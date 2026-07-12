@@ -1,0 +1,98 @@
+package settings
+
+import (
+	"context"
+	"github.com/google/uuid"
+	"github.com/tilecast/tilecast/apps/server/internal/auth"
+	"github.com/tilecast/tilecast/apps/server/internal/database"
+	"os"
+	"testing"
+	"time"
+)
+
+type testNotifier struct{ notes int }
+
+func (n *testNotifier) ConfigChanged(uuid.UUID, int64) { n.notes++ }
+func TestSettingsPolicyInheritanceAndRevision(t *testing.T) {
+	url := os.Getenv("TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("TEST_DATABASE_URL not set")
+	}
+	ctx := context.Background()
+	lock, err := database.Open(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Close()
+	_, _ = lock.Exec(ctx, `SELECT pg_advisory_lock(7421999)`)
+	defer lock.Exec(ctx, `SELECT pg_advisory_unlock(7421999)`)
+	if err = database.Migrate(ctx, url); err != nil {
+		t.Fatal(err)
+	}
+	pool, err := database.Open(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	_, err = pool.Exec(ctx, `TRUNCATE organization_runtime_settings,user_preferences,screen_group_player_policies,screen_player_policies,screen_config_state,screen_group_memberships,screen_groups,screen_player_status,screen_manifest_state,screen_playlist_assignments,playlist_items,playlists,media_jobs,upload_sessions,asset_variants,assets,device_pairing_sessions,device_credentials,screens,sessions,audit_logs,users,organization_settings CASCADE`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, err := auth.NewService(pool, time.Hour).Setup(ctx, auth.SetupInput{OrganizationName: "Settings Test", OwnerName: "Owner", Username: "owner", Password: "correct horse battery staple"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var org uuid.UUID
+	_ = pool.QueryRow(ctx, `SELECT id FROM organization_settings`).Scan(&org)
+	screen, group := uuid.New(), uuid.New()
+	_, err = pool.Exec(ctx, `INSERT INTO screens(id,organization_id,player_installation_id,name,platform,device_manufacturer,device_model,android_version,player_version,screen_width,screen_height,density,locale,timezone)VALUES($1,$2,$3,'Lobby','android-tv','Google','ADT','14','0.8',1920,1080,2,'en-US','UTC')`, screen, org, uuid.NewString())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO screen_groups(id,organization_id,name,created_by)VALUES($1,$2,'Cafeteria Displays',$3)`, group, org, owner.User.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO screen_group_memberships(screen_group_id,screen_id,added_by)VALUES($1,$2,$3)`, group, screen, owner.User.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO screen_config_state(screen_id)VALUES($1)`, screen); err != nil {
+		t.Fatal(err)
+	}
+	notifier := &testNotifier{}
+	service := NewService(pool, notifier, HardLimits{MaxUploadBytes: 20 << 30, MaxEmergencyMinutes: 1440, MaxWebsiteTimeout: 120, MaxPrefetchDays: 365})
+	document, err := service.Organization(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	values := map[string]any{"organization.name": "Settings Test", "player.playback.default_volume": 0.5}
+	document, err = service.UpdateOrganization(ctx, owner.User.ID, document.Revision, values)
+	if err != nil {
+		t.Fatal(err)
+	}
+	groupPolicy, err := service.PutGroupPolicy(ctx, owner.User.ID, group, 0, 100, map[string]any{"player.playback.default_volume": 0.4})
+	if err != nil || groupPolicy.Revision != 1 {
+		t.Fatalf("group policy: %#v %v", groupPolicy, err)
+	}
+	_, err = service.PutScreenPolicy(ctx, owner.User.ID, screen, 0, map[string]any{"player.playback.default_volume": 0.25})
+	if err != nil {
+		t.Fatal(err)
+	}
+	effective, err := service.Effective(ctx, screen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	volume := effective.Values["player.playback.default_volume"]
+	if volume.Value != 0.25 || volume.Source != "This screen" || effective.ConfigRevision < 3 {
+		t.Fatalf("effective=%#v", effective)
+	}
+	config, etag, err := service.PlayerConfiguration(ctx, screen)
+	if err != nil || config.Playback["defaultVolume"] != 0.25 || etag == "" {
+		t.Fatalf("config=%#v etag=%q err=%v", config, etag, err)
+	}
+	if notifier.notes < 3 {
+		t.Fatalf("notifications=%d", notifier.notes)
+	}
+	if _, err = service.UpdateOrganization(ctx, owner.User.ID, document.Revision-1, values); err != ErrRevisionConflict {
+		t.Fatalf("revision conflict=%v", err)
+	}
+}

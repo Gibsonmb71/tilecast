@@ -33,6 +33,9 @@ func (s *Service) RegisterPresenceWithNotifier(screenID uuid.UUID, closeConnecti
 func (s *Service) ManifestChanged(screenID uuid.UUID, version int64) {
 	s.presence.Notify(screenID, map[string]any{"type": "manifest.changed", "manifestVersion": version})
 }
+func (s *Service) ConfigChanged(screenID uuid.UUID, revision int64) {
+	s.presence.Notify(screenID, map[string]any{"type": "config.changed", "configRevision": revision})
+}
 func (s *Service) Notify(screenID uuid.UUID, message map[string]any) bool {
 	return s.presence.Notify(screenID, message)
 }

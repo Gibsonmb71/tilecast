@@ -54,6 +54,7 @@ class TilecastApi(
             ManifestResponse(json.decodeFromString(DataEnvelope.serializer(PlayerManifest.serializer()), body).data, body, response.header("ETag"), false)
         }
     }
+    suspend fun playerConfig(serverUrl:String,credential:String,etag:String?):PlayerConfigResponse=withContext(Dispatchers.IO){val request=Request.Builder().url(serverUrl+"/api/v1/player/config").header("Authorization","Bearer $credential").apply{if(etag!=null)header("If-None-Match",etag)}.get().build();client.newCall(request).execute().use{response->if(response.code==304)return@withContext PlayerConfigResponse(null,null,etag,true);val body=response.body?.string().orEmpty();if(!response.isSuccessful)throw apiException(response.code,body);PlayerConfigResponse(json.decodeFromString(DataEnvelope.serializer(PlayerConfig.serializer()),body).data,body,response.header("ETag"),false)}}
 
     suspend fun downloadVariant(serverUrl: String, path: String, credential: String, partFile: File, expectedHash: String, expectedSize: Long, progress: (Long) -> Unit) = withContext(Dispatchers.IO) {
         partFile.parentFile?.mkdirs()
@@ -84,6 +85,7 @@ class TilecastApi(
     }
 
     fun decodeManifest(envelope: String): PlayerManifest = json.decodeFromString(DataEnvelope.serializer(PlayerManifest.serializer()), envelope).data
+    fun decodePlayerConfig(envelope:String):PlayerConfig=json.decodeFromString(DataEnvelope.serializer(PlayerConfig.serializer()),envelope).data
     private fun apiException(status: Int, body: String): ApiException { val error=runCatching{json.decodeFromString(ErrorEnvelope.serializer(),body).error}.getOrNull();return ApiException(status,error?.code?:"http_$status",error?.message?:"Tilecast returned HTTP $status") }
 
     private suspend inline fun <reified T> get(serverUrl: String, path: String, authorization: String? = null): T = execute(

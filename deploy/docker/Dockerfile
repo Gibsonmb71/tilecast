@@ -7,6 +7,7 @@ COPY packages/design-tokens/package.json packages/design-tokens/package.json
 COPY packages/design-tokens/tokens.css packages/design-tokens/tokens.css
 COPY packages/api-schema/package.json packages/api-schema/package.json
 COPY packages/manifest-schema/package.json packages/manifest-schema/package.json
+COPY packages/settings-schema/package.json packages/settings-schema/package.json
 COPY packages/layout-schema/package.json packages/layout-schema/package.json
 RUN npm ci
 COPY apps/dashboard apps/dashboard

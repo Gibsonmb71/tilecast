@@ -4,7 +4,7 @@
 
 Tilecast is an open-source, self-hosted digital signage platform for organizations that want to operate their own signage server. It is designed for reliable playback on Fire TV, Google TV, and Android TV devices without requiring a paid cloud service.
 
-This repository implements **Milestone 7: Emergency takeover and operational screen controls**. Tilecast Studio can temporarily override normal fullscreen playback on selected screens or groups, track restoration state, and deliver persisted typed commands for synchronization, playback reload, screen identification, protected cache cleanup, website-data cleanup, and playback enable/disable. Website authentication, multi-zone layouts, compositions, PDF playback, device reboot, arbitrary execution, and proof-of-play remain out of scope.
+This repository implements **Milestone 8: Typed settings, branding, player policies, preferences, and system administration**. Tilecast separates deployment hard limits from runtime settings, resolves group and screen policy inheritance deterministically, synchronizes versioned player configuration independently of content, and provides safe diagnostics plus non-secret settings import/export. Multi-zone layouts, cloud accounts, billing, proof-of-play, arbitrary configuration, and remote execution remain out of scope.
 
 ## Quick start with Docker Compose
 

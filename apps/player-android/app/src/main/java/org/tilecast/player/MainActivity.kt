@@ -93,13 +93,16 @@ private val warning = Color(0xFFE9CF79)
 	val content by model.content.collectAsStateWithLifecycle()
 	val disabled by model.playbackDisabled.collectAsStateWithLifecycle()
 	val identify by model.identify.collectAsStateWithLifecycle()
+	val config by model.playerConfig.collectAsStateWithLifecycle()
+	val brandedBackground=config?.branding?.backgroundColor?.let{runCatching{Color(android.graphics.Color.parseColor(it))}.getOrNull()}?:background
+	val brandedText=config?.branding?.textColor?.let{runCatching{Color(android.graphics.Color.parseColor(it))}.getOrNull()}?:text
 	if(identify!=null){Box(Modifier.fillMaxSize().background(Color.Black),contentAlignment=Alignment.Center){Text(identify!!,color=Color.White,style=MaterialTheme.typography.displayLarge)};return}
 	if (content != null) {
 		FullscreenPlayback(content!!, model::playbackBoundary, model::playbackError,model::websitePlaybackStatus)
 		return
 	}
-	if(disabled){Box(Modifier.fillMaxSize().background(background),contentAlignment=Alignment.Center){Column(horizontalAlignment=Alignment.CenterHorizontally){TilecastBrand();Spacer(Modifier.height(28.dp));Text("Playback disabled",color=text,style=MaterialTheme.typography.headlineLarge);Text("This screen remains connected to Tilecast Studio.",color=muted)}};return}
-    Box(Modifier.fillMaxSize().background(background).padding(horizontal = 72.dp, vertical = 52.dp)) {
+	if(disabled){Box(Modifier.fillMaxSize().background(brandedBackground),contentAlignment=Alignment.Center){Column(horizontalAlignment=Alignment.CenterHorizontally){TilecastBrand();Spacer(Modifier.height(28.dp));Text(config?.branding?.disabledTitle?:"Playback disabled",color=brandedText,style=MaterialTheme.typography.headlineLarge);Text(config?.branding?.disabledMessage?:"This screen remains connected to Tilecast Studio.",color=brandedText)}};return}
+    Box(Modifier.fillMaxSize().background(brandedBackground).padding(horizontal = 72.dp, vertical = 52.dp)) {
         Column(Modifier.fillMaxSize()) {
             TilecastBrand()
             Spacer(Modifier.height(42.dp))

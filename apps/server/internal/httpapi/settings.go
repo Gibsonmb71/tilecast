@@ -1,0 +1,450 @@
+package httpapi
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"runtime"
+	"strings"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
+	"github.com/tilecast/tilecast/apps/server/internal/auth"
+	"github.com/tilecast/tilecast/apps/server/internal/devices"
+	"github.com/tilecast/tilecast/apps/server/internal/settings"
+)
+
+type settingsUpdate struct {
+	Revision int64          `json:"revision"`
+	Values   map[string]any `json:"values"`
+}
+type policyUpdate struct {
+	Revision int64          `json:"revision"`
+	Priority int            `json:"priority"`
+	Values   map[string]any `json:"values"`
+}
+
+func (s *server) listUsers(w http.ResponseWriter, r *http.Request) {
+	rows, err := s.db.Query(r.Context(), `SELECT id,name,username,role,active,created_at,last_login_at FROM users ORDER BY lower(name),id`)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	defer rows.Close()
+	items := []auth.User{}
+	for rows.Next() {
+		var user auth.User
+		if rows.Scan(&user.ID, &user.Name, &user.Username, &user.Role, &user.Active, &user.CreatedAt, &user.LastLoginAt) == nil {
+			items = append(items, user)
+		}
+	}
+	writeJSON(w, 200, map[string]any{"data": map[string]any{"items": items, "total": len(items)}})
+}
+
+func (s *server) getSettings(w http.ResponseWriter, r *http.Request) {
+	document, err := s.settings.Organization(r.Context())
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"data": document})
+}
+func (s *server) updateSettings(w http.ResponseWriter, r *http.Request) {
+	var body settingsUpdate
+	if err := decodeJSON(w, r, &body); err != nil {
+		writeError(w, 400, "invalid_request", err.Error())
+		return
+	}
+	user := r.Context().Value(sessionContextKey).(auth.Session).User
+	document, err := s.settings.UpdateOrganization(r.Context(), user.ID, body.Revision, body.Values)
+	if err != nil {
+		s.writeSettingsError(w, r, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"data": document})
+}
+func (s *server) resetSettings(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Revision int64  `json:"revision"`
+		Category string `json:"category"`
+	}
+	if err := decodeJSON(w, r, &body); err != nil {
+		writeError(w, 400, "invalid_request", err.Error())
+		return
+	}
+	current, err := s.settings.Organization(r.Context())
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	values := map[string]any{}
+	for _, definition := range current.Definitions {
+		if definition.Scope == settings.ScopePreference {
+			continue
+		}
+		if body.Category != "" && definition.Category != body.Category {
+			if value, ok := current.Values[definition.Key]; ok {
+				values[definition.Key] = value
+			}
+		}
+	}
+	user := r.Context().Value(sessionContextKey).(auth.Session).User
+	updated, err := s.settings.UpdateOrganization(r.Context(), user.ID, body.Revision, values)
+	if err != nil {
+		s.writeSettingsError(w, r, err)
+		return
+	}
+	_, _ = s.db.Exec(r.Context(), `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,metadata)VALUES($1,$2,'settings.category_reset','organization','singleton',jsonb_build_object('category',$3))`, uuid.New(), user.ID, body.Category)
+	writeJSON(w, 200, map[string]any{"data": updated})
+}
+func (s *server) getPreferences(w http.ResponseWriter, r *http.Request) {
+	user := r.Context().Value(sessionContextKey).(auth.Session).User
+	d, err := s.settings.Preferences(r.Context(), user.ID)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"data": d})
+}
+func (s *server) updatePreferences(w http.ResponseWriter, r *http.Request) {
+	var body settingsUpdate
+	if err := decodeJSON(w, r, &body); err != nil {
+		writeError(w, 400, "invalid_request", err.Error())
+		return
+	}
+	user := r.Context().Value(sessionContextKey).(auth.Session).User
+	d, err := s.settings.UpdatePreferences(r.Context(), user.ID, body.Revision, body.Values)
+	if err != nil {
+		s.writeSettingsError(w, r, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"data": d})
+}
+func (s *server) getGroupPolicy(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	d, err := s.settings.GroupPolicy(r.Context(), id)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"data": d})
+}
+func (s *server) putGroupPolicy(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	var body policyUpdate
+	if err := decodeJSON(w, r, &body); err != nil {
+		writeError(w, 400, "invalid_request", err.Error())
+		return
+	}
+	user := r.Context().Value(sessionContextKey).(auth.Session).User
+	d, err := s.settings.PutGroupPolicy(r.Context(), user.ID, id, body.Revision, body.Priority, body.Values)
+	if err != nil {
+		s.writeSettingsError(w, r, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"data": d})
+}
+func (s *server) deleteGroupPolicy(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	user := r.Context().Value(sessionContextKey).(auth.Session).User
+	if err := s.settings.DeleteGroupPolicy(r.Context(), user.ID, id); err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	w.WriteHeader(204)
+}
+func (s *server) getScreenPolicy(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	d, err := s.settings.ScreenPolicy(r.Context(), id)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"data": d})
+}
+func (s *server) putScreenPolicy(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	var body policyUpdate
+	if err := decodeJSON(w, r, &body); err != nil {
+		writeError(w, 400, "invalid_request", err.Error())
+		return
+	}
+	user := r.Context().Value(sessionContextKey).(auth.Session).User
+	d, err := s.settings.PutScreenPolicy(r.Context(), user.ID, id, body.Revision, body.Values)
+	if err != nil {
+		s.writeSettingsError(w, r, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"data": d})
+}
+func (s *server) deleteScreenPolicy(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	user := r.Context().Value(sessionContextKey).(auth.Session).User
+	if err := s.settings.DeleteScreenPolicy(r.Context(), user.ID, id); err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	w.WriteHeader(204)
+}
+func (s *server) getEffectivePolicy(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	d, err := s.settings.Effective(r.Context(), id)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"data": d})
+}
+func (s *server) playerConfig(w http.ResponseWriter, r *http.Request) {
+	principal := r.Context().Value(deviceContextKey).(devices.DevicePrincipal)
+	config, etag, err := s.settings.PlayerConfiguration(r.Context(), principal.ScreenID)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	w.Header().Set("ETag", etag)
+	_, _ = s.db.Exec(r.Context(), `UPDATE screen_config_state SET last_requested_at=now() WHERE screen_id=$1`, principal.ScreenID)
+	writeJSON(w, 200, map[string]any{"data": config})
+}
+
+func (s *server) systemStatus(w http.ResponseWriter, r *http.Request) {
+	var migration string
+	_ = s.db.QueryRow(r.Context(), `SELECT version_id::text FROM goose_db_version WHERE is_applied ORDER BY id DESC LIMIT 1`).Scan(&migration)
+	var postgres string
+	_ = s.db.QueryRow(r.Context(), `SHOW server_version`).Scan(&postgres)
+	var pending, connected, jobs int
+	_ = s.db.QueryRow(r.Context(), `SELECT count(*) FROM player_commands WHERE state IN('pending','delivered','acknowledged','running')`).Scan(&pending)
+	_ = s.db.QueryRow(r.Context(), `SELECT count(*) FROM screens WHERE last_heartbeat_at>now()-interval '2 minutes'`).Scan(&connected)
+	_ = s.db.QueryRow(r.Context(), `SELECT count(*) FROM media_jobs WHERE status IN('queued','running')`).Scan(&jobs)
+	mediaStatus := map[string]any{}
+	if s.media != nil {
+		mediaStatus, _ = s.media.Diagnostics()
+	}
+	writeJSON(w, 200, map[string]any{"data": map[string]any{"tilecastVersion": "0.8.0", "buildCommit": "local", "buildDate": "development", "uptimeSeconds": int64(time.Since(s.startedAt).Seconds()), "goVersion": runtime.Version(), "database": map[string]any{"status": "healthy", "migrationVersion": migration, "postgresVersion": postgres}, "media": mediaStatus, "activeProcessingJobs": jobs, "pendingCommands": pending, "connectedScreens": connected, "serverTimezone": time.Local.String(), "deployment": map[string]any{"database": "configured", "mediaStorage": "configured", "ffmpeg": "available", "restartRequired": false}}})
+}
+func (s *server) systemMaintenance(w http.ResponseWriter, r *http.Request) {
+	action := strings.TrimSpace(chi.URLParam(r, "action"))
+	allowed := map[string]bool{"expired-upload-cleanup": true, "completed-command-cleanup": true, "retention-cleanup": true, "reconcile-config": true, "validate-media": true}
+	if !allowed[action] {
+		writeError(w, 422, "maintenance_action_invalid", "Maintenance action is not supported.")
+		return
+	}
+	switch action {
+	case "completed-command-cleanup":
+		_, _ = s.db.Exec(r.Context(), `DELETE FROM player_commands WHERE completed_at<now()-interval '30 days'`)
+	case "expired-upload-cleanup":
+		_, _ = s.db.Exec(r.Context(), `INSERT INTO media_jobs(id,kind,status,run_after)VALUES(gen_random_uuid(),'clean_expired_uploads','queued',now())`)
+	case "retention-cleanup":
+		_, _ = s.db.Exec(r.Context(), `DELETE FROM device_pairing_sessions WHERE expires_at<now()-interval '30 days'`)
+	case "reconcile-config":
+		rows, _ := s.db.Query(r.Context(), `SELECT screen_id,config_revision FROM screen_config_state`)
+		if rows != nil {
+			for rows.Next() {
+				var id uuid.UUID
+				var revision int64
+				if rows.Scan(&id, &revision) == nil {
+					s.devices.ConfigChanged(id, revision)
+				}
+			}
+			rows.Close()
+		}
+	case "validate-media":
+		if _, err := s.media.Diagnostics(); err != nil {
+			writeError(w, 503, "media_validation_failed", "Media infrastructure is unavailable.")
+			return
+		}
+	}
+	user := r.Context().Value(sessionContextKey).(auth.Session).User
+	_, _ = s.db.Exec(r.Context(), `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)VALUES($1,$2,'system.maintenance_requested','system',$3)`, uuid.New(), user.ID, action)
+	writeJSON(w, 202, map[string]any{"data": map[string]any{"action": action, "status": "accepted"}})
+}
+
+type settingsExport struct {
+	SchemaVersion   int               `json:"schemaVersion"`
+	ExportedAt      time.Time         `json:"exportedAt"`
+	TilecastVersion string            `json:"tilecastVersion"`
+	Organization    settings.Document `json:"organization"`
+	GroupPolicies   []map[string]any  `json:"groupPolicies"`
+	ScreenPolicies  []map[string]any  `json:"screenPolicies,omitempty"`
+}
+
+func (s *server) exportSettings(w http.ResponseWriter, r *http.Request) {
+	org, err := s.settings.Organization(r.Context())
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	org.Definitions = nil
+	export := settingsExport{1, time.Now().UTC(), "0.8.0", org, []map[string]any{}, []map[string]any{}}
+	rows, _ := s.db.Query(r.Context(), `SELECT screen_group_id,priority,revision,policy FROM screen_group_player_policies ORDER BY screen_group_id`)
+	if rows != nil {
+		for rows.Next() {
+			var id uuid.UUID
+			var priority int
+			var revision int64
+			var raw []byte
+			if rows.Scan(&id, &priority, &revision, &raw) == nil {
+				var values any
+				_ = json.Unmarshal(raw, &values)
+				export.GroupPolicies = append(export.GroupPolicies, map[string]any{"screenGroupId": id, "priority": priority, "revision": revision, "values": values})
+			}
+		}
+		rows.Close()
+	}
+	screenRows, _ := s.db.Query(r.Context(), `SELECT screen_id,revision,policy FROM screen_player_policies ORDER BY screen_id`)
+	if screenRows != nil {
+		for screenRows.Next() {
+			var id uuid.UUID
+			var revision int64
+			var raw []byte
+			if screenRows.Scan(&id, &revision, &raw) == nil {
+				var values any
+				_ = json.Unmarshal(raw, &values)
+				export.ScreenPolicies = append(export.ScreenPolicies, map[string]any{"screenId": id, "revision": revision, "values": values})
+			}
+		}
+		screenRows.Close()
+	}
+	writeJSON(w, 200, map[string]any{"data": export})
+}
+func (s *server) previewSettingsImport(w http.ResponseWriter, r *http.Request) {
+	var body settingsExport
+	if err := decodeJSON(w, r, &body); err != nil {
+		writeError(w, 400, "settings_import_invalid", err.Error())
+		return
+	}
+	if body.SchemaVersion != 1 {
+		writeError(w, 422, "settings_import_version_unsupported", "Settings export version is not supported.")
+		return
+	}
+	if _, err := settings.Validate(body.Organization.Values, settings.ScopeOrganization); err != nil {
+		writeError(w, 422, "settings_import_invalid", err.Error())
+		return
+	}
+	for _, entry := range append(append([]map[string]any{}, body.GroupPolicies...), body.ScreenPolicies...) {
+		values, err := importValues(entry)
+		if err != nil {
+			writeError(w, 422, "settings_import_invalid", err.Error())
+			return
+		}
+		if _, err = settings.Validate(values, settings.ScopePolicy); err != nil {
+			writeError(w, 422, "settings_import_invalid", err.Error())
+			return
+		}
+	}
+	writeJSON(w, 200, map[string]any{"data": map[string]any{"valid": true, "changedKeys": keys(body.Organization.Values), "groupPolicyCount": len(body.GroupPolicies), "screenPolicyCount": len(body.ScreenPolicies), "requiresConfirmation": true}})
+}
+func (s *server) applySettingsImport(w http.ResponseWriter, r *http.Request) {
+	var body settingsExport
+	if err := decodeJSON(w, r, &body); err != nil {
+		writeError(w, 400, "settings_import_invalid", err.Error())
+		return
+	}
+	if body.SchemaVersion != 1 {
+		writeError(w, 422, "settings_import_version_unsupported", "Settings export version is not supported.")
+		return
+	}
+	current, err := s.settings.Organization(r.Context())
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	user := r.Context().Value(sessionContextKey).(auth.Session).User
+	updated, err := s.settings.UpdateOrganization(r.Context(), user.ID, current.Revision, body.Organization.Values)
+	if err != nil {
+		s.writeSettingsError(w, r, err)
+		return
+	}
+	for _, entry := range body.GroupPolicies {
+		id, err := uuid.Parse(fmt.Sprint(entry["screenGroupId"]))
+		if err != nil {
+			writeError(w, 422, "settings_import_invalid", "Group policy target is invalid.")
+			return
+		}
+		values, _ := importValues(entry)
+		currentPolicy, _ := s.settings.GroupPolicy(r.Context(), id)
+		priority := 0
+		if value, ok := entry["priority"].(float64); ok {
+			priority = int(value)
+		}
+		if _, err = s.settings.PutGroupPolicy(r.Context(), user.ID, id, currentPolicy.Revision, priority, values); err != nil {
+			s.writeSettingsError(w, r, err)
+			return
+		}
+	}
+	for _, entry := range body.ScreenPolicies {
+		id, err := uuid.Parse(fmt.Sprint(entry["screenId"]))
+		if err != nil {
+			writeError(w, 422, "settings_import_invalid", "Screen policy target is invalid.")
+			return
+		}
+		values, _ := importValues(entry)
+		currentPolicy, _ := s.settings.ScreenPolicy(r.Context(), id)
+		if _, err = s.settings.PutScreenPolicy(r.Context(), user.ID, id, currentPolicy.Revision, values); err != nil {
+			s.writeSettingsError(w, r, err)
+			return
+		}
+	}
+	_, _ = s.db.Exec(r.Context(), `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)VALUES($1,$2,'settings.imported','organization','singleton')`, uuid.New(), user.ID)
+	writeJSON(w, 200, map[string]any{"data": updated})
+}
+func (s *server) writeSettingsError(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, settings.ErrRevisionConflict) {
+		writeError(w, 409, "settings_revision_conflict", "Settings changed in another session. Reload and try again.")
+		return
+	}
+	message := err.Error()
+	code := "invalid_setting_value"
+	for _, candidate := range []string{"unknown_setting", "setting_not_allowed_at_scope", "setting_exceeds_hard_limit", "branding_asset_invalid"} {
+		if strings.HasPrefix(message, candidate) {
+			code = candidate
+		}
+	}
+	if strings.Contains(message, "not found") {
+		code = "not_found"
+	}
+	writeError(w, 422, code, message)
+}
+func keys(values map[string]any) []string {
+	out := make([]string, 0, len(values))
+	for key := range values {
+		out = append(out, key)
+	}
+	return out
+}
+func importValues(entry map[string]any) (map[string]any, error) {
+	raw, err := json.Marshal(entry["values"])
+	if err != nil {
+		return nil, err
+	}
+	values := map[string]any{}
+	err = json.Unmarshal(raw, &values)
+	return values, err
+}

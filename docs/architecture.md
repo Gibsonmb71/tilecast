@@ -60,3 +60,7 @@ The server validates URLs without fetching them, avoiding SSRF and network-topol
 ## Milestone 7 operations
 
 Emergency takeovers are separate lifecycle records rather than schedules. Manifest v4 references an emergency playlist and expiration only for affected screens. Persistent typed player commands use PostgreSQL as the delivery source of truth; WebSockets only announce availability. See [emergency-and-operations.md](emergency-and-operations.md).
+
+## Milestone 8 settings architecture
+
+The closed typed registry separates organization settings, preferences, group policy, and screen policy. Effective player policy uses screen, group priority plus stable UUID, organization, then built-in precedence. A separate ETag-enabled player configuration document changes policy and branding without revising content manifests. See [settings.md](settings.md).

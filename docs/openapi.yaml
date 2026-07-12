@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Tilecast API
-  version: 0.7.0
+  version: 0.8.0
   license:
     name: AGPL-3.0-only
 paths:
@@ -670,6 +670,131 @@ paths:
       responses:
         "200": { description: Result accepted idempotently }
         "409": { description: Command expired or cancelled }
+  /api/v1/settings:
+    get:
+      {
+        summary: Read typed organization settings,
+        responses: { "200": { description: Settings document and registry } },
+      }
+    patch:
+      {
+        summary: Update settings with optimistic revision,
+        responses:
+          {
+            "200": { description: Updated settings },
+            "409": { description: Settings revision conflict },
+            "422": { description: Unknown, invalid, or hard-limit setting },
+          },
+      }
+  /api/v1/me/preferences:
+    get:
+      {
+        summary: Read current user preferences,
+        responses: { "200": { description: Preference document } },
+      }
+    patch:
+      {
+        summary: Update current user preferences,
+        responses:
+          {
+            "200": { description: Updated preferences },
+            "409": { description: Revision conflict },
+          },
+      }
+  /api/v1/screen-groups/{id}/policy:
+    get:
+      {
+        summary: Read group player policy,
+        responses: { "200": { description: Group policy } },
+      }
+    put:
+      {
+        summary: Replace typed group policy,
+        responses:
+          {
+            "200": { description: Updated policy },
+            "409": { description: Revision conflict },
+          },
+      }
+    delete:
+      {
+        summary: Reset group policy,
+        responses: { "204": { description: Policy reset } },
+      }
+  /api/v1/screens/{id}/policy:
+    get:
+      {
+        summary: Read screen player policy,
+        responses: { "200": { description: Screen policy } },
+      }
+    put:
+      {
+        summary: Replace typed screen policy,
+        responses: { "200": { description: Updated policy } },
+      }
+    delete:
+      {
+        summary: Reset screen policy,
+        responses: { "204": { description: Policy reset } },
+      }
+  /api/v1/screens/{id}/effective-policy:
+    get:
+      {
+        summary: Inspect effective values and inheritance sources,
+        responses: { "200": { description: Effective policy } },
+      }
+  /api/v1/player/config:
+    get:
+      {
+        summary: Retrieve effective player configuration,
+        responses:
+          {
+            "200": { description: Versioned player config },
+            "304": { description: Not modified },
+          },
+      }
+  /api/v1/system/status:
+    get:
+      {
+        summary: Safe system diagnostics,
+        responses: { "200": { description: Secret-free status } },
+      }
+  /api/v1/system/maintenance/{action}:
+    post:
+      {
+        summary: Run a fixed safe maintenance action,
+        responses:
+          {
+            "202": { description: Action accepted },
+            "422": { description: Unsupported action },
+          },
+      }
+  /api/v1/system/settings/export:
+    get:
+      {
+        summary: Export non-secret settings,
+        responses: { "200": { description: Versioned settings export } },
+      }
+  /api/v1/system/settings/import/preview:
+    post:
+      {
+        summary: Validate settings import without applying,
+        responses:
+          {
+            "200": { description: Import preview },
+            "422": { description: Invalid import },
+          },
+      }
+  /api/v1/system/settings/import/apply:
+    post:
+      {
+        summary: Apply confirmed settings import,
+        responses:
+          {
+            "200": { description: Import applied },
+            "409": { description: Revision conflict },
+          },
+      }
 components:
   parameters:
     ResourceID:

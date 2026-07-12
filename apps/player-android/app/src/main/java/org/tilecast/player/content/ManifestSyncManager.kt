@@ -27,11 +27,12 @@ class ManifestSyncManager(
     private val context: Context,
     private val database: PlayerDatabase,
     private val api: TilecastApi,
-    private val cacheLimitBytes: Long = 8L * 1024 * 1024 * 1024,
-    private val minimumFreeBytes: Long = 1024L * 1024 * 1024,
-    private val automaticVideoThresholdBytes: Long = 256L * 1024 * 1024,
-    private val concurrentDownloads: Int = 2,
+    private var cacheLimitBytes: Long = 8L * 1024 * 1024 * 1024,
+    private var minimumFreeBytes: Long = 1024L * 1024 * 1024,
+    private var automaticVideoThresholdBytes: Long = 256L * 1024 * 1024,
+    private var concurrentDownloads: Int = 2,
 ) {
+    fun applyPolicy(maximumBytes:Long,minimumFree:Long,automaticThreshold:Long,downloads:Int){cacheLimitBytes=maximumBytes;minimumFreeBytes=minimumFree;automaticVideoThresholdBytes=automaticThreshold;concurrentDownloads=downloads}
     suspend fun loadActive(): PreparedContent? {
         val stored = database.manifests().active() ?: return null
         val manifest = runCatching { api.decodeManifest(stored.rawJson) }.getOrNull() ?: return null

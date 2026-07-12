@@ -9,9 +9,11 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { useAuth } from "../auth/AuthProvider";
 import { Brand } from "../components/Brand";
+import { api } from "../api/client";
 
 const nav = [
   ["Screens", "/screens", Monitor],
@@ -27,6 +29,37 @@ export function DashboardShell() {
   const auth = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const preferences = useQuery({
+    queryKey: ["preferences"],
+    queryFn: api.preferences,
+    enabled: Boolean(auth.status?.authenticated),
+  });
+  const branding = useQuery({
+    queryKey: ["settings", "branding-shell"],
+    queryFn: api.settings,
+    enabled: Boolean(auth.status?.authenticated),
+  });
+  useEffect(() => {
+    const values = preferences.data?.values;
+    if (!values) return;
+    const root = document.documentElement;
+    root.dataset.theme =
+      typeof values["preference.appearance"] === "string"
+        ? values["preference.appearance"]
+        : "system";
+    root.dataset.density =
+      typeof values["preference.density"] === "string"
+        ? values["preference.density"]
+        : "comfortable";
+    root.dataset.reducedMotion = String(
+      Boolean(values["preference.reduced_motion"]),
+    );
+  }, [preferences.data]);
+  useEffect(() => {
+    const color = branding.data?.values["branding.primary_color"];
+    if (typeof color === "string")
+      document.documentElement.style.setProperty("--tc-brand", color);
+  }, [branding.data]);
   useEffect(() => {
     if (!auth.isLoading && !auth.status?.authenticated)
       void navigate(

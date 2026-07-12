@@ -560,6 +560,7 @@ func (s *Service) Assignment(ctx context.Context, screenID uuid.UUID) (Assignmen
 		return Assignment{}, err
 	}
 	_ = s.db.QueryRow(ctx, `SELECT active_emergency_id,emergency_state,emergency_preparation_progress,playback_disabled,last_command_id,last_command_state,last_command_result,last_command_completed_at FROM screen_player_status WHERE screen_id=$1`, screenID).Scan(&a.ActiveEmergencyID, &a.EmergencyState, &a.EmergencyPreparationProgress, &a.PlaybackDisabled, &a.LastCommandID, &a.LastCommandState, &a.LastCommandResult, &a.LastCommandCompletedAt)
+	_ = s.db.QueryRow(ctx, `SELECT active_config_revision,configuration_error FROM screen_player_status WHERE screen_id=$1`, screenID).Scan(&a.ActiveConfigRevision, &a.ConfigurationError)
 	a.Groups = []AssignmentGroup{}
 	groupRows, e := s.db.Query(ctx, `SELECT g.id,g.name FROM screen_group_memberships m JOIN screen_groups g ON g.id=m.screen_group_id WHERE m.screen_id=$1 AND g.deleted_at IS NULL ORDER BY lower(g.name),g.id`, screenID)
 	if e != nil {
@@ -822,6 +823,12 @@ func (s *Service) ReportStatus(ctx context.Context, screenID uuid.UUID, status P
 	}
 	if err == nil && status.ActiveEmergencyID != nil && status.EmergencyState != "" {
 		_, _ = s.db.Exec(ctx, `UPDATE emergency_screen_states SET state=$3,last_updated_at=now(),prepared_at=CASE WHEN $3 IN ('ready','active') THEN COALESCE(prepared_at,now()) ELSE prepared_at END,activated_at=CASE WHEN $3='active' THEN COALESCE(activated_at,now()) ELSE activated_at END WHERE emergency_id=$1 AND screen_id=$2`, status.ActiveEmergencyID, screenID, status.EmergencyState)
+	}
+	if err == nil {
+		_, err = s.db.Exec(ctx, `UPDATE screen_player_status SET active_config_revision=$2,configuration_error=NULLIF($3,'') WHERE screen_id=$1`, screenID, status.ActiveConfigRevision, status.ConfigurationError)
+		if status.ActiveConfigRevision != nil {
+			_, _ = s.db.Exec(ctx, `UPDATE screen_config_state SET active_config_revision=$2 WHERE screen_id=$1`, screenID, status.ActiveConfigRevision)
+		}
 	}
 	return err
 }

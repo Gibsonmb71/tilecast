@@ -26,6 +26,13 @@ func (s *server) createUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
+	if s.settings != nil {
+		document, _ := s.settings.Organization(r.Context())
+		if limit, ok := document.Values["media.upload.max_bytes"].(float64); ok && body.SizeBytes > int64(limit) {
+			writeError(w, 422, "setting_exceeds_hard_limit", "Upload exceeds the Studio runtime limit.")
+			return
+		}
+	}
 	user := r.Context().Value(sessionContextKey).(auth.Session).User
 	upload, err := s.media.CreateUpload(r.Context(), user.ID, body.Filename, body.MIMEType, body.SizeBytes)
 	if err != nil {
@@ -135,6 +142,13 @@ func (s *server) createWebsite(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(body.URL)), "http://") && s.settings != nil {
+		document, _ := s.settings.Organization(r.Context())
+		if enabled, _ := document.Values["website.private_http_enabled"].(bool); !enabled {
+			writeError(w, 422, "setting_exceeds_hard_limit", "Private HTTP websites are disabled by runtime settings.")
+			return
+		}
+	}
 	user := r.Context().Value(sessionContextKey).(auth.Session).User
 	asset, err := s.media.CreateWebsite(r.Context(), user.ID, body)
 	if err != nil {
@@ -152,6 +166,13 @@ func (s *server) updateWebsite(w http.ResponseWriter, r *http.Request) {
 	if err := decodeJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
+	}
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(body.URL)), "http://") && s.settings != nil {
+		document, _ := s.settings.Organization(r.Context())
+		if enabled, _ := document.Values["website.private_http_enabled"].(bool); !enabled {
+			writeError(w, 422, "setting_exceeds_hard_limit", "Private HTTP websites are disabled by runtime settings.")
+			return
+		}
 	}
 	user := r.Context().Value(sessionContextKey).(auth.Session).User
 	asset, err := s.media.UpdateWebsite(r.Context(), id, user.ID, body)

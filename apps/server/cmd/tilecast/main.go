@@ -20,6 +20,7 @@ import (
 	"github.com/tilecast/tilecast/apps/server/internal/media"
 	"github.com/tilecast/tilecast/apps/server/internal/playlists"
 	"github.com/tilecast/tilecast/apps/server/internal/scheduling"
+	"github.com/tilecast/tilecast/apps/server/internal/settings"
 )
 
 func main() {
@@ -65,6 +66,7 @@ func main() {
 	mediaService.SetAssetInvalidator(playlistService)
 	schedulingService := scheduling.NewService(db, deviceService, scheduling.Limits{MaxSchedules: cfg.Scheduling.MaxSchedules, MaxTargetsPerSchedule: cfg.Scheduling.MaxTargetsPerSchedule, MaxGroupsPerScreen: cfg.Scheduling.MaxGroupsPerScreen, PrefetchDays: cfg.Scheduling.PrefetchDays, ActivationGraceSeconds: cfg.Scheduling.ActivationGraceSeconds, ClockSkewWarningSeconds: cfg.Scheduling.ClockSkewWarningSeconds})
 	playlistService.SetScheduling(schedulingService)
+	settingsService := settings.NewService(db, deviceService, settings.HardLimits{MaxUploadBytes: cfg.Media.MaxUploadBytes, MaxEmergencyMinutes: cfg.Operations.MaxEmergencyDurationHours * 60, MaxWebsiteTimeout: cfg.Website.MaxTimeoutSeconds, MaxPrefetchDays: cfg.Scheduling.PrefetchDays, PrivateHTTPAllowed: cfg.Website.AllowPrivateHTTP})
 	_, _ = db.Exec(ctx, `INSERT INTO media_jobs(id,kind,status,run_after) VALUES(gen_random_uuid(),'clean_expired_uploads','queued',now())`)
 	mediaWorkers := media.NewWorkerPool(mediaService, logger)
 	mediaWorkers.Start(ctx)
@@ -92,6 +94,7 @@ func main() {
 		Media:         mediaService,
 		Playlists:     playlistService,
 		Scheduling:    schedulingService,
+		Settings:      settingsService,
 		DB:            db,
 		Logger:        logger,
 		CookieName:    cfg.CookieName,
@@ -126,7 +129,8 @@ func main() {
 				return
 			case <-ticker.C:
 				_, _ = db.Exec(shutdownCtx, `UPDATE player_commands SET state='expired',completed_at=now(),updated_at=now() WHERE state IN ('pending','delivered','acknowledged','running') AND expires_at<=now()`)
-				_, _ = db.Exec(shutdownCtx, `DELETE FROM player_commands WHERE completed_at<now()-make_interval(days=>$1)`, cfg.Operations.CommandRetentionDays)
+				_, _ = db.Exec(shutdownCtx, `DELETE FROM player_commands WHERE completed_at<now()-make_interval(days=>COALESCE((SELECT (settings->>'retention.command_history_days')::int FROM organization_runtime_settings),$1))`, cfg.Operations.CommandRetentionDays)
+				_, _ = db.Exec(shutdownCtx, `DELETE FROM audit_logs WHERE created_at<now()-make_interval(days=>COALESCE((SELECT (settings->>'retention.audit_days')::int FROM organization_runtime_settings),365))`)
 				rows, err := db.Query(shutdownCtx, `WITH expired AS (UPDATE emergency_takeovers SET status='expired',updated_at=now() WHERE status='active' AND expires_at<=now() RETURNING id), affected AS (UPDATE emergency_screen_states SET state='expired',restored_at=now(),last_updated_at=now() WHERE emergency_id IN(SELECT id FROM expired) RETURNING screen_id), bumped AS (UPDATE screen_manifest_state SET manifest_version=manifest_version+1,changed_at=now(),change_reason='emergency.expired' WHERE screen_id IN(SELECT DISTINCT screen_id FROM affected) RETURNING screen_id,manifest_version) SELECT screen_id,manifest_version FROM bumped`)
 				if err == nil {
 					for rows.Next() {
