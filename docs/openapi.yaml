@@ -1,0 +1,506 @@
+openapi: 3.1.0
+info:
+  title: Tilecast API
+  version: 0.3.0
+  license:
+    name: AGPL-3.0-only
+paths:
+  /healthz:
+    get:
+      operationId: health
+      responses:
+        "200": { description: Server process is running }
+  /readyz:
+    get:
+      operationId: ready
+      responses:
+        "200": { description: Server and database are ready }
+        "503": { description: Database is unavailable }
+  /api/v1/auth/status:
+    get:
+      operationId: authStatus
+      responses:
+        "200": { description: Installation and session state }
+  /api/v1/auth/setup:
+    post:
+      operationId: initialSetup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetupRequest"
+      responses:
+        "201": { description: Organization and owner created }
+        "409": { description: Setup was already completed }
+        "422": { description: Validation failed }
+  /api/v1/auth/login:
+    post:
+      operationId: login
+      responses:
+        "200": { description: Signed in }
+        "401": { description: Invalid credentials }
+  /api/v1/auth/logout:
+    post:
+      operationId: logout
+      parameters:
+        - in: header
+          name: X-CSRF-Token
+          required: true
+          schema: { type: string }
+      responses:
+        "204": { description: Session revoked }
+        "401": { description: Authentication required }
+        "403": { description: CSRF verification failed }
+  /api/v1/system/identity:
+    get:
+      operationId: installationIdentity
+      responses:
+        "200": { description: Safe Tilecast installation identity }
+  /api/v1/player/pairing-sessions:
+    post:
+      operationId: createPairingSession
+      responses:
+        "201": { description: Pairing session created }
+        "409": { description: Installation identity mismatch }
+        "429": { description: Pairing requests are rate limited }
+  /api/v1/player/pairing-sessions/{id}:
+    get:
+      operationId: pollPairingSession
+      parameters:
+        - {
+            in: path,
+            name: id,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+        - {
+            in: header,
+            name: Authorization,
+            required: true,
+            schema: { type: string, pattern: "^Pairing " },
+          }
+      responses:
+        "200": { description: Pairing state or one-time enrollment result }
+        "401": { description: Poll secret missing or invalid }
+  /api/v1/player/enroll:
+    post:
+      operationId: enrollPlayer
+      responses:
+        "201": { description: Device credential returned exactly once }
+        "409": { description: Enrollment token already used }
+  /api/v1/player/heartbeat:
+    post:
+      operationId: playerHeartbeat
+      security: [{ deviceBearer: [] }]
+      responses:
+        "200": { description: Heartbeat accepted }
+        "401": { description: Credential invalid or revoked }
+        "403": { description: Screen disabled }
+  /api/v1/player/socket:
+    get:
+      operationId: playerSocket
+      security: [{ deviceBearer: [] }]
+      responses:
+        "101": { description: Player WebSocket connected }
+        "401": { description: Credential invalid or revoked }
+  /api/v1/screens:
+    get:
+      operationId: listScreens
+      responses:
+        "200": { description: Computed screen status list }
+        "401": { description: Dashboard authentication required }
+  /api/v1/screens/{id}:
+    get:
+      operationId: getScreen
+      parameters:
+        - {
+            in: path,
+            name: id,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+      responses:
+        "200": { description: Screen details }
+    patch:
+      operationId: updateScreen
+      parameters:
+        - {
+            in: path,
+            name: id,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+      responses:
+        "200": { description: Screen updated }
+        "403": { description: Owner or Administrator required }
+  /api/v1/screens/pairing/resolve:
+    post:
+      operationId: resolvePairingCode
+      responses:
+        "200": { description: Pending player metadata }
+        "404": { description: Code invalid, missing, or expired }
+  /api/v1/screens/pairing/{id}/approve:
+    post:
+      operationId: approvePairing
+      parameters:
+        - {
+            in: path,
+            name: id,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+      responses:
+        "200": { description: Screen approved }
+  /api/v1/screens/pairing/{id}/reject:
+    post:
+      operationId: rejectPairing
+      parameters:
+        - {
+            in: path,
+            name: id,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+      responses:
+        "204": { description: Pairing rejected }
+  /api/v1/screens/{id}/disable:
+    post:
+      operationId: disableScreen
+      parameters:
+        - {
+            in: path,
+            name: id,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+      responses: { "204": { description: Screen disabled and disconnected } }
+  /api/v1/screens/{id}/enable:
+    post:
+      operationId: enableScreen
+      parameters:
+        - {
+            in: path,
+            name: id,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+      responses: { "204": { description: Screen enabled } }
+  /api/v1/screens/{id}/revoke:
+    post:
+      operationId: revokeScreenCredential
+      parameters:
+        - {
+            in: path,
+            name: id,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+      responses: { "204": { description: Credential permanently revoked } }
+  /api/v1/uploads:
+    post:
+      operationId: createUploadSession
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateUploadRequest" }
+      responses:
+        "201": { description: Resumable upload session created }
+        "413": { description: Upload exceeds the configured maximum }
+        "507": { description: Reserved free storage would be violated }
+  /api/v1/uploads/{id}:
+    parameters: [{ $ref: "#/components/parameters/ResourceID" }]
+    head:
+      operationId: inspectUploadSession
+      responses:
+        "204":
+          description: Current upload state
+          headers:
+            Upload-Offset: { schema: { type: integer, format: int64 } }
+            Upload-Length: { schema: { type: integer, format: int64 } }
+            Upload-Status:
+              { schema: { $ref: "#/components/schemas/UploadStatus" } }
+            Upload-Expires: { schema: { type: string, format: date-time } }
+    patch:
+      operationId: appendUploadBytes
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+        - {
+            in: header,
+            name: Upload-Offset,
+            required: true,
+            schema: { type: integer, format: int64, minimum: 0 },
+          }
+      requestBody:
+        required: true
+        content:
+          application/offset+octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "204": { description: Chunk persisted and synchronized }
+        "409": { description: Offset mismatch }
+    delete:
+      operationId: cancelUpload
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      responses:
+        { "204": { description: Upload cancelled and temporary data removed } }
+  /api/v1/uploads/{id}/complete:
+    post:
+      operationId: completeUpload
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - $ref: "#/components/parameters/CSRFToken"
+      responses:
+        "200": { description: Upload finalized or idempotent result returned }
+        "409": { description: Upload is incomplete }
+        "415": { description: Detected media type is unsupported }
+  /api/v1/assets:
+    get:
+      operationId: listAssets
+      parameters:
+        - { in: query, name: page, schema: { type: integer, minimum: 1 } }
+        - {
+            in: query,
+            name: pageSize,
+            schema: { type: integer, minimum: 1, maximum: 100 },
+          }
+        - { in: query, name: search, schema: { type: string } }
+        - {
+            in: query,
+            name: type,
+            schema: { $ref: "#/components/schemas/AssetType" },
+          }
+        - {
+            in: query,
+            name: status,
+            schema: { $ref: "#/components/schemas/AssetStatus" },
+          }
+        - {
+            in: query,
+            name: sort,
+            schema: { type: string, enum: [newest, oldest, updated, name] },
+          }
+      responses: { "200": { description: Stable paginated media library } }
+  /api/v1/assets/{id}:
+    parameters: [{ $ref: "#/components/parameters/ResourceID" }]
+    get:
+      operationId: getAsset
+      responses: { "200": { description: Trusted metadata and variants } }
+    patch:
+      operationId: updateAsset
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      responses:
+        {
+          "200": { description: Asset metadata updated },
+          "403": { description: Viewer is read-only },
+        }
+    delete:
+      operationId: deleteAsset
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      responses:
+        { "204": { description: Asset soft-deleted and cleanup queued } }
+  /api/v1/assets/{id}/retry:
+    post:
+      operationId: retryAssetProcessing
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - $ref: "#/components/parameters/CSRFToken"
+      responses:
+        {
+          "200": { description: Failed asset returned to the persistent queue },
+        }
+  /api/v1/assets/{id}/thumbnail:
+    get:
+      operationId: getAssetThumbnail
+      parameters: [{ $ref: "#/components/parameters/ResourceID" }]
+      responses: { "200": { description: Authenticated thumbnail or poster } }
+  /api/v1/player/assets/{assetId}/variants/{variantId}:
+    parameters:
+      - {
+          in: path,
+          name: assetId,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
+      - {
+          in: path,
+          name: variantId,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
+    get:
+      operationId: downloadPlayerVariant
+      security: [{ deviceBearer: [] }]
+      parameters:
+        - {
+            in: header,
+            name: Range,
+            schema: { type: string, example: bytes=0-1048575 },
+          }
+        - { in: header, name: If-Range, schema: { type: string } }
+        - { in: header, name: If-None-Match, schema: { type: string } }
+      responses:
+        "200": { description: Complete compatible variant }
+        "206": { description: Requested byte range }
+        "304": { description: ETag matched }
+        "401": { description: Device credential invalid or revoked }
+        "403": { description: Screen disabled }
+        "416": { description: Range not satisfiable }
+    head:
+      operationId: inspectPlayerVariant
+      security: [{ deviceBearer: [] }]
+      responses:
+        {
+          "200":
+            { description: ETag, Content-Length, MIME type, and Accept-Ranges },
+        }
+components:
+  parameters:
+    ResourceID:
+      in: path
+      name: id
+      required: true
+      schema: { type: string, format: uuid }
+    CSRFToken:
+      in: header
+      name: X-CSRF-Token
+      required: true
+      schema: { type: string }
+  securitySchemes:
+    deviceBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: Tilecast device credential
+  schemas:
+    AssetType:
+      type: string
+      enum: [image, video]
+    AssetStatus:
+      type: string
+      enum:
+        [
+          uploading,
+          uploaded,
+          queued,
+          inspecting,
+          processing,
+          ready,
+          failed,
+          deleting,
+          deleted,
+        ]
+    UploadStatus:
+      type: string
+      enum:
+        [pending, uploading, finalizing, finalized, failed, expired, cancelled]
+    VariantKind:
+      type: string
+      enum: [original, playback, thumbnail, poster]
+    CreateUploadRequest:
+      type: object
+      additionalProperties: false
+      required: [filename, mimeType, sizeBytes]
+      properties:
+        filename: { type: string, minLength: 1, maxLength: 255 }
+        mimeType: { type: string }
+        sizeBytes: { type: integer, format: int64, minimum: 1 }
+    UploadSession:
+      type: object
+      required:
+        [
+          id,
+          filename,
+          mimeType,
+          sizeBytes,
+          offset,
+          status,
+          expiresAt,
+          uploadEndpoint,
+          maximumSizeBytes,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        filename: { type: string }
+        mimeType: { type: string }
+        sizeBytes: { type: integer, format: int64 }
+        offset: { type: integer, format: int64 }
+        status: { $ref: "#/components/schemas/UploadStatus" }
+        expiresAt: { type: string, format: date-time }
+        assetId: { type: string, format: uuid }
+        uploadEndpoint: { type: string }
+        maximumSizeBytes: { type: integer, format: int64 }
+    AssetVariant:
+      type: object
+      required:
+        [id, kind, mimeType, fileSize, sha256, playerCompatible, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { $ref: "#/components/schemas/VariantKind" }
+        mimeType: { type: string }
+        fileSize: { type: integer, format: int64 }
+        sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
+        width: { type: integer }
+        height: { type: integer }
+        durationSeconds: { type: number }
+        frameRate: { type: number }
+        videoCodec: { type: string }
+        audioCodec: { type: string }
+        playerCompatible: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    Asset:
+      type: object
+      required:
+        [
+          id,
+          name,
+          description,
+          type,
+          originalFilename,
+          detectedMimeType,
+          sha256,
+          originalSize,
+          metadata,
+          processingStatus,
+          createdAt,
+          updatedAt,
+          variants,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string }
+        type: { $ref: "#/components/schemas/AssetType" }
+        originalFilename: { type: string }
+        declaredMimeType: { type: string }
+        detectedMimeType: { type: string }
+        sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
+        originalSize: { type: integer, format: int64 }
+        width: { type: integer }
+        height: { type: integer }
+        durationSeconds: { type: number }
+        frameRate: { type: number }
+        videoCodec: { type: string }
+        audioCodec: { type: string }
+        audioChannels: { type: integer }
+        metadata: { type: object, additionalProperties: true }
+        processingStatus: { $ref: "#/components/schemas/AssetStatus" }
+        processingProgress: { type: number, minimum: 0, maximum: 1 }
+        errorCode: { type: string }
+        errorMessage: { type: string }
+        thumbnailUrl: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        variants:
+          type: array
+          items: { $ref: "#/components/schemas/AssetVariant" }
+    SetupRequest:
+      type: object
+      additionalProperties: false
+      required: [organizationName, ownerName, username, password]
+      properties:
+        organizationName: { type: string, minLength: 2, maxLength: 120 }
+        ownerName: { type: string, minLength: 2, maxLength: 120 }
+        username: { type: string, minLength: 3, maxLength: 254 }
+        password: { type: string, minLength: 12, maxLength: 1024 }

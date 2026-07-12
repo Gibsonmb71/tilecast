@@ -1,0 +1,159 @@
+package media
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"image"
+	"image/png"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/tilecast/tilecast/apps/server/internal/auth"
+	"github.com/tilecast/tilecast/apps/server/internal/database"
+)
+
+func TestMediaUploadProcessingAndDeletionLifecycle(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	lockPool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lockPool.Close()
+	lock, err := lockPool.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Release()
+	if _, err := lock.Exec(ctx, `SELECT pg_advisory_lock(7421999)`); err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Exec(ctx, `SELECT pg_advisory_unlock(7421999)`) //nolint:errcheck
+	if err := database.Migrate(ctx, databaseURL); err != nil {
+		t.Fatal(err)
+	}
+	pool, err := database.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if _, err := pool.Exec(ctx, `TRUNCATE media_jobs,upload_sessions,asset_variants,assets,device_pairing_sessions,device_credentials,screens,sessions,audit_logs,users,organization_settings CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+	owner, err := auth.NewService(pool, time.Hour).Setup(ctx, auth.SetupInput{OrganizationName: "Media Integration", OwnerName: "Owner", Username: "owner", Password: "correct horse battery staple"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	storage, err := NewLocalStorage(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var content bytes.Buffer
+	if err := png.Encode(&content, image.NewRGBA(image.Rect(0, 0, 64, 36))); err != nil {
+		t.Fatal(err)
+	}
+	// The processor still executes an explicit binary without a shell. This tiny test executable
+	// emulates FFmpeg by copying the generated fixture to its final argument.
+	fixture := filepath.Join(root, "fixture.jpg")
+	if err := os.WriteFile(fixture, content.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fake := filepath.Join(root, "fake-ffmpeg")
+	script := fmt.Sprintf("#!/bin/sh\nfor last; do :; done\ncp %q \"$last\"\n", fixture)
+	if err := os.WriteFile(fake, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(pool, storage, Config{MaxUploadBytes: 1 << 20, ReservedFreeBytes: 1, FFmpegPath: fake, Workers: 1, Profile: CompatibilityProfile{MaxWidth: 1920, MaxHeight: 1080, MaxFrameRate: 60}})
+	upload, err := service.CreateUpload(ctx, owner.User.ID, "misleading-video.mp4", "video/mp4", int64(content.Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := content.Bytes()[:20]
+	state, err := service.AppendUpload(ctx, upload.ID, owner.User.ID, 0, bytes.NewReader(first))
+	if err != nil || state.CurrentOffset != 20 {
+		t.Fatalf("first chunk: %#v %v", state, err)
+	}
+	if _, err := service.AppendUpload(ctx, upload.ID, owner.User.ID, 3, bytes.NewReader([]byte("wrong"))); !errors.Is(err, ErrOffsetMismatch) {
+		t.Fatalf("wrong offset: %v", err)
+	}
+	state, err = service.GetUpload(ctx, upload.ID, owner.User.ID)
+	if err != nil || state.CurrentOffset != 20 {
+		t.Fatalf("resume state: %#v %v", state, err)
+	}
+	if _, err := service.AppendUpload(ctx, upload.ID, owner.User.ID, 20, bytes.NewReader(content.Bytes()[20:])); err != nil {
+		t.Fatal(err)
+	}
+	asset, err := service.FinalizeUpload(ctx, upload.ID, owner.User.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if asset.Type != "image" || asset.DetectedMIMEType != "image/png" {
+		t.Fatalf("trusted type detection failed: %#v", asset)
+	}
+	duplicate, err := service.FinalizeUpload(ctx, upload.ID, owner.User.ID)
+	if err != nil || duplicate.ID != asset.ID {
+		t.Fatalf("duplicate finalization: %#v %v", duplicate, err)
+	}
+	worker := NewWorkerPool(service, nil)
+	if err := worker.inspect(ctx, asset.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := worker.preview(ctx, asset.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	ready, err := service.GetAsset(ctx, asset.ID)
+	if err != nil || ready.ProcessingStatus != StatusReady || ready.ThumbnailURL == nil {
+		t.Fatalf("processed asset: %#v %v", ready, err)
+	}
+	var compatible Variant
+	for _, variant := range ready.Variants {
+		if variant.PlayerCompatible {
+			compatible = variant
+			break
+		}
+	}
+	if compatible.ID.String() == "00000000-0000-0000-0000-000000000000" {
+		t.Fatal("missing compatible variant")
+	}
+	delivery, err := service.Delivery(ctx, asset.ID, compatible.ID)
+	if err != nil || delivery.Size != int64(content.Len()) {
+		t.Fatalf("delivery: %#v %v", delivery, err)
+	}
+	if err := os.Remove(delivery.Path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Delivery(ctx, asset.ID, compatible.ID); !errors.Is(err, ErrVariantUnavailable) {
+		t.Fatalf("missing file: %v", err)
+	}
+	expired, err := service.CreateUpload(ctx, owner.User.ID, "expired.png", "image/png", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE upload_sessions SET expires_at=now()-interval '1 minute' WHERE id=$1`, expired.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := worker.cleanExpired(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := storage.Stat(UploadKey(expired.ID)); !os.IsNotExist(err) {
+		t.Fatalf("expired temporary file remains: %v", err)
+	}
+	if err := service.DeleteAsset(ctx, asset.ID, owner.User.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := worker.deleteFiles(ctx, asset.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.GetAsset(ctx, asset.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("deleted asset visible: %v", err)
+	}
+}

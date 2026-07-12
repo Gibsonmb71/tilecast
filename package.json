@@ -1,0 +1,21 @@
+{
+  "name": "tilecast",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "workspaces": [
+    "apps/dashboard",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace @tilecast/dashboard",
+    "dev": "npm run dev --workspace @tilecast/dashboard",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "npm run lint --workspace @tilecast/dashboard",
+    "test": "npm run test --workspace @tilecast/dashboard"
+  },
+  "devDependencies": {
+    "prettier": "^3.5.3"
+  }
+}

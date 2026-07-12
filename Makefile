@@ -1,0 +1,40 @@
+.PHONY: android-build android-check bootstrap build check dev-dashboard dev-server format test
+
+bootstrap:
+	npm install
+	cd apps/server && go mod download
+
+build:
+	npm run build
+	rm -rf apps/server/internal/web/static/assets
+	cp apps/dashboard/dist/index.html apps/server/internal/web/static/index.html
+	cp -R apps/dashboard/dist/assets apps/server/internal/web/static/assets
+	cd apps/server && go build ./cmd/tilecast
+	cd apps/player-android && ./gradlew assembleDebug
+
+check:
+	npm run format:check
+	npm run lint
+	npm test
+	cd apps/server && test -z "$$(gofmt -l .)" && go vet ./... && go test ./...
+	cd apps/player-android && ./gradlew testDebugUnitTest lintDebug
+
+android-build:
+	cd apps/player-android && ./gradlew assembleDebug assembleRelease
+
+android-check:
+	cd apps/player-android && ./gradlew testDebugUnitTest lintDebug
+
+dev-dashboard:
+	npm run dev
+
+dev-server:
+	cd apps/server && go run ./cmd/tilecast
+
+format:
+	npm run format
+	cd apps/server && gofmt -w $$(find . -name '*.go' -type f)
+
+test:
+	npm test
+	cd apps/server && go test ./...

@@ -1,0 +1,12 @@
+.git
+.github
+.env
+**/.env
+node_modules
+**/node_modules
+**/dist
+apps/server/tilecast
+data
+postgres
+*.log
+
