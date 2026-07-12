@@ -97,3 +97,11 @@ Direct assignment routes are `/api/v1/screens/{id}/playlist-assignment`; only Ow
 Authenticated read routes are `GET /api/v1/screen-groups`, `GET /api/v1/screen-groups/{id}`, `GET /api/v1/schedules`, and `GET /api/v1/schedules/{id}`. Owner and Administrator mutations use the documented CSRF header on group create/update/delete and membership routes, schedule create/update/delete, and enable/disable routes. `POST /api/v1/schedules/preview` accepts `screenId`, an optional absolute `timestamp`, and an optional unsaved `proposedSchedule`; it returns precedence-ordered applicable schedules, conflicts, direct fallback, winner, and next transition using the production resolver.
 
 Weekly weekdays are integers `0` (Sunday) through `6` (Saturday). Times are `HH:MM`, dates are `YYYY-MM-DD`, timezones are IANA identifiers, and an end time less than or equal to its start denotes an overnight window.
+
+## Website assets
+
+`POST /api/v1/assets/websites` creates a ready configuration-only website asset. `PATCH /api/v1/assets/{id}/website` updates its normalized configuration and revises only affected screen manifests. `GET /api/v1/assets/{id}/website/diagnostics` returns safe load timestamps, categorized failure state, reporting screens, allowed hosts, and fallback configuration. Website pages are never fetched as part of save.
+
+Website playlist items require `durationMs` and always use `deliveryPolicy: "stream"`. Manifest schema v3 carries relevant website settings and optional fallback image/variant references. It never includes dashboard users, audit data, credentials, filesystem paths, full player logs, or unrelated websites.
+
+`POST /api/v1/screens/{id}/website-data/clear` is Owner/Administrator-only and CSRF protected. It returns `202` with an expiring idempotent command. The lightweight WebSocket message contains only command ID and expiry; the player responds with a success flag and safe category.

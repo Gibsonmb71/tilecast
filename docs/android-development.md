@@ -23,3 +23,5 @@ Offline recovery verification should activate a Download-policy playlist, stop T
 adb devices
 ./gradlew connectedDebugAndroidTest
 ```
+
+Milestone 6 uses the system Android WebView through a dedicated website playback component. Test exact-host policy and safe configuration on the JVM; validate renderer behavior, D-pad focus, installed WebView versions, TLS failures, and process termination on the target emulator/device. Tilecast does not require Google Play Services or a Chrome-specific API.

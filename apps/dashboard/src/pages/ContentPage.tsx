@@ -6,6 +6,7 @@ import {
   List,
   Search,
   Upload,
+  Globe2,
   X,
 } from "lucide-react";
 import {
@@ -16,7 +17,7 @@ import {
   type DragEvent,
 } from "react";
 import { api, ApiError } from "../api/client";
-import type { Asset, AssetStatus, User } from "../api/types";
+import type { Asset, AssetStatus, User, WebsiteInput } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 
 type QueueItem = {
@@ -104,6 +105,7 @@ export function ContentPage() {
     }
   });
   const [selected, setSelected] = useState<Asset>();
+  const [websiteEditor, setWebsiteEditor] = useState(false);
   const controllers = useRef(new Map<string, AbortController>());
   const fileInput = useRef<HTMLInputElement>(null);
   const params = new URLSearchParams({ page: "1", pageSize: "48", sort });
@@ -260,15 +262,23 @@ export function ContentPage() {
       <header className="page-heading">
         <div>
           <h2>Media library</h2>
-          <p>Images and videos available to future signage content.</p>
+          <p>Images, videos, and public websites available to playlists.</p>
         </div>
         {canManage && (
-          <button
-            className="button button--primary"
-            onClick={() => fileInput.current?.click()}
-          >
-            <Upload size={16} /> Upload media
-          </button>
+          <span className="heading-actions">
+            <button
+              className="button button--quiet"
+              onClick={() => setWebsiteEditor(true)}
+            >
+              <Globe2 size={16} /> Add website
+            </button>
+            <button
+              className="button button--primary"
+              onClick={() => fileInput.current?.click()}
+            >
+              <Upload size={16} /> Upload media
+            </button>
+          </span>
         )}
         <input
           ref={fileInput}
@@ -346,6 +356,7 @@ export function ContentPage() {
           <option value="">All types</option>
           <option value="image">Images</option>
           <option value="video">Videos</option>
+          <option value="website">Websites</option>
         </select>
         <select
           aria-label="Filter by status"
@@ -406,7 +417,7 @@ export function ContentPage() {
         <AssetCollection
           items={assets.data?.items ?? []}
           view={view}
-          onSelect={setSelected}
+          onSelect={(asset) => void api.asset(asset.id).then(setSelected)}
         />
       )}
       {selected && (
@@ -416,6 +427,17 @@ export function ContentPage() {
           csrf={csrf}
           onClose={() => setSelected(undefined)}
           onChanged={(asset) => {
+            setSelected(asset);
+            void queryClient.invalidateQueries({ queryKey: ["assets"] });
+          }}
+        />
+      )}
+      {websiteEditor && (
+        <WebsiteEditor
+          csrf={csrf}
+          onClose={() => setWebsiteEditor(false)}
+          onSaved={(asset) => {
+            setWebsiteEditor(false);
             setSelected(asset);
             void queryClient.invalidateQueries({ queryKey: ["assets"] });
           }}
@@ -478,6 +500,8 @@ export function AssetCollection({
               <img src={asset.thumbnailUrl} alt="" />
             ) : asset.type === "video" ? (
               <FileVideo size={28} />
+            ) : asset.type === "website" ? (
+              <Globe2 size={28} />
             ) : (
               <FileImage size={28} />
             )}
@@ -486,6 +510,7 @@ export function AssetCollection({
             <strong>{asset.name}</strong>
             <small>
               {asset.type === "video" && formatDuration(asset.durationSeconds)}
+              {asset.type === "website" && asset.website?.displayUrl}
               {asset.width && asset.height
                 ? `${asset.type === "video" ? " · " : ""}${asset.width} × ${asset.height}`
                 : ""}
@@ -503,7 +528,26 @@ export function AssetCollection({
   );
 }
 
-function AssetDetails({
+function AssetDetails(props: {
+  asset: Asset;
+  canManage: boolean;
+  csrf: string;
+  onClose: () => void;
+  onChanged: (asset: Asset) => void;
+}) {
+  return props.asset.type === "website" ? (
+    <WebsiteEditor
+      asset={props.asset}
+      csrf={props.csrf}
+      readOnly={!props.canManage}
+      onClose={props.onClose}
+      onSaved={props.onChanged}
+    />
+  ) : (
+    <MediaAssetDetails {...props} />
+  );
+}
+function MediaAssetDetails({
   asset,
   canManage,
   csrf,
@@ -616,6 +660,404 @@ function AssetDetails({
             </button>
           </footer>
         )}
+      </section>
+    </div>
+  );
+}
+
+const defaultWebsite: WebsiteInput = {
+  name: "",
+  description: "",
+  url: "https://",
+  allowedHosts: [],
+  javascriptEnabled: true,
+  domStorageEnabled: true,
+  cookiePolicy: "first_party",
+  reloadPolicy: "on_each_activation",
+  loadTimeoutSeconds: 20,
+  zoomPercent: 100,
+  scrollX: 0,
+  scrollY: 0,
+  customUserAgent: "",
+  backgroundColor: "#13231E",
+  failureBehavior: "placeholder",
+};
+function WebsiteEditor({
+  asset,
+  csrf,
+  readOnly = false,
+  onClose,
+  onSaved,
+}: {
+  asset?: Asset;
+  csrf: string;
+  readOnly?: boolean;
+  onClose: () => void;
+  onSaved: (asset: Asset) => void;
+}) {
+  const initial: WebsiteInput = asset?.website
+    ? {
+        name: asset.name,
+        description: asset.description,
+        url: asset.website.url,
+        allowedHosts: asset.website.allowedHosts,
+        javascriptEnabled: asset.website.javascriptEnabled,
+        domStorageEnabled: asset.website.domStorageEnabled,
+        cookiePolicy: asset.website.cookiePolicy,
+        reloadPolicy: asset.website.reloadPolicy,
+        refreshIntervalSeconds: asset.website.refreshIntervalSeconds,
+        loadTimeoutSeconds: asset.website.loadTimeoutSeconds,
+        zoomPercent: asset.website.zoomPercent,
+        scrollX: asset.website.scrollX,
+        scrollY: asset.website.scrollY,
+        customUserAgent: asset.website.customUserAgent,
+        backgroundColor: asset.website.backgroundColor,
+        failureBehavior: asset.website.failureBehavior,
+        fallbackImageAssetId: asset.website.fallbackImageAssetId,
+      }
+    : defaultWebsite;
+  const [input, setInput] = useState(initial),
+    [dirty, setDirty] = useState(false);
+  const set = <K extends keyof WebsiteInput>(
+    key: K,
+    value: WebsiteInput[K],
+  ) => {
+    setInput((current) => ({ ...current, [key]: value }));
+    setDirty(true);
+  };
+  useEffect(() => {
+    const handler = (event: BeforeUnloadEvent) => {
+      if (dirty) event.preventDefault();
+    };
+    addEventListener("beforeunload", handler);
+    return () => removeEventListener("beforeunload", handler);
+  }, [dirty]);
+  const images = useQuery({
+    queryKey: ["assets", "website-fallbacks"],
+    queryFn: () =>
+      api.assets(
+        new URLSearchParams({
+          page: "1",
+          pageSize: "100",
+          type: "image",
+          status: "ready",
+        }),
+      ),
+  });
+  const diagnostics = useQuery({
+    queryKey: ["assets", asset?.id, "website-diagnostics"],
+    queryFn: () => api.websiteDiagnostics(asset!.id),
+    enabled: !!asset,
+  });
+  const save = useMutation({
+    mutationFn: () =>
+      asset
+        ? api.updateWebsite(asset.id, input, csrf)
+        : api.createWebsite(input, csrf),
+    onSuccess: (value) => {
+      setDirty(false);
+      onSaved(value);
+    },
+  });
+  return (
+    <div
+      className="details-backdrop"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (
+          event.target === event.currentTarget &&
+          (!dirty || confirm("Discard unsaved website changes?"))
+        )
+          onClose();
+      }}
+    >
+      <section
+        className="asset-details website-editor"
+        role="dialog"
+        aria-modal="true"
+      >
+        <header>
+          <div>
+            <h2>{asset ? "Website settings" : "Add website"}</h2>
+            <p>
+              Fullscreen public website content. Duration is configured in the
+              playlist.
+            </p>
+          </div>
+          <button
+            className="icon-button"
+            aria-label="Close"
+            onClick={() => {
+              if (!dirty || confirm("Discard unsaved website changes?"))
+                onClose();
+            }}
+          >
+            <X size={18} />
+          </button>
+        </header>
+        <label className="field">
+          <span className="field__label">Name</span>
+          <input
+            disabled={readOnly}
+            value={input.name}
+            onChange={(e) => set("name", e.target.value)}
+          />
+        </label>
+        <label className="field">
+          <span className="field__label">Description</span>
+          <textarea
+            disabled={readOnly}
+            value={input.description}
+            onChange={(e) => set("description", e.target.value)}
+          />
+        </label>
+        <label className="field">
+          <span className="field__label">HTTPS URL</span>
+          <input
+            disabled={readOnly}
+            value={input.url}
+            onChange={(e) => set("url", e.target.value)}
+          />
+        </label>
+        <label className="field">
+          <span className="field__label">Reload policy</span>
+          <select
+            disabled={readOnly}
+            value={input.reloadPolicy}
+            onChange={(e) =>
+              set(
+                "reloadPolicy",
+                e.target.value as WebsiteInput["reloadPolicy"],
+              )
+            }
+          >
+            <option value="load_once">Load once while active</option>
+            <option value="on_each_activation">
+              Reload on each activation
+            </option>
+            <option value="interval">Reload on interval</option>
+          </select>
+        </label>
+        {input.reloadPolicy === "interval" && (
+          <label className="field">
+            <span className="field__label">Refresh interval (seconds)</span>
+            <input
+              disabled={readOnly}
+              type="number"
+              min={30}
+              value={input.refreshIntervalSeconds ?? 30}
+              onChange={(e) =>
+                set("refreshIntervalSeconds", Number(e.target.value))
+              }
+            />
+          </label>
+        )}
+        <label className="field">
+          <span className="field__label">Failure behavior</span>
+          <select
+            disabled={readOnly}
+            value={input.failureBehavior}
+            onChange={(e) =>
+              set(
+                "failureBehavior",
+                e.target.value as WebsiteInput["failureBehavior"],
+              )
+            }
+          >
+            <option value="placeholder">Show Tilecast placeholder</option>
+            <option value="last_success">Keep last rendered page</option>
+            <option value="fallback_image">Show fallback image</option>
+            <option value="skip">Skip item</option>
+          </select>
+        </label>
+        <label className="field">
+          <span className="field__label">Fallback image</span>
+          <select
+            disabled={readOnly}
+            value={input.fallbackImageAssetId ?? ""}
+            onChange={(e) =>
+              set("fallbackImageAssetId", e.target.value || undefined)
+            }
+          >
+            <option value="">None</option>
+            {images.data?.items.map((image) => (
+              <option key={image.id} value={image.id}>
+                {image.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <details>
+          <summary>Advanced website settings</summary>
+          <label className="field">
+            <span className="field__label">
+              Allowed top-level hosts (comma separated)
+            </span>
+            <input
+              disabled={readOnly}
+              value={input.allowedHosts.join(", ")}
+              onChange={(e) =>
+                set(
+                  "allowedHosts",
+                  e.target.value
+                    .split(",")
+                    .map((x) => x.trim())
+                    .filter(Boolean),
+                )
+              }
+            />
+            <small>
+              The URL host is always added. This restricts top-level navigation,
+              not all third-party subresources.
+            </small>
+          </label>
+          <label>
+            <input
+              disabled={readOnly}
+              type="checkbox"
+              checked={input.javascriptEnabled}
+              onChange={(e) => set("javascriptEnabled", e.target.checked)}
+            />{" "}
+            JavaScript enabled
+          </label>
+          <label>
+            <input
+              disabled={readOnly}
+              type="checkbox"
+              checked={input.domStorageEnabled}
+              onChange={(e) => set("domStorageEnabled", e.target.checked)}
+            />{" "}
+            DOM storage enabled
+          </label>
+          <label className="field">
+            <span className="field__label">Cookies</span>
+            <select
+              disabled={readOnly}
+              value={input.cookiePolicy}
+              onChange={(e) =>
+                set(
+                  "cookiePolicy",
+                  e.target.value as WebsiteInput["cookiePolicy"],
+                )
+              }
+            >
+              <option value="disabled">Disabled</option>
+              <option value="first_party">First-party only</option>
+              <option value="first_and_third_party">
+                First- and third-party
+              </option>
+            </select>
+          </label>
+          <label className="field">
+            <span className="field__label">Load timeout (seconds)</span>
+            <input
+              disabled={readOnly}
+              type="number"
+              min={1}
+              max={120}
+              value={input.loadTimeoutSeconds}
+              onChange={(e) =>
+                set("loadTimeoutSeconds", Number(e.target.value))
+              }
+            />
+          </label>
+          <label className="field">
+            <span className="field__label">Zoom percentage</span>
+            <input
+              disabled={readOnly}
+              type="number"
+              min={50}
+              max={200}
+              value={input.zoomPercent}
+              onChange={(e) => set("zoomPercent", Number(e.target.value))}
+            />
+          </label>
+          <div className="website-position">
+            <label className="field">
+              <span className="field__label">Horizontal scroll</span>
+              <input
+                disabled={readOnly}
+                type="number"
+                min={0}
+                value={input.scrollX}
+                onChange={(e) => set("scrollX", Number(e.target.value))}
+              />
+            </label>
+            <label className="field">
+              <span className="field__label">Vertical scroll</span>
+              <input
+                disabled={readOnly}
+                type="number"
+                min={0}
+                value={input.scrollY}
+                onChange={(e) => set("scrollY", Number(e.target.value))}
+              />
+            </label>
+          </div>
+          <label className="field">
+            <span className="field__label">Custom user agent</span>
+            <input
+              disabled={readOnly}
+              maxLength={512}
+              value={input.customUserAgent}
+              onChange={(e) => set("customUserAgent", e.target.value)}
+            />
+            <small>
+              Leave blank for Android WebView’s standard user agent. Overrides
+              can break sites.
+            </small>
+          </label>
+        </details>
+        {diagnostics.data && (
+          <section className="website-diagnostics">
+            <h3>Player diagnostics</h3>
+            <p>Allowed hosts: {diagnostics.data.allowedHosts.join(", ")}</p>
+            <p>
+              Last successful load:{" "}
+              {diagnostics.data.lastSuccessfulLoad
+                ? new Date(diagnostics.data.lastSuccessfulLoad).toLocaleString()
+                : "Not reported"}
+            </p>
+            <p>
+              Last failure:{" "}
+              {diagnostics.data.lastFailureCategory ?? "Not reported"}
+            </p>
+            <p>
+              Reporting screens:{" "}
+              {diagnostics.data.reportingScreens
+                .map((screen) => `${screen.name} (${screen.state})`)
+                .join(", ") || "None"}
+            </p>
+          </section>
+        )}
+        {save.error && (
+          <div className="notice notice--error">{save.error.message}</div>
+        )}
+        <footer>
+          {!readOnly && (
+            <button
+              className="button button--primary"
+              disabled={save.isPending}
+              onClick={() => save.mutate()}
+            >
+              Save website
+            </button>
+          )}
+          <button className="button button--quiet" onClick={onClose}>
+            Cancel
+          </button>
+          {asset && !readOnly && (
+            <button
+              className="button button--danger"
+              onClick={() => {
+                if (confirm(`Delete ${asset.name}?`))
+                  void api.deleteAsset(asset.id, csrf).then(onClose);
+              }}
+            >
+              Delete website
+            </button>
+          )}
+        </footer>
       </section>
     </div>
   );

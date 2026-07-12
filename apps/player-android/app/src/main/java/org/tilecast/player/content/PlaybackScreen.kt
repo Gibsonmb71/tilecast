@@ -43,35 +43,37 @@ import java.io.File
 
 data class PlaybackSession(val content: PreparedContent, val serverUrl: String, val credential: String)
 
-@Composable fun FullscreenPlayback(session: PlaybackSession, onBoundary: (String, String) -> Unit, onError: (String) -> Unit) {
+@Composable fun FullscreenPlayback(session: PlaybackSession, onBoundary: (String, String) -> Unit, onError: (String) -> Unit,onWebsiteStatus:(WebsitePlaybackStatus)->Unit={}) {
     val playlist = session.content.manifest.playlist
     if (playlist == null || playlist.items.isEmpty()) { EmptyPlayback("No content assigned"); return }
     var index by remember(session.content.manifest.manifestVersion) { mutableIntStateOf(0) }
     var consecutiveFailures by remember { mutableIntStateOf(0) }
     val item = playlist.items[index.coerceIn(0, playlist.items.lastIndex)]
-    val asset = session.content.manifest.assets.firstOrNull { it.variantId == item.variantId }
+	val website=session.content.manifest.websites.firstOrNull{it.assetId==item.assetId}
+    val asset = item.variantId?.let{variant->session.content.manifest.assets.firstOrNull { it.variantId == variant }}
 	LaunchedEffect(item.id){onBoundary(item.id,item.assetId)}
     fun advance(failed: Boolean = false) {
         consecutiveFailures = if (failed) consecutiveFailures + 1 else 0
         index = (index + 1) % playlist.items.size
     }
-    if (asset == null) { LaunchedEffect(item.id) { onError("Manifest item has no asset"); delay(1_000); advance(true) }; return }
+    if (asset == null&&website==null) { LaunchedEffect(item.id) { onError("Manifest item has no asset"); delay(1_000); advance(true) }; return }
     if (consecutiveFailures >= playlist.items.size) { EmptyPlayback("No playable content"); LaunchedEffect(consecutiveFailures) { delay(5_000); consecutiveFailures = 0 } ; return }
 	if(item.transition=="fade") Crossfade(item.id, label = "playlist-item") { targetItemId ->
-		val renderedItem = playlist.items.first { it.id == targetItemId };val renderedAsset = session.content.manifest.assets.first { it.variantId == renderedItem.variantId }
-		RenderedItem(renderedItem,renderedAsset,session,{advance()},{onError(it);advance(true)})
-	} else RenderedItem(item,asset,session,{advance()},{onError(it);advance(true)})
+		val renderedItem = playlist.items.first { it.id == targetItemId };val renderedAsset = renderedItem.variantId?.let{variant->session.content.manifest.assets.firstOrNull { it.variantId == variant }};val renderedWebsite=session.content.manifest.websites.firstOrNull{it.assetId==renderedItem.assetId}
+		RenderedItem(renderedItem,renderedAsset,renderedWebsite,session,{advance()},{onError(it);advance(true)},onWebsiteStatus)
+	} else RenderedItem(item,asset,website,session,{advance()},{onError(it);advance(true)},onWebsiteStatus)
 }
 
-@Composable private fun RenderedItem(item:ManifestItem,asset:ManifestAsset,session:PlaybackSession,onDone:()->Unit,onFailure:(String)->Unit){if(asset.mimeType.startsWith("image/"))ImageItem(item,asset,session,onDone,onFailure)else VideoItem(item,asset,session,onDone,onFailure)}
+@Composable private fun RenderedItem(item:ManifestItem,asset:ManifestAsset?,website:org.tilecast.player.network.ManifestWebsite?,session:PlaybackSession,onDone:()->Unit,onFailure:(String)->Unit,onWebsiteStatus:(WebsitePlaybackStatus)->Unit){if(website!=null)WebsiteItem(item,website,session,onDone,onWebsiteStatus)else if(asset?.mimeType?.startsWith("image/")==true)ImageItem(item,asset,session,onDone,onFailure)else if(asset!=null)VideoItem(item,asset,session,onDone,onFailure)}
 
 @Composable private fun EmptyPlayback(message: String) { Box(Modifier.fillMaxSize().background(Color(0xFF13231E)), contentAlignment = Alignment.Center) { androidx.compose.material3.Text(message, color = Color.White) } }
 
 @Composable private fun ImageItem(item: ManifestItem, asset: ManifestAsset, session: PlaybackSession, onDone: () -> Unit, onFailure: (String) -> Unit) {
-    var bitmap by remember(item.id) { mutableStateOf(session.content.localFiles[item.variantId]?.let { BitmapFactory.decodeFile(it) }) }
+	val variantId=item.variantId?:return
+    var bitmap by remember(item.id) { mutableStateOf(session.content.localFiles[variantId]?.let { BitmapFactory.decodeFile(it) }) }
     LaunchedEffect(item.id) {
 		if (bitmap == null) bitmap = runCatching { withContext(Dispatchers.IO) {
-            session.content.localFiles[item.variantId]?.let { BitmapFactory.decodeFile(it) } ?: OkHttpClient().newCall(Request.Builder().url(session.serverUrl + asset.downloadPath).header("Authorization", "Bearer ${session.credential}").build()).execute().use { response -> if (!response.isSuccessful) error("Image stream unavailable"); BitmapFactory.decodeStream(response.body?.byteStream()) }
+            session.content.localFiles[variantId]?.let { BitmapFactory.decodeFile(it) } ?: OkHttpClient().newCall(Request.Builder().url(session.serverUrl + asset.downloadPath).header("Authorization", "Bearer ${session.credential}").build()).execute().use { response -> if (!response.isSuccessful) error("Image stream unavailable"); BitmapFactory.decodeStream(response.body?.byteStream()) }
         } }.getOrElse { onFailure("Image could not be displayed"); return@LaunchedEffect }
         delay(item.durationMs ?: 10_000); onDone()
     }
@@ -86,7 +88,7 @@ data class PlaybackSession(val content: PreparedContent, val serverUrl: String, 
         val source = DefaultMediaSourceFactory(DefaultDataSource.Factory(context, http))
         ExoPlayer.Builder(context).setMediaSourceFactory(source).build().apply {
             volume = if (item.audioEnabled) item.volume else 0f
-            setMediaItem(MediaItem.fromUri(session.content.localFiles[item.variantId]?.let { Uri.fromFile(File(it)) } ?: Uri.parse(session.serverUrl + asset.downloadPath)))
+            setMediaItem(MediaItem.fromUri(item.variantId?.let{session.content.localFiles[it]}?.let { Uri.fromFile(File(it)) } ?: Uri.parse(session.serverUrl + asset.downloadPath)))
             prepare(); seekTo(item.videoStartOffsetMs ?: 0); playWhenReady = true
         }
     }

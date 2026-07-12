@@ -29,3 +29,9 @@
 Check the schedule's IANA timezone and the player clock warning in screen details. Tilecast Player intentionally uses its device clock while offline; it reports server-time skew but does not silently shift evaluation. Confirm automatic date/time and timezone are enabled on the TV. Around daylight-saving changes, nonexistent local times advance to the first valid time after the gap, while repeated times use the earlier start occurrence and later end occurrence.
 
 If a future one-time event was created after the player lost connectivity, it cannot activate until the player receives a new manifest. Weekly rules already present in the active manifest continue recurring offline when their Download-policy assets remain cached.
+
+## A website is unavailable or blocked
+
+Open the website asset for safe player diagnostics. Confirm the TV can resolve and reach the origin, its clock is correct for TLS, and redirects remain on an explicitly allowed host. Tilecast never bypasses certificate errors. Add a related redirect host only when it is trusted and intentional; wildcards are unsupported.
+
+Website pages are not offline-capable. Configure a ready fallback image for predictable offline presentation, or use the Tilecast placeholder/skip behavior. Do not rely on incidental WebView cache. On persistent site-state problems, an Owner or Administrator can clear website data from screen details; the command requires the player to reconnect before its ten-minute expiry.

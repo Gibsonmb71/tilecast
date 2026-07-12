@@ -512,6 +512,9 @@ export function ScreenDetailPage() {
       await queryClient.invalidateQueries({ queryKey: ["screens"] });
     },
   });
+  const clearWebsiteData = useMutation({
+    mutationFn: () => api.clearWebsiteData(id, auth.status?.csrfToken ?? ""),
+  });
   if (query.isLoading)
     return <div className="table-loading">Loading screen…</div>;
   if (!query.data)
@@ -635,6 +638,20 @@ export function ScreenDetailPage() {
             </dd>
           </div>
           <div>
+            <dt>Website playback</dt>
+            <dd>
+              {assignment.data?.websiteState
+                ? `${assignment.data.websiteState.replaceAll("_", " ")}${assignment.data.websiteCurrentHost ? ` · ${assignment.data.websiteCurrentHost}` : ""}`
+                : "Not active"}
+            </dd>
+          </div>
+          <div>
+            <dt>Blocked website navigation</dt>
+            <dd>
+              {assignment.data?.websiteBlockedNavigationCount ?? "Not reported"}
+            </dd>
+          </div>
+          <div>
             <dt>Playback</dt>
             <dd>{assignment.data?.playbackState ?? "Not reported"}</dd>
           </div>
@@ -667,6 +684,34 @@ export function ScreenDetailPage() {
         {assignment.data?.scheduleEvaluationError && (
           <div className="notice notice--error">
             Schedule evaluation: {assignment.data.scheduleEvaluationError}
+          </div>
+        )}
+        {assignment.data?.websiteFailureCategory &&
+          ["failed", "timed_out", "blocked", "showing_fallback"].includes(
+            assignment.data.websiteState ?? "",
+          ) && (
+            <div className="notice notice--error">
+              Website:{" "}
+              {assignment.data.websiteFailureCategory.replaceAll("_", " ")}
+            </div>
+          )}
+        {canManageScreens(auth.status?.user) && (
+          <div className="website-data-control">
+            <button
+              className="button button--danger-quiet"
+              disabled={clearWebsiteData.isPending}
+              onClick={() => {
+                if (
+                  confirm(
+                    "Clear cookies, cache, DOM storage, and WebView state on this player?",
+                  )
+                )
+                  clearWebsiteData.mutate();
+              }}
+            >
+              Clear website data
+            </button>
+            {clearWebsiteData.isSuccess && <span>Clear command queued.</span>}
           </div>
         )}
       </section>

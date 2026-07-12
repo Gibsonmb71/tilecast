@@ -34,3 +34,9 @@ Delivery is deterministic: Download always caches; Stream requires connectivity;
 Manifest schema v2 is activated atomically only after all Download-policy content for the direct fallback and included schedules is verified. Selection uses `[start, end)` intervals. The player evaluates with its device clock, wakes at the next transition, and restores the direct assignment whenever no schedule is active. Weekly schedules continue offline indefinitely while their definitions and assets remain cached. A future one-time schedule that was not received before disconnection cannot activate. Stream-policy media still requires connectivity and is not guaranteed offline.
 
 Clock changes, timezone changes, app foregrounding, startup, manifest activation, and transition wake-ups cause reevaluation. The manifest server timestamp is used only to report approximate skew; it never silently replaces the device clock for offline scheduling.
+
+## Website playback
+
+Manifest v3 adds `websites` and website playlist items. Website items have no media variant and are not included in download selection. A referenced fallback image does have normal asset/variant metadata and must be verified before manifest activation. Website failures never invalidate an otherwise prepared manifest.
+
+The player reports only website asset ID, state, timestamps, safe failure category, blocked-navigation count, origin host, fallback state, and renderer recovery count. Full URLs and query strings are excluded. `website.clear_data` commands carry an expiring command ID; `website.data_cleared` acknowledges that ID without browser data.

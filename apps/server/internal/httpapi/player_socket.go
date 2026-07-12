@@ -9,6 +9,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
+	"github.com/google/uuid"
 	"github.com/tilecast/tilecast/apps/server/internal/devices"
 	"github.com/tilecast/tilecast/apps/server/internal/playlists"
 )
@@ -50,6 +51,21 @@ func (s *server) playerSocket(w http.ResponseWriter, r *http.Request) {
 	if err := send(map[string]any{"type": "server.hello", "protocolVersion": 1, "screenId": principal.ScreenID, "screenName": principal.ScreenName}); err != nil {
 		return
 	}
+	commandRows, commandErr := s.db.Query(r.Context(), `UPDATE website_data_clear_commands SET status='expired' WHERE screen_id=$1 AND status='pending' AND expires_at<=now() RETURNING id`, principal.ScreenID)
+	if commandErr == nil {
+		commandRows.Close()
+	}
+	pendingRows, pendingErr := s.db.Query(r.Context(), `SELECT id,expires_at FROM website_data_clear_commands WHERE screen_id=$1 AND status='pending' AND expires_at>now() ORDER BY created_at`, principal.ScreenID)
+	if pendingErr == nil {
+		for pendingRows.Next() {
+			var id uuid.UUID
+			var expires time.Time
+			if pendingRows.Scan(&id, &expires) == nil {
+				_ = send(map[string]any{"type": "website.clear_data", "commandId": id, "expiresAt": expires})
+			}
+		}
+		pendingRows.Close()
+	}
 
 	pingDone := make(chan struct{})
 	go func() {
@@ -89,6 +105,24 @@ func (s *server) playerSocket(w http.ResponseWriter, r *http.Request) {
 				var status playlists.PlayerStatus
 				if err := json.Unmarshal(message.Payload, &status); err == nil {
 					_ = s.playlists.ReportStatus(ctx, principal.ScreenID, status)
+				}
+			}
+		case "website.data_cleared":
+			var result struct {
+				CommandID     uuid.UUID `json:"commandId"`
+				Success       bool      `json:"success"`
+				ErrorCategory string    `json:"errorCategory"`
+			}
+			if json.Unmarshal(message.Payload, &result) == nil {
+				status := "failed"
+				action := "website.data_clear_failed"
+				if result.Success {
+					status = "completed"
+					action = "website.data_clear_completed"
+				}
+				tag, _ := s.db.Exec(ctx, `UPDATE website_data_clear_commands SET status=$3,completed_at=now(),error_category=NULLIF($4,'') WHERE id=$1 AND screen_id=$2 AND status='pending' AND expires_at>now()`, result.CommandID, principal.ScreenID, status, result.ErrorCategory)
+				if tag.RowsAffected() > 0 {
+					_, _ = s.db.Exec(ctx, `INSERT INTO audit_logs(id,action,resource_type,resource_id)VALUES($1,$2,'screen',$3)`, uuid.New(), action, principal.ScreenID.String())
 				}
 			}
 		case "player.pong":

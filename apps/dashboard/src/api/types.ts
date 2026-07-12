@@ -65,7 +65,7 @@ export type PlaylistItem = {
   videoEndOffsetMs?: number;
   deliveryPolicy: "download" | "stream" | "automatic";
   assetName: string;
-  assetType: "image" | "video";
+  assetType: "image" | "video" | "website";
   assetStatus: AssetStatus;
   assetDurationSeconds?: number;
   thumbnailUrl: string;
@@ -137,6 +137,15 @@ export type PlaylistAssignment = {
     enabled: boolean;
   }[];
   clockSkewWarningSeconds: number;
+  currentWebsiteAssetId?: string;
+  websiteState?: string;
+  websiteLoadStartedAt?: string;
+  websiteLoadCompletedAt?: string;
+  websiteFailureCategory?: string;
+  websiteBlockedNavigationCount?: number;
+  websiteCurrentHost?: string;
+  websiteFallbackShown?: boolean;
+  websiteRendererRecoveryCount?: number;
 };
 export type ScreenGroup = {
   id: string;
@@ -253,7 +262,7 @@ export type Asset = {
   id: string;
   name: string;
   description: string;
-  type: "image" | "video";
+  type: "image" | "video" | "website";
   originalFilename: string;
   declaredMimeType: string;
   detectedMimeType: string;
@@ -276,6 +285,46 @@ export type Asset = {
   updatedAt: string;
   variants: AssetVariant[];
   thumbnailUrl?: string;
+  website?: WebsiteConfig;
+};
+export type WebsiteConfig = {
+  url: string;
+  displayUrl: string;
+  allowedHosts: string[];
+  javascriptEnabled: boolean;
+  domStorageEnabled: boolean;
+  cookiePolicy: "disabled" | "first_party" | "first_and_third_party";
+  reloadPolicy: "load_once" | "on_each_activation" | "interval";
+  refreshIntervalSeconds?: number;
+  loadTimeoutSeconds: number;
+  zoomPercent: number;
+  scrollX: number;
+  scrollY: number;
+  customUserAgent: string;
+  backgroundColor: string;
+  failureBehavior: "last_success" | "placeholder" | "fallback_image" | "skip";
+  fallbackImageAssetId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+export type WebsiteInput = { name: string; description: string } & Omit<
+  WebsiteConfig,
+  "displayUrl" | "createdAt" | "updatedAt"
+>;
+export type WebsiteDiagnostics = {
+  assetId: string;
+  configuredUrl: string;
+  allowedHosts: string[];
+  lastSuccessfulLoad?: string;
+  lastFailure?: string;
+  lastFailureCategory?: string;
+  reportingScreens: {
+    id: string;
+    name: string;
+    state: string;
+    host?: string;
+  }[];
+  fallbackImageAssetId?: string;
 };
 
 export type AssetList = {

@@ -119,31 +119,40 @@ type DevicePrincipal struct {
 }
 
 type Heartbeat struct {
-	ScreenWidth              int        `json:"screenWidth"`
-	ScreenHeight             int        `json:"screenHeight"`
-	AvailableStorageBytes    *int64     `json:"availableStorageBytes,omitempty"`
-	UptimeSeconds            *int64     `json:"uptimeSeconds,omitempty"`
-	PlayerVersion            string     `json:"playerVersion"`
-	ActiveManifestVersion    *int64     `json:"activeManifestVersion,omitempty"`
-	PendingManifestVersion   *int64     `json:"pendingManifestVersion,omitempty"`
-	AssignedPlaylistID       *uuid.UUID `json:"assignedPlaylistId,omitempty"`
-	CurrentItemID            *uuid.UUID `json:"currentItemId,omitempty"`
-	CurrentAssetID           *uuid.UUID `json:"currentAssetId,omitempty"`
-	PlaybackState            string     `json:"playbackState,omitempty"`
-	DownloadQueueCount       *int       `json:"downloadQueueCount,omitempty"`
-	DownloadedBytes          *int64     `json:"downloadedBytes,omitempty"`
-	RequiredBytes            *int64     `json:"requiredBytes,omitempty"`
-	CacheUsedBytes           *int64     `json:"cacheUsedBytes,omitempty"`
-	CacheLimitBytes          *int64     `json:"cacheLimitBytes,omitempty"`
-	LastSynchronizationError string     `json:"lastSynchronizationError,omitempty"`
-	LastPlaybackError        string     `json:"lastPlaybackError,omitempty"`
-	CurrentScheduleID        *uuid.UUID `json:"currentScheduleId,omitempty"`
-	CurrentPlaylistID        *uuid.UUID `json:"currentPlaylistId,omitempty"`
-	SelectionSource          string     `json:"selectionSource,omitempty"`
-	NextTransitionAt         *time.Time `json:"nextTransitionAt,omitempty"`
-	DeviceClockOffsetSeconds *int64     `json:"deviceClockOffsetSeconds,omitempty"`
-	ScheduleEvaluationError  string     `json:"scheduleEvaluationError,omitempty"`
-	ScheduleManifestVersion  *int64     `json:"scheduleManifestVersion,omitempty"`
+	ScreenWidth                   int        `json:"screenWidth"`
+	ScreenHeight                  int        `json:"screenHeight"`
+	AvailableStorageBytes         *int64     `json:"availableStorageBytes,omitempty"`
+	UptimeSeconds                 *int64     `json:"uptimeSeconds,omitempty"`
+	PlayerVersion                 string     `json:"playerVersion"`
+	ActiveManifestVersion         *int64     `json:"activeManifestVersion,omitempty"`
+	PendingManifestVersion        *int64     `json:"pendingManifestVersion,omitempty"`
+	AssignedPlaylistID            *uuid.UUID `json:"assignedPlaylistId,omitempty"`
+	CurrentItemID                 *uuid.UUID `json:"currentItemId,omitempty"`
+	CurrentAssetID                *uuid.UUID `json:"currentAssetId,omitempty"`
+	PlaybackState                 string     `json:"playbackState,omitempty"`
+	DownloadQueueCount            *int       `json:"downloadQueueCount,omitempty"`
+	DownloadedBytes               *int64     `json:"downloadedBytes,omitempty"`
+	RequiredBytes                 *int64     `json:"requiredBytes,omitempty"`
+	CacheUsedBytes                *int64     `json:"cacheUsedBytes,omitempty"`
+	CacheLimitBytes               *int64     `json:"cacheLimitBytes,omitempty"`
+	LastSynchronizationError      string     `json:"lastSynchronizationError,omitempty"`
+	LastPlaybackError             string     `json:"lastPlaybackError,omitempty"`
+	CurrentScheduleID             *uuid.UUID `json:"currentScheduleId,omitempty"`
+	CurrentPlaylistID             *uuid.UUID `json:"currentPlaylistId,omitempty"`
+	SelectionSource               string     `json:"selectionSource,omitempty"`
+	NextTransitionAt              *time.Time `json:"nextTransitionAt,omitempty"`
+	DeviceClockOffsetSeconds      *int64     `json:"deviceClockOffsetSeconds,omitempty"`
+	ScheduleEvaluationError       string     `json:"scheduleEvaluationError,omitempty"`
+	ScheduleManifestVersion       *int64     `json:"scheduleManifestVersion,omitempty"`
+	CurrentWebsiteAssetID         *uuid.UUID `json:"currentWebsiteAssetId,omitempty"`
+	WebsiteState                  string     `json:"websiteState,omitempty"`
+	WebsiteLoadStartedAt          *time.Time `json:"websiteLoadStartedAt,omitempty"`
+	WebsiteLoadCompletedAt        *time.Time `json:"websiteLoadCompletedAt,omitempty"`
+	WebsiteFailureCategory        string     `json:"websiteFailureCategory,omitempty"`
+	WebsiteBlockedNavigationCount *int       `json:"websiteBlockedNavigationCount,omitempty"`
+	WebsiteCurrentHost            string     `json:"websiteCurrentHost,omitempty"`
+	WebsiteFallbackShown          *bool      `json:"websiteFallbackShown,omitempty"`
+	WebsiteRendererRecoveryCount  *int       `json:"websiteRendererRecoveryCount,omitempty"`
 }
 
 func addressString(address netip.Addr) *string {

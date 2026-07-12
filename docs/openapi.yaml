@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Tilecast API
-  version: 0.5.0
+  version: 0.6.0
   license:
     name: AGPL-3.0-only
 paths:
@@ -583,6 +583,43 @@ paths:
               and next transition,
             },
           "403": { description: Scheduling access required },
+        }
+  /api/v1/assets/websites:
+    post:
+      operationId: createWebsiteAsset
+      description: Creates configuration-only public website content without fetching the page.
+      responses:
+        {
+          "201": { description: Website asset created },
+          "422": { description: URL or website settings rejected },
+        }
+  /api/v1/assets/{id}/website:
+    patch:
+      operationId: updateWebsiteAsset
+      responses:
+        {
+          "200":
+            {
+              description: Website configuration updated and affected manifests revised,
+            },
+          "422": { description: Website validation failed },
+        }
+  /api/v1/assets/{id}/website/diagnostics:
+    get:
+      operationId: websiteDiagnostics
+      responses:
+        { "200": { description: Safe categorized player website diagnostics } }
+  /api/v1/screens/{id}/website-data/clear:
+    post:
+      operationId: clearPlayerWebsiteData
+      description: Queues an expiring Owner/Administrator-only player command.
+      responses:
+        {
+          "202":
+            {
+              description: Clear-data command queued or existing pending command returned,
+            },
+          "403": { description: Insufficient role or CSRF failure },
         }
 components:
   parameters:

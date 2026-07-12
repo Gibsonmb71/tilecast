@@ -58,8 +58,10 @@ func main() {
 		FFmpegPath: cfg.Media.FFmpegPath, FFprobePath: cfg.Media.FFprobePath,
 		Profile: media.CompatibilityProfile{MaxWidth: cfg.Media.VideoMaxWidth, MaxHeight: cfg.Media.VideoMaxHeight, MaxFrameRate: cfg.Media.VideoMaxFrameRate},
 		Workers: cfg.Media.Workers, KeepOriginals: cfg.Media.KeepOriginals,
+		Website: media.WebsitePolicy{AllowPrivateHTTP: cfg.Website.AllowPrivateHTTP, DefaultTimeoutSeconds: cfg.Website.DefaultTimeoutSeconds, MaxTimeoutSeconds: cfg.Website.MaxTimeoutSeconds, MinRefreshSeconds: cfg.Website.MinRefreshSeconds, MaxAllowedHosts: cfg.Website.MaxAllowedHosts, MaxWebsites: cfg.Website.MaxWebsites},
 	})
 	playlistService := playlists.NewService(db, deviceService)
+	mediaService.SetAssetInvalidator(playlistService)
 	schedulingService := scheduling.NewService(db, deviceService, scheduling.Limits{MaxSchedules: cfg.Scheduling.MaxSchedules, MaxTargetsPerSchedule: cfg.Scheduling.MaxTargetsPerSchedule, MaxGroupsPerScreen: cfg.Scheduling.MaxGroupsPerScreen, PrefetchDays: cfg.Scheduling.PrefetchDays, ActivationGraceSeconds: cfg.Scheduling.ActivationGraceSeconds, ClockSkewWarningSeconds: cfg.Scheduling.ClockSkewWarningSeconds})
 	playlistService.SetScheduling(schedulingService)
 	_, _ = db.Exec(ctx, `INSERT INTO media_jobs(id,kind,status,run_after) VALUES(gen_random_uuid(),'clean_expired_uploads','queued',now())`)
