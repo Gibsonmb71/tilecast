@@ -34,7 +34,7 @@ Milestones 1 and 2 establish the foundation and player enrollment path:
 
 Milestone 2 intentionally does **not** contain media upload, media processing, playlists, layouts, schedules, player manifests, or content playback.
 
-Milestone 3 should add the media library only. Do not opportunistically begin playlists, layout rendering, scheduling, or a player content manifest while implementing media.
+Milestone 5 adds screen groups, one-time and weekly playlist schedules, deterministic precedence, schedule-aware manifests, prefetching, and offline schedule evaluation. Direct screen assignments remain the fallback. Do not opportunistically begin multi-zone layouts, compositions, website/PDF zones, emergency overrides, or proof-of-play.
 
 ## Repository map
 
@@ -198,9 +198,9 @@ If the installation ID changes, do not send the credential. Show `ServerIdentity
 
 All controls must work with D-pad focus and remote activation. Normal player UI must not display raw exceptions, internal IDs, debug JSON, or development placeholders. Until playback exists, paired state says “No content assigned.”
 
-### Milestone 3 Android boundary
+### Milestone 5 Android boundary
 
-Milestone 3 is the server/Studio media library. Do not add content playback merely because assets can be uploaded. Player download, hash verification, offline playlist playback, and manifests belong to Milestone 4. If Milestone 3 needs player-authenticated media-range tests, keep them server-side and do not create a premature manifest contract.
+Milestone 5 remains one fullscreen zone with sequential looping playback. Keep manifest activation atomic and preserve working offline content during failed updates. The player evaluates received one-time and weekly schedules offline; multi-zone rendering, layouts, compositions, emergency overrides, and simultaneous videos remain out of scope.
 
 ## LAN discovery and deployment
 

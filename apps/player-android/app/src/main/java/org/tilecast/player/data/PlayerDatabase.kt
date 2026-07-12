@@ -9,6 +9,9 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.Transaction
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Entity(tableName = "player_configuration")
 data class PlayerConfiguration(
@@ -29,14 +32,70 @@ interface PlayerConfigurationDao {
     @Query("DELETE FROM player_configuration") suspend fun reset()
 }
 
-@Database(entities = [PlayerConfiguration::class], version = 1, exportSchema = true)
+@Entity(tableName = "stored_manifests")
+data class StoredManifest(
+    @androidx.room.PrimaryKey val manifestVersion: Long,
+    val schemaVersion: Int,
+    val rawJson: String,
+    val etag: String? = null,
+    val state: String,
+    val receivedAt: Long,
+    val readyAt: Long? = null,
+    val activatedAt: Long? = null,
+    val failureReason: String? = null,
+)
+
+@Entity(tableName = "cached_assets")
+data class CachedAsset(
+    @androidx.room.PrimaryKey val variantId: String,
+    val assetId: String,
+    val sha256: String,
+    val expectedFileSize: Long,
+    val localPath: String,
+    val downloadStatus: String,
+    val downloadedBytes: Long = 0,
+    val lastVerifiedAt: Long? = null,
+    val lastUsedAt: Long? = null,
+    val requiredByActiveManifest: Boolean = false,
+    val requiredByPendingManifest: Boolean = false,
+    val failureReason: String? = null,
+)
+
+@Dao interface ManifestDao {
+    @Query("SELECT * FROM stored_manifests WHERE state='active' ORDER BY activatedAt DESC LIMIT 1") suspend fun active(): StoredManifest?
+    @Query("SELECT * FROM stored_manifests WHERE state='ready' ORDER BY manifestVersion DESC LIMIT 1") suspend fun ready(): StoredManifest?
+    @Query("SELECT * FROM stored_manifests WHERE manifestVersion=:version") suspend fun byVersion(version: Long): StoredManifest?
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun save(manifest: StoredManifest)
+    @Query("UPDATE stored_manifests SET state='superseded' WHERE state='active'") suspend fun supersedeActive()
+    @Query("UPDATE stored_manifests SET state='active',activatedAt=:now WHERE manifestVersion=:version") suspend fun setActive(version: Long, now: Long)
+	@Query("DELETE FROM stored_manifests WHERE state='superseded' AND manifestVersion NOT IN (SELECT manifestVersion FROM stored_manifests WHERE state='superseded' ORDER BY activatedAt DESC LIMIT 1)") suspend fun pruneSuperseded()
+    @Query("UPDATE stored_manifests SET state=:state,readyAt=:readyAt,failureReason=:failure WHERE manifestVersion=:version") suspend fun setState(version: Long, state: String, readyAt: Long?, failure: String?)
+    @Transaction suspend fun activate(version: Long, now: Long) { supersedeActive(); setActive(version, now); pruneSuperseded() }
+}
+
+@Dao interface CachedAssetDao {
+    @Query("SELECT * FROM cached_assets WHERE variantId=:variantId") suspend fun get(variantId: String): CachedAsset?
+    @Query("SELECT * FROM cached_assets") suspend fun all(): List<CachedAsset>
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun save(asset: CachedAsset)
+	@Query("UPDATE cached_assets SET requiredByPendingManifest=0") suspend fun clearPendingRequirements()
+    @Query("UPDATE cached_assets SET requiredByPendingManifest=1 WHERE variantId IN (:ids)") suspend fun requirePending(ids: List<String>)
+    @Query("UPDATE cached_assets SET requiredByActiveManifest=requiredByPendingManifest,requiredByPendingManifest=0") suspend fun promoteRequirements()
+    @Query("DELETE FROM cached_assets WHERE variantId=:variantId") suspend fun delete(variantId: String)
+}
+
+@Database(entities = [PlayerConfiguration::class, StoredManifest::class, CachedAsset::class], version = 2, exportSchema = true)
 abstract class PlayerDatabase : RoomDatabase() {
     abstract fun configuration(): PlayerConfigurationDao
+    abstract fun manifests(): ManifestDao
+    abstract fun cachedAssets(): CachedAssetDao
     companion object {
         @Volatile private var instance: PlayerDatabase? = null
+        val MIGRATION_1_2 = object : Migration(1, 2) { override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("CREATE TABLE IF NOT EXISTS stored_manifests (manifestVersion INTEGER NOT NULL, schemaVersion INTEGER NOT NULL, rawJson TEXT NOT NULL, etag TEXT, state TEXT NOT NULL, receivedAt INTEGER NOT NULL, readyAt INTEGER, activatedAt INTEGER, failureReason TEXT, PRIMARY KEY(manifestVersion))")
+            db.execSQL("CREATE TABLE IF NOT EXISTS cached_assets (variantId TEXT NOT NULL, assetId TEXT NOT NULL, sha256 TEXT NOT NULL, expectedFileSize INTEGER NOT NULL, localPath TEXT NOT NULL, downloadStatus TEXT NOT NULL, downloadedBytes INTEGER NOT NULL, lastVerifiedAt INTEGER, lastUsedAt INTEGER, requiredByActiveManifest INTEGER NOT NULL, requiredByPendingManifest INTEGER NOT NULL, failureReason TEXT, PRIMARY KEY(variantId))")
+        } }
         fun get(context: Context): PlayerDatabase = instance ?: synchronized(this) {
-            instance ?: Room.databaseBuilder(context.applicationContext, PlayerDatabase::class.java, "tilecast-player.db").build().also { instance = it }
+            instance ?: Room.databaseBuilder(context.applicationContext, PlayerDatabase::class.java, "tilecast-player.db").addMigrations(MIGRATION_1_2).build().also { instance = it }
         }
     }
 }
-

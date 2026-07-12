@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Tilecast API
-  version: 0.3.0
+  version: 0.5.0
   license:
     name: AGPL-3.0-only
 paths:
@@ -356,6 +356,234 @@ paths:
           "200":
             { description: ETag, Content-Length, MIME type, and Accept-Ranges },
         }
+  /api/v1/playlists:
+    get:
+      operationId: listPlaylists
+      parameters:
+        - { in: query, name: search, schema: { type: string } }
+        - { in: query, name: page, schema: { type: integer, minimum: 1 } }
+        - {
+            in: query,
+            name: pageSize,
+            schema: { type: integer, minimum: 1, maximum: 100 },
+          }
+      responses: { "200": { description: Paginated playlist list } }
+    post:
+      operationId: createPlaylist
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      responses:
+        {
+          "201": { description: Playlist created },
+          "403": { description: Viewer is read-only },
+        }
+  /api/v1/playlists/{id}:
+    parameters: [{ $ref: "#/components/parameters/ResourceID" }]
+    get:
+      {
+        operationId: getPlaylist,
+        responses: { "200": { description: Playlist and ordered items } },
+      }
+    patch:
+      operationId: updatePlaylist
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      responses:
+        { "200": { description: Playlist updated and revision incremented } }
+    delete:
+      operationId: deletePlaylist
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      responses:
+        {
+          "204": { description: Playlist soft-deleted },
+          "409": { description: Playlist is assigned },
+        }
+  /api/v1/playlists/{id}/items:
+    post:
+      operationId: addPlaylistItem
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - $ref: "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          {
+            application/json:
+              { schema: { $ref: "#/components/schemas/PlaylistItemInput" } },
+          }
+      responses:
+        {
+          "201": { description: Ready asset added transactionally },
+          "422": { description: Invalid or unavailable asset },
+        }
+  /api/v1/playlists/{id}/items/order:
+    put:
+      operationId: reorderPlaylistItems
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - $ref: "#/components/parameters/CSRFToken"
+      responses:
+        { "200": { description: Complete item order replaced transactionally } }
+  /api/v1/playlists/{id}/items/{itemId}:
+    parameters:
+      - $ref: "#/components/parameters/ResourceID"
+      - {
+          in: path,
+          name: itemId,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
+    patch:
+      operationId: updatePlaylistItem
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      responses: { "200": { description: Playback settings updated } }
+    delete:
+      operationId: deletePlaylistItem
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      responses:
+        {
+          "200":
+            { description: Item removed and remaining positions normalized },
+        }
+  /api/v1/screens/{id}/playlist-assignment:
+    parameters: [{ $ref: "#/components/parameters/ResourceID" }]
+    get:
+      {
+        operationId: getPlaylistAssignment,
+        responses:
+          {
+            "200":
+              {
+                description: Assignment,
+                manifest,
+                download,
+                playback,
+                and cache status,
+              },
+          },
+      }
+    put:
+      operationId: assignPlaylist
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      responses:
+        {
+          "200": { description: Direct playlist assignment replaced },
+          "403": { description: Owner or Administrator required },
+        }
+    delete:
+      operationId: removePlaylistAssignment
+      parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      responses: { "200": { description: Direct assignment removed } }
+  /api/v1/player/manifest:
+    get:
+      operationId: getPlayerManifest
+      security: [{ deviceBearer: [] }]
+      parameters:
+        [{ in: header, name: If-None-Match, schema: { type: string } }]
+      responses:
+        "200":
+          description: Stable screen-specific manifest or no-assignment manifest
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/ManifestResponse" } },
+            }
+        "304": { description: Manifest ETag matched }
+        "401": { description: Device credential invalid or revoked }
+        "403": { description: Screen disabled }
+  /api/v1/screen-groups:
+    get:
+      operationId: listScreenGroups
+      responses:
+        {
+          "200": { description: Paginated screen groups and membership counts },
+        }
+    post:
+      operationId: createScreenGroup
+      parameters:
+        [
+          {
+            in: header,
+            name: X-CSRF-Token,
+            required: true,
+            schema: { type: string },
+          },
+        ]
+      responses:
+        {
+          "201": { description: Screen group created },
+          "422": { description: Validation or configured limit failed },
+        }
+  /api/v1/screen-groups/{id}:
+    get:
+      operationId: getScreenGroup
+      responses:
+        {
+          "200": { description: Group with screen members },
+          "404": { description: Group not found },
+        }
+    patch:
+      operationId: updateScreenGroup
+      responses: { "200": { description: Group updated } }
+    delete:
+      operationId: deleteScreenGroup
+      responses:
+        { "204": { description: Group soft deleted; screens retained } }
+  /api/v1/screen-groups/{id}/screens:
+    post:
+      operationId: addScreenGroupMember
+      responses:
+        { "200": { description: Screen added and affected manifest revised } }
+  /api/v1/screen-groups/{id}/screens/{screenId}:
+    delete:
+      operationId: removeScreenGroupMember
+      responses:
+        { "204": { description: Screen removed and affected manifest revised } }
+  /api/v1/schedules:
+    get:
+      operationId: listSchedules
+      responses: { "200": { description: Paginated schedules } }
+    post:
+      operationId: createSchedule
+      responses:
+        {
+          "201": { description: Validated schedule created },
+          "422": { description: Schedule or target validation failed },
+        }
+  /api/v1/schedules/{id}:
+    get:
+      operationId: getSchedule
+      responses: { "200": { description: Schedule and normalized targets } }
+    patch:
+      operationId: updateSchedule
+      responses:
+        {
+          "200":
+            { description: Schedule updated and affected manifests revised },
+        }
+    delete:
+      operationId: deleteSchedule
+      responses: { "204": { description: Schedule soft deleted } }
+  /api/v1/schedules/{id}/enable:
+    post:
+      operationId: enableSchedule
+      responses: { "200": { description: Schedule enabled } }
+  /api/v1/schedules/{id}/disable:
+    post:
+      operationId: disableSchedule
+      responses: { "200": { description: Schedule disabled } }
+  /api/v1/schedules/preview:
+    post:
+      operationId: previewSchedule
+      responses:
+        {
+          "200":
+            {
+              description: Production resolution result,
+              conflicts,
+              fallback,
+              and next transition,
+            },
+          "403": { description: Scheduling access required },
+        }
 components:
   parameters:
     ResourceID:
@@ -374,6 +602,51 @@ components:
       scheme: bearer
       bearerFormat: Tilecast device credential
   schemas:
+    PlaylistItemInput:
+      type: object
+      additionalProperties: false
+      required: [assetId]
+      properties:
+        assetId: { type: string, format: uuid }
+        durationMs: { type: integer, minimum: 1 }
+        fitMode:
+          { type: string, enum: [contain, cover, stretch], default: contain }
+        transition: { type: string, enum: [none, fade], default: none }
+        audioEnabled: { type: boolean, default: true }
+        volume: { type: number, minimum: 0, maximum: 1, default: 1 }
+        videoStartOffsetMs: { type: integer, minimum: 0 }
+        videoEndOffsetMs: { type: integer, minimum: 1 }
+        deliveryPolicy:
+          {
+            type: string,
+            enum: [download, stream, automatic],
+            default: download,
+          }
+    PlayerManifest:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          schemaVersion,
+          manifestVersion,
+          screenId,
+          generatedAt,
+          mode,
+          playlist,
+          assets,
+        ]
+      properties:
+        schemaVersion: { type: integer, const: 1 }
+        manifestVersion: { type: integer, format: int64, minimum: 1 }
+        screenId: { type: string, format: uuid }
+        generatedAt: { type: string, format: date-time }
+        mode: { type: string, const: single-zone }
+        playlist: { oneOf: [{ type: "null" }, { type: object }] }
+        assets: { type: array, items: { type: object } }
+    ManifestResponse:
+      type: object
+      required: [data]
+      properties: { data: { $ref: "#/components/schemas/PlayerManifest" } }
     AssetType:
       type: string
       enum: [image, video]

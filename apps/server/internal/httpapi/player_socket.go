@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 	"github.com/tilecast/tilecast/apps/server/internal/devices"
+	"github.com/tilecast/tilecast/apps/server/internal/playlists"
 )
 
 type socketMessage struct {
@@ -29,17 +31,23 @@ func (s *server) playerSocket(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	defer connection.Close(websocket.StatusNormalClosure, "connection closed") //nolint:errcheck
 
-	unregister := s.devices.RegisterPresence(principal.ScreenID, func() {
+	var writeMu sync.Mutex
+	send := func(message any) error {
+		writeMu.Lock()
+		defer writeMu.Unlock()
+		return wsjson.Write(ctx, connection, message)
+	}
+	unregister := s.devices.RegisterPresenceWithNotifier(principal.ScreenID, func() {
 		cancel()
 		_ = connection.Close(websocket.StatusPolicyViolation, "credential revoked or screen disabled")
-	})
+	}, func(message map[string]any) error { return send(message) })
 	defer unregister()
 	if err := s.devices.MarkConnected(r.Context(), principal.ScreenID, r.RemoteAddr); err != nil {
 		return
 	}
 	defer s.devices.MarkDisconnected(context.Background(), principal.ScreenID)
 
-	if err := wsjson.Write(ctx, connection, map[string]any{"type": "server.hello", "protocolVersion": 1, "screenId": principal.ScreenID, "screenName": principal.ScreenName}); err != nil {
+	if err := send(map[string]any{"type": "server.hello", "protocolVersion": 1, "screenId": principal.ScreenID, "screenName": principal.ScreenName}); err != nil {
 		return
 	}
 
@@ -53,7 +61,7 @@ func (s *server) playerSocket(w http.ResponseWriter, r *http.Request) {
 			case <-ctx.Done():
 				return
 			case timestamp := <-ticker.C:
-				if err := wsjson.Write(ctx, connection, map[string]any{"type": "server.ping", "timestamp": timestamp.UTC().Format(time.RFC3339)}); err != nil {
+				if err := send(map[string]any{"type": "server.ping", "timestamp": timestamp.UTC().Format(time.RFC3339)}); err != nil {
 					cancel()
 					return
 				}
@@ -76,6 +84,12 @@ func (s *server) playerSocket(w http.ResponseWriter, r *http.Request) {
 			var heartbeat devices.Heartbeat
 			if err := json.Unmarshal(message.Payload, &heartbeat); err == nil {
 				_ = s.devices.Heartbeat(ctx, principal, heartbeat, r.RemoteAddr)
+			}
+			if s.playlists != nil {
+				var status playlists.PlayerStatus
+				if err := json.Unmarshal(message.Payload, &status); err == nil {
+					_ = s.playlists.ReportStatus(ctx, principal.ScreenID, status)
+				}
 			}
 		case "player.pong":
 			// The open socket itself is the presence signal; pong confirms the peer is processing messages.

@@ -8,6 +8,16 @@ import type {
   Asset,
   AssetList,
   UploadSession,
+  Playlist,
+  PlaylistAssignment,
+  PlaylistItemInput,
+  PlaylistList,
+  ScreenGroup,
+  ScreenGroupList,
+  Schedule,
+  ScheduleInput,
+  ScheduleList,
+  SchedulePreview,
 } from "./types";
 
 type DataResponse<T> = { data: T };
@@ -192,5 +202,156 @@ export const api = {
     request<void>(`/uploads/${id}`, {
       method: "DELETE",
       headers: { "X-CSRF-Token": csrfToken },
+    }),
+  playlists: (search = "") =>
+    request<PlaylistList>(
+      `/playlists?page=1&pageSize=100&search=${encodeURIComponent(search)}`,
+    ),
+  playlist: (id: string) => request<Playlist>(`/playlists/${id}`),
+  createPlaylist: (
+    input: { name: string; description: string },
+    csrfToken: string,
+  ) =>
+    request<Playlist>("/playlists", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  updatePlaylist: (
+    id: string,
+    input: { name: string; description: string },
+    csrfToken: string,
+  ) =>
+    request<Playlist>(`/playlists/${id}`, {
+      method: "PATCH",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  duplicatePlaylist: (id: string, csrfToken: string) =>
+    request<Playlist>(`/playlists/${id}/duplicate`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
+  deletePlaylist: (id: string, csrfToken: string) =>
+    request<void>(`/playlists/${id}`, {
+      method: "DELETE",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
+  addPlaylistItem: (id: string, input: PlaylistItemInput, csrfToken: string) =>
+    request<Playlist>(`/playlists/${id}/items`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  updatePlaylistItem: (
+    id: string,
+    itemId: string,
+    input: PlaylistItemInput,
+    csrfToken: string,
+  ) =>
+    request<Playlist>(`/playlists/${id}/items/${itemId}`, {
+      method: "PATCH",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  deletePlaylistItem: (id: string, itemId: string, csrfToken: string) =>
+    request<Playlist>(`/playlists/${id}/items/${itemId}`, {
+      method: "DELETE",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
+  reorderPlaylist: (id: string, itemIds: string[], csrfToken: string) =>
+    request<Playlist>(`/playlists/${id}/items/order`, {
+      method: "PUT",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ itemIds }),
+    }),
+  playlistAssignment: (screenId: string) =>
+    request<PlaylistAssignment>(`/screens/${screenId}/playlist-assignment`),
+  assignPlaylist: (screenId: string, playlistId: string, csrfToken: string) =>
+    request<PlaylistAssignment>(`/screens/${screenId}/playlist-assignment`, {
+      method: "PUT",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ playlistId }),
+    }),
+  unassignPlaylist: (screenId: string, csrfToken: string) =>
+    request<PlaylistAssignment>(`/screens/${screenId}/playlist-assignment`, {
+      method: "DELETE",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
+  screenGroups: (search = "") =>
+    request<ScreenGroupList>(
+      `/screen-groups?page=1&pageSize=100&search=${encodeURIComponent(search)}`,
+    ),
+  screenGroup: (id: string) => request<ScreenGroup>(`/screen-groups/${id}`),
+  createScreenGroup: (
+    input: { name: string; description: string },
+    csrfToken: string,
+  ) =>
+    request<ScreenGroup>("/screen-groups", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  updateScreenGroup: (
+    id: string,
+    input: { name: string; description: string },
+    csrfToken: string,
+  ) =>
+    request<ScreenGroup>(`/screen-groups/${id}`, {
+      method: "PATCH",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  deleteScreenGroup: (id: string, csrfToken: string) =>
+    request<void>(`/screen-groups/${id}`, {
+      method: "DELETE",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
+  addScreenToGroup: (id: string, screenId: string, csrfToken: string) =>
+    request<ScreenGroup>(`/screen-groups/${id}/screens`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ screenId }),
+    }),
+  removeScreenFromGroup: (id: string, screenId: string, csrfToken: string) =>
+    request<void>(`/screen-groups/${id}/screens/${screenId}`, {
+      method: "DELETE",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
+  schedules: (search = "") =>
+    request<ScheduleList>(
+      `/schedules?page=1&pageSize=100&search=${encodeURIComponent(search)}`,
+    ),
+  schedule: (id: string) => request<Schedule>(`/schedules/${id}`),
+  createSchedule: (input: ScheduleInput, csrfToken: string) =>
+    request<Schedule>("/schedules", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  updateSchedule: (id: string, input: ScheduleInput, csrfToken: string) =>
+    request<Schedule>(`/schedules/${id}`, {
+      method: "PATCH",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  deleteSchedule: (id: string, csrfToken: string) =>
+    request<void>(`/schedules/${id}`, {
+      method: "DELETE",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
+  setScheduleEnabled: (id: string, enabled: boolean, csrfToken: string) =>
+    request<Schedule>(`/schedules/${id}/${enabled ? "enable" : "disable"}`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
+  previewSchedule: (
+    screenId: string,
+    timestamp: string,
+    proposedSchedule?: ScheduleInput,
+  ) =>
+    request<SchedulePreview>("/schedules/preview", {
+      method: "POST",
+      body: JSON.stringify({ screenId, timestamp, proposedSchedule }),
     }),
 };

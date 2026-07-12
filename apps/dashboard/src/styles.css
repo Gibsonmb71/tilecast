@@ -858,6 +858,231 @@ a {
   }
 }
 
+.playlists-page,
+.playlist-editor {
+  width: min(1180px, 100%);
+}
+.playlist-search {
+  width: 280px;
+  margin-bottom: 16px;
+}
+.playlist-list {
+  overflow: hidden;
+  background: white;
+  border: 1px solid var(--tc-border);
+  border-radius: var(--tc-radius-md);
+}
+.playlist-list a {
+  display: grid;
+  grid-template-columns: 1fr 120px 90px;
+  gap: 18px;
+  align-items: center;
+  padding: 15px 17px;
+  color: var(--tc-ink);
+  border-bottom: 1px solid var(--tc-border);
+  text-decoration: none;
+}
+.playlist-list a:last-child {
+  border: 0;
+}
+.playlist-list a:hover {
+  background: var(--tc-surface-muted);
+}
+.playlist-list a > span:first-child {
+  display: grid;
+}
+.playlist-list small,
+.playlist-list a > span:not(:first-child) {
+  color: var(--tc-ink-muted);
+}
+.editor-actions,
+.timeline-heading,
+.asset-picker > header {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  justify-content: space-between;
+}
+.editor-actions .button {
+  gap: 6px;
+  margin: 0;
+}
+.playlist-settings {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(260px, 2fr) auto;
+  gap: 14px;
+  align-items: end;
+  padding: 17px;
+  margin-bottom: 22px;
+  background: white;
+  border: 1px solid var(--tc-border);
+  border-radius: var(--tc-radius-md);
+}
+.playlist-settings textarea {
+  height: 39px;
+  padding: 8px;
+  border: 1px solid var(--tc-border-strong);
+  border-radius: var(--tc-radius-sm);
+  resize: vertical;
+}
+.playlist-settings .button {
+  margin: 0 0 1px;
+}
+.timeline-heading {
+  margin-bottom: 12px;
+}
+.timeline-heading h3,
+.timeline-heading p {
+  margin: 0;
+}
+.timeline-heading p {
+  color: var(--tc-ink-muted);
+}
+.timeline-heading .button {
+  gap: 6px;
+  margin: 0;
+}
+.timeline-empty {
+  padding: 50px;
+  color: var(--tc-ink-muted);
+  text-align: center;
+  background: white;
+  border: 1px dashed var(--tc-border-strong);
+  border-radius: var(--tc-radius-md);
+}
+.playlist-timeline {
+  display: grid;
+  gap: 9px;
+}
+.timeline-item {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 11px;
+  background: white;
+  border: 1px solid var(--tc-border);
+  border-radius: var(--tc-radius-sm);
+}
+.timeline-item > img {
+  width: 92px;
+  height: 52px;
+  object-fit: contain;
+  background: #e8ece9;
+  border: 1px solid var(--tc-border);
+}
+.timeline-grip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--tc-ink-muted);
+  cursor: grab;
+}
+.timeline-name {
+  display: grid;
+  min-width: 150px;
+  flex: 1;
+}
+.timeline-name small {
+  color: var(--tc-ink-muted);
+}
+.timeline-item label {
+  display: grid;
+  gap: 3px;
+  color: var(--tc-ink-muted);
+  font-size: 11px;
+}
+.timeline-item select,
+.timeline-item input[type="number"] {
+  width: 92px;
+  height: 32px;
+  padding: 4px;
+  border: 1px solid var(--tc-border-strong);
+  border-radius: var(--tc-radius-sm);
+}
+.timeline-item input[type="range"] {
+  width: 90px;
+}
+.timeline-item .audio-toggle {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+.asset-picker {
+  width: min(780px, 90vw);
+  max-height: 80vh;
+  padding: 22px;
+  overflow: auto;
+  background: white;
+  border-radius: var(--tc-radius-md);
+}
+.asset-picker > header {
+  margin-bottom: 16px;
+}
+.asset-picker h3 {
+  margin: 0;
+}
+.asset-picker > div {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px;
+}
+.asset-picker > div > button {
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  color: var(--tc-ink);
+  text-align: left;
+  background: white;
+  border: 1px solid var(--tc-border);
+  border-radius: var(--tc-radius-sm);
+  cursor: pointer;
+}
+.asset-picker img {
+  width: 100%;
+  height: 90px;
+  object-fit: contain;
+  background: #e8ece9;
+}
+.asset-picker small {
+  color: var(--tc-ink-muted);
+  text-transform: capitalize;
+}
+@media (max-width: 900px) {
+  .playlist-settings {
+    grid-template-columns: 1fr;
+  }
+  .timeline-item {
+    flex-wrap: wrap;
+  }
+  .timeline-name {
+    min-width: calc(100% - 145px);
+  }
+}
+.assignment-card {
+  margin-bottom: 18px;
+  padding: 20px;
+  background: white;
+  border: 1px solid var(--tc-border);
+  border-radius: var(--tc-radius-md);
+}
+.assignment-card h3 {
+  margin: 0 0 14px;
+}
+.assignment-controls {
+  display: flex;
+  gap: 9px;
+  margin-bottom: 17px;
+}
+.assignment-controls select {
+  min-width: 260px;
+  padding: 7px;
+  border: 1px solid var(--tc-border-strong);
+  border-radius: var(--tc-radius-sm);
+}
+.assignment-controls .button {
+  margin: 0;
+}
+
 .page-heading {
   display: flex;
   align-items: flex-start;
@@ -1346,5 +1571,84 @@ a {
   }
   .device-facts div:nth-child(odd) {
     border-right: 0;
+  }
+}
+.heading-actions {
+  display: flex;
+  gap: 10px;
+}
+.schedule-list {
+  display: grid;
+  gap: 8px;
+}
+.schedule-card {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.5fr) repeat(3, minmax(120px, 1fr)) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 16px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: inherit;
+  text-decoration: none;
+}
+.schedule-card span {
+  display: grid;
+  gap: 3px;
+}
+.schedule-card small {
+  color: var(--muted);
+}
+.schedule-card--disabled {
+  opacity: 0.65;
+}
+.schedule-today,
+.schedule-preview {
+  padding: 16px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  margin-bottom: 16px;
+}
+.schedule-editor {
+  max-width: 850px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.schedule-editor > label,
+.schedule-editor fieldset {
+  display: grid;
+  gap: 7px;
+}
+.schedule-editor input,
+.schedule-editor select {
+  min-height: 42px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: inherit;
+}
+.schedule-editor fieldset,
+.schedule-preview,
+.schedule-editor > div {
+  grid-column: 1/-1;
+}
+.weekday-picker {
+  grid-column: 1/-1;
+  display: flex;
+  gap: 12px;
+}
+.weekday-picker label {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+@media (max-width: 900px) {
+  .schedule-card,
+  .schedule-editor {
+    grid-template-columns: 1fr;
+  }
+  .schedule-editor > * {
+    grid-column: 1 !important;
   }
 }

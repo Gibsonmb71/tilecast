@@ -1,0 +1,199 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 2,
+    "identityHash": "8a5c22064fd1d35e9bc4122d69b2d5be",
+    "entities": [
+      {
+        "tableName": "player_configuration",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `playerInstallationId` TEXT NOT NULL, `serverUrl` TEXT, `serverInstallationId` TEXT, `organizationName` TEXT, `screenId` TEXT, `screenName` TEXT, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "playerInstallationId",
+            "columnName": "playerInstallationId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "serverUrl",
+            "columnName": "serverUrl",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "serverInstallationId",
+            "columnName": "serverInstallationId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "organizationName",
+            "columnName": "organizationName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "screenId",
+            "columnName": "screenId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "screenName",
+            "columnName": "screenName",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": ["id"]
+        }
+      },
+      {
+        "tableName": "stored_manifests",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`manifestVersion` INTEGER NOT NULL, `schemaVersion` INTEGER NOT NULL, `rawJson` TEXT NOT NULL, `etag` TEXT, `state` TEXT NOT NULL, `receivedAt` INTEGER NOT NULL, `readyAt` INTEGER, `activatedAt` INTEGER, `failureReason` TEXT, PRIMARY KEY(`manifestVersion`))",
+        "fields": [
+          {
+            "fieldPath": "manifestVersion",
+            "columnName": "manifestVersion",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "schemaVersion",
+            "columnName": "schemaVersion",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rawJson",
+            "columnName": "rawJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "etag",
+            "columnName": "etag",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "receivedAt",
+            "columnName": "receivedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "readyAt",
+            "columnName": "readyAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "activatedAt",
+            "columnName": "activatedAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "failureReason",
+            "columnName": "failureReason",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": ["manifestVersion"]
+        }
+      },
+      {
+        "tableName": "cached_assets",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`variantId` TEXT NOT NULL, `assetId` TEXT NOT NULL, `sha256` TEXT NOT NULL, `expectedFileSize` INTEGER NOT NULL, `localPath` TEXT NOT NULL, `downloadStatus` TEXT NOT NULL, `downloadedBytes` INTEGER NOT NULL, `lastVerifiedAt` INTEGER, `lastUsedAt` INTEGER, `requiredByActiveManifest` INTEGER NOT NULL, `requiredByPendingManifest` INTEGER NOT NULL, `failureReason` TEXT, PRIMARY KEY(`variantId`))",
+        "fields": [
+          {
+            "fieldPath": "variantId",
+            "columnName": "variantId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "assetId",
+            "columnName": "assetId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sha256",
+            "columnName": "sha256",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "expectedFileSize",
+            "columnName": "expectedFileSize",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "localPath",
+            "columnName": "localPath",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "downloadStatus",
+            "columnName": "downloadStatus",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "downloadedBytes",
+            "columnName": "downloadedBytes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastVerifiedAt",
+            "columnName": "lastVerifiedAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "lastUsedAt",
+            "columnName": "lastUsedAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "requiredByActiveManifest",
+            "columnName": "requiredByActiveManifest",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "requiredByPendingManifest",
+            "columnName": "requiredByPendingManifest",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "failureReason",
+            "columnName": "failureReason",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": ["variantId"]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '8a5c22064fd1d35e9bc4122d69b2d5be')"
+    ]
+  }
+}

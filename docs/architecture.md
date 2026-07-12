@@ -1,4 +1,4 @@
-# Tilecast architecture through Milestone 3
+# Tilecast architecture through Milestone 4
 
 Tilecast begins as a modular monolith. The server compiles into one Go binary, serves the versioned REST API, applies embedded SQL migrations at startup, and serves the compiled dashboard. PostgreSQL is the source of truth. This keeps a small self-hosted installation understandable while preserving clean package boundaries for later player and media work.
 
@@ -10,6 +10,7 @@ Tilecast begins as a modular monolith. The server compiles into one Go binary, s
 - `internal/auth` owns password hashing, first-owner setup, users, and opaque sessions.
 - `internal/httpapi` translates versioned HTTP contracts to application operations. Database rows are not serialized directly.
 - `internal/media` owns resumable upload state, generated storage keys, local storage, trusted inspection, compatibility decisions, persistent jobs, and delivery metadata.
+- `internal/playlists` owns ordered playlists, direct assignments, per-screen manifest versions, manifest contracts, and summarized synchronization status.
 - `internal/web` serves immutable dashboard assets and the SPA fallback.
 - `apps/dashboard/src/api` owns browser API types and transport behavior.
 - `packages/*-schema` are reserved for stable, versioned cross-application contracts as those protocols are introduced.
@@ -38,4 +39,14 @@ Media files use a provider interface with a local backend under `/data/media`. P
 
 FFprobe extracts trusted video metadata. FFmpeg is invoked directly, never through a shell, with local-file protocol restrictions, timeouts, metadata stripping, bounded worker concurrency, and generated input/output paths. Derivatives are written to temporary files and atomically promoted. The first compatibility profile is MP4/H.264/yuv420p/AAC-LC at no more than 1920×1080 and 60 fps, with fast-start and normalized rotation. Compatible originals are reused; otherwise Tilecast remuxes when possible and transcodes only when necessary.
 
-Player manifests, content rendering, playlists, layouts, scheduling, Android downloading, and playback remain deliberately deferred.
+Manifest versions are persisted per screen and advance only when its assignment or playback-relevant playlist revision changes. Reads are idempotent and use stable ETags. WebSockets carry only `manifest.changed`; players periodically reconcile as a fallback.
+
+Android Room stores pending, ready, active, failed, and superseded manifests plus cache metadata. A pending manifest activates only after every required file is size-checked, SHA-256 verified, and atomically renamed. The prior active manifest remains untouched during preparation, and startup loads verified active content before attempting the network.
+
+Playback is one fullscreen zone with sequential looping, image timers, Media3 video, fit/audio/offset settings, bounded failure skipping, and safe fallback states. Multi-zone layouts, compositions, schedules, and advanced commands remain deferred.
+
+## Milestone 5 scheduling
+
+Screen groups are many-to-many labels used only for schedule targeting. Schedules retain explicit calendar fields and IANA timezones. `internal/scheduling` is the server authority for half-open interval evaluation and deterministic precedence: priority, direct-screen specificity, later effective start, then stable ID. The Android `ScheduleEngine` implements the same transport semantics for offline evaluation.
+
+Player manifest v2 contains only schedules relevant to the authenticated screen, its direct fallback, required playlists and variants, server time, and preparation policy. Recurring rules use calendar calculations rather than fixed-duration days. A repeated local time uses the earlier occurrence for a start and later occurrence for an end; a nonexistent local time advances to the first valid time after the DST gap.

@@ -1,0 +1,214 @@
+package httpapi
+
+import (
+	"errors"
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
+	"github.com/tilecast/tilecast/apps/server/internal/auth"
+	"github.com/tilecast/tilecast/apps/server/internal/scheduling"
+	"net/http"
+	"strconv"
+	"time"
+)
+
+type groupBody struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+func (s *server) listScreenGroups(w http.ResponseWriter, r *http.Request) {
+	p, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	z, _ := strconv.Atoi(r.URL.Query().Get("pageSize"))
+	x, e := s.scheduling.ListGroups(r.Context(), r.URL.Query().Get("search"), p, z)
+	s.scheduleResponse(w, r, x, e, http.StatusOK)
+}
+func (s *server) getScreenGroup(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	x, e := s.scheduling.GetGroup(r.Context(), id)
+	s.scheduleResponse(w, r, x, e, http.StatusOK)
+}
+func (s *server) createScreenGroup(w http.ResponseWriter, r *http.Request) {
+	var b groupBody
+	if e := decodeJSON(w, r, &b); e != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", e.Error())
+		return
+	}
+	u := r.Context().Value(sessionContextKey).(auth.Session).User
+	x, e := s.scheduling.CreateGroup(r.Context(), u.ID, b.Name, b.Description)
+	s.scheduleResponse(w, r, x, e, http.StatusCreated)
+}
+func (s *server) updateScreenGroup(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	var b groupBody
+	if e := decodeJSON(w, r, &b); e != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", e.Error())
+		return
+	}
+	u := r.Context().Value(sessionContextKey).(auth.Session).User
+	x, e := s.scheduling.UpdateGroup(r.Context(), id, u.ID, b.Name, b.Description)
+	s.scheduleResponse(w, r, x, e, http.StatusOK)
+}
+func (s *server) deleteScreenGroup(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	u := r.Context().Value(sessionContextKey).(auth.Session).User
+	e := s.scheduling.DeleteGroup(r.Context(), id, u.ID)
+	if e != nil {
+		s.writeScheduleError(w, r, e)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+func (s *server) addScreenGroupMember(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	var b struct {
+		ScreenID uuid.UUID `json:"screenId"`
+	}
+	if e := decodeJSON(w, r, &b); e != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", e.Error())
+		return
+	}
+	u := r.Context().Value(sessionContextKey).(auth.Session).User
+	e := s.scheduling.AddScreen(r.Context(), id, b.ScreenID, u.ID)
+	if e != nil {
+		s.writeScheduleError(w, r, e)
+		return
+	}
+	x, e := s.scheduling.GetGroup(r.Context(), id)
+	s.scheduleResponse(w, r, x, e, http.StatusOK)
+}
+func (s *server) removeScreenGroupMember(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	screen, e := uuid.Parse(chi.URLParam(r, "screenId"))
+	if e != nil {
+		writeError(w, 404, "screen_not_found", "Screen was not found.")
+		return
+	}
+	u := r.Context().Value(sessionContextKey).(auth.Session).User
+	e = s.scheduling.RemoveScreen(r.Context(), id, screen, u.ID)
+	if e != nil {
+		s.writeScheduleError(w, r, e)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+func (s *server) listSchedules(w http.ResponseWriter, r *http.Request) {
+	p, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	z, _ := strconv.Atoi(r.URL.Query().Get("pageSize"))
+	x, e := s.scheduling.List(r.Context(), r.URL.Query().Get("search"), p, z)
+	s.scheduleResponse(w, r, x, e, http.StatusOK)
+}
+func (s *server) getSchedule(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	x, e := s.scheduling.Get(r.Context(), id)
+	s.scheduleResponse(w, r, x, e, http.StatusOK)
+}
+func (s *server) createSchedule(w http.ResponseWriter, r *http.Request) {
+	var b scheduling.Input
+	if e := decodeJSON(w, r, &b); e != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", e.Error())
+		return
+	}
+	u := r.Context().Value(sessionContextKey).(auth.Session).User
+	x, e := s.scheduling.Create(r.Context(), u.ID, b)
+	s.scheduleResponse(w, r, x, e, http.StatusCreated)
+}
+func (s *server) updateSchedule(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	var b scheduling.Input
+	if e := decodeJSON(w, r, &b); e != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", e.Error())
+		return
+	}
+	u := r.Context().Value(sessionContextKey).(auth.Session).User
+	x, e := s.scheduling.Update(r.Context(), id, u.ID, b)
+	s.scheduleResponse(w, r, x, e, http.StatusOK)
+}
+func (s *server) deleteSchedule(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	u := r.Context().Value(sessionContextKey).(auth.Session).User
+	e := s.scheduling.Delete(r.Context(), id, u.ID)
+	if e != nil {
+		s.writeScheduleError(w, r, e)
+		return
+	}
+	w.WriteHeader(204)
+}
+func (s *server) enableSchedule(w http.ResponseWriter, r *http.Request) {
+	s.setScheduleEnabled(w, r, true)
+}
+func (s *server) disableSchedule(w http.ResponseWriter, r *http.Request) {
+	s.setScheduleEnabled(w, r, false)
+}
+func (s *server) setScheduleEnabled(w http.ResponseWriter, r *http.Request, v bool) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	u := r.Context().Value(sessionContextKey).(auth.Session).User
+	x, e := s.scheduling.SetEnabled(r.Context(), id, u.ID, v)
+	s.scheduleResponse(w, r, x, e, http.StatusOK)
+}
+func (s *server) previewSchedule(w http.ResponseWriter, r *http.Request) {
+	var b struct {
+		ScreenID  uuid.UUID         `json:"screenId"`
+		Timestamp *time.Time        `json:"timestamp"`
+		Proposed  *scheduling.Input `json:"proposedSchedule"`
+	}
+	if e := decodeJSON(w, r, &b); e != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", e.Error())
+		return
+	}
+	at := time.Now()
+	if b.Timestamp != nil {
+		at = *b.Timestamp
+	}
+	x, e := s.scheduling.Preview(r.Context(), b.ScreenID, at, b.Proposed)
+	s.scheduleResponse(w, r, x, e, http.StatusOK)
+}
+func (s *server) scheduleResponse(w http.ResponseWriter, r *http.Request, x any, e error, status int) {
+	if e != nil {
+		s.writeScheduleError(w, r, e)
+		return
+	}
+	writeJSON(w, status, map[string]any{"data": x})
+}
+func (s *server) writeScheduleError(w http.ResponseWriter, r *http.Request, e error) {
+	switch {
+	case errors.Is(e, scheduling.ErrNotFound):
+		writeError(w, 404, "schedule_not_found", "The requested scheduling resource was not found.")
+	case errors.Is(e, scheduling.ErrConflict):
+		writeError(w, 409, "schedule_conflict", e.Error())
+	case errors.Is(e, scheduling.ErrLimit):
+		writeError(w, 422, "schedule_limit_exceeded", e.Error())
+	default:
+		if len(e.Error()) < 240 {
+			writeError(w, 422, "schedule_validation_failed", e.Error())
+		} else {
+			s.internalError(w, r, e)
+		}
+	}
+}

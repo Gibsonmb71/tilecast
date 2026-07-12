@@ -26,6 +26,14 @@ func NewService(db *pgxpool.Pool, presence *PresenceHub, publicURL string) *Serv
 	return &Service{db: db, presence: presence, publicURL: strings.TrimRight(publicURL, "/"), now: time.Now}
 }
 
+func (s *Service) RegisterPresenceWithNotifier(screenID uuid.UUID, closeConnection func(), notify func(map[string]any) error) func() {
+	return s.presence.ConnectWithNotifier(screenID, closeConnection, notify)
+}
+
+func (s *Service) ManifestChanged(screenID uuid.UUID, version int64) {
+	s.presence.Notify(screenID, map[string]any{"type": "manifest.changed", "manifestVersion": version})
+}
+
 func (s *Service) Identity(ctx context.Context) (Identity, error) {
 	var identity Identity
 	err := s.db.QueryRow(ctx, `SELECT installation_id,organization_name,pairing_enabled FROM organization_settings WHERE singleton=TRUE`).Scan(

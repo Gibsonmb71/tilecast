@@ -7,6 +7,13 @@ import {
   ScreensPage,
 } from "./pages/ScreensPage";
 import { ContentPage } from "./pages/ContentPage";
+import { PlaylistEditorPage, PlaylistsPage } from "./pages/PlaylistsPage";
+import {
+  GroupsPage,
+  GroupDetailPage,
+  SchedulesPage,
+  ScheduleEditorPage,
+} from "./pages/SchedulesPage";
 
 export function App() {
   return (
@@ -23,19 +30,18 @@ export function App() {
           element={<PairScreenPage />}
         />
         <Route path="screens/:id" element={<ScreenDetailPage />} />
+        <Route path="groups" element={<GroupsPage />} />
+        <Route path="groups/:id" element={<GroupDetailPage />} />
         <Route path="content" element={<ContentPage />} />
-        <Route
-          path="playlists"
-          element={<PlannedPage feature="Playlists" milestone={4} />}
-        />
+        <Route path="playlists" element={<PlaylistsPage />} />
+        <Route path="playlists/:id" element={<PlaylistEditorPage />} />
         <Route
           path="layouts"
           element={<PlannedPage feature="Layouts" milestone={5} />}
         />
-        <Route
-          path="schedules"
-          element={<PlannedPage feature="Schedules" milestone={8} />}
-        />
+        <Route path="schedules" element={<SchedulesPage />} />
+        <Route path="schedules/new" element={<ScheduleEditorPage />} />
+        <Route path="schedules/:id" element={<ScheduleEditorPage />} />
         <Route
           path="activity"
           element={<PlannedPage feature="Activity reports" milestone={9} />}

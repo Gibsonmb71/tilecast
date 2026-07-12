@@ -1,0 +1,78 @@
+package scheduling
+
+import (
+	"encoding/json"
+	"github.com/google/uuid"
+	"os"
+	"testing"
+	"time"
+)
+
+func p[T any](v T) *T { return &v }
+func TestPrecedenceAndHalfOpen(t *testing.T) {
+	at := time.Date(2026, 7, 12, 16, 0, 0, 0, time.UTC)
+	a := Schedule{ID: uuid.MustParse("00000000-0000-0000-0000-000000000002"), PlaylistID: uuid.New(), Type: OneTime, Timezone: "UTC", Priority: 100, Specificity: 0, Enabled: true, OneTimeStart: p(at.Add(-time.Hour)), OneTimeEnd: p(at.Add(time.Hour))}
+	b := a
+	b.ID = uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	b.Specificity = 1
+	if got := Resolve(at, []Schedule{a, b}).Winner; got == nil || got.Schedule.ID != b.ID {
+		t.Fatal("screen target did not win")
+	}
+	if Resolve(*b.OneTimeEnd, []Schedule{b}).Winner != nil {
+		t.Fatal("end must be exclusive")
+	}
+}
+func TestSharedParityFixtures(t *testing.T) {
+	raw, err := os.ReadFile("../../../../packages/manifest-schema/schedule-fixtures.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixtures []struct {
+		Name               string     `json:"name"`
+		Now                time.Time  `json:"now"`
+		Schedules          []Schedule `json:"schedules"`
+		ExpectedScheduleID string     `json:"expectedScheduleId"`
+		ExpectedPlaylistID string     `json:"expectedPlaylistId"`
+		ExpectedSource     string     `json:"expectedSource"`
+	}
+	if err = json.Unmarshal(raw, &fixtures); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range fixtures {
+		t.Run(f.Name, func(t *testing.T) {
+			r := Resolve(f.Now, f.Schedules)
+			schedule, playlist, source := "", "fallback", "direct_fallback"
+			if r.Winner != nil {
+				schedule = r.Winner.Schedule.ID.String()
+				playlist = r.Winner.Schedule.PlaylistID.String()
+				source = "schedule"
+			}
+			if schedule != f.ExpectedScheduleID || playlist != f.ExpectedPlaylistID || source != f.ExpectedSource {
+				t.Fatalf("got %s %s %s", schedule, playlist, source)
+			}
+		})
+	}
+}
+func TestOvernightAndDST(t *testing.T) {
+	s := Schedule{ID: uuid.New(), PlaylistID: uuid.New(), Type: Weekly, Timezone: "America/New_York", Enabled: true, DailyStart: p("22:00"), DailyEnd: p("02:00"), DaysOfWeek: []int{5}}
+	at := time.Date(2026, 7, 11, 5, 0, 0, 0, time.UTC)
+	if Resolve(at, []Schedule{s}).Winner == nil {
+		t.Fatal("Friday overnight must remain active Saturday")
+	}
+	spring := s
+	spring.DaysOfWeek = []int{0}
+	spring.DailyStart = p("02:30")
+	spring.DailyEnd = p("04:00")
+	r := Resolve(time.Date(2026, 3, 8, 7, 15, 0, 0, time.UTC), []Schedule{spring})
+	if r.Winner == nil || r.Winner.Start != time.Date(2026, 3, 8, 7, 0, 0, 0, time.UTC) {
+		t.Fatalf("nonexistent start policy: %#v", r.Winner)
+	}
+	fall := s
+	fall.DaysOfWeek = []int{0}
+	fall.DailyStart = p("01:30")
+	fall.DailyEnd = p("01:45")
+	r = Resolve(time.Date(2026, 11, 1, 6, 35, 0, 0, time.UTC), []Schedule{fall})
+	if r.Winner == nil || r.Winner.Start != time.Date(2026, 11, 1, 5, 30, 0, 0, time.UTC) || r.Winner.End != time.Date(2026, 11, 1, 6, 45, 0, 0, time.UTC) {
+		t.Fatalf("ambiguous time policy: %#v", r.Winner)
+	}
+}

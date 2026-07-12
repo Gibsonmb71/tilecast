@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tilecast.org/schemas/player-manifest-v2.json",
+  "title": "Tilecast scheduled single-zone player manifest v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "manifestVersion",
+    "screenId",
+    "generatedAt",
+    "serverTime",
+    "mode",
+    "playlists",
+    "schedules",
+    "assets",
+    "prefetchHorizonDays",
+    "activationGraceSeconds"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "manifestVersion": { "type": "integer", "minimum": 1 },
+    "screenId": { "type": "string", "format": "uuid" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "serverTime": { "type": "string", "format": "date-time" },
+    "mode": { "const": "single-zone" },
+    "directFallbackPlaylist": { "$ref": "#/$defs/playlist" },
+    "playlists": { "type": "array", "items": { "$ref": "#/$defs/playlist" } },
+    "schedules": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": { "$ref": "#/$defs/schedule" }
+    },
+    "assets": {
+      "type": "array",
+      "items": { "$ref": "schema-v1.json#/$defs/asset" }
+    },
+    "prefetchHorizonDays": { "type": "integer", "minimum": 1, "maximum": 365 },
+    "activationGraceSeconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3600
+    }
+  },
+  "$defs": {
+    "playlist": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "revision", "name", "items"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "name": { "type": "string" },
+        "items": {
+          "type": "array",
+          "items": { "$ref": "schema-v1.json#/$defs/item" }
+        }
+      }
+    },
+    "schedule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "playlistId",
+        "type",
+        "timezone",
+        "priority",
+        "specificity"
+      ],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "playlistId": { "type": "string", "format": "uuid" },
+        "type": { "enum": ["one_time", "weekly"] },
+        "timezone": { "type": "string", "minLength": 1 },
+        "priority": { "type": "integer", "minimum": -999, "maximum": 999 },
+        "specificity": { "enum": [0, 1] },
+        "startDate": { "type": "string", "format": "date" },
+        "endDate": { "type": "string", "format": "date" },
+        "oneTimeStart": { "type": "string", "format": "date-time" },
+        "oneTimeEnd": { "type": "string", "format": "date-time" },
+        "dailyStart": {
+          "type": "string",
+          "pattern": "^[0-2][0-9]:[0-5][0-9]$"
+        },
+        "dailyEnd": { "type": "string", "pattern": "^[0-2][0-9]:[0-5][0-9]$" },
+        "daysOfWeek": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 0, "maximum": 6 },
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}

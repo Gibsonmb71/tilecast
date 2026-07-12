@@ -12,8 +12,9 @@ type PresenceHub struct {
 }
 
 type presenceConnection struct {
-	token uuid.UUID
-	close func()
+	token  uuid.UUID
+	close  func()
+	notify func(map[string]any) error
 }
 
 func NewPresenceHub() *PresenceHub {
@@ -21,10 +22,14 @@ func NewPresenceHub() *PresenceHub {
 }
 
 func (h *PresenceHub) Connect(screenID uuid.UUID, closeConnection func()) func() {
+	return h.ConnectWithNotifier(screenID, closeConnection, nil)
+}
+
+func (h *PresenceHub) ConnectWithNotifier(screenID uuid.UUID, closeConnection func(), notify func(map[string]any) error) func() {
 	h.mu.Lock()
 	previous := h.connections[screenID]
 	token := uuid.New()
-	h.connections[screenID] = presenceConnection{token: token, close: closeConnection}
+	h.connections[screenID] = presenceConnection{token: token, close: closeConnection, notify: notify}
 	h.mu.Unlock()
 	if previous.close != nil {
 		previous.close()
@@ -36,6 +41,13 @@ func (h *PresenceHub) Connect(screenID uuid.UUID, closeConnection func()) func()
 		}
 		h.mu.Unlock()
 	}
+}
+
+func (h *PresenceHub) Notify(screenID uuid.UUID, message map[string]any) bool {
+	h.mu.RLock()
+	notify := h.connections[screenID].notify
+	h.mu.RUnlock()
+	return notify != nil && notify(message) == nil
 }
 
 func (h *PresenceHub) Connected(screenID uuid.UUID) bool {
