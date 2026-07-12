@@ -1,6 +1,156 @@
 * {
   box-sizing: border-box;
 }
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --tc-ink: #f1f5f3;
+  --tc-ink-muted: #b5c5bf;
+  --tc-canvas: #101814;
+  --tc-surface: #1c3029;
+  --tc-surface-muted: #243a32;
+  --tc-border: #3b5148;
+  --tc-border-strong: #60776d;
+  --tc-brand: #78bfa6;
+  --tc-brand-hover: #91cfb9;
+  --tc-brand-soft: #26463b;
+  --tc-danger: #e78a84;
+  --tc-warning: #e9cf79;
+}
+@media (prefers-color-scheme: dark) {
+  html[data-theme="system"] {
+    color-scheme: dark;
+    --tc-ink: #f1f5f3;
+    --tc-ink-muted: #b5c5bf;
+    --tc-canvas: #101814;
+    --tc-surface: #1c3029;
+    --tc-surface-muted: #243a32;
+    --tc-border: #3b5148;
+    --tc-border-strong: #60776d;
+    --tc-brand: #78bfa6;
+    --tc-brand-hover: #91cfb9;
+    --tc-brand-soft: #26463b;
+  }
+}
+.settings-layout {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 24px;
+}
+.settings-nav {
+  display: grid;
+  align-content: start;
+  gap: 3px;
+  position: sticky;
+  top: 72px;
+}
+.settings-nav button {
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 9px 11px;
+  border-left: 2px solid transparent;
+}
+.settings-nav button.active {
+  color: var(--text);
+  border-left-color: var(--accent);
+  background: var(--surface);
+}
+.settings-form {
+  display: grid;
+  border-top: 1px solid var(--border);
+}
+.setting-row {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(180px, 320px);
+  gap: 24px;
+  align-items: center;
+  padding: 15px 0;
+  border-bottom: 1px solid var(--border);
+}
+.setting-row > span {
+  display: grid;
+  gap: 4px;
+}
+.setting-row small {
+  color: var(--muted);
+}
+.setting-row em {
+  font-size: 12px;
+  color: var(--warning);
+  font-style: normal;
+}
+.setting-row input:not([type="checkbox"]),
+.setting-row select {
+  width: 100%;
+}
+.color-input {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.color-input input {
+  width: 52px;
+  height: 38px;
+}
+.settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 18px 0;
+}
+.system-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.system-settings-grid div {
+  padding: 12px;
+  border: 1px solid var(--border);
+  display: grid;
+  gap: 5px;
+}
+.system-settings-grid dt {
+  color: var(--muted);
+}
+.import-export {
+  display: grid;
+  gap: 16px;
+  max-width: 700px;
+}
+.import-export label {
+  display: grid;
+  gap: 7px;
+  padding: 16px;
+  border: 1px solid var(--border);
+}
+html[data-density="compact"] .workspace__content {
+  padding: 18px;
+}
+html[data-density="compact"] .setting-row {
+  padding: 9px 0;
+}
+html[data-reduced-motion="true"] *,
+html[data-reduced-motion="true"] *::before,
+html[data-reduced-motion="true"] *::after {
+  animation-duration: 0.01ms !important;
+  transition-duration: 0.01ms !important;
+}
+@media (max-width: 850px) {
+  .settings-layout {
+    grid-template-columns: 1fr;
+  }
+  .settings-nav {
+    position: static;
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .setting-row {
+    grid-template-columns: 1fr;
+  }
+  .system-settings-grid {
+    grid-template-columns: 1fr;
+  }
+}
 .emergency-panel {
   margin-bottom: 18px;
 }
@@ -1120,6 +1270,47 @@ a {
   .timeline-name {
     min-width: calc(100% - 145px);
   }
+}
+.policy-editor {
+  margin: 20px 0;
+}
+.branding-preview {
+  min-height: 150px;
+  padding: 24px;
+  margin-bottom: 18px;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  gap: 8px;
+  border: 1px solid var(--tc-border);
+}
+.policy-editor > label {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.policy-fields {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+.policy-field {
+  padding: 11px;
+  border: 1px solid var(--border);
+  display: grid;
+  gap: 8px;
+}
+.policy-field > label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.policy-field .setting-row {
+  border: 0;
+  padding: 0;
+}
+.policy-field > small {
+  color: var(--muted);
 }
 .website-editor {
   width: min(760px, calc(100vw - 40px));

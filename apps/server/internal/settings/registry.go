@@ -1,0 +1,213 @@
+package settings
+
+import (
+	"errors"
+	"fmt"
+	"net/mail"
+	"regexp"
+	"strings"
+	"time"
+)
+
+const SchemaVersion = 1
+
+type Scope string
+
+const (
+	ScopeOrganization Scope = "organization"
+	ScopePolicy       Scope = "policy"
+	ScopePreference   Scope = "preference"
+)
+
+type Definition struct {
+	Key, Category, Type, Title, Description, Documentation string
+	Default                                                any
+	Min, Max                                               *float64
+	Allowed                                                []string
+	Scope                                                  Scope
+	Sensitive, RestartRequired, Immediate, FutureOnly      bool
+}
+
+func number(v float64) *float64 { return &v }
+
+var definitions = []Definition{
+	{Key: "organization.name", Category: "general", Type: "string", Default: "Tilecast", Scope: ScopeOrganization, Title: "Organization name", Description: "Name shown throughout Tilecast Studio"},
+	{Key: "organization.short_name", Category: "general", Type: "string", Default: "", Scope: ScopeOrganization, Title: "Short name", Description: "Compact organization name", Documentation: "docs/settings.md"},
+	{Key: "organization.timezone", Category: "general", Type: "timezone", Default: "UTC", Scope: ScopeOrganization, Title: "Default timezone"},
+	{Key: "organization.locale", Category: "general", Type: "enum", Default: "en-US", Allowed: []string{"en-US", "en-GB", "fr-FR", "de-DE", "es-ES"}, Scope: ScopeOrganization, Title: "Locale"},
+	{Key: "organization.first_day_of_week", Category: "general", Type: "enum", Default: "sunday", Allowed: []string{"sunday", "monday"}, Scope: ScopeOrganization, Title: "First day of week"},
+	{Key: "organization.date_format", Category: "general", Type: "enum", Default: "locale", Allowed: []string{"locale", "yyyy-MM-dd", "MM/dd/yyyy", "dd/MM/yyyy"}, Scope: ScopeOrganization, Title: "Date format"},
+	{Key: "organization.time_format", Category: "general", Type: "enum", Default: "locale", Allowed: []string{"locale", "12-hour", "24-hour"}, Scope: ScopeOrganization, Title: "Time format"},
+	{Key: "organization.support_name", Category: "general", Type: "string", Default: "", Scope: ScopeOrganization, Title: "Support contact"},
+	{Key: "organization.support_email", Category: "general", Type: "email", Default: "", Scope: ScopeOrganization, Title: "Support email"},
+	{Key: "organization.support_message", Category: "general", Type: "string", Default: "", Scope: ScopeOrganization, Title: "Internal support message"},
+	{Key: "branding.logo_asset_id", Category: "branding", Type: "uuid_or_empty", Default: "", Scope: ScopeOrganization, Title: "Logo"},
+	{Key: "branding.icon_asset_id", Category: "branding", Type: "uuid_or_empty", Default: "", Scope: ScopeOrganization, Title: "Square icon"},
+	{Key: "branding.primary_color", Category: "branding", Type: "color", Default: "#78BFA6", Scope: ScopeOrganization, Title: "Primary color", Immediate: true},
+	{Key: "branding.player_background_color", Category: "branding", Type: "color", Default: "#13231E", Scope: ScopeOrganization, Title: "Player background", Immediate: true},
+	{Key: "branding.player_text_color", Category: "branding", Type: "color", Default: "#FFFFFF", Scope: ScopeOrganization, Title: "Player text", Immediate: true},
+	{Key: "branding.no_content_title", Category: "branding", Type: "string", Default: "No content assigned", Scope: ScopeOrganization, Title: "No-content title"},
+	{Key: "branding.no_content_message", Category: "branding", Type: "string", Default: "This screen is ready for content.", Scope: ScopeOrganization, Title: "No-content message"},
+	{Key: "branding.disabled_title", Category: "branding", Type: "string", Default: "Playback disabled", Scope: ScopeOrganization, Title: "Disabled title"},
+	{Key: "branding.disabled_message", Category: "branding", Type: "string", Default: "This screen remains connected to Tilecast Studio.", Scope: ScopeOrganization, Title: "Disabled message"},
+	{Key: "branding.footer_text", Category: "branding", Type: "string", Default: "", Scope: ScopeOrganization, Title: "Footer text"},
+	{Key: "player.playback.default_fit_mode", Category: "playback", Type: "enum", Default: "contain", Allowed: []string{"contain", "cover", "stretch"}, Scope: ScopePolicy, Title: "Default fit mode"},
+	{Key: "player.playback.default_volume", Category: "playback", Type: "float", Default: 0.5, Min: number(0), Max: number(1), Scope: ScopePolicy, Title: "Default volume", Immediate: true},
+	{Key: "player.playback.default_image_duration_seconds", Category: "playback", Type: "int", Default: 10.0, Min: number(1), Max: number(86400), Scope: ScopeOrganization, Title: "Default image duration"},
+	{Key: "player.playback.default_transition", Category: "playback", Type: "enum", Default: "none", Allowed: []string{"none", "fade"}, Scope: ScopeOrganization, Title: "Default transition"},
+	{Key: "player.playback.default_audio_enabled", Category: "playback", Type: "bool", Default: true, Scope: ScopeOrganization, Title: "Default audio enabled"},
+	{Key: "player.playback.resume_after_restart", Category: "playback", Type: "bool", Default: true, Scope: ScopeOrganization, Title: "Resume after restart"},
+	{Key: "player.cache.max_bytes", Category: "playback", Type: "int64", Default: 8589934592.0, Min: number(268435456), Max: number(1099511627776), Scope: ScopePolicy, Title: "Maximum cache bytes"},
+	{Key: "player.cache.minimum_free_bytes", Category: "playback", Type: "int64", Default: 1073741824.0, Min: number(134217728), Max: number(1099511627776), Scope: ScopePolicy, Title: "Minimum free bytes"},
+	{Key: "player.download.concurrent_limit", Category: "playback", Type: "int", Default: 2.0, Min: number(1), Max: number(8), Scope: ScopePolicy, Title: "Concurrent downloads"},
+	{Key: "player.download.automatic_threshold_bytes", Category: "playback", Type: "int64", Default: 268435456.0, Min: number(1048576), Max: number(10737418240), Scope: ScopePolicy, Title: "Automatic delivery threshold"},
+	{Key: "player.sync.manifest_seconds", Category: "playback", Type: "int", Default: 300.0, Min: number(60), Max: number(86400), Scope: ScopePolicy, Title: "Manifest reconciliation interval", Immediate: true},
+	{Key: "player.sync.status_seconds", Category: "playback", Type: "int", Default: 60.0, Min: number(15), Max: number(3600), Scope: ScopePolicy, Title: "Status report interval", Immediate: true},
+	{Key: "player.sync.website_status_throttle_seconds", Category: "playback", Type: "int", Default: 30.0, Min: number(15), Max: number(3600), Scope: ScopeOrganization, Title: "Website status throttle"},
+	{Key: "player.website.timeout_seconds", Category: "websites", Type: "int", Default: 20.0, Min: number(1), Max: number(120), Scope: ScopePolicy, Title: "Website timeout", Immediate: true},
+	{Key: "player.website.cookie_policy", Category: "websites", Type: "enum", Default: "first_party", Allowed: []string{"disabled", "first_party", "first_and_third_party"}, Scope: ScopePolicy, Title: "Website cookie policy"},
+	{Key: "player.website.clear_on_restart", Category: "websites", Type: "bool", Default: false, Scope: ScopePolicy, Title: "Clear website data on restart"},
+	{Key: "player.identify.show_location", Category: "playback", Type: "bool", Default: true, Scope: ScopePolicy, Title: "Show location when identifying"},
+	{Key: "player.diagnostics.level", Category: "playback", Type: "enum", Default: "standard", Allowed: []string{"minimal", "standard", "detailed"}, Scope: ScopePolicy, Title: "Diagnostic reporting"},
+	{Key: "media.upload.max_bytes", Category: "media", Type: "int64", Default: 10737418240.0, Min: number(1048576), Max: number(1099511627776), Scope: ScopeOrganization, Title: "Studio upload limit"},
+	{Key: "media.keep_originals", Category: "media", Type: "bool", Default: true, Scope: ScopeOrganization, Title: "Keep originals", FutureOnly: true},
+	{Key: "media.video.max_width", Category: "media", Type: "int", Default: 1920.0, Min: number(320), Max: number(7680), Scope: ScopeOrganization, Title: "Maximum video width", FutureOnly: true},
+	{Key: "media.video.max_height", Category: "media", Type: "int", Default: 1080.0, Min: number(240), Max: number(4320), Scope: ScopeOrganization, Title: "Maximum video height", FutureOnly: true},
+	{Key: "media.video.max_frame_rate", Category: "media", Type: "float", Default: 60.0, Min: number(1), Max: number(120), Scope: ScopeOrganization, Title: "Maximum frame rate", FutureOnly: true},
+	{Key: "media.video.default_delivery_policy", Category: "media", Type: "enum", Default: "automatic", Allowed: []string{"download", "stream", "automatic"}, Scope: ScopeOrganization, Title: "Default video delivery"},
+	{Key: "media.image.default_fit_mode", Category: "media", Type: "enum", Default: "contain", Allowed: []string{"contain", "cover", "stretch"}, Scope: ScopeOrganization, Title: "Default image fit"},
+	{Key: "media.video.default_fit_mode", Category: "media", Type: "enum", Default: "contain", Allowed: []string{"contain", "cover", "stretch"}, Scope: ScopeOrganization, Title: "Default video fit"},
+	{Key: "media.processing.retry_limit", Category: "media", Type: "int", Default: 3.0, Min: number(0), Max: number(10), Scope: ScopeOrganization, Title: "Processing retry limit", FutureOnly: true},
+	{Key: "media.temporary_upload_retention_hours", Category: "media", Type: "int", Default: 24.0, Min: number(1), Max: number(720), Scope: ScopeOrganization, Title: "Temporary upload retention"},
+	{Key: "media.deleted_retention_days", Category: "media", Type: "int", Default: 30.0, Min: number(1), Max: number(3650), Scope: ScopeOrganization, Title: "Deleted media retention"},
+	{Key: "scheduling.default_priority", Category: "scheduling", Type: "int", Default: 0.0, Min: number(-999), Max: number(999), Scope: ScopeOrganization, Title: "Default priority"},
+	{Key: "scheduling.prefetch_days", Category: "scheduling", Type: "int", Default: 14.0, Min: number(1), Max: number(365), Scope: ScopeOrganization, Title: "Prefetch horizon"},
+	{Key: "scheduling.activation_grace_seconds", Category: "scheduling", Type: "int", Default: 30.0, Min: number(1), Max: number(3600), Scope: ScopeOrganization, Title: "Activation grace"},
+	{Key: "scheduling.clock_skew_warning_seconds", Category: "scheduling", Type: "int", Default: 300.0, Min: number(30), Max: number(86400), Scope: ScopeOrganization, Title: "Clock-skew warning"},
+	{Key: "scheduling.default_one_time_duration_minutes", Category: "scheduling", Type: "int", Default: 60.0, Min: number(1), Max: number(10080), Scope: ScopeOrganization, Title: "Default one-time duration"},
+	{Key: "scheduling.confirm_overnight", Category: "scheduling", Type: "bool", Default: true, Scope: ScopeOrganization, Title: "Confirm overnight schedules"},
+	{Key: "website.default_javascript", Category: "websites", Type: "bool", Default: true, Scope: ScopeOrganization, Title: "JavaScript default"},
+	{Key: "website.default_dom_storage", Category: "websites", Type: "bool", Default: true, Scope: ScopeOrganization, Title: "DOM storage default"},
+	{Key: "website.default_timeout_seconds", Category: "websites", Type: "int", Default: 20.0, Min: number(1), Max: number(120), Scope: ScopeOrganization, Title: "Website timeout default"},
+	{Key: "website.default_cookie_policy", Category: "websites", Type: "enum", Default: "first_party", Allowed: []string{"disabled", "first_party", "first_and_third_party"}, Scope: ScopeOrganization, Title: "Default cookie policy"},
+	{Key: "website.default_reload_policy", Category: "websites", Type: "enum", Default: "on_each_activation", Allowed: []string{"load_once", "on_each_activation", "interval"}, Scope: ScopeOrganization, Title: "Default reload policy"},
+	{Key: "website.minimum_refresh_seconds", Category: "websites", Type: "int", Default: 30.0, Min: number(30), Max: number(86400), Scope: ScopeOrganization, Title: "Minimum refresh interval"},
+	{Key: "website.default_failure_behavior", Category: "websites", Type: "enum", Default: "placeholder", Allowed: []string{"last_success", "placeholder", "fallback_image", "skip"}, Scope: ScopeOrganization, Title: "Default failure behavior"},
+	{Key: "website.default_zoom_percent", Category: "websites", Type: "int", Default: 100.0, Min: number(50), Max: number(200), Scope: ScopeOrganization, Title: "Default zoom"},
+	{Key: "website.default_fallback_image_id", Category: "websites", Type: "uuid_or_empty", Default: "", Scope: ScopeOrganization, Title: "Default fallback image"},
+	{Key: "website.clear_data_on_delete", Category: "websites", Type: "bool", Default: false, Scope: ScopeOrganization, Title: "Clear website data after deletion"},
+	{Key: "website.private_http_enabled", Category: "websites", Type: "bool", Default: false, Scope: ScopeOrganization, Title: "Private HTTP enabled"},
+	{Key: "emergency.default_duration_minutes", Category: "emergency", Type: "int", Default: 60.0, Min: number(1), Max: number(1440), Scope: ScopeOrganization, Title: "Default emergency duration"},
+	{Key: "emergency.maximum_duration_minutes", Category: "emergency", Type: "int", Default: 1440.0, Min: number(1), Max: number(10080), Scope: ScopeOrganization, Title: "Maximum emergency duration"},
+	{Key: "commands.default_expiry_minutes", Category: "emergency", Type: "int", Default: 10.0, Min: number(1), Max: number(1440), Scope: ScopeOrganization, Title: "Command expiration"},
+	{Key: "commands.identify_duration_seconds", Category: "emergency", Type: "int", Default: 30.0, Min: number(10), Max: number(120), Scope: ScopeOrganization, Title: "Identify duration"},
+	{Key: "emergency.confirmation_required", Category: "emergency", Type: "bool", Default: true, Scope: ScopeOrganization, Title: "Require emergency confirmation"},
+	{Key: "emergency.reauthentication_required", Category: "emergency", Type: "bool", Default: false, Scope: ScopeOrganization, Title: "Require password confirmation"},
+	{Key: "retention.command_history_days", Category: "retention", Type: "int", Default: 30.0, Min: number(1), Max: number(3650), Scope: ScopeOrganization, Title: "Command history retention"},
+	{Key: "retention.audit_days", Category: "retention", Type: "int", Default: 365.0, Min: number(30), Max: number(3650), Scope: ScopeOrganization, Title: "Audit retention"},
+	{Key: "retention.player_status_days", Category: "retention", Type: "int", Default: 30.0, Min: number(1), Max: number(3650), Scope: ScopeOrganization, Title: "Player status retention"},
+	{Key: "retention.expired_pairing_days", Category: "retention", Type: "int", Default: 30.0, Min: number(1), Max: number(3650), Scope: ScopeOrganization, Title: "Expired pairing retention"},
+	{Key: "retention.failed_upload_days", Category: "retention", Type: "int", Default: 7.0, Min: number(1), Max: number(3650), Scope: ScopeOrganization, Title: "Failed upload retention"},
+	{Key: "retention.deleted_media_metadata_days", Category: "retention", Type: "int", Default: 90.0, Min: number(1), Max: number(3650), Scope: ScopeOrganization, Title: "Deleted media metadata retention"},
+	{Key: "retention.emergency_history_days", Category: "retention", Type: "int", Default: 365.0, Min: number(1), Max: number(3650), Scope: ScopeOrganization, Title: "Emergency history retention"},
+	{Key: "retention.max_diagnostic_events_per_screen", Category: "retention", Type: "int", Default: 1000.0, Min: number(10), Max: number(100000), Scope: ScopeOrganization, Title: "Diagnostic event limit"},
+	{Key: "preference.appearance", Category: "interface", Type: "enum", Default: "system", Allowed: []string{"system", "light", "dark"}, Scope: ScopePreference, Title: "Appearance", Immediate: true},
+	{Key: "preference.density", Category: "interface", Type: "enum", Default: "comfortable", Allowed: []string{"comfortable", "compact"}, Scope: ScopePreference, Title: "Interface density", Immediate: true},
+	{Key: "preference.reduced_motion", Category: "interface", Type: "bool", Default: false, Scope: ScopePreference, Title: "Reduced motion", Immediate: true},
+	{Key: "preference.time_format", Category: "interface", Type: "enum", Default: "organization", Allowed: []string{"organization", "12-hour", "24-hour"}, Scope: ScopePreference, Title: "Time format"},
+	{Key: "preference.content_view", Category: "interface", Type: "enum", Default: "grid", Allowed: []string{"grid", "list"}, Scope: ScopePreference, Title: "Default content view"},
+	{Key: "preference.screens_view", Category: "interface", Type: "enum", Default: "list", Allowed: []string{"list", "groups"}, Scope: ScopePreference, Title: "Default screens view"},
+	{Key: "preference.table_page_size", Category: "interface", Type: "int", Default: 25.0, Allowed: []string{"10", "25", "50", "100"}, Scope: ScopePreference, Title: "Table page size"},
+	{Key: "preference.remember_filters", Category: "interface", Type: "bool", Default: true, Scope: ScopePreference, Title: "Remember filters"},
+	{Key: "preference.hide_completed_uploads_minutes", Category: "interface", Type: "int", Default: 60.0, Min: number(0), Max: number(10080), Scope: ScopePreference, Title: "Hide completed uploads after"},
+}
+
+var byKey = func() map[string]Definition {
+	m := map[string]Definition{}
+	for _, d := range definitions {
+		m[d.Key] = d
+	}
+	return m
+}()
+var colorPattern = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
+
+func Definitions() []Definition { return append([]Definition(nil), definitions...) }
+func Defaults(scope Scope) map[string]any {
+	out := map[string]any{}
+	for _, d := range definitions {
+		if d.Scope == scope || scope == ScopePolicy && d.Scope == ScopePolicy {
+			out[d.Key] = d.Default
+		}
+	}
+	return out
+}
+func Validate(values map[string]any, scope Scope) (map[string]any, error) {
+	out := map[string]any{}
+	for key, value := range values {
+		d, ok := byKey[key]
+		if !ok {
+			return nil, fmt.Errorf("unknown_setting: %s", key)
+		}
+		if d.Scope != scope && !(scope == ScopeOrganization && d.Scope == ScopePolicy) {
+			return nil, fmt.Errorf("setting_not_allowed_at_scope: %s", key)
+		}
+		normalized, err := validateValue(d, value)
+		if err != nil {
+			return nil, fmt.Errorf("invalid_setting_value: %s: %w", key, err)
+		}
+		out[key] = normalized
+	}
+	return out, nil
+}
+func validateValue(d Definition, value any) (any, error) {
+	switch d.Type {
+	case "bool":
+		if _, ok := value.(bool); !ok {
+			return nil, errors.New("must be boolean")
+		}
+	case "string", "email", "color", "timezone", "uuid_or_empty", "enum":
+		s, ok := value.(string)
+		if !ok || len(s) > 2000 {
+			return nil, errors.New("must be a bounded string")
+		}
+		s = strings.TrimSpace(s)
+		if d.Type == "email" && s != "" {
+			if _, err := mail.ParseAddress(s); err != nil {
+				return nil, errors.New("must be an email address")
+			}
+		}
+		if d.Type == "color" && !colorPattern.MatchString(s) {
+			return nil, errors.New("must be a six-digit hex color")
+		}
+		if d.Type == "timezone" {
+			if _, err := time.LoadLocation(s); err != nil {
+				return nil, errors.New("must be an IANA timezone")
+			}
+		}
+		if d.Type == "enum" && !contains(d.Allowed, s) {
+			return nil, errors.New("is not allowed")
+		}
+		return s, nil
+	case "int", "int64", "float":
+		n, ok := value.(float64)
+		if !ok {
+			return nil, errors.New("must be numeric")
+		}
+		if (d.Type == "int" || d.Type == "int64") && n != float64(int64(n)) {
+			return nil, errors.New("must be an integer")
+		}
+		if d.Min != nil && n < *d.Min || d.Max != nil && n > *d.Max {
+			return nil, errors.New("is outside the allowed range")
+		}
+		return n, nil
+	}
+	return value, nil
+}
+func contains(values []string, value string) bool {
+	for _, candidate := range values {
+		if candidate == value {
+			return true
+		}
+	}
+	return false
+}

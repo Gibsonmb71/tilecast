@@ -154,6 +154,8 @@ export type PlaylistAssignment = {
   lastCommandState?: string;
   lastCommandResult?: string;
   lastCommandCompletedAt?: string;
+  activeConfigRevision?: number;
+  configurationError?: string;
 };
 
 export type PlayerCommand = {
@@ -185,6 +187,63 @@ export type EmergencyTakeover = {
   activeCount: number;
   preparingCount: number;
   failedCount: number;
+};
+
+export type SettingDefinition = {
+  key: string;
+  category: string;
+  type: string;
+  title: string;
+  description?: string;
+  default: unknown;
+  min?: number;
+  max?: number;
+  allowed?: string[];
+  scope: "organization" | "policy" | "preference";
+  sensitive: boolean;
+  restartRequired: boolean;
+  immediate: boolean;
+  futureOnly: boolean;
+};
+export type SettingsDocument = {
+  schemaVersion: number;
+  revision: number;
+  values: Record<string, unknown>;
+  definitions: SettingDefinition[];
+  updatedAt: string;
+};
+export type PolicyDocument = {
+  schemaVersion: number;
+  revision: number;
+  priority?: number;
+  values: Record<string, unknown>;
+  updatedAt?: string;
+};
+export type EffectivePolicy = {
+  values: Record<string, { value: unknown; source: string; sourceId?: string }>;
+  organizationRevision: number;
+  groupRevisions: Record<string, number>;
+  screenRevision: number;
+  configRevision: number;
+  hash: string;
+};
+export type SystemStatus = {
+  tilecastVersion: string;
+  buildCommit: string;
+  buildDate: string;
+  uptimeSeconds: number;
+  goVersion: string;
+  database: {
+    status: string;
+    migrationVersion: string;
+    postgresVersion: string;
+  };
+  media: Record<string, unknown>;
+  activeProcessingJobs: number;
+  pendingCommands: number;
+  connectedScreens: number;
+  serverTimezone: string;
+  deployment: Record<string, unknown>;
 };
 export type ScreenGroup = {
   id: string;

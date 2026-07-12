@@ -113,6 +113,8 @@ type Assignment struct {
 	LastCommandState              *string              `json:"lastCommandState,omitempty"`
 	LastCommandResult             *string              `json:"lastCommandResult,omitempty"`
 	LastCommandCompletedAt        *time.Time           `json:"lastCommandCompletedAt,omitempty"`
+	ActiveConfigRevision          *int64               `json:"activeConfigRevision,omitempty"`
+	ConfigurationError            *string              `json:"configurationError,omitempty"`
 }
 type AssignmentGroup struct {
 	ID   uuid.UUID `json:"id"`
@@ -254,6 +256,8 @@ type PlayerStatus struct {
 	LastCommandState              string     `json:"lastCommandState,omitempty"`
 	LastCommandResult             string     `json:"lastCommandResult,omitempty"`
 	LastCommandCompletedAt        *time.Time `json:"lastCommandCompletedAt,omitempty"`
+	ActiveConfigRevision          *int64     `json:"activeConfigRevision,omitempty"`
+	ConfigurationError            string     `json:"configurationError,omitempty"`
 }
 
 type Notifier interface {

@@ -19,6 +19,7 @@ import (
 	"github.com/tilecast/tilecast/apps/server/internal/media"
 	"github.com/tilecast/tilecast/apps/server/internal/playlists"
 	"github.com/tilecast/tilecast/apps/server/internal/scheduling"
+	"github.com/tilecast/tilecast/apps/server/internal/settings"
 	"github.com/tilecast/tilecast/apps/server/internal/web"
 )
 
@@ -28,6 +29,7 @@ type Dependencies struct {
 	Media         *media.Service
 	Playlists     *playlists.Service
 	Scheduling    *scheduling.Service
+	Settings      *settings.Service
 	DB            *pgxpool.Pool
 	Logger        *slog.Logger
 	CookieName    string
@@ -59,6 +61,8 @@ type server struct {
 	codeLimiter       *rateLimiter
 	operationsLimiter *rateLimiter
 	operations        OperationsConfig
+	settings          *settings.Service
+	startedAt         time.Time
 }
 
 type contextKey string
@@ -81,6 +85,8 @@ func New(deps Dependencies) http.Handler {
 		codeLimiter:       newRateLimiter(30, 10*time.Minute),
 		operationsLimiter: newRateLimiter(60, time.Minute),
 		operations:        deps.Operations,
+		settings:          deps.Settings,
+		startedAt:         time.Now(),
 	}
 	if s.operations.MaxEmergencyDurationHours == 0 {
 		s.operations = OperationsConfig{24, 250, 50, 10, 120, 30}
@@ -110,6 +116,7 @@ func New(deps Dependencies) http.Handler {
 		api.With(s.requireDevice).Head("/player/assets/{assetId}/variants/{variantId}", s.playerAssetVariant)
 		api.With(s.requireDevice).Get("/player/manifest", s.playerManifest)
 		api.With(s.requireDevice).Get("/player/commands", s.playerCommands)
+		api.With(s.requireDevice).Get("/player/config", s.playerConfig)
 		api.With(s.requireDevice).Post("/player/commands/{id}/acknowledge", s.acknowledgePlayerCommand)
 		api.With(s.requireDevice).Post("/player/commands/{id}/result", s.resultPlayerCommand)
 
@@ -121,6 +128,24 @@ func New(deps Dependencies) http.Handler {
 			dashboard.Get("/screen-groups/{id}", s.getScreenGroup)
 			dashboard.Get("/schedules", s.listSchedules)
 			dashboard.Get("/schedules/{id}", s.getSchedule)
+			dashboard.Get("/settings", s.getSettings)
+			dashboard.With(s.requireRoles("owner", "administrator")).Get("/users", s.listUsers)
+			dashboard.Get("/me/preferences", s.getPreferences)
+			dashboard.With(s.requireCSRF).Patch("/me/preferences", s.updatePreferences)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Patch("/settings", s.updateSettings)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/settings/reset", s.resetSettings)
+			dashboard.Get("/screen-groups/{id}/policy", s.getGroupPolicy)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Put("/screen-groups/{id}/policy", s.putGroupPolicy)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Delete("/screen-groups/{id}/policy", s.deleteGroupPolicy)
+			dashboard.Get("/screens/{id}/policy", s.getScreenPolicy)
+			dashboard.Get("/screens/{id}/effective-policy", s.getEffectivePolicy)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Put("/screens/{id}/policy", s.putScreenPolicy)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Delete("/screens/{id}/policy", s.deleteScreenPolicy)
+			dashboard.With(s.requireRoles("owner", "administrator")).Get("/system/status", s.systemStatus)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/system/maintenance/{action}", s.systemMaintenance)
+			dashboard.With(s.requireRoles("owner")).Get("/system/settings/export", s.exportSettings)
+			dashboard.With(s.requireRoles("owner"), s.requireCSRF).Post("/system/settings/import/preview", s.previewSettingsImport)
+			dashboard.With(s.requireRoles("owner"), s.requireCSRF).Post("/system/settings/import/apply", s.applySettingsImport)
 			dashboard.Get("/emergencies", s.listEmergencies)
 			dashboard.Get("/emergencies/{id}", s.getEmergency)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.operationsRateLimit, s.requireCSRF).Post("/emergencies", s.activateEmergency)

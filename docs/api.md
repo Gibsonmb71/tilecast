@@ -109,3 +109,9 @@ Website data clearing is the typed `clear_website_data` persistent player comman
 ## Emergency takeover and commands
 
 Dashboard routes include `GET/POST /emergencies`, `GET /emergencies/{id}`, `POST /emergencies/{id}/cancel`, `GET/POST /screens/{id}/commands`, and command cancellation. Device-authenticated players use `GET /player/commands`, `POST /player/commands/{id}/acknowledge`, and `POST /player/commands/{id}/result`. Commands are typed, bounded, expiring, and scoped to the authenticated screen. The former one-off website clearing route is replaced by `clear_website_data`.
+
+## Settings and configuration
+
+Organization settings use `GET/PATCH /settings` with optimistic revision checking. Preferences use `GET/PATCH /me/preferences`. Group and screen policies have typed GET/PUT/DELETE routes; `/screens/{id}/effective-policy` returns values and administrative sources. Players receive source-free effective values from `/player/config` with ETag support. System status and fixed maintenance actions expose health without secrets. Owner import/export requires preview before apply.
+
+Stable settings errors include `unknown_setting`, `invalid_setting_value`, `setting_not_allowed_at_scope`, `setting_exceeds_hard_limit`, `settings_revision_conflict`, `settings_import_invalid`, `settings_import_version_unsupported`, and `branding_asset_invalid`.

@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tilecast.org/schemas/player-config-v1.json",
+  "title": "Tilecast effective player configuration v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "configRevision",
+    "generatedAt",
+    "branding",
+    "playback",
+    "cache",
+    "sync",
+    "website"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "configRevision": { "type": "integer", "minimum": 1 },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "branding": {
+      "type": "object",
+      "required": ["organizationName", "backgroundColor", "textColor"],
+      "properties": {
+        "organizationName": { "type": "string" },
+        "logoAssetId": { "type": ["string", "null"], "format": "uuid" },
+        "backgroundColor": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+        "textColor": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" }
+      },
+      "additionalProperties": true
+    },
+    "playback": {
+      "type": "object",
+      "required": ["defaultVolume", "defaultFitMode"],
+      "properties": {
+        "defaultVolume": { "type": "number", "minimum": 0, "maximum": 1 },
+        "defaultFitMode": { "enum": ["contain", "cover", "stretch"] }
+      },
+      "additionalProperties": true
+    },
+    "cache": {
+      "type": "object",
+      "required": ["maximumBytes", "minimumFreeBytes", "concurrentDownloads"],
+      "properties": {
+        "maximumBytes": { "type": "integer", "minimum": 268435456 },
+        "minimumFreeBytes": { "type": "integer", "minimum": 134217728 },
+        "concurrentDownloads": { "type": "integer", "minimum": 1, "maximum": 8 }
+      },
+      "additionalProperties": true
+    },
+    "sync": {
+      "type": "object",
+      "required": ["manifestReconciliationSeconds", "statusReportSeconds"],
+      "properties": {
+        "manifestReconciliationSeconds": { "type": "integer", "minimum": 60 },
+        "statusReportSeconds": { "type": "integer", "minimum": 15 }
+      },
+      "additionalProperties": false
+    },
+    "website": { "type": "object", "additionalProperties": true }
+  }
+}

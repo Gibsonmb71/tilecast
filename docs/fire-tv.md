@@ -9,3 +9,5 @@ adb shell monkey -p org.tilecast.player 1
 ```
 
 Tilecast uses the standard Leanback launcher category, standard Android networking, NSD, Room, WorkManager, and Keystore. It does not require Google Play Services. Compilation alone is not physical Fire TV validation; each supported Fire OS generation still needs device testing before a compatibility claim.
+
+Effective player configuration also uses ordinary authenticated HTTPS and Room persistence. Validate branding contrast and cache limits on each target Fire TV storage profile.

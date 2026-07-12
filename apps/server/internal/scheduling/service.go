@@ -194,6 +194,13 @@ func (s *Service) DeleteGroup(ctx context.Context, id, user uuid.UUID) error {
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
+	configRevisions := map[uuid.UUID]int64{}
+	for _, note := range notes {
+		_, _ = tx.Exec(ctx, `INSERT INTO screen_config_state(screen_id)VALUES($1)ON CONFLICT DO NOTHING`, note.id)
+		var revision int64
+		_ = tx.QueryRow(ctx, `UPDATE screen_config_state SET config_revision=config_revision+1,changed_at=now(),change_reason='screen_group.deleted' WHERE screen_id=$1 RETURNING config_revision`, note.id).Scan(&revision)
+		configRevisions[note.id] = revision
+	}
 	if _, err = tx.Exec(ctx, `DELETE FROM screen_group_memberships WHERE screen_group_id=$1`, id); err != nil {
 		return err
 	}
@@ -201,6 +208,11 @@ func (s *Service) DeleteGroup(ctx context.Context, id, user uuid.UUID) error {
 		return err
 	}
 	s.notify(notes)
+	if notifier, ok := s.notifier.(interface{ ConfigChanged(uuid.UUID, int64) }); ok {
+		for screen, revision := range configRevisions {
+			notifier.ConfigChanged(screen, revision)
+		}
+	}
 	_ = s.audit(ctx, user, "screen_group.deleted", "screen_group", id)
 	return nil
 }
@@ -228,10 +240,16 @@ func (s *Service) AddScreen(ctx context.Context, group, screen, user uuid.UUID) 
 	if err != nil {
 		return err
 	}
+	var configRevision int64
+	_, _ = tx.Exec(ctx, `INSERT INTO screen_config_state(screen_id)VALUES($1)ON CONFLICT DO NOTHING`, screen)
+	_ = tx.QueryRow(ctx, `UPDATE screen_config_state SET config_revision=config_revision+1,changed_at=now(),change_reason='screen_group.membership_changed' WHERE screen_id=$1 RETURNING config_revision`, screen).Scan(&configRevision)
 	if err = tx.Commit(ctx); err != nil {
 		return err
 	}
 	s.notify(notes)
+	if notifier, ok := s.notifier.(interface{ ConfigChanged(uuid.UUID, int64) }); ok {
+		notifier.ConfigChanged(screen, configRevision)
+	}
 	_ = s.audit(ctx, user, "screen_group.screen_added", "screen_group", group)
 	return nil
 }
@@ -252,10 +270,16 @@ func (s *Service) RemoveScreen(ctx context.Context, group, screen, user uuid.UUI
 	if err != nil {
 		return err
 	}
+	var configRevision int64
+	_, _ = tx.Exec(ctx, `INSERT INTO screen_config_state(screen_id)VALUES($1)ON CONFLICT DO NOTHING`, screen)
+	_ = tx.QueryRow(ctx, `UPDATE screen_config_state SET config_revision=config_revision+1,changed_at=now(),change_reason='screen_group.membership_changed' WHERE screen_id=$1 RETURNING config_revision`, screen).Scan(&configRevision)
 	if err = tx.Commit(ctx); err != nil {
 		return err
 	}
 	s.notify(notes)
+	if notifier, ok := s.notifier.(interface{ ConfigChanged(uuid.UUID, int64) }); ok {
+		notifier.ConfigChanged(screen, configRevision)
+	}
 	_ = s.audit(ctx, user, "screen_group.screen_removed", "screen_group", group)
 	return nil
 }

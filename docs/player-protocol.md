@@ -44,3 +44,5 @@ The player reports only website asset ID, state, timestamps, safe failure catego
 ## Emergency and command protocol
 
 Manifest v4 may contain one active emergency with its playlist and half-open activation/expiration interval. The player prepares it atomically, interrupts normal playback when ready, and re-evaluates schedules on restoration. `commands.available` prompts authenticated retrieval; acknowledgement and safe result endpoints make delivery persistent and idempotent. Emergency takeover overrides playback-disabled state, then returns to disabled after expiration.
+
+Player configuration is retrieved separately from `/api/v1/player/config` with device authentication, ETag, schema version, and monotonic effective revision. `config.changed` contains only the revision. The player validates and stores current and previous valid configurations; it never receives administrative inheritance sources or deployment secrets.

@@ -22,6 +22,10 @@ import type {
   WebsiteDiagnostics,
   PlayerCommand,
   EmergencyTakeover,
+  SettingsDocument,
+  PolicyDocument,
+  EffectivePolicy,
+  SystemStatus,
 } from "./types";
 
 type DataResponse<T> = { data: T };
@@ -67,6 +71,100 @@ async function apiFailure(response: Response): Promise<never> {
 type SessionResult = { user: User; csrfToken: string };
 
 export const api = {
+  settings: () => request<SettingsDocument>("/settings"),
+  users: () => request<{ items: User[]; total: number }>("/users"),
+  updateSettings: (
+    revision: number,
+    values: Record<string, unknown>,
+    csrfToken: string,
+  ) =>
+    request<SettingsDocument>("/settings", {
+      method: "PATCH",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ revision, values }),
+    }),
+  resetSettings: (revision: number, category: string, csrfToken: string) =>
+    request<SettingsDocument>("/settings/reset", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ revision, category }),
+    }),
+  preferences: () => request<SettingsDocument>("/me/preferences"),
+  updatePreferences: (
+    revision: number,
+    values: Record<string, unknown>,
+    csrfToken: string,
+  ) =>
+    request<SettingsDocument>("/me/preferences", {
+      method: "PATCH",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ revision, values }),
+    }),
+  groupPolicy: (id: string) =>
+    request<PolicyDocument>(`/screen-groups/${id}/policy`),
+  putGroupPolicy: (
+    id: string,
+    revision: number,
+    priority: number,
+    values: Record<string, unknown>,
+    csrfToken: string,
+  ) =>
+    request<PolicyDocument>(`/screen-groups/${id}/policy`, {
+      method: "PUT",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ revision, priority, values }),
+    }),
+  deleteGroupPolicy: (id: string, csrfToken: string) =>
+    request<void>(`/screen-groups/${id}/policy`, {
+      method: "DELETE",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
+  screenPolicy: (id: string) =>
+    request<PolicyDocument>(`/screens/${id}/policy`),
+  putScreenPolicy: (
+    id: string,
+    revision: number,
+    values: Record<string, unknown>,
+    csrfToken: string,
+  ) =>
+    request<PolicyDocument>(`/screens/${id}/policy`, {
+      method: "PUT",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ revision, values }),
+    }),
+  deleteScreenPolicy: (id: string, csrfToken: string) =>
+    request<void>(`/screens/${id}/policy`, {
+      method: "DELETE",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
+  effectivePolicy: (id: string) =>
+    request<EffectivePolicy>(`/screens/${id}/effective-policy`),
+  systemStatus: () => request<SystemStatus>("/system/status"),
+  runMaintenance: (action: string, csrfToken: string) =>
+    request<{ action: string; status: string }>(
+      `/system/maintenance/${action}`,
+      { method: "POST", headers: { "X-CSRF-Token": csrfToken } },
+    ),
+  exportSettings: () =>
+    request<Record<string, unknown>>("/system/settings/export"),
+  previewSettingsImport: (document: unknown, csrfToken: string) =>
+    request<{
+      valid: boolean;
+      changedKeys: string[];
+      groupPolicyCount: number;
+      screenPolicyCount: number;
+      requiresConfirmation: boolean;
+    }>("/system/settings/import/preview", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(document),
+    }),
+  applySettingsImport: (document: unknown, csrfToken: string) =>
+    request<SettingsDocument>("/system/settings/import/apply", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(document),
+    }),
   authStatus: () => request<AuthStatus>("/auth/status"),
   setup: (input: SetupInput) =>
     request<SessionResult>("/auth/setup", {
@@ -168,6 +266,7 @@ export const api = {
       screenIds: string[];
       groupIds: string[];
       expiresAt: string;
+      password?: string;
     },
     csrfToken: string,
   ) =>

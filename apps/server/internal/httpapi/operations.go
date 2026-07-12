@@ -28,6 +28,7 @@ type emergencyInput struct {
 	ScreenIDs   []uuid.UUID `json:"screenIds"`
 	GroupIDs    []uuid.UUID `json:"groupIds"`
 	ExpiresAt   time.Time   `json:"expiresAt"`
+	Password    string      `json:"password"`
 }
 
 type commandInput struct {
@@ -111,6 +112,14 @@ func (s *server) activateEmergency(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now().UTC()
+	user := r.Context().Value(sessionContextKey).(auth.Session).User
+	if s.settings != nil {
+		document, _ := s.settings.Organization(r.Context())
+		if required, _ := document.Values["emergency.reauthentication_required"].(bool); required && !s.auth.VerifyCurrentPassword(r.Context(), user.ID, input.Password) {
+			writeError(w, 401, "reauthentication_required", "Confirm your current password before activating an emergency.")
+			return
+		}
+	}
 	input.Name = strings.TrimSpace(input.Name)
 	input.Description = strings.TrimSpace(input.Description)
 	if input.Name == "" || len(input.Name) > 180 || len(input.Description) > 2000 {
@@ -125,8 +134,9 @@ func (s *server) activateEmergency(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 422, "emergency_target_required", fmt.Sprintf("An emergency may have at most %d targets.", s.operations.MaxEmergencyTargets))
 		return
 	}
-	if !input.ExpiresAt.After(now) || input.ExpiresAt.Sub(now) > time.Duration(s.operations.MaxEmergencyDurationHours)*time.Hour {
-		writeError(w, 422, "emergency_duration_exceeded", fmt.Sprintf("Emergency expiration must be within %d hours.", s.operations.MaxEmergencyDurationHours))
+	maxEmergencyMinutes := s.runtimeInt(r, "emergency.maximum_duration_minutes", s.operations.MaxEmergencyDurationHours*60)
+	if !input.ExpiresAt.After(now) || input.ExpiresAt.Sub(now) > time.Duration(maxEmergencyMinutes)*time.Minute {
+		writeError(w, 422, "emergency_duration_exceeded", fmt.Sprintf("Emergency expiration must be within %d minutes.", maxEmergencyMinutes))
 		return
 	}
 	var org uuid.UUID
@@ -145,7 +155,6 @@ func (s *server) activateEmergency(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback(r.Context())
 	id := uuid.New()
-	user := r.Context().Value(sessionContextKey).(auth.Session).User
 	if _, err = tx.Exec(r.Context(), `INSERT INTO emergency_takeovers(id,organization_id,name,description,playlist_id,status,activated_by,activated_at,expires_at)VALUES($1,$2,$3,$4,$5,'active',$6,$7,$8)`, id, org, input.Name, input.Description, input.PlaylistID, user.ID, now, input.ExpiresAt); err != nil {
 		s.internalError(w, r, err)
 		return
@@ -313,7 +322,7 @@ func (s *server) createPlayerCommand(w http.ResponseWriter, r *http.Request) {
 		key = *input.IdempotencyKey
 	}
 	user := r.Context().Value(sessionContextKey).(auth.Session).User
-	expires := time.Now().Add(time.Duration(s.operations.DefaultCommandExpiryMinutes) * time.Minute)
+	expires := time.Now().Add(time.Duration(s.runtimeInt(r, "commands.default_expiry_minutes", s.operations.DefaultCommandExpiryMinutes)) * time.Minute)
 	err = s.db.QueryRow(r.Context(), `INSERT INTO player_commands(id,organization_id,screen_id,type,payload,idempotency_key,created_by,expires_at)VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(screen_id,idempotency_key) DO UPDATE SET updated_at=player_commands.updated_at RETURNING id`, id, org, screen, input.Type, payload, key, user.ID, expires).Scan(&id)
 	if err != nil {
 		s.internalError(w, r, err)
@@ -493,8 +502,9 @@ func (s *server) validateCommand(typ string, raw json.RawMessage) ([]byte, error
 			}
 		}
 		duration, ok := object["durationSeconds"].(float64)
-		if !ok || duration < 10 || duration > float64(s.operations.MaxIdentifySeconds) || duration != float64(int(duration)) {
-			return nil, fmt.Errorf("identify duration must be 10 to %d seconds", s.operations.MaxIdentifySeconds)
+		maxIdentify := s.operations.MaxIdentifySeconds
+		if !ok || duration < 10 || duration > float64(maxIdentify) || duration != float64(int(duration)) {
+			return nil, fmt.Errorf("identify duration must be 10 to %d seconds", maxIdentify)
 		}
 	default:
 		if len(object) > 0 {
@@ -502,6 +512,19 @@ func (s *server) validateCommand(typ string, raw json.RawMessage) ([]byte, error
 		}
 	}
 	return json.Marshal(object)
+}
+func (s *server) runtimeInt(r *http.Request, key string, fallback int) int {
+	if s.settings == nil {
+		return fallback
+	}
+	document, err := s.settings.Organization(r.Context())
+	if err != nil {
+		return fallback
+	}
+	if value, ok := document.Values[key].(float64); ok {
+		return int(value)
+	}
+	return fallback
 }
 func uniqueUUIDs(values []uuid.UUID) []uuid.UUID {
 	seen := map[uuid.UUID]bool{}

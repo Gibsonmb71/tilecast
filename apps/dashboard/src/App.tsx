@@ -14,6 +14,7 @@ import {
   SchedulesPage,
   ScheduleEditorPage,
 } from "./pages/SchedulesPage";
+import { SettingsPage } from "./pages/SettingsPage";
 
 export function App() {
   return (
@@ -46,10 +47,7 @@ export function App() {
           path="activity"
           element={<PlannedPage feature="Activity reports" milestone={9} />}
         />
-        <Route
-          path="settings"
-          element={<PlannedPage feature="Settings" milestone={2} />}
-        />
+        <Route path="settings" element={<SettingsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

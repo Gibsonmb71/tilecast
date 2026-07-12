@@ -61,6 +61,18 @@ data class CachedAsset(
     val failureReason: String? = null,
 )
 
+@Entity(tableName="player_configs")
+data class StoredPlayerConfig(@androidx.room.PrimaryKey val configRevision:Long,val schemaVersion:Int,val rawJson:String,val etag:String?,val state:String,val receivedAt:Long,val activatedAt:Long?=null,val error:String?=null)
+@Dao interface PlayerConfigDao{
+    @Query("SELECT * FROM player_configs WHERE state='active' ORDER BY configRevision DESC LIMIT 1") suspend fun active():StoredPlayerConfig?
+    @Query("SELECT * FROM player_configs WHERE state='previous' ORDER BY configRevision DESC LIMIT 1") suspend fun previous():StoredPlayerConfig?
+    @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun save(config:StoredPlayerConfig)
+    @Query("UPDATE player_configs SET state='previous' WHERE state='active'") suspend fun demoteActive()
+    @Query("UPDATE player_configs SET state='active',activatedAt=:now WHERE configRevision=:revision") suspend fun activateRevision(revision:Long,now:Long)
+    @Query("DELETE FROM player_configs WHERE state='previous' AND configRevision NOT IN(SELECT configRevision FROM player_configs WHERE state='previous' ORDER BY activatedAt DESC LIMIT 1)") suspend fun prune()
+    @Transaction suspend fun activate(revision:Long,now:Long){demoteActive();activateRevision(revision,now);prune()}
+}
+
 @Dao interface ManifestDao {
     @Query("SELECT * FROM stored_manifests WHERE state='active' ORDER BY activatedAt DESC LIMIT 1") suspend fun active(): StoredManifest?
     @Query("SELECT * FROM stored_manifests WHERE state='ready' ORDER BY manifestVersion DESC LIMIT 1") suspend fun ready(): StoredManifest?
@@ -83,19 +95,21 @@ data class CachedAsset(
     @Query("DELETE FROM cached_assets WHERE variantId=:variantId") suspend fun delete(variantId: String)
 }
 
-@Database(entities = [PlayerConfiguration::class, StoredManifest::class, CachedAsset::class], version = 2, exportSchema = true)
+@Database(entities = [PlayerConfiguration::class, StoredManifest::class, CachedAsset::class,StoredPlayerConfig::class], version = 3, exportSchema = true)
 abstract class PlayerDatabase : RoomDatabase() {
     abstract fun configuration(): PlayerConfigurationDao
     abstract fun manifests(): ManifestDao
     abstract fun cachedAssets(): CachedAssetDao
+    abstract fun playerConfigs():PlayerConfigDao
     companion object {
         @Volatile private var instance: PlayerDatabase? = null
         val MIGRATION_1_2 = object : Migration(1, 2) { override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL("CREATE TABLE IF NOT EXISTS stored_manifests (manifestVersion INTEGER NOT NULL, schemaVersion INTEGER NOT NULL, rawJson TEXT NOT NULL, etag TEXT, state TEXT NOT NULL, receivedAt INTEGER NOT NULL, readyAt INTEGER, activatedAt INTEGER, failureReason TEXT, PRIMARY KEY(manifestVersion))")
             db.execSQL("CREATE TABLE IF NOT EXISTS cached_assets (variantId TEXT NOT NULL, assetId TEXT NOT NULL, sha256 TEXT NOT NULL, expectedFileSize INTEGER NOT NULL, localPath TEXT NOT NULL, downloadStatus TEXT NOT NULL, downloadedBytes INTEGER NOT NULL, lastVerifiedAt INTEGER, lastUsedAt INTEGER, requiredByActiveManifest INTEGER NOT NULL, requiredByPendingManifest INTEGER NOT NULL, failureReason TEXT, PRIMARY KEY(variantId))")
         } }
+        val MIGRATION_2_3=object:Migration(2,3){override fun migrate(db:SupportSQLiteDatabase){db.execSQL("CREATE TABLE IF NOT EXISTS player_configs (configRevision INTEGER NOT NULL, schemaVersion INTEGER NOT NULL, rawJson TEXT NOT NULL, etag TEXT, state TEXT NOT NULL, receivedAt INTEGER NOT NULL, activatedAt INTEGER, error TEXT, PRIMARY KEY(configRevision))")}}
         fun get(context: Context): PlayerDatabase = instance ?: synchronized(this) {
-            instance ?: Room.databaseBuilder(context.applicationContext, PlayerDatabase::class.java, "tilecast-player.db").addMigrations(MIGRATION_1_2).build().also { instance = it }
+            instance ?: Room.databaseBuilder(context.applicationContext, PlayerDatabase::class.java, "tilecast-player.db").addMigrations(MIGRATION_1_2,MIGRATION_2_3).build().also { instance = it }
         }
     }
 }

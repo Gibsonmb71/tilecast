@@ -152,6 +152,13 @@ func (s *Service) Login(ctx context.Context, input LoginInput) (Session, error) 
 	user.LastLoginAt = &now
 	return s.createSession(ctx, s.db, user)
 }
+func (s *Service) VerifyCurrentPassword(ctx context.Context, userID uuid.UUID, password string) bool {
+	var hash string
+	if s.db.QueryRow(ctx, `SELECT password_hash FROM users WHERE id=$1 AND active=TRUE`, userID).Scan(&hash) != nil {
+		return false
+	}
+	return VerifyPassword(hash, password)
+}
 
 type querier interface {
 	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)

@@ -18,6 +18,7 @@ import { api } from "../api/client";
 import type { PairingRequest, Screen, ScreenStatus, User } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { FormField } from "../components/FormField";
+import { PlayerPolicyEditor } from "./SettingsPage";
 
 export const canManageScreens = (user?: User) =>
   user?.role === "owner" || user?.role === "administrator";
@@ -126,8 +127,13 @@ function EmergencyPanel({
     queryFn: () => api.screenGroups(),
     enabled: canManage && open,
   });
+  const runtimeSettings = useQuery({
+    queryKey: ["settings", "emergency-defaults"],
+    queryFn: api.settings,
+    enabled: canManage && open,
+  });
   const activate = useMutation({
-    mutationFn: () =>
+    mutationFn: (password: string) =>
       api.activateEmergency(
         {
           name,
@@ -136,6 +142,7 @@ function EmergencyPanel({
           screenIds,
           groupIds,
           expiresAt: new Date(Date.now() + minutes * 60_000).toISOString(),
+          password,
         },
         auth.status?.csrfToken ?? "",
       ),
@@ -271,12 +278,21 @@ function EmergencyPanel({
               activate.isPending
             }
             onClick={() => {
+              const requiresPassword = Boolean(
+                runtimeSettings.data?.values[
+                  "emergency.reauthentication_required"
+                ],
+              );
+              const password = requiresPassword
+                ? (prompt("Confirm your current password") ?? "")
+                : "";
+              if (requiresPassword && !password) return;
               if (
                 confirm(
                   `Activate the selected playlist for these targets? Existing overlapping emergencies will be replaced.`,
                 )
               )
-                activate.mutate();
+                activate.mutate(password);
             }}
           >
             Activate emergency takeover
@@ -836,6 +852,14 @@ export function ScreenDetailPage() {
             <dd>Version {assignment.data?.manifestVersion ?? 1}</dd>
           </div>
           <div>
+            <dt>Player configuration</dt>
+            <dd>
+              {assignment.data?.activeConfigRevision != null
+                ? `Revision ${assignment.data.activeConfigRevision}`
+                : "Not reported"}
+            </dd>
+          </div>
+          <div>
             <dt>Player manifest</dt>
             <dd>
               {assignment.data?.playerActiveManifestVersion != null
@@ -924,6 +948,11 @@ export function ScreenDetailPage() {
         {assignment.data?.lastPlaybackError && (
           <div className="notice notice--error">
             Playback: {assignment.data.lastPlaybackError}
+          </div>
+        )}
+        {assignment.data?.configurationError && (
+          <div className="notice notice--error">
+            Configuration: {assignment.data.configurationError}
           </div>
         )}
         {Math.abs(assignment.data?.deviceClockOffsetSeconds ?? 0) >
@@ -1067,6 +1096,7 @@ export function ScreenDetailPage() {
             </section>
           )}
       </section>
+      <PlayerPolicyEditor target="screen" id={id} />
       <section className="detail-grid">
         <div className="detail-card">
           <h3>Device</h3>

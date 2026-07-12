@@ -153,6 +153,8 @@ type Heartbeat struct {
 	WebsiteCurrentHost            string     `json:"websiteCurrentHost,omitempty"`
 	WebsiteFallbackShown          *bool      `json:"websiteFallbackShown,omitempty"`
 	WebsiteRendererRecoveryCount  *int       `json:"websiteRendererRecoveryCount,omitempty"`
+	ActiveConfigRevision          *int64     `json:"activeConfigRevision,omitempty"`
+	ConfigurationError            string     `json:"configurationError,omitempty"`
 }
 
 func addressString(address netip.Addr) *string {
