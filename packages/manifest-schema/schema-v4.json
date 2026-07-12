@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tilecast.org/schemas/player-manifest-v4.json",
+  "title": "Tilecast emergency-capable single-zone player manifest v4",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "manifestVersion",
+    "screenId",
+    "generatedAt",
+    "serverTime",
+    "mode",
+    "playlists",
+    "schedules",
+    "assets",
+    "websites",
+    "prefetchHorizonDays",
+    "activationGraceSeconds"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 4 },
+    "manifestVersion": { "type": "integer", "minimum": 1 },
+    "screenId": { "type": "string", "format": "uuid" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "serverTime": { "type": "string", "format": "date-time" },
+    "mode": { "const": "single-zone" },
+    "directFallbackPlaylist": { "$ref": "#/$defs/playlist" },
+    "playlists": { "type": "array", "items": { "$ref": "#/$defs/playlist" } },
+    "schedules": {
+      "type": "array",
+      "items": { "$ref": "schema-v2.json#/$defs/schedule" }
+    },
+    "assets": {
+      "type": "array",
+      "items": { "$ref": "schema-v1.json#/$defs/asset" }
+    },
+    "websites": {
+      "type": "array",
+      "maxItems": 500,
+      "items": { "$ref": "#/$defs/website" }
+    },
+    "emergency": { "$ref": "#/$defs/emergency" },
+    "prefetchHorizonDays": { "type": "integer", "minimum": 1, "maximum": 365 },
+    "activationGraceSeconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3600
+    }
+  },
+  "$defs": {
+    "emergency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "playlistId", "activatedAt", "expiresAt"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "playlistId": { "type": "string", "format": "uuid" },
+        "activatedAt": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "playlist": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "revision", "name", "items"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "name": { "type": "string" },
+        "items": { "type": "array", "items": { "$ref": "#/$defs/item" } }
+      }
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "assetId",
+        "assetType",
+        "fitMode",
+        "transition",
+        "audioEnabled",
+        "volume",
+        "deliveryPolicy"
+      ],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "assetId": { "type": "string", "format": "uuid" },
+        "assetType": { "enum": ["image", "video", "website"] },
+        "variantId": { "type": "string", "format": "uuid" },
+        "durationMs": { "type": "integer", "minimum": 1 },
+        "fitMode": { "enum": ["contain", "cover", "stretch"] },
+        "transition": { "enum": ["none", "fade"] },
+        "audioEnabled": { "type": "boolean" },
+        "volume": { "type": "number", "minimum": 0, "maximum": 1 },
+        "videoStartOffsetMs": { "type": "integer", "minimum": 0 },
+        "videoEndOffsetMs": { "type": "integer", "minimum": 1 },
+        "deliveryPolicy": { "enum": ["download", "stream", "automatic"] }
+      }
+    },
+    "website": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assetId",
+        "name",
+        "url",
+        "allowedHosts",
+        "javascriptEnabled",
+        "domStorageEnabled",
+        "cookiePolicy",
+        "reloadPolicy",
+        "loadTimeoutSeconds",
+        "zoomPercent",
+        "scrollX",
+        "scrollY",
+        "backgroundColor",
+        "failureBehavior"
+      ],
+      "properties": {
+        "assetId": { "type": "string", "format": "uuid" },
+        "name": { "type": "string" },
+        "url": { "type": "string", "maxLength": 2048, "pattern": "^https?://" },
+        "allowedHosts": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 25,
+          "uniqueItems": true,
+          "items": { "type": "string", "maxLength": 253 }
+        },
+        "javascriptEnabled": { "type": "boolean" },
+        "domStorageEnabled": { "type": "boolean" },
+        "cookiePolicy": {
+          "enum": ["disabled", "first_party", "first_and_third_party"]
+        },
+        "reloadPolicy": {
+          "enum": ["load_once", "on_each_activation", "interval"]
+        },
+        "refreshIntervalSeconds": { "type": "integer", "minimum": 30 },
+        "loadTimeoutSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 120
+        },
+        "zoomPercent": { "type": "integer", "minimum": 50, "maximum": 200 },
+        "scrollX": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "scrollY": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "customUserAgent": { "type": "string", "maxLength": 512 },
+        "backgroundColor": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+        "failureBehavior": {
+          "enum": ["last_success", "placeholder", "fallback_image", "skip"]
+        },
+        "fallbackImageAssetId": { "type": "string", "format": "uuid" },
+        "fallbackVariantId": { "type": "string", "format": "uuid" }
+      }
+    }
+  }
+}

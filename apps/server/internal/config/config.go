@@ -21,6 +21,16 @@ type Config struct {
 	Media        MediaConfig
 	Scheduling   SchedulingConfig
 	Website      WebsiteConfig
+	Operations   OperationsConfig
+}
+
+type OperationsConfig struct {
+	MaxEmergencyDurationHours   int
+	MaxEmergencyTargets         int
+	MaxPendingCommands          int
+	DefaultCommandExpiryMinutes int
+	MaxIdentifySeconds          int
+	CommandRetentionDays        int
 }
 
 type WebsiteConfig struct {
@@ -111,6 +121,25 @@ func Load() (Config, error) {
 	}
 	if cfg.Website.DefaultTimeoutSeconds > cfg.Website.MaxTimeoutSeconds {
 		return Config{}, errors.New("TILECAST_WEBSITE_DEFAULT_TIMEOUT_SECONDS must not exceed TILECAST_WEBSITE_MAX_TIMEOUT_SECONDS")
+	}
+	operationValues := []struct {
+		name, fallback string
+		max            int
+		dest           *int
+	}{
+		{"TILECAST_MAX_EMERGENCY_DURATION_HOURS", "24", 168, &cfg.Operations.MaxEmergencyDurationHours},
+		{"TILECAST_MAX_EMERGENCY_TARGETS", "250", 1000, &cfg.Operations.MaxEmergencyTargets},
+		{"TILECAST_MAX_PENDING_COMMANDS_PER_SCREEN", "50", 500, &cfg.Operations.MaxPendingCommands},
+		{"TILECAST_DEFAULT_COMMAND_EXPIRY_MINUTES", "10", 1440, &cfg.Operations.DefaultCommandExpiryMinutes},
+		{"TILECAST_IDENTIFY_SCREEN_MAX_SECONDS", "120", 600, &cfg.Operations.MaxIdentifySeconds},
+		{"TILECAST_COMMAND_RETENTION_DAYS", "30", 3650, &cfg.Operations.CommandRetentionDays},
+	}
+	for _, value := range operationValues {
+		parsed, parseErr := parsePositiveInt64(value.name, value.fallback)
+		if parseErr != nil || parsed > int64(value.max) {
+			return Config{}, fmt.Errorf("%s must be between 1 and %d", value.name, value.max)
+		}
+		*value.dest = int(parsed)
 	}
 
 	cfg.Media = MediaConfig{

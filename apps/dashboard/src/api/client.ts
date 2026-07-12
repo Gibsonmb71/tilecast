@@ -20,6 +20,8 @@ import type {
   SchedulePreview,
   WebsiteInput,
   WebsiteDiagnostics,
+  PlayerCommand,
+  EmergencyTakeover,
 } from "./types";
 
 type DataResponse<T> = { data: T };
@@ -129,11 +131,62 @@ export const api = {
       headers: { "X-CSRF-Token": csrfToken },
       body: JSON.stringify({ reason }),
     }),
-  clearWebsiteData: (id: string, csrfToken: string) =>
-    request<{ commandId: string; status: string; expiresAt: string }>(
-      `/screens/${id}/website-data/clear`,
+  screenCommands: (id: string) =>
+    request<{ items: PlayerCommand[]; total: number }>(
+      `/screens/${id}/commands`,
+    ),
+  createScreenCommand: (
+    id: string,
+    type: string,
+    payload: Record<string, number>,
+    csrfToken: string,
+  ) =>
+    request<{ id: string; state: string; expiresAt: string }>(
+      `/screens/${id}/commands`,
+      {
+        method: "POST",
+        headers: { "X-CSRF-Token": csrfToken },
+        body: JSON.stringify({ type, payload }),
+      },
+    ),
+  cancelScreenCommand: (
+    screenId: string,
+    commandId: string,
+    csrfToken: string,
+  ) =>
+    request<{ id: string; state: string }>(
+      `/screens/${screenId}/commands/${commandId}/cancel`,
       { method: "POST", headers: { "X-CSRF-Token": csrfToken } },
     ),
+  emergencies: () =>
+    request<{ items: EmergencyTakeover[]; total: number }>("/emergencies"),
+  activateEmergency: (
+    input: {
+      name: string;
+      description: string;
+      playlistId: string;
+      screenIds: string[];
+      groupIds: string[];
+      expiresAt: string;
+    },
+    csrfToken: string,
+  ) =>
+    request<{
+      id: string;
+      status: string;
+      affectedCount: number;
+      expiresAt: string;
+    }>("/emergencies", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  cancelEmergency: (id: string, reason: string, csrfToken: string) =>
+    request<{ id: string; status: string }>(`/emergencies/${id}/cancel`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ reason }),
+    }),
   assets: (params: URLSearchParams) =>
     request<AssetList>(`/assets?${params.toString()}`),
   asset: (id: string) => request<Asset>(`/assets/${id}`),

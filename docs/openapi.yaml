@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Tilecast API
-  version: 0.6.0
+  version: 0.7.0
   license:
     name: AGPL-3.0-only
 paths:
@@ -609,18 +609,67 @@ paths:
       operationId: websiteDiagnostics
       responses:
         { "200": { description: Safe categorized player website diagnostics } }
-  /api/v1/screens/{id}/website-data/clear:
-    post:
-      operationId: clearPlayerWebsiteData
-      description: Queues an expiring Owner/Administrator-only player command.
+  /api/v1/emergencies:
+    get:
+      summary: List emergency takeovers
       responses:
-        {
-          "202":
-            {
-              description: Clear-data command queued or existing pending command returned,
-            },
-          "403": { description: Insufficient role or CSRF failure },
-        }
+        "200": { description: Emergency list }
+    post:
+      summary: Activate an emergency takeover
+      responses:
+        "201": { description: Emergency activated }
+        "422": { description: Invalid targets, playlist, or expiration }
+  /api/v1/emergencies/{id}:
+    get:
+      summary: Read emergency and per-screen state
+      parameters:
+        - {
+            in: path,
+            name: id,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+      responses:
+        "200": { description: Emergency detail }
+  /api/v1/emergencies/{id}/cancel:
+    post:
+      summary: Cancel an active emergency
+      parameters:
+        - {
+            in: path,
+            name: id,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+      responses:
+        "200": { description: Emergency cancelled }
+        "409": { description: Emergency already ended }
+  /api/v1/screens/{id}/commands:
+    get:
+      summary: List recent screen commands
+      responses:
+        "200": { description: Command history }
+    post:
+      summary: Queue a typed operational command
+      responses:
+        "202": { description: Command queued }
+        "429": { description: Pending command limit reached }
+  /api/v1/player/commands:
+    get:
+      summary: Retrieve executable commands for the authenticated player
+      responses:
+        "200": { description: Stable command list }
+  /api/v1/player/commands/{id}/acknowledge:
+    post:
+      summary: Acknowledge a player command
+      responses:
+        "200": { description: Command acknowledged }
+  /api/v1/player/commands/{id}/result:
+    post:
+      summary: Report a safe command result
+      responses:
+        "200": { description: Result accepted idempotently }
+        "409": { description: Command expired or cancelled }
 components:
   parameters:
     ResourceID:

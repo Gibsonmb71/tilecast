@@ -34,7 +34,7 @@ Milestones 1 and 2 establish the foundation and player enrollment path:
 
 Milestone 2 intentionally does **not** contain media upload, media processing, playlists, layouts, schedules, player manifests, or content playback.
 
-Milestone 6 adds authentication-free website assets and hardened fullscreen Android WebView playback inside existing playlists and schedules. Direct screen assignments remain the fallback. Do not opportunistically begin multi-zone layouts, compositions, authenticated websites, browser automation, PDF playback, emergency overrides, or proof-of-play.
+Milestone 7 adds explicit emergency takeover and persistent typed operational player commands. Direct screen assignments remain the fallback beneath schedules and emergencies. Do not opportunistically begin multi-zone layouts, compositions, authenticated websites, browser automation, PDF playback, proof-of-play, HDMI-CEC, device reboot, or arbitrary remote execution.
 
 ## Repository map
 
@@ -198,9 +198,9 @@ If the installation ID changes, do not send the credential. Show `ServerIdentity
 
 All controls must work with D-pad focus and remote activation. Normal player UI must not display raw exceptions, internal IDs, debug JSON, or development placeholders. Until playback exists, paired state says “No content assigned.”
 
-### Milestone 6 Android boundary
+### Milestone 7 Android boundary
 
-Milestone 6 remains one fullscreen zone with sequential looping playback. Websites are duration-bounded stream items with optional downloaded image fallbacks. Keep manifest activation atomic and downloaded image/video playback working when websites fail. Multi-zone rendering, layouts, compositions, authenticated sites, browser automation, emergency overrides, and simultaneous videos remain out of scope.
+Milestone 7 remains one fullscreen zone with sequential looping playback. Emergency content atomically overrides normal playback after preparation and restores current schedule/fallback selection at expiration. Persistent commands are typed and bounded. Multi-zone rendering, layouts, compositions, authenticated sites, browser automation, proof-of-play, arbitrary execution, and simultaneous videos remain out of scope.
 
 ## LAN discovery and deployment
 

@@ -559,6 +559,7 @@ func (s *Service) Assignment(ctx context.Context, screenID uuid.UUID) (Assignmen
 	if err != nil {
 		return Assignment{}, err
 	}
+	_ = s.db.QueryRow(ctx, `SELECT active_emergency_id,emergency_state,emergency_preparation_progress,playback_disabled,last_command_id,last_command_state,last_command_result,last_command_completed_at FROM screen_player_status WHERE screen_id=$1`, screenID).Scan(&a.ActiveEmergencyID, &a.EmergencyState, &a.EmergencyPreparationProgress, &a.PlaybackDisabled, &a.LastCommandID, &a.LastCommandState, &a.LastCommandResult, &a.LastCommandCompletedAt)
 	a.Groups = []AssignmentGroup{}
 	groupRows, e := s.db.Query(ctx, `SELECT g.id,g.name FROM screen_group_memberships m JOIN screen_groups g ON g.id=m.screen_group_id WHERE m.screen_id=$1 AND g.deleted_at IS NULL ORDER BY lower(g.name),g.id`, screenID)
 	if e != nil {
@@ -605,6 +606,18 @@ func (s *Service) Assignment(ctx context.Context, screenID uuid.UUID) (Assignmen
 }
 
 func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manifest, string, error) {
+	// Expiration is persisted during reconciliation so an unchanged ETag can never
+	// hide the removal of an emergency from a player.
+	var expired bool
+	_ = s.db.QueryRow(ctx, `WITH changed AS (
+		UPDATE emergency_takeovers e SET status='expired',updated_at=now()
+		WHERE e.status='active' AND e.expires_at<=now() AND EXISTS(SELECT 1 FROM emergency_screen_states es WHERE es.emergency_id=e.id AND es.screen_id=$1)
+		RETURNING e.id)
+		UPDATE emergency_screen_states es SET state='expired',restored_at=now(),last_updated_at=now()
+		WHERE es.screen_id=$1 AND es.emergency_id IN(SELECT id FROM changed) RETURNING true`, screenID).Scan(&expired)
+	if expired {
+		_, _ = s.db.Exec(ctx, `UPDATE screen_manifest_state SET manifest_version=manifest_version+1,changed_at=now(),change_reason='emergency.expired' WHERE screen_id=$1`, screenID)
+	}
 	assignment, err := s.Assignment(ctx, screenID)
 	if err != nil {
 		return Manifest{}, "", err
@@ -618,10 +631,17 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 	if s.scheduling != nil {
 		prefetch, grace, _ = s.scheduling.Config()
 	}
-	manifest := Manifest{SchemaVersion: 3, ManifestVersion: assignment.ManifestVersion, ScreenID: screenID, GeneratedAt: changed, ServerTime: now, Mode: "single-zone", Assets: []ManifestAsset{}, Playlists: []ManifestPlaylist{}, Schedules: []ManifestSchedule{}, Websites: []ManifestWebsite{}, PrefetchHorizonDays: prefetch, ActivationGraceSeconds: grace}
+	manifest := Manifest{SchemaVersion: 4, ManifestVersion: assignment.ManifestVersion, ScreenID: screenID, GeneratedAt: changed, ServerTime: now, Mode: "single-zone", Assets: []ManifestAsset{}, Playlists: []ManifestPlaylist{}, Schedules: []ManifestSchedule{}, Websites: []ManifestWebsite{}, PrefetchHorizonDays: prefetch, ActivationGraceSeconds: grace}
 	playlistIDs := []uuid.UUID{}
 	if assignment.PlaylistID != nil {
 		playlistIDs = append(playlistIDs, *assignment.PlaylistID)
+	}
+	var emergency ManifestEmergency
+	if emergencyErr := s.db.QueryRow(ctx, `SELECT e.id,e.playlist_id,e.activated_at,e.expires_at FROM emergency_takeovers e JOIN emergency_screen_states es ON es.emergency_id=e.id WHERE es.screen_id=$1 AND e.status='active' AND e.expires_at>now() AND es.state NOT IN ('restored','cancelled','expired') ORDER BY e.activated_at DESC,e.id DESC LIMIT 1`, screenID).Scan(&emergency.ID, &emergency.PlaylistID, &emergency.ActivatedAt, &emergency.ExpiresAt); emergencyErr == nil {
+		manifest.Emergency = &emergency
+		playlistIDs = append([]uuid.UUID{emergency.PlaylistID}, playlistIDs...)
+	} else if !errors.Is(emergencyErr, pgx.ErrNoRows) {
+		return Manifest{}, "", emergencyErr
 	}
 	if s.scheduling != nil {
 		records, loadErr := s.scheduling.Relevant(ctx, screenID)
@@ -762,7 +782,7 @@ func (s *Service) ReportStatus(ctx context.Context, screenID uuid.UUID, status P
 	if len(status.PlaybackState) > 80 || len(status.LastSyncError) > 500 || len(status.LastPlaybackError) > 500 || len(status.ScheduleEvaluationError) > 500 || len(status.WebsiteState) > 40 || len(status.WebsiteFailureCategory) > 80 || len(status.WebsiteCurrentHost) > 253 {
 		return errors.New("player status is invalid")
 	}
-	if status.SelectionSource != "" && status.SelectionSource != "schedule" && status.SelectionSource != "direct_fallback" && status.SelectionSource != "none" {
+	if status.SelectionSource != "" && status.SelectionSource != "emergency" && status.SelectionSource != "schedule" && status.SelectionSource != "direct_fallback" && status.SelectionSource != "none" {
 		return errors.New("player status is invalid")
 	}
 	websiteStates := map[string]bool{"": true, "idle": true, "loading": true, "loaded": true, "refreshing": true, "failed": true, "timed_out": true, "blocked": true, "showing_fallback": true}
@@ -781,6 +801,10 @@ func (s *Service) ReportStatus(ctx context.Context, screenID uuid.UUID, status P
 	if status.DownloadQueueCount != nil && *status.DownloadQueueCount < 0 {
 		return errors.New("player status is invalid")
 	}
+	emergencyStates := map[string]bool{"": true, "pending": true, "notified": true, "preparing": true, "ready": true, "active": true, "failed": true, "offline": true, "restored": true, "expired": true, "cancelled": true}
+	if !emergencyStates[status.EmergencyState] || status.EmergencyPreparationProgress != nil && (*status.EmergencyPreparationProgress < 0 || *status.EmergencyPreparationProgress > 100) {
+		return errors.New("player emergency status is invalid")
+	}
 	for _, value := range []*int{status.WebsiteBlockedNavigationCount, status.WebsiteRendererRecoveryCount} {
 		if value != nil && (*value < 0 || *value > 1000000) {
 			return errors.New("player website status is invalid")
@@ -792,6 +816,12 @@ func (s *Service) ReportStatus(ctx context.Context, screenID uuid.UUID, status P
 	}
 	if err == nil && status.WebsiteFailureCategory != "" {
 		_, err = s.db.Exec(ctx, `UPDATE screen_player_status SET website_failure_at=now() WHERE screen_id=$1`, screenID)
+	}
+	if err == nil {
+		_, err = s.db.Exec(ctx, `UPDATE screen_player_status SET active_emergency_id=$2,emergency_state=NULLIF($3,''),emergency_preparation_progress=$4,playback_disabled=COALESCE($5,playback_disabled),last_command_id=COALESCE($6,last_command_id),last_command_state=COALESCE(NULLIF($7,''),last_command_state),last_command_result=COALESCE(NULLIF($8,''),last_command_result),last_command_completed_at=COALESCE($9,last_command_completed_at) WHERE screen_id=$1`, screenID, status.ActiveEmergencyID, status.EmergencyState, status.EmergencyPreparationProgress, status.PlaybackDisabled, status.LastCommandID, status.LastCommandState, status.LastCommandResult, status.LastCommandCompletedAt)
+	}
+	if err == nil && status.ActiveEmergencyID != nil && status.EmergencyState != "" {
+		_, _ = s.db.Exec(ctx, `UPDATE emergency_screen_states SET state=$3,last_updated_at=now(),prepared_at=CASE WHEN $3 IN ('ready','active') THEN COALESCE(prepared_at,now()) ELSE prepared_at END,activated_at=CASE WHEN $3='active' THEN COALESCE(activated_at,now()) ELSE activated_at END WHERE emergency_id=$1 AND screen_id=$2`, status.ActiveEmergencyID, screenID, status.EmergencyState)
 	}
 	return err
 }
