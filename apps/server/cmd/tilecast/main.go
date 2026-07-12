@@ -21,6 +21,7 @@ import (
 	"github.com/tilecast/tilecast/apps/server/internal/playlists"
 	"github.com/tilecast/tilecast/apps/server/internal/scheduling"
 	"github.com/tilecast/tilecast/apps/server/internal/settings"
+	"github.com/tilecast/tilecast/apps/server/internal/updates"
 )
 
 func main() {
@@ -67,6 +68,10 @@ func main() {
 	schedulingService := scheduling.NewService(db, deviceService, scheduling.Limits{MaxSchedules: cfg.Scheduling.MaxSchedules, MaxTargetsPerSchedule: cfg.Scheduling.MaxTargetsPerSchedule, MaxGroupsPerScreen: cfg.Scheduling.MaxGroupsPerScreen, PrefetchDays: cfg.Scheduling.PrefetchDays, ActivationGraceSeconds: cfg.Scheduling.ActivationGraceSeconds, ClockSkewWarningSeconds: cfg.Scheduling.ClockSkewWarningSeconds})
 	playlistService.SetScheduling(schedulingService)
 	settingsService := settings.NewService(db, deviceService, settings.HardLimits{MaxUploadBytes: cfg.Media.MaxUploadBytes, MaxEmergencyMinutes: cfg.Operations.MaxEmergencyDurationHours * 60, MaxWebsiteTimeout: cfg.Website.MaxTimeoutSeconds, MaxPrefetchDays: cfg.Scheduling.PrefetchDays, PrivateHTTPAllowed: cfg.Website.AllowPrivateHTTP})
+	updateService, updateErr := updates.NewService(db, updates.NewGitHubProvider(cfg.Updates.GitHubToken), updates.Config{Root: cfg.Updates.Root, TrustedPublicKey: cfg.Updates.TrustedPublicKey, MaxAPKBytes: cfg.Updates.MaxAPKBytes})
+	if updateErr != nil {
+		fail("initialize player update service", updateErr)
+	}
 	_, _ = db.Exec(ctx, `INSERT INTO media_jobs(id,kind,status,run_after) VALUES(gen_random_uuid(),'clean_expired_uploads','queued',now())`)
 	mediaWorkers := media.NewWorkerPool(mediaService, logger)
 	mediaWorkers.Start(ctx)
@@ -95,6 +100,7 @@ func main() {
 		Playlists:     playlistService,
 		Scheduling:    schedulingService,
 		Settings:      settingsService,
+		Updates:       updateService,
 		DB:            db,
 		Logger:        logger,
 		CookieName:    cfg.CookieName,
@@ -128,6 +134,7 @@ func main() {
 			case <-shutdownCtx.Done():
 				return
 			case <-ticker.C:
+				updateService.Cleanup(shutdownCtx, cfg.Updates.RetentionDays)
 				_, _ = db.Exec(shutdownCtx, `UPDATE player_commands SET state='expired',completed_at=now(),updated_at=now() WHERE state IN ('pending','delivered','acknowledged','running') AND expires_at<=now()`)
 				_, _ = db.Exec(shutdownCtx, `DELETE FROM player_commands WHERE completed_at<now()-make_interval(days=>COALESCE((SELECT (settings->>'retention.command_history_days')::int FROM organization_runtime_settings),$1))`, cfg.Operations.CommandRetentionDays)
 				_, _ = db.Exec(shutdownCtx, `DELETE FROM audit_logs WHERE created_at<now()-make_interval(days=>COALESCE((SELECT (settings->>'retention.audit_days')::int FROM organization_runtime_settings),365))`)

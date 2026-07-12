@@ -22,6 +22,15 @@ type Config struct {
 	Scheduling   SchedulingConfig
 	Website      WebsiteConfig
 	Operations   OperationsConfig
+	Updates      UpdatesConfig
+}
+
+type UpdatesConfig struct {
+	Root             string
+	TrustedPublicKey string
+	GitHubToken      string
+	RetentionDays    int
+	MaxAPKBytes      int64
 }
 
 type OperationsConfig struct {
@@ -147,6 +156,19 @@ func Load() (Config, error) {
 		FFmpegPath:  get("TILECAST_FFMPEG_PATH", "/usr/bin/ffmpeg"),
 		FFprobePath: get("TILECAST_FFPROBE_PATH", "/usr/bin/ffprobe"),
 	}
+	cfg.Updates = UpdatesConfig{
+		Root:             get("TILECAST_UPDATE_ROOT", "/data/updates"),
+		TrustedPublicKey: os.Getenv("TILECAST_UPDATE_MANIFEST_PUBLIC_KEY"),
+		GitHubToken:      os.Getenv("TILECAST_GITHUB_TOKEN"),
+	}
+	if cfg.Updates.MaxAPKBytes, err = parsePositiveInt64("TILECAST_UPDATE_MAX_APK_BYTES", "536870912"); err != nil {
+		return Config{}, err
+	}
+	retention, retentionErr := parsePositiveInt64("TILECAST_UPDATE_RETENTION_DAYS", "90")
+	if retentionErr != nil || retention > 3650 {
+		return Config{}, errors.New("TILECAST_UPDATE_RETENTION_DAYS must be between 1 and 3650")
+	}
+	cfg.Updates.RetentionDays = int(retention)
 	if cfg.Media.MaxUploadBytes, err = parsePositiveInt64("TILECAST_MAX_UPLOAD_BYTES", "10737418240"); err != nil {
 		return Config{}, err
 	}

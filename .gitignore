@@ -13,3 +13,11 @@ apps/server/tilecast
 **/.gradle/
 **/build/
 **/local.properties
+*.jks
+*.keystore
+*.p12
+apps/player-android/signing.properties
+tilecast-player.apk
+tilecast-player-update.json
+tilecast-player-update.json.sig
+release-secrets/

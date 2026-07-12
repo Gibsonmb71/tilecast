@@ -247,7 +247,11 @@ func (s *server) systemStatus(w http.ResponseWriter, r *http.Request) {
 	if s.media != nil {
 		mediaStatus, _ = s.media.Diagnostics()
 	}
-	writeJSON(w, 200, map[string]any{"data": map[string]any{"tilecastVersion": "0.8.0", "buildCommit": "local", "buildDate": "development", "uptimeSeconds": int64(time.Since(s.startedAt).Seconds()), "goVersion": runtime.Version(), "database": map[string]any{"status": "healthy", "migrationVersion": migration, "postgresVersion": postgres}, "media": mediaStatus, "activeProcessingJobs": jobs, "pendingCommands": pending, "connectedScreens": connected, "serverTimezone": time.Local.String(), "deployment": map[string]any{"database": "configured", "mediaStorage": "configured", "ffmpeg": "available", "restartRequired": false}}})
+	updateTrust := "missing"
+	if s.updates != nil && s.updates.ManifestKeyConfigured() {
+		updateTrust = "configured"
+	}
+	writeJSON(w, 200, map[string]any{"data": map[string]any{"tilecastVersion": "0.9.0", "buildCommit": "local", "buildDate": "development", "uptimeSeconds": int64(time.Since(s.startedAt).Seconds()), "goVersion": runtime.Version(), "database": map[string]any{"status": "healthy", "migrationVersion": migration, "postgresVersion": postgres}, "media": mediaStatus, "activeProcessingJobs": jobs, "pendingCommands": pending, "connectedScreens": connected, "serverTimezone": time.Local.String(), "deployment": map[string]any{"database": "configured", "mediaStorage": "configured", "ffmpeg": "available", "updateManifestTrust": updateTrust, "restartRequired": false}}})
 }
 func (s *server) systemMaintenance(w http.ResponseWriter, r *http.Request) {
 	action := strings.TrimSpace(chi.URLParam(r, "action"))

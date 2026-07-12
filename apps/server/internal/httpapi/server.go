@@ -20,6 +20,7 @@ import (
 	"github.com/tilecast/tilecast/apps/server/internal/playlists"
 	"github.com/tilecast/tilecast/apps/server/internal/scheduling"
 	"github.com/tilecast/tilecast/apps/server/internal/settings"
+	"github.com/tilecast/tilecast/apps/server/internal/updates"
 	"github.com/tilecast/tilecast/apps/server/internal/web"
 )
 
@@ -30,6 +31,7 @@ type Dependencies struct {
 	Playlists     *playlists.Service
 	Scheduling    *scheduling.Service
 	Settings      *settings.Service
+	Updates       *updates.Service
 	DB            *pgxpool.Pool
 	Logger        *slog.Logger
 	CookieName    string
@@ -62,6 +64,7 @@ type server struct {
 	operationsLimiter *rateLimiter
 	operations        OperationsConfig
 	settings          *settings.Service
+	updates           *updates.Service
 	startedAt         time.Time
 }
 
@@ -86,6 +89,7 @@ func New(deps Dependencies) http.Handler {
 		operationsLimiter: newRateLimiter(60, time.Minute),
 		operations:        deps.Operations,
 		settings:          deps.Settings,
+		updates:           deps.Updates,
 		startedAt:         time.Now(),
 	}
 	if s.operations.MaxEmergencyDurationHours == 0 {
@@ -119,6 +123,10 @@ func New(deps Dependencies) http.Handler {
 		api.With(s.requireDevice).Get("/player/config", s.playerConfig)
 		api.With(s.requireDevice).Post("/player/commands/{id}/acknowledge", s.acknowledgePlayerCommand)
 		api.With(s.requireDevice).Post("/player/commands/{id}/result", s.resultPlayerCommand)
+		api.With(s.requireDevice).Get("/player/updates/{releaseId}", s.playerUpdateMetadata)
+		api.With(s.requireDevice).Get("/player/updates/{releaseId}/apk", s.playerUpdateAPK)
+		api.With(s.requireDevice).Head("/player/updates/{releaseId}/apk", s.playerUpdateAPK)
+		api.With(s.requireDevice).Post("/player/update-deployments/{deploymentId}/status", s.playerUpdateStatus)
 
 		api.Group(func(dashboard chi.Router) {
 			dashboard.Use(s.requireSession)
@@ -147,6 +155,14 @@ func New(deps Dependencies) http.Handler {
 			dashboard.With(s.requireRoles("owner"), s.requireCSRF).Post("/system/settings/import/preview", s.previewSettingsImport)
 			dashboard.With(s.requireRoles("owner"), s.requireCSRF).Post("/system/settings/import/apply", s.applySettingsImport)
 			dashboard.Get("/emergencies", s.listEmergencies)
+			dashboard.Get("/player-releases", s.listPlayerReleases)
+			dashboard.With(s.requireRoles("owner"), s.operationsRateLimit, s.requireCSRF).Post("/player-releases/check", s.checkPlayerReleases)
+			dashboard.With(s.requireRoles("owner"), s.operationsRateLimit, s.requireCSRF).Post("/player-releases/{id}/cache", s.cachePlayerRelease)
+			dashboard.Get("/update-deployments", s.listUpdateDeployments)
+			dashboard.Get("/update-deployments/{id}", s.getUpdateDeployment)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.operationsRateLimit, s.requireCSRF).Post("/update-deployments", s.createUpdateDeployment)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/update-deployments/{id}/cancel", s.cancelUpdateDeployment)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/update-deployments/{id}/screens/{screenId}/retry", s.retryUpdateScreen)
 			dashboard.Get("/emergencies/{id}", s.getEmergency)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.operationsRateLimit, s.requireCSRF).Post("/emergencies", s.activateEmergency)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/emergencies/{id}/cancel", s.cancelEmergency)

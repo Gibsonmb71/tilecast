@@ -2,6 +2,8 @@
 
 Milestone 1 exposes JSON endpoints under `/api/v1`. Successful responses use `{"data": ...}`. Errors use `{"error":{"code":"...","message":"..."}}`. Unknown JSON fields and request bodies over 1 MiB are rejected.
 
+Milestone 9 adds Player release check/cache endpoints, deployment list/detail/create/cancel/retry endpoints, and device-authenticated update metadata, byte-range APK, and status endpoints. Only targeted screens can retrieve APK data. See [player-updates.md](player-updates.md) and `openapi.yaml`.
+
 ## System
 
 - `GET /healthz` — process liveness; does not depend on PostgreSQL.

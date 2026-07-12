@@ -35,3 +35,5 @@ Website defaults are `TILECAST_WEBSITE_ALLOW_PRIVATE_HTTP=false`, `TILECAST_WEBS
 Emergency and command limits use `TILECAST_MAX_EMERGENCY_DURATION_HOURS`, `TILECAST_MAX_EMERGENCY_TARGETS`, `TILECAST_MAX_PENDING_COMMANDS_PER_SCREEN`, `TILECAST_DEFAULT_COMMAND_EXPIRY_MINUTES`, `TILECAST_IDENTIFY_SCREEN_MAX_SECONDS`, and `TILECAST_COMMAND_RETENTION_DAYS`.
 
 Database URLs, bind addresses, storage roots, executable paths, worker limits, logging, tunnel tokens, signing keys, and hard security limits remain deployment configuration. Studio shows only safe configured/healthy status and cannot read or edit secret values. Runtime settings may narrow but never exceed these hard limits.
+
+Player updates use `TILECAST_UPDATE_MANIFEST_PUBLIC_KEY` (base64 raw Ed25519 public key), `TILECAST_UPDATE_ROOT` (default `/data/updates`), `TILECAST_UPDATE_MAX_APK_BYTES` (default 512 MiB), and `TILECAST_UPDATE_RETENTION_DAYS` (default 90). `TILECAST_GITHUB_TOKEN` is optional for higher API rate limits and is never returned by diagnostics. Never install the manifest private key or Android keystore on Tilecast Server. Preserve `/data/updates` through the existing `/data` volume.

@@ -27,3 +27,5 @@ adb devices
 Milestone 6 uses the system Android WebView through a dedicated website playback component. Test exact-host policy and safe configuration on the JVM; validate renderer behavior, D-pad focus, installed WebView versions, TLS failures, and process termination on the target emulator/device. Tilecast does not require Google Play Services or a Chrome-specific API.
 
 Milestone 8 adds `PlayerConfigManager`, the validated source for effective branding, playback defaults, cache/download policy, and reporting intervals. Room schema 3 preserves current and previous valid configuration revisions independently of content manifests.
+
+Production Player release signing is free and independent of app stores. Preserve one permanent Android keystore and a separate Ed25519 manifest key. Gradle reads signing values only from local environment variables, and `scripts/build-player-release.sh` fails closed when any secret is missing. See [player-updates.md](player-updates.md). Emulator/debug builds do not validate production-key replacement.

@@ -1115,7 +1115,38 @@ export function ScreenDetailPage() {
             </div>
             <div>
               <dt>Player version</dt>
-              <dd>{screen.playerVersion}</dd>
+              <dd>
+                {screen.playerVersion}
+                {screen.playerVersionCode
+                  ? ` (code ${screen.playerVersionCode})`
+                  : ""}
+              </dd>
+            </div>
+            <div>
+              <dt>Android SDK</dt>
+              <dd>{screen.androidSdk ?? "Not reported"}</dd>
+            </div>
+            <div>
+              <dt>Installer source</dt>
+              <dd>{screen.installerSource ?? "Not reported"}</dd>
+            </div>
+            <div>
+              <dt>Install permission</dt>
+              <dd>
+                {screen.installPermissionStatus?.replaceAll("_", " ") ??
+                  "Unknown"}
+              </dd>
+            </div>
+            <div>
+              <dt>Player update</dt>
+              <dd>
+                {screen.updateState?.replaceAll("_", " ") ??
+                  "No active deployment"}
+                {screen.updateExpectedBytes
+                  ? ` · ${Math.round(((screen.updateDownloadedBytes ?? 0) / screen.updateExpectedBytes) * 100)}%`
+                  : ""}
+                {screen.updateError ? ` · ${screen.updateError}` : ""}
+              </dd>
             </div>
             <div>
               <dt>Resolution</dt>

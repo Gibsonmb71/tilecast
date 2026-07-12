@@ -12,14 +12,15 @@ import kotlinx.serialization.Serializable
 @Serializable data class PairingPoll(val status: String, val expiresAt: String, val screenId: String? = null, val enrollmentToken: String? = null, val failureReason: String? = null)
 @Serializable data class EnrollmentRequest(val pairingSessionId: String, val enrollmentToken: String)
 @Serializable data class EnrollmentResult(val screenId: String, val screenName: String, val deviceCredential: String)
-@Serializable data class HeartbeatRequest(val screenWidth: Int, val screenHeight: Int, val availableStorageBytes: Long? = null, val uptimeSeconds: Long? = null, val playerVersion: String,
+@Serializable data class HeartbeatRequest(val screenWidth: Int, val screenHeight: Int, val availableStorageBytes: Long? = null, val uptimeSeconds: Long? = null, val playerVersion: String,val playerVersionCode:Long?=null,val androidSdk:Int?=null,val installerSource:String?=null,val installPermissionStatus:String?=null,
     val activeManifestVersion: Long? = null, val pendingManifestVersion: Long? = null, val assignedPlaylistId: String? = null,
     val currentItemId: String? = null, val currentAssetId: String? = null, val playbackState: String? = null,
     val downloadQueueCount: Int? = null, val downloadedBytes: Long? = null, val requiredBytes: Long? = null,
     val cacheUsedBytes: Long? = null, val cacheLimitBytes: Long? = null, val lastSynchronizationError: String? = null, val lastPlaybackError: String? = null,
     val currentScheduleId:String?=null,val currentPlaylistId:String?=null,val selectionSource:String?=null,val nextTransitionAt:String?=null,val deviceClockOffsetSeconds:Long?=null,val scheduleEvaluationError:String?=null,val scheduleManifestVersion:Long?=null,
     val currentWebsiteAssetId:String?=null,val websiteState:String?=null,val websiteLoadStartedAt:String?=null,val websiteLoadCompletedAt:String?=null,val websiteFailureCategory:String?=null,val websiteBlockedNavigationCount:Int?=null,val websiteCurrentHost:String?=null,val websiteFallbackShown:Boolean?=null,val websiteRendererRecoveryCount:Int?=null,
-    val activeEmergencyId:String?=null,val emergencyState:String?=null,val emergencyPreparationProgress:Int?=null,val playbackDisabled:Boolean?=null,val lastCommandId:String?=null,val lastCommandState:String?=null,val lastCommandResult:String?=null,val lastCommandCompletedAt:String?=null,val activeConfigRevision:Long?=null,val configurationError:String?=null)
+    val activeEmergencyId:String?=null,val emergencyState:String?=null,val emergencyPreparationProgress:Int?=null,val playbackDisabled:Boolean?=null,val lastCommandId:String?=null,val lastCommandState:String?=null,val lastCommandResult:String?=null,val lastCommandCompletedAt:String?=null,val activeConfigRevision:Long?=null,val configurationError:String?=null,
+    val currentUpdateDeploymentId:String?=null,val updateState:String?=null,val updateDownloadedBytes:Long?=null,val updateExpectedBytes:Long?=null,val updateError:String?=null)
 
 @Serializable data class PlayerManifest(val schemaVersion: Int, val manifestVersion: Long, val screenId: String, val generatedAt: String, val mode: String, val playlist: ManifestPlaylist? = null, val directFallbackPlaylist:ManifestPlaylist?=null,val playlists:List<ManifestPlaylist> = emptyList(),val schedules:List<ManifestSchedule> = emptyList(),val assets: List<ManifestAsset> = emptyList(),val websites:List<ManifestWebsite> = emptyList(),val emergency:ManifestEmergency?=null,val serverTime:String?=null,val prefetchHorizonDays:Int=14,val activationGraceSeconds:Int=30)
 @Serializable data class ManifestEmergency(val id:String,val playlistId:String,val activatedAt:String,val expiresAt:String)
@@ -36,8 +37,9 @@ data class ManifestResponse(val manifest: PlayerManifest?, val rawJson: String?,
 @Serializable data class PlayerSyncPolicy(val manifestReconciliationSeconds:Int=300,val statusReportSeconds:Int=60)
 @Serializable data class PlayerWebsitePolicy(val timeoutSeconds:Int=20,val cookiePolicy:String="first_party",val clearOnRestart:Boolean=false)
 data class PlayerConfigResponse(val config:PlayerConfig?,val rawJson:String?,val etag:String?,val notModified:Boolean)
-@Serializable data class PlayerCommand(val id:String,val type:String,val payload:Map<String,Int> = emptyMap(),val idempotencyKey:String,val state:String,val createdAt:String,val expiresAt:String)
+@Serializable data class PlayerCommand(val id:String,val type:String,val payload:kotlinx.serialization.json.JsonObject = kotlinx.serialization.json.buildJsonObject{},val idempotencyKey:String,val state:String,val createdAt:String,val expiresAt:String)
 @Serializable data class PlayerCommandList(val items:List<PlayerCommand> = emptyList())
+@Serializable data class PlayerUpdateMetadata(val releaseId:String,val applicationId:String,val versionCode:Long,val versionName:String,val minimumSdk:Int,val apkSizeBytes:Long,val apkSha256:String,val signingCertificateSha256:String,val apkPath:String)
 
 @Serializable data class PlayerRuntimeStatus(
     val activeManifestVersion: Long? = null, val pendingManifestVersion: Long? = null, val assignedPlaylistId: String? = null,

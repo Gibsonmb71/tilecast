@@ -71,33 +71,42 @@ type EnrollmentResult struct {
 }
 
 type Screen struct {
-	ID                    uuid.UUID  `json:"id"`
-	Name                  string     `json:"name"`
-	Description           string     `json:"description"`
-	Location              string     `json:"location"`
-	Platform              string     `json:"platform"`
-	DeviceManufacturer    string     `json:"deviceManufacturer"`
-	DeviceModel           string     `json:"deviceModel"`
-	AndroidVersion        string     `json:"androidVersion"`
-	PlayerVersion         string     `json:"playerVersion"`
-	ScreenWidth           int        `json:"screenWidth"`
-	ScreenHeight          int        `json:"screenHeight"`
-	Density               float32    `json:"density"`
-	Locale                string     `json:"locale"`
-	Timezone              string     `json:"timezone"`
-	AvailableStorageBytes *int64     `json:"availableStorageBytes,omitempty"`
-	UptimeSeconds         *int64     `json:"uptimeSeconds,omitempty"`
-	Enabled               bool       `json:"enabled"`
-	PairedAt              time.Time  `json:"pairedAt"`
-	LastConnectedAt       *time.Time `json:"lastConnectedAt,omitempty"`
-	LastDisconnectedAt    *time.Time `json:"lastDisconnectedAt,omitempty"`
-	LastHeartbeatAt       *time.Time `json:"lastHeartbeatAt,omitempty"`
-	LastKnownIP           *string    `json:"lastKnownIp,omitempty"`
-	LastContactAt         *time.Time `json:"lastContactAt,omitempty"`
-	Status                Status     `json:"status"`
-	HasActiveCredential   bool       `json:"hasActiveCredential"`
-	CreatedAt             time.Time  `json:"createdAt"`
-	UpdatedAt             time.Time  `json:"updatedAt"`
+	ID                        uuid.UUID  `json:"id"`
+	Name                      string     `json:"name"`
+	Description               string     `json:"description"`
+	Location                  string     `json:"location"`
+	Platform                  string     `json:"platform"`
+	DeviceManufacturer        string     `json:"deviceManufacturer"`
+	DeviceModel               string     `json:"deviceModel"`
+	AndroidVersion            string     `json:"androidVersion"`
+	PlayerVersion             string     `json:"playerVersion"`
+	PlayerVersionCode         *int64     `json:"playerVersionCode,omitempty"`
+	AndroidSDK                *int       `json:"androidSdk,omitempty"`
+	InstallerSource           *string    `json:"installerSource,omitempty"`
+	InstallPermissionStatus   *string    `json:"installPermissionStatus,omitempty"`
+	CurrentUpdateDeploymentID *uuid.UUID `json:"currentUpdateDeploymentId,omitempty"`
+	UpdateState               *string    `json:"updateState,omitempty"`
+	UpdateDownloadedBytes     *int64     `json:"updateDownloadedBytes,omitempty"`
+	UpdateExpectedBytes       *int64     `json:"updateExpectedBytes,omitempty"`
+	UpdateError               *string    `json:"updateError,omitempty"`
+	ScreenWidth               int        `json:"screenWidth"`
+	ScreenHeight              int        `json:"screenHeight"`
+	Density                   float32    `json:"density"`
+	Locale                    string     `json:"locale"`
+	Timezone                  string     `json:"timezone"`
+	AvailableStorageBytes     *int64     `json:"availableStorageBytes,omitempty"`
+	UptimeSeconds             *int64     `json:"uptimeSeconds,omitempty"`
+	Enabled                   bool       `json:"enabled"`
+	PairedAt                  time.Time  `json:"pairedAt"`
+	LastConnectedAt           *time.Time `json:"lastConnectedAt,omitempty"`
+	LastDisconnectedAt        *time.Time `json:"lastDisconnectedAt,omitempty"`
+	LastHeartbeatAt           *time.Time `json:"lastHeartbeatAt,omitempty"`
+	LastKnownIP               *string    `json:"lastKnownIp,omitempty"`
+	LastContactAt             *time.Time `json:"lastContactAt,omitempty"`
+	Status                    Status     `json:"status"`
+	HasActiveCredential       bool       `json:"hasActiveCredential"`
+	CreatedAt                 time.Time  `json:"createdAt"`
+	UpdatedAt                 time.Time  `json:"updatedAt"`
 }
 
 type Status string
@@ -124,6 +133,10 @@ type Heartbeat struct {
 	AvailableStorageBytes         *int64     `json:"availableStorageBytes,omitempty"`
 	UptimeSeconds                 *int64     `json:"uptimeSeconds,omitempty"`
 	PlayerVersion                 string     `json:"playerVersion"`
+	PlayerVersionCode             *int64     `json:"playerVersionCode,omitempty"`
+	AndroidSDK                    *int       `json:"androidSdk,omitempty"`
+	InstallerSource               string     `json:"installerSource,omitempty"`
+	InstallPermissionStatus       string     `json:"installPermissionStatus,omitempty"`
 	ActiveManifestVersion         *int64     `json:"activeManifestVersion,omitempty"`
 	PendingManifestVersion        *int64     `json:"pendingManifestVersion,omitempty"`
 	AssignedPlaylistID            *uuid.UUID `json:"assignedPlaylistId,omitempty"`
@@ -155,6 +168,11 @@ type Heartbeat struct {
 	WebsiteRendererRecoveryCount  *int       `json:"websiteRendererRecoveryCount,omitempty"`
 	ActiveConfigRevision          *int64     `json:"activeConfigRevision,omitempty"`
 	ConfigurationError            string     `json:"configurationError,omitempty"`
+	CurrentUpdateDeploymentID     *uuid.UUID `json:"currentUpdateDeploymentId,omitempty"`
+	UpdateState                   string     `json:"updateState,omitempty"`
+	UpdateDownloadedBytes         *int64     `json:"updateDownloadedBytes,omitempty"`
+	UpdateExpectedBytes           *int64     `json:"updateExpectedBytes,omitempty"`
+	UpdateError                   string     `json:"updateError,omitempty"`
 }
 
 func addressString(address netip.Addr) *string {

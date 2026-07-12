@@ -64,3 +64,7 @@ Emergency takeovers are separate lifecycle records rather than schedules. Manife
 ## Milestone 8 settings architecture
 
 The closed typed registry separates organization settings, preferences, group policy, and screen policy. Effective player policy uses screen, group priority plus stable UUID, organization, then built-in precedence. A separate ETag-enabled player configuration document changes policy and branding without revising content manifests. See [settings.md](settings.md).
+
+## Milestone 9 player updates
+
+The `updates` domain owns a fixed GitHub Releases provider, Ed25519-signed release manifests, Android APK-signature verification, private persistent cache, deployment snapshots, and per-screen state. Update commands reuse PostgreSQL command delivery; APK bytes use a device-authenticated range endpoint and never enter content manifests. Success remains provisional until the updated player reconnects with the expected version code. See [player-updates.md](player-updates.md).

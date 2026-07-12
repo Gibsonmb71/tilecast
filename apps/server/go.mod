@@ -14,10 +14,13 @@ require (
 )
 
 require (
+	github.com/avast/apkparser v0.0.0-20251022140151-7294e274bf65 // indirect
+	github.com/avast/apkverifier v0.0.0-20260710162049-d0e1a791cd5a // indirect
 	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
+	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/mfridman/interpolate v0.0.2 // indirect
 	github.com/miekg/dns v1.1.27 // indirect
 	github.com/sethvargo/go-retry v0.3.0 // indirect

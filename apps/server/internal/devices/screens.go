@@ -15,8 +15,9 @@ const screenSelect = `
 SELECT s.id,s.name,s.description,s.location,s.platform,s.device_manufacturer,s.device_model,s.android_version,s.player_version,
        s.screen_width,s.screen_height,s.density,s.locale,s.timezone,s.available_storage_bytes,s.uptime_seconds,s.enabled,s.paired_at,
        s.last_connected_at,s.last_disconnected_at,s.last_heartbeat_at,s.last_known_ip::text,s.created_at,s.updated_at,
-       EXISTS(SELECT 1 FROM device_credentials c WHERE c.screen_id=s.id AND c.revoked_at IS NULL)
-FROM screens s`
+       EXISTS(SELECT 1 FROM device_credentials c WHERE c.screen_id=s.id AND c.revoked_at IS NULL),
+       ps.player_version_code,ps.android_sdk,ps.installer_source,ps.install_permission_status,ps.current_update_deployment_id,ps.update_state,ps.update_downloaded_bytes,ps.update_expected_bytes,ps.update_error
+FROM screens s LEFT JOIN screen_player_status ps ON ps.screen_id=s.id`
 
 func (s *Service) ListScreens(ctx context.Context) ([]Screen, error) {
 	rows, err := s.db.Query(ctx, screenSelect+` ORDER BY s.name ASC LIMIT 500`)
@@ -50,7 +51,7 @@ type scanner interface {
 
 func scanScreen(row scanner, presence *PresenceHub, now time.Time) (Screen, error) {
 	var screen Screen
-	if err := row.Scan(&screen.ID, &screen.Name, &screen.Description, &screen.Location, &screen.Platform, &screen.DeviceManufacturer, &screen.DeviceModel, &screen.AndroidVersion, &screen.PlayerVersion, &screen.ScreenWidth, &screen.ScreenHeight, &screen.Density, &screen.Locale, &screen.Timezone, &screen.AvailableStorageBytes, &screen.UptimeSeconds, &screen.Enabled, &screen.PairedAt, &screen.LastConnectedAt, &screen.LastDisconnectedAt, &screen.LastHeartbeatAt, &screen.LastKnownIP, &screen.CreatedAt, &screen.UpdatedAt, &screen.HasActiveCredential); err != nil {
+	if err := row.Scan(&screen.ID, &screen.Name, &screen.Description, &screen.Location, &screen.Platform, &screen.DeviceManufacturer, &screen.DeviceModel, &screen.AndroidVersion, &screen.PlayerVersion, &screen.ScreenWidth, &screen.ScreenHeight, &screen.Density, &screen.Locale, &screen.Timezone, &screen.AvailableStorageBytes, &screen.UptimeSeconds, &screen.Enabled, &screen.PairedAt, &screen.LastConnectedAt, &screen.LastDisconnectedAt, &screen.LastHeartbeatAt, &screen.LastKnownIP, &screen.CreatedAt, &screen.UpdatedAt, &screen.HasActiveCredential, &screen.PlayerVersionCode, &screen.AndroidSDK, &screen.InstallerSource, &screen.InstallPermissionStatus, &screen.CurrentUpdateDeploymentID, &screen.UpdateState, &screen.UpdateDownloadedBytes, &screen.UpdateExpectedBytes, &screen.UpdateError); err != nil {
 		return Screen{}, err
 	}
 	screen.LastContactAt = latestContact(screen.LastConnectedAt, screen.LastDisconnectedAt, screen.LastHeartbeatAt)

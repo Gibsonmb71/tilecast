@@ -27,7 +27,7 @@ FROM alpine:3.22
 RUN apk add --no-cache ca-certificates tzdata ffmpeg && addgroup -S tilecast && adduser -S -G tilecast tilecast
 WORKDIR /app
 COPY --from=server /out/tilecast-server /usr/local/bin/tilecast-server
-RUN mkdir -p /data/media/originals /data/media/variants /data/media/thumbnails /data/media/uploads /data/media/trash && chown -R tilecast:tilecast /data
+RUN mkdir -p /data/media/originals /data/media/variants /data/media/thumbnails /data/media/uploads /data/media/trash /data/updates && chown -R tilecast:tilecast /data
 USER tilecast
 EXPOSE 8080
 VOLUME ["/data"]

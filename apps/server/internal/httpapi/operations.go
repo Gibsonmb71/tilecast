@@ -19,6 +19,7 @@ var commandTypes = map[string]bool{
 	"sync_now": true, "reload_playback": true, "identify_screen": true,
 	"clear_media_cache": true, "clear_website_data": true,
 	"disable_playback": true, "enable_playback": true,
+	"install_player_update": true,
 }
 
 type emergencyInput struct {
@@ -505,6 +506,25 @@ func (s *server) validateCommand(typ string, raw json.RawMessage) ([]byte, error
 		maxIdentify := s.operations.MaxIdentifySeconds
 		if !ok || duration < 10 || duration > float64(maxIdentify) || duration != float64(int(duration)) {
 			return nil, fmt.Errorf("identify duration must be 10 to %d seconds", maxIdentify)
+		}
+	case "install_player_update":
+		allowed := map[string]bool{"deploymentId": true, "releaseId": true, "expectedVersionCode": true, "expectedApkSha256": true, "installationMode": true, "maintenanceWindowStart": true}
+		for key := range object {
+			if !allowed[key] {
+				return nil, errors.New("player update payload contains an unsupported field")
+			}
+		}
+		if _, err := uuid.Parse(fmt.Sprint(object["deploymentId"])); err != nil {
+			return nil, errors.New("player update deployment ID is invalid")
+		}
+		if _, err := uuid.Parse(fmt.Sprint(object["releaseId"])); err != nil {
+			return nil, errors.New("player update release ID is invalid")
+		}
+		version, versionOK := object["expectedVersionCode"].(float64)
+		hash, hashOK := object["expectedApkSha256"].(string)
+		mode, modeOK := object["installationMode"].(string)
+		if !versionOK || version <= 0 || version != float64(int64(version)) || !hashOK || len(hash) != 64 || !modeOK || (mode != "download_only" && mode != "install_now" && mode != "maintenance_window") {
+			return nil, errors.New("player update payload is invalid")
 		}
 	default:
 		if len(object) > 0 {

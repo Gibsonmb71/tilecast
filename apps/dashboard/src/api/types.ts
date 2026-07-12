@@ -37,6 +37,15 @@ export type Screen = {
   deviceModel: string;
   androidVersion: string;
   playerVersion: string;
+  playerVersionCode?: number;
+  androidSdk?: number;
+  installerSource?: string;
+  installPermissionStatus?: string;
+  currentUpdateDeploymentId?: string;
+  updateState?: string;
+  updateDownloadedBytes?: number;
+  updateExpectedBytes?: number;
+  updateError?: string;
   screenWidth: number;
   screenHeight: number;
   density: number;
@@ -307,6 +316,43 @@ export type SchedulePreview = {
   applicableSchedules: Schedule[];
   nextTransition?: string;
   conflicts: string[];
+};
+
+export type PlayerRelease = {
+  id: string;
+  tag: string;
+  channel: "stable" | "beta";
+  versionCode: number;
+  versionName: string;
+  minimumSdk: number;
+  releaseNotes: string;
+  publishedAt: string;
+  apkSizeBytes: number;
+  apkSha256: string;
+  signingCertificateSha256: string;
+  manifestSignature: string;
+  cacheStatus: "missing" | "downloading" | "cached" | "failed";
+  verificationStatus: "verified_manifest" | "verified" | "failed";
+  verificationError?: string;
+};
+export type PlayerReleaseList = {
+  repository: string;
+  lastCheckedAt?: string;
+  providerError?: string;
+  items: PlayerRelease[];
+};
+export type UpdateDeployment = {
+  id: string;
+  name: string;
+  mode: string;
+  status: string;
+  createdAt: string;
+  versionCode: number;
+  versionName: string;
+  targetCount: number;
+  succeededCount: number;
+  failedCount: number;
+  waitingForUserCount: number;
 };
 
 export type PairingRequest = {

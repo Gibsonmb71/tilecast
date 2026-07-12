@@ -14,8 +14,8 @@ android {
         applicationId = "org.tilecast.player"
         minSdk = 23
         targetSdk = 35
-        versionCode = 5
-        versionName = "0.5.0"
+        versionCode = 9
+        versionName = "0.9.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
 		buildConfigField("long", "MEDIA_CACHE_BYTES", "${providers.gradleProperty("TILECAST_PLAYER_CACHE_BYTES").orElse("8589934592").get()}L")
@@ -24,10 +24,25 @@ android {
 		buildConfigField("int", "CONCURRENT_DOWNLOADS", providers.gradleProperty("TILECAST_PLAYER_CONCURRENT_DOWNLOADS").orElse("2").get())
     }
 
+    val releaseKeystore = providers.environmentVariable("TILECAST_ANDROID_KEYSTORE_PATH")
+    val releaseStorePassword = providers.environmentVariable("TILECAST_ANDROID_KEYSTORE_PASSWORD")
+    val releaseAlias = providers.environmentVariable("TILECAST_ANDROID_KEY_ALIAS")
+    val releaseKeyPassword = providers.environmentVariable("TILECAST_ANDROID_KEY_PASSWORD")
+    signingConfigs {
+        if (releaseKeystore.isPresent && releaseStorePassword.isPresent && releaseAlias.isPresent && releaseKeyPassword.isPresent) {
+            create("production") {
+                storeFile = file(releaseKeystore.get())
+                storePassword = releaseStorePassword.get()
+                keyAlias = releaseAlias.get()
+                keyPassword = releaseKeyPassword.get()
+            }
+        }
+    }
     buildTypes {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.findByName("production")
         }
     }
     compileOptions {

@@ -37,3 +37,9 @@ Open the website asset for safe player diagnostics. Confirm the TV can resolve a
 Website pages are not offline-capable. Configure a ready fallback image for predictable offline presentation, or use the Tilecast placeholder/skip behavior. Do not rely on incidental WebView cache. On persistent site-state problems, an Owner or Administrator can clear website data from screen details; the command requires the player to reconnect before its ten-minute expiry.
 
 For stale player policy, compare the effective configuration revision with the active revision reported by the player, then request configuration reconciliation from Settings → System. Invalid configuration preserves the previous valid revision and reports a safe error.
+
+## A Player update is unavailable or waiting
+
+Confirm the release is published rather than draft and contains the three exact asset names. Check the trusted manifest public key, GitHub rate-limit status, `/data/updates` free space, and that the version code exceeds the installed player. Verification failures are intentionally undeployable.
+
+`Waiting for permission` requires enabling unknown-app installation for Tilecast Player. `Waiting for user` requires approving Android or Fire OS. Emergency playback delays installation. Interrupted downloads resume from `.part`. A certificate mismatch means the installed app and release use different Android keys and cannot update in place.

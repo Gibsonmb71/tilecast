@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Tilecast API
-  version: 0.8.0
+  version: 0.9.0
   license:
     name: AGPL-3.0-only
 paths:
@@ -795,6 +795,89 @@ paths:
             "409": { description: Revision conflict },
           },
       }
+  /api/v1/player-releases:
+    get:
+      summary: List fixed-repository Tilecast Player releases and verification state
+      responses: { "200": { description: Release list } }
+  /api/v1/player-releases/check:
+    post:
+      summary: Check Gibsonmb71/tilecast GitHub Releases
+      responses:
+        {
+          "200": { description: Check completed },
+          "502": { description: GitHub or verification failure },
+        }
+  /api/v1/player-releases/{id}/cache:
+    post:
+      summary: Download and verify a signed Player APK into private cache
+      responses:
+        {
+          "202": { description: Verification started },
+          "409": { description: Release cannot be cached },
+        }
+  /api/v1/update-deployments:
+    get:
+      summary: List Player update deployments
+      responses: { "200": { description: Deployment list } }
+    post:
+      summary: Create a deduplicated screen and group deployment
+      responses:
+        {
+          "201": { description: Deployment created },
+          "422": { description: Invalid or unverified release/targets },
+        }
+  /api/v1/update-deployments/{id}:
+    get:
+      summary: Read per-screen update state
+      responses: { "200": { description: Deployment detail } }
+  /api/v1/update-deployments/{id}/cancel:
+    post:
+      summary: Cancel pending update work
+      responses:
+        {
+          "200": { description: Cancelled },
+          "409": { description: Already complete },
+        }
+  /api/v1/update-deployments/{id}/screens/{screenId}/retry:
+    post:
+      summary: Retry a failed screen update idempotently
+      responses:
+        {
+          "202": { description: Retry queued },
+          "409": { description: Retry not allowed },
+        }
+  /api/v1/player/updates/{releaseId}:
+    get:
+      summary: Get targeted verified Player update metadata
+      responses:
+        {
+          "200": { description: Update metadata },
+          "404": { description: Not targeted },
+        }
+  /api/v1/player/updates/{releaseId}/apk:
+    head:
+      summary: Inspect authenticated APK range metadata
+      responses:
+        {
+          "200": { description: APK metadata },
+          "403": { description: Screen is not targeted },
+        }
+    get:
+      summary: Download or resume authenticated cached APK
+      responses:
+        {
+          "200": { description: Complete APK },
+          "206": { description: APK byte range },
+          "416": { description: Invalid range },
+        }
+  /api/v1/player/update-deployments/{deploymentId}/status:
+    post:
+      summary: Report bounded Player update preparation and installer status
+      responses:
+        {
+          "200": { description: Status accepted },
+          "409": { description: Deployment cancelled or complete },
+        }
 components:
   parameters:
     ResourceID:

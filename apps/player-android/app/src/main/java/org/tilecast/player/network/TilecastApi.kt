@@ -39,6 +39,11 @@ class TilecastApi(
         val body=kotlinx.serialization.json.buildJsonObject{put("success",kotlinx.serialization.json.JsonPrimitive(success));put("code",kotlinx.serialization.json.JsonPrimitive(code));put("message",kotlinx.serialization.json.JsonPrimitive(message))}.toString()
         post<kotlinx.serialization.json.JsonObject>(serverUrl,"/api/v1/player/commands/$id/result",body,"Bearer $credential")
     }
+    suspend fun playerUpdate(serverUrl:String,credential:String,releaseId:String):PlayerUpdateMetadata=get(serverUrl,"/api/v1/player/updates/$releaseId","Bearer $credential")
+    suspend fun updateStatus(serverUrl:String,credential:String,deploymentId:String,state:String,downloadedBytes:Long,permissionStatus:String="",installerStatus:String="",error:String=""){
+        val body=kotlinx.serialization.json.buildJsonObject{put("state",kotlinx.serialization.json.JsonPrimitive(state));put("downloadedBytes",kotlinx.serialization.json.JsonPrimitive(downloadedBytes));put("permissionStatus",kotlinx.serialization.json.JsonPrimitive(permissionStatus));put("installerStatus",kotlinx.serialization.json.JsonPrimitive(installerStatus));put("error",kotlinx.serialization.json.JsonPrimitive(error))}.toString()
+        post<kotlinx.serialization.json.JsonObject>(serverUrl,"/api/v1/player/update-deployments/$deploymentId/status",body,"Bearer $credential")
+    }
 
     fun socket(serverUrl: String, credential: String, listener: okhttp3.WebSocketListener): okhttp3.WebSocket {
         val socketUrl = serverUrl.replaceFirst("https://", "wss://").replaceFirst("http://", "ws://") + "/api/v1/player/socket"

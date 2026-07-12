@@ -75,7 +75,7 @@ class MainActivity : ComponentActivity() {
 		WindowCompat.getInsetsController(window,window.decorView).hide(WindowInsetsCompat.Type.systemBars())
         setContent { TilecastTheme { TilecastPlayer(model) } }
     }
-    override fun onStart(){super.onStart();ContextCompat.registerReceiver(this,clockReceiver,IntentFilter().apply{addAction(Intent.ACTION_TIME_CHANGED);addAction(Intent.ACTION_TIMEZONE_CHANGED)},ContextCompat.RECEIVER_NOT_EXPORTED);model.recalculateSchedule()}
+    override fun onStart(){super.onStart();ContextCompat.registerReceiver(this,clockReceiver,IntentFilter().apply{addAction(Intent.ACTION_TIME_CHANGED);addAction(Intent.ACTION_TIMEZONE_CHANGED)},ContextCompat.RECEIVER_NOT_EXPORTED);model.recalculateSchedule();model.refreshUpdatePermission();model.resumeUpdateSchedule()}
     override fun onStop(){unregisterReceiver(clockReceiver);super.onStop()}
 }
 
@@ -94,9 +94,11 @@ private val warning = Color(0xFFE9CF79)
 	val disabled by model.playbackDisabled.collectAsStateWithLifecycle()
 	val identify by model.identify.collectAsStateWithLifecycle()
 	val config by model.playerConfig.collectAsStateWithLifecycle()
+	val update by model.update.collectAsStateWithLifecycle()
 	val brandedBackground=config?.branding?.backgroundColor?.let{runCatching{Color(android.graphics.Color.parseColor(it))}.getOrNull()}?:background
 	val brandedText=config?.branding?.textColor?.let{runCatching{Color(android.graphics.Color.parseColor(it))}.getOrNull()}?:text
 	if(identify!=null){Box(Modifier.fillMaxSize().background(Color.Black),contentAlignment=Alignment.Center){Text(identify!!,color=Color.White,style=MaterialTheme.typography.displayLarge)};return}
+	if(update?.state in setOf("waiting_for_permission","waiting_for_user","installing")){UpdateApproval(update!!,model::openUpdatePermission,model::installUpdate);return}
 	if (content != null) {
 		FullscreenPlayback(content!!, model::playbackBoundary, model::playbackError,model::websitePlaybackStatus)
 		return
@@ -126,6 +128,8 @@ private val warning = Color(0xFFE9CF79)
         }
     }
 }
+
+@Composable private fun UpdateApproval(state:org.tilecast.player.content.UpdateUiState,permission:()->Unit,install:()->Unit){Box(Modifier.fillMaxSize().background(background).padding(72.dp),contentAlignment=Alignment.Center){Column(horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(20.dp)){TilecastBrand();Text("Tilecast Player update",color=text,fontSize=44.sp,fontWeight=FontWeight.SemiBold);Text("${state.currentVersion} → ${state.newVersion}",color=accent,fontSize=28.sp);Text(state.message,color=muted,fontSize=21.sp);when{state.permissionRequired->Button(onClick=permission){Text("Open install permission settings")};state.installReady->Button(onClick=install){Text("Install update")};else->CircularProgressIndicator()};Text("Android may require confirmation. Tilecast cannot approve the system installer for you.",color=warning,fontSize=16.sp)}}}
 
 @Composable private fun TilecastBrand() { Row(verticalAlignment = Alignment.CenterVertically) { Row(Modifier.size(31.dp).border(1.dp, accent, RoundedCornerShape(3.dp)).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) { Box(Modifier.width(8.dp).fillMaxSize().background(warning)); Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(3.dp)) { Box(Modifier.weight(1f).fillMaxWidth().background(accent)); Box(Modifier.weight(1f).fillMaxWidth().background(text)) } }; Spacer(Modifier.width(13.dp)); Text("Tilecast", color = text, fontSize = 28.sp, fontWeight = FontWeight.Bold) } }
 

@@ -15,6 +15,7 @@ const sections = [
   "retention",
   "users",
   "preferences",
+  "player-updates",
   "system",
   "import-export",
 ] as const;
@@ -29,6 +30,7 @@ const labels: Record<string, string> = {
   retention: "Retention",
   users: "Users",
   preferences: "My Preferences",
+  "player-updates": "Player Updates",
   system: "System",
   "import-export": "Import and Export",
 };
@@ -146,6 +148,8 @@ export function SettingsPage() {
           <UsersPanel canManage={manageable} />
         ) : section === "system" ? (
           <SystemPanel canManage={manageable} />
+        ) : section === "player-updates" ? (
+          <PlayerUpdatesPanel owner={owner} manageable={manageable} />
         ) : section === "import-export" ? (
           <ImportExport owner={owner} />
         ) : (
@@ -547,6 +551,379 @@ function ImportExport({ owner }: { owner: boolean }) {
 function documentGlobal() {
   return window.document;
 }
+
+function PlayerUpdatesPanel({
+  owner,
+  manageable,
+}: {
+  owner: boolean;
+  manageable: boolean;
+}) {
+  const auth = useAuth();
+  const queryClient = useQueryClient();
+  const releases = useQuery({
+    queryKey: ["player-releases"],
+    queryFn: api.playerReleases,
+    refetchInterval: 10_000,
+  });
+  const deployments = useQuery({
+    queryKey: ["update-deployments"],
+    queryFn: api.updateDeployments,
+    refetchInterval: 10_000,
+  });
+  const screens = useQuery({ queryKey: ["screens"], queryFn: api.screens });
+  const groups = useQuery({
+    queryKey: ["screen-groups"],
+    queryFn: () => api.screenGroups(),
+  });
+  const [selectedRelease, setSelectedRelease] = useState("");
+  const [selectedScreens, setSelectedScreens] = useState<string[]>([]);
+  const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
+  const [mode, setMode] = useState("download_only");
+  const [maintenanceWindow, setMaintenanceWindow] = useState("");
+  const check = useMutation({
+    mutationFn: () => api.checkPlayerReleases(auth.status?.csrfToken ?? ""),
+    onSuccess: () =>
+      void queryClient.invalidateQueries({ queryKey: ["player-releases"] }),
+  });
+  const cache = useMutation({
+    mutationFn: (id: string) =>
+      api.cachePlayerRelease(id, auth.status?.csrfToken ?? ""),
+    onSuccess: () =>
+      void queryClient.invalidateQueries({ queryKey: ["player-releases"] }),
+  });
+  const deploy = useMutation({
+    mutationFn: () =>
+      api.createUpdateDeployment(
+        {
+          releaseId: selectedRelease,
+          name: `Tilecast Player ${releases.data?.items.find((item) => item.id === selectedRelease)?.versionName ?? "update"}`,
+          mode,
+          screenIds: selectedScreens,
+          groupIds: selectedGroups,
+          maintenanceWindowStart:
+            mode === "maintenance_window" && maintenanceWindow
+              ? new Date(maintenanceWindow).toISOString()
+              : undefined,
+        },
+        auth.status?.csrfToken ?? "",
+      ),
+    onSuccess: () => {
+      setSelectedScreens([]);
+      setSelectedGroups([]);
+      void queryClient.invalidateQueries({ queryKey: ["update-deployments"] });
+    },
+  });
+  const release = releases.data?.items.find(
+    (item) => item.id === selectedRelease,
+  );
+  const explicitTargets = new Set(selectedScreens);
+  for (const group of groups.data?.items ?? []) {
+    if (selectedGroups.includes(group.id))
+      for (const screen of group.screens) explicitTargets.add(screen.id);
+  }
+  const targetScreens = (screens.data?.items ?? []).filter((screen) =>
+    explicitTargets.has(screen.id),
+  );
+  return (
+    <div className="settings-stack">
+      <section className="detail-card">
+        <div className="detail-card__heading">
+          <div>
+            <h3>GitHub Releases</h3>
+            <p>
+              Repository: <code>Gibsonmb71/tilecast</code>
+            </p>
+          </div>
+          {owner && (
+            <button
+              className="button button--primary"
+              onClick={() => check.mutate()}
+              disabled={check.isPending}
+            >
+              {check.isPending ? "Checking…" : "Check now"}
+            </button>
+          )}
+        </div>
+        <p>
+          Last check:{" "}
+          {releases.data?.lastCheckedAt
+            ? new Date(releases.data.lastCheckedAt).toLocaleString()
+            : "Never"}
+        </p>
+        {releases.data?.providerError && (
+          <div className="notice notice--error">
+            {releases.data.providerError}
+          </div>
+        )}
+        <div className="settings-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Version</th>
+                <th>Channel</th>
+                <th>Published</th>
+                <th>APK</th>
+                <th>Verification</th>
+                <th>Cache</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {(releases.data?.items ?? []).map((release) => (
+                <tr key={release.id}>
+                  <td>
+                    <strong>{release.versionName}</strong>
+                    <small>Code {release.versionCode}</small>
+                  </td>
+                  <td>
+                    {release.channel === "beta" ? "Beta prerelease" : "Stable"}
+                  </td>
+                  <td>{new Date(release.publishedAt).toLocaleDateString()}</td>
+                  <td>{(release.apkSizeBytes / 1024 / 1024).toFixed(1)} MB</td>
+                  <td>
+                    <span
+                      className={`status-pill status-pill--${release.verificationStatus === "verified" ? "success" : release.verificationStatus === "failed" ? "danger" : "warning"}`}
+                    >
+                      {release.verificationStatus.replaceAll("_", " ")}
+                    </span>
+                    {release.verificationError && (
+                      <small>{release.verificationError}</small>
+                    )}
+                  </td>
+                  <td>{release.cacheStatus}</td>
+                  <td>
+                    {owner &&
+                      release.verificationStatus !== "verified" &&
+                      release.cacheStatus !== "downloading" && (
+                        <button
+                          className="button button--quiet"
+                          onClick={() => cache.mutate(release.id)}
+                        >
+                          {release.verificationStatus === "failed"
+                            ? "Retry verification"
+                            : "Download and verify"}
+                        </button>
+                      )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      {manageable && (
+        <section className="detail-card">
+          <h3>Deploy player update</h3>
+          <p>
+            Targets selected through both screens and groups are deduplicated
+            when deployment begins. Installation waits while emergency playback
+            is active.
+          </p>
+          <label>
+            Verified release
+            <select
+              value={selectedRelease}
+              onChange={(event) => setSelectedRelease(event.target.value)}
+            >
+              <option value="">Select a release</option>
+              {(releases.data?.items ?? [])
+                .filter(
+                  (item) =>
+                    item.verificationStatus === "verified" &&
+                    item.cacheStatus === "cached",
+                )
+                .map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.versionName} · {item.channel}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <label>
+            Mode
+            <select
+              value={mode}
+              onChange={(event) => setMode(event.target.value)}
+            >
+              <option value="download_only">Download only</option>
+              <option value="install_now">
+                Download and request installation
+              </option>
+              <option value="maintenance_window">Maintenance window</option>
+            </select>
+          </label>
+          {mode === "maintenance_window" && (
+            <label>
+              Maintenance window start
+              <input
+                type="datetime-local"
+                value={maintenanceWindow}
+                onChange={(event) => setMaintenanceWindow(event.target.value)}
+              />
+            </label>
+          )}
+          {selectedRelease && targetScreens.length > 0 && (
+            <div className="notice">
+              <strong>{targetScreens.length} affected screens</strong>
+              <p>
+                {selectedScreens.length +
+                  selectedGroups.reduce(
+                    (total, id) =>
+                      total +
+                      (groups.data?.items.find((group) => group.id === id)
+                        ?.membershipCount ?? 0),
+                    0,
+                  ) -
+                  targetScreens.length}{" "}
+                duplicate targets removed ·{" "}
+                {
+                  targetScreens.filter((screen) => screen.status === "offline")
+                    .length
+                }{" "}
+                offline ·{" "}
+                {
+                  targetScreens.filter(
+                    (screen) =>
+                      screen.playerVersionCode !== undefined &&
+                      release &&
+                      screen.playerVersionCode >= release.versionCode,
+                  ).length
+                }{" "}
+                already current ·{" "}
+                {
+                  targetScreens.filter(
+                    (screen) => !screen.installPermissionStatus,
+                  ).length
+                }{" "}
+                unknown install permission
+              </p>
+              <p>
+                Maximum download:{" "}
+                {(
+                  ((release?.apkSizeBytes ?? 0) * targetScreens.length) /
+                  1024 /
+                  1024
+                ).toFixed(1)}{" "}
+                MB. Emergency-active players download but delay installation.
+              </p>
+            </div>
+          )}
+          <div className="policy-fields">
+            <fieldset>
+              <legend>Screens</legend>
+              {(screens.data?.items ?? []).map((screen) => (
+                <label key={screen.id}>
+                  <input
+                    type="checkbox"
+                    checked={selectedScreens.includes(screen.id)}
+                    onChange={(event) =>
+                      setSelectedScreens(
+                        event.target.checked
+                          ? [...selectedScreens, screen.id]
+                          : selectedScreens.filter((id) => id !== screen.id),
+                      )
+                    }
+                  />
+                  {screen.name} · {screen.playerVersion} · {screen.status}
+                </label>
+              ))}
+            </fieldset>
+            <fieldset>
+              <legend>Groups</legend>
+              {(groups.data?.items ?? []).map((group) => (
+                <label key={group.id}>
+                  <input
+                    type="checkbox"
+                    checked={selectedGroups.includes(group.id)}
+                    onChange={(event) =>
+                      setSelectedGroups(
+                        event.target.checked
+                          ? [...selectedGroups, group.id]
+                          : selectedGroups.filter((id) => id !== group.id),
+                      )
+                    }
+                  />
+                  {group.name} · {group.membershipCount} screens
+                </label>
+              ))}
+            </fieldset>
+          </div>
+          <button
+            className="button button--primary"
+            disabled={
+              !selectedRelease ||
+              selectedScreens.length + selectedGroups.length === 0 ||
+              (mode === "maintenance_window" && !maintenanceWindow) ||
+              deploy.isPending
+            }
+            onClick={() => {
+              if (
+                confirm(
+                  "Deploy player update? Android may require approval on each TV.",
+                )
+              )
+                deploy.mutate();
+            }}
+          >
+            Deploy player update
+          </button>
+          {deploy.error && (
+            <div className="notice notice--error">{deploy.error.message}</div>
+          )}
+        </section>
+      )}
+      <section className="detail-card">
+        <h3>Deployments</h3>
+        <div className="settings-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Mode</th>
+                <th>Status</th>
+                <th>Targets</th>
+                <th>Succeeded</th>
+                <th>Waiting for user</th>
+                <th>Failed</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(deployments.data?.items ?? []).map((item) => (
+                <tr key={item.id}>
+                  <td>
+                    {item.name}
+                    <small>
+                      {item.versionName} ({item.versionCode})
+                    </small>
+                  </td>
+                  <td>{item.mode.replaceAll("_", " ")}</td>
+                  <td>{item.status}</td>
+                  <td>{item.targetCount}</td>
+                  <td>{item.succeededCount}</td>
+                  <td>{item.waitingForUserCount}</td>
+                  <td>{item.failedCount}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+export function playerUpdateStateLabel(state: string) {
+  return state === "waiting_for_user"
+    ? "Waiting for user — approval required on TV"
+    : state === "waiting_for_permission"
+      ? "Waiting for install permission"
+      : state.replaceAll("_", " ");
+}
+
+export function canDeployPlayerUpdates(role: string | undefined) {
+  return role === "owner" || role === "administrator";
+}
 function settingText(value: unknown, fallback: string) {
   return typeof value === "string" ? value : fallback;
 }
@@ -576,6 +953,7 @@ function description(section: string) {
     retention: "Bounded cleanup and history policies.",
     users: "Local Tilecast accounts and role status.",
     preferences: "Preferences for your Studio account only.",
+    "player-updates": "Signed Tilecast Player APK releases from GitHub.",
     system: "Safe diagnostics and maintenance actions.",
     "import-export": "Portable non-secret Tilecast configuration.",
   }[section];

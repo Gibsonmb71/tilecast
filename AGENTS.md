@@ -36,6 +36,8 @@ Milestone 2 intentionally does **not** contain media upload, media processing, p
 
 Milestone 8 adds a closed typed settings registry, organization branding, user preferences, deterministic group/screen player policies, independent player configuration synchronization, and safe system administration. Do not opportunistically begin multi-zone layouts, compositions, authenticated websites, proof-of-play, notifications, cloud accounts, billing, multi-tenancy, HDMI-CEC, automatic APK installation, or arbitrary configuration and execution.
 
+Milestone 9 adds signed Tilecast Player APK updates from the fixed public GitHub repository. It does not add server, container, or operating-system updates; app-store distribution; silent-install claims; root or ADB installation; arbitrary update repositories; or arbitrary executable commands. Multi-zone layouts and proof-of-play remain deferred.
+
 ## Repository map
 
 ```text

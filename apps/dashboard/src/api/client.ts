@@ -26,6 +26,8 @@ import type {
   PolicyDocument,
   EffectivePolicy,
   SystemStatus,
+  PlayerReleaseList,
+  UpdateDeployment,
 } from "./types";
 
 type DataResponse<T> = { data: T };
@@ -71,6 +73,40 @@ async function apiFailure(response: Response): Promise<never> {
 type SessionResult = { user: User; csrfToken: string };
 
 export const api = {
+  playerReleases: () => request<PlayerReleaseList>("/player-releases"),
+  checkPlayerReleases: (csrfToken: string) =>
+    request<{ checked: boolean }>("/player-releases/check", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
+  cachePlayerRelease: (id: string, csrfToken: string) =>
+    request<{ id: string; cacheStatus: string }>(
+      `/player-releases/${id}/cache`,
+      { method: "POST", headers: { "X-CSRF-Token": csrfToken } },
+    ),
+  updateDeployments: () =>
+    request<{ items: UpdateDeployment[] }>("/update-deployments"),
+  createUpdateDeployment: (
+    input: {
+      releaseId: string;
+      name: string;
+      mode: string;
+      screenIds: string[];
+      groupIds: string[];
+      maintenanceWindowStart?: string;
+    },
+    csrfToken: string,
+  ) =>
+    request<{ id: string; targetCount: number }>("/update-deployments", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  cancelUpdateDeployment: (id: string, csrfToken: string) =>
+    request<{ id: string; status: string }>(
+      `/update-deployments/${id}/cancel`,
+      { method: "POST", headers: { "X-CSRF-Token": csrfToken } },
+    ),
   settings: () => request<SettingsDocument>("/settings"),
   users: () => request<{ items: User[]; total: number }>("/users"),
   updateSettings: (
