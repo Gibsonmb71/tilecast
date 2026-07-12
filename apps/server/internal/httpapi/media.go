@@ -260,6 +260,8 @@ func (s *server) writeMediaError(w http.ResponseWriter, r *http.Request, err err
 		writeError(w, http.StatusNotFound, "media_variant_unavailable", "The requested media variant is unavailable.")
 	case errors.Is(err, media.ErrNotReady):
 		writeError(w, http.StatusConflict, "media_not_ready", "This media asset is not ready.")
+	case strings.Contains(err.Error(), "in use by a playlist"):
+		writeError(w, http.StatusConflict, "asset_in_use", "This asset is used by a playlist and cannot be deleted.")
 	case strings.Contains(err.Error(), "must be") || strings.Contains(err.Error(), "only failed"):
 		writeError(w, http.StatusUnprocessableEntity, "validation_failed", err.Error())
 	default:

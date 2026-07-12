@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/tilecast/tilecast/apps/server/internal/auth"
 	"github.com/tilecast/tilecast/apps/server/internal/devices"
+	"github.com/tilecast/tilecast/apps/server/internal/playlists"
 )
 
 const deviceContextKey contextKey = "device"
@@ -107,6 +108,16 @@ func (s *server) playerHeartbeat(w http.ResponseWriter, r *http.Request) {
 	if err := s.devices.Heartbeat(r.Context(), principal, body, r.RemoteAddr); err != nil {
 		s.writeDeviceError(w, r, err)
 		return
+	}
+	if s.playlists != nil {
+		_ = s.playlists.ReportStatus(r.Context(), principal.ScreenID, playlists.PlayerStatus{
+			ActiveManifestVersion: body.ActiveManifestVersion, PendingManifestVersion: body.PendingManifestVersion,
+			AssignedPlaylistID: body.AssignedPlaylistID, CurrentItemID: body.CurrentItemID, CurrentAssetID: body.CurrentAssetID,
+			PlaybackState: body.PlaybackState, DownloadQueueCount: body.DownloadQueueCount, DownloadedBytes: body.DownloadedBytes,
+			RequiredBytes: body.RequiredBytes, CacheUsedBytes: body.CacheUsedBytes, CacheLimitBytes: body.CacheLimitBytes,
+			LastSyncError: body.LastSynchronizationError, LastPlaybackError: body.LastPlaybackError,
+			CurrentScheduleID: body.CurrentScheduleID, CurrentPlaylistID: body.CurrentPlaylistID, SelectionSource: body.SelectionSource, NextTransitionAt: body.NextTransitionAt, DeviceClockOffsetSeconds: body.DeviceClockOffsetSeconds, ScheduleEvaluationError: body.ScheduleEvaluationError, ScheduleManifestVersion: body.ScheduleManifestVersion,
+		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"accepted": true}})
 }

@@ -15,3 +15,17 @@
 - **Insufficient storage:** free space or reduce the upload. Tilecast reserves `TILECAST_MEDIA_RESERVED_FREE_BYTES` after accounting for the declared upload size.
 - **Processing failed:** inspect server logs using the request/job identifier. Studio receives only a safe error message, never raw FFmpeg output. Use Retry after correcting missing executables or storage permissions.
 - **Variant unavailable:** the asset must be ready, the variant must be player-compatible, and the underlying file must still exist. Restore both database and media volume from the same backup point.
+
+## Player synchronization and playback
+
+- **Manifest remains out of date:** confirm the socket is connected, then allow the five-minute reconciliation fallback.
+- **Insufficient player storage:** Automatic videos fall back to streaming, but explicit Download items prevent activation when the cache limit or free-space reserve is exceeded. The previous manifest keeps playing.
+- **Download restarts:** the ETag, size, or hash changed; Tilecast safely discards the incompatible partial file.
+- **Content is online-only:** Stream items require the server. Use Download, or Automatic for images and suitably sized videos.
+- **No playable content:** every item failed or was unavailable. Tilecast waits before retrying instead of remaining black or entering a tight loop.
+
+## A schedule changes at the wrong time
+
+Check the schedule's IANA timezone and the player clock warning in screen details. Tilecast Player intentionally uses its device clock while offline; it reports server-time skew but does not silently shift evaluation. Confirm automatic date/time and timezone are enabled on the TV. Around daylight-saving changes, nonexistent local times advance to the first valid time after the gap, while repeated times use the earlier start occurrence and later end occurrence.
+
+If a future one-time event was created after the player lost connectivity, it cannot activate until the player receives a new manifest. Weekly rules already present in the active manifest continue recurring offline when their Download-policy assets remain cached.

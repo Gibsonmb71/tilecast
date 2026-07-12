@@ -21,4 +21,16 @@ Player endpoints accept `Authorization: Bearer <device-credential>`. Dashboard c
 
 Status thresholds are centralized on the server: connected socket is `online`, contact within two minutes is `recent`, contact within fifteen minutes is `stale`, and older contact is `offline`. Administrative disable and credential revocation override those states.
 
-The content manifest protocol remains unimplemented until Milestone 4.
+## Manifest synchronization and playback
+
+`GET /api/v1/player/manifest` uses the active device credential. It returns schema version 1, a persisted per-screen version, a single-zone playlist or `null`, exact compatible variants, hashes, sizes, and authenticated relative download paths. `If-None-Match` returns 304 without incrementing the version.
+
+Playback-relevant changes send only `{ "type": "manifest.changed", "manifestVersion": 12 }` on the authenticated socket. Players also reconcile every five minutes and on connection. They save a pending manifest, resume `.part` downloads with `Range` and `If-Range`, verify size and SHA-256, and atomically promote verified files. A replacement activates at the next item boundary; failed preparation never overwrites active content.
+
+Delivery is deterministic: Download always caches; Stream requires connectivity; Automatic downloads images and videos up to 256 MiB when cache and reserved disk space permit, otherwise it streams video. The cache limit is 8 GiB, free-space reserve is 1 GiB, and at most two downloads run concurrently.
+
+## Scheduled playback and offline limits
+
+Manifest schema v2 is activated atomically only after all Download-policy content for the direct fallback and included schedules is verified. Selection uses `[start, end)` intervals. The player evaluates with its device clock, wakes at the next transition, and restores the direct assignment whenever no schedule is active. Weekly schedules continue offline indefinitely while their definitions and assets remain cached. A future one-time schedule that was not received before disconnection cannot activate. Stream-policy media still requires connectivity and is not guaranteed offline.
+
+Clock changes, timezone changes, app foregrounding, startup, manifest activation, and transition wake-ups cause reevaluation. The manifest server timestamp is used only to report approximate skew; it never silently replaces the device clock for offline scheduling.

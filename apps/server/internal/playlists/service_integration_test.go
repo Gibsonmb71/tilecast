@@ -1,0 +1,170 @@
+package playlists
+
+import (
+	"context"
+	"errors"
+	"os"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/tilecast/tilecast/apps/server/internal/auth"
+	"github.com/tilecast/tilecast/apps/server/internal/database"
+	"github.com/tilecast/tilecast/apps/server/internal/scheduling"
+)
+
+type testNotifier struct{ versions []int64 }
+
+func (n *testNotifier) ManifestChanged(_ uuid.UUID, version int64) {
+	n.versions = append(n.versions, version)
+}
+
+func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	lockPool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lockPool.Close()
+	lock, err := lockPool.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Release()
+	if _, err = lock.Exec(ctx, `SELECT pg_advisory_lock(7421999)`); err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Exec(ctx, `SELECT pg_advisory_unlock(7421999)`) //nolint:errcheck
+	if err = database.Migrate(ctx, databaseURL); err != nil {
+		t.Fatal(err)
+	}
+	pool, err := database.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if _, err = pool.Exec(ctx, `TRUNCATE screen_player_status,screen_manifest_state,screen_playlist_assignments,playlist_items,playlists,media_jobs,upload_sessions,asset_variants,assets,device_pairing_sessions,device_credentials,screens,sessions,audit_logs,users,organization_settings CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+	owner, err := auth.NewService(pool, time.Hour).Setup(ctx, auth.SetupInput{OrganizationName: "Playlist Test", OwnerName: "Owner", Username: "owner", Password: "correct horse battery staple"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var org uuid.UUID
+	if err = pool.QueryRow(ctx, `SELECT id FROM organization_settings`).Scan(&org); err != nil {
+		t.Fatal(err)
+	}
+	screenID := uuid.New()
+	_, err = pool.Exec(ctx, `INSERT INTO screens(id,organization_id,player_installation_id,name,platform,device_manufacturer,device_model,android_version,player_version,screen_width,screen_height,density,locale,timezone)VALUES($1,$2,$3,'Lobby','android-tv','Google','ADT-3','14','0.4.0',1920,1080,2,'en-US','UTC')`, screenID, org, uuid.NewString())
+	if err != nil {
+		t.Fatal(err)
+	}
+	imageID, videoID := uuid.New(), uuid.New()
+	_, err = pool.Exec(ctx, `INSERT INTO assets(id,organization_id,name,type,original_filename,detected_mime_type,sha256,original_size,width,height,duration_seconds,processing_status,created_by)VALUES($1,$3,'Welcome','image','welcome.png','image/png',$4,100,1920,1080,NULL,'ready',$5),($2,$3,'Announcement','video','announcement.mp4','video/mp4',$4,1000,1920,1080,12.5,'ready',$5)`, imageID, videoID, org, make([]byte, 32), owner.User.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	imageVariant, videoVariant := uuid.New(), uuid.New()
+	_, err = pool.Exec(ctx, `INSERT INTO asset_variants(id,asset_id,kind,storage_provider,storage_key,mime_type,file_size,sha256,width,height,duration_seconds,player_compatible)VALUES($1,$3,'original','local',$5,'image/png',100,$7,1920,1080,NULL,TRUE),($2,$4,'playback','local',$6,'video/mp4',1000,$7,1920,1080,12.5,TRUE)`, imageVariant, videoVariant, imageID, videoID, "originals/image", "variants/video", make([]byte, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	notifier := &testNotifier{}
+	service := NewService(pool, notifier)
+	playlist, err := service.Create(ctx, owner.User.ID, "Morning announcements", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = service.AddItem(ctx, playlist.ID, owner.User.ID, ItemInput{AssetID: imageID}); err == nil {
+		t.Fatal("image without duration was accepted")
+	}
+	duration := int64(10_000)
+	playlist, err = service.AddItem(ctx, playlist.ID, owner.User.ID, ItemInput{AssetID: imageID, DurationMS: &duration})
+	if err != nil {
+		t.Fatal(err)
+	}
+	playlist, err = service.AddItem(ctx, playlist.ID, owner.User.ID, ItemInput{AssetID: videoID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(playlist.Items) != 2 || playlist.Revision != 3 {
+		t.Fatalf("playlist=%#v", playlist)
+	}
+	playlist, err = service.Reorder(ctx, playlist.ID, owner.User.ID, []uuid.UUID{playlist.Items[1].ID, playlist.Items[0].ID})
+	if err != nil || playlist.Items[0].AssetID != videoID {
+		t.Fatalf("reorder: %#v %v", playlist, err)
+	}
+	assignment, err := service.Assign(ctx, screenID, playlist.ID, owner.User.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, etag, err := service.BuildManifest(ctx, screenID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	same, sameETag, err := service.BuildManifest(ctx, screenID)
+	if err != nil || same.ManifestVersion != manifest.ManifestVersion || sameETag != etag {
+		t.Fatal("manifest read changed version or ETag")
+	}
+	if manifest.SchemaVersion != 2 || manifest.DirectFallbackPlaylist == nil || len(manifest.DirectFallbackPlaylist.Items) != 2 || len(manifest.Assets) != 2 {
+		t.Fatalf("manifest=%#v", manifest)
+	}
+	scheduler := scheduling.NewService(pool, notifier, scheduling.Limits{MaxSchedules: 1000, MaxTargetsPerSchedule: 250, MaxGroupsPerScreen: 50, PrefetchDays: 14, ActivationGraceSeconds: 30, ClockSkewWarningSeconds: 300})
+	service.SetScheduling(scheduler)
+	group, err := scheduler.CreateGroup(ctx, owner.User.ID, "Lobby screens", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = scheduler.AddScreen(ctx, group.ID, screenID, owner.User.ID); err != nil {
+		t.Fatal(err)
+	}
+	start, end := time.Now().Add(-time.Hour), time.Now().Add(time.Hour)
+	scheduled, err := scheduler.Create(ctx, owner.User.ID, scheduling.Input{Name: "Special event", PlaylistID: playlist.ID, Type: scheduling.OneTime, Timezone: "America/New_York", Priority: 500, Enabled: true, OneTimeStart: &start, OneTimeEnd: &end, Targets: []scheduling.Target{{Type: "group", ID: group.ID}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scheduledManifest, _, err := service.BuildManifest(ctx, screenID)
+	if err != nil || len(scheduledManifest.Schedules) != 1 || len(scheduledManifest.Playlists) != 1 {
+		t.Fatalf("scheduled manifest=%#v %v", scheduledManifest, err)
+	}
+	updatedInput := ItemInput{AssetID: videoID, DeliveryPolicy: "stream"}
+	playlist, err = service.UpdateItem(ctx, playlist.ID, playlist.Items[0].ID, owner.User.ID, updatedInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed, _, err := service.BuildManifest(ctx, screenID)
+	if err != nil || changed.ManifestVersion <= manifest.ManifestVersion {
+		t.Fatal("playlist update did not advance manifest")
+	}
+	active := changed.ManifestVersion
+	status := PlayerStatus{ActiveManifestVersion: &active, PlaybackState: "playing"}
+	if err = service.ReportStatus(ctx, screenID, status); err != nil {
+		t.Fatal(err)
+	}
+	assignment, err = service.Assignment(ctx, screenID)
+	if err != nil || assignment.SynchronizationStatus != "current" {
+		t.Fatalf("assignment=%#v %v", assignment, err)
+	}
+	if err = service.Delete(ctx, playlist.ID, owner.User.ID); !errors.Is(err, ErrConflict) {
+		t.Fatalf("assigned playlist deletion=%v", err)
+	}
+	noAssignment, err := service.Unassign(ctx, screenID, owner.User.ID)
+	if err != nil || noAssignment.PlaylistID != nil {
+		t.Fatalf("unassign=%#v %v", noAssignment, err)
+	}
+	if err = scheduler.Delete(ctx, scheduled.ID, owner.User.ID); err != nil {
+		t.Fatal(err)
+	}
+	empty, _, err := service.BuildManifest(ctx, screenID)
+	if err != nil || empty.DirectFallbackPlaylist != nil {
+		t.Fatalf("empty manifest=%#v %v", empty, err)
+	}
+	if len(notifier.versions) < 3 {
+		t.Fatalf("notifications=%v", notifier.versions)
+	}
+}

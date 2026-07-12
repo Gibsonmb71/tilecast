@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tilecast.org/schemas/player-manifest-v1.json",
+  "title": "Tilecast player manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "manifestVersion",
+    "screenId",
+    "generatedAt",
+    "mode",
+    "playlist",
+    "assets"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "manifestVersion": { "type": "integer", "minimum": 1 },
+    "screenId": { "type": "string", "format": "uuid" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "mode": { "const": "single-zone" },
+    "playlist": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "revision", "name", "items"],
+          "properties": {
+            "id": { "type": "string", "format": "uuid" },
+            "revision": { "type": "integer", "minimum": 1 },
+            "name": { "type": "string" },
+            "items": { "type": "array", "items": { "$ref": "#/$defs/item" } }
+          }
+        }
+      ]
+    },
+    "assets": { "type": "array", "items": { "$ref": "#/$defs/asset" } }
+  },
+  "$defs": {
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "assetId",
+        "variantId",
+        "fitMode",
+        "transition",
+        "audioEnabled",
+        "volume",
+        "deliveryPolicy"
+      ],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "assetId": { "type": "string", "format": "uuid" },
+        "variantId": { "type": "string", "format": "uuid" },
+        "durationMs": { "type": "integer", "minimum": 1 },
+        "fitMode": { "enum": ["contain", "cover", "stretch"] },
+        "transition": { "enum": ["none", "fade"] },
+        "audioEnabled": { "type": "boolean" },
+        "volume": { "type": "number", "minimum": 0, "maximum": 1 },
+        "videoStartOffsetMs": { "type": "integer", "minimum": 0 },
+        "videoEndOffsetMs": { "type": "integer", "minimum": 1 },
+        "deliveryPolicy": { "enum": ["download", "stream", "automatic"] }
+      }
+    },
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assetId",
+        "variantId",
+        "mimeType",
+        "sha256",
+        "fileSize",
+        "downloadPath"
+      ],
+      "properties": {
+        "assetId": { "type": "string", "format": "uuid" },
+        "variantId": { "type": "string", "format": "uuid" },
+        "mimeType": { "type": "string" },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "fileSize": { "type": "integer", "minimum": 0 },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "durationSeconds": { "type": "number", "minimum": 0 },
+        "downloadPath": {
+          "type": "string",
+          "pattern": "^/api/v1/player/assets/"
+        }
+      }
+    }
+  }
+}

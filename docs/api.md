@@ -1,4 +1,4 @@
-# API through Milestone 3
+# API through Milestone 4
 
 Milestone 1 exposes JSON endpoints under `/api/v1`. Successful responses use `{"data": ...}`. Errors use `{"error":{"code":"...","message":"..."}}`. Unknown JSON fields and request bodies over 1 MiB are rejected.
 
@@ -83,3 +83,17 @@ Uploaded filenames are display metadata only. API responses never include a stor
 `GET` and `HEAD /api/v1/player/assets/{assetId}/variants/{variantId}` require an active device Bearer credential. Only ready, non-deleted, player-compatible variants are served. Disabled screens and revoked credentials are rejected before file access.
 
 Responses include a hash-derived ETag, correct MIME type and length, and `Accept-Ranges: bytes`. Standard full, initial, middle, suffix, unsatisfiable, `If-Range`, and `If-None-Match` behavior is provided without loading the complete file into memory. Range reads are not audit events.
+
+## Playlists, assignments, and manifests
+
+Owner, Administrator, and Editor may create, edit, duplicate, reorder, or delete unassigned playlists; Viewer is read-only. Items accept only ready image/video assets with a player-compatible variant. Images require a positive duration, video offsets must remain within trusted duration, and reordering must contain every item exactly once.
+
+Direct assignment routes are `/api/v1/screens/{id}/playlist-assignment`; only Owner and Administrator may mutate them. Responses contain the server manifest version and only status actually reported by the player.
+
+`GET /api/v1/player/manifest` requires an active device credential, supports stable ETags and 304, and returns `playlist: null` when unassigned. Reads never advance the manifest version.
+
+## Screen groups and schedules
+
+Authenticated read routes are `GET /api/v1/screen-groups`, `GET /api/v1/screen-groups/{id}`, `GET /api/v1/schedules`, and `GET /api/v1/schedules/{id}`. Owner and Administrator mutations use the documented CSRF header on group create/update/delete and membership routes, schedule create/update/delete, and enable/disable routes. `POST /api/v1/schedules/preview` accepts `screenId`, an optional absolute `timestamp`, and an optional unsaved `proposedSchedule`; it returns precedence-ordered applicable schedules, conflicts, direct fallback, winner, and next transition using the production resolver.
+
+Weekly weekdays are integers `0` (Sunday) through `6` (Saturday). Times are `HH:MM`, dates are `YYYY-MM-DD`, timezones are IANA identifiers, and an end time less than or equal to its start denotes an overnight window.

@@ -66,9 +66,14 @@ export function ScreensPage() {
           <p>Pair and monitor Android TV, Google TV, and Fire TV players.</p>
         </div>
         {manageable && (
-          <Link className="button button--primary" to="/screens/pair">
-            <Plus size={16} /> Pair screen
-          </Link>
+          <span className="heading-actions">
+            <Link className="button button--quiet" to="/groups">
+              Screen groups
+            </Link>
+            <Link className="button button--primary" to="/screens/pair">
+              <Plus size={16} /> Pair screen
+            </Link>
+          </span>
         )}
       </header>
       {screens.isError && (
@@ -458,10 +463,35 @@ export function ScreenDetailPage() {
   const auth = useAuth();
   const queryClient = useQueryClient();
   const [confirmRevoke, setConfirmRevoke] = useState(false);
+  const [selectedPlaylist, setSelectedPlaylist] = useState("");
   const query = useQuery({
     queryKey: ["screens", id],
     queryFn: () => api.screen(id),
     refetchInterval: 10_000,
+  });
+  const assignment = useQuery({
+    queryKey: ["screens", id, "playlist-assignment"],
+    queryFn: () => api.playlistAssignment(id),
+    refetchInterval: 10_000,
+  });
+  const playlists = useQuery({
+    queryKey: ["playlists", "assignment-picker"],
+    queryFn: () => api.playlists(),
+    enabled: canManageScreens(auth.status?.user),
+  });
+  useEffect(() => {
+    setSelectedPlaylist(assignment.data?.playlistId ?? "");
+  }, [assignment.data?.playlistId]);
+  const assign = useMutation({
+    mutationFn: () =>
+      selectedPlaylist
+        ? api.assignPlaylist(id, selectedPlaylist, auth.status?.csrfToken ?? "")
+        : api.unassignPlaylist(id, auth.status?.csrfToken ?? ""),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["screens", id, "playlist-assignment"],
+      });
+    },
   });
   const stateMutation = useMutation({
     mutationFn: (enabled: boolean) =>
@@ -501,6 +531,145 @@ export function ScreenDetailPage() {
         </div>
         <StatusLabel status={screen.status} />
       </header>
+      <section className="detail-card assignment-card">
+        <h3>Playback and scheduling</h3>
+        {canManageScreens(auth.status?.user) ? (
+          <div className="assignment-controls">
+            <select
+              aria-label="Assigned playlist"
+              value={selectedPlaylist}
+              onChange={(event) => setSelectedPlaylist(event.target.value)}
+            >
+              <option value="">No playlist assigned</option>
+              {playlists.data?.items.map((playlist) => (
+                <option key={playlist.id} value={playlist.id}>
+                  {playlist.name}
+                </option>
+              ))}
+            </select>
+            <button
+              className="button button--primary"
+              disabled={
+                assign.isPending ||
+                selectedPlaylist === (assignment.data?.playlistId ?? "")
+              }
+              onClick={() => assign.mutate()}
+            >
+              Apply assignment
+            </button>
+          </div>
+        ) : (
+          <p>{assignment.data?.playlistName ?? "No playlist assigned"}</p>
+        )}
+        <dl className="detail-list">
+          <div>
+            <dt>Direct fallback playlist</dt>
+            <dd>{assignment.data?.playlistName ?? "No fallback assigned"}</dd>
+          </div>
+          <div>
+            <dt>Current selection</dt>
+            <dd>
+              {assignment.data?.selectionSource === "schedule"
+                ? `Scheduled${assignment.data.currentScheduleId ? ` · ${assignment.data.relevantSchedules.find((s) => s.id === assignment.data?.currentScheduleId)?.name ?? "schedule"}` : ""}`
+                : assignment.data?.selectionSource === "direct_fallback"
+                  ? "Direct fallback"
+                  : "No content"}
+            </dd>
+          </div>
+          <div>
+            <dt>Next scheduled change</dt>
+            <dd>
+              {assignment.data?.nextTransitionAt
+                ? new Date(assignment.data.nextTransitionAt).toLocaleString()
+                : "None reported"}
+            </dd>
+          </div>
+          <div>
+            <dt>Server manifest</dt>
+            <dd>Version {assignment.data?.manifestVersion ?? 1}</dd>
+          </div>
+          <div>
+            <dt>Player manifest</dt>
+            <dd>
+              {assignment.data?.playerActiveManifestVersion != null
+                ? `Version ${assignment.data.playerActiveManifestVersion}`
+                : "Not reported"}
+            </dd>
+          </div>
+          <div>
+            <dt>Synchronization</dt>
+            <dd>
+              {assignment.data?.synchronizationStatus.replaceAll("_", " ") ??
+                "Not reported"}
+            </dd>
+          </div>
+          <div>
+            <dt>Groups</dt>
+            <dd>
+              {assignment.data?.groups.map((g) => g.name).join(", ") ||
+                "No groups"}
+            </dd>
+          </div>
+          <div>
+            <dt>Relevant schedules</dt>
+            <dd>
+              {assignment.data?.relevantSchedules
+                .map((s) => `${s.name} (${s.priority})`)
+                .join(", ") || "No schedules"}
+            </dd>
+          </div>
+          <div>
+            <dt>Device clock difference</dt>
+            <dd>
+              {assignment.data?.deviceClockOffsetSeconds != null
+                ? `${Math.abs(assignment.data.deviceClockOffsetSeconds)} seconds`
+                : "Not reported"}
+            </dd>
+          </div>
+          <div>
+            <dt>Downloads</dt>
+            <dd>
+              {assignment.data?.downloadQueueCount != null
+                ? `${assignment.data.downloadQueueCount} queued · ${assignment.data.downloadedBytes ?? 0} of ${assignment.data.requiredBytes ?? 0} bytes`
+                : "Not reported"}
+            </dd>
+          </div>
+          <div>
+            <dt>Playback</dt>
+            <dd>{assignment.data?.playbackState ?? "Not reported"}</dd>
+          </div>
+          <div>
+            <dt>Cache</dt>
+            <dd>
+              {assignment.data?.cacheUsedBytes != null
+                ? `${assignment.data.cacheUsedBytes} of ${assignment.data.cacheLimitBytes ?? 0} bytes`
+                : "Not reported"}
+            </dd>
+          </div>
+        </dl>
+        {assignment.data?.lastSynchronizationError && (
+          <div className="notice notice--error">
+            Synchronization: {assignment.data.lastSynchronizationError}
+          </div>
+        )}
+        {assignment.data?.lastPlaybackError && (
+          <div className="notice notice--error">
+            Playback: {assignment.data.lastPlaybackError}
+          </div>
+        )}
+        {Math.abs(assignment.data?.deviceClockOffsetSeconds ?? 0) >
+          (assignment.data?.clockSkewWarningSeconds ?? 300) && (
+          <div className="notice notice--warning">
+            The player clock differs from server time by more than five minutes.
+            Offline schedule changes may occur at the wrong time.
+          </div>
+        )}
+        {assignment.data?.scheduleEvaluationError && (
+          <div className="notice notice--error">
+            Schedule evaluation: {assignment.data.scheduleEvaluationError}
+          </div>
+        )}
+      </section>
       <section className="detail-grid">
         <div className="detail-card">
           <h3>Device</h3>

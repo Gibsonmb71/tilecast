@@ -17,6 +17,8 @@ import (
 	"github.com/tilecast/tilecast/apps/server/internal/discovery"
 	"github.com/tilecast/tilecast/apps/server/internal/httpapi"
 	"github.com/tilecast/tilecast/apps/server/internal/media"
+	"github.com/tilecast/tilecast/apps/server/internal/playlists"
+	"github.com/tilecast/tilecast/apps/server/internal/scheduling"
 )
 
 func main() {
@@ -57,6 +59,9 @@ func main() {
 		Profile: media.CompatibilityProfile{MaxWidth: cfg.Media.VideoMaxWidth, MaxHeight: cfg.Media.VideoMaxHeight, MaxFrameRate: cfg.Media.VideoMaxFrameRate},
 		Workers: cfg.Media.Workers, KeepOriginals: cfg.Media.KeepOriginals,
 	})
+	playlistService := playlists.NewService(db, deviceService)
+	schedulingService := scheduling.NewService(db, deviceService, scheduling.Limits{MaxSchedules: cfg.Scheduling.MaxSchedules, MaxTargetsPerSchedule: cfg.Scheduling.MaxTargetsPerSchedule, MaxGroupsPerScreen: cfg.Scheduling.MaxGroupsPerScreen, PrefetchDays: cfg.Scheduling.PrefetchDays, ActivationGraceSeconds: cfg.Scheduling.ActivationGraceSeconds, ClockSkewWarningSeconds: cfg.Scheduling.ClockSkewWarningSeconds})
+	playlistService.SetScheduling(schedulingService)
 	_, _ = db.Exec(ctx, `INSERT INTO media_jobs(id,kind,status,run_after) VALUES(gen_random_uuid(),'clean_expired_uploads','queued',now())`)
 	mediaWorkers := media.NewWorkerPool(mediaService, logger)
 	mediaWorkers.Start(ctx)
@@ -82,6 +87,8 @@ func main() {
 		Auth:          authService,
 		Devices:       deviceService,
 		Media:         mediaService,
+		Playlists:     playlistService,
+		Scheduling:    schedulingService,
 		DB:            db,
 		Logger:        logger,
 		CookieName:    cfg.CookieName,

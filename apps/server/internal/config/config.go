@@ -19,6 +19,16 @@ type Config struct {
 	LogLevel     string
 	MDNSEnabled  bool
 	Media        MediaConfig
+	Scheduling   SchedulingConfig
+}
+
+type SchedulingConfig struct {
+	MaxSchedules            int
+	MaxTargetsPerSchedule   int
+	MaxGroupsPerScreen      int
+	PrefetchDays            int
+	ActivationGraceSeconds  int
+	ClockSkewWarningSeconds int
 }
 
 type MediaConfig struct {
@@ -58,6 +68,25 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("parse TILECAST_MDNS_ENABLED: %w", err)
 	}
 	cfg.MDNSEnabled = mdnsEnabled
+	values := []struct {
+		name, fallback string
+		max            int
+		dest           *int
+	}{
+		{"TILECAST_MAX_SCHEDULES", "1000", 10000, &cfg.Scheduling.MaxSchedules},
+		{"TILECAST_MAX_SCHEDULE_TARGETS", "250", 1000, &cfg.Scheduling.MaxTargetsPerSchedule},
+		{"TILECAST_MAX_GROUPS_PER_SCREEN", "50", 500, &cfg.Scheduling.MaxGroupsPerScreen},
+		{"TILECAST_SCHEDULE_PREFETCH_DAYS", "14", 365, &cfg.Scheduling.PrefetchDays},
+		{"TILECAST_SCHEDULE_ACTIVATION_GRACE_SECONDS", "30", 3600, &cfg.Scheduling.ActivationGraceSeconds},
+		{"TILECAST_CLOCK_SKEW_WARNING_SECONDS", "300", 86400, &cfg.Scheduling.ClockSkewWarningSeconds},
+	}
+	for _, value := range values {
+		parsed, parseErr := parsePositiveInt64(value.name, value.fallback)
+		if parseErr != nil || parsed > int64(value.max) {
+			return Config{}, fmt.Errorf("%s must be between 1 and %d", value.name, value.max)
+		}
+		*value.dest = int(parsed)
+	}
 
 	cfg.Media = MediaConfig{
 		Root:        get("TILECAST_MEDIA_ROOT", "/data/media"),

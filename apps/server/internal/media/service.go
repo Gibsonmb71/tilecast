@@ -488,6 +488,13 @@ func (s *Service) DeleteAsset(ctx context.Context, id, userID uuid.UUID) error {
 		return err
 	}
 	defer tx.Rollback(ctx)
+	var inUse bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM playlist_items WHERE asset_id=$1)`, id).Scan(&inUse); err != nil {
+		return err
+	}
+	if inUse {
+		return errors.New("asset is in use by a playlist")
+	}
 	tag, err := tx.Exec(ctx, `UPDATE assets SET processing_status='deleting',deleted_at=COALESCE(deleted_at,now()),updated_at=now() WHERE id=$1 AND processing_status NOT IN ('deleting','deleted')`, id)
 	if err != nil {
 		return err

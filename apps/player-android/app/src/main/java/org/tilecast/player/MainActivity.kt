@@ -2,10 +2,18 @@ package org.tilecast.player
 
 import android.graphics.Bitmap
 import android.os.Bundle
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.os.SystemClock
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.content.ContextCompat
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -54,15 +62,21 @@ import com.google.zxing.qrcode.QRCodeWriter
 import kotlinx.coroutines.delay
 import org.tilecast.player.core.DiscoveredServer
 import org.tilecast.player.core.PlayerState
+import org.tilecast.player.content.FullscreenPlayback
 import java.time.Instant
 import java.time.Duration
 
 class MainActivity : ComponentActivity() {
+    private val model:PlayerViewModel by viewModels()
+    private val clockReceiver=object:BroadcastReceiver(){override fun onReceive(context:Context?,intent:Intent?){model.recalculateSchedule()}}
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent { TilecastTheme { val model: PlayerViewModel = viewModel(); TilecastPlayer(model) } }
+		WindowCompat.getInsetsController(window,window.decorView).hide(WindowInsetsCompat.Type.systemBars())
+        setContent { TilecastTheme { TilecastPlayer(model) } }
     }
+    override fun onStart(){super.onStart();ContextCompat.registerReceiver(this,clockReceiver,IntentFilter().apply{addAction(Intent.ACTION_TIME_CHANGED);addAction(Intent.ACTION_TIMEZONE_CHANGED)},ContextCompat.RECEIVER_NOT_EXPORTED);model.recalculateSchedule()}
+    override fun onStop(){unregisterReceiver(clockReceiver);super.onStop()}
 }
 
 private val background = Color(0xFF13231E)
@@ -76,6 +90,11 @@ private val warning = Color(0xFFE9CF79)
 
 @Composable fun TilecastPlayer(model: PlayerViewModel) {
     val state by model.state.collectAsStateWithLifecycle()
+	val content by model.content.collectAsStateWithLifecycle()
+	if (content != null) {
+		FullscreenPlayback(content!!, model::playbackBoundary, model::playbackError)
+		return
+	}
     Box(Modifier.fillMaxSize().background(background).padding(horizontal = 72.dp, vertical = 52.dp)) {
         Column(Modifier.fillMaxSize()) {
             TilecastBrand()

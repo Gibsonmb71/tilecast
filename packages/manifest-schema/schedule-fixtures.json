@@ -1,0 +1,76 @@
+[
+  {
+    "name": "direct target wins equal priority",
+    "now": "2026-07-12T16:00:00Z",
+    "fallbackPlaylistId": "fallback",
+    "schedules": [
+      {
+        "id": "00000000-0000-0000-0000-000000000002",
+        "playlistId": "00000000-0000-0000-0000-000000000012",
+        "type": "one_time",
+        "timezone": "UTC",
+        "priority": 100,
+        "specificity": 0,
+        "enabled": true,
+        "oneTimeStart": "2026-07-12T15:00:00Z",
+        "oneTimeEnd": "2026-07-12T17:00:00Z"
+      },
+      {
+        "id": "00000000-0000-0000-0000-000000000001",
+        "playlistId": "00000000-0000-0000-0000-000000000011",
+        "type": "one_time",
+        "timezone": "UTC",
+        "priority": 100,
+        "specificity": 1,
+        "enabled": true,
+        "oneTimeStart": "2026-07-12T15:00:00Z",
+        "oneTimeEnd": "2026-07-12T17:00:00Z"
+      }
+    ],
+    "expectedScheduleId": "00000000-0000-0000-0000-000000000001",
+    "expectedPlaylistId": "00000000-0000-0000-0000-000000000011",
+    "expectedSource": "schedule"
+  },
+  {
+    "name": "Friday overnight remains active Saturday",
+    "now": "2026-07-11T05:00:00Z",
+    "fallbackPlaylistId": "fallback",
+    "schedules": [
+      {
+        "id": "00000000-0000-0000-0000-000000000003",
+        "playlistId": "00000000-0000-0000-0000-000000000013",
+        "type": "weekly",
+        "timezone": "America/New_York",
+        "priority": 0,
+        "specificity": 0,
+        "enabled": true,
+        "dailyStart": "22:00",
+        "dailyEnd": "02:00",
+        "daysOfWeek": [5]
+      }
+    ],
+    "expectedScheduleId": "00000000-0000-0000-0000-000000000003",
+    "expectedPlaylistId": "00000000-0000-0000-0000-000000000013",
+    "expectedSource": "schedule"
+  },
+  {
+    "name": "exact end restores fallback",
+    "now": "2026-07-12T17:00:00Z",
+    "fallbackPlaylistId": "fallback",
+    "schedules": [
+      {
+        "id": "00000000-0000-0000-0000-000000000004",
+        "playlistId": "00000000-0000-0000-0000-000000000014",
+        "type": "one_time",
+        "timezone": "UTC",
+        "priority": 500,
+        "specificity": 1,
+        "enabled": true,
+        "oneTimeStart": "2026-07-12T15:00:00Z",
+        "oneTimeEnd": "2026-07-12T17:00:00Z"
+      }
+    ],
+    "expectedPlaylistId": "fallback",
+    "expectedSource": "direct_fallback"
+  }
+]

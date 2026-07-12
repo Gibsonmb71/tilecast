@@ -17,6 +17,8 @@ import (
 	"github.com/tilecast/tilecast/apps/server/internal/auth"
 	"github.com/tilecast/tilecast/apps/server/internal/devices"
 	"github.com/tilecast/tilecast/apps/server/internal/media"
+	"github.com/tilecast/tilecast/apps/server/internal/playlists"
+	"github.com/tilecast/tilecast/apps/server/internal/scheduling"
 	"github.com/tilecast/tilecast/apps/server/internal/web"
 )
 
@@ -24,6 +26,8 @@ type Dependencies struct {
 	Auth          *auth.Service
 	Devices       *devices.Service
 	Media         *media.Service
+	Playlists     *playlists.Service
+	Scheduling    *scheduling.Service
 	DB            *pgxpool.Pool
 	Logger        *slog.Logger
 	CookieName    string
@@ -34,6 +38,8 @@ type server struct {
 	auth           *auth.Service
 	devices        *devices.Service
 	media          *media.Service
+	playlists      *playlists.Service
+	scheduling     *scheduling.Service
 	db             *pgxpool.Pool
 	logger         *slog.Logger
 	cookieName     string
@@ -52,6 +58,8 @@ func New(deps Dependencies) http.Handler {
 		auth:           deps.Auth,
 		devices:        deps.Devices,
 		media:          deps.Media,
+		playlists:      deps.Playlists,
+		scheduling:     deps.Scheduling,
 		db:             deps.DB,
 		logger:         deps.Logger,
 		cookieName:     deps.CookieName,
@@ -83,14 +91,43 @@ func New(deps Dependencies) http.Handler {
 		api.With(s.requireDevice).Get("/player/socket", s.playerSocket)
 		api.With(s.requireDevice).Get("/player/assets/{assetId}/variants/{variantId}", s.playerAssetVariant)
 		api.With(s.requireDevice).Head("/player/assets/{assetId}/variants/{variantId}", s.playerAssetVariant)
+		api.With(s.requireDevice).Get("/player/manifest", s.playerManifest)
 
 		api.Group(func(dashboard chi.Router) {
 			dashboard.Use(s.requireSession)
 			dashboard.Get("/screens", s.listScreens)
 			dashboard.Get("/screens/{id}", s.getScreen)
+			dashboard.Get("/screen-groups", s.listScreenGroups)
+			dashboard.Get("/screen-groups/{id}", s.getScreenGroup)
+			dashboard.Get("/schedules", s.listSchedules)
+			dashboard.Get("/schedules/{id}", s.getSchedule)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/screen-groups", s.createScreenGroup)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Patch("/screen-groups/{id}", s.updateScreenGroup)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Delete("/screen-groups/{id}", s.deleteScreenGroup)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/screen-groups/{id}/screens", s.addScreenGroupMember)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Delete("/screen-groups/{id}/screens/{screenId}", s.removeScreenGroupMember)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/schedules", s.createSchedule)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Patch("/schedules/{id}", s.updateSchedule)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Delete("/schedules/{id}", s.deleteSchedule)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/schedules/{id}/enable", s.enableSchedule)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/schedules/{id}/disable", s.disableSchedule)
+			dashboard.With(s.requireRoles("owner", "administrator")).Post("/schedules/preview", s.previewSchedule)
 			dashboard.Get("/assets", s.listAssets)
 			dashboard.Get("/assets/{id}", s.getAsset)
 			dashboard.Get("/assets/{id}/thumbnail", s.assetThumbnail)
+			dashboard.Get("/playlists", s.listPlaylists)
+			dashboard.Get("/playlists/{id}", s.getPlaylist)
+			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/playlists", s.createPlaylist)
+			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Patch("/playlists/{id}", s.updatePlaylist)
+			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Delete("/playlists/{id}", s.deletePlaylist)
+			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/playlists/{id}/duplicate", s.duplicatePlaylist)
+			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/playlists/{id}/items", s.addPlaylistItem)
+			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Patch("/playlists/{id}/items/{itemId}", s.updatePlaylistItem)
+			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Delete("/playlists/{id}/items/{itemId}", s.deletePlaylistItem)
+			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Put("/playlists/{id}/items/order", s.reorderPlaylistItems)
+			dashboard.Get("/screens/{id}/playlist-assignment", s.getPlaylistAssignment)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Put("/screens/{id}/playlist-assignment", s.assignPlaylist)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Delete("/screens/{id}/playlist-assignment", s.unassignPlaylist)
 			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Patch("/assets/{id}", s.updateAsset)
 			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Delete("/assets/{id}", s.deleteAsset)
 			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/assets/{id}/retry", s.retryAsset)

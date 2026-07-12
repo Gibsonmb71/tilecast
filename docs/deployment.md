@@ -30,3 +30,4 @@ A complete backup requires:
 - deployment configuration, excluding copied secrets from documentation or source control.
 
 Take database and media snapshots from a consistent maintenance window. Restoring only PostgreSQL produces missing-file errors; restoring only media produces unreferenced files. Pin released Tilecast image tags rather than `latest`, back up both volumes before upgrades, and review migration notes. Automated backup/restore tooling remains a Milestone 9 deliverable.
+Scheduling limits are configured with `TILECAST_MAX_SCHEDULES` (1000), `TILECAST_MAX_SCHEDULE_TARGETS` (250), `TILECAST_MAX_GROUPS_PER_SCREEN` (50), `TILECAST_SCHEDULE_PREFETCH_DAYS` (14), `TILECAST_SCHEDULE_ACTIVATION_GRACE_SECONDS` (30), and `TILECAST_CLOCK_SKEW_WARNING_SECONDS` (300). Players need reasonably accurate clocks and current timezone data; Studio surfaces reported skew rather than changing offline evaluation time.
