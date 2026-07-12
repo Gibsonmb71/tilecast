@@ -1,0 +1,10 @@
+services:
+  server:
+    ports: []
+    networks:
+      - default
+      - proxy
+
+networks:
+  proxy:
+    external: true

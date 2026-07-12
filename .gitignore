@@ -1,0 +1,15 @@
+.DS_Store
+.env
+node_modules/
+dist/
+coverage/
+*.log
+.idea/
+.vscode/
+data/
+postgres/
+apps/server/internal/web/static/assets/
+apps/server/tilecast
+**/.gradle/
+**/build/
+**/local.properties

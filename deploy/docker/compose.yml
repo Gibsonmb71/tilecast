@@ -1,0 +1,71 @@
+name: tilecast
+
+services:
+  server:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    image: tilecast/server:local
+    restart: unless-stopped
+    environment:
+      TILECAST_ENV: production
+      TILECAST_HTTP_ADDR: :8080
+      TILECAST_DATABASE_URL: postgres://${POSTGRES_USER:-tilecast}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-tilecast}?sslmode=disable
+      TILECAST_PUBLIC_URL: ${TILECAST_PUBLIC_URL:-http://localhost:8080}
+      TILECAST_COOKIE_SECURE: ${TILECAST_COOKIE_SECURE:-false}
+      TILECAST_SESSION_TTL: ${TILECAST_SESSION_TTL:-24h}
+      TILECAST_LOG_LEVEL: ${TILECAST_LOG_LEVEL:-info}
+      TILECAST_MDNS_ENABLED: ${TILECAST_MDNS_ENABLED:-false}
+      TILECAST_MEDIA_ROOT: /data/media
+      TILECAST_MAX_UPLOAD_BYTES: ${TILECAST_MAX_UPLOAD_BYTES:-10737418240}
+      TILECAST_MEDIA_WORKERS: ${TILECAST_MEDIA_WORKERS:-2}
+      TILECAST_MEDIA_RESERVED_FREE_BYTES: ${TILECAST_MEDIA_RESERVED_FREE_BYTES:-1073741824}
+      TILECAST_FFMPEG_PATH: /usr/bin/ffmpeg
+      TILECAST_FFPROBE_PATH: /usr/bin/ffprobe
+      TILECAST_VIDEO_MAX_WIDTH: ${TILECAST_VIDEO_MAX_WIDTH:-1920}
+      TILECAST_VIDEO_MAX_HEIGHT: ${TILECAST_VIDEO_MAX_HEIGHT:-1080}
+      TILECAST_VIDEO_MAX_FRAME_RATE: ${TILECAST_VIDEO_MAX_FRAME_RATE:-60}
+      TILECAST_KEEP_ORIGINALS: ${TILECAST_KEEP_ORIGINALS:-true}
+    ports:
+      - "${TILECAST_PORT:-8080}:8080"
+    volumes:
+      - tilecast_data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/readyz"]
+      interval: 15s
+      timeout: 4s
+      retries: 5
+      start_period: 10s
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-tilecast}
+      POSTGRES_USER: ${POSTGRES_USER:-tilecast}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      server:
+        condition: service_healthy
+
+volumes:
+  tilecast_data:
+  postgres_data:

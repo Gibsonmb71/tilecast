@@ -1,0 +1,135 @@
+package devices
+
+import (
+	"net/netip"
+	"time"
+
+	"github.com/google/uuid"
+)
+
+const (
+	PairingLifetime  = 10 * time.Minute
+	PollingInterval  = 3 * time.Second
+	RecentThreshold  = 2 * time.Minute
+	OfflineThreshold = 15 * time.Minute
+)
+
+type Identity struct {
+	Product          string `json:"product"`
+	InstallationID   string `json:"installationId"`
+	OrganizationName string `json:"organizationName"`
+	APIVersion       string `json:"apiVersion"`
+	PairingEnabled   bool   `json:"pairingEnabled"`
+}
+
+type DeviceMetadata struct {
+	PlayerInstallationID string  `json:"playerInstallationId"`
+	Platform             string  `json:"platform"`
+	Manufacturer         string  `json:"manufacturer"`
+	Model                string  `json:"model"`
+	AndroidVersion       string  `json:"androidVersion"`
+	PlayerVersion        string  `json:"playerVersion"`
+	ScreenWidth          int     `json:"screenWidth"`
+	ScreenHeight         int     `json:"screenHeight"`
+	Density              float32 `json:"density"`
+	Locale               string  `json:"locale"`
+	Timezone             string  `json:"timezone"`
+	ApproximateAddress   string  `json:"approximateAddress,omitempty"`
+}
+
+type PairingCreated struct {
+	ID              uuid.UUID `json:"id"`
+	Code            string    `json:"code"`
+	PollSecret      string    `json:"pollSecret"`
+	ExpiresAt       time.Time `json:"expiresAt"`
+	ServerTime      time.Time `json:"serverTime"`
+	PollingInterval int       `json:"pollingIntervalSeconds"`
+	ApprovalURL     string    `json:"approvalUrl"`
+	Organization    string    `json:"organizationName"`
+}
+
+type PairingRequest struct {
+	ID        uuid.UUID      `json:"id"`
+	Status    string         `json:"status"`
+	Metadata  DeviceMetadata `json:"metadata"`
+	CreatedAt time.Time      `json:"createdAt"`
+	ExpiresAt time.Time      `json:"expiresAt"`
+}
+
+type PollResult struct {
+	Status          string     `json:"status"`
+	ExpiresAt       time.Time  `json:"expiresAt"`
+	ScreenID        *uuid.UUID `json:"screenId,omitempty"`
+	EnrollmentToken string     `json:"enrollmentToken,omitempty"`
+	FailureReason   string     `json:"failureReason,omitempty"`
+}
+
+type EnrollmentResult struct {
+	ScreenID         uuid.UUID `json:"screenId"`
+	ScreenName       string    `json:"screenName"`
+	DeviceCredential string    `json:"deviceCredential"`
+}
+
+type Screen struct {
+	ID                    uuid.UUID  `json:"id"`
+	Name                  string     `json:"name"`
+	Description           string     `json:"description"`
+	Location              string     `json:"location"`
+	Platform              string     `json:"platform"`
+	DeviceManufacturer    string     `json:"deviceManufacturer"`
+	DeviceModel           string     `json:"deviceModel"`
+	AndroidVersion        string     `json:"androidVersion"`
+	PlayerVersion         string     `json:"playerVersion"`
+	ScreenWidth           int        `json:"screenWidth"`
+	ScreenHeight          int        `json:"screenHeight"`
+	Density               float32    `json:"density"`
+	Locale                string     `json:"locale"`
+	Timezone              string     `json:"timezone"`
+	AvailableStorageBytes *int64     `json:"availableStorageBytes,omitempty"`
+	UptimeSeconds         *int64     `json:"uptimeSeconds,omitempty"`
+	Enabled               bool       `json:"enabled"`
+	PairedAt              time.Time  `json:"pairedAt"`
+	LastConnectedAt       *time.Time `json:"lastConnectedAt,omitempty"`
+	LastDisconnectedAt    *time.Time `json:"lastDisconnectedAt,omitempty"`
+	LastHeartbeatAt       *time.Time `json:"lastHeartbeatAt,omitempty"`
+	LastKnownIP           *string    `json:"lastKnownIp,omitempty"`
+	LastContactAt         *time.Time `json:"lastContactAt,omitempty"`
+	Status                Status     `json:"status"`
+	HasActiveCredential   bool       `json:"hasActiveCredential"`
+	CreatedAt             time.Time  `json:"createdAt"`
+	UpdatedAt             time.Time  `json:"updatedAt"`
+}
+
+type Status string
+
+const (
+	StatusOnline   Status = "online"
+	StatusRecent   Status = "recent"
+	StatusStale    Status = "stale"
+	StatusOffline  Status = "offline"
+	StatusDisabled Status = "disabled"
+	StatusRevoked  Status = "revoked"
+)
+
+type DevicePrincipal struct {
+	CredentialID uuid.UUID
+	ScreenID     uuid.UUID
+	ScreenName   string
+	Enabled      bool
+}
+
+type Heartbeat struct {
+	ScreenWidth           int    `json:"screenWidth"`
+	ScreenHeight          int    `json:"screenHeight"`
+	AvailableStorageBytes *int64 `json:"availableStorageBytes,omitempty"`
+	UptimeSeconds         *int64 `json:"uptimeSeconds,omitempty"`
+	PlayerVersion         string `json:"playerVersion"`
+}
+
+func addressString(address netip.Addr) *string {
+	if !address.IsValid() {
+		return nil
+	}
+	value := address.String()
+	return &value
+}

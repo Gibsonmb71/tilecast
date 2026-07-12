@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.Tilecast" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowBackground">@color/tilecast_background</item>
+        <item name="android:colorAccent">#7AC4AA</item>
+    </style>
+</resources>

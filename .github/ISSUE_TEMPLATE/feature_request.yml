@@ -1,0 +1,23 @@
+name: Feature request
+description: Propose a focused Tilecast improvement
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      {
+        label: Problem,
+        description: What operational problem should Tilecast solve?,
+      }
+    validations: { required: true }
+  - type: textarea
+    id: proposal
+    attributes: { label: Proposed behavior }
+    validations: { required: true }
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: [Server, Dashboard, Android player, Deployment, Documentation]
+    validations: { required: true }
