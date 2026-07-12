@@ -20,12 +20,21 @@ const (
 )
 
 type Definition struct {
-	Key, Category, Type, Title, Description, Documentation string
-	Default                                                any
-	Min, Max                                               *float64
-	Allowed                                                []string
-	Scope                                                  Scope
-	Sensitive, RestartRequired, Immediate, FutureOnly      bool
+	Key             string   `json:"key"`
+	Category        string   `json:"category"`
+	Type            string   `json:"type"`
+	Title           string   `json:"title"`
+	Description     string   `json:"description,omitempty"`
+	Documentation   string   `json:"documentation,omitempty"`
+	Default         any      `json:"default"`
+	Min             *float64 `json:"min,omitempty"`
+	Max             *float64 `json:"max,omitempty"`
+	Allowed         []string `json:"allowed,omitempty"`
+	Scope           Scope    `json:"scope"`
+	Sensitive       bool     `json:"sensitive"`
+	RestartRequired bool     `json:"restartRequired"`
+	Immediate       bool     `json:"immediate"`
+	FutureOnly      bool     `json:"futureOnly"`
 }
 
 func number(v float64) *float64 { return &v }
