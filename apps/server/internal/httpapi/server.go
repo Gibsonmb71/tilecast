@@ -32,21 +32,33 @@ type Dependencies struct {
 	Logger        *slog.Logger
 	CookieName    string
 	SecureCookies bool
+	Operations    OperationsConfig
+}
+
+type OperationsConfig struct {
+	MaxEmergencyDurationHours   int
+	MaxEmergencyTargets         int
+	MaxPendingCommands          int
+	DefaultCommandExpiryMinutes int
+	MaxIdentifySeconds          int
+	CommandRetentionDays        int
 }
 
 type server struct {
-	auth           *auth.Service
-	devices        *devices.Service
-	media          *media.Service
-	playlists      *playlists.Service
-	scheduling     *scheduling.Service
-	db             *pgxpool.Pool
-	logger         *slog.Logger
-	cookieName     string
-	secureCookies  bool
-	authLimiter    *rateLimiter
-	pairingLimiter *rateLimiter
-	codeLimiter    *rateLimiter
+	auth              *auth.Service
+	devices           *devices.Service
+	media             *media.Service
+	playlists         *playlists.Service
+	scheduling        *scheduling.Service
+	db                *pgxpool.Pool
+	logger            *slog.Logger
+	cookieName        string
+	secureCookies     bool
+	authLimiter       *rateLimiter
+	pairingLimiter    *rateLimiter
+	codeLimiter       *rateLimiter
+	operationsLimiter *rateLimiter
+	operations        OperationsConfig
 }
 
 type contextKey string
@@ -55,18 +67,23 @@ const sessionContextKey contextKey = "session"
 
 func New(deps Dependencies) http.Handler {
 	s := &server{
-		auth:           deps.Auth,
-		devices:        deps.Devices,
-		media:          deps.Media,
-		playlists:      deps.Playlists,
-		scheduling:     deps.Scheduling,
-		db:             deps.DB,
-		logger:         deps.Logger,
-		cookieName:     deps.CookieName,
-		secureCookies:  deps.SecureCookies,
-		authLimiter:    newRateLimiter(10, 10*time.Minute),
-		pairingLimiter: newRateLimiter(10, time.Minute),
-		codeLimiter:    newRateLimiter(30, 10*time.Minute),
+		auth:              deps.Auth,
+		devices:           deps.Devices,
+		media:             deps.Media,
+		playlists:         deps.Playlists,
+		scheduling:        deps.Scheduling,
+		db:                deps.DB,
+		logger:            deps.Logger,
+		cookieName:        deps.CookieName,
+		secureCookies:     deps.SecureCookies,
+		authLimiter:       newRateLimiter(10, 10*time.Minute),
+		pairingLimiter:    newRateLimiter(10, time.Minute),
+		codeLimiter:       newRateLimiter(30, 10*time.Minute),
+		operationsLimiter: newRateLimiter(60, time.Minute),
+		operations:        deps.Operations,
+	}
+	if s.operations.MaxEmergencyDurationHours == 0 {
+		s.operations = OperationsConfig{24, 250, 50, 10, 120, 30}
 	}
 
 	r := chi.NewRouter()
@@ -92,6 +109,9 @@ func New(deps Dependencies) http.Handler {
 		api.With(s.requireDevice).Get("/player/assets/{assetId}/variants/{variantId}", s.playerAssetVariant)
 		api.With(s.requireDevice).Head("/player/assets/{assetId}/variants/{variantId}", s.playerAssetVariant)
 		api.With(s.requireDevice).Get("/player/manifest", s.playerManifest)
+		api.With(s.requireDevice).Get("/player/commands", s.playerCommands)
+		api.With(s.requireDevice).Post("/player/commands/{id}/acknowledge", s.acknowledgePlayerCommand)
+		api.With(s.requireDevice).Post("/player/commands/{id}/result", s.resultPlayerCommand)
 
 		api.Group(func(dashboard chi.Router) {
 			dashboard.Use(s.requireSession)
@@ -101,6 +121,10 @@ func New(deps Dependencies) http.Handler {
 			dashboard.Get("/screen-groups/{id}", s.getScreenGroup)
 			dashboard.Get("/schedules", s.listSchedules)
 			dashboard.Get("/schedules/{id}", s.getSchedule)
+			dashboard.Get("/emergencies", s.listEmergencies)
+			dashboard.Get("/emergencies/{id}", s.getEmergency)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.operationsRateLimit, s.requireCSRF).Post("/emergencies", s.activateEmergency)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/emergencies/{id}/cancel", s.cancelEmergency)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/screen-groups", s.createScreenGroup)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Patch("/screen-groups/{id}", s.updateScreenGroup)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Delete("/screen-groups/{id}", s.deleteScreenGroup)
@@ -148,7 +172,9 @@ func New(deps Dependencies) http.Handler {
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/screens/{id}/disable", s.disableScreen)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/screens/{id}/enable", s.enableScreen)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/screens/{id}/revoke", s.revokeScreen)
-			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/screens/{id}/website-data/clear", s.clearWebsiteData)
+			dashboard.Get("/screens/{id}/commands", s.listScreenCommands)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.operationsRateLimit, s.requireCSRF).Post("/screens/{id}/commands", s.createPlayerCommand)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/screens/{id}/commands/{commandId}/cancel", s.cancelPlayerCommand)
 		})
 	})
 	r.Handle("/*", web.Handler())

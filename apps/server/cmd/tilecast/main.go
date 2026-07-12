@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/tilecast/tilecast/apps/server/internal/auth"
 	"github.com/tilecast/tilecast/apps/server/internal/config"
 	"github.com/tilecast/tilecast/apps/server/internal/database"
@@ -95,6 +96,14 @@ func main() {
 		Logger:        logger,
 		CookieName:    cfg.CookieName,
 		SecureCookies: cfg.CookieSecure,
+		Operations: httpapi.OperationsConfig{
+			MaxEmergencyDurationHours:   cfg.Operations.MaxEmergencyDurationHours,
+			MaxEmergencyTargets:         cfg.Operations.MaxEmergencyTargets,
+			MaxPendingCommands:          cfg.Operations.MaxPendingCommands,
+			DefaultCommandExpiryMinutes: cfg.Operations.DefaultCommandExpiryMinutes,
+			MaxIdentifySeconds:          cfg.Operations.MaxIdentifySeconds,
+			CommandRetentionDays:        cfg.Operations.CommandRetentionDays,
+		},
 	})
 
 	server := &http.Server{
@@ -108,6 +117,31 @@ func main() {
 
 	shutdownCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	go func() {
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-shutdownCtx.Done():
+				return
+			case <-ticker.C:
+				_, _ = db.Exec(shutdownCtx, `UPDATE player_commands SET state='expired',completed_at=now(),updated_at=now() WHERE state IN ('pending','delivered','acknowledged','running') AND expires_at<=now()`)
+				_, _ = db.Exec(shutdownCtx, `DELETE FROM player_commands WHERE completed_at<now()-make_interval(days=>$1)`, cfg.Operations.CommandRetentionDays)
+				rows, err := db.Query(shutdownCtx, `WITH expired AS (UPDATE emergency_takeovers SET status='expired',updated_at=now() WHERE status='active' AND expires_at<=now() RETURNING id), affected AS (UPDATE emergency_screen_states SET state='expired',restored_at=now(),last_updated_at=now() WHERE emergency_id IN(SELECT id FROM expired) RETURNING screen_id), bumped AS (UPDATE screen_manifest_state SET manifest_version=manifest_version+1,changed_at=now(),change_reason='emergency.expired' WHERE screen_id IN(SELECT DISTINCT screen_id FROM affected) RETURNING screen_id,manifest_version) SELECT screen_id,manifest_version FROM bumped`)
+				if err == nil {
+					for rows.Next() {
+						var screen uuid.UUID
+						var version int64
+						if rows.Scan(&screen, &version) == nil {
+							deviceService.Notify(screen, map[string]any{"type": "emergency.changed", "manifestVersion": version})
+							deviceService.Notify(screen, map[string]any{"type": "manifest.changed", "manifestVersion": version})
+						}
+					}
+					rows.Close()
+				}
+			}
+		}
+	}()
 
 	go func() {
 		logger.Info("Tilecast server listening", "address", cfg.HTTPAddr, "environment", cfg.Environment)

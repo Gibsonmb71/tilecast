@@ -80,6 +80,10 @@ func (s *server) codeRateLimit(next http.Handler) http.Handler {
 	return s.rateLimit(s.codeLimiter, true, next)
 }
 
+func (s *server) operationsRateLimit(next http.Handler) http.Handler {
+	return s.rateLimit(s.operationsLimiter, true, next)
+}
+
 func (s *server) rateLimit(limiter *rateLimiter, includeUser bool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		key := r.RemoteAddr

@@ -45,6 +45,9 @@ import org.tilecast.player.content.SyncProgress
 import org.tilecast.player.content.ScheduleEngine
 import org.tilecast.player.content.WebsitePlaybackStatus
 import org.tilecast.player.content.WebsiteDataManager
+import org.tilecast.player.content.CommandCoordinator
+import org.tilecast.player.content.CommandOutcome
+import org.tilecast.player.content.EmergencyController
 import java.time.Duration
 import java.time.Instant
 import java.util.Locale
@@ -86,6 +89,18 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 	private var scheduleError: String? = null
 	private var clockOffsetSeconds: Long? = null
 	private var websiteStatus=WebsitePlaybackStatus()
+	private val commandCoordinator=CommandCoordinator(application,api)
+	private val mutablePlaybackDisabled=MutableStateFlow(commandCoordinator.playbackDisabled)
+	val playbackDisabled:StateFlow<Boolean> = mutablePlaybackDisabled.asStateFlow()
+	private val mutableIdentify=MutableStateFlow<String?>(null)
+	val identify:StateFlow<String?> = mutableIdentify.asStateFlow()
+	private var emergencyJob:Job?=null
+	private var activeEmergencyId:String?=null
+	private var emergencyState:String?=null
+	private var lastCommandId:String?=null
+	private var lastCommandState:String?=null
+	private var lastCommandResult:String?=null
+	private var lastCommandCompletedAt:String?=null
 
     init { viewModelScope.launch { bootstrap() } }
 
@@ -195,12 +210,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 webSocket.send(Json.encodeToString(kotlinx.serialization.json.JsonObject.serializer(), statusMessage()))
                 viewModelScope.launch { emit(PlayerEvent.Connected(screenName)) }
 				viewModelScope.launch { reconcileManifest(url, credential) }
+				viewModelScope.launch { runCommands(url, credential) }
 				manifestPollJob?.cancel(); manifestPollJob=viewModelScope.launch { while (true) { delay(5*60*1000L); reconcileManifest(url,credential) } }
             }
             override fun onMessage(webSocket: WebSocket, text: String) {
 				if (text.contains("server.ping")) { webSocket.send("{\"type\":\"player.pong\"}"); webSocket.send(Json.encodeToString(kotlinx.serialization.json.JsonObject.serializer(), statusMessage())) }
 				if (text.contains("manifest.changed")) viewModelScope.launch { reconcileManifest(url, credential) }
-				if(text.contains("website.clear_data")){val commandId=runCatching{Json.parseToJsonElement(text).jsonObject["commandId"]?.jsonPrimitive?.content}.getOrNull();if(commandId!=null)WebsiteDataManager.clear(getApplication()){success->webSocket.send(Json.encodeToString(kotlinx.serialization.json.JsonObject.serializer(),kotlinx.serialization.json.buildJsonObject{put("type","website.data_cleared");put("payload",kotlinx.serialization.json.buildJsonObject{put("commandId",commandId);put("success",success);if(!success)put("errorCategory","clear_failed")})}))}}
+				if(text.contains("commands.available"))viewModelScope.launch{runCommands(url,credential)}
 			}
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
 				manifestPollJob?.cancel()
@@ -250,7 +266,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 		if (syncJob?.isActive == true) return
 		syncJob = viewModelScope.launch {
 			val screenId = current?.screenId ?: return@launch
-			try { val prepared = synchronizer.reconcile(url, credential, screenId) { syncProgress = it }; if (prepared != null) { if (mutableContent.value == null) activatePrepared(prepared, url, credential) else pendingContent = prepared } }
+			try { val prepared = synchronizer.reconcile(url, credential, screenId) { syncProgress = it }; if (prepared != null) { val emergencyChanged=prepared.manifest.emergency?.id!=activeEmergencyId;if (mutableContent.value == null||emergencyChanged) activatePrepared(prepared, url, credential) else pendingContent = prepared } }
 			catch(error:Exception){syncProgress=SyncProgress(cacheUsedBytes=syncProgress.cacheUsedBytes,error=error.message?:"Manifest synchronization failed")}
 		}
 		syncJob?.join()
@@ -266,16 +282,33 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 	}
 
 	private fun activateScheduleSelection(prepared:PreparedContent,url:String,credential:String){
-		scheduleContent=prepared;scheduleJob?.cancel()
+		scheduleContent=prepared;scheduleJob?.cancel();emergencyJob?.cancel()
+		val emergency=EmergencyController.evaluate(Instant.now(),prepared.manifest.emergency,true)
 		val selection=ScheduleEngine.resolve(Instant.now(),prepared.manifest.schedules,prepared.manifest.directFallbackPlaylist?.id?:prepared.manifest.playlist?.id)
 		val available=prepared.manifest.playlists+listOfNotNull(prepared.manifest.directFallbackPlaylist,prepared.manifest.playlist)
-		var playlist=available.firstOrNull{it.id==selection.playlistId}
+		var playlist=available.firstOrNull{it.id==(emergency.playlistId?:selection.playlistId)}
 		currentScheduleId=selection.scheduleId;currentPlaylistId=selection.playlistId;assignedPlaylistId=prepared.manifest.directFallbackPlaylist?.id;selectionSource=selection.source;nextTransition=selection.nextTransition;scheduleError=selection.error
+		if(emergency.active){activeEmergencyId=prepared.manifest.emergency?.id;emergencyState="active";currentScheduleId=null;currentPlaylistId=playlist?.id;selectionSource="emergency";nextTransition=emergency.nextTransition}else{activeEmergencyId=null;emergencyState=null}
 		if(selection.source=="schedule"&&(playlist==null||playlist.items.isEmpty())){playlist=prepared.manifest.directFallbackPlaylist?.takeIf{it.items.isNotEmpty()};currentPlaylistId=playlist?.id;selectionSource=if(playlist!=null)"direct_fallback" else "none";scheduleError="Scheduled playlist has no playable items"}
 		val selected=PreparedContent(prepared.manifest.copy(playlist=playlist),prepared.localFiles,prepared.serverClockOffsetSeconds)
-		mutableContent.value=playlist?.takeIf{it.items.isNotEmpty()}?.let{PlaybackSession(selected,url,credential)}
+		mutableContent.value=if(mutablePlaybackDisabled.value&&!emergency.active)null else playlist?.takeIf{it.items.isNotEmpty()}?.let{PlaybackSession(selected,url,credential)}
 		selection.nextTransition?.let{transition->scheduleJob=viewModelScope.launch{delay(Duration.between(Instant.now(),transition).toMillis().coerceAtLeast(0)+50);scheduleContent?.let{activateScheduleSelection(it,url,credential)}}}
+		emergency.nextTransition?.let{transition->emergencyJob=viewModelScope.launch{delay(Duration.between(Instant.now(),transition).toMillis().coerceAtLeast(0)+50);scheduleContent?.let{activateScheduleSelection(it,url,credential)}}}
 	}
+
+	private suspend fun runCommands(url:String,credential:String){commandCoordinator.fetchAndRun(url,credential){command->
+		lastCommandId=command.id;lastCommandState="running"
+		val outcome=when(command.type){
+			"sync_now"->{reconcileManifest(url,credential);CommandOutcome(true,"manifest_sync_started","Manifest synchronization started")}
+			"reload_playback"->{val active=mutableContent.value;mutableContent.value=null;delay(100);mutableContent.value=active;CommandOutcome(true,"playback_reloaded","Playback reloaded")}
+			"identify_screen"->{val seconds=command.payload["durationSeconds"]?:30;mutableIdentify.value="${current?.screenName ?: "Tilecast screen"}\n${current?.screenId?.takeLast(8).orEmpty()}";viewModelScope.launch{delay(seconds*1000L);mutableIdentify.value=null};CommandOutcome(true,"screen_identified","Identification overlay displayed")}
+			"clear_media_cache"->{val success=synchronizer.clearUnprotectedCache();reconcileManifest(url,credential);CommandOutcome(success,if(success)"cache_cleared" else "cache_cleanup_partial",if(success)"Unprotected media cache cleared" else "Some protected content was retained")}
+			"clear_website_data"->{var success=false;WebsiteDataManager.clear(getApplication()){success=it};delay(250);CommandOutcome(success,if(success)"website_data_cleared" else "website_data_clear_failed",if(success)"Website data cleared" else "Website data could not be cleared")}
+			"disable_playback"->{commandCoordinator.setPlaybackDisabled(true);mutablePlaybackDisabled.value=true;scheduleContent?.let{activateScheduleSelection(it,url,credential)};CommandOutcome(true,"playback_disabled","Playback disabled")}
+			"enable_playback"->{commandCoordinator.setPlaybackDisabled(false);mutablePlaybackDisabled.value=false;scheduleContent?.let{activateScheduleSelection(it,url,credential)};CommandOutcome(true,"playback_enabled","Playback enabled")}
+			else->CommandOutcome(false,"command_unsupported","Command is not supported")}
+		lastCommandState=if(outcome.success)"succeeded" else "failed";lastCommandResult=outcome.code;lastCommandCompletedAt=Instant.now().toString();outcome
+	}}
 
 	fun playbackBoundary(itemId: String, assetId: String) {
 		currentItemId=itemId;currentAssetId=assetId
@@ -288,7 +321,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 	fun recalculateSchedule(){val prepared=scheduleContent?:return;val url=current?.serverUrl?:return;val credential=credentials.read()?:return;activateScheduleSelection(prepared,url,credential)}
 
     private fun deviceMetadata(playerId: String): DeviceMetadata { val metrics = getApplication<Application>().resources.displayMetrics; return DeviceMetadata(playerId, if (Build.MANUFACTURER.equals("Amazon", true)) "fire-tv" else "android-tv", Build.MANUFACTURER ?: "Unknown", Build.MODEL ?: "Unknown", Build.VERSION.RELEASE ?: Build.VERSION.SDK_INT.toString(), BuildConfig.VERSION_NAME, metrics.widthPixels, metrics.heightPixels, metrics.density, Locale.getDefault().toLanguageTag(), TimeZone.getDefault().id) }
-	private fun heartbeat(): HeartbeatRequest { val app = getApplication<Application>(); val metrics = app.resources.displayMetrics; return HeartbeatRequest(metrics.widthPixels, metrics.heightPixels, app.filesDir.usableSpace, SystemClock.elapsedRealtime() / 1000, BuildConfig.VERSION_NAME,activeManifestVersion=activeManifestVersion,pendingManifestVersion=pendingContent?.manifest?.manifestVersion,assignedPlaylistId=assignedPlaylistId,currentItemId=currentItemId,currentAssetId=currentAssetId,playbackState=if(mutableContent.value!=null)"playing" else "idle",downloadQueueCount=syncProgress.queueCount,downloadedBytes=syncProgress.downloadedBytes,requiredBytes=syncProgress.requiredBytes,cacheUsedBytes=syncProgress.cacheUsedBytes,cacheLimitBytes=BuildConfig.MEDIA_CACHE_BYTES,lastSynchronizationError=syncProgress.error,lastPlaybackError=lastPlaybackError,currentScheduleId=currentScheduleId,currentPlaylistId=currentPlaylistId,selectionSource=selectionSource,nextTransitionAt=nextTransition?.toString(),deviceClockOffsetSeconds=clockOffsetSeconds,scheduleEvaluationError=scheduleError,scheduleManifestVersion=activeManifestVersion,currentWebsiteAssetId=websiteStatus.assetId,websiteState=websiteStatus.state,websiteLoadStartedAt=websiteStatus.loadStartedAt,websiteLoadCompletedAt=websiteStatus.loadCompletedAt,websiteFailureCategory=websiteStatus.failureCategory,websiteBlockedNavigationCount=websiteStatus.blockedNavigationCount,websiteCurrentHost=websiteStatus.currentHost,websiteFallbackShown=websiteStatus.fallbackShown,websiteRendererRecoveryCount=websiteStatus.rendererRecoveryCount) }
+	private fun heartbeat(): HeartbeatRequest { val app = getApplication<Application>(); val metrics = app.resources.displayMetrics; return HeartbeatRequest(metrics.widthPixels, metrics.heightPixels, app.filesDir.usableSpace, SystemClock.elapsedRealtime() / 1000, BuildConfig.VERSION_NAME,activeManifestVersion=activeManifestVersion,pendingManifestVersion=pendingContent?.manifest?.manifestVersion,assignedPlaylistId=assignedPlaylistId,currentItemId=currentItemId,currentAssetId=currentAssetId,playbackState=if(mutableContent.value!=null)"playing" else if(mutablePlaybackDisabled.value)"disabled" else "idle",downloadQueueCount=syncProgress.queueCount,downloadedBytes=syncProgress.downloadedBytes,requiredBytes=syncProgress.requiredBytes,cacheUsedBytes=syncProgress.cacheUsedBytes,cacheLimitBytes=BuildConfig.MEDIA_CACHE_BYTES,lastSynchronizationError=syncProgress.error,lastPlaybackError=lastPlaybackError,currentScheduleId=currentScheduleId,currentPlaylistId=currentPlaylistId,selectionSource=selectionSource,nextTransitionAt=nextTransition?.toString(),deviceClockOffsetSeconds=clockOffsetSeconds,scheduleEvaluationError=scheduleError,scheduleManifestVersion=activeManifestVersion,currentWebsiteAssetId=websiteStatus.assetId,websiteState=websiteStatus.state,websiteLoadStartedAt=websiteStatus.loadStartedAt,websiteLoadCompletedAt=websiteStatus.loadCompletedAt,websiteFailureCategory=websiteStatus.failureCategory,websiteBlockedNavigationCount=websiteStatus.blockedNavigationCount,websiteCurrentHost=websiteStatus.currentHost,websiteFallbackShown=websiteStatus.fallbackShown,websiteRendererRecoveryCount=websiteStatus.rendererRecoveryCount,activeEmergencyId=activeEmergencyId,emergencyState=emergencyState,emergencyPreparationProgress=if(emergencyState=="active")100 else null,playbackDisabled=mutablePlaybackDisabled.value,lastCommandId=lastCommandId,lastCommandState=lastCommandState,lastCommandResult=lastCommandResult,lastCommandCompletedAt=lastCommandCompletedAt) }
     private fun statusMessage() = kotlinx.serialization.json.buildJsonObject {
 		put("type", "player.status")
 		put("payload", kotlinx.serialization.json.buildJsonObject {
@@ -300,6 +333,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 			put("cacheUsedBytes", syncProgress.cacheUsedBytes); put("cacheLimitBytes", BuildConfig.MEDIA_CACHE_BYTES); syncProgress.error?.let { put("lastSynchronizationError", it) }; lastPlaybackError?.let { put("lastPlaybackError", it) }
 			currentScheduleId?.let{put("currentScheduleId",it)};currentPlaylistId?.let{put("currentPlaylistId",it)};put("selectionSource",selectionSource);nextTransition?.let{put("nextTransitionAt",it.toString())};clockOffsetSeconds?.let{put("deviceClockOffsetSeconds",it)};scheduleError?.let{put("scheduleEvaluationError",it)};activeManifestVersion?.let{put("scheduleManifestVersion",it)}
 			websiteStatus.assetId?.let{put("currentWebsiteAssetId",it)};put("websiteState",websiteStatus.state);websiteStatus.loadStartedAt?.let{put("websiteLoadStartedAt",it)};websiteStatus.loadCompletedAt?.let{put("websiteLoadCompletedAt",it)};websiteStatus.failureCategory?.let{put("websiteFailureCategory",it)};put("websiteBlockedNavigationCount",websiteStatus.blockedNavigationCount);websiteStatus.currentHost?.let{put("websiteCurrentHost",it)};put("websiteFallbackShown",websiteStatus.fallbackShown);put("websiteRendererRecoveryCount",websiteStatus.rendererRecoveryCount)
+			activeEmergencyId?.let{put("activeEmergencyId",it)};emergencyState?.let{put("emergencyState",it)};if(emergencyState=="active")put("emergencyPreparationProgress",100);put("playbackDisabled",mutablePlaybackDisabled.value);lastCommandId?.let{put("lastCommandId",it)};lastCommandState?.let{put("lastCommandState",it)};lastCommandResult?.let{put("lastCommandResult",it)};lastCommandCompletedAt?.let{put("lastCommandCompletedAt",it)}
 		})
 	}
 }

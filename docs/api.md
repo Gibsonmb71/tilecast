@@ -104,4 +104,8 @@ Weekly weekdays are integers `0` (Sunday) through `6` (Saturday). Times are `HH:
 
 Website playlist items require `durationMs` and always use `deliveryPolicy: "stream"`. Manifest schema v3 carries relevant website settings and optional fallback image/variant references. It never includes dashboard users, audit data, credentials, filesystem paths, full player logs, or unrelated websites.
 
-`POST /api/v1/screens/{id}/website-data/clear` is Owner/Administrator-only and CSRF protected. It returns `202` with an expiring idempotent command. The lightweight WebSocket message contains only command ID and expiry; the player responds with a success flag and safe category.
+Website data clearing is the typed `clear_website_data` persistent player command. It is Owner/Administrator-only and CSRF protected.
+
+## Emergency takeover and commands
+
+Dashboard routes include `GET/POST /emergencies`, `GET /emergencies/{id}`, `POST /emergencies/{id}/cancel`, `GET/POST /screens/{id}/commands`, and command cancellation. Device-authenticated players use `GET /player/commands`, `POST /player/commands/{id}/acknowledge`, and `POST /player/commands/{id}/result`. Commands are typed, bounded, expiring, and scoped to the authenticated screen. The former one-off website clearing route is replaced by `clear_website_data`.

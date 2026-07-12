@@ -1,6 +1,69 @@
 * {
   box-sizing: border-box;
 }
+.emergency-panel {
+  margin-bottom: 18px;
+}
+.emergency-panel > header,
+.emergency-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.emergency-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.emergency-form label,
+.emergency-form fieldset {
+  display: grid;
+  gap: 6px;
+}
+.emergency-form fieldset {
+  grid-column: span 3;
+  max-height: 180px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  padding: 12px;
+}
+.emergency-form fieldset label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.emergency-form p,
+.emergency-form button {
+  grid-column: span 3;
+}
+.emergency-row {
+  border-top: 1px solid var(--border);
+  padding: 12px 0;
+}
+.emergency-row span,
+.command-history div {
+  display: grid;
+  gap: 3px;
+}
+.operations {
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+.command-history {
+  margin-top: 14px;
+  display: grid;
+  gap: 8px;
+}
+.command-history div {
+  grid-template-columns: 1fr 1fr 1fr;
+  padding: 9px;
+  border: 1px solid var(--border);
+}
 html,
 body,
 #root {

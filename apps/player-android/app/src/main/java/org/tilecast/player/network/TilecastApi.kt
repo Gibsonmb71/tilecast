@@ -33,6 +33,13 @@ class TilecastApi(
         post<kotlinx.serialization.json.JsonObject>(serverUrl, "/api/v1/player/heartbeat", json.encodeToString(HeartbeatRequest.serializer(), heartbeat), "Bearer $credential")
     }
 
+    suspend fun commands(serverUrl:String,credential:String):PlayerCommandList=get(serverUrl,"/api/v1/player/commands","Bearer $credential")
+    suspend fun acknowledgeCommand(serverUrl:String,credential:String,id:String){post<kotlinx.serialization.json.JsonObject>(serverUrl,"/api/v1/player/commands/$id/acknowledge","{}","Bearer $credential")}
+    suspend fun commandResult(serverUrl:String,credential:String,id:String,success:Boolean,code:String,message:String){
+        val body=kotlinx.serialization.json.buildJsonObject{put("success",kotlinx.serialization.json.JsonPrimitive(success));put("code",kotlinx.serialization.json.JsonPrimitive(code));put("message",kotlinx.serialization.json.JsonPrimitive(message))}.toString()
+        post<kotlinx.serialization.json.JsonObject>(serverUrl,"/api/v1/player/commands/$id/result",body,"Bearer $credential")
+    }
+
     fun socket(serverUrl: String, credential: String, listener: okhttp3.WebSocketListener): okhttp3.WebSocket {
         val socketUrl = serverUrl.replaceFirst("https://", "wss://").replaceFirst("http://", "ws://") + "/api/v1/player/socket"
         return client.newWebSocket(Request.Builder().url(socketUrl).header("Authorization", "Bearer $credential").build(), listener)

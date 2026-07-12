@@ -91,10 +91,14 @@ private val warning = Color(0xFFE9CF79)
 @Composable fun TilecastPlayer(model: PlayerViewModel) {
     val state by model.state.collectAsStateWithLifecycle()
 	val content by model.content.collectAsStateWithLifecycle()
+	val disabled by model.playbackDisabled.collectAsStateWithLifecycle()
+	val identify by model.identify.collectAsStateWithLifecycle()
+	if(identify!=null){Box(Modifier.fillMaxSize().background(Color.Black),contentAlignment=Alignment.Center){Text(identify!!,color=Color.White,style=MaterialTheme.typography.displayLarge)};return}
 	if (content != null) {
 		FullscreenPlayback(content!!, model::playbackBoundary, model::playbackError,model::websitePlaybackStatus)
 		return
 	}
+	if(disabled){Box(Modifier.fillMaxSize().background(background),contentAlignment=Alignment.Center){Column(horizontalAlignment=Alignment.CenterHorizontally){TilecastBrand();Spacer(Modifier.height(28.dp));Text("Playback disabled",color=text,style=MaterialTheme.typography.headlineLarge);Text("This screen remains connected to Tilecast Studio.",color=muted)}};return}
     Box(Modifier.fillMaxSize().background(background).padding(horizontal = 72.dp, vertical = 52.dp)) {
         Column(Modifier.fillMaxSize()) {
             TilecastBrand()

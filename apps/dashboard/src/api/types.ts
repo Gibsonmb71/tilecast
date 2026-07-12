@@ -123,7 +123,7 @@ export type PlaylistAssignment = {
   lastPlaybackError?: string;
   currentScheduleId?: string;
   currentPlaylistId?: string;
-  selectionSource?: "schedule" | "direct_fallback" | "none";
+  selectionSource?: "emergency" | "schedule" | "direct_fallback" | "none";
   nextTransitionAt?: string;
   deviceClockOffsetSeconds?: number;
   scheduleEvaluationError?: string;
@@ -146,6 +146,45 @@ export type PlaylistAssignment = {
   websiteCurrentHost?: string;
   websiteFallbackShown?: boolean;
   websiteRendererRecoveryCount?: number;
+  activeEmergencyId?: string;
+  emergencyState?: string;
+  emergencyPreparationProgress?: number;
+  playbackDisabled: boolean;
+  lastCommandId?: string;
+  lastCommandState?: string;
+  lastCommandResult?: string;
+  lastCommandCompletedAt?: string;
+};
+
+export type PlayerCommand = {
+  id: string;
+  type: string;
+  payload: Record<string, number>;
+  state: string;
+  createdAt: string;
+  expiresAt: string;
+  deliveredAt?: string;
+  acknowledgedAt?: string;
+  completedAt?: string;
+  resultCode?: string;
+  resultMessage?: string;
+};
+
+export type EmergencyTakeover = {
+  id: string;
+  name: string;
+  description: string;
+  playlistId: string;
+  playlistName: string;
+  status: string;
+  activatedAt?: string;
+  expiresAt: string;
+  cancelledAt?: string;
+  cancellationReason?: string;
+  affectedCount: number;
+  activeCount: number;
+  preparingCount: number;
+  failedCount: number;
 };
 export type ScreenGroup = {
   id: string;

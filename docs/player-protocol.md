@@ -39,4 +39,8 @@ Clock changes, timezone changes, app foregrounding, startup, manifest activation
 
 Manifest v3 adds `websites` and website playlist items. Website items have no media variant and are not included in download selection. A referenced fallback image does have normal asset/variant metadata and must be verified before manifest activation. Website failures never invalidate an otherwise prepared manifest.
 
-The player reports only website asset ID, state, timestamps, safe failure category, blocked-navigation count, origin host, fallback state, and renderer recovery count. Full URLs and query strings are excluded. `website.clear_data` commands carry an expiring command ID; `website.data_cleared` acknowledges that ID without browser data.
+The player reports only website asset ID, state, timestamps, safe failure category, blocked-navigation count, origin host, fallback state, and renderer recovery count. Full URLs and query strings are excluded. Website clearing uses the general persistent command protocol.
+
+## Emergency and command protocol
+
+Manifest v4 may contain one active emergency with its playlist and half-open activation/expiration interval. The player prepares it atomically, interrupts normal playback when ready, and re-evaluates schedules on restoration. `commands.available` prompts authenticated retrieval; acknowledgement and safe result endpoints make delivery persistent and idempotent. Emergency takeover overrides playback-disabled state, then returns to disabled after expiration.

@@ -111,8 +111,26 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 	if err != nil || same.ManifestVersion != manifest.ManifestVersion || sameETag != etag {
 		t.Fatal("manifest read changed version or ETag")
 	}
-	if manifest.SchemaVersion != 3 || manifest.DirectFallbackPlaylist == nil || len(manifest.DirectFallbackPlaylist.Items) != 2 || len(manifest.Assets) != 2 {
+	if manifest.SchemaVersion != 4 || manifest.DirectFallbackPlaylist == nil || len(manifest.DirectFallbackPlaylist.Items) != 2 || len(manifest.Assets) != 2 {
 		t.Fatalf("manifest=%#v", manifest)
+	}
+	emergencyID := uuid.New()
+	_, err = pool.Exec(ctx, `INSERT INTO emergency_takeovers(id,organization_id,name,playlist_id,status,activated_by,activated_at,expires_at)VALUES($1,$2,'Test emergency',$3,'active',$4,now(),now()+interval '1 hour')`, emergencyID, org, playlist.ID, owner.User.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO emergency_targets(emergency_id,target_type,screen_id)VALUES($1,'screen',$2)`, emergencyID, screenID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO emergency_screen_states(emergency_id,screen_id,manifest_version,state)VALUES($1,$2,$3,'pending')`, emergencyID, screenID, manifest.ManifestVersion); err != nil {
+		t.Fatal(err)
+	}
+	emergencyManifest, _, err := service.BuildManifest(ctx, screenID)
+	if err != nil || emergencyManifest.Emergency == nil || emergencyManifest.Emergency.ID != emergencyID || emergencyManifest.Emergency.PlaylistID != playlist.ID {
+		t.Fatalf("emergency manifest=%#v err=%v", emergencyManifest.Emergency, err)
+	}
+	if _, err = pool.Exec(ctx, `DELETE FROM emergency_takeovers WHERE id=$1`, emergencyID); err != nil {
+		t.Fatal(err)
 	}
 	scheduler := scheduling.NewService(pool, notifier, scheduling.Limits{MaxSchedules: 1000, MaxTargetsPerSchedule: 250, MaxGroupsPerScreen: 50, PrefetchDays: 14, ActivationGraceSeconds: 30, ClockSkewWarningSeconds: 300})
 	service.SetScheduling(scheduler)
@@ -186,7 +204,7 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	webManifest, _, err := service.BuildManifest(ctx, screenID)
-	if err != nil || webManifest.SchemaVersion != 3 || len(webManifest.Websites) != 1 || webManifest.Websites[0].FallbackVariantID == nil || len(webManifest.Assets) != 1 {
+	if err != nil || webManifest.SchemaVersion != 4 || len(webManifest.Websites) != 1 || webManifest.Websites[0].FallbackVariantID == nil || len(webManifest.Assets) != 1 {
 		t.Fatalf("website manifest=%#v %v", webManifest, err)
 	}
 	if len(notifier.versions) < 3 {

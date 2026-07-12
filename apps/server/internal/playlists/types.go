@@ -105,6 +105,14 @@ type Assignment struct {
 	WebsiteCurrentHost            *string              `json:"websiteCurrentHost,omitempty"`
 	WebsiteFallbackShown          *bool                `json:"websiteFallbackShown,omitempty"`
 	WebsiteRendererRecoveryCount  *int                 `json:"websiteRendererRecoveryCount,omitempty"`
+	ActiveEmergencyID             *uuid.UUID           `json:"activeEmergencyId,omitempty"`
+	EmergencyState                *string              `json:"emergencyState,omitempty"`
+	EmergencyPreparationProgress  *int                 `json:"emergencyPreparationProgress,omitempty"`
+	PlaybackDisabled              bool                 `json:"playbackDisabled"`
+	LastCommandID                 *uuid.UUID           `json:"lastCommandId,omitempty"`
+	LastCommandState              *string              `json:"lastCommandState,omitempty"`
+	LastCommandResult             *string              `json:"lastCommandResult,omitempty"`
+	LastCommandCompletedAt        *time.Time           `json:"lastCommandCompletedAt,omitempty"`
 }
 type AssignmentGroup struct {
 	ID   uuid.UUID `json:"id"`
@@ -133,6 +141,13 @@ type Manifest struct {
 	PrefetchHorizonDays    int                `json:"prefetchHorizonDays"`
 	ActivationGraceSeconds int                `json:"activationGraceSeconds"`
 	Websites               []ManifestWebsite  `json:"websites"`
+	Emergency              *ManifestEmergency `json:"emergency,omitempty"`
+}
+type ManifestEmergency struct {
+	ID          uuid.UUID `json:"id"`
+	PlaylistID  uuid.UUID `json:"playlistId"`
+	ActivatedAt time.Time `json:"activatedAt"`
+	ExpiresAt   time.Time `json:"expiresAt"`
 }
 type ManifestWebsite struct {
 	AssetID                uuid.UUID  `json:"assetId"`
@@ -231,6 +246,14 @@ type PlayerStatus struct {
 	WebsiteCurrentHost            string     `json:"websiteCurrentHost,omitempty"`
 	WebsiteFallbackShown          *bool      `json:"websiteFallbackShown,omitempty"`
 	WebsiteRendererRecoveryCount  *int       `json:"websiteRendererRecoveryCount,omitempty"`
+	ActiveEmergencyID             *uuid.UUID `json:"activeEmergencyId,omitempty"`
+	EmergencyState                string     `json:"emergencyState,omitempty"`
+	EmergencyPreparationProgress  *int       `json:"emergencyPreparationProgress,omitempty"`
+	PlaybackDisabled              *bool      `json:"playbackDisabled,omitempty"`
+	LastCommandID                 *uuid.UUID `json:"lastCommandId,omitempty"`
+	LastCommandState              string     `json:"lastCommandState,omitempty"`
+	LastCommandResult             string     `json:"lastCommandResult,omitempty"`
+	LastCommandCompletedAt        *time.Time `json:"lastCommandCompletedAt,omitempty"`
 }
 
 type Notifier interface {

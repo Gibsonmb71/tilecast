@@ -76,6 +76,10 @@ export function ScreensPage() {
           </span>
         )}
       </header>
+      <EmergencyPanel
+        screens={screens.data?.items ?? []}
+        canManage={manageable}
+      />
       {screens.isError && (
         <div className="notice notice--error">{screens.error.message}</div>
       )}
@@ -89,6 +93,229 @@ export function ScreensPage() {
         canManage={manageable}
       />
     </div>
+  );
+}
+
+function EmergencyPanel({
+  screens,
+  canManage,
+}: {
+  screens: Screen[];
+  canManage: boolean;
+}) {
+  const auth = useAuth();
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [playlistId, setPlaylistId] = useState("");
+  const [screenIds, setScreenIds] = useState<string[]>([]);
+  const [groupIds, setGroupIds] = useState<string[]>([]);
+  const [minutes, setMinutes] = useState(60);
+  const emergencies = useQuery({
+    queryKey: ["emergencies"],
+    queryFn: api.emergencies,
+    refetchInterval: 10_000,
+  });
+  const playlists = useQuery({
+    queryKey: ["playlists", "emergency"],
+    queryFn: () => api.playlists(),
+    enabled: canManage && open,
+  });
+  const groups = useQuery({
+    queryKey: ["screen-groups", "emergency"],
+    queryFn: () => api.screenGroups(),
+    enabled: canManage && open,
+  });
+  const activate = useMutation({
+    mutationFn: () =>
+      api.activateEmergency(
+        {
+          name,
+          description: "",
+          playlistId,
+          screenIds,
+          groupIds,
+          expiresAt: new Date(Date.now() + minutes * 60_000).toISOString(),
+        },
+        auth.status?.csrfToken ?? "",
+      ),
+    onSuccess: async () => {
+      setOpen(false);
+      setName("");
+      setPlaylistId("");
+      setScreenIds([]);
+      setGroupIds([]);
+      await queryClient.invalidateQueries({ queryKey: ["emergencies"] });
+    },
+  });
+  const cancel = useMutation({
+    mutationFn: (id: string) =>
+      api.cancelEmergency(
+        id,
+        prompt("Optional cancellation reason") ?? "",
+        auth.status?.csrfToken ?? "",
+      ),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["emergencies"] }),
+  });
+  return (
+    <section className="detail-card emergency-panel">
+      <header>
+        <div>
+          <h3>Emergency takeover</h3>
+          <p>
+            Temporarily override schedules and fallback content on selected
+            screens.
+          </p>
+        </div>
+        {canManage && (
+          <button
+            className="button button--danger"
+            onClick={() => setOpen(!open)}
+          >
+            Emergency takeover
+          </button>
+        )}
+      </header>
+      {open && (
+        <div className="emergency-form">
+          <label>
+            Name
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={180}
+            />
+          </label>
+          <label>
+            Playlist
+            <select
+              value={playlistId}
+              onChange={(e) => setPlaylistId(e.target.value)}
+            >
+              <option value="">Select playlist</option>
+              {playlists.data?.items.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Expires in
+            <select
+              value={minutes}
+              onChange={(e) => setMinutes(Number(e.target.value))}
+            >
+              <option value={15}>15 minutes</option>
+              <option value={60}>1 hour</option>
+              <option value={240}>4 hours</option>
+              <option value={1440}>24 hours</option>
+            </select>
+          </label>
+          <fieldset>
+            <legend>Target screens</legend>
+            {screens.map((s) => (
+              <label key={s.id}>
+                <input
+                  type="checkbox"
+                  checked={screenIds.includes(s.id)}
+                  onChange={(e) =>
+                    setScreenIds((ids) =>
+                      e.target.checked
+                        ? [...ids, s.id]
+                        : ids.filter((id) => id !== s.id),
+                    )
+                  }
+                />
+                {s.name} · {s.status}
+              </label>
+            ))}
+          </fieldset>
+          <fieldset>
+            <legend>Target groups</legend>
+            {groups.data?.items.map((g) => (
+              <label key={g.id}>
+                <input
+                  type="checkbox"
+                  checked={groupIds.includes(g.id)}
+                  onChange={(e) =>
+                    setGroupIds((ids) =>
+                      e.target.checked
+                        ? [...ids, g.id]
+                        : ids.filter((id) => id !== g.id),
+                    )
+                  }
+                />
+                {g.name} · {g.membershipCount} screens
+              </label>
+            ))}
+          </fieldset>
+          <p>
+            {screenIds.length} directly selected screen
+            {screenIds.length === 1 ? "" : "s"}; {groupIds.length} group
+            {groupIds.length === 1 ? "" : "s"};{" "}
+            {
+              screens.filter(
+                (s) => screenIds.includes(s.id) && s.status !== "online",
+              ).length
+            }{" "}
+            selected screens currently offline.
+          </p>
+          <button
+            className="button button--danger"
+            disabled={
+              !name ||
+              !playlistId ||
+              (screenIds.length === 0 && groupIds.length === 0) ||
+              activate.isPending
+            }
+            onClick={() => {
+              if (
+                confirm(
+                  `Activate the selected playlist for these targets? Existing overlapping emergencies will be replaced.`,
+                )
+              )
+                activate.mutate();
+            }}
+          >
+            Activate emergency takeover
+          </button>
+        </div>
+      )}
+      {(emergencies.data?.items ?? [])
+        .filter((e) => e.status === "active")
+        .map((e) => (
+          <div className="emergency-row" key={e.id}>
+            <span>
+              <strong>{e.name}</strong>
+              <small>
+                {e.playlistName} · expires{" "}
+                {new Date(e.expiresAt).toLocaleString()}
+              </small>
+            </span>
+            <span>
+              {e.activeCount} active · {e.preparingCount} preparing ·{" "}
+              {e.failedCount} failed · {e.affectedCount} total
+            </span>
+            {canManage && (
+              <button
+                className="button button--danger-quiet"
+                onClick={() => {
+                  if (
+                    confirm(
+                      "Cancel this takeover and restore current scheduled or fallback playback?",
+                    )
+                  )
+                    cancel.mutate(e.id);
+                }}
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+        ))}
+    </section>
   );
 }
 
@@ -512,8 +739,23 @@ export function ScreenDetailPage() {
       await queryClient.invalidateQueries({ queryKey: ["screens"] });
     },
   });
-  const clearWebsiteData = useMutation({
-    mutationFn: () => api.clearWebsiteData(id, auth.status?.csrfToken ?? ""),
+  const commands = useQuery({
+    queryKey: ["screens", id, "commands"],
+    queryFn: () => api.screenCommands(id),
+    refetchInterval: 5_000,
+    enabled: true,
+  });
+  const command = useMutation({
+    mutationFn: ({
+      type,
+      payload,
+    }: {
+      type: string;
+      payload: Record<string, number>;
+    }) =>
+      api.createScreenCommand(id, type, payload, auth.status?.csrfToken ?? ""),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["screens", id, "commands"] }),
   });
   if (query.isLoading)
     return <div className="table-loading">Loading screen…</div>;
@@ -572,11 +814,13 @@ export function ScreenDetailPage() {
           <div>
             <dt>Current selection</dt>
             <dd>
-              {assignment.data?.selectionSource === "schedule"
-                ? `Scheduled${assignment.data.currentScheduleId ? ` · ${assignment.data.relevantSchedules.find((s) => s.id === assignment.data?.currentScheduleId)?.name ?? "schedule"}` : ""}`
-                : assignment.data?.selectionSource === "direct_fallback"
-                  ? "Direct fallback"
-                  : "No content"}
+              {assignment.data?.selectionSource === "emergency"
+                ? "Emergency takeover"
+                : assignment.data?.selectionSource === "schedule"
+                  ? `Scheduled${assignment.data.currentScheduleId ? ` · ${assignment.data.relevantSchedules.find((s) => s.id === assignment.data?.currentScheduleId)?.name ?? "schedule"}` : ""}`
+                  : assignment.data?.selectionSource === "direct_fallback"
+                    ? "Direct fallback"
+                    : "No content"}
             </dd>
           </div>
           <div>
@@ -656,6 +900,14 @@ export function ScreenDetailPage() {
             <dd>{assignment.data?.playbackState ?? "Not reported"}</dd>
           </div>
           <div>
+            <dt>Emergency</dt>
+            <dd>
+              {assignment.data?.activeEmergencyId
+                ? `${assignment.data.emergencyState ?? "pending"} · ${assignment.data.emergencyPreparationProgress ?? 0}% prepared`
+                : "No active emergency"}
+            </dd>
+          </div>
+          <div>
             <dt>Cache</dt>
             <dd>
               {assignment.data?.cacheUsedBytes != null
@@ -696,24 +948,124 @@ export function ScreenDetailPage() {
             </div>
           )}
         {canManageScreens(auth.status?.user) && (
-          <div className="website-data-control">
-            <button
-              className="button button--danger-quiet"
-              disabled={clearWebsiteData.isPending}
-              onClick={() => {
-                if (
-                  confirm(
-                    "Clear cookies, cache, DOM storage, and WebView state on this player?",
+          <section className="operations">
+            <h3>Operations</h3>
+            <p>
+              Commands remain pending during brief disconnections and expire
+              automatically.
+            </p>
+            <div className="heading-actions">
+              <button
+                className="button button--quiet"
+                onClick={() =>
+                  command.mutate({ type: "sync_now", payload: {} })
+                }
+              >
+                Sync now
+              </button>
+              <button
+                className="button button--quiet"
+                onClick={() =>
+                  command.mutate({ type: "reload_playback", payload: {} })
+                }
+              >
+                Reload playback
+              </button>
+              <button
+                className="button button--quiet"
+                onClick={() =>
+                  command.mutate({
+                    type: "identify_screen",
+                    payload: { durationSeconds: 30 },
+                  })
+                }
+              >
+                Identify screen
+              </button>
+              <button
+                className="button button--danger-quiet"
+                onClick={() => {
+                  if (
+                    confirm(
+                      "Clear media not protected by active or pending playback?",
+                    )
                   )
-                )
-                  clearWebsiteData.mutate();
-              }}
-            >
-              Clear website data
-            </button>
-            {clearWebsiteData.isSuccess && <span>Clear command queued.</span>}
-          </div>
+                    command.mutate({ type: "clear_media_cache", payload: {} });
+                }}
+              >
+                Clear media cache
+              </button>
+              <button
+                className="button button--danger-quiet"
+                onClick={() => {
+                  if (
+                    confirm(
+                      "Clear cookies, cache, DOM storage, and WebView state?",
+                    )
+                  )
+                    command.mutate({ type: "clear_website_data", payload: {} });
+                }}
+              >
+                Clear website data
+              </button>
+              <button
+                className="button button--danger-quiet"
+                onClick={() => {
+                  const disabling = !assignment.data?.playbackDisabled;
+                  if (
+                    !disabling ||
+                    confirm(
+                      "Disable ordinary playback while keeping this player paired and connected?",
+                    )
+                  )
+                    command.mutate({
+                      type: disabling ? "disable_playback" : "enable_playback",
+                      payload: {},
+                    });
+                }}
+              >
+                {assignment.data?.playbackDisabled
+                  ? "Enable playback"
+                  : "Disable playback"}
+              </button>
+            </div>
+            {command.isSuccess && (
+              <p>Command queued; this does not mean it has completed.</p>
+            )}
+            <div className="command-history">
+              {commands.data?.items.map((c) => (
+                <div key={c.id}>
+                  <strong>{c.type.replaceAll("_", " ")}</strong>
+                  <span>
+                    {c.state} · {new Date(c.createdAt).toLocaleString()}
+                  </span>
+                  <small>
+                    {c.resultCode?.replaceAll("_", " ") ?? "No result yet"}
+                  </small>
+                </div>
+              ))}
+            </div>
+          </section>
         )}
+        {!canManageScreens(auth.status?.user) &&
+          (commands.data?.items.length ?? 0) > 0 && (
+            <section className="operations">
+              <h3>Recent operations</h3>
+              <div className="command-history">
+                {commands.data?.items.map((c) => (
+                  <div key={c.id}>
+                    <strong>{c.type.replaceAll("_", " ")}</strong>
+                    <span>
+                      {c.state} · {new Date(c.createdAt).toLocaleString()}
+                    </span>
+                    <small>
+                      {c.resultCode?.replaceAll("_", " ") ?? "No result yet"}
+                    </small>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
       </section>
       <section className="detail-grid">
         <div className="detail-card">
