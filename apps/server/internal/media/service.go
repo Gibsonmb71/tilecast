@@ -26,17 +26,20 @@ type Config struct {
 	Profile                 CompatibilityProfile
 	Workers                 int
 	KeepOriginals           bool
+	Website                 WebsitePolicy
 }
 type Service struct {
-	db      *pgxpool.Pool
-	storage Storage
-	cfg     Config
+	db          *pgxpool.Pool
+	storage     Storage
+	cfg         Config
+	invalidator AssetInvalidator
 }
 
 func NewService(db *pgxpool.Pool, storage Storage, cfg Config) *Service {
 	return &Service{db: db, storage: storage, cfg: cfg}
 }
-func (s *Service) Storage() Storage { return s.storage }
+func (s *Service) Storage() Storage                                 { return s.storage }
+func (s *Service) SetAssetInvalidator(invalidator AssetInvalidator) { s.invalidator = invalidator }
 
 func (s *Service) CreateUpload(ctx context.Context, userID uuid.UUID, filename, mimeType string, size int64) (Upload, error) {
 	filename = strings.TrimSpace(filename)
@@ -318,6 +321,12 @@ func (s *Service) GetAsset(ctx context.Context, id uuid.UUID) (Asset, error) {
 	if err != nil {
 		return Asset{}, err
 	}
+	if asset.Type == "website" {
+		asset.Website, err = s.loadWebsite(ctx, id)
+		if err != nil {
+			return Asset{}, err
+		}
+	}
 	for _, v := range asset.Variants {
 		if v.Kind == "thumbnail" || v.Kind == "poster" {
 			url := "/api/v1/assets/" + id.String() + "/thumbnail"
@@ -489,11 +498,17 @@ func (s *Service) DeleteAsset(ctx context.Context, id, userID uuid.UUID) error {
 	}
 	defer tx.Rollback(ctx)
 	var inUse bool
-	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM playlist_items WHERE asset_id=$1)`, id).Scan(&inUse); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM playlist_items WHERE asset_id=$1) OR EXISTS(SELECT 1 FROM website_assets WHERE fallback_image_asset_id=$1)`, id).Scan(&inUse); err != nil {
 		return err
 	}
 	if inUse {
-		return errors.New("asset is in use by a playlist")
+		return errors.New("asset is in use by a playlist or website fallback")
+	}
+	var assetType string
+	if err := tx.QueryRow(ctx, `SELECT type FROM assets WHERE id=$1 AND deleted_at IS NULL`, id).Scan(&assetType); errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	} else if err != nil {
+		return err
 	}
 	tag, err := tx.Exec(ctx, `UPDATE assets SET processing_status='deleting',deleted_at=COALESCE(deleted_at,now()),updated_at=now() WHERE id=$1 AND processing_status NOT IN ('deleting','deleted')`, id)
 	if err != nil {
@@ -509,11 +524,24 @@ func (s *Service) DeleteAsset(ctx context.Context, id, userID uuid.UUID) error {
 		}
 		return nil
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO media_jobs(id,asset_id,kind,status)VALUES($1,$2,'delete_asset_files','queued') ON CONFLICT DO NOTHING`, uuid.New(), id)
-	if err != nil {
-		return err
+	if assetType == "website" {
+		if _, err = tx.Exec(ctx, `DELETE FROM website_assets WHERE asset_id=$1`, id); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(ctx, `UPDATE assets SET processing_status='deleted' WHERE id=$1`, id); err != nil {
+			return err
+		}
+	} else {
+		_, err = tx.Exec(ctx, `INSERT INTO media_jobs(id,asset_id,kind,status)VALUES($1,$2,'delete_asset_files','queued') ON CONFLICT DO NOTHING`, uuid.New(), id)
+		if err != nil {
+			return err
+		}
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)VALUES($1,$2,'media.asset_deleted','asset',$3)`, uuid.New(), userID, id.String())
+	action := "media.asset_deleted"
+	if assetType == "website" {
+		action = "website.asset_deleted"
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)VALUES($1,$2,$3,'asset',$4)`, uuid.New(), userID, action, id.String())
 	if err != nil {
 		return err
 	}

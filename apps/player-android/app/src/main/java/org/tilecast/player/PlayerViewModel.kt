@@ -15,6 +15,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
@@ -41,6 +43,8 @@ import org.tilecast.player.content.PlaybackSession
 import org.tilecast.player.content.PreparedContent
 import org.tilecast.player.content.SyncProgress
 import org.tilecast.player.content.ScheduleEngine
+import org.tilecast.player.content.WebsitePlaybackStatus
+import org.tilecast.player.content.WebsiteDataManager
 import java.time.Duration
 import java.time.Instant
 import java.util.Locale
@@ -81,6 +85,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 	private var nextTransition: Instant? = null
 	private var scheduleError: String? = null
 	private var clockOffsetSeconds: Long? = null
+	private var websiteStatus=WebsitePlaybackStatus()
 
     init { viewModelScope.launch { bootstrap() } }
 
@@ -195,6 +200,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             override fun onMessage(webSocket: WebSocket, text: String) {
 				if (text.contains("server.ping")) { webSocket.send("{\"type\":\"player.pong\"}"); webSocket.send(Json.encodeToString(kotlinx.serialization.json.JsonObject.serializer(), statusMessage())) }
 				if (text.contains("manifest.changed")) viewModelScope.launch { reconcileManifest(url, credential) }
+				if(text.contains("website.clear_data")){val commandId=runCatching{Json.parseToJsonElement(text).jsonObject["commandId"]?.jsonPrimitive?.content}.getOrNull();if(commandId!=null)WebsiteDataManager.clear(getApplication()){success->webSocket.send(Json.encodeToString(kotlinx.serialization.json.JsonObject.serializer(),kotlinx.serialization.json.buildJsonObject{put("type","website.data_cleared");put("payload",kotlinx.serialization.json.buildJsonObject{put("commandId",commandId);put("success",success);if(!success)put("errorCategory","clear_failed")})}))}}
 			}
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
 				manifestPollJob?.cancel()
@@ -238,7 +244,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private suspend fun revokeLocally(screenName: String?) { socket?.cancel(); credentials.clear(); configuration.clearPairing(); emit(PlayerEvent.Revoked(screenName)) }
     fun reconnectAfterRevocation() { viewModelScope.launch { credentials.clear(); configuration.clearPairing(); selectedIdentity?.let { emit(PlayerEvent.IdentityConfirmed(selectedUrl ?: return@launch, it)) } ?: discover() } }
     fun cancelPairing() { discover() }
-    fun resetServer() { viewModelScope.launch { socket?.cancel(); credentials.clear(); configuration.reset(); current = configuration.getOrCreate(); discover() } }
+    fun resetServer() { viewModelScope.launch { socket?.cancel(); credentials.clear(); WebsiteDataManager.clear(getApplication()){};configuration.reset(); current = configuration.getOrCreate(); discover() } }
 
 	private suspend fun reconcileManifest(url: String, credential: String) {
 		if (syncJob?.isActive == true) return
@@ -278,10 +284,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 		viewModelScope.launch { activatePrepared(pending,url,credential) }
 	}
 	fun playbackError(message:String){lastPlaybackError=message}
+	fun websitePlaybackStatus(status:WebsitePlaybackStatus){websiteStatus=status}
 	fun recalculateSchedule(){val prepared=scheduleContent?:return;val url=current?.serverUrl?:return;val credential=credentials.read()?:return;activateScheduleSelection(prepared,url,credential)}
 
     private fun deviceMetadata(playerId: String): DeviceMetadata { val metrics = getApplication<Application>().resources.displayMetrics; return DeviceMetadata(playerId, if (Build.MANUFACTURER.equals("Amazon", true)) "fire-tv" else "android-tv", Build.MANUFACTURER ?: "Unknown", Build.MODEL ?: "Unknown", Build.VERSION.RELEASE ?: Build.VERSION.SDK_INT.toString(), BuildConfig.VERSION_NAME, metrics.widthPixels, metrics.heightPixels, metrics.density, Locale.getDefault().toLanguageTag(), TimeZone.getDefault().id) }
-	private fun heartbeat(): HeartbeatRequest { val app = getApplication<Application>(); val metrics = app.resources.displayMetrics; return HeartbeatRequest(metrics.widthPixels, metrics.heightPixels, app.filesDir.usableSpace, SystemClock.elapsedRealtime() / 1000, BuildConfig.VERSION_NAME,activeManifestVersion=activeManifestVersion,pendingManifestVersion=pendingContent?.manifest?.manifestVersion,assignedPlaylistId=assignedPlaylistId,currentItemId=currentItemId,currentAssetId=currentAssetId,playbackState=if(mutableContent.value!=null)"playing" else "idle",downloadQueueCount=syncProgress.queueCount,downloadedBytes=syncProgress.downloadedBytes,requiredBytes=syncProgress.requiredBytes,cacheUsedBytes=syncProgress.cacheUsedBytes,cacheLimitBytes=BuildConfig.MEDIA_CACHE_BYTES,lastSynchronizationError=syncProgress.error,lastPlaybackError=lastPlaybackError,currentScheduleId=currentScheduleId,currentPlaylistId=currentPlaylistId,selectionSource=selectionSource,nextTransitionAt=nextTransition?.toString(),deviceClockOffsetSeconds=clockOffsetSeconds,scheduleEvaluationError=scheduleError,scheduleManifestVersion=activeManifestVersion) }
+	private fun heartbeat(): HeartbeatRequest { val app = getApplication<Application>(); val metrics = app.resources.displayMetrics; return HeartbeatRequest(metrics.widthPixels, metrics.heightPixels, app.filesDir.usableSpace, SystemClock.elapsedRealtime() / 1000, BuildConfig.VERSION_NAME,activeManifestVersion=activeManifestVersion,pendingManifestVersion=pendingContent?.manifest?.manifestVersion,assignedPlaylistId=assignedPlaylistId,currentItemId=currentItemId,currentAssetId=currentAssetId,playbackState=if(mutableContent.value!=null)"playing" else "idle",downloadQueueCount=syncProgress.queueCount,downloadedBytes=syncProgress.downloadedBytes,requiredBytes=syncProgress.requiredBytes,cacheUsedBytes=syncProgress.cacheUsedBytes,cacheLimitBytes=BuildConfig.MEDIA_CACHE_BYTES,lastSynchronizationError=syncProgress.error,lastPlaybackError=lastPlaybackError,currentScheduleId=currentScheduleId,currentPlaylistId=currentPlaylistId,selectionSource=selectionSource,nextTransitionAt=nextTransition?.toString(),deviceClockOffsetSeconds=clockOffsetSeconds,scheduleEvaluationError=scheduleError,scheduleManifestVersion=activeManifestVersion,currentWebsiteAssetId=websiteStatus.assetId,websiteState=websiteStatus.state,websiteLoadStartedAt=websiteStatus.loadStartedAt,websiteLoadCompletedAt=websiteStatus.loadCompletedAt,websiteFailureCategory=websiteStatus.failureCategory,websiteBlockedNavigationCount=websiteStatus.blockedNavigationCount,websiteCurrentHost=websiteStatus.currentHost,websiteFallbackShown=websiteStatus.fallbackShown,websiteRendererRecoveryCount=websiteStatus.rendererRecoveryCount) }
     private fun statusMessage() = kotlinx.serialization.json.buildJsonObject {
 		put("type", "player.status")
 		put("payload", kotlinx.serialization.json.buildJsonObject {
@@ -292,6 +299,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 			put("playbackState", if (mutableContent.value != null) "playing" else "idle"); put("downloadQueueCount", syncProgress.queueCount); put("downloadedBytes", syncProgress.downloadedBytes); put("requiredBytes", syncProgress.requiredBytes)
 			put("cacheUsedBytes", syncProgress.cacheUsedBytes); put("cacheLimitBytes", BuildConfig.MEDIA_CACHE_BYTES); syncProgress.error?.let { put("lastSynchronizationError", it) }; lastPlaybackError?.let { put("lastPlaybackError", it) }
 			currentScheduleId?.let{put("currentScheduleId",it)};currentPlaylistId?.let{put("currentPlaylistId",it)};put("selectionSource",selectionSource);nextTransition?.let{put("nextTransitionAt",it.toString())};clockOffsetSeconds?.let{put("deviceClockOffsetSeconds",it)};scheduleError?.let{put("scheduleEvaluationError",it)};activeManifestVersion?.let{put("scheduleManifestVersion",it)}
+			websiteStatus.assetId?.let{put("currentWebsiteAssetId",it)};put("websiteState",websiteStatus.state);websiteStatus.loadStartedAt?.let{put("websiteLoadStartedAt",it)};websiteStatus.loadCompletedAt?.let{put("websiteLoadCompletedAt",it)};websiteStatus.failureCategory?.let{put("websiteFailureCategory",it)};put("websiteBlockedNavigationCount",websiteStatus.blockedNavigationCount);websiteStatus.currentHost?.let{put("websiteCurrentHost",it)};put("websiteFallbackShown",websiteStatus.fallbackShown);put("websiteRendererRecoveryCount",websiteStatus.rendererRecoveryCount)
 		})
 	}
 }

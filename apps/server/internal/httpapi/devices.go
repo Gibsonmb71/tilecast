@@ -117,6 +117,7 @@ func (s *server) playerHeartbeat(w http.ResponseWriter, r *http.Request) {
 			RequiredBytes: body.RequiredBytes, CacheUsedBytes: body.CacheUsedBytes, CacheLimitBytes: body.CacheLimitBytes,
 			LastSyncError: body.LastSynchronizationError, LastPlaybackError: body.LastPlaybackError,
 			CurrentScheduleID: body.CurrentScheduleID, CurrentPlaylistID: body.CurrentPlaylistID, SelectionSource: body.SelectionSource, NextTransitionAt: body.NextTransitionAt, DeviceClockOffsetSeconds: body.DeviceClockOffsetSeconds, ScheduleEvaluationError: body.ScheduleEvaluationError, ScheduleManifestVersion: body.ScheduleManifestVersion,
+			CurrentWebsiteAssetID: body.CurrentWebsiteAssetID, WebsiteState: body.WebsiteState, WebsiteLoadStartedAt: body.WebsiteLoadStartedAt, WebsiteLoadCompletedAt: body.WebsiteLoadCompletedAt, WebsiteFailureCategory: body.WebsiteFailureCategory, WebsiteBlockedNavigationCount: body.WebsiteBlockedNavigationCount, WebsiteCurrentHost: body.WebsiteCurrentHost, WebsiteFallbackShown: body.WebsiteFallbackShown, WebsiteRendererRecoveryCount: body.WebsiteRendererRecoveryCount,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"accepted": true}})

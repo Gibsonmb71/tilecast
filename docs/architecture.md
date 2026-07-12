@@ -50,3 +50,9 @@ Playback is one fullscreen zone with sequential looping, image timers, Media3 vi
 Screen groups are many-to-many labels used only for schedule targeting. Schedules retain explicit calendar fields and IANA timezones. `internal/scheduling` is the server authority for half-open interval evaluation and deterministic precedence: priority, direct-screen specificity, later effective start, then stable ID. The Android `ScheduleEngine` implements the same transport semantics for offline evaluation.
 
 Player manifest v2 contains only schedules relevant to the authenticated screen, its direct fallback, required playlists and variants, server time, and preparation policy. Recurring rules use calendar calculations rather than fixed-duration days. A repeated local time uses the earlier occurrence for a start and later occurrence for an end; a nonexistent local time advances to the first valid time after the DST gap.
+
+## Milestone 6 website playback
+
+Website configuration is normalized in `website_assets`; no page data or credentials are stored. Manifest v3 includes only websites referenced by relevant playlists, plus optional fallback-image variants. The Android player isolates WebView policy, lifecycle, timeout/reload control, failure state, and data clearing from Compose playlist orchestration. Scheduling is unchanged.
+
+The server validates URLs without fetching them, avoiding SSRF and network-topology assumptions. Top-level navigation uses an exact-host allowlist on the player. Subresource filtering is intentionally not claimed because Milestone 6 does not install a request-interception proxy.

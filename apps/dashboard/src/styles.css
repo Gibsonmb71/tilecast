@@ -1058,6 +1058,51 @@ a {
     min-width: calc(100% - 145px);
   }
 }
+.website-editor {
+  width: min(760px, calc(100vw - 40px));
+  max-height: 90vh;
+  overflow: auto;
+}
+.website-editor details {
+  border: 1px solid var(--border);
+  padding: 12px;
+}
+.website-editor summary {
+  cursor: pointer;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+.website-editor details > label,
+.website-position {
+  margin-top: 12px;
+}
+.website-position {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.website-diagnostics {
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+.website-diagnostics p {
+  margin: 5px 0;
+  color: var(--muted);
+}
+.timeline-website-icon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  background: var(--surface-muted);
+  color: var(--muted);
+}
+.website-data-control {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+}
 .assignment-card {
   margin-bottom: 18px;
   padding: 20px;

@@ -34,7 +34,7 @@ Milestones 1 and 2 establish the foundation and player enrollment path:
 
 Milestone 2 intentionally does **not** contain media upload, media processing, playlists, layouts, schedules, player manifests, or content playback.
 
-Milestone 5 adds screen groups, one-time and weekly playlist schedules, deterministic precedence, schedule-aware manifests, prefetching, and offline schedule evaluation. Direct screen assignments remain the fallback. Do not opportunistically begin multi-zone layouts, compositions, website/PDF zones, emergency overrides, or proof-of-play.
+Milestone 6 adds authentication-free website assets and hardened fullscreen Android WebView playback inside existing playlists and schedules. Direct screen assignments remain the fallback. Do not opportunistically begin multi-zone layouts, compositions, authenticated websites, browser automation, PDF playback, emergency overrides, or proof-of-play.
 
 ## Repository map
 
@@ -198,9 +198,9 @@ If the installation ID changes, do not send the credential. Show `ServerIdentity
 
 All controls must work with D-pad focus and remote activation. Normal player UI must not display raw exceptions, internal IDs, debug JSON, or development placeholders. Until playback exists, paired state says “No content assigned.”
 
-### Milestone 5 Android boundary
+### Milestone 6 Android boundary
 
-Milestone 5 remains one fullscreen zone with sequential looping playback. Keep manifest activation atomic and preserve working offline content during failed updates. The player evaluates received one-time and weekly schedules offline; multi-zone rendering, layouts, compositions, emergency overrides, and simultaneous videos remain out of scope.
+Milestone 6 remains one fullscreen zone with sequential looping playback. Websites are duration-bounded stream items with optional downloaded image fallbacks. Keep manifest activation atomic and downloaded image/video playback working when websites fail. Multi-zone rendering, layouts, compositions, authenticated sites, browser automation, emergency overrides, and simultaneous videos remain out of scope.
 
 ## LAN discovery and deployment
 
@@ -334,6 +334,6 @@ At the Milestone 2 handoff, verify and update this section if facts change:
 - The emulator has completed manual server entry, visible local-HTTP confirmation, pairing, approval, enrollment, online presence, server-restart reconnection, live revocation, revoked-state recovery, and re-pairing.
 - Physical Fire TV validation is outstanding; do not claim physical Fire TV compatibility based only on compilation/emulation.
 - LAN discovery is implemented but depends on multicast network support and should be tested on the deployment LAN.
-- Content playback is not implemented by design.
+- Image/video playback and offline scheduling are implemented. Website playback is implemented but physical Fire TV and Google TV WebView validation remains outstanding.
 
-Before starting Milestone 3, rerun the full check suite and confirm pairing, server restart reconnection, credential revocation, and re-pairing remain green. Media work must not weaken or bypass device authentication.
+Before each milestone handoff, rerun the full check suite and confirm pairing, server restart reconnection, credential revocation, re-pairing, downloaded playback, and offline scheduling remain green. Website work must not weaken or bypass device authentication.

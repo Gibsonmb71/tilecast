@@ -111,7 +111,7 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 	if err != nil || same.ManifestVersion != manifest.ManifestVersion || sameETag != etag {
 		t.Fatal("manifest read changed version or ETag")
 	}
-	if manifest.SchemaVersion != 2 || manifest.DirectFallbackPlaylist == nil || len(manifest.DirectFallbackPlaylist.Items) != 2 || len(manifest.Assets) != 2 {
+	if manifest.SchemaVersion != 3 || manifest.DirectFallbackPlaylist == nil || len(manifest.DirectFallbackPlaylist.Items) != 2 || len(manifest.Assets) != 2 {
 		t.Fatalf("manifest=%#v", manifest)
 	}
 	scheduler := scheduling.NewService(pool, notifier, scheduling.Limits{MaxSchedules: 1000, MaxTargetsPerSchedule: 250, MaxGroupsPerScreen: 50, PrefetchDays: 14, ActivationGraceSeconds: 30, ClockSkewWarningSeconds: 300})
@@ -163,6 +163,31 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 	empty, _, err := service.BuildManifest(ctx, screenID)
 	if err != nil || empty.DirectFallbackPlaylist != nil {
 		t.Fatalf("empty manifest=%#v %v", empty, err)
+	}
+	websiteID := uuid.New()
+	_, err = pool.Exec(ctx, `INSERT INTO assets(id,organization_id,name,type,original_filename,detected_mime_type,sha256,original_size,processing_status,created_by)VALUES($1,$2,'Status website','website','','text/html',''::bytea,0,'ready',$3)`, websiteID, org, owner.User.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = pool.Exec(ctx, `INSERT INTO website_assets(asset_id,url,display_url,allowed_hosts,failure_behavior,fallback_image_asset_id)VALUES($1,'https://example.com/status','https://example.com/status',ARRAY['example.com'],'fallback_image',$2)`, websiteID, imageID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	webPlaylist, err := service.Create(ctx, owner.User.ID, "Web status", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	webDuration := int64(30000)
+	webPlaylist, err = service.AddItem(ctx, webPlaylist.ID, owner.User.ID, ItemInput{AssetID: websiteID, DurationMS: &webDuration, DeliveryPolicy: "stream"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = service.Assign(ctx, screenID, webPlaylist.ID, owner.User.ID); err != nil {
+		t.Fatal(err)
+	}
+	webManifest, _, err := service.BuildManifest(ctx, screenID)
+	if err != nil || webManifest.SchemaVersion != 3 || len(webManifest.Websites) != 1 || webManifest.Websites[0].FallbackVariantID == nil || len(webManifest.Assets) != 1 {
+		t.Fatalf("website manifest=%#v %v", webManifest, err)
 	}
 	if len(notifier.versions) < 3 {
 		t.Fatalf("notifications=%v", notifier.versions)

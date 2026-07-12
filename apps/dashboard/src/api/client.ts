@@ -18,6 +18,8 @@ import type {
   ScheduleInput,
   ScheduleList,
   SchedulePreview,
+  WebsiteInput,
+  WebsiteDiagnostics,
 } from "./types";
 
 type DataResponse<T> = { data: T };
@@ -127,6 +129,11 @@ export const api = {
       headers: { "X-CSRF-Token": csrfToken },
       body: JSON.stringify({ reason }),
     }),
+  clearWebsiteData: (id: string, csrfToken: string) =>
+    request<{ commandId: string; status: string; expiresAt: string }>(
+      `/screens/${id}/website-data/clear`,
+      { method: "POST", headers: { "X-CSRF-Token": csrfToken } },
+    ),
   assets: (params: URLSearchParams) =>
     request<AssetList>(`/assets?${params.toString()}`),
   asset: (id: string) => request<Asset>(`/assets/${id}`),
@@ -140,6 +147,20 @@ export const api = {
       headers: { "X-CSRF-Token": csrfToken },
       body: JSON.stringify(input),
     }),
+  createWebsite: (input: WebsiteInput, csrfToken: string) =>
+    request<Asset>("/assets/websites", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  updateWebsite: (id: string, input: WebsiteInput, csrfToken: string) =>
+    request<Asset>(`/assets/${id}/website`, {
+      method: "PATCH",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  websiteDiagnostics: (id: string) =>
+    request<WebsiteDiagnostics>(`/assets/${id}/website/diagnostics`),
   retryAsset: (id: string, csrfToken: string) =>
     request<Asset>(`/assets/${id}/retry`, {
       method: "POST",

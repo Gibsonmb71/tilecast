@@ -92,7 +92,7 @@ private val warning = Color(0xFFE9CF79)
     val state by model.state.collectAsStateWithLifecycle()
 	val content by model.content.collectAsStateWithLifecycle()
 	if (content != null) {
-		FullscreenPlayback(content!!, model::playbackBoundary, model::playbackError)
+		FullscreenPlayback(content!!, model::playbackBoundary, model::playbackError,model::websitePlaybackStatus)
 		return
 	}
     Box(Modifier.fillMaxSize().background(background).padding(horizontal = 72.dp, vertical = 52.dp)) {

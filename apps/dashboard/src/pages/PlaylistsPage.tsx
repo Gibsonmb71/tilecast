@@ -1,5 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, GripVertical, ListVideo, Plus, Trash2 } from "lucide-react";
+import {
+  Copy,
+  GripVertical,
+  ListVideo,
+  Plus,
+  Trash2,
+  Globe2,
+} from "lucide-react";
 import { useEffect, useState, type DragEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { api } from "../api/client";
@@ -17,7 +24,7 @@ export function canManagePlaylists(role?: string) {
 export function playlistDuration(items: PlaylistItem[]) {
   return items.reduce<number | null>((total, item) => {
     const duration =
-      item.assetType === "image"
+      item.assetType === "image" || item.assetType === "website"
         ? item.durationMs
         : item.videoEndOffsetMs != null
           ? item.videoEndOffsetMs - (item.videoStartOffsetMs ?? 0)
@@ -206,12 +213,17 @@ export function PlaylistEditorPage() {
         id,
         {
           assetId: asset.id,
-          durationMs: asset.type === "image" ? 10000 : undefined,
+          durationMs:
+            asset.type === "image"
+              ? 10000
+              : asset.type === "website"
+                ? 30000
+                : undefined,
           fitMode: "contain",
           transition: "none",
-          audioEnabled: true,
-          volume: 1,
-          deliveryPolicy: "download",
+          audioEnabled: asset.type !== "website",
+          volume: asset.type === "website" ? 0 : 1,
+          deliveryPolicy: asset.type === "website" ? "stream" : "download",
         },
         csrf,
       )
@@ -410,11 +422,17 @@ function TimelineItem({
         <GripVertical size={18} />
         <b>{index + 1}</b>
       </span>
-      <img src={item.thumbnailUrl} alt="" />
+      {item.assetType === "website" ? (
+        <span className="timeline-website-icon">
+          <Globe2 size={24} />
+        </span>
+      ) : (
+        <img src={item.thumbnailUrl} alt="" />
+      )}
       <span className="timeline-name">
         <strong>{item.assetName}</strong>
         <small>
-          {item.assetType === "image"
+          {item.assetType === "image" || item.assetType === "website"
             ? `${(item.durationMs ?? 0) / 1000} seconds`
             : "Full video"}
         </small>
@@ -458,12 +476,18 @@ function TimelineItem({
             )
           }
         >
-          <option value="download">Download</option>
-          <option value="stream">Stream</option>
-          <option value="automatic">Automatic</option>
+          {item.assetType === "website" ? (
+            <option value="stream">Stream</option>
+          ) : (
+            <>
+              <option value="download">Download</option>
+              <option value="stream">Stream</option>
+              <option value="automatic">Automatic</option>
+            </>
+          )}
         </select>
       </label>
-      {item.assetType === "image" ? (
+      {item.assetType === "image" || item.assetType === "website" ? (
         <label>
           Seconds
           <input

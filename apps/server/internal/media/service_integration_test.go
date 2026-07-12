@@ -72,7 +72,7 @@ func TestMediaUploadProcessingAndDeletionLifecycle(t *testing.T) {
 	if err := os.WriteFile(fake, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	service := NewService(pool, storage, Config{MaxUploadBytes: 1 << 20, ReservedFreeBytes: 1, FFmpegPath: fake, Workers: 1, Profile: CompatibilityProfile{MaxWidth: 1920, MaxHeight: 1080, MaxFrameRate: 60}})
+	service := NewService(pool, storage, Config{MaxUploadBytes: 1 << 20, ReservedFreeBytes: 1, FFmpegPath: fake, Workers: 1, Profile: CompatibilityProfile{MaxWidth: 1920, MaxHeight: 1080, MaxFrameRate: 60}, Website: WebsitePolicy{DefaultTimeoutSeconds: 20, MaxTimeoutSeconds: 120, MinRefreshSeconds: 30, MaxAllowedHosts: 25, MaxWebsites: 500}})
 	upload, err := service.CreateUpload(ctx, owner.User.ID, "misleading-video.mp4", "video/mp4", int64(content.Len()))
 	if err != nil {
 		t.Fatal(err)
@@ -113,6 +113,29 @@ func TestMediaUploadProcessingAndDeletionLifecycle(t *testing.T) {
 	ready, err := service.GetAsset(ctx, asset.ID)
 	if err != nil || ready.ProcessingStatus != StatusReady || ready.ThumbnailURL == nil {
 		t.Fatalf("processed asset: %#v %v", ready, err)
+	}
+	websiteInput := validWebsite()
+	websiteInput.FallbackImageAssetID = &ready.ID
+	websiteInput.FailureBehavior = "fallback_image"
+	website, err := service.CreateWebsite(ctx, owner.User.ID, websiteInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if website.Type != "website" || website.Website == nil || len(website.Variants) != 0 || website.Website.FallbackImageAssetID == nil {
+		t.Fatalf("website=%#v", website)
+	}
+	websiteInput.URL = "https://status.example.org/display"
+	websiteInput.AllowedHosts = []string{"cdn.example.org"}
+	website, err = service.UpdateWebsite(ctx, website.ID, owner.User.ID, websiteInput)
+	if err != nil || len(website.Website.AllowedHosts) != 2 {
+		t.Fatalf("updated website=%#v %v", website, err)
+	}
+	diagnostics, err := service.WebsiteDiagnostics(ctx, website.ID)
+	if err != nil || diagnostics.ConfiguredURL != "https://status.example.org/display" {
+		t.Fatalf("diagnostics=%#v %v", diagnostics, err)
+	}
+	if err = service.DeleteAsset(ctx, website.ID, owner.User.ID); err != nil {
+		t.Fatal(err)
 	}
 	var compatible Variant
 	for _, variant := range ready.Variants {

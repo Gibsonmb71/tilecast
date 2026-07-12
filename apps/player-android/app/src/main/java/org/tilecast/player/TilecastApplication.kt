@@ -1,6 +1,7 @@
 package org.tilecast.player
 
 import android.app.Application
+import android.webkit.WebView
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
@@ -12,10 +13,10 @@ import java.util.concurrent.TimeUnit
 class TilecastApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        WebView.setWebContentsDebuggingEnabled(false)
         val request = PeriodicWorkRequestBuilder<HeartbeatWorker>(15, TimeUnit.MINUTES)
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
             .build()
         WorkManager.getInstance(this).enqueueUniquePeriodicWork("tilecast-heartbeat", ExistingPeriodicWorkPolicy.UPDATE, request)
     }
 }
-

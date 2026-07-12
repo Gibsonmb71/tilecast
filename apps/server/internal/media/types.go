@@ -1,6 +1,7 @@
 package media
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -96,6 +97,57 @@ type Asset struct {
 	UpdatedAt          time.Time      `json:"updatedAt"`
 	Variants           []Variant      `json:"variants"`
 	ThumbnailURL       *string        `json:"thumbnailUrl,omitempty"`
+	Website            *WebsiteConfig `json:"website,omitempty"`
+}
+
+type WebsiteConfig struct {
+	URL                    string     `json:"url"`
+	DisplayURL             string     `json:"displayUrl"`
+	AllowedHosts           []string   `json:"allowedHosts"`
+	JavaScriptEnabled      bool       `json:"javascriptEnabled"`
+	DOMStorageEnabled      bool       `json:"domStorageEnabled"`
+	CookiePolicy           string     `json:"cookiePolicy"`
+	ReloadPolicy           string     `json:"reloadPolicy"`
+	RefreshIntervalSeconds *int       `json:"refreshIntervalSeconds,omitempty"`
+	LoadTimeoutSeconds     int        `json:"loadTimeoutSeconds"`
+	ZoomPercent            int        `json:"zoomPercent"`
+	ScrollX                int        `json:"scrollX"`
+	ScrollY                int        `json:"scrollY"`
+	CustomUserAgent        string     `json:"customUserAgent"`
+	BackgroundColor        string     `json:"backgroundColor"`
+	FailureBehavior        string     `json:"failureBehavior"`
+	FallbackImageAssetID   *uuid.UUID `json:"fallbackImageAssetId,omitempty"`
+	CreatedAt              time.Time  `json:"createdAt"`
+	UpdatedAt              time.Time  `json:"updatedAt"`
+}
+
+type WebsiteInput struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	WebsiteConfig
+	javascriptSet bool
+	domStorageSet bool
+}
+
+type WebsiteDiagnostics struct {
+	AssetID              uuid.UUID                `json:"assetId"`
+	ConfiguredURL        string                   `json:"configuredUrl"`
+	AllowedHosts         []string                 `json:"allowedHosts"`
+	LastSuccessfulLoad   *time.Time               `json:"lastSuccessfulLoad,omitempty"`
+	LastFailure          *time.Time               `json:"lastFailure,omitempty"`
+	LastFailureCategory  *string                  `json:"lastFailureCategory,omitempty"`
+	ReportingScreens     []WebsiteReportingScreen `json:"reportingScreens"`
+	FallbackImageAssetID *uuid.UUID               `json:"fallbackImageAssetId,omitempty"`
+}
+type WebsiteReportingScreen struct {
+	ID    uuid.UUID `json:"id"`
+	Name  string    `json:"name"`
+	State string    `json:"state"`
+	Host  *string   `json:"host,omitempty"`
+}
+
+type AssetInvalidator interface {
+	AssetChanged(context.Context, uuid.UUID, string) error
 }
 
 type Creator struct {

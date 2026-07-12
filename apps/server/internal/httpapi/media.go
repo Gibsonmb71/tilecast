@@ -129,6 +129,50 @@ func (s *server) getAsset(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": asset})
 }
+func (s *server) createWebsite(w http.ResponseWriter, r *http.Request) {
+	var body media.WebsiteInput
+	if err := decodeJSON(w, r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	user := r.Context().Value(sessionContextKey).(auth.Session).User
+	asset, err := s.media.CreateWebsite(r.Context(), user.ID, body)
+	if err != nil {
+		s.writeMediaError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"data": asset})
+}
+func (s *server) updateWebsite(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	var body media.WebsiteInput
+	if err := decodeJSON(w, r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	user := r.Context().Value(sessionContextKey).(auth.Session).User
+	asset, err := s.media.UpdateWebsite(r.Context(), id, user.ID, body)
+	if err != nil {
+		s.writeMediaError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": asset})
+}
+func (s *server) websiteDiagnostics(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	result, err := s.media.WebsiteDiagnostics(r.Context(), id)
+	if err != nil {
+		s.writeMediaError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+}
 
 type updateAssetRequest struct {
 	Name        *string `json:"name"`
@@ -261,8 +305,8 @@ func (s *server) writeMediaError(w http.ResponseWriter, r *http.Request, err err
 	case errors.Is(err, media.ErrNotReady):
 		writeError(w, http.StatusConflict, "media_not_ready", "This media asset is not ready.")
 	case strings.Contains(err.Error(), "in use by a playlist"):
-		writeError(w, http.StatusConflict, "asset_in_use", "This asset is used by a playlist and cannot be deleted.")
-	case strings.Contains(err.Error(), "must be") || strings.Contains(err.Error(), "only failed"):
+		writeError(w, http.StatusConflict, "asset_in_use", "This asset is used by a playlist or website fallback and cannot be deleted.")
+	case strings.Contains(err.Error(), "must be") || strings.Contains(err.Error(), "only failed") || strings.Contains(err.Error(), "invalid") || strings.Contains(err.Error(), "outside the configured") || strings.Contains(err.Error(), "exceeds the configured") || strings.Contains(err.Error(), "requires a fallback"):
 		writeError(w, http.StatusUnprocessableEntity, "validation_failed", err.Error())
 	default:
 		s.internalError(w, r, err)

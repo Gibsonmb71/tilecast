@@ -35,7 +35,7 @@ class ManifestSyncManager(
     suspend fun loadActive(): PreparedContent? {
         val stored = database.manifests().active() ?: return null
         val manifest = runCatching { api.decodeManifest(stored.rawJson) }.getOrNull() ?: return null
-        if (manifest.schemaVersion !in 1..2) return null
+        if (manifest.schemaVersion !in 1..3) return null
         val records = database.cachedAssets().all().associateBy { it.variantId }
         val local = records.filterValues { it.downloadStatus == "ready" && File(it.localPath).let { file -> file.exists() && file.length() == it.expectedFileSize } }.mapValues { it.value.localPath }
         val required = records.values.filter { it.requiredByActiveManifest }
@@ -90,15 +90,16 @@ class ManifestSyncManager(
 		val items = (manifest.playlists.flatMap { it.items } + manifest.directFallbackPlaylist?.items.orEmpty() + manifest.playlist?.items.orEmpty()).distinctBy { it.id }
         val byVariant = manifest.assets.associateBy { it.variantId }
 		val explicit = items.mapNotNull { item ->
-            val asset = byVariant[item.variantId] ?: return@mapNotNull null
+			val asset = item.variantId?.let{byVariant[it]} ?: return@mapNotNull null
             when (item.deliveryPolicy) {
                 "download" -> asset
 				"automatic" -> if (asset.mimeType.startsWith("image/")) asset else null
                 else -> null
             }
 		}.distinctBy { it.variantId }.toMutableList()
+		manifest.websites.mapNotNull{it.fallbackVariantId?.let(byVariant::get)}.forEach{if(explicit.none{x->x.variantId==it.variantId})explicit+=it}
 		val media=mediaDirectory();val used=media.walkTopDown().filter{it.isFile}.sumOf{it.length()};var remaining=minOf((cacheLimitBytes-used).coerceAtLeast(0),(media.usableSpace-minimumFreeBytes).coerceAtLeast(0))-explicit.sumOf{it.fileSize}
-		items.filter{it.deliveryPolicy=="automatic"}.mapNotNull{byVariant[it.variantId]}.filter{it.mimeType.startsWith("video/")&&it.fileSize<=automaticVideoThresholdBytes}.distinctBy{it.variantId}.forEach{if(it.fileSize<=remaining){explicit+=it;remaining-=it.fileSize}}
+		items.filter{it.deliveryPolicy=="automatic"}.mapNotNull{it.variantId?.let(byVariant::get)}.filter{it.mimeType.startsWith("video/")&&it.fileSize<=automaticVideoThresholdBytes}.distinctBy{it.variantId}.forEach{if(it.fileSize<=remaining){explicit+=it;remaining-=it.fileSize}}
 		return explicit
     }
 
@@ -141,5 +142,5 @@ class ManifestSyncManager(
 	private fun cacheUsed()=mediaDirectory().walkTopDown().filter{it.isFile}.sumOf{it.length()}
     private fun finalFile(asset: ManifestAsset) = File(mediaDirectory(), "${asset.variantId}.${extension(asset.mimeType)}")
     private fun extension(mime: String) = when (mime) { "video/mp4" -> "mp4"; "image/png" -> "png"; "image/webp" -> "webp"; "image/gif" -> "gif"; else -> "jpg" }
-	private fun validateManifest(manifest:PlayerManifest,screenId:String){require(manifest.schemaVersion in 1..2&&manifest.mode=="single-zone"&&manifest.screenId==screenId){"Manifest validation failed"};val assets=manifest.assets.associateBy{it.variantId};val playlists=manifest.playlists+listOfNotNull(manifest.directFallbackPlaylist,manifest.playlist);require(playlists.map{it.id}.toSet().containsAll(manifest.schedules.map{it.playlistId})){"Schedule references an unavailable playlist"};playlists.flatMap{it.items}.forEach{item->require(assets[item.variantId]?.assetId==item.assetId){"Manifest item references an unavailable variant"};require(item.fitMode in listOf("contain","cover","stretch")&&item.transition in listOf("none","fade")&&item.deliveryPolicy in listOf("download","stream","automatic")&&item.volume in 0f..1f){"Manifest item settings are invalid"};if(assets[item.variantId]?.mimeType?.startsWith("image/")==true)require((item.durationMs?:0)>0){"Image duration is invalid"};if(item.videoEndOffsetMs!=null)require(item.videoEndOffsetMs>(item.videoStartOffsetMs?:0)){"Video offsets are invalid"}}}
+	private fun validateManifest(manifest:PlayerManifest,screenId:String){require(manifest.schemaVersion in 1..3&&manifest.mode=="single-zone"&&manifest.screenId==screenId){"Manifest validation failed"};val assets=manifest.assets.associateBy{it.variantId};val websites=manifest.websites.associateBy{it.assetId};val playlists=manifest.playlists+listOfNotNull(manifest.directFallbackPlaylist,manifest.playlist);require(playlists.map{it.id}.toSet().containsAll(manifest.schedules.map{it.playlistId})){"Schedule references an unavailable playlist"};playlists.flatMap{it.items}.forEach{item->if(item.assetType=="website"){require(websites[item.assetId]!=null&&(item.durationMs?:0)>0&&item.deliveryPolicy=="stream"){"Website item is invalid"}}else{require(item.variantId!=null&&assets[item.variantId]?.assetId==item.assetId){"Manifest item references an unavailable variant"}};require(item.fitMode in listOf("contain","cover","stretch")&&item.transition in listOf("none","fade")&&item.deliveryPolicy in listOf("download","stream","automatic")&&item.volume in 0f..1f){"Manifest item settings are invalid"};if(item.variantId?.let{assets[it]?.mimeType?.startsWith("image/")}==true)require((item.durationMs?:0)>0){"Image duration is invalid"};if(item.videoEndOffsetMs!=null)require(item.videoEndOffsetMs>(item.videoStartOffsetMs?:0)){"Video offsets are invalid"}};manifest.websites.forEach{site->require(site.allowedHosts.isNotEmpty()&&site.allowedHosts.size<=25&&site.url.length<=2048&&site.loadTimeoutSeconds in 1..120&&site.zoomPercent in 50..200){"Website configuration is invalid"};site.fallbackVariantId?.let{require(assets[it]?.assetId==site.fallbackImageAssetId){"Website fallback is invalid"}}}}
 }

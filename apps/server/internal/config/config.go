@@ -20,6 +20,12 @@ type Config struct {
 	MDNSEnabled  bool
 	Media        MediaConfig
 	Scheduling   SchedulingConfig
+	Website      WebsiteConfig
+}
+
+type WebsiteConfig struct {
+	AllowPrivateHTTP                                                                          bool
+	DefaultTimeoutSeconds, MaxTimeoutSeconds, MinRefreshSeconds, MaxAllowedHosts, MaxWebsites int
 }
 
 type SchedulingConfig struct {
@@ -86,6 +92,25 @@ func Load() (Config, error) {
 			return Config{}, fmt.Errorf("%s must be between 1 and %d", value.name, value.max)
 		}
 		*value.dest = int(parsed)
+	}
+	cfg.Website.AllowPrivateHTTP, err = strconv.ParseBool(get("TILECAST_WEBSITE_ALLOW_PRIVATE_HTTP", "false"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parse TILECAST_WEBSITE_ALLOW_PRIVATE_HTTP: %w", err)
+	}
+	websiteValues := []struct {
+		name, fallback string
+		max            int
+		dest           *int
+	}{{"TILECAST_WEBSITE_DEFAULT_TIMEOUT_SECONDS", "20", 120, &cfg.Website.DefaultTimeoutSeconds}, {"TILECAST_WEBSITE_MAX_TIMEOUT_SECONDS", "120", 600, &cfg.Website.MaxTimeoutSeconds}, {"TILECAST_WEBSITE_MIN_REFRESH_SECONDS", "30", 3600, &cfg.Website.MinRefreshSeconds}, {"TILECAST_WEBSITE_MAX_ALLOWED_HOSTS", "25", 100, &cfg.Website.MaxAllowedHosts}, {"TILECAST_WEBSITE_MAX_ASSETS", "500", 5000, &cfg.Website.MaxWebsites}}
+	for _, value := range websiteValues {
+		parsed, parseErr := parsePositiveInt64(value.name, value.fallback)
+		if parseErr != nil || parsed > int64(value.max) {
+			return Config{}, fmt.Errorf("%s must be between 1 and %d", value.name, value.max)
+		}
+		*value.dest = int(parsed)
+	}
+	if cfg.Website.DefaultTimeoutSeconds > cfg.Website.MaxTimeoutSeconds {
+		return Config{}, errors.New("TILECAST_WEBSITE_DEFAULT_TIMEOUT_SECONDS must not exceed TILECAST_WEBSITE_MAX_TIMEOUT_SECONDS")
 	}
 
 	cfg.Media = MediaConfig{
