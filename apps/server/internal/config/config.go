@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 	"time"
@@ -164,10 +165,16 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	if maxWidth > int64(math.MaxInt) {
+		return Config{}, errors.New("TILECAST_VIDEO_MAX_WIDTH is too large")
+	}
 	cfg.Media.VideoMaxWidth = int(maxWidth)
 	maxHeight, err := parsePositiveInt64("TILECAST_VIDEO_MAX_HEIGHT", "1080")
 	if err != nil {
 		return Config{}, err
+	}
+	if maxHeight > int64(math.MaxInt) {
+		return Config{}, errors.New("TILECAST_VIDEO_MAX_HEIGHT is too large")
 	}
 	cfg.Media.VideoMaxHeight = int(maxHeight)
 	if cfg.Media.VideoMaxFrameRate, err = strconv.ParseFloat(get("TILECAST_VIDEO_MAX_FRAME_RATE", "60"), 64); err != nil || cfg.Media.VideoMaxFrameRate <= 0 {
