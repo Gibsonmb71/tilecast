@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { z } from "zod";
 import { api } from "../api/client";
 import type {
@@ -766,9 +766,11 @@ function ApprovalPanel({
 
 export function ScreenDetailPage() {
   const { id = "" } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const auth = useAuth();
   const queryClient = useQueryClient();
   const [confirmRevoke, setConfirmRevoke] = useState(false);
+  const [policyDirty, setPolicyDirty] = useState(false);
   const [selectedPlaylist, setSelectedPlaylist] = useState("");
   const query = useQuery({
     queryKey: ["screens", id],
@@ -829,6 +831,10 @@ export function ScreenDetailPage() {
     queryFn: () => api.screenReliability(id),
     refetchInterval: 10_000,
   });
+  const screenPolicy = useQuery({
+    queryKey: ["screen", id, "policy"],
+    queryFn: () => api.screenPolicy(id),
+  });
   const [powerResults, setPowerResults] = useState<PowerAssistResults>({
     deviceSleep: "untested",
     tvStandby: "untested",
@@ -868,6 +874,27 @@ export function ScreenDetailPage() {
       <div className="notice notice--error">Screen could not be loaded.</div>
     );
   const screen = query.data;
+  const requestedTab = searchParams.get("tab") ?? "overview";
+  const tab = [
+    "overview",
+    "content",
+    "player-settings",
+    "reliability",
+    "commands",
+  ].includes(requestedTab)
+    ? requestedTab
+    : "overview";
+  const selectTab = (nextTab: string) => {
+    if (policyDirty && tab === "player-settings") {
+      if (!confirm("Leave Player settings without saving your changes?"))
+        return;
+      setPolicyDirty(false);
+    }
+    const next = new URLSearchParams(searchParams);
+    if (nextTab === "overview") next.delete("tab");
+    else next.set("tab", nextTab);
+    setSearchParams(next);
+  };
   return (
     <div className="screen-detail">
       <header className="page-heading">
@@ -880,444 +907,568 @@ export function ScreenDetailPage() {
         </div>
         <StatusLabel status={screen.status} />
       </header>
-      <section className="detail-card assignment-card">
-        <h3>Playback and scheduling</h3>
-        {canManageScreens(auth.status?.user) ? (
-          <div className="assignment-controls">
-            <select
-              aria-label="Assigned playlist"
-              value={selectedPlaylist}
-              onChange={(event) => setSelectedPlaylist(event.target.value)}
-            >
-              <option value="">No playlist assigned</option>
-              {playlists.data?.items.map((playlist) => (
-                <option key={playlist.id} value={playlist.id}>
-                  {playlist.name}
-                </option>
-              ))}
-            </select>
-            <button
-              className="button button--primary"
-              disabled={
-                assign.isPending ||
-                selectedPlaylist === (assignment.data?.playlistId ?? "")
-              }
-              onClick={() => assign.mutate()}
-            >
-              Apply assignment
+      <nav className="screen-detail-tabs" aria-label="Screen details">
+        {(
+          [
+            ["overview", "Overview"],
+            ["content", "Content"],
+            ["player-settings", "Player settings"],
+            ["reliability", "Reliability"],
+            ["commands", "Commands"],
+          ] as const
+        ).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            aria-current={tab === value ? "page" : undefined}
+            onClick={() => selectTab(value)}
+          >
+            {label}
+            {value === "player-settings" && policyDirty && (
+              <span className="screen-detail-tabs__dirty">Unsaved</span>
+            )}
+          </button>
+        ))}
+      </nav>
+
+      {tab === "overview" && (
+        <section
+          className="screen-overview"
+          aria-labelledby="screen-overview-title"
+        >
+          <header>
+            <h3 id="screen-overview-title">Screen overview</h3>
+            <p>Current player state and the settings that affect it.</p>
+          </header>
+          <dl className="screen-overview__grid">
+            <div>
+              <dt>Online status</dt>
+              <dd>
+                <StatusLabel status={screen.status} />
+              </dd>
+            </div>
+            <div>
+              <dt>Current content</dt>
+              <dd>
+                {assignment.data?.playbackState ??
+                  assignment.data?.playlistName ??
+                  "No content"}
+              </dd>
+            </div>
+            <div>
+              <dt>Synchronization</dt>
+              <dd>
+                {assignment.data?.synchronizationStatus.replaceAll("_", " ") ??
+                  "Not reported"}
+              </dd>
+            </div>
+            <div>
+              <dt>Player version</dt>
+              <dd>{screen.playerVersion || "Not reported"}</dd>
+            </div>
+            <div>
+              <dt>Reliability mode</dt>
+              <dd>
+                {reliability.data?.effectiveMode?.replaceAll("_", " ") ??
+                  "Not reported"}
+              </dd>
+            </div>
+            <div>
+              <dt>Active hours</dt>
+              <dd>
+                {reliability.data?.activeHoursState?.replaceAll("_", " ") ??
+                  "Not reported"}
+              </dd>
+            </div>
+            <div>
+              <dt>Player-setting overrides</dt>
+              <dd>
+                <Link to={`?tab=player-settings`}>
+                  {Object.keys(screenPolicy.data?.values ?? {}).length}{" "}
+                  configured · Review settings
+                </Link>
+              </dd>
+            </div>
+          </dl>
+          <div className="screen-overview__links">
+            <button type="button" onClick={() => selectTab("content")}>
+              View content
+            </button>
+            <button type="button" onClick={() => selectTab("reliability")}>
+              View reliability
+            </button>
+            <button type="button" onClick={() => selectTab("commands")}>
+              View commands
             </button>
           </div>
-        ) : (
-          <p>{assignment.data?.playlistName ?? "No playlist assigned"}</p>
-        )}
-        <dl className="detail-list">
-          <div>
-            <dt>Direct fallback playlist</dt>
-            <dd>{assignment.data?.playlistName ?? "No fallback assigned"}</dd>
-          </div>
-          <div>
-            <dt>Current selection</dt>
-            <dd>
-              {assignment.data?.selectionSource === "emergency"
-                ? "Emergency takeover"
-                : assignment.data?.selectionSource === "schedule"
-                  ? `Scheduled${assignment.data.currentScheduleId ? ` · ${assignment.data.relevantSchedules.find((s) => s.id === assignment.data?.currentScheduleId)?.name ?? "schedule"}` : ""}`
-                  : assignment.data?.selectionSource === "direct_fallback"
-                    ? "Direct fallback"
-                    : "No content"}
-            </dd>
-          </div>
-          <div>
-            <dt>Next scheduled change</dt>
-            <dd>
-              {assignment.data?.nextTransitionAt
-                ? new Date(assignment.data.nextTransitionAt).toLocaleString()
-                : "None reported"}
-            </dd>
-          </div>
-          <div>
-            <dt>Server manifest</dt>
-            <dd>Version {assignment.data?.manifestVersion ?? 1}</dd>
-          </div>
-          <div>
-            <dt>Player configuration</dt>
-            <dd>
-              {assignment.data?.activeConfigRevision != null
-                ? `Revision ${assignment.data.activeConfigRevision}`
-                : "Not reported"}
-            </dd>
-          </div>
-          <div>
-            <dt>Player manifest</dt>
-            <dd>
-              {assignment.data?.playerActiveManifestVersion != null
-                ? `Version ${assignment.data.playerActiveManifestVersion}`
-                : "Not reported"}
-            </dd>
-          </div>
-          <div>
-            <dt>Synchronization</dt>
-            <dd>
-              {assignment.data?.synchronizationStatus.replaceAll("_", " ") ??
-                "Not reported"}
-            </dd>
-          </div>
-          <div>
-            <dt>Groups</dt>
-            <dd>
-              {assignment.data?.groups.map((g) => g.name).join(", ") ||
-                "No groups"}
-            </dd>
-          </div>
-          <div>
-            <dt>Relevant schedules</dt>
-            <dd>
-              {assignment.data?.relevantSchedules
-                .map((s) => `${s.name} (${s.priority})`)
-                .join(", ") || "No schedules"}
-            </dd>
-          </div>
-          <div>
-            <dt>Device clock difference</dt>
-            <dd>
-              {assignment.data?.deviceClockOffsetSeconds != null
-                ? `${Math.abs(assignment.data.deviceClockOffsetSeconds)} seconds`
-                : "Not reported"}
-            </dd>
-          </div>
-          <div>
-            <dt>Downloads</dt>
-            <dd>
-              {assignment.data?.downloadQueueCount != null
-                ? `${assignment.data.downloadQueueCount} queued · ${assignment.data.downloadedBytes ?? 0} of ${assignment.data.requiredBytes ?? 0} bytes`
-                : "Not reported"}
-            </dd>
-          </div>
-          <div>
-            <dt>Website playback</dt>
-            <dd>
-              {assignment.data?.websiteState
-                ? `${assignment.data.websiteState.replaceAll("_", " ")}${assignment.data.websiteCurrentHost ? ` · ${assignment.data.websiteCurrentHost}` : ""}`
-                : "Not active"}
-            </dd>
-          </div>
-          <div>
-            <dt>Blocked website navigation</dt>
-            <dd>
-              {assignment.data?.websiteBlockedNavigationCount ?? "Not reported"}
-            </dd>
-          </div>
-          <div>
-            <dt>Playback</dt>
-            <dd>{assignment.data?.playbackState ?? "Not reported"}</dd>
-          </div>
-          <div>
-            <dt>Emergency</dt>
-            <dd>
-              {assignment.data?.activeEmergencyId
-                ? `${assignment.data.emergencyState ?? "pending"} · ${assignment.data.emergencyPreparationProgress ?? 0}% prepared`
-                : "No active emergency"}
-            </dd>
-          </div>
-          <div>
-            <dt>Cache</dt>
-            <dd>
-              {assignment.data?.cacheUsedBytes != null
-                ? `${assignment.data.cacheUsedBytes} of ${assignment.data.cacheLimitBytes ?? 0} bytes`
-                : "Not reported"}
-            </dd>
-          </div>
-        </dl>
-        {assignment.data?.lastSynchronizationError && (
-          <div className="notice notice--error">
-            Synchronization: {assignment.data.lastSynchronizationError}
-          </div>
-        )}
-        {assignment.data?.lastPlaybackError && (
-          <div className="notice notice--error">
-            Playback: {assignment.data.lastPlaybackError}
-          </div>
-        )}
-        {assignment.data?.configurationError && (
-          <div className="notice notice--error">
-            Configuration: {assignment.data.configurationError}
-          </div>
-        )}
-        {Math.abs(assignment.data?.deviceClockOffsetSeconds ?? 0) >
-          (assignment.data?.clockSkewWarningSeconds ?? 300) && (
-          <div className="notice notice--warning">
-            The player clock differs from server time by more than five minutes.
-            Offline schedule changes may occur at the wrong time.
-          </div>
-        )}
-        {assignment.data?.scheduleEvaluationError && (
-          <div className="notice notice--error">
-            Schedule evaluation: {assignment.data.scheduleEvaluationError}
-          </div>
-        )}
-        {assignment.data?.websiteFailureCategory &&
-          ["failed", "timed_out", "blocked", "showing_fallback"].includes(
-            assignment.data.websiteState ?? "",
-          ) && (
+        </section>
+      )}
+
+      {tab === "content" && (
+        <section className="detail-card assignment-card">
+          <h3>Playback and scheduling</h3>
+          {canManageScreens(auth.status?.user) ? (
+            <div className="assignment-controls">
+              <select
+                aria-label="Assigned playlist"
+                value={selectedPlaylist}
+                onChange={(event) => setSelectedPlaylist(event.target.value)}
+              >
+                <option value="">No playlist assigned</option>
+                {playlists.data?.items.map((playlist) => (
+                  <option key={playlist.id} value={playlist.id}>
+                    {playlist.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                className="button button--primary"
+                disabled={
+                  assign.isPending ||
+                  selectedPlaylist === (assignment.data?.playlistId ?? "")
+                }
+                onClick={() => assign.mutate()}
+              >
+                Apply assignment
+              </button>
+            </div>
+          ) : (
+            <p>{assignment.data?.playlistName ?? "No playlist assigned"}</p>
+          )}
+          <dl className="detail-list">
+            <div>
+              <dt>Direct fallback playlist</dt>
+              <dd>{assignment.data?.playlistName ?? "No fallback assigned"}</dd>
+            </div>
+            <div>
+              <dt>Current selection</dt>
+              <dd>
+                {assignment.data?.selectionSource === "emergency"
+                  ? "Emergency takeover"
+                  : assignment.data?.selectionSource === "schedule"
+                    ? `Scheduled${assignment.data.currentScheduleId ? ` · ${assignment.data.relevantSchedules.find((s) => s.id === assignment.data?.currentScheduleId)?.name ?? "schedule"}` : ""}`
+                    : assignment.data?.selectionSource === "direct_fallback"
+                      ? "Direct fallback"
+                      : "No content"}
+              </dd>
+            </div>
+            <div>
+              <dt>Next scheduled change</dt>
+              <dd>
+                {assignment.data?.nextTransitionAt
+                  ? new Date(assignment.data.nextTransitionAt).toLocaleString()
+                  : "None reported"}
+              </dd>
+            </div>
+            <div>
+              <dt>Server manifest</dt>
+              <dd>Version {assignment.data?.manifestVersion ?? 1}</dd>
+            </div>
+            <div>
+              <dt>Player configuration</dt>
+              <dd>
+                {assignment.data?.activeConfigRevision != null
+                  ? `Revision ${assignment.data.activeConfigRevision}`
+                  : "Not reported"}
+              </dd>
+            </div>
+            <div>
+              <dt>Player manifest</dt>
+              <dd>
+                {assignment.data?.playerActiveManifestVersion != null
+                  ? `Version ${assignment.data.playerActiveManifestVersion}`
+                  : "Not reported"}
+              </dd>
+            </div>
+            <div>
+              <dt>Synchronization</dt>
+              <dd>
+                {assignment.data?.synchronizationStatus.replaceAll("_", " ") ??
+                  "Not reported"}
+              </dd>
+            </div>
+            <div>
+              <dt>Groups</dt>
+              <dd>
+                {assignment.data?.groups.map((g) => g.name).join(", ") ||
+                  "No groups"}
+              </dd>
+            </div>
+            <div>
+              <dt>Relevant schedules</dt>
+              <dd>
+                {assignment.data?.relevantSchedules
+                  .map((s) => `${s.name} (${s.priority})`)
+                  .join(", ") || "No schedules"}
+              </dd>
+            </div>
+            <div>
+              <dt>Device clock difference</dt>
+              <dd>
+                {assignment.data?.deviceClockOffsetSeconds != null
+                  ? `${Math.abs(assignment.data.deviceClockOffsetSeconds)} seconds`
+                  : "Not reported"}
+              </dd>
+            </div>
+            <div>
+              <dt>Downloads</dt>
+              <dd>
+                {assignment.data?.downloadQueueCount != null
+                  ? `${assignment.data.downloadQueueCount} queued · ${assignment.data.downloadedBytes ?? 0} of ${assignment.data.requiredBytes ?? 0} bytes`
+                  : "Not reported"}
+              </dd>
+            </div>
+            <div>
+              <dt>Website playback</dt>
+              <dd>
+                {assignment.data?.websiteState
+                  ? `${assignment.data.websiteState.replaceAll("_", " ")}${assignment.data.websiteCurrentHost ? ` · ${assignment.data.websiteCurrentHost}` : ""}`
+                  : "Not active"}
+              </dd>
+            </div>
+            <div>
+              <dt>Blocked website navigation</dt>
+              <dd>
+                {assignment.data?.websiteBlockedNavigationCount ??
+                  "Not reported"}
+              </dd>
+            </div>
+            <div>
+              <dt>Playback</dt>
+              <dd>{assignment.data?.playbackState ?? "Not reported"}</dd>
+            </div>
+            <div>
+              <dt>Emergency</dt>
+              <dd>
+                {assignment.data?.activeEmergencyId
+                  ? `${assignment.data.emergencyState ?? "pending"} · ${assignment.data.emergencyPreparationProgress ?? 0}% prepared`
+                  : "No active emergency"}
+              </dd>
+            </div>
+            <div>
+              <dt>Cache</dt>
+              <dd>
+                {assignment.data?.cacheUsedBytes != null
+                  ? `${assignment.data.cacheUsedBytes} of ${assignment.data.cacheLimitBytes ?? 0} bytes`
+                  : "Not reported"}
+              </dd>
+            </div>
+          </dl>
+          {assignment.data?.lastSynchronizationError && (
             <div className="notice notice--error">
-              Website:{" "}
-              {assignment.data.websiteFailureCategory.replaceAll("_", " ")}
+              Synchronization: {assignment.data.lastSynchronizationError}
             </div>
           )}
-        {canManageScreens(auth.status?.user) && (
-          <section className="operations" aria-labelledby="reliability-heading">
-            <h3 id="reliability-heading">Reliability &amp; Power</h3>
-            <p>
-              Configured features are reported separately from Android-confirmed
-              capabilities. Power Assist asks Android to sleep or wake; it does
-              not send direct HDMI-CEC commands.
-            </p>
-            <dl className="detail-list">
-              <div>
-                <dt>Reliability mode</dt>
-                <dd>
-                  {reliability.data?.configuredMode ?? "Not reported"}{" "}
-                  configured ·{" "}
-                  {reliability.data?.effectiveMode ?? "Not reported"} effective
-                </dd>
-              </div>
-              <div>
-                <dt>Foreground</dt>
-                <dd>{reliability.data?.foregroundState ?? "Not reported"}</dd>
-              </div>
-              <div>
-                <dt>Boot recovery</dt>
-                <dd>
-                  {reliability.data?.bootRecoveryResult ?? "Not reported"}
-                </dd>
-              </div>
-              <div>
-                <dt>Immersive / keep awake</dt>
-                <dd>
-                  {reliability.data?.immersiveModeActive
-                    ? "Immersive"
-                    : "Not immersive"}{" "}
-                  ·{" "}
-                  {reliability.data?.keepScreenOn
-                    ? "Kept awake"
-                    : "Wake lock released"}
-                </dd>
-              </div>
-              <div>
-                <dt>Managed Kiosk</dt>
-                <dd>
-                  {reliability.data?.managedKioskCapability ?? "Not reported"} ·
-                  lock task {reliability.data?.lockTaskState ?? "unknown"}
-                </dd>
-              </div>
-              <div>
-                <dt>Accessibility Control</dt>
-                <dd>
-                  {reliability.data?.accessibilityServiceState ??
-                    "Not reported"}
-                </dd>
-              </div>
-              <div>
-                <dt>Active hours</dt>
-                <dd>{reliability.data?.activeHoursState ?? "Not reported"}</dd>
-              </div>
-              <div>
-                <dt>Sleep support</dt>
-                <dd>{reliability.data?.sleepCapability ?? "Not reported"}</dd>
-              </div>
-              <div>
-                <dt>Recovery</dt>
-                <dd>
-                  Level {reliability.data?.recoveryLevel ?? 0} ·{" "}
-                  {reliability.data?.recoveryCount ?? 0} recent · safe mode{" "}
-                  {reliability.data?.safeMode ? "active" : "inactive"}
-                </dd>
-              </div>
-              <div>
-                <dt>Maintenance session</dt>
-                <dd>
-                  {reliability.data?.maintenanceSessionExpiresAt
-                    ? `Until ${new Date(reliability.data.maintenanceSessionExpiresAt).toLocaleString()}`
-                    : "Inactive"}
-                </dd>
-              </div>
-            </dl>
-            {reliabilityCapabilityWarning(reliability.data) && (
-              <div className="notice notice--warning">
-                {reliabilityCapabilityWarning(reliability.data)}
+          {assignment.data?.lastPlaybackError && (
+            <div className="notice notice--error">
+              Playback: {assignment.data.lastPlaybackError}
+            </div>
+          )}
+          {assignment.data?.configurationError && (
+            <div className="notice notice--error">
+              Configuration: {assignment.data.configurationError}
+            </div>
+          )}
+          {Math.abs(assignment.data?.deviceClockOffsetSeconds ?? 0) >
+            (assignment.data?.clockSkewWarningSeconds ?? 300) && (
+            <div className="notice notice--warning">
+              The player clock differs from server time by more than five
+              minutes. Offline schedule changes may occur at the wrong time.
+            </div>
+          )}
+          {assignment.data?.scheduleEvaluationError && (
+            <div className="notice notice--error">
+              Schedule evaluation: {assignment.data.scheduleEvaluationError}
+            </div>
+          )}
+          {assignment.data?.websiteFailureCategory &&
+            ["failed", "timed_out", "blocked", "showing_fallback"].includes(
+              assignment.data.websiteState ?? "",
+            ) && (
+              <div className="notice notice--error">
+                Website:{" "}
+                {assignment.data.websiteFailureCategory.replaceAll("_", " ")}
               </div>
             )}
-            <div className="heading-actions">
-              <button
-                className="button button--quiet"
-                onClick={() =>
-                  command.mutate({ type: "power_assist_sleep", payload: {} })
-                }
-              >
-                Test device sleep
-              </button>
-              <button
-                className="button button--quiet"
-                onClick={() =>
-                  command.mutate({ type: "power_assist_wake", payload: {} })
-                }
-              >
-                Test device wake
-              </button>
-              <button
-                className="button button--quiet"
-                onClick={() =>
-                  command.mutate({ type: "retry_player_recovery", payload: {} })
-                }
-              >
-                Retry recovery
-              </button>
-              <button
-                className="button button--quiet"
-                disabled={!reliability.data?.safeMode}
-                onClick={() =>
-                  command.mutate({ type: "exit_safe_mode", payload: {} })
-                }
-              >
-                Exit safe mode
-              </button>
+        </section>
+      )}
+
+      {tab === "reliability" && (
+        <section className="operations" aria-labelledby="reliability-heading">
+          <h3 id="reliability-heading">Reliability &amp; Power</h3>
+          <p>
+            Configured features are reported separately from Android-confirmed
+            capabilities. Power Assist asks Android to sleep or wake; it does
+            not send direct HDMI-CEC commands.
+          </p>
+          <dl className="detail-list">
+            <div>
+              <dt>Reliability mode</dt>
+              <dd>
+                {reliability.data?.configuredMode ?? "Not reported"} configured
+                · {reliability.data?.effectiveMode ?? "Not reported"} effective
+              </dd>
             </div>
-            <h4>Power Assist test confirmation</h4>
-            <p>
-              Confirm physical TV behavior separately; Tilecast cannot infer TV
-              standby, wake, or input selection from process activity.
-            </p>
-            <div className="policy-grid">
-              {(
-                [
-                  "deviceSleep",
-                  "tvStandby",
-                  "deviceWake",
-                  "tvWake",
-                  "inputSelection",
-                  "tilecastStartup",
-                ] as const
-              ).map((key) => (
-                <label key={key}>
-                  {key.replace(/([A-Z])/g, " $1")}
-                  <select
-                    value={powerResults[key]}
-                    onChange={(event) =>
-                      setPowerResults({
-                        ...powerResults,
-                        [key]: event.target.value,
-                      })
-                    }
-                  >
-                    {[
-                      "untested",
-                      "confirmed_working",
-                      "partially_working",
-                      "failed",
-                      "unsupported",
-                    ].map((value) => (
-                      <option key={value} value={value}>
-                        {value.replaceAll("_", " ")}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ))}
+            <div>
+              <dt>Foreground</dt>
+              <dd>{reliability.data?.foregroundState ?? "Not reported"}</dd>
             </div>
-            <button
-              className="button button--primary"
-              onClick={() => savePowerResults.mutate()}
-              disabled={savePowerResults.isPending}
-            >
-              Save test confirmation
-            </button>
-          </section>
-        )}
-        {canManageScreens(auth.status?.user) && (
-          <section className="operations">
-            <h3>Operations</h3>
-            <p>
-              Commands remain pending during brief disconnections and expire
-              automatically.
-            </p>
-            <div className="heading-actions">
-              <button
-                className="button button--quiet"
-                onClick={() =>
-                  command.mutate({ type: "sync_now", payload: {} })
-                }
-              >
-                Sync now
-              </button>
-              <button
-                className="button button--quiet"
-                onClick={() =>
-                  command.mutate({ type: "reload_playback", payload: {} })
-                }
-              >
-                Reload playback
-              </button>
-              <button
-                className="button button--quiet"
-                onClick={() =>
-                  command.mutate({
-                    type: "identify_screen",
-                    payload: { durationSeconds: 30 },
-                  })
-                }
-              >
-                Identify screen
-              </button>
-              <button
-                className="button button--danger-quiet"
-                onClick={() => {
-                  if (
-                    confirm(
-                      "Clear media not protected by active or pending playback?",
-                    )
-                  )
-                    command.mutate({ type: "clear_media_cache", payload: {} });
-                }}
-              >
-                Clear media cache
-              </button>
-              <button
-                className="button button--danger-quiet"
-                onClick={() => {
-                  if (
-                    confirm(
-                      "Clear cookies, cache, DOM storage, and WebView state?",
-                    )
-                  )
-                    command.mutate({ type: "clear_website_data", payload: {} });
-                }}
-              >
-                Clear website data
-              </button>
-              <button
-                className="button button--danger-quiet"
-                onClick={() => {
-                  const disabling = !assignment.data?.playbackDisabled;
-                  if (
-                    !disabling ||
-                    confirm(
-                      "Disable ordinary playback while keeping this player paired and connected?",
-                    )
-                  )
+            <div>
+              <dt>Boot recovery</dt>
+              <dd>{reliability.data?.bootRecoveryResult ?? "Not reported"}</dd>
+            </div>
+            <div>
+              <dt>Immersive / keep awake</dt>
+              <dd>
+                {reliability.data?.immersiveModeActive
+                  ? "Immersive"
+                  : "Not immersive"}{" "}
+                ·{" "}
+                {reliability.data?.keepScreenOn
+                  ? "Kept awake"
+                  : "Wake lock released"}
+              </dd>
+            </div>
+            <div>
+              <dt>Managed Kiosk</dt>
+              <dd>
+                {reliability.data?.managedKioskCapability ?? "Not reported"} ·
+                lock task {reliability.data?.lockTaskState ?? "unknown"}
+              </dd>
+            </div>
+            <div>
+              <dt>Accessibility Control</dt>
+              <dd>
+                {reliability.data?.accessibilityServiceState ?? "Not reported"}
+              </dd>
+            </div>
+            <div>
+              <dt>Active hours</dt>
+              <dd>{reliability.data?.activeHoursState ?? "Not reported"}</dd>
+            </div>
+            <div>
+              <dt>Sleep support</dt>
+              <dd>{reliability.data?.sleepCapability ?? "Not reported"}</dd>
+            </div>
+            <div>
+              <dt>Recovery</dt>
+              <dd>
+                Level {reliability.data?.recoveryLevel ?? 0} ·{" "}
+                {reliability.data?.recoveryCount ?? 0} recent · safe mode{" "}
+                {reliability.data?.safeMode ? "active" : "inactive"}
+              </dd>
+            </div>
+            <div>
+              <dt>Maintenance session</dt>
+              <dd>
+                {reliability.data?.maintenanceSessionExpiresAt
+                  ? `Until ${new Date(reliability.data.maintenanceSessionExpiresAt).toLocaleString()}`
+                  : "Inactive"}
+              </dd>
+            </div>
+          </dl>
+          {reliabilityCapabilityWarning(reliability.data) && (
+            <div className="notice notice--warning">
+              {reliabilityCapabilityWarning(reliability.data)}
+            </div>
+          )}
+          {canManageScreens(auth.status?.user) && (
+            <>
+              <div className="heading-actions">
+                <button
+                  className="button button--quiet"
+                  onClick={() =>
+                    command.mutate({ type: "power_assist_sleep", payload: {} })
+                  }
+                >
+                  Test device sleep
+                </button>
+                <button
+                  className="button button--quiet"
+                  onClick={() =>
+                    command.mutate({ type: "power_assist_wake", payload: {} })
+                  }
+                >
+                  Test device wake
+                </button>
+                <button
+                  className="button button--quiet"
+                  onClick={() =>
                     command.mutate({
-                      type: disabling ? "disable_playback" : "enable_playback",
+                      type: "retry_player_recovery",
                       payload: {},
-                    });
-                }}
+                    })
+                  }
+                >
+                  Retry recovery
+                </button>
+                <button
+                  className="button button--quiet"
+                  disabled={!reliability.data?.safeMode}
+                  onClick={() =>
+                    command.mutate({ type: "exit_safe_mode", payload: {} })
+                  }
+                >
+                  Exit safe mode
+                </button>
+              </div>
+              <h4>Power Assist test confirmation</h4>
+              <p>
+                Confirm physical TV behavior separately; Tilecast cannot infer
+                TV standby, wake, or input selection from process activity.
+              </p>
+              <div className="policy-grid">
+                {(
+                  [
+                    "deviceSleep",
+                    "tvStandby",
+                    "deviceWake",
+                    "tvWake",
+                    "inputSelection",
+                    "tilecastStartup",
+                  ] as const
+                ).map((key) => (
+                  <label key={key}>
+                    {key.replace(/([A-Z])/g, " $1")}
+                    <select
+                      value={powerResults[key]}
+                      onChange={(event) =>
+                        setPowerResults({
+                          ...powerResults,
+                          [key]: event.target.value,
+                        })
+                      }
+                    >
+                      {[
+                        "untested",
+                        "confirmed_working",
+                        "partially_working",
+                        "failed",
+                        "unsupported",
+                      ].map((value) => (
+                        <option key={value} value={value}>
+                          {value.replaceAll("_", " ")}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ))}
+              </div>
+              <button
+                className="button button--primary"
+                onClick={() => savePowerResults.mutate()}
+                disabled={savePowerResults.isPending}
               >
-                {assignment.data?.playbackDisabled
-                  ? "Enable playback"
-                  : "Disable playback"}
+                Save test confirmation
               </button>
-            </div>
-            {command.isSuccess && (
-              <p>Command queued; this does not mean it has completed.</p>
-            )}
+            </>
+          )}
+        </section>
+      )}
+
+      {tab === "commands" && canManageScreens(auth.status?.user) && (
+        <section className="operations">
+          <h3>Operations</h3>
+          <p>
+            Commands remain pending during brief disconnections and expire
+            automatically.
+          </p>
+          <div className="heading-actions">
+            <button
+              className="button button--quiet"
+              onClick={() => command.mutate({ type: "sync_now", payload: {} })}
+            >
+              Sync now
+            </button>
+            <button
+              className="button button--quiet"
+              onClick={() =>
+                command.mutate({ type: "reload_playback", payload: {} })
+              }
+            >
+              Reload playback
+            </button>
+            <button
+              className="button button--quiet"
+              onClick={() =>
+                command.mutate({
+                  type: "identify_screen",
+                  payload: { durationSeconds: 30 },
+                })
+              }
+            >
+              Identify screen
+            </button>
+            <button
+              className="button button--danger-quiet"
+              onClick={() => {
+                if (
+                  confirm(
+                    "Clear media not protected by active or pending playback?",
+                  )
+                )
+                  command.mutate({ type: "clear_media_cache", payload: {} });
+              }}
+            >
+              Clear media cache
+            </button>
+            <button
+              className="button button--danger-quiet"
+              onClick={() => {
+                if (
+                  confirm(
+                    "Clear cookies, cache, DOM storage, and WebView state?",
+                  )
+                )
+                  command.mutate({ type: "clear_website_data", payload: {} });
+              }}
+            >
+              Clear website data
+            </button>
+            <button
+              className="button button--danger-quiet"
+              onClick={() => {
+                const disabling = !assignment.data?.playbackDisabled;
+                if (
+                  !disabling ||
+                  confirm(
+                    "Disable ordinary playback while keeping this player paired and connected?",
+                  )
+                )
+                  command.mutate({
+                    type: disabling ? "disable_playback" : "enable_playback",
+                    payload: {},
+                  });
+              }}
+            >
+              {assignment.data?.playbackDisabled
+                ? "Enable playback"
+                : "Disable playback"}
+            </button>
+          </div>
+          {command.isSuccess && (
+            <p>Command queued; this does not mean it has completed.</p>
+          )}
+          <div className="command-history">
+            {commands.data?.items.map((c) => (
+              <div key={c.id}>
+                <strong>{c.type.replaceAll("_", " ")}</strong>
+                <span>
+                  {c.state} · {new Date(c.createdAt).toLocaleString()}
+                </span>
+                <small>
+                  {c.resultCode?.replaceAll("_", " ") ?? "No result yet"}
+                </small>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+      {tab === "commands" &&
+        !canManageScreens(auth.status?.user) &&
+        (commands.data?.items.length ?? 0) > 0 && (
+          <section className="operations">
+            <h3>Recent operations</h3>
             <div className="command-history">
               {commands.data?.items.map((c) => (
                 <div key={c.id}>
@@ -1333,150 +1484,140 @@ export function ScreenDetailPage() {
             </div>
           </section>
         )}
-        {!canManageScreens(auth.status?.user) &&
-          (commands.data?.items.length ?? 0) > 0 && (
-            <section className="operations">
-              <h3>Recent operations</h3>
-              <div className="command-history">
-                {commands.data?.items.map((c) => (
-                  <div key={c.id}>
-                    <strong>{c.type.replaceAll("_", " ")}</strong>
-                    <span>
-                      {c.state} · {new Date(c.createdAt).toLocaleString()}
-                    </span>
-                    <small>
-                      {c.resultCode?.replaceAll("_", " ") ?? "No result yet"}
-                    </small>
-                  </div>
-                ))}
+      {tab === "player-settings" && (
+        <PlayerPolicyEditor
+          target="screen"
+          id={id}
+          onDirtyChange={setPolicyDirty}
+        />
+      )}
+      {tab === "commands" && (
+        <>
+          <section className="detail-grid">
+            <div className="detail-card">
+              <h3>Device</h3>
+              <dl className="detail-list">
+                <div>
+                  <dt>Hardware</dt>
+                  <dd>
+                    {screen.deviceManufacturer} {screen.deviceModel}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Platform</dt>
+                  <dd>
+                    {screen.platform} · Android {screen.androidVersion}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Player version</dt>
+                  <dd>
+                    {screen.playerVersion}
+                    {screen.playerVersionCode
+                      ? ` (code ${screen.playerVersionCode})`
+                      : ""}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Android SDK</dt>
+                  <dd>{screen.androidSdk ?? "Not reported"}</dd>
+                </div>
+                <div>
+                  <dt>Installer source</dt>
+                  <dd>{screen.installerSource ?? "Not reported"}</dd>
+                </div>
+                <div>
+                  <dt>Install permission</dt>
+                  <dd>
+                    {screen.installPermissionStatus?.replaceAll("_", " ") ??
+                      "Unknown"}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Player update</dt>
+                  <dd>
+                    {screen.updateState?.replaceAll("_", " ") ??
+                      "No active deployment"}
+                    {screen.updateExpectedBytes
+                      ? ` · ${Math.round(((screen.updateDownloadedBytes ?? 0) / screen.updateExpectedBytes) * 100)}%`
+                      : ""}
+                    {screen.updateError ? ` · ${screen.updateError}` : ""}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Resolution</dt>
+                  <dd>
+                    {screen.screenWidth} × {screen.screenHeight}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Locale</dt>
+                  <dd>{screen.locale}</dd>
+                </div>
+                <div>
+                  <dt>Timezone</dt>
+                  <dd>{screen.timezone}</dd>
+                </div>
+              </dl>
+            </div>
+            <div className="detail-card">
+              <h3>Connection</h3>
+              <dl className="detail-list">
+                <div>
+                  <dt>Last contact</dt>
+                  <dd>{formatContact(screen.lastContactAt)}</dd>
+                </div>
+                <div>
+                  <dt>Network address</dt>
+                  <dd>{screen.lastKnownIp || "Not reported"}</dd>
+                </div>
+                <div>
+                  <dt>Credential</dt>
+                  <dd>{screen.hasActiveCredential ? "Active" : "Revoked"}</dd>
+                </div>
+              </dl>
+            </div>
+          </section>
+          {canManageScreens(auth.status?.user) && (
+            <section className="danger-zone">
+              <h3>Player access</h3>
+              <div>
+                <span>
+                  <strong>
+                    {screen.enabled ? "Disable screen" : "Enable screen"}
+                  </strong>
+                  <small>
+                    {screen.enabled
+                      ? "Temporarily blocks operation while retaining the pairing."
+                      : "Allow the paired player to reconnect."}
+                  </small>
+                </span>
+                <button
+                  className="button button--quiet"
+                  onClick={() => stateMutation.mutate(!screen.enabled)}
+                >
+                  {screen.enabled ? "Disable" : "Enable"}
+                </button>
+              </div>
+              <div>
+                <span>
+                  <strong>Revoke pairing</strong>
+                  <small>
+                    Permanently invalidates the device credential. The player
+                    must pair again.
+                  </small>
+                </span>
+                <button
+                  className="button button--danger"
+                  onClick={() => setConfirmRevoke(true)}
+                  disabled={!screen.hasActiveCredential}
+                >
+                  Revoke pairing
+                </button>
               </div>
             </section>
           )}
-      </section>
-      <PlayerPolicyEditor target="screen" id={id} />
-      <section className="detail-grid">
-        <div className="detail-card">
-          <h3>Device</h3>
-          <dl className="detail-list">
-            <div>
-              <dt>Hardware</dt>
-              <dd>
-                {screen.deviceManufacturer} {screen.deviceModel}
-              </dd>
-            </div>
-            <div>
-              <dt>Platform</dt>
-              <dd>
-                {screen.platform} · Android {screen.androidVersion}
-              </dd>
-            </div>
-            <div>
-              <dt>Player version</dt>
-              <dd>
-                {screen.playerVersion}
-                {screen.playerVersionCode
-                  ? ` (code ${screen.playerVersionCode})`
-                  : ""}
-              </dd>
-            </div>
-            <div>
-              <dt>Android SDK</dt>
-              <dd>{screen.androidSdk ?? "Not reported"}</dd>
-            </div>
-            <div>
-              <dt>Installer source</dt>
-              <dd>{screen.installerSource ?? "Not reported"}</dd>
-            </div>
-            <div>
-              <dt>Install permission</dt>
-              <dd>
-                {screen.installPermissionStatus?.replaceAll("_", " ") ??
-                  "Unknown"}
-              </dd>
-            </div>
-            <div>
-              <dt>Player update</dt>
-              <dd>
-                {screen.updateState?.replaceAll("_", " ") ??
-                  "No active deployment"}
-                {screen.updateExpectedBytes
-                  ? ` · ${Math.round(((screen.updateDownloadedBytes ?? 0) / screen.updateExpectedBytes) * 100)}%`
-                  : ""}
-                {screen.updateError ? ` · ${screen.updateError}` : ""}
-              </dd>
-            </div>
-            <div>
-              <dt>Resolution</dt>
-              <dd>
-                {screen.screenWidth} × {screen.screenHeight}
-              </dd>
-            </div>
-            <div>
-              <dt>Locale</dt>
-              <dd>{screen.locale}</dd>
-            </div>
-            <div>
-              <dt>Timezone</dt>
-              <dd>{screen.timezone}</dd>
-            </div>
-          </dl>
-        </div>
-        <div className="detail-card">
-          <h3>Connection</h3>
-          <dl className="detail-list">
-            <div>
-              <dt>Last contact</dt>
-              <dd>{formatContact(screen.lastContactAt)}</dd>
-            </div>
-            <div>
-              <dt>Network address</dt>
-              <dd>{screen.lastKnownIp || "Not reported"}</dd>
-            </div>
-            <div>
-              <dt>Credential</dt>
-              <dd>{screen.hasActiveCredential ? "Active" : "Revoked"}</dd>
-            </div>
-          </dl>
-        </div>
-      </section>
-      {canManageScreens(auth.status?.user) && (
-        <section className="danger-zone">
-          <h3>Player access</h3>
-          <div>
-            <span>
-              <strong>
-                {screen.enabled ? "Disable screen" : "Enable screen"}
-              </strong>
-              <small>
-                {screen.enabled
-                  ? "Temporarily blocks operation while retaining the pairing."
-                  : "Allow the paired player to reconnect."}
-              </small>
-            </span>
-            <button
-              className="button button--quiet"
-              onClick={() => stateMutation.mutate(!screen.enabled)}
-            >
-              {screen.enabled ? "Disable" : "Enable"}
-            </button>
-          </div>
-          <div>
-            <span>
-              <strong>Revoke pairing</strong>
-              <small>
-                Permanently invalidates the device credential. The player must
-                pair again.
-              </small>
-            </span>
-            <button
-              className="button button--danger"
-              onClick={() => setConfirmRevoke(true)}
-              disabled={!screen.hasActiveCredential}
-            >
-              Revoke pairing
-            </button>
-          </div>
-        </section>
+        </>
       )}
       {confirmRevoke && (
         <div className="modal-backdrop" role="presentation">

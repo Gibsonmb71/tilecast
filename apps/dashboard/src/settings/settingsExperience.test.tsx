@@ -111,6 +111,40 @@ describe("settings presentation", () => {
     expect(change).toHaveBeenCalledWith(12 * 1024 ** 3);
   });
 
+  it("presents second-backed durations in readable units", () => {
+    const change = vi.fn();
+    render(
+      <SettingControl
+        definition={definition({
+          key: "player.sync.manifest_seconds",
+          type: "int",
+          title: "Manifest reconciliation interval",
+          min: 60,
+          max: 86400,
+        })}
+        value={300}
+        onChange={change}
+      />,
+    );
+    expect(
+      screen.getByRole("spinbutton", {
+        name: "Manifest reconciliation interval",
+      }),
+    ).toHaveValue(5);
+    expect(
+      screen.getByRole("combobox", {
+        name: "Manifest reconciliation interval unit",
+      }),
+    ).toHaveValue("minutes");
+    fireEvent.change(
+      screen.getByRole("spinbutton", {
+        name: "Manifest reconciliation interval",
+      }),
+      { target: { value: "10" } },
+    );
+    expect(change).toHaveBeenCalledWith(600);
+  });
+
   it("centralizes dependencies and meaningful subsections", () => {
     expect(
       dependencyState("power.active_hours_days", {

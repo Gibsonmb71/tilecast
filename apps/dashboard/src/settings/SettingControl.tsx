@@ -14,11 +14,6 @@ const weekdays = [
 ] as const;
 const packagePattern = /^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+$/;
 const byteUnits = { MB: 1024 ** 2, GB: 1024 ** 3, TB: 1024 ** 4 } as const;
-const durationUnits: Record<string, { label: string; multiplier: number }> = {
-  "player.sync.manifest_seconds": { label: "minutes", multiplier: 60 },
-  "scheduling.clock_skew_warning_seconds": { label: "minutes", multiplier: 60 },
-  "media.temporary_upload_retention_hours": { label: "hours", multiplier: 1 },
-};
 
 export function SettingControl({
   definition,
@@ -91,6 +86,15 @@ export function SettingControl({
       <ColorInput
         id={id}
         value={String(value)}
+        disabled={disabled}
+        onChange={onChange}
+      />
+    );
+  if (definition.key.endsWith("_seconds"))
+    return (
+      <DurationInput
+        definition={definition}
+        value={Number(value)}
         disabled={disabled}
         onChange={onChange}
       />
@@ -336,6 +340,53 @@ function UnitInput({
     </div>
   );
 }
+function DurationInput({
+  definition,
+  value,
+  disabled,
+  onChange,
+}: {
+  definition: SettingDefinition;
+  value: number;
+  disabled?: boolean;
+  onChange: (value: unknown) => void;
+}) {
+  const units = { seconds: 1, minutes: 60, hours: 3600 } as const;
+  const initial =
+    value >= 3600 && value % 3600 === 0
+      ? "hours"
+      : value >= 60 && value % 60 === 0
+        ? "minutes"
+        : "seconds";
+  const [unit, setUnit] = useState<keyof typeof units>(initial);
+  const multiplier = units[unit];
+  return (
+    <div className="unit-input">
+      <input
+        aria-label={definition.title}
+        type="number"
+        min={definition.min != null ? definition.min / multiplier : undefined}
+        max={definition.max != null ? definition.max / multiplier : undefined}
+        step={unit === "seconds" ? 1 : 0.5}
+        value={Number((value / multiplier).toFixed(2))}
+        disabled={disabled}
+        onChange={(event) =>
+          onChange(Math.round(Number(event.target.value) * multiplier))
+        }
+      />
+      <select
+        aria-label={`${definition.title} unit`}
+        value={unit}
+        disabled={disabled}
+        onChange={(event) => setUnit(event.target.value as keyof typeof units)}
+      >
+        {Object.keys(units).map((option) => (
+          <option key={option}>{option}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
 function ColorInput({
   id,
   value,
@@ -372,9 +423,6 @@ function ColorInput({
   );
 }
 function unitFor(definition: SettingDefinition) {
-  if (durationUnits[definition.key]) return durationUnits[definition.key];
-  if (definition.key.endsWith("_seconds"))
-    return { label: "seconds", multiplier: 1 };
   if (definition.key.endsWith("_minutes"))
     return { label: "minutes", multiplier: 1 };
   if (definition.key.endsWith("_hours"))
