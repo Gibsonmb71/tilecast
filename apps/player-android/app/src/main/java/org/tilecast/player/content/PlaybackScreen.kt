@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,26 +43,29 @@ import org.tilecast.player.network.ManifestItem
 import java.io.File
 
 data class PlaybackSession(val content: PreparedContent, val serverUrl: String, val credential: String)
+internal data class PlaybackCursor(val index: Int, val cycle: Int)
+internal fun nextPlaybackCursor(cursor: PlaybackCursor, itemCount: Int) =
+    PlaybackCursor((cursor.index + 1) % itemCount, cursor.cycle + 1)
 
 @Composable fun FullscreenPlayback(session: PlaybackSession, onBoundary: (String, String) -> Unit, onError: (String) -> Unit,onWebsiteStatus:(WebsitePlaybackStatus)->Unit={}) {
     val playlist = session.content.manifest.playlist
     if (playlist == null || playlist.items.isEmpty()) { EmptyPlayback("No content assigned"); return }
-    var index by remember(session.content.manifest.manifestVersion) { mutableIntStateOf(0) }
+    var cursor by remember(session.content.manifest.manifestVersion) { mutableStateOf(PlaybackCursor(0, 0)) }
     var consecutiveFailures by remember { mutableIntStateOf(0) }
-    val item = playlist.items[index.coerceIn(0, playlist.items.lastIndex)]
+	val item = playlist.items[cursor.index.coerceIn(0, playlist.items.lastIndex)]
 	val website=session.content.manifest.websites.firstOrNull{it.assetId==item.assetId}
     val asset = item.variantId?.let{variant->session.content.manifest.assets.firstOrNull { it.variantId == variant }}
 	LaunchedEffect(item.id){onBoundary(item.id,item.assetId)}
     fun advance(failed: Boolean = false) {
         consecutiveFailures = if (failed) consecutiveFailures + 1 else 0
-        index = (index + 1) % playlist.items.size
+        cursor = nextPlaybackCursor(cursor, playlist.items.size)
     }
     if (asset == null&&website==null) { LaunchedEffect(item.id) { onError("Manifest item has no asset"); delay(1_000); advance(true) }; return }
     if (consecutiveFailures >= playlist.items.size) { EmptyPlayback("No playable content"); LaunchedEffect(consecutiveFailures) { delay(5_000); consecutiveFailures = 0 } ; return }
-	if(item.transition=="fade") Crossfade(item.id, label = "playlist-item") { targetItemId ->
-		val renderedItem = playlist.items.first { it.id == targetItemId };val renderedAsset = renderedItem.variantId?.let{variant->session.content.manifest.assets.firstOrNull { it.variantId == variant }};val renderedWebsite=session.content.manifest.websites.firstOrNull{it.assetId==renderedItem.assetId}
+	if(item.transition=="fade") Crossfade(cursor, label = "playlist-item") { targetCursor ->
+		val renderedItem = playlist.items[targetCursor.index];val renderedAsset = renderedItem.variantId?.let{variant->session.content.manifest.assets.firstOrNull { it.variantId == variant }};val renderedWebsite=session.content.manifest.websites.firstOrNull{it.assetId==renderedItem.assetId}
 		RenderedItem(renderedItem,renderedAsset,renderedWebsite,session,{advance()},{onError(it);advance(true)},onWebsiteStatus)
-	} else RenderedItem(item,asset,website,session,{advance()},{onError(it);advance(true)},onWebsiteStatus)
+	} else key(item.id,cursor.cycle){RenderedItem(item,asset,website,session,{advance()},{onError(it);advance(true)},onWebsiteStatus)}
 }
 
 @Composable private fun RenderedItem(item:ManifestItem,asset:ManifestAsset?,website:org.tilecast.player.network.ManifestWebsite?,session:PlaybackSession,onDone:()->Unit,onFailure:(String)->Unit,onWebsiteStatus:(WebsitePlaybackStatus)->Unit){if(website!=null)WebsiteItem(item,website,session,onDone,onWebsiteStatus)else if(asset?.mimeType?.startsWith("image/")==true)ImageItem(item,asset,session,onDone,onFailure)else if(asset!=null)VideoItem(item,asset,session,onDone,onFailure)}
