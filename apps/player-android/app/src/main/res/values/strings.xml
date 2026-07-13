@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Tilecast Player</string>
+    <string name="accessibility_control_disclosure">Optional Tilecast Control Assist observes only the foreground application name, can return to Tilecast after an approved delay, and can request Android lock for Power Assist. It never reads page text, passwords, clicks buttons, performs gestures, or approves installations.</string>
+</resources>

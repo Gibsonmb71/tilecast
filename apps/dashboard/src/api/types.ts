@@ -181,6 +181,44 @@ export type PlayerCommand = {
   resultMessage?: string;
 };
 
+export type ReliabilityStatus = {
+  configuredMode?: string;
+  effectiveMode?: string;
+  foregroundState?: string;
+  lastForegroundExitAt?: string;
+  lastForegroundPackage?: string;
+  bootRecoveryResult?: string;
+  lastSuccessfulColdBootAt?: string;
+  immersiveModeActive?: boolean;
+  keepScreenOn?: boolean;
+  managedKioskCapability?: string;
+  deviceOwnerState?: string;
+  lockTaskState?: string;
+  accessibilityServiceState?: string;
+  accessibilityReturnState?: string;
+  accessibilityReturnAttempts?: number;
+  activeHoursState?: string;
+  sleepCapability?: string;
+  lastSleepRequestResult?: string;
+  lastWakeResult?: string;
+  recoveryLevel?: number;
+  recoveryCount?: number;
+  safeMode?: boolean;
+  lastWatchdogFailure?: string;
+  lastWatchdogRecoveryAt?: string;
+  maintenanceSessionExpiresAt?: string;
+  powerAssist: PowerAssistResults;
+};
+export type PowerAssistResults = {
+  deviceSleep: string;
+  tvStandby: string;
+  deviceWake: string;
+  tvWake: string;
+  inputSelection: string;
+  tilecastStartup: string;
+  lastTestedAt?: string;
+};
+
 export type EmergencyTakeover = {
   id: string;
   name: string;

@@ -743,6 +743,30 @@ paths:
         summary: Inspect effective values and inheritance sources,
         responses: { "200": { description: Effective policy } },
       }
+  /api/v1/screens/{id}/reliability:
+    get:
+      {
+        summary: Read reported Android reliability and Power Assist state,
+        responses:
+          {
+            "200": { description: Capability and effective-state diagnostics },
+            "404": { description: Screen not found },
+          },
+      }
+  /api/v1/screens/{id}/power-assist:
+    put:
+      {
+        summary: Store administrator-confirmed sleep,
+        wake,
+        CEC,
+        input,
+        and startup test results,
+        responses:
+          {
+            "200": { description: Confirmation stored },
+            "422": { description: Invalid result state },
+          },
+      }
   /api/v1/player/config:
     get:
       {

@@ -12,7 +12,11 @@
     "playback",
     "cache",
     "sync",
-    "website"
+    "website",
+    "reliability",
+    "power",
+    "managedKiosk",
+    "accessibility"
   ],
   "properties": {
     "schemaVersion": { "const": 1 },
@@ -57,6 +61,87 @@
       },
       "additionalProperties": false
     },
-    "website": { "type": "object", "additionalProperties": true }
+    "website": { "type": "object", "additionalProperties": true },
+    "reliability": {
+      "type": "object",
+      "required": [
+        "mode",
+        "launchAfterBoot",
+        "immersiveMode",
+        "maximumProcessRestarts",
+        "restartWindowMinutes",
+        "safeModeEnabled"
+      ],
+      "properties": {
+        "mode": { "enum": ["standard", "managed_kiosk"] },
+        "launchAfterBoot": { "type": "boolean" },
+        "immersiveMode": { "type": "boolean" },
+        "maximumProcessRestarts": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "restartWindowMinutes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 120
+        },
+        "safeModeEnabled": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "power": {
+      "type": "object",
+      "required": [
+        "activeHoursEnabled",
+        "activeHoursTimezone",
+        "activeHoursDays",
+        "activeHoursStart",
+        "activeHoursEnd",
+        "keepScreenOn",
+        "cecAssistEnabled"
+      ],
+      "properties": {
+        "activeHoursEnabled": { "type": "boolean" },
+        "activeHoursTimezone": { "type": "string" },
+        "activeHoursDays": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "integer", "minimum": 1, "maximum": 7 }
+        },
+        "activeHoursStart": {
+          "type": "string",
+          "pattern": "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$"
+        },
+        "activeHoursEnd": {
+          "type": "string",
+          "pattern": "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$"
+        },
+        "keepScreenOn": { "type": "boolean" },
+        "cecAssistEnabled": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "managedKiosk": { "type": "object", "additionalProperties": true },
+    "accessibility": {
+      "type": "object",
+      "properties": {
+        "controlAssistEnabled": { "type": "boolean" },
+        "returnDelaySeconds": {
+          "type": "integer",
+          "minimum": 3,
+          "maximum": 300
+        },
+        "allowedPackages": {
+          "type": "array",
+          "maxItems": 50,
+          "uniqueItems": true,
+          "items": { "type": "string" }
+        },
+        "maximumReturns": { "type": "integer", "minimum": 1, "maximum": 20 }
+      },
+      "additionalProperties": true
+    }
   }
 }

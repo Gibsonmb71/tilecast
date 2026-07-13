@@ -64,16 +64,16 @@ func TestSettingsPolicyInheritanceAndRevision(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	values := map[string]any{"organization.name": "Settings Test", "player.playback.default_volume": 0.5}
+	values := map[string]any{"organization.name": "Settings Test", "player.playback.default_volume": 0.5, "reliability.mode": "standard", "power.active_hours_timezone": "America/New_York"}
 	document, err = service.UpdateOrganization(ctx, owner.User.ID, document.Revision, values)
 	if err != nil {
 		t.Fatal(err)
 	}
-	groupPolicy, err := service.PutGroupPolicy(ctx, owner.User.ID, group, 0, 100, map[string]any{"player.playback.default_volume": 0.4})
+	groupPolicy, err := service.PutGroupPolicy(ctx, owner.User.ID, group, 0, 100, map[string]any{"player.playback.default_volume": 0.4, "reliability.mode": "managed_kiosk"})
 	if err != nil || groupPolicy.Revision != 1 {
 		t.Fatalf("group policy: %#v %v", groupPolicy, err)
 	}
-	_, err = service.PutScreenPolicy(ctx, owner.User.ID, screen, 0, map[string]any{"player.playback.default_volume": 0.25})
+	_, err = service.PutScreenPolicy(ctx, owner.User.ID, screen, 0, map[string]any{"player.playback.default_volume": 0.25, "power.keep_screen_on": false})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,8 +85,11 @@ func TestSettingsPolicyInheritanceAndRevision(t *testing.T) {
 	if volume.Value != 0.25 || volume.Source != "This screen" || effective.ConfigRevision < 3 {
 		t.Fatalf("effective=%#v", effective)
 	}
+	if effective.Values["reliability.mode"].Value != "managed_kiosk" || effective.Values["power.keep_screen_on"].Value != false {
+		t.Fatalf("reliability inheritance=%#v", effective.Values)
+	}
 	config, etag, err := service.PlayerConfiguration(ctx, screen)
-	if err != nil || config.Playback["defaultVolume"] != 0.25 || etag == "" {
+	if err != nil || config.Playback["defaultVolume"] != 0.25 || config.Reliability["mode"] != "managed_kiosk" || config.Power["keepScreenOn"] != false || etag == "" {
 		t.Fatalf("config=%#v etag=%q err=%v", config, etag, err)
 	}
 	if notifier.notes < 3 {

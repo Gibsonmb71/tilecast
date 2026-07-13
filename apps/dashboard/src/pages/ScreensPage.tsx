@@ -15,13 +15,32 @@ import { useForm } from "react-hook-form";
 import { Link, useNavigate, useParams } from "react-router";
 import { z } from "zod";
 import { api } from "../api/client";
-import type { PairingRequest, Screen, ScreenStatus, User } from "../api/types";
+import type {
+  PairingRequest,
+  PowerAssistResults,
+  ReliabilityStatus,
+  Screen,
+  ScreenStatus,
+  User,
+} from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { FormField } from "../components/FormField";
 import { PlayerPolicyEditor } from "./SettingsPage";
 
 export const canManageScreens = (user?: User) =>
   user?.role === "owner" || user?.role === "administrator";
+export const reliabilityCapabilityWarning = (status?: ReliabilityStatus) => {
+  if (
+    status?.configuredMode === "managed_kiosk" &&
+    status.effectiveMode !== "managed_kiosk"
+  )
+    return "Managed Kiosk was requested but Android has not confirmed active lock-task capability.";
+  if (status?.accessibilityServiceState === "policy_enabled_service_disabled")
+    return "Accessibility Control is requested but must be enabled locally.";
+  if (status?.sleepCapability === "black_screen_only")
+    return "Device sleep is unavailable; the player will use black-screen fallback.";
+  return undefined;
+};
 const codeSchema = z.object({
   code: z.string().trim().min(6, "Enter the six-character code").max(9),
 });
@@ -761,6 +780,31 @@ export function ScreenDetailPage() {
     refetchInterval: 5_000,
     enabled: true,
   });
+  const reliability = useQuery({
+    queryKey: ["screens", id, "reliability"],
+    queryFn: () => api.screenReliability(id),
+    refetchInterval: 10_000,
+  });
+  const [powerResults, setPowerResults] = useState<PowerAssistResults>({
+    deviceSleep: "untested",
+    tvStandby: "untested",
+    deviceWake: "untested",
+    tvWake: "untested",
+    inputSelection: "untested",
+    tilecastStartup: "untested",
+  });
+  useEffect(() => {
+    if (reliability.data?.powerAssist)
+      setPowerResults(reliability.data.powerAssist);
+  }, [reliability.data?.powerAssist]);
+  const savePowerResults = useMutation({
+    mutationFn: () =>
+      api.confirmPowerAssist(id, powerResults, auth.status?.csrfToken ?? ""),
+    onSuccess: () =>
+      queryClient.invalidateQueries({
+        queryKey: ["screens", id, "reliability"],
+      }),
+  });
   const command = useMutation({
     mutationFn: ({
       type,
@@ -976,6 +1020,175 @@ export function ScreenDetailPage() {
               {assignment.data.websiteFailureCategory.replaceAll("_", " ")}
             </div>
           )}
+        {canManageScreens(auth.status?.user) && (
+          <section className="operations" aria-labelledby="reliability-heading">
+            <h3 id="reliability-heading">Reliability &amp; Power</h3>
+            <p>
+              Configured features are reported separately from Android-confirmed
+              capabilities. Power Assist asks Android to sleep or wake; it does
+              not send direct HDMI-CEC commands.
+            </p>
+            <dl className="detail-list">
+              <div>
+                <dt>Reliability mode</dt>
+                <dd>
+                  {reliability.data?.configuredMode ?? "Not reported"}{" "}
+                  configured ·{" "}
+                  {reliability.data?.effectiveMode ?? "Not reported"} effective
+                </dd>
+              </div>
+              <div>
+                <dt>Foreground</dt>
+                <dd>{reliability.data?.foregroundState ?? "Not reported"}</dd>
+              </div>
+              <div>
+                <dt>Boot recovery</dt>
+                <dd>
+                  {reliability.data?.bootRecoveryResult ?? "Not reported"}
+                </dd>
+              </div>
+              <div>
+                <dt>Immersive / keep awake</dt>
+                <dd>
+                  {reliability.data?.immersiveModeActive
+                    ? "Immersive"
+                    : "Not immersive"}{" "}
+                  ·{" "}
+                  {reliability.data?.keepScreenOn
+                    ? "Kept awake"
+                    : "Wake lock released"}
+                </dd>
+              </div>
+              <div>
+                <dt>Managed Kiosk</dt>
+                <dd>
+                  {reliability.data?.managedKioskCapability ?? "Not reported"} ·
+                  lock task {reliability.data?.lockTaskState ?? "unknown"}
+                </dd>
+              </div>
+              <div>
+                <dt>Accessibility Control</dt>
+                <dd>
+                  {reliability.data?.accessibilityServiceState ??
+                    "Not reported"}
+                </dd>
+              </div>
+              <div>
+                <dt>Active hours</dt>
+                <dd>{reliability.data?.activeHoursState ?? "Not reported"}</dd>
+              </div>
+              <div>
+                <dt>Sleep support</dt>
+                <dd>{reliability.data?.sleepCapability ?? "Not reported"}</dd>
+              </div>
+              <div>
+                <dt>Recovery</dt>
+                <dd>
+                  Level {reliability.data?.recoveryLevel ?? 0} ·{" "}
+                  {reliability.data?.recoveryCount ?? 0} recent · safe mode{" "}
+                  {reliability.data?.safeMode ? "active" : "inactive"}
+                </dd>
+              </div>
+              <div>
+                <dt>Maintenance session</dt>
+                <dd>
+                  {reliability.data?.maintenanceSessionExpiresAt
+                    ? `Until ${new Date(reliability.data.maintenanceSessionExpiresAt).toLocaleString()}`
+                    : "Inactive"}
+                </dd>
+              </div>
+            </dl>
+            {reliabilityCapabilityWarning(reliability.data) && (
+              <div className="notice notice--warning">
+                {reliabilityCapabilityWarning(reliability.data)}
+              </div>
+            )}
+            <div className="heading-actions">
+              <button
+                className="button button--quiet"
+                onClick={() =>
+                  command.mutate({ type: "power_assist_sleep", payload: {} })
+                }
+              >
+                Test device sleep
+              </button>
+              <button
+                className="button button--quiet"
+                onClick={() =>
+                  command.mutate({ type: "power_assist_wake", payload: {} })
+                }
+              >
+                Test device wake
+              </button>
+              <button
+                className="button button--quiet"
+                onClick={() =>
+                  command.mutate({ type: "retry_player_recovery", payload: {} })
+                }
+              >
+                Retry recovery
+              </button>
+              <button
+                className="button button--quiet"
+                disabled={!reliability.data?.safeMode}
+                onClick={() =>
+                  command.mutate({ type: "exit_safe_mode", payload: {} })
+                }
+              >
+                Exit safe mode
+              </button>
+            </div>
+            <h4>Power Assist test confirmation</h4>
+            <p>
+              Confirm physical TV behavior separately; Tilecast cannot infer TV
+              standby, wake, or input selection from process activity.
+            </p>
+            <div className="policy-grid">
+              {(
+                [
+                  "deviceSleep",
+                  "tvStandby",
+                  "deviceWake",
+                  "tvWake",
+                  "inputSelection",
+                  "tilecastStartup",
+                ] as const
+              ).map((key) => (
+                <label key={key}>
+                  {key.replace(/([A-Z])/g, " $1")}
+                  <select
+                    value={powerResults[key]}
+                    onChange={(event) =>
+                      setPowerResults({
+                        ...powerResults,
+                        [key]: event.target.value,
+                      })
+                    }
+                  >
+                    {[
+                      "untested",
+                      "confirmed_working",
+                      "partially_working",
+                      "failed",
+                      "unsupported",
+                    ].map((value) => (
+                      <option key={value} value={value}>
+                        {value.replaceAll("_", " ")}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ))}
+            </div>
+            <button
+              className="button button--primary"
+              onClick={() => savePowerResults.mutate()}
+              disabled={savePowerResults.isPending}
+            >
+              Save test confirmation
+            </button>
+          </section>
+        )}
         {canManageScreens(auth.status?.user) && (
           <section className="operations">
             <h3>Operations</h3>

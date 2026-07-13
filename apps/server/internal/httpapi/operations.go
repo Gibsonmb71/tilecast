@@ -20,6 +20,8 @@ var commandTypes = map[string]bool{
 	"clear_media_cache": true, "clear_website_data": true,
 	"disable_playback": true, "enable_playback": true,
 	"install_player_update": true,
+	"retry_player_recovery": true, "exit_safe_mode": true,
+	"power_assist_sleep": true, "power_assist_wake": true,
 }
 
 type emergencyInput struct {

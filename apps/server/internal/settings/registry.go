@@ -78,6 +78,38 @@ var definitions = []Definition{
 	{Key: "player.website.clear_on_restart", Category: "websites", Type: "bool", Default: false, Scope: ScopePolicy, Title: "Clear website data on restart"},
 	{Key: "player.identify.show_location", Category: "playback", Type: "bool", Default: true, Scope: ScopePolicy, Title: "Show location when identifying"},
 	{Key: "player.diagnostics.level", Category: "playback", Type: "enum", Default: "standard", Allowed: []string{"minimal", "standard", "detailed"}, Scope: ScopePolicy, Title: "Diagnostic reporting"},
+	{Key: "reliability.mode", Category: "reliability", Type: "enum", Default: "standard", Allowed: []string{"standard", "managed_kiosk"}, Scope: ScopePolicy, Title: "Reliability mode", Description: "Managed Kiosk becomes effective only when Android confirms device-policy capability."},
+	{Key: "reliability.launch_after_boot", Category: "reliability", Type: "bool", Default: true, Scope: ScopePolicy, Title: "Launch after boot", Immediate: true},
+	{Key: "reliability.immersive_mode", Category: "reliability", Type: "bool", Default: true, Scope: ScopePolicy, Title: "Immersive fullscreen", Immediate: true},
+	{Key: "reliability.foreground_watchdog_enabled", Category: "reliability", Type: "bool", Default: true, Scope: ScopePolicy, Title: "Foreground watchdog", Immediate: true},
+	{Key: "reliability.playback_stall_seconds", Category: "reliability", Type: "int", Default: 30.0, Min: number(10), Max: number(600), Scope: ScopePolicy, Title: "Playback stall threshold"},
+	{Key: "reliability.webview_stall_seconds", Category: "reliability", Type: "int", Default: 45.0, Min: number(15), Max: number(600), Scope: ScopePolicy, Title: "Website stall threshold"},
+	{Key: "reliability.maximum_process_restarts", Category: "reliability", Type: "int", Default: 3.0, Min: number(0), Max: number(10), Scope: ScopePolicy, Title: "Maximum process recoveries"},
+	{Key: "reliability.restart_window_minutes", Category: "reliability", Type: "int", Default: 10.0, Min: number(1), Max: number(120), Scope: ScopePolicy, Title: "Recovery window"},
+	{Key: "reliability.safe_mode_enabled", Category: "reliability", Type: "bool", Default: true, Scope: ScopePolicy, Title: "Crash-loop safe mode"},
+	{Key: "power.active_hours_enabled", Category: "power", Type: "bool", Default: false, Scope: ScopePolicy, Title: "Active hours"},
+	{Key: "power.active_hours_timezone", Category: "power", Type: "timezone", Default: "UTC", Scope: ScopePolicy, Title: "Active-hours timezone"},
+	{Key: "power.active_hours_days", Category: "power", Type: "weekday_list", Default: []any{1.0, 2.0, 3.0, 4.0, 5.0}, Scope: ScopePolicy, Title: "Active days"},
+	{Key: "power.active_hours_start", Category: "power", Type: "local_time", Default: "06:30", Scope: ScopePolicy, Title: "Start time"},
+	{Key: "power.active_hours_end", Category: "power", Type: "local_time", Default: "16:00", Scope: ScopePolicy, Title: "End time"},
+	{Key: "power.startup_grace_seconds", Category: "power", Type: "int", Default: 30.0, Min: number(0), Max: number(3600), Scope: ScopePolicy, Title: "Startup grace"},
+	{Key: "power.shutdown_prepare_seconds", Category: "power", Type: "int", Default: 60.0, Min: number(0), Max: number(3600), Scope: ScopePolicy, Title: "Shutdown preparation"},
+	{Key: "power.keep_screen_on", Category: "power", Type: "bool", Default: true, Scope: ScopePolicy, Title: "Keep screen awake during active hours", Immediate: true},
+	{Key: "power.cec_assist_enabled", Category: "power", Type: "bool", Default: false, Scope: ScopePolicy, Title: "Power Assist", Description: "Uses Android sleep and wake behavior; compatible firmware may relay HDMI-CEC."},
+	{Key: "power.sleep_outside_active_hours", Category: "power", Type: "bool", Default: false, Scope: ScopePolicy, Title: "Request sleep outside active hours"},
+	{Key: "power.black_screen_fallback", Category: "power", Type: "bool", Default: true, Scope: ScopePolicy, Title: "Black-screen fallback"},
+	{Key: "managed_kiosk.lock_task_enabled", Category: "reliability", Type: "bool", Default: false, Scope: ScopePolicy, Title: "Lock task"},
+	{Key: "managed_kiosk.block_overlays", Category: "reliability", Type: "bool", Default: true, Scope: ScopePolicy, Title: "Block overlays where supported"},
+	{Key: "managed_kiosk.allow_settings_during_admin", Category: "reliability", Type: "bool", Default: true, Scope: ScopePolicy, Title: "Allow Settings during maintenance"},
+	{Key: "managed_kiosk.admin_session_minutes", Category: "reliability", Type: "int", Default: 15.0, Min: number(1), Max: number(120), Scope: ScopePolicy, Title: "Maintenance session duration"},
+	{Key: "accessibility.control_assist_enabled", Category: "accessibility", Type: "bool", Default: false, Scope: ScopePolicy, Title: "Accessibility Control Assist", Description: "Requires deliberate local enablement in Android Accessibility Settings."},
+	{Key: "accessibility.return_delay_seconds", Category: "accessibility", Type: "int", Default: 10.0, Min: number(3), Max: number(300), Scope: ScopePolicy, Title: "Return delay"},
+	{Key: "accessibility.allowed_packages", Category: "accessibility", Type: "package_list", Default: []any{}, Scope: ScopePolicy, Title: "Maintenance applications"},
+	{Key: "accessibility.pause_during_updates", Category: "accessibility", Type: "bool", Default: true, Scope: ScopePolicy, Title: "Pause during player updates"},
+	{Key: "accessibility.pause_during_admin_session", Category: "accessibility", Type: "bool", Default: true, Scope: ScopePolicy, Title: "Pause during maintenance"},
+	{Key: "accessibility.report_foreground_package", Category: "accessibility", Type: "bool", Default: false, Scope: ScopePolicy, Title: "Report foreground package"},
+	{Key: "accessibility.maximum_returns", Category: "accessibility", Type: "int", Default: 3.0, Min: number(1), Max: number(20), Scope: ScopePolicy, Title: "Maximum automatic returns"},
+	{Key: "accessibility.return_window_minutes", Category: "accessibility", Type: "int", Default: 10.0, Min: number(1), Max: number(120), Scope: ScopePolicy, Title: "Return attempt window"},
 	{Key: "media.upload.max_bytes", Category: "media", Type: "int64", Default: 10737418240.0, Min: number(1048576), Max: number(1099511627776), Scope: ScopeOrganization, Title: "Studio upload limit"},
 	{Key: "media.keep_originals", Category: "media", Type: "bool", Default: true, Scope: ScopeOrganization, Title: "Keep originals", FutureOnly: true},
 	{Key: "media.video.max_width", Category: "media", Type: "int", Default: 1920.0, Min: number(320), Max: number(7680), Scope: ScopeOrganization, Title: "Maximum video width", FutureOnly: true},
@@ -139,6 +171,8 @@ var byKey = func() map[string]Definition {
 	return m
 }()
 var colorPattern = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
+var localTimePattern = regexp.MustCompile(`^(?:[01][0-9]|2[0-3]):[0-5][0-9]$`)
+var packagePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+$`)
 
 func Definitions() []Definition { return append([]Definition(nil), definitions...) }
 func Defaults(scope Scope) map[string]any {
@@ -174,7 +208,7 @@ func validateValue(d Definition, value any) (any, error) {
 		if _, ok := value.(bool); !ok {
 			return nil, errors.New("must be boolean")
 		}
-	case "string", "email", "color", "timezone", "uuid_or_empty", "enum":
+	case "string", "email", "color", "timezone", "uuid_or_empty", "enum", "local_time":
 		s, ok := value.(string)
 		if !ok || len(s) > 2000 {
 			return nil, errors.New("must be a bounded string")
@@ -196,7 +230,36 @@ func validateValue(d Definition, value any) (any, error) {
 		if d.Type == "enum" && !contains(d.Allowed, s) {
 			return nil, errors.New("is not allowed")
 		}
+		if d.Type == "local_time" && !localTimePattern.MatchString(s) {
+			return nil, errors.New("must use HH:mm local time")
+		}
 		return s, nil
+	case "weekday_list", "package_list":
+		values, ok := value.([]any)
+		if !ok || len(values) > 50 || (d.Type == "weekday_list" && len(values) == 0) {
+			return nil, errors.New("must be a bounded non-empty list")
+		}
+		seen := map[string]bool{}
+		normalized := make([]any, 0, len(values))
+		for _, item := range values {
+			if d.Type == "weekday_list" {
+				n, ok := item.(float64)
+				if !ok || n < 1 || n > 7 || n != float64(int(n)) || seen[fmt.Sprint(n)] {
+					return nil, errors.New("weekdays must be unique ISO values from 1 through 7")
+				}
+				seen[fmt.Sprint(n)] = true
+				normalized = append(normalized, n)
+				continue
+			}
+			s, ok := item.(string)
+			s = strings.TrimSpace(s)
+			if !ok || len(s) > 200 || !packagePattern.MatchString(s) || seen[s] {
+				return nil, errors.New("package names must be unique Android application IDs")
+			}
+			seen[s] = true
+			normalized = append(normalized, s)
+		}
+		return normalized, nil
 	case "int", "int64", "float":
 		n, ok := value.(float64)
 		if !ok {

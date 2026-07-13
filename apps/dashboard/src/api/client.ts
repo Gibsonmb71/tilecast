@@ -28,6 +28,8 @@ import type {
   SystemStatus,
   PlayerReleaseList,
   UpdateDeployment,
+  ReliabilityStatus,
+  PowerAssistResults,
 } from "./types";
 
 type DataResponse<T> = { data: T };
@@ -223,6 +225,21 @@ export const api = {
       "/screens/pairing/pending",
     ),
   screen: (id: string) => request<Screen>(`/screens/${id}`),
+  screenReliability: (id: string) =>
+    request<ReliabilityStatus>(`/screens/${id}/reliability`),
+  confirmPowerAssist: (
+    id: string,
+    results: PowerAssistResults,
+    csrfToken: string,
+  ) =>
+    request<{ screenId: string; lastTestedAt: string }>(
+      `/screens/${id}/power-assist`,
+      {
+        method: "PUT",
+        headers: { "X-CSRF-Token": csrfToken },
+        body: JSON.stringify(results),
+      },
+    ),
   resolvePairing: (code: string) =>
     request<PairingRequest>("/screens/pairing/resolve", {
       method: "POST",

@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { Screen, User } from "../api/types";
 import {
   canManageScreens,
+  reliabilityCapabilityWarning,
   ScreenListContent,
   StatusLabel,
 } from "./ScreensPage";
@@ -94,5 +95,22 @@ describe("screen management", () => {
       "/screens/screen-1",
     );
     expect(screen.getByText("Online")).toBeInTheDocument();
+  });
+
+  it("does not confuse requested Managed Kiosk with effective capability", () => {
+    expect(
+      reliabilityCapabilityWarning({
+        configuredMode: "managed_kiosk",
+        effectiveMode: "standard",
+        powerAssist: {
+          deviceSleep: "untested",
+          tvStandby: "untested",
+          deviceWake: "untested",
+          tvWake: "untested",
+          inputSelection: "untested",
+          tilecastStartup: "untested",
+        },
+      }),
+    ).toContain("not confirmed");
   });
 });

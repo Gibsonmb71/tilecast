@@ -8,6 +8,9 @@ const sections = [
   "general",
   "branding",
   "playback",
+  "reliability",
+  "power",
+  "accessibility",
   "media",
   "scheduling",
   "websites",
@@ -23,6 +26,9 @@ const labels: Record<string, string> = {
   general: "General",
   branding: "Branding",
   playback: "Playback",
+  reliability: "Reliability & Kiosk",
+  power: "Active Hours & Power Assist",
+  accessibility: "Accessibility Control",
   media: "Media",
   scheduling: "Scheduling",
   websites: "Websites",
@@ -310,6 +316,34 @@ function SettingField({
         <code>{String(value)}</code>
       </span>
     );
+  else if (
+    definition.type === "weekday_list" ||
+    definition.type === "package_list"
+  )
+    control = (
+      <input
+        id={id}
+        type="text"
+        value={Array.isArray(value) ? value.join(", ") : ""}
+        disabled={disabled}
+        placeholder={
+          definition.type === "weekday_list"
+            ? "1, 2, 3, 4, 5"
+            : "com.example.maintenance"
+        }
+        onChange={(e) =>
+          onChange(
+            e.target.value
+              .split(",")
+              .map((part) => part.trim())
+              .filter(Boolean)
+              .map((part) =>
+                definition.type === "weekday_list" ? Number(part) : part,
+              ),
+          )
+        }
+      />
+    );
   else
     control = (
       <input
@@ -321,7 +355,9 @@ function SettingField({
             ? "number"
             : definition.type === "email"
               ? "email"
-              : "text"
+              : definition.type === "local_time"
+                ? "time"
+                : "text"
         }
         value={
           typeof value === "string" || typeof value === "number"
@@ -946,6 +982,11 @@ function description(section: string) {
     general: "Organization identity, locale, timezone, and support details.",
     branding: "Studio and player colors, images, and fallback messages.",
     playback: "Organization player defaults and safe operational intervals.",
+    reliability:
+      "Boot recovery, watchdog, safe mode, and capability-gated Managed Kiosk defaults.",
+    power: "Timezone-aware active hours and best-effort Android Power Assist.",
+    accessibility:
+      "Optional, locally enabled foreground-return assist with strict exclusions.",
     media: "Upload and future media-processing defaults.",
     scheduling: "Schedule preparation and clock defaults.",
     websites: "Default hardened website behavior.",

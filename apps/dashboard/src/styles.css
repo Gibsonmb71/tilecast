@@ -204,6 +204,17 @@ html[data-reduced-motion="true"] *::after {
   padding-top: 18px;
   border-top: 1px solid var(--border);
 }
+.policy-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+  margin: 12px 0 16px;
+}
+.policy-grid label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+}
 .command-history {
   margin-top: 14px;
   display: grid;

@@ -1,5 +1,13 @@
 # Troubleshooting pairing
 
+## Reliability and power
+
+- **Managed Kiosk remains Standard:** the policy is requested but Android has not confirmed device-owner permission and active lock task. Provision locally on compatible firmware.
+- **Tilecast does not launch after boot:** consumer firmware may block foreground launch. Open Tilecast once, remove vendor battery restrictions, and record `foreground_launch_blocked` in Studio; cached content remains available when launched.
+- **TV did not turn off or wake:** Power Assist asks Android to sleep/wake. Enable the device and TV HDMI-CEC options, test sleep and wake separately, and store the observed physical result. Tilecast does not send raw CEC.
+- **Accessibility keeps returning from Settings:** Settings and installers are excluded by default. End the loop with the maintenance sequence and verify the locally configured package allowlist.
+- **Recovery screen is shown:** the bounded watchdog entered safe mode. Inspect the diagnostic code and storage, then issue Retry recovery or Exit safe mode. Tilecast does not automatically delete cache, manifests, or pairing.
+
 - **No server appears:** use manual entry, confirm the TV and server share a network, and check multicast or client-isolation rules.
 - **Public HTTP is rejected:** use HTTPS. HTTP is permitted only for private IPv4, link-local, localhost, and `.local` addresses after a visible warning.
 - **Code expired:** request a new code on the TV; pairing sessions last ten minutes.

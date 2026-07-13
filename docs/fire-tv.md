@@ -1,5 +1,7 @@
 # Fire TV sideloading
 
+Fire OS firmware varies. Standard Reliability, cached startup, immersive mode, and optional Accessibility Control Assist must be verified on the target model. Fire TV may relay Android sleep/wake as HDMI-CEC standby or wake, but Tilecast does not send direct CEC commands and Studio requires a physical administrator confirmation. Device-owner Managed Kiosk is often unavailable on consumer Fire TV firmware; never label it active unless the player reports confirmed lock task. Keep Android Settings and the package installer excluded from Accessibility return behavior.
+
 Enable Developer Options and ADB debugging on the Fire TV, note its LAN address, then connect and install:
 
 ```sh

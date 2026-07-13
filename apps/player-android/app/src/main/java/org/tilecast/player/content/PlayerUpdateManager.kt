@@ -43,7 +43,7 @@ class PlayerUpdateManager(private val app:Application,private val api:TilecastAp
     private val store=app.getSharedPreferences("tilecast-player-updates",Application.MODE_PRIVATE)
     private val scope=CoroutineScope(SupervisorJob()+Dispatchers.Default)
     private var maintenanceJob:Job?=null
-    val restored:UpdateUiState? get()=store.getString("deployment",null)?.let{UpdateUiState(it,BuildConfig.VERSION_NAME,store.getString("new-version","")?:"",store.getString("state","pending")?:"pending",store.getLong("downloaded",0),store.getLong("expected",0),"Player update is ready to continue",store.getBoolean("permission",false),store.getBoolean("ready",false),store.getString("maintenance-at",null))}
+    val restored:UpdateUiState? get()=store.getString("deployment",null)?.let{deployment->val next=store.getString("new-version","")?:"";if(next==BuildConfig.VERSION_NAME){store.edit().clear().apply();null}else UpdateUiState(deployment,BuildConfig.VERSION_NAME,next,store.getString("state","pending")?:"pending",store.getLong("downloaded",0),store.getLong("expected",0),"Player update is ready to continue",store.getBoolean("permission",false),store.getBoolean("ready",false),store.getString("maintenance-at",null))}
 
     suspend fun prepare(server:String,credential:String,command:PlayerCommand,emergencyActive:()->Boolean,onState:(UpdateUiState)->Unit):CommandOutcome{
         val deployment=command.payload["deploymentId"]?.jsonPrimitive?.contentOrNull?:return CommandOutcome(false,"update_payload_invalid","Update deployment is invalid")

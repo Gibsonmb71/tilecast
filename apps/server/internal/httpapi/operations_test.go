@@ -13,6 +13,11 @@ func TestCommandPayloadValidation(t *testing.T) {
 	if _, err := s.validateCommand("identify_screen", json.RawMessage(`{"durationSeconds":30}`)); err != nil {
 		t.Fatalf("identify command: %v", err)
 	}
+	for _, command := range []string{"retry_player_recovery", "exit_safe_mode", "power_assist_sleep", "power_assist_wake"} {
+		if _, err := s.validateCommand(command, json.RawMessage(`{}`)); err != nil {
+			t.Fatalf("%s command: %v", command, err)
+		}
+	}
 	for _, input := range []struct{ typ, body string }{
 		{"shell", `{}`},
 		{"sync_now", `{"url":"https://example.com"}`},

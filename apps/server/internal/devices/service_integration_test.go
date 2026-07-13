@@ -108,6 +108,26 @@ func TestCompletePairingCredentialAndRevocationFlow(t *testing.T) {
 	if err := service.Heartbeat(ctx, principal, Heartbeat{ScreenWidth: 1920, ScreenHeight: 1080, AvailableStorageBytes: &storage, UptimeSeconds: &uptime, PlayerVersion: "0.2.0"}, "192.168.1.42:1234"); err != nil {
 		t.Fatal(err)
 	}
+	safeMode := true
+	maintenance := time.Now().Add(15 * time.Minute).UTC()
+	pinChanged := time.Now().UTC()
+	if err := service.Heartbeat(ctx, principal, Heartbeat{ScreenWidth: 1920, ScreenHeight: 1080, PlayerVersion: "0.2.0", ConfiguredReliabilityMode: "managed_kiosk", EffectiveReliabilityMode: "standard", ForegroundState: "foreground", SafeMode: &safeMode, MaintenanceSessionExpiresAt: &maintenance, AdminPINChangedAt: &pinChanged}, "192.168.1.42:1234"); err != nil {
+		t.Fatal(err)
+	}
+	var configured, effective string
+	var storedSafe bool
+	if err := pool.QueryRow(ctx, `SELECT configured_reliability_mode,effective_reliability_mode,safe_mode FROM screen_player_status WHERE screen_id=$1`, screen.ID).Scan(&configured, &effective, &storedSafe); err != nil || configured != "managed_kiosk" || effective != "standard" || !storedSafe {
+		t.Fatalf("reliability status configured=%q effective=%q safe=%v err=%v", configured, effective, storedSafe, err)
+	}
+	safeMode = false
+	maintenance = time.Now().Add(-time.Minute).UTC()
+	if err := service.Heartbeat(ctx, principal, Heartbeat{ScreenWidth: 1920, ScreenHeight: 1080, PlayerVersion: "0.2.0", ConfiguredReliabilityMode: "standard", SafeMode: &safeMode, MaintenanceSessionExpiresAt: &maintenance}, "192.168.1.42:1234"); err != nil {
+		t.Fatal(err)
+	}
+	var reliabilityAudits int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM audit_logs WHERE action IN ('reliability.safe_mode_entered','reliability.safe_mode_exited','reliability.maintenance_started','reliability.maintenance_ended','reliability.admin_pin_changed')`).Scan(&reliabilityAudits); err != nil || reliabilityAudits != 5 {
+		t.Fatalf("reliability audits=%d err=%v", reliabilityAudits, err)
+	}
 	if err := service.SetEnabled(ctx, screen.ID, owner.User.ID, false); err != nil {
 		t.Fatal(err)
 	}

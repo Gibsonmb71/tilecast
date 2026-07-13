@@ -89,7 +89,44 @@ func (s *Service) Heartbeat(ctx context.Context, principal DevicePrincipal, hear
 	if err != nil {
 		return fmt.Errorf("record heartbeat: %w", err)
 	}
+	_, _ = s.db.Exec(ctx, `INSERT INTO screen_player_status(screen_id) VALUES($1) ON CONFLICT DO NOTHING`, principal.ScreenID)
 	_, _ = s.db.Exec(ctx, `UPDATE screen_player_status SET player_version_code=$2,android_sdk=$3,installer_source=NULLIF($4,''),install_permission_status=NULLIF($5,''),current_update_deployment_id=$6,update_state=NULLIF($7,''),update_downloaded_bytes=$8,update_expected_bytes=$9,update_error=NULLIF($10,'') WHERE screen_id=$1`, principal.ScreenID, heartbeat.PlayerVersionCode, heartbeat.AndroidSDK, heartbeat.InstallerSource, heartbeat.InstallPermissionStatus, heartbeat.CurrentUpdateDeploymentID, heartbeat.UpdateState, heartbeat.UpdateDownloadedBytes, heartbeat.UpdateExpectedBytes, heartbeat.UpdateError)
+	if heartbeat.ConfiguredReliabilityMode != "" || heartbeat.SafeMode != nil {
+		var previousSafeMode bool
+		var previousMaintenance, previousPINChange *time.Time
+		_ = s.db.QueryRow(ctx, `SELECT safe_mode,maintenance_session_expires_at,admin_pin_changed_at FROM screen_player_status WHERE screen_id=$1`, principal.ScreenID).Scan(&previousSafeMode, &previousMaintenance, &previousPINChange)
+		_, _ = s.db.Exec(ctx, `UPDATE screen_player_status SET configured_reliability_mode=NULLIF($2,''),effective_reliability_mode=NULLIF($3,''),foreground_state=NULLIF($4,''),last_foreground_exit_at=$5,last_foreground_package=NULLIF($6,''),boot_recovery_result=NULLIF($7,''),last_successful_cold_boot_at=$8,immersive_mode_active=$9,keep_screen_on=$10,managed_kiosk_capability=NULLIF($11,''),device_owner_state=NULLIF($12,''),lock_task_state=NULLIF($13,''),accessibility_service_state=NULLIF($14,''),accessibility_return_state=NULLIF($15,''),accessibility_return_attempts=$16,active_hours_state=NULLIF($17,''),sleep_capability=NULLIF($18,''),last_sleep_request_result=NULLIF($19,''),last_wake_result=NULLIF($20,''),recovery_level=$21,recovery_count=$22,safe_mode=COALESCE($23,safe_mode),last_watchdog_failure=NULLIF($24,''),last_watchdog_recovery_at=$25,maintenance_session_expires_at=$26 WHERE screen_id=$1`, principal.ScreenID, heartbeat.ConfiguredReliabilityMode, heartbeat.EffectiveReliabilityMode, heartbeat.ForegroundState, heartbeat.LastForegroundExitAt, heartbeat.LastForegroundPackage, heartbeat.BootRecoveryResult, heartbeat.LastSuccessfulColdBootAt, heartbeat.ImmersiveModeActive, heartbeat.KeepScreenOn, heartbeat.ManagedKioskCapability, heartbeat.DeviceOwnerState, heartbeat.LockTaskState, heartbeat.AccessibilityServiceState, heartbeat.AccessibilityReturnState, heartbeat.AccessibilityReturnAttempts, heartbeat.ActiveHoursState, heartbeat.SleepCapability, heartbeat.LastSleepRequestResult, heartbeat.LastWakeResult, heartbeat.RecoveryLevel, heartbeat.RecoveryCount, heartbeat.SafeMode, heartbeat.LastWatchdogFailure, heartbeat.LastWatchdogRecoveryAt, heartbeat.MaintenanceSessionExpiresAt)
+		if heartbeat.AdminPINChangedAt != nil {
+			_, _ = s.db.Exec(ctx, `UPDATE screen_player_status SET admin_pin_changed_at=$2 WHERE screen_id=$1 AND (admin_pin_changed_at IS NULL OR admin_pin_changed_at<$2)`, principal.ScreenID, heartbeat.AdminPINChangedAt)
+		}
+		now := time.Now()
+		newSafeMode := previousSafeMode
+		if heartbeat.SafeMode != nil {
+			newSafeMode = *heartbeat.SafeMode
+		}
+		previousMaintenanceActive := previousMaintenance != nil && previousMaintenance.After(now)
+		newMaintenanceActive := heartbeat.MaintenanceSessionExpiresAt != nil && heartbeat.MaintenanceSessionExpiresAt.After(now)
+		audit := func(action string) {
+			_, _ = s.db.Exec(ctx, `INSERT INTO audit_logs(id,action,resource_type,resource_id)VALUES($1,$2,'screen',$3)`, uuid.New(), action, principal.ScreenID.String())
+		}
+		if newSafeMode != previousSafeMode {
+			if newSafeMode {
+				audit("reliability.safe_mode_entered")
+			} else {
+				audit("reliability.safe_mode_exited")
+			}
+		}
+		if newMaintenanceActive != previousMaintenanceActive {
+			if newMaintenanceActive {
+				audit("reliability.maintenance_started")
+			} else {
+				audit("reliability.maintenance_ended")
+			}
+		}
+		if heartbeat.AdminPINChangedAt != nil && (previousPINChange == nil || heartbeat.AdminPINChangedAt.After(*previousPINChange)) {
+			audit("reliability.admin_pin_changed")
+		}
+	}
 	if heartbeat.PlayerVersionCode != nil {
 		_, _ = s.db.Exec(ctx, `WITH completed AS (UPDATE screen_update_states SET state='succeeded',reconnect_at=now(),completed_at=now(),updated_at=now() WHERE screen_id=$1 AND expected_version_code<=$2 AND state IN('ready','waiting_for_permission','waiting_for_user','installing','reconnecting') RETURNING deployment_id) UPDATE update_deployments d SET status=CASE WHEN NOT EXISTS(SELECT 1 FROM screen_update_states st WHERE st.deployment_id=d.id AND st.state NOT IN('succeeded','failed','cancelled','incompatible','already_current')) THEN 'completed' ELSE d.status END,completed_at=CASE WHEN NOT EXISTS(SELECT 1 FROM screen_update_states st WHERE st.deployment_id=d.id AND st.state NOT IN('succeeded','failed','cancelled','incompatible','already_current')) THEN now() ELSE d.completed_at END WHERE d.id IN(SELECT deployment_id FROM completed)`, principal.ScreenID, *heartbeat.PlayerVersionCode)
 	}

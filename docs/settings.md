@@ -17,7 +17,9 @@ Equal-priority groups use ascending stable group UUID ordering. Update timestamp
 
 ## Player configuration
 
-`GET /api/v1/player/config` is device-authenticated and independent of content manifests. Schema v1 has a monotonic per-screen revision and stable ETag. It contains effective branding, playback, cache, synchronization, and website policy only—never inheritance metadata, credentials, unrelated groups, or deployment paths.
+`GET /api/v1/player/config` is device-authenticated and independent of content manifests. Schema v1 has a monotonic per-screen revision and stable ETag. It contains effective branding, playback, cache, synchronization, website, reliability, power, Managed Kiosk, and accessibility policy only—never inheritance metadata, credentials, unrelated groups, or deployment paths.
+
+Reliability, power, and accessibility keys are policy-scoped and follow the same screen/group/organization/built-in inheritance. Requested values and effective Android capabilities are distinct: for example, `reliability.mode=managed_kiosk` remains effectively `standard` until Android confirms active lock task. Active-hour local times and IANA timezone identifiers are validated; package allowlists accept only bounded Android application IDs. See [reliability and power](reliability-and-power.md).
 
 Players preserve the current and previous valid configuration in Room, validate before activation, reconcile periodically, and react to lightweight `config.changed` notifications. Item-specific playlist settings continue to win over player defaults. Invalid configuration preserves the previous valid revision and reports a safe error.
 

@@ -4,6 +4,8 @@ Every screen receives a separate random credential formatted as `tc_device_<publ
 
 Android stores the credential encrypted with an AES-GCM key generated inside Android Keystore. Room contains non-secret configuration only. Revocation timestamps the credential record, closes the active WebSocket, rejects future requests with `device_credential_revoked`, and causes the player to delete its local credential.
 
+The local maintenance PIN is independent of device authentication. Tilecast stores only a random-salted PBKDF2-SHA256 PIN hash, rate-limits verification, and temporarily locks after repeated failures. Accessibility Control is optional and locally enabled; it cannot retrieve window content, click, gesture, approve installers, change Wi-Fi, or accept arbitrary actions from Studio. Detailed foreground package reporting is restricted to Owners and Administrators and is not retained as an unbounded event history.
+
 Disable is reversible and preserves the credential. Revoke is permanent and requires pairing again. Both operations are role-restricted, CSRF-protected, and audited.
 Website content does not change device authentication. Website pages never receive the Tilecast device credential, and WebView requests are not given Tilecast authorization headers. Website authentication credentials, imported cookies, OAuth tokens, and native JavaScript bridges are outside the product boundary.
 

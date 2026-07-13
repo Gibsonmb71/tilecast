@@ -173,6 +173,32 @@ type Heartbeat struct {
 	UpdateDownloadedBytes         *int64     `json:"updateDownloadedBytes,omitempty"`
 	UpdateExpectedBytes           *int64     `json:"updateExpectedBytes,omitempty"`
 	UpdateError                   string     `json:"updateError,omitempty"`
+	ConfiguredReliabilityMode     string     `json:"configuredReliabilityMode,omitempty"`
+	EffectiveReliabilityMode      string     `json:"effectiveReliabilityMode,omitempty"`
+	ForegroundState               string     `json:"foregroundState,omitempty"`
+	LastForegroundExitAt          *time.Time `json:"lastForegroundExitAt,omitempty"`
+	LastForegroundPackage         string     `json:"lastForegroundPackage,omitempty"`
+	BootRecoveryResult            string     `json:"bootRecoveryResult,omitempty"`
+	LastSuccessfulColdBootAt      *time.Time `json:"lastSuccessfulColdBootAt,omitempty"`
+	ImmersiveModeActive           *bool      `json:"immersiveModeActive,omitempty"`
+	KeepScreenOn                  *bool      `json:"keepScreenOn,omitempty"`
+	ManagedKioskCapability        string     `json:"managedKioskCapability,omitempty"`
+	DeviceOwnerState              string     `json:"deviceOwnerState,omitempty"`
+	LockTaskState                 string     `json:"lockTaskState,omitempty"`
+	AccessibilityServiceState     string     `json:"accessibilityServiceState,omitempty"`
+	AccessibilityReturnState      string     `json:"accessibilityReturnState,omitempty"`
+	AccessibilityReturnAttempts   *int       `json:"accessibilityReturnAttempts,omitempty"`
+	ActiveHoursState              string     `json:"activeHoursState,omitempty"`
+	SleepCapability               string     `json:"sleepCapability,omitempty"`
+	LastSleepRequestResult        string     `json:"lastSleepRequestResult,omitempty"`
+	LastWakeResult                string     `json:"lastWakeResult,omitempty"`
+	RecoveryLevel                 *int       `json:"recoveryLevel,omitempty"`
+	RecoveryCount                 *int       `json:"recoveryCount,omitempty"`
+	SafeMode                      *bool      `json:"safeMode,omitempty"`
+	LastWatchdogFailure           string     `json:"lastWatchdogFailure,omitempty"`
+	LastWatchdogRecoveryAt        *time.Time `json:"lastWatchdogRecoveryAt,omitempty"`
+	MaintenanceSessionExpiresAt   *time.Time `json:"maintenanceSessionExpiresAt,omitempty"`
+	AdminPINChangedAt             *time.Time `json:"adminPinChangedAt,omitempty"`
 }
 
 func addressString(address netip.Addr) *string {

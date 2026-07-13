@@ -7,10 +7,16 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.SystemClock
+import android.os.Handler
+import android.os.Looper
+import android.view.KeyEvent
+import android.provider.Settings
+import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.activity.compose.LocalActivity
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.content.ContextCompat
@@ -47,6 +53,9 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -63,20 +72,36 @@ import kotlinx.coroutines.delay
 import org.tilecast.player.core.DiscoveredServer
 import org.tilecast.player.core.PlayerState
 import org.tilecast.player.content.FullscreenPlayback
+import org.tilecast.player.reliability.ReliabilityController
 import java.time.Instant
 import java.time.Duration
 
 class MainActivity : ComponentActivity() {
     private val model:PlayerViewModel by viewModels()
+	private lateinit var reliability:ReliabilityController
+	private var adminPrompt by mutableStateOf(false)
+	private val escapeKeys=ArrayDeque<Int>()
+	private val reliabilityHandler=Handler(Looper.getMainLooper())
+	private var restoreKiosk:Runnable?=null
+	private val escapeSequence=listOf(KeyEvent.KEYCODE_BACK,KeyEvent.KEYCODE_BACK,KeyEvent.KEYCODE_DPAD_UP,KeyEvent.KEYCODE_DPAD_DOWN,KeyEvent.KEYCODE_DPAD_CENTER)
     private val clockReceiver=object:BroadcastReceiver(){override fun onReceive(context:Context?,intent:Intent?){model.recalculateSchedule()}}
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+		reliability=ReliabilityController(this)
+		getSharedPreferences("tilecast-reliability",MODE_PRIVATE).edit().putBoolean("update-active",model.update.value?.state in setOf("waiting_for_permission","waiting_for_user","installing")).apply()
         enableEdgeToEdge()
 		WindowCompat.getInsetsController(window,window.decorView).hide(WindowInsetsCompat.Type.systemBars())
-        setContent { TilecastTheme { TilecastPlayer(model) } }
+        setContent { TilecastTheme { TilecastPlayer(model,adminPrompt,{adminPrompt=false},reliability) } }
     }
-    override fun onStart(){super.onStart();ContextCompat.registerReceiver(this,clockReceiver,IntentFilter().apply{addAction(Intent.ACTION_TIME_CHANGED);addAction(Intent.ACTION_TIMEZONE_CHANGED)},ContextCompat.RECEIVER_NOT_EXPORTED);model.recalculateSchedule();model.refreshUpdatePermission();model.resumeUpdateSchedule()}
-    override fun onStop(){unregisterReceiver(clockReceiver);super.onStop()}
+    override fun onStart(){super.onStart();getSharedPreferences("tilecast-reliability",MODE_PRIVATE).edit().putBoolean("foreground",true).apply();ContextCompat.registerReceiver(this,clockReceiver,IntentFilter().apply{addAction(Intent.ACTION_TIME_CHANGED);addAction(Intent.ACTION_TIMEZONE_CHANGED)},ContextCompat.RECEIVER_NOT_EXPORTED);model.recalculateSchedule();model.refreshUpdatePermission();model.resumeUpdateSchedule();model.playerConfig.value?.let{reliability.applyWindow(this,it,model.activeHours.value)}}
+    override fun onStop(){getSharedPreferences("tilecast-reliability",MODE_PRIVATE).edit().putBoolean("foreground",false).putLong("last-foreground-exit",System.currentTimeMillis()).apply();unregisterReceiver(clockReceiver);super.onStop()}
+    override fun onWindowFocusChanged(hasFocus:Boolean){super.onWindowFocusChanged(hasFocus);if(hasFocus)model.playerConfig.value?.let{reliability.applyWindow(this,it,model.activeHours.value)}}
+    override fun onKeyDown(keyCode:Int,event:KeyEvent?):Boolean {escapeKeys.addLast(keyCode);while(escapeKeys.size>escapeSequence.size)escapeKeys.removeFirst();if(escapeKeys.toList()==escapeSequence){escapeKeys.clear();adminPrompt=true;return true};return if(keyCode==KeyEvent.KEYCODE_BACK)true else super.onKeyDown(keyCode,event)}
+	fun openSystemSettings(action:String){val intent=Intent(action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);if(action==Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES)intent.data=Uri.parse("package:$packageName");runCatching{startActivity(intent)}}
+	fun restartPlayer(){startActivity(Intent(this,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK));finish()}
+	fun installPlayerUpdate(){runCatching{stopLockTask()};getSharedPreferences("tilecast-reliability",MODE_PRIVATE).edit().putBoolean("update-active",true).apply();model.installUpdate()}
+	fun applyReliability(config:org.tilecast.player.network.PlayerConfig,activeHours:Boolean){reliability.applyWindow(this,config,activeHours);restoreKiosk?.let(reliabilityHandler::removeCallbacks);reliability.maintenanceUntil()?.let{until->Runnable{reliability.applyWindow(this,config,activeHours)}.also{restoreKiosk=it;reliabilityHandler.postDelayed(it,Duration.between(Instant.now(),until).toMillis().coerceAtLeast(0)+100)}}}
+	fun maintenanceChanged(){model.playerConfig.value?.let{applyReliability(it,model.activeHours.value)}}
 }
 
 private val background = Color(0xFF13231E)
@@ -88,17 +113,24 @@ private val warning = Color(0xFFE9CF79)
 
 @Composable private fun TilecastTheme(content: @Composable () -> Unit) { MaterialTheme(colorScheme = darkColorScheme(primary = accent, background = background, surface = surface, onBackground = text, onSurface = text), content = content) }
 
-@Composable fun TilecastPlayer(model: PlayerViewModel) {
+@Composable fun TilecastPlayer(model: PlayerViewModel,adminPrompt:Boolean=false,dismissAdmin:()->Unit={},reliability:ReliabilityController?=null) {
     val state by model.state.collectAsStateWithLifecycle()
 	val content by model.content.collectAsStateWithLifecycle()
 	val disabled by model.playbackDisabled.collectAsStateWithLifecycle()
 	val identify by model.identify.collectAsStateWithLifecycle()
 	val config by model.playerConfig.collectAsStateWithLifecycle()
 	val update by model.update.collectAsStateWithLifecycle()
+	val activeHours by model.activeHours.collectAsStateWithLifecycle()
+	val safeMode by model.safeMode.collectAsStateWithLifecycle()
 	val brandedBackground=config?.branding?.backgroundColor?.let{runCatching{Color(android.graphics.Color.parseColor(it))}.getOrNull()}?:background
 	val brandedText=config?.branding?.textColor?.let{runCatching{Color(android.graphics.Color.parseColor(it))}.getOrNull()}?:text
+	val activity=LocalActivity.current as? MainActivity
+	LaunchedEffect(config,activeHours){config?.let{activity?.applyReliability(it,activeHours)}}
+	if(adminPrompt&&reliability!=null){AdministratorMaintenance(reliability,dismissAdmin);return}
 	if(identify!=null){Box(Modifier.fillMaxSize().background(Color.Black),contentAlignment=Alignment.Center){Text(identify!!,color=Color.White,style=MaterialTheme.typography.displayLarge)};return}
-	if(update?.state in setOf("waiting_for_permission","waiting_for_user","installing")){UpdateApproval(update!!,model::openUpdatePermission,model::installUpdate);return}
+	if(update?.state in setOf("waiting_for_permission","waiting_for_user","installing")){UpdateApproval(update!!,model::openUpdatePermission,{activity?.installPlayerUpdate()?:model.installUpdate()});return}
+	if(safeMode){Box(Modifier.fillMaxSize().background(brandedBackground),contentAlignment=Alignment.Center){Column(horizontalAlignment=Alignment.CenterHorizontally){TilecastBrand();Spacer(Modifier.height(28.dp));Text("Player recovery mode",color=brandedText,style=MaterialTheme.typography.headlineLarge);Text("Tilecast remains paired and connected. Use Studio or the local maintenance menu to retry.",color=brandedText);Text("Diagnostic code: TC-RCV-10",color=warning)}};return}
+	if(!activeHours){val offHoursBackground=if(config?.power?.blackScreenFallback!=false)Color.Black else brandedBackground;Box(Modifier.fillMaxSize().background(offHoursBackground),contentAlignment=Alignment.Center){Text(config?.branding?.footerText.orEmpty(),color=if(offHoursBackground==Color.Black)Color.DarkGray else brandedText)};return}
 	if (content != null) {
 		FullscreenPlayback(content!!, model::playbackBoundary, model::playbackError,model::websitePlaybackStatus)
 		return
@@ -128,6 +160,8 @@ private val warning = Color(0xFFE9CF79)
         }
     }
 }
+
+@Composable private fun AdministratorMaintenance(reliability:ReliabilityController,dismiss:()->Unit){var pin by remember{mutableStateOf("")};var unlocked by remember{mutableStateOf(false)};var error by remember{mutableStateOf<String?>(null)};val activity=LocalActivity.current as? MainActivity ?: return;Box(Modifier.fillMaxSize().background(background).padding(72.dp),contentAlignment=Alignment.Center){if(!unlocked)Column(Modifier.fillMaxWidth(.6f),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(16.dp)){Text(if(reliability.hasAdminPin())"Administrator maintenance" else "Set local administrator PIN",color=text,fontSize=36.sp);Text("This local PIN only opens bounded Tilecast maintenance tools. Incorrect attempts are rate-limited.",color=muted,textAlign=TextAlign.Center);OutlinedTextField(value=pin,onValueChange={pin=it.filter(Char::isDigit).take(12)},label={Text("PIN")},visualTransformation=PasswordVisualTransformation(),keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.NumberPassword),singleLine=true);error?.let{Text(it,color=Color(0xFFFFAAA4))};Row(horizontalArrangement=Arrangement.spacedBy(12.dp)){OutlinedButton(onClick=dismiss){Text("Cancel")};Button(onClick={val valid=if(reliability.hasAdminPin())reliability.verifyAdminPin(pin.toCharArray()) else runCatching{reliability.setAdminPin(pin.toCharArray());true}.getOrDefault(false);if(valid){reliability.beginMaintenance(15);unlocked=true;pin=""}else error="PIN was incorrect or is temporarily locked"},enabled=pin.length>=4){Text(if(reliability.hasAdminPin())"Unlock" else "Set PIN")}}}else Column(Modifier.fillMaxWidth(.8f),verticalArrangement=Arrangement.spacedBy(12.dp)){Text("Tilecast maintenance",color=text,fontSize=38.sp);Text("This session expires automatically. Accessibility return and off-hours sleep are paused.",color=muted);Row(horizontalArrangement=Arrangement.spacedBy(10.dp)){Button(onClick={activity.openSystemSettings(Settings.ACTION_SETTINGS)}){Text("Android Settings")};Button(onClick={activity.openSystemSettings(Settings.ACTION_ACCESSIBILITY_SETTINGS)}){Text("Accessibility Settings")};Button(onClick={activity.openSystemSettings(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES)}){Text("Install permission")}};Row(horizontalArrangement=Arrangement.spacedBy(10.dp)){OutlinedButton(onClick={reliability.setSafeMode(false)}){Text("Clear safe mode")};OutlinedButton(onClick={activity.restartPlayer()}){Text("Restart Tilecast")};Button(onClick=dismiss){Text("Return to playback")}}}}}
 
 @Composable private fun UpdateApproval(state:org.tilecast.player.content.UpdateUiState,permission:()->Unit,install:()->Unit){Box(Modifier.fillMaxSize().background(background).padding(72.dp),contentAlignment=Alignment.Center){Column(horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(20.dp)){TilecastBrand();Text("Tilecast Player update",color=text,fontSize=44.sp,fontWeight=FontWeight.SemiBold);Text("${state.currentVersion} → ${state.newVersion}",color=accent,fontSize=28.sp);Text(state.message,color=muted,fontSize=21.sp);when{state.permissionRequired->Button(onClick=permission){Text("Open install permission settings")};state.installReady->Button(onClick=install){Text("Install update")};else->CircularProgressIndicator()};Text("Android may require confirmation. Tilecast cannot approve the system installer for you.",color=warning,fontSize=16.sp)}}}
 

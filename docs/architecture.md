@@ -65,6 +65,10 @@ Emergency takeovers are separate lifecycle records rather than schedules. Manife
 
 The closed typed registry separates organization settings, preferences, group policy, and screen policy. Effective player policy uses screen, group priority plus stable UUID, organization, then built-in precedence. A separate ETag-enabled player configuration document changes policy and branding without revising content manifests. See [settings.md](settings.md).
 
+## Milestone 10 Android reliability
+
+`ActiveHoursEngine`, `ReliabilitySupervisor`, `ReliabilityController`, and the accessibility return policy are independent of Compose playback UI. Boot recovery restores cached state. Watchdog escalation is bounded and persists safe mode without deleting configuration. Managed Kiosk is capability-confirmed through Android device policy and lock task. Optional Accessibility Control observes only foreground package transitions and applies a fixed excluded-package policy. Power Assist selects device-policy sleep, accessibility lock, or black-screen fallback; it never sends direct HDMI-CEC commands. Studio stores human-confirmed physical-TV results separately from player-reported Android capability. See [reliability-and-power.md](reliability-and-power.md).
+
 ## Milestone 9 player updates
 
 The `updates` domain owns a fixed GitHub Releases provider, Ed25519-signed release manifests, Android APK-signature verification, private persistent cache, deployment snapshots, and per-screen state. Update commands reuse PostgreSQL command delivery; APK bytes use a device-authenticated range endpoint and never enter content manifests. Success remains provisional until the updated player reconnects with the expected version code. See [player-updates.md](player-updates.md).
