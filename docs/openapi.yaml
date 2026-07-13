@@ -629,6 +629,34 @@ paths:
       operationId: websiteDiagnostics
       responses:
         { "200": { description: Safe categorized player website diagnostics } }
+  /api/v1/sources:
+    post:
+      operationId: createSource
+      description: Creates a validated built-in Website or YouTube Source.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SourceInput" }
+      responses:
+        "201": { description: Source created }
+        "422": { description: Provider configuration rejected }
+  /api/v1/sources/{id}:
+    patch:
+      operationId: updateSource
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SourceInput" }
+      responses:
+        "200": { description: Source updated and affected manifests revised }
+        "422": { description: Provider configuration rejected }
+  /api/v1/sources/{id}/duplicate:
+    post:
+      operationId: duplicateSource
+      responses:
+        "201": { description: Source duplicated }
   /api/v1/emergencies:
     get:
       summary: List emergency takeovers
@@ -987,7 +1015,27 @@ components:
       properties: { data: { $ref: "#/components/schemas/PlayerManifest" } }
     AssetType:
       type: string
-      enum: [image, video]
+      enum: [image, video, source]
+    SourceProvider:
+      type: string
+      enum: [website, youtube]
+    Source:
+      type: object
+      additionalProperties: false
+      required: [provider, configVersion, configuration]
+      properties:
+        provider: { $ref: "#/components/schemas/SourceProvider" }
+        configVersion: { type: integer, minimum: 1 }
+        configuration: { type: object }
+    SourceInput:
+      type: object
+      additionalProperties: false
+      required: [provider, name, configuration]
+      properties:
+        provider: { $ref: "#/components/schemas/SourceProvider" }
+        name: { type: string, minLength: 1, maxLength: 180 }
+        description: { type: string, maxLength: 2000 }
+        configuration: { type: object }
     AssetStatus:
       type: string
       enum:
@@ -1106,6 +1154,8 @@ components:
         variants:
           type: array
           items: { $ref: "#/components/schemas/AssetVariant" }
+        source: { $ref: "#/components/schemas/Source" }
+        playlistUsage: { type: integer, minimum: 0 }
     SetupRequest:
       type: object
       additionalProperties: false

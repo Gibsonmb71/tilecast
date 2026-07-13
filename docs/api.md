@@ -110,6 +110,12 @@ Website playlist items require `durationMs` and always use `deliveryPolicy: "str
 
 Website data clearing is the typed `clear_website_data` persistent player command. It is Owner/Administrator-only and CSRF protected.
 
+## Sources
+
+`POST /api/v1/sources` creates a Website or YouTube Source, `PATCH /api/v1/sources/{id}` edits its name and provider configuration, and `POST /api/v1/sources/{id}/duplicate` creates a reusable copy. A request contains a closed `provider` (`website` or `youtube`), name, optional description, and provider configuration object. Strict JSON decoding applies to both the request and provider configuration; unknown providers and fields are rejected.
+
+`GET /api/v1/assets` returns Sources with normal Content results. Use `type=source` for all Sources or `provider=website|youtube` for one provider. Existing Website assets are migrated in place, keep their asset IDs and playlist relationships, and continue to work through the compatibility Website routes. Manifest v5 projects relevant provider configurations into `sources`; it never sends unrelated Sources.
+
 ## Emergency takeover and commands
 
 Dashboard routes include `GET/POST /emergencies`, `GET /emergencies/{id}`, `POST /emergencies/{id}/cancel`, `GET/POST /screens/{id}/commands`, and command cancellation. Device-authenticated players use `GET /player/commands`, `POST /player/commands/{id}/acknowledge`, and `POST /player/commands/{id}/result`. Commands are typed, bounded, expiring, and scoped to the authenticated screen. The former one-off website clearing route is replaced by `clear_website_data`.

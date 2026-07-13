@@ -20,6 +20,7 @@ import type {
   SchedulePreview,
   WebsiteInput,
   WebsiteDiagnostics,
+  SourceInput,
   PlayerCommand,
   EmergencyTakeover,
   SettingsDocument,
@@ -371,6 +372,23 @@ export const api = {
     }),
   websiteDiagnostics: (id: string) =>
     request<WebsiteDiagnostics>(`/assets/${id}/website/diagnostics`),
+  createSource: (input: SourceInput, csrfToken: string) =>
+    request<Asset>("/sources", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  updateSource: (id: string, input: SourceInput, csrfToken: string) =>
+    request<Asset>(`/sources/${id}`, {
+      method: "PATCH",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  duplicateSource: (id: string, csrfToken: string) =>
+    request<Asset>(`/sources/${id}/duplicate`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
   retryAsset: (id: string, csrfToken: string) =>
     request<Asset>(`/assets/${id}/retry`, {
       method: "POST",

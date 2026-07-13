@@ -171,6 +171,10 @@ type Heartbeat struct {
 	WebsiteCurrentHost            string     `json:"websiteCurrentHost,omitempty"`
 	WebsiteFallbackShown          *bool      `json:"websiteFallbackShown,omitempty"`
 	WebsiteRendererRecoveryCount  *int       `json:"websiteRendererRecoveryCount,omitempty"`
+	CurrentSourceID               *uuid.UUID `json:"currentSourceId,omitempty"`
+	SourceProvider                string     `json:"sourceProvider,omitempty"`
+	SourceState                   string     `json:"sourceState,omitempty"`
+	SourceError                   string     `json:"sourceError,omitempty"`
 	ActiveEmergencyID             *uuid.UUID `json:"activeEmergencyId,omitempty"`
 	EmergencyState                string     `json:"emergencyState,omitempty"`
 	EmergencyPreparationProgress  *int       `json:"emergencyPreparationProgress,omitempty"`

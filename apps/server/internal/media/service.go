@@ -321,12 +321,19 @@ func (s *Service) GetAsset(ctx context.Context, id uuid.UUID) (Asset, error) {
 	if err != nil {
 		return Asset{}, err
 	}
-	if asset.Type == "website" {
-		asset.Website, err = s.loadWebsite(ctx, id)
+	if asset.Type == "source" {
+		asset.Source, err = s.loadSource(ctx, id)
 		if err != nil {
 			return Asset{}, err
 		}
+		if asset.Source != nil && asset.Source.Provider == "website" {
+			asset.Website, err = s.loadWebsite(ctx, id)
+			if err != nil {
+				return Asset{}, err
+			}
+		}
 	}
+	_ = s.db.QueryRow(ctx, `SELECT count(DISTINCT playlist_id) FROM playlist_items WHERE asset_id=$1`, id).Scan(&asset.PlaylistUsage)
 	for _, v := range asset.Variants {
 		if v.Kind == "thumbnail" || v.Kind == "poster" {
 			url := "/api/v1/assets/" + id.String() + "/thumbnail"
@@ -407,7 +414,14 @@ func (s *Service) ListAssets(ctx context.Context, o ListOptions) (ListResult, er
 		add("a.name ILIKE '%%' || $%d || '%%'", q)
 	}
 	if o.Type != "" {
-		add("a.type=$%d", o.Type)
+		if o.Type == "media" {
+			where = append(where, "a.type IN ('image','video')")
+		} else {
+			add("a.type=$%d", o.Type)
+		}
+	}
+	if o.SourceProvider != "" {
+		add("EXISTS(SELECT 1 FROM sources sf WHERE sf.asset_id=a.id AND sf.provider=$%d)", o.SourceProvider)
 	}
 	if o.Status != "" {
 		add("a.processing_status=$%d", o.Status)
@@ -429,6 +443,19 @@ func (s *Service) ListAssets(ctx context.Context, o ListOptions) (ListResult, er
 		if err != nil {
 			return ListResult{}, err
 		}
+		if a.Type == "source" {
+			a.Source, err = s.loadSource(ctx, a.ID)
+			if err != nil {
+				return ListResult{}, err
+			}
+			if a.Source != nil && a.Source.Provider == "website" {
+				a.Website, err = s.loadWebsite(ctx, a.ID)
+				if err != nil {
+					return ListResult{}, err
+				}
+			}
+		}
+		_ = s.db.QueryRow(ctx, `SELECT count(DISTINCT playlist_id) FROM playlist_items WHERE asset_id=$1`, a.ID).Scan(&a.PlaylistUsage)
 		items = append(items, a)
 	}
 	return ListResult{Items: items, Total: total, Page: o.Page, PageSize: o.PageSize}, rows.Err()
@@ -498,7 +525,7 @@ func (s *Service) DeleteAsset(ctx context.Context, id, userID uuid.UUID) error {
 	}
 	defer tx.Rollback(ctx)
 	var inUse bool
-	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM playlist_items WHERE asset_id=$1) OR EXISTS(SELECT 1 FROM website_assets WHERE fallback_image_asset_id=$1) OR EXISTS(SELECT 1 FROM organization_runtime_settings WHERE settings->>'branding.logo_asset_id'=$1::text OR settings->>'branding.icon_asset_id'=$1::text)`, id).Scan(&inUse); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM playlist_items WHERE asset_id=$1) OR EXISTS(SELECT 1 FROM website_assets WHERE fallback_image_asset_id=$1) OR EXISTS(SELECT 1 FROM sources JOIN assets source_asset ON source_asset.id=sources.asset_id AND source_asset.deleted_at IS NULL WHERE sources.configuration->>'fallbackImageAssetId'=$1::text) OR EXISTS(SELECT 1 FROM organization_runtime_settings WHERE settings->>'branding.logo_asset_id'=$1::text OR settings->>'branding.icon_asset_id'=$1::text)`, id).Scan(&inUse); err != nil {
 		return err
 	}
 	if inUse {
@@ -524,8 +551,11 @@ func (s *Service) DeleteAsset(ctx context.Context, id, userID uuid.UUID) error {
 		}
 		return nil
 	}
-	if assetType == "website" {
+	if assetType == "source" {
 		if _, err = tx.Exec(ctx, `DELETE FROM website_assets WHERE asset_id=$1`, id); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(ctx, `DELETE FROM sources WHERE asset_id=$1`, id); err != nil {
 			return err
 		}
 		if _, err = tx.Exec(ctx, `UPDATE assets SET processing_status='deleted' WHERE id=$1`, id); err != nil {
@@ -538,8 +568,8 @@ func (s *Service) DeleteAsset(ctx context.Context, id, userID uuid.UUID) error {
 		}
 	}
 	action := "media.asset_deleted"
-	if assetType == "website" {
-		action = "website.asset_deleted"
+	if assetType == "source" {
+		action = "source.deleted"
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)VALUES($1,$2,$3,'asset',$4)`, uuid.New(), userID, action, id.String())
 	if err != nil {

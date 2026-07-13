@@ -57,6 +57,12 @@ Website configuration is normalized in `website_assets`; no page data or credent
 
 The server validates URLs without fetching them, avoiding SSRF and network-topology assumptions. Top-level navigation uses an exact-host allowlist on the player. Subresource filtering is intentionally not claimed because Milestone 6 does not install a request-interception proxy.
 
+## Sources
+
+Sources are reusable dynamic Content items. The `sources` table stores a built-in provider name, a provider configuration version, and a validated JSON object; clients cannot invent provider names or arbitrary keys. Provider implementations own normalization, validation, manifest projection, Studio editing, and player rendering. Website is migrated into the Source model while retaining the existing website validation and WebView renderer. YouTube has a dedicated IFrame API renderer and does not pass through the generic Website renderer.
+
+Manifest v5 contains only Sources referenced by playlists relevant to the authenticated screen. Source items use stream delivery; fallback images continue through the verified media-variant preparation path. The provider boundary is internal—Tilecast does not load third-party provider code or expose a marketplace.
+
 ## Milestone 7 operations
 
 Emergency takeovers are separate lifecycle records rather than schedules. Manifest v4 references an emergency playlist and expiration only for affected screens. Persistent typed player commands use PostgreSQL as the delivery source of truth; WebSockets only announce availability. See [emergency-and-operations.md](emergency-and-operations.md).

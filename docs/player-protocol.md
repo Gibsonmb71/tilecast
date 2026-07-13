@@ -47,6 +47,12 @@ Manifest v3 adds `websites` and website playlist items. Website items have no me
 
 The player reports only website asset ID, state, timestamps, safe failure category, blocked-navigation count, origin host, fallback state, and renderer recovery count. Full URLs and query strings are excluded. Website clearing uses the general persistent command protocol.
 
+## Source playback
+
+Manifest schema v5 adds `sources`, each with an asset ID, name, closed provider name, configuration version, and validated provider configuration. Website Sources are adapted into the existing hardened WebView path. YouTube Sources use the YouTube IFrame API with the Tilecast server origin and an origin referrer, require no API key, and report safe states such as ready, playing, paused, ended, autoplay blocked, and player error.
+
+Source playlist items may run until the provider signals completion or for a fixed `durationMs`. Switching items disposes the provider renderer. A configured failure may show a verified fallback image, retain a safe placeholder, or advance to the next playlist item. Heartbeats report only Source ID, provider, safe state, and safe error code—not URLs or page contents.
+
 ## Emergency and command protocol
 
 Manifest v4 may contain one active emergency with its playlist and half-open activation/expiration interval. The player prepares it atomically, interrupts normal playback when ready, and re-evaluates schedules on restoration. `commands.available` prompts authenticated retrieval; acknowledgement and safe result endpoints make delivery persistent and idempotent. Emergency takeover overrides playback-disabled state, then returns to disabled after expiration.

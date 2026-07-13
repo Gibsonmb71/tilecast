@@ -7,6 +7,10 @@ import {
   Search,
   Upload,
   Globe2,
+  Plus,
+  Copy,
+  Trash2,
+  Youtube,
   X,
 } from "lucide-react";
 import { signalColors } from "@tilecast/design-tokens/values";
@@ -18,8 +22,18 @@ import {
   type DragEvent,
 } from "react";
 import { api, ApiError } from "../api/client";
-import type { Asset, AssetStatus, User, WebsiteInput } from "../api/types";
+import type {
+  Asset,
+  AssetStatus,
+  User,
+  WebsiteInput,
+  YouTubeConfig,
+} from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
+import {
+  SourceProviderGallery,
+  YouTubeSourceEditor,
+} from "../content/SourceEditors";
 
 type QueueItem = {
   localId: string;
@@ -86,7 +100,7 @@ export function ContentPage() {
   const csrf = auth.status?.csrfToken ?? "";
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
-  const [type, setType] = useState("");
+  const [contentFilter, setContentFilter] = useState("all");
   const [status, setStatus] = useState("");
   const [sort, setSort] = useState("updated");
   const [view, setView] = useState<"grid" | "list">("grid");
@@ -107,11 +121,19 @@ export function ContentPage() {
   });
   const [selected, setSelected] = useState<Asset>();
   const [websiteEditor, setWebsiteEditor] = useState(false);
+  const [youtubeEditor, setYouTubeEditor] = useState(false);
+  const [sourceGallery, setSourceGallery] = useState(false);
   const controllers = useRef(new Map<string, AbortController>());
   const fileInput = useRef<HTMLInputElement>(null);
   const params = new URLSearchParams({ page: "1", pageSize: "48", sort });
   if (search) params.set("search", search);
-  if (type) params.set("type", type);
+  if (contentFilter === "media") params.set("type", "media");
+  if (["image", "video", "source"].includes(contentFilter))
+    params.set("type", contentFilter);
+  if (["website", "youtube"].includes(contentFilter)) {
+    params.set("type", "source");
+    params.set("provider", contentFilter);
+  }
   if (status) params.set("status", status);
   const assets = useQuery({
     queryKey: ["assets", params.toString()],
@@ -262,24 +284,31 @@ export function ContentPage() {
     >
       <header className="page-heading">
         <div>
-          <h2>Media library</h2>
-          <p>Images, videos, and public websites available to playlists.</p>
+          <h2>Content library</h2>
+          <p>Media and reusable Sources available to playlists.</p>
         </div>
         {canManage && (
-          <span className="heading-actions">
-            <button
-              className="button button--quiet"
-              onClick={() => setWebsiteEditor(true)}
-            >
-              <Globe2 size={16} /> Add website
-            </button>
-            <button
-              className="button button--primary"
-              onClick={() => fileInput.current?.click()}
-            >
-              <Upload size={16} /> Upload media
-            </button>
-          </span>
+          <details className="content-add-menu">
+            <summary className="button button--primary">
+              <Plus size={16} /> Add content
+            </summary>
+            <div>
+              <button type="button" onClick={() => fileInput.current?.click()}>
+                <Upload size={16} />
+                <span>
+                  <strong>Upload media</strong>
+                  <small>Add images or videos</small>
+                </span>
+              </button>
+              <button type="button" onClick={() => setSourceGallery(true)}>
+                <Globe2 size={16} />
+                <span>
+                  <strong>Create source</strong>
+                  <small>Add dynamic content</small>
+                </span>
+              </button>
+            </div>
+          </details>
         )}
         <input
           ref={fileInput}
@@ -349,16 +378,28 @@ export function ContentPage() {
             placeholder="Search media"
           />
         </label>
-        <select
-          aria-label="Filter by type"
-          value={type}
-          onChange={(event) => setType(event.target.value)}
-        >
-          <option value="">All types</option>
-          <option value="image">Images</option>
-          <option value="video">Videos</option>
-          <option value="website">Websites</option>
-        </select>
+        <div className="content-type-filters" aria-label="Content type filters">
+          {(
+            [
+              ["all", "All"],
+              ["media", "Media"],
+              ["source", "Sources"],
+              ["image", "Images"],
+              ["video", "Videos"],
+              ["website", "Websites"],
+              ["youtube", "YouTube"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={contentFilter === value}
+              onClick={() => setContentFilter(value)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <select
           aria-label="Filter by status"
           value={status}
@@ -419,6 +460,22 @@ export function ContentPage() {
           items={assets.data?.items ?? []}
           view={view}
           onSelect={(asset) => void api.asset(asset.id).then(setSelected)}
+          canManage={canManage}
+          onDuplicate={(asset) =>
+            void api
+              .duplicateSource(asset.id, csrf)
+              .then(() =>
+                queryClient.invalidateQueries({ queryKey: ["assets"] }),
+              )
+          }
+          onDelete={(asset) => {
+            if (confirm(`Delete ${asset.name}?`))
+              void api
+                .deleteAsset(asset.id, csrf)
+                .then(() =>
+                  queryClient.invalidateQueries({ queryKey: ["assets"] }),
+                );
+          }}
         />
       )}
       {selected && (
@@ -441,6 +498,26 @@ export function ContentPage() {
             setWebsiteEditor(false);
             setSelected(asset);
             void queryClient.invalidateQueries({ queryKey: ["assets"] });
+          }}
+        />
+      )}
+      {youtubeEditor && (
+        <YouTubeSourceEditor
+          csrf={csrf}
+          onClose={() => setYouTubeEditor(false)}
+          onSaved={(asset) => {
+            setYouTubeEditor(false);
+            setSelected(asset);
+          }}
+        />
+      )}
+      {sourceGallery && (
+        <SourceProviderGallery
+          onClose={() => setSourceGallery(false)}
+          onChoose={(provider) => {
+            setSourceGallery(false);
+            if (provider === "website") setWebsiteEditor(true);
+            else setYouTubeEditor(true);
           }}
         />
       )}
@@ -483,47 +560,100 @@ export function AssetCollection({
   items,
   view,
   onSelect,
+  canManage = false,
+  onDuplicate,
+  onDelete,
 }: {
   items: Asset[];
   view: "grid" | "list";
   onSelect: (asset: Asset) => void;
+  canManage?: boolean;
+  onDuplicate?: (asset: Asset) => void;
+  onDelete?: (asset: Asset) => void;
 }) {
   return (
     <div className={`asset-collection asset-collection--${view}`}>
       {items.map((asset) => (
-        <button
-          className="asset-card"
-          key={asset.id}
-          onClick={() => onSelect(asset)}
-        >
-          <span className="asset-preview">
-            {asset.thumbnailUrl ? (
-              <img src={asset.thumbnailUrl} alt="" />
-            ) : asset.type === "video" ? (
-              <FileVideo size={28} />
-            ) : asset.type === "website" ? (
-              <Globe2 size={28} />
-            ) : (
-              <FileImage size={28} />
-            )}
-          </span>
-          <span className="asset-card__body">
-            <strong>{asset.name}</strong>
-            <small>
-              {asset.type === "video" && formatDuration(asset.durationSeconds)}
-              {asset.type === "website" && asset.website?.displayUrl}
-              {asset.width && asset.height
-                ? `${asset.type === "video" ? " · " : ""}${asset.width} × ${asset.height}`
-                : ""}
-            </small>
-            <small>{formatBytes(asset.originalSize)}</small>
-          </span>
-          <span
-            className={`media-status media-status--${asset.processingStatus}`}
+        <article className="asset-card" key={asset.id}>
+          <button
+            className="asset-card__open"
+            onClick={() => onSelect(asset)}
+            aria-label={`Edit ${asset.name}`}
           >
-            {statusLabel(asset.processingStatus)}
-          </span>
-        </button>
+            <span className="asset-preview">
+              {asset.source?.provider === "youtube" &&
+              typeof (asset.source.configuration as YouTubeConfig).videoId ===
+                "string" ? (
+                <img
+                  src={`https://i.ytimg.com/vi/${(asset.source.configuration as YouTubeConfig).videoId}/hqdefault.jpg`}
+                  alt=""
+                  referrerPolicy="origin"
+                />
+              ) : asset.thumbnailUrl ? (
+                <img src={asset.thumbnailUrl} alt="" />
+              ) : asset.type === "video" ? (
+                <FileVideo size={28} />
+              ) : asset.type === "source" ? (
+                asset.source?.provider === "youtube" ? (
+                  <Youtube size={28} />
+                ) : (
+                  <Globe2 size={28} />
+                )
+              ) : (
+                <FileImage size={28} />
+              )}
+            </span>
+            <span className="asset-card__body">
+              <strong>{asset.name}</strong>
+              <small>
+                {asset.type === "video" &&
+                  formatDuration(asset.durationSeconds)}
+                {asset.type === "source" &&
+                  (asset.source?.provider === "youtube"
+                    ? "YouTube"
+                    : asset.website?.displayUrl)}
+                {asset.width && asset.height
+                  ? `${asset.type === "video" ? " · " : ""}${asset.width} × ${asset.height}`
+                  : ""}
+              </small>
+              <small>{formatBytes(asset.originalSize)}</small>
+            </span>
+            <span
+              className={`media-status media-status--${asset.processingStatus}`}
+            >
+              {statusLabel(asset.processingStatus)}
+            </span>
+          </button>
+          {asset.type === "source" && (
+            <footer className="source-card-actions">
+              <span>
+                {asset.playlistUsage ?? 0} playlist
+                {asset.playlistUsage === 1 ? "" : "s"}
+              </span>
+              {canManage && (
+                <>
+                  <button type="button" onClick={() => onSelect(asset)}>
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onDuplicate?.(asset)}
+                    aria-label={`Duplicate ${asset.name}`}
+                  >
+                    <Copy size={14} /> Duplicate
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onDelete?.(asset)}
+                    aria-label={`Delete ${asset.name}`}
+                  >
+                    <Trash2 size={14} /> Delete
+                  </button>
+                </>
+              )}
+            </footer>
+          )}
+        </article>
       ))}
     </div>
   );
@@ -536,8 +666,18 @@ function AssetDetails(props: {
   onClose: () => void;
   onChanged: (asset: Asset) => void;
 }) {
-  return props.asset.type === "website" ? (
+  return props.asset.type === "source" &&
+    props.asset.source?.provider === "website" ? (
     <WebsiteEditor
+      asset={props.asset}
+      csrf={props.csrf}
+      readOnly={!props.canManage}
+      onClose={props.onClose}
+      onSaved={props.onChanged}
+    />
+  ) : props.asset.type === "source" &&
+    props.asset.source?.provider === "youtube" ? (
+    <YouTubeSourceEditor
       asset={props.asset}
       csrf={props.csrf}
       readOnly={!props.canManage}
@@ -751,10 +891,18 @@ function WebsiteEditor({
     enabled: !!asset,
   });
   const save = useMutation({
-    mutationFn: () =>
-      asset
-        ? api.updateWebsite(asset.id, input, csrf)
-        : api.createWebsite(input, csrf),
+    mutationFn: () => {
+      const { name, description, ...configuration } = input;
+      const sourceInput = {
+        provider: "website" as const,
+        name,
+        description,
+        configuration,
+      };
+      return asset
+        ? api.updateSource(asset.id, sourceInput, csrf)
+        : api.createSource(sourceInput, csrf);
+    },
     onSuccess: (value) => {
       setDirty(false);
       onSaved(value);
@@ -779,7 +927,7 @@ function WebsiteEditor({
       >
         <header>
           <div>
-            <h2>{asset ? "Website settings" : "Add website"}</h2>
+            <h2>{asset ? "Edit Website source" : "Create Website source"}</h2>
             <p>
               Fullscreen public website content. Duration is configured in the
               playlist.

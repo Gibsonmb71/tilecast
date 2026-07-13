@@ -1,6 +1,7 @@
 package playlists
 
 import (
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -40,6 +41,7 @@ type Item struct {
 	DeliveryPolicy       string     `json:"deliveryPolicy"`
 	AssetName            string     `json:"assetName"`
 	AssetType            string     `json:"assetType"`
+	SourceProvider       string     `json:"sourceProvider,omitempty"`
 	AssetStatus          string     `json:"assetStatus"`
 	AssetDurationSeconds *float64   `json:"assetDurationSeconds,omitempty"`
 	ThumbnailURL         string     `json:"thumbnailUrl"`
@@ -143,7 +145,15 @@ type Manifest struct {
 	PrefetchHorizonDays    int                `json:"prefetchHorizonDays"`
 	ActivationGraceSeconds int                `json:"activationGraceSeconds"`
 	Websites               []ManifestWebsite  `json:"websites"`
+	Sources                []ManifestSource   `json:"sources"`
 	Emergency              *ManifestEmergency `json:"emergency,omitempty"`
+}
+type ManifestSource struct {
+	AssetID       uuid.UUID       `json:"assetId"`
+	Name          string          `json:"name"`
+	Provider      string          `json:"provider"`
+	ConfigVersion int             `json:"configVersion"`
+	Configuration json.RawMessage `json:"configuration"`
 }
 type ManifestEmergency struct {
 	ID          uuid.UUID `json:"id"`
@@ -248,6 +258,10 @@ type PlayerStatus struct {
 	WebsiteCurrentHost            string     `json:"websiteCurrentHost,omitempty"`
 	WebsiteFallbackShown          *bool      `json:"websiteFallbackShown,omitempty"`
 	WebsiteRendererRecoveryCount  *int       `json:"websiteRendererRecoveryCount,omitempty"`
+	CurrentSourceID               *uuid.UUID `json:"currentSourceId,omitempty"`
+	SourceProvider                string     `json:"sourceProvider,omitempty"`
+	SourceState                   string     `json:"sourceState,omitempty"`
+	SourceError                   string     `json:"sourceError,omitempty"`
 	ActiveEmergencyID             *uuid.UUID `json:"activeEmergencyId,omitempty"`
 	EmergencyState                string     `json:"emergencyState,omitempty"`
 	EmergencyPreparationProgress  *int       `json:"emergencyPreparationProgress,omitempty"`

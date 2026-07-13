@@ -2,6 +2,7 @@ package media
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -98,6 +99,40 @@ type Asset struct {
 	Variants           []Variant      `json:"variants"`
 	ThumbnailURL       *string        `json:"thumbnailUrl,omitempty"`
 	Website            *WebsiteConfig `json:"website,omitempty"`
+	Source             *Source        `json:"source,omitempty"`
+	PlaylistUsage      int            `json:"playlistUsage"`
+}
+
+type Source struct {
+	Provider      string          `json:"provider"`
+	ConfigVersion int             `json:"configVersion"`
+	Configuration json.RawMessage `json:"configuration"`
+}
+
+type SourceInput struct {
+	Provider      string          `json:"provider"`
+	Name          string          `json:"name"`
+	Description   string          `json:"description"`
+	Configuration json.RawMessage `json:"configuration"`
+}
+
+type YouTubeConfig struct {
+	URL                  string     `json:"url"`
+	Kind                 string     `json:"kind"`
+	VideoID              string     `json:"videoId,omitempty"`
+	PlaylistID           string     `json:"playlistId,omitempty"`
+	StartSeconds         int        `json:"startSeconds"`
+	EndSeconds           *int       `json:"endSeconds,omitempty"`
+	Loop                 bool       `json:"loop"`
+	Muted                bool       `json:"muted"`
+	Volume               int        `json:"volume"`
+	Captions             bool       `json:"captions"`
+	CaptionLanguage      string     `json:"captionLanguage,omitempty"`
+	Controls             bool       `json:"controls"`
+	FailureBehavior      string     `json:"failureBehavior"`
+	FallbackImageAssetID *uuid.UUID `json:"fallbackImageAssetId,omitempty"`
+	PlaylistPlaybackMode string     `json:"playlistPlaybackMode"`
+	FixedDurationSeconds *int       `json:"fixedDurationSeconds,omitempty"`
 }
 
 type WebsiteConfig struct {
@@ -185,8 +220,8 @@ type Upload struct {
 }
 
 type ListOptions struct {
-	Search, Type, Status, Sort string
-	Page, PageSize             int
+	Search, Type, SourceProvider, Status, Sort string
+	Page, PageSize                             int
 }
 type ListResult struct {
 	Items    []Asset `json:"items"`

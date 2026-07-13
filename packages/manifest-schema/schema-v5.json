@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tilecast.org/schemas/player-manifest-v5.json",
+  "title": "Tilecast Source-capable single-zone player manifest v5",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "manifestVersion",
+    "screenId",
+    "generatedAt",
+    "serverTime",
+    "mode",
+    "playlists",
+    "schedules",
+    "assets",
+    "websites",
+    "sources",
+    "prefetchHorizonDays",
+    "activationGraceSeconds"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 5 },
+    "manifestVersion": { "type": "integer", "minimum": 1 },
+    "screenId": { "type": "string", "format": "uuid" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "serverTime": { "type": "string", "format": "date-time" },
+    "mode": { "const": "single-zone" },
+    "playlist": { "$ref": "#/$defs/playlist" },
+    "directFallbackPlaylist": { "$ref": "#/$defs/playlist" },
+    "playlists": { "type": "array", "items": { "$ref": "#/$defs/playlist" } },
+    "schedules": {
+      "type": "array",
+      "items": { "$ref": "schema-v2.json#/$defs/schedule" }
+    },
+    "assets": {
+      "type": "array",
+      "items": { "$ref": "schema-v1.json#/$defs/asset" }
+    },
+    "websites": {
+      "type": "array",
+      "items": { "$ref": "schema-v4.json#/$defs/website" }
+    },
+    "sources": { "type": "array", "items": { "$ref": "#/$defs/source" } },
+    "emergency": { "$ref": "schema-v4.json#/$defs/emergency" },
+    "prefetchHorizonDays": { "type": "integer", "minimum": 1, "maximum": 90 },
+    "activationGraceSeconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3600
+    }
+  },
+  "$defs": {
+    "playlist": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "revision", "name", "items"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "name": { "type": "string" },
+        "items": { "type": "array", "items": { "$ref": "#/$defs/item" } }
+      }
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "assetId",
+        "assetType",
+        "fitMode",
+        "transition",
+        "audioEnabled",
+        "volume",
+        "deliveryPolicy"
+      ],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "assetId": { "type": "string", "format": "uuid" },
+        "assetType": { "enum": ["image", "video", "source"] },
+        "variantId": { "type": "string", "format": "uuid" },
+        "durationMs": { "type": "integer", "minimum": 1 },
+        "fitMode": { "enum": ["contain", "cover", "stretch"] },
+        "transition": { "enum": ["none", "fade"] },
+        "audioEnabled": { "type": "boolean" },
+        "volume": { "type": "number", "minimum": 0, "maximum": 1 },
+        "videoStartOffsetMs": { "type": "integer", "minimum": 0 },
+        "videoEndOffsetMs": { "type": "integer", "minimum": 1 },
+        "deliveryPolicy": { "const": "stream" }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assetId",
+        "name",
+        "provider",
+        "configVersion",
+        "configuration"
+      ],
+      "properties": {
+        "assetId": { "type": "string", "format": "uuid" },
+        "name": { "type": "string" },
+        "provider": { "enum": ["website", "youtube"] },
+        "configVersion": { "type": "integer", "minimum": 1 },
+        "configuration": { "type": "object" }
+      }
+    }
+  }
+}

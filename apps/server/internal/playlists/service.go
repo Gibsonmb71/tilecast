@@ -108,7 +108,7 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (Playlist, error) {
 	if err != nil {
 		return Playlist{}, err
 	}
-	rows, err := s.db.Query(ctx, `SELECT i.id,i.asset_id,i.position,i.duration_ms,i.fit_mode,i.transition,i.audio_enabled,i.volume,i.video_start_offset_ms,i.video_end_offset_ms,i.delivery_policy,a.name,a.type,a.processing_status,a.duration_seconds,v.id,i.created_at,i.updated_at FROM playlist_items i JOIN assets a ON a.id=i.asset_id LEFT JOIN LATERAL(SELECT id FROM asset_variants WHERE asset_id=a.id AND deleted_at IS NULL AND player_compatible=TRUE ORDER BY CASE kind WHEN 'playback' THEN 0 WHEN 'original' THEN 1 ELSE 2 END LIMIT 1)v ON TRUE WHERE i.playlist_id=$1 ORDER BY i.position`, id)
+	rows, err := s.db.Query(ctx, `SELECT i.id,i.asset_id,i.position,i.duration_ms,i.fit_mode,i.transition,i.audio_enabled,i.volume,i.video_start_offset_ms,i.video_end_offset_ms,i.delivery_policy,a.name,a.type,COALESCE(s.provider,''),a.processing_status,a.duration_seconds,v.id,i.created_at,i.updated_at FROM playlist_items i JOIN assets a ON a.id=i.asset_id LEFT JOIN sources s ON s.asset_id=a.id LEFT JOIN LATERAL(SELECT id FROM asset_variants WHERE asset_id=a.id AND deleted_at IS NULL AND player_compatible=TRUE ORDER BY CASE kind WHEN 'playback' THEN 0 WHEN 'original' THEN 1 ELSE 2 END LIMIT 1)v ON TRUE WHERE i.playlist_id=$1 ORDER BY i.position`, id)
 	if err != nil {
 		return Playlist{}, err
 	}
@@ -117,11 +117,11 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (Playlist, error) {
 	p.Warnings = []string{}
 	for rows.Next() {
 		var item Item
-		if err := rows.Scan(&item.ID, &item.AssetID, &item.Position, &item.DurationMS, &item.FitMode, &item.Transition, &item.AudioEnabled, &item.Volume, &item.VideoStartOffsetMS, &item.VideoEndOffsetMS, &item.DeliveryPolicy, &item.AssetName, &item.AssetType, &item.AssetStatus, &item.AssetDurationSeconds, &item.VariantID, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.AssetID, &item.Position, &item.DurationMS, &item.FitMode, &item.Transition, &item.AudioEnabled, &item.Volume, &item.VideoStartOffsetMS, &item.VideoEndOffsetMS, &item.DeliveryPolicy, &item.AssetName, &item.AssetType, &item.SourceProvider, &item.AssetStatus, &item.AssetDurationSeconds, &item.VariantID, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			return Playlist{}, err
 		}
 		item.ThumbnailURL = "/api/v1/assets/" + item.AssetID.String() + "/thumbnail"
-		if item.AssetStatus != "ready" || (item.AssetType != "website" && item.VariantID == nil) {
+		if item.AssetStatus != "ready" || (item.AssetType != "source" && item.VariantID == nil) {
 			p.Warnings = append(p.Warnings, "Asset "+item.AssetName+" is no longer ready for playback.")
 		}
 		p.Items = append(p.Items, item)
@@ -217,6 +217,7 @@ func (s *Service) Delete(ctx context.Context, id, userID uuid.UUID) error {
 
 type assetInfo struct {
 	Type     string
+	Provider string
 	Duration *float64
 	Variant  *uuid.UUID
 }
@@ -254,7 +255,7 @@ func (s *Service) validateItem(ctx context.Context, q interface {
 		return input, assetInfo{}, errors.New("volume must be between 0 and 1")
 	}
 	var a assetInfo
-	err := q.QueryRow(ctx, `SELECT a.type,a.duration_seconds,v.id FROM assets a LEFT JOIN LATERAL(SELECT id FROM asset_variants WHERE asset_id=a.id AND deleted_at IS NULL AND player_compatible=TRUE ORDER BY CASE kind WHEN 'playback' THEN 0 ELSE 1 END LIMIT 1)v ON TRUE WHERE a.id=$1 AND a.deleted_at IS NULL AND a.processing_status='ready' AND (a.type='website' OR v.id IS NOT NULL)`, input.AssetID).Scan(&a.Type, &a.Duration, &a.Variant)
+	err := q.QueryRow(ctx, `SELECT a.type,COALESCE(s.provider,''),a.duration_seconds,v.id FROM assets a LEFT JOIN sources s ON s.asset_id=a.id LEFT JOIN LATERAL(SELECT id FROM asset_variants WHERE asset_id=a.id AND deleted_at IS NULL AND player_compatible=TRUE ORDER BY CASE kind WHEN 'playback' THEN 0 ELSE 1 END LIMIT 1)v ON TRUE WHERE a.id=$1 AND a.deleted_at IS NULL AND a.processing_status='ready' AND (a.type='source' OR v.id IS NOT NULL)`, input.AssetID).Scan(&a.Type, &a.Provider, &a.Duration, &a.Variant)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return input, a, ErrInvalidAsset
 	}
@@ -264,9 +265,11 @@ func (s *Service) validateItem(ctx context.Context, q interface {
 	if a.Type == "image" && (input.DurationMS == nil || *input.DurationMS <= 0) {
 		return input, a, errors.New("image durationMs must be positive")
 	}
-	if a.Type == "website" {
+	if a.Type == "source" {
 		if input.DurationMS == nil || *input.DurationMS <= 0 {
-			return input, a, errors.New("website durationMs must be positive")
+			if a.Provider == "website" {
+				return input, a, errors.New("website source durationMs must be positive")
+			}
 		}
 		input.DeliveryPolicy = "stream"
 		input.VideoStartOffsetMS = nil
@@ -632,7 +635,7 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 	if s.scheduling != nil {
 		prefetch, grace, _ = s.scheduling.Config()
 	}
-	manifest := Manifest{SchemaVersion: 4, ManifestVersion: assignment.ManifestVersion, ScreenID: screenID, GeneratedAt: changed, ServerTime: now, Mode: "single-zone", Assets: []ManifestAsset{}, Playlists: []ManifestPlaylist{}, Schedules: []ManifestSchedule{}, Websites: []ManifestWebsite{}, PrefetchHorizonDays: prefetch, ActivationGraceSeconds: grace}
+	manifest := Manifest{SchemaVersion: 5, ManifestVersion: assignment.ManifestVersion, ScreenID: screenID, GeneratedAt: changed, ServerTime: now, Mode: "single-zone", Assets: []ManifestAsset{}, Playlists: []ManifestPlaylist{}, Schedules: []ManifestSchedule{}, Websites: []ManifestWebsite{}, Sources: []ManifestSource{}, PrefetchHorizonDays: prefetch, ActivationGraceSeconds: grace}
 	playlistIDs := []uuid.UUID{}
 	if assignment.PlaylistID != nil {
 		playlistIDs = append(playlistIDs, *assignment.PlaylistID)
@@ -676,8 +679,49 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 		}
 		mp := ManifestPlaylist{ID: playlist.ID, Revision: playlist.Revision, Name: playlist.Name, Items: []ManifestItem{}}
 		for _, item := range playlist.Items {
-			if item.AssetStatus != "ready" || (item.AssetType != "website" && item.VariantID == nil) {
+			if item.AssetStatus != "ready" || (item.AssetType != "source" && item.VariantID == nil) {
 				return Manifest{}, "", fmt.Errorf("%w: playlist contains an unavailable asset", ErrConflict)
+			}
+			if item.AssetType == "source" {
+				var source ManifestSource
+				source.AssetID = item.AssetID
+				source.Name = item.AssetName
+				if err = s.db.QueryRow(ctx, `SELECT provider,config_version,configuration FROM sources WHERE asset_id=$1`, item.AssetID).Scan(&source.Provider, &source.ConfigVersion, &source.Configuration); err != nil {
+					return Manifest{}, "", err
+				}
+				var configuration map[string]any
+				if err = json.Unmarshal(source.Configuration, &configuration); err != nil {
+					return Manifest{}, "", err
+				}
+				if rawFallback, ok := configuration["fallbackImageAssetId"].(string); ok && rawFallback != "" {
+					fallbackID, parseErr := uuid.Parse(rawFallback)
+					if parseErr != nil {
+						return Manifest{}, "", fmt.Errorf("%w: source fallback image is invalid", ErrConflict)
+					}
+					var fallback ManifestAsset
+					err = s.db.QueryRow(ctx, `SELECT v.asset_id,v.id,v.mime_type,encode(v.sha256,'hex'),v.file_size,v.width,v.height,v.duration_seconds FROM asset_variants v WHERE v.asset_id=$1 AND v.deleted_at IS NULL AND v.player_compatible=TRUE ORDER BY CASE kind WHEN 'playback' THEN 0 WHEN 'original' THEN 1 ELSE 2 END LIMIT 1`, fallbackID).Scan(&fallback.AssetID, &fallback.VariantID, &fallback.MIMEType, &fallback.SHA256, &fallback.FileSize, &fallback.Width, &fallback.Height, &fallback.DurationSeconds)
+					if err != nil {
+						return Manifest{}, "", fmt.Errorf("%w: source fallback image unavailable", ErrConflict)
+					}
+					fallback.DownloadPath = "/api/v1/player/assets/" + fallback.AssetID.String() + "/variants/" + fallback.VariantID.String()
+					configuration["fallbackVariantId"] = fallback.VariantID.String()
+					if !seen[fallback.VariantID] {
+						manifest.Assets = append(manifest.Assets, fallback)
+						seen[fallback.VariantID] = true
+					}
+				}
+				source.Configuration, _ = json.Marshal(configuration)
+				foundSource := false
+				for _, existing := range manifest.Sources {
+					if existing.AssetID == source.AssetID {
+						foundSource = true
+					}
+				}
+				if !foundSource {
+					manifest.Sources = append(manifest.Sources, source)
+				}
+				mp.Items = append(mp.Items, ManifestItem{ID: item.ID, AssetID: item.AssetID, AssetType: "source", DurationMS: item.DurationMS, FitMode: item.FitMode, Transition: item.Transition, AudioEnabled: item.AudioEnabled, Volume: item.Volume, DeliveryPolicy: "stream"})
+				continue
 			}
 			if item.AssetType == "website" {
 				var website ManifestWebsite
@@ -780,8 +824,11 @@ func manifestETag(screenID uuid.UUID, version int64) string {
 }
 
 func (s *Service) ReportStatus(ctx context.Context, screenID uuid.UUID, status PlayerStatus) error {
-	if len(status.PlaybackState) > 80 || len(status.LastSyncError) > 500 || len(status.LastPlaybackError) > 500 || len(status.ScheduleEvaluationError) > 500 || len(status.WebsiteState) > 40 || len(status.WebsiteFailureCategory) > 80 || len(status.WebsiteCurrentHost) > 253 {
+	if len(status.PlaybackState) > 80 || len(status.LastSyncError) > 500 || len(status.LastPlaybackError) > 500 || len(status.ScheduleEvaluationError) > 500 || len(status.WebsiteState) > 40 || len(status.WebsiteFailureCategory) > 80 || len(status.WebsiteCurrentHost) > 253 || len(status.SourceState) > 40 || len(status.SourceError) > 120 {
 		return errors.New("player status is invalid")
+	}
+	if status.SourceProvider != "" && status.SourceProvider != "website" && status.SourceProvider != "youtube" {
+		return errors.New("player source status is invalid")
 	}
 	if status.SelectionSource != "" && status.SelectionSource != "emergency" && status.SelectionSource != "schedule" && status.SelectionSource != "direct_fallback" && status.SelectionSource != "none" {
 		return errors.New("player status is invalid")
@@ -817,6 +864,9 @@ func (s *Service) ReportStatus(ctx context.Context, screenID uuid.UUID, status P
 	}
 	if err == nil && status.WebsiteFailureCategory != "" {
 		_, err = s.db.Exec(ctx, `UPDATE screen_player_status SET website_failure_at=now() WHERE screen_id=$1`, screenID)
+	}
+	if err == nil {
+		_, err = s.db.Exec(ctx, `UPDATE screen_player_status SET current_source_id=$2,source_provider=NULLIF($3,''),source_state=NULLIF($4,''),source_error=NULLIF($5,'') WHERE screen_id=$1`, screenID, status.CurrentSourceID, status.SourceProvider, status.SourceState, status.SourceError)
 	}
 	if err == nil {
 		_, err = s.db.Exec(ctx, `UPDATE screen_player_status SET active_emergency_id=$2,emergency_state=NULLIF($3,''),emergency_preparation_progress=$4,playback_disabled=COALESCE($5,playback_disabled),last_command_id=COALESCE($6,last_command_id),last_command_state=COALESCE(NULLIF($7,''),last_command_state),last_command_result=COALESCE(NULLIF($8,''),last_command_result),last_command_completed_at=COALESCE($9,last_command_completed_at) WHERE screen_id=$1`, screenID, status.ActiveEmergencyID, status.EmergencyState, status.EmergencyPreparationProgress, status.PlaybackDisabled, status.LastCommandID, status.LastCommandState, status.LastCommandResult, status.LastCommandCompletedAt)

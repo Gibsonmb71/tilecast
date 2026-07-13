@@ -111,7 +111,7 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 	if err != nil || same.ManifestVersion != manifest.ManifestVersion || sameETag != etag {
 		t.Fatal("manifest read changed version or ETag")
 	}
-	if manifest.SchemaVersion != 4 || manifest.DirectFallbackPlaylist == nil || len(manifest.DirectFallbackPlaylist.Items) != 2 || len(manifest.Assets) != 2 {
+	if manifest.SchemaVersion != 5 || manifest.DirectFallbackPlaylist == nil || len(manifest.DirectFallbackPlaylist.Items) != 2 || len(manifest.Assets) != 2 {
 		t.Fatalf("manifest=%#v", manifest)
 	}
 	emergencyID := uuid.New()
@@ -183,11 +183,15 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 		t.Fatalf("empty manifest=%#v %v", empty, err)
 	}
 	websiteID := uuid.New()
-	_, err = pool.Exec(ctx, `INSERT INTO assets(id,organization_id,name,type,original_filename,detected_mime_type,sha256,original_size,processing_status,created_by)VALUES($1,$2,'Status website','website','','text/html',''::bytea,0,'ready',$3)`, websiteID, org, owner.User.ID)
+	_, err = pool.Exec(ctx, `INSERT INTO assets(id,organization_id,name,type,original_filename,detected_mime_type,sha256,original_size,processing_status,created_by)VALUES($1,$2,'Status website','source','','application/vnd.tilecast.source+json',''::bytea,0,'ready',$3)`, websiteID, org, owner.User.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, err = pool.Exec(ctx, `INSERT INTO website_assets(asset_id,url,display_url,allowed_hosts,failure_behavior,fallback_image_asset_id)VALUES($1,'https://example.com/status','https://example.com/status',ARRAY['example.com'],'fallback_image',$2)`, websiteID, imageID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = pool.Exec(ctx, `INSERT INTO sources(asset_id,provider,configuration)VALUES($1,'website',jsonb_build_object('url','https://example.com/status','displayUrl','https://example.com/status','allowedHosts',jsonb_build_array('example.com'),'javascriptEnabled',true,'domStorageEnabled',true,'cookiePolicy','first_party','reloadPolicy','on_each_activation','loadTimeoutSeconds',20,'zoomPercent',100,'scrollX',0,'scrollY',0,'customUserAgent','','backgroundColor','#0E141B','failureBehavior','fallback_image','fallbackImageAssetId',$2::text))`, websiteID, imageID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +208,7 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	webManifest, _, err := service.BuildManifest(ctx, screenID)
-	if err != nil || webManifest.SchemaVersion != 4 || len(webManifest.Websites) != 1 || webManifest.Websites[0].FallbackVariantID == nil || len(webManifest.Assets) != 1 {
+	if err != nil || webManifest.SchemaVersion != 5 || len(webManifest.Sources) != 1 || webManifest.Sources[0].Provider != "website" || len(webManifest.Assets) != 1 {
 		t.Fatalf("website manifest=%#v %v", webManifest, err)
 	}
 	if len(notifier.versions) < 3 {

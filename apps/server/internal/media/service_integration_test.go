@@ -121,7 +121,7 @@ func TestMediaUploadProcessingAndDeletionLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if website.Type != "website" || website.Website == nil || len(website.Variants) != 0 || website.Website.FallbackImageAssetID == nil {
+	if website.Type != "source" || website.Source == nil || website.Source.Provider != "website" || website.Website == nil || len(website.Variants) != 0 || website.Website.FallbackImageAssetID == nil {
 		t.Fatalf("website=%#v", website)
 	}
 	websiteInput.URL = "https://status.example.org/display"

@@ -188,7 +188,7 @@ func (s *Service) CreateWebsite(ctx context.Context, user uuid.UUID, in WebsiteI
 		return Asset{}, err
 	}
 	var count int
-	if err = s.db.QueryRow(ctx, `SELECT count(*) FROM assets WHERE type='website' AND deleted_at IS NULL`).Scan(&count); err != nil {
+	if err = s.db.QueryRow(ctx, `SELECT count(*) FROM sources s JOIN assets a ON a.id=s.asset_id WHERE s.provider='website' AND a.deleted_at IS NULL`).Scan(&count); err != nil {
 		return Asset{}, err
 	}
 	if count >= s.cfg.Website.MaxWebsites {
@@ -204,14 +204,18 @@ func (s *Service) CreateWebsite(ctx context.Context, user uuid.UUID, in WebsiteI
 		return Asset{}, err
 	}
 	id := uuid.New()
-	_, err = tx.Exec(ctx, `INSERT INTO assets(id,organization_id,name,description,type,original_filename,detected_mime_type,sha256,original_size,processing_status,created_by)VALUES($1,$2,$3,$4,'website','','text/html',''::bytea,0,'ready',$5)`, id, org, in.Name, in.Description, user)
+	_, err = tx.Exec(ctx, `INSERT INTO assets(id,organization_id,name,description,type,original_filename,detected_mime_type,sha256,original_size,processing_status,created_by)VALUES($1,$2,$3,$4,'source','','application/vnd.tilecast.source+json',''::bytea,0,'ready',$5)`, id, org, in.Name, in.Description, user)
 	if err != nil {
 		return Asset{}, err
 	}
 	if err = insertWebsite(ctx, tx, id, in); err != nil {
 		return Asset{}, err
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)VALUES($1,$2,'website.asset_created','asset',$3)`, uuid.New(), user, id.String())
+	configuration, _ := json.Marshal(in.WebsiteConfig)
+	if _, err = tx.Exec(ctx, `INSERT INTO sources(asset_id,provider,config_version,configuration) VALUES($1,'website',1,$2)`, id, configuration); err != nil {
+		return Asset{}, err
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)VALUES($1,$2,'source.created','source',$3)`, uuid.New(), user, id.String())
 	if err != nil {
 		return Asset{}, err
 	}
@@ -234,7 +238,7 @@ func (s *Service) UpdateWebsite(ctx context.Context, id, user uuid.UUID, in Webs
 		return Asset{}, err
 	}
 	defer tx.Rollback(ctx)
-	tag, err := tx.Exec(ctx, `UPDATE assets SET name=$2,description=$3,updated_at=now() WHERE id=$1 AND type='website' AND deleted_at IS NULL`, id, in.Name, in.Description)
+	tag, err := tx.Exec(ctx, `UPDATE assets SET name=$2,description=$3,updated_at=now() WHERE id=$1 AND type='source' AND deleted_at IS NULL`, id, in.Name, in.Description)
 	if err != nil {
 		return Asset{}, err
 	}
@@ -245,7 +249,11 @@ func (s *Service) UpdateWebsite(ctx context.Context, id, user uuid.UUID, in Webs
 	if err != nil {
 		return Asset{}, err
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)VALUES($1,$2,'website.asset_edited','asset',$3)`, uuid.New(), user, id.String())
+	configuration, _ := json.Marshal(in.WebsiteConfig)
+	if _, err = tx.Exec(ctx, `UPDATE sources SET configuration=$2,config_version=1,updated_at=now() WHERE asset_id=$1 AND provider='website'`, id, configuration); err != nil {
+		return Asset{}, err
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)VALUES($1,$2,'source.updated','source',$3)`, uuid.New(), user, id.String())
 	if err != nil {
 		return Asset{}, err
 	}
@@ -258,6 +266,16 @@ func (s *Service) UpdateWebsite(ctx context.Context, id, user uuid.UUID, in Webs
 	return s.GetAsset(ctx, id)
 }
 func (s *Service) loadWebsite(ctx context.Context, id uuid.UUID) (*WebsiteConfig, error) {
+	var configuration []byte
+	if err := s.db.QueryRow(ctx, `SELECT configuration FROM sources WHERE asset_id=$1 AND provider='website'`, id).Scan(&configuration); err == nil {
+		var website WebsiteConfig
+		if err = json.Unmarshal(configuration, &website); err != nil {
+			return nil, err
+		}
+		return &website, nil
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, err
+	}
 	var w WebsiteConfig
 	err := s.db.QueryRow(ctx, `SELECT url,display_url,allowed_hosts,javascript_enabled,dom_storage_enabled,cookie_policy,reload_policy,refresh_interval_seconds,load_timeout_seconds,zoom_percent,scroll_x,scroll_y,custom_user_agent,background_color,failure_behavior,fallback_image_asset_id,created_at,updated_at FROM website_assets WHERE asset_id=$1`, id).Scan(&w.URL, &w.DisplayURL, &w.AllowedHosts, &w.JavaScriptEnabled, &w.DOMStorageEnabled, &w.CookiePolicy, &w.ReloadPolicy, &w.RefreshIntervalSeconds, &w.LoadTimeoutSeconds, &w.ZoomPercent, &w.ScrollX, &w.ScrollY, &w.CustomUserAgent, &w.BackgroundColor, &w.FailureBehavior, &w.FallbackImageAssetID, &w.CreatedAt, &w.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {

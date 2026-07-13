@@ -74,7 +74,8 @@ export type PlaylistItem = {
   videoEndOffsetMs?: number;
   deliveryPolicy: "download" | "stream" | "automatic";
   assetName: string;
-  assetType: "image" | "video" | "website";
+  assetType: "image" | "video" | "source" | "website";
+  sourceProvider?: SourceProvider;
   assetStatus: AssetStatus;
   assetDurationSeconds?: number;
   thumbnailUrl: string;
@@ -450,7 +451,7 @@ export type Asset = {
   id: string;
   name: string;
   description: string;
-  type: "image" | "video" | "website";
+  type: "image" | "video" | "source";
   originalFilename: string;
   declaredMimeType: string;
   detectedMimeType: string;
@@ -474,6 +475,20 @@ export type Asset = {
   variants: AssetVariant[];
   thumbnailUrl?: string;
   website?: WebsiteConfig;
+  source?: Source;
+  playlistUsage?: number;
+};
+export type SourceProvider = "website" | "youtube";
+export type Source = {
+  provider: SourceProvider;
+  configVersion: number;
+  configuration: WebsiteConfig | YouTubeConfig;
+};
+export type SourceInput = {
+  provider: SourceProvider;
+  name: string;
+  description: string;
+  configuration: WebsiteConfigInput | YouTubeConfig;
 };
 export type WebsiteConfig = {
   url: string;
@@ -499,6 +514,28 @@ export type WebsiteInput = { name: string; description: string } & Omit<
   WebsiteConfig,
   "displayUrl" | "createdAt" | "updatedAt"
 >;
+export type WebsiteConfigInput = Omit<
+  WebsiteConfig,
+  "displayUrl" | "createdAt" | "updatedAt"
+>;
+export type YouTubeConfig = {
+  url: string;
+  kind?: "video" | "playlist";
+  videoId?: string;
+  playlistId?: string;
+  startSeconds: number;
+  endSeconds?: number;
+  loop: boolean;
+  muted: boolean;
+  volume: number;
+  captions: boolean;
+  captionLanguage: string;
+  controls: boolean;
+  failureBehavior: "placeholder" | "fallback_image" | "skip";
+  fallbackImageAssetId?: string;
+  playlistPlaybackMode: "until_end" | "fixed_duration";
+  fixedDurationSeconds?: number;
+};
 export type WebsiteDiagnostics = {
   assetId: string;
   configuredUrl: string;

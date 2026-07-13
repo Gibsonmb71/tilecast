@@ -3,6 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Asset, User } from "../api/types";
+import { SourceProviderGallery } from "../content/SourceEditors";
 import {
   AssetCollection,
   canManageContent,
@@ -84,5 +85,14 @@ describe("content library", () => {
     expect(statusLabel("inspecting")).toBe("Inspecting");
     expect(statusLabel("processing")).toBe("Processing");
     expect(statusLabel("failed")).toBe("Failed");
+  });
+
+  it("offers the built-in Website and YouTube Source providers", () => {
+    const choose = vi.fn();
+    render(<SourceProviderGallery onChoose={choose} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /YouTube/ }));
+    expect(choose).toHaveBeenCalledWith("youtube");
+    expect(screen.getByText(/Display a website/)).toBeInTheDocument();
+    expect(screen.getByText(/without an API key/)).toBeInTheDocument();
   });
 });
