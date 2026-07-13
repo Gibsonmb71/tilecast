@@ -150,8 +150,28 @@ paths:
             required: true,
             schema: { type: string, format: uuid },
           }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, location, description]
+              properties:
+                name: { type: string, minLength: 2, maxLength: 120 }
+                location: { type: string, maxLength: 240 }
+                description: { type: string, maxLength: 1000 }
+                replaceExistingCredential:
+                  type: boolean
+                  default: false
+                  description: Explicitly authorizes credential rotation after successful enrollment.
       responses:
         "200": { description: Screen approved }
+        "409":
+          {
+            description: Pairing recovery confirmation required or pairing state conflict,
+          }
   /api/v1/screens/pairing/{id}/reject:
     post:
       operationId: rejectPairing

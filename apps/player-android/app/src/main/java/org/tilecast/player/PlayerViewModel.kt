@@ -35,6 +35,7 @@ import org.tilecast.player.network.DeviceMetadata
 import org.tilecast.player.network.HeartbeatRequest
 import org.tilecast.player.network.LanDiscovery
 import org.tilecast.player.network.ServerIdentity
+import org.tilecast.player.network.PairingSession
 import org.tilecast.player.network.TilecastApi
 import org.tilecast.player.security.CredentialStore
 import org.tilecast.player.security.KeystoreCredentialStore
@@ -156,7 +157,14 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             selectedIdentity = identity
             selectedUrl = ServerUrlPolicy.normalize(saved.serverUrl).getOrThrow()
             val credential = storedCredential
-            if (credential != null && saved.screenName != null) connectPaired(saved, credential) else emit(PlayerEvent.IdentityConfirmed(selectedUrl!!, identity))
+            if (credential != null && saved.screenName != null) connectPaired(saved, credential)
+            else if (saved.pairingSessionId != null && saved.pairingPollSecret != null && saved.pairingCode != null && saved.pairingExpiresAt != null && Instant.parse(saved.pairingExpiresAt).isAfter(Instant.now())) {
+                val session=PairingSession(saved.pairingSessionId,saved.pairingCode,saved.pairingPollSecret,saved.pairingExpiresAt,Instant.now().toString(),saved.pairingPollingIntervalSeconds?:3,"",saved.organizationName?:identity.organizationName)
+                emit(PlayerEvent.IdentityConfirmed(selectedUrl!!,identity));emit(PlayerEvent.PairingCreated(saved.serverUrl,identity.organizationName,session));pollPairing(session.id,session.pollSecret,session.pollingIntervalSeconds)
+            } else {
+                if(saved.pairingSessionId!=null)current=configuration.clearPairingSession(saved)
+                emit(PlayerEvent.IdentityConfirmed(selectedUrl!!, identity))
+            }
         } catch (error: Exception) { emit(PlayerEvent.Failed(error.message ?: "Could not reach the Tilecast server")) }
     }
 
@@ -187,7 +195,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         emit(PlayerEvent.RequestPairing)
         try {
             current = configuration.saveServer(saved, url.value, identity.installationId, identity.organizationName)
+            val persisted=current!!
+            if(persisted.pairingSessionId!=null&&persisted.pairingPollSecret!=null&&persisted.pairingCode!=null&&persisted.pairingExpiresAt!=null&&Instant.parse(persisted.pairingExpiresAt).isAfter(Instant.now())){
+                val existing=PairingSession(persisted.pairingSessionId,persisted.pairingCode,persisted.pairingPollSecret,persisted.pairingExpiresAt,Instant.now().toString(),persisted.pairingPollingIntervalSeconds?:3,"",identity.organizationName)
+                emit(PlayerEvent.PairingCreated(url.value,identity.organizationName,existing));pollPairing(existing.id,existing.pollSecret,existing.pollingIntervalSeconds);return@launch
+            }
             val session = api.createPairing(url.value, identity.installationId, deviceMetadata(saved.playerInstallationId))
+            current=configuration.savePairingSession(current!!,session)
             emit(PlayerEvent.PairingCreated(url.value, identity.organizationName, session))
             pollPairing(session.id, session.pollSecret, session.pollingIntervalSeconds)
         } catch (error: Exception) { emit(PlayerEvent.Failed(error.message ?: "Pairing request failed")) }
@@ -202,7 +216,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 when (result.status) {
                     "pending", "approved" -> continue
                     "rejected" -> { emit(PlayerEvent.Failed(result.failureReason ?: "The pairing request was rejected")); return }
-                    "expired", "cancelled" -> { emit(PlayerEvent.Failed("The pairing code expired. Request a new code.")); return }
+                    "expired", "cancelled" -> { current?.let{current=configuration.clearPairingSession(it)};emit(PlayerEvent.Failed("The pairing code expired. Request a new code.")); return }
                     "claimed" -> {
                         val token = result.enrollmentToken ?: return
                         emit(PlayerEvent.EnrollmentStarted)
@@ -227,7 +241,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         try {
             api.heartbeat(url, credential, heartbeat())
         } catch (error: ApiException) {
-            if (error.code == "device_credential_revoked") { revokeLocally(screenName); return }
+            if (error.code == "device_credential_revoked" || error.code == "device_credential_invalid") { revokeLocally(screenName); return }
             if (error.code == "screen_disabled") { emit(PlayerEvent.Disconnected(screenName, "This screen is disabled in Tilecast Studio")); return }
             if (error.status in 400..499) { emit(PlayerEvent.Failed(error.message)); return }
         } catch (_: Exception) { }
@@ -292,7 +306,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     private suspend fun verifyAfterAuthFailure(url: String, name: String, credential: String) {
         try { api.heartbeat(url, credential, heartbeat()); scheduleReconnect(url, name, credential, 1, "Connection interrupted") }
-        catch (error: ApiException) { if (error.code == "device_credential_revoked") revokeLocally(name) else emit(PlayerEvent.Disconnected(name, error.message)) }
+        catch (error: ApiException) { if (error.code == "device_credential_revoked" || error.code == "device_credential_invalid") revokeLocally(name) else emit(PlayerEvent.Disconnected(name, error.message)) }
     }
 
     private suspend fun revokeLocally(screenName: String?) { socket?.cancel(); credentials.clear(); configuration.clearPairing(); emit(PlayerEvent.Revoked(screenName)) }

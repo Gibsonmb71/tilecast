@@ -51,6 +51,18 @@ const approvalSchema = z.object({
 });
 type CodeForm = z.infer<typeof codeSchema>;
 type ApprovalForm = z.infer<typeof approvalSchema>;
+export const pairingApprovalPayload = (
+  request: PairingRequest,
+  values: ApprovalForm,
+) => ({
+  ...values,
+  replaceExistingCredential:
+    request.previouslyPaired && request.hasActiveCredential,
+});
+export const pairingApprovalLabel = (request: PairingRequest) =>
+  request.previouslyPaired && request.hasActiveCredential
+    ? "Repair and replace credential"
+    : "Approve and pair";
 
 const statusContent: Record<
   ScreenStatus,
@@ -532,7 +544,9 @@ export function PairScreenPage() {
     return (
       <ApprovalPanel
         request={request}
-        onDone={() => void navigate("/screens")}
+        onDone={(screenId) =>
+          void navigate(screenId ? `/screens/${screenId}` : "/screens")
+        }
       />
     );
   return (
@@ -585,24 +599,42 @@ function ApprovalPanel({
   onDone,
 }: {
   request: PairingRequest;
-  onDone: () => void;
+  onDone: (screenId?: string) => void;
 }) {
   const auth = useAuth();
   const queryClient = useQueryClient();
   const form = useForm<ApprovalForm>({
     resolver: zodResolver(approvalSchema),
     defaultValues: {
-      name: `${request.metadata.manufacturer} ${request.metadata.model}`,
+      name:
+        request.existingScreenName ??
+        `${request.metadata.manufacturer} ${request.metadata.model}`,
       location: "",
       description: "",
     },
   });
   const approve = useMutation({
-    mutationFn: (values: ApprovalForm) =>
-      api.approvePairing(request.id, values, auth.status?.csrfToken ?? ""),
-    onSuccess: async () => {
+    mutationFn: (values: ApprovalForm) => {
+      const repair = request.previouslyPaired && request.hasActiveCredential;
+      if (
+        repair &&
+        !window.confirm(
+          `Repair pairing for “${request.existingScreenName}” and replace its credential after this player enrolls?`,
+        )
+      )
+        throw new Error("Pairing repair was cancelled.");
+      return api.approvePairing(
+        request.id,
+        pairingApprovalPayload(request, values),
+        auth.status?.csrfToken ?? "",
+      );
+    },
+    onSuccess: async (screen) => {
       await queryClient.invalidateQueries({ queryKey: ["screens"] });
-      onDone();
+      await queryClient.invalidateQueries({
+        queryKey: ["screens", "pairing", "pending"],
+      });
+      onDone(screen.id);
     },
   });
   const reject = useMutation({
@@ -612,7 +644,7 @@ function ApprovalPanel({
         "Rejected by administrator",
         auth.status?.csrfToken ?? "",
       ),
-    onSuccess: onDone,
+    onSuccess: () => onDone(),
   });
   const metadata = request.metadata;
   return (
@@ -672,6 +704,18 @@ function ApprovalPanel({
           </div>
         )}
       </dl>
+      {request.previouslyPaired && (
+        <div className="notice notice--warning" role="status">
+          <strong>
+            This device was previously paired as “{request.existingScreenName}.”
+          </strong>
+          <p>
+            Repairing the pairing will preserve this screen and its content
+            assignments. The previous device credential will be revoked only
+            after this player completes enrollment.
+          </p>
+        </div>
+      )}
       {(approve.error || reject.error) && (
         <div className="notice notice--error">
           {(approve.error ?? reject.error)?.message}
@@ -703,16 +747,16 @@ function ApprovalPanel({
             type="button"
             className="button button--danger-quiet"
             onClick={() => reject.mutate()}
-            disabled={reject.isPending}
+            disabled={reject.isPending || approve.isPending}
           >
             Reject
           </button>
           <button
             type="submit"
             className="button button--primary"
-            disabled={approve.isPending}
+            disabled={approve.isPending || reject.isPending}
           >
-            {approve.isPending ? "Approving…" : "Approve and pair"}
+            {approve.isPending ? "Approving…" : pairingApprovalLabel(request)}
           </button>
         </div>
       </form>

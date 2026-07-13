@@ -14,6 +14,8 @@
 - **Identity changed:** confirm the address points to the intended installation, then reset the saved connection. Tilecast will not send the old credential to a different installation ID.
 - **Screen is disabled:** enable it in Screens. Pairing remains intact.
 - **Pairing revoked:** choose Pair again on the TV and approve a new request.
+- **Pairing recovery required:** the player installation matches an existing screen with an active credential. Review the existing screen name and select **Repair and replace credential**. The old credential remains valid until this player successfully enrolls, and all content relationships stay on the original screen record.
+- **Unsupported request field:** update Studio and Player together. Strict JSON errors now name the mismatched field; pairing and enrollment request bodies are never written to logs.
 - **Tunnel connection fails:** enter the public HTTPS hostname manually and verify the Tunnel routes to `http://server:8080`.
 
 ## Media

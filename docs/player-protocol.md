@@ -15,6 +15,12 @@ The bootstrap identity endpoint is public and returns only the product identifie
 
 Pairing sessions expire after ten minutes. Codes use an unambiguous alphabet and are compared through indexed SHA-256 hashes. Expired records are marked during pairing activity and may be removed by later maintenance.
 
+### Pairing recovery
+
+The player installation UUID remains stable across upgrades and is used to recognize a previously paired screen. Studio shows the existing screen name and requires the deliberate **Repair and replace credential** action when that screen still has an active credential. Approval records the authorization but does not revoke the old credential. Only a successful one-time enrollment creates the replacement credential and revokes the previous active credentials in the same database transaction. The existing screen ID, assignments, groups, schedules, policies, and history remain unchanged.
+
+Only the latest pending or approved pairing session for a player installation is actionable. Tilecast Player stores its session ID, private poll secret, visible code, expiry, and polling interval in Room, resumes that session after activity or process recreation, and clears it after enrollment or expiry. A stored device credential is attempted first and is cleared only after an authenticated endpoint confirms that it is invalid or revoked.
+
 ## Authenticated connection
 
 Player endpoints accept `Authorization: Bearer <device-credential>`. Dashboard cookies are never accepted. `/api/v1/player/socket` uses protocol version 1 and supports `player.hello`, `player.status`, `server.ping`, and `player.pong`. `/api/v1/player/heartbeat` is the lower-frequency fallback.

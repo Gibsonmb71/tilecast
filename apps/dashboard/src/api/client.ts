@@ -247,7 +247,12 @@ export const api = {
     }),
   approvePairing: (
     id: string,
-    input: { name: string; location: string; description: string },
+    input: {
+      name: string;
+      location: string;
+      description: string;
+      replaceExistingCredential: boolean;
+    },
     csrfToken: string,
   ) =>
     request<Screen>(`/screens/pairing/${id}/approve`, {

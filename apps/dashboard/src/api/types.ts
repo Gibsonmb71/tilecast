@@ -398,7 +398,13 @@ export type PairingRequest = {
   status: string;
   createdAt: string;
   expiresAt: string;
+  previouslyPaired: boolean;
+  existingScreenId?: string;
+  existingScreenName?: string;
+  hasActiveCredential: boolean;
+  credentialReplacementAuthorized: boolean;
   metadata: {
+    playerInstallationId: string;
     platform: string;
     manufacturer: string;
     model: string;

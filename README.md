@@ -6,6 +6,8 @@ Tilecast is an open-source, self-hosted digital signage platform for organizatio
 
 This repository implements **Milestone 10: Android kiosk reliability, Power Assist, and Accessibility Control**. Tilecast adds timezone-aware active hours, cached boot recovery, bounded watchdog escalation and safe mode, capability-confirmed Managed Kiosk, optional locally enabled Accessibility Control Assist, and best-effort Android sleep/wake behavior. Tilecast does not send direct HDMI-CEC commands, and Standard Reliability cannot guarantee that users cannot leave the app. See [Android reliability and power](docs/reliability-and-power.md).
 
+Player `0.10.1` includes a pairing-recovery hotfix for upgraded devices that retain their stable player installation ID but lose access to the Android Keystore credential. Studio can explicitly repair the existing screen without deleting assignments; the previous credential is revoked only after successful replacement enrollment.
+
 ## Quick start with Docker Compose
 
 Requirements: Docker Engine with Docker Compose v2.

@@ -21,7 +21,9 @@ func (s *Service) Enroll(ctx context.Context, sessionID uuid.UUID, enrollmentTok
 	var enrolledAt *time.Time
 	var screenID uuid.UUID
 	var screenName string
-	err = tx.QueryRow(ctx, `SELECT p.status,p.enrollment_token_hash,p.enrolled_at,p.resulting_screen_id,s.name FROM device_pairing_sessions p JOIN screens s ON s.id=p.resulting_screen_id WHERE p.id=$1 FOR UPDATE`, sessionID).Scan(&status, &expected, &enrolledAt, &screenID, &screenName)
+	var replaceExisting bool
+	var approvedBy *uuid.UUID
+	err = tx.QueryRow(ctx, `SELECT p.status,p.enrollment_token_hash,p.enrolled_at,p.resulting_screen_id,s.name,p.replace_existing_credential,p.approved_by_user_id FROM device_pairing_sessions p JOIN screens s ON s.id=p.resulting_screen_id WHERE p.id=$1 FOR UPDATE`, sessionID).Scan(&status, &expected, &enrolledAt, &screenID, &screenName, &replaceExisting, &approvedBy)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return EnrollmentResult{}, ErrNotFound
 	}
@@ -38,8 +40,19 @@ func (s *Service) Enroll(ctx context.Context, sessionID uuid.UUID, enrollmentTok
 	if err != nil {
 		return EnrollmentResult{}, err
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO device_credentials (id,screen_id,public_id,secret_hash) VALUES ($1,$2,$3,$4)`, uuid.New(), screenID, publicID, secretHash(secret)); err != nil {
+	credentialID := uuid.New()
+	if _, err := tx.Exec(ctx, `INSERT INTO device_credentials (id,screen_id,public_id,secret_hash) VALUES ($1,$2,$3,$4)`, credentialID, screenID, publicID, secretHash(secret)); err != nil {
 		return EnrollmentResult{}, fmt.Errorf("create device credential: %w", err)
+	}
+	if replaceExisting {
+		if _, err := tx.Exec(ctx, `UPDATE device_credentials SET revoked_at=now(),revocation_reason='Replaced through approved pairing recovery' WHERE screen_id=$1 AND id<>$2 AND revoked_at IS NULL`, screenID, credentialID); err != nil {
+			return EnrollmentResult{}, fmt.Errorf("replace previous device credentials: %w", err)
+		}
+		if approvedBy != nil {
+			if err := insertAudit(ctx, tx, *approvedBy, "screen.pairing.credential_replaced", screenID); err != nil {
+				return EnrollmentResult{}, err
+			}
+		}
 	}
 	if _, err := tx.Exec(ctx, `UPDATE device_pairing_sessions SET enrolled_at=now(),enrollment_token_hash=NULL WHERE id=$1`, sessionID); err != nil {
 		return EnrollmentResult{}, fmt.Errorf("complete enrollment: %w", err)

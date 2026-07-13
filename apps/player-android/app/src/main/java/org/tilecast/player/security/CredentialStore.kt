@@ -26,7 +26,7 @@ class KeystoreCredentialStore(context: Context) : CredentialStore {
         preferences.edit()
             .putString("value", Base64.encodeToString(cipher.doFinal(credential.toByteArray(Charsets.UTF_8)), Base64.NO_WRAP))
             .putString("iv", Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
-            .apply()
+            .commit()
     }
 
     override fun read(): String? = runCatching {
@@ -51,4 +51,3 @@ class KeystoreCredentialStore(context: Context) : CredentialStore {
         }.generateKey()
     }
 }
-

@@ -152,9 +152,10 @@ func (s *server) listPendingPairings(w http.ResponseWriter, r *http.Request) {
 }
 
 type approvePairingRequest struct {
-	Name        string `json:"name"`
-	Location    string `json:"location"`
-	Description string `json:"description"`
+	Name                      string `json:"name"`
+	Location                  string `json:"location"`
+	Description               string `json:"description"`
+	ReplaceExistingCredential bool   `json:"replaceExistingCredential"`
 }
 
 func (s *server) approvePairing(w http.ResponseWriter, r *http.Request) {
@@ -168,7 +169,7 @@ func (s *server) approvePairing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user := r.Context().Value(sessionContextKey).(auth.Session).User
-	screen, err := s.devices.ApprovePairing(r.Context(), id, user.ID, body.Name, body.Location, body.Description)
+	screen, err := s.devices.ApprovePairing(r.Context(), id, user.ID, body.Name, body.Location, body.Description, body.ReplaceExistingCredential)
 	if err != nil {
 		s.writeDeviceError(w, r, err)
 		return
@@ -308,6 +309,8 @@ func (s *server) writeDeviceError(w http.ResponseWriter, r *http.Request, err er
 		writeError(w, http.StatusForbidden, "screen_disabled", "This screen is disabled.")
 	case errors.Is(err, devices.ErrAlreadyClaimed):
 		writeError(w, http.StatusConflict, "enrollment_already_used", "This enrollment result was already used.")
+	case errors.Is(err, devices.ErrPairingRecovery):
+		writeError(w, http.StatusConflict, "pairing_recovery_required", "This device was previously paired. Confirm credential replacement to repair the pairing.")
 	case errors.Is(err, devices.ErrConflict):
 		writeError(w, http.StatusConflict, "state_conflict", "The request conflicts with the current device state.")
 	case errors.Is(err, devices.ErrForbidden):

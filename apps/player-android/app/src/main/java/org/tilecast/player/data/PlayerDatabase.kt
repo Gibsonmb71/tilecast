@@ -22,6 +22,11 @@ data class PlayerConfiguration(
     val organizationName: String? = null,
     val screenId: String? = null,
     val screenName: String? = null,
+    val pairingSessionId: String? = null,
+    val pairingPollSecret: String? = null,
+    val pairingCode: String? = null,
+    val pairingExpiresAt: String? = null,
+    val pairingPollingIntervalSeconds: Int? = null,
 )
 
 @Dao
@@ -95,7 +100,7 @@ data class StoredPlayerConfig(@androidx.room.PrimaryKey val configRevision:Long,
     @Query("DELETE FROM cached_assets WHERE variantId=:variantId") suspend fun delete(variantId: String)
 }
 
-@Database(entities = [PlayerConfiguration::class, StoredManifest::class, CachedAsset::class,StoredPlayerConfig::class], version = 3, exportSchema = true)
+@Database(entities = [PlayerConfiguration::class, StoredManifest::class, CachedAsset::class,StoredPlayerConfig::class], version = 4, exportSchema = true)
 abstract class PlayerDatabase : RoomDatabase() {
     abstract fun configuration(): PlayerConfigurationDao
     abstract fun manifests(): ManifestDao
@@ -108,8 +113,15 @@ abstract class PlayerDatabase : RoomDatabase() {
             db.execSQL("CREATE TABLE IF NOT EXISTS cached_assets (variantId TEXT NOT NULL, assetId TEXT NOT NULL, sha256 TEXT NOT NULL, expectedFileSize INTEGER NOT NULL, localPath TEXT NOT NULL, downloadStatus TEXT NOT NULL, downloadedBytes INTEGER NOT NULL, lastVerifiedAt INTEGER, lastUsedAt INTEGER, requiredByActiveManifest INTEGER NOT NULL, requiredByPendingManifest INTEGER NOT NULL, failureReason TEXT, PRIMARY KEY(variantId))")
         } }
         val MIGRATION_2_3=object:Migration(2,3){override fun migrate(db:SupportSQLiteDatabase){db.execSQL("CREATE TABLE IF NOT EXISTS player_configs (configRevision INTEGER NOT NULL, schemaVersion INTEGER NOT NULL, rawJson TEXT NOT NULL, etag TEXT, state TEXT NOT NULL, receivedAt INTEGER NOT NULL, activatedAt INTEGER, error TEXT, PRIMARY KEY(configRevision))")}}
+        val MIGRATION_3_4=object:Migration(3,4){override fun migrate(db:SupportSQLiteDatabase){
+            db.execSQL("ALTER TABLE player_configuration ADD COLUMN pairingSessionId TEXT")
+            db.execSQL("ALTER TABLE player_configuration ADD COLUMN pairingPollSecret TEXT")
+            db.execSQL("ALTER TABLE player_configuration ADD COLUMN pairingCode TEXT")
+            db.execSQL("ALTER TABLE player_configuration ADD COLUMN pairingExpiresAt TEXT")
+            db.execSQL("ALTER TABLE player_configuration ADD COLUMN pairingPollingIntervalSeconds INTEGER")
+        }}
         fun get(context: Context): PlayerDatabase = instance ?: synchronized(this) {
-            instance ?: Room.databaseBuilder(context.applicationContext, PlayerDatabase::class.java, "tilecast-player.db").addMigrations(MIGRATION_1_2,MIGRATION_2_3).build().also { instance = it }
+            instance ?: Room.databaseBuilder(context.applicationContext, PlayerDatabase::class.java, "tilecast-player.db").addMigrations(MIGRATION_1_2,MIGRATION_2_3,MIGRATION_3_4).build().also { instance = it }
         }
     }
 }

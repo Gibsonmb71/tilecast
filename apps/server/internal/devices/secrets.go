@@ -23,6 +23,7 @@ var (
 	ErrAlreadyClaimed    = errors.New("pairing result has already been claimed")
 	ErrRejected          = errors.New("pairing request was rejected")
 	ErrConflict          = errors.New("resource conflicts with existing state")
+	ErrPairingRecovery   = errors.New("pairing recovery requires credential replacement approval")
 	ErrInvalidCredential = errors.New("device credential is invalid")
 	ErrRevokedCredential = errors.New("device credential is revoked")
 	ErrDisabledScreen    = errors.New("screen is disabled")

@@ -390,7 +390,20 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, target any) error {
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
-		return errors.New("Request body must be valid JSON with only supported fields.")
+		category := "malformed"
+		message := "Request body contains malformed JSON."
+		if errors.Is(err, io.EOF) {
+			category, message = "missing", "Request body is missing."
+		} else if strings.HasPrefix(err.Error(), "json: unknown field ") {
+			category = "unsupported_field"
+			field := strings.Trim(err.Error()[len("json: unknown field "):], `"`)
+			message = "Unsupported request field: " + field + "."
+		} else if typeError := new(json.UnmarshalTypeError); errors.As(err, &typeError) {
+			category = "invalid_field_type"
+			message = "Request field has an invalid value type: " + typeError.Field + "."
+		}
+		slog.Default().Warn("request JSON rejected", "error", err, "category", category, "request_id", middleware.GetReqID(r.Context()), "path", r.URL.Path)
+		return errors.New(message)
 	}
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		return errors.New("Request body must contain one JSON object.")

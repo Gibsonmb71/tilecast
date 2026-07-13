@@ -57,7 +57,7 @@ All screen routes require a dashboard session. Mutations also require `X-CSRF-To
 - `GET /api/v1/screens/{id}`
 - `GET /api/v1/screens/pairing/pending`
 - `POST /api/v1/screens/pairing/resolve`
-- `POST /api/v1/screens/pairing/{id}/approve`
+- `POST /api/v1/screens/pairing/{id}/approve` — accepts `replaceExistingCredential` (default `false`); an existing active credential otherwise returns `pairing_recovery_required`.
 - `POST /api/v1/screens/pairing/{id}/reject`
 - `PATCH /api/v1/screens/{id}`
 - `POST /api/v1/screens/{id}/disable`

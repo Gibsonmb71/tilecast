@@ -80,7 +80,7 @@ func TestCompletePairingCredentialAndRevocationFlow(t *testing.T) {
 	if _, err := service.PollPairing(ctx, pairing.ID, "wrong-secret"); !errors.Is(err, ErrWrongSecret) {
 		t.Fatalf("expected wrong poll secret, got %v", err)
 	}
-	screen, err := service.ApprovePairing(ctx, pairing.ID, owner.User.ID, "Lobby display", "Main lobby", "Welcome screen")
+	screen, err := service.ApprovePairing(ctx, pairing.ID, owner.User.ID, "Lobby display", "Main lobby", "Welcome screen", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,10 +128,73 @@ func TestCompletePairingCredentialAndRevocationFlow(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM audit_logs WHERE action IN ('reliability.safe_mode_entered','reliability.safe_mode_exited','reliability.maintenance_started','reliability.maintenance_ended','reliability.admin_pin_changed')`).Scan(&reliabilityAudits); err != nil || reliabilityAudits != 5 {
 		t.Fatalf("reliability audits=%d err=%v", reliabilityAudits, err)
 	}
+
+	preservedPlaylistID := uuid.New()
+	if _, err := pool.Exec(ctx, `INSERT INTO playlists(id,organization_id,name,created_by) SELECT $1,id,'Preserved assignment',$2 FROM organization_settings WHERE singleton=TRUE`, preservedPlaylistID, owner.User.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO screen_playlist_assignments(id,screen_id,playlist_id,assigned_by) VALUES($1,$2,$3,$4)`, uuid.New(), screen.ID, preservedPlaylistID, owner.User.ID); err != nil {
+		t.Fatal(err)
+	}
+	olderRepair, err := service.CreatePairing(ctx, identity.InstallationID, metadata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repair, err := service.CreatePairing(ctx, identity.InstallationID, metadata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var olderStatus string
+	if err := pool.QueryRow(ctx, `SELECT status FROM device_pairing_sessions WHERE id=$1`, olderRepair.ID).Scan(&olderStatus); err != nil || olderStatus != "expired" {
+		t.Fatalf("older pairing status=%q err=%v", olderStatus, err)
+	}
+	resolvedRepair, err := service.ResolvePairing(ctx, repair.Code)
+	if err != nil || !resolvedRepair.PreviouslyPaired || resolvedRepair.ExistingScreenID == nil || *resolvedRepair.ExistingScreenID != screen.ID || !resolvedRepair.HasActiveCredential {
+		t.Fatalf("repair metadata=%#v err=%v", resolvedRepair, err)
+	}
+	if _, err := service.ApprovePairing(ctx, repair.ID, owner.User.ID, screen.Name, screen.Location, screen.Description, false); !errors.Is(err, ErrPairingRecovery) {
+		t.Fatalf("expected pairing recovery requirement, got %v", err)
+	}
+	repairedScreen, err := service.ApprovePairing(ctx, repair.ID, owner.User.ID, screen.Name, screen.Location, screen.Description, true)
+	if err != nil || repairedScreen.ID != screen.ID {
+		t.Fatalf("repair approval=%#v err=%v", repairedScreen, err)
+	}
+	if duplicate, err := service.ApprovePairing(ctx, repair.ID, owner.User.ID, screen.Name, screen.Location, screen.Description, true); err != nil || duplicate.ID != screen.ID {
+		t.Fatalf("duplicate approval=%#v err=%v", duplicate, err)
+	}
+	if _, err := service.AuthenticateDevice(ctx, enrollment.DeviceCredential); err != nil {
+		t.Fatalf("old credential was revoked before enrollment: %v", err)
+	}
+	repairClaim, err := service.PollPairing(ctx, repair.ID, repair.PollSecret)
+	if err != nil || repairClaim.EnrollmentToken == "" {
+		t.Fatalf("repair claim=%#v err=%v", repairClaim, err)
+	}
+	repairEnrollment, err := service.Enroll(ctx, repair.ID, repairClaim.EnrollmentToken)
+	if err != nil || repairEnrollment.ScreenID != screen.ID {
+		t.Fatalf("repair enrollment=%#v err=%v", repairEnrollment, err)
+	}
+	if _, err := service.AuthenticateDevice(ctx, enrollment.DeviceCredential); !errors.Is(err, ErrRevokedCredential) {
+		t.Fatalf("old credential still valid after repair enrollment: %v", err)
+	}
+	if _, err := service.AuthenticateDevice(ctx, repairEnrollment.DeviceCredential); err != nil {
+		t.Fatalf("new credential invalid: %v", err)
+	}
+	var screenCount, replacementAudits int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM screens WHERE player_installation_id=$1`, metadata.PlayerInstallationID).Scan(&screenCount); err != nil || screenCount != 1 {
+		t.Fatalf("screen count=%d err=%v", screenCount, err)
+	}
+	var assignedPlaylistID uuid.UUID
+	if err := pool.QueryRow(ctx, `SELECT playlist_id FROM screen_playlist_assignments WHERE screen_id=$1`, screen.ID).Scan(&assignedPlaylistID); err != nil || assignedPlaylistID != preservedPlaylistID {
+		t.Fatalf("assignment playlist=%s err=%v", assignedPlaylistID, err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM audit_logs WHERE action='screen.pairing.credential_replaced' AND resource_id=$1`, screen.ID.String()).Scan(&replacementAudits); err != nil || replacementAudits != 1 {
+		t.Fatalf("replacement audits=%d err=%v", replacementAudits, err)
+	}
+	activeCredential := repairEnrollment.DeviceCredential
 	if err := service.SetEnabled(ctx, screen.ID, owner.User.ID, false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.AuthenticateDevice(ctx, enrollment.DeviceCredential); !errors.Is(err, ErrDisabledScreen) {
+	if _, err := service.AuthenticateDevice(ctx, activeCredential); !errors.Is(err, ErrDisabledScreen) {
 		t.Fatalf("expected disabled screen rejection, got %v", err)
 	}
 	if err := service.SetEnabled(ctx, screen.ID, owner.User.ID, true); err != nil {
@@ -140,7 +203,7 @@ func TestCompletePairingCredentialAndRevocationFlow(t *testing.T) {
 	if err := service.Revoke(ctx, screen.ID, owner.User.ID, "integration test"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.AuthenticateDevice(ctx, enrollment.DeviceCredential); !errors.Is(err, ErrRevokedCredential) {
+	if _, err := service.AuthenticateDevice(ctx, activeCredential); !errors.Is(err, ErrRevokedCredential) {
 		t.Fatalf("expected revoked credential rejection, got %v", err)
 	}
 
@@ -178,8 +241,24 @@ func TestCompletePairingCredentialAndRevocationFlow(t *testing.T) {
 		t.Fatalf("expected duplicate code constraint, got %v", err)
 	}
 	var auditCount int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM audit_logs WHERE action IN ('screen.pairing.approved','screen.pairing.rejected','screen.disabled','screen.enabled','screen.credential.revoked')`).Scan(&auditCount); err != nil || auditCount != 5 {
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM audit_logs WHERE action IN ('screen.pairing.approved','screen.pairing.rejected','screen.disabled','screen.enabled','screen.credential.revoked')`).Scan(&auditCount); err != nil || auditCount != 6 {
 		t.Fatalf("audit count=%d err=%v", auditCount, err)
+	}
+	repairWithoutActive, err := service.CreatePairing(ctx, identity.InstallationID, metadata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withoutActiveScreen, err := service.ApprovePairing(ctx, repairWithoutActive.ID, owner.User.ID, screen.Name, screen.Location, screen.Description, false)
+	if err != nil || withoutActiveScreen.ID != screen.ID {
+		t.Fatalf("repair without active credential=%#v err=%v", withoutActiveScreen, err)
+	}
+	withoutActiveClaim, err := service.PollPairing(ctx, repairWithoutActive.ID, repairWithoutActive.PollSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withoutActiveEnrollment, err := service.Enroll(ctx, repairWithoutActive.ID, withoutActiveClaim.EnrollmentToken)
+	if err != nil || withoutActiveEnrollment.ScreenID != screen.ID {
+		t.Fatalf("re-enrollment without active credential=%#v err=%v", withoutActiveEnrollment, err)
 	}
 }
 

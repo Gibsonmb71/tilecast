@@ -49,11 +49,16 @@ type PairingCreated struct {
 }
 
 type PairingRequest struct {
-	ID        uuid.UUID      `json:"id"`
-	Status    string         `json:"status"`
-	Metadata  DeviceMetadata `json:"metadata"`
-	CreatedAt time.Time      `json:"createdAt"`
-	ExpiresAt time.Time      `json:"expiresAt"`
+	ID                      uuid.UUID      `json:"id"`
+	Status                  string         `json:"status"`
+	Metadata                DeviceMetadata `json:"metadata"`
+	CreatedAt               time.Time      `json:"createdAt"`
+	ExpiresAt               time.Time      `json:"expiresAt"`
+	PreviouslyPaired        bool           `json:"previouslyPaired"`
+	ExistingScreenID        *uuid.UUID     `json:"existingScreenId,omitempty"`
+	ExistingScreenName      string         `json:"existingScreenName,omitempty"`
+	HasActiveCredential     bool           `json:"hasActiveCredential"`
+	CredentialReplacementOK bool           `json:"credentialReplacementAuthorized"`
 }
 
 type PollResult struct {

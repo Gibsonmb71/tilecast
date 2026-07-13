@@ -82,22 +82,32 @@ func (s *Service) CreatePairing(ctx context.Context, installationID string, meta
 	result := PairingCreated{ID: uuid.New(), PollSecret: pollSecret, ExpiresAt: now.Add(PairingLifetime), ServerTime: now, PollingInterval: int(PollingInterval.Seconds()), Organization: identity.OrganizationName}
 	result.ApprovalURL = s.publicURL + "/screens/pair/"
 
-	_, _ = s.db.Exec(ctx, `UPDATE device_pairing_sessions SET status='expired' WHERE status IN ('pending','approved') AND expires_at<=now()`)
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return PairingCreated{}, fmt.Errorf("begin pairing creation: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, metadata.PlayerInstallationID); err != nil {
+		return PairingCreated{}, fmt.Errorf("lock pairing installation: %w", err)
+	}
+	_, _ = tx.Exec(ctx, `UPDATE device_pairing_sessions SET status='expired' WHERE status IN ('pending','approved') AND (expires_at<=now() OR player_installation_id=$1)`, metadata.PlayerInstallationID)
 	for attempt := 0; attempt < 8; attempt++ {
 		code, err := GeneratePairingCode()
 		if err != nil {
 			return PairingCreated{}, err
 		}
-		_, err = s.db.Exec(ctx, `INSERT INTO device_pairing_sessions (id,code_hash,poll_secret_hash,requested_metadata,requested_server_installation_id,player_installation_id,status,created_at,expires_at) VALUES ($1,$2,$3,$4,$5,$6,'pending',$7,$8)`,
+		tag, err := tx.Exec(ctx, `INSERT INTO device_pairing_sessions (id,code_hash,poll_secret_hash,requested_metadata,requested_server_installation_id,player_installation_id,status,created_at,expires_at) VALUES ($1,$2,$3,$4,$5,$6,'pending',$7,$8) ON CONFLICT DO NOTHING`,
 			result.ID, secretHash(code), secretHash(pollSecret), encoded, installationID, metadata.PlayerInstallationID, now, result.ExpiresAt,
 		)
-		if err == nil {
+		if err == nil && tag.RowsAffected() == 1 {
 			result.Code = code
 			result.ApprovalURL += code
+			if err := tx.Commit(ctx); err != nil {
+				return PairingCreated{}, fmt.Errorf("commit pairing creation: %w", err)
+			}
 			return result, nil
 		}
-		var pgError *pgconn.PgError
-		if !errors.As(err, &pgError) || pgError.Code != "23505" {
+		if err != nil {
 			return PairingCreated{}, fmt.Errorf("create pairing session: %w", err)
 		}
 		result.ID = uuid.New()
@@ -134,8 +144,8 @@ func (s *Service) ResolvePairing(ctx context.Context, code string) (PairingReque
 	}
 	var request PairingRequest
 	var metadata []byte
-	err = s.db.QueryRow(ctx, `SELECT id,status,requested_metadata,created_at,expires_at FROM device_pairing_sessions WHERE code_hash=$1`, secretHash(normalized)).Scan(
-		&request.ID, &request.Status, &metadata, &request.CreatedAt, &request.ExpiresAt,
+	err = s.db.QueryRow(ctx, pairingRequestQuery+` WHERE p.code_hash=$1`, secretHash(normalized)).Scan(
+		&request.ID, &request.Status, &metadata, &request.CreatedAt, &request.ExpiresAt, &request.ExistingScreenID, &request.ExistingScreenName, &request.HasActiveCredential, &request.CredentialReplacementOK,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return PairingRequest{}, ErrNotFound
@@ -150,12 +160,17 @@ func (s *Service) ResolvePairing(ctx context.Context, code string) (PairingReque
 	if err := json.Unmarshal(metadata, &request.Metadata); err != nil {
 		return PairingRequest{}, fmt.Errorf("decode pairing metadata: %w", err)
 	}
+	request.PreviouslyPaired = request.ExistingScreenID != nil
 	return request, nil
 }
 
+const pairingRequestQuery = `SELECT p.id,p.status,p.requested_metadata,p.created_at,p.expires_at,s.id,COALESCE(s.name,''),
+EXISTS(SELECT 1 FROM device_credentials c WHERE c.screen_id=s.id AND c.revoked_at IS NULL),p.replace_existing_credential
+FROM device_pairing_sessions p LEFT JOIN screens s ON s.player_installation_id=p.player_installation_id`
+
 func (s *Service) ListPendingPairings(ctx context.Context) ([]PairingRequest, error) {
 	_, _ = s.db.Exec(ctx, `UPDATE device_pairing_sessions SET status='expired' WHERE status IN ('pending','approved') AND expires_at<=now()`)
-	rows, err := s.db.Query(ctx, `SELECT id,status,requested_metadata,created_at,expires_at FROM device_pairing_sessions WHERE status IN ('pending','approved') AND expires_at>now() ORDER BY created_at DESC LIMIT 100`)
+	rows, err := s.db.Query(ctx, pairingRequestQuery+` WHERE p.status IN ('pending','approved') AND p.expires_at>now() ORDER BY p.created_at DESC LIMIT 100`)
 	if err != nil {
 		return nil, fmt.Errorf("list pending pairing requests: %w", err)
 	}
@@ -164,9 +179,10 @@ func (s *Service) ListPendingPairings(ctx context.Context) ([]PairingRequest, er
 	for rows.Next() {
 		var request PairingRequest
 		var metadata []byte
-		if err := rows.Scan(&request.ID, &request.Status, &metadata, &request.CreatedAt, &request.ExpiresAt); err != nil {
+		if err := rows.Scan(&request.ID, &request.Status, &metadata, &request.CreatedAt, &request.ExpiresAt, &request.ExistingScreenID, &request.ExistingScreenName, &request.HasActiveCredential, &request.CredentialReplacementOK); err != nil {
 			return nil, err
 		}
+		request.PreviouslyPaired = request.ExistingScreenID != nil
 		if err := json.Unmarshal(metadata, &request.Metadata); err != nil {
 			return nil, fmt.Errorf("decode pairing metadata: %w", err)
 		}
@@ -218,7 +234,7 @@ func (s *Service) PollPairing(ctx context.Context, id uuid.UUID, pollSecret stri
 	return result, nil
 }
 
-func (s *Service) ApprovePairing(ctx context.Context, id, userID uuid.UUID, name, location, description string) (Screen, error) {
+func (s *Service) ApprovePairing(ctx context.Context, id, userID uuid.UUID, name, location, description string, replaceExistingCredential bool) (Screen, error) {
 	name, location, description = strings.TrimSpace(name), strings.TrimSpace(location), strings.TrimSpace(description)
 	if len(name) < 2 || len(name) > 120 || len(location) > 240 || len(description) > 1000 {
 		return Screen{}, errors.New("screen name must be 2 to 120 characters; location and description are too long")
@@ -242,6 +258,12 @@ func (s *Service) ApprovePairing(ctx context.Context, id, userID uuid.UUID, name
 		_, _ = tx.Exec(ctx, `UPDATE device_pairing_sessions SET status='expired' WHERE id=$1`, id)
 		return Screen{}, ErrExpired
 	}
+	if status == "approved" {
+		var existing uuid.UUID
+		if err := tx.QueryRow(ctx, `SELECT resulting_screen_id FROM device_pairing_sessions WHERE id=$1`, id).Scan(&existing); err == nil {
+			return s.GetScreen(ctx, existing)
+		}
+	}
 	if status != "pending" {
 		return Screen{}, ErrConflict
 	}
@@ -259,8 +281,8 @@ func (s *Service) ApprovePairing(ctx context.Context, id, userID uuid.UUID, name
 	var activeCredential bool
 	err = tx.QueryRow(ctx, `SELECT s.id,EXISTS(SELECT 1 FROM device_credentials c WHERE c.screen_id=s.id AND c.revoked_at IS NULL) FROM screens s WHERE s.organization_id=$1 AND s.player_installation_id=$2`, organizationID, metadata.PlayerInstallationID).Scan(&existingID, &activeCredential)
 	if err == nil {
-		if activeCredential {
-			return Screen{}, ErrConflict
+		if activeCredential && !replaceExistingCredential {
+			return Screen{}, ErrPairingRecovery
 		}
 		screenID = existingID
 		_, err = tx.Exec(ctx, `UPDATE screens SET name=$2,description=$3,location=$4,platform=$5,device_manufacturer=$6,device_model=$7,android_version=$8,player_version=$9,screen_width=$10,screen_height=$11,density=$12,locale=$13,timezone=$14,enabled=TRUE,paired_at=now(),updated_at=now() WHERE id=$1`, screenID, name, description, location, metadata.Platform, metadata.Manufacturer, metadata.Model, metadata.AndroidVersion, metadata.PlayerVersion, metadata.ScreenWidth, metadata.ScreenHeight, metadata.Density, metadata.Locale, metadata.Timezone)
@@ -270,7 +292,7 @@ func (s *Service) ApprovePairing(ctx context.Context, id, userID uuid.UUID, name
 	if err != nil {
 		return Screen{}, fmt.Errorf("save screen: %w", err)
 	}
-	if _, err := tx.Exec(ctx, `UPDATE device_pairing_sessions SET status='approved',approved_at=now(),approved_by_user_id=$2,resulting_screen_id=$3 WHERE id=$1`, id, userID, screenID); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE device_pairing_sessions SET status='approved',approved_at=now(),approved_by_user_id=$2,resulting_screen_id=$3,replace_existing_credential=$4 WHERE id=$1`, id, userID, screenID, replaceExistingCredential && activeCredential); err != nil {
 		return Screen{}, fmt.Errorf("approve pairing session: %w", err)
 	}
 	if err := insertAudit(ctx, tx, userID, "screen.pairing.approved", screenID); err != nil {
