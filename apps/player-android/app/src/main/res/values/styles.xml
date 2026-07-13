@@ -1,7 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.Tilecast" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:windowBackground">@color/tilecast_background</item>
-        <item name="android:colorAccent">#7AC4AA</item>
+        <item name="android:windowBackground">@color/tilecast_signal_background</item>
+        <item name="android:colorAccent">@color/tilecast_signal_blue</item>
+        <item name="android:navigationBarColor">@color/tilecast_signal_background</item>
+        <item name="android:statusBarColor">@color/tilecast_signal_background</item>
+        <item name="android:windowLightStatusBar">false</item>
     </style>
 </resources>

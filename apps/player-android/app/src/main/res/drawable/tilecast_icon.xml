@@ -1,6 +1,6 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
-    <path android:fillColor="#172B25" android:pathData="M0,0h108v108h-108z" />
-    <path android:fillColor="#E7D275" android:pathData="M24,25h23v58h-23z" />
-    <path android:fillColor="#62A78E" android:pathData="M52,25h32v25h-32z" />
-    <path android:fillColor="#DBECE5" android:pathData="M52,56h32v27h-32z" />
+    <path android:fillColor="@color/tilecast_signal_background" android:pathData="M0,0h108v108h-108z" />
+    <path android:fillColor="@color/tilecast_broadcast_amber" android:pathData="M24,25h23v58h-23z" />
+    <path android:fillColor="@color/tilecast_signal_blue" android:pathData="M52,25h32v25h-32z" />
+    <path android:fillColor="@color/tilecast_signal_tile_pale" android:pathData="M52,56h32v27h-32z" />
 </vector>

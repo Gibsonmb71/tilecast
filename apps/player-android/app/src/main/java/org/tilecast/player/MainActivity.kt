@@ -135,7 +135,8 @@ class MainActivity : ComponentActivity() {
 		return
 	}
 	if(disabled){Box(Modifier.fillMaxSize().background(brandedBackground),contentAlignment=Alignment.Center){Column(horizontalAlignment=Alignment.CenterHorizontally){TilecastBrand();Spacer(Modifier.height(28.dp));Text(config?.branding?.disabledTitle?:"Playback disabled",color=brandedText,style=MaterialTheme.typography.headlineLarge);Text(config?.branding?.disabledMessage?:"This screen remains connected to Tilecast Studio.",color=brandedText)}};return}
-    Box(Modifier.fillMaxSize().background(brandedBackground).padding(horizontal = SignalDimensions.ScreenHorizontal, vertical = SignalDimensions.ScreenVertical)) {
+	val stateBackground = if (state is PlayerState.PairedIdle) brandedBackground else SignalBackground
+	Box(Modifier.fillMaxSize().background(stateBackground).padding(horizontal = SignalDimensions.ScreenHorizontal, vertical = SignalDimensions.ScreenVertical)) {
         Column(Modifier.fillMaxSize()) {
             TilecastBrand()
             Spacer(Modifier.height(42.dp))

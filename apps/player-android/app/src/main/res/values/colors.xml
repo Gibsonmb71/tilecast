@@ -1,1 +1,9 @@
-<resources><color name="tilecast_background">#13231E</color></resources>
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="tilecast_signal_background">#0E141B</color>
+    <color name="tilecast_signal_surface">#151D26</color>
+    <color name="tilecast_signal_blue">#7EA2FF</color>
+    <color name="tilecast_broadcast_amber">#F4C15A</color>
+    <color name="tilecast_signal_tile_pale">#DCE7EE</color>
+    <color name="tilecast_signal_text">#F5F7FA</color>
+</resources>
