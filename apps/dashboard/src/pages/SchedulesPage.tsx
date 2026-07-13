@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from "react-router";
 import { api } from "../api/client";
 import type { ScheduleInput } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
-import { PlayerPolicyEditor } from "./SettingsPage";
+import { PlayerPolicyEditor } from "../settings/PlayerPolicyEditor";
 const canManage = (role?: string) =>
   role === "owner" || role === "administrator";
 export function GroupsPage() {

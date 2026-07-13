@@ -47,7 +47,7 @@ export function App() {
           path="activity"
           element={<PlannedPage feature="Activity reports" milestone={9} />}
         />
-        <Route path="settings" element={<SettingsPage />} />
+        <Route path="settings/*" element={<SettingsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

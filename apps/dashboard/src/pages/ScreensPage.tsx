@@ -25,7 +25,7 @@ import type {
 } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { FormField } from "../components/FormField";
-import { PlayerPolicyEditor } from "./SettingsPage";
+import { PlayerPolicyEditor } from "../settings/PlayerPolicyEditor";
 
 export const canManageScreens = (user?: User) =>
   user?.role === "owner" || user?.role === "administrator";

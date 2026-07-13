@@ -1,0 +1,74 @@
+import { Link, useNavigate } from "react-router";
+import {
+  settingsNavigation,
+  sectionDetails,
+  type SettingsSectionId,
+} from "./settingsNavigation";
+
+export function SettingsShell({
+  active,
+  dirty,
+  onNavigate,
+  children,
+}: {
+  active: SettingsSectionId;
+  dirty: Set<SettingsSectionId>;
+  onNavigate: (next: SettingsSectionId) => boolean;
+  children: React.ReactNode;
+}) {
+  const navigate = useNavigate();
+  const details = sectionDetails[active];
+  return (
+    <div className="settings-layout">
+      <aside className="settings-nav" aria-label="Settings sections">
+        <label className="settings-mobile-select">
+          <span>Settings section</span>
+          <select
+            value={active}
+            onChange={(event) => {
+              const item = settingsNavigation
+                .flatMap((group) => group.items)
+                .find((item) => item.id === event.target.value);
+              if (item && onNavigate(item.id))
+                void navigate(`/settings/${item.path}`);
+            }}
+          >
+            {settingsNavigation
+              .flatMap((group) => group.items)
+              .map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.label}
+                  {dirty.has(item.id) ? " • Unsaved" : ""}
+                </option>
+              ))}
+          </select>
+        </label>
+        {settingsNavigation.map((group) => (
+          <div className="settings-nav-group" key={group.label}>
+            <h2>{group.label}</h2>
+            {group.items.map((item) => (
+              <Link
+                key={item.id}
+                to={`/settings/${item.path}`}
+                aria-current={active === item.id ? "page" : undefined}
+                onClick={(event) => {
+                  if (!onNavigate(item.id)) event.preventDefault();
+                }}
+              >
+                <span>{item.label}</span>
+                {dirty.has(item.id) && <small>Unsaved</small>}
+              </Link>
+            ))}
+          </div>
+        ))}
+      </aside>
+      <main className="settings-content">
+        <header className="settings-heading">
+          <h1>{details.title}</h1>
+          <p>{details.description}</p>
+        </header>
+        {children}
+      </main>
+    </div>
+  );
+}
