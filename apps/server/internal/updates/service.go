@@ -21,6 +21,7 @@ import (
 	"github.com/avast/apkparser"
 	"github.com/avast/apkverifier"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -61,7 +62,18 @@ type Service struct {
 	maxAPK   int64
 }
 
+type ImportedRelease struct {
+	ID                 uuid.UUID
+	Manifest           Manifest
+	Source             string
+	CacheStatus        string
+	VerificationStatus string
+	Duplicate          bool
+}
+
 func (s *Service) ManifestKeyConfigured() bool { return len(s.key) == ed25519.PublicKeySize }
+func (s *Service) MaximumUploadBytes() int64   { return s.maxAPK + (256 << 10) }
+func (s *Service) MaximumAPKBytes() int64      { return s.maxAPK }
 
 func NewService(db *pgxpool.Pool, provider Provider, cfg Config) (*Service, error) {
 	if err := os.MkdirAll(cfg.Root, 0o750); err != nil {
@@ -92,6 +104,9 @@ func ParseAndVerifyManifest(raw, signature []byte, key ed25519.PublicKey) (Manif
 	if err := decoder.Decode(&manifest); err != nil {
 		return Manifest{}, errors.New("invalid update manifest")
 	}
+	if decoder.Decode(&struct{}{}) != io.EOF {
+		return Manifest{}, errors.New("update manifest must contain one JSON object")
+	}
 	if manifest.SchemaVersion != 1 || manifest.Product != "tilecast-player" || manifest.ApplicationID != ApplicationID || manifest.VersionCode <= CurrentVersionCode || manifest.VersionName == "" || manifest.APKAssetName != "tilecast-player.apk" || manifest.APKSizeBytes <= 0 || !digestPattern.MatchString(strings.ToLower(manifest.APKSHA256)) || !digestPattern.MatchString(strings.ToLower(manifest.SigningCertificateSHA256)) {
 		return Manifest{}, errors.New("update manifest metadata is invalid or not newer than this Tilecast Player baseline")
 	}
@@ -102,6 +117,83 @@ func ParseAndVerifyManifest(raw, signature []byte, key ed25519.PublicKey) (Manif
 		return Manifest{}, errors.New("update minimum SDK is unsupported")
 	}
 	return manifest, nil
+}
+
+// ImportUpload verifies a locally uploaded release with the same manifest, APK,
+// package, and signing-certificate checks used for GitHub releases. The caller
+// owns apkPath and may remove it after this method returns.
+func (s *Service) ImportUpload(ctx context.Context, apkPath string, raw, signature []byte, importedBy *uuid.UUID) (ImportedRelease, error) {
+	manifest, err := ParseAndVerifyManifest(raw, signature, s.key)
+	if err != nil {
+		return ImportedRelease{}, err
+	}
+	if manifest.APKSizeBytes > s.maxAPK {
+		return ImportedRelease{}, errors.New("APK exceeds the configured player update size limit")
+	}
+	info, err := os.Stat(apkPath)
+	if err != nil || !info.Mode().IsRegular() || info.Size() != manifest.APKSizeBytes {
+		return ImportedRelease{}, errors.New("APK size does not match the signed manifest")
+	}
+
+	id := uuid.New()
+	part := filepath.Join(s.root, id.String()+".apk.part")
+	final := filepath.Join(s.root, id.String()+".apk")
+	input, err := os.Open(apkPath)
+	if err != nil {
+		return ImportedRelease{}, errors.New("uploaded APK could not be read")
+	}
+	output, err := os.OpenFile(part, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o640)
+	if err != nil {
+		input.Close()
+		return ImportedRelease{}, err
+	}
+	hash := sha256.New()
+	written, copyErr := io.Copy(io.MultiWriter(output, hash), io.LimitReader(input, s.maxAPK+1))
+	inputErr := input.Close()
+	syncErr := output.Sync()
+	closeErr := output.Close()
+	if copyErr != nil || inputErr != nil || syncErr != nil || closeErr != nil || written != manifest.APKSizeBytes || hex.EncodeToString(hash.Sum(nil)) != strings.ToLower(manifest.APKSHA256) {
+		_ = os.Remove(part)
+		return ImportedRelease{}, errors.New("APK size or SHA-256 verification failed")
+	}
+	if err := verifyAPK(part, manifest); err != nil {
+		_ = os.Remove(part)
+		return ImportedRelease{}, err
+	}
+
+	var existingID uuid.UUID
+	var existingHash, existingCert, existingVerification, existingCache, existingSource string
+	err = s.db.QueryRow(ctx, `SELECT id,apk_sha256,signing_certificate_sha256,verification_status,cache_status,source FROM player_releases WHERE version_code=$1`, manifest.VersionCode).Scan(&existingID, &existingHash, &existingCert, &existingVerification, &existingCache, &existingSource)
+	if err == nil {
+		_ = os.Remove(part)
+		if existingHash == strings.ToLower(manifest.APKSHA256) && existingCert == strings.ToLower(manifest.SigningCertificateSHA256) && existingVerification == "verified" && existingCache == "cached" {
+			return ImportedRelease{ID: existingID, Manifest: manifest, Source: existingSource, CacheStatus: existingCache, VerificationStatus: existingVerification, Duplicate: true}, nil
+		}
+		return ImportedRelease{}, errors.New("this version code already exists with different or invalid release data")
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		_ = os.Remove(part)
+		return ImportedRelease{}, err
+	}
+	var latestVersion int64
+	if err := s.db.QueryRow(ctx, `SELECT COALESCE(max(version_code),$1) FROM player_releases`, CurrentVersionCode).Scan(&latestVersion); err != nil {
+		_ = os.Remove(part)
+		return ImportedRelease{}, err
+	}
+	if manifest.VersionCode <= latestVersion {
+		_ = os.Remove(part)
+		return ImportedRelease{}, errors.New("player release version code must be newer than every imported release")
+	}
+	if err := os.Rename(part, final); err != nil {
+		_ = os.Remove(part)
+		return ImportedRelease{}, err
+	}
+	_, err = s.db.Exec(ctx, `INSERT INTO player_releases(id,channel,version_code,version_name,application_id,minimum_sdk,release_notes,published_at,apk_name,apk_size,apk_sha256,signing_certificate_sha256,manifest,manifest_signature,cache_status,verification_status,source,imported_by) VALUES($1,$2,$3,$4,$5,$6,$7,now(),$8,$9,$10,$11,$12,$13,'cached','verified','upload',$14)`, id, manifest.Channel, manifest.VersionCode, manifest.VersionName, manifest.ApplicationID, manifest.MinimumSDK, manifest.ReleaseNotes, manifest.APKAssetName, manifest.APKSizeBytes, strings.ToLower(manifest.APKSHA256), strings.ToLower(manifest.SigningCertificateSHA256), raw, strings.TrimSpace(string(signature)), importedBy)
+	if err != nil {
+		_ = os.Remove(final)
+		return ImportedRelease{}, err
+	}
+	return ImportedRelease{ID: id, Manifest: manifest, Source: "upload", CacheStatus: "cached", VerificationStatus: "verified"}, nil
 }
 
 func (s *Service) Check(ctx context.Context) error {
@@ -199,30 +291,35 @@ func (s *Service) Cache(ctx context.Context, releaseID uuid.UUID) error {
 		_ = os.Remove(part)
 		return errors.New("APK size or SHA-256 verification failed")
 	}
-	verification, err := apkverifier.Verify(part, nil)
-	if err != nil {
-		_ = os.Remove(part)
-		return errors.New("APK signing verification failed")
-	}
-	cert, _ := apkverifier.PickBestApkCert(verification.SignerCerts)
-	if cert == nil || strings.ToLower(strings.ReplaceAll(cert.Sha256, ":", "")) != expectedCert {
-		_ = os.Remove(part)
-		return errors.New("APK signing certificate does not match the signed manifest")
-	}
 	var expectedApplication string
 	var expectedVersion int64
 	var expectedMinSDK int
 	_ = s.db.QueryRow(ctx, `SELECT application_id,version_code,minimum_sdk FROM player_releases WHERE id=$1`, releaseID).Scan(&expectedApplication, &expectedVersion, &expectedMinSDK)
-	application, version, minimumSDK, metadataErr := apkMetadata(part)
-	if metadataErr != nil || application != expectedApplication || version != expectedVersion || minimumSDK != expectedMinSDK {
+	if err := verifyAPK(part, Manifest{ApplicationID: expectedApplication, VersionCode: expectedVersion, MinimumSDK: expectedMinSDK, SigningCertificateSHA256: expectedCert}); err != nil {
 		_ = os.Remove(part)
-		return errors.New("APK package metadata does not match the signed manifest")
+		return err
 	}
 	if err := os.Rename(part, final); err != nil {
 		return err
 	}
 	_, err = s.db.Exec(ctx, `UPDATE player_releases SET cache_status='cached',verification_status='verified',verification_error=NULL,updated_at=now() WHERE id=$1`, releaseID)
 	return err
+}
+
+func verifyAPK(path string, manifest Manifest) error {
+	verification, err := apkverifier.Verify(path, nil)
+	if err != nil {
+		return errors.New("APK signing verification failed")
+	}
+	cert, _ := apkverifier.PickBestApkCert(verification.SignerCerts)
+	if cert == nil || strings.ToLower(strings.ReplaceAll(cert.Sha256, ":", "")) != strings.ToLower(manifest.SigningCertificateSHA256) {
+		return errors.New("APK signing certificate does not match the signed manifest")
+	}
+	application, version, minimumSDK, metadataErr := apkMetadata(path)
+	if metadataErr != nil || application != manifest.ApplicationID || version != manifest.VersionCode || minimumSDK != manifest.MinimumSDK {
+		return errors.New("APK package metadata does not match the signed manifest")
+	}
+	return nil
 }
 
 func apkMetadata(path string) (string, int64, int, error) {

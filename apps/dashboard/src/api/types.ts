@@ -360,6 +360,7 @@ export type SchedulePreview = {
 export type PlayerRelease = {
   id: string;
   tag: string;
+  source: "github" | "upload";
   channel: "stable" | "beta";
   versionCode: number;
   versionName: string;
@@ -374,6 +375,18 @@ export type PlayerRelease = {
   verificationStatus: "verified_manifest" | "verified" | "failed";
   verificationError?: string;
 };
+export type PlayerReleaseImport = Pick<
+  PlayerRelease,
+  | "id"
+  | "source"
+  | "versionCode"
+  | "versionName"
+  | "channel"
+  | "apkSizeBytes"
+  | "releaseNotes"
+  | "cacheStatus"
+  | "verificationStatus"
+> & { duplicate: boolean };
 export type PlayerReleaseList = {
   repository: string;
   lastCheckedAt?: string;

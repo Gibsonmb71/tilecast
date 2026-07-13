@@ -28,6 +28,7 @@ import type {
   EffectivePolicy,
   SystemStatus,
   PlayerReleaseList,
+  PlayerReleaseImport,
   UpdateDeployment,
   ReliabilityStatus,
   PowerAssistResults,
@@ -87,6 +88,57 @@ export const api = {
       `/player-releases/${id}/cache`,
       { method: "POST", headers: { "X-CSRF-Token": csrfToken } },
     ),
+  uploadPlayerRelease: (
+    files: File[],
+    csrfToken: string,
+    onProgress: (percent: number) => void,
+  ) =>
+    new Promise<PlayerReleaseImport>((resolve, reject) => {
+      const contentTypes: Record<string, string> = {
+        "tilecast-player.apk": "application/vnd.android.package-archive",
+        "tilecast-player-update.json": "application/json",
+        "tilecast-player-update.json.sig": "text/plain",
+      };
+      const form = new FormData();
+      for (const file of files)
+        form.append(
+          "files",
+          new Blob([file], { type: contentTypes[file.name] }),
+          file.name,
+        );
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "/api/v1/player-releases/upload");
+      xhr.withCredentials = true;
+      xhr.setRequestHeader("X-CSRF-Token", csrfToken);
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable)
+          onProgress(Math.round((event.loaded / event.total) * 100));
+      };
+      xhr.onerror = () =>
+        reject(new ApiError("Release upload failed.", 0, "network_error"));
+      xhr.onload = () => {
+        let body: DataResponse<PlayerReleaseImport> | ErrorResponse = {};
+        try {
+          body = JSON.parse(xhr.responseText || "{}") as
+            DataResponse<PlayerReleaseImport> | ErrorResponse;
+        } catch {
+          // A proxy may replace a bounded API error with a non-JSON response.
+        }
+        if (xhr.status < 200 || xhr.status >= 300) {
+          const error = body as ErrorResponse;
+          reject(
+            new ApiError(
+              error.error?.message ?? "Release upload failed.",
+              xhr.status,
+              error.error?.code ?? "unknown_error",
+            ),
+          );
+          return;
+        }
+        resolve((body as DataResponse<PlayerReleaseImport>).data);
+      };
+      xhr.send(form);
+    }),
   updateDeployments: () =>
     request<{ items: UpdateDeployment[] }>("/update-deployments"),
   createUpdateDeployment: (

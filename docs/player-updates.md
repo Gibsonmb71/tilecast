@@ -35,7 +35,22 @@ The `Tilecast Player Release` workflow requires `TILECAST_ANDROID_KEYSTORE_BASE6
 
 ## Studio and player flow
 
-Owners check/import releases and request caching under **Settings → Player Updates**. Owners and Administrators deploy a fully verified cached release to screens and/or groups. Group membership is resolved at deployment start and duplicates are removed. Modes are download only, install now, and maintenance window. Screen states distinguish downloading, verification, permission/user approval, installation, reconnecting, success, failure, cancellation, incompatibility, and already-current.
+Owners can either select **Upload release** or **Sync from GitHub** under **Settings → Player Updates**. Direct upload accepts exactly `tilecast-player.apk`, `tilecast-player-update.json`, and `tilecast-player-update.json.sig`. The server applies the same manifest-signature, APK hash/size, package metadata, version, minimum-SDK, and Android signing-certificate checks to both sources. A verified direct upload is moved atomically into the same private update cache and creates the same Player release record used by deployments. GitHub availability is therefore optional.
+
+Owners and Administrators deploy a fully verified cached release to screens and/or groups. Group membership is resolved at deployment start and duplicates are removed. Modes are download only, install now, and maintenance window. Screen states distinguish downloading, verification, permission/user approval, installation, reconnecting, success, failure, cancellation, incompatibility, and already-current. Players always retrieve APKs from their paired Tilecast server; the player never contacts GitHub.
+
+## CI publishing
+
+Set `TILECAST_RELEASE_PUBLISH_TOKEN` to a high-entropy secret to enable narrowly scoped CI publishing. A CI job may send the same three multipart files to `POST /api/v1/player-releases/upload` with `Authorization: Bearer <token>`. This token grants only release upload access. Studio uses the normal Owner session and CSRF token instead. Keep the publishing token in CI and deployment secret storage; it is never returned by the API or written to audit metadata. The update-manifest private key and Android keystore must never be installed on Tilecast Server.
+
+```sh
+curl --fail-with-body \
+  -H "Authorization: Bearer $TILECAST_RELEASE_PUBLISH_TOKEN" \
+  -F "files=@tilecast-player.apk;type=application/vnd.android.package-archive" \
+  -F "files=@tilecast-player-update.json;type=application/json" \
+  -F "files=@tilecast-player-update.json.sig;type=text/plain" \
+  https://tilecast.example.org/api/v1/player-releases/upload
+```
 
 The player resumes `.part` downloads, verifies SHA-256, package name, version code, minimum SDK, and signing certificate, then uses Android `PackageInstaller`. Emergency playback delays installation but not downloading. Pairing credentials, manifests, configuration, disabled state, and media cache live outside the APK and survive replacement. Success is recorded only after the updated player reconnects and reports the expected version code.
 

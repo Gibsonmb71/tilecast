@@ -1159,6 +1159,86 @@ tbody tr:hover {
   accent-color: var(--tc-action-primary);
 }
 
+.player-release-upload {
+  display: grid;
+  gap: var(--tc-space-4);
+  padding: var(--tc-space-4);
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-panel);
+  background: var(--tc-bg-subtle);
+}
+
+.player-release-upload h4,
+.player-release-upload p {
+  margin: 0;
+}
+
+.player-release-upload p {
+  margin-top: var(--tc-space-1);
+  color: var(--tc-text-secondary);
+}
+
+.player-release-dropzone {
+  display: grid;
+  min-height: 132px;
+  place-items: center;
+  align-content: center;
+  gap: var(--tc-space-1);
+  border: 1px dashed var(--tc-border-strong);
+  border-radius: var(--tc-radius-control);
+  background: var(--tc-bg-surface);
+  cursor: pointer;
+}
+
+.player-release-dropzone:focus-within {
+  outline: 3px solid var(--tc-focus-ring);
+  outline-offset: 2px;
+}
+
+.player-release-dropzone span,
+.player-release-files small,
+.player-release-progress span {
+  color: var(--tc-text-secondary);
+}
+
+.player-release-dropzone input {
+  width: min(420px, calc(100% - var(--tc-space-6)));
+}
+
+.player-release-files {
+  display: grid;
+}
+
+.player-release-files > div {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--tc-space-2);
+  min-height: 44px;
+  border-bottom: 1px solid var(--tc-border-default);
+}
+
+.player-release-files > div:last-child {
+  border-bottom: 0;
+}
+
+.player-release-progress {
+  display: grid;
+  gap: var(--tc-space-2);
+}
+
+.player-release-progress > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--tc-space-2);
+}
+
+.player-release-progress progress {
+  width: 100%;
+  accent-color: var(--tc-action-primary);
+}
+
 @media (max-width: 1024px) {
   .content-picker-toolbar {
     grid-template-columns: minmax(180px, 1fr) auto auto;

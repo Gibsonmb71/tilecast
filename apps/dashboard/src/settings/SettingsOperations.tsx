@@ -316,6 +316,7 @@ export function PlayerUpdatesPanel({
   const [mode, setMode] = useState("download_only");
   const [windowStart, setWindowStart] = useState("");
   const [targetSearch, setTargetSearch] = useState("");
+  const [showUpload, setShowUpload] = useState(false);
   const check = useMutation({
     mutationFn: () => api.checkPlayerReleases(auth.status?.csrfToken ?? ""),
     onSuccess: () =>
@@ -364,25 +365,43 @@ export function PlayerUpdatesPanel({
           <div>
             <h3>Available releases</h3>
             <p>
-              Verified releases from <code>Gibsonmb71/tilecast</code>.
+              Upload a signed release directly or optionally synchronize from{" "}
+              <code>Gibsonmb71/tilecast</code>.
             </p>
           </div>
           {owner && (
-            <button
-              className="button button--primary"
-              disabled={check.isPending}
-              onClick={() => check.mutate()}
-            >
-              {check.isPending ? "Checking…" : "Check now"}
-            </button>
+            <div className="settings-inline-actions">
+              <button
+                className="button button--primary"
+                onClick={() => setShowUpload((visible) => !visible)}
+              >
+                Upload release
+              </button>
+              <button
+                className="button button--secondary"
+                disabled={check.isPending}
+                onClick={() => check.mutate()}
+              >
+                {check.isPending ? "Synchronizing…" : "Sync from GitHub"}
+              </button>
+            </div>
           )}
         </header>
+        {showUpload && (
+          <PlayerReleaseUpload
+            csrfToken={auth.status?.csrfToken ?? ""}
+            onImported={() => {
+              void client.invalidateQueries({ queryKey: ["player-releases"] });
+            }}
+          />
+        )}
         <div className="settings-table-wrap">
           <table>
             <thead>
               <tr>
                 <th>Version</th>
                 <th>Channel</th>
+                <th>Source</th>
                 <th>Published</th>
                 <th>Size</th>
                 <th>Verification</th>
@@ -398,6 +417,9 @@ export function PlayerUpdatesPanel({
                     <small>Code {release.versionCode}</small>
                   </td>
                   <td>{release.channel === "beta" ? "Beta" : "Stable"}</td>
+                  <td>
+                    {release.source === "upload" ? "Direct upload" : "GitHub"}
+                  </td>
                   <td>{new Date(release.publishedAt).toLocaleDateString()}</td>
                   <td>{formatBytes(release.apkSizeBytes)}</td>
                   <td>{humanize(release.verificationStatus)}</td>
@@ -599,6 +621,170 @@ export function PlayerUpdatesPanel({
           </table>
         </div>
       </section>
+    </div>
+  );
+}
+
+const releaseFileNames = [
+  "tilecast-player.apk",
+  "tilecast-player-update.json",
+  "tilecast-player-update.json.sig",
+] as const;
+
+function PlayerReleaseUpload({
+  csrfToken,
+  onImported,
+}: {
+  csrfToken: string;
+  onImported: () => void;
+}) {
+  const [files, setFiles] = useState<Record<string, File>>({});
+  const [progress, setProgress] = useState(0);
+  const [phase, setPhase] = useState<
+    "selecting" | "uploading" | "verifying" | "complete"
+  >("selecting");
+  const [clientError, setClientError] = useState("");
+  const upload = useMutation({
+    mutationFn: () =>
+      api.uploadPlayerRelease(
+        releaseFileNames
+          .map((name) => files[name])
+          .filter((file): file is File => Boolean(file)),
+        csrfToken,
+        (value) => {
+          setProgress(value);
+          if (value >= 100) setPhase("verifying");
+        },
+      ),
+    onMutate: () => {
+      setProgress(0);
+      setPhase("uploading");
+    },
+    onSuccess: () => {
+      setPhase("complete");
+      onImported();
+    },
+    onError: () => setPhase("selecting"),
+  });
+  const selectFiles = (selected: FileList | File[]) => {
+    const next = { ...files };
+    let error = "";
+    for (const file of Array.from(selected)) {
+      if (
+        !releaseFileNames.includes(
+          file.name as (typeof releaseFileNames)[number],
+        )
+      ) {
+        error = `Unexpected file: ${file.name}. Choose only the three signed release files.`;
+        continue;
+      }
+      if (file.name === "tilecast-player-update.json" && file.size > 128 * 1024)
+        error = "The update manifest must not exceed 128 KB.";
+      else if (file.name.endsWith(".sig") && file.size > 4 * 1024)
+        error = "The manifest signature must not exceed 4 KB.";
+      else next[file.name] = file;
+    }
+    setClientError(error);
+    setFiles(next);
+    setPhase("selecting");
+    upload.reset();
+  };
+  const ready = releaseFileNames.every((name) => files[name]) && !clientError;
+  return (
+    <div className="player-release-upload">
+      <div>
+        <h4>Upload signed Player release</h4>
+        <p>
+          All three files are verified before the APK enters Tilecast&apos;s
+          private update cache.
+        </p>
+      </div>
+      <label
+        className="player-release-dropzone"
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={(event) => {
+          event.preventDefault();
+          selectFiles(event.dataTransfer.files);
+        }}
+      >
+        <strong>Drop the release files here</strong>
+        <span>or choose all three files</span>
+        <input
+          type="file"
+          multiple
+          onChange={(event) =>
+            event.target.files && selectFiles(event.target.files)
+          }
+          disabled={upload.isPending}
+        />
+      </label>
+      <div
+        className="player-release-files"
+        aria-label="Release file validation"
+      >
+        {releaseFileNames.map((name) => (
+          <div key={name}>
+            <span aria-hidden="true">{files[name] ? "✓" : "○"}</span>
+            <strong>{name}</strong>
+            <small>
+              {files[name] ? formatBytes(files[name].size) : "Required"}
+            </small>
+          </div>
+        ))}
+      </div>
+      {(clientError || upload.error) && (
+        <div className="notice notice--danger" role="alert">
+          {clientError || (upload.error as Error).message}
+        </div>
+      )}
+      {phase !== "selecting" && (
+        <div className="player-release-progress" aria-live="polite">
+          <div>
+            <strong>
+              {phase === "uploading"
+                ? `Uploading… ${progress}%`
+                : phase === "verifying"
+                  ? "Verifying signature, APK, and package metadata…"
+                  : "Release verified and cached"}
+            </strong>
+            {upload.data && (
+              <span>
+                Version {upload.data.versionName} ·{" "}
+                {upload.data.channel === "beta" ? "Beta" : "Stable"} ·{" "}
+                {formatBytes(upload.data.apkSizeBytes)}
+              </span>
+            )}
+          </div>
+          {phase !== "complete" && (
+            <progress
+              value={phase === "verifying" ? undefined : progress}
+              max="100"
+            />
+          )}
+          {upload.data?.releaseNotes && <p>{upload.data.releaseNotes}</p>}
+        </div>
+      )}
+      <div className="settings-inline-actions">
+        <button
+          className="button button--primary"
+          disabled={!ready || upload.isPending || phase === "complete"}
+          onClick={() => upload.mutate()}
+        >
+          {upload.isPending ? "Importing release…" : "Upload and verify"}
+        </button>
+        <button
+          className="button button--quiet"
+          disabled={upload.isPending}
+          onClick={() => {
+            setFiles({});
+            setClientError("");
+            setPhase("selecting");
+            upload.reset();
+          }}
+        >
+          Clear files
+        </button>
+      </div>
     </div>
   );
 }

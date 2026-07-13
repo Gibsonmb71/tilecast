@@ -41,3 +41,13 @@ func TestManifestRejectsWrongApplicationAndDowngrade(t *testing.T) {
 		}
 	}
 }
+
+func TestManifestRejectsTrailingJSON(t *testing.T) {
+	public, private, _ := ed25519.GenerateKey(rand.Reader)
+	raw, _ := json.Marshal(Manifest{SchemaVersion: 1, Product: "tilecast-player", ApplicationID: ApplicationID, VersionCode: 9, VersionName: "0.9.0", Channel: "stable", MinimumSDK: 23, APKAssetName: "tilecast-player.apk", APKSizeBytes: 42, APKSHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", SigningCertificateSHA256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"})
+	raw = append(raw, []byte(` {}`)...)
+	signature := []byte(base64.StdEncoding.EncodeToString(ed25519.Sign(private, raw)))
+	if _, err := ParseAndVerifyManifest(raw, signature, public); err == nil {
+		t.Fatal("multiple JSON values were accepted")
+	}
+}

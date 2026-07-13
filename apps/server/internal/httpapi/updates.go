@@ -3,9 +3,12 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -15,7 +18,7 @@ import (
 )
 
 func (s *server) listPlayerReleases(w http.ResponseWriter, r *http.Request) {
-	rows, err := s.db.Query(r.Context(), `SELECT id,github_tag,channel,version_code,version_name,minimum_sdk,release_notes,published_at,apk_size,apk_sha256,signing_certificate_sha256,manifest_signature,cache_status,verification_status,verification_error FROM player_releases ORDER BY version_code DESC`)
+	rows, err := s.db.Query(r.Context(), `SELECT id,COALESCE(github_tag,''),source,channel,version_code,version_name,minimum_sdk,release_notes,published_at,apk_size,apk_sha256,signing_certificate_sha256,manifest_signature,cache_status,verification_status,verification_error FROM player_releases ORDER BY version_code DESC`)
 	if err != nil {
 		s.internalError(w, r, err)
 		return
@@ -24,19 +27,114 @@ func (s *server) listPlayerReleases(w http.ResponseWriter, r *http.Request) {
 	items := []map[string]any{}
 	for rows.Next() {
 		var id uuid.UUID
-		var tag, channel, name, notes, hash, cert, signature, cache, verification string
+		var tag, source, channel, name, notes, hash, cert, signature, cache, verification string
 		var code, size int64
 		var sdk int
 		var published time.Time
 		var verificationError *string
-		if rows.Scan(&id, &tag, &channel, &code, &name, &sdk, &notes, &published, &size, &hash, &cert, &signature, &cache, &verification, &verificationError) == nil {
-			items = append(items, map[string]any{"id": id, "tag": tag, "channel": channel, "versionCode": code, "versionName": name, "minimumSdk": sdk, "releaseNotes": notes, "publishedAt": published, "apkSizeBytes": size, "apkSha256": hash, "signingCertificateSha256": cert, "manifestSignature": signature, "cacheStatus": cache, "verificationStatus": verification, "verificationError": verificationError})
+		if rows.Scan(&id, &tag, &source, &channel, &code, &name, &sdk, &notes, &published, &size, &hash, &cert, &signature, &cache, &verification, &verificationError) == nil {
+			items = append(items, map[string]any{"id": id, "tag": tag, "source": source, "channel": channel, "versionCode": code, "versionName": name, "minimumSdk": sdk, "releaseNotes": notes, "publishedAt": published, "apkSizeBytes": size, "apkSha256": hash, "signingCertificateSha256": cert, "manifestSignature": signature, "cacheStatus": cache, "verificationStatus": verification, "verificationError": verificationError})
 		}
 	}
 	var checked *time.Time
 	var providerError *string
 	_ = s.db.QueryRow(r.Context(), `SELECT last_checked_at,safe_error FROM update_provider_state WHERE provider='github'`).Scan(&checked, &providerError)
 	writeJSON(w, 200, map[string]any{"data": map[string]any{"repository": "Gibsonmb71/tilecast", "lastCheckedAt": checked, "providerError": providerError, "items": items}})
+}
+
+func (s *server) uploadPlayerRelease(w http.ResponseWriter, r *http.Request) {
+	if !s.updates.ManifestKeyConfigured() {
+		writeError(w, http.StatusServiceUnavailable, "update_manifest_key_missing", "A trusted update manifest public key must be configured before importing releases.")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, s.updates.MaximumUploadBytes())
+	reader, err := r.MultipartReader()
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "player_release_upload_invalid", "Upload a multipart form containing the three required release files.")
+		return
+	}
+	temporary, err := os.MkdirTemp("", "tilecast-player-release-*")
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	defer os.RemoveAll(temporary)
+
+	files := map[string]string{}
+	for {
+		part, partErr := reader.NextPart()
+		if errors.Is(partErr, io.EOF) {
+			break
+		}
+		if partErr != nil {
+			writeError(w, http.StatusBadRequest, "player_release_upload_invalid", "The release upload could not be read.")
+			return
+		}
+		name := filepath.Base(part.FileName())
+		limit, accepted := releaseUploadPartLimit(name, part.Header.Get("Content-Type"), s.updates.MaximumAPKBytes())
+		if !accepted || name != part.FileName() || files[name] != "" {
+			part.Close()
+			writeError(w, http.StatusUnprocessableEntity, "player_release_file_invalid", "Only one copy of each required Tilecast Player release file is accepted.")
+			return
+		}
+		path := filepath.Join(temporary, name)
+		file, createErr := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if createErr != nil {
+			part.Close()
+			s.internalError(w, r, createErr)
+			return
+		}
+		written, copyErr := io.Copy(file, io.LimitReader(part, limit+1))
+		closeErr := file.Close()
+		part.Close()
+		if copyErr != nil || closeErr != nil || written > limit {
+			writeError(w, http.StatusRequestEntityTooLarge, "player_release_file_too_large", "A release file exceeds its configured size limit.")
+			return
+		}
+		files[name] = path
+	}
+	for _, name := range []string{"tilecast-player.apk", "tilecast-player-update.json", "tilecast-player-update.json.sig"} {
+		if files[name] == "" {
+			writeError(w, http.StatusUnprocessableEntity, "player_release_file_missing", "Missing required release file: "+name+".")
+			return
+		}
+	}
+	manifest, err := os.ReadFile(files["tilecast-player-update.json"])
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	signature, err := os.ReadFile(files["tilecast-player-update.json.sig"])
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	var userID *uuid.UUID
+	if session, ok := r.Context().Value(sessionContextKey).(auth.Session); ok {
+		userID = &session.User.ID
+	}
+	result, err := s.updates.ImportUpload(r.Context(), files["tilecast-player.apk"], manifest, signature, userID)
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "player_release_verification_failed", err.Error())
+		return
+	}
+	resourceID := result.ID.String()
+	_, _ = s.db.Exec(r.Context(), `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,metadata)VALUES($1,$2,'player_updates.release_uploaded','player_release',$3,$4)`, uuid.New(), userID, resourceID, map[string]any{"versionCode": result.Manifest.VersionCode, "channel": result.Manifest.Channel, "duplicate": result.Duplicate})
+	writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]any{"id": result.ID, "source": result.Source, "versionCode": result.Manifest.VersionCode, "versionName": result.Manifest.VersionName, "channel": result.Manifest.Channel, "apkSizeBytes": result.Manifest.APKSizeBytes, "releaseNotes": result.Manifest.ReleaseNotes, "cacheStatus": result.CacheStatus, "verificationStatus": result.VerificationStatus, "duplicate": result.Duplicate}})
+}
+
+func releaseUploadPartLimit(name, contentType string, maximum int64) (int64, bool) {
+	mediaType := strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
+	switch name {
+	case "tilecast-player.apk":
+		return maximum, mediaType == "application/vnd.android.package-archive" || mediaType == "application/octet-stream"
+	case "tilecast-player-update.json":
+		return 128 << 10, mediaType == "application/json" || mediaType == "application/octet-stream"
+	case "tilecast-player-update.json.sig":
+		return 4 << 10, mediaType == "application/octet-stream" || mediaType == "text/plain"
+	default:
+		return 0, false
+	}
 }
 
 func (s *server) checkPlayerReleases(w http.ResponseWriter, r *http.Request) {

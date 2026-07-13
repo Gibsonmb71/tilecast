@@ -879,6 +879,28 @@ paths:
           "200": { description: Check completed },
           "502": { description: GitHub or verification failure },
         }
+  /api/v1/player-releases/upload:
+    post:
+      summary: Upload and verify a signed Tilecast Player release bundle
+      description: Accepts the APK, signed update manifest, and manifest signature as multipart files. Owner session plus CSRF or a configured release-publishing bearer token is required.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [files]
+              properties:
+                files:
+                  type: array
+                  minItems: 3
+                  maxItems: 3
+                  items: { type: string, format: binary }
+      responses:
+        "201": { description: Release fully verified and cached }
+        "401": { description: Invalid publishing token }
+        "413": { description: Upload exceeds configured limits }
+        "422": { description: Missing file or verification failure }
   /api/v1/player-releases/{id}/cache:
     post:
       summary: Download and verify a signed Player APK into private cache

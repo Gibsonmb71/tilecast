@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -25,18 +26,19 @@ import (
 )
 
 type Dependencies struct {
-	Auth          *auth.Service
-	Devices       *devices.Service
-	Media         *media.Service
-	Playlists     *playlists.Service
-	Scheduling    *scheduling.Service
-	Settings      *settings.Service
-	Updates       *updates.Service
-	DB            *pgxpool.Pool
-	Logger        *slog.Logger
-	CookieName    string
-	SecureCookies bool
-	Operations    OperationsConfig
+	Auth                *auth.Service
+	Devices             *devices.Service
+	Media               *media.Service
+	Playlists           *playlists.Service
+	Scheduling          *scheduling.Service
+	Settings            *settings.Service
+	Updates             *updates.Service
+	DB                  *pgxpool.Pool
+	Logger              *slog.Logger
+	CookieName          string
+	SecureCookies       bool
+	ReleasePublishToken string
+	Operations          OperationsConfig
 }
 
 type OperationsConfig struct {
@@ -49,23 +51,25 @@ type OperationsConfig struct {
 }
 
 type server struct {
-	auth              *auth.Service
-	devices           *devices.Service
-	media             *media.Service
-	playlists         *playlists.Service
-	scheduling        *scheduling.Service
-	db                *pgxpool.Pool
-	logger            *slog.Logger
-	cookieName        string
-	secureCookies     bool
-	authLimiter       *rateLimiter
-	pairingLimiter    *rateLimiter
-	codeLimiter       *rateLimiter
-	operationsLimiter *rateLimiter
-	operations        OperationsConfig
-	settings          *settings.Service
-	updates           *updates.Service
-	startedAt         time.Time
+	auth                          *auth.Service
+	devices                       *devices.Service
+	media                         *media.Service
+	playlists                     *playlists.Service
+	scheduling                    *scheduling.Service
+	db                            *pgxpool.Pool
+	logger                        *slog.Logger
+	cookieName                    string
+	secureCookies                 bool
+	authLimiter                   *rateLimiter
+	pairingLimiter                *rateLimiter
+	codeLimiter                   *rateLimiter
+	operationsLimiter             *rateLimiter
+	operations                    OperationsConfig
+	settings                      *settings.Service
+	updates                       *updates.Service
+	releasePublishTokenHash       [32]byte
+	releasePublishTokenConfigured bool
+	startedAt                     time.Time
 }
 
 type contextKey string
@@ -91,6 +95,10 @@ func New(deps Dependencies) http.Handler {
 		settings:          deps.Settings,
 		updates:           deps.Updates,
 		startedAt:         time.Now(),
+	}
+	if deps.ReleasePublishToken != "" {
+		s.releasePublishTokenHash = sha256.Sum256([]byte(deps.ReleasePublishToken))
+		s.releasePublishTokenConfigured = true
 	}
 	if s.operations.MaxEmergencyDurationHours == 0 {
 		s.operations = OperationsConfig{24, 250, 50, 10, 120, 30}
@@ -127,6 +135,7 @@ func New(deps Dependencies) http.Handler {
 		api.With(s.requireDevice).Get("/player/updates/{releaseId}/apk", s.playerUpdateAPK)
 		api.With(s.requireDevice).Head("/player/updates/{releaseId}/apk", s.playerUpdateAPK)
 		api.With(s.requireDevice).Post("/player/update-deployments/{deploymentId}/status", s.playerUpdateStatus)
+		api.With(s.operationsRateLimit, s.requireReleasePublisher).Post("/player-releases/upload", s.uploadPlayerRelease)
 
 		api.Group(func(dashboard chi.Router) {
 			dashboard.Use(s.requireSession)
@@ -378,6 +387,21 @@ func (s *server) requireCSRF(next http.Handler) http.Handler {
 			return
 		}
 		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *server) requireReleasePublisher(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if credential, ok := parseAuthorization(r.Header.Get("Authorization"), "Bearer"); ok {
+			provided := sha256.Sum256([]byte(credential))
+			if !s.releasePublishTokenConfigured || subtle.ConstantTimeCompare(provided[:], s.releasePublishTokenHash[:]) != 1 {
+				writeError(w, http.StatusUnauthorized, "release_publish_token_invalid", "The release publishing token is invalid.")
+				return
+			}
+			next.ServeHTTP(w, r)
+			return
+		}
+		s.requireSession(s.requireRoles("owner")(s.requireCSRF(next))).ServeHTTP(w, r)
 	})
 }
 
