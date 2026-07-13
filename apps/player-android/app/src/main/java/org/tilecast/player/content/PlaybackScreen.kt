@@ -40,6 +40,8 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.tilecast.player.network.ManifestAsset
 import org.tilecast.player.network.ManifestItem
+import org.tilecast.player.ui.theme.SignalBackground
+import org.tilecast.player.ui.theme.SignalText
 import java.io.File
 
 data class PlaybackSession(val content: PreparedContent, val serverUrl: String, val credential: String)
@@ -70,7 +72,7 @@ internal fun nextPlaybackCursor(cursor: PlaybackCursor, itemCount: Int) =
 
 @Composable private fun RenderedItem(item:ManifestItem,asset:ManifestAsset?,website:org.tilecast.player.network.ManifestWebsite?,session:PlaybackSession,onDone:()->Unit,onFailure:(String)->Unit,onWebsiteStatus:(WebsitePlaybackStatus)->Unit){if(website!=null)WebsiteItem(item,website,session,onDone,onWebsiteStatus)else if(asset?.mimeType?.startsWith("image/")==true)ImageItem(item,asset,session,onDone,onFailure)else if(asset!=null)VideoItem(item,asset,session,onDone,onFailure)}
 
-@Composable private fun EmptyPlayback(message: String) { Box(Modifier.fillMaxSize().background(Color(0xFF13231E)), contentAlignment = Alignment.Center) { androidx.compose.material3.Text(message, color = Color.White) } }
+@Composable private fun EmptyPlayback(message: String) { Box(Modifier.fillMaxSize().background(SignalBackground), contentAlignment = Alignment.Center) { androidx.compose.material3.Text(message, color = SignalText) } }
 
 @Composable private fun ImageItem(item: ManifestItem, asset: ManifestAsset, session: PlaybackSession, onDone: () -> Unit, onFailure: (String) -> Unit) {
 	val variantId=item.variantId?:return

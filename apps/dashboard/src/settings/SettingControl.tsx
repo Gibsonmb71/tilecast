@@ -1,4 +1,5 @@
 import { useId, useMemo, useState } from "react";
+import { signalColors } from "@tilecast/design-tokens/values";
 import type { SettingDefinition } from "../api/types";
 import { enumLabel } from "./settingDisplay";
 
@@ -352,7 +353,7 @@ function ColorInput({
       <input
         aria-label="Color picker"
         type="color"
-        value={valid ? value : "#000000"}
+        value={valid ? value : signalColors.colorInputFallback}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value.toUpperCase())}
       />

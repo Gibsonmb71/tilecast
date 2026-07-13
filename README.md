@@ -2,6 +2,8 @@
 
 **Open signage, built to stay on.**
 
+Tilecast Studio and Tilecast Player use the [Tilecast Signal design system](docs/design-system.md) for shared color, typography, spacing, status, focus, and accessibility behavior.
+
 Tilecast is an open-source, self-hosted digital signage platform for organizations that want to operate their own signage server. It is designed for reliable playback on Fire TV, Google TV, and Android TV devices without requiring a paid cloud service.
 
 This repository implements **Milestone 10: Android kiosk reliability, Power Assist, and Accessibility Control**. Tilecast adds timezone-aware active hours, cached boot recovery, bounded watchdog escalation and safe mode, capability-confirmed Managed Kiosk, optional locally enabled Accessibility Control Assist, and best-effort Android sleep/wake behavior. Tilecast does not send direct HDMI-CEC commands, and Standard Reliability cannot guarantee that users cannot leave the app. See [Android reliability and power](docs/reliability-and-power.md).

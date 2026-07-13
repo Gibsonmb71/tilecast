@@ -1,0 +1,41 @@
+:root {
+  --tc-sidebar-bg: #111b27;
+  --tc-sidebar-border: #233143;
+  --tc-sidebar-text: #aab8c5;
+  --tc-sidebar-text-active: #ffffff;
+  --tc-sidebar-hover: #1a2837;
+  --tc-sidebar-active: #20345e;
+  --tc-button-primary-bg: var(--tc-action-primary);
+  --tc-button-primary-text: var(--tc-text-inverse);
+  --tc-input-bg: var(--tc-bg-surface);
+  --tc-input-border: var(--tc-border-strong);
+  --tc-input-disabled-bg: var(--tc-bg-subtle);
+  --tc-table-header-bg: var(--tc-bg-subtle);
+  --tc-table-row-hover: color-mix(
+    in srgb,
+    var(--tc-action-primary-soft) 55%,
+    var(--tc-bg-surface)
+  );
+  --tc-table-row-selected: var(--tc-action-primary-soft);
+  --tc-notice-info-bg: var(--tc-status-info-bg);
+  --tc-notice-success-bg: var(--tc-status-success-bg);
+  --tc-notice-warning-bg: var(--tc-status-warning-bg);
+  --tc-notice-danger-bg: var(--tc-status-danger-bg);
+
+  /* Compatibility aliases while page markup moves to semantic names. */
+  --tc-ink: var(--tc-text-primary);
+  --tc-ink-muted: var(--tc-text-secondary);
+  --tc-canvas: var(--tc-bg-canvas);
+  --tc-surface: var(--tc-bg-surface);
+  --tc-surface-muted: var(--tc-bg-subtle);
+  --tc-border: var(--tc-border-default);
+  --tc-brand: var(--tc-action-primary);
+  --tc-brand-hover: var(--tc-action-primary-hover);
+  --tc-brand-soft: var(--tc-action-primary-soft);
+  --tc-danger: var(--tc-status-danger);
+  --tc-warning: var(--tc-status-warning);
+  --tc-focus: var(--tc-focus-ring);
+  --tc-radius-sm: var(--tc-radius-control);
+  --tc-radius-md: var(--tc-radius-panel);
+  --tc-shadow-sm: none;
+}

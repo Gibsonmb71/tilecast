@@ -6,6 +6,7 @@ import "@tilecast/design-tokens/tokens.css";
 import { App } from "./App";
 import { AuthProvider } from "./auth/AuthProvider";
 import "./styles.css";
+import "./styles/signal.css";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false } },

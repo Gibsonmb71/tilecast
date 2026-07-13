@@ -1,0 +1,17 @@
+:root {
+  --tc-space-1: 4px;
+  --tc-space-2: 8px;
+  --tc-space-3: 12px;
+  --tc-space-4: 16px;
+  --tc-space-6: 24px;
+  --tc-space-8: 32px;
+  --tc-space-12: 48px;
+  --tc-space-16: 64px;
+  --tc-radius-control: 6px;
+  --tc-radius-panel: 9px;
+  --tc-radius-overlay: 12px;
+  --tc-radius-pill: 999px;
+  --tc-motion-fast: 120ms;
+  --tc-motion-standard: 180ms;
+  --tc-motion-slow: 240ms;
+}

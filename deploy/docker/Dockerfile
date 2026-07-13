@@ -4,7 +4,8 @@ WORKDIR /src
 COPY package.json package-lock.json ./
 COPY apps/dashboard/package.json apps/dashboard/package.json
 COPY packages/design-tokens/package.json packages/design-tokens/package.json
-COPY packages/design-tokens/tokens.css packages/design-tokens/tokens.css
+COPY packages/design-tokens/*.css packages/design-tokens/
+COPY packages/design-tokens/*.ts packages/design-tokens/
 COPY packages/api-schema/package.json packages/api-schema/package.json
 COPY packages/manifest-schema/package.json packages/manifest-schema/package.json
 COPY packages/settings-schema/package.json packages/settings-schema/package.json

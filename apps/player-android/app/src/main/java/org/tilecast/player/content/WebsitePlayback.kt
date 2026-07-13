@@ -22,6 +22,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.delay
 import org.tilecast.player.network.ManifestItem
 import org.tilecast.player.network.ManifestWebsite
+import org.tilecast.player.ui.theme.SignalBackground
 import java.io.File
 import java.time.Instant
 
@@ -56,5 +57,5 @@ object WebsiteDataManager {
     if(site.reloadPolicy=="interval"&&site.refreshIntervalSeconds!=null){val interval=site.refreshIntervalSeconds;LaunchedEffect(item.id,interval){while(true){delay(interval*1000L);report("refreshing");activeWebView?.reload()}}}
 }
 private fun mapError(code:Int)=when(code){WebViewClient.ERROR_HOST_LOOKUP->"dns_failure";WebViewClient.ERROR_CONNECT->"connection_failure";WebViewClient.ERROR_TIMEOUT->"load_timeout";WebViewClient.ERROR_FAILED_SSL_HANDSHAKE->"tls_failure";WebViewClient.ERROR_UNSUPPORTED_SCHEME->"unsupported_scheme";else->"unknown_webview_error"}
-private fun parseColor(value:String)=runCatching{Color(android.graphics.Color.parseColor(value))}.getOrDefault(Color(0xFF13231E))
+private fun parseColor(value:String)=runCatching{Color(android.graphics.Color.parseColor(value))}.getOrDefault(SignalBackground)
 private fun isOffline(context:Context):Boolean{val manager=context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager;val network=manager.activeNetwork?:return true;return manager.getNetworkCapabilities(network)?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)!=true}

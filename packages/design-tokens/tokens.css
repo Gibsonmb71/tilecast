@@ -1,22 +1,5 @@
-:root {
-  color-scheme: light;
-  --tc-ink: #18201d;
-  --tc-ink-muted: #5d6863;
-  --tc-canvas: #f2f3ef;
-  --tc-surface: #ffffff;
-  --tc-surface-muted: #f7f8f5;
-  --tc-border: #d9ddd7;
-  --tc-border-strong: #b9c0ba;
-  --tc-brand: #176b55;
-  --tc-brand-hover: #105944;
-  --tc-brand-soft: #e3f0eb;
-  --tc-danger: #a23935;
-  --tc-warning: #9a6715;
-  --tc-focus: #2c7fda;
-  --tc-radius-sm: 4px;
-  --tc-radius-md: 7px;
-  --tc-shadow-sm: 0 1px 2px rgb(20 30 25 / 8%);
-  --tc-font-sans:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-    "Segoe UI", sans-serif;
-}
+@import "./colors.css";
+@import "./semantic.css";
+@import "./typography.css";
+@import "./spacing.css";
+@import "./components.css";

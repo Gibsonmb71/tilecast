@@ -13,6 +13,7 @@ import { useQuery } from "@tanstack/react-query";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { useAuth } from "../auth/AuthProvider";
 import { Brand } from "../components/Brand";
+import { Button } from "../components/ui";
 import { api } from "../api/client";
 
 const nav = [
@@ -34,11 +35,6 @@ export function DashboardShell() {
     queryFn: api.preferences,
     enabled: Boolean(auth.status?.authenticated),
   });
-  const branding = useQuery({
-    queryKey: ["settings", "branding-shell"],
-    queryFn: api.settings,
-    enabled: Boolean(auth.status?.authenticated),
-  });
   useEffect(() => {
     const values = preferences.data?.values;
     if (!values) return;
@@ -55,11 +51,6 @@ export function DashboardShell() {
       Boolean(values["preference.reduced_motion"]),
     );
   }, [preferences.data]);
-  useEffect(() => {
-    const color = branding.data?.values["branding.primary_color"];
-    if (typeof color === "string")
-      document.documentElement.style.setProperty("--tc-brand", color);
-  }, [branding.data]);
   useEffect(() => {
     if (!auth.isLoading && !auth.status?.authenticated)
       void navigate(
@@ -81,8 +72,8 @@ export function DashboardShell() {
         </div>
         <nav aria-label="Primary">
           {nav.map(([label, to, Icon]) => (
-            <NavLink key={to} to={to}>
-              <Icon size={17} strokeWidth={1.8} />
+            <NavLink key={to} to={to} aria-label={label}>
+              <Icon size={18} strokeWidth={1.8} aria-hidden="true" />
               <span>{label}</span>
             </NavLink>
           ))}
@@ -100,13 +91,13 @@ export function DashboardShell() {
       <div className="workspace">
         <header className="topbar">
           <h1>{title}</h1>
-          <button
-            className="button button--quiet"
+          <Button
+            variant="quiet"
             onClick={() => void auth.logout()}
             disabled={auth.isSubmitting}
           >
             Sign out
-          </button>
+          </Button>
         </header>
         <main className="workspace__content">
           <Outlet />

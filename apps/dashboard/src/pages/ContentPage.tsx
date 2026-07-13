@@ -9,6 +9,7 @@ import {
   Globe2,
   X,
 } from "lucide-react";
+import { signalColors } from "@tilecast/design-tokens/values";
 import {
   useEffect,
   useRef,
@@ -679,7 +680,7 @@ const defaultWebsite: WebsiteInput = {
   scrollX: 0,
   scrollY: 0,
   customUserAgent: "",
-  backgroundColor: "#13231E",
+  backgroundColor: signalColors.playerBackground,
   failureBehavior: "placeholder",
 };
 function WebsiteEditor({

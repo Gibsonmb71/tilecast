@@ -4,6 +4,7 @@ import { useLocation } from "react-router";
 import { api, ApiError } from "../api/client";
 import type { SettingDefinition } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
+import { signalColors } from "@tilecast/design-tokens/values";
 import { SettingsShell } from "../settings/SettingsShell";
 import { SettingsSection } from "../settings/SettingsSection";
 import { SettingsActionBar } from "../settings/SettingsActionBar";
@@ -265,9 +266,12 @@ function BrandingPreview({ values }: { values: Record<string, unknown> }) {
           style={{
             background: text(
               values["branding.player_background_color"],
-              "#13231E",
+              signalColors.playerBackground,
             ),
-            color: text(values["branding.player_text_color"], "#FFFFFF"),
+            color: text(
+              values["branding.player_text_color"],
+              signalColors.playerText,
+            ),
           }}
         >
           <strong>

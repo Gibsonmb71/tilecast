@@ -4,6 +4,7 @@
   "private": true,
   "license": "AGPL-3.0-only",
   "exports": {
-    "./tokens.css": "./tokens.css"
+    "./tokens.css": "./tokens.css",
+    "./values": "./values.ts"
   }
 }
