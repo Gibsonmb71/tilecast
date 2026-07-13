@@ -1,0 +1,1107 @@
+import {
+  useMutation,
+  useQuery,
+  useQueries,
+  useQueryClient,
+  type UseQueryResult,
+} from "@tanstack/react-query";
+import {
+  CalendarDays,
+  Check,
+  ChevronDown,
+  Clock3,
+  Search,
+  X,
+} from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Link, useNavigate, useParams } from "react-router";
+import { api } from "../api/client";
+import type {
+  Playlist,
+  ScheduleInput,
+  SchedulePreview,
+  ScheduleTarget,
+} from "../api/types";
+import { useAuth } from "../auth/AuthProvider";
+import { Button, Dialog, Field, Notice, Switch } from "../components/ui";
+import {
+  conflictWinnerReason,
+  countTargetScreens,
+  describeScheduleTiming,
+  oneTimeDuration,
+  priorityLabel,
+  priorityPreset,
+  scheduleIsDirty,
+  schedulePreviewTimestamp,
+  scheduleWeekdays,
+  setTargetSelected,
+  validateScheduleInput,
+  type PriorityPreset,
+} from "./scheduleBuilderModel";
+
+const initialSchedule = (): ScheduleInput => ({
+  name: "",
+  description: "",
+  playlistId: "",
+  type: "weekly",
+  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+  priority: 0,
+  enabled: true,
+  dailyStart: "09:00",
+  dailyEnd: "17:00",
+  daysOfWeek: [1, 2, 3, 4, 5],
+  targets: [],
+});
+
+function scheduleToInput(
+  schedule: Awaited<ReturnType<typeof api.schedule>>,
+): ScheduleInput {
+  return {
+    name: schedule.name,
+    description: schedule.description,
+    playlistId: schedule.playlistId,
+    type: schedule.type,
+    timezone: schedule.timezone,
+    priority: schedule.priority,
+    enabled: schedule.enabled,
+    startDate: schedule.startDate,
+    endDate: schedule.endDate,
+    oneTimeStart: schedule.oneTimeStart,
+    oneTimeEnd: schedule.oneTimeEnd,
+    dailyStart: schedule.dailyStart,
+    dailyEnd: schedule.dailyEnd,
+    daysOfWeek: schedule.daysOfWeek,
+    targets: schedule.targets,
+  };
+}
+
+export function ScheduleEditorPage() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const auth = useAuth();
+  const client = useQueryClient();
+  const csrf = auth.status?.csrfToken ?? "";
+  const existing = useQuery({
+    queryKey: ["schedules", id],
+    queryFn: () => api.schedule(id!),
+    enabled: Boolean(id),
+  });
+  const playlists = useQuery({
+    queryKey: ["playlists", "schedule"],
+    queryFn: () => api.playlists(),
+  });
+  const screens = useQuery({ queryKey: ["screens"], queryFn: api.screens });
+  const groups = useQuery({
+    queryKey: ["screen-groups"],
+    queryFn: () => api.screenGroups(),
+  });
+  const defaults = useQuery({
+    queryKey: ["schedules", "defaults"],
+    queryFn: () => api.schedules(),
+  });
+  const [input, setInput] = useState<ScheduleInput>(initialSchedule);
+  const [baseline, setBaseline] = useState<ScheduleInput>(initialSchedule);
+  const [attempted, setAttempted] = useState(false);
+  const [playlistOpen, setPlaylistOpen] = useState(false);
+  const [targetTab, setTargetTab] = useState<"screens" | "groups">("screens");
+  const [targetSearch, setTargetSearch] = useState("");
+  const [showDateRange, setShowDateRange] = useState(false);
+  const [defaultTimezoneApplied, setDefaultTimezoneApplied] = useState(false);
+
+  useEffect(() => {
+    if (!existing.data) return;
+    const next = scheduleToInput(existing.data);
+    setInput(next);
+    setBaseline(next);
+    setShowDateRange(Boolean(next.startDate || next.endDate));
+  }, [existing.data]);
+  useEffect(() => {
+    if (id || defaultTimezoneApplied || !defaults.data?.defaultTimezone) return;
+    setInput((current) => {
+      if (scheduleIsDirty(current, baseline)) return current;
+      const next = { ...current, timezone: defaults.data.defaultTimezone };
+      setBaseline(next);
+      return next;
+    });
+    setDefaultTimezoneApplied(true);
+  }, [baseline, defaultTimezoneApplied, defaults.data?.defaultTimezone, id]);
+
+  const dirty = scheduleIsDirty(input, baseline);
+  const errors = useMemo(() => validateScheduleInput(input), [input]);
+  const valid = Object.keys(errors).length === 0;
+  useEffect(() => {
+    const warn = (event: BeforeUnloadEvent) => {
+      if (dirty) event.preventDefault();
+    };
+    addEventListener("beforeunload", warn);
+    return () => removeEventListener("beforeunload", warn);
+  }, [dirty]);
+
+  const selectedPlaylist = playlists.data?.items.find(
+    (playlist) => playlist.id === input.playlistId,
+  );
+  const playlistDetails = useQuery({
+    queryKey: ["playlists", input.playlistId, "schedule-card"],
+    queryFn: () => api.playlist(input.playlistId),
+    enabled: Boolean(input.playlistId),
+  });
+  const selectedPlaylistData = playlistDetails.data ?? selectedPlaylist;
+  const selectedGroupIds = input.targets
+    .filter((target) => target.type === "group")
+    .map((target) => target.id);
+  const selectedGroups = useQueries({
+    queries: selectedGroupIds.map((groupId) => ({
+      queryKey: ["screen-groups", groupId, "schedule-target"],
+      queryFn: () => api.screenGroup(groupId),
+    })),
+  });
+  const resolvedGroups = selectedGroups
+    .map((query) => query.data)
+    .filter((group) => group !== undefined);
+  const previewScreenId =
+    input.targets.find((target) => target.type === "screen")?.id ??
+    resolvedGroups[0]?.screens[0]?.id ??
+    "";
+  const preview = useQuery({
+    queryKey: ["schedule-preview", input, previewScreenId],
+    queryFn: () =>
+      api.previewSchedule(
+        previewScreenId,
+        schedulePreviewTimestamp(input),
+        input,
+      ),
+    enabled: Boolean(previewScreenId && input.playlistId && valid),
+  });
+  const targetCount = countTargetScreens(
+    input.targets,
+    screens.data?.items ?? [],
+    resolvedGroups,
+  );
+
+  const set = <K extends keyof ScheduleInput>(
+    key: K,
+    value: ScheduleInput[K],
+  ) => setInput((current) => ({ ...current, [key]: value }));
+  const save = useMutation({
+    mutationFn: () =>
+      id
+        ? api.updateSchedule(id, input, csrf)
+        : api.createSchedule(input, csrf),
+    onSuccess: (schedule) => {
+      const next = scheduleToInput(schedule);
+      setBaseline(next);
+      setInput(next);
+      void client.invalidateQueries({ queryKey: ["schedules"] });
+      void navigate(`/schedules/${schedule.id}`, { replace: true });
+    },
+  });
+  const remove = useMutation({
+    mutationFn: () => api.deleteSchedule(id!, csrf),
+    onSuccess: () => void navigate("/schedules"),
+  });
+
+  if (id && existing.isLoading)
+    return <div className="table-loading">Loading schedule…</div>;
+  return (
+    <section className="schedule-builder-page">
+      <header className="page-heading schedule-builder-heading">
+        <div>
+          <Link to="/schedules">← Schedules</Link>
+          <h2>{id ? "Edit schedule" : "Create schedule"}</h2>
+          <p>Build the playback rule, then review its effect before saving.</p>
+        </div>
+      </header>
+      <form
+        className="schedule-builder"
+        onSubmit={(event) => {
+          event.preventDefault();
+          setAttempted(true);
+          if (valid) save.mutate();
+        }}
+      >
+        <main className="schedule-builder__main">
+          <BuilderSection
+            number="1"
+            title="Content"
+            description="Name this schedule and choose what it should play."
+          >
+            <Field
+              label="Schedule name"
+              required
+              error={attempted ? errors.name : undefined}
+            >
+              <input
+                value={input.name}
+                maxLength={180}
+                onChange={(event) => set("name", event.target.value)}
+                placeholder="Morning announcements"
+              />
+            </Field>
+            <PlaylistSelection
+              playlist={selectedPlaylistData}
+              onChoose={() => setPlaylistOpen(true)}
+              error={attempted ? errors.playlistId : undefined}
+            />
+          </BuilderSection>
+
+          <BuilderSection
+            number="2"
+            title="Timing"
+            description="Choose when this content takes precedence."
+          >
+            <div
+              className="schedule-segmented"
+              role="group"
+              aria-label="Schedule type"
+            >
+              <button
+                type="button"
+                aria-pressed={input.type === "weekly"}
+                onClick={() => set("type", "weekly")}
+              >
+                Weekly recurring
+              </button>
+              <button
+                type="button"
+                aria-pressed={input.type === "one_time"}
+                onClick={() => {
+                  if (!input.oneTimeStart) {
+                    const start = new Date();
+                    start.setMinutes(
+                      Math.ceil(start.getMinutes() / 15) * 15,
+                      0,
+                      0,
+                    );
+                    const end = new Date(start.getTime() + 60 * 60 * 1000);
+                    setInput((current) => ({
+                      ...current,
+                      type: "one_time",
+                      oneTimeStart: start.toISOString(),
+                      oneTimeEnd: end.toISOString(),
+                    }));
+                  } else set("type", "one_time");
+                }}
+              >
+                One-time event
+              </button>
+            </div>
+            {input.type === "weekly" ? (
+              <WeeklyTiming
+                input={input}
+                set={set}
+                showDateRange={showDateRange}
+                setShowDateRange={setShowDateRange}
+                errors={attempted ? errors : {}}
+              />
+            ) : (
+              <OneTimeTiming
+                input={input}
+                set={set}
+                error={attempted ? errors.oneTime : undefined}
+              />
+            )}
+            <TimezonePicker
+              value={input.timezone}
+              onChange={(value) => set("timezone", value)}
+              error={attempted ? errors.timezone : undefined}
+            />
+            <div className="schedule-human-summary">
+              <CalendarDays size={18} />
+              <span>{describeScheduleTiming(input)}</span>
+            </div>
+          </BuilderSection>
+
+          <BuilderSection
+            number="3"
+            title="Targets"
+            description="Select individual screens, reusable groups, or both."
+          >
+            <TargetPicker
+              targets={input.targets}
+              screens={screens.data?.items ?? []}
+              groups={groups.data?.items ?? []}
+              tab={targetTab}
+              setTab={setTargetTab}
+              search={targetSearch}
+              setSearch={setTargetSearch}
+              onChange={(targets) => set("targets", targets)}
+              error={attempted ? errors.targets : undefined}
+            />
+          </BuilderSection>
+
+          <BuilderSection
+            number="4"
+            title="Advanced options"
+            description="Control availability, precedence, and administrator notes."
+            compact
+          >
+            <Switch
+              label="Enabled"
+              description="Disabled schedules remain saved but do not affect playback."
+              checked={input.enabled}
+              onChange={(event) => set("enabled", event.target.checked)}
+            />
+            <PriorityControl
+              value={input.priority}
+              onChange={(value) => set("priority", value)}
+              error={attempted ? errors.priority : undefined}
+            />
+            <Field
+              label="Description"
+              description="Optional internal note shown in Studio."
+            >
+              <textarea
+                value={input.description}
+                maxLength={2000}
+                rows={3}
+                onChange={(event) => set("description", event.target.value)}
+              />
+            </Field>
+          </BuilderSection>
+        </main>
+
+        <ScheduleSummary
+          input={input}
+          playlist={selectedPlaylistData}
+          targetCount={targetCount}
+          preview={preview}
+        />
+
+        <footer className="schedule-builder__actions">
+          <span>
+            {dirty
+              ? "Unsaved changes"
+              : id
+                ? "All changes saved"
+                : "Complete the required fields"}
+          </span>
+          {id && (
+            <Button
+              type="button"
+              variant="danger"
+              disabled={remove.isPending}
+              onClick={() =>
+                confirm(`Delete ${input.name}?`) && remove.mutate()
+              }
+            >
+              Delete
+            </Button>
+          )}
+          <Button
+            type="button"
+            variant="quiet"
+            onClick={() => {
+              if (!dirty || confirm("Discard unsaved schedule changes?"))
+                void navigate("/schedules");
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            variant="primary"
+            loading={save.isPending}
+            disabled={!valid || !dirty}
+          >
+            Save schedule
+          </Button>
+          {save.error && (
+            <span className="field__error" role="alert">
+              {save.error.message}
+            </span>
+          )}
+        </footer>
+      </form>
+      <PlaylistPicker
+        open={playlistOpen}
+        playlists={playlists.data?.items ?? []}
+        selectedId={input.playlistId}
+        onClose={() => setPlaylistOpen(false)}
+        onSelect={(playlist) => {
+          set("playlistId", playlist.id);
+          setPlaylistOpen(false);
+        }}
+      />
+    </section>
+  );
+}
+
+function BuilderSection({
+  number,
+  title,
+  description,
+  compact,
+  children,
+}: {
+  number: string;
+  title: string;
+  description: string;
+  compact?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <section
+      className={`schedule-builder-section${compact ? " schedule-builder-section--compact" : ""}`}
+    >
+      <header>
+        <span>{number}</span>
+        <div>
+          <h3>{title}</h3>
+          <p>{description}</p>
+        </div>
+      </header>
+      <div className="schedule-builder-section__content">{children}</div>
+    </section>
+  );
+}
+
+function PlaylistSelection({
+  playlist,
+  onChoose,
+  error,
+}: {
+  playlist?: Playlist;
+  onChoose: () => void;
+  error?: string;
+}) {
+  const duration = playlist ? playlistDuration(playlist) : "";
+  const thumbnail = playlist?.items?.[0]?.thumbnailUrl;
+  return (
+    <div className="schedule-playlist-field">
+      <span className="field__label">
+        Playlist <span aria-hidden="true">*</span>
+      </span>
+      {playlist ? (
+        <div className="schedule-playlist-card">
+          <div className="schedule-playlist-card__thumb">
+            {thumbnail ? <img src={thumbnail} alt="" /> : <span>Playlist</span>}
+          </div>
+          <div>
+            <strong>{playlist.name}</strong>
+            <span>
+              {playlist.itemCount} item{playlist.itemCount === 1 ? "" : "s"} ·{" "}
+              {duration}
+            </span>
+          </div>
+          <Button type="button" variant="quiet" compact onClick={onChoose}>
+            Change
+          </Button>
+        </div>
+      ) : (
+        <Button type="button" variant="secondary" onClick={onChoose}>
+          Choose playlist
+        </Button>
+      )}
+      {error && <span className="field__error">{error}</span>}
+    </div>
+  );
+}
+
+function PlaylistPicker({
+  open,
+  playlists,
+  selectedId,
+  onClose,
+  onSelect,
+}: {
+  open: boolean;
+  playlists: Playlist[];
+  selectedId: string;
+  onClose: () => void;
+  onSelect: (playlist: Playlist) => void;
+}) {
+  const [search, setSearch] = useState("");
+  const filtered = playlists.filter((playlist) =>
+    playlist.name.toLowerCase().includes(search.toLowerCase()),
+  );
+  return (
+    <Dialog open={open} title="Choose playlist" onClose={onClose}>
+      <div className="schedule-picker-dialog">
+        <label className="schedule-picker-search">
+          <Search size={17} />
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search playlists"
+            autoFocus
+          />
+        </label>
+        <div className="schedule-picker-results">
+          {filtered.map((playlist) => (
+            <button
+              type="button"
+              key={playlist.id}
+              className={selectedId === playlist.id ? "selected" : ""}
+              onClick={() => onSelect(playlist)}
+            >
+              <span>
+                <strong>{playlist.name}</strong>
+                <small>
+                  {playlist.itemCount} items · {playlistDuration(playlist)}
+                </small>
+              </span>
+              {selectedId === playlist.id && <Check size={18} />}
+            </button>
+          ))}
+          {!filtered.length && <p>No playlists match this search.</p>}
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
+function WeeklyTiming({
+  input,
+  set,
+  showDateRange,
+  setShowDateRange,
+  errors,
+}: {
+  input: ScheduleInput;
+  set: <K extends keyof ScheduleInput>(key: K, value: ScheduleInput[K]) => void;
+  showDateRange: boolean;
+  setShowDateRange: (value: boolean) => void;
+  errors: Record<string, string>;
+}) {
+  const overnight = (input.dailyEnd ?? "") <= (input.dailyStart ?? "");
+  return (
+    <div className="schedule-timing-fields">
+      <div className="schedule-weekdays" aria-label="Active weekdays">
+        {scheduleWeekdays.map((day) => (
+          <button
+            type="button"
+            key={day.value}
+            aria-pressed={input.daysOfWeek.includes(day.value)}
+            onClick={() =>
+              set(
+                "daysOfWeek",
+                input.daysOfWeek.includes(day.value)
+                  ? input.daysOfWeek.filter((value) => value !== day.value)
+                  : [...input.daysOfWeek, day.value],
+              )
+            }
+          >
+            {day.short}
+          </button>
+        ))}
+      </div>
+      {errors.daysOfWeek && (
+        <span className="field__error">{errors.daysOfWeek}</span>
+      )}
+      <div className="schedule-time-pair">
+        <Field label="Starts">
+          <input
+            type="time"
+            value={input.dailyStart ?? ""}
+            onChange={(event) => set("dailyStart", event.target.value)}
+          />
+        </Field>
+        <Field label="Ends">
+          <input
+            type="time"
+            value={input.dailyEnd ?? ""}
+            onChange={(event) => set("dailyEnd", event.target.value)}
+          />
+        </Field>
+      </div>
+      {errors.time && <span className="field__error">{errors.time}</span>}
+      {overnight && (
+        <Notice
+          variant="info"
+          title={
+            input.dailyEnd === input.dailyStart
+              ? "24-hour window"
+              : "Overnight schedule"
+          }
+        >
+          Playback ends the following day.
+        </Notice>
+      )}
+      {!showDateRange ? (
+        <Button
+          type="button"
+          variant="quiet"
+          compact
+          onClick={() => setShowDateRange(true)}
+        >
+          Add date range
+        </Button>
+      ) : (
+        <div className="schedule-date-range">
+          <Field label="First active date">
+            <input
+              type="date"
+              value={input.startDate ?? ""}
+              onChange={(event) =>
+                set("startDate", event.target.value || undefined)
+              }
+            />
+          </Field>
+          <Field label="Last active date">
+            <input
+              type="date"
+              value={input.endDate ?? ""}
+              onChange={(event) =>
+                set("endDate", event.target.value || undefined)
+              }
+            />
+          </Field>
+          <Button
+            type="button"
+            variant="quiet"
+            compact
+            onClick={() => {
+              set("startDate", undefined);
+              set("endDate", undefined);
+              setShowDateRange(false);
+            }}
+          >
+            Remove date range
+          </Button>
+          {errors.dateRange && (
+            <span className="field__error">{errors.dateRange}</span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OneTimeTiming({
+  input,
+  set,
+  error,
+}: {
+  input: ScheduleInput;
+  set: <K extends keyof ScheduleInput>(key: K, value: ScheduleInput[K]) => void;
+  error?: string;
+}) {
+  return (
+    <div className="schedule-timing-fields">
+      <div className="schedule-datetime-pair">
+        <Field label="Starts">
+          <input
+            type="datetime-local"
+            value={localDateTime(input.oneTimeStart)}
+            onChange={(event) =>
+              set("oneTimeStart", toISOString(event.target.value))
+            }
+          />
+        </Field>
+        <Field label="Ends">
+          <input
+            type="datetime-local"
+            value={localDateTime(input.oneTimeEnd)}
+            onChange={(event) =>
+              set("oneTimeEnd", toISOString(event.target.value))
+            }
+          />
+        </Field>
+      </div>
+      <div className="schedule-duration">
+        <Clock3 size={17} />
+        <span>{oneTimeDuration(input)}</span>
+      </div>
+      {error && <span className="field__error">{error}</span>}
+    </div>
+  );
+}
+
+function TimezonePicker({
+  value,
+  onChange,
+  error,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  error?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const zones = useMemo(timezones, []);
+  const filtered = zones
+    .filter((zone) =>
+      timezoneLabel(zone).toLowerCase().includes(search.toLowerCase()),
+    )
+    .slice(0, 80);
+  return (
+    <div className="schedule-timezone">
+      <span className="field__label">
+        Timezone <span aria-hidden="true">*</span>
+      </span>
+      <button
+        type="button"
+        className="schedule-timezone__trigger"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span>{timezoneLabel(value)}</span>
+        <ChevronDown size={17} />
+      </button>
+      {open && (
+        <div className="schedule-timezone__menu">
+          <label>
+            <Search size={16} />
+            <input
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search city or region"
+              autoFocus
+            />
+          </label>
+          <div>
+            {filtered.map((zone) => (
+              <button
+                type="button"
+                key={zone}
+                className={zone === value ? "selected" : ""}
+                onClick={() => {
+                  onChange(zone);
+                  setOpen(false);
+                  setSearch("");
+                }}
+              >
+                {timezoneLabel(zone)}
+                {zone === value && <Check size={16} />}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {error && <span className="field__error">{error}</span>}
+    </div>
+  );
+}
+
+function TargetPicker({
+  targets,
+  screens,
+  groups,
+  tab,
+  setTab,
+  search,
+  setSearch,
+  onChange,
+  error,
+}: {
+  targets: ScheduleTarget[];
+  screens: Awaited<ReturnType<typeof api.screens>>["items"];
+  groups: Awaited<ReturnType<typeof api.screenGroups>>["items"];
+  tab: "screens" | "groups";
+  setTab: (tab: "screens" | "groups") => void;
+  search: string;
+  setSearch: (value: string) => void;
+  onChange: (targets: ScheduleTarget[]) => void;
+  error?: string;
+}) {
+  const add = (target: ScheduleTarget) => {
+    onChange(setTargetSelected(targets, target, true));
+  };
+  const remove = (target: ScheduleTarget) =>
+    onChange(setTargetSelected(targets, target, false));
+  const query = search.toLowerCase();
+  const results =
+    tab === "screens"
+      ? screens
+          .filter((screen) =>
+            `${screen.name} ${screen.location}`.toLowerCase().includes(query),
+          )
+          .map((screen) => ({
+            type: "screen" as const,
+            id: screen.id,
+            name: screen.name,
+            detail: screen.location || "No location",
+          }))
+      : groups
+          .filter((group) => group.name.toLowerCase().includes(query))
+          .map((group) => ({
+            type: "group" as const,
+            id: group.id,
+            name: group.name,
+            detail: `${group.membershipCount} screen${group.membershipCount === 1 ? "" : "s"}`,
+          }));
+  return (
+    <div className="schedule-target-picker">
+      {targets.length > 0 && (
+        <div className="schedule-target-chips">
+          {targets.map((target) => (
+            <span key={`${target.type}-${target.id}`}>
+              {target.name ?? "Selected target"}
+              <button
+                type="button"
+                aria-label={`Remove ${target.name ?? "target"}`}
+                onClick={() => remove(target)}
+              >
+                <X size={14} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div
+        className="schedule-target-tabs"
+        role="tablist"
+        aria-label="Target type"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "screens"}
+          onClick={() => setTab("screens")}
+        >
+          Screens
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "groups"}
+          onClick={() => setTab("groups")}
+        >
+          Groups
+        </button>
+      </div>
+      <label className="schedule-picker-search">
+        <Search size={17} />
+        <input
+          type="search"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder={`Search ${tab}`}
+        />
+      </label>
+      <div className="schedule-target-results">
+        {results.map((result) => {
+          const selected = targets.some(
+            (target) => target.type === result.type && target.id === result.id,
+          );
+          return (
+            <button
+              type="button"
+              key={result.id}
+              disabled={selected}
+              onClick={() =>
+                add({ type: result.type, id: result.id, name: result.name })
+              }
+            >
+              <span>
+                <strong>{result.name}</strong>
+                <small>{result.detail}</small>
+              </span>
+              <span>{selected ? "Selected" : "Add"}</span>
+            </button>
+          );
+        })}
+        {!results.length && <p>No {tab} match this search.</p>}
+      </div>
+      {error && <span className="field__error">{error}</span>}
+    </div>
+  );
+}
+
+function PriorityControl({
+  value,
+  onChange,
+  error,
+}: {
+  value: number;
+  onChange: (value: number) => void;
+  error?: string;
+}) {
+  const preset = priorityPreset(value);
+  const choose = (next: PriorityPreset) => {
+    if (next === "normal") onChange(0);
+    else if (next === "important") onChange(100);
+    else if (next === "special") onChange(500);
+    else if (preset !== "custom") onChange(1);
+  };
+  return (
+    <div className="schedule-priority">
+      <span className="field__label">Priority</span>
+      <span className="field__hint">
+        Higher-priority schedules win when times and targets overlap.
+      </span>
+      <div role="radiogroup" aria-label="Schedule priority">
+        {(["normal", "important", "special", "custom"] as PriorityPreset[]).map(
+          (option) => (
+            <button
+              type="button"
+              role="radio"
+              aria-checked={preset === option}
+              key={option}
+              onClick={() => choose(option)}
+            >
+              {option === "special"
+                ? "Special event"
+                : option.charAt(0).toUpperCase() + option.slice(1)}
+            </button>
+          ),
+        )}
+      </div>
+      {preset === "custom" && (
+        <Field label="Custom priority">
+          <input
+            type="number"
+            min="-999"
+            max="999"
+            value={value}
+            onChange={(event) => onChange(Number(event.target.value))}
+          />
+        </Field>
+      )}
+      {error && <span className="field__error">{error}</span>}
+    </div>
+  );
+}
+
+function ScheduleSummary({
+  input,
+  playlist,
+  targetCount,
+  preview,
+}: {
+  input: ScheduleInput;
+  playlist?: Playlist;
+  targetCount: number;
+  preview: UseQueryResult<SchedulePreview, Error>;
+}) {
+  const conflicts = preview.data?.conflicts ?? [];
+  const applicable = preview.data?.applicableSchedules ?? [];
+  const winner = preview.data?.winningSchedule;
+  return (
+    <aside className="schedule-builder-summary" aria-label="Schedule summary">
+      <h3>Schedule summary</h3>
+      <dl>
+        <div>
+          <dt>When</dt>
+          <dd>
+            {input.type === "weekly"
+              ? `${describeScheduleTiming(input)}`
+              : describeScheduleTiming(input)}
+          </dd>
+        </div>
+        <div>
+          <dt>Content</dt>
+          <dd>
+            {playlist ? `Plays ${playlist.name}` : "No playlist selected"}
+          </dd>
+        </div>
+        <div>
+          <dt>Targets</dt>
+          <dd>
+            {targetCount
+              ? `On ${targetCount} screen${targetCount === 1 ? "" : "s"}`
+              : "No targets selected"}
+          </dd>
+        </div>
+        <div>
+          <dt>Priority</dt>
+          <dd>{priorityLabel(input.priority)}</dd>
+        </div>
+      </dl>
+      <div className="schedule-conflicts">
+        <h4>Conflict preview</h4>
+        {!input.targets.length || !input.playlistId ? (
+          <Notice variant="neutral">
+            Choose content and targets to check conflicts.
+          </Notice>
+        ) : preview.isLoading ? (
+          <Notice variant="info">Checking applicable schedules…</Notice>
+        ) : preview.isError ? (
+          <Notice variant="danger" title="Conflict check unavailable">
+            {preview.error.message}
+          </Notice>
+        ) : conflicts.length === 0 && applicable.length <= 1 ? (
+          <Notice variant="success" title="No conflicts">
+            No other schedule overlaps this preview time.
+          </Notice>
+        ) : (
+          <>
+            <Notice
+              variant="warning"
+              title={`${Math.max(conflicts.length, applicable.length - 1)} overlapping schedule${Math.max(conflicts.length, applicable.length - 1) === 1 ? "" : "s"}`}
+            >
+              {winner
+                ? `${winner.name} wins because ${conflictWinnerReason(winner, input.priority)}.`
+                : "Direct fallback content plays when no schedule is active."}
+            </Notice>
+            <ul>
+              {applicable.map((schedule) => (
+                <li key={schedule.id}>
+                  <strong>{schedule.name}</strong>
+                  <span>
+                    {priorityLabel(schedule.priority)} ·{" "}
+                    {schedule.specificity > 0
+                      ? "Direct screen target"
+                      : "Group target"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            {conflicts.map((conflict) => (
+              <p key={conflict}>{humanizeConflict(conflict)}</p>
+            ))}
+          </>
+        )}
+      </div>
+      <p className="schedule-summary-note">
+        Direct screen assignments remain fallback content when no schedule is
+        active.
+      </p>
+    </aside>
+  );
+}
+
+function playlistDuration(playlist: Playlist) {
+  if (!playlist.items?.length)
+    return playlist.itemCount ? "Duration varies" : "Empty playlist";
+  const seconds = playlist.items.reduce(
+    (total, item) =>
+      total +
+      (item.durationMs
+        ? item.durationMs / 1000
+        : (item.assetDurationSeconds ?? 0)),
+    0,
+  );
+  if (!seconds) return "Duration varies";
+  const minutes = Math.floor(seconds / 60);
+  const remainder = Math.round(seconds % 60);
+  return minutes
+    ? `${minutes} min${remainder ? ` ${remainder} sec` : ""}`
+    : `${remainder} sec`;
+}
+
+function localDateTime(value?: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+    .toISOString()
+    .slice(0, 16);
+}
+function toISOString(value: string) {
+  return value ? new Date(value).toISOString() : undefined;
+}
+function timezones() {
+  const supported = (
+    Intl as typeof Intl & { supportedValuesOf?: (key: "timeZone") => string[] }
+  ).supportedValuesOf?.("timeZone");
+  return supported?.length
+    ? supported
+    : [
+        "UTC",
+        "America/New_York",
+        "America/Chicago",
+        "America/Denver",
+        "America/Los_Angeles",
+        "Europe/London",
+      ];
+}
+function timezoneLabel(zone: string) {
+  return zone === "UTC" ? "UTC" : zone.replaceAll("_", " ").replace("/", " — ");
+}
+function humanizeConflict(value: string) {
+  return value
+    .replaceAll("_", " ")
+    .replace(/^./, (letter) => letter.toUpperCase());
+}

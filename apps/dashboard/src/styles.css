@@ -2501,53 +2501,14 @@ a {
 .schedule-card--disabled {
   opacity: 0.65;
 }
-.schedule-today,
-.schedule-preview {
+.schedule-today {
   padding: 16px;
   border: 1px solid var(--border);
   background: var(--surface);
   margin-bottom: 16px;
 }
-.schedule-editor {
-  max-width: 850px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-.schedule-editor > label,
-.schedule-editor fieldset {
-  display: grid;
-  gap: 7px;
-}
-.schedule-editor input,
-.schedule-editor select {
-  min-height: 42px;
-  padding: 8px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: inherit;
-}
-.schedule-editor fieldset,
-.schedule-preview,
-.schedule-editor > div {
-  grid-column: 1/-1;
-}
-.weekday-picker {
-  grid-column: 1/-1;
-  display: flex;
-  gap: 12px;
-}
-.weekday-picker label {
-  display: flex;
-  gap: 5px;
-  align-items: center;
-}
 @media (max-width: 900px) {
-  .schedule-card,
-  .schedule-editor {
+  .schedule-card {
     grid-template-columns: 1fr;
-  }
-  .schedule-editor > * {
-    grid-column: 1 !important;
   }
 }
