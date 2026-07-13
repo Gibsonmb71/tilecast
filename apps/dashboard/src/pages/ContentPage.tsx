@@ -823,7 +823,7 @@ const defaultWebsite: WebsiteInput = {
   backgroundColor: signalColors.playerBackground,
   failureBehavior: "placeholder",
 };
-function WebsiteEditor({
+export function WebsiteEditor({
   asset,
   csrf,
   readOnly = false,
@@ -908,6 +908,19 @@ function WebsiteEditor({
       onSaved(value);
     },
   });
+  const close = () => {
+    if (!dirty || confirm("Discard unsaved website changes?")) onClose();
+  };
+  useEffect(() => {
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        if (!dirty || confirm("Discard unsaved website changes?")) onClose();
+      }
+    };
+    addEventListener("keydown", escape);
+    return () => removeEventListener("keydown", escape);
+  }, [dirty, onClose]);
   return (
     <div
       className="details-backdrop"
@@ -933,14 +946,7 @@ function WebsiteEditor({
               playlist.
             </p>
           </div>
-          <button
-            className="icon-button"
-            aria-label="Close"
-            onClick={() => {
-              if (!dirty || confirm("Discard unsaved website changes?"))
-                onClose();
-            }}
-          >
+          <button className="icon-button" aria-label="Close" onClick={close}>
             <X size={18} />
           </button>
         </header>
@@ -1192,7 +1198,7 @@ function WebsiteEditor({
               Save website
             </button>
           )}
-          <button className="button button--quiet" onClick={onClose}>
+          <button className="button button--quiet" onClick={close}>
             Cancel
           </button>
           {asset && !readOnly && (

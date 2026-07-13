@@ -17,6 +17,10 @@ import type {
   PlaylistItemInput,
 } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
+import {
+  ContentPicker,
+  type ContentPickerResult,
+} from "../components/content-picker";
 
 export function canManagePlaylists(role?: string) {
   return role !== "viewer";
@@ -163,13 +167,6 @@ export function PlaylistEditorPage() {
     queryKey: ["playlists", id],
     queryFn: () => api.playlist(id),
   });
-  const assets = useQuery({
-    queryKey: ["assets", "playlist-picker"],
-    queryFn: () =>
-      api.assets(
-        new URLSearchParams({ page: "1", pageSize: "100", status: "ready" }),
-      ),
-  });
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [dirty, setDirty] = useState(false);
@@ -209,30 +206,42 @@ export function PlaylistEditorPage() {
     mutationFn: () => api.deletePlaylist(id, csrf),
     onSuccess: () => void navigate("/playlists"),
   });
-  const add = (asset: Asset) =>
-    api
-      .addPlaylistItem(
-        id,
-        {
-          assetId: asset.id,
-          durationMs:
-            asset.type === "image"
-              ? 10000
-              : asset.type === "source" && asset.source?.provider === "website"
-                ? 30000
-                : undefined,
-          fitMode: "contain",
-          transition: "none",
-          audioEnabled: asset.type !== "source",
-          volume: asset.type === "source" ? 0 : 1,
-          deliveryPolicy: asset.type === "source" ? "stream" : "download",
-        },
-        csrf,
-      )
-      .then((p) => {
-        update(p);
-        setPicker(false);
-      });
+  const add = async (selected: Asset[]): Promise<ContentPickerResult> => {
+    const failures: ContentPickerResult["failures"] = [];
+    for (const asset of selected) {
+      try {
+        const next = await api.addPlaylistItem(
+          id,
+          {
+            assetId: asset.id,
+            durationMs:
+              asset.type === "image"
+                ? 10000
+                : asset.type === "source" &&
+                    asset.source?.provider === "website"
+                  ? 30000
+                  : undefined,
+            fitMode: "contain",
+            transition: "none",
+            audioEnabled: asset.type !== "source",
+            volume: asset.type === "source" ? 0 : 1,
+            deliveryPolicy: asset.type === "source" ? "stream" : "download",
+          },
+          csrf,
+        );
+        update(next);
+      } catch (error) {
+        failures.push({
+          id: asset.id,
+          name: asset.name,
+          message:
+            error instanceof Error ? error.message : "Could not add item.",
+        });
+      }
+    }
+    if (failures.length === 0) setPicker(false);
+    return { failures };
+  };
   const reorder = async (target: string) => {
     if (!query.data || !dragged || dragged === target) return;
     const ids = query.data.items.map((i) => i.id);
@@ -334,7 +343,7 @@ export function PlaylistEditorPage() {
             onClick={() => setPicker(true)}
           >
             <Plus size={15} />
-            Add media
+            Add content
           </button>
         )}
       </div>
@@ -368,9 +377,13 @@ export function PlaylistEditorPage() {
         </div>
       )}
       {picker && (
-        <AssetPicker
-          assets={assets.data?.items ?? []}
-          onAdd={(asset) => void add(asset)}
+        <ContentPicker
+          open
+          mode="multiple"
+          csrf={csrf}
+          allowedTypes={["image", "video", "source"]}
+          confirmLabel="Add to playlist"
+          onConfirm={add}
           onClose={() => setPicker(false)}
         />
       )}
@@ -601,49 +614,5 @@ function TimelineItem({
         </button>
       )}
     </article>
-  );
-}
-function AssetPicker({
-  assets,
-  onAdd,
-  onClose,
-}: {
-  assets: Asset[];
-  onAdd: (asset: Asset) => void;
-  onClose: () => void;
-}) {
-  return (
-    <div className="modal-backdrop">
-      <section
-        className="asset-picker"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="asset-picker-title"
-      >
-        <header>
-          <h3 id="asset-picker-title">Add ready media</h3>
-          <button className="button button--quiet" onClick={onClose}>
-            Close
-          </button>
-        </header>
-        {assets.length === 0 ? (
-          <p>No ready media is available.</p>
-        ) : (
-          <div>
-            {assets.map((asset) => (
-              <button key={asset.id} onClick={() => onAdd(asset)}>
-                <span>
-                  {asset.thumbnailUrl && (
-                    <img src={asset.thumbnailUrl} alt="" />
-                  )}
-                </span>
-                <strong>{asset.name}</strong>
-                <small>{asset.type}</small>
-              </button>
-            ))}
-          </div>
-        )}
-      </section>
-    </div>
   );
 }

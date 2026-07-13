@@ -1,0 +1,365 @@
+import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
+import { Globe2, Upload, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { api } from "../../api/client";
+import type { Asset } from "../../api/types";
+import { ContentLibraryGrid } from "./ContentLibraryGrid";
+import {
+  ContentPickerToolbar,
+  type ContentPickerFilter,
+} from "./ContentPickerToolbar";
+import { CreateSourceDialog } from "./CreateSourceDialog";
+import { SelectedContentTray } from "./SelectedContentTray";
+import { UploadContentDialog } from "./UploadContentDialog";
+
+export type ContentPickerResult = {
+  failures: { id: string; name: string; message: string }[];
+};
+
+export type ContentPickerProps = {
+  open: boolean;
+  mode: "single" | "multiple";
+  csrf: string;
+  allowedTypes?: Array<"image" | "video" | "source">;
+  allowedProviders?: Array<"website" | "youtube">;
+  disabledItemIds?: string[];
+  selectedIds?: string[];
+  confirmLabel?: string;
+  onConfirm: (items: Asset[]) => Promise<void | ContentPickerResult> | void;
+  onClose: () => void;
+};
+
+export function ContentPicker({
+  open,
+  mode,
+  csrf,
+  allowedTypes = ["image", "video", "source"],
+  allowedProviders,
+  disabledItemIds = [],
+  selectedIds = [],
+  confirmLabel = "Add content",
+  onConfirm,
+  onClose,
+}: ContentPickerProps) {
+  const queryClient = useQueryClient();
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<ContentPickerFilter>("all");
+  const [sort, setSort] = useState("updated");
+  const [view, setView] = useState<"grid" | "list">("grid");
+  const [selected, setSelected] = useState<Map<string, Asset>>(new Map());
+  const [initialIds] = useState(() => new Set(selectedIds));
+  const [created, setCreated] = useState<Map<string, Asset>>(new Map());
+  const [highlighted, setHighlighted] = useState<Set<string>>(new Set());
+  const [child, setChild] = useState<"upload" | "source">();
+  const [confirming, setConfirming] = useState(false);
+  const [failures, setFailures] = useState<ContentPickerResult["failures"]>([]);
+  const dialog = useRef<HTMLElement>(null);
+  const paramsKey = `${search}|${filter}|${sort}`;
+  const library = useInfiniteQuery({
+    queryKey: ["assets", "content-picker", paramsKey],
+    initialPageParam: 1,
+    queryFn: ({ pageParam }) => {
+      const params = new URLSearchParams({
+        page: String(pageParam),
+        pageSize: "48",
+        sort,
+      });
+      if (search) params.set("search", search);
+      if (["image", "video", "source"].includes(filter))
+        params.set("type", filter);
+      if (filter === "website" || filter === "youtube") {
+        params.set("type", "source");
+        params.set("provider", filter);
+      }
+      return api.assets(params);
+    },
+    getNextPageParam: (last) =>
+      last.page * last.pageSize < last.total ? last.page + 1 : undefined,
+    refetchInterval: (query) =>
+      query.state.data?.pages.some((page) =>
+        page.items.some((asset) =>
+          ["queued", "inspecting", "processing"].includes(
+            asset.processingStatus,
+          ),
+        ),
+      )
+        ? 3000
+        : false,
+  });
+  const loaded = useMemo(
+    () => library.data?.pages.flatMap((page) => page.items) ?? [],
+    [library.data],
+  );
+  useEffect(() => {
+    if (initialIds.size === 0) return;
+    setSelected((current) => {
+      const next = new Map(current);
+      for (const asset of loaded) {
+        if (initialIds.has(asset.id)) next.set(asset.id, asset);
+        if (mode === "single" && next.size > 0) break;
+      }
+      return next;
+    });
+  }, [initialIds, loaded, mode]);
+  useEffect(() => {
+    if (!open) return;
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !child) {
+        event.preventDefault();
+        onClose();
+      }
+      if (event.key === "Tab" && !child && dialog.current) {
+        const focusable = [
+          ...dialog.current.querySelectorAll<HTMLElement>(
+            'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+          ),
+        ];
+        const first = focusable[0];
+        const last = focusable.at(-1);
+        if (!first || !last) return;
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    addEventListener("keydown", escape);
+    return () => removeEventListener("keydown", escape);
+  }, [child, onClose, open]);
+  const trackCreated = (asset: Asset) => {
+    setCreated((current) => new Map(current).set(asset.id, asset));
+    setHighlighted((current) => new Set(current).add(asset.id));
+    setSelected((current) => {
+      const next =
+        mode === "single" ? new Map<string, Asset>() : new Map(current);
+      next.set(asset.id, asset);
+      return next;
+    });
+    void queryClient.invalidateQueries({ queryKey: ["assets"] });
+    if (asset.processingStatus !== "ready") {
+      void (async () => {
+        for (let attempt = 0; attempt < 80; attempt += 1) {
+          await new Promise((resolve) => window.setTimeout(resolve, 1500));
+          const latest = await api.asset(asset.id).catch(() => undefined);
+          if (!latest) return;
+          setCreated((current) => new Map(current).set(latest.id, latest));
+          setSelected((current) =>
+            current.has(latest.id)
+              ? new Map(current).set(latest.id, latest)
+              : current,
+          );
+          if (
+            latest.processingStatus === "ready" ||
+            latest.processingStatus === "failed"
+          )
+            return;
+        }
+      })();
+    }
+  };
+  if (!open) return null;
+  const allowed = new Set(allowedTypes);
+  const providers = allowedProviders ? new Set(allowedProviders) : undefined;
+  const combined = [...created.values(), ...loaded].filter(
+    (asset, index, values) =>
+      values.findIndex((candidate) => candidate.id === asset.id) === index &&
+      allowed.has(asset.type) &&
+      (asset.type !== "source" ||
+        !providers ||
+        (asset.source != null && providers.has(asset.source.provider))),
+  );
+  const disabled = new Set(disabledItemIds);
+  const chosen = [...selected.values()];
+  const selectionPreparing = chosen.some(
+    (asset) => asset.processingStatus !== "ready",
+  );
+  const toggle = (asset: Asset) => {
+    setFailures([]);
+    setSelected((current) => {
+      const next =
+        mode === "single" ? new Map<string, Asset>() : new Map(current);
+      if (current.has(asset.id)) next.delete(asset.id);
+      else next.set(asset.id, asset);
+      return next;
+    });
+  };
+  const confirm = async () => {
+    setConfirming(true);
+    setFailures([]);
+    try {
+      const result = await onConfirm(chosen);
+      if (result?.failures.length) {
+        setFailures(result.failures);
+        const failed = new Set(result.failures.map((failure) => failure.id));
+        setSelected(
+          (current) => new Map([...current].filter(([id]) => failed.has(id))),
+        );
+      }
+    } catch (error) {
+      setFailures([
+        {
+          id: "picker",
+          name: "Content selection",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Content could not be added.",
+        },
+      ]);
+    } finally {
+      setConfirming(false);
+    }
+  };
+  return (
+    <div className="content-picker-backdrop">
+      <section
+        ref={dialog}
+        className="content-picker"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="content-picker-title"
+      >
+        <header className="content-picker__header">
+          <div>
+            <h2 id="content-picker-title">Choose content</h2>
+            <p>Select existing content, upload media, or create a Source.</p>
+          </div>
+          <div className="content-picker__primary-actions">
+            <button
+              className="button button--secondary"
+              onClick={() => setChild("upload")}
+            >
+              <Upload size={16} /> Upload media
+            </button>
+            <button
+              className="button button--secondary"
+              onClick={() => setChild("source")}
+            >
+              <Globe2 size={16} /> Create source
+            </button>
+            <button
+              className="icon-button"
+              aria-label="Close content picker"
+              onClick={onClose}
+            >
+              <X size={18} />
+            </button>
+          </div>
+        </header>
+        <ContentPickerToolbar
+          search={search}
+          filter={filter}
+          sort={sort}
+          view={view}
+          onSearch={setSearch}
+          onFilter={setFilter}
+          onSort={setSort}
+          onView={setView}
+        />
+        <main className="content-picker__library">
+          {library.isLoading ? (
+            <div className="table-loading">Loading content…</div>
+          ) : library.isError ? (
+            <div className="notice notice--error">
+              <strong>Content could not be loaded.</strong>
+              <button
+                className="button button--quiet"
+                onClick={() => void library.refetch()}
+              >
+                Try again
+              </button>
+            </div>
+          ) : combined.length === 0 ? (
+            <div className="content-empty">
+              <h3>No matching content</h3>
+              <p>Try a different search or create new content.</p>
+            </div>
+          ) : (
+            <>
+              <ContentLibraryGrid
+                items={combined}
+                view={view}
+                selectedIds={new Set(selected.keys())}
+                disabledIds={disabled}
+                highlightedIds={highlighted}
+                onToggle={toggle}
+              />
+              {library.hasNextPage && (
+                <button
+                  className="button button--secondary picker-load-more"
+                  disabled={library.isFetchingNextPage}
+                  onClick={() => void library.fetchNextPage()}
+                >
+                  {library.isFetchingNextPage
+                    ? "Loading…"
+                    : "Load more content"}
+                </button>
+              )}
+            </>
+          )}
+        </main>
+        <SelectedContentTray
+          items={chosen}
+          onRemove={(id) =>
+            setSelected(
+              (current) => new Map([...current].filter(([key]) => key !== id)),
+            )
+          }
+          onClear={() => setSelected(new Map())}
+        />
+        {failures.length > 0 && (
+          <div
+            className="content-picker-failures notice notice--error"
+            role="alert"
+          >
+            <strong>Some content could not be added.</strong>
+            <ul>
+              {failures.map((failure) => (
+                <li key={failure.id}>
+                  <b>{failure.name}:</b> {failure.message}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <footer className="content-picker__footer">
+          <span>
+            {chosen.length} item{chosen.length === 1 ? "" : "s"} selected
+            {selectionPreparing ? " · waiting for processing" : ""}
+          </span>
+          <div>
+            <button className="button button--quiet" onClick={onClose}>
+              Cancel
+            </button>
+            <button
+              className="button button--primary"
+              disabled={chosen.length === 0 || selectionPreparing || confirming}
+              onClick={() => void confirm()}
+            >
+              {confirming
+                ? "Adding…"
+                : `${confirmLabel}${chosen.length > 0 ? ` (${chosen.length})` : ""}`}
+            </button>
+          </div>
+        </footer>
+      </section>
+      {child === "upload" && (
+        <UploadContentDialog
+          csrf={csrf}
+          onCreated={trackCreated}
+          onClose={() => setChild(undefined)}
+        />
+      )}
+      {child === "source" && (
+        <CreateSourceDialog
+          csrf={csrf}
+          onCreated={trackCreated}
+          onClose={() => setChild(undefined)}
+        />
+      )}
+    </div>
+  );
+}

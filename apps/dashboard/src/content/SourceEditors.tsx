@@ -11,6 +11,16 @@ export function SourceProviderGallery({
   onChoose: (provider: SourceProvider) => void;
   onClose: () => void;
 }) {
+  useEffect(() => {
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        onClose();
+      }
+    };
+    addEventListener("keydown", escape);
+    return () => removeEventListener("keydown", escape);
+  }, [onClose]);
   return (
     <div className="details-backdrop" role="presentation">
       <section
@@ -128,6 +138,17 @@ export function YouTubeSourceEditor({
   const close = () => {
     if (!dirty || confirm("Discard unsaved YouTube source changes?")) onClose();
   };
+  useEffect(() => {
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        if (!dirty || confirm("Discard unsaved YouTube source changes?"))
+          onClose();
+      }
+    };
+    addEventListener("keydown", escape);
+    return () => removeEventListener("keydown", escape);
+  }, [dirty, onClose]);
   return (
     <div className="details-backdrop" role="presentation">
       <section
