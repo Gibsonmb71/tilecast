@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -393,9 +394,50 @@ func (s *server) cancelPlayerCommand(w http.ResponseWriter, r *http.Request) {
 func (s *server) playerCommands(w http.ResponseWriter, r *http.Request) {
 	principal := r.Context().Value(deviceContextKey).(devices.DevicePrincipal)
 	s.expireCommands(r)
-	rows, err := s.db.Query(r.Context(), `UPDATE player_commands SET state=CASE WHEN state='pending' THEN 'delivered' ELSE state END,delivered_at=COALESCE(delivered_at,now()),attempt_count=attempt_count+1,updated_at=now() WHERE screen_id=$1 AND state IN ('pending','delivered','acknowledged','running') AND expires_at>now() RETURNING id,type,payload,idempotency_key,state,created_at,expires_at ORDER BY created_at,id`, principal.ScreenID)
+	rows, err := s.db.Query(r.Context(), `
+		WITH delivered AS (
+			UPDATE player_commands
+			SET
+				state = CASE
+					WHEN state = 'pending' THEN 'delivered'
+					ELSE state
+				END,
+				delivered_at = COALESCE(delivered_at, now()),
+				attempt_count = attempt_count + 1,
+				updated_at = now()
+			WHERE
+				screen_id = $1
+				AND state IN ('pending', 'delivered', 'acknowledged', 'running')
+				AND expires_at > now()
+			RETURNING
+				id,
+				type,
+				payload,
+				idempotency_key,
+				state,
+				created_at,
+				expires_at
+		)
+		SELECT
+			id,
+			type,
+			payload,
+			idempotency_key,
+			state,
+			created_at,
+			expires_at
+		FROM delivered
+		ORDER BY created_at, id
+	`, principal.ScreenID)
 	if err != nil {
-		s.internalError(w, r, err)
+		s.logger.Error("player command poll failed",
+			"operation", "player_commands_poll",
+			"error", err,
+			"request_id", middleware.GetReqID(r.Context()),
+			"path", r.URL.Path,
+			"screen_id", principal.ScreenID,
+		)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Tilecast could not complete the request.")
 		return
 	}
 	defer rows.Close()
@@ -405,11 +447,17 @@ func (s *server) playerCommands(w http.ResponseWriter, r *http.Request) {
 		var typ, state string
 		var payload []byte
 		var created, expires time.Time
-		if rows.Scan(&id, &typ, &payload, &key, &state, &created, &expires) == nil {
-			var body any
-			_ = json.Unmarshal(payload, &body)
-			items = append(items, map[string]any{"id": id, "type": typ, "payload": body, "idempotencyKey": key, "state": state, "createdAt": created, "expiresAt": expires})
+		if err := rows.Scan(&id, &typ, &payload, &key, &state, &created, &expires); err != nil {
+			s.internalError(w, r, err)
+			return
 		}
+		var body any
+		_ = json.Unmarshal(payload, &body)
+		items = append(items, map[string]any{"id": id, "type": typ, "payload": body, "idempotencyKey": key, "state": state, "createdAt": created, "expiresAt": expires})
+	}
+	if err := rows.Err(); err != nil {
+		s.internalError(w, r, err)
+		return
 	}
 	writeJSON(w, 200, map[string]any{"data": map[string]any{"items": items}})
 }

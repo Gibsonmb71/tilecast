@@ -48,6 +48,7 @@ import org.tilecast.player.content.WebsitePlaybackStatus
 import org.tilecast.player.content.WebsiteDataManager
 import org.tilecast.player.content.CommandCoordinator
 import org.tilecast.player.content.CommandOutcome
+import org.tilecast.player.content.runCommandPollSafely
 import org.tilecast.player.content.EmergencyController
 import org.tilecast.player.content.PlayerConfigManager
 import org.tilecast.player.content.PlayerUpdateManager
@@ -349,7 +350,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 		emergency.nextTransition?.let{transition->emergencyJob=viewModelScope.launch{delay(Duration.between(Instant.now(),transition).toMillis().coerceAtLeast(0)+50);scheduleContent?.let{activateScheduleSelection(it,url,credential)}}}
 	}
 
-	private suspend fun runCommands(url:String,credential:String){commandCoordinator.fetchAndRun(url,credential){command->
+	private suspend fun runCommands(url:String,credential:String){
+		runCommandPollSafely(
+			poll={commandCoordinator.fetchAndRun(url,credential,onOperationFailure={recordCommandPollFailure(it)}){command->
 		lastCommandId=command.id;lastCommandState="running"
 		val outcome=when(command.type){
 			"sync_now"->{reconcileManifest(url,credential);CommandOutcome(true,"manifest_sync_started","Manifest synchronization started")}
@@ -366,7 +369,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 			"power_assist_wake"->{val result=reliabilityController.requestWake();CommandOutcome(true,result,"Power Assist wake request was sent to Android")}
 			else->CommandOutcome(false,"command_unsupported","Command is not supported")}
 		lastCommandState=if(outcome.success)"succeeded" else "failed";lastCommandResult=outcome.code;lastCommandCompletedAt=Instant.now().toString();outcome
-	}}
+		}},
+			onFailure={recordCommandPollFailure(it)},
+			onCredentialRejected={revokeLocally(current?.screenName)},
+		)
+	}
+	private fun recordCommandPollFailure(code:String){lastCommandState="poll_failed";lastCommandResult=code;lastCommandCompletedAt=Instant.now().toString()}
 	private suspend fun reconcilePlayerConfig(url:String,credential:String){try{configManager.reconcile(url,credential)?.let{mutablePlayerConfig.value=it;applyPlayerConfig(it)};configurationError=null}catch(_:Exception){configurationError="Player configuration could not be applied"}}
 	private fun applyPlayerConfig(config:PlayerConfig){activeConfigRevision=config.configRevision;synchronizer.applyPolicy(config.cache.maximumBytes,config.cache.minimumFreeBytes,config.cache.automaticThresholdBytes,config.cache.concurrentDownloads);if(config.website.clearOnRestart)WebsiteDataManager.clear(getApplication()){};reliabilitySupervisor=ReliabilitySupervisor(config.reliability.maximumProcessRestarts,Duration.ofMinutes(config.reliability.restartWindowMinutes.toLong()),config.reliability.safeModeEnabled);getApplication<Application>().getSharedPreferences("tilecast-reliability",Application.MODE_PRIVATE).edit().putBoolean("launch-after-boot",config.reliability.launchAfterBoot).putBoolean("accessibility-enabled-by-policy",config.accessibility.controlAssistEnabled).putBoolean("report-foreground-package",config.accessibility.reportForegroundPackage).putBoolean("pause-accessibility-during-updates",config.accessibility.pauseDuringUpdates).putBoolean("pause-accessibility-during-admin",config.accessibility.pauseDuringAdminSession).putInt("return-delay",config.accessibility.returnDelaySeconds).putInt("maximum-returns",config.accessibility.maximumReturns).putInt("return-window",config.accessibility.returnWindowMinutes).putStringSet("allowed-packages",config.accessibility.allowedPackages.toSet()).apply();evaluateActiveHours() }
 	private fun evaluateActiveHours(){val config=mutablePlayerConfig.value?:return;val rule=ActiveHoursRule(config.power.activeHoursEnabled,config.power.activeHoursTimezone,config.power.activeHoursDays.map{DayOfWeek.of(it)}.toSet(),LocalTime.parse(config.power.activeHoursStart),LocalTime.parse(config.power.activeHoursEnd));val result=runCatching{ActiveHoursEngine.evaluate(Instant.now(),rule,activeEmergencyId!=null)}.getOrNull()?:return;activeHoursNextTransition=result.nextTransition;val changed=mutableActiveHours.value!=result.active;mutableActiveHours.value=result.active;if(changed&&result.active)reliabilityController.requestWake();if(changed&&!result.active&&config.power.sleepOutsideActiveHours&&activeEmergencyId==null)reliabilityController.requestSleep();if(!result.active&&activeEmergencyId==null)mutableContent.value=null else if(changed){val url=current?.serverUrl;val credential=credentials.read();if(url!=null&&credential!=null)scheduleContent?.let{activateScheduleSelection(it,url,credential)}};powerJob?.cancel();result.nextTransition?.let{next->if(!result.active)reliabilityController.scheduleWake(next.minusSeconds(config.power.startupGraceSeconds.toLong()));powerJob=viewModelScope.launch{delay(Duration.between(Instant.now(),next).toMillis().coerceAtLeast(0)+100);evaluateActiveHours()}}}
