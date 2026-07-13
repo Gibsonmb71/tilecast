@@ -171,6 +171,14 @@ type Heartbeat struct {
 	WebsiteCurrentHost            string     `json:"websiteCurrentHost,omitempty"`
 	WebsiteFallbackShown          *bool      `json:"websiteFallbackShown,omitempty"`
 	WebsiteRendererRecoveryCount  *int       `json:"websiteRendererRecoveryCount,omitempty"`
+	ActiveEmergencyID             *uuid.UUID `json:"activeEmergencyId,omitempty"`
+	EmergencyState                string     `json:"emergencyState,omitempty"`
+	EmergencyPreparationProgress  *int       `json:"emergencyPreparationProgress,omitempty"`
+	PlaybackDisabled              *bool      `json:"playbackDisabled,omitempty"`
+	LastCommandID                 *uuid.UUID `json:"lastCommandId,omitempty"`
+	LastCommandState              string     `json:"lastCommandState,omitempty"`
+	LastCommandResult             string     `json:"lastCommandResult,omitempty"`
+	LastCommandCompletedAt        *time.Time `json:"lastCommandCompletedAt,omitempty"`
 	ActiveConfigRevision          *int64     `json:"activeConfigRevision,omitempty"`
 	ConfigurationError            string     `json:"configurationError,omitempty"`
 	CurrentUpdateDeploymentID     *uuid.UUID `json:"currentUpdateDeploymentId,omitempty"`
