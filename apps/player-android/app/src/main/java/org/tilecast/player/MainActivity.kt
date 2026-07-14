@@ -23,7 +23,6 @@ import androidx.core.content.ContextCompat
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,7 +36,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -56,6 +54,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -78,7 +78,6 @@ import org.tilecast.player.ui.theme.SignalDimensions
 import org.tilecast.player.ui.theme.SignalMuted
 import org.tilecast.player.ui.theme.SignalOutlinedButton
 import org.tilecast.player.ui.theme.SignalText
-import org.tilecast.player.ui.theme.SignalTilePale
 import org.tilecast.player.ui.theme.SignalWarning
 import org.tilecast.player.ui.theme.SignalButton
 import org.tilecast.player.ui.theme.TilecastSignalTheme
@@ -183,7 +182,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable private fun UpdateApproval(state:org.tilecast.player.content.UpdateUiState,permission:()->Unit,install:()->Unit){Box(Modifier.fillMaxSize().background(SignalBackground).padding(72.dp),contentAlignment=Alignment.Center){Column(horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(20.dp)){TilecastBrand();Text("Tilecast Player update",color=SignalText,fontSize=44.sp,fontWeight=FontWeight.SemiBold);Text("${state.currentVersion} → ${state.newVersion}",color=SignalBlue,fontSize=28.sp);Text(state.message,color=SignalMuted,fontSize=21.sp);when{state.permissionRequired->SignalButton(onClick=permission){Text("Open install permission settings")};state.installReady->SignalButton(onClick=install){Text("Install update")};else->CircularProgressIndicator()};Text("Android may require confirmation. Tilecast cannot approve the system installer for you.",color=SignalWarning,fontSize=16.sp)}}}
 
-@Composable private fun TilecastBrand() { Row(verticalAlignment = Alignment.CenterVertically) { Row(Modifier.size(31.dp).border(1.dp, SignalBlue, RoundedCornerShape(3.dp)).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) { Box(Modifier.width(8.dp).fillMaxSize().background(BroadcastAmber)); Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(3.dp)) { Box(Modifier.weight(1f).fillMaxWidth().background(SignalBlue)); Box(Modifier.weight(1f).fillMaxWidth().background(SignalTilePale)) } }; Spacer(Modifier.width(13.dp)); Text("Tilecast", color = SignalText, fontSize = 28.sp, fontWeight = FontWeight.Bold) } }
+@Composable private fun TilecastBrand() { Image(painterResource(R.drawable.tilecast_wordmark), "Tilecast", Modifier.width(180.dp).height(44.dp), contentScale = ContentScale.Fit) }
 
 @Composable private fun LoadingState(message: String) { Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) { CircularProgressIndicator(color = SignalBlue); Spacer(Modifier.width(20.dp)); Text(message, color = SignalText, fontSize = 25.sp) } }
 
