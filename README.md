@@ -2,8 +2,6 @@
 
 **Open signage, built to stay on.**
 
-Tilecast Studio and Tilecast Player use the [Tilecast Signal design system](docs/design-system.md) for shared color, typography, spacing, status, focus, and accessibility behavior.
-
 Tilecast is an open-source, self-hosted digital signage platform for organizations that want to operate their own signage server. It is designed for reliable playback on Fire TV, Google TV, and Android TV devices without requiring a paid cloud service.
 
 The Content library combines uploaded images and videos with reusable **Sources**. Built-in Website Sources display dashboards, calendars, menus, and public pages; YouTube Sources play videos or playlists without requiring a YouTube API key. Sources can be reused and ordered in playlists like uploaded media.
@@ -11,6 +9,8 @@ The Content library combines uploaded images and videos with reusable **Sources*
 Tilecast Player includes hardened first-run commissioning, cached boot recovery, persistent watchdog escalation and safe mode, capability-confirmed Managed Kiosk, locally approved Accessibility Control Assist, and best-effort Android sleep/wake behavior. New players verify every protected Android capability before unattended playback; Studio reports readiness without claiming recovery from hardware, power, network-credential, or system-approval failures. Tilecast does not send direct HDMI-CEC commands, and Standard Reliability cannot guarantee that users cannot leave the app. See [Android reliability and power](docs/reliability-and-power.md).
 
 Player `0.10.1` includes a pairing-recovery hotfix for upgraded devices that retain their stable player installation ID but lose access to the Android Keystore credential. Studio can explicitly repair the existing screen without deleting assignments; the previous credential is revoked only after successful replacement enrollment.
+
+Tilecast Studio and Tilecast Player use the [Tilecast Signal design system](docs/design-system.md) for shared color, typography, spacing, status, focus, and accessibility behavior.
 
 ## Quick start with Docker Compose
 
