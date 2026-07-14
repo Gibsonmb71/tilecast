@@ -650,7 +650,7 @@ function nextScheduleChanges(schedules: Schedule[]) {
       continue;
     }
     if (!schedule.dailyStart || schedule.daysOfWeek.length === 0) continue;
-    const [hour, minute] = schedule.dailyStart.split(":").map(Number);
+    const [hour = 0, minute = 0] = schedule.dailyStart.split(":").map(Number);
     for (let offset = 0; offset < 8; offset += 1) {
       const at = new Date(now);
       at.setDate(now.getDate() + offset);
