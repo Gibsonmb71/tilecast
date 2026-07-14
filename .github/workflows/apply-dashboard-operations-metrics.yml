@@ -1,0 +1,293 @@
+name: Apply dashboard operations metrics
+
+on:
+  push:
+    branches: [feat/dashboard-operations-metrics]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-dashboard-operations-metrics
+  cancel-in-progress: true
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/dashboard-operations-metrics
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Extend operations dashboard
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          tsx = Path('apps/dashboard/src/pages/OperationsDashboard.tsx')
+          text = tsx.read_text()
+
+          text = text.replace(
+              '  const schedules = useQuery({\n    queryKey: ["schedules"],\n    queryFn: () => api.schedules(),\n  });',
+              '  const schedules = useQuery({\n    queryKey: ["schedules"],\n    queryFn: () => api.schedules(),\n  });\n  const deployments = useQuery({\n    queryKey: ["update-deployments"],\n    queryFn: api.updateDeployments,\n  });'
+          )
+
+          text = text.replace(
+              '  const nextChange = nextScheduleChange(schedules.data?.items ?? []);\n  const lastUpdated = newestContact(allScreens);',
+              '  const enabledSchedules = (schedules.data?.items ?? []).filter((item) => item.enabled);\n  const nextChange = nextScheduleChange(enabledSchedules);\n  const lastUpdated = newestContact(allScreens);\n  const verifiedCount = allScreens.filter((screen) => screen.status === "online").length;\n  const verifiedPercent = allScreens.length === 0 ? 0 : Math.round((verifiedCount / allScreens.length) * 100);\n  const pendingUpdateActions = (deployments.data?.items ?? []).reduce(\n    (count, deployment) => count + deployment.waitingForUserCount + deployment.failedCount,\n    0,\n  );\n  const outageDuration = primaryIssue ? formatDurationSince(primaryIssue.lastContactAt) : "None";\n  const scheduleCoverage = enabledSchedules.length > 0 ? 100 : 0;'
+          )
+
+          marker = '      <section className="ops-layout">'
+          metrics = '''      <section className="ops-metrics-strip" aria-label="Operational metrics">
+        <Metric value={`${onlineCount} / ${allScreens.length}`} label="Screens online" detail={`${issueScreens.length} screen${issueScreens.length === 1 ? "" : "s"} offline`} />
+        <Metric value={`${verifiedPercent}%`} label="Playback verified" detail={`${verifiedCount} of ${allScreens.length} confirmed`} />
+        <Metric value="Not tracked" label="7-day uptime" detail="Historical telemetry unavailable" muted />
+        <Metric value={String(pendingUpdateActions)} label="Player updates pending" detail={pendingUpdateActions === 1 ? "1 update action pending" : `${pendingUpdateActions} update actions pending`} />
+      </section>\n\n'''
+          if marker not in text:
+              raise SystemExit('layout marker not found')
+          text = text.replace(marker, metrics + marker, 1)
+
+          text = text.replace(
+              '              <Link\n                className="ops-inline-action"',
+              '              <dl className="ops-detail-stats">\n                <div><dt>Verified screens</dt><dd>{verifiedCount} / {allScreens.length}</dd></div>\n                <div><dt>Last confirmed</dt><dd>{formatRelative(lastUpdated)}</dd></div>\n                <div><dt>Interruptions</dt><dd>Not tracked</dd></div>\n              </dl>\n              <Link\n                className="ops-inline-action"',
+              1,
+          )
+
+          fleet_anchor = '''            <p>
+              {allScreens.length === 0
+                ? "Pair a screen to begin monitoring fleet health."
+                : onlineCount === allScreens.length
+                  ? "All paired screens are currently reporting."
+                  : `${issueScreens.length} screen${issueScreens.length === 1 ? "" : "s"} currently need attention.`}
+            </p>'''
+          fleet_stats = fleet_anchor + '''
+            <dl className="ops-detail-stats ops-detail-stats--stacked">
+              <div><dt>Current outage</dt><dd>{outageDuration}</dd></div>
+              <div><dt>7-day uptime</dt><dd>Not tracked</dd></div>
+              <div><dt>Reconnects</dt><dd>Not tracked</dd></div>
+            </dl>'''
+          if fleet_anchor not in text:
+              raise SystemExit('fleet anchor not found')
+          text = text.replace(fleet_anchor, fleet_stats, 1)
+
+          schedule_anchor = '''            {nextChange ? (
+              <>'''
+          schedule_stats = '''            <dl className="ops-detail-stats ops-detail-stats--stacked">
+              <div><dt>24-hour coverage</dt><dd>{scheduleCoverage}%</dd></div>
+              <div><dt>Screens without a schedule</dt><dd>{enabledSchedules.length > 0 ? 0 : allScreens.length}</dd></div>
+              <div><dt>Upcoming playback changes</dt><dd>{nextChange ? 1 : 0}</dd></div>
+            </dl>
+            {nextChange ? (
+              <>'''
+          if schedule_anchor not in text:
+              raise SystemExit('schedule anchor not found')
+          text = text.replace(schedule_anchor, schedule_stats, 1)
+
+          closing = '''      </section>
+    </div>
+  );
+}'''
+          extension = '''      </section>
+
+      <section className="ops-secondary-cards">
+        <section className="ops-card ops-maintenance-card">
+          <div className="ops-card__header">
+            <div>
+              <h3>Player maintenance</h3>
+              <p>Planned operational work that may briefly affect screens.</p>
+            </div>
+            <details className="ops-overflow">
+              <summary aria-label="Maintenance actions"><Ellipsis size={18} /></summary>
+              <div><Link to="/settings/system">Open maintenance tools</Link></div>
+            </details>
+          </div>
+          <div className="ops-empty-compact">
+            <strong>No maintenance windows scheduled</strong>
+            <span>Tilecast does not currently store planned maintenance windows.</span>
+            <Link className="ops-inline-action" to="/settings/system">Open maintenance tools <ChevronRight size={14} /></Link>
+          </div>
+        </section>
+
+        <section className={`ops-card ops-update-card ${pendingUpdateActions > 0 ? "ops-update-card--warning" : ""}`}>
+          <div className="ops-card__header">
+            <div>
+              <h3>Player updates</h3>
+              <p>Application releases awaiting deployment or operator approval.</p>
+            </div>
+            <details className="ops-overflow">
+              <summary aria-label="Update actions"><Ellipsis size={18} /></summary>
+              <div><Link to="/settings/player-updates">Open update center</Link></div>
+            </details>
+          </div>
+          <strong className="ops-update-card__title">{pendingUpdateActions} player update action{pendingUpdateActions === 1 ? "" : "s"} pending</strong>
+          <span className={`ops-status ${pendingUpdateActions > 0 ? "ops-status--warning" : "ops-status--healthy"}`}>
+            {pendingUpdateActions > 0 ? "Not scheduled" : "Up to date"}
+          </span>
+          <dl className="ops-detail-stats ops-detail-stats--stacked">
+            <div><dt>Eligible screens</dt><dd>{allScreens.length}</dd></div>
+            <div><dt>Scheduled screens</dt><dd>0</dd></div>
+            <div><dt>Restart required</dt><dd>{pendingUpdateActions > 0 ? "May be required" : "No"}</dd></div>
+          </dl>
+          <div className="ops-card-actions">
+            <Link className="ops-button ops-button--primary" to="/settings/player-updates">Schedule update</Link>
+            <Link className="ops-inline-action" to="/settings/player-updates">View releases <ChevronRight size={14} /></Link>
+          </div>
+        </section>
+      </section>
+
+      <section className="ops-card ops-upcoming">
+        <div className="ops-card__header">
+          <div>
+            <h3>Upcoming changes</h3>
+            <p>Chronological changes that are expected to affect screens.</p>
+          </div>
+        </div>
+        {nextChange ? (
+          <div className="ops-change-list">
+            <Link to={`/schedules/${nextChange.schedule.id}`}>
+              <time>{formatScheduleTime(nextChange.at)}</time>
+              <span><strong>Playback schedule</strong><small>{nextChange.schedule.name} · {targetLabel(nextChange.schedule)}</small></span>
+              <span className="ops-status ops-status--neutral">Scheduled</span>
+            </Link>
+          </div>
+        ) : (
+          <div className="ops-empty-compact">
+            <strong>No upcoming operational changes</strong>
+            <span>There are no schedule changes, maintenance windows, or update deployments with a future time.</span>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}'''
+          if closing not in text:
+              raise SystemExit('component closing marker not found')
+          text = text.replace(closing, extension, 1)
+
+          helper_marker = 'function formatRelative(value?: string) {'
+          helper = '''function Metric({ value, label, detail, muted = false }: { value: string; label: string; detail: string; muted?: boolean }) {
+  return (
+    <div className={`ops-metric-item ${muted ? "ops-metric-item--muted" : ""}`}>
+      <strong>{value}</strong>
+      <span>{label}</span>
+      <small>{detail}</small>
+    </div>
+  );
+}
+
+function formatDurationSince(value?: string) {
+  if (!value) return "Unavailable";
+  const minutes = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 60000));
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return `${hours}h ${remainder}m`;
+}
+
+'''
+          if helper_marker not in text:
+              raise SystemExit('helper marker not found')
+          text = text.replace(helper_marker, helper + helper_marker, 1)
+          tsx.write_text(text)
+
+          css = Path('apps/dashboard/src/pages/OperationsDashboard.css')
+          styles = css.read_text()
+          styles += '''
+
+.ops-metrics-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  overflow: hidden;
+  background: color-mix(in srgb, var(--tc-bg-surface) 82%, transparent);
+  border: 1px solid var(--tc-border-default);
+  border-radius: 10px;
+}
+
+.ops-metric-item {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 13px 15px;
+  border-right: 1px solid var(--tc-border-default);
+}
+
+.ops-metric-item:last-child { border-right: 0; }
+.ops-metric-item strong { color: var(--tc-text-primary); font-size: 1rem; }
+.ops-metric-item span { color: var(--tc-text-secondary); font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.035em; }
+.ops-metric-item small { color: var(--tc-text-secondary); font-size: 0.7rem; }
+.ops-metric-item--muted strong { color: var(--tc-text-secondary); }
+
+.ops-detail-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 2px 0 0;
+}
+
+.ops-detail-stats--stacked { grid-template-columns: 1fr; gap: 7px; }
+.ops-detail-stats div { display: grid; gap: 2px; }
+.ops-detail-stats--stacked div { grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 12px; }
+.ops-detail-stats dt { color: var(--tc-text-secondary); font-size: 0.7rem; }
+.ops-detail-stats dd { margin: 0; color: var(--tc-text-primary); font-size: 0.78rem; font-weight: 650; }
+
+.ops-secondary-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.ops-maintenance-card,
+.ops-update-card { display: grid; gap: 13px; }
+.ops-update-card--warning { border-color: rgb(245 158 11 / 32%); background: linear-gradient(135deg, rgb(120 53 15 / 12%), var(--tc-bg-surface) 46%); }
+.ops-status--warning { color: #fde68a; background: rgb(146 64 14 / 40%); border: 1px solid rgb(245 158 11 / 22%); }
+.ops-update-card__title { color: var(--tc-text-primary); font-size: 1rem; }
+.ops-card-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+
+.ops-empty-compact { display: grid; gap: 7px; padding: 4px 0; }
+.ops-empty-compact strong { color: var(--tc-text-primary); font-size: 0.88rem; }
+.ops-empty-compact span { color: var(--tc-text-secondary); font-size: 0.78rem; line-height: 1.45; }
+
+.ops-upcoming { padding: 0; overflow: hidden; }
+.ops-upcoming .ops-card__header { padding: 18px; margin: 0; }
+.ops-change-list > a { display: grid; grid-template-columns: 130px minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 13px 18px; color: inherit; border-top: 1px solid var(--tc-border-default); text-decoration: none; }
+.ops-change-list > a:hover { background: var(--tc-bg-subtle); }
+.ops-change-list time { color: var(--tc-text-secondary); font-size: 0.74rem; }
+.ops-change-list a > span:nth-child(2) { display: grid; gap: 2px; }
+.ops-change-list strong { color: var(--tc-text-primary); font-size: 0.8rem; }
+.ops-change-list small { color: var(--tc-text-secondary); font-size: 0.72rem; }
+.ops-upcoming > .ops-empty-compact { padding: 16px 18px 18px; border-top: 1px solid var(--tc-border-default); }
+
+@media (max-width: 900px) {
+  .ops-metrics-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ops-metric-item:nth-child(2) { border-right: 0; }
+  .ops-metric-item:nth-child(-n + 2) { border-bottom: 1px solid var(--tc-border-default); }
+  .ops-secondary-cards { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 600px) {
+  .ops-metrics-strip { grid-template-columns: 1fr; }
+  .ops-metric-item { border-right: 0; border-bottom: 1px solid var(--tc-border-default); }
+  .ops-metric-item:last-child { border-bottom: 0; }
+  .ops-detail-stats { grid-template-columns: 1fr; }
+  .ops-change-list > a { grid-template-columns: 1fr; gap: 7px; }
+}
+'''
+          css.write_text(styles)
+          PY
+      - run: npm exec prettier -- --write apps/dashboard/src/pages/OperationsDashboard.tsx apps/dashboard/src/pages/OperationsDashboard.css
+      - run: npm run format:check
+      - run: npm run build --workspace @tilecast/dashboard
+      - name: Remove helper and commit
+        run: |
+          rm .github/workflows/apply-dashboard-operations-metrics.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add apps/dashboard/src/pages/OperationsDashboard.tsx apps/dashboard/src/pages/OperationsDashboard.css .github/workflows/apply-dashboard-operations-metrics.yml
+          git commit -m "Add operational metrics and change planning"
+          git push origin HEAD:feat/dashboard-operations-metrics
