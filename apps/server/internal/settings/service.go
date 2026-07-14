@@ -122,7 +122,7 @@ func (s *Service) UpdateOrganization(ctx context.Context, user uuid.UUID, revisi
 	defer tx.Rollback(ctx)
 	var next int64
 	var org uuid.UUID
-	err = tx.QueryRow(ctx, `UPDATE organization_runtime_settings SET settings=$1,revision=revision+1,updated_by=$2,updated_at=now() WHERE revision=$3 RETURNING revision,organization_id`, encoded, user, revision).Scan(&next, &org)
+	err = tx.QueryRow(ctx, `UPDATE organization_runtime_settings SET settings=$1::jsonb,revision=revision+1,updated_by=$2,updated_at=now() WHERE revision=$3 RETURNING revision,organization_id`, string(encoded), user, revision).Scan(&next, &org)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Document{}, ErrRevisionConflict
 	}
@@ -141,7 +141,7 @@ func (s *Service) UpdateOrganization(ctx context.Context, user uuid.UUID, revisi
 	}
 	keys := sortedKeys(validated)
 	metadata, _ := json.Marshal(map[string]any{"changedKeys": keys, "revision": next, "scope": "organization"})
-	_, _ = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,metadata)VALUES($1,$2,'settings.organization_changed','organization',$3,$4)`, uuid.New(), user, org.String(), metadata)
+	_, _ = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,metadata)VALUES($1,$2,'settings.organization_changed','organization',$3,$4::jsonb)`, uuid.New(), user, org.String(), string(metadata))
 	screens, err := bumpAll(ctx, tx, "organization.settings_changed")
 	if err != nil {
 		return Document{}, err
@@ -177,7 +177,7 @@ func (s *Service) UpdatePreferences(ctx context.Context, user uuid.UUID, revisio
 		return Document{}, err
 	}
 	raw, _ := json.Marshal(validated)
-	tag, err := s.db.Exec(ctx, `UPDATE user_preferences SET preferences=$1,revision=revision+1,updated_at=now() WHERE user_id=$2 AND revision=$3`, raw, user, revision)
+	tag, err := s.db.Exec(ctx, `UPDATE user_preferences SET preferences=$1::jsonb,revision=revision+1,updated_at=now() WHERE user_id=$2 AND revision=$3`, string(raw), user, revision)
 	if err != nil {
 		return Document{}, err
 	}
@@ -213,9 +213,9 @@ func (s *Service) PutGroupPolicy(ctx context.Context, user, id uuid.UUID, revisi
 	defer tx.Rollback(ctx)
 	var next int64
 	if revision == 0 {
-		err = tx.QueryRow(ctx, `INSERT INTO screen_group_player_policies(screen_group_id,priority,policy,updated_by)VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING RETURNING revision`, id, priority, raw, user).Scan(&next)
+		err = tx.QueryRow(ctx, `INSERT INTO screen_group_player_policies(screen_group_id,priority,policy,updated_by)VALUES($1,$2,$3::jsonb,$4) ON CONFLICT DO NOTHING RETURNING revision`, id, priority, string(raw), user).Scan(&next)
 	} else {
-		err = tx.QueryRow(ctx, `UPDATE screen_group_player_policies SET priority=$2,policy=$3,revision=revision+1,updated_by=$4,updated_at=now() WHERE screen_group_id=$1 AND revision=$5 RETURNING revision`, id, priority, raw, user, revision).Scan(&next)
+		err = tx.QueryRow(ctx, `UPDATE screen_group_player_policies SET priority=$2,policy=$3::jsonb,revision=revision+1,updated_by=$4,updated_at=now() WHERE screen_group_id=$1 AND revision=$5 RETURNING revision`, id, priority, string(raw), user, revision).Scan(&next)
 	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		return PolicyDocument{}, ErrRevisionConflict
@@ -276,9 +276,9 @@ func (s *Service) PutScreenPolicy(ctx context.Context, user, id uuid.UUID, revis
 	}
 	defer tx.Rollback(ctx)
 	if revision == 0 {
-		err = tx.QueryRow(ctx, `INSERT INTO screen_player_policies(screen_id,policy,updated_by)VALUES($1,$2,$3) ON CONFLICT DO NOTHING RETURNING revision`, id, raw, user).Scan(&revision)
+		err = tx.QueryRow(ctx, `INSERT INTO screen_player_policies(screen_id,policy,updated_by)VALUES($1,$2::jsonb,$3) ON CONFLICT DO NOTHING RETURNING revision`, id, string(raw), user).Scan(&revision)
 	} else {
-		err = tx.QueryRow(ctx, `UPDATE screen_player_policies SET policy=$2,revision=revision+1,updated_by=$3,updated_at=now() WHERE screen_id=$1 AND revision=$4 RETURNING revision`, id, raw, user, revision).Scan(&revision)
+		err = tx.QueryRow(ctx, `UPDATE screen_player_policies SET policy=$2::jsonb,revision=revision+1,updated_by=$3,updated_at=now() WHERE screen_id=$1 AND revision=$4 RETURNING revision`, id, string(raw), user, revision).Scan(&revision)
 	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		return PolicyDocument{}, ErrRevisionConflict
@@ -444,7 +444,7 @@ func (s *Service) notify(notes []note) {
 }
 func (s *Service) audit(ctx context.Context, tx pgx.Tx, user uuid.UUID, action, resource string, id uuid.UUID, values map[string]any, revision int64) {
 	metadata, _ := json.Marshal(map[string]any{"changedKeys": sortedKeys(values), "revision": revision, "scope": resource})
-	_, _ = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,metadata)VALUES($1,$2,$3,$4,$5,$6)`, uuid.New(), user, action, resource, id.String(), metadata)
+	_, _ = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,metadata)VALUES($1,$2,$3,$4,$5,$6::jsonb)`, uuid.New(), user, action, resource, id.String(), string(metadata))
 }
 func mergeDefaults(values map[string]any, scope Scope) map[string]any {
 	out := Defaults(scope)

@@ -331,7 +331,7 @@ func (s *server) createPlayerCommand(w http.ResponseWriter, r *http.Request) {
 	}
 	user := r.Context().Value(sessionContextKey).(auth.Session).User
 	expires := time.Now().Add(time.Duration(s.runtimeInt(r, "commands.default_expiry_minutes", s.operations.DefaultCommandExpiryMinutes)) * time.Minute)
-	err = s.db.QueryRow(r.Context(), `INSERT INTO player_commands(id,organization_id,screen_id,type,payload,idempotency_key,created_by,expires_at)VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(screen_id,idempotency_key) DO UPDATE SET updated_at=player_commands.updated_at RETURNING id`, id, org, screen, input.Type, payload, key, user.ID, expires).Scan(&id)
+	err = s.db.QueryRow(r.Context(), `INSERT INTO player_commands(id,organization_id,screen_id,type,payload,idempotency_key,created_by,expires_at)VALUES($1,$2,$3,$4,$5::jsonb,$6,$7,$8) ON CONFLICT(screen_id,idempotency_key) DO UPDATE SET updated_at=player_commands.updated_at RETURNING id`, id, org, screen, input.Type, string(payload), key, user.ID, expires).Scan(&id)
 	if err != nil {
 		s.internalError(w, r, err)
 		return

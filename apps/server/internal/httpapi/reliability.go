@@ -95,7 +95,7 @@ func (s *server) confirmPowerAssist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	metadata, _ := json.Marshal(map[string]any{"deviceSleep": input.DeviceSleep, "tvStandby": input.TVStandby, "deviceWake": input.DeviceWake, "tvWake": input.TVWake, "inputSelection": input.InputSelection, "tilecastStartup": input.TilecastStartup})
-	_, _ = s.db.Exec(r.Context(), `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,metadata)VALUES($1,$2,'power_assist.confirmed','screen',$3,$4)`, uuid.New(), user.ID, id.String(), metadata)
+	_, _ = s.db.Exec(r.Context(), `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,metadata)VALUES($1,$2,'power_assist.confirmed','screen',$3,$4::jsonb)`, uuid.New(), user.ID, id.String(), string(metadata))
 	writeJSON(w, 200, map[string]any{"data": map[string]any{"screenId": id, "lastTestedAt": time.Now().UTC()}})
 }
 

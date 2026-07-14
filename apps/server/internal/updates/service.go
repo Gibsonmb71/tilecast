@@ -188,7 +188,7 @@ func (s *Service) ImportUpload(ctx context.Context, apkPath string, raw, signatu
 		_ = os.Remove(part)
 		return ImportedRelease{}, err
 	}
-	_, err = s.db.Exec(ctx, `INSERT INTO player_releases(id,channel,version_code,version_name,application_id,minimum_sdk,release_notes,published_at,apk_name,apk_size,apk_sha256,signing_certificate_sha256,manifest,manifest_signature,cache_status,verification_status,source,imported_by) VALUES($1,$2,$3,$4,$5,$6,$7,now(),$8,$9,$10,$11,$12,$13,'cached','verified','upload',$14)`, id, manifest.Channel, manifest.VersionCode, manifest.VersionName, manifest.ApplicationID, manifest.MinimumSDK, manifest.ReleaseNotes, manifest.APKAssetName, manifest.APKSizeBytes, strings.ToLower(manifest.APKSHA256), strings.ToLower(manifest.SigningCertificateSHA256), raw, strings.TrimSpace(string(signature)), importedBy)
+	_, err = s.db.Exec(ctx, `INSERT INTO player_releases(id,channel,version_code,version_name,application_id,minimum_sdk,release_notes,published_at,apk_name,apk_size,apk_sha256,signing_certificate_sha256,manifest,manifest_signature,cache_status,verification_status,source,imported_by) VALUES($1,$2,$3,$4,$5,$6,$7,now(),$8,$9,$10,$11,$12::jsonb,$13,'cached','verified','upload',$14)`, id, manifest.Channel, manifest.VersionCode, manifest.VersionName, manifest.ApplicationID, manifest.MinimumSDK, manifest.ReleaseNotes, manifest.APKAssetName, manifest.APKSizeBytes, strings.ToLower(manifest.APKSHA256), strings.ToLower(manifest.SigningCertificateSHA256), string(raw), strings.TrimSpace(string(signature)), importedBy)
 	if err != nil {
 		_ = os.Remove(final)
 		return ImportedRelease{}, err
@@ -208,8 +208,13 @@ func (s *Service) Check(ctx context.Context) error {
 		_, _ = s.db.Exec(ctx, `UPDATE update_provider_state SET last_checked_at=now(),safe_error=NULL,updated_at=now() WHERE provider='github'`)
 		return nil
 	}
-	encoded, _ := json.Marshal(result.Releases)
-	_, _ = s.db.Exec(ctx, `INSERT INTO update_provider_state(provider,etag,last_checked_at,rate_limit_reset_at,response,safe_error,updated_at)VALUES('github',$1,now(),$2,$3,NULL,now()) ON CONFLICT(provider) DO UPDATE SET etag=$1,last_checked_at=now(),rate_limit_reset_at=$2,response=$3,safe_error=NULL,updated_at=now()`, result.ETag, result.RateReset, encoded)
+	encoded, err := json.Marshal(result.Releases)
+	if err != nil {
+		return fmt.Errorf("encode GitHub release response: %w", err)
+	}
+	if _, err = s.db.Exec(ctx, `INSERT INTO update_provider_state(provider,etag,last_checked_at,rate_limit_reset_at,response,safe_error,updated_at)VALUES('github',$1,now(),$2,$3::jsonb,NULL,now()) ON CONFLICT(provider) DO UPDATE SET etag=$1,last_checked_at=now(),rate_limit_reset_at=$2,response=$3::jsonb,safe_error=NULL,updated_at=now()`, result.ETag, result.RateReset, string(encoded)); err != nil {
+		return fmt.Errorf("store GitHub release response: %w", err)
+	}
 	var imported int
 	var firstImportError error
 	for _, release := range result.Releases {
@@ -259,7 +264,7 @@ func (s *Service) importRelease(ctx context.Context, release ProviderRelease) er
 		return errors.New("GitHub asset metadata does not match the signed update manifest")
 	}
 	id := uuid.NewSHA1(uuid.NameSpaceURL, []byte(fmt.Sprintf("github:%d", release.ID)))
-	_, err = s.db.Exec(ctx, `INSERT INTO player_releases(id,github_release_id,github_tag,channel,version_code,version_name,application_id,minimum_sdk,release_notes,published_at,apk_name,apk_size,apk_sha256,signing_certificate_sha256,manifest,manifest_signature,apk_download_url,verification_status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,'verified_manifest') ON CONFLICT(github_release_id) DO UPDATE SET manifest=EXCLUDED.manifest,manifest_signature=EXCLUDED.manifest_signature,updated_at=now()`, id, release.ID, release.Tag, manifest.Channel, manifest.VersionCode, manifest.VersionName, manifest.ApplicationID, manifest.MinimumSDK, manifest.ReleaseNotes, release.PublishedAt, manifest.APKAssetName, manifest.APKSizeBytes, strings.ToLower(manifest.APKSHA256), strings.ToLower(manifest.SigningCertificateSHA256), raw, strings.TrimSpace(string(signature)), apkAsset.URL)
+	_, err = s.db.Exec(ctx, `INSERT INTO player_releases(id,github_release_id,github_tag,channel,version_code,version_name,application_id,minimum_sdk,release_notes,published_at,apk_name,apk_size,apk_sha256,signing_certificate_sha256,manifest,manifest_signature,apk_download_url,verification_status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16,$17,'verified_manifest') ON CONFLICT(github_release_id) DO UPDATE SET manifest=EXCLUDED.manifest,manifest_signature=EXCLUDED.manifest_signature,updated_at=now()`, id, release.ID, release.Tag, manifest.Channel, manifest.VersionCode, manifest.VersionName, manifest.ApplicationID, manifest.MinimumSDK, manifest.ReleaseNotes, release.PublishedAt, manifest.APKAssetName, manifest.APKSizeBytes, strings.ToLower(manifest.APKSHA256), strings.ToLower(manifest.SigningCertificateSHA256), string(raw), strings.TrimSpace(string(signature)), apkAsset.URL)
 	return err
 }
 

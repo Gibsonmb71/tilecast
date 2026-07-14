@@ -1,5 +1,13 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  CheckCircle2,
+  Download,
+  RefreshCw,
+  Rocket,
+  Search,
+  Upload,
+} from "lucide-react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
 
@@ -318,6 +326,7 @@ export function PlayerUpdatesPanel({
   const [windowStart, setWindowStart] = useState("");
   const [targetSearch, setTargetSearch] = useState("");
   const [showUpload, setShowUpload] = useState(false);
+  const [deploySuccess, setDeploySuccess] = useState("");
   const check = useMutation({
     mutationFn: () => api.checkPlayerReleases(auth.status?.csrfToken ?? ""),
     onSuccess: () =>
@@ -346,10 +355,14 @@ export function PlayerUpdatesPanel({
         },
         auth.status?.csrfToken ?? "",
       ),
-    onSuccess: () => {
+    onMutate: () => setDeploySuccess(""),
+    onSuccess: async (created) => {
       setScreenIds([]);
       setGroupIds([]);
-      void client.invalidateQueries({ queryKey: ["update-deployments"] });
+      await client.invalidateQueries({ queryKey: ["update-deployments"] });
+      setDeploySuccess(
+        `Deployment created for ${created.targetCount} ${created.targetCount === 1 ? "screen" : "screens"}.`,
+      );
     },
   });
   const targetSet = new Set(screenIds);
@@ -377,6 +390,7 @@ export function PlayerUpdatesPanel({
                 className="button button--primary"
                 onClick={() => setShowUpload((visible) => !visible)}
               >
+                <Upload size={16} aria-hidden="true" />
                 Upload release
               </button>
               <button
@@ -384,6 +398,7 @@ export function PlayerUpdatesPanel({
                 disabled={check.isPending}
                 onClick={() => check.mutate()}
               >
+                <RefreshCw size={16} aria-hidden="true" />
                 {check.isPending ? "Synchronizing…" : "Sync from GitHub"}
               </button>
             </div>
@@ -427,7 +442,7 @@ export function PlayerUpdatesPanel({
             </div>
           )}
         <div className="settings-table-wrap">
-          <table>
+          <table className="player-updates-table">
             <thead>
               <tr>
                 <th>Version</th>
@@ -445,7 +460,9 @@ export function PlayerUpdatesPanel({
                 <tr key={release.id}>
                   <td>
                     <strong>{release.versionName}</strong>
-                    <small>Code {release.versionCode}</small>
+                    <small className="technical">
+                      Code {release.versionCode}
+                    </small>
                   </td>
                   <td>{release.channel === "beta" ? "Beta" : "Stable"}</td>
                   <td>
@@ -453,14 +470,19 @@ export function PlayerUpdatesPanel({
                   </td>
                   <td>{new Date(release.publishedAt).toLocaleDateString()}</td>
                   <td>{formatBytes(release.apkSizeBytes)}</td>
-                  <td>{humanize(release.verificationStatus)}</td>
-                  <td>{humanize(release.cacheStatus)}</td>
+                  <td>
+                    <UpdateStatus value={release.verificationStatus} />
+                  </td>
+                  <td>
+                    <UpdateStatus value={release.cacheStatus} />
+                  </td>
                   <td>
                     {owner && release.verificationStatus !== "verified" && (
                       <button
                         className="button button--quiet"
                         onClick={() => cache.mutate(release.id)}
                       >
+                        <Download size={15} aria-hidden="true" />
                         Download and verify
                       </button>
                     )}
@@ -480,7 +502,7 @@ export function PlayerUpdatesPanel({
               screens are removed automatically.
             </p>
           </header>
-          <div className="deployment-fields">
+          <div className="deployment-fields deployment-fields--primary">
             <label>
               Verified release
               <select
@@ -541,89 +563,111 @@ export function PlayerUpdatesPanel({
               </small>
             </label>
           </div>
-          <label className="target-search">
-            Search targets
-            <input
-              type="search"
-              value={targetSearch}
-              onChange={(event) => setTargetSearch(event.target.value)}
-              placeholder="Screen or group name"
-            />
-          </label>
-          <div className="target-picker">
-            <div>
-              <h4>Screens</h4>
-              {(screens.data?.items ?? [])
-                .filter((item) => item.name.toLowerCase().includes(query))
-                .map((screen) => (
-                  <Target
-                    key={screen.id}
-                    checked={screenIds.includes(screen.id)}
-                    label={screen.name}
-                    detail={`${screen.playerVersion} · ${screen.status}`}
-                    onChange={(checked) =>
-                      setScreenIds(
-                        checked
-                          ? [...screenIds, screen.id]
-                          : screenIds.filter((id) => id !== screen.id),
-                      )
-                    }
-                  />
-                ))}
-            </div>
-            <div>
-              <h4>Groups</h4>
-              {(groups.data?.items ?? [])
-                .filter((item) => item.name.toLowerCase().includes(query))
-                .map((group) => (
-                  <Target
-                    key={group.id}
-                    checked={groupIds.includes(group.id)}
-                    label={group.name}
-                    detail={`${group.membershipCount} screens`}
-                    onChange={(checked) =>
-                      setGroupIds(
-                        checked
-                          ? [...groupIds, group.id]
-                          : groupIds.filter((id) => id !== group.id),
-                      )
-                    }
-                  />
-                ))}
-            </div>
-          </div>
-          <div className="target-summary">
-            <strong>{selectedScreens.length} deduplicated targets</strong>
-            {selectedScreens.length > 0 && (
-              <span>
-                {
-                  selectedScreens.filter(
-                    (screen) => screen.status === "offline",
-                  ).length
-                }{" "}
-                offline
+          <div className="deployment-targets">
+            <label className="target-search">
+              <span>Target screens and groups</span>
+              <span className="target-search__control">
+                <Search size={16} aria-hidden="true" />
+                <input
+                  type="search"
+                  value={targetSearch}
+                  onChange={(event) => setTargetSearch(event.target.value)}
+                  placeholder="Search by name"
+                />
               </span>
-            )}
+            </label>
+            <div className="target-picker">
+              <div className="target-picker__column">
+                <h4>
+                  Screens <span>{screens.data?.items.length ?? 0}</span>
+                </h4>
+                {(screens.data?.items ?? [])
+                  .filter((item) => item.name.toLowerCase().includes(query))
+                  .map((screen) => (
+                    <Target
+                      key={screen.id}
+                      checked={screenIds.includes(screen.id)}
+                      label={screen.name}
+                      detail={`${screen.playerVersion} · ${screen.status}`}
+                      onChange={(checked) =>
+                        setScreenIds(
+                          checked
+                            ? [...screenIds, screen.id]
+                            : screenIds.filter((id) => id !== screen.id),
+                        )
+                      }
+                    />
+                  ))}
+              </div>
+              <div className="target-picker__column">
+                <h4>
+                  Groups <span>{groups.data?.items.length ?? 0}</span>
+                </h4>
+                {(groups.data?.items ?? [])
+                  .filter((item) => item.name.toLowerCase().includes(query))
+                  .map((group) => (
+                    <Target
+                      key={group.id}
+                      checked={groupIds.includes(group.id)}
+                      label={group.name}
+                      detail={`${group.membershipCount} screens`}
+                      onChange={(checked) =>
+                        setGroupIds(
+                          checked
+                            ? [...groupIds, group.id]
+                            : groupIds.filter((id) => id !== group.id),
+                        )
+                      }
+                    />
+                  ))}
+              </div>
+            </div>
           </div>
-          <button
-            className="button button--primary"
-            disabled={
-              !releaseId ||
-              !selectedScreens.length ||
-              deploy.isPending ||
-              (mode === "maintenance_window" && !windowStart)
-            }
-            onClick={() => {
-              if (
-                confirm(
-                  "Deploy player update? Android may require approval on each TV.",
+          {(deploy.error || deploySuccess) && (
+            <div
+              className={`notice ${deploy.error ? "notice--danger" : "notice--success"}`}
+              role={deploy.error ? "alert" : "status"}
+              aria-live="polite"
+            >
+              {deploy.error ? mutationError(deploy.error) : deploySuccess}
+            </div>
+          )}
+          <div className="deployment-submit">
+            <div className="target-summary">
+              <strong>{selectedScreens.length} deduplicated targets</strong>
+              {selectedScreens.length > 0 && (
+                <span>
+                  {
+                    selectedScreens.filter(
+                      (screen) => screen.status === "offline",
+                    ).length
+                  }{" "}
+                  offline
+                </span>
+              )}
+            </div>
+            <button
+              className="button button--primary"
+              disabled={
+                !releaseId ||
+                !selectedScreens.length ||
+                deploy.isPending ||
+                (mode === "maintenance_window" && !windowStart)
+              }
+              aria-busy={deploy.isPending}
+              onClick={() => {
+                if (
+                  confirm(
+                    `Deploy this Player update to ${selectedScreens.length} ${selectedScreens.length === 1 ? "screen" : "screens"}? Android may require approval on each TV.`,
+                  )
                 )
-              )
-                deploy.mutate();
-            }}
-          >
-            Deploy player update
-          </button>
+                  deploy.mutate();
+              }}
+            >
+              <Rocket size={16} aria-hidden="true" />
+              {deploy.isPending ? "Creating deployment…" : "Deploy update"}
+            </button>
+          </div>
         </section>
       )}
       <section className="settings-subsection">
@@ -634,8 +678,14 @@ export function PlayerUpdatesPanel({
             approval; it is not a failure.
           </p>
         </header>
+        {deployments.error && (
+          <div className="notice notice--danger" role="alert">
+            Deployment history could not be loaded.{" "}
+            {mutationError(deployments.error)}
+          </div>
+        )}
         <div className="settings-table-wrap">
-          <table>
+          <table className="player-updates-table">
             <thead>
               <tr>
                 <th>Name</th>
@@ -653,12 +703,14 @@ export function PlayerUpdatesPanel({
                 <tr key={item.id}>
                   <td>
                     {item.name}
-                    <small>
+                    <small className="technical">
                       {item.versionName} ({item.versionCode})
                     </small>
                   </td>
                   <td>{humanize(item.mode)}</td>
-                  <td>{humanize(item.status)}</td>
+                  <td>
+                    <UpdateStatus value={item.status} />
+                  </td>
                   <td>
                     {item.rolloutMode === "canary"
                       ? `${item.canarySize ?? 0} canaries · ${humanize(item.rolloutPhase ?? "canary")}`
@@ -671,6 +723,16 @@ export function PlayerUpdatesPanel({
                   <td>{item.failedCount}</td>
                 </tr>
               ))}
+              {!deployments.isLoading &&
+                !deployments.error &&
+                (deployments.data?.items.length ?? 0) === 0 && (
+                  <tr>
+                    <td colSpan={8} className="table-empty-state">
+                      <CheckCircle2 size={18} aria-hidden="true" />
+                      No Player deployments have been created.
+                    </td>
+                  </tr>
+                )}
             </tbody>
           </table>
         </div>
@@ -866,6 +928,28 @@ function Target({
       </span>
     </label>
   );
+}
+function UpdateStatus({ value }: { value: string }) {
+  const tone = ["verified", "cached", "completed", "succeeded"].includes(value)
+    ? "success"
+    : ["failed", "error"].includes(value)
+      ? "danger"
+      : ["active", "pending", "downloading", "verified_manifest"].includes(
+            value,
+          )
+        ? "info"
+        : value === "paused"
+          ? "warning"
+          : "neutral";
+  return (
+    <span className={`status-dot-label status-dot-label--${tone}`}>
+      <span aria-hidden="true" />
+      {humanize(value)}
+    </span>
+  );
+}
+function mutationError(error: unknown) {
+  return error instanceof Error ? error.message : "The request failed.";
 }
 export function playerUpdateStateLabel(state: string) {
   return state === "waiting_for_user"
