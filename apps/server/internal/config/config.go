@@ -3,7 +3,6 @@ package config
 import (
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"strconv"
 	"time"
@@ -108,11 +107,11 @@ func Load() (Config, error) {
 		{"TILECAST_CLOCK_SKEW_WARNING_SECONDS", "300", 86400, &cfg.Scheduling.ClockSkewWarningSeconds},
 	}
 	for _, value := range values {
-		parsed, parseErr := parsePositiveInt64(value.name, value.fallback)
-		if parseErr != nil || parsed > int64(value.max) {
-			return Config{}, fmt.Errorf("%s must be between 1 and %d", value.name, value.max)
+		parsed, parseErr := parsePositiveInt(value.name, value.fallback, value.max)
+		if parseErr != nil {
+			return Config{}, parseErr
 		}
-		*value.dest = int(parsed)
+		*value.dest = parsed
 	}
 	cfg.Website.AllowPrivateHTTP, err = strconv.ParseBool(get("TILECAST_WEBSITE_ALLOW_PRIVATE_HTTP", "false"))
 	if err != nil {
@@ -124,11 +123,11 @@ func Load() (Config, error) {
 		dest           *int
 	}{{"TILECAST_WEBSITE_DEFAULT_TIMEOUT_SECONDS", "20", 120, &cfg.Website.DefaultTimeoutSeconds}, {"TILECAST_WEBSITE_MAX_TIMEOUT_SECONDS", "120", 600, &cfg.Website.MaxTimeoutSeconds}, {"TILECAST_WEBSITE_MIN_REFRESH_SECONDS", "30", 3600, &cfg.Website.MinRefreshSeconds}, {"TILECAST_WEBSITE_MAX_ALLOWED_HOSTS", "25", 100, &cfg.Website.MaxAllowedHosts}, {"TILECAST_WEBSITE_MAX_ASSETS", "500", 5000, &cfg.Website.MaxWebsites}}
 	for _, value := range websiteValues {
-		parsed, parseErr := parsePositiveInt64(value.name, value.fallback)
-		if parseErr != nil || parsed > int64(value.max) {
-			return Config{}, fmt.Errorf("%s must be between 1 and %d", value.name, value.max)
+		parsed, parseErr := parsePositiveInt(value.name, value.fallback, value.max)
+		if parseErr != nil {
+			return Config{}, parseErr
 		}
-		*value.dest = int(parsed)
+		*value.dest = parsed
 	}
 	if cfg.Website.DefaultTimeoutSeconds > cfg.Website.MaxTimeoutSeconds {
 		return Config{}, errors.New("TILECAST_WEBSITE_DEFAULT_TIMEOUT_SECONDS must not exceed TILECAST_WEBSITE_MAX_TIMEOUT_SECONDS")
@@ -146,11 +145,11 @@ func Load() (Config, error) {
 		{"TILECAST_COMMAND_RETENTION_DAYS", "30", 3650, &cfg.Operations.CommandRetentionDays},
 	}
 	for _, value := range operationValues {
-		parsed, parseErr := parsePositiveInt64(value.name, value.fallback)
-		if parseErr != nil || parsed > int64(value.max) {
-			return Config{}, fmt.Errorf("%s must be between 1 and %d", value.name, value.max)
+		parsed, parseErr := parsePositiveInt(value.name, value.fallback, value.max)
+		if parseErr != nil {
+			return Config{}, parseErr
 		}
-		*value.dest = int(parsed)
+		*value.dest = parsed
 	}
 
 	cfg.Media = MediaConfig{
@@ -167,40 +166,26 @@ func Load() (Config, error) {
 	if cfg.Updates.MaxAPKBytes, err = parsePositiveInt64("TILECAST_UPDATE_MAX_APK_BYTES", "536870912"); err != nil {
 		return Config{}, err
 	}
-	retention, retentionErr := parsePositiveInt64("TILECAST_UPDATE_RETENTION_DAYS", "90")
-	if retentionErr != nil || retention > 3650 {
-		return Config{}, errors.New("TILECAST_UPDATE_RETENTION_DAYS must be between 1 and 3650")
+	if cfg.Updates.RetentionDays, err = parsePositiveInt("TILECAST_UPDATE_RETENTION_DAYS", "90", 3650); err != nil {
+		return Config{}, err
 	}
-	cfg.Updates.RetentionDays = int(retention)
 	if cfg.Media.MaxUploadBytes, err = parsePositiveInt64("TILECAST_MAX_UPLOAD_BYTES", "10737418240"); err != nil {
 		return Config{}, err
 	}
-	workers, err := parsePositiveInt64("TILECAST_MEDIA_WORKERS", "2")
-	if err != nil || workers > 32 {
-		return Config{}, errors.New("TILECAST_MEDIA_WORKERS must be between 1 and 32")
+	if cfg.Media.Workers, err = parsePositiveInt("TILECAST_MEDIA_WORKERS", "2", 32); err != nil {
+		return Config{}, err
 	}
-	cfg.Media.Workers = int(workers)
 	reserved, err := parsePositiveInt64("TILECAST_MEDIA_RESERVED_FREE_BYTES", "1073741824")
 	if err != nil {
 		return Config{}, err
 	}
 	cfg.Media.ReservedFreeBytes = uint64(reserved)
-	maxWidth, err := parsePositiveInt64("TILECAST_VIDEO_MAX_WIDTH", "1920")
-	if err != nil {
+	if cfg.Media.VideoMaxWidth, err = parsePositiveInt("TILECAST_VIDEO_MAX_WIDTH", "1920", 0); err != nil {
 		return Config{}, err
 	}
-	if maxWidth > int64(math.MaxInt) {
-		return Config{}, errors.New("TILECAST_VIDEO_MAX_WIDTH is too large")
-	}
-	cfg.Media.VideoMaxWidth = int(maxWidth)
-	maxHeight, err := parsePositiveInt64("TILECAST_VIDEO_MAX_HEIGHT", "1080")
-	if err != nil {
+	if cfg.Media.VideoMaxHeight, err = parsePositiveInt("TILECAST_VIDEO_MAX_HEIGHT", "1080", 0); err != nil {
 		return Config{}, err
 	}
-	if maxHeight > int64(math.MaxInt) {
-		return Config{}, errors.New("TILECAST_VIDEO_MAX_HEIGHT is too large")
-	}
-	cfg.Media.VideoMaxHeight = int(maxHeight)
 	if cfg.Media.VideoMaxFrameRate, err = strconv.ParseFloat(get("TILECAST_VIDEO_MAX_FRAME_RATE", "60"), 64); err != nil || cfg.Media.VideoMaxFrameRate <= 0 {
 		return Config{}, errors.New("TILECAST_VIDEO_MAX_FRAME_RATE must be positive")
 	}
@@ -215,6 +200,17 @@ func Load() (Config, error) {
 	cfg.SessionTTL = ttl
 
 	return cfg, nil
+}
+
+func parsePositiveInt(key, fallback string, max int) (int, error) {
+	value, err := strconv.Atoi(get(key, fallback))
+	if err != nil || value <= 0 {
+		return 0, fmt.Errorf("%s must be a positive integer", key)
+	}
+	if max > 0 && value > max {
+		return 0, fmt.Errorf("%s must be between 1 and %d", key, max)
+	}
+	return value, nil
 }
 
 func parsePositiveInt64(key, fallback string) (int64, error) {
