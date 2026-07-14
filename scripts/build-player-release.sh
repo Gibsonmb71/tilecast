@@ -31,9 +31,13 @@ BADGING_OUTPUT="$("$AAPT" dump badging "$APK")"
 GRADLE_VERSION_CODE="$(sed -n 's/.*versionCode = \([0-9][0-9]*\).*/\1/p' app/build.gradle.kts)"
 GRADLE_VERSION_NAME="$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts)"
 PACKAGE_METADATA="${BADGING_OUTPUT%%$'\n'*}"
-APPLICATION_ID="$(printf '%s\n' "$PACKAGE_METADATA" | sed -n "s/.*name='\([^']*\)'.*/\1/p")"
-VERSION_CODE="$(printf '%s\n' "$PACKAGE_METADATA" | sed -n "s/.*versionCode='\([^']*\)'.*/\1/p")"
-VERSION_NAME="$(printf '%s\n' "$PACKAGE_METADATA" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p")"
+
+# The package line also contains fields such as compileSdkVersionCodename.
+# Anchor each expression to the leading package fields so a greedy `.*name=`
+# cannot accidentally return the SDK codename as the application ID.
+APPLICATION_ID="$(printf '%s\n' "$PACKAGE_METADATA" | sed -n "s/^package: name='\([^']*\)'.*/\1/p")"
+VERSION_CODE="$(printf '%s\n' "$PACKAGE_METADATA" | sed -n "s/^package: name='[^']*' versionCode='\([^']*\)'.*/\1/p")"
+VERSION_NAME="$(printf '%s\n' "$PACKAGE_METADATA" | sed -n "s/^package: name='[^']*' versionCode='[^']*' versionName='\([^']*\)'.*/\1/p")"
 MINIMUM_SDK="$(printf '%s\n' "$BADGING_OUTPUT" | sed -n "s/sdkVersion:'\([^']*\)'/\1/p")"
 APK_SIZE="$(wc -c < "$APK" | tr -d ' ')"
 if command -v sha256sum >/dev/null 2>&1; then
