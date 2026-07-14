@@ -5,7 +5,7 @@ import { api } from "../api/client";
 const ACCESSIBILITY_COMPONENT =
   "org.tilecast.player/org.tilecast.player.reliability.TilecastAccessibilityService";
 
-const ADB_COMMAND = `adb shell 'component="${ACCESSIBILITY_COMPONENT}"; current=$(settings get secure enabled_accessibility_services); [ "$current" = "null" ] && current=""; case ":$current:" in *":$component:"*) ;; *) current="${current:+$current:}$component" ;; esac; settings put secure enabled_accessibility_services "$current"; settings put secure accessibility_enabled 1'`;
+const ADB_COMMAND = `adb shell 'component="${ACCESSIBILITY_COMPONENT}"; current=$(settings get secure enabled_accessibility_services); [ "$current" = "null" ] && current=""; case ":$current:" in *":$component:"*) ;; *) current="\${current:+$current:}$component" ;; esac; settings put secure enabled_accessibility_services "$current"; settings put secure accessibility_enabled 1'`;
 
 export function FireTvAccessibilityAdbPanel({
   screenId,
