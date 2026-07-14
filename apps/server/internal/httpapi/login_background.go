@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/tilecast/tilecast/apps/server/internal/auth"
@@ -12,28 +13,15 @@ import (
 const defaultLoginBackgroundURL = "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&fm=jpg&q=82&w=2400"
 
 func (s *server) loginBackgroundRoutes(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/api/v1/auth/background":
-			if r.Method == http.MethodGet || r.Method == http.MethodHead {
-				s.loginBackgroundImage(w, r)
-				return
-			}
-		case "/api/v1/settings/login-background":
-			switch r.Method {
-			case http.MethodGet:
-				s.requireSession(http.HandlerFunc(s.getLoginBackground)).ServeHTTP(w, r)
-				return
-			case http.MethodPut:
-				s.requireSession(s.requireRoles("owner", "administrator")(s.requireCSRF(http.HandlerFunc(s.putLoginBackground)))).ServeHTTP(w, r)
-				return
-			case http.MethodDelete:
-				s.requireSession(s.requireRoles("owner", "administrator")(s.requireCSRF(http.HandlerFunc(s.deleteLoginBackground)))).ServeHTTP(w, r)
-				return
-			}
-		}
-		next.ServeHTTP(w, r)
-	})
+	router := chi.NewRouter()
+	router.Get("/api/v1/auth/background", s.loginBackgroundImage)
+	router.Head("/api/v1/auth/background", s.loginBackgroundImage)
+	router.With(s.requireSession).Get("/api/v1/settings/login-background", s.getLoginBackground)
+	router.With(s.requireSession, s.requireRoles("owner", "administrator"), s.requireCSRF).Put("/api/v1/settings/login-background", s.putLoginBackground)
+	router.With(s.requireSession, s.requireRoles("owner", "administrator"), s.requireCSRF).Delete("/api/v1/settings/login-background", s.deleteLoginBackground)
+	router.NotFound(next.ServeHTTP)
+	router.MethodNotAllowed(next.ServeHTTP)
+	return router
 }
 
 func (s *server) loginBackgroundImage(w http.ResponseWriter, r *http.Request) {
