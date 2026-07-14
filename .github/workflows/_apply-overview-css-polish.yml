@@ -1,0 +1,40 @@
+name: Apply Overview CSS polish
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.head_ref == 'fix/overview-density-light-theme'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/overview-density-light-theme
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Apply CSS-only polish
+        run: |
+          node scripts/apply-overview-css-polish.mjs
+          rm scripts/apply-overview-css-polish.mjs .github/workflows/_apply-overview-css-polish.yml
+          npm exec prettier -- --write apps/dashboard/src/pages/OperationsDashboard.css
+      - name: Verify dashboard
+        run: |
+          npm run format:check
+          npm run lint --workspace @tilecast/dashboard
+          npm test --workspace @tilecast/dashboard
+          npm run build --workspace @tilecast/dashboard
+      - name: Commit verified change
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Polish Overview density and light theme'
+          git push origin HEAD:fix/overview-density-light-theme
