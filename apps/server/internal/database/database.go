@@ -6,6 +6,7 @@ import (
 	"embed"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
@@ -15,7 +16,18 @@ import (
 var migrations embed.FS
 
 func Open(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
-	pool, err := pgxpool.New(ctx, databaseURL)
+	config, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("parse pool config: %w", err)
+	}
+
+	// QueryExecModeExec sends PostgreSQL the concrete parameter types inferred
+	// from Go values. This is required for polymorphic functions such as
+	// jsonb_build_object, whose arguments cannot be inferred from untyped $n
+	// placeholders during statement preparation.
+	config.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeExec
+
+	pool, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {
 		return nil, fmt.Errorf("create pool: %w", err)
 	}
