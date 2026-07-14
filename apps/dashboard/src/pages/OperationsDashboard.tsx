@@ -192,8 +192,8 @@ export function OperationsDashboard() {
         />
       </section>
 
-      <section className="ops-layout">
-        <div className="ops-layout__primary">
+      <section className="ops-dashboard-grid">
+        <div className="ops-dashboard-grid__main">
           <section className="ops-card ops-now-playing">
             <div className="ops-card__eyebrow">
               <Monitor size={17} />
@@ -263,7 +263,40 @@ export function OperationsDashboard() {
           ) : null}
         </div>
 
-        <aside className="ops-layout__supporting">
+      <section className="ops-card ops-upcoming">
+        <div className="ops-card__header">
+          <div>
+            <h3>Upcoming changes</h3>
+            <p>Chronological changes expected to affect screens.</p>
+          </div>
+        </div>
+        {nextChange ? (
+          <div className="ops-change-list">
+            <Link to={`/schedules/${nextChange.schedule.id}`}>
+              <time>{formatScheduleTime(nextChange.at)}</time>
+              <span>
+                <strong>Playback schedule</strong>
+                <small>
+                  {nextChange.schedule.name} · {targetLabel(nextChange.schedule)}
+                </small>
+              </span>
+              <span className="ops-status ops-status--neutral">Scheduled</span>
+            </Link>
+          </div>
+        ) : (
+          <div className="ops-empty-compact">
+            <RefreshCw size={18} />
+            <strong>No upcoming operational changes</strong>
+            <span>
+              There are no schedule changes, maintenance windows, or update
+              deployments with a future time.
+            </span>
+          </div>
+        )}
+      </section>
+        </div>
+
+        <aside className="ops-dashboard-grid__rail">
           <section className="ops-card ops-compact-card">
             <div className="ops-card__eyebrow">
               <MonitorCheck size={17} />
@@ -346,8 +379,6 @@ export function OperationsDashboard() {
               </>
             )}
           </section>
-        </aside>
-      </section>
 
       <section className="ops-secondary-cards">
         <section className="ops-card ops-maintenance-card">
@@ -417,37 +448,7 @@ export function OperationsDashboard() {
           </div>
         </section>
       </section>
-
-      <section className="ops-card ops-upcoming">
-        <div className="ops-card__header">
-          <div>
-            <h3>Upcoming changes</h3>
-            <p>Chronological changes expected to affect screens.</p>
-          </div>
-        </div>
-        {nextChange ? (
-          <div className="ops-change-list">
-            <Link to={`/schedules/${nextChange.schedule.id}`}>
-              <time>{formatScheduleTime(nextChange.at)}</time>
-              <span>
-                <strong>Playback schedule</strong>
-                <small>
-                  {nextChange.schedule.name} · {targetLabel(nextChange.schedule)}
-                </small>
-              </span>
-              <span className="ops-status ops-status--neutral">Scheduled</span>
-            </Link>
-          </div>
-        ) : (
-          <div className="ops-empty-compact">
-            <RefreshCw size={18} />
-            <strong>No upcoming operational changes</strong>
-            <span>
-              There are no schedule changes, maintenance windows, or update
-              deployments with a future time.
-            </span>
-          </div>
-        )}
+        </aside>
       </section>
     </div>
   );
