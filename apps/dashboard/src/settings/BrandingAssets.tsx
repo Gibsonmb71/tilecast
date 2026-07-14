@@ -72,7 +72,9 @@ export function BrandingAssets({
           description="The full-screen image behind the Tilecast Studio sign-in panel."
           value={background.data?.assetId ?? ""}
           editable={editable && !background.isLoading}
-          fallbackImageUrl={background.data?.imageUrl ?? "/api/v1/auth/background"}
+          fallbackImageUrl={
+            background.data?.imageUrl ?? "/api/v1/auth/background"
+          }
           previewMode="cover"
           pending={saveBackground.isPending || removeBackground.isPending}
           actionError={
