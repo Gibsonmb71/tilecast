@@ -15,6 +15,7 @@
         android:name=".TilecastApplication"
         android:allowBackup="false"
         android:banner="@drawable/tilecast_banner"
+        android:hardwareAccelerated="true"
         android:icon="@drawable/tilecast_icon"
         android:label="Tilecast Player"
         android:supportsRtl="true"
