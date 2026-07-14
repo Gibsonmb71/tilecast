@@ -1,0 +1,35 @@
+name: Format login redesign
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: github.head_ref == 'feat/login-background'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/login-background
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: |
+          npm exec prettier -- --write \
+            apps/dashboard/src/pages/AuthPage.tsx \
+            apps/dashboard/src/pages/AuthPage.css \
+            apps/dashboard/src/settings/BrandingAssets.tsx \
+            apps/dashboard/src/settings/BrandingAssets.css
+          rm .github/workflows/_format-login-redesign.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m 'Format login redesign'
+          git push origin HEAD:feat/login-background
