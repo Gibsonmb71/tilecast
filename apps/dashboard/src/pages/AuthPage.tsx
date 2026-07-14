@@ -140,8 +140,8 @@ function LoginFormView() {
   return (
     <div className="auth-form" aria-labelledby="login-title">
       <header>
-        <h1 id="login-title">Welcome back</h1>
-        <p>Sign in to manage your displays.</p>
+        <h1 id="login-title">Sign in</h1>
+        <p>Manage your Tilecast displays.</p>
       </header>
       {error && (
         <div className="notice notice--error" role="alert">
