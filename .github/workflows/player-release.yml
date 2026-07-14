@@ -1,32 +1,98 @@
 name: Tilecast Player Release
 
 on:
+  push:
+    tags:
+      - "player-v*"
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag, for example player-v0.9.0
+        description: Existing release tag, for example player-v0.10.1
         required: true
       channel:
-        description: stable or beta
+        description: Release channel for a manual run
         required: true
         default: stable
         type: choice
         options: [stable, beta]
       release_notes:
-        description: Public release summary
-        required: true
+        description: Optional public release summary; generated when omitted
+        required: false
+        default: ""
 
 permissions:
   contents: write
+
+concurrency:
+  group: player-release-${{ github.ref }}-${{ inputs.tag }}
+  cancel-in-progress: false
 
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
       - uses: actions/setup-java@v4
-        with: { distribution: temurin, java-version: "17" }
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Resolve and validate release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MANUAL_TAG: ${{ inputs.tag }}
+          MANUAL_CHANNEL: ${{ inputs.channel }}
+          MANUAL_NOTES: ${{ inputs.release_notes }}
+        run: |
+          set -euo pipefail
+
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            tag="$GITHUB_REF_NAME"
+            case "$tag" in
+              *beta*) channel=beta ;;
+              *) channel=stable ;;
+            esac
+            notes=""
+          else
+            tag="$MANUAL_TAG"
+            channel="$MANUAL_CHANNEL"
+            notes="$MANUAL_NOTES"
+          fi
+
+          if ! [[ "$tag" =~ ^player-v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Release tag must use player-v<versionName>." >&2
+            exit 1
+          fi
+
+          version="${tag#player-v}"
+          android_version="$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' apps/player-android/app/build.gradle.kts | head -1)"
+          if [ "$version" != "$android_version" ]; then
+            echo "Tag version $version does not match Android versionName $android_version." >&2
+            exit 1
+          fi
+
+          if [ -z "$notes" ]; then
+            notes="$(gh api --method POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+              -f tag_name="$tag" \
+              -f target_commitish="$GITHUB_SHA" \
+              --jq .body)"
+          fi
+          if [ -z "$notes" ]; then
+            notes="Tilecast Player $version"
+          fi
+
+          printf '%s\n' "$notes" > "$RUNNER_TEMP/tilecast-release-notes.md"
+          {
+            echo "tag=$tag"
+            echo "version=$version"
+            echo "channel=$channel"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Require signing secrets
         env:
           KEYSTORE_B64: ${{ secrets.TILECAST_ANDROID_KEYSTORE_BASE64 }}
@@ -35,24 +101,58 @@ jobs:
           KEY_PASSWORD: ${{ secrets.TILECAST_ANDROID_KEY_PASSWORD }}
           UPDATE_PRIVATE_KEY: ${{ secrets.TILECAST_UPDATE_MANIFEST_PRIVATE_KEY_PEM }}
           UPDATE_PUBLIC_KEY: ${{ secrets.TILECAST_UPDATE_MANIFEST_PUBLIC_KEY_PEM }}
-        run: test -n "$KEYSTORE_B64" && test -n "$STORE_PASSWORD" && test -n "$KEY_ALIAS" && test -n "$KEY_PASSWORD" && test -n "$UPDATE_PRIVATE_KEY" && test -n "$UPDATE_PUBLIC_KEY"
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in KEYSTORE_B64 STORE_PASSWORD KEY_ALIAS KEY_PASSWORD UPDATE_PRIVATE_KEY UPDATE_PUBLIC_KEY; do
+            if [ -z "${!name}" ]; then
+              echo "Required signing secret for $name is missing." >&2
+              missing=1
+            fi
+          done
+          test "$missing" -eq 0
+
       - name: Materialize ephemeral signing files
         env:
           KEYSTORE_B64: ${{ secrets.TILECAST_ANDROID_KEYSTORE_BASE64 }}
           UPDATE_PRIVATE_KEY: ${{ secrets.TILECAST_UPDATE_MANIFEST_PRIVATE_KEY_PEM }}
           UPDATE_PUBLIC_KEY: ${{ secrets.TILECAST_UPDATE_MANIFEST_PUBLIC_KEY_PEM }}
         run: |
-          mkdir -p "$RUNNER_TEMP/tilecast-signing"
+          set -euo pipefail
+          install -d -m 700 "$RUNNER_TEMP/tilecast-signing"
           printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/tilecast-signing/player.jks"
           printf '%s' "$UPDATE_PRIVATE_KEY" > "$RUNNER_TEMP/tilecast-signing/update-private.pem"
           printf '%s' "$UPDATE_PUBLIC_KEY" > "$RUNNER_TEMP/tilecast-signing/update-public.pem"
+          chmod 600 "$RUNNER_TEMP/tilecast-signing/"*
+
       - name: Reject a non-increasing version code
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          current=$(sed -n 's/.*versionCode = \([0-9][0-9]*\).*/\1/p' apps/player-android/app/build.gradle.kts | head -1)
-          previous=$(gh release list --limit 30 --json tagName --jq '.[].tagName' | while read -r tag; do gh release download "$tag" -p tilecast-player-update.json -D "$RUNNER_TEMP/previous-$tag" >/dev/null 2>&1 && jq -r .versionCode "$RUNNER_TEMP/previous-$tag/tilecast-player-update.json"; done | sort -nr | head -1)
-          test -z "$previous" || test "$current" -gt "$previous"
+          set -euo pipefail
+          current="$(sed -n 's/.*versionCode = \([0-9][0-9]*\).*/\1/p' apps/player-android/app/build.gradle.kts | head -1)"
+          previous=0
+          release_index=0
+
+          while IFS= read -r release_tag; do
+            release_index=$((release_index + 1))
+            release_dir="$RUNNER_TEMP/previous-release-$release_index"
+            mkdir -p "$release_dir"
+            if gh release download "$release_tag" --repo "$GITHUB_REPOSITORY" \
+              --pattern tilecast-player-update.json --dir "$release_dir" >/dev/null 2>&1; then
+              candidate="$(jq -er 'select(.product == "tilecast-player") | .versionCode' \
+                "$release_dir/tilecast-player-update.json" 2>/dev/null || true)"
+              if [[ "$candidate" =~ ^[0-9]+$ ]] && [ "$candidate" -gt "$previous" ]; then
+                previous="$candidate"
+              fi
+            fi
+          done < <(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName --jq '.[].tagName')
+
+          if [ "$current" -le "$previous" ]; then
+            echo "Android versionCode $current must be greater than published versionCode $previous." >&2
+            exit 1
+          fi
+
       - name: Build, sign, verify, and create release assets
         env:
           TILECAST_ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/tilecast-signing/player.jks
@@ -61,22 +161,50 @@ jobs:
           TILECAST_ANDROID_KEY_PASSWORD: ${{ secrets.TILECAST_ANDROID_KEY_PASSWORD }}
           TILECAST_UPDATE_MANIFEST_PRIVATE_KEY: ${{ runner.temp }}/tilecast-signing/update-private.pem
           TILECAST_UPDATE_MANIFEST_PUBLIC_KEY_FILE: ${{ runner.temp }}/tilecast-signing/update-public.pem
-          TILECAST_RELEASE_CHANNEL: ${{ inputs.channel }}
-          TILECAST_RELEASE_NOTES: ${{ inputs.release_notes }}
+          TILECAST_RELEASE_CHANNEL: ${{ steps.release.outputs.channel }}
           TILECAST_RELEASE_OUTPUT: ${{ runner.temp }}/tilecast-player-release
           ANDROID_BUILD_TOOLS_VERSION: 35.0.0
-        run: scripts/build-player-release.sh
-      - name: Verify release metadata against APK
         run: |
-          test "$(jq -r .apkSizeBytes "$RUNNER_TEMP/tilecast-player-release/tilecast-player-update.json")" = "$(wc -c < "$RUNNER_TEMP/tilecast-player-release/tilecast-player.apk" | tr -d ' ')"
-          test "$(jq -r .apkSha256 "$RUNNER_TEMP/tilecast-player-release/tilecast-player-update.json")" = "$(sha256sum "$RUNNER_TEMP/tilecast-player-release/tilecast-player.apk" | awk '{print $1}')"
+          set -euo pipefail
+          export TILECAST_RELEASE_NOTES="$(cat "$RUNNER_TEMP/tilecast-release-notes.md")"
+          scripts/build-player-release.sh
+
+      - name: Verify release contract
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          RELEASE_CHANNEL: ${{ steps.release.outputs.channel }}
+        run: |
+          set -euo pipefail
+          output="$RUNNER_TEMP/tilecast-player-release"
+          test "$(find "$output" -maxdepth 1 -type f | wc -l)" -eq 3
+          test -f "$output/tilecast-player.apk"
+          test -f "$output/tilecast-player-update.json"
+          test -f "$output/tilecast-player-update.json.sig"
+          test "$(jq -r .versionName "$output/tilecast-player-update.json")" = "$RELEASE_VERSION"
+          test "$(jq -r .channel "$output/tilecast-player-update.json")" = "$RELEASE_CHANNEL"
+          test "$(jq -r .apkSizeBytes "$output/tilecast-player-update.json")" = \
+            "$(wc -c < "$output/tilecast-player.apk" | tr -d ' ')"
+          test "$(jq -r .apkSha256 "$output/tilecast-player-update.json")" = \
+            "$(sha256sum "$output/tilecast-player.apk" | awk '{print $1}')"
+
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.tag }}
-          RELEASE_NOTES: ${{ inputs.release_notes }}
-          RELEASE_CHANNEL: ${{ inputs.channel }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          RELEASE_CHANNEL: ${{ steps.release.outputs.channel }}
         run: |
+          set -euo pipefail
           prerelease=()
-          if [ "$RELEASE_CHANNEL" = beta ]; then prerelease=(--prerelease); fi
-          gh release create "$RELEASE_TAG" "$RUNNER_TEMP/tilecast-player-release/tilecast-player.apk" "$RUNNER_TEMP/tilecast-player-release/tilecast-player-update.json" "$RUNNER_TEMP/tilecast-player-release/tilecast-player-update.json.sig" --title "Tilecast Player $RELEASE_TAG" --notes "$RELEASE_NOTES" "${prerelease[@]}"
+          if [ "$RELEASE_CHANNEL" = beta ]; then
+            prerelease=(--prerelease)
+          fi
+          gh release create "$RELEASE_TAG" \
+            "$RUNNER_TEMP/tilecast-player-release/tilecast-player.apk" \
+            "$RUNNER_TEMP/tilecast-player-release/tilecast-player-update.json" \
+            "$RUNNER_TEMP/tilecast-player-release/tilecast-player-update.json.sig" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "Tilecast Player $RELEASE_VERSION" \
+            --notes-file "$RUNNER_TEMP/tilecast-release-notes.md" \
+            "${prerelease[@]}"
