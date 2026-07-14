@@ -3,9 +3,9 @@ import { AuthPage } from "./pages/AuthPage";
 import { DashboardShell, FoundationPage, PlannedPage } from "./pages/Dashboard";
 import {
   PairScreenPage,
-  ScreenDetailPage,
   ScreensPage,
 } from "./pages/ScreensPage";
+import { ScreenDetailWithPreviewPage } from "./pages/ScreenDetailWithPreviewPage";
 import { ContentPage } from "./pages/ContentPage";
 import { PlaylistEditorPage, PlaylistsPage } from "./pages/PlaylistsPage";
 import {
@@ -30,7 +30,7 @@ export function App() {
           path="screens/pair/request/:requestId"
           element={<PairScreenPage />}
         />
-        <Route path="screens/:id" element={<ScreenDetailPage />} />
+        <Route path="screens/:id" element={<ScreenDetailWithPreviewPage />} />
         <Route path="groups" element={<GroupsPage />} />
         <Route path="groups/:id" element={<GroupDetailPage />} />
         <Route path="content" element={<ContentPage />} />
