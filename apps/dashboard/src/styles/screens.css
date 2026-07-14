@@ -1,0 +1,38 @@
+.emergency-panel > header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px 20px;
+  align-items: center;
+  padding: 14px 16px;
+}
+
+.emergency-panel > header > div {
+  min-width: 0;
+}
+
+.emergency-panel > header h3 {
+  padding: 0;
+  border-bottom: 0;
+}
+
+.emergency-panel > header p {
+  margin: 3px 0 0;
+  color: var(--tc-ink-muted);
+  overflow-wrap: anywhere;
+}
+
+.emergency-panel > header .button {
+  margin: 0;
+  white-space: nowrap;
+}
+
+@media (max-width: 620px) {
+  .emergency-panel > header {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .emergency-panel > header .button {
+    width: 100%;
+  }
+}
