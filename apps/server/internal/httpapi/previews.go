@@ -9,11 +9,28 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/tilecast/tilecast/apps/server/internal/devices"
 	"github.com/tilecast/tilecast/apps/server/internal/previews"
 )
 
 const previewUploadOverhead = 128 * 1024
+
+func (s *server) previewRoutes(next http.Handler) http.Handler {
+	router := chi.NewRouter()
+	router.With(s.requireDevice).Get("/api/v1/player/preview-session", s.playerPreviewSession)
+	router.With(s.requireDevice).Post("/api/v1/player/preview", s.uploadPlayerPreview)
+	router.With(s.requireSession, s.requireCSRF).Post("/api/v1/screens/{id}/preview-session", s.renewScreenPreview)
+	router.With(s.requireSession).Get("/api/v1/screens/{id}/preview", s.getScreenPreview)
+	router.With(s.requireSession).Get("/api/v1/screens/{id}/preview/image", s.getScreenPreviewImage)
+	router.NotFound(next.ServeHTTP)
+	router.MethodNotAllowed(next.ServeHTTP)
+	return router
+}
+
+func (s *server) previewService() *previews.Service {
+	return previews.NewService(s.db, s.devices)
+}
 
 func (s *server) renewScreenPreview(w http.ResponseWriter, r *http.Request) {
 	screenID, ok := urlUUID(w, r, "id")
@@ -27,7 +44,7 @@ func (s *server) renewScreenPreview(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	session, err := s.previews.Renew(r.Context(), screenID, body.ForceCapture)
+	session, err := s.previewService().Renew(r.Context(), screenID, body.ForceCapture)
 	if err != nil {
 		s.writePreviewError(w, r, err)
 		return
@@ -37,7 +54,7 @@ func (s *server) renewScreenPreview(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) playerPreviewSession(w http.ResponseWriter, r *http.Request) {
 	principal := r.Context().Value(deviceContextKey).(devices.DevicePrincipal)
-	session, err := s.previews.PlayerSession(r.Context(), principal.ScreenID)
+	session, err := s.previewService().PlayerSession(r.Context(), principal.ScreenID)
 	if err != nil {
 		s.writePreviewError(w, r, err)
 		return
@@ -93,7 +110,7 @@ func (s *server) uploadPlayerPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.previews.RecordUpload(r.Context(), principal.ScreenID, upload); err != nil {
+	if err := s.previewService().RecordUpload(r.Context(), principal.ScreenID, upload); err != nil {
 		s.writePreviewError(w, r, err)
 		return
 	}
@@ -105,7 +122,7 @@ func (s *server) getScreenPreview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	preview, err := s.previews.GetMetadata(r.Context(), screenID)
+	preview, err := s.previewService().GetMetadata(r.Context(), screenID)
 	if err != nil {
 		s.writePreviewError(w, r, err)
 		return
@@ -119,7 +136,7 @@ func (s *server) getScreenPreviewImage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	image, err := s.previews.GetImage(r.Context(), screenID)
+	image, err := s.previewService().GetImage(r.Context(), screenID)
 	if err != nil {
 		s.writePreviewError(w, r, err)
 		return
