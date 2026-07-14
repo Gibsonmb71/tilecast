@@ -20,7 +20,7 @@ SELECT s.id,s.name,s.description,s.location,s.platform,s.device_manufacturer,s.d
 FROM screens s LEFT JOIN screen_player_status ps ON ps.screen_id=s.id`
 
 func (s *Service) ListScreens(ctx context.Context) ([]Screen, error) {
-	rows, err := s.db.Query(ctx, screenSelect+` ORDER BY s.name ASC LIMIT 500`)
+	rows, err := s.db.Query(ctx, screenSelect+` WHERE EXISTS (SELECT 1 FROM device_credentials c WHERE c.screen_id=s.id AND c.revoked_at IS NULL) ORDER BY s.name ASC LIMIT 500`)
 	if err != nil {
 		return nil, fmt.Errorf("list screens: %w", err)
 	}

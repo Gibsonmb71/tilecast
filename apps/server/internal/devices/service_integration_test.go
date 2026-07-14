@@ -206,6 +206,13 @@ func TestCompletePairingCredentialAndRevocationFlow(t *testing.T) {
 	if _, err := service.AuthenticateDevice(ctx, activeCredential); !errors.Is(err, ErrRevokedCredential) {
 		t.Fatalf("expected revoked credential rejection, got %v", err)
 	}
+	listedScreens, err := service.ListScreens(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listedScreens) != 0 {
+		t.Fatalf("revoked screen remained in list: %#v", listedScreens)
+	}
 
 	rejected, err := service.CreatePairing(ctx, identity.InstallationID, withNewPlayerID(metadata))
 	if err != nil {
