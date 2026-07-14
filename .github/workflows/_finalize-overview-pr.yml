@@ -1,15 +1,16 @@
 name: Finalize Overview design PR
 
 on:
-  push:
+  pull_request_target:
+    types: [reopened]
     branches: [main]
-    paths: [.github/workflows/_finalize-overview-pr.yml]
 
 permissions:
   contents: write
 
 jobs:
   finalize:
+    if: github.event.pull_request.head.ref == 'fix/overview-layout-light-theme'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,7 +26,6 @@ jobs:
         run: |
           python3 -c 'from pathlib import Path; p=Path("apps/dashboard/src/pages/OperationsDashboard.tsx"); t=p.read_text(); old="          ) : null}\n        </div>\n\n      <section className=\"ops-card ops-upcoming\">"; new="          ) : null}\n\n          <section className=\"ops-card ops-upcoming\">"; assert old in t, "missing premature main-column close"; p.write_text(t.replace(old,new,1))'
           python3 -c 'from pathlib import Path; p=Path("apps/dashboard/src/pages/OperationsDashboard.tsx"); t=p.read_text(); old="      </section>\n        </div>\n\n        <aside className=\"ops-dashboard-grid__rail\">"; new="          </section>\n        </div>\n\n        <aside className=\"ops-dashboard-grid__rail\">"; assert old in t, "missing Upcoming changes close"; p.write_text(t.replace(old,new,1))'
-          rm -f .github/workflows/_fix-overview-markup.yml .github/workflows/_format-overview-polish.yml .github/workflows/_finalize-overview-layout.yml
           npm exec prettier -- --write apps/dashboard/src/pages/OperationsDashboard.tsx apps/dashboard/src/pages/OperationsDashboard.css apps/dashboard/src/pages/OperationsDashboard.test.ts
       - name: Verify dashboard
         run: |
