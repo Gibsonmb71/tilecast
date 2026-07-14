@@ -35,7 +35,9 @@
   font-weight: 650;
 }
 
-.ops-console__actions {
+.ops-console__actions,
+.ops-alert__actions,
+.ops-card-actions {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -199,12 +201,6 @@
   font-size: 0.86rem;
 }
 
-.ops-alert__actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .ops-overflow > summary {
   display: grid;
   width: 32px;
@@ -246,6 +242,55 @@
   color: #a7f3d0;
   background: rgb(6 95 70 / 38%);
   border: 1px solid rgb(52 211 153 / 20%);
+}
+
+.ops-status--warning {
+  color: #fde68a;
+  background: rgb(146 64 14 / 40%);
+  border: 1px solid rgb(245 158 11 / 22%);
+}
+
+.ops-metrics-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  overflow: hidden;
+  background: color-mix(in srgb, var(--tc-bg-surface) 82%, transparent);
+  border: 1px solid var(--tc-border-default);
+  border-radius: 10px;
+}
+
+.ops-metric-item {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 13px 15px;
+  border-right: 1px solid var(--tc-border-default);
+}
+
+.ops-metric-item:last-child {
+  border-right: 0;
+}
+
+.ops-metric-item strong {
+  color: var(--tc-text-primary);
+  font-size: 1rem;
+}
+
+.ops-metric-item span {
+  color: var(--tc-text-secondary);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+.ops-metric-item small {
+  color: var(--tc-text-secondary);
+  font-size: 0.7rem;
+}
+
+.ops-metric-item--muted strong {
+  color: var(--tc-text-secondary);
 }
 
 .ops-layout {
@@ -294,7 +339,7 @@
   margin-top: 20px;
 }
 
-.ops-now-playing__content > div {
+.ops-now-playing__content > div:first-child {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -334,12 +379,15 @@
   text-decoration: underline;
 }
 
-.ops-compact-card {
+.ops-compact-card,
+.ops-maintenance-card,
+.ops-update-card {
   display: grid;
   gap: 12px;
 }
 
-.ops-compact-card__value {
+.ops-compact-card__value,
+.ops-update-card__title {
   color: var(--tc-text-primary);
   font-size: 1rem;
   line-height: 1.35;
@@ -368,6 +416,41 @@
   font-size: 0.76rem;
   font-weight: 650;
   text-decoration: none;
+}
+
+.ops-detail-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 2px 0 0;
+}
+
+.ops-detail-stats--stacked {
+  grid-template-columns: 1fr;
+  gap: 7px;
+}
+
+.ops-detail-stats div {
+  display: grid;
+  gap: 2px;
+}
+
+.ops-detail-stats--stacked div {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.ops-detail-stats dt {
+  color: var(--tc-text-secondary);
+  font-size: 0.7rem;
+}
+
+.ops-detail-stats dd {
+  margin: 0;
+  color: var(--tc-text-primary);
+  font-size: 0.78rem;
+  font-weight: 650;
 }
 
 .ops-issue-list {
@@ -419,22 +502,123 @@
   font-size: 0.72rem;
 }
 
+.ops-secondary-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.ops-update-card--warning {
+  background: linear-gradient(135deg, rgb(120 53 15 / 12%), var(--tc-bg-surface) 46%);
+  border-color: rgb(245 158 11 / 32%);
+}
+
+.ops-card-actions {
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.ops-empty-compact {
+  display: grid;
+  gap: 7px;
+  padding: 4px 0;
+}
+
+.ops-empty-compact > svg {
+  color: var(--tc-text-secondary);
+}
+
+.ops-empty-compact strong {
+  color: var(--tc-text-primary);
+  font-size: 0.88rem;
+}
+
+.ops-empty-compact span {
+  color: var(--tc-text-secondary);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.ops-upcoming {
+  padding: 0;
+  overflow: hidden;
+}
+
+.ops-upcoming .ops-card__header {
+  padding: 18px;
+  margin: 0;
+}
+
+.ops-change-list > a {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 18px;
+  color: inherit;
+  border-top: 1px solid var(--tc-border-default);
+  text-decoration: none;
+}
+
+.ops-change-list > a:hover {
+  background: var(--tc-bg-subtle);
+}
+
+.ops-change-list time {
+  color: var(--tc-text-secondary);
+  font-size: 0.74rem;
+}
+
+.ops-change-list a > span:nth-child(2) {
+  display: grid;
+  gap: 2px;
+}
+
+.ops-change-list strong {
+  color: var(--tc-text-primary);
+  font-size: 0.8rem;
+}
+
+.ops-change-list small {
+  color: var(--tc-text-secondary);
+  font-size: 0.72rem;
+}
+
+.ops-upcoming > .ops-empty-compact {
+  padding: 16px 18px 18px;
+  border-top: 1px solid var(--tc-border-default);
+}
+
 @media (max-width: 1040px) {
   .ops-layout {
     grid-template-columns: 1fr;
   }
 
-  .ops-layout__supporting {
+  .ops-layout__supporting,
+  .ops-secondary-cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-@media (max-width: 760px) {
-  .ops-console__header,
-  .ops-alert {
-    grid-template-columns: 1fr;
+@media (max-width: 900px) {
+  .ops-metrics-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .ops-metric-item:nth-child(2) {
+    border-right: 0;
+  }
+
+  .ops-metric-item:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--tc-border-default);
+  }
+
+  .ops-secondary-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
   .ops-console__header {
     display: grid;
   }
@@ -444,6 +628,7 @@
   }
 
   .ops-alert {
+    grid-template-columns: 1fr;
     align-items: start;
   }
 
@@ -456,40 +641,26 @@
   }
 }
 
-@media (max-width: 520px) {
-  .ops-console__meta {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 4px;
+@media (max-width: 600px) {
+  .ops-metrics-strip {
+    grid-template-columns: 1fr;
   }
 
-  .ops-console__meta > span[aria-hidden="true"] {
-    display: none;
+  .ops-metric-item {
+    border-right: 0;
+    border-bottom: 1px solid var(--tc-border-default);
   }
 
-  .ops-console__actions {
-    width: 100%;
+  .ops-metric-item:last-child {
+    border-bottom: 0;
   }
 
-  .ops-console__actions > * {
-    flex: 1;
+  .ops-detail-stats {
+    grid-template-columns: 1fr;
   }
 
-  .ops-create-menu > summary {
-    width: 100%;
-  }
-
-  .ops-alert__actions {
-    margin-left: 0;
-    flex-wrap: wrap;
-  }
-
-  .ops-alert__actions .ops-button {
-    flex: 1;
-  }
-
-  .ops-card,
-  .ops-now-playing {
-    padding: 16px;
+  .ops-change-list > a {
+    grid-template-columns: 1fr;
+    gap: 7px;
   }
 }
