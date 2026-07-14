@@ -20,7 +20,7 @@ permissions:
   packages: write
 
 concurrency:
-  group: server-image-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:
