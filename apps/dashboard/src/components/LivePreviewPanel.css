@@ -68,8 +68,8 @@
 }
 
 .live-preview-frame--capture-error .live-preview-frame__empty {
-  color: var(--tc-status-danger-text);
-  background: var(--tc-status-danger-soft);
+  color: var(--tc-status-danger);
+  background: var(--tc-status-danger-bg);
 }
 
 .live-preview-frame--offline .live-preview-frame__empty,
@@ -83,8 +83,8 @@
   bottom: var(--tc-space-2);
   padding: 4px 8px;
   border-radius: var(--tc-radius-pill);
-  color: var(--tc-status-warning-text);
-  background: var(--tc-status-warning-soft);
+  color: var(--tc-status-warning);
+  background: var(--tc-status-warning-bg);
   font-size: 12px;
   font-weight: 650;
 }
