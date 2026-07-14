@@ -19,11 +19,12 @@ jobs:
         run: |
           python3 scripts/apply-reliability-youtube-polish.py
           rm scripts/apply-reliability-youtube-polish.py .github/workflows/_apply-reliability-youtube-polish.yml
+          npm ci
+          npm run format
       - name: Verify dashboard
         working-directory: apps/dashboard
         run: |
           npm ci
-          npm run format
           npm run format:check
           npm run lint
           npm test
