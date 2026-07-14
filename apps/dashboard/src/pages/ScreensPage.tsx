@@ -17,7 +17,6 @@ import { z } from "zod";
 import { api } from "../api/client";
 import type {
   PairingRequest,
-  PowerAssistResults,
   ReliabilityStatus,
   Screen,
   ScreenStatus,
@@ -862,26 +861,6 @@ export function ScreenDetailPage() {
     queryKey: ["screen", id, "policy"],
     queryFn: () => api.screenPolicy(id),
   });
-  const [powerResults, setPowerResults] = useState<PowerAssistResults>({
-    deviceSleep: "untested",
-    tvStandby: "untested",
-    deviceWake: "untested",
-    tvWake: "untested",
-    inputSelection: "untested",
-    tilecastStartup: "untested",
-  });
-  useEffect(() => {
-    if (reliability.data?.powerAssist)
-      setPowerResults(reliability.data.powerAssist);
-  }, [reliability.data?.powerAssist]);
-  const savePowerResults = useMutation({
-    mutationFn: () =>
-      api.confirmPowerAssist(id, powerResults, auth.status?.csrfToken ?? ""),
-    onSuccess: () =>
-      queryClient.invalidateQueries({
-        queryKey: ["screens", id, "reliability"],
-      }),
-  });
   const command = useMutation({
     mutationFn: ({
       type,
@@ -1494,100 +1473,6 @@ export function ScreenDetailPage() {
                     </div>
                   </div>
                 </div>
-              </section>
-              <section
-                className="power-assist-confirmation"
-                aria-labelledby="power-assist-confirmation-title"
-              >
-                <header className="reliability-section-heading">
-                  <div>
-                    <h4 id="power-assist-confirmation-title">
-                      Power Assist verification
-                    </h4>
-                    <p>
-                      Record what happened on the physical display after running
-                      the tests above.
-                    </p>
-                  </div>
-                  <span className="status-badge">Manual check</span>
-                </header>
-                <div className="power-assist-grid">
-                  {(
-                    [
-                      [
-                        "deviceSleep",
-                        "Device sleep",
-                        "Did Android enter its requested sleep state?",
-                      ],
-                      [
-                        "tvStandby",
-                        "TV standby",
-                        "Did the television actually enter standby?",
-                      ],
-                      [
-                        "deviceWake",
-                        "Device wake",
-                        "Did Android wake and resume Tilecast?",
-                      ],
-                      [
-                        "tvWake",
-                        "TV wake",
-                        "Did the television power back on?",
-                      ],
-                      [
-                        "inputSelection",
-                        "Input selection",
-                        "Did the television return to the Tilecast input?",
-                      ],
-                      [
-                        "tilecastStartup",
-                        "Tilecast startup",
-                        "Did playback return without local intervention?",
-                      ],
-                    ] as const
-                  ).map(([key, label, description]) => (
-                    <label className="power-assist-field" key={key}>
-                      <span>{label}</span>
-                      <small>{description}</small>
-                      <select
-                        value={powerResults[key]}
-                        onChange={(event) =>
-                          setPowerResults({
-                            ...powerResults,
-                            [key]: event.target.value,
-                          })
-                        }
-                      >
-                        {[
-                          "untested",
-                          "confirmed_working",
-                          "partially_working",
-                          "failed",
-                          "unsupported",
-                        ].map((value) => (
-                          <option key={value} value={value}>
-                            {value.replaceAll("_", " ")}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  ))}
-                </div>
-                <footer className="power-assist-confirmation__footer">
-                  <p>
-                    Tilecast cannot infer TV standby, wake, or input selection
-                    from app activity alone.
-                  </p>
-                  <button
-                    className="button button--primary"
-                    onClick={() => savePowerResults.mutate()}
-                    disabled={savePowerResults.isPending}
-                  >
-                    {savePowerResults.isPending
-                      ? "Saving…"
-                      : "Save verification"}
-                  </button>
-                </footer>
               </section>
             </>
           )}
