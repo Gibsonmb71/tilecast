@@ -59,7 +59,7 @@ fun CommissioningScreen(
             when (state.step) {
                 CommissioningStep.RESULT -> SignalButton(onClick = finish) { Text("Finish commissioning") }
                 CommissioningStep.ADMIN_PIN -> Unit
-                CommissioningStep.ACCESSIBILITY -> SignalButton(onClick = advance, enabled = state.accessibilityEnabled) { Text("Continue") }
+                CommissioningStep.ACCESSIBILITY -> SignalButton(onClick = advance, enabled = !state.accessibilitySupported || state.accessibilityEnabled) { Text("Continue") }
                 CommissioningStep.INSTALL_PERMISSION -> SignalButton(onClick = advance, enabled = state.installPermissionGranted) { Text("Continue") }
                 CommissioningStep.BOOT_RECOVERY -> SignalButton(onClick = advance, enabled = state.bootLaunchVerified) { Text("Continue") }
                 CommissioningStep.PRESENTATION -> SignalButton(onClick = advance, enabled = state.immersiveVerified && state.keepAwakeVerified) { Text("Continue") }
@@ -105,14 +105,27 @@ private fun CommissioningStepBody(
                 enabled = pin.length >= 4,
             ) { Text(if (state.adminPinSet) "Replace PIN" else "Set PIN") }
         }
-        CommissioningStep.ACCESSIBILITY -> CapabilityStep(
-            "Enable Accessibility Control",
-            "Tilecast uses its disclosed accessibility service only to detect an unexpected foreground app, return to playback, and request Android’s lock action. It cannot approve dialogs or click settings.",
-            state.accessibilityEnabled,
-            "Open Accessibility Settings",
-            openAccessibility,
-            refresh,
-        )
+        CommissioningStep.ACCESSIBILITY -> {
+            if (!state.accessibilitySupported) {
+                Text("Accessibility Control is unavailable on Fire TV", color = SignalText, fontSize = 30.sp)
+                Text(
+                    "Fire OS does not expose the standard Android screen for enabling Tilecast’s accessibility service. Tilecast will continue without accessibility-assisted app return or lock actions on this device.",
+                    color = SignalMuted,
+                    fontSize = 18.sp,
+                )
+                Spacer(Modifier.height(14.dp))
+                Text("This limitation will remain visible in Tilecast Studio.", color = SignalWarning, fontSize = 17.sp)
+            } else {
+                CapabilityStep(
+                    "Enable Accessibility Control",
+                    "Tilecast uses its disclosed accessibility service only to detect an unexpected foreground app, return to playback, and request Android’s lock action. It cannot approve dialogs or click settings.",
+                    state.accessibilityEnabled,
+                    "Open Accessibility Settings",
+                    openAccessibility,
+                    refresh,
+                )
+            }
+        }
         CommissioningStep.INSTALL_PERMISSION -> CapabilityStep(
             "Allow signed Player updates",
             "Android requires local approval before Tilecast may open its signed APK in the system installer. Tilecast never approves the installer prompt for you.",
