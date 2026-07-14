@@ -20,7 +20,12 @@ test -f "$APK"
 APKSIGNER="${ANDROID_HOME:?ANDROID_HOME is required}/build-tools/${ANDROID_BUILD_TOOLS_VERSION:-35.0.0}/apksigner"
 BUILD_TOOLS="$(dirname "$APKSIGNER")"
 AAPT="$BUILD_TOOLS/aapt"
-"$APKSIGNER" verify --verbose --print-certs "$APK"
+
+# Capture the complete verifier output before parsing it. Piping apksigner through
+# head under `set -o pipefail` can turn a valid signature check into a failed step
+# when the downstream process exits after finding the first certificate digest.
+VERIFY_OUTPUT="$("$APKSIGNER" verify --verbose --print-certs "$APK")"
+printf '%s\n' "$VERIFY_OUTPUT"
 
 GRADLE_VERSION_CODE="$(sed -n 's/.*versionCode = \([0-9][0-9]*\).*/\1/p' app/build.gradle.kts | head -1)"
 GRADLE_VERSION_NAME="$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -1)"
@@ -35,12 +40,26 @@ if command -v sha256sum >/dev/null 2>&1; then
 else
 	APK_SHA="$(shasum -a 256 "$APK" | awk '{print $1}')"
 fi
-CERT_SHA="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | tr -d ':' | tr '[:upper:]' '[:lower:]' | head -1)"
-test "$APPLICATION_ID" = "org.tilecast.player"
-test "$VERSION_CODE" = "$GRADLE_VERSION_CODE"
-test "$VERSION_NAME" = "$GRADLE_VERSION_NAME"
-test "$MINIMUM_SDK" = "23"
-test -n "$CERT_SHA"
+CERT_SHA="$(printf '%s\n' "$VERIFY_OUTPUT" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+
+require_equal() {
+	local label="$1"
+	local actual="$2"
+	local expected="$3"
+	if [ "$actual" != "$expected" ]; then
+		printf '%s mismatch: expected %s, got %s\n' "$label" "$expected" "${actual:-<empty>}" >&2
+		exit 1
+	fi
+}
+
+require_equal "applicationId" "$APPLICATION_ID" "org.tilecast.player"
+require_equal "versionCode" "$VERSION_CODE" "$GRADLE_VERSION_CODE"
+require_equal "versionName" "$VERSION_NAME" "$GRADLE_VERSION_NAME"
+require_equal "minimumSdk" "$MINIMUM_SDK" "23"
+if ! [[ "$CERT_SHA" =~ ^[0-9a-f]{64}$ ]]; then
+	printf 'Unable to read a valid SHA-256 signing certificate digest from apksigner output: %s\n' "${CERT_SHA:-<empty>}" >&2
+	exit 1
+fi
 
 cp "$APK" "$OUTPUT/tilecast-player.apk"
 jq -n --argjson versionCode "$VERSION_CODE" --arg versionName "$VERSION_NAME" --arg channel "$CHANNEL" --argjson minimumSdk "$MINIMUM_SDK" --argjson size "$APK_SIZE" --arg sha "$APK_SHA" --arg cert "$CERT_SHA" --arg notes "$NOTES" '{schemaVersion:1,product:"tilecast-player",applicationId:"org.tilecast.player",versionCode:$versionCode,versionName:$versionName,channel:$channel,minimumSdk:$minimumSdk,apkAssetName:"tilecast-player.apk",apkSizeBytes:$size,apkSha256:$sha,signingCertificateSha256:$cert,releaseNotes:$notes}' > "$OUTPUT/tilecast-player-update.json"
