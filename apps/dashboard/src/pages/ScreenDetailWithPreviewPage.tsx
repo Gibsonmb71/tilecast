@@ -23,9 +23,7 @@ export function ScreenDetailWithPreviewPage() {
   return (
     <>
       <ScreenDetailPage />
-      {tab === "reliability" && (
-        <FireTvAccessibilityAdbPanel screenId={id} />
-      )}
+      {tab === "reliability" && <FireTvAccessibilityAdbPanel screenId={id} />}
     </>
   );
 }

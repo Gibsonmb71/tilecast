@@ -54,7 +54,10 @@ export function FireTvAccessibilityAdbPanel({
   };
 
   return (
-    <section className="detail-card" aria-labelledby="fire-tv-accessibility-title">
+    <section
+      className="detail-card"
+      aria-labelledby="fire-tv-accessibility-title"
+    >
       <h3 id="fire-tv-accessibility-title">
         Optional Fire TV Accessibility Control
       </h3>
