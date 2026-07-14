@@ -1,8 +1,11 @@
 .auth-page {
   position: relative;
   display: grid;
+  width: 100%;
+  min-width: 100vw;
   min-height: 100svh;
-  place-items: center;
+  justify-items: center;
+  align-items: center;
   padding: clamp(1rem, 4vw, 3rem);
   overflow: hidden;
   background-color: #1b2430;
@@ -26,7 +29,9 @@
 .auth-panel {
   position: relative;
   z-index: 1;
+  justify-self: center;
   width: min(27rem, 100%);
+  margin-inline: auto;
   padding: 2.25rem 2.35rem 1.55rem;
   background: rgb(255 255 255 / 97%);
   border: 1px solid rgb(255 255 255 / 70%);
