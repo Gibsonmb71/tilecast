@@ -1,0 +1,296 @@
+name: Apply player deployment diagnostics fix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/_apply-player-deployment-diagnostics.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/server/go.mod
+          cache-dependency-path: apps/server/go.sum
+      - run: npm ci
+      - name: Patch deployment error handling and UI feedback
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text()
+              if old not in text:
+                  raise SystemExit(f"Expected snippet not found in {path}:\n{old}")
+              file.write_text(text.replace(old, new, 1))
+
+          ui = "apps/dashboard/src/settings/SettingsOperations.tsx"
+          replace(
+              ui,
+              '  const [showUpload, setShowUpload] = useState(false);\n',
+              '  const [showUpload, setShowUpload] = useState(false);\n'
+              '  const [deploymentResult, setDeploymentResult] = useState<{\n'
+              '    targetCount: number;\n'
+              '  } | null>(null);\n',
+          )
+          replace(
+              ui,
+              '''  const deploy = useMutation({
+    mutationFn: () =>
+      api.createUpdateDeployment(
+        {
+          releaseId,
+          name: `Tilecast Player ${releases.data?.items.find((item) => item.id === releaseId)?.versionName ?? "update"}`,
+          mode,
+          screenIds,
+          groupIds,
+          canarySize,
+          maintenanceWindowStart:
+            mode === "maintenance_window" && windowStart
+              ? new Date(windowStart).toISOString()
+              : undefined,
+        },
+        auth.status?.csrfToken ?? "",
+      ),
+    onSuccess: () => {
+      setScreenIds([]);
+      setGroupIds([]);
+      void client.invalidateQueries({ queryKey: ["update-deployments"] });
+    },
+  });
+''',
+              '''  const deploy = useMutation({
+    mutationFn: () =>
+      api.createUpdateDeployment(
+        {
+          releaseId,
+          name: `Tilecast Player ${releases.data?.items.find((item) => item.id === releaseId)?.versionName ?? "update"}`,
+          mode,
+          screenIds,
+          groupIds,
+          canarySize,
+          maintenanceWindowStart:
+            mode === "maintenance_window" && windowStart
+              ? new Date(windowStart).toISOString()
+              : undefined,
+        },
+        auth.status?.csrfToken ?? "",
+      ),
+    onMutate: () => setDeploymentResult(null),
+    onSuccess: async (result) => {
+      setDeploymentResult({ targetCount: result.targetCount });
+      setScreenIds([]);
+      setGroupIds([]);
+      await client.invalidateQueries({ queryKey: ["update-deployments"] });
+    },
+  });
+''',
+          )
+          replace(
+              ui,
+              '''          <button
+            className="button button--primary"
+            disabled={
+              !releaseId ||
+              !selectedScreens.length ||
+              deploy.isPending ||
+              (mode === "maintenance_window" && !windowStart)
+            }
+            onClick={() => {
+              if (
+                confirm(
+                  "Deploy player update? Android may require approval on each TV.",
+                )
+              )
+                deploy.mutate();
+            }}
+          >
+            Deploy player update
+          </button>
+''',
+              '''          {deploy.error && (
+            <div className="notice notice--error" role="alert">
+              <strong>Player update was not deployed.</strong>
+              <p>{deploy.error.message}</p>
+            </div>
+          )}
+          {deploymentResult && (
+            <div className="notice notice--success" role="status">
+              Deployment created for {deploymentResult.targetCount} screen
+              {deploymentResult.targetCount === 1 ? "" : "s"}.
+            </div>
+          )}
+          <button
+            type="button"
+            className="button button--primary"
+            disabled={
+              !releaseId ||
+              !selectedScreens.length ||
+              deploy.isPending ||
+              (mode === "maintenance_window" && !windowStart)
+            }
+            onClick={() => {
+              if (
+                confirm(
+                  "Deploy player update? Android may require approval on each TV.",
+                )
+              )
+                deploy.mutate();
+            }}
+          >
+            {deploy.isPending ? "Creating deployment…" : "Deploy player update"}
+          </button>
+''',
+          )
+
+          server = "apps/server/internal/httpapi/updates.go"
+          replace(
+              server,
+              '''\tfor _, screen := range uniqueUUIDs(input.ScreenIDs) {
+\t\t_, _ = tx.Exec(r.Context(), `INSERT INTO update_deployment_targets(deployment_id,target_type,screen_id) SELECT $1,'screen',$2 WHERE EXISTS(SELECT 1 FROM screens WHERE id=$2 AND deleted_at IS NULL)`, id, screen)
+\t}
+\tfor _, group := range uniqueUUIDs(input.GroupIDs) {
+\t\t_, _ = tx.Exec(r.Context(), `INSERT INTO update_deployment_targets(deployment_id,target_type,screen_group_id) SELECT $1,'group',$2 WHERE EXISTS(SELECT 1 FROM screen_groups WHERE id=$2 AND deleted_at IS NULL)`, id, group)
+\t}
+''',
+              '''\tfor _, screen := range uniqueUUIDs(input.ScreenIDs) {
+\t\tif _, err = tx.Exec(r.Context(), `INSERT INTO update_deployment_targets(deployment_id,target_type,screen_id) SELECT $1,'screen',$2 WHERE EXISTS(SELECT 1 FROM screens WHERE id=$2 AND deleted_at IS NULL)`, id, screen); err != nil {
+\t\t\ts.internalError(w, r, fmt.Errorf("insert screen deployment target: %w", err))
+\t\t\treturn
+\t\t}
+\t}
+\tfor _, group := range uniqueUUIDs(input.GroupIDs) {
+\t\tif _, err = tx.Exec(r.Context(), `INSERT INTO update_deployment_targets(deployment_id,target_type,screen_group_id) SELECT $1,'group',$2 WHERE EXISTS(SELECT 1 FROM screen_groups WHERE id=$2 AND deleted_at IS NULL)`, id, group); err != nil {
+\t\t\ts.internalError(w, r, fmt.Errorf("insert group deployment target: %w", err))
+\t\t\treturn
+\t\t}
+\t}
+''',
+          )
+          replace(
+              server,
+              '''\tfor rows.Next() {
+\t\tvar item target
+\t\tif rows.Scan(&item.id, &item.current, &item.sdk, &item.permission, &item.recent) == nil {
+\t\t\ttargets = append(targets, item)
+\t\t}
+\t}
+\trows.Close()
+''',
+              '''\tfor rows.Next() {
+\t\tvar item target
+\t\tif err = rows.Scan(&item.id, &item.current, &item.sdk, &item.permission, &item.recent); err != nil {
+\t\t\trows.Close()
+\t\t\ts.internalError(w, r, fmt.Errorf("scan deployment target: %w", err))
+\t\t\treturn
+\t\t}
+\t\ttargets = append(targets, item)
+\t}
+\tif err = rows.Err(); err != nil {
+\t\trows.Close()
+\t\ts.internalError(w, r, fmt.Errorf("read deployment targets: %w", err))
+\t\treturn
+\t}
+\trows.Close()
+''',
+          )
+          replace(
+              server,
+              '''\t\t_, _ = tx.Exec(r.Context(), `INSERT INTO screen_update_states(deployment_id,screen_id,previous_version_code,expected_version_code,permission_status,state,completed_at,is_canary)VALUES($1,$2,$3,$4,$5,$6,CASE WHEN $6 IN('already_current','incompatible') THEN now() END,$7)`, id, target.id, target.current, versionCode, target.permission, state, isCanary)
+\t\tif state == "pending" || state == "offline" {
+\t\t\tpayload, _ := json.Marshal(map[string]any{"deploymentId": id, "releaseId": input.ReleaseID, "expectedVersionCode": versionCode, "expectedApkSha256": hash, "installationMode": input.Mode, "maintenanceWindowStart": input.MaintenanceWindowStart})
+\t\t\tcommandID := uuid.New()
+\t\t\t_, _ = tx.Exec(r.Context(), `INSERT INTO player_commands(id,organization_id,screen_id,type,payload,idempotency_key,created_by,expires_at) SELECT $1,organization_id,id,'install_player_update',$2,$1,$3,now()+interval '7 days' FROM screens WHERE id=$4`, commandID, payload, user.ID, target.id)
+\t\t}
+''',
+              '''\t\tif _, err = tx.Exec(r.Context(), `INSERT INTO screen_update_states(deployment_id,screen_id,previous_version_code,expected_version_code,permission_status,state,completed_at,is_canary)VALUES($1,$2,$3,$4,$5,$6,CASE WHEN $6 IN('already_current','incompatible') THEN now() END,$7)`, id, target.id, target.current, versionCode, target.permission, state, isCanary); err != nil {
+\t\t\ts.internalError(w, r, fmt.Errorf("insert screen update state: %w", err))
+\t\t\treturn
+\t\t}
+\t\tif state == "pending" || state == "offline" {
+\t\t\tpayload, _ := json.Marshal(map[string]any{"deploymentId": id, "releaseId": input.ReleaseID, "expectedVersionCode": versionCode, "expectedApkSha256": hash, "installationMode": input.Mode, "maintenanceWindowStart": input.MaintenanceWindowStart})
+\t\t\tcommandID := uuid.New()
+\t\t\tif _, err = tx.Exec(r.Context(), `INSERT INTO player_commands(id,organization_id,screen_id,type,payload,idempotency_key,created_by,expires_at) SELECT $1,organization_id,id,'install_player_update',$2,$1,$3,now()+interval '7 days' FROM screens WHERE id=$4`, commandID, payload, user.ID, target.id); err != nil {
+\t\t\t\ts.internalError(w, r, fmt.Errorf("insert player update command: %w", err))
+\t\t\t\treturn
+\t\t\t}
+\t\t}
+''',
+          )
+          replace(
+              server,
+              '''\t_, _ = tx.Exec(r.Context(), `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,metadata)VALUES($1,$2,'player_update.deployed','update_deployment',$3,jsonb_build_object('targetCount',$4,'duplicateTargetsRemoved',$5))`, uuid.New(), user.ID, id.String(), len(targets), len(input.ScreenIDs)+len(input.GroupIDs)-len(targets))
+\tif err := tx.Commit(r.Context()); err != nil {
+''',
+              '''\tif _, err = tx.Exec(r.Context(), `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,metadata)VALUES($1,$2,'player_update.deployed','update_deployment',$3,jsonb_build_object('targetCount',$4,'duplicateTargetsRemoved',$5))`, uuid.New(), user.ID, id.String(), len(targets), len(input.ScreenIDs)+len(input.GroupIDs)-len(targets)); err != nil {
+\t\ts.internalError(w, r, fmt.Errorf("insert deployment audit log: %w", err))
+\t\treturn
+\t}
+\tif err := tx.Commit(r.Context()); err != nil {
+''',
+          )
+          replace(
+              server,
+              '''\tfor rows.Next() {
+\t\tvar id uuid.UUID
+\t\tvar name, mode, status, version, rolloutMode, rolloutPhase string
+\t\tvar pauseReason *string
+\t\tvar created time.Time
+\t\tvar code int64
+\t\tvar total, succeeded, failed, waiting int
+\t\tvar canarySize int
+\t\tif rows.Scan(&id, &name, &mode, &status, &created, &code, &version, &total, &succeeded, &failed, &waiting, &rolloutMode, &rolloutPhase, &canarySize, &pauseReason) == nil {
+\t\t\titems = append(items, map[string]any{"id": id, "name": name, "mode": mode, "status": status, "createdAt": created, "versionCode": code, "versionName": version, "targetCount": total, "succeededCount": succeeded, "failedCount": failed, "waitingForUserCount": waiting, "rolloutMode": rolloutMode, "rolloutPhase": rolloutPhase, "canarySize": canarySize, "pauseReason": pauseReason})
+\t\t}
+\t}
+\twriteJSON(w, 200, map[string]any{"data": map[string]any{"items": items}})
+''',
+              '''\tfor rows.Next() {
+\t\tvar id uuid.UUID
+\t\tvar name, mode, status, version, rolloutMode, rolloutPhase string
+\t\tvar pauseReason *string
+\t\tvar created time.Time
+\t\tvar code int64
+\t\tvar total, succeeded, failed, waiting int
+\t\tvar canarySize int
+\t\tif err = rows.Scan(&id, &name, &mode, &status, &created, &code, &version, &total, &succeeded, &failed, &waiting, &rolloutMode, &rolloutPhase, &canarySize, &pauseReason); err != nil {
+\t\t\ts.internalError(w, r, fmt.Errorf("scan update deployment history: %w", err))
+\t\t\treturn
+\t\t}
+\t\titems = append(items, map[string]any{"id": id, "name": name, "mode": mode, "status": status, "createdAt": created, "versionCode": code, "versionName": version, "targetCount": total, "succeededCount": succeeded, "failedCount": failed, "waitingForUserCount": waiting, "rolloutMode": rolloutMode, "rolloutPhase": rolloutPhase, "canarySize": canarySize, "pauseReason": pauseReason})
+\t}
+\tif err = rows.Err(); err != nil {
+\t\ts.internalError(w, r, fmt.Errorf("read update deployment history: %w", err))
+\t\treturn
+\t}
+\twriteJSON(w, 200, map[string]any{"data": map[string]any{"items": items}})
+''',
+          )
+          PY
+      - run: npx prettier --write apps/dashboard/src/settings/SettingsOperations.tsx
+      - run: gofmt -w apps/server/internal/httpapi/updates.go
+      - run: npm run build --workspace @tilecast/dashboard
+      - run: go test ./...
+        working-directory: apps/server
+      - name: Commit changes
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm .github/workflows/_apply-player-deployment-diagnostics.yml
+          git add apps/dashboard/src/settings/SettingsOperations.tsx apps/server/internal/httpapi/updates.go
+          git commit -m "Show player deployment failures"
+          git push origin HEAD:main
