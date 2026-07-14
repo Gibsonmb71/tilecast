@@ -10,7 +10,8 @@ The player captures immediately after it observes a new session and then approxi
 - Every lookup is scoped through the screen and current organization.
 - Preview images are served only through an authenticated, `no-store` endpoint. Tilecast does not issue permanent or public image URLs.
 - The Android player captures only Tilecast's own activity window.
-- API 26 and newer use `PixelCopy`. API 23 through 25 use `View.draw(Canvas)`.
+- API 26 and newer use `PixelCopy`. Tilecast also copies visible `SurfaceView` layers owned by its activity so video playback appears in the preview instead of as a black frame. API 23 through 25 use `View.draw(Canvas)`.
+- Nearly empty video frames are retried once and then reported as a capture failure rather than replacing the latest preview with a black JPEG.
 - Tilecast does not use MediaProjection and cannot capture Android system screens or other applications.
 - Pairing, administrator PIN, commissioning, maintenance, update approval, identify, and other protected player states report an unavailable status instead of uploading an image.
 
