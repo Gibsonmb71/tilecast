@@ -11,6 +11,7 @@ import {
 } from "../auth/schemas";
 import { Brand } from "../components/Brand";
 import { FormField } from "../components/FormField";
+import "./AuthPage.css";
 
 export function AuthPage({ mode }: { mode: "setup" | "login" }) {
   const auth = useAuth();
@@ -31,23 +32,15 @@ export function AuthPage({ mode }: { mode: "setup" | "login" }) {
 
   if (auth.isLoading) return <LoadingScreen />;
   return (
-    <div className="auth-page">
-      <aside className="auth-context">
-        <Brand />
-        <div>
-          <p className="eyebrow">Open signage infrastructure</p>
-          <h1>Built to keep the message on.</h1>
-          <p>
-            Run your own signage service, keep control of your content, and stay
-            operational through network interruptions.
-          </p>
+    <main className="auth-page">
+      <section className="auth-panel">
+        <div className="auth-panel__logo">
+          <Brand compact />
         </div>
-        <p className="auth-context__foot">Tilecast · AGPLv3</p>
-      </aside>
-      <main className="auth-main">
         {mode === "setup" ? <SetupFormView /> : <LoginFormView />}
-      </main>
-    </div>
+        <p className="auth-panel__footer">Tilecast Studio</p>
+      </section>
+    </main>
   );
 }
 
@@ -72,14 +65,10 @@ function SetupFormView() {
     });
   });
   return (
-    <section className="auth-card" aria-labelledby="setup-title">
+    <div className="auth-form auth-form--setup" aria-labelledby="setup-title">
       <header>
-        <p className="step-label">Initial setup</p>
-        <h2 id="setup-title">Create your Tilecast installation</h2>
-        <p>
-          This owner account has full administrative access. More users can be
-          added later.
-        </p>
+        <h1 id="setup-title">Set up Tilecast</h1>
+        <p>Create the first owner account for this installation.</p>
       </header>
       {error && (
         <div className="notice notice--error" role="alert">
@@ -108,7 +97,7 @@ function SetupFormView() {
           error={form.formState.errors.username?.message}
           {...form.register("username")}
         />
-        <div className="form-grid">
+        <div className="auth-form__passwords">
           <FormField
             id="password"
             label="Password"
@@ -128,14 +117,14 @@ function SetupFormView() {
           />
         </div>
         <button
-          className="button button--primary"
+          className="button button--primary auth-form__submit"
           type="submit"
           disabled={isSubmitting}
         >
           {isSubmitting ? "Creating installation…" : "Create installation"}
         </button>
       </form>
-    </section>
+    </div>
   );
 }
 
@@ -149,14 +138,10 @@ function LoginFormView() {
     await login(values);
   });
   return (
-    <section
-      className="auth-card auth-card--login"
-      aria-labelledby="login-title"
-    >
+    <div className="auth-form" aria-labelledby="login-title">
       <header>
-        <p className="step-label">Management dashboard</p>
-        <h2 id="login-title">Sign in to Tilecast</h2>
-        <p>Use the local account for this installation.</p>
+        <h1 id="login-title">Sign in</h1>
+        <p>Manage your Tilecast displays.</p>
       </header>
       {error && (
         <div className="notice notice--error" role="alert">
@@ -181,21 +166,23 @@ function LoginFormView() {
           {...form.register("password")}
         />
         <button
-          className="button button--primary"
+          className="button button--primary auth-form__submit"
           type="submit"
           disabled={isSubmitting}
         >
           {isSubmitting ? "Signing in…" : "Sign in"}
         </button>
       </form>
-    </section>
+    </div>
   );
 }
 
 function LoadingScreen() {
   return (
-    <div className="loading-screen">
-      <Brand />
+    <div className="loading-screen auth-loading">
+      <div className="auth-panel__logo">
+        <Brand compact />
+      </div>
       <span className="spinner" aria-label="Loading" />
     </div>
   );
