@@ -64,3 +64,17 @@ func TestMediaConfigurationValidation(t *testing.T) {
 		t.Fatal("expected invalid upload maximum to fail")
 	}
 }
+
+func TestPositiveIntParsingRejectsOverflow(t *testing.T) {
+	t.Setenv("TILECAST_TEST_INT", "999999999999999999999999999999")
+	if _, err := parsePositiveInt("TILECAST_TEST_INT", "1", 0); err == nil {
+		t.Fatal("expected platform int overflow to fail")
+	}
+}
+
+func TestPositiveIntParsingEnforcesMaximum(t *testing.T) {
+	t.Setenv("TILECAST_TEST_INT", "11")
+	if _, err := parsePositiveInt("TILECAST_TEST_INT", "1", 10); err == nil {
+		t.Fatal("expected configured upper bound to fail")
+	}
+}
