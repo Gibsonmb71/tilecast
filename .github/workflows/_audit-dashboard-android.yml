@@ -17,19 +17,11 @@ jobs:
           fetch-depth: 0
       - name: Apply focused fixes
         run: python3 scripts/apply-dashboard-android-audit.py
-      - name: Remove temporary files
-        run: rm -f scripts/apply-dashboard-android-audit.py .github/workflows/_audit-dashboard-android.yml
-      - name: Verify dashboard
+      - name: Remove temporary files and format
         run: |
+          rm -f scripts/apply-dashboard-android-audit.py .github/workflows/_audit-dashboard-android.yml
           npm ci
           npm run format
-          npm run format:check
-          npm run lint
-          npm test
-          npm run build
-      - name: Verify Android player
-        working-directory: apps/player-android
-        run: ./gradlew testDebugUnitTest lintDebug assembleDebug
       - name: Commit fixes
         run: |
           git config user.name 'github-actions[bot]'
@@ -37,3 +29,12 @@ jobs:
           git add -A
           git commit -m 'Fix dashboard and player reliability issues'
           git push origin HEAD:audit/dashboard-android-polish
+      - name: Verify dashboard
+        run: |
+          npm run format:check
+          npm run lint
+          npm test
+          npm run build
+      - name: Verify Android player
+        working-directory: apps/player-android
+        run: ./gradlew testDebugUnitTest lintDebug assembleDebug
