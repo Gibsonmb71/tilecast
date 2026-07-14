@@ -58,17 +58,19 @@ func (s *server) loginBackgroundImage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) getLoginBackground(w http.ResponseWriter, r *http.Request) {
-	var assetID *uuid.UUID
-	err := s.db.QueryRow(r.Context(), `SELECT background_asset_id FROM organization_login_branding LIMIT 1`).Scan(&assetID)
+	var assetID string
+	err := s.db.QueryRow(r.Context(), `SELECT COALESCE(background_asset_id::text, '') FROM organization_login_branding LIMIT 1`).Scan(&assetID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"assetId": nil, "imageUrl": "/api/v1/auth/background"}})
-		return
-	}
-	if err != nil {
+		assetID = ""
+	} else if err != nil {
 		s.internalError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"assetId": assetID, "imageUrl": "/api/v1/auth/background"}})
+	var value any
+	if assetID != "" {
+		value = assetID
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"assetId": value, "imageUrl": "/api/v1/auth/background"}})
 }
 
 type loginBackgroundRequest struct {
@@ -107,7 +109,7 @@ func (s *server) putLoginBackground(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, _ = s.db.Exec(r.Context(), `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,metadata) VALUES($1,$2,'branding.login_background_changed','organization',$3,jsonb_build_object('assetId',$4::text))`, uuid.New(), session.User.ID, "login-background", assetID)
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"assetId": assetID, "imageUrl": "/api/v1/auth/background"}})
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"assetId": assetID.String(), "imageUrl": "/api/v1/auth/background"}})
 }
 
 func (s *server) deleteLoginBackground(w http.ResponseWriter, r *http.Request) {
