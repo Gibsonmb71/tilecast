@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -20,7 +21,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.tilecast.player.reliability.CommissioningStatus
@@ -43,6 +43,8 @@ fun CommissioningScreen(
     runSelfTest: () -> Unit,
     finish: () -> Unit,
 ) {
+    val activeSteps = CommissioningStep.activeEntries
+    val stepNumber = activeSteps.indexOf(state.step).coerceAtLeast(0) + 1
     Column(
         Modifier.fillMaxSize().padding(horizontal = 80.dp, vertical = 54.dp),
         verticalArrangement = Arrangement.SpaceBetween,
@@ -51,7 +53,7 @@ fun CommissioningScreen(
             Text("Harden this player", color = SignalText, fontSize = 42.sp, fontWeight = FontWeight.SemiBold)
             Text("Commissioning verifies local Android capabilities before unattended playback.", color = SignalMuted, fontSize = 20.sp)
             Spacer(Modifier.height(28.dp))
-            Text("Step ${state.step.ordinal + 1} of ${CommissioningStep.entries.size}", color = SignalBlue, fontSize = 16.sp)
+            Text("Step $stepNumber of ${activeSteps.size}", color = SignalBlue, fontSize = 16.sp)
             Spacer(Modifier.height(12.dp))
             CommissioningStepBody(state, setPin, openAccessibility, openInstallPermission, refresh, advance, runSelfTest)
         }
@@ -63,9 +65,8 @@ fun CommissioningScreen(
                 CommissioningStep.INSTALL_PERMISSION -> SignalButton(onClick = advance, enabled = state.installPermissionGranted) { Text("Continue") }
                 CommissioningStep.BOOT_RECOVERY -> SignalButton(onClick = advance, enabled = state.bootLaunchVerified) { Text("Continue") }
                 CommissioningStep.PRESENTATION -> SignalButton(onClick = advance, enabled = state.immersiveVerified && state.keepAwakeVerified) { Text("Continue") }
-                CommissioningStep.CACHED_FALLBACK -> SignalButton(onClick = advance, enabled = state.cachedFallbackAvailable) { Text("Continue") }
                 CommissioningStep.SELF_TEST -> SignalButton(onClick = advance, enabled = state.selfTestResult != null) { Text("View result") }
-                else -> SignalButton(onClick = advance) { Text("Continue") }
+                CommissioningStep.CACHED_FALLBACK -> Unit
             }
         }
     }
@@ -152,16 +153,9 @@ private fun CommissioningStepBody(
             StatusLine("Keep screen awake", state.keepAwakeVerified)
             SignalOutlinedButton(onClick = refresh) { Text("Verify again") }
         }
-        CommissioningStep.CACHED_FALLBACK -> {
-            Text("Verify cached fallback content", color = SignalText, fontSize = 30.sp)
-            Text("Tilecast protects the active cached manifest and required files so playback continues when the server is unavailable.", color = SignalMuted, fontSize = 18.sp)
-            StatusLine("Cached fallback", state.cachedFallbackAvailable)
-            if (!state.cachedFallbackAvailable) Text("Assign downloadable fallback content in Studio, then synchronize this player.", color = SignalWarning, fontSize = 17.sp)
-            SignalOutlinedButton(onClick = refresh) { Text("Check cached content") }
-        }
         CommissioningStep.SELF_TEST -> {
             Text("Run unattended-readiness test", color = SignalText, fontSize = 30.sp)
-            Text("The test checks the PIN, protected Android permissions, boot evidence, cached fallback, and current recovery state without changing system settings.", color = SignalMuted, fontSize = 18.sp)
+            Text("The test checks the PIN, protected Android permissions, boot evidence, and current recovery state without changing system settings.", color = SignalMuted, fontSize = 18.sp)
             state.selfTestResult?.let { Text(it.replace('_', ' '), color = if (it == "passed") SignalBlue else SignalWarning, fontSize = 20.sp) }
             Spacer(Modifier.height(14.dp))
             SignalButton(onClick = runSelfTest) { Text("Run self-test") }
@@ -171,6 +165,7 @@ private fun CommissioningStepBody(
             Text(state.readiness.replace('_', ' '), color = if (state.readiness == "ready") SignalBlue else SignalWarning, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
             Text("Ready means all locally verifiable safeguards passed. Partial readiness remains explicit in Studio and does not claim recovery from power, network-credential, hardware, or Android approval failures.", color = SignalMuted, fontSize = 18.sp)
         }
+        CommissioningStep.CACHED_FALLBACK -> Unit
     }
 }
 
