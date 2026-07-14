@@ -1,0 +1,70 @@
+name: Embed Player update trust key
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.head_ref == 'fix/player-update-discovery'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/player-update-discovery
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.work
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Embed public key and improve updater diagnostics
+        env:
+          UPDATE_PUBLIC_KEY: ${{ secrets.TILECAST_UPDATE_MANIFEST_PUBLIC_KEY_PEM }}
+        run: |
+          set -euo pipefail
+          test -n "$UPDATE_PUBLIC_KEY"
+          key="$(printf '%s' "$UPDATE_PUBLIC_KEY" | openssl pkey -pubin -outform DER | tail -c 32 | base64 -w0)"
+          test "$(printf '%s' "$key" | base64 -d | wc -c | tr -d ' ')" = 32
+          cat > apps/server/internal/config/trusted_update_key.go <<EOF
+          package config
+
+          // DefaultUpdateManifestPublicKey is Tilecast's public Ed25519 update-signing key.
+          // It is public trust material, not a secret. Deployments may override it with
+          // TILECAST_UPDATE_MANIFEST_PUBLIC_KEY for custom Player builds.
+          const DefaultUpdateManifestPublicKey = "$key"
+          EOF
+          python3 - <<'PY'
+          from pathlib import Path
+
+          config = Path('apps/server/internal/config/config.go')
+          text = config.read_text()
+          text = text.replace('TrustedPublicKey: os.Getenv("TILECAST_UPDATE_MANIFEST_PUBLIC_KEY"),', 'TrustedPublicKey: get("TILECAST_UPDATE_MANIFEST_PUBLIC_KEY", DefaultUpdateManifestPublicKey),')
+          config.write_text(text)
+
+          api = Path('apps/server/internal/httpapi/updates.go')
+          text = api.read_text()
+          text = text.replace('"providerError": providerError, "items": items', '"providerError": providerError, "manifestKeyConfigured": s.updates.ManifestKeyConfigured(), "items": items')
+          text = text.replace('func (s *server) checkPlayerReleases(w http.ResponseWriter, r *http.Request) {\n\tif err := s.updates.Check(r.Context()); err != nil {', 'func (s *server) checkPlayerReleases(w http.ResponseWriter, r *http.Request) {\n\tif !s.updates.ManifestKeyConfigured() {\n\t\twriteError(w, http.StatusServiceUnavailable, "update_manifest_key_missing", "Tilecast Player update trust is not configured. Rebuild the server with the official trust key or set TILECAST_UPDATE_MANIFEST_PUBLIC_KEY.")\n\t\treturn\n\t}\n\tif err := s.updates.Check(r.Context()); err != nil {')
+          api.write_text(text)
+
+          env = Path('deploy/docker/.env.example')
+          text = env.read_text().replace('# Base64 raw Ed25519 public key. Required before importing Player releases.\nTILECAST_UPDATE_MANIFEST_PUBLIC_KEY=', '# Optional Base64 raw Ed25519 public key override for custom Player builds.\n# Official Tilecast images include the public release-verification key.\nTILECAST_UPDATE_MANIFEST_PUBLIC_KEY=')
+          env.write_text(text)
+
+          docs = Path('docs/player-updates.md')
+          text = docs.read_text().replace('The server trusts only `TILECAST_UPDATE_MANIFEST_PUBLIC_KEY`; the private key is never installed on Tilecast Server.', 'Official Tilecast Server builds include the public release-verification key. `TILECAST_UPDATE_MANIFEST_PUBLIC_KEY` may override it for custom Player builds; the private key is never installed on Tilecast Server.')
+          docs.write_text(text)
+          PY
+          gofmt -w apps/server/internal/config/trusted_update_key.go apps/server/internal/config/config.go apps/server/internal/httpapi/updates.go
+          rm .github/workflows/_embed-player-update-key.yml
+          go test ./apps/server/internal/config ./apps/server/internal/updates ./apps/server/internal/httpapi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Fix GitHub Player release discovery'
+          git push origin HEAD:fix/player-update-discovery
