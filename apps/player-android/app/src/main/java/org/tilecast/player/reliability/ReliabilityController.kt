@@ -1,20 +1,19 @@
 package org.tilecast.player.reliability
 
 import android.app.Activity
+import android.app.AlarmManager
+import android.app.PendingIntent
 import android.app.admin.DevicePolicyManager
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.Process
 import android.provider.Settings
+import android.util.Base64
 import android.view.WindowManager
 import org.tilecast.player.MainActivity
 import org.tilecast.player.network.PlayerConfig
 import java.time.Instant
-import android.util.Base64
-import android.app.AlarmManager
-import android.app.PendingIntent
-import android.os.Process
 
 data class ReliabilityStatus(val configuredMode:String="standard",val effectiveMode:String="standard",val foreground:Boolean=false,val immersive:Boolean=false,val keepScreenOn:Boolean=false,val kioskCapability:ManagedKioskCapability=ManagedKioskCapability.UNSUPPORTED,val accessibilityEnabled:Boolean=false,val activeHours:Boolean=true,val safeMode:Boolean=false,val maintenanceUntil:Instant?=null)
 
@@ -46,11 +45,12 @@ class ReliabilityController(private val context:Context) {
     fun restartActivity(){context.startActivity(Intent(context,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_CLEAR_TASK))}
     fun restartProcess(){
         val alarm=context.getSystemService(AlarmManager::class.java)
-        val pending=PendingIntent.getActivity(context,4040,Intent(context,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val restartIntent=Intent().setClass(context,MainActivity::class.java).setPackage(context.packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        val pending=PendingIntent.getActivity(context,4040,restartIntent,PendingIntent.FLAG_IMMUTABLE)
         alarm.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP,android.os.SystemClock.elapsedRealtime()+1500,pending)
         Process.killProcess(Process.myPid())
     }
-    fun scheduleWake(at:Instant){val alarm=context.getSystemService(AlarmManager::class.java);val intent=PendingIntent.getBroadcast(context,1010,Intent(context,ActiveHoursReceiver::class.java),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE);alarm.setWindow(AlarmManager.RTC_WAKEUP,at.toEpochMilli(),60_000,intent)}
+    fun scheduleWake(at:Instant){val alarm=context.getSystemService(AlarmManager::class.java);val wakeIntent=Intent().setClass(context,ActiveHoursReceiver::class.java).setPackage(context.packageName);val intent=PendingIntent.getBroadcast(context,1010,wakeIntent,PendingIntent.FLAG_IMMUTABLE);alarm.setWindow(AlarmManager.RTC_WAKEUP,at.toEpochMilli(),60_000,intent)}
     fun beginMaintenance(minutes:Int){(context as? Activity)?.let{runCatching{it.stopLockTask()}};store.edit().putLong("maintenance-until",System.currentTimeMillis()+minutes.coerceIn(1,120)*60_000L).apply();(context as? MainActivity)?.maintenanceChanged()}
     fun maintenanceUntil():Instant?=store.getLong("maintenance-until",0).takeIf{it>System.currentTimeMillis()}?.let{Instant.ofEpochMilli(it)}
     fun setSafeMode(value:Boolean){store.edit().putBoolean("safe-mode",value).apply()}
