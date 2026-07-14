@@ -1,11 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import type { Asset } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import "./BrandingAssets.css";
 
 const chunkSize = 5 * 1024 * 1024;
+
+type LoginBackground = {
+  assetId?: string;
+  imageUrl: string;
+};
 
 export function BrandingAssets({
   values,
@@ -16,6 +21,26 @@ export function BrandingAssets({
   editable: boolean;
   onChange: (key: string, value: unknown) => void;
 }) {
+  const auth = useAuth();
+  const queryClient = useQueryClient();
+  const background = useQuery({
+    queryKey: ["login-background"],
+    queryFn: getLoginBackground,
+  });
+  const saveBackground = useMutation({
+    mutationFn: (assetId: string) =>
+      setLoginBackground(assetId, auth.status?.csrfToken ?? ""),
+    onSuccess: (result) =>
+      queryClient.setQueryData(["login-background"], result),
+  });
+  const removeBackground = useMutation({
+    mutationFn: () => clearLoginBackground(auth.status?.csrfToken ?? ""),
+    onSuccess: () =>
+      queryClient.setQueryData(["login-background"], {
+        imageUrl: "/api/v1/auth/background",
+      } satisfies LoginBackground),
+  });
+
   return (
     <section className="settings-subsection">
       <header>
@@ -27,20 +52,34 @@ export function BrandingAssets({
       </header>
       <div className="branding-asset-grid">
         <BrandingAssetUpload
-          settingKey="branding.logo_asset_id"
           title="Logo"
           description="A wide organization logo for Tilecast Studio and supported player screens."
           value={stringValue(values["branding.logo_asset_id"])}
           editable={editable}
-          onChange={onChange}
+          onSelect={(assetId) => onChange("branding.logo_asset_id", assetId)}
+          onRemove={() => onChange("branding.logo_asset_id", "")}
         />
         <BrandingAssetUpload
-          settingKey="branding.icon_asset_id"
           title="Square icon"
           description="A square mark for compact branding and icon-sized placements."
           value={stringValue(values["branding.icon_asset_id"])}
           editable={editable}
-          onChange={onChange}
+          onSelect={(assetId) => onChange("branding.icon_asset_id", assetId)}
+          onRemove={() => onChange("branding.icon_asset_id", "")}
+        />
+        <BrandingAssetUpload
+          title="Login background"
+          description="The full-screen image behind the Tilecast Studio sign-in panel."
+          value={background.data?.assetId ?? ""}
+          editable={editable && !background.isLoading}
+          fallbackImageUrl={background.data?.imageUrl ?? "/api/v1/auth/background"}
+          previewMode="cover"
+          pending={saveBackground.isPending || removeBackground.isPending}
+          actionError={
+            saveBackground.error?.message ?? removeBackground.error?.message
+          }
+          onSelect={(assetId) => saveBackground.mutateAsync(assetId)}
+          onRemove={() => removeBackground.mutateAsync()}
         />
       </div>
     </section>
@@ -48,19 +87,27 @@ export function BrandingAssets({
 }
 
 function BrandingAssetUpload({
-  settingKey,
   title,
   description,
   value,
   editable,
-  onChange,
+  fallbackImageUrl,
+  previewMode = "contain",
+  pending = false,
+  actionError,
+  onSelect,
+  onRemove,
 }: {
-  settingKey: string;
   title: string;
   description: string;
   value: string;
   editable: boolean;
-  onChange: (key: string, value: unknown) => void;
+  fallbackImageUrl?: string;
+  previewMode?: "contain" | "cover";
+  pending?: boolean;
+  actionError?: string;
+  onSelect: (assetId: string) => void | Promise<void>;
+  onRemove: () => void | Promise<void>;
 }) {
   const auth = useAuth();
   const input = useRef<HTMLInputElement>(null);
@@ -121,7 +168,7 @@ function BrandingAssetUpload({
         auth.status?.csrfToken ?? "",
       );
       setUploadedAsset(completed);
-      onChange(settingKey, completed.id);
+      await onSelect(completed.id);
       setProgress(100);
     } catch (uploadError) {
       if (sessionId)
@@ -136,14 +183,17 @@ function BrandingAssetUpload({
     }
   };
 
-  const imageUrl = previewUrl || asset?.thumbnailUrl;
+  const imageUrl = previewUrl || asset?.thumbnailUrl || fallbackImageUrl;
+  const busy = uploading || pending;
   return (
     <article className="branding-asset-card">
-      <div className="branding-asset-card__preview">
+      <div
+        className={`branding-asset-card__preview branding-asset-card__preview--${previewMode}`}
+      >
         {imageUrl ? (
           <img src={imageUrl} alt={`${title} preview`} />
         ) : (
-          <span aria-hidden="true">{title === "Logo" ? "Logo" : "Icon"}</span>
+          <span aria-hidden="true">{title}</span>
         )}
       </div>
       <div className="branding-asset-card__body">
@@ -163,7 +213,7 @@ function BrandingAssetUpload({
             type="file"
             accept="image/png,image/jpeg,image/webp,image/svg+xml"
             hidden
-            disabled={!editable || uploading}
+            disabled={!editable || busy}
             onChange={(event) => {
               const file = event.target.files?.[0];
               if (file) void upload(file);
@@ -173,7 +223,7 @@ function BrandingAssetUpload({
           <button
             type="button"
             className="button button--primary"
-            disabled={!editable || uploading}
+            disabled={!editable || busy}
             onClick={() => input.current?.click()}
           >
             {uploading
@@ -186,25 +236,69 @@ function BrandingAssetUpload({
             <button
               type="button"
               className="button button--quiet"
-              disabled={!editable || uploading}
+              disabled={!editable || busy}
               onClick={() => {
-                setUploadedAsset(undefined);
-                if (previewUrl) URL.revokeObjectURL(previewUrl);
-                setPreviewUrl(undefined);
-                onChange(settingKey, "");
+                void Promise.resolve(onRemove()).then(() => {
+                  setUploadedAsset(undefined);
+                  if (previewUrl) URL.revokeObjectURL(previewUrl);
+                  setPreviewUrl(undefined);
+                });
               }}
             >
               Remove
             </button>
           )}
         </div>
-        {error && (
+        {(error || actionError) && (
           <div className="notice notice--error" role="alert">
-            {error}
+            {error ?? actionError}
           </div>
         )}
       </div>
     </article>
+  );
+}
+
+async function getLoginBackground(): Promise<LoginBackground> {
+  const response = await fetch("/api/v1/settings/login-background", {
+    credentials: "same-origin",
+  });
+  if (!response.ok) throw await backgroundError(response);
+  return ((await response.json()) as { data: LoginBackground }).data;
+}
+
+async function setLoginBackground(
+  assetId: string,
+  csrfToken: string,
+): Promise<LoginBackground> {
+  const response = await fetch("/api/v1/settings/login-background", {
+    method: "PUT",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRF-Token": csrfToken,
+    },
+    body: JSON.stringify({ assetId }),
+  });
+  if (!response.ok) throw await backgroundError(response);
+  return ((await response.json()) as { data: LoginBackground }).data;
+}
+
+async function clearLoginBackground(csrfToken: string): Promise<void> {
+  const response = await fetch("/api/v1/settings/login-background", {
+    method: "DELETE",
+    credentials: "same-origin",
+    headers: { "X-CSRF-Token": csrfToken },
+  });
+  if (!response.ok) throw await backgroundError(response);
+}
+
+async function backgroundError(response: Response) {
+  const body = (await response.json().catch(() => ({}))) as {
+    error?: { message?: string };
+  };
+  return new Error(
+    body.error?.message ?? "The login background could not be updated.",
   );
 }
 
