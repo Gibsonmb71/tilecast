@@ -1,0 +1,53 @@
+name: Android CodeQL
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/player-android/**"
+      - ".github/workflows/codeql-android.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/player-android/**"
+      - ".github/workflows/codeql-android.yml"
+  schedule:
+    - cron: "43 3 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  security-events: write
+  packages: read
+  actions: read
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: java-kotlin
+          build-mode: manual
+      - name: Build Android player
+        working-directory: apps/player-android
+        run: ./gradlew clean assembleDebug
+      - name: Analyze
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:java-kotlin"

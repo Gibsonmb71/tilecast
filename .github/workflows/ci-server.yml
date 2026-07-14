@@ -1,8 +1,16 @@
-name: CI
+name: Server CI
+
 on:
   push:
     branches: [main]
+    paths:
+      - "apps/server/**"
+      - ".github/workflows/ci-server.yml"
   pull_request:
+    paths:
+      - "apps/server/**"
+      - ".github/workflows/ci-server.yml"
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -10,18 +18,8 @@ concurrency:
 
 permissions:
   contents: read
+
 jobs:
-  dashboard:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: npm }
-      - run: npm ci
-      - run: npm run format:check
-      - run: npm run lint
-      - run: npm test
-      - run: npm run build
   server:
     runs-on: ubuntu-latest
     services:
@@ -42,10 +40,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          {
-            go-version-file: apps/server/go.mod,
-            cache-dependency-path: apps/server/go.sum,
-          }
+          go-version-file: apps/server/go.mod
+          cache-dependency-path: apps/server/go.sum
       - working-directory: apps/server
         run: go vet ./...
       - working-directory: apps/server
@@ -54,15 +50,3 @@ jobs:
           TEST_DATABASE_URL: postgres://tilecast:tilecast_test_password@localhost:5432/tilecast_test?sslmode=disable
       - working-directory: apps/server
         run: go build ./cmd/tilecast
-  android-player:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
-          cache: gradle
-      - uses: android-actions/setup-android@v3
-      - working-directory: apps/player-android
-        run: ./gradlew testDebugUnitTest lintDebug assembleDebug

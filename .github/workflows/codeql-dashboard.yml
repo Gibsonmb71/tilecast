@@ -1,0 +1,48 @@
+name: Dashboard CodeQL
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/dashboard/**"
+      - "packages/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/codeql-dashboard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/dashboard/**"
+      - "packages/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/codeql-dashboard.yml"
+  schedule:
+    - cron: "23 3 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  security-events: write
+  packages: read
+  actions: read
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          build-mode: none
+      - name: Analyze
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:javascript-typescript"
