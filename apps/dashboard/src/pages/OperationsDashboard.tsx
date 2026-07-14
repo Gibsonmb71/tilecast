@@ -63,7 +63,8 @@ export function OperationsDashboard() {
             </span>
             <span aria-hidden="true">•</span>
             <strong>
-              {issueScreens.length} issue{issueScreens.length === 1 ? "" : "s"} requiring attention
+              {issueScreens.length} issue{issueScreens.length === 1 ? "" : "s"}{" "}
+              requiring attention
             </strong>
             <span aria-hidden="true">•</span>
             <span>Last updated {formatRelative(lastUpdated)}</span>
@@ -197,7 +198,8 @@ export function OperationsDashboard() {
                     <span>
                       <strong>{screen.name}</strong>
                       <small>
-                        {statusLabel(screen)} · Last seen {formatRelative(screen.lastContactAt)}
+                        {statusLabel(screen)} · Last seen{" "}
+                        {formatRelative(screen.lastContactAt)}
                       </small>
                     </span>
                     <ChevronRight size={16} />
@@ -250,9 +252,7 @@ export function OperationsDashboard() {
               <span>Next schedule</span>
             </div>
             <strong className="ops-compact-card__value">
-              {nextChange
-                ? nextChange.schedule.name
-                : "No scheduled changes"}
+              {nextChange ? nextChange.schedule.name : "No scheduled changes"}
             </strong>
             {nextChange ? (
               <>
