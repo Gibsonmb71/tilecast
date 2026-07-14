@@ -1,12 +1,12 @@
 import {
   Activity,
   CalendarDays,
+  Home,
   Image,
   Layers3,
   ListVideo,
   Monitor,
   Settings,
-  ShieldCheck,
 } from "lucide-react";
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -15,8 +15,10 @@ import { useAuth } from "../auth/AuthProvider";
 import { Brand } from "../components/Brand";
 import { Button } from "../components/ui";
 import { api } from "../api/client";
+import { OperationsDashboard } from "./OperationsDashboard";
 
 const nav = [
+  ["Overview", "/", Home],
   ["Screens", "/screens", Monitor],
   ["Content", "/content", Image],
   ["Playlists", "/playlists", ListVideo],
@@ -62,8 +64,11 @@ export function DashboardShell() {
   }, [auth.isLoading, auth.status, navigate, location.pathname]);
   if (auth.isLoading || !auth.status?.authenticated) return null;
   const title =
-    nav.find((item) => location.pathname.startsWith(item[1]))?.[0] ??
-    "Overview";
+    location.pathname === "/"
+      ? "Overview"
+      : (nav.find(
+          (item) => item[1] !== "/" && location.pathname.startsWith(item[1]),
+        )?.[0] ?? "Overview");
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -72,7 +77,7 @@ export function DashboardShell() {
         </div>
         <nav aria-label="Primary">
           {nav.map(([label, to, Icon]) => (
-            <NavLink key={to} to={to} aria-label={label}>
+            <NavLink key={to} to={to} end={to === "/"} aria-label={label}>
               <Icon size={18} strokeWidth={1.8} aria-hidden="true" />
               <span>{label}</span>
             </NavLink>
@@ -108,48 +113,7 @@ export function DashboardShell() {
 }
 
 export function FoundationPage() {
-  return (
-    <div className="foundation">
-      <section className="foundation__intro">
-        <div className="status-badge">
-          <ShieldCheck size={15} /> Foundation ready
-        </div>
-        <h2>Your Tilecast installation is running.</h2>
-        <p>
-          The server, database, dashboard, local accounts, and player pairing
-          service are configured. Pair a TV from the Screens section.
-        </p>
-      </section>
-      <section className="system-list" aria-label="Foundation services">
-        <div>
-          <span className="status-dot status-dot--ok" />
-          <span>
-            <strong>Application server</strong>
-            <small>Serving the dashboard and versioned API</small>
-          </span>
-          <b>Operational</b>
-        </div>
-        <div>
-          <span className="status-dot status-dot--ok" />
-          <span>
-            <strong>Local authentication</strong>
-            <small>Owner session is active</small>
-          </span>
-          <b>Operational</b>
-        </div>
-        <div>
-          <span className="status-dot status-dot--planned" />
-          <span>
-            <strong>Android TV players</strong>
-            <small>
-              Secure pairing and connection monitoring are available
-            </small>
-          </span>
-          <b>Ready to pair</b>
-        </div>
-      </section>
-    </div>
-  );
+  return <OperationsDashboard />;
 }
 
 export function PlannedPage({
