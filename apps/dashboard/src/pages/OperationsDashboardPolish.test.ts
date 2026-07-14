@@ -10,7 +10,9 @@ const css = readFileSync(
 describe("Overview dashboard polish", () => {
   it("stacks the main dashboard regions to avoid the tall empty grid row", () => {
     expect(css).toContain("/* Overview density and light-theme polish */");
-    expect(css).toMatch(/\.ops-layout\s*{[^}]*grid-template-columns:\s*1fr;/s);
+    expect(css).toMatch(
+      /\.ops-layout\s*{[^}]*grid-template-columns:\s*1fr;/s,
+    );
     expect(css).toMatch(
       /\.ops-layout__supporting\s*{[^}]*grid-template-columns:\s*repeat\(2,/s,
     );
