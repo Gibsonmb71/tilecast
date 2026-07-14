@@ -1,0 +1,54 @@
+name: Apply preview and screen cleanup fixes
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tilecast
+          POSTGRES_PASSWORD: tilecast
+          POSTGRES_DB: tilecast_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tilecast -d tilecast_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: audit/dashboard-android-polish
+          fetch-depth: 0
+      - name: Apply fixes
+        run: |
+          python3 scripts/apply-preview-and-screen-cleanup.py
+          rm scripts/apply-preview-and-screen-cleanup.py .github/workflows/_apply-preview-screen-cleanup.yml
+          gofmt -w apps/server/internal/devices/screens.go apps/server/internal/devices/service_integration_test.go
+      - name: Verify server
+        working-directory: apps/server
+        env:
+          TEST_DATABASE_URL: postgres://tilecast:tilecast@localhost:5432/tilecast_test?sslmode=disable
+        run: |
+          go vet ./...
+          go test ./...
+          go build ./cmd/tilecast
+      - name: Verify Android
+        working-directory: apps/player-android
+        run: ./gradlew testDebugUnitTest lintDebug assembleDebug
+      - name: Commit fixes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Fix black previews and hide unpaired screens'
+          git push origin HEAD:audit/dashboard-android-polish
