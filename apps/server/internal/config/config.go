@@ -159,7 +159,7 @@ func Load() (Config, error) {
 	}
 	cfg.Updates = UpdatesConfig{
 		Root:             get("TILECAST_UPDATE_ROOT", "/data/updates"),
-		TrustedPublicKey: os.Getenv("TILECAST_UPDATE_MANIFEST_PUBLIC_KEY"),
+		TrustedPublicKey: get("TILECAST_UPDATE_MANIFEST_PUBLIC_KEY", DefaultUpdateManifestPublicKey),
 		GitHubToken:      os.Getenv("TILECAST_GITHUB_TOKEN"),
 		PublishToken:     os.Getenv("TILECAST_RELEASE_PUBLISH_TOKEN"),
 	}
