@@ -1,5 +1,6 @@
 name: Finalize Overview design PR
 
+# One-time workflow for PR #20. It deletes itself after a successful run.
 on:
   pull_request_target:
     types: [reopened]
