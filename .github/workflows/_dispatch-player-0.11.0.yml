@@ -1,0 +1,39 @@
+name: Dispatch Player 0.11.0 release
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  release:
+    if: github.head_ref == 'release/player-0.11.0'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Tag main and dispatch signed release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          main_sha="$(gh api repos/$GITHUB_REPOSITORY/commits/main --jq .sha)"
+          version="$(gh api repos/$GITHUB_REPOSITORY/contents/apps/player-android/app/build.gradle.kts?ref=main --jq .content | base64 --decode | sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' | head -1)"
+          code="$(gh api repos/$GITHUB_REPOSITORY/contents/apps/player-android/app/build.gradle.kts?ref=main --jq .content | base64 --decode | sed -n 's/.*versionCode = \([0-9][0-9]*\).*/\1/p' | head -1)"
+          test "$version" = "0.11.0"
+          test "$code" = "12"
+          if ! gh api repos/$GITHUB_REPOSITORY/git/ref/tags/player-v0.11.0 >/dev/null 2>&1; then
+            gh api --method POST repos/$GITHUB_REPOSITORY/git/refs \
+              -f ref='refs/tags/player-v0.11.0' \
+              -f sha="$main_sha"
+          fi
+          gh workflow run player-release.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f tag=player-v0.11.0 \
+            -f channel=stable \
+            -f release_notes='Tilecast Player 0.11.0 adds on-demand live previews, improved commissioning and Fire TV setup, YouTube livestream rendering fixes, reliability improvements, and safer unattended recovery.'
