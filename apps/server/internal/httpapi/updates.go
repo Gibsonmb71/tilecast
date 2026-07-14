@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/tilecast/tilecast/apps/server/internal/auth"
 	"github.com/tilecast/tilecast/apps/server/internal/devices"
+	"github.com/tilecast/tilecast/apps/server/internal/updates"
 )
 
 func (s *server) listPlayerReleases(w http.ResponseWriter, r *http.Request) {
@@ -50,7 +51,7 @@ func (s *server) listPlayerReleases(w http.ResponseWriter, r *http.Request) {
 			items = append(items, map[string]any{"id": id, "tag": tag, "source": source, "channel": channel, "versionCode": code, "versionName": name, "minimumSdk": sdk, "releaseNotes": notes, "publishedAt": published, "apkSizeBytes": size, "apkSha256": hash, "signingCertificateSha256": cert, "manifestSignature": signature, "cacheStatus": cache, "verificationStatus": verification, "verificationError": verificationError})
 		}
 	}
-	writeJSON(w, 200, map[string]any{"data": map[string]any{"repository": "Gibsonmb71/tilecast", "lastCheckedAt": checked, "providerError": providerError, "manifestKeyConfigured": s.updates.ManifestKeyConfigured(), "items": items}})
+	writeJSON(w, 200, map[string]any{"data": map[string]any{"repository": "Gibsonmb71/tilecast", "lastCheckedAt": checked, "providerError": providerError, "manifestKeyConfigured": s.updates.ManifestKeyConfigured(), "githubAuth": s.updates.GitHubAuthStatus(), "items": items}})
 }
 
 func (s *server) uploadPlayerRelease(w http.ResponseWriter, r *http.Request) {
@@ -161,6 +162,71 @@ func (s *server) checkPlayerReleases(w http.ResponseWriter, r *http.Request) {
 	user := r.Context().Value(sessionContextKey).(auth.Session).User
 	_, _ = s.db.Exec(r.Context(), `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)VALUES($1,$2,'player_updates.checked','update_provider','github')`, uuid.New(), user.ID)
 	writeJSON(w, 200, map[string]any{"data": map[string]any{"checked": true}})
+}
+
+func (s *server) startGitHubDeviceAuthorization(w http.ResponseWriter, r *http.Request) {
+	result, err := s.updates.BeginGitHubDeviceAuthorization(r.Context())
+	if err != nil {
+		if errors.Is(err, updates.ErrGitHubAuthUnavailable) {
+			writeError(w, http.StatusServiceUnavailable, "github_sign_in_unavailable", "GitHub sign-in is unavailable. Configure TILECAST_GITHUB_CLIENT_ID with a device-flow-enabled OAuth App client ID.")
+			return
+		}
+		writeError(w, http.StatusBadGateway, "github_sign_in_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"data": result})
+}
+
+type githubDevicePollInput struct {
+	FlowID string `json:"flowId"`
+}
+
+func (s *server) pollGitHubDeviceAuthorization(w http.ResponseWriter, r *http.Request) {
+	var input githubDevicePollInput
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	input.FlowID = strings.TrimSpace(input.FlowID)
+	if _, err := uuid.Parse(input.FlowID); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "github_sign_in_flow_invalid", "GitHub sign-in request is invalid or expired.")
+		return
+	}
+	result, err := s.updates.PollGitHubDeviceAuthorization(r.Context(), input.FlowID)
+	if err != nil {
+		switch {
+		case errors.Is(err, updates.ErrGitHubAuthUnavailable):
+			writeError(w, http.StatusServiceUnavailable, "github_sign_in_unavailable", "GitHub sign-in is unavailable.")
+		case errors.Is(err, updates.ErrGitHubAuthFlow):
+			writeError(w, http.StatusGone, "github_sign_in_expired", err.Error())
+		default:
+			writeError(w, http.StatusBadGateway, "github_sign_in_failed", err.Error())
+		}
+		return
+	}
+	if result.Status == "connected" {
+		user := r.Context().Value(sessionContextKey).(auth.Session).User
+		metadata, _ := json.Marshal(map[string]string{"login": result.Login})
+		_, _ = s.db.Exec(r.Context(), `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,metadata)VALUES($1,$2,'player_updates.github_connected','update_provider','github',$3::jsonb)`, uuid.New(), user.ID, string(metadata))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+}
+
+func (s *server) disconnectGitHub(w http.ResponseWriter, r *http.Request) {
+	if err := s.updates.DisconnectGitHub(); err != nil {
+		switch {
+		case errors.Is(err, updates.ErrGitHubAuthManaged):
+			writeError(w, http.StatusConflict, "github_auth_environment_managed", err.Error())
+		case errors.Is(err, updates.ErrGitHubAuthUnavailable):
+			writeError(w, http.StatusServiceUnavailable, "github_sign_in_unavailable", err.Error())
+		default:
+			s.internalError(w, r, err)
+		}
+		return
+	}
+	user := r.Context().Value(sessionContextKey).(auth.Session).User
+	_, _ = s.db.Exec(r.Context(), `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)VALUES($1,$2,'player_updates.github_disconnected','update_provider','github')`, uuid.New(), user.ID)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *server) cachePlayerRelease(w http.ResponseWriter, r *http.Request) {

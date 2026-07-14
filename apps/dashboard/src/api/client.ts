@@ -29,6 +29,8 @@ import type {
   SystemStatus,
   PlayerReleaseList,
   PlayerReleaseImport,
+  GitHubDeviceStart,
+  GitHubDevicePoll,
   UpdateDeployment,
   ReliabilityStatus,
   PowerAssistResults,
@@ -81,6 +83,22 @@ export const api = {
   checkPlayerReleases: (csrfToken: string) =>
     request<{ checked: boolean }>("/player-releases/check", {
       method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
+  startGitHubDeviceAuthorization: (csrfToken: string) =>
+    request<GitHubDeviceStart>("/player-releases/github/device", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
+  pollGitHubDeviceAuthorization: (flowId: string, csrfToken: string) =>
+    request<GitHubDevicePoll>("/player-releases/github/device/poll", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ flowId }),
+    }),
+  disconnectGitHub: (csrfToken: string) =>
+    request<void>("/player-releases/github", {
+      method: "DELETE",
       headers: { "X-CSRF-Token": csrfToken },
     }),
   cachePlayerRelease: (id: string, csrfToken: string) =>

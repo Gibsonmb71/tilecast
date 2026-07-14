@@ -1829,11 +1829,89 @@ a {
 }
 .deployment-submit .button,
 .settings-inline-actions .button,
-.player-updates-table .button {
+.player-updates-table .button,
+.github-auth .button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 7px;
+}
+.github-auth {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px 20px;
+  padding: 14px 16px;
+  border: 1px solid var(--tc-border);
+  border-radius: 6px;
+  background: var(--tc-surface);
+}
+.github-auth__summary {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+.github-auth__summary > div {
+  display: grid;
+  min-width: 180px;
+  gap: 2px;
+}
+.github-auth__summary > div span,
+.github-auth__configuration,
+.github-auth__message,
+.github-auth__device small {
+  color: var(--tc-ink-muted);
+}
+.github-auth__summary .status-dot-label {
+  margin-left: 8px;
+}
+.github-auth__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+.github-auth__device {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--tc-border);
+}
+.github-auth__device > div {
+  display: grid;
+  gap: 2px;
+  margin-right: 8px;
+}
+.github-auth__device > div span {
+  color: var(--tc-ink-muted);
+  font-size: 12px;
+}
+.github-auth__device > div strong {
+  font-size: 20px;
+  letter-spacing: 0;
+}
+.github-auth__device small {
+  margin-left: auto;
+}
+.github-auth__configuration,
+.github-auth__message {
+  grid-column: 1 / -1;
+}
+@media (max-width: 720px) {
+  .github-auth {
+    grid-template-columns: 1fr;
+  }
+  .github-auth__actions {
+    justify-content: flex-start;
+  }
+  .github-auth__device {
+    flex-wrap: wrap;
+  }
+  .github-auth__device small {
+    width: 100%;
+    margin-left: 0;
+  }
 }
 .player-updates-table td {
   height: 48px;

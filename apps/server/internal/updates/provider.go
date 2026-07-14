@@ -1,6 +1,7 @@
 package updates
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -47,8 +49,25 @@ type Provider interface {
 }
 
 type GitHubProvider struct {
-	client *http.Client
-	token  string
+	client    *http.Client
+	apiBase   string
+	oauthBase string
+	mu        sync.RWMutex
+	token     string
+}
+
+type DeviceAuthorization struct {
+	DeviceCode      string
+	UserCode        string
+	VerificationURI string
+	ExpiresIn       time.Duration
+	Interval        time.Duration
+}
+
+type DeviceTokenResult struct {
+	AccessToken string
+	Status      string
+	SlowDown    bool
 }
 
 func NewGitHubProvider(token string) *GitHubProvider {
@@ -63,11 +82,11 @@ func NewGitHubProvider(token string) *GitHubProvider {
 		}
 		return nil
 	}
-	return &GitHubProvider{client: client, token: token}
+	return &GitHubProvider{client: client, apiBase: "https://api.github.com", oauthBase: "https://github.com", token: strings.TrimSpace(token)}
 }
 
 func (p *GitHubProvider) Releases(ctx context.Context, etag string) (ProviderResult, error) {
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.com/repos/"+GitHubOwner+"/"+GitHubRepo+"/releases?per_page=30", nil)
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, p.apiBase+"/repos/"+GitHubOwner+"/"+GitHubRepo+"/releases?per_page=30", nil)
 	p.headers(req)
 	if etag != "" {
 		req.Header.Set("If-None-Match", etag)
@@ -144,7 +163,128 @@ func (p *GitHubProvider) headers(req *http.Request) {
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	req.Header.Set("User-Agent", "Tilecast-Server/0.9 (+https://github.com/Gibsonmb71/tilecast)")
-	if p.token != "" {
-		req.Header.Set("Authorization", "Bearer "+p.token)
+	if token := p.currentToken(); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
+}
+
+func (p *GitHubProvider) currentToken() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.token
+}
+
+func (p *GitHubProvider) SetToken(token string) {
+	p.mu.Lock()
+	p.token = strings.TrimSpace(token)
+	p.mu.Unlock()
+}
+
+func (p *GitHubProvider) BeginDeviceAuthorization(ctx context.Context, clientID string) (DeviceAuthorization, error) {
+	form := url.Values{"client_id": {clientID}}
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, p.oauthBase+"/login/device/code", bytes.NewBufferString(form.Encode()))
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("User-Agent", "Tilecast-Server/0.9 (+https://github.com/Gibsonmb71/tilecast)")
+	response, err := p.client.Do(req)
+	if err != nil {
+		return DeviceAuthorization{}, fmt.Errorf("GitHub authorization request failed: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return DeviceAuthorization{}, fmt.Errorf("GitHub authorization returned HTTP %d", response.StatusCode)
+	}
+	var body struct {
+		DeviceCode      string `json:"device_code"`
+		UserCode        string `json:"user_code"`
+		VerificationURI string `json:"verification_uri"`
+		ExpiresIn       int    `json:"expires_in"`
+		Interval        int    `json:"interval"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, 32<<10)).Decode(&body); err != nil {
+		return DeviceAuthorization{}, errors.New("GitHub returned an invalid authorization response")
+	}
+	verification, err := url.Parse(body.VerificationURI)
+	if err != nil || verification.Scheme != "https" || verification.Hostname() != "github.com" || verification.Path != "/login/device" || body.DeviceCode == "" || len(body.DeviceCode) > 1024 || body.UserCode == "" || len(body.UserCode) > 64 || len(body.VerificationURI) > 2048 || body.ExpiresIn <= 0 || body.ExpiresIn > 3600 {
+		return DeviceAuthorization{}, errors.New("GitHub returned an invalid authorization response")
+	}
+	interval := time.Duration(body.Interval) * time.Second
+	if interval < 5*time.Second {
+		interval = 5 * time.Second
+	}
+	return DeviceAuthorization{DeviceCode: body.DeviceCode, UserCode: body.UserCode, VerificationURI: body.VerificationURI, ExpiresIn: time.Duration(body.ExpiresIn) * time.Second, Interval: interval}, nil
+}
+
+func (p *GitHubProvider) PollDeviceAuthorization(ctx context.Context, clientID, deviceCode string) (DeviceTokenResult, error) {
+	form := url.Values{"client_id": {clientID}, "device_code": {deviceCode}, "grant_type": {"urn:ietf:params:oauth:grant-type:device_code"}}
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, p.oauthBase+"/login/oauth/access_token", bytes.NewBufferString(form.Encode()))
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("User-Agent", "Tilecast-Server/0.9 (+https://github.com/Gibsonmb71/tilecast)")
+	response, err := p.client.Do(req)
+	if err != nil {
+		return DeviceTokenResult{}, fmt.Errorf("GitHub authorization poll failed: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return DeviceTokenResult{}, fmt.Errorf("GitHub authorization poll returned HTTP %d", response.StatusCode)
+	}
+	var body struct {
+		AccessToken string `json:"access_token"`
+		Error       string `json:"error"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, 32<<10)).Decode(&body); err != nil {
+		return DeviceTokenResult{}, errors.New("GitHub returned an invalid authorization response")
+	}
+	if body.AccessToken != "" {
+		if !validGitHubAccessToken(body.AccessToken) {
+			return DeviceTokenResult{}, errors.New("GitHub returned an invalid access token")
+		}
+		return DeviceTokenResult{AccessToken: body.AccessToken, Status: "connected"}, nil
+	}
+	switch body.Error {
+	case "authorization_pending":
+		return DeviceTokenResult{Status: "pending"}, nil
+	case "slow_down":
+		return DeviceTokenResult{Status: "pending", SlowDown: true}, nil
+	case "expired_token":
+		return DeviceTokenResult{Status: "expired"}, nil
+	case "access_denied":
+		return DeviceTokenResult{Status: "denied"}, nil
+	default:
+		return DeviceTokenResult{}, errors.New("GitHub authorization could not be completed")
+	}
+}
+
+func validGitHubAccessToken(token string) bool {
+	if len(token) < 8 || len(token) > 1024 {
+		return false
+	}
+	for _, character := range token {
+		if character <= 0x20 || character >= 0x7f {
+			return false
+		}
+	}
+	return true
+}
+
+func (p *GitHubProvider) Viewer(ctx context.Context, token string) (string, error) {
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, p.apiBase+"/user", nil)
+	p.headers(req)
+	req.Header.Set("Authorization", "Bearer "+token)
+	response, err := p.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("GitHub account request failed: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return "", errors.New("GitHub did not accept the authorized account")
+	}
+	var body struct {
+		Login string `json:"login"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, 32<<10)).Decode(&body); err != nil || strings.TrimSpace(body.Login) == "" || len(body.Login) > 100 {
+		return "", errors.New("GitHub returned an invalid account response")
+	}
+	return strings.TrimSpace(body.Login), nil
 }

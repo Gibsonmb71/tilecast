@@ -49,9 +49,11 @@ type Manifest struct {
 }
 
 type Config struct {
-	Root             string
-	TrustedPublicKey string
-	MaxAPKBytes      int64
+	Root                  string
+	TrustedPublicKey      string
+	MaxAPKBytes           int64
+	GitHubClientID        string
+	GitHubTokenConfigured bool
 }
 
 type Service struct {
@@ -60,6 +62,7 @@ type Service struct {
 	root     string
 	key      ed25519.PublicKey
 	maxAPK   int64
+	github   *githubAuthorization
 }
 
 type ImportedRelease struct {
@@ -87,7 +90,11 @@ func NewService(db *pgxpool.Pool, provider Provider, cfg Config) (*Service, erro
 		}
 		key = ed25519.PublicKey(decoded)
 	}
-	return &Service{db: db, provider: provider, root: cfg.Root, key: key, maxAPK: cfg.MaxAPKBytes}, nil
+	github, err := newGitHubAuthorization(provider, cfg.Root, cfg.GitHubClientID, cfg.GitHubTokenConfigured)
+	if err != nil {
+		return nil, err
+	}
+	return &Service{db: db, provider: provider, root: cfg.Root, key: key, maxAPK: cfg.MaxAPKBytes, github: github}, nil
 }
 
 func ParseAndVerifyManifest(raw, signature []byte, key ed25519.PublicKey) (Manifest, error) {

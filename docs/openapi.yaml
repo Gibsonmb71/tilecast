@@ -882,6 +882,25 @@ paths:
           "200": { description: Check completed },
           "502": { description: GitHub or verification failure },
         }
+  /api/v1/player-releases/github/device:
+    post:
+      summary: Start Owner-authorized GitHub OAuth device flow
+      responses:
+        "201": { description: One-time user code and verification URL }
+        "503": { description: GitHub OAuth client ID is not configured }
+  /api/v1/player-releases/github/device/poll:
+    post:
+      summary: Poll an active GitHub OAuth device flow
+      responses:
+        "200": { description: Pending, connected, denied, or expired state }
+        "410": { description: Device flow expired or was not found }
+        "502": { description: GitHub authorization failure }
+  /api/v1/player-releases/github:
+    delete:
+      summary: Remove a device-authorized GitHub credential from Tilecast Server
+      responses:
+        "204": { description: Local GitHub credential removed }
+        "409": { description: Authentication is managed by environment token }
   /api/v1/player-releases/upload:
     post:
       summary: Upload and verify a signed Tilecast Player release bundle

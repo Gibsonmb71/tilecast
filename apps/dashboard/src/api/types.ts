@@ -406,7 +406,27 @@ export type PlayerReleaseList = {
   lastCheckedAt?: string;
   providerError?: string;
   manifestKeyConfigured: boolean;
+  githubAuth: GitHubAuthStatus;
   items: PlayerRelease[];
+};
+export type GitHubAuthStatus = {
+  available: boolean;
+  connected: boolean;
+  source: "anonymous" | "device" | "environment";
+  login?: string;
+  canDisconnect: boolean;
+};
+export type GitHubDeviceStart = {
+  flowId: string;
+  userCode: string;
+  verificationUri: string;
+  expiresAt: string;
+  pollIntervalSeconds: number;
+};
+export type GitHubDevicePoll = {
+  status: "pending" | "connected" | "denied" | "expired";
+  login?: string;
+  retryAfterSeconds?: number;
 };
 export type UpdateDeployment = {
   id: string;

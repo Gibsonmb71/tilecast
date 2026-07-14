@@ -1,14 +1,18 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CheckCircle2,
   Download,
+  ExternalLink,
+  Github,
+  LogOut,
   RefreshCw,
   Rocket,
   Search,
   Upload,
 } from "lucide-react";
 import { api } from "../api/client";
+import type { GitHubDeviceStart } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 
 export function UsersPanel({ canManage }: { canManage: boolean }) {
@@ -327,6 +331,10 @@ export function PlayerUpdatesPanel({
   const [targetSearch, setTargetSearch] = useState("");
   const [showUpload, setShowUpload] = useState(false);
   const [deploySuccess, setDeploySuccess] = useState("");
+  const [githubFlow, setGitHubFlow] = useState<
+    (GitHubDeviceStart & { retryAfterSeconds: number }) | null
+  >(null);
+  const [githubAuthMessage, setGitHubAuthMessage] = useState("");
   const check = useMutation({
     mutationFn: () => api.checkPlayerReleases(auth.status?.csrfToken ?? ""),
     onSuccess: () =>
@@ -338,6 +346,82 @@ export function PlayerUpdatesPanel({
     onSuccess: () =>
       client.invalidateQueries({ queryKey: ["player-releases"] }),
   });
+  const startGitHubAuth = useMutation({
+    mutationFn: () =>
+      api.startGitHubDeviceAuthorization(auth.status?.csrfToken ?? ""),
+    onMutate: () => setGitHubAuthMessage(""),
+    onSuccess: (flow) =>
+      setGitHubFlow({
+        ...flow,
+        retryAfterSeconds: flow.pollIntervalSeconds,
+      }),
+    onError: (error) => setGitHubAuthMessage(error.message),
+  });
+  const disconnectGitHub = useMutation({
+    mutationFn: () => api.disconnectGitHub(auth.status?.csrfToken ?? ""),
+    onMutate: () => setGitHubAuthMessage(""),
+    onSuccess: async () => {
+      setGitHubFlow(null);
+      setGitHubAuthMessage("GitHub account disconnected.");
+      await client.invalidateQueries({ queryKey: ["player-releases"] });
+    },
+    onError: (error) => setGitHubAuthMessage(error.message),
+  });
+  useEffect(() => {
+    if (!githubFlow) return;
+    let cancelled = false;
+    const timeout = window.setTimeout(() => {
+      void api
+        .pollGitHubDeviceAuthorization(
+          githubFlow.flowId,
+          auth.status?.csrfToken ?? "",
+        )
+        .then(async (result) => {
+          if (cancelled) return;
+          if (result.status === "connected") {
+            setGitHubFlow(null);
+            setGitHubAuthMessage(
+              `Connected to GitHub as @${result.login ?? "authorized user"}.`,
+            );
+            await client.invalidateQueries({
+              queryKey: ["player-releases"],
+            });
+            return;
+          }
+          if (result.status === "denied" || result.status === "expired") {
+            setGitHubFlow(null);
+            setGitHubAuthMessage(
+              result.status === "denied"
+                ? "GitHub authorization was declined."
+                : "The GitHub authorization code expired. Start again for a new code.",
+            );
+            return;
+          }
+          setGitHubFlow((current) =>
+            current?.flowId === githubFlow.flowId
+              ? {
+                  ...current,
+                  retryAfterSeconds:
+                    result.retryAfterSeconds ?? current.pollIntervalSeconds,
+                }
+              : current,
+          );
+        })
+        .catch((error: unknown) => {
+          if (cancelled) return;
+          setGitHubFlow(null);
+          setGitHubAuthMessage(
+            error instanceof Error
+              ? error.message
+              : "GitHub authorization could not be completed.",
+          );
+        });
+    }, githubFlow.retryAfterSeconds * 1000);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [auth.status?.csrfToken, client, githubFlow]);
   const deploy = useMutation({
     mutationFn: () =>
       api.createUpdateDeployment(
@@ -404,6 +488,95 @@ export function PlayerUpdatesPanel({
             </div>
           )}
         </header>
+        {releases.data && (
+          <div className="github-auth">
+            <div className="github-auth__summary">
+              <Github size={20} aria-hidden="true" />
+              <div>
+                <strong>GitHub connection</strong>
+                <span>
+                  {releases.data.githubAuth.connected
+                    ? releases.data.githubAuth.login
+                      ? `Authorized as @${releases.data.githubAuth.login}`
+                      : "Authorized with a server-managed token"
+                    : "Anonymous API access"}
+                </span>
+              </div>
+              <span
+                className={`status-dot-label status-dot-label--${releases.data.githubAuth.connected ? "success" : "neutral"}`}
+              >
+                <span aria-hidden="true" />
+                {releases.data.githubAuth.connected
+                  ? "Connected"
+                  : "Not connected"}
+              </span>
+            </div>
+            {owner && !githubFlow && (
+              <div className="github-auth__actions">
+                {releases.data.githubAuth.canDisconnect ? (
+                  <button
+                    className="button button--quiet"
+                    disabled={disconnectGitHub.isPending}
+                    onClick={() => disconnectGitHub.mutate()}
+                  >
+                    <LogOut size={16} aria-hidden="true" />
+                    {disconnectGitHub.isPending
+                      ? "Disconnecting…"
+                      : "Disconnect"}
+                  </button>
+                ) : !releases.data.githubAuth.connected ? (
+                  <button
+                    className="button button--secondary"
+                    disabled={
+                      !releases.data.githubAuth.available ||
+                      startGitHubAuth.isPending
+                    }
+                    onClick={() => startGitHubAuth.mutate()}
+                  >
+                    <Github size={16} aria-hidden="true" />
+                    {startGitHubAuth.isPending ? "Starting…" : "Connect GitHub"}
+                  </button>
+                ) : null}
+              </div>
+            )}
+            {githubFlow && (
+              <div className="github-auth__device" role="status">
+                <div>
+                  <span>One-time code</span>
+                  <strong className="technical">{githubFlow.userCode}</strong>
+                </div>
+                <a
+                  className="button button--primary"
+                  href={githubFlow.verificationUri}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <ExternalLink size={16} aria-hidden="true" />
+                  Open GitHub
+                </a>
+                <button
+                  className="button button--quiet"
+                  onClick={() => setGitHubFlow(null)}
+                >
+                  Cancel
+                </button>
+                <small>Waiting for authorization…</small>
+              </div>
+            )}
+            {!releases.data.githubAuth.available &&
+              !releases.data.githubAuth.connected && (
+                <small className="github-auth__configuration">
+                  Configure <code>TILECAST_GITHUB_CLIENT_ID</code> with a
+                  device-flow-enabled GitHub OAuth App to enable sign-in.
+                </small>
+              )}
+            {githubAuthMessage && (
+              <small className="github-auth__message" role="status">
+                {githubAuthMessage}
+              </small>
+            )}
+          </div>
+        )}
         {showUpload && (
           <PlayerReleaseUpload
             csrfToken={auth.status?.csrfToken ?? ""}
