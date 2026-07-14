@@ -7,7 +7,7 @@ import { App } from "./App";
 import { AuthProvider } from "./auth/AuthProvider";
 import "./styles.css";
 import "./styles/signal.css";
-// Page-specific refinements intentionally load after the shared Signal styles.
+// Page-specific refinements intentionally load after shared Signal styles.
 import "./styles/reliability.css";
 
 const queryClient = new QueryClient({
