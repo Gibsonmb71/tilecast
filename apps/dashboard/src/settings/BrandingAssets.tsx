@@ -81,8 +81,12 @@ export function BrandingAssets({
           actionError={
             saveBackground.error?.message ?? removeBackground.error?.message
           }
-          onSelect={(assetId) => saveBackground.mutateAsync(assetId)}
-          onRemove={() => removeBackground.mutateAsync()}
+          onSelect={async (assetId) => {
+            await saveBackground.mutateAsync(assetId);
+          }}
+          onRemove={async () => {
+            await removeBackground.mutateAsync();
+          }}
         />
       </div>
     </section>
