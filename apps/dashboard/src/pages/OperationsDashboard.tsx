@@ -2,26 +2,31 @@ import {
   CalendarClock,
   ChevronRight,
   CircleAlert,
-  Ellipsis,
-  Monitor,
   MonitorCheck,
   Plus,
   RefreshCw,
   Upload,
-  WifiOff,
-  Wrench,
 } from "lucide-react";
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { api } from "../api/client";
-import type { PlaylistAssignment, Schedule, Screen } from "../api/types";
+import type { Schedule, ScreenStatus } from "../api/types";
 import "./OperationsDashboard.css";
+
+const statusLabels: Record<ScreenStatus, string> = {
+  online: "Online",
+  recent: "Recently online",
+  stale: "Stale",
+  offline: "Offline",
+  disabled: "Disabled",
+  revoked: "Pairing revoked",
+};
 
 export function OperationsDashboard() {
   const screens = useQuery({
     queryKey: ["screens"],
     queryFn: api.screens,
-    refetchInterval: 30_000,
+    refetchInterval: 10_000,
   });
   const schedules = useQuery({
     queryKey: ["schedules"],
@@ -30,547 +35,312 @@ export function OperationsDashboard() {
   const deployments = useQuery({
     queryKey: ["update-deployments"],
     queryFn: api.updateDeployments,
+    refetchInterval: 15_000,
   });
 
   const allScreens = screens.data?.items ?? [];
-  const assignmentQueries = useQueries({
-    queries: allScreens.map((screen) => ({
-      queryKey: ["playlist-assignment", screen.id],
-      queryFn: () => api.playlistAssignment(screen.id),
-      refetchInterval: 30_000,
-    })),
-  });
-  const assignments = assignmentQueries
-    .map((query) => query.data)
-    .filter((value): value is PlaylistAssignment => Boolean(value));
-
-  const onlineCount = allScreens.filter(
-    (screen) => screen.status === "online",
-  ).length;
-  const issueScreens = allScreens.filter(
-    (screen) => screen.status !== "online",
+  const online = allScreens.filter((screen) => screen.status === "online");
+  const attention = allScreens.filter((screen) => screen.status !== "online");
+  const activeSchedules = (schedules.data?.items ?? []).filter(
+    (schedule) => schedule.enabled,
   );
-  const primaryIssue = issueScreens[0];
-  const additionalIssues = issueScreens.slice(1);
-  const primaryAssignment = primaryIssue
-    ? assignments.find((item) => item.screenId === primaryIssue.id)
-    : assignments[0];
-  const enabledSchedules = (schedules.data?.items ?? []).filter(
-    (item) => item.enabled,
-  );
-  const nextChange = nextScheduleChange(enabledSchedules);
-  const lastUpdated = newestContact(allScreens);
-  const verifiedCount = onlineCount;
-  const verifiedPercent =
-    allScreens.length === 0
-      ? 0
-      : Math.round((verifiedCount / allScreens.length) * 100);
-  const pendingUpdateActions = (deployments.data?.items ?? []).reduce(
-    (count, deployment) =>
-      count + deployment.waitingForUserCount + deployment.failedCount,
+  const updateActions = (deployments.data?.items ?? []).reduce(
+    (total, deployment) =>
+      total + deployment.waitingForUserCount + deployment.failedCount,
     0,
   );
-  const outageDuration = primaryIssue
-    ? formatDurationSince(primaryIssue.lastContactAt)
-    : "None";
-  const scheduleCoverage = enabledSchedules.length > 0 ? 100 : 0;
+  const latestDeployment = deployments.data?.items[0];
+  const nextChange = nextScheduleChange(activeSchedules);
 
   return (
     <div className="ops-console">
-      <header className="ops-console__header">
+      <header className="ops-header">
         <div>
-          <h2>Overview</h2>
-          <div className="ops-console__meta">
-            <span>
-              {allScreens.length} screen{allScreens.length === 1 ? "" : "s"}
-            </span>
-            <span aria-hidden="true">•</span>
-            <strong>
-              {issueScreens.length} issue{issueScreens.length === 1 ? "" : "s"}{" "}
-              requiring attention
-            </strong>
-            <span aria-hidden="true">•</span>
-            <span>Last updated {formatRelative(lastUpdated)}</span>
-          </div>
+          <h2>System overview</h2>
+          <p>
+            Live player state, items requiring attention, and what changes next.
+          </p>
         </div>
-        <div className="ops-console__actions" aria-label="Quick actions">
-          <Link className="ops-button ops-button--primary" to="/screens/pair">
-            <MonitorCheck size={16} /> Pair screen
+        <div className="ops-actions" aria-label="Quick actions">
+          <Link className="button button--primary" to="/screens/pair">
+            <MonitorCheck size={16} aria-hidden="true" /> Pair screen
           </Link>
           <details className="ops-create-menu">
-            <summary className="ops-button">
-              <Plus size={16} /> Create
+            <summary className="button button--secondary">
+              <Plus size={16} aria-hidden="true" /> Create
             </summary>
-            <div className="ops-create-menu__popover">
+            <div>
               <Link to="/content">
-                <Upload size={16} /> Upload content
+                <Upload size={16} aria-hidden="true" /> Upload content
               </Link>
               <Link to="/schedules/new">
-                <CalendarClock size={16} /> Create schedule
+                <CalendarClock size={16} aria-hidden="true" /> Create schedule
               </Link>
             </div>
           </details>
         </div>
       </header>
 
-      {primaryIssue ? (
-        <section className="ops-alert" aria-labelledby="primary-alert-title">
-          <div className="ops-alert__icon">
-            <WifiOff size={20} />
-          </div>
-          <div className="ops-alert__body">
-            <div className="ops-alert__heading">
-              <div>
-                <span className="ops-status ops-status--danger">Offline</span>
-                <h3 id="primary-alert-title">{primaryIssue.name} is offline</h3>
-              </div>
-              <OverflowMenu>
-                <Link to={`/screens/${primaryIssue.id}`}>Open details</Link>
-                <Link to="/screens">View all screens</Link>
-              </OverflowMenu>
-            </div>
-            <p>
-              Last seen {formatRelative(primaryIssue.lastContactAt)} · Playback
-              status cannot currently be verified
-            </p>
-            <div className="ops-alert__reported">
-              <span>Last reported playback</span>
-              <strong>{playbackName(primaryAssignment)}</strong>
-              <small>{playbackDetail(primaryAssignment)}</small>
-            </div>
-          </div>
-          <div className="ops-alert__actions">
-            <Link
-              className="ops-button ops-button--warning"
-              to={`/screens/${primaryIssue.id}?tab=reliability`}
-            >
-              Troubleshoot
-            </Link>
-            <Link className="ops-button" to={`/screens/${primaryIssue.id}`}>
-              View screen
-            </Link>
-          </div>
-        </section>
-      ) : allScreens.length > 0 ? (
-        <section className="ops-alert ops-alert--healthy">
-          <div className="ops-alert__icon">
-            <MonitorCheck size={20} />
-          </div>
-          <div className="ops-alert__body">
-            <span className="ops-status ops-status--healthy">Healthy</span>
-            <h3>All screens are online</h3>
-            <p>Current player status is being reported normally.</p>
-          </div>
-        </section>
-      ) : null}
-
-      <section className="ops-metrics-strip" aria-label="Operational metrics">
-        <Metric
-          value={`${onlineCount} / ${allScreens.length}`}
+      <section className="ops-summary" aria-label="Current status">
+        <Summary
+          value={`${online.length}/${allScreens.length}`}
           label="Screens online"
-          detail={`${issueScreens.length} screen${issueScreens.length === 1 ? "" : "s"} offline`}
         />
-        <Metric
-          value={`${verifiedPercent}%`}
-          label="Playback verified"
-          detail={`${verifiedCount} of ${allScreens.length} confirmed`}
+        <Summary
+          value={String(attention.length)}
+          label="Need attention"
+          urgent={attention.length > 0}
         />
-        <Metric
-          value="Not tracked"
-          label="7-day uptime"
-          detail="Historical telemetry unavailable"
-          muted
+        <Summary
+          value={String(activeSchedules.length)}
+          label="Active schedules"
         />
-        <Metric
-          value={String(pendingUpdateActions)}
-          label="Player updates pending"
-          detail={
-            pendingUpdateActions === 1
-              ? "1 update action pending"
-              : `${pendingUpdateActions} update actions pending`
-          }
+        <Summary
+          value={String(updateActions)}
+          label="Update actions"
+          urgent={updateActions > 0}
         />
       </section>
 
-      <section className="ops-layout">
-        <div className="ops-layout__primary">
-          <section className="ops-card ops-now-playing">
-            <div className="ops-card__eyebrow">
-              <Monitor size={17} />
-              <span>Now playing</span>
-            </div>
-            <div className="ops-now-playing__content">
-              <div>
-                <h3>{playbackName(primaryAssignment)}</h3>
-                <span className="ops-status ops-status--neutral">
-                  {primaryIssue
-                    ? "Playback unverified"
-                    : primaryAssignment
-                      ? "Live"
-                      : "Status unavailable"}
-                </span>
-              </div>
+      {attention.length > 0 && (
+        <section className="ops-attention" aria-labelledby="attention-heading">
+          <header>
+            <div>
+              <h3 id="attention-heading">
+                <CircleAlert size={18} aria-hidden="true" /> Needs attention
+              </h3>
               <p>
-                {primaryIssue
-                  ? "The most recent player report indicated fallback playback."
-                  : primaryAssignment
-                    ? "Current playback is based on the latest player report."
-                    : "No playback report is available yet."}
+                Players below are not currently reporting an online connection.
               </p>
-              <DetailStats
-                items={[
-                  [
-                    "Verified screens",
-                    `${verifiedCount} / ${allScreens.length}`,
-                  ],
-                  ["Last confirmed", formatRelative(lastUpdated)],
-                  ["Interruptions", "Not tracked"],
-                ]}
-              />
-              <Link
-                className="ops-inline-action"
-                to={primaryIssue ? `/screens/${primaryIssue.id}` : "/screens"}
-              >
-                View playback details <ChevronRight size={14} />
-              </Link>
             </div>
-          </section>
-
-          {additionalIssues.length > 0 ? (
-            <section className="ops-card ops-attention-card">
-              <div className="ops-card__header">
-                <div>
-                  <h3>Needs attention</h3>
-                  <p>Additional issues not covered by the primary alert.</p>
-                </div>
-                <Link to="/screens">View all</Link>
-              </div>
-              <div className="ops-issue-list">
-                {additionalIssues.map((screen) => (
-                  <Link key={screen.id} to={`/screens/${screen.id}`}>
-                    <span className="ops-issue-list__icon">
-                      <CircleAlert size={17} />
-                    </span>
-                    <span>
-                      <strong>{screen.name}</strong>
-                      <small>
-                        {statusLabel(screen)} · Last seen{" "}
-                        {formatRelative(screen.lastContactAt)}
-                      </small>
-                    </span>
-                    <ChevronRight size={16} />
-                  </Link>
-                ))}
-              </div>
-            </section>
-          ) : null}
-        </div>
-
-        <aside className="ops-layout__supporting">
-          <section className="ops-card ops-compact-card">
-            <div className="ops-card__eyebrow">
-              <MonitorCheck size={17} />
-              <span>Fleet health</span>
-            </div>
-            <strong className="ops-compact-card__value">
-              {onlineCount} of {allScreens.length} screens online
-            </strong>
-            <span
-              className={`ops-status ${
-                allScreens.length === 0
-                  ? "ops-status--neutral"
-                  : onlineCount === allScreens.length
-                    ? "ops-status--healthy"
-                    : "ops-status--danger"
-              }`}
-            >
-              {allScreens.length === 0
-                ? "Setup incomplete"
-                : onlineCount === allScreens.length
-                  ? "Healthy"
-                  : "Action required"}
-            </span>
-            <DetailStats
-              stacked
-              items={[
-                ["Current outage", outageDuration],
-                ["7-day uptime", "Not tracked"],
-                ["Reconnects", "Not tracked"],
-              ]}
-            />
-            <Link className="ops-inline-action" to="/screens">
-              Open screens <ChevronRight size={14} />
-            </Link>
-          </section>
-
-          <section className="ops-card ops-compact-card">
-            <div className="ops-card__eyebrow">
-              <CalendarClock size={17} />
-              <span>Next schedule</span>
-            </div>
-            <strong className="ops-compact-card__value">
-              {nextChange ? nextChange.schedule.name : "No scheduled changes"}
-            </strong>
-            <DetailStats
-              stacked
-              items={[
-                ["24-hour schedule coverage", `${scheduleCoverage}%`],
-                [
-                  "Screens without a schedule",
-                  String(enabledSchedules.length > 0 ? 0 : allScreens.length),
-                ],
-                ["Upcoming playback changes", String(nextChange ? 1 : 0)],
-              ]}
-            />
-            {nextChange ? (
-              <>
-                <span className="ops-status ops-status--neutral">
-                  {formatScheduleTime(nextChange.at)}
+            <Link to="/screens">View all screens</Link>
+          </header>
+          <div className="ops-attention-list">
+            {attention.slice(0, 5).map((screen) => (
+              <Link key={screen.id} to={`/screens/${screen.id}`}>
+                <StatusDot status={screen.status} />
+                <span className="ops-attention-list__name">
+                  <strong>{screen.name}</strong>
+                  <small>{screen.location || "No location set"}</small>
                 </span>
-                <p>
-                  {nextChange.schedule.playlistName} will begin on{" "}
-                  {targetLabel(nextChange.schedule)}.
-                </p>
-                <Link
-                  className="ops-inline-action"
-                  to={`/schedules/${nextChange.schedule.id}`}
-                >
-                  View schedule <ChevronRight size={14} />
+                <span>{statusLabels[screen.status]}</span>
+                <time>{formatRelative(screen.lastContactAt)}</time>
+                <ChevronRight size={16} aria-hidden="true" />
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <div className="ops-grid">
+        <section
+          className="ops-panel ops-fleet"
+          aria-labelledby="fleet-heading"
+        >
+          <header>
+            <div>
+              <h3 id="fleet-heading">Player fleet</h3>
+              <p>Connection, playback readiness, and installed version.</p>
+            </div>
+            <Link to="/screens">Manage screens</Link>
+          </header>
+          {screens.isLoading ? (
+            <div className="ops-empty">Loading player status…</div>
+          ) : screens.isError ? (
+            <div className="ops-empty" role="alert">
+              <CircleAlert size={20} aria-hidden="true" />
+              <strong>Player status could not be loaded</strong>
+              <span>
+                Refresh the page or check the Tilecast server connection.
+              </span>
+            </div>
+          ) : allScreens.length === 0 ? (
+            <div className="ops-empty">
+              <MonitorCheck size={20} aria-hidden="true" />
+              <strong>No screens paired</strong>
+              <Link to="/screens/pair">Pair the first screen</Link>
+            </div>
+          ) : (
+            <div className="ops-table-wrap">
+              <table className="ops-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Status</th>
+                    <th>Location</th>
+                    <th>Player</th>
+                    <th>Last contact</th>
+                    <th>
+                      <span className="sr-only">Open</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {allScreens.map((screen) => (
+                    <tr key={screen.id}>
+                      <td>
+                        <Link to={`/screens/${screen.id}`}>{screen.name}</Link>
+                      </td>
+                      <td>
+                        <span className="ops-inline-status">
+                          <StatusDot status={screen.status} />{" "}
+                          {statusLabels[screen.status]}
+                        </span>
+                      </td>
+                      <td>{screen.location || "Not set"}</td>
+                      <td>{screen.playerVersion || "Not reported"}</td>
+                      <td>{formatRelative(screen.lastContactAt)}</td>
+                      <td>
+                        <Link
+                          className="ops-row-link"
+                          aria-label={`Open ${screen.name}`}
+                          to={`/screens/${screen.id}`}
+                        >
+                          <ChevronRight size={16} />
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
+        <aside className="ops-side">
+          <section className="ops-panel">
+            <header>
+              <div>
+                <h3>Next schedule change</h3>
+                <p>Next enabled playback transition.</p>
+              </div>
+            </header>
+            {schedules.isError ? (
+              <div className="ops-empty ops-empty--compact" role="alert">
+                <CircleAlert size={18} aria-hidden="true" />
+                <strong>Schedules could not be loaded</strong>
+              </div>
+            ) : nextChange ? (
+              <div className="ops-key-value">
+                <strong>{nextChange.schedule.name}</strong>
+                <span>{formatScheduleTime(nextChange.at)}</span>
+                <small>
+                  {nextChange.schedule.playlistName} on{" "}
+                  {targetLabel(nextChange.schedule)}
+                </small>
+                <Link to={`/schedules/${nextChange.schedule.id}`}>
+                  Open schedule <ChevronRight size={14} />
                 </Link>
-              </>
+              </div>
             ) : (
-              <>
-                <p>
-                  Fallback content will continue until a schedule is created.
-                </p>
-                <Link className="ops-inline-action" to="/schedules/new">
-                  Create schedule <ChevronRight size={14} />
-                </Link>
-              </>
+              <div className="ops-empty ops-empty--compact">
+                <CalendarClock size={18} aria-hidden="true" />
+                <strong>No upcoming change</strong>
+                <span>
+                  Fallback assignments continue until a schedule starts.
+                </span>
+              </div>
+            )}
+          </section>
+
+          <section className="ops-panel">
+            <header>
+              <div>
+                <h3>Player updates</h3>
+                <p>Latest deployment result.</p>
+              </div>
+              <Link to="/settings/player-updates">Update center</Link>
+            </header>
+            {deployments.isError ? (
+              <div className="ops-empty ops-empty--compact" role="alert">
+                <CircleAlert size={18} aria-hidden="true" />
+                <strong>Update status could not be loaded</strong>
+              </div>
+            ) : latestDeployment ? (
+              <dl className="ops-deployment">
+                <div>
+                  <dt>Release</dt>
+                  <dd>{latestDeployment.versionName}</dd>
+                </div>
+                <div>
+                  <dt>Status</dt>
+                  <dd>{humanize(latestDeployment.status)}</dd>
+                </div>
+                <div>
+                  <dt>Succeeded</dt>
+                  <dd>
+                    {latestDeployment.succeededCount}/
+                    {latestDeployment.targetCount}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Action needed</dt>
+                  <dd>
+                    {latestDeployment.failedCount +
+                      latestDeployment.waitingForUserCount}
+                  </dd>
+                </div>
+              </dl>
+            ) : (
+              <div className="ops-empty ops-empty--compact">
+                <RefreshCw size={18} aria-hidden="true" />
+                <strong>No deployments yet</strong>
+                <span>
+                  Published player releases appear in the update center.
+                </span>
+              </div>
             )}
           </section>
         </aside>
-      </section>
-
-      <section className="ops-secondary-cards">
-        <section className="ops-card ops-maintenance-card">
-          <div className="ops-card__header">
-            <div>
-              <h3>Player maintenance</h3>
-              <p>Planned work that may briefly affect screens.</p>
-            </div>
-            <OverflowMenu>
-              <Link to="/settings/system">Open maintenance tools</Link>
-            </OverflowMenu>
-          </div>
-          <div className="ops-empty-compact">
-            <Wrench size={18} />
-            <strong>No maintenance windows scheduled</strong>
-            <span>
-              Tilecast does not currently store planned maintenance windows.
-            </span>
-            <Link className="ops-inline-action" to="/settings/system">
-              Open maintenance tools <ChevronRight size={14} />
-            </Link>
-          </div>
-        </section>
-
-        <section
-          className={`ops-card ops-update-card ${pendingUpdateActions > 0 ? "ops-update-card--warning" : ""}`}
-        >
-          <div className="ops-card__header">
-            <div>
-              <h3>Player updates</h3>
-              <p>Releases awaiting deployment or operator approval.</p>
-            </div>
-            <OverflowMenu>
-              <Link to="/settings/player-updates">Open update center</Link>
-            </OverflowMenu>
-          </div>
-          <strong className="ops-update-card__title">
-            {pendingUpdateActions} player update action
-            {pendingUpdateActions === 1 ? "" : "s"} pending
-          </strong>
-          <span
-            className={`ops-status ${pendingUpdateActions > 0 ? "ops-status--warning" : "ops-status--healthy"}`}
-          >
-            {pendingUpdateActions > 0 ? "Not scheduled" : "Up to date"}
-          </span>
-          <DetailStats
-            stacked
-            items={[
-              ["Eligible screens", String(allScreens.length)],
-              ["Scheduled screens", "0"],
-              [
-                "Restart required",
-                pendingUpdateActions > 0 ? "May be required" : "No",
-              ],
-            ]}
-          />
-          <div className="ops-card-actions">
-            <Link
-              className="ops-button ops-button--primary"
-              to="/settings/player-updates"
-            >
-              Schedule update
-            </Link>
-            <Link className="ops-inline-action" to="/settings/player-updates">
-              View releases <ChevronRight size={14} />
-            </Link>
-          </div>
-        </section>
-      </section>
-
-      <section className="ops-card ops-upcoming">
-        <div className="ops-card__header">
-          <div>
-            <h3>Upcoming changes</h3>
-            <p>Chronological changes expected to affect screens.</p>
-          </div>
-        </div>
-        {nextChange ? (
-          <div className="ops-change-list">
-            <Link to={`/schedules/${nextChange.schedule.id}`}>
-              <time>{formatScheduleTime(nextChange.at)}</time>
-              <span>
-                <strong>Playback schedule</strong>
-                <small>
-                  {nextChange.schedule.name} ·{" "}
-                  {targetLabel(nextChange.schedule)}
-                </small>
-              </span>
-              <span className="ops-status ops-status--neutral">Scheduled</span>
-            </Link>
-          </div>
-        ) : (
-          <div className="ops-empty-compact">
-            <RefreshCw size={18} />
-            <strong>No upcoming operational changes</strong>
-            <span>
-              There are no schedule changes, maintenance windows, or update
-              deployments with a future time.
-            </span>
-          </div>
-        )}
-      </section>
+      </div>
     </div>
   );
 }
 
-function Metric({
+function Summary({
   value,
   label,
-  detail,
-  muted = false,
+  urgent = false,
 }: {
   value: string;
   label: string;
-  detail: string;
-  muted?: boolean;
+  urgent?: boolean;
 }) {
   return (
-    <div className={`ops-metric-item ${muted ? "ops-metric-item--muted" : ""}`}>
+    <div
+      className={
+        urgent
+          ? "ops-summary__item ops-summary__item--urgent"
+          : "ops-summary__item"
+      }
+    >
       <strong>{value}</strong>
       <span>{label}</span>
-      <small>{detail}</small>
     </div>
   );
 }
 
-function DetailStats({
-  items,
-  stacked = false,
-}: {
-  items: [string, string][];
-  stacked?: boolean;
-}) {
+function StatusDot({ status }: { status: ScreenStatus }) {
   return (
-    <dl
-      className={`ops-detail-stats ${stacked ? "ops-detail-stats--stacked" : ""}`}
-    >
-      {items.map(([label, value]) => (
-        <div key={label}>
-          <dt>{label}</dt>
-          <dd>{value}</dd>
-        </div>
-      ))}
-    </dl>
+    <span
+      className={`ops-status-dot ops-status-dot--${status}`}
+      aria-hidden="true"
+    />
   );
-}
-
-function OverflowMenu({ children }: { children: React.ReactNode }) {
-  return (
-    <details className="ops-overflow">
-      <summary aria-label="More actions">
-        <Ellipsis size={18} />
-      </summary>
-      <div>{children}</div>
-    </details>
-  );
-}
-
-function playbackName(assignment?: PlaylistAssignment) {
-  if (!assignment) return "Status unavailable";
-  if (assignment.selectionSource === "direct_fallback")
-    return assignment.playlistName ?? "Fallback content";
-  if (assignment.selectionSource === "schedule")
-    return assignment.playlistName ?? "Scheduled content";
-  if (assignment.selectionSource === "emergency")
-    return assignment.playlistName ?? "Emergency content";
-  return "No content reported";
-}
-
-function playbackDetail(assignment?: PlaylistAssignment) {
-  if (!assignment) return "No player report is available";
-  if (assignment.selectionSource === "direct_fallback")
-    return "Fallback content · reported before disconnect";
-  if (assignment.selectionSource === "schedule")
-    return "Scheduled content · reported before disconnect";
-  return "Reported before disconnect";
-}
-
-function newestContact(screens: Screen[]) {
-  return screens.reduce<string | undefined>((current, screen) => {
-    if (!screen.lastContactAt) return current;
-    if (!current || new Date(screen.lastContactAt) > new Date(current))
-      return screen.lastContactAt;
-    return current;
-  }, undefined);
-}
-
-function statusLabel(screen: Screen) {
-  if (screen.status === "offline") return "Offline";
-  if (screen.status === "stale") return "Stale connection";
-  if (screen.status === "recent") return "Connection interrupted";
-  if (screen.status === "disabled") return "Playback disabled";
-  if (screen.status === "revoked") return "Pairing revoked";
-  return "Action required";
-}
-
-function formatDurationSince(value?: string) {
-  if (!value) return "Unavailable";
-  const minutes = Math.max(
-    0,
-    Math.round((Date.now() - new Date(value).getTime()) / 60_000),
-  );
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  return `${hours}h ${minutes % 60}m`;
 }
 
 function formatRelative(value?: string) {
-  if (!value) return "unavailable";
+  if (!value) return "Never";
   const seconds = Math.max(
     0,
     Math.round((Date.now() - new Date(value).getTime()) / 1000),
   );
-  if (seconds < 60) return "just now";
+  if (seconds < 60) return "Just now";
   const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+  if (minutes < 60) return `${minutes}m ago`;
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
-  const days = Math.round(hours / 24);
-  return `${days} day${days === 1 ? "" : "s"} ago`;
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
 }
 
 function nextScheduleChange(schedules: Schedule[]) {
@@ -588,25 +358,34 @@ function nextScheduleChange(schedules: Schedule[]) {
       const at = new Date(now);
       at.setDate(now.getDate() + offset);
       at.setHours(hour, minute, 0, 0);
-      if (at <= now || !schedule.daysOfWeek.includes(at.getDay())) continue;
-      candidates.push({ schedule, at });
-      break;
+      if (at > now && schedule.daysOfWeek.includes(at.getDay())) {
+        candidates.push({ schedule, at });
+        break;
+      }
     }
   }
   return candidates.sort((a, b) => a.at.getTime() - b.at.getTime())[0];
 }
 
 function targetLabel(schedule: Schedule) {
-  const count = schedule.targets.length;
-  if (count === 0) return "no targets";
-  if (count === 1) return schedule.targets[0]?.name ?? "1 target";
-  return `${count} targets`;
+  if (schedule.targets.length === 0) return "no targets";
+  if (schedule.targets.length === 1)
+    return schedule.targets[0]?.name ?? "1 target";
+  return `${schedule.targets.length} targets`;
 }
 
 function formatScheduleTime(value: Date) {
   return new Intl.DateTimeFormat(undefined, {
     weekday: "short",
+    month: "short",
+    day: "numeric",
     hour: "numeric",
     minute: "2-digit",
   }).format(value);
+}
+
+function humanize(value: string) {
+  return value
+    .replaceAll("_", " ")
+    .replace(/^./, (letter) => letter.toUpperCase());
 }

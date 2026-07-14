@@ -1919,6 +1919,58 @@ tbody tr:hover {
   width: min(1000px, 100%);
 }
 
+.screen-detail__heading-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--tc-space-3);
+}
+
+.screen-details-editor {
+  margin: 0 0 var(--tc-space-5);
+  padding: var(--tc-space-4) var(--tc-space-5);
+  background: var(--tc-bg-surface);
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-panel);
+}
+
+.screen-details-editor > header h3,
+.screen-details-editor > header p {
+  margin: 0;
+}
+
+.screen-details-editor > header h3 {
+  font-size: 15px;
+}
+
+.screen-details-editor > header p {
+  margin-top: var(--tc-space-1);
+  color: var(--tc-text-secondary);
+  font-size: 13px;
+}
+
+.screen-details-editor form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--tc-space-4);
+  margin-top: var(--tc-space-4);
+}
+
+.screen-details-editor__description,
+.screen-details-editor__actions,
+.screen-details-editor .notice {
+  grid-column: 1 / -1;
+}
+
+.screen-details-editor__description textarea {
+  min-height: 76px;
+}
+
+.screen-details-editor__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--tc-space-2);
+}
+
 .screen-detail-tabs {
   display: flex;
   gap: var(--tc-space-1);
@@ -2671,6 +2723,14 @@ tbody tr:hover {
 }
 
 @media (max-width: 600px) {
+  .screen-detail__heading-actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .screen-details-editor form {
+    grid-template-columns: 1fr;
+  }
   .content-add-menu > div {
     right: auto;
     left: 0;

@@ -4,6 +4,7 @@ import {
   CircleAlert,
   Link2,
   Monitor,
+  Pencil,
   Plus,
   RefreshCw,
   ShieldOff,
@@ -796,12 +797,34 @@ export function ScreenDetailPage() {
   const auth = useAuth();
   const queryClient = useQueryClient();
   const [confirmRevoke, setConfirmRevoke] = useState(false);
+  const [editingDetails, setEditingDetails] = useState(false);
   const [policyDirty, setPolicyDirty] = useState(false);
   const [selectedPlaylist, setSelectedPlaylist] = useState("");
   const query = useQuery({
     queryKey: ["screens", id],
     queryFn: () => api.screen(id),
     refetchInterval: 10_000,
+  });
+  const detailsForm = useForm<ApprovalForm>({
+    resolver: zodResolver(approvalSchema),
+    defaultValues: { name: "", location: "", description: "" },
+  });
+  useEffect(() => {
+    if (!query.data || editingDetails) return;
+    detailsForm.reset({
+      name: query.data.name,
+      location: query.data.location,
+      description: query.data.description,
+    });
+  }, [detailsForm, editingDetails, query.data]);
+  const updateDetails = useMutation({
+    mutationFn: (values: ApprovalForm) =>
+      api.updateScreen(id, values, auth.status?.csrfToken ?? ""),
+    onSuccess: async (updated) => {
+      queryClient.setQueryData(["screens", id], updated);
+      setEditingDetails(false);
+      await queryClient.invalidateQueries({ queryKey: ["screens"] });
+    },
   });
   const assignment = useQuery({
     queryKey: ["screens", id, "playlist-assignment"],
@@ -911,8 +934,89 @@ export function ScreenDetailPage() {
           <h2>{screen.name}</h2>
           <p>{screen.location || "No location set"}</p>
         </div>
-        <StatusLabel status={screen.status} />
+        <div className="screen-detail__heading-actions">
+          <StatusLabel status={screen.status} />
+          {canManageScreens(auth.status?.user) && (
+            <button
+              type="button"
+              className="button button--secondary"
+              onClick={() => setEditingDetails((editing) => !editing)}
+            >
+              <Pencil size={15} aria-hidden="true" />
+              {editingDetails ? "Close editor" : "Edit details"}
+            </button>
+          )}
+        </div>
       </header>
+      {editingDetails && (
+        <section
+          className="screen-details-editor"
+          aria-labelledby="screen-details-editor-title"
+        >
+          <header>
+            <div>
+              <h3 id="screen-details-editor-title">Player details</h3>
+            </div>
+          </header>
+          {updateDetails.error && (
+            <div className="notice notice--error" role="alert">
+              {updateDetails.error.message}
+            </div>
+          )}
+          <form
+            onSubmit={(event) =>
+              void detailsForm.handleSubmit((values) =>
+                updateDetails.mutateAsync(values),
+              )(event)
+            }
+          >
+            <FormField
+              id="editScreenName"
+              label="Screen name"
+              autoFocus
+              error={detailsForm.formState.errors.name?.message}
+              {...detailsForm.register("name")}
+            />
+            <FormField
+              id="editScreenLocation"
+              label="Location (optional)"
+              error={detailsForm.formState.errors.location?.message}
+              {...detailsForm.register("location")}
+            />
+            <label
+              className="field screen-details-editor__description"
+              htmlFor="editScreenDescription"
+            >
+              <span className="field__label">Description (optional)</span>
+              <textarea
+                id="editScreenDescription"
+                {...detailsForm.register("description")}
+              />
+              {detailsForm.formState.errors.description?.message && (
+                <span className="field__error">
+                  {detailsForm.formState.errors.description.message}
+                </span>
+              )}
+            </label>
+            <div className="screen-details-editor__actions">
+              <button
+                type="button"
+                className="button button--secondary"
+                onClick={() => setEditingDetails(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="button button--primary"
+                disabled={updateDetails.isPending}
+              >
+                {updateDetails.isPending ? "Saving…" : "Save details"}
+              </button>
+            </div>
+          </form>
+        </section>
+      )}
       <nav className="screen-detail-tabs" aria-label="Screen details">
         {(
           [
