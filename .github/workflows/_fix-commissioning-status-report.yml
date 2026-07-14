@@ -1,0 +1,41 @@
+name: Apply commissioning status reporting fix
+
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/_fix-commissioning-status-report.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Persist and immediately report commissioning completion
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('apps/player-android/app/src/main/java/org/tilecast/player/PlayerViewModel.kt')
+          text = path.read_text()
+          old = 'fun completeCommissioning(){val screen=current?.screenId?:return;commissioningController.complete(screen);refreshCommissioning()}'
+          new = '''fun completeCommissioning(){viewModelScope.launch{val saved=configuration.getOrCreate();current=saved;val screen=saved.screenId?:return@launch;commissioningController.complete(screen);refreshCommissioning();socket?.send(Json.encodeToString(kotlinx.serialization.json.JsonObject.serializer(),statusMessage()));val url=saved.serverUrl;val credential=credentials.read();if(url!=null&&credential!=null)runCatching{api.heartbeat(url,credential,heartbeat())}}}'''
+          if old not in text:
+              raise SystemExit('completeCommissioning marker not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          rm .github/workflows/_fix-commissioning-status-report.yml
+      - name: Verify Android player
+        working-directory: apps/player-android
+        run: ./gradlew testDebugUnitTest lintDebug assembleDebug
+      - name: Commit fix
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Report commissioning completion immediately'
+          git push origin HEAD:main
