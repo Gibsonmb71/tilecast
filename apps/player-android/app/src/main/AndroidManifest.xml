@@ -30,9 +30,14 @@
             </intent-filter>
         </activity>
         <receiver android:name=".UpdateInstallReceiver" android:exported="false" />
-        <receiver android:name=".reliability.BootReceiver" android:exported="true">
+        <receiver
+            android:name=".reliability.BootReceiver"
+            android:directBootAware="true"
+            android:enabled="true"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
         <receiver android:name=".reliability.ActiveHoursReceiver" android:exported="false" />

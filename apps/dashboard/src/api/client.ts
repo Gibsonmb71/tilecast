@@ -148,6 +148,7 @@ export const api = {
       mode: string;
       screenIds: string[];
       groupIds: string[];
+      canarySize?: number;
       maintenanceWindowStart?: string;
     },
     csrfToken: string,

@@ -29,6 +29,16 @@ import { PlayerPolicyEditor } from "../settings/PlayerPolicyEditor";
 
 export const canManageScreens = (user?: User) =>
   user?.role === "owner" || user?.role === "administrator";
+const formatBytes = (value: number) => {
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let amount = value;
+  let unit = 0;
+  while (amount >= 1024 && unit < units.length - 1) {
+    amount /= 1024;
+    unit += 1;
+  }
+  return `${amount.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
+};
 export const reliabilityCapabilityWarning = (status?: ReliabilityStatus) => {
   if (
     status?.configuredMode === "managed_kiosk" &&
@@ -40,6 +50,28 @@ export const reliabilityCapabilityWarning = (status?: ReliabilityStatus) => {
   if (status?.sleepCapability === "black_screen_only")
     return "Device sleep is unavailable; the player will use black-screen fallback.";
   return undefined;
+};
+export const zeroTouchReadiness = (
+  status?: ReliabilityStatus,
+): "Ready" | "Partially ready" | "Needs setup" | "Unsupported" => {
+  if (!status || !status.commissioningState) return "Needs setup";
+  if (
+    status.accessibilityServiceState === "unsupported" ||
+    status.bootRecoveryResult === "unsupported"
+  )
+    return "Unsupported";
+  if (status.commissioningState !== "complete") return "Needs setup";
+  if (
+    status.accessibilityServiceState === "enabled" &&
+    status.bootLaunchVerified &&
+    status.immersiveModeActive &&
+    status.keepScreenOn &&
+    status.cachedFallbackAvailable &&
+    status.updateReadiness === "ready" &&
+    !status.safeMode
+  )
+    return "Ready";
+  return "Partially ready";
 };
 const codeSchema = z.object({
   code: z.string().trim().min(6, "Enter the six-character code").max(9),
@@ -1201,6 +1233,81 @@ export function ScreenDetailPage() {
             capabilities. Power Assist asks Android to sleep or wake; it does
             not send direct HDMI-CEC commands.
           </p>
+          <div className="readiness-panel">
+            <div className="readiness-panel__heading">
+              <div>
+                <h4>Zero-Touch Readiness</h4>
+                <p>
+                  Commissioning and current device capabilities required for
+                  unattended recovery.
+                </p>
+              </div>
+              <span className="status-badge">
+                {zeroTouchReadiness(reliability.data)}
+              </span>
+            </div>
+            <dl className="detail-list">
+              <div>
+                <dt>Commissioning</dt>
+                <dd>
+                  {reliability.data?.commissioningState?.replaceAll("_", " ") ??
+                    "Not started"}
+                  {reliability.data?.commissioningStep
+                    ? ` · ${reliability.data.commissioningStep.replaceAll("_", " ")}`
+                    : ""}
+                </dd>
+              </div>
+              <div>
+                <dt>Accessibility return</dt>
+                <dd>
+                  {reliability.data?.accessibilityServiceState ??
+                    "Not reported"}
+                </dd>
+              </div>
+              <div>
+                <dt>Launch after boot</dt>
+                <dd>
+                  {reliability.data?.bootLaunchVerified
+                    ? "Verified"
+                    : `${reliability.data?.bootAttemptCount ?? 0} attempts · not verified`}
+                </dd>
+              </div>
+              <div>
+                <dt>Cached fallback</dt>
+                <dd>
+                  {reliability.data?.cachedFallbackAvailable
+                    ? "Available"
+                    : "Not confirmed"}
+                </dd>
+              </div>
+              <div>
+                <dt>Install permission</dt>
+                <dd>{screen.installPermissionStatus ?? "Not reported"}</dd>
+              </div>
+              <div>
+                <dt>Free storage</dt>
+                <dd>
+                  {screen.availableStorageBytes == null
+                    ? "Not reported"
+                    : formatBytes(screen.availableStorageBytes)}
+                </dd>
+              </div>
+              <div>
+                <dt>Last healthy playback</dt>
+                <dd>
+                  {reliability.data?.lastHealthyPlaybackAt
+                    ? new Date(
+                        reliability.data.lastHealthyPlaybackAt,
+                      ).toLocaleString()
+                    : "Not reported"}
+                </dd>
+              </div>
+              <div>
+                <dt>Update readiness</dt>
+                <dd>{reliability.data?.updateReadiness ?? "Not reported"}</dd>
+              </div>
+            </dl>
+          </div>
           <dl className="detail-list">
             <div>
               <dt>Reliability mode</dt>
@@ -1311,6 +1418,27 @@ export function ScreenDetailPage() {
                 >
                   Exit safe mode
                 </button>
+                {(
+                  [
+                    ["retry_current_item", "Retry current item"],
+                    ["skip_current_item", "Skip current item"],
+                    ["recreate_renderer", "Recreate renderer"],
+                    ["recreate_playback_session", "Recreate playback session"],
+                    ["restart_activity", "Restart activity"],
+                    ["restart_player_process", "Restart player process"],
+                    ["resynchronize_player", "Resynchronize player"],
+                    ["run_player_self_test", "Run player self-test"],
+                  ] as const
+                ).map(([type, label]) => (
+                  <button
+                    key={type}
+                    className="button button--quiet"
+                    disabled={command.isPending}
+                    onClick={() => command.mutate({ type, payload: {} })}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
               <h4>Power Assist test confirmation</h4>
               <p>

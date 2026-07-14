@@ -109,6 +109,7 @@ func (s *server) playerHeartbeat(w http.ResponseWriter, r *http.Request) {
 		s.writeDeviceError(w, r, err)
 		return
 	}
+	s.advanceCanaryDeploymentsForScreen(r.Context(), principal.ScreenID)
 	if s.playlists != nil {
 		_ = s.playlists.ReportStatus(r.Context(), principal.ScreenID, playlists.PlayerStatus{
 			ActiveManifestVersion: body.ActiveManifestVersion, PendingManifestVersion: body.PendingManifestVersion,

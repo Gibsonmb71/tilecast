@@ -208,6 +208,20 @@ export type ReliabilityStatus = {
   lastWatchdogFailure?: string;
   lastWatchdogRecoveryAt?: string;
   maintenanceSessionExpiresAt?: string;
+  commissioningState?: string;
+  commissioningStep?: string;
+  commissioningCompletedAt?: string;
+  cachedFallbackAvailable?: boolean;
+  lastHealthyPlaybackAt?: string;
+  lastPlaylistTransitionAt?: string;
+  lastSuccessfulSyncAt?: string;
+  lastServerConnectionAt?: string;
+  bootAttemptCount?: number;
+  bootLastAttemptAt?: string;
+  bootLaunchVerified?: boolean;
+  updateReadiness?: string;
+  selfTestResult?: string;
+  selfTestCompletedAt?: string;
   powerAssist: PowerAssistResults;
 };
 export type PowerAssistResults = {
@@ -405,6 +419,10 @@ export type UpdateDeployment = {
   succeededCount: number;
   failedCount: number;
   waitingForUserCount: number;
+  rolloutMode?: string;
+  rolloutPhase?: string;
+  canarySize?: number;
+  pauseReason?: string;
 };
 
 export type PairingRequest = {

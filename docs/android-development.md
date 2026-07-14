@@ -2,6 +2,12 @@
 
 Tilecast Player requires JDK 17 and Android SDK 35. It uses the checked-in Gradle wrapper and has no Google Play Services dependency.
 
+## Commissioning and unattended-recovery checks
+
+Pairing a fresh installation enters the required commissioning wizard before playback. Emulator tests can exercise PIN storage, permission-state verification, boot receiver registration, immersive/keep-awake reporting, cached-manifest checks, recovery escalation, and safe mode. They cannot prove firmware foreground-launch behavior, physical-TV wake/standby, or approval of Android’s Accessibility and package-installer settings.
+
+Do not bypass commissioning in debug builds. For repeat testing, use **Run setup again** from the local maintenance menu. `BOOT_COMPLETED` and `LOCKED_BOOT_COMPLETED` recovery state is stored in device-protected preferences; watchdog crash history is stored independently of the activity so process recreation does not reset escalation.
+
 ```sh
 cd apps/player-android
 ./gradlew testDebugUnitTest lintDebug assembleDebug

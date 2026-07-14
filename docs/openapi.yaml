@@ -698,7 +698,7 @@ paths:
       responses:
         "200": { description: Command history }
     post:
-      summary: Queue a typed operational command
+      summary: Queue a typed operational or bounded player-recovery command
       responses:
         "202": { description: Command queued }
         "429": { description: Pending command limit reached }
@@ -794,7 +794,10 @@ paths:
   /api/v1/screens/{id}/reliability:
     get:
       {
-        summary: Read reported Android reliability and Power Assist state,
+        summary: Read commissioning,
+        zero-touch readiness,
+        Android reliability,
+        and Power Assist state,
         responses:
           {
             "200": { description: Capability and effective-state diagnostics },
@@ -914,7 +917,7 @@ paths:
       summary: List Player update deployments
       responses: { "200": { description: Deployment list } }
     post:
-      summary: Create a deduplicated screen and group deployment
+      summary: Create a deduplicated screen and group deployment with an optional canary cohort
       responses:
         {
           "201": { description: Deployment created },

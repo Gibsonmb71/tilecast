@@ -54,6 +54,8 @@ curl --fail-with-body \
   https://tilecast.example.org/api/v1/player-releases/upload
 ```
 
-The player resumes `.part` downloads, verifies SHA-256, package name, version code, minimum SDK, and signing certificate, then uses Android `PackageInstaller`. Emergency playback delays installation but not downloading. Pairing credentials, manifests, configuration, disabled state, and media cache live outside the APK and survive replacement. Success is recorded only after the updated player reconnects and reports the expected version code.
+The player resumes `.part` downloads, verifies available storage, SHA-256, package name, version code, minimum SDK, signing certificate, install permission, and emergency state, then uses Android `PackageInstaller`. Emergency playback delays installation but not downloading. Pairing credentials, manifests, configuration, disabled state, and media cache live outside the APK and survive replacement. Success is recorded only after the updated player reconnects at the expected version and reports healthy playback after installation.
+
+Deployments may start with a deterministic canary cohort. Other targeted screens remain held until every canary reconnects successfully. The rollout pauses when a canary reports failure, enters safe mode, or remains reconnecting beyond the bounded health window. Studio shows the rollout phase and safe pause reason; it never treats `WaitingForUser` as failure.
 
 An offline player cannot receive a new deployment. `WaitingForPermission` and `WaitingForUser` are expected operational states, not failures. Silent installation is not claimed. Physical Fire TV and Google TV validation remains required for each device/OS family.

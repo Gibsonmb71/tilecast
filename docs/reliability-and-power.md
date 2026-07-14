@@ -1,6 +1,12 @@
 # Android reliability, kiosk, accessibility, and power
 
-Tilecast Player has two reliability modes. **Standard Reliability** works with a normally installed APK and provides cached startup, boot recovery, immersive fullscreen, keep-awake behavior, bounded playback recovery, safe mode, and optional Accessibility Control Assist. Android can still let a user leave the app. **Managed Kiosk** is effective only when Android confirms device-owner/device-policy provisioning and active lock task. Requesting it in policy is not proof that it is active.
+Tilecast Player has two reliability modes. **Standard Reliability** works with a normally installed APK and provides cached startup, boot recovery, immersive fullscreen, keep-awake behavior, bounded playback recovery, safe mode, and locally approved Accessibility Control Assist. Android can still let a user leave the app. **Managed Kiosk** is effective only when Android confirms device-owner/device-policy provisioning and active lock task. Requesting it in policy is not proof that it is active.
+
+## First-run commissioning
+
+Every newly paired player completes a local wizard before normal playback. It sets the hashed maintenance PIN, opens and verifies Accessibility Settings and unknown-app installation permission, verifies a healthy boot return, confirms immersive and keep-awake state, confirms a downloadable cached fallback, runs a self-test, and reports the final readiness state. Protected Android settings are never automated or marked complete based only on policy. **Run setup again** is available from the bounded local maintenance menu.
+
+New effective defaults request launch after boot, keep-awake, immersive presentation, accessibility return control, cached offline playback, recovery escalation, safe mode, and the stable update channel. Accessibility and installation permissions still require a person to approve Android’s system UI. Sleep outside active hours remains off until configured.
 
 ## Active hours
 
@@ -16,13 +22,17 @@ Sleep strategy is capability ordered: authorized device policy, optional Accessi
 
 ## Accessibility Control Assist
 
-Control Assist is disabled by default and must be enabled locally in Android Accessibility Settings. The service observes only foreground window/package changes. It can wait, return to Tilecast, and request Android’s global lock action for Power Assist. It cannot read window text, passwords, click controls, perform gestures, approve an installer, navigate Settings, or change network configuration.
+Control Assist is requested by the hardened default but remains disabled at the Android platform until it is enabled locally in Android Accessibility Settings. The service observes only foreground window/package changes. It can wait, return to Tilecast, and request Android’s global lock action for Power Assist. It cannot read window text, passwords, click controls, perform gestures, approve an installer, navigate Settings, or change network configuration.
 
 Tilecast, Android Settings, package installers, permission controllers, captive portals, setup/system components, and configured maintenance apps are excluded. Automatic returns pause during player updates and maintenance. Attempts are bounded in a time window; exhausting the bound stops the loop until the window clears.
 
 ## Recovery and safe mode
 
-The local supervisor escalates through retry, item skip, renderer recreation, controller recreation, activity restart, and a bounded number of process recoveries. Repeated failure enters safe mode instead of looping. Safe mode keeps pairing, networking, health reporting, commands, local maintenance, cache validation, and manual retry available; it does not delete content or credentials. Owners and Administrators can issue `retry_player_recovery` or `exit_safe_mode` persistent commands.
+The local supervisor persists failure and healthy-playback history across activity and process restarts. It executes retry, item skip, renderer recreation, playback-session recreation, activity restart, and a bounded number of process recoveries. Failure history clears only after a meaningful healthy-playback period. Repeated failure enters safe mode instead of looping. Safe mode keeps pairing, networking, health reporting, commands, local maintenance, cache validation, and manual retry available; it does not delete content or credentials. Owners and Administrators can issue typed commands for each recovery rung, resynchronize manifest and configuration, run a self-test, retry recovery, or exit safe mode.
+
+Boot recovery registers both normal and locked boot completion. It requests an immediate foreground launch and retries after bounded 15, 60, and 180 second delays, stopping after a healthy foreground is confirmed. Firmware may block background activity launch; that limitation is reported to Studio rather than hidden.
+
+Network, heartbeat, command, manifest, and configuration failures do not clear cached playback. Reconnection uses bounded exponential backoff while the active manifest and local schedules continue. Complete hardware failure, power that is not restored, changed Wi-Fi credentials, and Android prompts that require approval remain outside zero-touch recovery.
 
 ## Local maintenance and Managed Kiosk
 

@@ -314,6 +314,7 @@ export function PlayerUpdatesPanel({
   const [screenIds, setScreenIds] = useState<string[]>([]);
   const [groupIds, setGroupIds] = useState<string[]>([]);
   const [mode, setMode] = useState("download_only");
+  const [canarySize, setCanarySize] = useState(0);
   const [windowStart, setWindowStart] = useState("");
   const [targetSearch, setTargetSearch] = useState("");
   const [showUpload, setShowUpload] = useState(false);
@@ -337,6 +338,7 @@ export function PlayerUpdatesPanel({
           mode,
           screenIds,
           groupIds,
+          canarySize,
           maintenanceWindowStart:
             mode === "maintenance_window" && windowStart
               ? new Date(windowStart).toISOString()
@@ -493,6 +495,22 @@ export function PlayerUpdatesPanel({
                 />
               </label>
             )}
+            <label>
+              Canary screens
+              <input
+                type="number"
+                min="0"
+                max="50"
+                value={canarySize}
+                onChange={(event) =>
+                  setCanarySize(Math.max(0, Number(event.target.value)))
+                }
+              />
+              <small>
+                Start with this many screens. Remaining targets are held until
+                every canary reconnects successfully. Use 0 for all at once.
+              </small>
+            </label>
           </div>
           <label className="target-search">
             Search targets
@@ -594,6 +612,7 @@ export function PlayerUpdatesPanel({
                 <th>Name</th>
                 <th>Mode</th>
                 <th>Status</th>
+                <th>Rollout</th>
                 <th>Targets</th>
                 <th>Succeeded</th>
                 <th>Waiting</th>
@@ -611,6 +630,12 @@ export function PlayerUpdatesPanel({
                   </td>
                   <td>{humanize(item.mode)}</td>
                   <td>{humanize(item.status)}</td>
+                  <td>
+                    {item.rolloutMode === "canary"
+                      ? `${item.canarySize ?? 0} canaries · ${humanize(item.rolloutPhase ?? "canary")}`
+                      : "All screens"}
+                    {item.pauseReason && <small>{item.pauseReason}</small>}
+                  </td>
                   <td>{item.targetCount}</td>
                   <td>{item.succeededCount}</td>
                   <td>{item.waitingForUserCount}</td>

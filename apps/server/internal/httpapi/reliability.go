@@ -33,6 +33,13 @@ func (s *server) screenReliability(w http.ResponseWriter, r *http.Request) {
 		'recoveryLevel',ps.recovery_level,'recoveryCount',ps.recovery_count,'safeMode',ps.safe_mode,
 		'lastWatchdogFailure',ps.last_watchdog_failure,'lastWatchdogRecoveryAt',ps.last_watchdog_recovery_at,
 		'maintenanceSessionExpiresAt',ps.maintenance_session_expires_at,
+		'commissioningState',ps.commissioning_state,'commissioningStep',ps.commissioning_step,
+		'commissioningCompletedAt',ps.commissioning_completed_at,'cachedFallbackAvailable',ps.cached_fallback_available,
+		'lastHealthyPlaybackAt',ps.last_healthy_playback_at,'lastPlaylistTransitionAt',ps.last_playlist_transition_at,
+		'lastSuccessfulSyncAt',ps.last_successful_sync_at,'lastServerConnectionAt',ps.last_server_connection_at,
+		'bootAttemptCount',ps.boot_attempt_count,'bootLastAttemptAt',ps.boot_last_attempt_at,
+		'bootLaunchVerified',ps.boot_launch_verified,'updateReadiness',ps.update_readiness,
+		'selfTestResult',ps.self_test_result,'selfTestCompletedAt',ps.self_test_completed_at,
 		'powerAssist',jsonb_build_object('deviceSleep',COALESCE(pa.device_sleep,'untested'),'tvStandby',COALESCE(pa.tv_standby,'untested'),'deviceWake',COALESCE(pa.device_wake,'untested'),'tvWake',COALESCE(pa.tv_wake,'untested'),'inputSelection',COALESCE(pa.input_selection,'untested'),'tilecastStartup',COALESCE(pa.tilecast_startup,'untested'),'lastTestedAt',pa.last_tested_at)
 	) FROM screens sc LEFT JOIN screen_player_status ps ON ps.screen_id=sc.id LEFT JOIN screen_power_assist_results pa ON pa.screen_id=sc.id WHERE sc.id=$1`, id, detailedDiagnostics(r)).Scan(&raw)
 	if errors.Is(err, pgx.ErrNoRows) {

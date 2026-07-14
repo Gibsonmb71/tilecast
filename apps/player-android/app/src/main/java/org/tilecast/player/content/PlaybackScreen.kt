@@ -55,7 +55,7 @@ internal data class PlaybackCursor(val index: Int, val cycle: Int)
 internal fun nextPlaybackCursor(cursor: PlaybackCursor, itemCount: Int) =
     PlaybackCursor((cursor.index + 1) % itemCount, cursor.cycle + 1)
 
-@Composable fun FullscreenPlayback(session: PlaybackSession, onBoundary: (String, String) -> Unit, onError: (String) -> Unit,onWebsiteStatus:(WebsitePlaybackStatus)->Unit={},onSourceStatus:(SourcePlaybackStatus)->Unit={}) {
+@Composable fun FullscreenPlayback(session: PlaybackSession, onBoundary: (String, String) -> Unit, onError: (String) -> Unit,onWebsiteStatus:(WebsitePlaybackStatus)->Unit={},onSourceStatus:(SourcePlaybackStatus)->Unit={},onProgress:()->Unit={}) {
     val playlist = session.content.manifest.playlist
     if (playlist == null || playlist.items.isEmpty()) { EmptyPlayback("No content assigned"); return }
     var cursor by remember(session.content.manifest.manifestVersion) { mutableStateOf(PlaybackCursor(0, 0)) }
@@ -73,11 +73,11 @@ internal fun nextPlaybackCursor(cursor: PlaybackCursor, itemCount: Int) =
     if (consecutiveFailures >= playlist.items.size) { EmptyPlayback("No playable content"); LaunchedEffect(consecutiveFailures) { delay(5_000); consecutiveFailures = 0 } ; return }
 	if(item.transition=="fade") Crossfade(cursor, label = "playlist-item") { targetCursor ->
 		val renderedItem = playlist.items[targetCursor.index];val renderedAsset = renderedItem.variantId?.let{variant->session.content.manifest.assets.firstOrNull { it.variantId == variant }};val renderedWebsite=session.content.manifest.websites.firstOrNull{it.assetId==renderedItem.assetId};val renderedSource=session.content.manifest.sources.firstOrNull{it.assetId==renderedItem.assetId}
-		RenderedItem(renderedItem,renderedAsset,renderedWebsite,renderedSource,session,{advance()},{onError(it);advance(true)},onWebsiteStatus,onSourceStatus)
-	} else key(item.id,cursor.cycle){RenderedItem(item,asset,website,source,session,{advance()},{onError(it);advance(true)},onWebsiteStatus,onSourceStatus)}
+		RenderedItem(renderedItem,renderedAsset,renderedWebsite,renderedSource,session,{advance()},{onError(it);advance(true)},onWebsiteStatus,onSourceStatus,onProgress)
+	} else key(item.id,cursor.cycle){RenderedItem(item,asset,website,source,session,{advance()},{onError(it);advance(true)},onWebsiteStatus,onSourceStatus,onProgress)}
 }
 
-@Composable private fun RenderedItem(item:ManifestItem,asset:ManifestAsset?,website:ManifestWebsite?,source:ManifestSource?,session:PlaybackSession,onDone:()->Unit,onFailure:(String)->Unit,onWebsiteStatus:(WebsitePlaybackStatus)->Unit,onSourceStatus:(SourcePlaybackStatus)->Unit){
+@Composable private fun RenderedItem(item:ManifestItem,asset:ManifestAsset?,website:ManifestWebsite?,source:ManifestSource?,session:PlaybackSession,onDone:()->Unit,onFailure:(String)->Unit,onWebsiteStatus:(WebsitePlaybackStatus)->Unit,onSourceStatus:(SourcePlaybackStatus)->Unit,onProgress:()->Unit){
     if(source?.provider=="website"){
         val config=runCatching{Json.decodeFromJsonElement<WebsiteSourceConfig>(source.configuration)}.getOrElse{onFailure("Website source configuration is invalid");return}
         WebsiteItem(item,ManifestWebsite(source.assetId,source.name,config.url,config.allowedHosts,config.javascriptEnabled,config.domStorageEnabled,config.cookiePolicy,config.reloadPolicy,config.refreshIntervalSeconds,config.loadTimeoutSeconds,config.zoomPercent,config.scrollX,config.scrollY,config.customUserAgent,config.backgroundColor,config.failureBehavior,config.fallbackImageAssetId,config.fallbackVariantId),session,onDone){status->onWebsiteStatus(status);onSourceStatus(SourcePlaybackStatus(source.assetId,"website",status.state,status.failureCategory))}
@@ -85,26 +85,26 @@ internal fun nextPlaybackCursor(cursor: PlaybackCursor, itemCount: Int) =
         val config=runCatching{Json.decodeFromJsonElement<YouTubeSourceConfig>(source.configuration)}.getOrElse{onFailure("YouTube source configuration is invalid");return}
         YouTubeSourceItem(item,source,config,session,onDone,onFailure,onSourceStatus)
     } else if(website!=null) WebsiteItem(item,website,session,onDone,onWebsiteStatus)
-    else if(asset?.mimeType?.startsWith("image/")==true)ImageItem(item,asset,session,onDone,onFailure)
-    else if(asset!=null)VideoItem(item,asset,session,onDone,onFailure)
+    else if(asset?.mimeType?.startsWith("image/")==true)ImageItem(item,asset,session,onDone,onFailure,onProgress)
+    else if(asset!=null)VideoItem(item,asset,session,onDone,onFailure,onProgress)
 }
 
 @Composable private fun EmptyPlayback(message: String) { Box(Modifier.fillMaxSize().background(SignalBackground), contentAlignment = Alignment.Center) { androidx.compose.material3.Text(message, color = SignalText) } }
 
-@Composable private fun ImageItem(item: ManifestItem, asset: ManifestAsset, session: PlaybackSession, onDone: () -> Unit, onFailure: (String) -> Unit) {
+@Composable private fun ImageItem(item: ManifestItem, asset: ManifestAsset, session: PlaybackSession, onDone: () -> Unit, onFailure: (String) -> Unit, onProgress: () -> Unit) {
 	val variantId=item.variantId?:return
     var bitmap by remember(item.id) { mutableStateOf(session.content.localFiles[variantId]?.let { BitmapFactory.decodeFile(it) }) }
     LaunchedEffect(item.id) {
 		if (bitmap == null) bitmap = runCatching { withContext(Dispatchers.IO) {
             session.content.localFiles[variantId]?.let { BitmapFactory.decodeFile(it) } ?: OkHttpClient().newCall(Request.Builder().url(session.serverUrl + asset.downloadPath).header("Authorization", "Bearer ${session.credential}").build()).execute().use { response -> if (!response.isSuccessful) error("Image stream unavailable"); BitmapFactory.decodeStream(response.body?.byteStream()) }
         } }.getOrElse { onFailure("Image could not be displayed"); return@LaunchedEffect }
-        delay(item.durationMs ?: 10_000); onDone()
+        onProgress(); delay(item.durationMs ?: 10_000); onDone()
     }
     bitmap?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize().background(Color.Black), contentScale = scale(item.fitMode)) }
 }
 
 @OptIn(UnstableApi::class)
-@Composable private fun VideoItem(item: ManifestItem, asset: ManifestAsset, session: PlaybackSession, onDone: () -> Unit, onFailure: (String) -> Unit) {
+@Composable private fun VideoItem(item: ManifestItem, asset: ManifestAsset, session: PlaybackSession, onDone: () -> Unit, onFailure: (String) -> Unit, onProgress: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val player = remember(item.id) {
         val http = OkHttpDataSource.Factory(OkHttpClient()).setDefaultRequestProperties(mapOf("Authorization" to "Bearer ${session.credential}"))
@@ -120,6 +120,15 @@ internal fun nextPlaybackCursor(cursor: PlaybackCursor, itemCount: Int) =
             override fun onPlaybackStateChanged(state: Int) { if (state == Player.STATE_ENDED) onDone() }
             override fun onPlayerError(error: PlaybackException) { onFailure("Video playback failed") }
         }; player.addListener(listener); onDispose { player.removeListener(listener); player.release() }
+    }
+    LaunchedEffect(player) {
+        var previousPosition = -1L
+        while (true) {
+            delay(5_000)
+            val position = player.currentPosition
+            if (player.isPlaying && position > previousPosition) onProgress()
+            previousPosition = position
+        }
     }
     item.videoEndOffsetMs?.let { end -> LaunchedEffect(player, end) { while (true) { delay(250); if (player.currentPosition >= end) { player.pause(); onDone(); break } } } }
     AndroidView(factory = { PlayerView(it).apply { useController=false; this.player=player; resizeMode=resize(item.fitMode) } }, modifier=Modifier.fillMaxSize(), update={it.resizeMode=resize(item.fitMode)})

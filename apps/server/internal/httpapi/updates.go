@@ -178,6 +178,7 @@ type deploymentInput struct {
 	MaintenanceWindowStart *time.Time  `json:"maintenanceWindowStart"`
 	ScreenIDs              []uuid.UUID `json:"screenIds"`
 	GroupIDs               []uuid.UUID `json:"groupIds"`
+	CanarySize             int         `json:"canarySize"`
 }
 
 func (s *server) createUpdateDeployment(w http.ResponseWriter, r *http.Request) {
@@ -187,7 +188,7 @@ func (s *server) createUpdateDeployment(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	input.Name = strings.TrimSpace(input.Name)
-	if input.Name == "" || len(input.Name) > 180 || (input.Mode != "download_only" && input.Mode != "install_now" && input.Mode != "maintenance_window") || len(input.ScreenIDs)+len(input.GroupIDs) == 0 {
+	if input.Name == "" || len(input.Name) > 180 || (input.Mode != "download_only" && input.Mode != "install_now" && input.Mode != "maintenance_window") || len(input.ScreenIDs)+len(input.GroupIDs) == 0 || input.CanarySize < 0 || input.CanarySize > 50 {
 		writeError(w, 422, "update_deployment_invalid", "Name, deployment mode, and at least one target are required.")
 		return
 	}
@@ -210,7 +211,13 @@ func (s *server) createUpdateDeployment(w http.ResponseWriter, r *http.Request) 
 	}
 	defer tx.Rollback(r.Context())
 	id := uuid.New()
-	_, err = tx.Exec(r.Context(), `INSERT INTO update_deployments(id,release_id,name,mode,maintenance_window_start,created_by,status,started_at)VALUES($1,$2,$3,$4,$5,$6,'active',now())`, id, input.ReleaseID, input.Name, input.Mode, input.MaintenanceWindowStart, user.ID)
+	rolloutMode := "full"
+	rolloutPhase := "full"
+	if input.CanarySize > 0 {
+		rolloutMode = "canary"
+		rolloutPhase = "canary"
+	}
+	_, err = tx.Exec(r.Context(), `INSERT INTO update_deployments(id,release_id,name,mode,maintenance_window_start,created_by,status,started_at,rollout_mode,rollout_phase,canary_size)VALUES($1,$2,$3,$4,$5,$6,'active',now(),$7,$8,$9)`, id, input.ReleaseID, input.Name, input.Mode, input.MaintenanceWindowStart, user.ID, rolloutMode, rolloutPhase, input.CanarySize)
 	if err != nil {
 		s.internalError(w, r, err)
 		return
@@ -221,7 +228,7 @@ func (s *server) createUpdateDeployment(w http.ResponseWriter, r *http.Request) 
 	for _, group := range uniqueUUIDs(input.GroupIDs) {
 		_, _ = tx.Exec(r.Context(), `INSERT INTO update_deployment_targets(deployment_id,target_type,screen_group_id) SELECT $1,'group',$2 WHERE EXISTS(SELECT 1 FROM screen_groups WHERE id=$2 AND deleted_at IS NULL)`, id, group)
 	}
-	rows, err := tx.Query(r.Context(), `SELECT DISTINCT s.id,ps.player_version_code,ps.android_sdk,COALESCE(ps.install_permission_status,'unknown'),COALESCE(s.last_heartbeat_at>now()-interval '15 minutes',false) FROM screens s LEFT JOIN screen_player_status ps ON ps.screen_id=s.id WHERE s.deleted_at IS NULL AND (s.id=ANY($1) OR EXISTS(SELECT 1 FROM screen_group_memberships m WHERE m.screen_id=s.id AND m.screen_group_id=ANY($2)))`, input.ScreenIDs, input.GroupIDs)
+	rows, err := tx.Query(r.Context(), `SELECT DISTINCT s.id,ps.player_version_code,ps.android_sdk,COALESCE(ps.install_permission_status,'unknown'),COALESCE(s.last_heartbeat_at>now()-interval '15 minutes',false) FROM screens s LEFT JOIN screen_player_status ps ON ps.screen_id=s.id WHERE s.deleted_at IS NULL AND (s.id=ANY($1) OR EXISTS(SELECT 1 FROM screen_group_memberships m WHERE m.screen_id=s.id AND m.screen_group_id=ANY($2))) ORDER BY s.id`, input.ScreenIDs, input.GroupIDs)
 	if err != nil {
 		s.internalError(w, r, err)
 		return
@@ -245,7 +252,14 @@ func (s *server) createUpdateDeployment(w http.ResponseWriter, r *http.Request) 
 		writeError(w, 422, "update_target_required", "No eligible screens matched the targets.")
 		return
 	}
-	for _, target := range targets {
+	canarySize := normalizedCanarySize(input.CanarySize, len(targets))
+	if input.CanarySize > 0 && canarySize == 0 {
+		rolloutMode = "full"
+		rolloutPhase = "full"
+		_, _ = tx.Exec(r.Context(), `UPDATE update_deployments SET rollout_mode='full',rollout_phase='full',canary_size=0 WHERE id=$1`, id)
+	}
+	for index, target := range targets {
+		isCanary := canarySize > 0 && index < canarySize
 		state := "pending"
 		if !target.recent {
 			state = "offline"
@@ -256,7 +270,10 @@ func (s *server) createUpdateDeployment(w http.ResponseWriter, r *http.Request) 
 		if target.current != nil && *target.current >= versionCode {
 			state = "already_current"
 		}
-		_, _ = tx.Exec(r.Context(), `INSERT INTO screen_update_states(deployment_id,screen_id,previous_version_code,expected_version_code,permission_status,state,completed_at)VALUES($1,$2,$3,$4,$5,$6,CASE WHEN $6 IN('already_current','incompatible') THEN now() END)`, id, target.id, target.current, versionCode, target.permission, state)
+		if canarySize > 0 && !isCanary && (state == "pending" || state == "offline") {
+			state = "held"
+		}
+		_, _ = tx.Exec(r.Context(), `INSERT INTO screen_update_states(deployment_id,screen_id,previous_version_code,expected_version_code,permission_status,state,completed_at,is_canary)VALUES($1,$2,$3,$4,$5,$6,CASE WHEN $6 IN('already_current','incompatible') THEN now() END,$7)`, id, target.id, target.current, versionCode, target.permission, state, isCanary)
 		if state == "pending" || state == "offline" {
 			payload, _ := json.Marshal(map[string]any{"deploymentId": id, "releaseId": input.ReleaseID, "expectedVersionCode": versionCode, "expectedApkSha256": hash, "installationMode": input.Mode, "maintenanceWindowStart": input.MaintenanceWindowStart})
 			commandID := uuid.New()
@@ -271,11 +288,19 @@ func (s *server) createUpdateDeployment(w http.ResponseWriter, r *http.Request) 
 	for _, target := range targets {
 		s.devices.Notify(target.id, map[string]any{"type": "commands.available"})
 	}
-	writeJSON(w, 201, map[string]any{"data": map[string]any{"id": id, "status": "active", "targetCount": len(targets), "apkSizeBytes": apkSize}})
+	writeJSON(w, 201, map[string]any{"data": map[string]any{"id": id, "status": "active", "targetCount": len(targets), "apkSizeBytes": apkSize, "rolloutMode": rolloutMode, "rolloutPhase": rolloutPhase, "canarySize": canarySize}})
+}
+
+func normalizedCanarySize(requested, targetCount int) int {
+	if requested <= 0 || requested >= targetCount {
+		return 0
+	}
+	return requested
 }
 
 func (s *server) listUpdateDeployments(w http.ResponseWriter, r *http.Request) {
-	rows, err := s.db.Query(r.Context(), `SELECT d.id,d.name,d.mode,d.status,d.created_at,r.version_code,r.version_name,count(st.screen_id),count(*) FILTER(WHERE st.state='succeeded'),count(*) FILTER(WHERE st.state='failed'),count(*) FILTER(WHERE st.state IN ('waiting_for_permission','waiting_for_user')) FROM update_deployments d JOIN player_releases r ON r.id=d.release_id LEFT JOIN screen_update_states st ON st.deployment_id=d.id GROUP BY d.id,r.id ORDER BY d.created_at DESC LIMIT 100`)
+	_, _ = s.db.Exec(r.Context(), `UPDATE update_deployments d SET status='paused',rollout_phase='paused',paused_at=now(),pause_reason='A canary did not reconnect within ten minutes.' WHERE d.status='active' AND d.rollout_phase='canary' AND EXISTS(SELECT 1 FROM screen_update_states st WHERE st.deployment_id=d.id AND st.is_canary AND st.state='reconnecting' AND st.updated_at<now()-interval '10 minutes')`)
+	rows, err := s.db.Query(r.Context(), `SELECT d.id,d.name,d.mode,d.status,d.created_at,r.version_code,r.version_name,count(st.screen_id),count(*) FILTER(WHERE st.state='succeeded'),count(*) FILTER(WHERE st.state='failed'),count(*) FILTER(WHERE st.state IN ('waiting_for_permission','waiting_for_user')),d.rollout_mode,d.rollout_phase,d.canary_size,d.pause_reason FROM update_deployments d JOIN player_releases r ON r.id=d.release_id LEFT JOIN screen_update_states st ON st.deployment_id=d.id GROUP BY d.id,r.id ORDER BY d.created_at DESC LIMIT 100`)
 	if err != nil {
 		s.internalError(w, r, err)
 		return
@@ -284,12 +309,14 @@ func (s *server) listUpdateDeployments(w http.ResponseWriter, r *http.Request) {
 	items := []map[string]any{}
 	for rows.Next() {
 		var id uuid.UUID
-		var name, mode, status, version string
+		var name, mode, status, version, rolloutMode, rolloutPhase string
+		var pauseReason *string
 		var created time.Time
 		var code int64
 		var total, succeeded, failed, waiting int
-		if rows.Scan(&id, &name, &mode, &status, &created, &code, &version, &total, &succeeded, &failed, &waiting) == nil {
-			items = append(items, map[string]any{"id": id, "name": name, "mode": mode, "status": status, "createdAt": created, "versionCode": code, "versionName": version, "targetCount": total, "succeededCount": succeeded, "failedCount": failed, "waitingForUserCount": waiting})
+		var canarySize int
+		if rows.Scan(&id, &name, &mode, &status, &created, &code, &version, &total, &succeeded, &failed, &waiting, &rolloutMode, &rolloutPhase, &canarySize, &pauseReason) == nil {
+			items = append(items, map[string]any{"id": id, "name": name, "mode": mode, "status": status, "createdAt": created, "versionCode": code, "versionName": version, "targetCount": total, "succeededCount": succeeded, "failedCount": failed, "waitingForUserCount": waiting, "rolloutMode": rolloutMode, "rolloutPhase": rolloutPhase, "canarySize": canarySize, "pauseReason": pauseReason})
 		}
 	}
 	writeJSON(w, 200, map[string]any{"data": map[string]any{"items": items}})
@@ -454,5 +481,67 @@ func (s *server) playerUpdateStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, _ = s.db.Exec(r.Context(), `UPDATE screen_player_status SET current_update_deployment_id=$2,update_state=$3,update_downloaded_bytes=$4,update_error=NULLIF($5,'') WHERE screen_id=$1`, principal.ScreenID, deployment, body.State, body.DownloadedBytes, body.Error)
+	s.advanceCanaryDeployment(r.Context(), deployment, body.State == "failed")
 	writeJSON(w, 200, map[string]any{"data": map[string]any{"state": body.State}})
+}
+
+func (s *server) advanceCanaryDeployment(ctx context.Context, deployment uuid.UUID, failed bool) {
+	var phase string
+	if s.db.QueryRow(ctx, `SELECT rollout_phase FROM update_deployments WHERE id=$1 AND status='active'`, deployment).Scan(&phase) != nil || phase != "canary" {
+		return
+	}
+	if failed {
+		_, _ = s.db.Exec(ctx, `UPDATE update_deployments SET status='paused',rollout_phase='paused',paused_at=now(),pause_reason='A canary player reported an update failure.' WHERE id=$1 AND status='active'`, deployment)
+		return
+	}
+	var remaining int
+	_ = s.db.QueryRow(ctx, `SELECT count(*) FROM screen_update_states WHERE deployment_id=$1 AND is_canary AND state NOT IN('succeeded','already_current')`, deployment).Scan(&remaining)
+	if remaining != 0 {
+		return
+	}
+	rows, err := s.db.Query(ctx, `UPDATE screen_update_states SET state='pending',updated_at=now() WHERE deployment_id=$1 AND state='held' RETURNING screen_id`, deployment)
+	if err != nil {
+		return
+	}
+	var screens []uuid.UUID
+	for rows.Next() {
+		var screen uuid.UUID
+		if rows.Scan(&screen) == nil {
+			screens = append(screens, screen)
+		}
+	}
+	rows.Close()
+	var release uuid.UUID
+	var version int64
+	var hash, mode string
+	var window *time.Time
+	var creator *uuid.UUID
+	if s.db.QueryRow(ctx, `SELECT d.release_id,r.version_code,r.apk_sha256,d.mode,d.maintenance_window_start,d.created_by FROM update_deployments d JOIN player_releases r ON r.id=d.release_id WHERE d.id=$1`, deployment).Scan(&release, &version, &hash, &mode, &window, &creator) != nil {
+		return
+	}
+	for _, screen := range screens {
+		payload, _ := json.Marshal(map[string]any{"deploymentId": deployment, "releaseId": release, "expectedVersionCode": version, "expectedApkSha256": hash, "installationMode": mode, "maintenanceWindowStart": window})
+		command := uuid.New()
+		_, _ = s.db.Exec(ctx, `INSERT INTO player_commands(id,organization_id,screen_id,type,payload,idempotency_key,created_by,expires_at) SELECT $1,organization_id,id,'install_player_update',$2,$1,$3,now()+interval '7 days' FROM screens WHERE id=$4`, command, payload, creator, screen)
+		s.devices.Notify(screen, map[string]any{"type": "commands.available"})
+	}
+	_, _ = s.db.Exec(ctx, `UPDATE update_deployments SET rollout_phase='full' WHERE id=$1 AND status='active'`, deployment)
+}
+
+func (s *server) advanceCanaryDeploymentsForScreen(ctx context.Context, screen uuid.UUID) {
+	rows, err := s.db.Query(ctx, `SELECT DISTINCT d.id FROM update_deployments d JOIN screen_update_states current ON current.deployment_id=d.id AND current.screen_id=$1 AND current.is_canary WHERE d.status='active' AND d.rollout_phase='canary' AND current.state IN('succeeded','already_current') AND NOT EXISTS(SELECT 1 FROM screen_update_states remaining WHERE remaining.deployment_id=d.id AND remaining.is_canary AND remaining.state NOT IN('succeeded','already_current'))`, screen)
+	if err != nil {
+		return
+	}
+	var deployments []uuid.UUID
+	for rows.Next() {
+		var deployment uuid.UUID
+		if rows.Scan(&deployment) == nil {
+			deployments = append(deployments, deployment)
+		}
+	}
+	rows.Close()
+	for _, deployment := range deployments {
+		s.advanceCanaryDeployment(ctx, deployment, false)
+	}
 }

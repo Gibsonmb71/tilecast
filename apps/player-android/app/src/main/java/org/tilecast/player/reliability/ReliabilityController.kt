@@ -14,6 +14,7 @@ import java.time.Instant
 import android.util.Base64
 import android.app.AlarmManager
 import android.app.PendingIntent
+import android.os.Process
 
 data class ReliabilityStatus(val configuredMode:String="standard",val effectiveMode:String="standard",val foreground:Boolean=false,val immersive:Boolean=false,val keepScreenOn:Boolean=false,val kioskCapability:ManagedKioskCapability=ManagedKioskCapability.UNSUPPORTED,val accessibilityEnabled:Boolean=false,val activeHours:Boolean=true,val safeMode:Boolean=false,val maintenanceUntil:Instant?=null)
 
@@ -42,6 +43,13 @@ class ReliabilityController(private val context:Context) {
     }
     fun requestSleep():String {if(maintenanceUntil()!=null)return "maintenance_session_deferred".also{store.edit().putString("last-sleep-result",it).apply()};if(store.getBoolean("update-active",false))return "player_update_deferred".also{store.edit().putString("last-sleep-result",it).apply()};return runCatching {if(dpm.isDeviceOwnerApp(context.packageName)){dpm.lockNow();"device_policy_requested"}else if(accessibilityEnabled()){if(TilecastAccessibilityService.requestLock())"accessibility_lock_requested" else {store.edit().putBoolean("request-lock",true).apply();"accessibility_lock_deferred"}}else "black_screen_only"}.getOrElse{"sleep_unsupported"}.also{store.edit().putString("last-sleep-result",it).apply()}}
     fun requestWake():String {val intent=Intent(context,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP);return runCatching{context.startActivity(intent);"device_wake_requested"}.getOrElse{"wake_launch_blocked"}.also{store.edit().putString("last-wake-result",it).apply()}}
+    fun restartActivity(){context.startActivity(Intent(context,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_CLEAR_TASK))}
+    fun restartProcess(){
+        val alarm=context.getSystemService(AlarmManager::class.java)
+        val pending=PendingIntent.getActivity(context,4040,Intent(context,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        alarm.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP,android.os.SystemClock.elapsedRealtime()+1500,pending)
+        Process.killProcess(Process.myPid())
+    }
     fun scheduleWake(at:Instant){val alarm=context.getSystemService(AlarmManager::class.java);val intent=PendingIntent.getBroadcast(context,1010,Intent(context,ActiveHoursReceiver::class.java),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE);alarm.setWindow(AlarmManager.RTC_WAKEUP,at.toEpochMilli(),60_000,intent)}
     fun beginMaintenance(minutes:Int){(context as? Activity)?.let{runCatching{it.stopLockTask()}};store.edit().putLong("maintenance-until",System.currentTimeMillis()+minutes.coerceIn(1,120)*60_000L).apply();(context as? MainActivity)?.maintenanceChanged()}
     fun maintenanceUntil():Instant?=store.getLong("maintenance-until",0).takeIf{it>System.currentTimeMillis()}?.let{Instant.ofEpochMilli(it)}

@@ -56,6 +56,15 @@ code,
   letter-spacing: -0.025em;
 }
 
+.brand__studio-logo {
+  display: block;
+  width: 171px;
+  max-width: 100%;
+  height: 22px;
+  object-fit: contain;
+  object-position: left center;
+}
+
 .app-shell {
   grid-template-columns: 232px minmax(0, 1fr);
   background: var(--tc-bg-canvas);
@@ -2607,6 +2616,55 @@ tbody tr:hover {
   display: flex;
   align-items: center;
   gap: var(--tc-space-2);
+}
+
+.readiness-panel {
+  margin: var(--tc-space-5, 20px) var(--tc-space-6) var(--tc-space-4);
+  border: 1px solid var(--tc-border-default);
+  border-left: 3px solid var(--tc-action-primary);
+  border-radius: var(--tc-radius-panel);
+  background: var(--tc-bg-subtle);
+}
+
+.readiness-panel__heading {
+  display: flex;
+  gap: var(--tc-space-4);
+  align-items: start;
+  justify-content: space-between;
+  padding: var(--tc-space-4);
+  border-bottom: 1px solid var(--tc-border-default);
+}
+
+.readiness-panel__heading h4,
+.readiness-panel__heading p {
+  margin: 0;
+}
+
+.readiness-panel__heading p {
+  margin-top: var(--tc-space-1);
+  color: var(--tc-text-secondary);
+  font-size: 12px;
+}
+
+.readiness-panel .detail-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+
+@media (max-width: 700px) {
+  .readiness-panel {
+    margin-inline: var(--tc-space-4);
+  }
+
+  .readiness-panel__heading,
+  .readiness-panel .detail-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .readiness-panel__heading {
+    flex-direction: column;
+  }
 }
 
 @media (max-width: 600px) {

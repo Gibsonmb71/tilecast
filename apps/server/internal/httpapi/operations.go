@@ -23,6 +23,10 @@ var commandTypes = map[string]bool{
 	"install_player_update": true,
 	"retry_player_recovery": true, "exit_safe_mode": true,
 	"power_assist_sleep": true, "power_assist_wake": true,
+	"retry_current_item": true, "skip_current_item": true,
+	"recreate_renderer": true, "recreate_playback_session": true,
+	"restart_activity": true, "restart_player_process": true,
+	"resynchronize_player": true, "run_player_self_test": true,
 }
 
 type emergencyInput struct {

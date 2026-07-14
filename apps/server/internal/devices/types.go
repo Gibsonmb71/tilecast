@@ -216,6 +216,20 @@ type Heartbeat struct {
 	LastWatchdogRecoveryAt        *time.Time `json:"lastWatchdogRecoveryAt,omitempty"`
 	MaintenanceSessionExpiresAt   *time.Time `json:"maintenanceSessionExpiresAt,omitempty"`
 	AdminPINChangedAt             *time.Time `json:"adminPinChangedAt,omitempty"`
+	CommissioningState            string     `json:"commissioningState,omitempty"`
+	CommissioningStep             string     `json:"commissioningStep,omitempty"`
+	CommissioningCompletedAt      *time.Time `json:"commissioningCompletedAt,omitempty"`
+	CachedFallbackAvailable       *bool      `json:"cachedFallbackAvailable,omitempty"`
+	LastHealthyPlaybackAt         *time.Time `json:"lastHealthyPlaybackAt,omitempty"`
+	LastPlaylistTransitionAt      *time.Time `json:"lastPlaylistTransitionAt,omitempty"`
+	LastSuccessfulSyncAt          *time.Time `json:"lastSuccessfulSyncAt,omitempty"`
+	LastServerConnectionAt        *time.Time `json:"lastServerConnectionAt,omitempty"`
+	BootAttemptCount              *int       `json:"bootAttemptCount,omitempty"`
+	BootLastAttemptAt             *time.Time `json:"bootLastAttemptAt,omitempty"`
+	BootLaunchVerified            *bool      `json:"bootLaunchVerified,omitempty"`
+	UpdateReadiness               string     `json:"updateReadiness,omitempty"`
+	SelfTestResult                string     `json:"selfTestResult,omitempty"`
+	SelfTestCompletedAt           *time.Time `json:"selfTestCompletedAt,omitempty"`
 }
 
 func addressString(address netip.Addr) *string {

@@ -1,9 +1,14 @@
 export function Brand({ compact = false }: { compact?: boolean }) {
+  if (compact)
+    return (
+      <img
+        className="brand__studio-logo"
+        src="/tilecast-studio-logo.svg"
+        alt="Tilecast Studio"
+      />
+    );
   return (
-    <div
-      className={`brand ${compact ? "brand--compact" : ""}`}
-      aria-label="Tilecast"
-    >
+    <div className="brand" aria-label="Tilecast">
       <span className="brand__mark" aria-hidden="true">
         <span />
         <span />

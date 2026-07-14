@@ -12,6 +12,7 @@ import {
   pairingApprovalPayload,
   ScreenListContent,
   StatusLabel,
+  zeroTouchReadiness,
 } from "./ScreensPage";
 
 const user = (role: User["role"]): User => ({
@@ -115,6 +116,37 @@ describe("screen management", () => {
         },
       }),
     ).toContain("not confirmed");
+  });
+
+  it("reports zero-touch readiness only after every safeguard is verified", () => {
+    const powerAssist = {
+      deviceSleep: "untested",
+      tvStandby: "untested",
+      deviceWake: "untested",
+      tvWake: "untested",
+      inputSelection: "untested",
+      tilecastStartup: "untested",
+    };
+    expect(
+      zeroTouchReadiness({
+        commissioningState: "complete",
+        accessibilityServiceState: "enabled",
+        bootLaunchVerified: true,
+        immersiveModeActive: true,
+        keepScreenOn: true,
+        cachedFallbackAvailable: true,
+        updateReadiness: "ready",
+        safeMode: false,
+        powerAssist,
+      }),
+    ).toBe("Ready");
+    expect(
+      zeroTouchReadiness({
+        commissioningState: "complete",
+        accessibilityServiceState: "disabled",
+        powerAssist,
+      }),
+    ).toBe("Partially ready");
   });
 
   it("uses an explicit credential-replacement payload for known players", () => {

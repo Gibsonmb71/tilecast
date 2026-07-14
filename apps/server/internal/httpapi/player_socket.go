@@ -89,6 +89,7 @@ func (s *server) playerSocket(w http.ResponseWriter, r *http.Request) {
 			var heartbeat devices.Heartbeat
 			if err := json.Unmarshal(message.Payload, &heartbeat); err == nil {
 				_ = s.devices.Heartbeat(ctx, principal, heartbeat, r.RemoteAddr)
+				s.advanceCanaryDeploymentsForScreen(ctx, principal.ScreenID)
 			}
 			if s.playlists != nil {
 				var status playlists.PlayerStatus

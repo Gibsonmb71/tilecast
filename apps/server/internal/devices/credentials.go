@@ -97,6 +97,9 @@ func (s *Service) Heartbeat(ctx context.Context, principal DevicePrincipal, hear
 	if heartbeat.ScreenWidth < 1 || heartbeat.ScreenWidth > 16384 || heartbeat.ScreenHeight < 1 || heartbeat.ScreenHeight > 16384 || len(heartbeat.PlayerVersion) > 120 {
 		return errors.New("heartbeat metadata is invalid")
 	}
+	if len(heartbeat.CommissioningState) > 40 || len(heartbeat.CommissioningStep) > 80 || len(heartbeat.UpdateReadiness) > 40 || len(heartbeat.SelfTestResult) > 120 || heartbeat.BootAttemptCount != nil && (*heartbeat.BootAttemptCount < 0 || *heartbeat.BootAttemptCount > 1000) {
+		return errors.New("heartbeat reliability metadata is invalid")
+	}
 	ip := remoteAddress(address)
 	_, err := s.db.Exec(ctx, `UPDATE screens SET screen_width=$2,screen_height=$3,available_storage_bytes=$4,uptime_seconds=$5,player_version=COALESCE(NULLIF($6,''),player_version),last_heartbeat_at=now(),last_known_ip=$7,updated_at=now() WHERE id=$1`, principal.ScreenID, heartbeat.ScreenWidth, heartbeat.ScreenHeight, heartbeat.AvailableStorageBytes, heartbeat.UptimeSeconds, heartbeat.PlayerVersion, addressString(ip))
 	if err != nil {
@@ -112,6 +115,7 @@ func (s *Service) Heartbeat(ctx context.Context, principal DevicePrincipal, hear
 		if heartbeat.AdminPINChangedAt != nil {
 			_, _ = s.db.Exec(ctx, `UPDATE screen_player_status SET admin_pin_changed_at=$2 WHERE screen_id=$1 AND (admin_pin_changed_at IS NULL OR admin_pin_changed_at<$2)`, principal.ScreenID, heartbeat.AdminPINChangedAt)
 		}
+		_, _ = s.db.Exec(ctx, `UPDATE screen_player_status SET commissioning_state=NULLIF($2,''),commissioning_step=NULLIF($3,''),commissioning_completed_at=$4,cached_fallback_available=$5,last_healthy_playback_at=$6,last_playlist_transition_at=$7,last_successful_sync_at=$8,last_server_connection_at=$9,boot_attempt_count=$10,boot_last_attempt_at=$11,boot_launch_verified=$12,update_readiness=NULLIF($13,''),self_test_result=NULLIF($14,''),self_test_completed_at=$15 WHERE screen_id=$1`, principal.ScreenID, heartbeat.CommissioningState, heartbeat.CommissioningStep, heartbeat.CommissioningCompletedAt, heartbeat.CachedFallbackAvailable, heartbeat.LastHealthyPlaybackAt, heartbeat.LastPlaylistTransitionAt, heartbeat.LastSuccessfulSyncAt, heartbeat.LastServerConnectionAt, heartbeat.BootAttemptCount, heartbeat.BootLastAttemptAt, heartbeat.BootLaunchVerified, heartbeat.UpdateReadiness, heartbeat.SelfTestResult, heartbeat.SelfTestCompletedAt)
 		now := time.Now()
 		newSafeMode := previousSafeMode
 		if heartbeat.SafeMode != nil {
@@ -129,6 +133,9 @@ func (s *Service) Heartbeat(ctx context.Context, principal DevicePrincipal, hear
 				audit("reliability.safe_mode_exited")
 			}
 		}
+		if newSafeMode && heartbeat.CurrentUpdateDeploymentID != nil {
+			_, _ = s.db.Exec(ctx, `UPDATE update_deployments d SET status='paused',rollout_phase='paused',paused_at=now(),pause_reason='A canary player entered safe mode.' WHERE d.id=$1 AND d.status='active' AND d.rollout_phase='canary' AND EXISTS(SELECT 1 FROM screen_update_states st WHERE st.deployment_id=d.id AND st.screen_id=$2 AND st.is_canary)`, heartbeat.CurrentUpdateDeploymentID, principal.ScreenID)
+		}
 		if newMaintenanceActive != previousMaintenanceActive {
 			if newMaintenanceActive {
 				audit("reliability.maintenance_started")
@@ -140,8 +147,8 @@ func (s *Service) Heartbeat(ctx context.Context, principal DevicePrincipal, hear
 			audit("reliability.admin_pin_changed")
 		}
 	}
-	if heartbeat.PlayerVersionCode != nil {
-		_, _ = s.db.Exec(ctx, `WITH completed AS (UPDATE screen_update_states SET state='succeeded',reconnect_at=now(),completed_at=now(),updated_at=now() WHERE screen_id=$1 AND expected_version_code<=$2 AND state IN('ready','waiting_for_permission','waiting_for_user','installing','reconnecting') RETURNING deployment_id) UPDATE update_deployments d SET status=CASE WHEN NOT EXISTS(SELECT 1 FROM screen_update_states st WHERE st.deployment_id=d.id AND st.state NOT IN('succeeded','failed','cancelled','incompatible','already_current')) THEN 'completed' ELSE d.status END,completed_at=CASE WHEN NOT EXISTS(SELECT 1 FROM screen_update_states st WHERE st.deployment_id=d.id AND st.state NOT IN('succeeded','failed','cancelled','incompatible','already_current')) THEN now() ELSE d.completed_at END WHERE d.id IN(SELECT deployment_id FROM completed)`, principal.ScreenID, *heartbeat.PlayerVersionCode)
+	if heartbeat.PlayerVersionCode != nil && heartbeat.LastHealthyPlaybackAt != nil && (heartbeat.SafeMode == nil || !*heartbeat.SafeMode) {
+		_, _ = s.db.Exec(ctx, `WITH completed AS (UPDATE screen_update_states SET state='succeeded',reconnect_at=now(),completed_at=now(),updated_at=now() WHERE screen_id=$1 AND expected_version_code<=$2 AND state IN('ready','waiting_for_permission','waiting_for_user','installing','reconnecting') AND (install_started_at IS NULL OR $3>install_started_at) RETURNING deployment_id) UPDATE update_deployments d SET status=CASE WHEN NOT EXISTS(SELECT 1 FROM screen_update_states st WHERE st.deployment_id=d.id AND st.state NOT IN('succeeded','failed','cancelled','incompatible','already_current')) THEN 'completed' ELSE d.status END,completed_at=CASE WHEN NOT EXISTS(SELECT 1 FROM screen_update_states st WHERE st.deployment_id=d.id AND st.state NOT IN('succeeded','failed','cancelled','incompatible','already_current')) THEN now() ELSE d.completed_at END WHERE d.id IN(SELECT deployment_id FROM completed)`, principal.ScreenID, *heartbeat.PlayerVersionCode, heartbeat.LastHealthyPlaybackAt)
 	}
 	return nil
 }
