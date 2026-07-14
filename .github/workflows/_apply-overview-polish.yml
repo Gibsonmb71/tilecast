@@ -1,0 +1,39 @@
+name: Apply Overview polish
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.head_ref == 'fix/overview-layout-light-theme'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/overview-layout-light-theme
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Apply layout and theme fixes
+        run: |
+          set -euo pipefail
+          python3 scripts/polish-operations-dashboard.py
+          rm scripts/polish-operations-dashboard.py .github/workflows/_apply-overview-polish.yml
+          npm exec prettier -- --write apps/dashboard/src/pages/OperationsDashboard.tsx apps/dashboard/src/pages/OperationsDashboard.css
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Polish Overview layout and light theme'
+          git push origin HEAD:fix/overview-layout-light-theme
+      - name: Verify dashboard
+        run: |
+          npm run format:check --workspace @tilecast/dashboard
+          npm run lint --workspace @tilecast/dashboard
+          npm test --workspace @tilecast/dashboard
+          npm run build --workspace @tilecast/dashboard
