@@ -12,6 +12,7 @@ import (
 )
 
 func (s *server) securityHeaders(next http.Handler) http.Handler {
+	next = s.previewRoutes(next)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
 		w.Header().Set("Referrer-Policy", "same-origin")
