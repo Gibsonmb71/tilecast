@@ -1,8 +1,10 @@
 package org.tilecast.player.reliability
 
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 import java.time.Instant
+import org.tilecast.player.MainActivity
 
 enum class CommissioningStep(val wireValue: String) {
     ADMIN_PIN("admin_pin"),
@@ -120,7 +122,23 @@ class CommissioningController(
     }
 
     fun complete(screenId: String) {
-        preferences.edit().putLong("completed-at-$screenId", System.currentTimeMillis()).putBoolean("run-again-$screenId", false).putInt("step-$screenId", CommissioningStep.RESULT.ordinal).commit()
+        val saved =
+            preferences
+                .edit()
+                .putLong("completed-at-$screenId", System.currentTimeMillis())
+                .putBoolean("run-again-$screenId", false)
+                .putInt("step-$screenId", CommissioningStep.RESULT.ordinal)
+                .commit()
+        if (!saved) return
+
+        context.startActivity(
+            Intent(context, MainActivity::class.java)
+                .addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        Intent.FLAG_ACTIVITY_CLEAR_TASK,
+                ),
+        )
     }
 
     fun runAgain(screenId: String) {
