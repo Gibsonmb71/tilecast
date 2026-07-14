@@ -6,7 +6,9 @@ describe("Fire TV accessibility ADB commands", () => {
     const commands = fireTvAccessibilityCommands("192.168.1.44");
     expect(commands.connect).toBe("adb connect 192.168.1.44:5555");
     expect(commands.enable).toContain("enabled_accessibility_services");
-    expect(commands.enable).toContain("current="\${current:+$current:}$component"");
+    expect(commands.enable).toContain(
+      'current="${current:+$current:}$component"',
+    );
   });
 
   it("falls back to a clear placeholder when no address was reported", () => {
