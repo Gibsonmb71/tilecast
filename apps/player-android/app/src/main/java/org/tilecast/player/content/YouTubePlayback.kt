@@ -40,8 +40,13 @@ private class YouTubeBridge(private val callback: (String, String?) -> Unit) {
 }
 
 private class YouTubeChromeClient(private val container: FrameLayout) : WebChromeClient() {
+    private var webView: WebView? = null
     private var fullscreenView: View? = null
     private var fullscreenCallback: CustomViewCallback? = null
+
+    fun attach(webView: WebView) {
+        this.webView = webView
+    }
 
     override fun onShowCustomView(view: View, callback: CustomViewCallback) {
         if (fullscreenView != null) {
@@ -50,6 +55,7 @@ private class YouTubeChromeClient(private val container: FrameLayout) : WebChrom
         }
         fullscreenView = view
         fullscreenCallback = callback
+        webView?.visibility = View.INVISIBLE
         container.addView(
             view,
             FrameLayout.LayoutParams(
@@ -63,6 +69,7 @@ private class YouTubeChromeClient(private val container: FrameLayout) : WebChrom
     override fun onHideCustomView() {
         fullscreenView?.let(container::removeView)
         fullscreenView = null
+        webView?.visibility = View.VISIBLE
         fullscreenCallback?.onCustomViewHidden()
         fullscreenCallback = null
     }
@@ -124,8 +131,13 @@ fun YouTubeSourceItem(
                 val webView =
                     WebView(context).apply {
                         tag = chrome
-                        setBackgroundColor(AndroidColor.BLACK)
-                        setLayerType(View.LAYER_TYPE_HARDWARE, null)
+                        // Fire OS can place Chromium's decoded video in a separate
+                        // compositor layer behind the WebView. An explicitly opaque,
+                        // forced hardware layer hides that video while HTML controls,
+                        // captions, and audio continue. Keep Tilecast's container black,
+                        // but let WebView choose its compositor and remain transparent.
+                        setBackgroundColor(AndroidColor.TRANSPARENT)
+                        setLayerType(View.LAYER_TYPE_NONE, null)
                         layoutParams =
                             FrameLayout.LayoutParams(
                                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -142,6 +154,7 @@ fun YouTubeSourceItem(
                         addJavascriptInterface(YouTubeBridge(report), "Tilecast")
                         loadDataWithBaseURL("$origin/", html, "text/html", "UTF-8", null)
                     }
+                chrome.attach(webView)
                 addView(webView)
             }
         },
@@ -166,8 +179,8 @@ internal fun youtubeHTML(config: YouTubeSourceConfig, origin: String): String {
     val loopPlaylist = if (config.loop && config.kind == "video") ",playlist:'$id'" else ""
     val captions = if (config.captions) "cc_load_policy:1,cc_lang_pref:'${config.captionLanguage}'," else "cc_load_policy:0,"
     val end = config.endSeconds?.let { "end:$it," }.orEmpty()
-    return """<!doctype html><html><head><meta name="referrer" content="origin"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><style>html,body,#player,iframe{margin:0;width:100%;height:100%;overflow:hidden;background:#000;border:0}</style></head><body><div id="player"></div><script src="https://www.youtube.com/iframe_api"></script><script>
+    return """<!doctype html><html><head><meta name="referrer" content="origin"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><style>html,body,#player,iframe{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;border:0}</style></head><body><div id="player"></div><script src="https://www.youtube.com/iframe_api"></script><script>
       var player; function send(s,d){try{Tilecast.report(s,d||null)}catch(e){}}
-      function onYouTubeIframeAPIReady(){player=new YT.Player('player',{width:'100%',height:'100%',${listOptions}playerVars:{autoplay:1,playsinline:0,controls:${if (config.controls) 1 else 0},disablekb:1,fs:0,rel:0,start:${config.startSeconds},${end}loop:${if (config.loop) 1 else 0}$loopPlaylist,origin:'$origin',$captions},events:{onReady:function(e){${if (config.muted) "e.target.mute();" else "e.target.unMute();"}e.target.setVolume(${config.volume});e.target.playVideo();send('ready')},onStateChange:function(e){var m={0:'ended',1:'playing',2:'paused',3:'buffering',5:'ready'};send(m[e.data]||'waiting')},onError:function(e){send('player_error','youtube_'+e.data)}}});}
+      function onYouTubeIframeAPIReady(){player=new YT.Player('player',{width:'100%',height:'100%',${listOptions}playerVars:{autoplay:1,playsinline:1,controls:${if (config.controls) 1 else 0},disablekb:1,fs:0,rel:0,start:${config.startSeconds},${end}loop:${if (config.loop) 1 else 0}$loopPlaylist,origin:'$origin',$captions},events:{onReady:function(e){${if (config.muted) "e.target.mute();" else "e.target.unMute();"}e.target.setVolume(${config.volume});e.target.playVideo();send('ready')},onStateChange:function(e){var m={0:'ended',1:'playing',2:'paused',3:'buffering',5:'ready'};send(m[e.data]||'waiting')},onError:function(e){send('player_error','youtube_'+e.data)}}});}
     </script></body></html>"""
 }

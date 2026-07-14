@@ -107,7 +107,7 @@ class CommissioningController(
         preferences.edit().putInt("step-$screenId", next.ordinal).commit()
     }
 
-    fun runSelfTest(screenId: String, cachedFallbackAvailable: Boolean): String {
+    fun runSelfTest(screenId: String): String {
         val boot = BootRecovery.status(context)
         val accessibilitySupported = !Build.MANUFACTURER.equals("Amazon", ignoreCase = true)
         val accessibilityReady = !accessibilitySupported || reliability.accessibilityEnabled()

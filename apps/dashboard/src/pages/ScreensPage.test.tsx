@@ -147,6 +147,32 @@ describe("screen management", () => {
         powerAssist,
       }),
     ).toBe("Partially ready");
+    expect(
+      zeroTouchReadiness({
+        commissioningState: "complete",
+        accessibilityServiceState: "unsupported",
+        bootLaunchVerified: true,
+        immersiveModeActive: true,
+        keepScreenOn: true,
+        cachedFallbackAvailable: false,
+        updateReadiness: "ready",
+        safeMode: false,
+        powerAssist,
+      }),
+    ).toBe("Partially ready");
+    expect(
+      zeroTouchReadiness({
+        commissioningState: "complete",
+        accessibilityServiceState: "enabled",
+        bootLaunchVerified: true,
+        immersiveModeActive: true,
+        keepScreenOn: true,
+        cachedFallbackAvailable: false,
+        updateReadiness: "ready",
+        safeMode: false,
+        powerAssist,
+      }),
+    ).toBe("Ready");
   });
 
   it("uses an explicit credential-replacement payload for known players", () => {
