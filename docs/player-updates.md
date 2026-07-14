@@ -39,6 +39,8 @@ Pushing a tag named `player-v<versionName>` publishes a release automatically. T
 
 Owners can either select **Upload release** or **Sync from GitHub** under **Settings → Player Updates**. Direct upload accepts exactly `tilecast-player.apk`, `tilecast-player-update.json`, and `tilecast-player-update.json.sig`. The server applies the same manifest-signature, APK hash/size, package metadata, version, minimum-SDK, and Android signing-certificate checks to both sources. A verified direct upload is moved atomically into the same private update cache and creates the same Player release record used by deployments. GitHub availability is therefore optional.
 
+Tilecast refreshes the GitHub release catalog automatically when the catalog is empty or the previous check is more than 15 minutes old. Studio keeps **Sync from GitHub** as an immediate retry and displays provider, signature, and release-verification failures instead of showing an unexplained empty table.
+
 Owners and Administrators deploy a fully verified cached release to screens and/or groups. Group membership is resolved at deployment start and duplicates are removed. Modes are download only, install now, and maintenance window. Screen states distinguish downloading, verification, permission/user approval, installation, reconnecting, success, failure, cancellation, incompatibility, and already-current. Players always retrieve APKs from their paired Tilecast server; the player never contacts GitHub.
 
 ## CI publishing
