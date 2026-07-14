@@ -10,9 +10,15 @@ enum class CommissioningStep(val wireValue: String) {
     INSTALL_PERMISSION("install_permission"),
     BOOT_RECOVERY("boot_recovery"),
     PRESENTATION("presentation"),
+    @Deprecated("Retained only to migrate players commissioned by older releases")
     CACHED_FALLBACK("cached_fallback"),
     SELF_TEST("self_test"),
     RESULT("result"),
+    ;
+
+    companion object {
+        val activeEntries = entries.filterNot { it == CACHED_FALLBACK }
+    }
 }
 
 data class CommissioningStatus(
@@ -41,7 +47,6 @@ data class CommissioningStatus(
                     bootLaunchVerified,
                     immersiveVerified,
                     keepAwakeVerified,
-                    cachedFallbackAvailable,
                 )
             return when {
                 supported.all { it } && selfTestResult == "passed" -> "ready"
@@ -64,7 +69,14 @@ class CommissioningController(
                 .getLong("completed-at-$screenId", 0)
                 .takeIf { it > 0 }
                 ?.let(Instant::ofEpochMilli)
-        val step = CommissioningStep.entries.getOrElse(preferences.getInt("step-$screenId", 0)) { CommissioningStep.ADMIN_PIN }
+        val storedStep = CommissioningStep.entries.getOrElse(preferences.getInt("step-$screenId", 0)) { CommissioningStep.ADMIN_PIN }
+        val step =
+            if (storedStep == CommissioningStep.CACHED_FALLBACK) {
+                preferences.edit().putInt("step-$screenId", CommissioningStep.SELF_TEST.ordinal).commit()
+                CommissioningStep.SELF_TEST
+            } else {
+                storedStep
+            }
         val boot = BootRecovery.status(context)
         val accessibilitySupported = !Build.MANUFACTURER.equals("Amazon", ignoreCase = true)
         return CommissioningStatus(
@@ -87,8 +99,10 @@ class CommissioningController(
     fun setPin(pin: CharArray) = reliability.setAdminPin(pin)
 
     fun advance(screenId: String, current: CommissioningStep) {
-        val next = (current.ordinal + 1).coerceAtMost(CommissioningStep.RESULT.ordinal)
-        preferences.edit().putInt("step-$screenId", next).commit()
+        val active = CommissioningStep.activeEntries
+        val currentIndex = active.indexOf(current).coerceAtLeast(0)
+        val next = active[(currentIndex + 1).coerceAtMost(active.lastIndex)]
+        preferences.edit().putInt("step-$screenId", next.ordinal).commit()
     }
 
     fun runSelfTest(screenId: String, cachedFallbackAvailable: Boolean): String {
@@ -99,8 +113,7 @@ class CommissioningController(
             reliability.hasAdminPin() &&
                 accessibilityReady &&
                 (Build.VERSION.SDK_INT < 26 || context.packageManager.canRequestPackageInstalls()) &&
-                boot.launchVerified &&
-                cachedFallbackAvailable
+                boot.launchVerified
         val result = if (passed) "passed" else "completed_with_warnings"
         preferences.edit().putString("self-test-result-$screenId", result).putLong("self-test-at-$screenId", System.currentTimeMillis()).commit()
         return result
