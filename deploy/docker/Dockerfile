@@ -20,8 +20,7 @@ WORKDIR /src
 COPY apps/server/go.mod apps/server/go.sum ./
 RUN go mod download
 COPY apps/server .
-COPY --from=dashboard /src/apps/dashboard/dist/index.html internal/web/static/index.html
-COPY --from=dashboard /src/apps/dashboard/dist/assets internal/web/static/assets
+COPY --from=dashboard /src/apps/dashboard/dist/ internal/web/static/
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/tilecast-server ./cmd/tilecast
 
 FROM alpine:3.22
