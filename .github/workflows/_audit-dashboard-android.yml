@@ -17,11 +17,8 @@ jobs:
           fetch-depth: 0
       - name: Apply focused fixes
         run: python3 scripts/apply-dashboard-android-audit.py
-      - name: Remove temporary files and format
-        run: |
-          rm -f scripts/apply-dashboard-android-audit.py .github/workflows/_audit-dashboard-android.yml
-          npm ci
-          npm run format
+      - name: Remove temporary files
+        run: rm -f scripts/apply-dashboard-android-audit.py .github/workflows/_audit-dashboard-android.yml
       - name: Commit fixes
         run: |
           git config user.name 'github-actions[bot]'
@@ -31,6 +28,7 @@ jobs:
           git push origin HEAD:audit/dashboard-android-polish
       - name: Verify dashboard
         run: |
+          npm ci
           npm run format:check
           npm run lint
           npm test
