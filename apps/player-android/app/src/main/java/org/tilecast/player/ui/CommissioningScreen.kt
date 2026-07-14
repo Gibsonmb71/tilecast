@@ -53,12 +53,12 @@ fun CommissioningScreen(
             Spacer(Modifier.height(28.dp))
             Text("Step ${state.step.ordinal + 1} of ${CommissioningStep.entries.size}", color = SignalBlue, fontSize = 16.sp)
             Spacer(Modifier.height(12.dp))
-            CommissioningStepBody(state, setPin, openAccessibility, openInstallPermission, refresh, runSelfTest)
+            CommissioningStepBody(state, setPin, openAccessibility, openInstallPermission, refresh, advance, runSelfTest)
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
             when (state.step) {
                 CommissioningStep.RESULT -> SignalButton(onClick = finish) { Text("Finish commissioning") }
-                CommissioningStep.ADMIN_PIN -> if (state.adminPinSet) SignalButton(onClick = advance) { Text("Continue") }
+                CommissioningStep.ADMIN_PIN -> Unit
                 CommissioningStep.ACCESSIBILITY -> SignalButton(onClick = advance, enabled = state.accessibilityEnabled) { Text("Continue") }
                 CommissioningStep.INSTALL_PERMISSION -> SignalButton(onClick = advance, enabled = state.installPermissionGranted) { Text("Continue") }
                 CommissioningStep.BOOT_RECOVERY -> SignalButton(onClick = advance, enabled = state.bootLaunchVerified) { Text("Continue") }
@@ -78,6 +78,7 @@ private fun CommissioningStepBody(
     openAccessibility: () -> Unit,
     openInstallPermission: () -> Unit,
     refresh: () -> Unit,
+    advance: () -> Unit,
     runSelfTest: () -> Unit,
 ) {
     when (state.step) {
@@ -95,7 +96,14 @@ private fun CommissioningStepBody(
                 singleLine = true,
             )
             Spacer(Modifier.height(12.dp))
-            SignalButton(onClick = { setPin(pin.toCharArray()); pin = "" }, enabled = pin.length >= 4) { Text(if (state.adminPinSet) "Replace PIN" else "Set PIN") }
+            SignalButton(
+                onClick = {
+                    setPin(pin.toCharArray())
+                    pin = ""
+                    advance()
+                },
+                enabled = pin.length >= 4,
+            ) { Text(if (state.adminPinSet) "Replace PIN" else "Set PIN") }
         }
         CommissioningStep.ACCESSIBILITY -> CapabilityStep(
             "Enable Accessibility Control",
