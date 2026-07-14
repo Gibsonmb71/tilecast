@@ -55,18 +55,13 @@ export const zeroTouchReadiness = (
   status?: ReliabilityStatus,
 ): "Ready" | "Partially ready" | "Needs setup" | "Unsupported" => {
   if (!status || !status.commissioningState) return "Needs setup";
-  if (
-    status.accessibilityServiceState === "unsupported" ||
-    status.bootRecoveryResult === "unsupported"
-  )
-    return "Unsupported";
+  if (status.bootRecoveryResult === "unsupported") return "Unsupported";
   if (status.commissioningState !== "complete") return "Needs setup";
   if (
     status.accessibilityServiceState === "enabled" &&
     status.bootLaunchVerified &&
     status.immersiveModeActive &&
     status.keepScreenOn &&
-    status.cachedFallbackAvailable &&
     status.updateReadiness === "ready" &&
     !status.safeMode
   )
