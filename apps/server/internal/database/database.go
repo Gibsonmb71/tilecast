@@ -6,6 +6,7 @@ import (
 	"embed"
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -22,10 +23,16 @@ func Open(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 	}
 
 	// QueryExecModeExec sends PostgreSQL the concrete parameter types inferred
-	// from Go values. This is required for polymorphic functions such as
-	// jsonb_build_object, whose arguments cannot be inferred from untyped $n
-	// placeholders during statement preparation.
+	// from Go values. Polymorphic functions such as jsonb_build_object need this.
 	config.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeExec
+
+	// google/uuid slices are not registered by pgx automatically. Deployment
+	// target queries pass []uuid.UUID to ANY($n), so register the PostgreSQL
+	// uuid[] type before each pooled connection is used.
+	config.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
+		conn.TypeMap().RegisterDefaultPgType([]uuid.UUID{}, "_uuid")
+		return nil
+	}
 
 	pool, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {
