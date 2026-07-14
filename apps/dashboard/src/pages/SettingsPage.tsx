@@ -8,6 +8,7 @@ import { signalColors } from "@tilecast/design-tokens/values";
 import { SettingsShell } from "../settings/SettingsShell";
 import { SettingsSection } from "../settings/SettingsSection";
 import { SettingsActionBar } from "../settings/SettingsActionBar";
+import { BrandingAssets } from "../settings/BrandingAssets";
 import {
   sectionFromPath,
   type SettingsSectionId,
@@ -222,7 +223,17 @@ function Destination({
   if (active === "player-updates")
     return <PlayerUpdatesPanel owner={owner} manageable={manageable} />;
   let before: React.ReactNode;
-  if (active === "branding") before = <BrandingPreview values={values} />;
+  if (active === "branding")
+    before = (
+      <>
+        <BrandingAssets
+          values={values}
+          editable={manageable}
+          onChange={onChange}
+        />
+        <BrandingPreview values={values} />
+      </>
+    );
   if (active === "accessibility")
     before = (
       <div className="notice notice--info">
@@ -245,10 +256,23 @@ function Destination({
         end time is treated as overnight.
       </div>
     );
+  const visibleDefinitions =
+    active === "branding"
+      ? definitions.filter(
+          (definition) =>
+            ![
+              "branding.logo_asset_id",
+              "branding.icon_asset_id",
+              "branding.primary_color",
+              "branding.player_background_color",
+              "branding.player_text_color",
+            ].includes(definition.key),
+        )
+      : definitions;
   return (
     <SettingsSection
       section={active}
-      definitions={definitions}
+      definitions={visibleDefinitions}
       values={values}
       editable={active === "preferences" || manageable}
       onChange={onChange}
@@ -264,14 +288,8 @@ function BrandingPreview({ values }: { values: Record<string, unknown> }) {
         <div
           className="branding-preview"
           style={{
-            background: text(
-              values["branding.player_background_color"],
-              signalColors.playerBackground,
-            ),
-            color: text(
-              values["branding.player_text_color"],
-              signalColors.playerText,
-            ),
+            background: signalColors.playerBackground,
+            color: signalColors.playerText,
           }}
         >
           <strong>

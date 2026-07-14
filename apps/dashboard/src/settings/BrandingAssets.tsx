@@ -20,7 +20,10 @@ export function BrandingAssets({
     <section className="settings-subsection">
       <header>
         <h3>Organization images</h3>
-        <p>Upload images from this device. Tilecast stores the selected asset internally.</p>
+        <p>
+          Upload images from this device. Tilecast stores the selected asset
+          internally.
+        </p>
       </header>
       <div className="branding-asset-grid">
         <BrandingAssetUpload
@@ -122,8 +125,12 @@ function BrandingAssetUpload({
       setProgress(100);
     } catch (uploadError) {
       if (sessionId)
-        void api.cancelUpload(sessionId, auth.status?.csrfToken ?? "").catch(() => {});
-      setError(uploadError instanceof Error ? uploadError.message : "Upload failed.");
+        void api
+          .cancelUpload(sessionId, auth.status?.csrfToken ?? "")
+          .catch(() => {});
+      setError(
+        uploadError instanceof Error ? uploadError.message : "Upload failed.",
+      );
     } finally {
       setUploading(false);
     }
@@ -145,7 +152,9 @@ function BrandingAssetUpload({
           <p>{description}</p>
           {asset && <small>{asset.name || asset.originalFilename}</small>}
           {value && !asset && !existing.isLoading && (
-            <small className="field-error">The selected image is unavailable. Upload a replacement.</small>
+            <small className="field-error">
+              The selected image is unavailable. Upload a replacement.
+            </small>
           )}
         </div>
         <div className="branding-asset-card__actions">

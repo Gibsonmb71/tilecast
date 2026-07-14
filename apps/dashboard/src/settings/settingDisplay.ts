@@ -43,10 +43,6 @@ export const enumLabels: Record<string, string> = {
   interval: "Reload on an interval",
 };
 export const descriptions: Record<string, string> = {
-  "branding.logo_asset_id":
-    "Advanced: enter the UUID of a ready image asset used as the organization logo.",
-  "branding.icon_asset_id":
-    "Advanced: enter the UUID of a ready square image asset.",
   "player.cache.max_bytes":
     "Maximum storage Tilecast may use for downloaded content.",
   "player.cache.minimum_free_bytes":
@@ -165,18 +161,6 @@ export const subsectionOrder: Record<
     { title: "Diagnostics", keys: ["accessibility.report_foreground_package"] },
   ],
   branding: [
-    {
-      title: "Organization identity",
-      keys: [
-        "branding.logo_asset_id",
-        "branding.icon_asset_id",
-        "branding.primary_color",
-      ],
-    },
-    {
-      title: "Player appearance",
-      keys: ["branding.player_background_color", "branding.player_text_color"],
-    },
     {
       title: "Player fallback screen",
       prefix: [
