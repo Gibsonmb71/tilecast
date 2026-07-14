@@ -96,8 +96,8 @@ func (s *Service) CreatePairing(ctx context.Context, installationID string, meta
 		if err != nil {
 			return PairingCreated{}, err
 		}
-		tag, err := tx.Exec(ctx, `INSERT INTO device_pairing_sessions (id,code_hash,poll_secret_hash,requested_metadata,requested_server_installation_id,player_installation_id,status,created_at,expires_at) VALUES ($1,$2,$3,$4,$5,$6,'pending',$7,$8) ON CONFLICT DO NOTHING`,
-			result.ID, secretHash(code), secretHash(pollSecret), encoded, installationID, metadata.PlayerInstallationID, now, result.ExpiresAt,
+		tag, err := tx.Exec(ctx, `INSERT INTO device_pairing_sessions (id,code_hash,poll_secret_hash,requested_metadata,requested_server_installation_id,player_installation_id,status,created_at,expires_at) VALUES ($1,$2,$3,$4::jsonb,$5,$6,'pending',$7,$8) ON CONFLICT DO NOTHING`,
+			result.ID, secretHash(code), secretHash(pollSecret), string(encoded), installationID, metadata.PlayerInstallationID, now, result.ExpiresAt,
 		)
 		if err == nil && tag.RowsAffected() == 1 {
 			result.Code = code

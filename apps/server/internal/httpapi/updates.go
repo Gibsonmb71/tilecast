@@ -130,7 +130,8 @@ func (s *server) uploadPlayerRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resourceID := result.ID.String()
-	_, _ = s.db.Exec(r.Context(), `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,metadata)VALUES($1,$2,'player_updates.release_uploaded','player_release',$3,$4)`, uuid.New(), userID, resourceID, map[string]any{"versionCode": result.Manifest.VersionCode, "channel": result.Manifest.Channel, "duplicate": result.Duplicate})
+	auditMetadata, _ := json.Marshal(map[string]any{"versionCode": result.Manifest.VersionCode, "channel": result.Manifest.Channel, "duplicate": result.Duplicate})
+	_, _ = s.db.Exec(r.Context(), `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,metadata)VALUES($1,$2,'player_updates.release_uploaded','player_release',$3,$4::jsonb)`, uuid.New(), userID, resourceID, string(auditMetadata))
 	writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]any{"id": result.ID, "source": result.Source, "versionCode": result.Manifest.VersionCode, "versionName": result.Manifest.VersionName, "channel": result.Manifest.Channel, "apkSizeBytes": result.Manifest.APKSizeBytes, "releaseNotes": result.Manifest.ReleaseNotes, "cacheStatus": result.CacheStatus, "verificationStatus": result.VerificationStatus, "duplicate": result.Duplicate}})
 }
 

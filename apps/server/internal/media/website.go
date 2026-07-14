@@ -212,7 +212,7 @@ func (s *Service) CreateWebsite(ctx context.Context, user uuid.UUID, in WebsiteI
 		return Asset{}, err
 	}
 	configuration, _ := json.Marshal(in.WebsiteConfig)
-	if _, err = tx.Exec(ctx, `INSERT INTO sources(asset_id,provider,config_version,configuration) VALUES($1,'website',1,$2)`, id, configuration); err != nil {
+	if _, err = tx.Exec(ctx, `INSERT INTO sources(asset_id,provider,config_version,configuration) VALUES($1,'website',1,$2::jsonb)`, id, string(configuration)); err != nil {
 		return Asset{}, err
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)VALUES($1,$2,'source.created','source',$3)`, uuid.New(), user, id.String())
@@ -250,7 +250,7 @@ func (s *Service) UpdateWebsite(ctx context.Context, id, user uuid.UUID, in Webs
 		return Asset{}, err
 	}
 	configuration, _ := json.Marshal(in.WebsiteConfig)
-	if _, err = tx.Exec(ctx, `UPDATE sources SET configuration=$2,config_version=1,updated_at=now() WHERE asset_id=$1 AND provider='website'`, id, configuration); err != nil {
+	if _, err = tx.Exec(ctx, `UPDATE sources SET configuration=$2::jsonb,config_version=1,updated_at=now() WHERE asset_id=$1 AND provider='website'`, id, string(configuration)); err != nil {
 		return Asset{}, err
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)VALUES($1,$2,'source.updated','source',$3)`, uuid.New(), user, id.String())
