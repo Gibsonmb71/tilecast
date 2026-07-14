@@ -57,10 +57,6 @@ export function SettingsSection({
                     disabled={disabled}
                     onChange={(value) => onChange(definition.key, value)}
                   />
-                  <details>
-                    <summary>Advanced details</summary>
-                    <code>{definition.key}</code>
-                  </details>
                 </div>
               </div>
             );
