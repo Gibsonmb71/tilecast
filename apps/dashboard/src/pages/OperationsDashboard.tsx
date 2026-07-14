@@ -79,7 +79,9 @@ export function OperationsDashboard() {
   const activeEmergency = (emergencies.data?.items ?? []).find(
     (item) => item.status === "active" || item.status === "preparing",
   );
-  const online = allScreens.filter((screen) => screen.status === "online").length;
+  const online = allScreens.filter(
+    (screen) => screen.status === "online",
+  ).length;
   const attention = buildAttention(allScreens, assignments);
   const processing = (assets.data?.items ?? []).filter((asset) =>
     ["uploading", "uploaded", "queued", "inspecting", "processing"].includes(
@@ -133,7 +135,11 @@ export function OperationsDashboard() {
                 ? "All paired screens are online"
                 : `${allScreens.length - online} not currently online`
           }
-          tone={online === allScreens.length && allScreens.length > 0 ? "good" : "neutral"}
+          tone={
+            online === allScreens.length && allScreens.length > 0
+              ? "good"
+              : "neutral"
+          }
           to="/screens"
         />
         <MetricCard
@@ -142,7 +148,8 @@ export function OperationsDashboard() {
           value={String(
             assignments.filter(
               (assignment) =>
-                assignment.selectionSource && assignment.selectionSource !== "none",
+                assignment.selectionSource &&
+                assignment.selectionSource !== "none",
             ).length,
           )}
           detail={`${assignments.filter((item) => item.selectionSource === "schedule").length} scheduled · ${assignments.filter((item) => item.selectionSource === "direct_fallback").length} fallback`}
@@ -164,7 +171,9 @@ export function OperationsDashboard() {
         <MetricCard
           icon={<CheckCircle2 size={20} />}
           label="System health"
-          value={system.data?.database.status === "ok" ? "Healthy" : "Check system"}
+          value={
+            system.data?.database.status === "ok" ? "Healthy" : "Check system"
+          }
           detail={
             system.data
               ? `${system.data.connectedScreens} connected · ${system.data.activeProcessingJobs} processing`
@@ -180,14 +189,21 @@ export function OperationsDashboard() {
           title="Needs attention"
           description="Only screens with an actionable problem appear here."
           icon={<CircleAlert size={18} />}
-          action={<Link to="/screens">View all screens <ArrowRight size={15} /></Link>}
+          action={
+            <Link to="/screens">
+              View all screens <ArrowRight size={15} />
+            </Link>
+          }
         >
           {screens.isLoading ? (
             <LoadingRows />
           ) : attention.length > 0 ? (
             <div className="ops-attention-list">
               {attention.slice(0, 6).map((item) => (
-                <Link key={`${item.screen.id}-${item.label}`} to={`/screens/${item.screen.id}`}>
+                <Link
+                  key={`${item.screen.id}-${item.label}`}
+                  to={`/screens/${item.screen.id}`}
+                >
                   <span className={`ops-severity ops-severity--${item.tone}`}>
                     {item.icon}
                   </span>
@@ -225,15 +241,24 @@ export function OperationsDashboard() {
           title="Upcoming schedule changes"
           description="The next enabled playback windows across your installation."
           icon={<Clock3 size={18} />}
-          action={<Link to="/schedules">Open schedules <ArrowRight size={15} /></Link>}
+          action={
+            <Link to="/schedules">
+              Open schedules <ArrowRight size={15} />
+            </Link>
+          }
         >
           {schedules.isLoading ? (
             <LoadingRows />
           ) : upcoming.length > 0 ? (
             <div className="ops-timeline">
               {upcoming.map(({ schedule, at, label }) => (
-                <Link key={`${schedule.id}-${at.toISOString()}`} to={`/schedules/${schedule.id}`}>
-                  <time dateTime={at.toISOString()}>{formatScheduleTime(at)}</time>
+                <Link
+                  key={`${schedule.id}-${at.toISOString()}`}
+                  to={`/schedules/${schedule.id}`}
+                >
+                  <time dateTime={at.toISOString()}>
+                    {formatScheduleTime(at)}
+                  </time>
                   <span className="ops-timeline-marker" />
                   <span>
                     <strong>{schedule.playlistName}</strong>
@@ -259,10 +284,19 @@ export function OperationsDashboard() {
         title="Now playing"
         description="Current selection and synchronization state for recently active screens."
         icon={<ListVideo size={18} />}
-        action={<Link to="/screens">Open screen monitor <ArrowRight size={15} /></Link>}
+        action={
+          <Link to="/screens">
+            Open screen monitor <ArrowRight size={15} />
+          </Link>
+        }
       >
-        {screens.isLoading || assignmentQueries.some((query) => query.isLoading) ? (
-          <div className="ops-playing-grid"><LoadingCard /><LoadingCard /><LoadingCard /></div>
+        {screens.isLoading ||
+        assignmentQueries.some((query) => query.isLoading) ? (
+          <div className="ops-playing-grid">
+            <LoadingCard />
+            <LoadingCard />
+            <LoadingCard />
+          </div>
         ) : allScreens.length > 0 ? (
           <div className="ops-playing-grid">
             {allScreens.slice(0, 8).map((screen, index) => (
@@ -288,7 +322,11 @@ export function OperationsDashboard() {
           title="Content pipeline"
           description="Uploads and media jobs that may affect playback readiness."
           icon={<ImagePlus size={18} />}
-          action={<Link to="/content">Open content <ArrowRight size={15} /></Link>}
+          action={
+            <Link to="/content">
+              Open content <ArrowRight size={15} />
+            </Link>
+          }
         >
           <div className="ops-compact-stats">
             <CompactStat
@@ -310,7 +348,11 @@ export function OperationsDashboard() {
           title="Player operations"
           description="Commands, update approvals, and failed deployments."
           icon={<Wrench size={18} />}
-          action={<Link to="/settings/player-updates">Player updates <ArrowRight size={15} /></Link>}
+          action={
+            <Link to="/settings/player-updates">
+              Player updates <ArrowRight size={15} />
+            </Link>
+          }
         >
           <div className="ops-compact-stats">
             <CompactStat
@@ -406,10 +448,12 @@ function NowPlayingCard({
           ? "Fallback"
           : "No content";
   const title = assignment?.currentPlaylistId
-    ? assignment.relevantSchedules.find(
+    ? (assignment.relevantSchedules.find(
         (schedule) => schedule.id === assignment.currentScheduleId,
-      )?.playlistName ?? assignment.playlistName ?? "Assigned playlist"
-    : assignment?.playlistName ?? "No playlist assigned";
+      )?.playlistName ??
+      assignment.playlistName ??
+      "Assigned playlist")
+    : (assignment?.playlistName ?? "No playlist assigned");
   return (
     <Link className="ops-playing-card" to={`/screens/${screen.id}`}>
       <div className="ops-playing-visual">
@@ -419,9 +463,14 @@ function NowPlayingCard({
       <div className="ops-playing-copy">
         <div>
           <strong>{screen.name}</strong>
-          <small>{screen.location || `${screen.deviceManufacturer} ${screen.deviceModel}`}</small>
+          <small>
+            {screen.location ||
+              `${screen.deviceManufacturer} ${screen.deviceModel}`}
+          </small>
         </div>
-        <span className={`ops-source-pill ops-source-pill--${source ?? "none"}`}>
+        <span
+          className={`ops-source-pill ops-source-pill--${source ?? "none"}`}
+        >
           {sourceLabel}
         </span>
       </div>
@@ -472,38 +521,121 @@ function CompactStat({
   warning?: boolean;
 }) {
   return (
-    <div className={warning ? "ops-compact-stat ops-compact-stat--warning" : "ops-compact-stat"}>
+    <div
+      className={
+        warning
+          ? "ops-compact-stat ops-compact-stat--warning"
+          : "ops-compact-stat"
+      }
+    >
       <span>{icon}</span>
-      <div><strong>{value}</strong><b>{label}</b><small>{detail}</small></div>
+      <div>
+        <strong>{value}</strong>
+        <b>{label}</b>
+        <small>{detail}</small>
+      </div>
     </div>
   );
 }
 
 function LoadingRows() {
-  return <div className="ops-loading-rows"><i /><i /><i /></div>;
+  return (
+    <div className="ops-loading-rows">
+      <i />
+      <i />
+      <i />
+    </div>
+  );
 }
 function LoadingCard() {
-  return <div className="ops-loading-card"><i /><i /><i /></div>;
+  return (
+    <div className="ops-loading-card">
+      <i />
+      <i />
+      <i />
+    </div>
+  );
 }
 
 function buildAttention(screens: Screen[], assignments: PlaylistAssignment[]) {
-  const assignmentByScreen = new Map(assignments.map((item) => [item.screenId, item]));
+  const assignmentByScreen = new Map(
+    assignments.map((item) => [item.screenId, item]),
+  );
   return screens.flatMap((screen) => {
     const assignment = assignmentByScreen.get(screen.id);
     if (screen.status === "offline")
-      return [{ screen, label: "Offline", detail: lastSeen(screen), tone: "danger", icon: <WifiOff size={17} /> }];
+      return [
+        {
+          screen,
+          label: "Offline",
+          detail: lastSeen(screen),
+          tone: "danger",
+          icon: <WifiOff size={17} />,
+        },
+      ];
     if (screen.status === "stale")
-      return [{ screen, label: "Connection stale", detail: lastSeen(screen), tone: "warning", icon: <AlertTriangle size={17} /> }];
+      return [
+        {
+          screen,
+          label: "Connection stale",
+          detail: lastSeen(screen),
+          tone: "warning",
+          icon: <AlertTriangle size={17} />,
+        },
+      ];
     if (screen.status === "revoked")
-      return [{ screen, label: "Pairing revoked", detail: "Player credential is inactive", tone: "danger", icon: <ShieldAlert size={17} /> }];
+      return [
+        {
+          screen,
+          label: "Pairing revoked",
+          detail: "Player credential is inactive",
+          tone: "danger",
+          icon: <ShieldAlert size={17} />,
+        },
+      ];
     if (assignment?.lastSynchronizationError || assignment?.lastPlaybackError)
-      return [{ screen, label: "Playback error", detail: assignment.lastPlaybackError ?? assignment.lastSynchronizationError ?? "Open for details", tone: "danger", icon: <CircleAlert size={17} /> }];
+      return [
+        {
+          screen,
+          label: "Playback error",
+          detail:
+            assignment.lastPlaybackError ??
+            assignment.lastSynchronizationError ??
+            "Open for details",
+          tone: "danger",
+          icon: <CircleAlert size={17} />,
+        },
+      ];
     if (assignment?.synchronizationStatus === "out_of_date")
-      return [{ screen, label: "Content out of date", detail: "Player has not activated the latest manifest", tone: "warning", icon: <RefreshCw size={17} /> }];
+      return [
+        {
+          screen,
+          label: "Content out of date",
+          detail: "Player has not activated the latest manifest",
+          tone: "warning",
+          icon: <RefreshCw size={17} />,
+        },
+      ];
     if (assignment?.configurationError)
-      return [{ screen, label: "Configuration error", detail: assignment.configurationError, tone: "warning", icon: <Wrench size={17} /> }];
+      return [
+        {
+          screen,
+          label: "Configuration error",
+          detail: assignment.configurationError,
+          tone: "warning",
+          icon: <Wrench size={17} />,
+        },
+      ];
     if (!assignment?.playlistId && assignment?.selectionSource === "none")
-      return [{ screen, label: "No content assigned", detail: "Assign a fallback playlist or schedule", tone: "neutral", icon: <Sparkles size={17} /> }];
+      return [
+        {
+          screen,
+          label: "No content assigned",
+          detail: "Assign a fallback playlist or schedule",
+          tone: "neutral",
+          icon: <Sparkles size={17} />,
+        },
+      ];
     return [];
   });
 }
@@ -543,18 +675,36 @@ function formatScheduleTime(value: Date) {
   tomorrow.setDate(today.getDate() + 1);
   const sameDay = value.toDateString() === today.toDateString();
   const nextDay = value.toDateString() === tomorrow.toDateString();
-  const day = sameDay ? "Today" : nextDay ? "Tomorrow" : value.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  const day = sameDay
+    ? "Today"
+    : nextDay
+      ? "Tomorrow"
+      : value.toLocaleDateString(undefined, {
+          weekday: "short",
+          month: "short",
+          day: "numeric",
+        });
   return `${day}, ${value.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
 }
 function lastSeen(screen: Screen) {
   if (!screen.lastContactAt) return "Never contacted";
-  const minutes = Math.max(1, Math.round((Date.now() - new Date(screen.lastContactAt).getTime()) / 60_000));
-  return minutes < 60 ? `Last seen ${minutes} min ago` : `Last seen ${Math.round(minutes / 60)} hr ago`;
+  const minutes = Math.max(
+    1,
+    Math.round(
+      (Date.now() - new Date(screen.lastContactAt).getTime()) / 60_000,
+    ),
+  );
+  return minutes < 60
+    ? `Last seen ${minutes} min ago`
+    : `Last seen ${Math.round(minutes / 60)} hr ago`;
 }
 function syncLabel(assignment?: PlaylistAssignment) {
   if (!assignment) return "Loading playback state";
-  if (assignment.synchronizationStatus === "current") return "Content synchronized";
-  if (assignment.synchronizationStatus === "preparing") return "Preparing content";
-  if (assignment.synchronizationStatus === "out_of_date") return "Content out of date";
+  if (assignment.synchronizationStatus === "current")
+    return "Content synchronized";
+  if (assignment.synchronizationStatus === "preparing")
+    return "Preparing content";
+  if (assignment.synchronizationStatus === "out_of_date")
+    return "Content out of date";
   return "Awaiting player report";
 }
