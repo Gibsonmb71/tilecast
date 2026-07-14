@@ -18,6 +18,20 @@ import (
 )
 
 func (s *server) listPlayerReleases(w http.ResponseWriter, r *http.Request) {
+	var releaseCount int
+	var checked *time.Time
+	var providerError *string
+	_ = s.db.QueryRow(r.Context(), `SELECT count(*) FROM player_releases`).Scan(&releaseCount)
+	_ = s.db.QueryRow(r.Context(), `SELECT last_checked_at,safe_error FROM update_provider_state WHERE provider='github'`).Scan(&checked, &providerError)
+	if releaseCount == 0 || checked == nil || time.Since(*checked) > 15*time.Minute {
+		ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
+		_ = s.updates.Check(ctx)
+		cancel()
+		checked = nil
+		providerError = nil
+		_ = s.db.QueryRow(r.Context(), `SELECT last_checked_at,safe_error FROM update_provider_state WHERE provider='github'`).Scan(&checked, &providerError)
+	}
+
 	rows, err := s.db.Query(r.Context(), `SELECT id,COALESCE(github_tag,''),source,channel,version_code,version_name,minimum_sdk,release_notes,published_at,apk_size,apk_sha256,signing_certificate_sha256,manifest_signature,cache_status,verification_status,verification_error FROM player_releases ORDER BY version_code DESC`)
 	if err != nil {
 		s.internalError(w, r, err)
@@ -36,9 +50,6 @@ func (s *server) listPlayerReleases(w http.ResponseWriter, r *http.Request) {
 			items = append(items, map[string]any{"id": id, "tag": tag, "source": source, "channel": channel, "versionCode": code, "versionName": name, "minimumSdk": sdk, "releaseNotes": notes, "publishedAt": published, "apkSizeBytes": size, "apkSha256": hash, "signingCertificateSha256": cert, "manifestSignature": signature, "cacheStatus": cache, "verificationStatus": verification, "verificationError": verificationError})
 		}
 	}
-	var checked *time.Time
-	var providerError *string
-	_ = s.db.QueryRow(r.Context(), `SELECT last_checked_at,safe_error FROM update_provider_state WHERE provider='github'`).Scan(&checked, &providerError)
 	writeJSON(w, 200, map[string]any{"data": map[string]any{"repository": "Gibsonmb71/tilecast", "lastCheckedAt": checked, "providerError": providerError, "manifestKeyConfigured": s.updates.ManifestKeyConfigured(), "items": items}})
 }
 

@@ -397,6 +397,35 @@ export function PlayerUpdatesPanel({
             }}
           />
         )}
+        {releases.data && !releases.data.manifestKeyConfigured && (
+          <div className="notice notice--error" role="alert">
+            <strong>Player update verification is not configured.</strong>
+            <p>
+              Set <code>TILECAST_UPDATE_MANIFEST_PUBLIC_KEY</code> on the
+              Tilecast server to the public Ed25519 key used by the Player
+              release workflow, then restart the server.
+            </p>
+          </div>
+        )}
+        {(check.error || releases.data?.providerError) && (
+          <div className="notice notice--error" role="alert">
+            <strong>GitHub releases could not be synchronized.</strong>
+            <p>{check.error?.message ?? releases.data?.providerError}</p>
+          </div>
+        )}
+        {!releases.isLoading &&
+          !releases.error &&
+          releases.data?.manifestKeyConfigured &&
+          !releases.data?.providerError &&
+          (releases.data?.items.length ?? 0) === 0 && (
+            <div className="notice">
+              <strong>No Player releases have been imported.</strong>
+              <p>
+                Tilecast checks GitHub automatically. Use Sync from GitHub to
+                retry immediately.
+              </p>
+            </div>
+          )}
         <div className="settings-table-wrap">
           <table>
             <thead>

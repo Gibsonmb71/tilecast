@@ -405,6 +405,7 @@ export type PlayerReleaseList = {
   repository: string;
   lastCheckedAt?: string;
   providerError?: string;
+  manifestKeyConfigured: boolean;
   items: PlayerRelease[];
 };
 export type UpdateDeployment = {
