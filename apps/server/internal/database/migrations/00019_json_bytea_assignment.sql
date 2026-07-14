@@ -10,9 +10,7 @@ LANGUAGE sql
 IMMUTABLE
 STRICT
 PARALLEL SAFE
-AS $$
-    SELECT convert_from(value, 'UTF8')::jsonb;
-$$;
+AS 'SELECT convert_from($1, ''UTF8'')::jsonb';
 
 DROP CAST IF EXISTS (bytea AS jsonb);
 CREATE CAST (bytea AS jsonb)
