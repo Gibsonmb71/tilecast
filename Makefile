@@ -6,9 +6,9 @@ bootstrap:
 
 build:
 	npm run build
-	rm -rf apps/server/internal/web/static/assets
-	cp apps/dashboard/dist/index.html apps/server/internal/web/static/index.html
-	cp -R apps/dashboard/dist/assets apps/server/internal/web/static/assets
+	rm -rf apps/server/internal/web/static
+	mkdir -p apps/server/internal/web/static
+	cp -R apps/dashboard/dist/. apps/server/internal/web/static/
 	cd apps/server && go build ./cmd/tilecast
 	cd apps/player-android && ./gradlew assembleDebug
 
