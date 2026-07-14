@@ -6,7 +6,7 @@ import org.junit.Test
 
 class CommissioningStatusTest {
     @Test
-    fun allVerifiedCapabilitiesAreReady() {
+    fun allVerifiedCapabilitiesAreReadyWithoutAssignedContent() {
         val status = CommissioningStatus(
             required = false,
             adminPinSet = true,
@@ -15,7 +15,7 @@ class CommissioningStatusTest {
             bootLaunchVerified = true,
             immersiveVerified = true,
             keepAwakeVerified = true,
-            cachedFallbackAvailable = true,
+            cachedFallbackAvailable = false,
             selfTestResult = "passed",
             completedAt = Instant.parse("2026-07-13T12:00:00Z"),
         )
