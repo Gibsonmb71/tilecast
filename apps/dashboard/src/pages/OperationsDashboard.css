@@ -509,7 +509,11 @@
 }
 
 .ops-update-card--warning {
-  background: linear-gradient(135deg, rgb(120 53 15 / 12%), var(--tc-bg-surface) 46%);
+  background: linear-gradient(
+    135deg,
+    rgb(120 53 15 / 12%),
+    var(--tc-bg-surface) 46%
+  );
   border-color: rgb(245 158 11 / 32%);
 }
 
@@ -664,7 +668,6 @@
     gap: 7px;
   }
 }
-
 
 /* Overview layout and theme polish */
 .ops-console {

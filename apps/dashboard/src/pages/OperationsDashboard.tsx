@@ -219,7 +219,10 @@ export function OperationsDashboard() {
               </p>
               <DetailStats
                 items={[
-                  ["Verified screens", `${verifiedCount} / ${allScreens.length}`],
+                  [
+                    "Verified screens",
+                    `${verifiedCount} / ${allScreens.length}`,
+                  ],
                   ["Last confirmed", formatRelative(lastUpdated)],
                   ["Interruptions", "Not tracked"],
                 ]}
@@ -261,39 +264,41 @@ export function OperationsDashboard() {
               </div>
             </section>
           ) : null}
-        </div>
 
-      <section className="ops-card ops-upcoming">
-        <div className="ops-card__header">
-          <div>
-            <h3>Upcoming changes</h3>
-            <p>Chronological changes expected to affect screens.</p>
-          </div>
-        </div>
-        {nextChange ? (
-          <div className="ops-change-list">
-            <Link to={`/schedules/${nextChange.schedule.id}`}>
-              <time>{formatScheduleTime(nextChange.at)}</time>
-              <span>
-                <strong>Playback schedule</strong>
-                <small>
-                  {nextChange.schedule.name} · {targetLabel(nextChange.schedule)}
-                </small>
-              </span>
-              <span className="ops-status ops-status--neutral">Scheduled</span>
-            </Link>
-          </div>
-        ) : (
-          <div className="ops-empty-compact">
-            <RefreshCw size={18} />
-            <strong>No upcoming operational changes</strong>
-            <span>
-              There are no schedule changes, maintenance windows, or update
-              deployments with a future time.
-            </span>
-          </div>
-        )}
-      </section>
+          <section className="ops-card ops-upcoming">
+            <div className="ops-card__header">
+              <div>
+                <h3>Upcoming changes</h3>
+                <p>Chronological changes expected to affect screens.</p>
+              </div>
+            </div>
+            {nextChange ? (
+              <div className="ops-change-list">
+                <Link to={`/schedules/${nextChange.schedule.id}`}>
+                  <time>{formatScheduleTime(nextChange.at)}</time>
+                  <span>
+                    <strong>Playback schedule</strong>
+                    <small>
+                      {nextChange.schedule.name} ·{" "}
+                      {targetLabel(nextChange.schedule)}
+                    </small>
+                  </span>
+                  <span className="ops-status ops-status--neutral">
+                    Scheduled
+                  </span>
+                </Link>
+              </div>
+            ) : (
+              <div className="ops-empty-compact">
+                <RefreshCw size={18} />
+                <strong>No upcoming operational changes</strong>
+                <span>
+                  There are no schedule changes, maintenance windows, or update
+                  deployments with a future time.
+                </span>
+              </div>
+            )}
+          </section>
         </div>
 
         <aside className="ops-dashboard-grid__rail">
@@ -380,74 +385,77 @@ export function OperationsDashboard() {
             )}
           </section>
 
-      <section className="ops-secondary-cards">
-        <section className="ops-card ops-maintenance-card">
-          <div className="ops-card__header">
-            <div>
-              <h3>Player maintenance</h3>
-              <p>Planned work that may briefly affect screens.</p>
-            </div>
-            <OverflowMenu>
-              <Link to="/settings/system">Open maintenance tools</Link>
-            </OverflowMenu>
-          </div>
-          <div className="ops-empty-compact">
-            <Wrench size={18} />
-            <strong>No maintenance windows scheduled</strong>
-            <span>
-              Tilecast does not currently store planned maintenance windows.
-            </span>
-            <Link className="ops-inline-action" to="/settings/system">
-              Open maintenance tools <ChevronRight size={14} />
-            </Link>
-          </div>
-        </section>
+          <section className="ops-secondary-cards">
+            <section className="ops-card ops-maintenance-card">
+              <div className="ops-card__header">
+                <div>
+                  <h3>Player maintenance</h3>
+                  <p>Planned work that may briefly affect screens.</p>
+                </div>
+                <OverflowMenu>
+                  <Link to="/settings/system">Open maintenance tools</Link>
+                </OverflowMenu>
+              </div>
+              <div className="ops-empty-compact">
+                <Wrench size={18} />
+                <strong>No maintenance windows scheduled</strong>
+                <span>
+                  Tilecast does not currently store planned maintenance windows.
+                </span>
+                <Link className="ops-inline-action" to="/settings/system">
+                  Open maintenance tools <ChevronRight size={14} />
+                </Link>
+              </div>
+            </section>
 
-        <section
-          className={`ops-card ops-update-card ${pendingUpdateActions > 0 ? "ops-update-card--warning" : ""}`}
-        >
-          <div className="ops-card__header">
-            <div>
-              <h3>Player updates</h3>
-              <p>Releases awaiting deployment or operator approval.</p>
-            </div>
-            <OverflowMenu>
-              <Link to="/settings/player-updates">Open update center</Link>
-            </OverflowMenu>
-          </div>
-          <strong className="ops-update-card__title">
-            {pendingUpdateActions} player update action
-            {pendingUpdateActions === 1 ? "" : "s"} pending
-          </strong>
-          <span
-            className={`ops-status ${pendingUpdateActions > 0 ? "ops-status--warning" : "ops-status--healthy"}`}
-          >
-            {pendingUpdateActions > 0 ? "Not scheduled" : "Up to date"}
-          </span>
-          <DetailStats
-            stacked
-            items={[
-              ["Eligible screens", String(allScreens.length)],
-              ["Scheduled screens", "0"],
-              [
-                "Restart required",
-                pendingUpdateActions > 0 ? "May be required" : "No",
-              ],
-            ]}
-          />
-          <div className="ops-card-actions">
-            <Link
-              className="ops-button ops-button--primary"
-              to="/settings/player-updates"
+            <section
+              className={`ops-card ops-update-card ${pendingUpdateActions > 0 ? "ops-update-card--warning" : ""}`}
             >
-              Schedule update
-            </Link>
-            <Link className="ops-inline-action" to="/settings/player-updates">
-              View releases <ChevronRight size={14} />
-            </Link>
-          </div>
-        </section>
-      </section>
+              <div className="ops-card__header">
+                <div>
+                  <h3>Player updates</h3>
+                  <p>Releases awaiting deployment or operator approval.</p>
+                </div>
+                <OverflowMenu>
+                  <Link to="/settings/player-updates">Open update center</Link>
+                </OverflowMenu>
+              </div>
+              <strong className="ops-update-card__title">
+                {pendingUpdateActions} player update action
+                {pendingUpdateActions === 1 ? "" : "s"} pending
+              </strong>
+              <span
+                className={`ops-status ${pendingUpdateActions > 0 ? "ops-status--warning" : "ops-status--healthy"}`}
+              >
+                {pendingUpdateActions > 0 ? "Not scheduled" : "Up to date"}
+              </span>
+              <DetailStats
+                stacked
+                items={[
+                  ["Eligible screens", String(allScreens.length)],
+                  ["Scheduled screens", "0"],
+                  [
+                    "Restart required",
+                    pendingUpdateActions > 0 ? "May be required" : "No",
+                  ],
+                ]}
+              />
+              <div className="ops-card-actions">
+                <Link
+                  className="ops-button ops-button--primary"
+                  to="/settings/player-updates"
+                >
+                  Schedule update
+                </Link>
+                <Link
+                  className="ops-inline-action"
+                  to="/settings/player-updates"
+                >
+                  View releases <ChevronRight size={14} />
+                </Link>
+              </div>
+            </section>
+          </section>
         </aside>
       </section>
     </div>
@@ -482,7 +490,9 @@ function DetailStats({
   stacked?: boolean;
 }) {
   return (
-    <dl className={`ops-detail-stats ${stacked ? "ops-detail-stats--stacked" : ""}`}>
+    <dl
+      className={`ops-detail-stats ${stacked ? "ops-detail-stats--stacked" : ""}`}
+    >
       {items.map(([label, value]) => (
         <div key={label}>
           <dt>{label}</dt>
