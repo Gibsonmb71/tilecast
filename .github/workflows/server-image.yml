@@ -6,6 +6,12 @@ on:
     tags:
       - "v*"
       - "server-v*"
+    paths:
+      - "apps/server/**"
+      - "apps/dashboard/**"
+      - "packages/**"
+      - "deploy/docker/Dockerfile"
+      - ".github/workflows/server-image.yml"
   pull_request:
     paths:
       - "apps/server/**"
