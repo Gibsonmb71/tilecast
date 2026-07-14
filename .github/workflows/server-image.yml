@@ -25,7 +25,7 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository_owner }}/tilecast-server
+  IMAGE_NAME: gibsonmb71/tilecast-server
 
 jobs:
   build:
