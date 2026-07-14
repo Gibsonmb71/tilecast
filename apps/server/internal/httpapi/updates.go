@@ -353,11 +353,17 @@ func (s *server) listUpdateDeployments(w http.ResponseWriter, r *http.Request) {
 		var pauseReason *string
 		var created time.Time
 		var code int64
-		var total, succeeded, failed, waiting int
+		var total, succeeded, failed, waiting int64
 		var canarySize int
-		if rows.Scan(&id, &name, &mode, &status, &created, &code, &version, &total, &succeeded, &failed, &waiting, &rolloutMode, &rolloutPhase, &canarySize, &pauseReason) == nil {
-			items = append(items, map[string]any{"id": id, "name": name, "mode": mode, "status": status, "createdAt": created, "versionCode": code, "versionName": version, "targetCount": total, "succeededCount": succeeded, "failedCount": failed, "waitingForUserCount": waiting, "rolloutMode": rolloutMode, "rolloutPhase": rolloutPhase, "canarySize": canarySize, "pauseReason": pauseReason})
+		if err = rows.Scan(&id, &name, &mode, &status, &created, &code, &version, &total, &succeeded, &failed, &waiting, &rolloutMode, &rolloutPhase, &canarySize, &pauseReason); err != nil {
+			s.internalError(w, r, err)
+			return
 		}
+		items = append(items, map[string]any{"id": id, "name": name, "mode": mode, "status": status, "createdAt": created, "versionCode": code, "versionName": version, "targetCount": total, "succeededCount": succeeded, "failedCount": failed, "waitingForUserCount": waiting, "rolloutMode": rolloutMode, "rolloutPhase": rolloutPhase, "canarySize": canarySize, "pauseReason": pauseReason})
+	}
+	if err = rows.Err(); err != nil {
+		s.internalError(w, r, err)
+		return
 	}
 	writeJSON(w, 200, map[string]any{"data": map[string]any{"items": items}})
 }
@@ -426,7 +432,7 @@ func (s *server) retryUpdateScreen(w http.ResponseWriter, r *http.Request) {
 	payload, _ := json.Marshal(map[string]any{"deploymentId": deployment, "releaseId": release, "expectedVersionCode": version, "expectedApkSha256": hash, "installationMode": mode})
 	user := r.Context().Value(sessionContextKey).(auth.Session).User
 	command := uuid.New()
-	_, err := s.db.Exec(r.Context(), `INSERT INTO player_commands(id,organization_id,screen_id,type,payload,idempotency_key,created_by,expires_at) SELECT $1,organization_id,id,'install_player_update',$2,$1,$3,now()+interval '7 days' FROM screens WHERE id=$4`, command, payload, user.ID, screen)
+	_, err := s.db.Exec(r.Context(), `INSERT INTO player_commands(id,organization_id,screen_id,type,payload,idempotency_key,created_by,expires_at) SELECT $1,organization_id,id,'install_player_update',$2::jsonb,$1,$3,now()+interval '7 days' FROM screens WHERE id=$4`, command, string(payload), user.ID, screen)
 	if err != nil {
 		s.internalError(w, r, err)
 		return
@@ -562,7 +568,7 @@ func (s *server) advanceCanaryDeployment(ctx context.Context, deployment uuid.UU
 	for _, screen := range screens {
 		payload, _ := json.Marshal(map[string]any{"deploymentId": deployment, "releaseId": release, "expectedVersionCode": version, "expectedApkSha256": hash, "installationMode": mode, "maintenanceWindowStart": window})
 		command := uuid.New()
-		_, _ = s.db.Exec(ctx, `INSERT INTO player_commands(id,organization_id,screen_id,type,payload,idempotency_key,created_by,expires_at) SELECT $1,organization_id,id,'install_player_update',$2,$1,$3,now()+interval '7 days' FROM screens WHERE id=$4`, command, payload, creator, screen)
+		_, _ = s.db.Exec(ctx, `INSERT INTO player_commands(id,organization_id,screen_id,type,payload,idempotency_key,created_by,expires_at) SELECT $1,organization_id,id,'install_player_update',$2::jsonb,$1,$3,now()+interval '7 days' FROM screens WHERE id=$4`, command, string(payload), creator, screen)
 		s.devices.Notify(screen, map[string]any{"type": "commands.available"})
 	}
 	_, _ = s.db.Exec(ctx, `UPDATE update_deployments SET rollout_phase='full' WHERE id=$1 AND status='active'`, deployment)
