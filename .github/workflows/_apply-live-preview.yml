@@ -1,15 +1,17 @@
 name: Apply live preview wiring
 
 on:
-  push:
-    branches: [feature/live-screen-previews]
-    paths: [.github/workflows/_apply-live-preview.yml]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
+  pull-requests: read
 
 jobs:
   apply-and-verify:
+    if: github.head_ref == 'feature/live-screen-previews' || github.ref == 'refs/heads/feature/live-screen-previews'
     runs-on: ubuntu-latest
     steps:
       - name: Check out feature branch
