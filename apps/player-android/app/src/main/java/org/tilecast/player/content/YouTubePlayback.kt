@@ -2,11 +2,15 @@ package org.tilecast.player.content
 
 import android.annotation.SuppressLint
 import android.graphics.BitmapFactory
+import android.graphics.Color as AndroidColor
+import android.view.View
+import android.view.ViewGroup
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.FrameLayout
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -31,7 +35,39 @@ import org.tilecast.player.network.ManifestSource
 import org.tilecast.player.network.YouTubeSourceConfig
 
 private class YouTubeBridge(private val callback: (String, String?) -> Unit) {
-    @JavascriptInterface fun report(state: String, detail: String?) = callback(state, detail)
+    @JavascriptInterface
+    fun report(state: String, detail: String?) = callback(state, detail)
+}
+
+private class YouTubeChromeClient(private val container: FrameLayout) : WebChromeClient() {
+    private var fullscreenView: View? = null
+    private var fullscreenCallback: CustomViewCallback? = null
+
+    override fun onShowCustomView(view: View, callback: CustomViewCallback) {
+        if (fullscreenView != null) {
+            callback.onCustomViewHidden()
+            return
+        }
+        fullscreenView = view
+        fullscreenCallback = callback
+        container.addView(
+            view,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            ),
+        )
+        view.bringToFront()
+    }
+
+    override fun onHideCustomView() {
+        fullscreenView?.let(container::removeView)
+        fullscreenView = null
+        fullscreenCallback?.onCustomViewHidden()
+        fullscreenCallback = null
+    }
+
+    fun release() = onHideCustomView()
 }
 
 @SuppressLint("SetJavaScriptEnabled")
@@ -81,24 +117,43 @@ fun YouTubeSourceItem(
     AndroidView(
         modifier = Modifier.fillMaxSize().background(Color.Black),
         factory = { context ->
-            WebView(context).apply {
-                setBackgroundColor(android.graphics.Color.BLACK)
-                settings.javaScriptEnabled = true
-                settings.domStorageEnabled = true
-                settings.mediaPlaybackRequiresUserGesture = false
-                settings.cacheMode = WebSettings.LOAD_DEFAULT
-                webChromeClient = WebChromeClient()
-                webViewClient = WebViewClient()
-                addJavascriptInterface(YouTubeBridge(report), "Tilecast")
-                loadDataWithBaseURL("$origin/", html, "text/html", "UTF-8", null)
+            FrameLayout(context).apply {
+                setBackgroundColor(AndroidColor.BLACK)
+                val root = this
+                val chrome = YouTubeChromeClient(root)
+                val webView =
+                    WebView(context).apply {
+                        tag = chrome
+                        setBackgroundColor(AndroidColor.BLACK)
+                        setLayerType(View.LAYER_TYPE_HARDWARE, null)
+                        layoutParams =
+                            FrameLayout.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                            )
+                        settings.javaScriptEnabled = true
+                        settings.domStorageEnabled = true
+                        settings.mediaPlaybackRequiresUserGesture = false
+                        settings.cacheMode = WebSettings.LOAD_DEFAULT
+                        settings.useWideViewPort = true
+                        settings.loadWithOverviewMode = true
+                        webChromeClient = chrome
+                        webViewClient = WebViewClient()
+                        addJavascriptInterface(YouTubeBridge(report), "Tilecast")
+                        loadDataWithBaseURL("$origin/", html, "text/html", "UTF-8", null)
+                    }
+                addView(webView)
             }
         },
         update = {},
-        onRelease = { view ->
-            view.loadUrl("about:blank")
-            view.removeJavascriptInterface("Tilecast")
-            view.stopLoading()
-            view.destroy()
+        onRelease = { container ->
+            val webView = container.getChildAt(0) as? WebView
+            (webView?.tag as? YouTubeChromeClient)?.release()
+            webView?.loadUrl("about:blank")
+            webView?.removeJavascriptInterface("Tilecast")
+            webView?.stopLoading()
+            container.removeAllViews()
+            webView?.destroy()
         },
     )
 }
@@ -111,8 +166,8 @@ internal fun youtubeHTML(config: YouTubeSourceConfig, origin: String): String {
     val loopPlaylist = if (config.loop && config.kind == "video") ",playlist:'$id'" else ""
     val captions = if (config.captions) "cc_load_policy:1,cc_lang_pref:'${config.captionLanguage}'," else "cc_load_policy:0,"
     val end = config.endSeconds?.let { "end:$it," }.orEmpty()
-    return """<!doctype html><html><head><meta name="referrer" content="origin"><style>html,body,#player{margin:0;width:100%;height:100%;overflow:hidden;background:#000}</style></head><body><div id="player"></div><script src="https://www.youtube.com/iframe_api"></script><script>
+    return """<!doctype html><html><head><meta name="referrer" content="origin"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><style>html,body,#player,iframe{margin:0;width:100%;height:100%;overflow:hidden;background:#000;border:0}</style></head><body><div id="player"></div><script src="https://www.youtube.com/iframe_api"></script><script>
       var player; function send(s,d){try{Tilecast.report(s,d||null)}catch(e){}}
-      function onYouTubeIframeAPIReady(){player=new YT.Player('player',{${listOptions}playerVars:{autoplay:1,playsinline:1,controls:${if (config.controls) 1 else 0},disablekb:1,fs:0,rel:0,start:${config.startSeconds},${end}loop:${if (config.loop) 1 else 0}$loopPlaylist,origin:'$origin',$captions},events:{onReady:function(e){${if (config.muted) "e.target.mute();" else "e.target.unMute();"}e.target.setVolume(${config.volume});e.target.playVideo();send('ready')},onStateChange:function(e){var m={0:'ended',1:'playing',2:'paused',3:'buffering',5:'ready'};send(m[e.data]||'waiting')},onError:function(e){send('player_error','youtube_'+e.data)}}});}
+      function onYouTubeIframeAPIReady(){player=new YT.Player('player',{width:'100%',height:'100%',${listOptions}playerVars:{autoplay:1,playsinline:0,controls:${if (config.controls) 1 else 0},disablekb:1,fs:0,rel:0,start:${config.startSeconds},${end}loop:${if (config.loop) 1 else 0}$loopPlaylist,origin:'$origin',$captions},events:{onReady:function(e){${if (config.muted) "e.target.mute();" else "e.target.unMute();"}e.target.setVolume(${config.volume});e.target.playVideo();send('ready')},onStateChange:function(e){var m={0:'ended',1:'playing',2:'paused',3:'buffering',5:'ready'};send(m[e.data]||'waiting')},onError:function(e){send('player_error','youtube_'+e.data)}}});}
     </script></body></html>"""
 }
