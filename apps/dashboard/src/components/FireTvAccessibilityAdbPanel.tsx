@@ -53,6 +53,7 @@ export function FireTvAccessibilityAdbPanel({
     }
   };
 
+  const commandPanelId = `fire-tv-accessibility-commands-${screenId}`;
   return (
     <section
       className="detail-card"
@@ -69,6 +70,8 @@ export function FireTvAccessibilityAdbPanel({
       <button
         type="button"
         className="button button--quiet"
+        aria-expanded={showCommand}
+        aria-controls={commandPanelId}
         onClick={() => {
           setShowCommand((shown) => !shown);
           setCopyState("idle");
@@ -77,7 +80,7 @@ export function FireTvAccessibilityAdbPanel({
         {showCommand ? "Hide ADB commands" : "Show ADB commands"}
       </button>
       {showCommand && (
-        <div>
+        <div id={commandPanelId}>
           <p>
             Enable ADB debugging on the Fire TV first. These commands use the
             player’s last reported address when available.
