@@ -18,7 +18,7 @@ The player captures immediately after it observes a new session and then approxi
 
 The player preserves aspect ratio, never upscales, and resizes the capture to at most 960×540 before upload. It encodes JPEG near 75 percent quality and progressively reduces quality or dimensions only when needed to remain below the hard 500 KB limit.
 
-The server stores one `screen_previews` row per screen. A successful or failed capture replaces the previous result, so no preview history accumulates.
+The server stores one `screen_previews` row per screen. A successful or failed capture replaces the previous result, so no preview history accumulates. Capture metadata remains available only through authenticated screen endpoints.
 
 ## Endpoints
 
