@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
+import {
+  clearLoginBackground,
+  getLoginBackground,
+  setLoginBackground,
+  type LoginBackground,
+} from "../api/loginBackground";
 import type { Asset } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import "./BrandingAssets.css";
 
 const chunkSize = 5 * 1024 * 1024;
-
-type LoginBackground = {
-  assetId?: string;
-  imageUrl: string;
-};
 
 export function BrandingAssets({
   values,
@@ -240,11 +241,13 @@ function BrandingAssetUpload({
               className="button button--quiet"
               disabled={!editable || busy}
               onClick={() => {
-                void Promise.resolve(onRemove()).then(() => {
-                  setUploadedAsset(undefined);
-                  if (previewUrl) URL.revokeObjectURL(previewUrl);
-                  setPreviewUrl(undefined);
-                });
+                void Promise.resolve(onRemove())
+                  .then(() => {
+                    setUploadedAsset(undefined);
+                    if (previewUrl) URL.revokeObjectURL(previewUrl);
+                    setPreviewUrl(undefined);
+                  })
+                  .catch(() => {});
               }}
             >
               Remove
@@ -258,49 +261,6 @@ function BrandingAssetUpload({
         )}
       </div>
     </article>
-  );
-}
-
-async function getLoginBackground(): Promise<LoginBackground> {
-  const response = await fetch("/api/v1/settings/login-background", {
-    credentials: "same-origin",
-  });
-  if (!response.ok) throw await backgroundError(response);
-  return ((await response.json()) as { data: LoginBackground }).data;
-}
-
-async function setLoginBackground(
-  assetId: string,
-  csrfToken: string,
-): Promise<LoginBackground> {
-  const response = await fetch("/api/v1/settings/login-background", {
-    method: "PUT",
-    credentials: "same-origin",
-    headers: {
-      "Content-Type": "application/json",
-      "X-CSRF-Token": csrfToken,
-    },
-    body: JSON.stringify({ assetId }),
-  });
-  if (!response.ok) throw await backgroundError(response);
-  return ((await response.json()) as { data: LoginBackground }).data;
-}
-
-async function clearLoginBackground(csrfToken: string): Promise<void> {
-  const response = await fetch("/api/v1/settings/login-background", {
-    method: "DELETE",
-    credentials: "same-origin",
-    headers: { "X-CSRF-Token": csrfToken },
-  });
-  if (!response.ok) throw await backgroundError(response);
-}
-
-async function backgroundError(response: Response) {
-  const body = (await response.json().catch(() => ({}))) as {
-    error?: { message?: string };
-  };
-  return new Error(
-    body.error?.message ?? "The login background could not be updated.",
   );
 }
 
