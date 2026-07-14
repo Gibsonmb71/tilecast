@@ -1,0 +1,34 @@
+name: Cut Player 0.11.0
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/player-android/app/build.gradle.kts"
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    if: github.event.head_commit.message == 'Bump Player to 0.11.0'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+      - name: Create release tag and remove one-time workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' apps/player-android/app/build.gradle.kts | head -1)" = "0.11.0"
+          test "$(sed -n 's/.*versionCode = \([0-9][0-9]*\).*/\1/p' apps/player-android/app/build.gradle.kts | head -1)" = "12"
+          git tag -a player-v0.11.0 -m "Tilecast Player 0.11.0" "$GITHUB_SHA"
+          git push origin player-v0.11.0
+          git rm .github/workflows/_cut-player-0.11.0.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Remove Player 0.11.0 release helper'
+          git push origin HEAD:main
