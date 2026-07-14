@@ -1857,6 +1857,11 @@ a {
   margin-right: 7px;
   vertical-align: middle;
 }
+.deployment-attention {
+  color: var(--tc-danger);
+  font-size: 12px;
+  font-weight: 650;
+}
 .policy-editor {
   padding: 20px 0;
 }

@@ -424,6 +424,7 @@ export type UpdateDeployment = {
   rolloutPhase?: string;
   canarySize?: number;
   pauseReason?: string;
+  lastFailure?: string;
 };
 
 export type PairingRequest = {

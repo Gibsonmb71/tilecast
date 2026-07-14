@@ -696,6 +696,7 @@ export function PlayerUpdatesPanel({
                 <th>Succeeded</th>
                 <th>Waiting</th>
                 <th>Failed</th>
+                <th>Attention</th>
               </tr>
             </thead>
             <tbody>
@@ -721,13 +722,20 @@ export function PlayerUpdatesPanel({
                   <td>{item.succeededCount}</td>
                   <td>{item.waitingForUserCount}</td>
                   <td>{item.failedCount}</td>
+                  <td
+                    className={
+                      item.lastFailure ? "deployment-attention" : undefined
+                    }
+                  >
+                    {item.lastFailure ? humanize(item.lastFailure) : "None"}
+                  </td>
                 </tr>
               ))}
               {!deployments.isLoading &&
                 !deployments.error &&
                 (deployments.data?.items.length ?? 0) === 0 && (
                   <tr>
-                    <td colSpan={8} className="table-empty-state">
+                    <td colSpan={9} className="table-empty-state">
                       <CheckCircle2 size={18} aria-hidden="true" />
                       No Player deployments have been created.
                     </td>

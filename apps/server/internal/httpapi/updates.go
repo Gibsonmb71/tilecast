@@ -341,7 +341,7 @@ func normalizedCanarySize(requested, targetCount int) int {
 
 func (s *server) listUpdateDeployments(w http.ResponseWriter, r *http.Request) {
 	_, _ = s.db.Exec(r.Context(), `UPDATE update_deployments d SET status='paused',rollout_phase='paused',paused_at=now(),pause_reason='A canary did not reconnect within ten minutes.' WHERE d.status='active' AND d.rollout_phase='canary' AND EXISTS(SELECT 1 FROM screen_update_states st WHERE st.deployment_id=d.id AND st.is_canary AND st.state='reconnecting' AND st.updated_at<now()-interval '10 minutes')`)
-	rows, err := s.db.Query(r.Context(), `SELECT d.id,d.name,d.mode,d.status,d.created_at,r.version_code,r.version_name,count(st.screen_id),count(*) FILTER(WHERE st.state='succeeded'),count(*) FILTER(WHERE st.state='failed'),count(*) FILTER(WHERE st.state IN ('waiting_for_permission','waiting_for_user')),d.rollout_mode,d.rollout_phase,d.canary_size,d.pause_reason FROM update_deployments d JOIN player_releases r ON r.id=d.release_id LEFT JOIN screen_update_states st ON st.deployment_id=d.id GROUP BY d.id,r.id ORDER BY d.created_at DESC LIMIT 100`)
+	rows, err := s.db.Query(r.Context(), `SELECT d.id,d.name,d.mode,d.status,d.created_at,r.version_code,r.version_name,count(st.screen_id),count(*) FILTER(WHERE st.state='succeeded'),count(*) FILTER(WHERE st.state='failed'),count(*) FILTER(WHERE st.state IN ('waiting_for_permission','waiting_for_user')),d.rollout_mode,d.rollout_phase,d.canary_size,d.pause_reason,max(st.safe_error) FILTER(WHERE st.state='failed') FROM update_deployments d JOIN player_releases r ON r.id=d.release_id LEFT JOIN screen_update_states st ON st.deployment_id=d.id GROUP BY d.id,r.id ORDER BY d.created_at DESC LIMIT 100`)
 	if err != nil {
 		s.internalError(w, r, err)
 		return
@@ -351,16 +351,16 @@ func (s *server) listUpdateDeployments(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var id uuid.UUID
 		var name, mode, status, version, rolloutMode, rolloutPhase string
-		var pauseReason *string
+		var pauseReason, lastFailure *string
 		var created time.Time
 		var code int64
 		var total, succeeded, failed, waiting int64
 		var canarySize int
-		if err = rows.Scan(&id, &name, &mode, &status, &created, &code, &version, &total, &succeeded, &failed, &waiting, &rolloutMode, &rolloutPhase, &canarySize, &pauseReason); err != nil {
+		if err = rows.Scan(&id, &name, &mode, &status, &created, &code, &version, &total, &succeeded, &failed, &waiting, &rolloutMode, &rolloutPhase, &canarySize, &pauseReason, &lastFailure); err != nil {
 			s.internalError(w, r, err)
 			return
 		}
-		items = append(items, map[string]any{"id": id, "name": name, "mode": mode, "status": status, "createdAt": created, "versionCode": code, "versionName": version, "targetCount": total, "succeededCount": succeeded, "failedCount": failed, "waitingForUserCount": waiting, "rolloutMode": rolloutMode, "rolloutPhase": rolloutPhase, "canarySize": canarySize, "pauseReason": pauseReason})
+		items = append(items, map[string]any{"id": id, "name": name, "mode": mode, "status": status, "createdAt": created, "versionCode": code, "versionName": version, "targetCount": total, "succeededCount": succeeded, "failedCount": failed, "waitingForUserCount": waiting, "rolloutMode": rolloutMode, "rolloutPhase": rolloutPhase, "canarySize": canarySize, "pauseReason": pauseReason, "lastFailure": lastFailure})
 	}
 	if err = rows.Err(); err != nil {
 		s.internalError(w, r, err)

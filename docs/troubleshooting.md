@@ -56,3 +56,5 @@ For stale player policy, compare the effective configuration revision with the a
 Confirm the release is published rather than draft and contains the three exact asset names. Check the trusted manifest public key, GitHub rate-limit status, `/data/updates` free space, and that the version code exceeds the installed player. Verification failures are intentionally undeployable.
 
 `Waiting for permission` requires enabling unknown-app installation for Tilecast Player. `Waiting for user` requires approving Android or Fire OS. Emergency playback delays installation. Interrupted downloads resume from `.part`. A certificate mismatch means the installed app and release use different Android keys and cannot update in place.
+
+`Installed certificate mismatch` means the Player currently on the TV was signed with a different Android key than the verified release, commonly because a debug APK was installed during setup. Android cannot replace it in place. Uninstall that Player once, install the production-signed `tilecast-player.apk`, and pair the screen again. Preserve the same production keystore for every later release.

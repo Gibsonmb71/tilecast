@@ -116,6 +116,9 @@ func TestCreateUpdateDeploymentPersistsHistoryAndCommand(t *testing.T) {
 	if err = pool.QueryRow(ctx, `SELECT state FROM screen_update_states WHERE deployment_id=$1 AND screen_id=$2`, created.Data.ID, screenID).Scan(&state); err != nil || state != "pending" {
 		t.Fatalf("screen update state=%q err=%v", state, err)
 	}
+	if _, err = pool.Exec(ctx, `UPDATE screen_update_states SET state='failed',safe_error='installer_conflict' WHERE deployment_id=$1 AND screen_id=$2`, created.Data.ID, screenID); err != nil {
+		t.Fatal(err)
+	}
 
 	historyResponse := httptest.NewRecorder()
 	s.listUpdateDeployments(historyResponse, httptest.NewRequest(http.MethodGet, "/api/v1/update-deployments", nil))
@@ -127,13 +130,14 @@ func TestCreateUpdateDeploymentPersistsHistoryAndCommand(t *testing.T) {
 			Items []struct {
 				ID          uuid.UUID `json:"id"`
 				TargetCount int       `json:"targetCount"`
+				LastFailure string    `json:"lastFailure"`
 			} `json:"items"`
 		} `json:"data"`
 	}
 	if err = json.Unmarshal(historyResponse.Body.Bytes(), &history); err != nil {
 		t.Fatal(err)
 	}
-	if len(history.Data.Items) != 1 || history.Data.Items[0].ID != created.Data.ID || history.Data.Items[0].TargetCount != 1 {
+	if len(history.Data.Items) != 1 || history.Data.Items[0].ID != created.Data.ID || history.Data.Items[0].TargetCount != 1 || history.Data.Items[0].LastFailure != "installer_conflict" {
 		t.Fatalf("deployment missing from history: %#v", history.Data.Items)
 	}
 }
