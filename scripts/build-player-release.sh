@@ -21,19 +21,20 @@ APKSIGNER="${ANDROID_HOME:?ANDROID_HOME is required}/build-tools/${ANDROID_BUILD
 BUILD_TOOLS="$(dirname "$APKSIGNER")"
 AAPT="$BUILD_TOOLS/aapt"
 
-# Capture the complete verifier output before parsing it. Piping apksigner through
-# head under `set -o pipefail` can turn a valid signature check into a failed step
-# when the downstream process exits after finding the first certificate digest.
+# Capture complete command output before parsing it. Early-closing consumers such
+# as `head` can send SIGPIPE upstream and fail an otherwise successful release
+# script when `set -o pipefail` is enabled.
 VERIFY_OUTPUT="$("$APKSIGNER" verify --verbose --print-certs "$APK")"
 printf '%s\n' "$VERIFY_OUTPUT"
+BADGING_OUTPUT="$("$AAPT" dump badging "$APK")"
 
-GRADLE_VERSION_CODE="$(sed -n 's/.*versionCode = \([0-9][0-9]*\).*/\1/p' app/build.gradle.kts | head -1)"
-GRADLE_VERSION_NAME="$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -1)"
-PACKAGE_METADATA="$("$AAPT" dump badging "$APK" | head -1)"
+GRADLE_VERSION_CODE="$(sed -n 's/.*versionCode = \([0-9][0-9]*\).*/\1/p' app/build.gradle.kts)"
+GRADLE_VERSION_NAME="$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts)"
+PACKAGE_METADATA="${BADGING_OUTPUT%%$'\n'*}"
 APPLICATION_ID="$(printf '%s\n' "$PACKAGE_METADATA" | sed -n "s/.*name='\([^']*\)'.*/\1/p")"
 VERSION_CODE="$(printf '%s\n' "$PACKAGE_METADATA" | sed -n "s/.*versionCode='\([^']*\)'.*/\1/p")"
 VERSION_NAME="$(printf '%s\n' "$PACKAGE_METADATA" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p")"
-MINIMUM_SDK="$("$AAPT" dump badging "$APK" | sed -n "s/sdkVersion:'\([^']*\)'/\1/p" | head -1)"
+MINIMUM_SDK="$(printf '%s\n' "$BADGING_OUTPUT" | sed -n "s/sdkVersion:'\([^']*\)'/\1/p")"
 APK_SIZE="$(wc -c < "$APK" | tr -d ' ')"
 if command -v sha256sum >/dev/null 2>&1; then
 	APK_SHA="$(sha256sum "$APK" | awk '{print $1}')"
