@@ -66,6 +66,13 @@ func (s *server) playerSocket(w http.ResponseWriter, r *http.Request) {
 			case <-ctx.Done():
 				return
 			case timestamp := <-ticker.C:
+				var commandsWaiting bool
+				if err := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM player_commands WHERE screen_id=$1 AND state IN ('pending','delivered','acknowledged','running') AND expires_at>now())`, principal.ScreenID).Scan(&commandsWaiting); err == nil && commandsWaiting {
+					if err := send(map[string]any{"type": "commands.available"}); err != nil {
+						cancel()
+						return
+					}
+				}
 				if err := send(map[string]any{"type": "server.ping", "timestamp": timestamp.UTC().Format(time.RFC3339)}); err != nil {
 					cancel()
 					return
