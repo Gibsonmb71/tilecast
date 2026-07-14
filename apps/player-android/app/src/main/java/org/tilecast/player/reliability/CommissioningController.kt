@@ -72,7 +72,7 @@ class CommissioningController(
             step = step,
             adminPinSet = reliability.hasAdminPin(),
             accessibilitySupported = accessibilitySupported,
-            accessibilityEnabled = accessibilitySupported && reliability.accessibilityEnabled(),
+            accessibilityEnabled = reliability.accessibilityEnabled(),
             installPermissionGranted = Build.VERSION.SDK_INT < 26 || context.packageManager.canRequestPackageInstalls(),
             bootLaunchVerified = boot.launchVerified,
             immersiveVerified = context.getSharedPreferences("tilecast-reliability", Context.MODE_PRIVATE).getBoolean("immersive", false),
