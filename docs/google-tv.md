@@ -8,4 +8,4 @@ Use the D-pad to verify every action, manual address entry, back navigation, pai
 
 Validate custom branding, reporting intervals, and effective cache limits on the target Google TV device; configuration remains available from Room during outages.
 
-For GitHub APK updates, allow Tilecast Player under **Settings → Apps → Special app access → Install unknown apps**, return to Tilecast, and approve the system installer. Exact labels vary by manufacturer. Physical Google TV update verification remains outstanding.
+For GitHub APK updates, allow Tilecast Player once under **Settings → Apps → Special app access → Install unknown apps**. On Android 12 and newer, Tilecast then requests Android's unattended self-update mode and relaunches after replacement. Android can still require confirmation when platform eligibility is not met. Exact labels vary by manufacturer. Physical Google TV unattended-update verification remains outstanding.

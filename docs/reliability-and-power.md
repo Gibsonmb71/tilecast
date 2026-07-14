@@ -6,7 +6,7 @@ Tilecast Player has two reliability modes. **Standard Reliability** works with a
 
 Every newly paired player completes a local wizard before normal playback. It sets the hashed maintenance PIN, opens and verifies Accessibility Settings and unknown-app installation permission, verifies a healthy boot return, confirms immersive and keep-awake state, confirms a downloadable cached fallback, runs a self-test, and reports the final readiness state. Protected Android settings are never automated or marked complete based only on policy. **Run setup again** is available from the bounded local maintenance menu.
 
-New effective defaults request launch after boot, keep-awake, immersive presentation, accessibility return control, cached offline playback, recovery escalation, safe mode, and the stable update channel. Accessibility and installation permissions still require a person to approve Android’s system UI. Sleep outside active hours remains off until configured.
+New effective defaults request launch after boot, keep-awake, immersive presentation, accessibility return control, cached offline playback, recovery escalation, safe mode, and the stable update channel. Accessibility and unknown-app installation remain one-time local commissioning permissions. Eligible self-updates on Android 12 and newer can proceed unattended after commissioning. Sleep outside active hours remains off until configured.
 
 ## Active hours
 

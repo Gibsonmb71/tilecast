@@ -1,6 +1,6 @@
 # GitHub Player updates
 
-Tilecast distributes Tilecast Player as signed APKs through published releases at `Gibsonmb71/tilecast`. No Google Play, Amazon Developer, or paid Android developer account is required. Android and Fire OS can require an administrator at the TV to allow unknown-app installation and approve the system installer; Tilecast does not automate those prompts.
+Tilecast distributes Tilecast Player as signed APKs through published releases at `Gibsonmb71/tilecast`. No Google Play, Amazon Developer, or paid Android developer account is required. Unknown-app installation remains a one-time local commissioning permission. On Android 12 and newer, eligible signed self-updates request Android's supported unattended-update mode. Older Android and Fire OS installers may still require local confirmation.
 
 ## Release contract
 
@@ -60,7 +60,7 @@ curl --fail-with-body \
   https://tilecast.example.org/api/v1/player-releases/upload
 ```
 
-The player resumes `.part` downloads, verifies available storage, SHA-256, package name, version code, minimum SDK, signing certificate, install permission, and emergency state, then uses Android `PackageInstaller`. Emergency playback delays installation but not downloading. Pairing credentials, manifests, configuration, disabled state, and media cache live outside the APK and survive replacement. Success is recorded only after the updated player reconnects at the expected version and reports healthy playback after installation.
+The player resumes `.part` downloads, verifies available storage, SHA-256, package name, version code, minimum SDK, signing certificate, install permission, and emergency state, then uses Android `PackageInstaller`. For API 31 and newer it declares `UPDATE_PACKAGES_WITHOUT_USER_ACTION` and requests `USER_ACTION_NOT_REQUIRED` for its own signed update. Android can still return `STATUS_PENDING_USER_ACTION`, so the Player preserves an explicit confirmation fallback instead of claiming universal silent installation. Emergency playback delays installation but not downloading. Pairing credentials, manifests, configuration, disabled state, and media cache live outside the APK and survive replacement. The package-replaced receiver and the already-enabled bounded Accessibility service both request a return to Tilecast after replacement; Accessibility never reads or clicks installer controls. Success is recorded only after the updated player reconnects at the expected version and reports healthy playback after installation.
 
 Deployments may start with a deterministic canary cohort. Other targeted screens remain held until every canary reconnects successfully. The rollout pauses when a canary reports failure, enters safe mode, or remains reconnecting beyond the bounded health window. Studio shows the rollout phase and safe pause reason; it never treats `WaitingForUser` as failure.
 

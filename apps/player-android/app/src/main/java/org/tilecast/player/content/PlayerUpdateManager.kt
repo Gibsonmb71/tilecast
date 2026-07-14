@@ -40,6 +40,10 @@ object PlayerUpdateVerifier {
     }
 }
 
+object PlayerUpdateInstallPolicy {
+    fun canRequestUnattended(sdk:Int):Boolean=sdk>=Build.VERSION_CODES.S
+}
+
 class PlayerUpdateManager(private val app:Application,private val api:TilecastApi){
     private val store=app.getSharedPreferences("tilecast-player-updates",Application.MODE_PRIVATE)
     private val scope=CoroutineScope(SupervisorJob()+Dispatchers.Default)
@@ -66,26 +70,43 @@ class PlayerUpdateManager(private val app:Application,private val api:TilecastAp
             }
             val maintenanceAt=command.payload["maintenanceWindowStart"]?.jsonPrimitive?.contentOrNull?.takeIf{it!="null"}
             if(command.payload["installationMode"]?.jsonPrimitive?.contentOrNull=="maintenance_window"&&maintenanceAt!=null&&Instant.parse(maintenanceAt).isAfter(Instant.now())){state=state.copy(state="ready",message="Installation scheduled for ${maintenanceAt}",maintenanceAt=maintenanceAt);persist(state);onState(state);api.updateStatus(server,credential,deployment,"ready",state.downloadedBytes,installerStatus="maintenance_scheduled");scheduleMaintenance(server,credential,state,emergencyActive,onState);return CommandOutcome(true,"update_maintenance_scheduled","Update verified for its maintenance window")}
-            if(emergencyActive()){state=state.copy(state="ready",message="Installation delayed by emergency playback",installReady=true);persist(state);onState(state);api.updateStatus(server,credential,deployment,"ready",state.downloadedBytes,installerStatus="delayed_by_emergency");return CommandOutcome(true,"update_ready_emergency_delay","Update verified; installation is delayed by emergency playback")}
+            if(emergencyActive()){state=state.copy(state="ready",message="Installation delayed by emergency playback",installReady=true,maintenanceAt=Instant.now().toString());persist(state);onState(state);api.updateStatus(server,credential,deployment,"ready",state.downloadedBytes,installerStatus="delayed_by_emergency");scheduleMaintenance(server,credential,state,emergencyActive,onState);return CommandOutcome(true,"update_ready_emergency_delay","Update verified; installation is delayed by emergency playback")}
             if(Build.VERSION.SDK_INT>=26&&!app.packageManager.canRequestPackageInstalls()){
                 state=state.copy(state="waiting_for_permission",message="Allow Tilecast Player to install updates",permissionRequired=true,installReady=true);persist(state);onState(state);api.updateStatus(server,credential,deployment,"waiting_for_permission",state.downloadedBytes,"required");return CommandOutcome(true,"update_waiting_for_permission","Update is waiting for unknown-app permission")
             }
-            state=state.copy(state="waiting_for_user",message="Player update is ready to install",installReady=true);persist(state);onState(state);api.updateStatus(server,credential,deployment,"waiting_for_user",state.downloadedBytes,permissionStatus="granted");CommandOutcome(true,"update_waiting_for_user","Update is waiting for TV approval")
+            if(PlayerUpdateInstallPolicy.canRequestUnattended(Build.VERSION.SDK_INT)){
+                state=state.copy(state="installing",message="Installing verified player update",installReady=false);persist(state);onState(state)
+                if(!install(state))throw IllegalStateException("installer_session_failed")
+                api.updateStatus(server,credential,deployment,"installing",state.downloadedBytes,permissionStatus="granted",installerStatus="unattended_install_requested")
+                return CommandOutcome(true,"unattended_update_started","Verified Player update installation started")
+            }
+            state=state.copy(state="waiting_for_user",message="This Android version requires local installer approval",installReady=true);persist(state);onState(state);api.updateStatus(server,credential,deployment,"waiting_for_user",state.downloadedBytes,permissionStatus="granted",installerStatus="system_confirmation_required");CommandOutcome(true,"update_waiting_for_user","This Android version requires local installer approval")
         }catch(error:Exception){val code=error.message?.takeIf{it.matches(Regex("[a-z_]+"))}?:"update_preparation_failed";api.updateStatus(server,credential,deployment,"failed",0,error=code);CommandOutcome(false,code,"Player update could not be prepared")}
     }
 
     fun openPermissionSettings(){app.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${app.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}
-    fun permissionGranted(state:UpdateUiState):UpdateUiState?=if((Build.VERSION.SDK_INT<26||app.packageManager.canRequestPackageInstalls())&&state.permissionRequired){state.copy(state="waiting_for_user",message="Player update is ready to install",permissionRequired=false,installReady=true).also(::persist)}else null
-    fun installerFailure(state:UpdateUiState):UpdateUiState?{val result=store.getString("installer-result",null)?:return null;store.edit().remove("installer-result").apply();return if(result=="success")null else state.copy(state="failed",message="Android did not install the update: ${result.replace('_',' ')}",permissionRequired=false,installReady=true,errorCode=result).also(::persist)}
+    fun permissionGranted(state:UpdateUiState):UpdateUiState? {
+        if((Build.VERSION.SDK_INT>=26&&!app.packageManager.canRequestPackageInstalls())||!state.permissionRequired)return null
+        val next=if(PlayerUpdateInstallPolicy.canRequestUnattended(Build.VERSION.SDK_INT))state.copy(state="installing",message="Installing verified player update",permissionRequired=false,installReady=false) else state.copy(state="waiting_for_user",message="This Android version requires local installer approval",permissionRequired=false,installReady=true)
+        persist(next)
+        return if(next.state=="installing"&&!install(next))next.copy(state="failed",message="Android could not start the installer",errorCode="installer_session_failed").also(::persist) else next
+    }
+    fun installerFailure(state:UpdateUiState):UpdateUiState?{val result=store.getString("installer-result",null)?:return null;store.edit().remove("installer-result").apply();return when(result){"success"->null;"installer_confirmation_required"->state.copy(state="waiting_for_user",message="Android requires local installer approval on this device",permissionRequired=false,installReady=true,errorCode=null).also(::persist);else->state.copy(state="failed",message="Android did not install the update: ${result.replace('_',' ')}",permissionRequired=false,installReady=true,errorCode=result).also(::persist)}}
     fun resumeMaintenance(server:String,credential:String,state:UpdateUiState,emergencyActive:()->Boolean,onState:(UpdateUiState)->Unit){if(state.state=="ready"&&state.maintenanceAt!=null)scheduleMaintenance(server,credential,state,emergencyActive,onState)}
-    private fun scheduleMaintenance(server:String,credential:String,state:UpdateUiState,emergencyActive:()->Boolean,onState:(UpdateUiState)->Unit){if(maintenanceJob?.isActive==true)return;maintenanceJob=scope.launch{delay(java.time.Duration.between(Instant.now(),Instant.parse(state.maintenanceAt)).toMillis().coerceAtLeast(0));while(emergencyActive()){delay(30_000)};val permissionRequired=Build.VERSION.SDK_INT>=26&&!app.packageManager.canRequestPackageInstalls();val next=state.copy(state=if(permissionRequired)"waiting_for_permission" else "waiting_for_user",message=if(permissionRequired)"Allow Tilecast Player to install updates" else "Player update is ready to install",permissionRequired=permissionRequired,installReady=true);persist(next);onState(next);runCatching{api.updateStatus(server,credential,next.deploymentId,next.state,next.downloadedBytes,if(permissionRequired)"required" else "granted",installerStatus="maintenance_window_reached")}}}
+    private fun scheduleMaintenance(server:String,credential:String,state:UpdateUiState,emergencyActive:()->Boolean,onState:(UpdateUiState)->Unit){if(maintenanceJob?.isActive==true)return;maintenanceJob=scope.launch{delay(java.time.Duration.between(Instant.now(),Instant.parse(state.maintenanceAt)).toMillis().coerceAtLeast(0));while(emergencyActive()){delay(30_000)};val permissionRequired=Build.VERSION.SDK_INT>=26&&!app.packageManager.canRequestPackageInstalls();val unattended=!permissionRequired&&PlayerUpdateInstallPolicy.canRequestUnattended(Build.VERSION.SDK_INT);var next=state.copy(state=if(permissionRequired)"waiting_for_permission" else if(unattended)"installing" else "waiting_for_user",message=if(permissionRequired)"Allow Tilecast Player to install updates" else if(unattended)"Installing verified player update" else "This Android version requires local installer approval",permissionRequired=permissionRequired,installReady=!permissionRequired&&!unattended);persist(next);onState(next);if(unattended&&!install(next)){next=next.copy(state="failed",message="Android could not start the installer",errorCode="installer_session_failed");persist(next);onState(next)};runCatching{api.updateStatus(server,credential,next.deploymentId,next.state,next.downloadedBytes,if(permissionRequired)"required" else "granted",installerStatus=if(unattended)"unattended_install_requested" else "maintenance_window_reached",error=next.errorCode?:"")}}}
     fun install(state:UpdateUiState):Boolean{
         val releaseFiles=File(app.filesDir,"updates").listFiles()?.filter{it.extension=="apk"}.orEmpty();val apk=releaseFiles.maxByOrNull{it.lastModified()}?:return false
-        return runCatching{
-            val params=PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply{setAppPackageName(BuildConfig.APPLICATION_ID);setSize(apk.length())}
-            val installer=app.packageManager.packageInstaller;val sessionId=installer.createSession(params);installer.openSession(sessionId).use{session->apk.inputStream().use{input->session.openWrite("tilecast-player.apk",0,apk.length()).use{output->input.copyTo(output);session.fsync(output)}};val intent=Intent(app,UpdateInstallReceiver::class.java);val pending=PendingIntent.getBroadcast(app,sessionId,intent,PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE);session.commit(pending.intentSender)}
+        val reliability=app.getSharedPreferences("tilecast-reliability",Application.MODE_PRIVATE)
+        val started=runCatching{
+            val params=PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply{setAppPackageName(BuildConfig.APPLICATION_ID);setSize(apk.length());if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.S)setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)}
+            val installer=app.packageManager.packageInstaller
+            val sessionId=installer.createSession(params)
+            reliability.edit().putBoolean("update-active",true).putBoolean("update-relaunch-requested",true).putInt("update-relaunch-attempts",0).apply()
+            installer.openSession(sessionId).use{session->apk.inputStream().use{input->session.openWrite("tilecast-player.apk",0,apk.length()).use{output->input.copyTo(output);session.fsync(output)}};val intent=Intent(app,UpdateInstallReceiver::class.java);val pending=PendingIntent.getBroadcast(app,sessionId,intent,PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE);session.commit(pending.intentSender)}
             persist(state.copy(state="installing",message="Android installer is preparing the update"));true
         }.getOrDefault(false)
+        if(!started)reliability.edit().putBoolean("update-active",false).putBoolean("update-relaunch-requested",false).apply()
+        return started
     }
 
     @Suppress("DEPRECATION") private fun inspect(file:File):ArchiveMetadata{

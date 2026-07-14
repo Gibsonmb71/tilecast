@@ -34,7 +34,7 @@ class TilecastAccessibilityService:AccessibilityService(){
         exitedAt=Instant.now()
         handler.postDelayed({policy?.let{if(it.shouldReturn(packageName,exitedAt,Instant.now(),maintenance||updating)){it.recordAttempt(Instant.now());store.edit().putInt("accessibility-return-attempts",it.attemptsInWindow(Instant.now())).putString("accessibility-return-state","return_requested").apply();startActivity(Intent(this,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))}else if(it.attemptsInWindow(Instant.now())>=store.getInt("maximum-returns",3))store.edit().putString("accessibility-return-state","loop_prevented").apply()}},delay*1000L)
     }
-    override fun onServiceConnected(){super.onServiceConnected();active=this}
+    override fun onServiceConnected(){super.onServiceConnected();active=this;val store=getSharedPreferences("tilecast-reliability",Context.MODE_PRIVATE);val attempts=store.getInt("update-relaunch-attempts",0);if(store.getBoolean("update-relaunch-requested",false)&&attempts<3){store.edit().putInt("update-relaunch-attempts",attempts+1).apply();handler.postDelayed({startActivity(Intent(this,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP))},1500)}}
     override fun onDestroy(){if(active===this)active=null;super.onDestroy()}
     override fun onInterrupt() = Unit
 }

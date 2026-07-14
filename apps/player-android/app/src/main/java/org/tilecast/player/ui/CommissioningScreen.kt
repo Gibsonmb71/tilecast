@@ -133,7 +133,7 @@ private fun CommissioningStepBody(
         }
         CommissioningStep.INSTALL_PERMISSION -> CapabilityStep(
             "Allow signed Player updates",
-            "Android requires local approval before Tilecast may open its signed APK in the system installer. Tilecast never approves the installer prompt for you.",
+            "Grant this one-time Android permission so Tilecast can install its verified updates. Android 12 and newer can complete eligible self-updates unattended; older system installers may still require local confirmation.",
             state.installPermissionGranted,
             "Open install permission",
             openInstallPermission,
