@@ -107,14 +107,18 @@ private fun CommissioningStepBody(
         }
         CommissioningStep.ACCESSIBILITY -> {
             if (!state.accessibilitySupported) {
-                Text("Accessibility Control is unavailable on Fire TV", color = SignalText, fontSize = 30.sp)
+                Text("Accessibility Control is optional on Fire TV", color = SignalText, fontSize = 30.sp)
                 Text(
-                    "Fire OS does not expose the standard Android screen for enabling Tilecast’s accessibility service. Tilecast will continue without accessibility-assisted app return or lock actions on this device.",
+                    "Fire OS does not expose the standard Android screen for enabling Tilecast’s accessibility service. You may continue without it, or enable it manually with ADB using the command shown in Tilecast Studio under this screen’s Reliability tab.",
                     color = SignalMuted,
                     fontSize = 18.sp,
                 )
                 Spacer(Modifier.height(14.dp))
-                Text("This limitation will remain visible in Tilecast Studio.", color = SignalWarning, fontSize = 17.sp)
+                if (state.accessibilityEnabled) {
+                    StatusLine("ADB-enabled Accessibility Control", true)
+                } else {
+                    Text("Optional: enable ADB debugging on the Fire TV, run the Studio command, then choose Verify again.", color = SignalWarning, fontSize = 17.sp)
+                }
             } else {
                 CapabilityStep(
                     "Enable Accessibility Control",
