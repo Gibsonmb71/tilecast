@@ -1,0 +1,90 @@
+.sidebar__account {
+  position: relative;
+  grid-template-columns: 31px minmax(0, 1fr) 32px;
+}
+
+.sidebar__account-copy {
+  display: grid;
+  min-width: 0;
+}
+
+.account-menu {
+  position: relative;
+}
+
+.account-menu__trigger {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  padding: 0;
+  color: var(--tc-sidebar-text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--tc-radius-sm);
+  cursor: pointer;
+}
+
+.account-menu__trigger:hover,
+.account-menu__trigger[aria-expanded="true"] {
+  color: white;
+  background: var(--tc-sidebar-hover);
+  border-color: var(--tc-sidebar-border);
+}
+
+.account-menu__popover {
+  position: absolute;
+  z-index: 20;
+  right: 0;
+  bottom: calc(100% + 8px);
+  width: 166px;
+  padding: 5px;
+  background: var(--tc-surface);
+  border: 1px solid var(--tc-border);
+  border-radius: var(--tc-radius-sm);
+  box-shadow: var(--tc-shadow-sm);
+}
+
+.account-menu__popover button {
+  display: flex;
+  width: 100%;
+  min-height: 36px;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 9px;
+  color: var(--tc-danger);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: var(--tc-radius-sm);
+  cursor: pointer;
+}
+
+.account-menu__popover button:hover:not(:disabled) {
+  background: var(--tc-status-danger-bg);
+}
+
+.account-menu__popover button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+@media (max-width: 800px) {
+  .sidebar__account {
+    display: grid;
+    grid-template-columns: 1fr;
+    justify-items: center;
+    gap: 7px;
+    padding: 12px 8px;
+  }
+
+  .sidebar__account-copy {
+    display: none;
+  }
+
+  .account-menu__popover {
+    right: auto;
+    bottom: 0;
+    left: calc(100% + 8px);
+  }
+}
