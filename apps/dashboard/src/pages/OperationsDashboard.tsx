@@ -219,7 +219,10 @@ export function OperationsDashboard() {
               </p>
               <DetailStats
                 items={[
-                  ["Verified screens", `${verifiedCount} / ${allScreens.length}`],
+                  [
+                    "Verified screens",
+                    `${verifiedCount} / ${allScreens.length}`,
+                  ],
                   ["Last confirmed", formatRelative(lastUpdated)],
                   ["Interruptions", "Not tracked"],
                 ]}
@@ -432,7 +435,8 @@ export function OperationsDashboard() {
               <span>
                 <strong>Playback schedule</strong>
                 <small>
-                  {nextChange.schedule.name} · {targetLabel(nextChange.schedule)}
+                  {nextChange.schedule.name} ·{" "}
+                  {targetLabel(nextChange.schedule)}
                 </small>
               </span>
               <span className="ops-status ops-status--neutral">Scheduled</span>
@@ -481,7 +485,9 @@ function DetailStats({
   stacked?: boolean;
 }) {
   return (
-    <dl className={`ops-detail-stats ${stacked ? "ops-detail-stats--stacked" : ""}`}>
+    <dl
+      className={`ops-detail-stats ${stacked ? "ops-detail-stats--stacked" : ""}`}
+    >
       {items.map(([label, value]) => (
         <div key={label}>
           <dt>{label}</dt>
