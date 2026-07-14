@@ -14,8 +14,8 @@ android {
         applicationId = "org.tilecast.player"
         minSdk = 23
         targetSdk = 35
-        versionCode = 11
-        versionName = "0.10.1"
+        versionCode = 12
+        versionName = "0.11.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
 		buildConfigField("long", "MEDIA_CACHE_BYTES", "${providers.gradleProperty("TILECAST_PLAYER_CACHE_BYTES").orElse("8589934592").get()}L")
