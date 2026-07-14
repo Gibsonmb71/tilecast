@@ -1,0 +1,49 @@
+name: Finalize Overview design PR
+
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/_finalize-overview-pr.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/overview-layout-light-theme
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Correct Overview markup
+        run: |
+          python3 -c 'from pathlib import Path; p=Path("apps/dashboard/src/pages/OperationsDashboard.tsx"); t=p.read_text(); old="          ) : null}\n        </div>\n\n      <section className=\"ops-card ops-upcoming\">"; new="          ) : null}\n\n          <section className=\"ops-card ops-upcoming\">"; assert old in t, "missing premature main-column close"; p.write_text(t.replace(old,new,1))'
+          python3 -c 'from pathlib import Path; p=Path("apps/dashboard/src/pages/OperationsDashboard.tsx"); t=p.read_text(); old="      </section>\n        </div>\n\n        <aside className=\"ops-dashboard-grid__rail\">"; new="          </section>\n        </div>\n\n        <aside className=\"ops-dashboard-grid__rail\">"; assert old in t, "missing Upcoming changes close"; p.write_text(t.replace(old,new,1))'
+          rm -f .github/workflows/_fix-overview-markup.yml .github/workflows/_format-overview-polish.yml .github/workflows/_finalize-overview-layout.yml
+          npm exec prettier -- --write apps/dashboard/src/pages/OperationsDashboard.tsx apps/dashboard/src/pages/OperationsDashboard.css apps/dashboard/src/pages/OperationsDashboard.test.ts
+      - name: Verify dashboard
+        run: |
+          npm run format:check
+          npm run lint --workspace @tilecast/dashboard
+          npm test --workspace @tilecast/dashboard
+          npm run build --workspace @tilecast/dashboard
+      - name: Commit corrected PR branch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Fix Overview markup and workflow formatting'
+          git push origin HEAD:fix/overview-layout-light-theme
+      - name: Remove this workflow from main
+        run: |
+          git fetch origin main
+          git checkout -B main origin/main
+          git rm .github/workflows/_finalize-overview-pr.yml
+          git commit -m 'Remove Overview PR finalizer'
+          git push origin HEAD:main
