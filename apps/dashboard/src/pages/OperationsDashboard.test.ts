@@ -1,5 +1,11 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import styles from "./OperationsDashboard.css?raw";
+
+const styles = readFileSync(
+  fileURLToPath(new URL("./OperationsDashboard.css", import.meta.url)),
+  "utf8",
+);
 
 describe("Operations Dashboard styling", () => {
   it("uses independent dashboard columns to avoid empty grid space", () => {
