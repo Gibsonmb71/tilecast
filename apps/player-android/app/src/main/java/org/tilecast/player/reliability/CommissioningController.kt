@@ -19,6 +19,7 @@ data class CommissioningStatus(
     val required: Boolean = false,
     val step: CommissioningStep = CommissioningStep.ADMIN_PIN,
     val adminPinSet: Boolean = false,
+    val accessibilitySupported: Boolean = true,
     val accessibilityEnabled: Boolean = false,
     val installPermissionGranted: Boolean = false,
     val bootLaunchVerified: Boolean = false,
@@ -32,7 +33,16 @@ data class CommissioningStatus(
     val readiness: String
         get() {
             if (!required && completedAt == null) return "needs_setup"
-            val supported = listOf(adminPinSet, accessibilityEnabled, installPermissionGranted, bootLaunchVerified, immersiveVerified, keepAwakeVerified, cachedFallbackAvailable)
+            val supported =
+                listOf(
+                    adminPinSet,
+                    !accessibilitySupported || accessibilityEnabled,
+                    installPermissionGranted,
+                    bootLaunchVerified,
+                    immersiveVerified,
+                    keepAwakeVerified,
+                    cachedFallbackAvailable,
+                )
             return when {
                 supported.all { it } && selfTestResult == "passed" -> "ready"
                 completedAt != null -> "partially_ready"
@@ -56,11 +66,13 @@ class CommissioningController(
                 ?.let(Instant::ofEpochMilli)
         val step = CommissioningStep.entries.getOrElse(preferences.getInt("step-$screenId", 0)) { CommissioningStep.ADMIN_PIN }
         val boot = BootRecovery.status(context)
+        val accessibilitySupported = !Build.MANUFACTURER.equals("Amazon", ignoreCase = true)
         return CommissioningStatus(
             required = completedAt == null || preferences.getBoolean("run-again-$screenId", false),
             step = step,
             adminPinSet = reliability.hasAdminPin(),
-            accessibilityEnabled = reliability.accessibilityEnabled(),
+            accessibilitySupported = accessibilitySupported,
+            accessibilityEnabled = accessibilitySupported && reliability.accessibilityEnabled(),
             installPermissionGranted = Build.VERSION.SDK_INT < 26 || context.packageManager.canRequestPackageInstalls(),
             bootLaunchVerified = boot.launchVerified,
             immersiveVerified = context.getSharedPreferences("tilecast-reliability", Context.MODE_PRIVATE).getBoolean("immersive", false),
@@ -81,7 +93,14 @@ class CommissioningController(
 
     fun runSelfTest(screenId: String, cachedFallbackAvailable: Boolean): String {
         val boot = BootRecovery.status(context)
-        val passed = reliability.hasAdminPin() && reliability.accessibilityEnabled() && (Build.VERSION.SDK_INT < 26 || context.packageManager.canRequestPackageInstalls()) && boot.launchVerified && cachedFallbackAvailable
+        val accessibilitySupported = !Build.MANUFACTURER.equals("Amazon", ignoreCase = true)
+        val accessibilityReady = !accessibilitySupported || reliability.accessibilityEnabled()
+        val passed =
+            reliability.hasAdminPin() &&
+                accessibilityReady &&
+                (Build.VERSION.SDK_INT < 26 || context.packageManager.canRequestPackageInstalls()) &&
+                boot.launchVerified &&
+                cachedFallbackAvailable
         val result = if (passed) "passed" else "completed_with_warnings"
         preferences.edit().putString("self-test-result-$screenId", result).putLong("self-test-at-$screenId", System.currentTimeMillis()).commit()
         return result
