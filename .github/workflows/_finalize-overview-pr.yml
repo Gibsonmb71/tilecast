@@ -1,6 +1,5 @@
 name: Finalize Overview design PR
 
-# One-time workflow used to finish PR #20.
 on:
   push:
     branches: [main]
@@ -22,43 +21,64 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Correct and verify Overview
+      - name: Correct Overview markup
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          path = Path('apps/dashboard/src/pages/OperationsDashboard.tsx')
+
+          path = Path("apps/dashboard/src/pages/OperationsDashboard.tsx")
           text = path.read_text()
-          old = '''          ) : null}
+
+          premature_close = """          ) : null}
         </div>
 
-      <section className="ops-card ops-upcoming">'''
-          new = '''          ) : null}
+      <section className=\"ops-card ops-upcoming\">"""
+          corrected_open = """          ) : null}
 
-          <section className="ops-card ops-upcoming">'''
-          if old in text:
-              text = text.replace(old, new, 1)
-          path.write_text(text)
+          <section className=\"ops-card ops-upcoming\">"""
+          if premature_close not in text:
+              raise SystemExit("Could not find premature main-column close")
+          text = text.replace(premature_close, corrected_open, 1)
+
+          upcoming_close = """      </section>
+        </div>
+
+        <aside className=\"ops-dashboard-grid__rail\">"""
+          corrected_close = """          </section>
+        </div>
+
+        <aside className=\"ops-dashboard-grid__rail\">"""
+          if upcoming_close not in text:
+              raise SystemExit("Could not find Upcoming changes close")
+          path.write_text(text.replace(upcoming_close, corrected_close, 1))
           PY
+
           rm -f \
             .github/workflows/_fix-overview-markup.yml \
-            .github/workflows/_format-overview-polish.yml
+            .github/workflows/_format-overview-polish.yml \
+            .github/workflows/_finalize-overview-layout.yml
+
           npm exec prettier -- --write \
             apps/dashboard/src/pages/OperationsDashboard.tsx \
             apps/dashboard/src/pages/OperationsDashboard.css \
             apps/dashboard/src/pages/OperationsDashboard.test.ts
-          npm run format:check --workspace @tilecast/dashboard
+      - name: Verify dashboard
+        run: |
+          npm run format:check
           npm run lint --workspace @tilecast/dashboard
           npm test --workspace @tilecast/dashboard
           npm run build --workspace @tilecast/dashboard
+      - name: Commit corrected PR branch
+        run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
-          git commit -m 'Finalize Overview layout and light theme'
+          git commit -m 'Fix Overview markup and workflow formatting'
           git push origin HEAD:fix/overview-layout-light-theme
       - name: Remove this workflow from main
         run: |
-          git checkout main
-          git pull --ff-only origin main
+          git fetch origin main
+          git checkout -B main origin/main
           git rm .github/workflows/_finalize-overview-pr.yml
           git commit -m 'Remove Overview PR finalizer'
-          git push origin main
+          git push origin HEAD:main
