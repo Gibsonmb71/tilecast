@@ -37,25 +37,26 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Apply and verify fix
-        env:
-          TILECAST_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/tilecast_test?sslmode=disable
+      - name: Apply fix
         run: |
           set -euo pipefail
           python3 scripts/fix-player-update-catalog.py
           rm scripts/fix-player-update-catalog.py .github/workflows/_apply-player-update-catalog-fix.yml
           gofmt -w apps/server/internal/httpapi/updates.go
           npm exec prettier -- --write apps/dashboard/src/settings/SettingsOperations.tsx
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Fix Player release synchronization'
+          git push origin HEAD:fix/player-update-catalog
+      - name: Verify fix
+        env:
+          TILECAST_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/tilecast_test?sslmode=disable
+        run: |
+          set -euo pipefail
           go vet ./...
           go test ./...
           npm run format:check --workspace @tilecast/dashboard
           npm run lint --workspace @tilecast/dashboard
           npm test --workspace @tilecast/dashboard
           npm run build --workspace @tilecast/dashboard
-      - name: Commit fix
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
-          git commit -m 'Fix Player release synchronization'
-          git push origin HEAD:fix/player-update-catalog
