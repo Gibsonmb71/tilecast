@@ -135,10 +135,10 @@ const codeSchema = z.object({
           PY
           rm .github/workflows/_add-fire-tv-accessibility-adb.yml
       - name: Format and verify Studio
-        working-directory: apps/dashboard
         run: |
           npm ci
-          npm run format
+          npm run format -- apps/dashboard/src/pages/ScreensPage.tsx
+          npm run format:check
           npm run lint
           npm test
           npm run build
