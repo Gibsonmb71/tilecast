@@ -1,5 +1,6 @@
 name: Finalize Overview design PR
 
+# One-time workflow used to finish PR #20.
 on:
   push:
     branches: [main]
