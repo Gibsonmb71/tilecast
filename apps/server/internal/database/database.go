@@ -22,10 +22,6 @@ func Open(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 		return nil, fmt.Errorf("parse pool config: %w", err)
 	}
 
-	// QueryExecModeExec sends PostgreSQL the concrete parameter types inferred
-	// from Go values. Polymorphic functions such as jsonb_build_object need this.
-	config.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeExec
-
 	// google/uuid slices are not registered by pgx automatically. Deployment
 	// target queries pass []uuid.UUID to ANY($n), so register the PostgreSQL
 	// uuid[] type before each pooled connection is used.

@@ -494,6 +494,9 @@ textarea:disabled {
 .status-dot-label--danger {
   color: var(--tc-status-danger);
 }
+.status-dot-label--neutral {
+  color: var(--tc-status-neutral);
+}
 
 .status-badge,
 .status-chip--online,

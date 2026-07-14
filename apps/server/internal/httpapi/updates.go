@@ -238,10 +238,16 @@ func (s *server) createUpdateDeployment(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	for _, screen := range uniqueUUIDs(input.ScreenIDs) {
-		_, _ = tx.Exec(r.Context(), `INSERT INTO update_deployment_targets(deployment_id,target_type,screen_id) SELECT $1,'screen',$2 WHERE EXISTS(SELECT 1 FROM screens WHERE id=$2 AND deleted_at IS NULL)`, id, screen)
+		if _, err = tx.Exec(r.Context(), `INSERT INTO update_deployment_targets(deployment_id,target_type,screen_id) SELECT $1,'screen',$2 WHERE EXISTS(SELECT 1 FROM screens WHERE id=$2 AND deleted_at IS NULL)`, id, screen); err != nil {
+			s.internalError(w, r, err)
+			return
+		}
 	}
 	for _, group := range uniqueUUIDs(input.GroupIDs) {
-		_, _ = tx.Exec(r.Context(), `INSERT INTO update_deployment_targets(deployment_id,target_type,screen_group_id) SELECT $1,'group',$2 WHERE EXISTS(SELECT 1 FROM screen_groups WHERE id=$2 AND deleted_at IS NULL)`, id, group)
+		if _, err = tx.Exec(r.Context(), `INSERT INTO update_deployment_targets(deployment_id,target_type,screen_group_id) SELECT $1,'group',$2 WHERE EXISTS(SELECT 1 FROM screen_groups WHERE id=$2 AND deleted_at IS NULL)`, id, group); err != nil {
+			s.internalError(w, r, err)
+			return
+		}
 	}
 	rows, err := tx.Query(r.Context(), `SELECT DISTINCT s.id,ps.player_version_code,ps.android_sdk,COALESCE(ps.install_permission_status,'unknown'),COALESCE(s.last_heartbeat_at>now()-interval '15 minutes',false) FROM screens s LEFT JOIN screen_player_status ps ON ps.screen_id=s.id WHERE s.deleted_at IS NULL AND (s.id=ANY($1) OR EXISTS(SELECT 1 FROM screen_group_memberships m WHERE m.screen_id=s.id AND m.screen_group_id=ANY($2))) ORDER BY s.id`, input.ScreenIDs, input.GroupIDs)
 	if err != nil {
@@ -258,11 +264,18 @@ func (s *server) createUpdateDeployment(w http.ResponseWriter, r *http.Request) 
 	targets := []target{}
 	for rows.Next() {
 		var item target
-		if rows.Scan(&item.id, &item.current, &item.sdk, &item.permission, &item.recent) == nil {
-			targets = append(targets, item)
+		if err = rows.Scan(&item.id, &item.current, &item.sdk, &item.permission, &item.recent); err != nil {
+			rows.Close()
+			s.internalError(w, r, err)
+			return
 		}
+		targets = append(targets, item)
 	}
 	rows.Close()
+	if err = rows.Err(); err != nil {
+		s.internalError(w, r, err)
+		return
+	}
 	if len(targets) == 0 {
 		writeError(w, 422, "update_target_required", "No eligible screens matched the targets.")
 		return
@@ -271,7 +284,10 @@ func (s *server) createUpdateDeployment(w http.ResponseWriter, r *http.Request) 
 	if input.CanarySize > 0 && canarySize == 0 {
 		rolloutMode = "full"
 		rolloutPhase = "full"
-		_, _ = tx.Exec(r.Context(), `UPDATE update_deployments SET rollout_mode='full',rollout_phase='full',canary_size=0 WHERE id=$1`, id)
+		if _, err = tx.Exec(r.Context(), `UPDATE update_deployments SET rollout_mode='full',rollout_phase='full',canary_size=0 WHERE id=$1`, id); err != nil {
+			s.internalError(w, r, err)
+			return
+		}
 	}
 	for index, target := range targets {
 		isCanary := canarySize > 0 && index < canarySize
@@ -288,14 +304,23 @@ func (s *server) createUpdateDeployment(w http.ResponseWriter, r *http.Request) 
 		if canarySize > 0 && !isCanary && (state == "pending" || state == "offline") {
 			state = "held"
 		}
-		_, _ = tx.Exec(r.Context(), `INSERT INTO screen_update_states(deployment_id,screen_id,previous_version_code,expected_version_code,permission_status,state,completed_at,is_canary)VALUES($1,$2,$3,$4,$5,$6,CASE WHEN $6 IN('already_current','incompatible') THEN now() END,$7)`, id, target.id, target.current, versionCode, target.permission, state, isCanary)
+		if _, err = tx.Exec(r.Context(), `INSERT INTO screen_update_states(deployment_id,screen_id,previous_version_code,expected_version_code,permission_status,state,completed_at,is_canary)VALUES($1,$2,$3,$4,$5,$6,CASE WHEN $6 IN('already_current','incompatible') THEN now() END,$7)`, id, target.id, target.current, versionCode, target.permission, state, isCanary); err != nil {
+			s.internalError(w, r, err)
+			return
+		}
 		if state == "pending" || state == "offline" {
 			payload, _ := json.Marshal(map[string]any{"deploymentId": id, "releaseId": input.ReleaseID, "expectedVersionCode": versionCode, "expectedApkSha256": hash, "installationMode": input.Mode, "maintenanceWindowStart": input.MaintenanceWindowStart})
 			commandID := uuid.New()
-			_, _ = tx.Exec(r.Context(), `INSERT INTO player_commands(id,organization_id,screen_id,type,payload,idempotency_key,created_by,expires_at) SELECT $1,organization_id,id,'install_player_update',$2,$1,$3,now()+interval '7 days' FROM screens WHERE id=$4`, commandID, payload, user.ID, target.id)
+			if _, err = tx.Exec(r.Context(), `INSERT INTO player_commands(id,organization_id,screen_id,type,payload,idempotency_key,created_by,expires_at) SELECT $1,organization_id,id,'install_player_update',$2::jsonb,$1,$3,now()+interval '7 days' FROM screens WHERE id=$4`, commandID, string(payload), user.ID, target.id); err != nil {
+				s.internalError(w, r, err)
+				return
+			}
 		}
 	}
-	_, _ = tx.Exec(r.Context(), `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,metadata)VALUES($1,$2,'player_update.deployed','update_deployment',$3,jsonb_build_object('targetCount',$4,'duplicateTargetsRemoved',$5))`, uuid.New(), user.ID, id.String(), len(targets), len(input.ScreenIDs)+len(input.GroupIDs)-len(targets))
+	if _, err = tx.Exec(r.Context(), `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,metadata)VALUES($1,$2,'player_update.deployed','update_deployment',$3,jsonb_build_object('targetCount',$4::integer,'duplicateTargetsRemoved',$5::integer))`, uuid.New(), user.ID, id.String(), len(targets), len(input.ScreenIDs)+len(input.GroupIDs)-len(targets)); err != nil {
+		s.internalError(w, r, err)
+		return
+	}
 	if err := tx.Commit(r.Context()); err != nil {
 		s.internalError(w, r, err)
 		return
