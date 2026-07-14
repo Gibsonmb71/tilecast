@@ -10,7 +10,7 @@ Every stable release, and every GitHub prerelease used as the beta channel, must
 - `tilecast-player-update.json`
 - `tilecast-player-update.json.sig`
 
-The schema-1 JSON identifies `tilecast-player`, application ID `org.tilecast.player`, version code/name, stable or beta channel, minimum SDK 23, APK name/size/SHA-256, signing-certificate SHA-256, and release notes. The signature is base64 Ed25519 over the exact JSON bytes. The server trusts only `TILECAST_UPDATE_MANIFEST_PUBLIC_KEY`; the private key is never installed on Tilecast Server.
+The schema-1 JSON identifies `tilecast-player`, application ID `org.tilecast.player`, version code/name, stable or beta channel, minimum SDK 23, APK name/size/SHA-256, signing-certificate SHA-256, and release notes. The signature is base64 Ed25519 over the exact JSON bytes. Official Tilecast Server builds include the public release-verification key. `TILECAST_UPDATE_MANIFEST_PUBLIC_KEY` may override it for custom Player builds; the private key is never installed on Tilecast Server.
 
 Drafts, arbitrary repositories, arbitrary asset names/URLs, invalid signatures, downgrades, incompatible SDK declarations, checksum mismatches, invalid APK signatures, and signing-certificate mismatches are rejected. A verified APK is streamed to a temporary file beneath `/data/updates`, checked, and atomically renamed. Players download only from their paired Tilecast server using authenticated range requests.
 

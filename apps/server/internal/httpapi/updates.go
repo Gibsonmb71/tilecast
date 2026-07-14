@@ -39,7 +39,7 @@ func (s *server) listPlayerReleases(w http.ResponseWriter, r *http.Request) {
 	var checked *time.Time
 	var providerError *string
 	_ = s.db.QueryRow(r.Context(), `SELECT last_checked_at,safe_error FROM update_provider_state WHERE provider='github'`).Scan(&checked, &providerError)
-	writeJSON(w, 200, map[string]any{"data": map[string]any{"repository": "Gibsonmb71/tilecast", "lastCheckedAt": checked, "providerError": providerError, "items": items}})
+	writeJSON(w, 200, map[string]any{"data": map[string]any{"repository": "Gibsonmb71/tilecast", "lastCheckedAt": checked, "providerError": providerError, "manifestKeyConfigured": s.updates.ManifestKeyConfigured(), "items": items}})
 }
 
 func (s *server) uploadPlayerRelease(w http.ResponseWriter, r *http.Request) {
@@ -138,6 +138,10 @@ func releaseUploadPartLimit(name, contentType string, maximum int64) (int64, boo
 }
 
 func (s *server) checkPlayerReleases(w http.ResponseWriter, r *http.Request) {
+	if !s.updates.ManifestKeyConfigured() {
+		writeError(w, http.StatusServiceUnavailable, "update_manifest_key_missing", "Tilecast Player update trust is not configured. Rebuild the server with the official trust key or set TILECAST_UPDATE_MANIFEST_PUBLIC_KEY.")
+		return
+	}
 	if err := s.updates.Check(r.Context()); err != nil {
 		writeError(w, 502, "github_release_check_failed", err.Error())
 		return
