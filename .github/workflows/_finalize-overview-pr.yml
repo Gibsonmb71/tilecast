@@ -1,0 +1,63 @@
+name: Finalize Overview design PR
+
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/_finalize-overview-pr.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/overview-layout-light-theme
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Correct and verify Overview
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('apps/dashboard/src/pages/OperationsDashboard.tsx')
+          text = path.read_text()
+          old = '''          ) : null}
+        </div>
+
+      <section className="ops-card ops-upcoming">'''
+          new = '''          ) : null}
+
+          <section className="ops-card ops-upcoming">'''
+          if old in text:
+              text = text.replace(old, new, 1)
+          path.write_text(text)
+          PY
+          rm -f \
+            .github/workflows/_fix-overview-markup.yml \
+            .github/workflows/_format-overview-polish.yml
+          npm exec prettier -- --write \
+            apps/dashboard/src/pages/OperationsDashboard.tsx \
+            apps/dashboard/src/pages/OperationsDashboard.css \
+            apps/dashboard/src/pages/OperationsDashboard.test.ts
+          npm run format:check --workspace @tilecast/dashboard
+          npm run lint --workspace @tilecast/dashboard
+          npm test --workspace @tilecast/dashboard
+          npm run build --workspace @tilecast/dashboard
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Finalize Overview layout and light theme'
+          git push origin HEAD:fix/overview-layout-light-theme
+      - name: Remove this workflow from main
+        run: |
+          git checkout main
+          git pull --ff-only origin main
+          git rm .github/workflows/_finalize-overview-pr.yml
+          git commit -m 'Remove Overview PR finalizer'
+          git push origin main
