@@ -7,7 +7,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/tilecast/tilecast/apps/server/internal/auth"
-	"github.com/tilecast/tilecast/apps/server/internal/media"
 )
 
 const defaultLoginBackgroundURL = "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&fm=jpg&q=82&w=2400"
@@ -89,8 +88,8 @@ func (s *server) putLoginBackground(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	asset, err := s.media.GetAsset(r.Context(), assetID)
-	if err != nil || asset.Type != "image" || asset.ProcessingStatus != media.StatusReady {
-		writeError(w, http.StatusUnprocessableEntity, "login_background_invalid", "The login background must be a ready image asset.")
+	if err != nil || asset.Type != "image" {
+		writeError(w, http.StatusUnprocessableEntity, "login_background_invalid", "The login background must be an image asset.")
 		return
 	}
 	session := r.Context().Value(sessionContextKey).(auth.Session)
