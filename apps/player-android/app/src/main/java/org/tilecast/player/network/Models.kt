@@ -12,6 +12,7 @@ import kotlinx.serialization.Serializable
 @Serializable data class PairingPoll(val status: String, val expiresAt: String, val screenId: String? = null, val enrollmentToken: String? = null, val failureReason: String? = null)
 @Serializable data class EnrollmentRequest(val pairingSessionId: String, val enrollmentToken: String)
 @Serializable data class EnrollmentResult(val screenId: String, val screenName: String, val deviceCredential: String)
+@Serializable data class PreviewSession(val active: Boolean = false, val expiresAt: String? = null, val captureIntervalSeconds: Int = 20, val captureNow: Boolean = false)
 @Serializable data class HeartbeatRequest(val screenWidth: Int, val screenHeight: Int, val availableStorageBytes: Long? = null, val uptimeSeconds: Long? = null, val playerVersion: String,val playerVersionCode:Long?=null,val androidSdk:Int?=null,val installerSource:String?=null,val installPermissionStatus:String?=null,
     val activeManifestVersion: Long? = null, val pendingManifestVersion: Long? = null, val assignedPlaylistId: String? = null,
     val currentItemId: String? = null, val currentAssetId: String? = null, val playbackState: String? = null,
@@ -62,6 +63,7 @@ data class PlayerConfigResponse(val config:PlayerConfig?,val rawJson:String?,val
     val cacheUsedBytes: Long? = null, val cacheLimitBytes: Long? = null, val lastSynchronizationError: String? = null,
     val lastPlaybackError: String? = null,val currentScheduleId:String?=null,val currentPlaylistId:String?=null,val selectionSource:String?=null,val nextTransitionAt:String?=null,val deviceClockOffsetSeconds:Long?=null,val scheduleEvaluationError:String?=null,val scheduleManifestVersion:Long?=null,
     val currentWebsiteAssetId:String?=null,val websiteState:String?=null,val websiteLoadStartedAt:String?=null,val websiteLoadCompletedAt:String?=null,val websiteFailureCategory:String?=null,val websiteBlockedNavigationCount:Int?=null,val websiteCurrentHost:String?=null,val websiteFallbackShown:Boolean?=null,val websiteRendererRecoveryCount:Int?=null,
+    val currentSourceId:String?=null,val sourceProvider:String?=null,val sourceState:String?=null,val sourceError:String?=null,
 )
 
 class ApiException(val status: Int, val code: String, override val message: String) : Exception(message)

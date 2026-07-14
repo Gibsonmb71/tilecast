@@ -22,6 +22,7 @@ func (s *server) securityHeaders(next http.Handler) http.Handler {
 }
 
 func (s *server) requestLog(next http.Handler) http.Handler {
+	next = s.previewRoutes(next)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		wrapped := middleware.NewWrapResponseWriter(w, r.ProtoMajor)

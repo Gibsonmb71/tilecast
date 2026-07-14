@@ -68,6 +68,7 @@ import kotlinx.coroutines.delay
 import org.tilecast.player.core.DiscoveredServer
 import org.tilecast.player.core.PlayerState
 import org.tilecast.player.content.FullscreenPlayback
+import org.tilecast.player.preview.LivePreviewCoordinator
 import org.tilecast.player.reliability.ReliabilityController
 import org.tilecast.player.ui.theme.BroadcastAmber
 import org.tilecast.player.ui.theme.SignalBackground
@@ -89,6 +90,7 @@ import java.time.Duration
 class MainActivity : ComponentActivity() {
     private val model:PlayerViewModel by viewModels()
 	private lateinit var reliability:ReliabilityController
+	private lateinit var livePreview:LivePreviewCoordinator
 	private var adminPrompt by mutableStateOf(false)
 	private val escapeKeys=ArrayDeque<Int>()
 	private val reliabilityHandler=Handler(Looper.getMainLooper())
@@ -98,14 +100,16 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 		reliability=ReliabilityController(this)
+		livePreview=LivePreviewCoordinator(this,::previewCaptureBlockReason)
 		getSharedPreferences("tilecast-reliability",MODE_PRIVATE).edit().putBoolean("update-active",model.update.value?.state in setOf("waiting_for_permission","waiting_for_user","installing")).apply()
         enableEdgeToEdge()
 		WindowCompat.getInsetsController(window,window.decorView).hide(WindowInsetsCompat.Type.systemBars())
         setContent { TilecastSignalTheme { TilecastPlayer(model,adminPrompt,{adminPrompt=false},reliability) } }
     }
-    override fun onStart(){super.onStart();getSharedPreferences("tilecast-reliability",MODE_PRIVATE).edit().putBoolean("foreground",true).apply();ContextCompat.registerReceiver(this,clockReceiver,IntentFilter().apply{addAction(Intent.ACTION_TIME_CHANGED);addAction(Intent.ACTION_TIMEZONE_CHANGED)},ContextCompat.RECEIVER_NOT_EXPORTED);model.recalculateSchedule();model.refreshUpdatePermission();model.resumeUpdateSchedule();model.playerConfig.value?.let{reliability.applyWindow(this,it,model.activeHours.value)};reliabilityHandler.postDelayed({BootRecovery.markForegroundHealthy(this);model.refreshCommissioning()},5000)}
+    override fun onStart(){super.onStart();livePreview.start();getSharedPreferences("tilecast-reliability",MODE_PRIVATE).edit().putBoolean("foreground",true).apply();ContextCompat.registerReceiver(this,clockReceiver,IntentFilter().apply{addAction(Intent.ACTION_TIME_CHANGED);addAction(Intent.ACTION_TIMEZONE_CHANGED)},ContextCompat.RECEIVER_NOT_EXPORTED);model.recalculateSchedule();model.refreshUpdatePermission();model.resumeUpdateSchedule();model.playerConfig.value?.let{reliability.applyWindow(this,it,model.activeHours.value)};reliabilityHandler.postDelayed({BootRecovery.markForegroundHealthy(this);model.refreshCommissioning()},5000)}
     override fun onResume(){super.onResume();model.refreshCommissioning()}
-    override fun onStop(){getSharedPreferences("tilecast-reliability",MODE_PRIVATE).edit().putBoolean("foreground",false).putLong("last-foreground-exit",System.currentTimeMillis()).apply();unregisterReceiver(clockReceiver);super.onStop()}
+    override fun onStop(){livePreview.stop();getSharedPreferences("tilecast-reliability",MODE_PRIVATE).edit().putBoolean("foreground",false).putLong("last-foreground-exit",System.currentTimeMillis()).apply();unregisterReceiver(clockReceiver);super.onStop()}
+    override fun onDestroy(){livePreview.close();super.onDestroy()}
     override fun onWindowFocusChanged(hasFocus:Boolean){super.onWindowFocusChanged(hasFocus);if(hasFocus)model.playerConfig.value?.let{reliability.applyWindow(this,it,model.activeHours.value)}}
     override fun onKeyDown(keyCode:Int,event:KeyEvent?):Boolean {escapeKeys.addLast(keyCode);while(escapeKeys.size>escapeSequence.size)escapeKeys.removeFirst();if(escapeKeys.toList()==escapeSequence){escapeKeys.clear();adminPrompt=true;return true};return if(keyCode==KeyEvent.KEYCODE_BACK)true else super.onKeyDown(keyCode,event)}
 	fun openSystemSettings(action:String){val intent=Intent(action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);if(action==Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES)intent.data=Uri.parse("package:$packageName");runCatching{startActivity(intent)}}
@@ -113,6 +117,15 @@ class MainActivity : ComponentActivity() {
 	fun installPlayerUpdate(){runCatching{stopLockTask()};getSharedPreferences("tilecast-reliability",MODE_PRIVATE).edit().putBoolean("update-active",true).apply();model.installUpdate()}
 	fun applyReliability(config:org.tilecast.player.network.PlayerConfig,activeHours:Boolean){reliability.applyWindow(this,config,activeHours);restoreKiosk?.let(reliabilityHandler::removeCallbacks);reliability.maintenanceUntil()?.let{until->Runnable{reliability.applyWindow(this,config,activeHours)}.also{restoreKiosk=it;reliabilityHandler.postDelayed(it,Duration.between(Instant.now(),until).toMillis().coerceAtLeast(0)+100)}}}
 	fun maintenanceChanged(){model.playerConfig.value?.let{applyReliability(it,model.activeHours.value)}}
+	private fun previewCaptureBlockReason():String?=when{
+		adminPrompt->"sensitive_admin"
+		reliability.maintenanceUntil()!=null->"sensitive_maintenance"
+		model.commissioning.value.required->"sensitive_commissioning"
+		model.update.value?.state in setOf("waiting_for_permission","waiting_for_user","installing")->"sensitive_update"
+		model.identify.value!=null->"sensitive_identify"
+		model.state.value !is PlayerState.PairedIdle->"sensitive_pairing"
+		else->null
+	}
 }
 
 @Composable fun TilecastPlayer(model: PlayerViewModel,adminPrompt:Boolean=false,dismissAdmin:()->Unit={},reliability:ReliabilityController?=null) {

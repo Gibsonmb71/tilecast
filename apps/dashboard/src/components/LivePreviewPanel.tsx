@@ -1,0 +1,212 @@
+import { useMutation, useQuery } from "@tanstack/react-query";
+import {
+  AlertTriangle,
+  Clock3,
+  ImageOff,
+  Monitor,
+  RefreshCw,
+  ShieldAlert,
+  WifiOff,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { api } from "../api/client";
+import { previewApi } from "../api/previews";
+import { useAuth } from "../auth/AuthProvider";
+import { Button } from "./ui";
+import {
+  livePreviewState,
+  previewUnavailableMessage,
+} from "./livePreviewState";
+import "./LivePreviewPanel.css";
+
+const LEASE_RENEWAL_MILLIS = 30_000;
+const METADATA_REFRESH_MILLIS = 5_000;
+
+export function LivePreviewPanel({ screenId }: { screenId: string }) {
+  const auth = useAuth();
+  const [renewalError, setRenewalError] = useState<string | null>(null);
+  const screen = useQuery({
+    queryKey: ["screens", screenId],
+    queryFn: () => api.screen(screenId),
+    refetchInterval: 15_000,
+  });
+  const preview = useQuery({
+    queryKey: ["screen-preview", screenId],
+    queryFn: () => previewApi.metadata(screenId),
+    refetchInterval: METADATA_REFRESH_MILLIS,
+    retry: false,
+  });
+  const csrfToken = auth.status?.csrfToken;
+
+  useEffect(() => {
+    if (!csrfToken) return;
+    let active = true;
+    const renew = async (forceCapture: boolean) => {
+      try {
+        await previewApi.renew(screenId, csrfToken, forceCapture);
+        if (active) setRenewalError(null);
+      } catch (error) {
+        if (active)
+          setRenewalError(
+            error instanceof Error ? error.message : "Preview session failed.",
+          );
+      }
+    };
+    void renew(true);
+    const interval = window.setInterval(
+      () => void renew(false),
+      LEASE_RENEWAL_MILLIS,
+    );
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [csrfToken, screenId]);
+
+  const manualRefresh = useMutation({
+    mutationFn: async () => {
+      if (!csrfToken) throw new Error("Your Studio session has expired.");
+      await previewApi.renew(screenId, csrfToken, true);
+    },
+    onSuccess: async () => {
+      setRenewalError(null);
+      await preview.refetch();
+    },
+  });
+
+  const state = livePreviewState(screen.data, preview.data);
+  const imageUrl = useMemo(() => {
+    if (!preview.data?.imageAvailable) return null;
+    return previewApi.imageUrl(screenId, preview.data.updatedAt);
+  }, [preview.data?.imageAvailable, preview.data?.updatedAt, screenId]);
+  const capturedAt = preview.data?.capturedAt
+    ? new Date(preview.data.capturedAt)
+    : null;
+
+  return (
+    <aside className="live-preview-panel" aria-label="Live preview">
+      <header className="live-preview-panel__header">
+        <div>
+          <span className="live-preview-panel__eyebrow">On demand</span>
+          <h2>Live preview</h2>
+        </div>
+        <Button
+          compact
+          variant="quiet"
+          onClick={() => manualRefresh.mutate()}
+          loading={manualRefresh.isPending}
+        >
+          <RefreshCw size={15} aria-hidden="true" />
+          Refresh
+        </Button>
+      </header>
+
+      <div className={`live-preview-frame live-preview-frame--${state}`}>
+        {(state === "live" || state === "stale") && imageUrl ? (
+          <img
+            src={imageUrl}
+            alt={`Current Tilecast output for ${screen.data?.name ?? "screen"}`}
+          />
+        ) : (
+          <PreviewState
+            state={state}
+            failureStatus={preview.data?.captureFailureStatus}
+          />
+        )}
+        {state === "stale" && imageUrl && (
+          <span className="live-preview-frame__banner">Preview is stale</span>
+        )}
+      </div>
+
+      <div className="live-preview-panel__status" aria-live="polite">
+        <strong>{stateLabel(state)}</strong>
+        <span>{stateDescription(state, renewalError)}</span>
+      </div>
+
+      <dl className="live-preview-panel__meta">
+        <div>
+          <dt>Last capture</dt>
+          <dd>{capturedAt ? capturedAt.toLocaleString() : "Not captured"}</dd>
+        </div>
+        <div>
+          <dt>Player</dt>
+          <dd>
+            {preview.data?.playerVersion ||
+              screen.data?.playerVersion ||
+              "Unknown"}
+          </dd>
+        </div>
+        <div>
+          <dt>Image</dt>
+          <dd>
+            {preview.data?.width && preview.data?.height
+              ? `${preview.data.width}×${preview.data.height} · ${formatBytes(preview.data.fileSize ?? 0)}`
+              : "No image"}
+          </dd>
+        </div>
+      </dl>
+      <p className="live-preview-panel__privacy">
+        Tilecast captures only its own player window. Protected setup and
+        maintenance screens are never uploaded.
+      </p>
+    </aside>
+  );
+}
+
+function PreviewState({
+  state,
+  failureStatus,
+}: {
+  state: ReturnType<typeof livePreviewState>;
+  failureStatus?: string;
+}) {
+  const content = {
+    loading: [Clock3, "Requesting a fresh capture…"],
+    offline: [WifiOff, "The player is offline."],
+    stale: [Clock3, "The latest preview is stale."],
+    unavailable: [ShieldAlert, previewUnavailableMessage(failureStatus)],
+    "capture-error": [
+      AlertTriangle,
+      "The player could not capture its window.",
+    ],
+    live: [Monitor, "Live preview is ready."],
+  } as const;
+  const [Icon, message] = content[state] ?? [ImageOff, "Preview unavailable."];
+  return (
+    <div className="live-preview-frame__empty">
+      <Icon size={28} aria-hidden="true" />
+      <span>{message}</span>
+    </div>
+  );
+}
+
+function stateLabel(state: ReturnType<typeof livePreviewState>) {
+  return {
+    loading: "Loading",
+    live: "Live",
+    offline: "Offline",
+    stale: "Stale",
+    unavailable: "Unavailable",
+    "capture-error": "Capture error",
+  }[state];
+}
+
+function stateDescription(
+  state: ReturnType<typeof livePreviewState>,
+  renewalError: string | null,
+) {
+  if (renewalError) return renewalError;
+  return {
+    loading: "Waiting for the paired player to respond.",
+    live: "Refreshes about every 20 seconds while this page is open.",
+    offline: "The session will resume when the player reconnects.",
+    stale: "The player has not delivered a recent capture.",
+    unavailable: "The current player screen cannot be previewed.",
+    "capture-error": "Use Refresh to request another capture.",
+  }[state];
+}
+
+function formatBytes(bytes: number) {
+  if (!bytes) return "0 KB";
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}

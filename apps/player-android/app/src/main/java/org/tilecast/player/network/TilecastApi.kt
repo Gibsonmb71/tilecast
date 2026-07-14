@@ -4,6 +4,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -17,6 +18,7 @@ class TilecastApi(
     private val json: Json = Json { ignoreUnknownKeys = true; encodeDefaults = true },
 ) {
     private val mediaType = "application/json".toMediaType()
+    private val jpegMediaType = "image/jpeg".toMediaType()
 
     suspend fun identity(serverUrl: String): ServerIdentity = get(serverUrl, "/api/v1/system/identity")
 
@@ -31,6 +33,39 @@ class TilecastApi(
 
     suspend fun heartbeat(serverUrl: String, credential: String, heartbeat: HeartbeatRequest) {
         post<kotlinx.serialization.json.JsonObject>(serverUrl, "/api/v1/player/heartbeat", json.encodeToString(HeartbeatRequest.serializer(), heartbeat), "Bearer $credential")
+    }
+
+    suspend fun previewSession(serverUrl: String, credential: String): PreviewSession =
+        get(serverUrl, "/api/v1/player/preview-session", "Bearer $credential")
+
+    suspend fun uploadPreview(
+        serverUrl: String,
+        credential: String,
+        playerVersion: String,
+        capturedAt: String? = null,
+        width: Int = 0,
+        height: Int = 0,
+        image: ByteArray? = null,
+        failureStatus: String = "",
+    ) = withContext(Dispatchers.IO) {
+        val body = MultipartBody.Builder().setType(MultipartBody.FORM)
+            .addFormDataPart("playerVersion", playerVersion)
+            .addFormDataPart("capturedAt", capturedAt.orEmpty())
+            .addFormDataPart("width", width.toString())
+            .addFormDataPart("height", height.toString())
+            .addFormDataPart("failureStatus", failureStatus)
+            .apply {
+                if (image != null) {
+                    addFormDataPart("preview", "preview.jpg", image.toRequestBody(jpegMediaType))
+                }
+            }
+            .build()
+        val request = Request.Builder()
+            .url(serverUrl + "/api/v1/player/preview")
+            .header("Authorization", "Bearer $credential")
+            .post(body)
+            .build()
+        executeNoContent(request)
     }
 
     suspend fun commands(serverUrl:String,credential:String):PlayerCommandList=get(serverUrl,"/api/v1/player/commands","Bearer $credential")
@@ -100,6 +135,14 @@ class TilecastApi(
     private suspend inline fun <reified T> post(serverUrl: String, path: String, body: String, authorization: String? = null): T = execute(
         Request.Builder().url(serverUrl + path).apply { if (authorization != null) header("Authorization", authorization) }.post(body.toRequestBody(mediaType)).build(),
     )
+
+    private suspend fun executeNoContent(request: Request) = withContext(Dispatchers.IO) {
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw apiException(response.code, response.body?.string().orEmpty())
+            }
+        }
+    }
 
     private suspend inline fun <reified T> execute(request: Request): T = withContext(Dispatchers.IO) {
         client.newCall(request).execute().use { response ->

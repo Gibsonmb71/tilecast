@@ -1,0 +1,36 @@
+# On-demand live screen previews
+
+Tilecast Studio starts a temporary preview session whenever a screen detail page is open. The session uses a 60-second lease. Studio renews the lease every 30 seconds and stops renewing it when the page closes, so the player stops capturing automatically.
+
+The player captures immediately after it observes a new session and then approximately every 20 seconds while the lease remains active. Preview captures are not player commands and do not create command-history records.
+
+## Security and privacy
+
+- Preview endpoints require an authenticated Studio session or the paired player's device credential.
+- Every lookup is scoped through the screen and current organization.
+- Preview images are served only through an authenticated, `no-store` endpoint. Tilecast does not issue permanent or public image URLs.
+- The Android player captures only Tilecast's own activity window.
+- API 26 and newer use `PixelCopy`. API 23 through 25 use `View.draw(Canvas)`.
+- Tilecast does not use MediaProjection and cannot capture Android system screens or other applications.
+- Pairing, administrator PIN, commissioning, maintenance, update approval, identify, and other protected player states report an unavailable status instead of uploading an image.
+
+## Image limits
+
+The player preserves aspect ratio, never upscales, and resizes the capture to at most 960×540 before upload. It encodes JPEG near 75 percent quality and progressively reduces quality or dimensions only when needed to remain below the hard 500 KB limit.
+
+The server stores one `screen_previews` row per screen. A successful or failed capture replaces the previous result, so no preview history accumulates. Capture metadata remains available only through authenticated screen endpoints.
+
+## Endpoints
+
+### Studio
+
+- `POST /api/v1/screens/{id}/preview-session` starts or renews the lease. Body: `{ "forceCapture": true|false }`.
+- `GET /api/v1/screens/{id}/preview` returns capture metadata and status.
+- `GET /api/v1/screens/{id}/preview/image` returns the latest image through the authenticated session.
+
+### Paired player
+
+- `GET /api/v1/player/preview-session` returns the active lease, capture interval, and manual-capture signal.
+- `POST /api/v1/player/preview` uploads multipart capture metadata with an optional `preview` image or a bounded `failureStatus`.
+
+Tracked metadata includes capture time, player version, width, height, file size, and capture failure status.
