@@ -14,6 +14,7 @@ android {
         applicationId = "org.tilecast.player"
         minSdk = 23
         targetSdk = 35
+        // Keep versionCode monotonic for signed GitHub releases.
         versionCode = 12
         versionName = "0.11.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
