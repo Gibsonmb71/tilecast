@@ -1,11 +1,12 @@
 .auth-page {
-  position: relative;
-  display: grid;
-  width: 100%;
-  min-width: 100vw;
-  min-height: 100svh;
-  justify-items: center;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  display: flex;
   align-items: center;
+  justify-content: center;
+  width: 100vw;
+  min-height: 100svh;
   padding: clamp(1rem, 4vw, 3rem);
   overflow: hidden;
   background-color: #1b2430;
@@ -29,9 +30,8 @@
 .auth-panel {
   position: relative;
   z-index: 1;
+  flex: 0 0 auto;
   width: min(27rem, 100%);
-  margin-inline: auto;
-  justify-self: center;
   padding: 2.25rem 2.35rem 1.55rem;
   background: rgb(255 255 255 / 97%);
   border: 1px solid rgb(255 255 255 / 70%);
@@ -148,7 +148,7 @@
 
 @media (max-width: 620px) {
   .auth-page {
-    align-items: end;
+    align-items: flex-end;
     padding: 0.85rem;
     background-position: 58% center;
   }
