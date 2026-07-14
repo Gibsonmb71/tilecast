@@ -28,9 +28,9 @@ text = text.replace(old, new, 1)
 old_state = '''\tvar checked *time.Time
 \tvar providerError *string
 \t_ = s.db.QueryRow(r.Context(), `SELECT last_checked_at,safe_error FROM update_provider_state WHERE provider='github'`).Scan(&checked, &providerError)
-\twriteJSON(w, 200, map[string]any{"data": map[string]any{"repository": "Gibsonmb71/tilecast", "lastCheckedAt": checked, "providerError": providerError, "items": items}})
+\twriteJSON(w, 200, map[string]any{"data": map[string]any{"repository": "Gibsonmb71/tilecast", "lastCheckedAt": checked, "providerError": providerError, "manifestKeyConfigured": s.updates.ManifestKeyConfigured(), "items": items}})
 '''
-new_state = '''\twriteJSON(w, 200, map[string]any{"data": map[string]any{"repository": "Gibsonmb71/tilecast", "lastCheckedAt": checked, "providerError": providerError, "items": items}})
+new_state = '''\twriteJSON(w, 200, map[string]any{"data": map[string]any{"repository": "Gibsonmb71/tilecast", "lastCheckedAt": checked, "providerError": providerError, "manifestKeyConfigured": s.updates.ManifestKeyConfigured(), "items": items}})
 '''
 if old_state not in text:
     raise SystemExit("provider state marker not found")
@@ -57,6 +57,16 @@ replacement = '''        {showUpload && (
             }}
           />
         )}
+        {releases.data && !releases.data.manifestKeyConfigured && (
+          <div className="notice notice--error" role="alert">
+            <strong>Player update verification is not configured.</strong>
+            <p>
+              Set <code>TILECAST_UPDATE_MANIFEST_PUBLIC_KEY</code> on the Tilecast
+              server to the public Ed25519 key used by the Player release workflow,
+              then restart the server.
+            </p>
+          </div>
+        )}
         {(check.error || releases.data?.providerError) && (
           <div className="notice notice--error" role="alert">
             <strong>GitHub releases could not be synchronized.</strong>
@@ -65,14 +75,14 @@ replacement = '''        {showUpload && (
         )}
         {!releases.isLoading &&
           !releases.error &&
+          releases.data?.manifestKeyConfigured &&
           !releases.data?.providerError &&
           (releases.data?.items.length ?? 0) === 0 && (
             <div className="notice">
               <strong>No Player releases have been imported.</strong>
               <p>
                 Tilecast checks GitHub automatically. Use Sync from GitHub to
-                retry immediately, or configure the trusted update manifest
-                public key when the message above reports that it is missing.
+                retry immediately.
               </p>
             </div>
           )}
