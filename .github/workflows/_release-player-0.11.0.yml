@@ -1,0 +1,66 @@
+name: Release Player 0.11.0
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/_release-player-0.11.0.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      TAG: player-v0.11.0
+      TARGET_SHA: a9ae71c976d92d534635056a69d73386cf6bf9c7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Validate and create release tag
+        run: |
+          set -euo pipefail
+          gradle_file="$(git show "$TARGET_SHA:apps/player-android/app/build.gradle.kts")"
+          version_name="$(printf '%s\n' "$gradle_file" | sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' | sed -n '1p')"
+          version_code="$(printf '%s\n' "$gradle_file" | sed -n 's/.*versionCode = \([0-9][0-9]*\).*/\1/p' | sed -n '1p')"
+          test "$version_name" = "0.11.0"
+          test "$version_code" = "12"
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if ! git rev-parse "$TAG" >/dev/null 2>&1; then
+            git tag -a "$TAG" -m "Tilecast Player 0.11.0" "$TARGET_SHA"
+            git push origin "$TAG"
+          fi
+
+      - name: Dispatch signed Player release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5; do
+            if gh workflow run player-release.yml \
+              --repo "$GITHUB_REPOSITORY" \
+              --ref "$TAG" \
+              -f tag="$TAG" \
+              -f channel=stable; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              exit 1
+            fi
+            sleep 2
+          done
+
+      - name: Remove one-time helper
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/_release-player-0.11.0.yml
+          git commit -m 'Remove Player 0.11.0 release helper'
+          git push origin HEAD:main
