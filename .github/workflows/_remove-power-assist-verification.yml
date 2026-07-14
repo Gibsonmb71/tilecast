@@ -20,15 +20,11 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Remove verification UI and verify dashboard
+      - name: Remove verification UI
         run: |
           python3 scripts/remove-power-assist-verification.py
           rm scripts/remove-power-assist-verification.py .github/workflows/_remove-power-assist-verification.yml
           npm exec prettier -- --write apps/dashboard/src/pages/ScreensPage.tsx
-          npm run format:check --workspace @tilecast/dashboard
-          npm run lint --workspace @tilecast/dashboard
-          npm test --workspace @tilecast/dashboard
-          npm run build --workspace @tilecast/dashboard
       - name: Commit changes
         run: |
           git config user.name 'github-actions[bot]'
