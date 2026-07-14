@@ -5,6 +5,7 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.SystemClock
 import org.tilecast.player.MainActivity
 import java.time.Instant
@@ -21,7 +22,11 @@ object BootRecovery {
     private val delays = longArrayOf(15_000, 60_000, 180_000)
 
     private fun preferences(context: Context) =
-        context.createDeviceProtectedStorageContext().getSharedPreferences("tilecast-boot-recovery", Context.MODE_PRIVATE)
+        (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            context.createDeviceProtectedStorageContext()
+        } else {
+            context
+        }).getSharedPreferences("tilecast-boot-recovery", Context.MODE_PRIVATE)
 
     fun receive(context: Context, action: String?) {
         val preferences = preferences(context)
