@@ -1,8 +1,5 @@
 export type ScreenPreviewStatus =
-  | "loading"
-  | "available"
-  | "unavailable"
-  | "capture_error";
+  "loading" | "available" | "unavailable" | "capture_error";
 
 export type ScreenPreview = {
   screenId: string;

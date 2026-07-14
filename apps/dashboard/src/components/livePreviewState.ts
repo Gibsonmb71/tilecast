@@ -2,12 +2,7 @@ import type { Screen, ScreenStatus } from "../api/types";
 import type { ScreenPreview } from "../api/previews";
 
 export type LivePreviewState =
-  | "loading"
-  | "live"
-  | "offline"
-  | "stale"
-  | "unavailable"
-  | "capture-error";
+  "loading" | "live" | "offline" | "stale" | "unavailable" | "capture-error";
 
 const offlineStatuses = new Set<ScreenStatus>([
   "offline",
@@ -26,7 +21,11 @@ export function livePreviewState(
   if (preview.status === "unavailable") return "unavailable";
   if (!preview.imageAvailable || !preview.capturedAt) return "loading";
   const captureAge = now - new Date(preview.capturedAt).getTime();
-  if (screen.status === "stale" || !Number.isFinite(captureAge) || captureAge > 45_000)
+  if (
+    screen.status === "stale" ||
+    !Number.isFinite(captureAge) ||
+    captureAge > 45_000
+  )
     return "stale";
   return "live";
 }

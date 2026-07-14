@@ -103,9 +103,15 @@ export function LivePreviewPanel({ screenId }: { screenId: string }) {
 
       <div className={`live-preview-frame live-preview-frame--${state}`}>
         {(state === "live" || state === "stale") && imageUrl ? (
-          <img src={imageUrl} alt={`Current Tilecast output for ${screen.data?.name ?? "screen"}`} />
+          <img
+            src={imageUrl}
+            alt={`Current Tilecast output for ${screen.data?.name ?? "screen"}`}
+          />
         ) : (
-          <PreviewState state={state} failureStatus={preview.data?.captureFailureStatus} />
+          <PreviewState
+            state={state}
+            failureStatus={preview.data?.captureFailureStatus}
+          />
         )}
         {state === "stale" && imageUrl && (
           <span className="live-preview-frame__banner">Preview is stale</span>
@@ -124,7 +130,11 @@ export function LivePreviewPanel({ screenId }: { screenId: string }) {
         </div>
         <div>
           <dt>Player</dt>
-          <dd>{preview.data?.playerVersion || screen.data?.playerVersion || "Unknown"}</dd>
+          <dd>
+            {preview.data?.playerVersion ||
+              screen.data?.playerVersion ||
+              "Unknown"}
+          </dd>
         </div>
         <div>
           <dt>Image</dt>
@@ -136,7 +146,8 @@ export function LivePreviewPanel({ screenId }: { screenId: string }) {
         </div>
       </dl>
       <p className="live-preview-panel__privacy">
-        Tilecast captures only its own player window. Protected setup and maintenance screens are never uploaded.
+        Tilecast captures only its own player window. Protected setup and
+        maintenance screens are never uploaded.
       </p>
     </aside>
   );
@@ -154,7 +165,10 @@ function PreviewState({
     offline: [WifiOff, "The player is offline."],
     stale: [Clock3, "The latest preview is stale."],
     unavailable: [ShieldAlert, previewUnavailableMessage(failureStatus)],
-    "capture-error": [AlertTriangle, "The player could not capture its window."],
+    "capture-error": [
+      AlertTriangle,
+      "The player could not capture its window.",
+    ],
     live: [Monitor, "Live preview is ready."],
   } as const;
   const [Icon, message] = content[state] ?? [ImageOff, "Preview unavailable."];

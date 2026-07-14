@@ -21,8 +21,8 @@ const (
 )
 
 var (
-	ErrNotFound    = errors.New("screen preview was not found")
-	ErrLeaseExpired = errors.New("screen preview session has expired")
+	ErrNotFound      = errors.New("screen preview was not found")
+	ErrLeaseExpired  = errors.New("screen preview session has expired")
 	ErrInvalidUpload = errors.New("screen preview upload is invalid")
 )
 

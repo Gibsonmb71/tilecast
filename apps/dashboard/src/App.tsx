@@ -1,10 +1,7 @@
 import { Navigate, Route, Routes } from "react-router";
 import { AuthPage } from "./pages/AuthPage";
 import { DashboardShell, FoundationPage, PlannedPage } from "./pages/Dashboard";
-import {
-  PairScreenPage,
-  ScreensPage,
-} from "./pages/ScreensPage";
+import { PairScreenPage, ScreensPage } from "./pages/ScreensPage";
 import { ScreenDetailWithPreviewPage } from "./pages/ScreenDetailWithPreviewPage";
 import { ContentPage } from "./pages/ContentPage";
 import { PlaylistEditorPage, PlaylistsPage } from "./pages/PlaylistsPage";
