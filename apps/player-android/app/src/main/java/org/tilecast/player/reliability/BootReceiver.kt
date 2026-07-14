@@ -48,12 +48,17 @@ object BootRecovery {
 
     private fun schedule(context: Context, attempt: Int, delay: Long) {
         val alarm = context.getSystemService(AlarmManager::class.java)
+        val retryIntent =
+            Intent()
+                .setClass(context, BootReceiver::class.java)
+                .setPackage(context.packageName)
+                .setAction(ACTION_RETRY)
         val pending =
             PendingIntent.getBroadcast(
                 context,
                 2100 + attempt,
-                Intent(context, BootReceiver::class.java).setAction(ACTION_RETRY),
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                retryIntent,
+                PendingIntent.FLAG_IMMUTABLE,
             )
         alarm.setWindow(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + delay, 5_000, pending)
     }
