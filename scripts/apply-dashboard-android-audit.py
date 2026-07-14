@@ -1,0 +1,219 @@
+from pathlib import Path
+
+screens = Path("apps/dashboard/src/pages/ScreensPage.tsx")
+text = screens.read_text()
+old = '''  if (
+    status.accessibilityServiceState === "unsupported" ||
+    status.bootRecoveryResult === "unsupported"
+  )
+    return "Unsupported";'''
+new = '''  if (status.bootRecoveryResult === "unsupported") return "Unsupported";'''
+if old not in text:
+    raise SystemExit("zero-touch unsupported marker not found")
+text = text.replace(old, new, 1)
+old = '''    status.keepScreenOn &&
+    status.cachedFallbackAvailable &&
+    status.updateReadiness === "ready" &&'''
+new = '''    status.keepScreenOn &&
+    status.updateReadiness === "ready" &&'''
+if old not in text:
+    raise SystemExit("zero-touch cached fallback marker not found")
+screens.write_text(text.replace(old, new, 1))
+
+tests = Path("apps/dashboard/src/pages/ScreensPage.test.tsx")
+text = tests.read_text()
+marker = '''    expect(
+      zeroTouchReadiness({
+        commissioningState: "complete",
+        accessibilityServiceState: "disabled",
+        powerAssist,
+      }),
+    ).toBe("Partially ready");
+  });'''
+replacement = '''    expect(
+      zeroTouchReadiness({
+        commissioningState: "complete",
+        accessibilityServiceState: "disabled",
+        powerAssist,
+      }),
+    ).toBe("Partially ready");
+    expect(
+      zeroTouchReadiness({
+        commissioningState: "complete",
+        accessibilityServiceState: "unsupported",
+        bootLaunchVerified: true,
+        immersiveModeActive: true,
+        keepScreenOn: true,
+        cachedFallbackAvailable: false,
+        updateReadiness: "ready",
+        safeMode: false,
+        powerAssist,
+      }),
+    ).toBe("Partially ready");
+    expect(
+      zeroTouchReadiness({
+        commissioningState: "complete",
+        accessibilityServiceState: "enabled",
+        bootLaunchVerified: true,
+        immersiveModeActive: true,
+        keepScreenOn: true,
+        cachedFallbackAvailable: false,
+        updateReadiness: "ready",
+        safeMode: false,
+        powerAssist,
+      }),
+    ).toBe("Ready");
+  });'''
+if marker not in text:
+    raise SystemExit("zero-touch test marker not found")
+tests.write_text(text.replace(marker, replacement, 1))
+
+panel = Path("apps/dashboard/src/components/FireTvAccessibilityAdbPanel.tsx")
+panel.write_text('''import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { api } from "../api/client";
+
+const ACCESSIBILITY_COMPONENT =
+  "org.tilecast.player/org.tilecast.player.reliability.TilecastAccessibilityService";
+
+export const fireTvAccessibilityCommands = (address?: string) => {
+  const target = address
+    ? address.includes(":")
+      ? `[${address}]:5555`
+      : `${address}:5555`
+    : "FIRE_TV_IP:5555";
+  const enable = `adb shell 'component="${ACCESSIBILITY_COMPONENT}"; current=$(settings get secure enabled_accessibility_services); [ "$current" = "null" ] && current=""; case ":$current:" in *":$component:"*) ;; *) current="\\${current:+$current:}$component" ;; esac; settings put secure enabled_accessibility_services "$current"; settings put secure accessibility_enabled 1'`;
+  return {
+    connect: `adb connect ${target}`,
+    enable,
+    combined: `adb connect ${target}\n${enable}`,
+  };
+};
+
+export function FireTvAccessibilityAdbPanel({
+  screenId,
+}: {
+  screenId: string;
+}) {
+  const [showCommand, setShowCommand] = useState(false);
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "error">(
+    "idle",
+  );
+  const screen = useQuery({
+    queryKey: ["screens", screenId],
+    queryFn: () => api.screen(screenId),
+  });
+
+  const isFireTv =
+    screen.data?.platform === "fire-tv" ||
+    screen.data?.deviceManufacturer.toLowerCase() === "amazon";
+  const commands = useMemo(
+    () => fireTvAccessibilityCommands(screen.data?.lastKnownIp),
+    [screen.data?.lastKnownIp],
+  );
+  if (!isFireTv) return null;
+
+  const copyCommands = async () => {
+    try {
+      await navigator.clipboard.writeText(commands.combined);
+      setCopyState("copied");
+      window.setTimeout(() => setCopyState("idle"), 2_000);
+    } catch {
+      setCopyState("error");
+    }
+  };
+
+  return (
+    <section className="detail-card" aria-labelledby="fire-tv-accessibility-title">
+      <h3 id="fire-tv-accessibility-title">
+        Optional Fire TV Accessibility Control
+      </h3>
+      <p>
+        Fire OS does not expose Tilecast in its normal Accessibility menu.
+        Commissioning can continue without this feature, or an administrator can
+        enable Tilecast’s accessibility service manually through ADB.
+      </p>
+      <button
+        type="button"
+        className="button button--quiet"
+        onClick={() => {
+          setShowCommand((shown) => !shown);
+          setCopyState("idle");
+        }}
+      >
+        {showCommand ? "Hide ADB commands" : "Show ADB commands"}
+      </button>
+      {showCommand && (
+        <div>
+          <p>
+            Enable ADB debugging on the Fire TV first. These commands use the
+            player’s last reported address when available.
+          </p>
+          <pre>
+            <code>{commands.combined}</code>
+          </pre>
+          <button
+            type="button"
+            className="button button--quiet"
+            onClick={() => void copyCommands()}
+          >
+            {copyState === "copied" ? "Copied" : "Copy commands"}
+          </button>
+          <span role="status" aria-live="polite">
+            {copyState === "error"
+              ? " Clipboard access failed. Select and copy the commands manually."
+              : copyState === "copied"
+                ? " Commands copied."
+                : ""}
+          </span>
+          <p>
+            Run both commands, reopen Tilecast Player, and choose Verify again.
+            The enable command preserves other accessibility services.
+          </p>
+        </div>
+      )}
+    </section>
+  );
+}
+''')
+
+panel_test = Path("apps/dashboard/src/components/FireTvAccessibilityAdbPanel.test.ts")
+panel_test.write_text('''import { describe, expect, it } from "vitest";
+import { fireTvAccessibilityCommands } from "./FireTvAccessibilityAdbPanel";
+
+describe("Fire TV accessibility ADB commands", () => {
+  it("uses the screen address and preserves existing services", () => {
+    const commands = fireTvAccessibilityCommands("192.168.1.44");
+    expect(commands.connect).toBe("adb connect 192.168.1.44:5555");
+    expect(commands.enable).toContain("enabled_accessibility_services");
+    expect(commands.enable).toContain("current=\"\\${current:+$current:}$component\"");
+  });
+
+  it("falls back to a clear placeholder when no address was reported", () => {
+    expect(fireTvAccessibilityCommands().connect).toBe(
+      "adb connect FIRE_TV_IP:5555",
+    );
+  });
+});
+''')
+
+view_model = Path("apps/player-android/app/src/main/java/org/tilecast/player/PlayerViewModel.kt")
+text = view_model.read_text()
+old = "fun completeCommissioning(){val screen=current?.screenId?:return;commissioningController.complete(screen);refreshCommissioning()}"
+new = '''fun completeCommissioning(){viewModelScope.launch{val saved=configuration.getOrCreate();current=saved;val screen=saved.screenId?:return@launch;commissioningController.complete(screen);refreshCommissioning();socket?.send(Json.encodeToString(kotlinx.serialization.json.JsonObject.serializer(),statusMessage()));lastStatusSentAt=System.currentTimeMillis();val url=saved.serverUrl;val credential=credentials.read();if(url!=null&&credential!=null)runCatching{api.heartbeat(url,credential,heartbeat())}}}'''
+if old not in text:
+    raise SystemExit("completeCommissioning marker not found")
+text = text.replace(old, new, 1)
+old = 'fun runSelfTest():String {val screen=current?.screenId?:return "not_paired";val result=commissioningController.runSelfTest(screen,mutableCommissioning.value.cachedFallbackAvailable);refreshCommissioning();return result}'
+new = 'fun runSelfTest():String {val screen=current?.screenId?:return "not_paired";val result=commissioningController.runSelfTest(screen);refreshCommissioning();return result}'
+if old not in text:
+    raise SystemExit("runSelfTest call marker not found")
+view_model.write_text(text.replace(old, new, 1))
+
+controller = Path("apps/player-android/app/src/main/java/org/tilecast/player/reliability/CommissioningController.kt")
+text = controller.read_text()
+old = "fun runSelfTest(screenId: String, cachedFallbackAvailable: Boolean): String {"
+new = "fun runSelfTest(screenId: String): String {"
+if old not in text:
+    raise SystemExit("runSelfTest signature marker not found")
+controller.write_text(text.replace(old, new, 1))
