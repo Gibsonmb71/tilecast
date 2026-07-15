@@ -454,7 +454,7 @@ func (s *Service) PlayerSourceConfiguration(ctx context.Context, assetID uuid.UU
 		} else if errorCode != nil {
 			prepared.Unavailable = true
 		}
-		return json.Marshal(StructuredPlayerConfig{Presentation: config.Presentation, Fields: config.Fields, EmptyState: config.EmptyState, Data: prepared})
+		return json.Marshal(StructuredPlayerConfig{Presentation: config.Presentation, Fields: config.Fields, EmptyState: config.EmptyState, DateSelection: config.DateSelection, Data: prepared})
 	}
 	var config CalendarConfig
 	if err := json.Unmarshal(raw, &config); err != nil {

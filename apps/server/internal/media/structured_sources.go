@@ -108,8 +108,46 @@ func (p structuredSourceProvider) Normalize(ctx context.Context, raw json.RawMes
 			return nil, errors.New("source filter is invalid")
 		}
 	}
+	if c.DateSelection.Enabled {
+		if c.Mapping == nil || c.Mapping.Date == "" {
+			return nil, errors.New("date-aware selection requires a mapped date field")
+		}
+		if c.DateSelection.DateFormat == "" {
+			c.DateSelection.DateFormat = "auto"
+		}
+		if c.DateSelection.DateFormat != "auto" && c.DateSelection.DateFormat != "iso_date" && c.DateSelection.DateFormat != "us_date" && c.DateSelection.DateFormat != "us_short" && c.DateSelection.DateFormat != "day_month_name" && c.DateSelection.DateFormat != "rfc3339" {
+			return nil, errors.New("date selection format is invalid")
+		}
+		if c.DateSelection.Timezone == "" {
+			c.DateSelection.Timezone = "UTC"
+		}
+		if _, err := time.LoadLocation(c.DateSelection.Timezone); err != nil {
+			return nil, errors.New("date selection timezone is invalid")
+		}
+		if c.DateSelection.Mode == "" {
+			c.DateSelection.Mode = "today"
+		}
+		if c.DateSelection.Mode != "today" && c.DateSelection.Mode != "tomorrow" && c.DateSelection.Mode != "next_available" && c.DateSelection.Mode != "current_week" && c.DateSelection.Mode != "custom_range" {
+			return nil, errors.New("date selection mode is invalid")
+		}
+		if c.DateSelection.NoMatchBehavior == "" {
+			c.DateSelection.NoMatchBehavior = "empty"
+		}
+		if c.DateSelection.NoMatchBehavior != "fallback_text" && c.DateSelection.NoMatchBehavior != "next_available" && c.DateSelection.NoMatchBehavior != "empty" && c.DateSelection.NoMatchBehavior != "hide" && c.DateSelection.NoMatchBehavior != "last_known_good" {
+			return nil, errors.New("date selection no-match behavior is invalid")
+		}
+		c.DateSelection.FallbackText = sanitizeCalendarText(c.DateSelection.FallbackText, 240)
+		if c.DateSelection.NoMatchBehavior == "fallback_text" && c.DateSelection.FallbackText == "" {
+			return nil, errors.New("date selection fallback text is required")
+		}
+		if c.DateSelection.Mode == "custom_range" && (!validISODate(c.DateSelection.CustomStartDate) || !validISODate(c.DateSelection.CustomEndDate) || c.DateSelection.CustomEndDate < c.DateSelection.CustomStartDate) {
+			return nil, errors.New("date selection custom range is invalid")
+		}
+	}
 	return c, nil
 }
+
+func validISODate(value string) bool { _, err := time.Parse("2006-01-02", value); return err == nil }
 
 func validateStructuredMapping(m StructuredMapping, provider string) error {
 	paths := []string{m.RootList, m.Title, m.Subtitle, m.Date, m.ImageURL, m.Link}
@@ -276,7 +314,7 @@ func parseJSONRecords(body []byte, c StructuredSourceConfig) ([]StructuredRecord
 			values[sanitizeCalendarText(name, 80)] = sanitizeCalendarText(value(path), 240)
 		}
 		title := sanitizeCalendarText(value(c.Mapping.Title), 240)
-		records = append(records, StructuredRecord{ID: stableRecordID(fmt.Sprintf("%d:%s", index, title)), Title: title, Subtitle: sanitizeCalendarText(value(c.Mapping.Subtitle), 240), Date: normalizeRecordDate(value(c.Mapping.Date)), ImageURL: safeRemoteRecordURL(value(c.Mapping.ImageURL)), Link: safeRemoteRecordURL(value(c.Mapping.Link)), Values: values})
+		records = append(records, StructuredRecord{ID: stableRecordID(fmt.Sprintf("%d:%s", index, title)), Title: title, Subtitle: sanitizeCalendarText(value(c.Mapping.Subtitle), 240), Date: normalizeStructuredDate(value(c.Mapping.Date), c.DateSelection), ImageURL: safeRemoteRecordURL(value(c.Mapping.ImageURL)), Link: safeRemoteRecordURL(value(c.Mapping.Link)), Values: values})
 	}
 	return applyStructuredOptions(records, c), nil
 }
@@ -358,7 +396,7 @@ func parseCSVRecords(body []byte, c StructuredSourceConfig) ([]StructuredRecord,
 		if err != nil {
 			return nil, err
 		}
-		records = append(records, StructuredRecord{ID: stableRecordID(fmt.Sprintf("%d:%s", index, title)), Title: sanitizeCalendarText(title, 240), Subtitle: sanitizeCalendarText(value(c.Mapping.Subtitle), 240), Date: normalizeRecordDate(value(c.Mapping.Date)), ImageURL: safeRemoteRecordURL(value(c.Mapping.ImageURL)), Link: safeRemoteRecordURL(value(c.Mapping.Link)), Values: values})
+		records = append(records, StructuredRecord{ID: stableRecordID(fmt.Sprintf("%d:%s", index, title)), Title: sanitizeCalendarText(title, 240), Subtitle: sanitizeCalendarText(value(c.Mapping.Subtitle), 240), Date: normalizeStructuredDate(value(c.Mapping.Date), c.DateSelection), ImageURL: safeRemoteRecordURL(value(c.Mapping.ImageURL)), Link: safeRemoteRecordURL(value(c.Mapping.Link)), Values: values})
 	}
 	return applyStructuredOptions(records, c), nil
 }
@@ -467,9 +505,20 @@ func scalarText(value any) string {
 	}
 }
 func normalizeRecordDate(value string) string {
+	return normalizeStructuredDate(value, DateSelection{DateFormat: "auto"})
+}
+func normalizeStructuredDate(value string, selection DateSelection) string {
 	value = strings.TrimSpace(value)
-	for _, layout := range []string{time.RFC3339, time.RFC1123Z, time.RFC1123, time.RFC822Z, time.RFC822, "2006-01-02"} {
+	formats := map[string][]string{"iso_date": {"2006-01-02"}, "us_date": {"01/02/2006"}, "us_short": {"1/2/2006"}, "day_month_name": {"02-Jan-2006"}, "rfc3339": {time.RFC3339}}
+	layouts := formats[selection.DateFormat]
+	if selection.DateFormat == "" || selection.DateFormat == "auto" {
+		layouts = []string{time.RFC3339, time.RFC1123Z, time.RFC1123, time.RFC822Z, time.RFC822, "2006-01-02", "01/02/2006", "1/2/2006", "02-Jan-2006"}
+	}
+	for _, layout := range layouts {
 		if parsed, err := time.Parse(layout, value); err == nil {
+			if layout == "2006-01-02" || layout == "01/02/2006" || layout == "1/2/2006" || layout == "02-Jan-2006" {
+				return parsed.Format("2006-01-02")
+			}
 			return parsed.UTC().Format(time.RFC3339)
 		}
 	}
@@ -511,7 +560,7 @@ func (s *Service) refreshStructured(ctx context.Context, assetID uuid.UUID, prov
 	return prepared, diagnostics, nil
 }
 
-func (s *Service) StructuredPreview(ctx context.Context, provider string, raw json.RawMessage) (StructuredPreview, error) {
+func (s *Service) StructuredPreview(ctx context.Context, provider string, raw json.RawMessage, previewDate string) (StructuredPreview, error) {
 	normalized, err := (structuredSourceProvider{s, provider}).Normalize(ctx, raw)
 	if err != nil {
 		return StructuredPreview{}, err
@@ -521,5 +570,118 @@ func (s *Service) StructuredPreview(ctx context.Context, provider string, raw js
 	if err != nil {
 		return StructuredPreview{}, err
 	}
-	return StructuredPreview{Configuration: StructuredPlayerConfig{Presentation: c.Presentation, Fields: c.Fields, EmptyState: c.EmptyState, Data: prepared}, Diagnostics: diagnostics}, nil
+	if c.DateSelection.Enabled {
+		prepared.Records = selectStructuredRecords(prepared.Records, c.DateSelection, previewDate)
+	}
+	return StructuredPreview{Configuration: StructuredPlayerConfig{Presentation: c.Presentation, Fields: c.Fields, EmptyState: c.EmptyState, DateSelection: c.DateSelection, Data: prepared}, Diagnostics: diagnostics}, nil
+}
+
+func selectStructuredRecords(records []StructuredRecord, selection DateSelection, previewDate string) []StructuredRecord {
+	loc, _ := time.LoadLocation(selection.Timezone)
+	target := time.Now().In(loc)
+	if parsed, err := time.ParseInLocation("2006-01-02", previewDate, loc); err == nil {
+		target = parsed
+	}
+	today := target.Format("2006-01-02")
+	targetDate := today
+	if selection.Mode == "tomorrow" {
+		targetDate = target.AddDate(0, 0, 1).Format("2006-01-02")
+	}
+	matches := []StructuredRecord{}
+	dated := []StructuredRecord{}
+	for _, record := range records {
+		date := recordDateInLocation(record.Date, loc)
+		if date == "" {
+			continue
+		}
+		dated = append(dated, record)
+		if selection.ExcludePast && date < today {
+			continue
+		}
+		switch selection.Mode {
+		case "next_available":
+			if date >= targetDate {
+				matches = append(matches, record)
+			}
+		case "current_week":
+			weekday := int(target.Weekday())
+			if weekday == 0 {
+				weekday = 7
+			}
+			start := target.AddDate(0, 0, -weekday+1).Format("2006-01-02")
+			end := target.AddDate(0, 0, 7-weekday).Format("2006-01-02")
+			if date >= start && date <= end {
+				matches = append(matches, record)
+			}
+		case "custom_range":
+			if date >= selection.CustomStartDate && date <= selection.CustomEndDate {
+				matches = append(matches, record)
+			}
+		default:
+			if date == targetDate {
+				matches = append(matches, record)
+			}
+		}
+	}
+	if selection.Mode == "next_available" && len(matches) > 0 {
+		sort.SliceStable(matches, func(i, j int) bool {
+			return recordDateInLocation(matches[i].Date, loc) < recordDateInLocation(matches[j].Date, loc)
+		})
+		return filterRecordDate(matches, loc, recordDateInLocation(matches[0].Date, loc))
+	}
+	if len(matches) > 0 {
+		return matches
+	}
+	switch selection.NoMatchBehavior {
+	case "next_available":
+		future := []StructuredRecord{}
+		for _, record := range dated {
+			if recordDateInLocation(record.Date, loc) > targetDate {
+				future = append(future, record)
+			}
+		}
+		sort.SliceStable(future, func(i, j int) bool {
+			return recordDateInLocation(future[i].Date, loc) < recordDateInLocation(future[j].Date, loc)
+		})
+		if len(future) > 0 {
+			return filterRecordDate(future, loc, recordDateInLocation(future[0].Date, loc))
+		}
+	case "last_known_good":
+		past := []StructuredRecord{}
+		for _, record := range dated {
+			if recordDateInLocation(record.Date, loc) < targetDate {
+				past = append(past, record)
+			}
+		}
+		sort.SliceStable(past, func(i, j int) bool {
+			return recordDateInLocation(past[i].Date, loc) > recordDateInLocation(past[j].Date, loc)
+		})
+		if len(past) > 0 {
+			return filterRecordDate(past, loc, recordDateInLocation(past[0].Date, loc))
+		}
+	case "fallback_text":
+		return []StructuredRecord{{ID: "date-fallback", Title: selection.FallbackText}}
+	}
+	return []StructuredRecord{}
+}
+
+func recordDateInLocation(value string, loc *time.Location) string {
+	if len(value) >= 10 && !strings.Contains(value, "T") {
+		if _, err := time.Parse("2006-01-02", value[:10]); err == nil {
+			return value[:10]
+		}
+	}
+	if parsed, err := time.Parse(time.RFC3339, value); err == nil {
+		return parsed.In(loc).Format("2006-01-02")
+	}
+	return ""
+}
+func filterRecordDate(records []StructuredRecord, loc *time.Location, date string) []StructuredRecord {
+	result := []StructuredRecord{}
+	for _, record := range records {
+		if recordDateInLocation(record.Date, loc) == date {
+			result = append(result, record)
+		}
+	}
+	return result
 }

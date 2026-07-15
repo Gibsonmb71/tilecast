@@ -57,9 +57,11 @@ Website configuration is normalized in `website_assets`; no page data or credent
 
 The server validates URLs without fetching them, avoiding SSRF and network-topology assumptions. Top-level navigation uses an exact-host allowlist on the player. Subresource filtering is intentionally not claimed because Milestone 6 does not install a request-interception proxy.
 
-## Sources
+## Apps and data Sources
 
-Sources are reusable dynamic Content items. The `sources` table stores a built-in provider name, a provider configuration version, and a validated JSON object; clients cannot invent provider names or arbitrary keys. Provider implementations own normalization, validation, manifest projection, Studio editing, and player rendering. Website is migrated into the Source model while retaining the existing website validation and WebView renderer. YouTube has a dedicated IFrame API renderer and does not pass through the generic Website renderer.
+Apps are reusable configured Content items backed by the closed Source/provider registry. The `sources` table remains the internal compatibility name and stores a built-in provider, provider configuration version, and validated JSON object; clients cannot invent provider names or arbitrary keys. Website and YouTube are Apps in Studio. Clock, Date, QR Code, and Ticker are native Apps. Calendar, RSS, Atom, JSON, and CSV may supply prepared data to a display App or render directly when their playback model supports it.
+
+Layouts place generic references to Apps, data Sources, Assets, and playlists. A placement owns bounds, layer, opacity, and a small provider-approved override object; it never copies or silently edits the shared App configuration. Playlist zones remain a separate region type. Static text, shapes, lines, decorative images, groups, and background properties are native layout primitives rather than Apps. See [apps-and-layouts.md](apps-and-layouts.md).
 
 Manifest v5 contains only Sources referenced by playlists relevant to the authenticated screen. Source items use stream delivery; fallback images continue through the verified media-variant preparation path. The provider boundary is internal—Tilecast does not load third-party provider code or expose a marketplace.
 
@@ -68,6 +70,8 @@ Calendar Sources add a server-owned refresh boundary. `source_refresh_states` is
 Content organization remains inside the media domain. Folders are a nullable asset relationship with database-level `ON DELETE SET NULL`; collections and tags are many-to-many metadata. Bulk changes validate all referenced rows and commit atomically, with one bounded audit event per request. Organization metadata is intentionally absent from Player manifests, so rearranging Studio content cannot interrupt playback or invalidate otherwise unchanged manifests.
 
 RSS, Atom, JSON, and CSV extend the Calendar refresh boundary rather than adding provider-specific workers. One `source_refresh_states` row is the restart-safe `SKIP LOCKED` queue, current typed diagnostics, and bounded last-known-good payload. Provider-specific parsers normalize into a renderer-neutral record contract; manifest v8 carries only prepared records. Android validates that contract and shares native list, agenda, card, and ticker primitives across all four providers.
+
+Manifest v9 adds native Clock, Date, QR Code, and Ticker Apps plus date-aware structured Source configuration. The server prepares and bounds datasets, but the Player selects the active record from its current local calendar date and configured IANA timezone. It reevaluates without a manifest revision at calendar transitions, startup, and runtime clock changes; reuse of a previous record requires the explicit `last_known_good` policy.
 
 ## Milestone 7 operations
 

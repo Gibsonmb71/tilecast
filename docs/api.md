@@ -118,17 +118,19 @@ Website playlist items require `durationMs` and always use `deliveryPolicy: "str
 
 Website data clearing is the typed `clear_website_data` persistent player command. It is Owner/Administrator-only and CSRF protected.
 
-## Sources
+## Apps and data Sources
 
-`POST /api/v1/sources` creates a Website, YouTube, Calendar, RSS, Atom, JSON, or CSV Source, `PATCH /api/v1/sources/{id}` edits its name and provider configuration, and `POST /api/v1/sources/{id}/duplicate` creates a reusable copy. A request contains a closed `provider`, name, optional description, and provider configuration object. Strict JSON decoding applies to both the request and provider configuration; unknown providers and fields are rejected.
+`POST /api/v1/apps` creates a reusable Website, YouTube, Calendar, RSS, Atom, JSON, CSV, Clock, Date, QR Code, or Ticker App/Source instance. `PATCH /api/v1/apps/{id}` edits it and `POST /api/v1/apps/{id}/duplicate` creates a reusable copy. The former `/api/v1/sources` routes remain compatible aliases. A request contains a closed `provider`, name, optional description, and provider configuration object. Strict JSON decoding applies to both the request and provider configuration; unknown providers and fields are rejected.
 
 `POST /api/v1/sources/calendar/preview` performs a bounded fetch and returns real sanitized event data before save. `GET /api/v1/sources/{id}/diagnostics` returns last attempt/success, HTTP category, parse state, event count, cache usage, and cache lifetime without returning raw ICS. `GET /api/v1/assets` returns Sources with normal Content results. Use `type=source` for all Sources or `provider=website|youtube|calendar` for one provider.
 
 Manifest v7 projects only Sources referenced by relevant playlists. Calendar projection contains presentation settings and bounded prepared events, never feed URLs or raw calendar bytes. Existing v1-v6 manifests remain readable by the updated Player. Stable calendar failures use `validation_failed`; inaccessible resources remain `not_found`.
 
-`POST /api/v1/sources/{provider}/preview` previews `rss`, `atom`, `json`, or `csv` using the real bounded parser. JSON mappings use only RFC 6901 JSON Pointer; CSV uses exact header names. The result contains prepared records and current diagnostics. `GET /api/v1/sources/{id}/diagnostics` reports `availableItemCount` for structured providers.
+`POST /api/v1/apps/{provider}/preview` previews `rss`, `atom`, `json`, or `csv` using the real bounded parser. JSON mappings use only RFC 6901 JSON Pointer; CSV uses exact header names. An optional `previewDate` evaluates the configured date selection for Studio without changing saved data. The result contains prepared records and current diagnostics. `GET /api/v1/apps/{id}/diagnostics` reports `availableItemCount` for structured providers. Equivalent `/sources` paths remain available.
 
 Manifest v8 adds the four structured providers. Their projections contain only native presentation fields and bounded sanitized records. Fetch URLs, uploaded CSV bytes, mappings, and filters are server-only. Player versions that understand v1-v8 continue to load older cached manifests. See [structured-sources.md](structured-sources.md).
+
+Manifest v9 adds Clock, Date, QR Code, and Ticker Apps and projects date-selection policy with structured data. A Ticker references its data Source by stable asset ID; the manifest includes that Source once as a dependency rather than duplicating its records. Date-only records remain calendar dates, and timestamp records remain RFC 3339 values for timezone-aware local evaluation.
 
 ## Emergency takeover and commands
 

@@ -284,6 +284,48 @@ type StructuredSourceConfig struct {
 	RefreshIntervalSeconds int                `json:"refreshIntervalSeconds"`
 	StalenessLimitHours    int                `json:"stalenessLimitHours"`
 	EmptyState             string             `json:"emptyState"`
+	DateSelection          DateSelection      `json:"dateSelection"`
+}
+
+type DateSelection struct {
+	Enabled         bool   `json:"enabled"`
+	DateFormat      string `json:"dateFormat"`
+	Timezone        string `json:"timezone"`
+	Mode            string `json:"mode"`
+	CustomStartDate string `json:"customStartDate,omitempty"`
+	CustomEndDate   string `json:"customEndDate,omitempty"`
+	ExcludePast     bool   `json:"excludePast"`
+	NoMatchBehavior string `json:"noMatchBehavior"`
+	FallbackText    string `json:"fallbackText,omitempty"`
+}
+
+type ClockAppConfig struct {
+	Timezone        string `json:"timezone"`
+	Format          string `json:"format"`
+	ShowSeconds     bool   `json:"showSeconds"`
+	ForegroundColor string `json:"foregroundColor"`
+	BackgroundColor string `json:"backgroundColor"`
+}
+type DateAppConfig struct {
+	Timezone        string `json:"timezone"`
+	Format          string `json:"format"`
+	ForegroundColor string `json:"foregroundColor"`
+	BackgroundColor string `json:"backgroundColor"`
+}
+type QRCodeAppConfig struct {
+	Value           string `json:"value"`
+	Label           string `json:"label,omitempty"`
+	ErrorCorrection string `json:"errorCorrection"`
+	ForegroundColor string `json:"foregroundColor"`
+	BackgroundColor string `json:"backgroundColor"`
+}
+type TickerAppConfig struct {
+	SourceAssetID   uuid.UUID `json:"sourceAssetId"`
+	Field           string    `json:"field"`
+	Separator       string    `json:"separator"`
+	Speed           string    `json:"speed"`
+	ForegroundColor string    `json:"foregroundColor"`
+	BackgroundColor string    `json:"backgroundColor"`
 }
 
 type StructuredRecord struct {
@@ -307,10 +349,11 @@ type StructuredPreparedData struct {
 }
 
 type StructuredPlayerConfig struct {
-	Presentation string                 `json:"presentation"`
-	Fields       StructuredFields       `json:"fields"`
-	EmptyState   string                 `json:"emptyState"`
-	Data         StructuredPreparedData `json:"data"`
+	Presentation  string                 `json:"presentation"`
+	Fields        StructuredFields       `json:"fields"`
+	EmptyState    string                 `json:"emptyState"`
+	DateSelection DateSelection          `json:"dateSelection"`
+	Data          StructuredPreparedData `json:"data"`
 }
 
 type StructuredPreview struct {

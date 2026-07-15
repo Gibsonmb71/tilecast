@@ -3,6 +3,9 @@ import {
   Braces,
   CalendarDays,
   FileSpreadsheet,
+  Clock3,
+  QrCode,
+  TextQuote,
   Globe2,
   Plus,
   Rss,
@@ -10,7 +13,8 @@ import {
   X,
   Youtube,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import QRCode from "qrcode";
 import { api } from "../api/client";
 import type {
   Asset,
@@ -19,6 +23,10 @@ import type {
   SourceProvider,
   StructuredPreview,
   StructuredSourceConfig,
+  ClockAppConfig,
+  DateAppConfig,
+  QRCodeAppConfig,
+  TickerAppConfig,
   YouTubeConfig,
 } from "../api/types";
 
@@ -49,8 +57,8 @@ export function SourceProviderGallery({
       >
         <header>
           <div>
-            <h2 id="source-gallery-title">Create source</h2>
-            <p>Choose a built-in Source provider.</p>
+            <h2 id="source-gallery-title">Create App</h2>
+            <p>Choose a built-in App provider.</p>
           </div>
           <button className="icon-button" aria-label="Close" onClick={onClose}>
             <X size={18} />
@@ -97,6 +105,26 @@ export function SourceProviderGallery({
             <FileSpreadsheet size={30} />
             <strong>CSV</strong>
             <span>Map a hosted or uploaded UTF-8 CSV file.</span>
+          </button>
+          <button type="button" onClick={() => onChoose("clock")}>
+            <Clock3 size={30} />
+            <strong>Clock</strong>
+            <span>Show a live local time using a configured timezone.</span>
+          </button>
+          <button type="button" onClick={() => onChoose("date")}>
+            <CalendarDays size={30} />
+            <strong>Date</strong>
+            <span>Show a live localized calendar date.</span>
+          </button>
+          <button type="button" onClick={() => onChoose("qrcode")}>
+            <QrCode size={30} />
+            <strong>QR Code</strong>
+            <span>Display validated text or a URL as a scannable code.</span>
+          </button>
+          <button type="button" onClick={() => onChoose("ticker")}>
+            <TextQuote size={30} />
+            <strong>Ticker</strong>
+            <span>Present a selected field from a reusable data App.</span>
           </button>
         </div>
       </section>
@@ -150,6 +178,14 @@ const defaultStructured = (
   refreshIntervalSeconds: 900,
   stalenessLimitHours: 168,
   emptyState: "No items available",
+  dateSelection: {
+    enabled: false,
+    dateFormat: "auto",
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+    mode: "today",
+    excludePast: false,
+    noMatchBehavior: "empty",
+  },
 });
 
 export function StructuredSourceEditor({
@@ -170,11 +206,21 @@ export function StructuredSourceEditor({
   const queryClient = useQueryClient();
   const [name, setName] = useState(asset?.name ?? "");
   const [description, setDescription] = useState(asset?.description ?? "");
-  const [configuration, setConfiguration] = useState<StructuredSourceConfig>(
-    (asset?.source?.configuration as StructuredSourceConfig | undefined) ??
-      defaultStructured(provider),
-  );
+  const configured = asset?.source?.configuration as
+    StructuredSourceConfig | undefined;
+  const defaults = defaultStructured(provider);
+  const [configuration, setConfiguration] = useState<StructuredSourceConfig>({
+    ...defaults,
+    ...configured,
+    dateSelection: {
+      ...defaults.dateSelection,
+      ...configured?.dateSelection,
+    },
+  });
   const [preview, setPreview] = useState<StructuredPreview>();
+  const [previewDate, setPreviewDate] = useState(
+    new Date().toISOString().slice(0, 10),
+  );
   const diagnostics = useQuery({
     queryKey: ["source-diagnostics", asset?.id],
     queryFn: () => api.sourceDiagnostics(asset!.id),
@@ -194,7 +240,12 @@ export function StructuredSourceEditor({
   });
   const previewMutation = useMutation({
     mutationFn: () =>
-      api.previewStructuredSource(provider, configuration, csrf),
+      api.previewStructuredSource(
+        provider,
+        configuration,
+        csrf,
+        configuration.dateSelection.enabled ? previewDate : undefined,
+      ),
     onSuccess: setPreview,
   });
   const mapping = configuration.mapping;
@@ -227,7 +278,7 @@ export function StructuredSourceEditor({
         <header>
           <div>
             <h2 id="structured-source-title">
-              {asset ? "Edit" : "Create"} {provider.toUpperCase()} source
+              {asset ? "Edit" : "Create"} {provider.toUpperCase()} App
             </h2>
             <p>Fetched data is sanitized and cached for offline playback.</p>
           </div>
@@ -386,7 +437,7 @@ export function StructuredSourceEditor({
                 <option value="newest">Newest</option>
                 <option value="oldest">Oldest</option>
                 <option value="title">Title</option>
-                <option value="source">Source order</option>
+                <option value="source">Original order</option>
               </select>
             </label>
           </div>
@@ -402,6 +453,227 @@ export function StructuredSourceEditor({
                     onChange={(e) => updateMapping("rootList", e.target.value)}
                   />
                 </label>
+              )}
+              {(provider === "json" || provider === "csv") && (
+                <fieldset>
+                  <legend>Date-aware selection</legend>
+                  <label className="switch-row">
+                    <input
+                      type="checkbox"
+                      checked={configuration.dateSelection.enabled}
+                      disabled={readOnly}
+                      onChange={(event) =>
+                        setConfiguration((current) => ({
+                          ...current,
+                          dateSelection: {
+                            ...current.dateSelection,
+                            enabled: event.target.checked,
+                          },
+                        }))
+                      }
+                    />
+                    <span>
+                      <strong>Select records by local date</strong>
+                      <small>
+                        The Player reevaluates cached records at the configured
+                        local date transition.
+                      </small>
+                    </span>
+                  </label>
+                  {configuration.dateSelection.enabled && (
+                    <>
+                      <div className="form-grid form-grid--2">
+                        <label className="field">
+                          <span className="field__label">Date format</span>
+                          <select
+                            value={configuration.dateSelection.dateFormat}
+                            disabled={readOnly}
+                            onChange={(event) =>
+                              setConfiguration((current) => ({
+                                ...current,
+                                dateSelection: {
+                                  ...current.dateSelection,
+                                  dateFormat: event.target
+                                    .value as StructuredSourceConfig["dateSelection"]["dateFormat"],
+                                },
+                              }))
+                            }
+                          >
+                            <option value="auto">Detect</option>
+                            <option value="iso_date">YYYY-MM-DD</option>
+                            <option value="us_date">MM/DD/YYYY</option>
+                            <option value="us_short">M/D/YYYY</option>
+                            <option value="day_month_name">DD-Mon-YYYY</option>
+                            <option value="rfc3339">RFC 3339</option>
+                          </select>
+                        </label>
+                        <label className="field">
+                          <span className="field__label">Timezone</span>
+                          <input
+                            value={configuration.dateSelection.timezone}
+                            disabled={readOnly}
+                            onChange={(event) =>
+                              setConfiguration((current) => ({
+                                ...current,
+                                dateSelection: {
+                                  ...current.dateSelection,
+                                  timezone: event.target.value,
+                                },
+                              }))
+                            }
+                          />
+                        </label>
+                        <label className="field">
+                          <span className="field__label">Selection</span>
+                          <select
+                            value={configuration.dateSelection.mode}
+                            disabled={readOnly}
+                            onChange={(event) =>
+                              setConfiguration((current) => ({
+                                ...current,
+                                dateSelection: {
+                                  ...current.dateSelection,
+                                  mode: event.target
+                                    .value as StructuredSourceConfig["dateSelection"]["mode"],
+                                },
+                              }))
+                            }
+                          >
+                            <option value="today">Today</option>
+                            <option value="tomorrow">Tomorrow</option>
+                            <option value="next_available">
+                              Next available date
+                            </option>
+                            <option value="current_week">Current week</option>
+                            <option value="custom_range">
+                              Custom date range
+                            </option>
+                          </select>
+                        </label>
+                        <label className="field">
+                          <span className="field__label">No match</span>
+                          <select
+                            value={configuration.dateSelection.noMatchBehavior}
+                            disabled={readOnly}
+                            onChange={(event) =>
+                              setConfiguration((current) => ({
+                                ...current,
+                                dateSelection: {
+                                  ...current.dateSelection,
+                                  noMatchBehavior: event.target
+                                    .value as StructuredSourceConfig["dateSelection"]["noMatchBehavior"],
+                                },
+                              }))
+                            }
+                          >
+                            <option value="empty">Display empty state</option>
+                            <option value="fallback_text">
+                              Show fallback text
+                            </option>
+                            <option value="next_available">
+                              Show next available
+                            </option>
+                            <option value="hide">Hide App or binding</option>
+                            <option value="last_known_good">
+                              Use last-known-good record
+                            </option>
+                          </select>
+                        </label>
+                      </div>
+                      {configuration.dateSelection.mode === "custom_range" && (
+                        <div className="form-grid form-grid--2">
+                          <label className="field">
+                            <span className="field__label">Start date</span>
+                            <input
+                              type="date"
+                              value={
+                                configuration.dateSelection.customStartDate ??
+                                ""
+                              }
+                              disabled={readOnly}
+                              onChange={(event) =>
+                                setConfiguration((current) => ({
+                                  ...current,
+                                  dateSelection: {
+                                    ...current.dateSelection,
+                                    customStartDate: event.target.value,
+                                  },
+                                }))
+                              }
+                            />
+                          </label>
+                          <label className="field">
+                            <span className="field__label">End date</span>
+                            <input
+                              type="date"
+                              value={
+                                configuration.dateSelection.customEndDate ?? ""
+                              }
+                              disabled={readOnly}
+                              onChange={(event) =>
+                                setConfiguration((current) => ({
+                                  ...current,
+                                  dateSelection: {
+                                    ...current.dateSelection,
+                                    customEndDate: event.target.value,
+                                  },
+                                }))
+                              }
+                            />
+                          </label>
+                        </div>
+                      )}
+                      {configuration.dateSelection.noMatchBehavior ===
+                        "fallback_text" && (
+                        <label className="field">
+                          <span className="field__label">Fallback text</span>
+                          <input
+                            value={
+                              configuration.dateSelection.fallbackText ?? ""
+                            }
+                            disabled={readOnly}
+                            onChange={(event) =>
+                              setConfiguration((current) => ({
+                                ...current,
+                                dateSelection: {
+                                  ...current.dateSelection,
+                                  fallbackText: event.target.value,
+                                },
+                              }))
+                            }
+                          />
+                        </label>
+                      )}
+                      <label className="switch-row">
+                        <input
+                          type="checkbox"
+                          checked={configuration.dateSelection.excludePast}
+                          disabled={readOnly}
+                          onChange={(event) =>
+                            setConfiguration((current) => ({
+                              ...current,
+                              dateSelection: {
+                                ...current.dateSelection,
+                                excludePast: event.target.checked,
+                              },
+                            }))
+                          }
+                        />
+                        <span>Exclude past records</span>
+                      </label>
+                      <label className="field">
+                        <span className="field__label">Preview date</span>
+                        <input
+                          type="date"
+                          value={previewDate}
+                          onChange={(event) =>
+                            setPreviewDate(event.target.value)
+                          }
+                        />
+                      </label>
+                    </>
+                  )}
+                </fieldset>
               )}
               <div className="form-grid form-grid--2">
                 {(
@@ -692,12 +964,417 @@ export function StructuredSourceEditor({
               disabled={save.isPending || !name.trim()}
               onClick={() => save.mutate()}
             >
-              {save.isPending ? "Saving…" : "Save source"}
+              {save.isPending ? "Saving…" : "Save App"}
             </button>
           )}
         </footer>
       </section>
     </div>
+  );
+}
+
+type NativeProvider = "clock" | "date" | "qrcode" | "ticker";
+type NativeConfig =
+  ClockAppConfig | DateAppConfig | QRCodeAppConfig | TickerAppConfig;
+const nativeDefault = (provider: NativeProvider): NativeConfig => {
+  const colors = { foregroundColor: "#F5F7FA", backgroundColor: "#0E141B" };
+  if (provider === "clock")
+    return {
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+      format: "12",
+      showSeconds: false,
+      ...colors,
+    };
+  if (provider === "date")
+    return {
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+      format: "full",
+      ...colors,
+    };
+  if (provider === "qrcode")
+    return {
+      value: "https://",
+      label: "",
+      errorCorrection: "medium",
+      foregroundColor: "#000000",
+      backgroundColor: "#FFFFFF",
+    };
+  return {
+    sourceAssetId: "",
+    field: "title",
+    separator: " • ",
+    speed: "normal",
+    ...colors,
+  };
+};
+
+export function NativeAppEditor({
+  provider,
+  asset,
+  csrf,
+  readOnly = false,
+  onClose,
+  onSaved,
+}: {
+  provider: NativeProvider;
+  asset?: Asset;
+  csrf: string;
+  readOnly?: boolean;
+  onClose: () => void;
+  onSaved: (asset: Asset) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [name, setName] = useState(asset?.name ?? "");
+  const [description, setDescription] = useState(asset?.description ?? "");
+  const [configuration, setConfiguration] = useState<NativeConfig>(
+    (asset?.source?.configuration as NativeConfig | undefined) ??
+      nativeDefault(provider),
+  );
+  const dataApps = useQuery({
+    queryKey: ["ticker-data-apps"],
+    queryFn: () =>
+      api.assets(
+        new URLSearchParams({
+          type: "source",
+          page: "1",
+          pageSize: "100",
+          sort: "name",
+        }),
+      ),
+    enabled: provider === "ticker",
+  });
+  const save = useMutation({
+    mutationFn: () => {
+      const input = { provider, name, description, configuration };
+      return asset
+        ? api.updateSource(asset.id, input, csrf)
+        : api.createSource(input, csrf);
+    },
+    onSuccess: (saved) => {
+      void queryClient.invalidateQueries({ queryKey: ["assets"] });
+      onSaved(saved);
+    },
+  });
+  const updateColors = (
+    key: "foregroundColor" | "backgroundColor",
+    value: string,
+  ) => setConfiguration((current) => ({ ...current, [key]: value }));
+  return (
+    <div className="details-backdrop" role="presentation">
+      <section
+        className="asset-details source-editor"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="native-app-title"
+      >
+        <header>
+          <div>
+            <h2 id="native-app-title">
+              {asset ? "Edit" : "Create"}{" "}
+              {provider === "qrcode"
+                ? "QR Code"
+                : provider[0]!.toUpperCase() + provider.slice(1)}{" "}
+              App
+            </h2>
+            <p>Reusable native App configuration.</p>
+          </div>
+          <button className="icon-button" aria-label="Close" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </header>
+        <div className="source-editor__body">
+          <label className="field">
+            <span className="field__label">Name</span>
+            <input
+              value={name}
+              disabled={readOnly}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </label>
+          <label className="field">
+            <span className="field__label">Description</span>
+            <input
+              value={description}
+              disabled={readOnly}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+          </label>
+          {(provider === "clock" || provider === "date") && (
+            <label className="field">
+              <span className="field__label">Timezone</span>
+              <input
+                value={
+                  (configuration as ClockAppConfig | DateAppConfig).timezone
+                }
+                disabled={readOnly}
+                onChange={(e) =>
+                  setConfiguration((current) => ({
+                    ...current,
+                    timezone: e.target.value,
+                  }))
+                }
+              />
+            </label>
+          )}
+          {provider === "clock" && (
+            <div className="form-grid form-grid--2">
+              <label className="field">
+                <span className="field__label">Time format</span>
+                <select
+                  value={(configuration as ClockAppConfig).format}
+                  disabled={readOnly}
+                  onChange={(e) =>
+                    setConfiguration((current) => ({
+                      ...(current as ClockAppConfig),
+                      format: e.target.value as "12" | "24",
+                    }))
+                  }
+                >
+                  <option value="12">12-hour</option>
+                  <option value="24">24-hour</option>
+                </select>
+              </label>
+              <label className="switch-row">
+                <input
+                  type="checkbox"
+                  checked={(configuration as ClockAppConfig).showSeconds}
+                  disabled={readOnly}
+                  onChange={(e) =>
+                    setConfiguration((current) => ({
+                      ...current,
+                      showSeconds: e.target.checked,
+                    }))
+                  }
+                />
+                <span>Show seconds</span>
+              </label>
+            </div>
+          )}
+          {provider === "date" && (
+            <label className="field">
+              <span className="field__label">Date format</span>
+              <select
+                value={(configuration as DateAppConfig).format}
+                disabled={readOnly}
+                onChange={(e) =>
+                  setConfiguration((current) => ({
+                    ...current,
+                    format: e.target.value as DateAppConfig["format"],
+                  }))
+                }
+              >
+                <option value="full">Full</option>
+                <option value="long">Long</option>
+                <option value="medium">Medium</option>
+                <option value="short">Short</option>
+              </select>
+            </label>
+          )}
+          {provider === "qrcode" && (
+            <>
+              <label className="field">
+                <span className="field__label">Text or URL</span>
+                <textarea
+                  value={(configuration as QRCodeAppConfig).value}
+                  maxLength={2048}
+                  disabled={readOnly}
+                  onChange={(e) =>
+                    setConfiguration((current) => ({
+                      ...current,
+                      value: e.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <div className="form-grid form-grid--2">
+                <label className="field">
+                  <span className="field__label">Label</span>
+                  <input
+                    value={(configuration as QRCodeAppConfig).label ?? ""}
+                    disabled={readOnly}
+                    onChange={(e) =>
+                      setConfiguration((current) => ({
+                        ...current,
+                        label: e.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span className="field__label">Error correction</span>
+                  <select
+                    value={(configuration as QRCodeAppConfig).errorCorrection}
+                    disabled={readOnly}
+                    onChange={(e) =>
+                      setConfiguration((current) => ({
+                        ...current,
+                        errorCorrection: e.target
+                          .value as QRCodeAppConfig["errorCorrection"],
+                      }))
+                    }
+                  >
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="quartile">Quartile</option>
+                    <option value="high">High</option>
+                  </select>
+                </label>
+              </div>
+              {(configuration as QRCodeAppConfig).value.length > 500 && (
+                <div className="notice notice--warning">
+                  Dense QR Code. Test scanning at the intended display distance.
+                </div>
+              )}
+            </>
+          )}
+          {provider === "ticker" && (
+            <>
+              <label className="field">
+                <span className="field__label">Data App</span>
+                <select
+                  value={(configuration as TickerAppConfig).sourceAssetId}
+                  disabled={readOnly}
+                  onChange={(e) =>
+                    setConfiguration((current) => ({
+                      ...current,
+                      sourceAssetId: e.target.value,
+                    }))
+                  }
+                >
+                  <option value="">Select data</option>
+                  {dataApps.data?.items
+                    .filter(
+                      (item) =>
+                        item.source &&
+                        ["rss", "atom", "json", "csv"].includes(
+                          item.source.provider,
+                        ),
+                    )
+                    .map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <div className="form-grid form-grid--2">
+                <label className="field">
+                  <span className="field__label">Field</span>
+                  <input
+                    value={(configuration as TickerAppConfig).field}
+                    disabled={readOnly}
+                    onChange={(e) =>
+                      setConfiguration((current) => ({
+                        ...current,
+                        field: e.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span className="field__label">Separator</span>
+                  <input
+                    value={(configuration as TickerAppConfig).separator}
+                    disabled={readOnly}
+                    onChange={(e) =>
+                      setConfiguration((current) => ({
+                        ...current,
+                        separator: e.target.value,
+                      }))
+                    }
+                  />
+                </label>
+              </div>
+            </>
+          )}
+          <div className="form-grid form-grid--2">
+            <label className="field">
+              <span className="field__label">Foreground</span>
+              <input
+                type="color"
+                value={configuration.foregroundColor}
+                disabled={readOnly}
+                onChange={(e) =>
+                  updateColors("foregroundColor", e.target.value)
+                }
+              />
+            </label>
+            <label className="field">
+              <span className="field__label">Background</span>
+              <input
+                type="color"
+                value={configuration.backgroundColor}
+                disabled={readOnly}
+                onChange={(e) =>
+                  updateColors("backgroundColor", e.target.value)
+                }
+              />
+            </label>
+          </div>
+          <div
+            className="native-app-preview"
+            style={{
+              color: configuration.foregroundColor,
+              backgroundColor: configuration.backgroundColor,
+            }}
+          >
+            {provider === "clock" ? (
+              new Intl.DateTimeFormat(undefined, {
+                timeStyle: (configuration as ClockAppConfig).showSeconds
+                  ? "medium"
+                  : "short",
+                timeZone: (configuration as ClockAppConfig).timezone,
+              }).format(new Date())
+            ) : provider === "date" ? (
+              new Intl.DateTimeFormat(undefined, {
+                dateStyle: (configuration as DateAppConfig).format,
+                timeZone: (configuration as DateAppConfig).timezone,
+              }).format(new Date())
+            ) : provider === "qrcode" ? (
+              <QRCodePreview configuration={configuration as QRCodeAppConfig} />
+            ) : (
+              "Ticker preview uses the selected data App."
+            )}
+          </div>
+          {save.error && <p className="form-error">{save.error.message}</p>}
+        </div>
+        <footer>
+          {!readOnly && (
+            <button
+              className="button button--primary"
+              disabled={save.isPending || !name.trim()}
+              onClick={() => save.mutate()}
+            >
+              {save.isPending ? "Saving…" : "Save App"}
+            </button>
+          )}
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+function QRCodePreview({ configuration }: { configuration: QRCodeAppConfig }) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    if (!canvas.current || !configuration.value) return;
+    void QRCode.toCanvas(canvas.current, configuration.value, {
+      width: 220,
+      margin: 2,
+      errorCorrectionLevel: { low: "L", medium: "M", quartile: "Q", high: "H" }[
+        configuration.errorCorrection
+      ] as "L" | "M" | "Q" | "H",
+      color: {
+        dark: configuration.foregroundColor,
+        light: configuration.backgroundColor,
+      },
+    });
+  }, [configuration]);
+  return (
+    <>
+      <canvas ref={canvas} aria-label="QR Code preview" />
+      {configuration.label && <small>{configuration.label}</small>}
+    </>
   );
 }
 
@@ -794,7 +1471,7 @@ export function CalendarSourceEditor({
         <header>
           <div>
             <h2 id="calendar-source-title">
-              {asset ? "Edit Calendar source" : "Create Calendar source"}
+              {asset ? "Edit Calendar App" : "Create Calendar App"}
             </h2>
             <p>
               Tilecast fetches and sanitizes public iCalendar feeds for native
@@ -1136,7 +1813,7 @@ export function CalendarSourceEditor({
               disabled={save.isPending || !name.trim()}
               onClick={() => save.mutate()}
             >
-              {save.isPending ? "Saving…" : "Save calendar source"}
+              {save.isPending ? "Saving…" : "Save Calendar App"}
             </button>
           )}
         </footer>
@@ -1224,13 +1901,13 @@ export function YouTubeSourceEditor({
     },
   });
   const close = () => {
-    if (!dirty || confirm("Discard unsaved YouTube source changes?")) onClose();
+    if (!dirty || confirm("Discard unsaved YouTube App changes?")) onClose();
   };
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.stopPropagation();
-        if (!dirty || confirm("Discard unsaved YouTube source changes?"))
+        if (!dirty || confirm("Discard unsaved YouTube App changes?"))
           onClose();
       }
     };
@@ -1248,7 +1925,7 @@ export function YouTubeSourceEditor({
         <header>
           <div>
             <h2 id="youtube-source-title">
-              {asset ? "Edit YouTube source" : "Create YouTube source"}
+              {asset ? "Edit YouTube App" : "Create YouTube App"}
             </h2>
             <p>
               Videos and playlists play fullscreen through YouTube’s embedded
@@ -1440,7 +2117,7 @@ export function YouTubeSourceEditor({
               disabled={save.isPending || !name.trim()}
               onClick={() => save.mutate()}
             >
-              {save.isPending ? "Saving…" : "Save source"}
+              {save.isPending ? "Saving…" : "Save App"}
             </button>
           )}
           <button className="button button--quiet" onClick={close}>

@@ -570,12 +570,29 @@ export type BulkOrganizeInput = {
   removeCollectionIds?: string[];
 };
 export type SourceProvider =
-  "website" | "youtube" | "calendar" | "rss" | "atom" | "json" | "csv";
+  | "website"
+  | "youtube"
+  | "calendar"
+  | "rss"
+  | "atom"
+  | "json"
+  | "csv"
+  | "clock"
+  | "date"
+  | "qrcode"
+  | "ticker";
 export type Source = {
   provider: SourceProvider;
   configVersion: number;
   configuration:
-    WebsiteConfig | YouTubeConfig | CalendarConfig | StructuredSourceConfig;
+    | WebsiteConfig
+    | YouTubeConfig
+    | CalendarConfig
+    | StructuredSourceConfig
+    | ClockAppConfig
+    | DateAppConfig
+    | QRCodeAppConfig
+    | TickerAppConfig;
 };
 export type SourceInput = {
   provider: SourceProvider;
@@ -585,7 +602,11 @@ export type SourceInput = {
     | WebsiteConfigInput
     | YouTubeConfig
     | CalendarConfig
-    | StructuredSourceConfig;
+    | StructuredSourceConfig
+    | ClockAppConfig
+    | DateAppConfig
+    | QRCodeAppConfig
+    | TickerAppConfig;
 };
 export type StructuredSourceConfig = {
   url?: string;
@@ -618,6 +639,49 @@ export type StructuredSourceConfig = {
   refreshIntervalSeconds: number;
   stalenessLimitHours: number;
   emptyState: string;
+  dateSelection: DateSelection;
+};
+export type DateSelection = {
+  enabled: boolean;
+  dateFormat:
+    "auto" | "iso_date" | "us_date" | "us_short" | "day_month_name" | "rfc3339";
+  timezone: string;
+  mode:
+    "today" | "tomorrow" | "next_available" | "current_week" | "custom_range";
+  customStartDate?: string;
+  customEndDate?: string;
+  excludePast: boolean;
+  noMatchBehavior:
+    "fallback_text" | "next_available" | "empty" | "hide" | "last_known_good";
+  fallbackText?: string;
+};
+export type ClockAppConfig = {
+  timezone: string;
+  format: "12" | "24";
+  showSeconds: boolean;
+  foregroundColor: string;
+  backgroundColor: string;
+};
+export type DateAppConfig = {
+  timezone: string;
+  format: "full" | "long" | "medium" | "short";
+  foregroundColor: string;
+  backgroundColor: string;
+};
+export type QRCodeAppConfig = {
+  value: string;
+  label?: string;
+  errorCorrection: "low" | "medium" | "quartile" | "high";
+  foregroundColor: string;
+  backgroundColor: string;
+};
+export type TickerAppConfig = {
+  sourceAssetId: string;
+  field: string;
+  separator: string;
+  speed: "slow" | "normal" | "fast";
+  foregroundColor: string;
+  backgroundColor: string;
 };
 export type StructuredRecord = {
   id: string;
@@ -635,6 +699,7 @@ export type StructuredPreview = {
     presentation: StructuredSourceConfig["presentation"];
     fields: StructuredSourceConfig["fields"];
     emptyState: string;
+    dateSelection: DateSelection;
     data: {
       records: StructuredRecord[];
       cachedAt: string;

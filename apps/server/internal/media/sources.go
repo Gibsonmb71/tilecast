@@ -141,6 +141,14 @@ func (s *Service) sourceProvider(name string) (sourceProvider, error) {
 		return calendarSourceProvider{s}, nil
 	case "rss", "atom", "json", "csv":
 		return structuredSourceProvider{s, name}, nil
+	case "clock":
+		return clockAppProvider{}, nil
+	case "date":
+		return dateAppProvider{}, nil
+	case "qrcode":
+		return qrCodeAppProvider{}, nil
+	case "ticker":
+		return tickerAppProvider{s}, nil
 	default:
 		return nil, errors.New("source provider is not supported")
 	}

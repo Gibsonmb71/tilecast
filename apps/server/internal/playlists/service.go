@@ -757,7 +757,7 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 	if s.scheduling != nil {
 		prefetch, grace, _ = s.scheduling.Config()
 	}
-	manifest := Manifest{SchemaVersion: 8, ManifestVersion: assignment.ManifestVersion, ScreenID: screenID, GeneratedAt: changed, ServerTime: now, Mode: "single-zone", Assets: []ManifestAsset{}, Playlists: []ManifestPlaylist{}, Schedules: []ManifestSchedule{}, Websites: []ManifestWebsite{}, Sources: []ManifestSource{}, PrefetchHorizonDays: prefetch, ActivationGraceSeconds: grace}
+	manifest := Manifest{SchemaVersion: 9, ManifestVersion: assignment.ManifestVersion, ScreenID: screenID, GeneratedAt: changed, ServerTime: now, Mode: "single-zone", Assets: []ManifestAsset{}, Playlists: []ManifestPlaylist{}, Schedules: []ManifestSchedule{}, Websites: []ManifestWebsite{}, Sources: []ManifestSource{}, PrefetchHorizonDays: prefetch, ActivationGraceSeconds: grace}
 	var syncGroup ManifestSyncGroup
 	if groupErr := s.db.QueryRow(ctx, `SELECT g.id,g.playback_epoch FROM screen_group_memberships m JOIN screen_groups g ON g.id=m.screen_group_id WHERE m.screen_id=$1 AND g.deleted_at IS NULL`, screenID).Scan(&syncGroup.ID, &syncGroup.PlaybackEpoch); groupErr == nil {
 		manifest.SyncGroup = &syncGroup
@@ -908,6 +908,39 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 			manifest.DirectFallbackPlaylist = &fallback
 		}
 	}
+	for _, app := range append([]ManifestSource(nil), manifest.Sources...) {
+		if app.Provider != "ticker" {
+			continue
+		}
+		var config struct {
+			SourceAssetID uuid.UUID `json:"sourceAssetId"`
+		}
+		if err = json.Unmarshal(app.Configuration, &config); err != nil {
+			return Manifest{}, "", err
+		}
+		found := false
+		for _, existing := range manifest.Sources {
+			if existing.AssetID == config.SourceAssetID {
+				found = true
+				break
+			}
+		}
+		if found {
+			continue
+		}
+		var dependency ManifestSource
+		dependency.AssetID = config.SourceAssetID
+		if err = s.db.QueryRow(ctx, `SELECT a.name,s.provider,s.config_version,s.configuration FROM sources s JOIN assets a ON a.id=s.asset_id AND a.deleted_at IS NULL WHERE s.asset_id=$1`, config.SourceAssetID).Scan(&dependency.Name, &dependency.Provider, &dependency.ConfigVersion, &dependency.Configuration); err != nil {
+			return Manifest{}, "", fmt.Errorf("%w: ticker data Source unavailable", ErrConflict)
+		}
+		if s.sources != nil {
+			dependency.Configuration, err = s.sources.PlayerSourceConfiguration(ctx, dependency.AssetID, dependency.Provider, dependency.Configuration)
+			if err != nil {
+				return Manifest{}, "", err
+			}
+		}
+		manifest.Sources = append(manifest.Sources, dependency)
+	}
 	encoded, encodeErr := json.Marshal(manifest)
 	if encodeErr != nil {
 		return Manifest{}, "", encodeErr
@@ -961,7 +994,7 @@ func (s *Service) ReportStatus(ctx context.Context, screenID uuid.UUID, status P
 	if len(status.PlaybackState) > 80 || len(status.LastSyncError) > 500 || len(status.LastPlaybackError) > 500 || len(status.ScheduleEvaluationError) > 500 || len(status.WebsiteState) > 40 || len(status.WebsiteFailureCategory) > 80 || len(status.WebsiteCurrentHost) > 253 || len(status.SourceState) > 40 || len(status.SourceError) > 120 {
 		return errors.New("player status is invalid")
 	}
-	if status.SourceProvider != "" && status.SourceProvider != "website" && status.SourceProvider != "youtube" && status.SourceProvider != "calendar" && status.SourceProvider != "rss" && status.SourceProvider != "atom" && status.SourceProvider != "json" && status.SourceProvider != "csv" {
+	if status.SourceProvider != "" && status.SourceProvider != "website" && status.SourceProvider != "youtube" && status.SourceProvider != "calendar" && status.SourceProvider != "rss" && status.SourceProvider != "atom" && status.SourceProvider != "json" && status.SourceProvider != "csv" && status.SourceProvider != "clock" && status.SourceProvider != "date" && status.SourceProvider != "qrcode" && status.SourceProvider != "ticker" {
 		return errors.New("player source status is invalid")
 	}
 	if status.SelectionSource != "" && status.SelectionSource != "emergency" && status.SelectionSource != "schedule" && status.SelectionSource != "direct_fallback" && status.SelectionSource != "none" {

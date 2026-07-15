@@ -1,0 +1,27 @@
+# Apps, Sources, and layouts
+
+Tilecast uses one closed provider registry for reusable signage behavior. Studio calls configured display-oriented instances **Apps**. Structured instances that primarily fetch and normalize data are **data Sources**. Both remain Content records backed by the existing `sources` storage and API domain for backward compatibility.
+
+## Ownership
+
+- A provider implements a built-in name, strict configuration schema, normalization, manifest projection, diagnostics, and native Player behavior.
+- An App/Source instance owns reusable configuration and appears in Content, playlists, usage details, and the Layout library.
+- A Layout placement references an instance by stable ID and owns only bounds, layer, opacity, visibility, and provider-approved presentation overrides.
+- A Layout owns the complete composition and published revision.
+- A playlist zone is a Layout region that plays an existing playlist. It is not an App.
+
+Static text, shapes, lines, backgrounds, decorative uploaded images, and groups are native Layout primitives. Uploaded image and video Assets may also be placed directly. Website, YouTube, Clock, Date, QR Code, Ticker, Calendar, RSS, Atom, CSV, and JSON are provider-backed reusable Content. The registry never loads third-party code and rejects unknown providers and configuration properties.
+
+Editing placement overrides must not mutate the referenced App. Studio must offer a separate **Edit shared App** action and warn when playlist or Layout usage means that change has multiple consumers. “Used in” includes every playlist and Layout that references the item.
+
+## Structured data
+
+CSV and JSON Sources own fetching, parsing, caching, field schema, row selection, refresh policy, and diagnostics. Layouts and display Apps own presentation. Built-in Menu, List, Table, Agenda, and Ticker Apps may reference a structured Source; constrained Layout bindings may reference its declared fields. Neither form duplicates the fetched dataset into each Layout revision.
+
+A binding identifies a Source and declared field. Display syntax such as `{{lunch.option_1}}` is editor shorthand that compiles to typed references. It is not a general template language and cannot execute expressions or code.
+
+Date-aware Sources store a mapped date field, fixed or detected format, IANA timezone, selection mode, and explicit no-match behavior. The manifest carries the bounded dataset and policy once. The Player evaluates the active record locally, uses timezone calendar rules across DST, and reevaluates at startup and local date changes without requiring a new Layout or manifest. It never assumes a day is 24 hours and never reuses yesterday’s record unless `last_known_good` is explicitly configured.
+
+## Compatibility
+
+Studio uses `/api/v1/apps`; `/api/v1/sources` remains an additive compatibility alias. Existing database rows, stable asset IDs, playlist items, Website/YouTube playback, and cached manifest versions remain valid. Internal package and table names may retain `source` where renaming would break storage or protocol compatibility.

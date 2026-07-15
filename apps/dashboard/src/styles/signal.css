@@ -2665,16 +2665,28 @@ tbody tr:hover {
 }
 .source-mapping-row {
   display: grid;
-  grid-template-columns: minmax(100px, 0.7fr) minmax(140px, 1fr) minmax(
-      110px,
-      0.6fr
-    ) 34px;
+  grid-template-columns:
+    minmax(100px, 0.7fr) minmax(140px, 1fr) minmax(110px, 0.6fr)
+    34px;
   gap: var(--tc-space-2);
   align-items: center;
 }
 .source-mapping-row input,
 .source-mapping-row select {
   min-width: 0;
+}
+.native-app-preview {
+  display: grid;
+  min-height: 210px;
+  place-content: center;
+  justify-items: center;
+  gap: var(--tc-space-3);
+  padding: var(--tc-space-5);
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-sm);
+  font-size: 42px;
+  font-weight: 650;
+  text-align: center;
 }
 
 .source-editor__fieldset,

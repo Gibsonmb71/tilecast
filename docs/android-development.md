@@ -21,6 +21,8 @@ Calendar Sources are rendered by `CalendarPlayback.kt` from sanitized manifest d
 
 RSS, Atom, JSON, and CSV Sources use manifest v8 and the native `StructuredSourcePlayback` renderer. The Player validates provider, presentation, record count, and text/value bounds before activation. It never fetches feed/data URLs, executes expressions, or routes structured Sources through WebView. Prepared records live in the verified cached manifest, so offline startup uses the same last-known-good data.
 
+Manifest v9 adds native Clock, Date, QR Code, and Ticker Apps. Structured date selection runs locally against the configured IANA timezone and uses calendar arithmetic rather than 24-hour durations. The Player reevaluates while running and after process restart; `empty`, `hide`, `fallback_text`, and `next_available` do not silently reuse an old record. `last_known_good` is an explicit administrator choice.
+
 Unit tests cover URL policy, state transitions, player-generated identity, secure-storage abstractions, pairing enrollment, revocation, and reconnect backoff. Instrumented tests require an emulator or device:
 
 Milestone 4 uses Room schema version 2 and AndroidX Media3. `MIGRATION_1_2` preserves pairing configuration while adding manifest and cache metadata; media bytes live under the application-controlled `files/media-cache` directory. Startup loads verified active content before network reconciliation. Animated GIFs render a safe static frame because portable animation cannot be guaranteed across Fire TV and Google TV.

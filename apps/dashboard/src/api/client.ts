@@ -505,24 +505,24 @@ export const api = {
   websiteDiagnostics: (id: string) =>
     request<WebsiteDiagnostics>(`/assets/${id}/website/diagnostics`),
   createSource: (input: SourceInput, csrfToken: string) =>
-    request<Asset>("/sources", {
+    request<Asset>("/apps", {
       method: "POST",
       headers: { "X-CSRF-Token": csrfToken },
       body: JSON.stringify(input),
     }),
   updateSource: (id: string, input: SourceInput, csrfToken: string) =>
-    request<Asset>(`/sources/${id}`, {
+    request<Asset>(`/apps/${id}`, {
       method: "PATCH",
       headers: { "X-CSRF-Token": csrfToken },
       body: JSON.stringify(input),
     }),
   duplicateSource: (id: string, csrfToken: string) =>
-    request<Asset>(`/sources/${id}/duplicate`, {
+    request<Asset>(`/apps/${id}/duplicate`, {
       method: "POST",
       headers: { "X-CSRF-Token": csrfToken },
     }),
   previewCalendarSource: (configuration: CalendarConfig, csrfToken: string) =>
-    request<CalendarPreview>("/sources/calendar/preview", {
+    request<CalendarPreview>("/apps/calendar/preview", {
       method: "POST",
       headers: { "X-CSRF-Token": csrfToken },
       body: JSON.stringify({ configuration }),
@@ -531,14 +531,15 @@ export const api = {
     provider: "rss" | "atom" | "json" | "csv",
     configuration: StructuredSourceConfig,
     csrfToken: string,
+    previewDate?: string,
   ) =>
-    request<StructuredPreview>(`/sources/${provider}/preview`, {
+    request<StructuredPreview>(`/apps/${provider}/preview`, {
       method: "POST",
       headers: { "X-CSRF-Token": csrfToken },
-      body: JSON.stringify({ configuration }),
+      body: JSON.stringify({ configuration, previewDate }),
     }),
   sourceDiagnostics: (id: string) =>
-    request<SourceRefreshDiagnostics>(`/sources/${id}/diagnostics`),
+    request<SourceRefreshDiagnostics>(`/apps/${id}/diagnostics`),
   retryAsset: (id: string, csrfToken: string) =>
     request<Asset>(`/assets/${id}/retry`, {
       method: "POST",

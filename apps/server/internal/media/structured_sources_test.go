@@ -31,3 +31,40 @@ func TestJSONPointerIsConstrained(t *testing.T) {
 		t.Fatal("expected non-pointer path to fail")
 	}
 }
+
+func TestSelectStructuredRecordsUsesConfiguredLocalDate(t *testing.T) {
+	records := []StructuredRecord{
+		{ID: "monday", Date: "2026-11-02"},
+		{ID: "sunday", Date: "2026-11-01"},
+	}
+	selection := DateSelection{
+		Enabled:         true,
+		Timezone:        "America/New_York",
+		Mode:            "today",
+		NoMatchBehavior: "empty",
+	}
+
+	selected := selectStructuredRecords(records, selection, "2026-11-01")
+	if len(selected) != 1 || selected[0].ID != "sunday" {
+		t.Fatalf("selected=%#v", selected)
+	}
+}
+
+func TestSelectStructuredRecordsDoesNotReusePastByDefault(t *testing.T) {
+	records := []StructuredRecord{{ID: "yesterday", Date: "2026-08-02"}}
+	selection := DateSelection{
+		Enabled:         true,
+		Timezone:        "America/New_York",
+		Mode:            "today",
+		NoMatchBehavior: "empty",
+	}
+
+	if selected := selectStructuredRecords(records, selection, "2026-08-03"); len(selected) != 0 {
+		t.Fatalf("expected empty selection, got %#v", selected)
+	}
+	selection.NoMatchBehavior = "last_known_good"
+	selected := selectStructuredRecords(records, selection, "2026-08-03")
+	if len(selected) != 1 || selected[0].ID != "yesterday" {
+		t.Fatalf("selected=%#v", selected)
+	}
+}

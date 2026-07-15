@@ -135,6 +135,7 @@ paths:
               required: [configuration]
               properties:
                 configuration: { type: object }
+                previewDate: { type: string, format: date }
       responses:
         "200": { description: Sanitized mapped records and typed diagnostics }
         "404": { description: Provider not found }
@@ -737,7 +738,7 @@ paths:
   /api/v1/sources:
     post:
       operationId: createSource
-      description: Creates a validated built-in Website, YouTube, or Calendar Source.
+      description: Compatibility alias that creates a validated built-in App or data Source.
       requestBody:
         required: true
         content:
@@ -785,6 +786,68 @@ paths:
       responses:
         "200": { description: Current bounded Source refresh diagnostics }
         "404": { description: Source refresh diagnostics unavailable }
+  /api/v1/apps:
+    post:
+      operationId: createApp
+      description: Creates a reusable configured App or data Source from the closed provider registry.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SourceInput" }
+      responses:
+        "201": { description: App created }
+        "422": { description: Provider configuration rejected }
+  /api/v1/apps/{id}:
+    patch:
+      operationId: updateApp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SourceInput" }
+      responses:
+        "200": { description: App updated and affected manifests revised }
+        "422": { description: Provider configuration rejected }
+  /api/v1/apps/{id}/duplicate:
+    post:
+      operationId: duplicateApp
+      responses:
+        "201": { description: App duplicated }
+  /api/v1/apps/{provider}/preview:
+    post:
+      operationId: previewAppData
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema: { enum: [rss, atom, json, csv] }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [configuration]
+              properties:
+                configuration: { type: object }
+                previewDate: { type: string, format: date }
+      responses:
+        "200": { description: Sanitized mapped records and typed diagnostics }
+        "404": { description: Provider not found }
+  /api/v1/apps/calendar/preview:
+    post:
+      operationId: previewCalendarApp
+      description: Fetches and parses public ICS feeds under the safe Source fetch policy.
+      responses:
+        "200": { description: Sanitized real-data Calendar preview }
+        "422": { description: Calendar validation or safe fetch failed }
+  /api/v1/apps/{id}/diagnostics:
+    get:
+      operationId: appRefreshDiagnostics
+      responses:
+        "200": { description: Current bounded App refresh diagnostics }
+        "404": { description: Diagnostics unavailable }
   /api/v1/emergencies:
     get:
       summary: List emergency takeovers
@@ -1190,7 +1253,20 @@ components:
       enum: [image, video, source]
     SourceProvider:
       type: string
-      enum: [website, youtube, calendar]
+      enum:
+        [
+          website,
+          youtube,
+          calendar,
+          rss,
+          atom,
+          json,
+          csv,
+          clock,
+          date,
+          qrcode,
+          ticker,
+        ]
     Source:
       type: object
       additionalProperties: false

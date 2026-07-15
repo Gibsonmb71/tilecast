@@ -234,12 +234,13 @@ func (s *server) previewStructuredSource(w http.ResponseWriter, r *http.Request)
 	}
 	var body struct {
 		Configuration json.RawMessage `json:"configuration"`
+		PreviewDate   string          `json:"previewDate"`
 	}
 	if err := decodeJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	preview, err := s.media.StructuredPreview(r.Context(), provider, body.Configuration)
+	preview, err := s.media.StructuredPreview(r.Context(), provider, body.Configuration, body.PreviewDate)
 	if err != nil {
 		s.writeMediaError(w, r, err)
 		return

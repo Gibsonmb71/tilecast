@@ -41,6 +41,7 @@ import {
   CalendarSourceEditor,
   SourceProviderGallery,
   StructuredSourceEditor,
+  NativeAppEditor,
   YouTubeSourceEditor,
 } from "../content/SourceEditors";
 
@@ -142,6 +143,9 @@ export function ContentPage() {
   const [structuredEditor, setStructuredEditor] = useState<
     "rss" | "atom" | "json" | "csv"
   >();
+  const [nativeEditor, setNativeEditor] = useState<
+    "clock" | "date" | "qrcode" | "ticker"
+  >();
   const controllers = useRef(new Map<string, AbortController>());
   const fileInput = useRef<HTMLInputElement>(null);
   const params = new URLSearchParams({ page: "1", pageSize: "48", sort });
@@ -150,9 +154,19 @@ export function ContentPage() {
   if (["image", "video", "source"].includes(contentFilter))
     params.set("type", contentFilter);
   if (
-    ["website", "youtube", "calendar", "rss", "atom", "json", "csv"].includes(
-      contentFilter,
-    )
+    [
+      "website",
+      "youtube",
+      "calendar",
+      "rss",
+      "atom",
+      "json",
+      "csv",
+      "clock",
+      "date",
+      "qrcode",
+      "ticker",
+    ].includes(contentFilter)
   ) {
     params.set("type", "source");
     params.set("provider", contentFilter);
@@ -323,7 +337,7 @@ export function ContentPage() {
       <header className="page-heading">
         <div>
           <h2>Content library</h2>
-          <p>Media and reusable Sources available to playlists.</p>
+          <p>Media and reusable Apps available to playlists and Layouts.</p>
         </div>
         {canManage && (
           <details className="content-add-menu">
@@ -341,7 +355,7 @@ export function ContentPage() {
               <button type="button" onClick={() => setSourceGallery(true)}>
                 <Globe2 size={16} />
                 <span>
-                  <strong>Create source</strong>
+                  <strong>Create App</strong>
                   <small>Add dynamic content</small>
                 </span>
               </button>
@@ -421,7 +435,7 @@ export function ContentPage() {
             [
               ["all", "All"],
               ["media", "Media"],
-              ["source", "Sources"],
+              ["source", "Apps"],
               ["image", "Images"],
               ["video", "Videos"],
               ["website", "Websites"],
@@ -431,6 +445,10 @@ export function ContentPage() {
               ["atom", "Atom"],
               ["json", "JSON"],
               ["csv", "CSV"],
+              ["clock", "Clock"],
+              ["date", "Date"],
+              ["qrcode", "QR Code"],
+              ["ticker", "Ticker"],
             ] as const
           ).map(([value, label]) => (
             <button
@@ -643,6 +661,18 @@ export function ContentPage() {
           }}
         />
       )}
+      {nativeEditor && (
+        <NativeAppEditor
+          provider={nativeEditor}
+          csrf={csrf}
+          onClose={() => setNativeEditor(undefined)}
+          onSaved={(asset) => {
+            setNativeEditor(undefined);
+            setSelected(asset);
+            void queryClient.invalidateQueries({ queryKey: ["assets"] });
+          }}
+        />
+      )}
       {sourceGallery && (
         <SourceProviderGallery
           onClose={() => setSourceGallery(false)}
@@ -651,7 +681,12 @@ export function ContentPage() {
             if (provider === "website") setWebsiteEditor(true);
             else if (provider === "youtube") setYouTubeEditor(true);
             else if (provider === "calendar") setCalendarEditor(true);
-            else setStructuredEditor(provider);
+            else if (["rss", "atom", "json", "csv"].includes(provider))
+              setStructuredEditor(provider as "rss" | "atom" | "json" | "csv");
+            else
+              setNativeEditor(
+                provider as "clock" | "date" | "qrcode" | "ticker",
+              );
           }}
         />
       )}
@@ -1029,6 +1064,21 @@ function AssetDetails(props: {
       onClose={props.onClose}
       onSaved={props.onChanged}
     />
+  ) : props.asset.type === "source" &&
+    props.asset.source &&
+    ["clock", "date", "qrcode", "ticker"].includes(
+      props.asset.source.provider,
+    ) ? (
+    <NativeAppEditor
+      provider={
+        props.asset.source.provider as "clock" | "date" | "qrcode" | "ticker"
+      }
+      asset={props.asset}
+      csrf={props.csrf}
+      readOnly={!props.canManage}
+      onClose={props.onClose}
+      onSaved={props.onChanged}
+    />
   ) : (
     <MediaAssetDetails {...props} />
   );
@@ -1285,7 +1335,7 @@ export function WebsiteEditor({
       >
         <header>
           <div>
-            <h2>{asset ? "Edit Website source" : "Create Website source"}</h2>
+            <h2>{asset ? "Edit Website App" : "Create Website App"}</h2>
             <p>
               Fullscreen public website content. Duration is configured in the
               playlist.
