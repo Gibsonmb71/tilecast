@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://tilecast.org/schemas/layout-v1.json",
-  "title": "Tilecast layout document v1",
+  "$id": "https://tilecast.org/schemas/layout-v2.json",
+  "title": "Tilecast layout document v2",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "canvas", "placements"],
   "properties": {
-    "schemaVersion": { "const": 1 },
+    "schemaVersion": { "const": 2 },
     "canvas": { "$ref": "#/$defs/canvas" },
     "placements": {
       "type": "array",
@@ -37,6 +37,7 @@
     "placement": {
       "type": "object",
       "additionalProperties": false,
+      "description": "Layouts arrange Widgets and Media. A Data Source is never a placement; it may only be referenced by a text primitive binding.",
       "required": [
         "id",
         "type",
@@ -52,7 +53,7 @@
       ],
       "properties": {
         "id": { "type": "string", "format": "uuid" },
-        "type": { "enum": ["app", "asset", "playlistZone", "primitive"] },
+        "type": { "enum": ["widget", "asset", "playlistZone", "primitive"] },
         "name": { "type": "string", "minLength": 1, "maxLength": 120 },
         "x": { "type": "number" },
         "y": { "type": "number" },
@@ -63,7 +64,7 @@
         "visible": { "type": "boolean" },
         "locked": { "type": "boolean" },
         "groupId": { "type": "string", "format": "uuid" },
-        "appId": { "type": "string", "format": "uuid" },
+        "widgetId": { "type": "string", "format": "uuid" },
         "assetId": { "type": "string", "format": "uuid" },
         "playlistId": { "type": "string", "format": "uuid" },
         "overrides": { "type": "object", "maxProperties": 12 },
@@ -106,9 +107,10 @@
     "binding": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sourceId", "field"],
+      "description": "A safe typed reference from a text primitive to one field of a declared Data Source.",
+      "required": ["dataSourceId", "field"],
       "properties": {
-        "sourceId": { "type": "string", "format": "uuid" },
+        "dataSourceId": { "type": "string", "format": "uuid" },
         "field": { "type": "string", "pattern": "^[A-Za-z0-9_]{1,80}$" },
         "prefix": { "type": "string", "maxLength": 500 },
         "suffix": { "type": "string", "maxLength": 500 },

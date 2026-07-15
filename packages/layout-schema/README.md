@@ -11,4 +11,4 @@ Every placement carries bounded geometry, layer, opacity, visibility, and only t
 
 See `docs/apps-and-layouts.md` for the ownership and compatibility contract that layout schema versions must preserve.
 
-`schema-v1.json` is the first published contract. Server and Player validators enforce the same hard limits in code before accepting or activating a document.
+`schema-v2.json` is the current contract. Placements use `type: "widget"` with a `widgetId`; text primitives may bind to one field of a declared Data Source through `binding.dataSourceId`. A Data Source is never itself a placement. Server and Player validators enforce the same hard limits in code before accepting or activating a document.
