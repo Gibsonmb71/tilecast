@@ -138,6 +138,8 @@ Manifest v9 adds Clock, Date, QR Code, and Ticker Apps and projects date-selecti
 
 `GET /api/v1/layouts/{id}/revisions` returns paginated immutable history. `POST /api/v1/layouts/{id}/revisions/{revisionId}/restore` copies an old document into a new draft revision without changing history. Duplicate and delete operations are `POST /api/v1/layouts/{id}/duplicate` and `DELETE /api/v1/layouts/{id}`. Validation errors use `layout_validation_failed`; stale draft writes use `layout_revision_conflict`.
 
+Content responses include `layoutUsage` with stable Layout IDs, names, and published state. Content deletion returns `asset_in_use` when a draft or published revision depends on the item. Layout App placements contain only the Content ID and approved presentation overrides; shared provider configuration remains in Content.
+
 ## Emergency takeover and commands
 
 Dashboard routes include `GET/POST /emergencies`, `GET /emergencies/{id}`, `POST /emergencies/{id}/cancel`, `GET/POST /screens/{id}/commands`, and command cancellation. Device-authenticated players use `GET /player/commands`, `POST /player/commands/{id}/acknowledge`, and `POST /player/commands/{id}/result`. Commands are typed, bounded, expiring, and scoped to the authenticated screen. The former one-off website clearing route is replaced by `clear_website_data`.

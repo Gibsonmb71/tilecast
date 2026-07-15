@@ -335,6 +335,10 @@ func (s *Service) GetAsset(ctx context.Context, id uuid.UUID) (Asset, error) {
 		}
 	}
 	_ = s.db.QueryRow(ctx, `SELECT count(DISTINCT playlist_id) FROM playlist_items WHERE asset_id=$1`, id).Scan(&asset.PlaylistUsage)
+	asset.LayoutUsage, err = s.layoutUsage(ctx, id)
+	if err != nil {
+		return Asset{}, err
+	}
 	if err = s.loadOrganization(ctx, &asset); err != nil {
 		return Asset{}, err
 	}
@@ -369,6 +373,7 @@ func scanAsset(row rowScanner) (Asset, error) {
 		a.Creator = &Creator{ID: *creatorID, Name: *creatorName}
 	}
 	a.Variants = []Variant{}
+	a.LayoutUsage = []LayoutUsage{}
 	return a, nil
 }
 
@@ -385,6 +390,23 @@ func (s *Service) variants(ctx context.Context, assetID uuid.UUID) ([]Variant, e
 			return nil, err
 		}
 		result = append(result, v)
+	}
+	return result, rows.Err()
+}
+
+func (s *Service) layoutUsage(ctx context.Context, assetID uuid.UUID) ([]LayoutUsage, error) {
+	rows, err := s.db.Query(ctx, `SELECT l.id,l.name,bool_or(l.published_revision_id IS NOT NULL) FROM layouts l WHERE l.deleted_at IS NULL AND (EXISTS(SELECT 1 FROM layout_draft_dependencies d WHERE d.layout_id=l.id AND d.dependency_id=$1 AND d.dependency_type IN('app','asset')) OR EXISTS(SELECT 1 FROM layout_revisions r JOIN layout_revision_dependencies d ON d.revision_id=r.id WHERE r.layout_id=l.id AND d.dependency_id=$1 AND d.dependency_type IN('app','asset'))) GROUP BY l.id,l.name ORDER BY lower(l.name),l.id`, assetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := []LayoutUsage{}
+	for rows.Next() {
+		var usage LayoutUsage
+		if err = rows.Scan(&usage.ID, &usage.Name, &usage.Published); err != nil {
+			return nil, err
+		}
+		result = append(result, usage)
 	}
 	return result, rows.Err()
 }
@@ -469,6 +491,10 @@ func (s *Service) ListAssets(ctx context.Context, o ListOptions) (ListResult, er
 			}
 		}
 		_ = s.db.QueryRow(ctx, `SELECT count(DISTINCT playlist_id) FROM playlist_items WHERE asset_id=$1`, a.ID).Scan(&a.PlaylistUsage)
+		a.LayoutUsage, err = s.layoutUsage(ctx, a.ID)
+		if err != nil {
+			return ListResult{}, err
+		}
 		if err = s.loadOrganization(ctx, &a); err != nil {
 			return ListResult{}, err
 		}
@@ -541,11 +567,11 @@ func (s *Service) DeleteAsset(ctx context.Context, id, userID uuid.UUID) error {
 	}
 	defer tx.Rollback(ctx)
 	var inUse bool
-	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM playlist_items WHERE asset_id=$1) OR EXISTS(SELECT 1 FROM website_assets WHERE fallback_image_asset_id=$1) OR EXISTS(SELECT 1 FROM sources JOIN assets source_asset ON source_asset.id=sources.asset_id AND source_asset.deleted_at IS NULL WHERE sources.configuration->>'fallbackImageAssetId'=$1::text) OR EXISTS(SELECT 1 FROM organization_runtime_settings WHERE settings->>'branding.logo_asset_id'=$1::text OR settings->>'branding.icon_asset_id'=$1::text)`, id).Scan(&inUse); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM playlist_items WHERE asset_id=$1) OR EXISTS(SELECT 1 FROM website_assets WHERE fallback_image_asset_id=$1) OR EXISTS(SELECT 1 FROM sources JOIN assets source_asset ON source_asset.id=sources.asset_id AND source_asset.deleted_at IS NULL WHERE sources.configuration->>'fallbackImageAssetId'=$1::text) OR EXISTS(SELECT 1 FROM organization_runtime_settings WHERE settings->>'branding.logo_asset_id'=$1::text OR settings->>'branding.icon_asset_id'=$1::text) OR EXISTS(SELECT 1 FROM layout_draft_dependencies WHERE dependency_id=$1 AND dependency_type IN('app','asset')) OR EXISTS(SELECT 1 FROM layout_revision_dependencies WHERE dependency_id=$1 AND dependency_type IN('app','asset'))`, id).Scan(&inUse); err != nil {
 		return err
 	}
 	if inUse {
-		return errors.New("asset is in use by a playlist or website fallback")
+		return errors.New("asset is in use by a playlist, Layout, or shared configuration")
 	}
 	var assetType string
 	if err := tx.QueryRow(ctx, `SELECT type FROM assets WHERE id=$1 AND deleted_at IS NULL`, id).Scan(&assetType); errors.Is(err, pgx.ErrNoRows) {

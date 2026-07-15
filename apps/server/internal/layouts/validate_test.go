@@ -1,6 +1,7 @@
 package layouts
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/google/uuid"
@@ -14,6 +15,19 @@ func validTestDocument() Document {
 			ID: uuid.New(), Type: "primitive", Name: "Heading", X: 80, Y: 80, Width: 900, Height: 180,
 			Layer: 1, Opacity: 1, Visible: true, Primitive: &Primitive{Kind: "text", Text: "Welcome", FontFamily: "Inter", FontSize: 72, FontWeight: 700, Color: "#FFFFFF"},
 		}},
+	}
+}
+
+func TestValidateDocumentRestrictsAppPlacementOverrides(t *testing.T) {
+	document := validTestDocument()
+	appID := uuid.New()
+	document.Placements = []Placement{{ID: uuid.New(), Type: "app", Name: "Clock", X: 0, Y: 0, Width: 400, Height: 200, Layer: 1, Opacity: 1, Visible: true, AppID: &appID, Overrides: json.RawMessage(`{"fit":"contain","alignment":"center"}`)}}
+	if err := ValidateDocument(document); err != nil {
+		t.Fatal(err)
+	}
+	document.Placements[0].Overrides = json.RawMessage(`{"javascript":"alert(1)"}`)
+	if err := ValidateDocument(document); err == nil {
+		t.Fatal("unsupported App override was accepted")
 	}
 }
 

@@ -656,6 +656,7 @@ export type Asset = {
   website?: WebsiteConfig;
   source?: Source;
   playlistUsage?: number;
+  layoutUsage?: { id: string; name: string; published: boolean }[];
   folderId?: string;
   tags?: ContentTag[];
   collectionIds?: string[];

@@ -462,7 +462,7 @@ func (s *server) writeMediaError(w http.ResponseWriter, r *http.Request, err err
 	case errors.Is(err, media.ErrNotReady):
 		writeError(w, http.StatusConflict, "media_not_ready", "This media asset is not ready.")
 	case strings.Contains(err.Error(), "in use by a playlist"):
-		writeError(w, http.StatusConflict, "asset_in_use", "This asset is used by a playlist or website fallback and cannot be deleted.")
+		writeError(w, http.StatusConflict, "asset_in_use", "This Content item is used by a playlist, Layout, or shared configuration and cannot be deleted.")
 	case strings.Contains(err.Error(), "must be") || strings.Contains(err.Error(), "only failed") || strings.Contains(err.Error(), "invalid") || strings.Contains(err.Error(), "outside the configured") || strings.Contains(err.Error(), "exceeds the configured") || strings.Contains(err.Error(), "requires a fallback") || strings.Contains(strings.ToLower(err.Error()), "source") || strings.Contains(err.Error(), "CSV") || strings.Contains(err.Error(), "JSON") || strings.Contains(err.Error(), "YouTube") || strings.Contains(err.Error(), "youtube.com") || strings.Contains(err.Error(), "calendar") || strings.Contains(err.Error(), "volume") || strings.Contains(err.Error(), "start time") || strings.Contains(err.Error(), "end time") || strings.Contains(err.Error(), "caption language") || strings.Contains(err.Error(), "failure behavior") || strings.Contains(err.Error(), "fixed duration"):
 		writeError(w, http.StatusUnprocessableEntity, "validation_failed", err.Error())
 	default:

@@ -340,6 +340,128 @@ code,
   padding: var(--tc-space-2);
 }
 
+.layout-content-shelf {
+  display: grid;
+  max-height: 220px;
+  padding: var(--tc-space-2);
+  overflow: auto;
+}
+
+.layout-content-shelf > button {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: var(--tc-space-2);
+  align-items: center;
+  min-height: 46px;
+  padding: 4px;
+  color: var(--tc-text-primary);
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--tc-radius-control);
+}
+
+.layout-content-shelf > button:hover {
+  background: var(--tc-bg-subtle);
+  border-color: var(--tc-border-default);
+}
+
+.layout-content-shelf > button > span:last-child {
+  display: grid;
+  min-width: 0;
+}
+
+.layout-content-shelf strong,
+.layout-content-shelf small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layout-content-shelf small {
+  color: var(--tc-text-secondary);
+  text-transform: capitalize;
+}
+
+.layout-content-shelf__preview {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 34px;
+  overflow: hidden;
+  background: var(--tc-bg-subtle);
+  border: 1px solid var(--tc-border-default);
+}
+
+.layout-content-shelf__preview img,
+.layout-asset-placement {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.layout-placement-placeholder,
+.layout-app-placement {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 6%;
+  color: #f5f7fa;
+  text-align: center;
+  background: #18232d;
+  overflow: hidden;
+}
+
+.layout-app-placement__provider {
+  font-size: 0.7em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.layout-app-placement strong {
+  font-size: 1.35em;
+  overflow-wrap: anywhere;
+}
+
+.layout-placement-settings {
+  display: grid;
+  gap: var(--tc-space-3);
+  padding-top: var(--tc-space-3);
+  border-top: 1px solid var(--tc-border-default);
+}
+
+.content-usage-list {
+  display: grid;
+  gap: var(--tc-space-1);
+  padding-top: var(--tc-space-3);
+  border-top: 1px solid var(--tc-border-default);
+}
+
+.content-usage-list h3 {
+  margin: 0 0 var(--tc-space-1);
+  font: var(--tc-text-panel-title);
+}
+
+.content-usage-list a {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--tc-space-3);
+  padding: 7px 9px;
+  color: var(--tc-text-primary);
+  text-decoration: none;
+  background: var(--tc-bg-subtle);
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-control);
+}
+
+.content-usage-list small {
+  color: var(--tc-text-secondary);
+}
+
 .layout-layers > button {
   display: grid;
   grid-template-columns: 24px minmax(0, 1fr) auto;

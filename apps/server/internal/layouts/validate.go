@@ -1,6 +1,7 @@
 package layouts
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -79,6 +80,32 @@ func validatePlacement(p Placement, canvas Canvas) error {
 	}
 	if len(p.Overrides) > 4096 || (len(p.Overrides) > 0 && !json.Valid(p.Overrides)) {
 		return errors.New("presentation overrides are invalid")
+	}
+	if p.Type == "app" && len(p.Overrides) > 0 {
+		var overrides struct {
+			Fit                string `json:"fit"`
+			Alignment          string `json:"alignment"`
+			ForegroundColor    string `json:"foregroundColor"`
+			BackgroundColor    string `json:"backgroundColor"`
+			FallbackVisibility string `json:"fallbackVisibility"`
+		}
+		decoder := json.NewDecoder(bytes.NewReader(p.Overrides))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&overrides); err != nil {
+			return errors.New("App placement contains unsupported overrides")
+		}
+		if overrides.Fit != "" && overrides.Fit != "contain" && overrides.Fit != "cover" && overrides.Fit != "stretch" {
+			return errors.New("App placement fit override is invalid")
+		}
+		if overrides.Alignment != "" && overrides.Alignment != "left" && overrides.Alignment != "center" && overrides.Alignment != "right" {
+			return errors.New("App placement alignment override is invalid")
+		}
+		if overrides.ForegroundColor != "" && !validColor(overrides.ForegroundColor) || overrides.BackgroundColor != "" && !validColor(overrides.BackgroundColor) {
+			return errors.New("App placement color override is invalid")
+		}
+		if overrides.FallbackVisibility != "" && overrides.FallbackVisibility != "show" && overrides.FallbackVisibility != "hide" {
+			return errors.New("App placement fallback override is invalid")
+		}
 	}
 	references := 0
 	if p.AppID != nil {

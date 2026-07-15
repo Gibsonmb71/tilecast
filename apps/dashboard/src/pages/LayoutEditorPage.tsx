@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlignCenter,
+  AppWindow,
   ArrowDown,
   ArrowUp,
   BoxSelect,
@@ -10,6 +11,7 @@ import {
   EyeOff,
   Group,
   History,
+  Image as ImageIcon,
   Lock,
   LockOpen,
   Minus,
@@ -34,6 +36,7 @@ import {
 import { useNavigate, useParams } from "react-router";
 import { api, ApiError } from "../api/client";
 import type {
+  Asset,
   LayoutDocument,
   LayoutPlacement,
   LayoutPrimitive,
@@ -105,6 +108,18 @@ export function LayoutEditorPage() {
     queryKey: ["layout", id],
     queryFn: () => api.layout(id),
     enabled: Boolean(id),
+  });
+  const contentQuery = useQuery({
+    queryKey: ["layout-content-library"],
+    queryFn: () =>
+      api.assets(
+        new URLSearchParams({
+          status: "ready",
+          page: "1",
+          pageSize: "100",
+          sort: "name",
+        }),
+      ),
   });
   const revisions = useQuery({
     queryKey: ["layout-revisions", id],
@@ -257,6 +272,43 @@ export function LayoutEditorPage() {
       item.layer = Math.max(0, ...draft.placements.map((x) => x.layer)) + 1;
       draft.placements.push(item);
     });
+    setSelection(new Set([item.id]));
+  };
+  const addContent = (asset: Asset) => {
+    if (!document) return;
+    const isApp = asset.type === "source";
+    const item: LayoutPlacement = {
+      id: crypto.randomUUID(),
+      type: isApp ? "app" : "asset",
+      name: asset.name,
+      x: document.canvas.width * 0.2,
+      y: document.canvas.height * 0.2,
+      width: document.canvas.width * 0.4,
+      height: document.canvas.height * 0.4,
+      layer:
+        Math.max(
+          0,
+          ...document.placements.map((placement) => placement.layer),
+        ) + 1,
+      opacity: 1,
+      visible: true,
+      locked: false,
+      appId: isApp ? asset.id : undefined,
+      assetId: isApp ? undefined : asset.id,
+      overrides: isApp
+        ? { fit: "contain", alignment: "center", fallbackVisibility: "show" }
+        : undefined,
+      playback: !isApp
+        ? {
+            fit: "contain",
+            muted: true,
+            loop: true,
+            fallback: "hide",
+            cornerRadius: 0,
+          }
+        : undefined,
+    };
+    update((draft) => draft.placements.push(item));
     setSelection(new Set([item.id]));
   };
   const duplicateSelection = useCallback(() => {
@@ -514,6 +566,9 @@ export function LayoutEditorPage() {
         </button>
       </div>
     );
+  const contentByID = new Map(
+    contentQuery.data?.items.map((asset) => [asset.id, asset]),
+  );
   return (
     <div className="layout-editor">
       <div className="layout-editor-toolbar">
@@ -593,6 +648,33 @@ export function LayoutEditorPage() {
             <Minus size={20} />
             Line
           </button>
+        </div>
+        <div className="layout-panel-heading">
+          <strong>Content</strong>
+          <span>{contentQuery.data?.items.length ?? 0}</span>
+        </div>
+        <div className="layout-content-shelf">
+          {contentQuery.data?.items.map((asset) => (
+            <button
+              key={asset.id}
+              onClick={() => addContent(asset)}
+              title={`Add ${asset.name}`}
+            >
+              <span className="layout-content-shelf__preview">
+                {asset.thumbnailUrl ? (
+                  <img src={asset.thumbnailUrl} alt="" />
+                ) : asset.type === "source" ? (
+                  <AppWindow size={18} />
+                ) : (
+                  <ImageIcon size={18} />
+                )}
+              </span>
+              <span>
+                <strong>{asset.name}</strong>
+                <small>{asset.source?.provider ?? asset.type}</small>
+              </span>
+            </button>
+          ))}
         </div>
         <div className="layout-panel-heading">
           <strong>Layers</strong>
@@ -732,6 +814,13 @@ export function LayoutEditorPage() {
                 <PlacementView
                   key={item.id}
                   item={item}
+                  content={
+                    item.appId
+                      ? contentByID.get(item.appId)
+                      : item.assetId
+                        ? contentByID.get(item.assetId)
+                        : undefined
+                  }
                   canvas={document.canvas}
                   selected={selection.has(item.id)}
                   onPointerDown={(event) => beginMove(event, item)}
@@ -751,6 +840,13 @@ export function LayoutEditorPage() {
         {primary ? (
           <PlacementInspector
             item={primary}
+            content={
+              primary.appId
+                ? contentByID.get(primary.appId)
+                : primary.assetId
+                  ? contentByID.get(primary.assetId)
+                  : undefined
+            }
             update={(change) => mutateSelected(change)}
             duplicate={duplicateSelection}
             group={groupSelection}
@@ -789,6 +885,13 @@ export function LayoutEditorPage() {
                   key={item.id}
                   item={item}
                   canvas={document.canvas}
+                  content={
+                    item.appId
+                      ? contentByID.get(item.appId)
+                      : item.assetId
+                        ? contentByID.get(item.assetId)
+                        : undefined
+                  }
                 />
               ))}
           </div>
@@ -850,12 +953,14 @@ export function LayoutEditorPage() {
 function PlacementView({
   item,
   canvas,
+  content,
   selected = false,
   onPointerDown,
   onResize,
 }: {
   item: LayoutPlacement;
   canvas: LayoutDocument["canvas"];
+  content?: Asset;
   selected?: boolean;
   onPointerDown?: (event: ReactPointerEvent) => void;
   onResize?: (event: ReactPointerEvent) => void;
@@ -876,7 +981,31 @@ function PlacementView({
       style={style}
       onPointerDown={onPointerDown}
     >
-      {primitive?.kind === "text" ? (
+      {item.type === "asset" ? (
+        content?.thumbnailUrl ? (
+          <img
+            className="layout-asset-placement"
+            src={content.thumbnailUrl}
+            alt=""
+            style={{
+              objectFit:
+                item.playback?.fit === "cover"
+                  ? "cover"
+                  : item.playback?.fit === "stretch"
+                    ? "fill"
+                    : "contain",
+              borderRadius: item.playback?.cornerRadius,
+            }}
+          />
+        ) : (
+          <div className="layout-placement-placeholder">
+            <ImageIcon size={22} />
+            <span>{content?.name ?? item.name}</span>
+          </div>
+        )
+      ) : item.type === "app" ? (
+        <AppPlacementPreview asset={content} item={item} />
+      ) : primitive?.kind === "text" ? (
         <div
           className="layout-text-primitive"
           style={{
@@ -945,6 +1074,71 @@ function PlacementView({
   );
 }
 
+function AppPlacementPreview({
+  asset,
+  item,
+}: {
+  asset?: Asset;
+  item: LayoutPlacement;
+}) {
+  const provider = asset?.source?.provider;
+  const config = (asset?.source?.configuration ?? {}) as Record<
+    string,
+    unknown
+  >;
+  const background =
+    (item.overrides?.backgroundColor as string | undefined) ??
+    (config.backgroundColor as string | undefined) ??
+    "#18232D";
+  const foreground =
+    (item.overrides?.foregroundColor as string | undefined) ??
+    (config.foregroundColor as string | undefined) ??
+    "#F5F7FA";
+  let value = asset?.name ?? item.name;
+  if (provider === "clock") {
+    const timezone =
+      typeof config.timezone === "string" ? config.timezone : "UTC";
+    value = new Intl.DateTimeFormat(undefined, {
+      timeStyle: config.showSeconds ? "medium" : "short",
+      timeZone: timezone,
+    }).format(new Date());
+  } else if (provider === "date") {
+    const timezone =
+      typeof config.timezone === "string" ? config.timezone : "UTC";
+    value = new Intl.DateTimeFormat(undefined, {
+      dateStyle:
+        (config.format as "full" | "long" | "medium" | "short") ?? "full",
+      timeZone: timezone,
+    }).format(new Date());
+  } else if (provider === "qrcode")
+    value =
+      typeof config.label === "string" && config.label
+        ? config.label
+        : "QR Code";
+  else if (provider === "ticker")
+    value = `${asset?.name ?? "Ticker"} · live data`;
+  return (
+    <div
+      className={`layout-app-placement layout-app-placement--${provider ?? "unknown"}`}
+      style={{
+        background,
+        color: foreground,
+        alignItems:
+          item.overrides?.alignment === "left"
+            ? "flex-start"
+            : item.overrides?.alignment === "right"
+              ? "flex-end"
+              : "center",
+      }}
+    >
+      <span className="layout-app-placement__provider">
+        {provider ?? "App"}
+      </span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
 function NumberField({
   label,
   value,
@@ -976,6 +1170,7 @@ function NumberField({
 }
 function PlacementInspector({
   item,
+  content,
   update,
   duplicate,
   group,
@@ -983,12 +1178,14 @@ function PlacementInspector({
   canGroup,
 }: {
   item: LayoutPlacement;
+  content?: Asset;
   update: (change: (item: LayoutPlacement) => void) => void;
   duplicate: () => void;
   group: () => void;
   ungroup: () => void;
   canGroup: boolean;
 }) {
+  const navigate = useNavigate();
   const primitive = item.primitive;
   return (
     <div className="layout-inspector">
@@ -1070,6 +1267,207 @@ function PlacementInspector({
           {item.visible ? <Eye size={16} /> : <EyeOff size={16} />}
         </button>
       </div>
+      {item.type === "app" && (
+        <div className="layout-placement-settings">
+          <div className="form-grid form-grid--2">
+            <label className="field">
+              <span className="field__label">Fit</span>
+              <select
+                value={(item.overrides?.fit as string | undefined) ?? "contain"}
+                onChange={(event) =>
+                  update((target) => {
+                    target.overrides = {
+                      ...target.overrides,
+                      fit: event.target.value,
+                    };
+                  })
+                }
+              >
+                <option value="contain">Fit</option>
+                <option value="cover">Fill</option>
+                <option value="stretch">Stretch</option>
+              </select>
+            </label>
+            <label className="field">
+              <span className="field__label">Alignment</span>
+              <select
+                value={
+                  (item.overrides?.alignment as string | undefined) ?? "center"
+                }
+                onChange={(event) =>
+                  update((target) => {
+                    target.overrides = {
+                      ...target.overrides,
+                      alignment: event.target.value,
+                    };
+                  })
+                }
+              >
+                <option value="left">Left</option>
+                <option value="center">Center</option>
+                <option value="right">Right</option>
+              </select>
+            </label>
+            <label className="field">
+              <span className="field__label">Foreground</span>
+              <input
+                type="color"
+                value={(
+                  (item.overrides?.foregroundColor as string | undefined) ??
+                  "#F5F7FA"
+                ).slice(0, 7)}
+                onChange={(event) =>
+                  update((target) => {
+                    target.overrides = {
+                      ...target.overrides,
+                      foregroundColor: event.target.value,
+                    };
+                  })
+                }
+              />
+            </label>
+            <label className="field">
+              <span className="field__label">Background</span>
+              <input
+                type="color"
+                value={(
+                  (item.overrides?.backgroundColor as string | undefined) ??
+                  "#18232D"
+                ).slice(0, 7)}
+                onChange={(event) =>
+                  update((target) => {
+                    target.overrides = {
+                      ...target.overrides,
+                      backgroundColor: event.target.value,
+                    };
+                  })
+                }
+              />
+            </label>
+          </div>
+          <label className="field">
+            <span className="field__label">When unavailable</span>
+            <select
+              value={
+                (item.overrides?.fallbackVisibility as string | undefined) ??
+                "show"
+              }
+              onChange={(event) =>
+                update((target) => {
+                  target.overrides = {
+                    ...target.overrides,
+                    fallbackVisibility: event.target.value,
+                  };
+                })
+              }
+            >
+              <option value="show">Show App fallback</option>
+              <option value="hide">Hide placement</option>
+            </select>
+          </label>
+          <button
+            className="button button--secondary"
+            onClick={() => {
+              if (
+                window.confirm(
+                  `${content?.name ?? "This App"} may be used by other playlists and Layouts. Open the shared App editor?`,
+                )
+              )
+                void navigate("/content");
+            }}
+          >
+            <AppWindow size={16} />
+            Edit shared App
+          </button>
+        </div>
+      )}
+      {item.type === "asset" && (
+        <div className="layout-placement-settings">
+          <label className="field">
+            <span className="field__label">Fit</span>
+            <select
+              value={item.playback?.fit ?? "contain"}
+              onChange={(event) =>
+                update((target) => {
+                  target.playback = {
+                    ...target.playback,
+                    fit: event.target.value as "contain" | "cover" | "stretch",
+                  };
+                })
+              }
+            >
+              <option value="contain">Fit</option>
+              <option value="cover">Fill</option>
+              <option value="stretch">Stretch</option>
+            </select>
+          </label>
+          <div className="form-grid form-grid--2">
+            <NumberField
+              label="Corner radius"
+              value={item.playback?.cornerRadius ?? 0}
+              max={1000}
+              onChange={(value) =>
+                update((target) => {
+                  target.playback = { ...target.playback, cornerRadius: value };
+                })
+              }
+            />
+            <label className="field">
+              <span className="field__label">Fallback</span>
+              <select
+                value={item.playback?.fallback ?? "hide"}
+                onChange={(event) =>
+                  update((target) => {
+                    target.playback = {
+                      ...target.playback,
+                      fallback: event.target.value as
+                        "hide" | "background" | "previous",
+                    };
+                  })
+                }
+              >
+                <option value="hide">Hide</option>
+                <option value="background">Background</option>
+                <option value="previous">Previous frame</option>
+              </select>
+            </label>
+          </div>
+          {content?.type === "video" && (
+            <>
+              <label className="switch-row">
+                <input
+                  type="checkbox"
+                  checked={item.playback?.muted ?? true}
+                  onChange={(event) =>
+                    update((target) => {
+                      target.playback = {
+                        ...target.playback,
+                        muted: event.target.checked,
+                      };
+                    })
+                  }
+                />
+                <span>Muted</span>
+              </label>
+              <label className="switch-row">
+                <input
+                  type="checkbox"
+                  checked={item.playback?.loop ?? true}
+                  onChange={(event) =>
+                    update((target) => {
+                      target.playback = {
+                        ...target.playback,
+                        loop: event.target.checked,
+                      };
+                    })
+                  }
+                />
+                <span>Loop</span>
+              </label>
+            </>
+          )}
+        </div>
+      )}
       {canGroup && (
         <button className="button button--secondary" onClick={group}>
           <Group size={16} />

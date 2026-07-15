@@ -822,6 +822,7 @@ export function AssetCollection({
               <span>
                 {asset.playlistUsage ?? 0} playlist
                 {asset.playlistUsage === 1 ? "" : "s"}
+                {` · ${asset.layoutUsage?.length ?? 0} Layout${asset.layoutUsage?.length === 1 ? "" : "s"}`}
               </span>
               {canManage && (
                 <>
@@ -1163,6 +1164,17 @@ function MediaAssetDetails({
             <dd className="hash">{asset.sha256}</dd>
           </div>
         </dl>
+        {asset.layoutUsage?.length ? (
+          <section className="content-usage-list">
+            <h3>Used in Layouts</h3>
+            {asset.layoutUsage.map((usage) => (
+              <a key={usage.id} href={`/layouts/${usage.id}`}>
+                <span>{usage.name}</span>
+                <small>{usage.published ? "Published" : "Draft"}</small>
+              </a>
+            ))}
+          </section>
+        ) : null}
         {asset.errorMessage && (
           <div className="notice notice--error">{asset.errorMessage}</div>
         )}

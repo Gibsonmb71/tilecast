@@ -101,9 +101,16 @@ type Asset struct {
 	Website            *WebsiteConfig `json:"website,omitempty"`
 	Source             *Source        `json:"source,omitempty"`
 	PlaylistUsage      int            `json:"playlistUsage"`
+	LayoutUsage        []LayoutUsage  `json:"layoutUsage"`
 	FolderID           *uuid.UUID     `json:"folderId,omitempty"`
 	Tags               []ContentTag   `json:"tags"`
 	CollectionIDs      []uuid.UUID    `json:"collectionIds"`
+}
+
+type LayoutUsage struct {
+	ID        uuid.UUID `json:"id"`
+	Name      string    `json:"name"`
+	Published bool      `json:"published"`
 }
 
 type ContentFolder struct {

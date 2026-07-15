@@ -4,12 +4,15 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/tilecast/tilecast/apps/server/internal/auth"
 	"github.com/tilecast/tilecast/apps/server/internal/database"
+	"github.com/tilecast/tilecast/apps/server/internal/media"
 )
 
 func TestLayoutDraftPublishAndRestoreLifecycle(t *testing.T) {
@@ -48,11 +51,20 @@ func TestLayoutDraftPublishAndRestoreLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	service := NewService(pool)
+	var organizationID uuid.UUID
+	if err = pool.QueryRow(ctx, `SELECT id FROM organization_settings WHERE singleton=TRUE`).Scan(&organizationID); err != nil {
+		t.Fatal(err)
+	}
+	assetID := uuid.New()
+	if _, err = pool.Exec(ctx, `INSERT INTO assets(id,organization_id,name,type,original_filename,detected_mime_type,sha256,original_size,width,height,processing_status,created_by)VALUES($1,$2,'Logo','image','logo.png','image/png',$3,100,400,200,'ready',$4)`, assetID, organizationID, make([]byte, 32), owner.User.ID); err != nil {
+		t.Fatal(err)
+	}
 	layout, err := service.Create(ctx, owner.User.ID, "Lobby board", "", "landscape", 1920, 1080)
 	if err != nil {
 		t.Fatal(err)
 	}
 	document := validTestDocument()
+	document.Placements = append(document.Placements, Placement{ID: uuid.New(), Type: "asset", Name: "Logo", X: 1200, Y: 40, Width: 400, Height: 200, Layer: 2, Opacity: 1, Visible: true, AssetID: &assetID})
 	layout, err = service.SaveDraft(ctx, layout.ID, owner.User.ID, layout.DraftRevision, document)
 	if err != nil {
 		t.Fatal(err)
@@ -66,6 +78,9 @@ func TestLayoutDraftPublishAndRestoreLifecycle(t *testing.T) {
 	}
 	if published.Revision != 1 || published.DocumentSHA256 == "" {
 		t.Fatalf("published=%#v", published)
+	}
+	if err = media.NewService(pool, nil, media.Config{}).DeleteAsset(ctx, assetID, owner.User.ID); err == nil || !strings.Contains(err.Error(), "Layout") {
+		t.Fatalf("referenced asset deletion err=%v", err)
 	}
 	document.Placements[0].Primitive.Text = "Changed draft"
 	layout, err = service.SaveDraft(ctx, layout.ID, owner.User.ID, layout.DraftRevision, document)

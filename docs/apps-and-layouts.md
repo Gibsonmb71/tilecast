@@ -14,6 +14,8 @@ Static text, shapes, lines, backgrounds, decorative uploaded images, and groups 
 
 Editing placement overrides must not mutate the referenced App. Studio must offer a separate **Edit shared App** action and warn when playlist or Layout usage means that change has multiple consumers. “Used in” includes every playlist and Layout that references the item.
 
+App placements accept only the closed override keys `fit`, `alignment`, `foregroundColor`, `backgroundColor`, and `fallbackVisibility`. Asset placements use typed fit, mute, loop, fallback, and corner-radius settings. The server rejects other override properties and prevents deleting Content referenced by a draft or any immutable Layout revision.
+
 ## Structured data
 
 CSV and JSON Sources own fetching, parsing, caching, field schema, row selection, refresh policy, and diagnostics. Layouts and display Apps own presentation. Built-in Menu, List, Table, Agenda, and Ticker Apps may reference a structured Source; constrained Layout bindings may reference its declared fields. Neither form duplicates the fetched dataset into each Layout revision.
