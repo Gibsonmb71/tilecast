@@ -533,6 +533,41 @@ export type Asset = {
   website?: WebsiteConfig;
   source?: Source;
   playlistUsage?: number;
+  folderId?: string;
+  tags?: ContentTag[];
+  collectionIds?: string[];
+};
+export type ContentFolder = {
+  id: string;
+  parentId?: string;
+  name: string;
+  description: string;
+  assetCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+export type ContentCollection = {
+  id: string;
+  name: string;
+  description: string;
+  assetCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+export type ContentTag = {
+  id: string;
+  name: string;
+  color: string;
+  assetCount?: number;
+};
+export type BulkOrganizeInput = {
+  assetIds: string[];
+  setFolder?: boolean;
+  folderId?: string;
+  addTagIds?: string[];
+  removeTagIds?: string[];
+  addCollectionIds?: string[];
+  removeCollectionIds?: string[];
 };
 export type SourceProvider = "website" | "youtube" | "calendar";
 export type Source = {

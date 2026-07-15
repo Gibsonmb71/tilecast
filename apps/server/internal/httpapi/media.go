@@ -118,7 +118,18 @@ func (s *server) listAssets(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	page, _ := strconv.Atoi(query.Get("page"))
 	pageSize, _ := strconv.Atoi(query.Get("pageSize"))
-	result, err := s.media.ListAssets(r.Context(), media.ListOptions{Search: query.Get("search"), Type: query.Get("type"), SourceProvider: query.Get("provider"), Status: query.Get("status"), Sort: query.Get("sort"), Page: page, PageSize: pageSize})
+	var folderID, collectionID, tagID *uuid.UUID
+	for value, target := range map[string]**uuid.UUID{"folderId": &folderID, "collectionId": &collectionID, "tagId": &tagID} {
+		if raw := query.Get(value); raw != "" {
+			id, err := uuid.Parse(raw)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "invalid_filter", value+" must be a UUID.")
+				return
+			}
+			*target = &id
+		}
+	}
+	result, err := s.media.ListAssets(r.Context(), media.ListOptions{Search: query.Get("search"), Type: query.Get("type"), SourceProvider: query.Get("provider"), Status: query.Get("status"), Sort: query.Get("sort"), FolderID: folderID, CollectionID: collectionID, TagID: tagID, Page: page, PageSize: pageSize})
 	if err != nil {
 		s.writeMediaError(w, r, err)
 		return

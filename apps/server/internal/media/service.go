@@ -335,6 +335,9 @@ func (s *Service) GetAsset(ctx context.Context, id uuid.UUID) (Asset, error) {
 		}
 	}
 	_ = s.db.QueryRow(ctx, `SELECT count(DISTINCT playlist_id) FROM playlist_items WHERE asset_id=$1`, id).Scan(&asset.PlaylistUsage)
+	if err = s.loadOrganization(ctx, &asset); err != nil {
+		return Asset{}, err
+	}
 	for _, v := range asset.Variants {
 		if v.Kind == "thumbnail" || v.Kind == "poster" {
 			url := "/api/v1/assets/" + id.String() + "/thumbnail"
@@ -427,6 +430,15 @@ func (s *Service) ListAssets(ctx context.Context, o ListOptions) (ListResult, er
 	if o.Status != "" {
 		add("a.processing_status=$%d", o.Status)
 	}
+	if o.FolderID != nil {
+		add("a.folder_id=$%d", *o.FolderID)
+	}
+	if o.CollectionID != nil {
+		add("EXISTS(SELECT 1 FROM content_collection_assets ca WHERE ca.asset_id=a.id AND ca.collection_id=$%d)", *o.CollectionID)
+	}
+	if o.TagID != nil {
+		add("EXISTS(SELECT 1 FROM content_asset_tags at WHERE at.asset_id=a.id AND at.tag_id=$%d)", *o.TagID)
+	}
 	clause := strings.Join(where, " AND ")
 	var total int
 	if err := s.db.QueryRow(ctx, "SELECT count(*) FROM assets a WHERE "+clause, args...).Scan(&total); err != nil {
@@ -457,6 +469,9 @@ func (s *Service) ListAssets(ctx context.Context, o ListOptions) (ListResult, er
 			}
 		}
 		_ = s.db.QueryRow(ctx, `SELECT count(DISTINCT playlist_id) FROM playlist_items WHERE asset_id=$1`, a.ID).Scan(&a.PlaylistUsage)
+		if err = s.loadOrganization(ctx, &a); err != nil {
+			return ListResult{}, err
+		}
 		items = append(items, a)
 	}
 	return ListResult{Items: items, Total: total, Page: o.Page, PageSize: o.PageSize}, rows.Err()

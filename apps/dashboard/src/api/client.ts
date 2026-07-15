@@ -37,6 +37,10 @@ import type {
   CalendarConfig,
   CalendarPreview,
   SourceRefreshDiagnostics,
+  ContentFolder,
+  ContentCollection,
+  ContentTag,
+  BulkOrganizeInput,
 } from "./types";
 
 type DataResponse<T> = { data: T };
@@ -421,6 +425,58 @@ export const api = {
     }),
   assets: (params: URLSearchParams) =>
     request<AssetList>(`/assets?${params.toString()}`),
+  contentFolders: () => request<ContentFolder[]>("/content-folders"),
+  createContentFolder: (
+    input: { name: string; description: string; parentId?: string },
+    csrfToken: string,
+  ) =>
+    request<ContentFolder>("/content-folders", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  deleteContentFolder: (id: string, csrfToken: string) =>
+    request<void>(`/content-folders/${id}`, {
+      method: "DELETE",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
+  contentCollections: () =>
+    request<ContentCollection[]>("/content-collections"),
+  createContentCollection: (
+    input: { name: string; description: string },
+    csrfToken: string,
+  ) =>
+    request<ContentCollection>("/content-collections", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  deleteContentCollection: (id: string, csrfToken: string) =>
+    request<void>(`/content-collections/${id}`, {
+      method: "DELETE",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
+  contentTags: () => request<ContentTag[]>("/content-tags"),
+  createContentTag: (
+    input: { name: string; color: string },
+    csrfToken: string,
+  ) =>
+    request<ContentTag>("/content-tags", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  deleteContentTag: (id: string, csrfToken: string) =>
+    request<void>(`/content-tags/${id}`, {
+      method: "DELETE",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
+  bulkOrganize: (input: BulkOrganizeInput, csrfToken: string) =>
+    request<{ updated: number }>("/assets/bulk-organize", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
   asset: (id: string) => request<Asset>(`/assets/${id}`),
   updateAsset: (
     id: string,

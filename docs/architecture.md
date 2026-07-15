@@ -65,6 +65,8 @@ Manifest v5 contains only Sources referenced by playlists relevant to the authen
 
 Calendar Sources add a server-owned refresh boundary. `source_refresh_states` is both the restart-safe `SKIP LOCKED` claim queue and the bounded last-known-good cache; it stores only sanitized, expanded event occurrences and current diagnostics. Fetches use a dedicated no-proxy HTTP transport with DNS and dial-time private-address checks, timeouts, redirect and response limits, and content validation. Manifest v7 strips configured feed URLs and sends only the prepared data required by that screen. Android renders it natively in Compose and never opens structured calendar data in WebView.
 
+Content organization remains inside the media domain. Folders are a nullable asset relationship with database-level `ON DELETE SET NULL`; collections and tags are many-to-many metadata. Bulk changes validate all referenced rows and commit atomically, with one bounded audit event per request. Organization metadata is intentionally absent from Player manifests, so rearranging Studio content cannot interrupt playback or invalidate otherwise unchanged manifests.
+
 ## Milestone 7 operations
 
 Emergency takeovers are separate lifecycle records rather than schedules. Manifest v4 references an emergency playlist and expiration only for affected screens. Persistent typed player commands use PostgreSQL as the delivery source of truth; WebSockets only announce availability. See [emergency-and-operations.md](emergency-and-operations.md).

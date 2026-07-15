@@ -101,6 +101,45 @@ type Asset struct {
 	Website            *WebsiteConfig `json:"website,omitempty"`
 	Source             *Source        `json:"source,omitempty"`
 	PlaylistUsage      int            `json:"playlistUsage"`
+	FolderID           *uuid.UUID     `json:"folderId,omitempty"`
+	Tags               []ContentTag   `json:"tags"`
+	CollectionIDs      []uuid.UUID    `json:"collectionIds"`
+}
+
+type ContentFolder struct {
+	ID          uuid.UUID  `json:"id"`
+	ParentID    *uuid.UUID `json:"parentId,omitempty"`
+	Name        string     `json:"name"`
+	Description string     `json:"description"`
+	AssetCount  int        `json:"assetCount"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	UpdatedAt   time.Time  `json:"updatedAt"`
+}
+
+type ContentCollection struct {
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	AssetCount  int       `json:"assetCount"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+}
+
+type ContentTag struct {
+	ID         uuid.UUID `json:"id"`
+	Name       string    `json:"name"`
+	Color      string    `json:"color"`
+	AssetCount int       `json:"assetCount,omitempty"`
+}
+
+type BulkOrganizeInput struct {
+	AssetIDs            []uuid.UUID
+	SetFolder           bool
+	FolderID            *uuid.UUID
+	AddTagIDs           []uuid.UUID
+	RemoveTagIDs        []uuid.UUID
+	AddCollectionIDs    []uuid.UUID
+	RemoveCollectionIDs []uuid.UUID
 }
 
 type Source struct {
@@ -294,6 +333,7 @@ type Upload struct {
 
 type ListOptions struct {
 	Search, Type, SourceProvider, Status, Sort string
+	FolderID, CollectionID, TagID              *uuid.UUID
 	Page, PageSize                             int
 }
 type ListResult struct {

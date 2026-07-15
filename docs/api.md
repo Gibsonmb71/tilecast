@@ -75,12 +75,18 @@ All routes below require a dashboard session. Owner, Administrator, and Editor m
 - `PATCH /api/v1/uploads/{id}` accepts `application/offset+octet-stream` and requires the exact `Upload-Offset`. A mismatch returns `409 upload_offset_mismatch` without moving the accepted offset.
 - `POST /api/v1/uploads/{id}/complete` validates size, synchronizes the file, hashes it, detects its actual type, atomically promotes it, creates the asset and original variant, and queues inspection. Repeating completion after success returns the same asset.
 - `DELETE /api/v1/uploads/{id}` cancels an unfinished upload and removes temporary bytes.
-- `GET /api/v1/assets` is paginated and supports `search`, `type`, `status`, `sort`, `page`, and `pageSize` (maximum 100).
+- `GET /api/v1/assets` is paginated and supports `search`, `type`, `status`, `folderId`, `collectionId`, `tagId`, `sort`, `page`, and `pageSize` (maximum 100).
 - `GET`, `PATCH`, and `DELETE /api/v1/assets/{id}` read, edit, or soft-delete an asset.
 - `POST /api/v1/assets/{id}/retry` retries a failed processing pipeline.
 - `GET /api/v1/assets/{id}/thumbnail` streams the authenticated thumbnail or poster.
 
 Uploaded filenames are display metadata only. API responses never include a storage key or filesystem path. Safe media errors include `unsupported_media_type`, `upload_too_large`, `upload_offset_mismatch`, `upload_expired`, `upload_incomplete`, `insufficient_storage`, `media_inspection_failed`, `media_processing_failed`, and `media_variant_unavailable`.
+
+### Content organization
+
+Folders, collections, and tags are installation-scoped metadata. Authenticated users can list them through `GET /api/v1/content-folders`, `/content-collections`, and `/content-tags`. Owner, Administrator, and Editor mutations require CSRF. Creation and deletion use the matching collection route; folders also support `PATCH /content-folders/{id}` for hierarchy and details.
+
+`POST /api/v1/assets/bulk-organize` accepts 1–250 unique `assetIds`, an optional folder assignment, and tag or collection additions/removals. It validates every asset and referenced organization record before applying an all-or-nothing transaction. Deleting a folder moves its direct content to Unfiled and moves child folders to the root. Deleting a tag or collection removes only its relationships and never deletes content. These records are Studio metadata and do not change Player manifests.
 
 ## Player media delivery
 

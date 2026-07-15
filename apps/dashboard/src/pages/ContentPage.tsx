@@ -13,6 +13,9 @@ import {
   Youtube,
   X,
   CalendarDays,
+  FolderPlus,
+  Tags,
+  Library,
 } from "lucide-react";
 import { signalColors } from "@tilecast/design-tokens/values";
 import {
@@ -29,6 +32,9 @@ import type {
   User,
   WebsiteInput,
   YouTubeConfig,
+  ContentFolder,
+  ContentCollection,
+  ContentTag,
 } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import {
@@ -105,6 +111,12 @@ export function ContentPage() {
   const [contentFilter, setContentFilter] = useState("all");
   const [status, setStatus] = useState("");
   const [sort, setSort] = useState("updated");
+  const [folderFilter, setFolderFilter] = useState("");
+  const [collectionFilter, setCollectionFilter] = useState("");
+  const [tagFilter, setTagFilter] = useState("");
+  const [checkedAssetIds, setCheckedAssetIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [view, setView] = useState<"grid" | "list">("grid");
   const [queue, setQueue] = useState<QueueItem[]>(() => {
     try {
@@ -138,6 +150,9 @@ export function ContentPage() {
     params.set("provider", contentFilter);
   }
   if (status) params.set("status", status);
+  if (folderFilter) params.set("folderId", folderFilter);
+  if (collectionFilter) params.set("collectionId", collectionFilter);
+  if (tagFilter) params.set("tagId", tagFilter);
   const assets = useQuery({
     queryKey: ["assets", params.toString()],
     queryFn: () => api.assets(params),
@@ -147,6 +162,18 @@ export function ContentPage() {
       )
         ? 3000
         : false,
+  });
+  const folders = useQuery({
+    queryKey: ["content-folders"],
+    queryFn: api.contentFolders,
+  });
+  const collections = useQuery({
+    queryKey: ["content-collections"],
+    queryFn: api.contentCollections,
+  });
+  const tags = useQuery({
+    queryKey: ["content-tags"],
+    queryFn: api.contentTags,
   });
 
   useEffect(() => {
@@ -417,6 +444,42 @@ export function ContentPage() {
           <option value="failed">Failed</option>
         </select>
         <select
+          aria-label="Filter by folder"
+          value={folderFilter}
+          onChange={(event) => setFolderFilter(event.target.value)}
+        >
+          <option value="">All folders</option>
+          {folders.data?.map((folder) => (
+            <option key={folder.id} value={folder.id}>
+              {folder.name} ({folder.assetCount})
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label="Filter by collection"
+          value={collectionFilter}
+          onChange={(event) => setCollectionFilter(event.target.value)}
+        >
+          <option value="">All collections</option>
+          {collections.data?.map((collection) => (
+            <option key={collection.id} value={collection.id}>
+              {collection.name} ({collection.assetCount})
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label="Filter by tag"
+          value={tagFilter}
+          onChange={(event) => setTagFilter(event.target.value)}
+        >
+          <option value="">All tags</option>
+          {tags.data?.map((tag) => (
+            <option key={tag.id} value={tag.id}>
+              {tag.name} ({tag.assetCount ?? 0})
+            </option>
+          ))}
+        </select>
+        <select
           aria-label="Sort media"
           value={sort}
           onChange={(event) => setSort(event.target.value)}
@@ -443,6 +506,27 @@ export function ContentPage() {
           </button>
         </span>
       </div>
+
+      {canManage && (
+        <ContentOrganizer
+          csrf={csrf}
+          folders={folders.data ?? []}
+          collections={collections.data ?? []}
+          tags={tags.data ?? []}
+          assetIds={[...checkedAssetIds]}
+          onChanged={() => {
+            setCheckedAssetIds(new Set());
+            void queryClient.invalidateQueries({ queryKey: ["assets"] });
+            void queryClient.invalidateQueries({
+              queryKey: ["content-folders"],
+            });
+            void queryClient.invalidateQueries({
+              queryKey: ["content-collections"],
+            });
+            void queryClient.invalidateQueries({ queryKey: ["content-tags"] });
+          }}
+        />
+      )}
 
       {assets.isError && (
         <div className="notice notice--error">
@@ -480,6 +564,15 @@ export function ContentPage() {
                   queryClient.invalidateQueries({ queryKey: ["assets"] }),
                 );
           }}
+          selectedIds={checkedAssetIds}
+          onToggle={(id) =>
+            setCheckedAssetIds((current) => {
+              const next = new Set(current);
+              if (next.has(id)) next.delete(id);
+              else next.add(id);
+              return next;
+            })
+          }
         />
       )}
       {selected && (
@@ -579,6 +672,8 @@ export function AssetCollection({
   canManage = false,
   onDuplicate,
   onDelete,
+  selectedIds = new Set(),
+  onToggle,
 }: {
   items: Asset[];
   view: "grid" | "list";
@@ -586,11 +681,23 @@ export function AssetCollection({
   canManage?: boolean;
   onDuplicate?: (asset: Asset) => void;
   onDelete?: (asset: Asset) => void;
+  selectedIds?: Set<string>;
+  onToggle?: (id: string) => void;
 }) {
   return (
     <div className={`asset-collection asset-collection--${view}`}>
       {items.map((asset) => (
         <article className="asset-card" key={asset.id}>
+          {canManage && onToggle && (
+            <label className="asset-card__select">
+              <input
+                type="checkbox"
+                checked={selectedIds.has(asset.id)}
+                onChange={() => onToggle(asset.id)}
+              />
+              <span className="visually-hidden">Select {asset.name}</span>
+            </label>
+          )}
           <button
             className="asset-card__open"
             onClick={() => onSelect(asset)}
@@ -675,6 +782,173 @@ export function AssetCollection({
           )}
         </article>
       ))}
+    </div>
+  );
+}
+
+function ContentOrganizer({
+  csrf,
+  folders,
+  collections,
+  tags,
+  assetIds,
+  onChanged,
+}: {
+  csrf: string;
+  folders: ContentFolder[];
+  collections: ContentCollection[];
+  tags: ContentTag[];
+  assetIds: string[];
+  onChanged: () => void;
+}) {
+  const [folderId, setFolderId] = useState("");
+  const [tagId, setTagId] = useState("");
+  const [collectionId, setCollectionId] = useState("");
+  const [error, setError] = useState("");
+  const createFolder = async () => {
+    const name = prompt("Folder name");
+    if (!name) return;
+    await api.createContentFolder({ name, description: "" }, csrf);
+    onChanged();
+  };
+  const createCollection = async () => {
+    const name = prompt("Collection name");
+    if (!name) return;
+    await api.createContentCollection({ name, description: "" }, csrf);
+    onChanged();
+  };
+  const createTag = async () => {
+    const name = prompt("Tag name");
+    if (!name) return;
+    await api.createContentTag({ name, color: "#64748b" }, csrf);
+    onChanged();
+  };
+  const apply = async () => {
+    if (!assetIds.length) return;
+    setError("");
+    try {
+      const [tagAction, selectedTagId] = tagId.split(":");
+      const [collectionAction, selectedCollectionId] = collectionId.split(":");
+      await api.bulkOrganize(
+        {
+          assetIds,
+          ...(folderId
+            ? {
+                setFolder: true,
+                ...(folderId === "unfiled" ? {} : { folderId }),
+              }
+            : {}),
+          ...(selectedTagId
+            ? tagAction === "remove"
+              ? { removeTagIds: [selectedTagId] }
+              : { addTagIds: [selectedTagId] }
+            : {}),
+          ...(selectedCollectionId
+            ? collectionAction === "remove"
+              ? { removeCollectionIds: [selectedCollectionId] }
+              : { addCollectionIds: [selectedCollectionId] }
+            : {}),
+        },
+        csrf,
+      );
+      setFolderId("");
+      setTagId("");
+      setCollectionId("");
+      onChanged();
+    } catch (cause) {
+      setError(
+        cause instanceof ApiError
+          ? cause.message
+          : "Content could not be organized.",
+      );
+    }
+  };
+  return (
+    <div className="content-organizer" aria-label="Content organization">
+      <div className="content-organizer__create">
+        <button
+          type="button"
+          className="button button--quiet"
+          onClick={() => void createFolder()}
+        >
+          <FolderPlus size={15} /> Folder
+        </button>
+        <button
+          type="button"
+          className="button button--quiet"
+          onClick={() => void createCollection()}
+        >
+          <Library size={15} /> Collection
+        </button>
+        <button
+          type="button"
+          className="button button--quiet"
+          onClick={() => void createTag()}
+        >
+          <Tags size={15} /> Tag
+        </button>
+      </div>
+      {assetIds.length > 0 && (
+        <div className="content-organizer__bulk">
+          <strong>{assetIds.length} selected</strong>
+          <select
+            aria-label="Move selected content to folder"
+            value={folderId}
+            onChange={(e) => setFolderId(e.target.value)}
+          >
+            <option value="">Folder…</option>
+            <option value="unfiled">Unfiled</option>
+            {folders.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.name}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="Tag selected content"
+            value={tagId}
+            onChange={(e) => setTagId(e.target.value)}
+          >
+            <option value="">Add tag…</option>
+            {tags.map((v) => (
+              <option key={`add-${v.id}`} value={`add:${v.id}`}>
+                Add {v.name}
+              </option>
+            ))}
+            {tags.map((v) => (
+              <option key={`remove-${v.id}`} value={`remove:${v.id}`}>
+                Remove {v.name}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="Add selected content to collection"
+            value={collectionId}
+            onChange={(e) => setCollectionId(e.target.value)}
+          >
+            <option value="">Collection…</option>
+            {collections.map((v) => (
+              <option key={`add-${v.id}`} value={`add:${v.id}`}>
+                Add to {v.name}
+              </option>
+            ))}
+            {collections.map((v) => (
+              <option key={`remove-${v.id}`} value={`remove:${v.id}`}>
+                Remove from {v.name}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="button button--primary"
+            disabled={!folderId && !tagId && !collectionId}
+            onClick={() => void apply()}
+          >
+            Apply
+          </button>
+        </div>
+      )}
+      {error && <span className="notice notice--error">{error}</span>}
     </div>
   );
 }
