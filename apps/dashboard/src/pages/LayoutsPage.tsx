@@ -127,7 +127,9 @@ export function LayoutsPage() {
     },
     onError: (error) =>
       setActionError(
-        error instanceof Error ? error.message : "The Layout could not be duplicated.",
+        error instanceof Error
+          ? error.message
+          : "The Layout could not be duplicated.",
       ),
   });
   const remove = useMutation({
