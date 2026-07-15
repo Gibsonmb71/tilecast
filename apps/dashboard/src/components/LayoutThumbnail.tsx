@@ -24,7 +24,9 @@ export function LayoutThumbnail({
         className="layout-thumbnail layout-thumbnail--loading"
         aria-hidden="true"
       >
-        <span>{query.isError ? "Preview unavailable" : "Loading preview…"}</span>
+        <span>
+          {query.isError ? "Preview unavailable" : "Loading preview…"}
+        </span>
       </span>
     );
   }
