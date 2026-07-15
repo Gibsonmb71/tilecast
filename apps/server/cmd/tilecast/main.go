@@ -18,6 +18,7 @@ import (
 	"github.com/tilecast/tilecast/apps/server/internal/devices"
 	"github.com/tilecast/tilecast/apps/server/internal/discovery"
 	"github.com/tilecast/tilecast/apps/server/internal/httpapi"
+	"github.com/tilecast/tilecast/apps/server/internal/layouts"
 	"github.com/tilecast/tilecast/apps/server/internal/media"
 	"github.com/tilecast/tilecast/apps/server/internal/playlists"
 	"github.com/tilecast/tilecast/apps/server/internal/scheduling"
@@ -66,6 +67,7 @@ func main() {
 		SourceFetch: media.SourceFetchPolicy{AllowPrivateNetworks: cfg.Sources.AllowPrivateNetworks, Timeout: time.Duration(cfg.Sources.TimeoutSeconds) * time.Second, MaximumBytes: cfg.Sources.MaximumResponseBytes, MaximumRedirects: cfg.Sources.MaximumRedirects, MinimumRefresh: time.Duration(cfg.Sources.MinimumRefreshSeconds) * time.Second, MaximumRefresh: time.Duration(cfg.Sources.MaximumRefreshSeconds) * time.Second},
 	})
 	playlistService := playlists.NewService(db, deviceService)
+	layoutService := layouts.NewService(db)
 	mediaService.SetAssetInvalidator(playlistService)
 	playlistService.SetSourceProjector(mediaService)
 	schedulingService := scheduling.NewService(db, deviceService, scheduling.Limits{MaxSchedules: cfg.Scheduling.MaxSchedules, MaxTargetsPerSchedule: cfg.Scheduling.MaxTargetsPerSchedule, MaxGroupsPerScreen: cfg.Scheduling.MaxGroupsPerScreen, PrefetchDays: cfg.Scheduling.PrefetchDays, ActivationGraceSeconds: cfg.Scheduling.ActivationGraceSeconds, ClockSkewWarningSeconds: cfg.Scheduling.ClockSkewWarningSeconds})
@@ -104,6 +106,7 @@ func main() {
 		Devices:             deviceService,
 		Media:               mediaService,
 		Playlists:           playlistService,
+		Layouts:             layoutService,
 		Scheduling:          schedulingService,
 		Settings:            settingsService,
 		Updates:             updateService,

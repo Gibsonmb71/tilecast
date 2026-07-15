@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tilecast.org/schemas/layout-v1.json",
+  "title": "Tilecast layout document v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "canvas", "placements"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "canvas": { "$ref": "#/$defs/canvas" },
+    "placements": {
+      "type": "array",
+      "maxItems": 200,
+      "items": { "$ref": "#/$defs/placement" }
+    }
+  },
+  "$defs": {
+    "canvas": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "width",
+        "height",
+        "orientation",
+        "backgroundColor",
+        "safeAreaPercent"
+      ],
+      "properties": {
+        "width": { "type": "integer", "minimum": 320, "maximum": 7680 },
+        "height": { "type": "integer", "minimum": 320, "maximum": 7680 },
+        "orientation": { "enum": ["landscape", "portrait", "custom"] },
+        "backgroundColor": { "$ref": "#/$defs/color" },
+        "backgroundAssetId": { "type": "string", "format": "uuid" },
+        "safeAreaPercent": { "type": "number", "minimum": 0, "maximum": 20 }
+      }
+    },
+    "placement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "name",
+        "x",
+        "y",
+        "width",
+        "height",
+        "layer",
+        "opacity",
+        "visible",
+        "locked"
+      ],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "type": { "enum": ["app", "asset", "playlistZone", "primitive"] },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "width": { "type": "number", "exclusiveMinimum": 0 },
+        "height": { "type": "number", "exclusiveMinimum": 0 },
+        "layer": { "type": "integer", "minimum": 0, "maximum": 999 },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "visible": { "type": "boolean" },
+        "locked": { "type": "boolean" },
+        "groupId": { "type": "string", "format": "uuid" },
+        "appId": { "type": "string", "format": "uuid" },
+        "assetId": { "type": "string", "format": "uuid" },
+        "playlistId": { "type": "string", "format": "uuid" },
+        "overrides": { "type": "object", "maxProperties": 12 },
+        "primitive": { "$ref": "#/$defs/primitive" },
+        "playback": { "$ref": "#/$defs/playback" }
+      }
+    },
+    "primitive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["text", "rectangle", "circle", "line", "group"] },
+        "text": { "type": "string", "maxLength": 4000 },
+        "fontFamily": {
+          "enum": ["Inter", "Roboto", "Source Sans 3", "Noto Sans"]
+        },
+        "fontSize": { "type": "number", "minimum": 8, "maximum": 600 },
+        "fontWeight": { "enum": [400, 500, 600, 700, 800] },
+        "textAlign": { "enum": ["left", "center", "right"] },
+        "verticalAlign": { "enum": ["top", "center", "bottom"] },
+        "color": { "$ref": "#/$defs/color" },
+        "backgroundColor": { "$ref": "#/$defs/color" },
+        "lineHeight": { "type": "number", "minimum": 0.8, "maximum": 3 },
+        "letterSpacing": { "type": "number", "minimum": 0, "maximum": 40 },
+        "padding": { "type": "number", "minimum": 0, "maximum": 300 },
+        "borderWidth": { "type": "number", "minimum": 0, "maximum": 100 },
+        "borderColor": { "$ref": "#/$defs/color" },
+        "cornerRadius": { "type": "number", "minimum": 0, "maximum": 1000 },
+        "maximumLines": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "overflow": { "enum": ["clip", "ellipsis"] },
+        "autoFit": { "type": "boolean" },
+        "minimumFontSize": { "type": "number", "minimum": 8, "maximum": 300 },
+        "fillColor": { "$ref": "#/$defs/color" },
+        "strokeColor": { "$ref": "#/$defs/color" },
+        "strokeWidth": { "type": "number", "minimum": 0, "maximum": 100 },
+        "binding": { "$ref": "#/$defs/binding" }
+      }
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceId", "field"],
+      "properties": {
+        "sourceId": { "type": "string", "format": "uuid" },
+        "field": { "type": "string", "pattern": "^[A-Za-z0-9_]{1,80}$" },
+        "prefix": { "type": "string", "maxLength": 500 },
+        "suffix": { "type": "string", "maxLength": 500 },
+        "fallbackText": { "type": "string", "maxLength": 500 },
+        "hideWhenEmpty": { "type": "boolean" },
+        "format": {
+          "enum": [
+            "text",
+            "date-short",
+            "date-long",
+            "number",
+            "integer",
+            "currency"
+          ]
+        }
+      }
+    },
+    "playback": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "fit": { "enum": ["contain", "cover", "stretch"] },
+        "muted": { "type": "boolean" },
+        "loop": { "type": "boolean" },
+        "fallback": { "enum": ["hide", "background", "previous"] },
+        "cornerRadius": { "type": "number", "minimum": 0, "maximum": 1000 }
+      }
+    },
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$"
+    }
+  }
+}

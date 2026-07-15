@@ -848,6 +848,62 @@ paths:
       responses:
         "200": { description: Current bounded App refresh diagnostics }
         "404": { description: Diagnostics unavailable }
+  /api/v1/layouts:
+    get:
+      operationId: listLayouts
+      responses:
+        "200": { description: Paginated Layout summaries }
+    post:
+      operationId: createLayout
+      responses:
+        "201": { description: Layout and initial draft created }
+        "422": { description: Layout details rejected }
+  /api/v1/layouts/{id}:
+    get:
+      operationId: getLayout
+      responses:
+        "200":
+          { description: Layout metadata, editable draft, and published state }
+        "404": { description: Layout not found }
+    patch:
+      operationId: updateLayout
+      responses:
+        "200": { description: Layout metadata updated }
+    delete:
+      operationId: deleteLayout
+      responses:
+        "204": { description: Unused Layout deleted }
+        "409": { description: Layout is assigned or scheduled }
+  /api/v1/layouts/{id}/draft:
+    put:
+      operationId: saveLayoutDraft
+      description: Saves a validated draft using expectedDraftRevision optimistic concurrency.
+      responses:
+        "200": { description: Draft saved with a new revision and ETag }
+        "409": { description: Draft revision conflict }
+        "422": { description: Layout document or dependency rejected }
+  /api/v1/layouts/{id}/publish:
+    post:
+      operationId: publishLayout
+      responses:
+        "201": { description: Immutable published revision created }
+        "409": { description: Draft revision conflict }
+  /api/v1/layouts/{id}/duplicate:
+    post:
+      operationId: duplicateLayout
+      responses:
+        "201": { description: Independent Layout draft created }
+  /api/v1/layouts/{id}/revisions:
+    get:
+      operationId: listLayoutRevisions
+      responses:
+        "200": { description: Paginated immutable revision history }
+  /api/v1/layouts/{id}/revisions/{revisionId}/restore:
+    post:
+      operationId: restoreLayoutRevision
+      responses:
+        "200": { description: Revision copied into a new draft revision }
+        "409": { description: Draft revision conflict }
   /api/v1/emergencies:
     get:
       summary: List emergency takeovers

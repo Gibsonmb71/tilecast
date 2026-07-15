@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/tilecast/tilecast/apps/server/internal/auth"
 	"github.com/tilecast/tilecast/apps/server/internal/devices"
+	"github.com/tilecast/tilecast/apps/server/internal/layouts"
 	"github.com/tilecast/tilecast/apps/server/internal/media"
 	"github.com/tilecast/tilecast/apps/server/internal/playlists"
 	"github.com/tilecast/tilecast/apps/server/internal/scheduling"
@@ -30,6 +31,7 @@ type Dependencies struct {
 	Devices             *devices.Service
 	Media               *media.Service
 	Playlists           *playlists.Service
+	Layouts             *layouts.Service
 	Scheduling          *scheduling.Service
 	Settings            *settings.Service
 	Updates             *updates.Service
@@ -55,6 +57,7 @@ type server struct {
 	devices                       *devices.Service
 	media                         *media.Service
 	playlists                     *playlists.Service
+	layouts                       *layouts.Service
 	scheduling                    *scheduling.Service
 	db                            *pgxpool.Pool
 	logger                        *slog.Logger
@@ -82,6 +85,7 @@ func New(deps Dependencies) http.Handler {
 		devices:           deps.Devices,
 		media:             deps.Media,
 		playlists:         deps.Playlists,
+		layouts:           deps.Layouts,
 		scheduling:        deps.Scheduling,
 		db:                deps.DB,
 		logger:            deps.Logger,
@@ -208,6 +212,16 @@ func New(deps Dependencies) http.Handler {
 			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Delete("/content-tags/{id}", s.deleteContentTag)
 			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/assets/bulk-organize", s.bulkOrganizeContent)
 			dashboard.Get("/playlists", s.listPlaylists)
+			dashboard.Get("/layouts", s.listLayouts)
+			dashboard.Get("/layouts/{id}", s.getLayout)
+			dashboard.Get("/layouts/{id}/revisions", s.listLayoutRevisions)
+			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/layouts", s.createLayout)
+			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Patch("/layouts/{id}", s.updateLayout)
+			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Put("/layouts/{id}/draft", s.saveLayoutDraft)
+			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/layouts/{id}/publish", s.publishLayout)
+			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/layouts/{id}/duplicate", s.duplicateLayout)
+			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/layouts/{id}/revisions/{revisionId}/restore", s.restoreLayoutRevision)
+			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Delete("/layouts/{id}", s.deleteLayout)
 			dashboard.Get("/playlists/{id}", s.getPlaylist)
 			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/playlists", s.createPlaylist)
 			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Patch("/playlists/{id}", s.updatePlaylist)

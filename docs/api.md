@@ -132,6 +132,12 @@ Manifest v8 adds the four structured providers. Their projections contain only n
 
 Manifest v9 adds Clock, Date, QR Code, and Ticker Apps and projects date-selection policy with structured data. A Ticker references its data Source by stable asset ID; the manifest includes that Source once as a dependency rather than duplicating its records. Date-only records remain calendar dates, and timestamp records remain RFC 3339 values for timezone-aware local evaluation.
 
+## Layouts
+
+`GET/POST /api/v1/layouts` lists or creates Layouts. `GET/PATCH /api/v1/layouts/{id}` reads or edits metadata, and `PUT /api/v1/layouts/{id}/draft` autosaves a validated renderer-neutral document with `expectedDraftRevision` optimistic concurrency. Successful draft reads and writes include an ETag. `POST /api/v1/layouts/{id}/publish` creates an immutable revision; Players never receive a draft.
+
+`GET /api/v1/layouts/{id}/revisions` returns paginated immutable history. `POST /api/v1/layouts/{id}/revisions/{revisionId}/restore` copies an old document into a new draft revision without changing history. Duplicate and delete operations are `POST /api/v1/layouts/{id}/duplicate` and `DELETE /api/v1/layouts/{id}`. Validation errors use `layout_validation_failed`; stale draft writes use `layout_revision_conflict`.
+
 ## Emergency takeover and commands
 
 Dashboard routes include `GET/POST /emergencies`, `GET /emergencies/{id}`, `POST /emergencies/{id}/cancel`, `GET/POST /screens/{id}/commands`, and command cancellation. Device-authenticated players use `GET /player/commands`, `POST /player/commands/{id}/acknowledge`, and `POST /player/commands/{id}/result`. Commands are typed, bounded, expiring, and scoped to the authenticated screen. The former one-off website clearing route is replaced by `clear_website_data`.
