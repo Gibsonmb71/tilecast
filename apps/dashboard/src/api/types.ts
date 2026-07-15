@@ -311,6 +311,9 @@ export type ScreenGroup = {
   id: string;
   name: string;
   description: string;
+  playlistId?: string;
+  playlistName?: string;
+  playbackEpoch: string;
   membershipCount: number;
   screens: { id: string; name: string; location: string }[];
   createdAt: string;

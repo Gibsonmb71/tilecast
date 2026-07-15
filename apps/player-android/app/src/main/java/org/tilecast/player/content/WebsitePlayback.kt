@@ -37,12 +37,12 @@ object WebsiteDataManager {
 }
 
 @SuppressLint("SetJavaScriptEnabled")
-@Composable fun WebsiteItem(item:ManifestItem,site:ManifestWebsite,session:PlaybackSession,onDone:()->Unit,onStatus:(WebsitePlaybackStatus)->Unit){
+@Composable fun WebsiteItem(item:ManifestItem,site:ManifestWebsite,session:PlaybackSession,onDone:()->Unit,startOffsetMs:Long=0,onStatus:(WebsitePlaybackStatus)->Unit){
     var failed by remember(item.id){mutableStateOf<String?>(null)};var loaded by remember(item.id){mutableStateOf(false)};var blocked by remember(item.id){mutableIntStateOf(0)};var rendererRecoveries by remember(item.id){mutableIntStateOf(0)};var activeWebView by remember(item.id){mutableStateOf<WebView?>(null)};val started=remember(item.id){Instant.now().toString()}
     fun report(state:String,category:String?=null,fallback:Boolean=false,host:String?=Uri.parse(site.url).host){onStatus(WebsitePlaybackStatus(site.assetId,state,started,if(state=="loaded")Instant.now().toString() else null,category,blocked,host,fallback,rendererRecoveries))}
     DisposableEffect(item.id){onDispose{onStatus(WebsitePlaybackStatus())}}
     LaunchedEffect(item.id){report("loading");delay(site.loadTimeoutSeconds*1000L);if(!loaded&&failed==null){failed="load_timeout";report("timed_out","load_timeout")}}
-    LaunchedEffect(item.id,item.durationMs){delay(item.durationMs?:30_000);onDone()}
+    LaunchedEffect(item.id,item.durationMs,startOffsetMs){delay(((item.durationMs?:30_000)-startOffsetMs).coerceAtLeast(1));onDone()}
     if(failed!=null&&!loaded){if(site.failureBehavior=="skip"){LaunchedEffect(failed){onDone()};return};val fallbackPath=site.fallbackVariantId?.let{session.content.localFiles[it]};if(site.failureBehavior=="fallback_image"&&fallbackPath!=null){val bitmap=remember(fallbackPath){BitmapFactory.decodeFile(fallbackPath)};if(bitmap!=null){report("showing_fallback",failed,true);Image(bitmap.asImageBitmap(),null,Modifier.fillMaxSize().background(Color.Black),contentScale=when(item.fitMode){"cover"->ContentScale.Crop;"stretch"->ContentScale.FillBounds;else->ContentScale.Fit});return}};Box(Modifier.fillMaxSize().background(parseColor(site.backgroundColor)),contentAlignment=Alignment.Center){Text("Website unavailable",color=Color.White)};return}
     AndroidView(modifier=Modifier.fillMaxSize().background(parseColor(site.backgroundColor)),factory={context->WebView(context).apply{activeWebView=this
         setBackgroundColor(android.graphics.Color.parseColor(site.backgroundColor));isFocusable=false;isFocusableInTouchMode=false

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
@@ -23,10 +23,10 @@ export function GroupsPage() {
     <section>
       <header className="page-heading">
         <div>
-          <h2>Screen groups</h2>
+          <h2>Sync groups</h2>
           <p>
-            Target schedules to reusable sets of screens. A screen may belong to
-            multiple groups.
+            Keep a set of screens on the same content, schedule, and playback
+            position.
           </p>
         </div>
         {canManage(auth.status?.user?.role) && (
@@ -37,7 +37,7 @@ export function GroupsPage() {
               if (n) create.mutate(n);
             }}
           >
-            Create group
+            Create sync group
           </button>
         )}
       </header>
@@ -53,8 +53,8 @@ export function GroupsPage() {
         ))}
         {q.data?.items.length === 0 && (
           <div className="screen-empty">
-            <h3>No groups yet</h3>
-            <p>Create a group to schedule several screens together.</p>
+            <h3>No sync groups yet</h3>
+            <p>Group screens that should always play in sync.</p>
           </div>
         )}
       </div>
@@ -68,11 +68,20 @@ export function GroupDetailPage() {
     csrf = auth.status?.csrfToken ?? "",
     client = useQueryClient();
   const [screenSearch, setScreenSearch] = useState("");
+  const [selectedPlaylist, setSelectedPlaylist] = useState("");
   const group = useQuery({
       queryKey: ["screen-groups", id],
       queryFn: () => api.screenGroup(id),
     }),
-    screens = useQuery({ queryKey: ["screens"], queryFn: api.screens });
+    screens = useQuery({ queryKey: ["screens"], queryFn: api.screens }),
+    groups = useQuery({
+      queryKey: ["screen-groups"],
+      queryFn: () => api.screenGroups(),
+    }),
+    playlists = useQuery({
+      queryKey: ["playlists", "sync-group"],
+      queryFn: () => api.playlists(),
+    });
   const refresh = () =>
     client.invalidateQueries({ queryKey: ["screen-groups", id] });
   const add = useMutation({
@@ -93,12 +102,28 @@ export function GroupDetailPage() {
     deleteGroup = useMutation({
       mutationFn: () => api.deleteScreenGroup(id, csrf),
       onSuccess: () => navigate("/groups"),
+    }),
+    assignContent = useMutation({
+      mutationFn: (playlistId: string) =>
+        playlistId
+          ? api.assignSyncGroupPlaylist(id, playlistId, csrf)
+          : api.unassignSyncGroupPlaylist(id, csrf),
+      onSuccess: refresh,
     });
+  useEffect(() => {
+    setSelectedPlaylist(group.data?.playlistId ?? "");
+  }, [group.data?.playlistId]);
   if (!group.data) return <div className="table-loading">Loading group…</div>;
   const groupData = group.data;
+  const assignedElsewhere = new Set(
+    (groups.data?.items ?? [])
+      .filter((candidate) => candidate.id !== id)
+      .flatMap((candidate) => candidate.screens.map((screen) => screen.id)),
+  );
   const available =
     screens.data?.items
       .filter((s) => !groupData.screens.some((m) => m.id === s.id))
+      .filter((s) => !assignedElsewhere.has(s.id))
       .filter((s) =>
         `${s.name} ${s.location}`
           .toLowerCase()
@@ -108,7 +133,7 @@ export function GroupDetailPage() {
     <section>
       <header className="page-heading">
         <div>
-          <Link to="/groups">← Groups</Link>
+          <Link to="/groups">← Sync groups</Link>
           <h2>{groupData.name}</h2>
           <p>{groupData.description || "No description"}</p>
         </div>
@@ -127,7 +152,7 @@ export function GroupDetailPage() {
                   });
               }}
             >
-              Edit group
+              Edit sync group
             </button>
             <button
               className="button button--danger-quiet"
@@ -140,14 +165,49 @@ export function GroupDetailPage() {
                   deleteGroup.mutate();
               }}
             >
-              Delete group
+              Delete sync group
             </button>
           </span>
         )}
       </header>
+      <section className="detail-card assignment-card">
+        <h3>Synchronized content</h3>
+        <p>
+          Every screen in this sync group uses this fallback content and the
+          group&apos;s schedules.
+        </p>
+        {canManage(auth.status?.user?.role) ? (
+          <div className="assignment-controls">
+            <select
+              aria-label="Sync group content"
+              value={selectedPlaylist}
+              onChange={(event) => setSelectedPlaylist(event.target.value)}
+            >
+              <option value="">No fallback playlist</option>
+              {playlists.data?.items.map((playlist) => (
+                <option key={playlist.id} value={playlist.id}>
+                  {playlist.name}
+                </option>
+              ))}
+            </select>
+            <button
+              className="button button--primary"
+              disabled={
+                assignContent.isPending ||
+                selectedPlaylist === (groupData.playlistId ?? "")
+              }
+              onClick={() => assignContent.mutate(selectedPlaylist)}
+            >
+              {assignContent.isPending ? "Applying…" : "Apply to sync group"}
+            </button>
+          </div>
+        ) : (
+          <strong>{groupData.playlistName ?? "No fallback playlist"}</strong>
+        )}
+      </section>
       {canManage(auth.status?.user?.role) && (
         <label className="form-field">
-          <span>Add screen</span>
+          <span>Add ungrouped screen</span>
           <input
             type="search"
             placeholder="Search screens"
@@ -196,8 +256,8 @@ export function SchedulesPage() {
         <div>
           <h2>Schedules</h2>
           <p>
-            Higher priority wins; direct screen targets beat groups at equal
-            priority. Direct assignments remain fallback content.
+            Higher priority wins. Screens in a sync group always share the same
+            schedule and fallback content.
           </p>
         </div>
         {canManage(auth.status?.user?.role) && (

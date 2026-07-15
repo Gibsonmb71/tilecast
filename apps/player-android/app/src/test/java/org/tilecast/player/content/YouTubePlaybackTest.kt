@@ -14,14 +14,17 @@ class YouTubePlaybackTest {
                 videoId = "dQw4w9WgXcQ",
                 controls = true,
                 volume = 70,
+                startSeconds = 10,
             ),
             "https://tilecast.example",
+            5_500,
         )
         assertTrue(html.contains("content=\"origin\""))
         assertTrue(html.contains("origin:'https://tilecast.example'"))
         assertTrue(html.contains("videoId:'dQw4w9WgXcQ'"))
         assertTrue(html.contains("controls:1"))
         assertTrue(html.contains("setVolume(70)"))
+        assertTrue(html.contains("start:15.5"))
         assertFalse(html.contains("end:0"))
     }
 

@@ -54,6 +54,7 @@ import org.tilecast.player.content.EmergencyController
 import org.tilecast.player.content.PlayerConfigManager
 import org.tilecast.player.content.PlayerUpdateManager
 import org.tilecast.player.content.UpdateUiState
+import org.tilecast.player.content.synchronizedPlaybackStart
 import org.tilecast.player.network.PlayerConfig
 import org.tilecast.player.reliability.ActiveHoursEngine
 import org.tilecast.player.reliability.ActiveHoursRule
@@ -336,7 +337,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 		if (syncJob?.isActive == true) return
 		syncJob = viewModelScope.launch {
 			val screenId = current?.screenId ?: return@launch
-				try { val prepared = synchronizer.reconcile(url, credential, screenId) { syncProgress = it };getApplication<Application>().getSharedPreferences("tilecast-reliability",Application.MODE_PRIVATE).edit().putLong("last-successful-sync-at",System.currentTimeMillis()).apply(); if (prepared != null) { val emergencyChanged=prepared.manifest.emergency?.id!=activeEmergencyId;if (mutableContent.value == null||emergencyChanged) activatePrepared(prepared, url, credential) else pendingContent = prepared };refreshCommissioning() }
+				try { val prepared = synchronizer.reconcile(url, credential, screenId) { syncProgress = it };getApplication<Application>().getSharedPreferences("tilecast-reliability",Application.MODE_PRIVATE).edit().putLong("last-successful-sync-at",System.currentTimeMillis()).apply(); if (prepared != null) { val emergencyChanged=prepared.manifest.emergency?.id!=activeEmergencyId;if (mutableContent.value == null||emergencyChanged||prepared.manifest.syncGroup!=null) activatePrepared(prepared, url, credential) else pendingContent = prepared };refreshCommissioning() }
 			catch(error:Exception){syncProgress=SyncProgress(cacheUsedBytes=syncProgress.cacheUsedBytes,error=error.message?:"Manifest synchronization failed")}
 		}
 		syncJob?.join()
@@ -362,7 +363,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 		evaluateActiveHours()
 		if(selection.source=="schedule"&&(playlist==null||playlist.items.isEmpty())){playlist=prepared.manifest.directFallbackPlaylist?.takeIf{it.items.isNotEmpty()};currentPlaylistId=playlist?.id;selectionSource=if(playlist!=null)"direct_fallback" else "none";scheduleError="Scheduled playlist has no playable items"}
 		val selected=PreparedContent(prepared.manifest.copy(playlist=playlist),prepared.localFiles,prepared.serverClockOffsetSeconds)
-			mutableContent.value=if((mutablePlaybackDisabled.value||!mutableActiveHours.value||mutableSafeMode.value)&&!emergency.active)null else playlist?.takeIf{it.items.isNotEmpty()}?.let{PlaybackSession(selected,url,credential)}
+		val anchor=if(emergency.active)prepared.manifest.emergency?.activatedAt?.let{runCatching{Instant.parse(it)}.getOrNull()} else selection.playbackAnchor?:prepared.manifest.syncGroup?.playbackEpoch?.let{runCatching{Instant.parse(it)}.getOrNull()}
+		val synchronizedStart=if(prepared.manifest.syncGroup!=null&&playlist!=null&&anchor!=null)synchronizedPlaybackStart(playlist,prepared.manifest.assets,anchor,Instant.now().plusSeconds(prepared.serverClockOffsetSeconds?:0))else null
+			mutableContent.value=if((mutablePlaybackDisabled.value||!mutableActiveHours.value||mutableSafeMode.value)&&!emergency.active)null else playlist?.takeIf{it.items.isNotEmpty()}?.let{PlaybackSession(selected,url,credential,synchronizedStart?.cursor?:org.tilecast.player.content.PlaybackCursor(0,0),synchronizedStart?.offsetMs?:0)}
 			getApplication<Application>().getSharedPreferences("tilecast-reliability",Application.MODE_PRIVATE).edit().putLong("last-playlist-transition-at",System.currentTimeMillis()).putBoolean("cached-fallback-available",prepared.manifest.directFallbackPlaylist?.items?.isNotEmpty()==true&&prepared.localFiles.isNotEmpty()).apply();refreshCommissioning()
 		selection.nextTransition?.let{transition->scheduleJob=viewModelScope.launch{delay(Duration.between(Instant.now(),transition).toMillis().coerceAtLeast(0)+50);scheduleContent?.let{activateScheduleSelection(it,url,credential)}}}
 		emergency.nextTransition?.let{transition->emergencyJob=viewModelScope.launch{delay(Duration.between(Instant.now(),transition).toMillis().coerceAtLeast(0)+50);scheduleContent?.let{activateScheduleSelection(it,url,credential)}}}

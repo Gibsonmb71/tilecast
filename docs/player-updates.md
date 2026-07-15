@@ -45,7 +45,7 @@ Authenticated GitHub requests receive a substantially higher API allowance than 
 
 The Owner starts sign-in in Studio, opens GitHub's device page, and enters the displayed one-time code. The private device code remains only in server memory. After approval, Tilecast validates the GitHub account and stores the access token in `/data/updates/github-oauth.json` with owner-only file permissions. The token is never returned through the API, audit metadata, diagnostics, or logs. Disconnecting removes the local credential; the GitHub account can separately revoke the OAuth App grant. `TILECAST_GITHUB_TOKEN` remains supported as an environment-managed override and cannot be disconnected from Studio.
 
-Owners and Administrators deploy a fully verified cached release to screens and/or groups. Group membership is resolved at deployment start and duplicates are removed. Modes are download only, install now, and maintenance window. Screen states distinguish downloading, verification, permission/user approval, installation, reconnecting, success, failure, cancellation, incompatibility, and already-current. Players always retrieve APKs from their paired Tilecast server; the player never contacts GitHub.
+Owners and Administrators deploy a fully verified cached release to screens and/or sync groups. Sync-group membership is resolved at deployment start and duplicates are removed. Modes are download only, install now, and maintenance window. Screen states distinguish downloading, verification, permission/user approval, installation, reconnecting, success, failure, cancellation, incompatibility, and already-current. Players always retrieve APKs from their paired Tilecast server; the player never contacts GitHub.
 
 ## CI publishing
 

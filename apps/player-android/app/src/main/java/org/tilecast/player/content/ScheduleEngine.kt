@@ -3,7 +3,7 @@ package org.tilecast.player.content
 import org.tilecast.player.network.ManifestSchedule
 import java.time.*
 
-data class ScheduleSelection(val scheduleId:String?,val playlistId:String?,val source:String,val nextTransition:Instant?,val error:String?=null)
+data class ScheduleSelection(val scheduleId:String?,val playlistId:String?,val source:String,val nextTransition:Instant?,val error:String?=null,val playbackAnchor:Instant?=null)
 private data class ActiveWindow(val schedule:ManifestSchedule,val start:Instant,val end:Instant)
 
 /** Offline, timezone-aware schedule evaluator. Intervals are half-open [start,end). */
@@ -12,7 +12,7 @@ object ScheduleEngine {
         val active=mutableListOf<ActiveWindow>();val transitions=mutableListOf<Instant>()
         schedules.forEach { schedule -> windows(schedule,now).forEach { window -> transitions += window.start;transitions += window.end;if(!now.isBefore(window.start)&&now.isBefore(window.end))active+=window } }
         val winner=active.sortedWith(compareByDescending<ActiveWindow>{it.schedule.priority}.thenByDescending{it.schedule.specificity}.thenByDescending{it.start}.thenBy{it.schedule.id}).firstOrNull()
-        ScheduleSelection(winner?.schedule?.id,winner?.schedule?.playlistId?:fallbackPlaylistId,if(winner!=null)"schedule" else if(fallbackPlaylistId!=null)"direct_fallback" else "none",transitions.filter{it.isAfter(now)}.minOrNull())
+        ScheduleSelection(winner?.schedule?.id,winner?.schedule?.playlistId?:fallbackPlaylistId,if(winner!=null)"schedule" else if(fallbackPlaylistId!=null)"direct_fallback" else "none",transitions.filter{it.isAfter(now)}.minOrNull(),playbackAnchor=winner?.start)
     } catch(error:Exception){ScheduleSelection(null,fallbackPlaylistId,if(fallbackPlaylistId!=null)"direct_fallback" else "none",null,"Schedule evaluation failed")}
 
     private fun windows(s:ManifestSchedule,now:Instant):List<ActiveWindow>{

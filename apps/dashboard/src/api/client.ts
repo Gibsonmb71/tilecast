@@ -638,6 +638,21 @@ export const api = {
       method: "DELETE",
       headers: { "X-CSRF-Token": csrfToken },
     }),
+  assignSyncGroupPlaylist: (
+    id: string,
+    playlistId: string,
+    csrfToken: string,
+  ) =>
+    request<ScreenGroup>(`/screen-groups/${id}/playlist-assignment`, {
+      method: "PUT",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ playlistId }),
+    }),
+  unassignSyncGroupPlaylist: (id: string, csrfToken: string) =>
+    request<ScreenGroup>(`/screen-groups/${id}/playlist-assignment`, {
+      method: "DELETE",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
   schedules: (search = "") =>
     request<ScheduleList>(
       `/schedules?page=1&pageSize=100&search=${encodeURIComponent(search)}`,

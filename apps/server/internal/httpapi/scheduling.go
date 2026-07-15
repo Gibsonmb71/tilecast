@@ -106,6 +106,39 @@ func (s *server) removeScreenGroupMember(w http.ResponseWriter, r *http.Request)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+func (s *server) assignSyncGroupPlaylist(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	var body struct {
+		PlaylistID uuid.UUID `json:"playlistId"`
+	}
+	if err := decodeJSON(w, r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	user := r.Context().Value(sessionContextKey).(auth.Session).User
+	if err := s.playlists.AssignGroup(r.Context(), id, body.PlaylistID, user.ID); err != nil {
+		s.writePlaylistError(w, r, err)
+		return
+	}
+	group, err := s.scheduling.GetGroup(r.Context(), id)
+	s.scheduleResponse(w, r, group, err, http.StatusOK)
+}
+func (s *server) unassignSyncGroupPlaylist(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	user := r.Context().Value(sessionContextKey).(auth.Session).User
+	if err := s.playlists.UnassignGroup(r.Context(), id, user.ID); err != nil {
+		s.writePlaylistError(w, r, err)
+		return
+	}
+	group, err := s.scheduling.GetGroup(r.Context(), id)
+	s.scheduleResponse(w, r, group, err, http.StatusOK)
+}
 func (s *server) listSchedules(w http.ResponseWriter, r *http.Request) {
 	p, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	z, _ := strconv.Atoi(r.URL.Query().Get("pageSize"))

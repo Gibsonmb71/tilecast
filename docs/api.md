@@ -92,13 +92,15 @@ Responses include a hash-derived ETag, correct MIME type and length, and `Accept
 
 Owner, Administrator, and Editor may create, edit, duplicate, reorder, or delete unassigned playlists; Viewer is read-only. Items accept only ready image/video assets with a player-compatible variant. Images require a positive duration, video offsets must remain within trusted duration, and reordering must contain every item exactly once.
 
-Direct assignment routes are `/api/v1/screens/{id}/playlist-assignment`; only Owner and Administrator may mutate them. Responses contain the server manifest version and only status actually reported by the player.
+Direct assignment routes are `/api/v1/screens/{id}/playlist-assignment`; only Owner and Administrator may mutate them. For an ungrouped screen the assignment remains independent. For a sync-group member the same route updates the group-owned assignment and revises every member manifest. Sync groups can also be assigned explicitly with `PUT` or `DELETE /api/v1/screen-groups/{id}/playlist-assignment`. Responses contain the server manifest version and only status actually reported by the player.
 
 `GET /api/v1/player/manifest` requires an active device credential, supports stable ETags and 304, and returns `playlist: null` when unassigned. Reads never advance the manifest version.
 
-## Screen groups and schedules
+## Sync groups and schedules
 
-Authenticated read routes are `GET /api/v1/screen-groups`, `GET /api/v1/screen-groups/{id}`, `GET /api/v1/schedules`, and `GET /api/v1/schedules/{id}`. Owner and Administrator mutations use the documented CSRF header on group create/update/delete and membership routes, schedule create/update/delete, and enable/disable routes. `POST /api/v1/schedules/preview` accepts `screenId`, an optional absolute `timestamp`, and an optional unsaved `proposedSchedule`; it returns precedence-ordered applicable schedules, conflicts, direct fallback, winner, and next transition using the production resolver.
+The API retains `/screen-groups` paths for compatibility, while Studio calls these resources Sync Groups. A database unique constraint permits each screen in at most one sync group. Adding an already-grouped screen returns `409`; removing a screen preserves the group fallback as that screen's independent assignment. Authenticated read routes are `GET /api/v1/screen-groups`, `GET /api/v1/screen-groups/{id}`, `GET /api/v1/schedules`, and `GET /api/v1/schedules/{id}`. Owner and Administrator mutations use the documented CSRF header on group create/update/delete and membership routes, schedule create/update/delete, and enable/disable routes.
+
+Schedule targets for a grouped screen are normalized to its sync group, so every member receives the same schedule set. `POST /api/v1/schedules/preview` accepts `screenId`, an optional absolute `timestamp`, and an optional unsaved `proposedSchedule`; it returns precedence-ordered applicable schedules, conflicts, fallback content, winner, and next transition using the production resolver. Player manifest v6 includes an optional sync-group ID and playback epoch. Players combine that epoch or the active schedule window start with server-adjusted time to select the shared playlist item and media offset.
 
 Weekly weekdays are integers `0` (Sunday) through `6` (Saturday). Times are `HH:MM`, dates are `YYYY-MM-DD`, timezones are IANA identifiers, and an end time less than or equal to its start denotes an overnight window.
 

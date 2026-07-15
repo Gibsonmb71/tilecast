@@ -464,7 +464,7 @@ type notification struct {
 }
 
 func bumpAssigned(ctx context.Context, tx pgx.Tx, playlistID uuid.UUID, reason string) ([]notification, error) {
-	rows, err := tx.Query(ctx, `INSERT INTO screen_manifest_state(screen_id,manifest_version,previous_manifest_version,changed_at,change_reason) SELECT DISTINCT affected.screen_id,1,NULL::bigint,now(),$2 FROM (SELECT screen_id FROM screen_playlist_assignments WHERE playlist_id=$1 UNION SELECT t.screen_id FROM schedules s JOIN schedule_targets t ON t.schedule_id=s.id WHERE s.playlist_id=$1 AND s.deleted_at IS NULL AND t.screen_id IS NOT NULL UNION SELECT m.screen_id FROM schedules s JOIN schedule_targets t ON t.schedule_id=s.id JOIN screen_group_memberships m ON m.screen_group_id=t.screen_group_id WHERE s.playlist_id=$1 AND s.deleted_at IS NULL) affected ON CONFLICT(screen_id)DO UPDATE SET previous_manifest_version=screen_manifest_state.manifest_version,manifest_version=screen_manifest_state.manifest_version+1,changed_at=now(),change_reason=$2 RETURNING screen_id,manifest_version`, playlistID, reason)
+	rows, err := tx.Query(ctx, `INSERT INTO screen_manifest_state(screen_id,manifest_version,previous_manifest_version,changed_at,change_reason) SELECT DISTINCT affected.screen_id,1,NULL::bigint,now(),$2 FROM (SELECT screen_id FROM screen_playlist_assignments WHERE playlist_id=$1 UNION SELECT m.screen_id FROM screen_group_playlist_assignments a JOIN screen_group_memberships m ON m.screen_group_id=a.screen_group_id WHERE a.playlist_id=$1 UNION SELECT t.screen_id FROM schedules s JOIN schedule_targets t ON t.schedule_id=s.id WHERE s.playlist_id=$1 AND s.deleted_at IS NULL AND t.screen_id IS NOT NULL UNION SELECT m.screen_id FROM schedules s JOIN schedule_targets t ON t.schedule_id=s.id JOIN screen_group_memberships m ON m.screen_group_id=t.screen_group_id WHERE s.playlist_id=$1 AND s.deleted_at IS NULL) affected ON CONFLICT(screen_id)DO UPDATE SET previous_manifest_version=screen_manifest_state.manifest_version,manifest_version=screen_manifest_state.manifest_version+1,changed_at=now(),change_reason=$2 RETURNING screen_id,manifest_version`, playlistID, reason)
 	if err != nil {
 		return nil, err
 	}
@@ -478,6 +478,40 @@ func bumpAssigned(ctx context.Context, tx pgx.Tx, playlistID uuid.UUID, reason s
 		result = append(result, n)
 	}
 	return result, rows.Err()
+}
+
+func bumpAssignmentScreens(ctx context.Context, tx pgx.Tx, screenID uuid.UUID, reason string) ([]notification, error) {
+	rows, err := tx.Query(ctx, `WITH affected AS (SELECT members.screen_id FROM screen_group_memberships selected JOIN screen_group_memberships members ON members.screen_group_id=selected.screen_group_id WHERE selected.screen_id=$1 UNION SELECT $1 WHERE NOT EXISTS(SELECT 1 FROM screen_group_memberships WHERE screen_id=$1)) INSERT INTO screen_manifest_state(screen_id,manifest_version,previous_manifest_version,changed_at,change_reason) SELECT screen_id,1,NULL::bigint,now(),$2 FROM affected ON CONFLICT(screen_id)DO UPDATE SET previous_manifest_version=screen_manifest_state.manifest_version,manifest_version=screen_manifest_state.manifest_version+1,changed_at=now(),change_reason=$2 RETURNING screen_id,manifest_version`, screenID, reason)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	notes := []notification{}
+	for rows.Next() {
+		var note notification
+		if err = rows.Scan(&note.screen, &note.version); err != nil {
+			return nil, err
+		}
+		notes = append(notes, note)
+	}
+	return notes, rows.Err()
+}
+
+func bumpGroupAssignmentScreens(ctx context.Context, tx pgx.Tx, groupID uuid.UUID, reason string) ([]notification, error) {
+	rows, err := tx.Query(ctx, `INSERT INTO screen_manifest_state(screen_id,manifest_version,previous_manifest_version,changed_at,change_reason) SELECT screen_id,1,NULL::bigint,now(),$2 FROM screen_group_memberships WHERE screen_group_id=$1 ON CONFLICT(screen_id)DO UPDATE SET previous_manifest_version=screen_manifest_state.manifest_version,manifest_version=screen_manifest_state.manifest_version+1,changed_at=now(),change_reason=$2 RETURNING screen_id,manifest_version`, groupID, reason)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	notes := []notification{}
+	for rows.Next() {
+		var note notification
+		if err = rows.Scan(&note.screen, &note.version); err != nil {
+			return nil, err
+		}
+		notes = append(notes, note)
+	}
+	return notes, rows.Err()
 }
 func (s *Service) notify(items []notification) {
 	if s.notifier == nil {
@@ -501,12 +535,25 @@ func (s *Service) Assign(ctx context.Context, screenID, playlistID, userID uuid.
 	if !exists {
 		return Assignment{}, ErrNotFound
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO screen_playlist_assignments(id,screen_id,playlist_id,assigned_by)VALUES($1,$2,$3,$4) ON CONFLICT(screen_id)DO UPDATE SET playlist_id=EXCLUDED.playlist_id,assigned_by=EXCLUDED.assigned_by,updated_at=now()`, uuid.New(), screenID, playlistID, userID)
+	var groupID *uuid.UUID
+	if err = tx.QueryRow(ctx, `SELECT m.screen_group_id FROM screens sc LEFT JOIN screen_group_memberships m ON m.screen_id=sc.id WHERE sc.id=$1`, screenID).Scan(&groupID); err != nil {
+		return Assignment{}, err
+	}
+	if groupID != nil {
+		_, err = tx.Exec(ctx, `INSERT INTO screen_group_playlist_assignments(screen_group_id,playlist_id,assigned_by)VALUES($1,$2,$3) ON CONFLICT(screen_group_id)DO UPDATE SET playlist_id=EXCLUDED.playlist_id,assigned_by=EXCLUDED.assigned_by,updated_at=now()`, *groupID, playlistID, userID)
+		if err == nil {
+			_, err = tx.Exec(ctx, `DELETE FROM screen_playlist_assignments WHERE screen_id IN(SELECT screen_id FROM screen_group_memberships WHERE screen_group_id=$1)`, *groupID)
+		}
+		if err == nil {
+			_, err = tx.Exec(ctx, `UPDATE screen_groups SET playback_epoch=now(),updated_at=now() WHERE id=$1`, *groupID)
+		}
+	} else {
+		_, err = tx.Exec(ctx, `INSERT INTO screen_playlist_assignments(id,screen_id,playlist_id,assigned_by)VALUES($1,$2,$3,$4) ON CONFLICT(screen_id)DO UPDATE SET playlist_id=EXCLUDED.playlist_id,assigned_by=EXCLUDED.assigned_by,updated_at=now()`, uuid.New(), screenID, playlistID, userID)
+	}
 	if err != nil {
 		return Assignment{}, err
 	}
-	var version int64
-	err = tx.QueryRow(ctx, `INSERT INTO screen_manifest_state(screen_id,manifest_version,change_reason)VALUES($1,1,'assignment.changed') ON CONFLICT(screen_id)DO UPDATE SET previous_manifest_version=screen_manifest_state.manifest_version,manifest_version=screen_manifest_state.manifest_version+1,changed_at=now(),change_reason='assignment.changed' RETURNING manifest_version`, screenID).Scan(&version)
+	notes, err := bumpAssignmentScreens(ctx, tx, screenID, "assignment.changed")
 	if err != nil {
 		return Assignment{}, err
 	}
@@ -516,9 +563,7 @@ func (s *Service) Assign(ctx context.Context, screenID, playlistID, userID uuid.
 	if err = tx.Commit(ctx); err != nil {
 		return Assignment{}, err
 	}
-	if s.notifier != nil {
-		s.notifier.ManifestChanged(screenID, version)
-	}
+	s.notify(notes)
 	return s.Assignment(ctx, screenID)
 }
 func (s *Service) Unassign(ctx context.Context, screenID, userID uuid.UUID) (Assignment, error) {
@@ -527,12 +572,22 @@ func (s *Service) Unassign(ctx context.Context, screenID, userID uuid.UUID) (Ass
 		return Assignment{}, err
 	}
 	defer tx.Rollback(ctx)
-	_, err = tx.Exec(ctx, `DELETE FROM screen_playlist_assignments WHERE screen_id=$1`, screenID)
+	var groupID *uuid.UUID
+	if err = tx.QueryRow(ctx, `SELECT m.screen_group_id FROM screens sc LEFT JOIN screen_group_memberships m ON m.screen_id=sc.id WHERE sc.id=$1`, screenID).Scan(&groupID); err != nil {
+		return Assignment{}, err
+	}
+	if groupID != nil {
+		_, err = tx.Exec(ctx, `DELETE FROM screen_group_playlist_assignments WHERE screen_group_id=$1`, *groupID)
+		if err == nil {
+			_, err = tx.Exec(ctx, `UPDATE screen_groups SET playback_epoch=now(),updated_at=now() WHERE id=$1`, *groupID)
+		}
+	} else {
+		_, err = tx.Exec(ctx, `DELETE FROM screen_playlist_assignments WHERE screen_id=$1`, screenID)
+	}
 	if err != nil {
 		return Assignment{}, err
 	}
-	var version int64
-	err = tx.QueryRow(ctx, `INSERT INTO screen_manifest_state(screen_id,manifest_version,change_reason)VALUES($1,1,'assignment.removed') ON CONFLICT(screen_id)DO UPDATE SET previous_manifest_version=screen_manifest_state.manifest_version,manifest_version=screen_manifest_state.manifest_version+1,changed_at=now(),change_reason='assignment.removed' RETURNING manifest_version`, screenID).Scan(&version)
+	notes, err := bumpAssignmentScreens(ctx, tx, screenID, "assignment.removed")
 	if err != nil {
 		return Assignment{}, err
 	}
@@ -542,10 +597,71 @@ func (s *Service) Unassign(ctx context.Context, screenID, userID uuid.UUID) (Ass
 	if err = tx.Commit(ctx); err != nil {
 		return Assignment{}, err
 	}
-	if s.notifier != nil {
-		s.notifier.ManifestChanged(screenID, version)
-	}
+	s.notify(notes)
 	return s.Assignment(ctx, screenID)
+}
+
+func (s *Service) AssignGroup(ctx context.Context, groupID, playlistID, userID uuid.UUID) error {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	var valid bool
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM screen_groups g JOIN playlists p ON p.organization_id=g.organization_id WHERE g.id=$1 AND g.deleted_at IS NULL AND p.id=$2 AND p.deleted_at IS NULL)`, groupID, playlistID).Scan(&valid); err != nil {
+		return err
+	}
+	if !valid {
+		return ErrNotFound
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO screen_group_playlist_assignments(screen_group_id,playlist_id,assigned_by)VALUES($1,$2,$3) ON CONFLICT(screen_group_id)DO UPDATE SET playlist_id=EXCLUDED.playlist_id,assigned_by=EXCLUDED.assigned_by,updated_at=now()`, groupID, playlistID, userID); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `UPDATE screen_groups SET playback_epoch=now(),updated_at=now() WHERE id=$1`, groupID); err != nil {
+		return err
+	}
+	notes, err := bumpGroupAssignmentScreens(ctx, tx, groupID, "sync_group.assignment_changed")
+	if err != nil {
+		return err
+	}
+	if err = insertAudit(ctx, tx, userID, "sync_group.playlist_assigned", groupID); err != nil {
+		return err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return err
+	}
+	s.notify(notes)
+	return nil
+}
+
+func (s *Service) UnassignGroup(ctx context.Context, groupID, userID uuid.UUID) error {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	tag, err := tx.Exec(ctx, `DELETE FROM screen_group_playlist_assignments WHERE screen_group_id=$1`, groupID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	if _, err = tx.Exec(ctx, `UPDATE screen_groups SET playback_epoch=now(),updated_at=now() WHERE id=$1`, groupID); err != nil {
+		return err
+	}
+	notes, err := bumpGroupAssignmentScreens(ctx, tx, groupID, "sync_group.assignment_removed")
+	if err != nil {
+		return err
+	}
+	if err = insertAudit(ctx, tx, userID, "sync_group.playlist_unassigned", groupID); err != nil {
+		return err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return err
+	}
+	s.notify(notes)
+	return nil
 }
 
 func (s *Service) Assignment(ctx context.Context, screenID uuid.UUID) (Assignment, error) {
@@ -555,7 +671,7 @@ func (s *Service) Assignment(ctx context.Context, screenID uuid.UUID) (Assignmen
 	}
 	var a Assignment
 	a.ScreenID = screenID
-	err = s.db.QueryRow(ctx, `SELECT pa.playlist_id,p.name,p.revision,ms.manifest_version,ps.active_manifest_version,ps.pending_manifest_version,ps.download_queue_count,ps.downloaded_bytes,ps.required_bytes,ps.cache_used_bytes,ps.cache_limit_bytes,ps.current_item_id,ps.current_asset_id,ps.playback_state,ps.last_sync_error,ps.last_playback_error,ps.current_schedule_id,ps.current_playlist_id,ps.selection_source,ps.next_transition_at,ps.device_clock_offset_seconds,ps.schedule_evaluation_error,ps.schedule_manifest_version,ps.current_website_asset_id,ps.website_state,ps.website_load_started_at,ps.website_load_completed_at,ps.website_failure_category,ps.website_blocked_navigation_count,ps.website_current_host,ps.website_fallback_shown,ps.website_renderer_recovery_count FROM screen_manifest_state ms LEFT JOIN screen_playlist_assignments pa ON pa.screen_id=ms.screen_id LEFT JOIN playlists p ON p.id=pa.playlist_id LEFT JOIN screen_player_status ps ON ps.screen_id=ms.screen_id WHERE ms.screen_id=$1`, screenID).Scan(&a.PlaylistID, &a.PlaylistName, &a.PlaylistRevision, &a.ManifestVersion, &a.PlayerActiveManifestVersion, &a.PlayerPendingManifestVersion, &a.DownloadQueueCount, &a.DownloadedBytes, &a.RequiredBytes, &a.CacheUsedBytes, &a.CacheLimitBytes, &a.CurrentItemID, &a.CurrentAssetID, &a.PlaybackState, &a.LastSyncError, &a.LastPlaybackError, &a.CurrentScheduleID, &a.CurrentPlaylistID, &a.SelectionSource, &a.NextTransitionAt, &a.DeviceClockOffsetSeconds, &a.ScheduleEvaluationError, &a.ScheduleManifestVersion, &a.CurrentWebsiteAssetID, &a.WebsiteState, &a.WebsiteLoadStartedAt, &a.WebsiteLoadCompletedAt, &a.WebsiteFailureCategory, &a.WebsiteBlockedNavigationCount, &a.WebsiteCurrentHost, &a.WebsiteFallbackShown, &a.WebsiteRendererRecoveryCount)
+	err = s.db.QueryRow(ctx, `SELECT COALESCE(ga.playlist_id,pa.playlist_id),p.name,p.revision,ms.manifest_version,ps.active_manifest_version,ps.pending_manifest_version,ps.download_queue_count,ps.downloaded_bytes,ps.required_bytes,ps.cache_used_bytes,ps.cache_limit_bytes,ps.current_item_id,ps.current_asset_id,ps.playback_state,ps.last_sync_error,ps.last_playback_error,ps.current_schedule_id,ps.current_playlist_id,ps.selection_source,ps.next_transition_at,ps.device_clock_offset_seconds,ps.schedule_evaluation_error,ps.schedule_manifest_version,ps.current_website_asset_id,ps.website_state,ps.website_load_started_at,ps.website_load_completed_at,ps.website_failure_category,ps.website_blocked_navigation_count,ps.website_current_host,ps.website_fallback_shown,ps.website_renderer_recovery_count FROM screen_manifest_state ms LEFT JOIN screen_group_memberships gm ON gm.screen_id=ms.screen_id LEFT JOIN screen_group_playlist_assignments ga ON ga.screen_group_id=gm.screen_group_id LEFT JOIN screen_playlist_assignments pa ON pa.screen_id=ms.screen_id LEFT JOIN playlists p ON p.id=COALESCE(ga.playlist_id,pa.playlist_id) LEFT JOIN screen_player_status ps ON ps.screen_id=ms.screen_id WHERE ms.screen_id=$1`, screenID).Scan(&a.PlaylistID, &a.PlaylistName, &a.PlaylistRevision, &a.ManifestVersion, &a.PlayerActiveManifestVersion, &a.PlayerPendingManifestVersion, &a.DownloadQueueCount, &a.DownloadedBytes, &a.RequiredBytes, &a.CacheUsedBytes, &a.CacheLimitBytes, &a.CurrentItemID, &a.CurrentAssetID, &a.PlaybackState, &a.LastSyncError, &a.LastPlaybackError, &a.CurrentScheduleID, &a.CurrentPlaylistID, &a.SelectionSource, &a.NextTransitionAt, &a.DeviceClockOffsetSeconds, &a.ScheduleEvaluationError, &a.ScheduleManifestVersion, &a.CurrentWebsiteAssetID, &a.WebsiteState, &a.WebsiteLoadStartedAt, &a.WebsiteLoadCompletedAt, &a.WebsiteFailureCategory, &a.WebsiteBlockedNavigationCount, &a.WebsiteCurrentHost, &a.WebsiteFallbackShown, &a.WebsiteRendererRecoveryCount)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Assignment{}, ErrNotFound
 	}
@@ -635,7 +751,13 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 	if s.scheduling != nil {
 		prefetch, grace, _ = s.scheduling.Config()
 	}
-	manifest := Manifest{SchemaVersion: 5, ManifestVersion: assignment.ManifestVersion, ScreenID: screenID, GeneratedAt: changed, ServerTime: now, Mode: "single-zone", Assets: []ManifestAsset{}, Playlists: []ManifestPlaylist{}, Schedules: []ManifestSchedule{}, Websites: []ManifestWebsite{}, Sources: []ManifestSource{}, PrefetchHorizonDays: prefetch, ActivationGraceSeconds: grace}
+	manifest := Manifest{SchemaVersion: 6, ManifestVersion: assignment.ManifestVersion, ScreenID: screenID, GeneratedAt: changed, ServerTime: now, Mode: "single-zone", Assets: []ManifestAsset{}, Playlists: []ManifestPlaylist{}, Schedules: []ManifestSchedule{}, Websites: []ManifestWebsite{}, Sources: []ManifestSource{}, PrefetchHorizonDays: prefetch, ActivationGraceSeconds: grace}
+	var syncGroup ManifestSyncGroup
+	if groupErr := s.db.QueryRow(ctx, `SELECT g.id,g.playback_epoch FROM screen_group_memberships m JOIN screen_groups g ON g.id=m.screen_group_id WHERE m.screen_id=$1 AND g.deleted_at IS NULL`, screenID).Scan(&syncGroup.ID, &syncGroup.PlaybackEpoch); groupErr == nil {
+		manifest.SyncGroup = &syncGroup
+	} else if !errors.Is(groupErr, pgx.ErrNoRows) {
+		return Manifest{}, "", groupErr
+	}
 	playlistIDs := []uuid.UUID{}
 	if assignment.PlaylistID != nil {
 		playlistIDs = append(playlistIDs, *assignment.PlaylistID)

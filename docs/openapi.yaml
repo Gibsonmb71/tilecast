@@ -514,7 +514,8 @@ paths:
       operationId: listScreenGroups
       responses:
         {
-          "200": { description: Paginated screen groups and membership counts },
+          "200":
+            { description: Paginated sync groups, assignments, and members },
         }
     post:
       operationId: createScreenGroup
@@ -529,7 +530,7 @@ paths:
         ]
       responses:
         {
-          "201": { description: Screen group created },
+          "201": { description: Sync group created },
           "422": { description: Validation or configured limit failed },
         }
   /api/v1/screen-groups/{id}:
@@ -537,26 +538,48 @@ paths:
       operationId: getScreenGroup
       responses:
         {
-          "200": { description: Group with screen members },
-          "404": { description: Group not found },
+          "200": { description: Sync group with assignment and screen members },
+          "404": { description: Sync group not found },
         }
     patch:
       operationId: updateScreenGroup
-      responses: { "200": { description: Group updated } }
+      responses: { "200": { description: Sync group updated } }
     delete:
       operationId: deleteScreenGroup
       responses:
-        { "204": { description: Group soft deleted; screens retained } }
+        { "204": { description: Sync group soft deleted; screens retained } }
   /api/v1/screen-groups/{id}/screens:
     post:
       operationId: addScreenGroupMember
       responses:
-        { "200": { description: Screen added and affected manifest revised } }
+        {
+          "200": { description: Screen added and member manifests revised },
+          "409": { description: Screen already belongs to a sync group },
+        }
   /api/v1/screen-groups/{id}/screens/{screenId}:
     delete:
       operationId: removeScreenGroupMember
       responses:
         { "204": { description: Screen removed and affected manifest revised } }
+  /api/v1/screen-groups/{id}/playlist-assignment:
+    put:
+      operationId: assignSyncGroupPlaylist
+      responses:
+        {
+          "200":
+            {
+              description: Group fallback assigned and member manifests revised,
+            },
+        }
+    delete:
+      operationId: unassignSyncGroupPlaylist
+      responses:
+        {
+          "200":
+            {
+              description: Group fallback removed and member manifests revised,
+            },
+        }
   /api/v1/schedules:
     get:
       operationId: listSchedules

@@ -188,30 +188,11 @@ export function PlayerPolicyEditor({
           </h2>
           <p>
             {target === "group"
-              ? "Override organization defaults for players in this group."
+              ? "Override organization defaults for this sync group."
               : "Override inherited player behavior for this screen only."}
           </p>
         </div>
       </header>
-
-      {target === "group" && (
-        <label className="policy-priority">
-          <span>
-            <strong>Policy priority</strong>
-            <small>
-              Higher-priority groups win when they override the same setting.
-            </small>
-          </span>
-          <input
-            type="number"
-            min={-1000}
-            max={1000}
-            value={priority}
-            disabled={!manageable}
-            onChange={(event) => setPriority(Number(event.target.value))}
-          />
-        </label>
-      )}
 
       <div className="policy-toolbar">
         <label className="policy-search">

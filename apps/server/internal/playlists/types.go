@@ -147,6 +147,11 @@ type Manifest struct {
 	Websites               []ManifestWebsite  `json:"websites"`
 	Sources                []ManifestSource   `json:"sources"`
 	Emergency              *ManifestEmergency `json:"emergency,omitempty"`
+	SyncGroup              *ManifestSyncGroup `json:"syncGroup,omitempty"`
+}
+type ManifestSyncGroup struct {
+	ID            uuid.UUID `json:"id"`
+	PlaybackEpoch time.Time `json:"playbackEpoch"`
 }
 type ManifestSource struct {
 	AssetID       uuid.UUID       `json:"assetId"`

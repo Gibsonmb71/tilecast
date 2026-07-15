@@ -184,6 +184,8 @@ func New(deps Dependencies) http.Handler {
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Delete("/screen-groups/{id}", s.deleteScreenGroup)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/screen-groups/{id}/screens", s.addScreenGroupMember)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Delete("/screen-groups/{id}/screens/{screenId}", s.removeScreenGroupMember)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Put("/screen-groups/{id}/playlist-assignment", s.assignSyncGroupPlaylist)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Delete("/screen-groups/{id}/playlist-assignment", s.unassignSyncGroupPlaylist)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/schedules", s.createSchedule)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Patch("/schedules/{id}", s.updateSchedule)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Delete("/schedules/{id}", s.deleteSchedule)

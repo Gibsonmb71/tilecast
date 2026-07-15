@@ -45,11 +45,11 @@ Android Room stores pending, ready, active, failed, and superseded manifests plu
 
 Playback is one fullscreen zone with sequential looping, image timers, Media3 video, fit/audio/offset settings, bounded failure skipping, and safe fallback states. Multi-zone layouts, compositions, schedules, and advanced commands remain deferred.
 
-## Milestone 5 scheduling
+## Scheduling and sync groups
 
-Screen groups are many-to-many labels used only for schedule targeting. Schedules retain explicit calendar fields and IANA timezones. `internal/scheduling` is the server authority for half-open interval evaluation and deterministic precedence: priority, direct-screen specificity, later effective start, then stable ID. The Android `ScheduleEngine` implements the same transport semantics for offline evaluation.
+Sync groups own synchronized fallback content and schedule targeting. A screen belongs to zero or one group; PostgreSQL enforces the invariant with a unique membership constraint. Assigning content through any member updates the group assignment, and a schedule aimed at a grouped screen is normalized to the group target. Ungrouped screens keep independent assignments and schedules. `internal/scheduling` remains the server authority for half-open interval evaluation and deterministic precedence: priority, later effective start, then stable ID. The Android `ScheduleEngine` implements the same transport semantics for offline evaluation.
 
-Player manifest v2 contains only schedules relevant to the authenticated screen, its direct fallback, required playlists and variants, server time, and preparation policy. Recurring rules use calendar calculations rather than fixed-duration days. A repeated local time uses the earlier occurrence for a start and later occurrence for an end; a nonexistent local time advances to the first valid time after the DST gap.
+Player manifest v6 contains only schedules relevant to the authenticated screen, its fallback, required playlists and variants, server time, preparation policy, and optional sync-group playback epoch. Group members calculate the same current item and elapsed offset from the shared clock, including after reconnecting late. Recurring rules use calendar calculations rather than fixed-duration days. A repeated local time uses the earlier occurrence for a start and later occurrence for an end; a nonexistent local time advances to the first valid time after the DST gap.
 
 ## Milestone 6 website playback
 

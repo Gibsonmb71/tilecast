@@ -670,10 +670,7 @@ export function PlayerUpdatesPanel({
         <section className="settings-subsection">
           <header>
             <h3>New deployment</h3>
-            <p>
-              Choose a verified release and target screens or groups. Duplicate
-              screens are removed automatically.
-            </p>
+            <p>Choose a verified release and target screens or sync groups.</p>
           </header>
           <div className="deployment-fields deployment-fields--primary">
             <label>
@@ -738,7 +735,7 @@ export function PlayerUpdatesPanel({
           </div>
           <div className="deployment-targets">
             <label className="target-search">
-              <span>Target screens and groups</span>
+              <span>Target screens and sync groups</span>
               <span className="target-search__control">
                 <Search size={16} aria-hidden="true" />
                 <input
@@ -774,7 +771,7 @@ export function PlayerUpdatesPanel({
               </div>
               <div className="target-picker__column">
                 <h4>
-                  Groups <span>{groups.data?.items.length ?? 0}</span>
+                  Sync groups <span>{groups.data?.items.length ?? 0}</span>
                 </h4>
                 {(groups.data?.items ?? [])
                   .filter((item) => item.name.toLowerCase().includes(query))

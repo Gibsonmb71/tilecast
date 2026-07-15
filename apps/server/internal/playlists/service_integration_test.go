@@ -111,7 +111,7 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 	if err != nil || same.ManifestVersion != manifest.ManifestVersion || sameETag != etag {
 		t.Fatal("manifest read changed version or ETag")
 	}
-	if manifest.SchemaVersion != 5 || manifest.DirectFallbackPlaylist == nil || len(manifest.DirectFallbackPlaylist.Items) != 2 || len(manifest.Assets) != 2 {
+	if manifest.SchemaVersion != 6 || manifest.DirectFallbackPlaylist == nil || len(manifest.DirectFallbackPlaylist.Items) != 2 || len(manifest.Assets) != 2 {
 		t.Fatalf("manifest=%#v", manifest)
 	}
 	emergencyID := uuid.New()
@@ -141,13 +141,23 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 	if err = scheduler.AddScreen(ctx, group.ID, screenID, owner.User.ID); err != nil {
 		t.Fatal(err)
 	}
-	start, end := time.Now().Add(-time.Hour), time.Now().Add(time.Hour)
-	scheduled, err := scheduler.Create(ctx, owner.User.ID, scheduling.Input{Name: "Special event", PlaylistID: playlist.ID, Type: scheduling.OneTime, Timezone: "America/New_York", Priority: 500, Enabled: true, OneTimeStart: &start, OneTimeEnd: &end, Targets: []scheduling.Target{{Type: "group", ID: group.ID}}})
+	otherGroup, err := scheduler.CreateGroup(ctx, owner.User.ID, "Other screens", "")
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err = scheduler.AddScreen(ctx, otherGroup.ID, screenID, owner.User.ID); !errors.Is(err, scheduling.ErrConflict) {
+		t.Fatalf("screen joined a second sync group: %v", err)
+	}
+	start, end := time.Now().Add(-time.Hour), time.Now().Add(time.Hour)
+	scheduled, err := scheduler.Create(ctx, owner.User.ID, scheduling.Input{Name: "Special event", PlaylistID: playlist.ID, Type: scheduling.OneTime, Timezone: "America/New_York", Priority: 500, Enabled: true, OneTimeStart: &start, OneTimeEnd: &end, Targets: []scheduling.Target{{Type: "screen", ID: screenID}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(scheduled.Targets) != 1 || scheduled.Targets[0].Type != "group" || scheduled.Targets[0].ID != group.ID {
+		t.Fatalf("grouped screen target was not normalized: %#v", scheduled.Targets)
+	}
 	scheduledManifest, _, err := service.BuildManifest(ctx, screenID)
-	if err != nil || len(scheduledManifest.Schedules) != 1 || len(scheduledManifest.Playlists) != 1 {
+	if err != nil || len(scheduledManifest.Schedules) != 1 || len(scheduledManifest.Playlists) != 1 || scheduledManifest.SyncGroup == nil || scheduledManifest.SyncGroup.ID != group.ID {
 		t.Fatalf("scheduled manifest=%#v %v", scheduledManifest, err)
 	}
 	updatedInput := ItemInput{AssetID: videoID, DeliveryPolicy: "stream"}
@@ -208,7 +218,7 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	webManifest, _, err := service.BuildManifest(ctx, screenID)
-	if err != nil || webManifest.SchemaVersion != 5 || len(webManifest.Sources) != 1 || webManifest.Sources[0].Provider != "website" || len(webManifest.Assets) != 1 {
+	if err != nil || webManifest.SchemaVersion != 6 || len(webManifest.Sources) != 1 || webManifest.Sources[0].Provider != "website" || len(webManifest.Assets) != 1 {
 		t.Fatalf("website manifest=%#v %v", webManifest, err)
 	}
 	if len(notifier.versions) < 3 {

@@ -314,7 +314,7 @@ export function ScheduleEditorPage() {
           <BuilderSection
             number="3"
             title="Targets"
-            description="Select individual screens, reusable groups, or both."
+            description="Select independent screens or synchronized groups. Grouped screens are scheduled together."
           >
             <TargetPicker
               targets={input.targets}
@@ -796,6 +796,11 @@ function TargetPicker({
   onChange: (targets: ScheduleTarget[]) => void;
   error?: string;
 }) {
+  const screenGroups = new Map(
+    groups.flatMap((group) =>
+      group.screens.map((screen) => [screen.id, group] as const),
+    ),
+  );
   const add = (target: ScheduleTarget) => {
     onChange(setTargetSelected(targets, target, true));
   };
@@ -808,12 +813,22 @@ function TargetPicker({
           .filter((screen) =>
             `${screen.name} ${screen.location}`.toLowerCase().includes(query),
           )
-          .map((screen) => ({
-            type: "screen" as const,
-            id: screen.id,
-            name: screen.name,
-            detail: screen.location || "No location",
-          }))
+          .map((screen) => {
+            const group = screenGroups.get(screen.id);
+            return group
+              ? {
+                  type: "group" as const,
+                  id: group.id,
+                  name: group.name,
+                  detail: `Sync group: ${group.name}`,
+                }
+              : {
+                  type: "screen" as const,
+                  id: screen.id,
+                  name: screen.name,
+                  detail: screen.location || "No location",
+                };
+          })
       : groups
           .filter((group) => group.name.toLowerCase().includes(query))
           .map((group) => ({
@@ -859,7 +874,7 @@ function TargetPicker({
           aria-selected={tab === "groups"}
           onClick={() => setTab("groups")}
         >
-          Groups
+          Sync groups
         </button>
       </div>
       <label className="schedule-picker-search">
@@ -868,7 +883,9 @@ function TargetPicker({
           type="search"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          placeholder={`Search ${tab}`}
+          placeholder={
+            tab === "groups" ? "Search sync groups" : "Search screens"
+          }
         />
       </label>
       <div className="schedule-target-results">

@@ -35,6 +35,9 @@ type Group struct {
 	ID              uuid.UUID     `json:"id"`
 	Name            string        `json:"name"`
 	Description     string        `json:"description"`
+	PlaylistID      *uuid.UUID    `json:"playlistId,omitempty"`
+	PlaylistName    *string       `json:"playlistName,omitempty"`
+	PlaybackEpoch   time.Time     `json:"playbackEpoch"`
 	MembershipCount int           `json:"membershipCount"`
 	Screens         []GroupScreen `json:"screens"`
 	CreatedAt       time.Time     `json:"createdAt"`
@@ -102,7 +105,7 @@ func (s *Service) ListGroups(ctx context.Context, search string, page, size int)
 	if err := s.db.QueryRow(ctx, `SELECT count(*) FROM screen_groups WHERE deleted_at IS NULL AND ($1='' OR name ILIKE '%'||$1||'%')`, strings.TrimSpace(search)).Scan(&out.Total); err != nil {
 		return out, err
 	}
-	rows, err := s.db.Query(ctx, `SELECT g.id,g.name,g.description,g.created_at,g.updated_at,count(m.screen_id) FROM screen_groups g LEFT JOIN screen_group_memberships m ON m.screen_group_id=g.id WHERE g.deleted_at IS NULL AND ($1='' OR g.name ILIKE '%'||$1||'%') GROUP BY g.id ORDER BY lower(g.name),g.id LIMIT $2 OFFSET $3`, strings.TrimSpace(search), size, (page-1)*size)
+	rows, err := s.db.Query(ctx, `SELECT g.id,g.name,g.description,a.playlist_id,p.name,g.playback_epoch,g.created_at,g.updated_at,count(m.screen_id) FROM screen_groups g LEFT JOIN screen_group_memberships m ON m.screen_group_id=g.id LEFT JOIN screen_group_playlist_assignments a ON a.screen_group_id=g.id LEFT JOIN playlists p ON p.id=a.playlist_id WHERE g.deleted_at IS NULL AND ($1='' OR g.name ILIKE '%'||$1||'%') GROUP BY g.id,a.playlist_id,p.name ORDER BY lower(g.name),g.id LIMIT $2 OFFSET $3`, strings.TrimSpace(search), size, (page-1)*size)
 	if err != nil {
 		return out, err
 	}
@@ -110,13 +113,41 @@ func (s *Service) ListGroups(ctx context.Context, search string, page, size int)
 	out.Items = []Group{}
 	for rows.Next() {
 		var g Group
-		if err = rows.Scan(&g.ID, &g.Name, &g.Description, &g.CreatedAt, &g.UpdatedAt, &g.MembershipCount); err != nil {
+		if err = rows.Scan(&g.ID, &g.Name, &g.Description, &g.PlaylistID, &g.PlaylistName, &g.PlaybackEpoch, &g.CreatedAt, &g.UpdatedAt, &g.MembershipCount); err != nil {
 			return out, err
 		}
 		g.Screens = []GroupScreen{}
 		out.Items = append(out.Items, g)
 	}
-	return out, rows.Err()
+	if err = rows.Err(); err != nil {
+		return out, err
+	}
+	rows.Close()
+	if len(out.Items) == 0 {
+		return out, nil
+	}
+	ids := make([]uuid.UUID, 0, len(out.Items))
+	byID := make(map[uuid.UUID]*Group, len(out.Items))
+	for index := range out.Items {
+		ids = append(ids, out.Items[index].ID)
+		byID[out.Items[index].ID] = &out.Items[index]
+	}
+	members, err := s.db.Query(ctx, `SELECT m.screen_group_id,sc.id,sc.name,sc.location FROM screen_group_memberships m JOIN screens sc ON sc.id=m.screen_id WHERE m.screen_group_id=ANY($1) ORDER BY lower(sc.name),sc.id`, ids)
+	if err != nil {
+		return out, err
+	}
+	defer members.Close()
+	for members.Next() {
+		var groupID uuid.UUID
+		var screen GroupScreen
+		if err = members.Scan(&groupID, &screen.ID, &screen.Name, &screen.Location); err != nil {
+			return out, err
+		}
+		if group := byID[groupID]; group != nil {
+			group.Screens = append(group.Screens, screen)
+		}
+	}
+	return out, members.Err()
 }
 func validateGroup(name, description string) error {
 	if n := len(strings.TrimSpace(name)); n < 1 || n > 180 {
@@ -141,7 +172,7 @@ func (s *Service) CreateGroup(ctx context.Context, user uuid.UUID, name, descrip
 }
 func (s *Service) GetGroup(ctx context.Context, id uuid.UUID) (Group, error) {
 	var g Group
-	err := s.db.QueryRow(ctx, `SELECT g.id,g.name,g.description,g.created_at,g.updated_at,count(m.screen_id) FROM screen_groups g LEFT JOIN screen_group_memberships m ON m.screen_group_id=g.id WHERE g.id=$1 AND g.deleted_at IS NULL GROUP BY g.id`, id).Scan(&g.ID, &g.Name, &g.Description, &g.CreatedAt, &g.UpdatedAt, &g.MembershipCount)
+	err := s.db.QueryRow(ctx, `SELECT g.id,g.name,g.description,a.playlist_id,p.name,g.playback_epoch,g.created_at,g.updated_at,count(m.screen_id) FROM screen_groups g LEFT JOIN screen_group_memberships m ON m.screen_group_id=g.id LEFT JOIN screen_group_playlist_assignments a ON a.screen_group_id=g.id LEFT JOIN playlists p ON p.id=a.playlist_id WHERE g.id=$1 AND g.deleted_at IS NULL GROUP BY g.id,a.playlist_id,p.name`, id).Scan(&g.ID, &g.Name, &g.Description, &g.PlaylistID, &g.PlaylistName, &g.PlaybackEpoch, &g.CreatedAt, &g.UpdatedAt, &g.MembershipCount)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return g, ErrNotFound
 	}
@@ -194,6 +225,12 @@ func (s *Service) DeleteGroup(ctx context.Context, id, user uuid.UUID) error {
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
+	if _, err = tx.Exec(ctx, `INSERT INTO screen_playlist_assignments(id,screen_id,playlist_id,assigned_by,assigned_at,updated_at) SELECT gen_random_uuid(),m.screen_id,a.playlist_id,$2,now(),now() FROM screen_group_memberships m JOIN screen_group_playlist_assignments a ON a.screen_group_id=m.screen_group_id WHERE m.screen_group_id=$1 ON CONFLICT(screen_id)DO UPDATE SET playlist_id=EXCLUDED.playlist_id,assigned_by=EXCLUDED.assigned_by,updated_at=now()`, id, user); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `DELETE FROM screen_group_playlist_assignments WHERE screen_group_id=$1`, id); err != nil {
+		return err
+	}
 	configRevisions := map[uuid.UUID]int64{}
 	for _, note := range notes {
 		_, _ = tx.Exec(ctx, `INSERT INTO screen_config_state(screen_id)VALUES($1)ON CONFLICT DO NOTHING`, note.id)
@@ -222,21 +259,47 @@ func (s *Service) AddScreen(ctx context.Context, group, screen, user uuid.UUID) 
 		return err
 	}
 	defer tx.Rollback(ctx)
-	var count int
-	if err = tx.QueryRow(ctx, `SELECT count(*) FROM screen_group_memberships WHERE screen_id=$1`, screen).Scan(&count); err != nil {
-		return err
-	}
-	if count >= s.limits.MaxGroupsPerScreen {
-		return ErrLimit
-	}
-	tag, err := tx.Exec(ctx, `INSERT INTO screen_group_memberships(screen_group_id,screen_id,added_by) SELECT g.id,sc.id,$3 FROM screen_groups g JOIN screens sc ON sc.organization_id=g.organization_id WHERE g.id=$1 AND sc.id=$2 AND g.deleted_at IS NULL ON CONFLICT DO NOTHING`, group, screen, user)
+	tag, err := tx.Exec(ctx, `INSERT INTO screen_group_memberships(screen_group_id,screen_id,added_by) SELECT g.id,sc.id,$3 FROM screen_groups g JOIN screens sc ON sc.organization_id=g.organization_id WHERE g.id=$1 AND sc.id=$2 AND g.deleted_at IS NULL`, group, screen, user)
 	if err != nil {
+		var databaseError *pgconn.PgError
+		if errors.As(err, &databaseError) && (databaseError.ConstraintName == "screen_group_memberships_one_group_per_screen" || databaseError.ConstraintName == "screen_group_memberships_pkey") {
+			return fmt.Errorf("%w: screen already belongs to a sync group", ErrConflict)
+		}
 		return err
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrConflict
 	}
-	notes, err := bumpScreens(ctx, tx, []uuid.UUID{screen}, "screen_group.membership_changed")
+	if _, err = tx.Exec(ctx, `INSERT INTO screen_group_playlist_assignments(screen_group_id,playlist_id,assigned_by,assigned_at) SELECT $1,a.playlist_id,$3,a.assigned_at FROM screen_playlist_assignments a WHERE a.screen_id=$2 ON CONFLICT(screen_group_id)DO NOTHING`, group, screen, user); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `DELETE FROM screen_playlist_assignments WHERE screen_id=$1`, screen); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO schedule_targets(schedule_id,target_type,screen_group_id) SELECT schedule_id,'group',$1 FROM schedule_targets WHERE target_type='screen' AND screen_id=$2 ON CONFLICT(schedule_id,screen_group_id)DO NOTHING`, group, screen); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `DELETE FROM schedule_targets WHERE target_type='screen' AND screen_id=$1`, screen); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `UPDATE screen_groups SET playback_epoch=now(),updated_at=now() WHERE id=$1`, group); err != nil {
+		return err
+	}
+	memberRows, err := tx.Query(ctx, `SELECT screen_id FROM screen_group_memberships WHERE screen_group_id=$1`, group)
+	if err != nil {
+		return err
+	}
+	memberIDs := []uuid.UUID{}
+	for memberRows.Next() {
+		var id uuid.UUID
+		if err = memberRows.Scan(&id); err != nil {
+			memberRows.Close()
+			return err
+		}
+		memberIDs = append(memberIDs, id)
+	}
+	memberRows.Close()
+	notes, err := bumpScreens(ctx, tx, memberIDs, "sync_group.membership_changed")
 	if err != nil {
 		return err
 	}
@@ -259,6 +322,9 @@ func (s *Service) RemoveScreen(ctx context.Context, group, screen, user uuid.UUI
 		return err
 	}
 	defer tx.Rollback(ctx)
+	if _, err = tx.Exec(ctx, `INSERT INTO screen_playlist_assignments(id,screen_id,playlist_id,assigned_by,assigned_at,updated_at) SELECT gen_random_uuid(),$2,a.playlist_id,$3,now(),now() FROM screen_group_playlist_assignments a WHERE a.screen_group_id=$1 ON CONFLICT(screen_id)DO UPDATE SET playlist_id=EXCLUDED.playlist_id,assigned_by=EXCLUDED.assigned_by,updated_at=now()`, group, screen, user); err != nil {
+		return err
+	}
 	tag, err := tx.Exec(ctx, `DELETE FROM screen_group_memberships WHERE screen_group_id=$1 AND screen_id=$2`, group, screen)
 	if err != nil {
 		return err
@@ -340,9 +406,37 @@ func (s *Service) withDefaultTimezone(ctx context.Context, in Input) (Input, err
 	err := s.db.QueryRow(ctx, `SELECT default_timezone FROM organization_settings WHERE singleton`).Scan(&in.Timezone)
 	return in, err
 }
+func (s *Service) normalizeSyncGroupTargets(ctx context.Context, in Input) (Input, error) {
+	normalized := make([]Target, 0, len(in.Targets))
+	seen := map[string]bool{}
+	for _, target := range in.Targets {
+		if target.Type == "screen" {
+			var groupID *uuid.UUID
+			if err := s.db.QueryRow(ctx, `SELECT m.screen_group_id FROM screens sc LEFT JOIN screen_group_memberships m ON m.screen_id=sc.id WHERE sc.id=$1`, target.ID).Scan(&groupID); err != nil {
+				return in, err
+			}
+			if groupID != nil {
+				target.Type = "group"
+				target.ID = *groupID
+			}
+		}
+		key := target.Type + target.ID.String()
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		normalized = append(normalized, target)
+	}
+	in.Targets = normalized
+	return in, nil
+}
 func (s *Service) Create(ctx context.Context, user uuid.UUID, in Input) (Record, error) {
 	var err error
 	in, err = s.withDefaultTimezone(ctx, in)
+	if err != nil {
+		return Record{}, err
+	}
+	in, err = s.normalizeSyncGroupTargets(ctx, in)
 	if err != nil {
 		return Record{}, err
 	}
@@ -369,6 +463,10 @@ func (s *Service) Update(ctx context.Context, id, user uuid.UUID, in Input) (Rec
 	}
 	var err error
 	in, err = s.withDefaultTimezone(ctx, in)
+	if err != nil {
+		return Record{}, err
+	}
+	in, err = s.normalizeSyncGroupTargets(ctx, in)
 	if err != nil {
 		return Record{}, err
 	}
@@ -644,6 +742,11 @@ func (s *Service) Preview(ctx context.Context, screen uuid.UUID, at time.Time, p
 		return Preview{}, err
 	}
 	if proposed != nil {
+		normalized, normalizeErr := s.normalizeSyncGroupTargets(ctx, *proposed)
+		if normalizeErr != nil {
+			return Preview{}, normalizeErr
+		}
+		proposed = &normalized
 		if err = s.validateInput(ctx, *proposed); err != nil {
 			return Preview{}, err
 		}
@@ -671,7 +774,7 @@ func (s *Service) Preview(ctx context.Context, screen uuid.UUID, at time.Time, p
 	resolved := Resolve(at, base)
 	out := Preview{ScreenID: screen, At: at, Applicable: []Record{}, NextTransition: resolved.NextTransition, Conflicts: []string{}}
 	var fallback uuid.UUID
-	if e := s.db.QueryRow(ctx, `SELECT playlist_id FROM screen_playlist_assignments WHERE screen_id=$1`, screen).Scan(&fallback); e == nil {
+	if e := s.db.QueryRow(ctx, `SELECT COALESCE(group_assignment.playlist_id,screen_assignment.playlist_id) FROM screens sc LEFT JOIN screen_group_memberships membership ON membership.screen_id=sc.id LEFT JOIN screen_group_playlist_assignments group_assignment ON group_assignment.screen_group_id=membership.screen_group_id LEFT JOIN screen_playlist_assignments screen_assignment ON screen_assignment.screen_id=sc.id WHERE sc.id=$1`, screen).Scan(&fallback); e == nil {
 		out.DirectFallbackPlaylistID = &fallback
 		out.WinningPlaylistID = &fallback
 	}

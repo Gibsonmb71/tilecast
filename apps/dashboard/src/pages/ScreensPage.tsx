@@ -127,7 +127,7 @@ export function ScreensPage() {
         {manageable && (
           <span className="heading-actions">
             <Link className="button button--quiet" to="/groups">
-              Screen groups
+              Sync groups
             </Link>
             <Link className="button button--primary" to="/screens/pair">
               <Plus size={16} /> Pair screen
@@ -298,7 +298,7 @@ function EmergencyPanel({
             ))}
           </fieldset>
           <fieldset>
-            <legend>Target groups</legend>
+            <legend>Target sync groups</legend>
             {groups.data?.items.map((g) => (
               <label key={g.id}>
                 <input
@@ -318,7 +318,7 @@ function EmergencyPanel({
           </fieldset>
           <p>
             {screenIds.length} directly selected screen
-            {screenIds.length === 1 ? "" : "s"}; {groupIds.length} group
+            {screenIds.length === 1 ? "" : "s"}; {groupIds.length} sync group
             {groupIds.length === 1 ? "" : "s"};{" "}
             {
               screens.filter(
@@ -1117,6 +1117,15 @@ export function ScreenDetailPage() {
       {tab === "content" && (
         <section className="detail-card assignment-card">
           <h3>Playback and scheduling</h3>
+          {assignment.data?.groups[0] && (
+            <div className="notice notice--info">
+              This player belongs to the{" "}
+              <Link to={`/groups/${assignment.data.groups[0].id}`}>
+                {assignment.data.groups[0].name}
+              </Link>{" "}
+              sync group. Content and schedules apply to every member.
+            </div>
+          )}
           {canManageScreens(auth.status?.user) ? (
             <div className="assignment-controls">
               <select
@@ -1139,7 +1148,9 @@ export function ScreenDetailPage() {
                 }
                 onClick={() => assign.mutate()}
               >
-                Apply assignment
+                {assignment.data?.groups[0]
+                  ? "Apply to sync group"
+                  : "Apply assignment"}
               </button>
             </div>
           ) : (
@@ -1198,10 +1209,10 @@ export function ScreenDetailPage() {
               </dd>
             </div>
             <div>
-              <dt>Groups</dt>
+              <dt>Sync group</dt>
               <dd>
                 {assignment.data?.groups.map((g) => g.name).join(", ") ||
-                  "No groups"}
+                  "Not grouped"}
               </dd>
             </div>
             <div>

@@ -87,6 +87,7 @@ fun YouTubeSourceItem(
     onDone: () -> Unit,
     onFailure: (String) -> Unit,
     onStatus: (SourcePlaybackStatus) -> Unit,
+    startOffsetMs: Long = 0,
 ) {
     var state by remember(item.id) { mutableStateOf("loading") }
     var error by remember(item.id) { mutableStateOf<String?>(null) }
@@ -102,7 +103,7 @@ fun YouTubeSourceItem(
         if (state == "loading") report("autoplay_blocked", "youtube_autoplay_blocked")
     }
     val duration = item.durationMs ?: config.fixedDurationSeconds?.times(1000L)
-    if (duration != null) LaunchedEffect(item.id, duration) { delay(duration); onDone() }
+    if (duration != null) LaunchedEffect(item.id, duration, startOffsetMs) { delay((duration-startOffsetMs).coerceAtLeast(1)); onDone() }
     if (error != null) {
         if (config.failureBehavior == "skip") {
             LaunchedEffect(error) { onFailure("YouTube source failed") }
@@ -120,7 +121,9 @@ fun YouTubeSourceItem(
         return
     }
     val origin = session.serverUrl.trimEnd('/')
-    val html = remember(item.id, source.configVersion) { youtubeHTML(config, origin) }
+    val html = remember(item.id, source.configVersion, startOffsetMs) {
+        youtubeHTML(config, origin, startOffsetMs)
+    }
     AndroidView(
         modifier = Modifier.fillMaxSize().background(Color.Black),
         factory = { context ->
@@ -173,14 +176,19 @@ fun YouTubeSourceItem(
 
 private fun YouTubeSourceConfig.loadTimeoutSeconds() = 30_000L
 
-internal fun youtubeHTML(config: YouTubeSourceConfig, origin: String): String {
+internal fun youtubeHTML(
+    config: YouTubeSourceConfig,
+    origin: String,
+    startOffsetMs: Long = 0,
+): String {
     val id = if (config.kind == "playlist") config.playlistId.orEmpty() else config.videoId.orEmpty()
     val listOptions = if (config.kind == "playlist") "listType:'playlist',list:'$id'," else "videoId:'$id',"
     val loopPlaylist = if (config.loop && config.kind == "video") ",playlist:'$id'" else ""
     val captions = if (config.captions) "cc_load_policy:1,cc_lang_pref:'${config.captionLanguage}'," else "cc_load_policy:0,"
     val end = config.endSeconds?.let { "end:$it," }.orEmpty()
+    val synchronizedStartSeconds = config.startSeconds + startOffsetMs.coerceAtLeast(0) / 1000.0
     return """<!doctype html><html><head><meta name="referrer" content="origin"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><style>html,body,#player,iframe{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;border:0}</style></head><body><div id="player"></div><script src="https://www.youtube.com/iframe_api"></script><script>
       var player; function send(s,d){try{Tilecast.report(s,d||null)}catch(e){}}
-      function onYouTubeIframeAPIReady(){player=new YT.Player('player',{width:'100%',height:'100%',${listOptions}playerVars:{autoplay:1,playsinline:1,controls:${if (config.controls) 1 else 0},disablekb:1,fs:0,rel:0,start:${config.startSeconds},${end}loop:${if (config.loop) 1 else 0}$loopPlaylist,origin:'$origin',$captions},events:{onReady:function(e){${if (config.muted) "e.target.mute();" else "e.target.unMute();"}e.target.setVolume(${config.volume});e.target.playVideo();send('ready')},onStateChange:function(e){var m={0:'ended',1:'playing',2:'paused',3:'buffering',5:'ready'};send(m[e.data]||'waiting')},onError:function(e){send('player_error','youtube_'+e.data)}}});}
+      function onYouTubeIframeAPIReady(){player=new YT.Player('player',{width:'100%',height:'100%',${listOptions}playerVars:{autoplay:1,playsinline:1,controls:${if (config.controls) 1 else 0},disablekb:1,fs:0,rel:0,start:$synchronizedStartSeconds,${end}loop:${if (config.loop) 1 else 0}$loopPlaylist,origin:'$origin',$captions},events:{onReady:function(e){${if (config.muted) "e.target.mute();" else "e.target.unMute();"}e.target.setVolume(${config.volume});e.target.playVideo();send('ready')},onStateChange:function(e){var m={0:'ended',1:'playing',2:'paused',3:'buffering',5:'ready'};send(m[e.data]||'waiting')},onError:function(e){send('player_error','youtube_'+e.data)}}});}
     </script></body></html>"""
 }

@@ -9,11 +9,11 @@ The typed registry in `apps/server/internal/settings/registry.go` is closed: eve
 Effective player values resolve in this order:
 
 1. Screen override.
-2. Highest-priority matching group policy.
+2. Matching sync-group policy.
 3. Organization player default.
 4. Built-in Tilecast default.
 
-Equal-priority groups use ascending stable group UUID ordering. Update timestamps never affect precedence. Studio’s effective-policy view shows every value and source plus organization, group, screen, and final configuration revisions.
+Because each screen belongs to at most one sync group, group-policy conflict precedence is no longer exposed in Studio. Studio’s effective-policy view shows every value and source plus organization, sync group, screen, and final configuration revisions.
 
 ## Player configuration
 
