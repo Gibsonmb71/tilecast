@@ -6,6 +6,7 @@ import (
 )
 
 func (s *server) activityRoutes(next http.Handler) http.Handler {
+	go s.runActivityRetentionWorker()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v1/auth/login" || r.URL.Path == "/api/v1/auth/logout" {
 			s.auditAuthentication(next, w, r)
