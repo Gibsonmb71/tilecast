@@ -15,6 +15,7 @@ import { SettingsPage } from "./pages/SettingsPage";
 import { LayoutsPage } from "./pages/LayoutsPage";
 import { LayoutEditorPage } from "./pages/LayoutEditorPage";
 import { AppEditorPage, AppsPage } from "./pages/AppsPage";
+import { UsersPage } from "./pages/UsersPage";
 
 export function App() {
   return (
@@ -46,6 +47,7 @@ export function App() {
         <Route path="schedules" element={<SchedulesPage />} />
         <Route path="schedules/new" element={<ScheduleEditorPage />} />
         <Route path="schedules/:id" element={<ScheduleEditorPage />} />
+        <Route path="users" element={<UsersPage />} />
         <Route
           path="activity"
           element={<PlannedPage feature="Activity reports" milestone={9} />}
