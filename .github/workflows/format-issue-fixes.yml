@@ -1,9 +1,9 @@
 name: Format issue fixes
 
 on:
-  push:
+  pull_request:
     branches:
-      - fix/issues-37-45
+      - main
 
 permissions:
   contents: read
