@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { Filter, RotateCcw } from "lucide-react";
+import { Filter, RotateCcw, Upload } from "lucide-react";
 import { useLocation } from "react-router";
 
 type NativeFilter = {
@@ -54,6 +54,12 @@ function nativeSelect(label: string) {
   );
 }
 
+function nativeUploadButton() {
+  return document.querySelector<HTMLButtonElement>(
+    ".content-page:not(.apps-page) > .page-heading > button.button--primary",
+  );
+}
+
 export function AssetFilterPortal() {
   const location = useLocation();
   const [target, setTarget] = useState<HTMLElement | null>(null);
@@ -68,8 +74,11 @@ export function AssetFilterPortal() {
     const findTarget = () =>
       setTarget(
         document.querySelector<HTMLElement>(
-          ".content-page:not(.apps-page) > .page-heading",
-        ),
+          ".content-page:not(.apps-page) .content-organizer__create",
+        ) ??
+          document.querySelector<HTMLElement>(
+            ".content-page:not(.apps-page) > .page-heading",
+          ),
       );
     findTarget();
     const observer = new MutationObserver(findTarget);
@@ -77,14 +86,15 @@ export function AssetFilterPortal() {
     return () => observer.disconnect();
   }, [location.pathname]);
 
-  return target ? createPortal(<AssetFilterMenu />, target) : null;
+  return target ? createPortal(<AssetActionControls />, target) : null;
 }
 
-function AssetFilterMenu() {
+function AssetActionControls() {
   const [, setRevision] = useState(0);
   const toolbar = document.querySelector<HTMLElement>(
     ".content-page:not(.apps-page) .content-toolbar",
   );
+  const uploadButton = nativeUploadButton();
 
   useEffect(() => {
     if (!toolbar) return;
@@ -122,73 +132,84 @@ function AssetFilterMenu() {
     }, 0);
 
   return (
-    <details className="asset-filter-menu">
-      <summary className="button button--secondary">
-        <Filter size={16} />
-        Filters
-        {activeCount > 0 && (
-          <span className="asset-filter-menu__count">{activeCount}</span>
-        )}
-      </summary>
-      <div className="asset-filter-menu__panel">
-        <header>
-          <div>
-            <strong>Filter assets</strong>
-            <span>Show only the files you need.</span>
-          </div>
-          <button
-            type="button"
-            className="button button--quiet button--compact"
-            onClick={() => {
-              setType("media");
-              for (const filter of filters) {
-                if (!filter.element) continue;
-                dispatchChange(
-                  filter.element,
-                  filter.label === "Sort media" ? "updated" : "",
-                );
-              }
-              setRevision((value) => value + 1);
-            }}
-          >
-            <RotateCcw size={14} /> Clear
-          </button>
-        </header>
-        <label>
-          Type
-          <select
-            value={type}
-            onChange={(event) => {
-              setType(event.target.value);
-              setRevision((value) => value + 1);
-            }}
-          >
-            <option value="media">All media</option>
-            <option value="image">Images</option>
-            <option value="video">Videos</option>
-          </select>
-        </label>
-        {filters.map((filter) => (
-          <label key={filter.label}>
-            {filter.title}
-            <select
-              value={filter.element?.value ?? ""}
-              disabled={!filter.element}
-              onChange={(event) => {
-                if (filter.element)
-                  dispatchChange(filter.element, event.target.value);
+    <>
+      <details className="asset-filter-menu">
+        <summary className="button button--quiet">
+          <Filter size={16} />
+          Filters
+          {activeCount > 0 && (
+            <span className="asset-filter-menu__count">{activeCount}</span>
+          )}
+        </summary>
+        <div className="asset-filter-menu__panel">
+          <header>
+            <div>
+              <strong>Filter assets</strong>
+              <span>Show only the files you need.</span>
+            </div>
+            <button
+              type="button"
+              className="button button--quiet button--compact"
+              onClick={() => {
+                setType("media");
+                for (const filter of filters) {
+                  if (!filter.element) continue;
+                  dispatchChange(
+                    filter.element,
+                    filter.label === "Sort media" ? "updated" : "",
+                  );
+                }
                 setRevision((value) => value + 1);
               }}
             >
-              {Array.from(filter.element?.options ?? []).map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.text}
-                </option>
-              ))}
+              <RotateCcw size={14} /> Clear
+            </button>
+          </header>
+          <label>
+            Type
+            <select
+              value={type}
+              onChange={(event) => {
+                setType(event.target.value);
+                setRevision((value) => value + 1);
+              }}
+            >
+              <option value="media">All media</option>
+              <option value="image">Images</option>
+              <option value="video">Videos</option>
             </select>
           </label>
-        ))}
-      </div>
-    </details>
+          {filters.map((filter) => (
+            <label key={filter.label}>
+              {filter.title}
+              <select
+                value={filter.element?.value ?? ""}
+                disabled={!filter.element}
+                onChange={(event) => {
+                  if (filter.element)
+                    dispatchChange(filter.element, event.target.value);
+                  setRevision((value) => value + 1);
+                }}
+              >
+                {Array.from(filter.element?.options ?? []).map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.text}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
+        </div>
+      </details>
+      {uploadButton && (
+        <button
+          type="button"
+          className="button button--primary asset-upload-action"
+          onClick={() => uploadButton.click()}
+        >
+          <Upload size={16} /> Upload assets
+        </button>
+      )}
+    </>
   );
 }
