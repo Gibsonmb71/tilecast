@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Filter, RotateCcw } from "lucide-react";
 import { useLocation } from "react-router";
@@ -41,7 +41,8 @@ function currentType() {
 }
 
 function setType(value: string) {
-  const label = value === "image" ? "Images" : value === "video" ? "Videos" : "Media";
+  const label =
+    value === "image" ? "Images" : value === "video" ? "Videos" : "Media";
   typeButtons()
     .find((button) => button.textContent?.trim() === label)
     ?.click();
@@ -80,14 +81,16 @@ export function AssetFilterPortal() {
 }
 
 function AssetFilterMenu() {
-  const [revision, setRevision] = useState(0);
+  const [, setRevision] = useState(0);
   const toolbar = document.querySelector<HTMLElement>(
     ".content-page:not(.apps-page) .content-toolbar",
   );
 
   useEffect(() => {
     if (!toolbar) return;
-    const observer = new MutationObserver(() => setRevision((value) => value + 1));
+    const observer = new MutationObserver(() =>
+      setRevision((value) => value + 1),
+    );
     observer.observe(toolbar, {
       attributes: true,
       childList: true,
@@ -104,14 +107,10 @@ function AssetFilterMenu() {
     };
   }, [toolbar]);
 
-  const filters = useMemo(
-    () =>
-      nativeFilters.map((filter) => ({
-        ...filter,
-        element: nativeSelect(filter.label),
-      })),
-    [revision],
-  );
+  const filters = nativeFilters.map((filter) => ({
+    ...filter,
+    element: nativeSelect(filter.label),
+  }));
   const type = currentType();
   const activeCount =
     (type === "media" ? 0 : 1) +
