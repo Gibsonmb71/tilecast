@@ -102,6 +102,14 @@ func (s *server) ingestPlayerActivity(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		result.Accepted++
+		if err := s.derivePlayerActivity(r, tx, principal.ScreenID, *event); err != nil {
+			s.internalError(w, r, err)
+			return
+		}
+	}
+	if err := closeExpiredPlaybackSessions(r, tx, principal.ScreenID, now); err != nil {
+		s.internalError(w, r, err)
+		return
 	}
 	if err := tx.Commit(r.Context()); err != nil {
 		s.internalError(w, r, err)
@@ -208,6 +216,153 @@ func (s *server) insertPlayerActivityEvent(r *http.Request, tx pgx.Tx, screenID 
 		return false, nil
 	}
 	return err == nil, err
+}
+
+func (s *server) derivePlayerActivity(r *http.Request, tx pgx.Tx, screenID uuid.UUID, event playerActivityEventInput) error {
+	if activityState, ok := screenStateForEvent(event); ok {
+		if err := updateScreenStateInterval(r, tx, screenID, event, activityState); err != nil {
+			return err
+		}
+	}
+	if event.EventType == "heartbeat.gap_detected" {
+		if _, err := tx.Exec(r.Context(), `
+			UPDATE playback_sessions SET ended_at=$2,result='unknown',
+				actual_duration_ms=GREATEST(0,EXTRACT(EPOCH FROM ($2-started_at))*1000)::bigint,
+				metadata=metadata||'{"closedReason":"heartbeat_gap"}'::jsonb,updated_at=now()
+			WHERE screen_id=$1 AND ended_at IS NULL`, screenID, event.OccurredAt); err != nil {
+			return err
+		}
+	}
+	if isPlaybackStart(event.EventType) {
+		return startPlaybackSession(r, tx, screenID, event)
+	}
+	if isPlaybackEnd(event.EventType) {
+		return endPlaybackSession(r, tx, screenID, event)
+	}
+	return nil
+}
+
+func startPlaybackSession(r *http.Request, tx pgx.Tx, screenID uuid.UUID, event playerActivityEventInput) error {
+	sessionID := event.ActivitySessionID
+	if sessionID == "" {
+		sessionID = event.ID.String()
+	}
+	if event.EventType == "presentation.started" || event.EventType == "presentation.activated" || event.EventType == "layout.activated" || event.EventType == "playlist.started" {
+		_, err := tx.Exec(r.Context(), `
+			UPDATE playback_sessions SET ended_at=$2,result='partial',actual_duration_ms=GREATEST(0,EXTRACT(EPOCH FROM ($2-started_at))*1000)::bigint,
+			metadata=metadata||'{"closedReason":"incompatible_start"}'::jsonb,updated_at=now()
+			WHERE screen_id=$1 AND ended_at IS NULL AND activity_session_id<>$3`, screenID, event.OccurredAt, sessionID)
+		if err != nil {
+			return err
+		}
+	}
+	var groupID *uuid.UUID
+	_ = tx.QueryRow(r.Context(), `SELECT screen_group_id FROM screen_group_memberships WHERE screen_id=$1 ORDER BY screen_group_id LIMIT 1`, screenID).Scan(&groupID)
+	var parentID *uuid.UUID
+	if parentKey, ok := event.Metadata["parentActivitySessionId"].(string); ok && parentKey != "" {
+		_ = tx.QueryRow(r.Context(), `SELECT id FROM playback_sessions WHERE screen_id=$1 AND activity_session_id=$2`, screenID, parentKey).Scan(&parentID)
+	}
+	metadata, _ := json.Marshal(event.Metadata)
+	presentationName, _ := event.Metadata["presentationName"].(string)
+	contentName, _ := event.Metadata["contentName"].(string)
+	_, err := tx.Exec(r.Context(), `
+		INSERT INTO playback_sessions(
+			id,screen_id,group_id,parent_session_id,activity_session_id,start_event_id,started_at,presentation_type,
+			presentation_id,presentation_revision,presentation_name,content_type,content_id,content_name,playlist_item_id,
+			layout_placement_id,expected_duration_ms,result,trigger_context,schedule_id,emergency_id,manifest_version,
+			source_id,selected_record_id,selection_date,source_cached_at,source_revision,snapshot_hash,metadata)
+		VALUES($1,$2,$3,$4,$5,$6,$7,NULLIF($8,''),NULLIF($9,''),NULLIF($10,''),NULLIF($11,''),NULLIF($12,''),NULLIF($13,''),
+		       NULLIF($14,''),NULLIF($15,''),NULLIF($16,''),$17,'playing',NULLIF($18,''),NULLIF($19,''),NULLIF($20,''),$21,
+		       NULLIF($22,''),NULLIF($23,''),NULLIF($24,'')::date,$25,NULLIF($26,''),NULLIF($27,''),$28::jsonb)
+		ON CONFLICT(screen_id,activity_session_id) DO NOTHING`,
+		uuid.New(), screenID, groupID, parentID, sessionID, event.ID, event.OccurredAt, event.PresentationType,
+		event.PresentationID, event.PresentationRev, safeActivityText(presentationName, 240), event.ContentType, event.ContentID,
+		safeActivityText(contentName, 240), event.PlaylistItemID, event.LayoutPlacementID, event.ExpectedDurationMS, event.TriggerContext,
+		event.ScheduleID, event.EmergencyID, event.ManifestVersion, event.SourceID, event.SelectedRecordID, event.SelectionDate,
+		event.SourceCachedAt, event.SourceRevision, event.SnapshotHash, string(metadata))
+	return err
+}
+
+func endPlaybackSession(r *http.Request, tx pgx.Tx, screenID uuid.UUID, event playerActivityEventInput) error {
+	if event.ActivitySessionID == "" {
+		return nil
+	}
+	result := event.Result
+	if result == "success" {
+		result = "completed"
+	}
+	if result == "playing" {
+		result = "unknown"
+	}
+	metadata, _ := json.Marshal(event.Metadata)
+	tag, err := tx.Exec(r.Context(), `
+		UPDATE playback_sessions SET end_event_id=$3,ended_at=$4,
+			actual_duration_ms=COALESCE($5,GREATEST(0,EXTRACT(EPOCH FROM ($4-started_at))*1000)::bigint),
+			result=$6,failure_code=NULLIF($7,''),metadata=metadata||$8::jsonb,updated_at=now()
+		WHERE screen_id=$1 AND activity_session_id=$2 AND ended_at IS NULL`,
+		screenID, event.ActivitySessionID, event.ID, event.OccurredAt, event.DurationMS, result, event.FailureCode, string(metadata))
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 && (event.EventType == "presentation.failed" || event.EventType == "widget.failed" || event.EventType == "playlist_item.failed") {
+		fallback := event
+		fallback.Result = result
+		fallback.ActivitySessionID = event.ActivitySessionID
+		if err := startPlaybackSession(r, tx, screenID, fallback); err != nil {
+			return err
+		}
+		_, err = tx.Exec(r.Context(), `UPDATE playback_sessions SET end_event_id=$3,ended_at=$4,actual_duration_ms=COALESCE($5,0),result=$6,failure_code=NULLIF($7,''),updated_at=now() WHERE screen_id=$1 AND activity_session_id=$2`, screenID, event.ActivitySessionID, event.ID, event.OccurredAt, event.DurationMS, result, event.FailureCode)
+	}
+	return err
+}
+
+func updateScreenStateInterval(r *http.Request, tx pgx.Tx, screenID uuid.UUID, event playerActivityEventInput, state string) error {
+	_, err := tx.Exec(r.Context(), `UPDATE screen_state_intervals SET ended_at=$2,end_event_id=$3 WHERE screen_id=$1 AND ended_at IS NULL AND state<>$4`, screenID, event.OccurredAt, event.ID, state)
+	if err != nil {
+		return err
+	}
+	metadata, _ := json.Marshal(event.Metadata)
+	_, err = tx.Exec(r.Context(), `INSERT INTO screen_state_intervals(id,screen_id,state,started_at,start_event_id,reason_code,metadata) SELECT $1,$2,$3,$4,$5,NULLIF($6,''),$7::jsonb WHERE NOT EXISTS(SELECT 1 FROM screen_state_intervals WHERE screen_id=$2 AND state=$3 AND ended_at IS NULL) ON CONFLICT DO NOTHING`, uuid.New(), screenID, state, event.OccurredAt, event.ID, event.FailureCode, string(metadata))
+	return err
+}
+
+func closeExpiredPlaybackSessions(r *http.Request, tx pgx.Tx, screenID uuid.UUID, now time.Time) error {
+	_, err := tx.Exec(r.Context(), `
+		UPDATE playback_sessions SET ended_at=LEAST($2,started_at+interval '6 hours'),result='unknown',
+			actual_duration_ms=GREATEST(0,EXTRACT(EPOCH FROM (LEAST($2,started_at+interval '6 hours')-started_at))*1000)::bigint,
+			metadata=metadata||'{"closedReason":"bounded_timeout"}'::jsonb,updated_at=now()
+		WHERE screen_id=$1 AND ended_at IS NULL AND started_at < $2-interval '6 hours'`, screenID, now)
+	return err
+}
+
+func isPlaybackStart(eventType string) bool {
+	switch eventType {
+	case "presentation.started", "presentation.activated", "playlist.started", "layout.activated", "playlist_item.started", "media.started", "widget.started", "layout_zone_item.started", "data_widget.activated":
+		return true
+	default:
+		return false
+	}
+}
+
+func isPlaybackEnd(eventType string) bool {
+	return strings.HasSuffix(eventType, ".completed") || strings.HasSuffix(eventType, ".stopped") || strings.HasSuffix(eventType, ".failed") || strings.HasSuffix(eventType, ".skipped") || eventType == "presentation.recovered"
+}
+
+func screenStateForEvent(event playerActivityEventInput) (string, bool) {
+	switch event.EventType {
+	case "player.connected", "connection.restored":
+		return "online", true
+	case "player.disconnected":
+		return "offline", true
+	case "heartbeat.gap_detected", "renderer.failure", "decoder.failure", "storage.pressure":
+		return "degraded", true
+	case "safe_mode.entered":
+		return "safe_mode", true
+	case "safe_mode.exited", "manifest.activated", "presentation.started", "presentation.activated":
+		return "healthy", true
+	default:
+		return "", false
+	}
 }
 
 func activityCategory(eventType string) string {
