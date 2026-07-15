@@ -160,13 +160,45 @@
   width: 30px;
   min-width: 30px;
   padding: 4px;
-  overflow: hidden;
+  position: relative;
+  overflow: visible;
   font-size: 0;
 }
 
 .apps-page .source-card-actions button:nth-of-type(2) svg,
 .apps-page .source-card-actions button:nth-of-type(3) svg {
   margin: 0;
+}
+
+.apps-page .source-card-actions button:nth-of-type(2)::after,
+.apps-page .source-card-actions button:nth-of-type(3)::after {
+  position: absolute;
+  z-index: 30;
+  bottom: calc(100% + 7px);
+  left: 50%;
+  padding: 5px 7px;
+  pointer-events: none;
+  color: var(--tc-text-inverse);
+  content: attr(aria-label);
+  background: var(--tc-bg-inverse);
+  border-radius: var(--tc-radius-sm);
+  box-shadow: var(--tc-shadow-md);
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0;
+  transform: translate(-50%, 3px);
+  transition:
+    opacity var(--tc-motion-fast),
+    transform var(--tc-motion-fast);
+  white-space: nowrap;
+}
+
+.apps-page .source-card-actions button:nth-of-type(2):hover::after,
+.apps-page .source-card-actions button:nth-of-type(2):focus-visible::after,
+.apps-page .source-card-actions button:nth-of-type(3):hover::after,
+.apps-page .source-card-actions button:nth-of-type(3):focus-visible::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
 }
 
 /* #43 and #44: replace the always-visible Assets controls with one popover. */
