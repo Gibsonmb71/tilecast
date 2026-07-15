@@ -44,5 +44,67 @@ CREATE INDEX player_activity_events_category_idx ON player_activity_events(categ
 CREATE INDEX player_activity_events_result_idx ON player_activity_events(result, occurred_at DESC, id DESC);
 CREATE INDEX player_activity_events_session_idx ON player_activity_events(screen_id, activity_session_id) WHERE activity_session_id IS NOT NULL;
 
+
+-- Server-side operational events are written immediately for actions that exist
+-- before the Player can report them. State transitions reported by the Player
+-- are added by the heartbeat transition detector.
+CREATE OR REPLACE FUNCTION tilecast_activity_command_created() RETURNS trigger AS $$
+BEGIN
+    INSERT INTO player_activity_events(
+        id,screen_id,sequence,origin,event_type,category,severity,occurred_at,
+        player_timezone,result,content_type,content_id,metadata,priority
+    ) VALUES (
+        gen_random_uuid(),NEW.screen_id,NULL,'server','command.created','commands','info',NEW.created_at,
+        'UTC','success','command',NEW.id::text,
+        jsonb_build_object('commandType',NEW.type,'expiresAt',NEW.expires_at),8
+    );
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER player_commands_activity_created
+AFTER INSERT ON player_commands
+FOR EACH ROW EXECUTE FUNCTION tilecast_activity_command_created();
+
+CREATE OR REPLACE FUNCTION tilecast_activity_update_assigned() RETURNS trigger AS $$
+BEGIN
+    INSERT INTO player_activity_events(
+        id,screen_id,sequence,origin,event_type,category,severity,occurred_at,
+        player_timezone,result,content_type,content_id,metadata,priority
+    ) VALUES (
+        gen_random_uuid(),NEW.screen_id,NULL,'server','update.assigned','updates','info',now(),
+        'UTC','success','update_deployment',NEW.deployment_id::text,
+        jsonb_build_object('expectedVersionCode',NEW.expected_version_code,'state',NEW.state),8
+    );
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER screen_update_states_activity_assigned
+AFTER INSERT ON screen_update_states
+FOR EACH ROW EXECUTE FUNCTION tilecast_activity_update_assigned();
+
+CREATE OR REPLACE FUNCTION tilecast_activity_emergency_assigned() RETURNS trigger AS $$
+BEGIN
+    INSERT INTO player_activity_events(
+        id,screen_id,sequence,origin,event_type,category,severity,occurred_at,
+        player_timezone,result,emergency_id,content_type,content_id,metadata,priority
+    ) VALUES (
+        gen_random_uuid(),NEW.screen_id,NULL,'server','emergency.assigned','emergencies','warning',now(),
+        'UTC','success',NEW.emergency_id::text,'emergency',NEW.emergency_id::text,
+        jsonb_build_object('manifestVersion',NEW.manifest_version,'state',NEW.state),9
+    );
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER emergency_screen_states_activity_assigned
+AFTER INSERT ON emergency_screen_states
+FOR EACH ROW EXECUTE FUNCTION tilecast_activity_emergency_assigned();
+
+
 -- +goose Down
+DROP TRIGGER emergency_screen_states_activity_assigned ON emergency_screen_states;
+DROP FUNCTION tilecast_activity_emergency_assigned();
+DROP TRIGGER screen_update_states_activity_assigned ON screen_update_states;
+DROP FUNCTION tilecast_activity_update_assigned();
+DROP TRIGGER player_commands_activity_created ON player_commands;
+DROP FUNCTION tilecast_activity_command_created();
 DROP TABLE player_activity_events;

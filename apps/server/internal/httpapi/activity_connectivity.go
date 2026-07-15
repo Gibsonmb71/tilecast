@@ -1,0 +1,311 @@
+package httpapi
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/tilecast/tilecast/apps/server/internal/devices"
+)
+
+type heartbeatActivityState struct {
+	ManifestVersion    *int64
+	ScheduleID         *uuid.UUID
+	SelectionSource    string
+	CommandID          *uuid.UUID
+	CommandState       string
+	EmergencyID        *uuid.UUID
+	EmergencyState     string
+	UpdateDeploymentID *uuid.UUID
+	UpdateState        string
+	SafeMode           bool
+	WatchdogFailure    string
+	WatchdogRecoveryAt *time.Time
+	ForegroundState    string
+	SleepResult        string
+	WakeResult         string
+	PlaybackState      string
+	CurrentItemID      *uuid.UUID
+	CurrentAssetID     *uuid.UUID
+	PlaybackError      string
+	CacheUsedBytes     *int64
+	CacheLimitBytes    *int64
+}
+
+func (s *server) playerHeartbeatWithActivity(w http.ResponseWriter, r *http.Request) {
+	principal := r.Context().Value(deviceContextKey).(devices.DevicePrincipal)
+	var previousHeartbeat *time.Time
+	_ = s.db.QueryRow(r.Context(), `SELECT last_heartbeat_at FROM screens WHERE id=$1`, principal.ScreenID).Scan(&previousHeartbeat)
+	before, _ := s.readHeartbeatActivityState(r.Context(), principal.ScreenID)
+
+	wrapped := &auditStatusWriter{ResponseWriter: w}
+	s.playerHeartbeat(wrapped, r)
+	status := wrapped.status
+	if status == 0 {
+		status = http.StatusOK
+	}
+	if status >= 300 {
+		return
+	}
+
+	now := time.Now().UTC()
+	after, _ := s.readHeartbeatActivityState(activityContextWithoutCancel(r.Context()), principal.ScreenID)
+	tx, err := s.db.Begin(activityContextWithoutCancel(r.Context()))
+	if err != nil {
+		return
+	}
+	defer tx.Rollback(activityContextWithoutCancel(r.Context())) //nolint:errcheck
+
+	if previousHeartbeat == nil {
+		s.recordServerTransition(r, tx, principal.ScreenID, playerActivityEventInput{
+			ID: uuid.New(), EventType: "player.connected", Category: "connectivity", Severity: "info",
+			OccurredAt: now, PlayerTimezone: "UTC", Result: "success", Priority: 8,
+		})
+	} else if gap := now.Sub(previousHeartbeat.UTC()); gap > 3*time.Minute {
+		s.recordServerTransition(r, tx, principal.ScreenID, playerActivityEventInput{
+			ID: uuid.New(), EventType: "heartbeat.gap_detected", Category: "connectivity", Severity: "warning",
+			OccurredAt: previousHeartbeat.UTC().Add(3 * time.Minute), PlayerTimezone: "UTC", Result: "unknown",
+			DurationMS: durationPointer(gap.Milliseconds()), FailureCode: "heartbeat_gap",
+			FailureMessage: "Player stopped reporting within the expected heartbeat window.", Priority: 9,
+			Metadata: map[string]any{"lastHeartbeatAt": previousHeartbeat.UTC(), "restoredAt": now},
+		})
+		s.recordServerTransition(r, tx, principal.ScreenID, playerActivityEventInput{
+			ID: uuid.New(), EventType: "connection.restored", Category: "connectivity", Severity: "info",
+			OccurredAt: now, PlayerTimezone: "UTC", Result: "recovered", DurationMS: durationPointer(gap.Milliseconds()), Priority: 8,
+		})
+		_, _ = tx.Exec(r.Context(), `UPDATE playback_sessions SET ended_at=$2,result='unknown',actual_duration_ms=GREATEST(0,EXTRACT(EPOCH FROM ($2-started_at))*1000)::bigint,metadata=metadata||'{"closedReason":"heartbeat_gap"}'::jsonb,updated_at=now() WHERE screen_id=$1 AND ended_at IS NULL AND started_at<$3`, principal.ScreenID, previousHeartbeat.UTC(), now)
+	}
+
+	s.recordHeartbeatStateTransitions(r, tx, principal.ScreenID, before, after, now)
+	_ = tx.Commit(activityContextWithoutCancel(r.Context()))
+}
+
+func (s *server) readHeartbeatActivityState(ctx context.Context, screenID uuid.UUID) (heartbeatActivityState, error) {
+	var value heartbeatActivityState
+	err := s.db.QueryRow(ctx, `
+		SELECT active_manifest_version,current_schedule_id,COALESCE(selection_source,''),
+		       last_command_id,COALESCE(last_command_state,''),active_emergency_id,COALESCE(emergency_state,''),
+		       current_update_deployment_id,COALESCE(update_state,''),safe_mode,COALESCE(last_watchdog_failure,''),last_watchdog_recovery_at,
+		       COALESCE(foreground_state,''),COALESCE(last_sleep_request_result,''),COALESCE(last_wake_result,''),
+		       COALESCE(playback_state,''),current_item_id,current_asset_id,COALESCE(last_playback_error,''),cache_used_bytes,cache_limit_bytes
+		FROM screen_player_status WHERE screen_id=$1`, screenID).Scan(
+		&value.ManifestVersion, &value.ScheduleID, &value.SelectionSource,
+		&value.CommandID, &value.CommandState, &value.EmergencyID, &value.EmergencyState,
+		&value.UpdateDeploymentID, &value.UpdateState, &value.SafeMode, &value.WatchdogFailure, &value.WatchdogRecoveryAt,
+		&value.ForegroundState, &value.SleepResult, &value.WakeResult,
+		&value.PlaybackState, &value.CurrentItemID, &value.CurrentAssetID, &value.PlaybackError, &value.CacheUsedBytes, &value.CacheLimitBytes,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return heartbeatActivityState{}, nil
+	}
+	return value, err
+}
+
+func (s *server) recordHeartbeatStateTransitions(r *http.Request, tx pgx.Tx, screenID uuid.UUID, before, after heartbeatActivityState, now time.Time) {
+	if !sameInt64(before.ManifestVersion, after.ManifestVersion) && after.ManifestVersion != nil {
+		s.recordServerTransition(r, tx, screenID, playerActivityEventInput{ID: uuid.New(), EventType: "manifest.activated", Category: "manifest", Severity: "info", OccurredAt: now, ManifestVersion: after.ManifestVersion, Result: "success", Priority: 8})
+	}
+	if !sameUUID(before.ScheduleID, after.ScheduleID) {
+		if before.ScheduleID != nil {
+			s.recordServerTransition(r, tx, screenID, playerActivityEventInput{ID: uuid.New(), EventType: "schedule.ended", Category: "scheduling", Severity: "info", OccurredAt: now, Result: "success", ScheduleID: before.ScheduleID.String(), Priority: 7})
+		}
+		if after.ScheduleID != nil {
+			s.recordServerTransition(r, tx, screenID, playerActivityEventInput{ID: uuid.New(), EventType: "schedule.became_active", Category: "scheduling", Severity: "info", OccurredAt: now, Result: "success", ScheduleID: after.ScheduleID.String(), TriggerContext: "schedule", Priority: 8})
+		} else if before.ScheduleID != nil && after.SelectionSource != "emergency" {
+			s.recordServerTransition(r, tx, screenID, playerActivityEventInput{ID: uuid.New(), EventType: "direct_assignment.resumed", Category: "scheduling", Severity: "info", OccurredAt: now, Result: "recovered", TriggerContext: after.SelectionSource, Priority: 7})
+		}
+	}
+	if !sameUUID(before.CommandID, after.CommandID) || before.CommandState != after.CommandState {
+		if after.CommandID != nil && after.CommandState != "" {
+			eventType, severity, result := commandStateActivity(after.CommandState)
+			s.recordServerTransition(r, tx, screenID, playerActivityEventInput{ID: uuid.New(), EventType: eventType, Category: "commands", Severity: severity, OccurredAt: now, Result: result, ContentType: "command", ContentID: after.CommandID.String(), Priority: activityPriority(severity)})
+		}
+	}
+	if !sameUUID(before.EmergencyID, after.EmergencyID) || before.EmergencyState != after.EmergencyState {
+		if after.EmergencyID != nil {
+			eventType, severity, result := emergencyStateActivity(after.EmergencyState)
+			s.recordServerTransition(r, tx, screenID, playerActivityEventInput{ID: uuid.New(), EventType: eventType, Category: "emergencies", Severity: severity, OccurredAt: now, Result: result, EmergencyID: after.EmergencyID.String(), ContentType: "emergency", ContentID: after.EmergencyID.String(), Priority: activityPriority(severity)})
+		} else if before.EmergencyID != nil {
+			s.recordServerTransition(r, tx, screenID, playerActivityEventInput{ID: uuid.New(), EventType: "emergency.restored", Category: "emergencies", Severity: "info", OccurredAt: now, Result: "recovered", EmergencyID: before.EmergencyID.String(), Priority: 9})
+		}
+	}
+	if !sameUUID(before.UpdateDeploymentID, after.UpdateDeploymentID) || before.UpdateState != after.UpdateState {
+		if after.UpdateDeploymentID != nil && after.UpdateState != "" {
+			eventType, severity, result := updateStateActivity(after.UpdateState)
+			s.recordServerTransition(r, tx, screenID, playerActivityEventInput{ID: uuid.New(), EventType: eventType, Category: "updates", Severity: severity, OccurredAt: now, Result: result, ContentType: "update_deployment", ContentID: after.UpdateDeploymentID.String(), Priority: activityPriority(severity)})
+		}
+	}
+	if before.SafeMode != after.SafeMode {
+		eventType, result, severity := "safe_mode.exited", "recovered", "info"
+		if after.SafeMode {
+			eventType, result, severity = "safe_mode.entered", "failed", "error"
+		}
+		s.recordServerTransition(r, tx, screenID, playerActivityEventInput{ID: uuid.New(), EventType: eventType, Category: "reliability", Severity: severity, OccurredAt: now, Result: result, Priority: 9})
+	}
+	if before.ForegroundState != after.ForegroundState && after.ForegroundState != "" && after.ForegroundState != "foreground" {
+		s.recordServerTransition(r, tx, screenID, playerActivityEventInput{ID: uuid.New(), EventType: "foreground_playback.lost", Category: "reliability", Severity: "warning", OccurredAt: now, Result: "failed", FailureCode: after.ForegroundState, Priority: 8})
+	}
+	if before.WatchdogRecoveryAt == nil && after.WatchdogRecoveryAt != nil || before.WatchdogRecoveryAt != nil && after.WatchdogRecoveryAt != nil && !before.WatchdogRecoveryAt.Equal(*after.WatchdogRecoveryAt) {
+		s.recordServerTransition(r, tx, screenID, playerActivityEventInput{ID: uuid.New(), EventType: "watchdog.recovery", Category: "reliability", Severity: "warning", OccurredAt: after.WatchdogRecoveryAt.UTC(), Result: "recovered", FailureCode: after.WatchdogFailure, Priority: 9})
+	}
+	if before.SleepResult != after.SleepResult && after.SleepResult != "" {
+		s.recordServerTransition(r, tx, screenID, playerActivityEventInput{ID: uuid.New(), EventType: "sleep.request", Category: "reliability", Severity: "info", OccurredAt: now, Result: resultFromText(after.SleepResult), Metadata: map[string]any{"result": after.SleepResult}, Priority: 6})
+	}
+	if before.WakeResult != after.WakeResult && after.WakeResult != "" {
+		s.recordServerTransition(r, tx, screenID, playerActivityEventInput{ID: uuid.New(), EventType: "wake.request", Category: "reliability", Severity: "info", OccurredAt: now, Result: resultFromText(after.WakeResult), Metadata: map[string]any{"result": after.WakeResult}, Priority: 6})
+	}
+	if before.PlaybackError != after.PlaybackError && after.PlaybackError != "" {
+		s.recordServerTransition(r, tx, screenID, playerActivityEventInput{ID: uuid.New(), EventType: "renderer.failure", Category: "reliability", Severity: "error", OccurredAt: now, Result: "failed", FailureCode: "playback_error", FailureMessage: safeActivityText(after.PlaybackError, 240), Priority: 9})
+	}
+	if storagePressure(after) && !storagePressure(before) {
+		s.recordServerTransition(r, tx, screenID, playerActivityEventInput{ID: uuid.New(), EventType: "storage.pressure", Category: "reliability", Severity: "warning", OccurredAt: now, Result: "failed", FailureCode: "cache_pressure", Metadata: map[string]any{"usedBytes": after.CacheUsedBytes, "limitBytes": after.CacheLimitBytes}, Priority: 8})
+	}
+}
+
+func (s *server) recordServerTransition(r *http.Request, tx pgx.Tx, screenID uuid.UUID, event playerActivityEventInput) {
+	if event.PlayerTimezone == "" {
+		event.PlayerTimezone = "UTC"
+	}
+	if event.OccurredAt.IsZero() {
+		event.OccurredAt = time.Now().UTC()
+	}
+	if s.insertServerActivity(activityContextWithoutCancel(r.Context()), tx, screenID, event) == nil {
+		_ = s.derivePlayerActivity(r, tx, screenID, event)
+	}
+}
+
+func (s *server) insertServerActivity(ctx context.Context, tx pgx.Tx, screenID uuid.UUID, event playerActivityEventInput) error {
+	metadata, _ := json.Marshal(sanitizeActivityMap(event.Metadata, true))
+	_, err := tx.Exec(ctx, `
+		INSERT INTO player_activity_events(id,screen_id,sequence,origin,event_type,category,severity,occurred_at,player_timezone,manifest_version,presentation_type,presentation_id,presentation_revision,content_type,content_id,result,duration_ms,failure_code,failure_message,trigger_context,schedule_id,emergency_id,metadata,priority)
+		VALUES($1,$2,NULL,'server',$3,$4,$5,$6,'UTC',$7,NULLIF($8,''),NULLIF($9,''),NULLIF($10,''),NULLIF($11,''),NULLIF($12,''),$13,$14,NULLIF($15,''),NULLIF($16,''),NULLIF($17,''),NULLIF($18,''),NULLIF($19,''),$20::jsonb,$21)
+		ON CONFLICT(id) DO NOTHING`, event.ID, screenID, event.EventType, event.Category, event.Severity, event.OccurredAt, event.ManifestVersion, event.PresentationType, event.PresentationID, event.PresentationRev, event.ContentType, event.ContentID, event.Result, event.DurationMS, event.FailureCode, event.FailureMessage, event.TriggerContext, event.ScheduleID, event.EmergencyID, string(metadata), event.Priority)
+	return err
+}
+
+func commandStateActivity(state string) (string, string, string) {
+	switch state {
+	case "acknowledged":
+		return "command.acknowledged", "info", "success"
+	case "running":
+		return "command.started", "info", "playing"
+	case "succeeded":
+		return "command.succeeded", "info", "completed"
+	case "failed":
+		return "command.failed", "error", "failed"
+	case "expired", "cancelled":
+		return "command.expired", "warning", "failed"
+	default:
+		return "command.created", "info", "success"
+	}
+}
+
+func updateStateActivity(state string) (string, string, string) {
+	switch state {
+	case "downloading":
+		return "update.download_started", "info", "playing"
+	case "verifying", "ready":
+		return "update.signature_verified", "info", "success"
+	case "installing", "reconnecting":
+		return "update.installation_started", "info", "playing"
+	case "succeeded", "already_current":
+		return "update.installation_completed", "info", "completed"
+	case "failed", "incompatible":
+		return "update.installation_failed", "error", "failed"
+	default:
+		return "update.assigned", "info", "success"
+	}
+}
+
+func emergencyStateActivity(state string) (string, string, string) {
+	switch state {
+	case "notified":
+		return "emergency.screen_notified", "warning", "success"
+	case "preparing", "ready":
+		return "emergency.content_preparing", "warning", "playing"
+	case "active":
+		return "emergency.active", "critical", "playing"
+	case "failed", "offline":
+		return "emergency.activation_failed", "critical", "failed"
+	case "restored", "cancelled", "expired":
+		return "emergency.restored", "info", "recovered"
+	default:
+		return "emergency.assigned", "warning", "success"
+	}
+}
+
+func activityPriority(severity string) int16 {
+	switch severity {
+	case "critical":
+		return 9
+	case "error":
+		return 9
+	case "warning":
+		return 8
+	default:
+		return 6
+	}
+}
+
+func sameUUID(left, right *uuid.UUID) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
+}
+
+func sameInt64(left, right *int64) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
+}
+
+func storagePressure(value heartbeatActivityState) bool {
+	return value.CacheUsedBytes != nil && value.CacheLimitBytes != nil && *value.CacheLimitBytes > 0 && *value.CacheUsedBytes*100 >= *value.CacheLimitBytes*90
+}
+
+func resultFromText(value string) string {
+	for _, failed := range []string{"failed", "unsupported", "denied", "error"} {
+		if containsFold(value, failed) {
+			return "failed"
+		}
+	}
+	return "success"
+}
+
+func containsFold(value, fragment string) bool {
+	return len(value) >= len(fragment) && (value == fragment || stringContainsFold(value, fragment))
+}
+
+func stringContainsFold(value, fragment string) bool {
+	valueRunes := []rune(value)
+	fragmentRunes := []rune(fragment)
+	for index := 0; index+len(fragmentRunes) <= len(valueRunes); index++ {
+		match := true
+		for offset := range fragmentRunes {
+			left := valueRunes[index+offset]
+			right := fragmentRunes[offset]
+			if left >= 'A' && left <= 'Z' {
+				left += 'a' - 'A'
+			}
+			if right >= 'A' && right <= 'Z' {
+				right += 'a' - 'A'
+			}
+			if left != right {
+				match = false
+				break
+			}
+		}
+		if match {
+			return true
+		}
+	}
+	return false
+}
+
+func durationPointer(value int64) *int64 { return &value }
