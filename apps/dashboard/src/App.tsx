@@ -14,6 +14,7 @@ import {
 import { SettingsPage } from "./pages/SettingsPage";
 import { LayoutsPage } from "./pages/LayoutsPage";
 import { LayoutEditorPage } from "./pages/LayoutEditorPage";
+import { AppEditorPage, AppsPage } from "./pages/AppsPage";
 
 export function App() {
   return (
@@ -32,7 +33,12 @@ export function App() {
         <Route path="screens/:id" element={<ScreenDetailWithPreviewPage />} />
         <Route path="groups" element={<GroupsPage />} />
         <Route path="groups/:id" element={<GroupDetailPage />} />
-        <Route path="content" element={<ContentPage />} />
+        <Route path="assets" element={<ContentPage />} />
+        <Route path="content" element={<Navigate to="/assets" replace />} />
+        <Route path="apps" element={<AppsPage />} />
+        <Route path="apps/new" element={<AppEditorPage />} />
+        <Route path="apps/new/:provider" element={<AppEditorPage />} />
+        <Route path="apps/:id" element={<AppEditorPage />} />
         <Route path="playlists" element={<PlaylistsPage />} />
         <Route path="playlists/:id" element={<PlaylistEditorPage />} />
         <Route path="layouts" element={<LayoutsPage />} />

@@ -7,7 +7,6 @@ import {
   Search,
   Upload,
   Globe2,
-  Plus,
   Copy,
   Trash2,
   Youtube,
@@ -39,7 +38,6 @@ import type {
 import { useAuth } from "../auth/AuthProvider";
 import {
   CalendarSourceEditor,
-  SourceProviderGallery,
   StructuredSourceEditor,
   NativeAppEditor,
   YouTubeSourceEditor,
@@ -110,7 +108,7 @@ export function ContentPage() {
   const csrf = auth.status?.csrfToken ?? "";
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
-  const [contentFilter, setContentFilter] = useState("all");
+  const [contentFilter, setContentFilter] = useState("media");
   const [status, setStatus] = useState("");
   const [sort, setSort] = useState("updated");
   const [folderFilter, setFolderFilter] = useState("");
@@ -136,48 +134,12 @@ export function ContentPage() {
     }
   });
   const [selected, setSelected] = useState<Asset>();
-  const [websiteEditor, setWebsiteEditor] = useState(false);
-  const [youtubeEditor, setYouTubeEditor] = useState(false);
-  const [calendarEditor, setCalendarEditor] = useState(false);
-  const [sourceGallery, setSourceGallery] = useState(false);
-  const [structuredEditor, setStructuredEditor] = useState<
-    "rss" | "atom" | "json" | "csv"
-  >();
-  const [nativeEditor, setNativeEditor] = useState<
-    | "clock"
-    | "date"
-    | "qrcode"
-    | "ticker"
-    | "menu"
-    | "list"
-    | "table"
-    | "agenda"
-  >();
   const controllers = useRef(new Map<string, AbortController>());
   const fileInput = useRef<HTMLInputElement>(null);
   const params = new URLSearchParams({ page: "1", pageSize: "48", sort });
   if (search) params.set("search", search);
-  if (contentFilter === "media") params.set("type", "media");
-  if (["image", "video", "source"].includes(contentFilter))
+  if (["media", "image", "video"].includes(contentFilter))
     params.set("type", contentFilter);
-  if (
-    [
-      "website",
-      "youtube",
-      "calendar",
-      "rss",
-      "atom",
-      "json",
-      "csv",
-      "clock",
-      "date",
-      "qrcode",
-      "ticker",
-    ].includes(contentFilter)
-  ) {
-    params.set("type", "source");
-    params.set("provider", contentFilter);
-  }
   if (status) params.set("status", status);
   if (folderFilter) params.set("folderId", folderFilter);
   if (collectionFilter) params.set("collectionId", collectionFilter);
@@ -343,31 +305,17 @@ export function ContentPage() {
     >
       <header className="page-heading">
         <div>
-          <h2>Content library</h2>
-          <p>Media and reusable Apps available to playlists and Layouts.</p>
+          <h2>Assets</h2>
+          <p>Uploaded images and videos available to playlists and Layouts.</p>
         </div>
         {canManage && (
-          <details className="content-add-menu">
-            <summary className="button button--primary">
-              <Plus size={16} /> Add content
-            </summary>
-            <div>
-              <button type="button" onClick={() => fileInput.current?.click()}>
-                <Upload size={16} />
-                <span>
-                  <strong>Upload media</strong>
-                  <small>Add images or videos</small>
-                </span>
-              </button>
-              <button type="button" onClick={() => setSourceGallery(true)}>
-                <Globe2 size={16} />
-                <span>
-                  <strong>Create App</strong>
-                  <small>Add dynamic content</small>
-                </span>
-              </button>
-            </div>
-          </details>
+          <button
+            className="button button--primary"
+            type="button"
+            onClick={() => fileInput.current?.click()}
+          >
+            <Upload size={16} /> Upload assets
+          </button>
         )}
         <input
           ref={fileInput}
@@ -440,22 +388,9 @@ export function ContentPage() {
         <div className="content-type-filters" aria-label="Content type filters">
           {(
             [
-              ["all", "All"],
               ["media", "Media"],
-              ["source", "Apps"],
               ["image", "Images"],
               ["video", "Videos"],
-              ["website", "Websites"],
-              ["youtube", "YouTube"],
-              ["calendar", "Calendars"],
-              ["rss", "RSS"],
-              ["atom", "Atom"],
-              ["json", "JSON"],
-              ["csv", "CSV"],
-              ["clock", "Clock"],
-              ["date", "Date"],
-              ["qrcode", "QR Code"],
-              ["ticker", "Ticker"],
             ] as const
           ).map(([value, label]) => (
             <button
@@ -621,87 +556,6 @@ export function ContentPage() {
           onChanged={(asset) => {
             setSelected(asset);
             void queryClient.invalidateQueries({ queryKey: ["assets"] });
-          }}
-        />
-      )}
-      {websiteEditor && (
-        <WebsiteEditor
-          csrf={csrf}
-          onClose={() => setWebsiteEditor(false)}
-          onSaved={(asset) => {
-            setWebsiteEditor(false);
-            setSelected(asset);
-            void queryClient.invalidateQueries({ queryKey: ["assets"] });
-          }}
-        />
-      )}
-      {youtubeEditor && (
-        <YouTubeSourceEditor
-          csrf={csrf}
-          onClose={() => setYouTubeEditor(false)}
-          onSaved={(asset) => {
-            setYouTubeEditor(false);
-            setSelected(asset);
-          }}
-        />
-      )}
-      {calendarEditor && (
-        <CalendarSourceEditor
-          csrf={csrf}
-          onClose={() => setCalendarEditor(false)}
-          onSaved={(asset) => {
-            setCalendarEditor(false);
-            setSelected(asset);
-            void queryClient.invalidateQueries({ queryKey: ["assets"] });
-          }}
-        />
-      )}
-      {structuredEditor && (
-        <StructuredSourceEditor
-          provider={structuredEditor}
-          csrf={csrf}
-          onClose={() => setStructuredEditor(undefined)}
-          onSaved={(asset) => {
-            setStructuredEditor(undefined);
-            setSelected(asset);
-            void queryClient.invalidateQueries({ queryKey: ["assets"] });
-          }}
-        />
-      )}
-      {nativeEditor && (
-        <NativeAppEditor
-          provider={nativeEditor}
-          csrf={csrf}
-          onClose={() => setNativeEditor(undefined)}
-          onSaved={(asset) => {
-            setNativeEditor(undefined);
-            setSelected(asset);
-            void queryClient.invalidateQueries({ queryKey: ["assets"] });
-          }}
-        />
-      )}
-      {sourceGallery && (
-        <SourceProviderGallery
-          onClose={() => setSourceGallery(false)}
-          onChoose={(provider) => {
-            setSourceGallery(false);
-            if (provider === "website") setWebsiteEditor(true);
-            else if (provider === "youtube") setYouTubeEditor(true);
-            else if (provider === "calendar") setCalendarEditor(true);
-            else if (["rss", "atom", "json", "csv"].includes(provider))
-              setStructuredEditor(provider as "rss" | "atom" | "json" | "csv");
-            else
-              setNativeEditor(
-                provider as
-                  | "clock"
-                  | "date"
-                  | "qrcode"
-                  | "ticker"
-                  | "menu"
-                  | "list"
-                  | "table"
-                  | "agenda",
-              );
           }}
         />
       )}
@@ -1266,12 +1120,14 @@ export function WebsiteEditor({
   readOnly = false,
   onClose,
   onSaved,
+  page = false,
 }: {
   asset?: Asset;
   csrf: string;
   readOnly?: boolean;
   onClose: () => void;
   onSaved: (asset: Asset) => void;
+  page?: boolean;
 }) {
   const initial: WebsiteInput = asset?.website
     ? {
@@ -1361,7 +1217,7 @@ export function WebsiteEditor({
   return (
     <div
       className="details-backdrop"
-      role="presentation"
+      role={page ? undefined : "presentation"}
       onMouseDown={(event) => {
         if (
           event.target === event.currentTarget &&
@@ -1372,8 +1228,8 @@ export function WebsiteEditor({
     >
       <section
         className="asset-details website-editor"
-        role="dialog"
-        aria-modal="true"
+        role={page ? undefined : "dialog"}
+        aria-modal={page ? undefined : true}
       >
         <header>
           <div>

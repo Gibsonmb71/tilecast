@@ -3233,6 +3233,37 @@ tbody tr:hover {
   overflow-y: auto;
 }
 
+.app-editor-route {
+  width: min(1120px, 100%);
+  margin: 0 auto;
+}
+
+.app-editor-route > .details-backdrop {
+  position: static;
+  z-index: auto;
+  inset: auto;
+  display: block;
+  background: transparent;
+}
+
+.app-editor-route .source-gallery,
+.app-editor-route .source-editor,
+.app-editor-route .website-editor {
+  width: 100%;
+  max-height: none;
+  padding: 0;
+  overflow: visible;
+  background: transparent;
+  box-shadow: none;
+}
+
+.app-editor-route .source-gallery > header,
+.app-editor-route .source-editor > header,
+.app-editor-route .website-editor > header {
+  padding-bottom: var(--tc-space-4);
+  border-bottom: 1px solid var(--tc-border-default);
+}
+
 .source-editor__columns {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

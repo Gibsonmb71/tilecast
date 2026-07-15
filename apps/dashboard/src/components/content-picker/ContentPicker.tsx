@@ -8,7 +8,6 @@ import {
   ContentPickerToolbar,
   type ContentPickerFilter,
 } from "./ContentPickerToolbar";
-import { CreateSourceDialog } from "./CreateSourceDialog";
 import { SelectedContentTray } from "./SelectedContentTray";
 import { UploadContentDialog } from "./UploadContentDialog";
 
@@ -50,7 +49,7 @@ export function ContentPicker({
   const [initialIds] = useState(() => new Set(selectedIds));
   const [created, setCreated] = useState<Map<string, Asset>>(new Map());
   const [highlighted, setHighlighted] = useState<Set<string>>(new Set());
-  const [child, setChild] = useState<"upload" | "source">();
+  const [child, setChild] = useState<"upload">();
   const [confirming, setConfirming] = useState(false);
   const [failures, setFailures] = useState<ContentPickerResult["failures"]>([]);
   const dialog = useRef<HTMLElement>(null);
@@ -229,7 +228,10 @@ export function ContentPicker({
         <header className="content-picker__header">
           <div>
             <h2 id="content-picker-title">Choose content</h2>
-            <p>Select existing content, upload media, or create a Source.</p>
+            <p>
+              Select existing content or upload media. Apps are managed in their
+              own library.
+            </p>
           </div>
           <div className="content-picker__primary-actions">
             <button
@@ -238,12 +240,9 @@ export function ContentPicker({
             >
               <Upload size={16} /> Upload media
             </button>
-            <button
-              className="button button--secondary"
-              onClick={() => setChild("source")}
-            >
-              <Globe2 size={16} /> Create source
-            </button>
+            <a className="button button--secondary" href="/apps/new">
+              <Globe2 size={16} /> Create App
+            </a>
             <button
               className="icon-button"
               aria-label="Close content picker"
@@ -352,13 +351,6 @@ export function ContentPicker({
       </section>
       {child === "upload" && (
         <UploadContentDialog
-          csrf={csrf}
-          onCreated={trackCreated}
-          onClose={() => setChild(undefined)}
-        />
-      )}
-      {child === "source" && (
-        <CreateSourceDialog
           csrf={csrf}
           onCreated={trackCreated}
           onClose={() => setChild(undefined)}

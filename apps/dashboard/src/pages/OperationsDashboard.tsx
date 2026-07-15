@@ -70,7 +70,7 @@ export function OperationsDashboard() {
               <Plus size={16} aria-hidden="true" /> Create
             </summary>
             <div>
-              <Link to="/content">
+              <Link to="/assets">
                 <Upload size={16} aria-hidden="true" /> Upload content
               </Link>
               <Link to="/schedules/new">

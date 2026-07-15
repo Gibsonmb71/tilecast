@@ -1575,7 +1575,7 @@ function PlacementInspector({
                   `${content?.name ?? "This App"} may be used by other playlists and Layouts. Open the shared App editor?`,
                 )
               )
-                void navigate("/content");
+                void navigate("/apps");
             }}
           >
             <AppWindow size={16} />

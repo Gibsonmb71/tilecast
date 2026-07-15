@@ -4,6 +4,7 @@ import {
   Ellipsis,
   Home,
   Image,
+  Blocks,
   Layers3,
   ListVideo,
   LogOut,
@@ -21,7 +22,8 @@ import { OperationsDashboard } from "./OperationsDashboard";
 const nav = [
   ["Overview", "/", Home],
   ["Screens", "/screens", Monitor],
-  ["Content", "/content", Image],
+  ["Assets", "/assets", Image],
+  ["Apps", "/apps", Blocks],
   ["Playlists", "/playlists", ListVideo],
   ["Layouts", "/layouts", Layers3],
   ["Schedules", "/schedules", CalendarDays],

@@ -37,9 +37,11 @@ import type {
 export function SourceProviderGallery({
   onChoose,
   onClose,
+  page = false,
 }: {
   onChoose: (provider: SourceProvider) => void;
   onClose: () => void;
+  page?: boolean;
 }) {
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
@@ -52,11 +54,11 @@ export function SourceProviderGallery({
     return () => removeEventListener("keydown", escape);
   }, [onClose]);
   return (
-    <div className="details-backdrop" role="presentation">
+    <div className="details-backdrop" role={page ? undefined : "presentation"}>
       <section
         className="source-gallery"
-        role="dialog"
-        aria-modal="true"
+        role={page ? undefined : "dialog"}
+        aria-modal={page ? undefined : true}
         aria-labelledby="source-gallery-title"
       >
         <header>
@@ -219,6 +221,7 @@ export function StructuredSourceEditor({
   readOnly = false,
   onClose,
   onSaved,
+  page = false,
 }: {
   provider: "rss" | "atom" | "json" | "csv";
   asset?: Asset;
@@ -226,6 +229,7 @@ export function StructuredSourceEditor({
   readOnly?: boolean;
   onClose: () => void;
   onSaved: (asset: Asset) => void;
+  page?: boolean;
 }) {
   const queryClient = useQueryClient();
   const [name, setName] = useState(asset?.name ?? "");
@@ -292,11 +296,11 @@ export function StructuredSourceEditor({
       },
     }));
   return (
-    <div className="details-backdrop" role="presentation">
+    <div className="details-backdrop" role={page ? undefined : "presentation"}>
       <section
         className="source-editor"
-        role="dialog"
-        aria-modal="true"
+        role={page ? undefined : "dialog"}
+        aria-modal={page ? undefined : true}
         aria-labelledby="structured-source-title"
       >
         <header>
@@ -1051,6 +1055,7 @@ export function NativeAppEditor({
   readOnly = false,
   onClose,
   onSaved,
+  page = false,
 }: {
   provider: NativeProvider;
   asset?: Asset;
@@ -1058,6 +1063,7 @@ export function NativeAppEditor({
   readOnly?: boolean;
   onClose: () => void;
   onSaved: (asset: Asset) => void;
+  page?: boolean;
 }) {
   const queryClient = useQueryClient();
   const [name, setName] = useState(asset?.name ?? "");
@@ -1096,11 +1102,11 @@ export function NativeAppEditor({
     value: string,
   ) => setConfiguration((current) => ({ ...current, [key]: value }));
   return (
-    <div className="details-backdrop" role="presentation">
+    <div className="details-backdrop" role={page ? undefined : "presentation"}>
       <section
         className="asset-details source-editor"
-        role="dialog"
-        aria-modal="true"
+        role={page ? undefined : "dialog"}
+        aria-modal={page ? undefined : true}
         aria-labelledby="native-app-title"
       >
         <header>
@@ -1511,12 +1517,14 @@ export function CalendarSourceEditor({
   readOnly = false,
   onClose,
   onSaved,
+  page = false,
 }: {
   asset?: Asset;
   csrf: string;
   readOnly?: boolean;
   onClose: () => void;
   onSaved: (asset: Asset) => void;
+  page?: boolean;
 }) {
   const queryClient = useQueryClient();
   const configured = asset?.source?.configuration as CalendarConfig | undefined;
@@ -1570,11 +1578,11 @@ export function CalendarSourceEditor({
     });
   const diagnostic = diagnostics.data;
   return (
-    <div className="details-backdrop" role="presentation">
+    <div className="details-backdrop" role={page ? undefined : "presentation"}>
       <section
         className="asset-details source-editor"
-        role="dialog"
-        aria-modal="true"
+        role={page ? undefined : "dialog"}
+        aria-modal={page ? undefined : true}
         aria-labelledby="calendar-source-title"
       >
         <header>
@@ -1950,12 +1958,14 @@ export function YouTubeSourceEditor({
   readOnly = false,
   onClose,
   onSaved,
+  page = false,
 }: {
   asset?: Asset;
   csrf: string;
   readOnly?: boolean;
   onClose: () => void;
   onSaved: (asset: Asset) => void;
+  page?: boolean;
 }) {
   const queryClient = useQueryClient();
   const configured = asset?.source?.configuration as YouTubeConfig | undefined;
@@ -2024,11 +2034,11 @@ export function YouTubeSourceEditor({
     return () => removeEventListener("keydown", escape);
   }, [dirty, onClose]);
   return (
-    <div className="details-backdrop" role="presentation">
+    <div className="details-backdrop" role={page ? undefined : "presentation"}>
       <section
         className="asset-details source-editor"
-        role="dialog"
-        aria-modal="true"
+        role={page ? undefined : "dialog"}
+        aria-modal={page ? undefined : true}
         aria-labelledby="youtube-source-title"
       >
         <header>

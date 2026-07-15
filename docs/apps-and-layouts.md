@@ -5,7 +5,7 @@ Tilecast uses one closed provider registry for reusable signage behavior. Studio
 ## Ownership
 
 - A provider implements a built-in name, strict configuration schema, normalization, manifest projection, diagnostics, and native Player behavior.
-- An App/Source instance owns reusable configuration and appears in Content, playlists, usage details, and the Layout library.
+- An App/Source instance owns reusable configuration and appears in the Studio Apps library, playlists, usage details, and the Layout library. Uploaded image and video files remain in the separate Assets library.
 - A Layout placement references an instance by stable ID and owns only bounds, layer, opacity, visibility, and provider-approved presentation overrides.
 - A Layout owns the complete composition and published revision.
 - A playlist zone is a Layout region that plays an existing playlist. It is not an App.
@@ -29,3 +29,5 @@ Date-aware Sources store a mapped date field, fixed or detected format, IANA tim
 ## Compatibility
 
 Studio uses `/api/v1/apps`; `/api/v1/sources` remains an additive compatibility alias. Existing database rows, stable asset IDs, playlist items, Website/YouTube playback, and cached manifest versions remain valid. Internal package and table names may retain `source` where renaming would break storage or protocol compatibility.
+
+Studio routes Apps and Assets separately. `/apps` lists reusable provider instances, `/apps/new/:provider` provides a full-page creator, and `/apps/:id` provides the corresponding full-page editor. `/assets` owns uploaded media and organization. The former `/content` route redirects to `/assets` for bookmarked-link compatibility.
