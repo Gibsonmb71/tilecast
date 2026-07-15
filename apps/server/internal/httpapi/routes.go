@@ -75,6 +75,7 @@ func (s *server) routes() http.Handler {
 			dashboard.Get("/emergencies", s.listEmergencies)
 			dashboard.Get("/player-releases", s.listPlayerReleases)
 			dashboard.With(s.requireRoles("owner"), s.operationsRateLimit, s.requireCSRF).Post("/player-releases/check", s.checkPlayerReleases)
+			dashboard.With(s.requireRoles("owner"), s.operationsRateLimit, s.requireCSRF).Post("/player-releases/github/configuration", s.configureGitHubOAuth)
 			dashboard.With(s.requireRoles("owner"), s.operationsRateLimit, s.requireCSRF).Post("/player-releases/github/device", s.startGitHubDeviceAuthorization)
 			dashboard.With(s.requireRoles("owner"), s.requireCSRF).Post("/player-releases/github/device/poll", s.pollGitHubDeviceAuthorization)
 			dashboard.With(s.requireRoles("owner"), s.requireCSRF).Delete("/player-releases/github", s.disconnectGitHub)
