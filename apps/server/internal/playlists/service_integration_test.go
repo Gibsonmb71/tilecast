@@ -195,7 +195,7 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 		t.Fatalf("empty manifest=%#v %v", empty, err)
 	}
 	websiteID := uuid.New()
-	_, err = pool.Exec(ctx, `INSERT INTO assets(id,organization_id,name,type,original_filename,detected_mime_type,sha256,original_size,processing_status,created_by)VALUES($1,$2,'Status website','source','','application/vnd.tilecast.source+json',''::bytea,0,'ready',$3)`, websiteID, org, owner.User.ID)
+	_, err = pool.Exec(ctx, `INSERT INTO assets(id,organization_id,name,type,original_filename,detected_mime_type,sha256,original_size,processing_status,created_by)VALUES($1,$2,'Status website','widget','','application/vnd.tilecast.widget+json',''::bytea,0,'ready',$3)`, websiteID, org, owner.User.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +203,7 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = pool.Exec(ctx, `INSERT INTO sources(asset_id,provider,configuration)VALUES($1,'website',jsonb_build_object('url','https://example.com/status','displayUrl','https://example.com/status','allowedHosts',jsonb_build_array('example.com'),'javascriptEnabled',true,'domStorageEnabled',true,'cookiePolicy','first_party','reloadPolicy','on_each_activation','loadTimeoutSeconds',20,'zoomPercent',100,'scrollX',0,'scrollY',0,'customUserAgent','','backgroundColor','#0E141B','failureBehavior','fallback_image','fallbackImageAssetId',$2::text))`, websiteID, imageID)
+	_, err = pool.Exec(ctx, `INSERT INTO widgets(asset_id,provider,configuration)VALUES($1,'website',jsonb_build_object('url','https://example.com/status','displayUrl','https://example.com/status','allowedHosts',jsonb_build_array('example.com'),'javascriptEnabled',true,'domStorageEnabled',true,'cookiePolicy','first_party','reloadPolicy','on_each_activation','loadTimeoutSeconds',20,'zoomPercent',100,'scrollX',0,'scrollY',0,'customUserAgent','','backgroundColor','#0E141B','failureBehavior','fallback_image','fallbackImageAssetId',$2::text))`, websiteID, imageID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,17 +220,23 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	webManifest, _, err := service.BuildManifest(ctx, screenID)
-	if err != nil || webManifest.SchemaVersion != 10 || len(webManifest.Sources) != 1 || webManifest.Sources[0].Provider != "website" || len(webManifest.Assets) != 1 {
+	if err != nil || webManifest.SchemaVersion != 11 || len(webManifest.Widgets) != 1 || webManifest.Widgets[0].Provider != "website" || len(webManifest.Assets) != 1 {
 		t.Fatalf("website manifest=%#v %v", webManifest, err)
 	}
+	// Calendar is a Data Source; an Agenda Widget consumes it and is the playlist item.
 	calendarID := uuid.New()
 	calendarConfiguration := `{"calendars":[{"name":"School","url":"https://private.example/calendar.ics"}],"displayMode":"upcoming","maxEvents":10,"fields":{"title":true,"startTime":true,"endTime":false,"date":true,"location":true,"descriptionExcerpt":false},"timezone":"UTC","refreshIntervalSeconds":900,"stalenessLimitHours":168,"emptyState":"No events"}`
-	_, err = pool.Exec(ctx, `INSERT INTO assets(id,organization_id,name,type,original_filename,detected_mime_type,sha256,original_size,processing_status,created_by)VALUES($1,$2,'School calendar','source','','application/vnd.tilecast.source+json',''::bytea,0,'ready',$3)`, calendarID, org, owner.User.ID)
+	_, err = pool.Exec(ctx, `INSERT INTO data_sources(id,organization_id,name,provider,configuration,created_by)VALUES($1,$2,'School calendar','calendar',$3::jsonb,$4)`, calendarID, org, calendarConfiguration, owner.User.ID)
 	if err == nil {
-		_, err = pool.Exec(ctx, `INSERT INTO sources(asset_id,provider,configuration)VALUES($1,'calendar',$2::jsonb)`, calendarID, calendarConfiguration)
+		_, err = pool.Exec(ctx, `INSERT INTO data_source_refresh_states(data_source_id,last_success_at,parse_status,available_event_count,cache_updated_at,cache_expires_at,cached_payload)VALUES($1,now(),'success',1,now(),now()+interval '7 days',jsonb_build_object('events',jsonb_build_array(jsonb_build_object('id','event-1','calendar','School','title','Board meeting','start',to_jsonb(now()+interval '1 day'),'end',to_jsonb(now()+interval '2 hours 1 day'),'allDay',false)),'cachedAt',to_jsonb(now()),'staleAt',to_jsonb(now()+interval '7 days'),'usingCachedData',false,'unavailable',false))`, calendarID)
 	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	agendaID := uuid.New()
+	_, err = pool.Exec(ctx, `INSERT INTO assets(id,organization_id,name,type,original_filename,detected_mime_type,sha256,original_size,processing_status,created_by)VALUES($1,$2,'Today agenda','widget','','application/vnd.tilecast.widget+json',''::bytea,0,'ready',$3)`, agendaID, org, owner.User.ID)
 	if err == nil {
-		_, err = pool.Exec(ctx, `INSERT INTO source_refresh_states(asset_id,last_success_at,parse_status,available_event_count,cache_updated_at,cache_expires_at,cached_payload)VALUES($1,now(),'success',1,now(),now()+interval '7 days',jsonb_build_object('events',jsonb_build_array(jsonb_build_object('id','event-1','calendar','School','title','Board meeting','start',to_jsonb(now()+interval '1 day'),'end',to_jsonb(now()+interval '2 hours 1 day'),'allDay',false)),'cachedAt',to_jsonb(now()),'staleAt',to_jsonb(now()+interval '7 days'),'usingCachedData',false,'unavailable',false))`, calendarID)
+		_, err = pool.Exec(ctx, `INSERT INTO widgets(asset_id,provider,configuration)VALUES($1,'agenda',jsonb_build_object('dataSourceId',$2::text,'fields',jsonb_build_array('title','date'),'maximumItems',10,'foregroundColor','#F5F7FA','backgroundColor','#0E141B'))`, agendaID, calendarID.String())
 	}
 	if err != nil {
 		t.Fatal(err)
@@ -240,7 +246,7 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	calendarDuration := int64(30_000)
-	calendarPlaylist, err = service.AddItem(ctx, calendarPlaylist.ID, owner.User.ID, ItemInput{AssetID: calendarID, DurationMS: &calendarDuration})
+	calendarPlaylist, err = service.AddItem(ctx, calendarPlaylist.ID, owner.User.ID, ItemInput{AssetID: agendaID, DurationMS: &calendarDuration, DeliveryPolicy: "stream"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,8 +255,11 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	calendarManifest, _, err := service.BuildManifest(ctx, screenID)
-	if err != nil || len(calendarManifest.Sources) != 1 || calendarManifest.Sources[0].Provider != "calendar" || strings.Contains(string(calendarManifest.Sources[0].Configuration), "private.example") || !strings.Contains(string(calendarManifest.Sources[0].Configuration), "Board meeting") {
-		t.Fatalf("calendar manifest=%#v err=%v", calendarManifest.Sources, err)
+	if err != nil || len(calendarManifest.DataSources) != 1 || calendarManifest.DataSources[0].Provider != "calendar" || strings.Contains(string(calendarManifest.DataSources[0].Configuration), "private.example") || !strings.Contains(string(calendarManifest.DataSources[0].Configuration), "Board meeting") {
+		t.Fatalf("calendar manifest data sources=%#v err=%v", calendarManifest.DataSources, err)
+	}
+	if len(calendarManifest.Widgets) != 1 || calendarManifest.Widgets[0].Provider != "agenda" {
+		t.Fatalf("calendar manifest widgets=%#v", calendarManifest.Widgets)
 	}
 	if len(notifier.versions) < 3 {
 		t.Fatalf("notifications=%v", notifier.versions)

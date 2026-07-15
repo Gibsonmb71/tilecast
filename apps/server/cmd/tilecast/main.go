@@ -82,7 +82,7 @@ func main() {
 	mediaWorkers := media.NewWorkerPool(mediaService, logger)
 	mediaWorkers.Start(ctx)
 	defer mediaWorkers.Stop()
-	sourceWorker := media.NewSourceRefreshWorker(mediaService, logger)
+	sourceWorker := media.NewDataSourceRefreshWorker(mediaService, logger)
 	sourceWorker.Start(ctx)
 	defer sourceWorker.Stop()
 	if cfg.MDNSEnabled {

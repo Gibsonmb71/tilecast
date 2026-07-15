@@ -24,7 +24,7 @@ func NewService(db *pgxpool.Pool) *Service       { return &Service{db: db} }
 func (s *Service) SetNotifier(notifier Notifier) { s.notifier = notifier }
 
 func defaultDocument(orientation string, width, height int) Document {
-	return Document{SchemaVersion: 1, Canvas: Canvas{Width: width, Height: height, Orientation: orientation, BackgroundColor: "#0E141B", SafeAreaPercent: 5}, Placements: []Placement{}}
+	return Document{SchemaVersion: 2, Canvas: Canvas{Width: width, Height: height, Orientation: orientation, BackgroundColor: "#0E141B", SafeAreaPercent: 5}, Placements: []Placement{}}
 }
 
 func validateDetails(name, description, orientation string, width, height int) error {
@@ -432,9 +432,9 @@ func (s *Service) validatePlaybackLimitsTx(ctx context.Context, tx pgx.Tx, docum
 			}
 			video = assetType == "video"
 			audio = video && (placement.Playback == nil || !placement.Playback.Muted)
-		case "app":
+		case "widget":
 			var provider string
-			if err := tx.QueryRow(ctx, `SELECT provider FROM sources WHERE asset_id=$1`, placement.AppID).Scan(&provider); err != nil {
+			if err := tx.QueryRow(ctx, `SELECT provider FROM widgets WHERE asset_id=$1`, placement.WidgetID).Scan(&provider); err != nil {
 				return err
 			}
 			video = provider == "website" || provider == "youtube"
@@ -450,7 +450,7 @@ func (s *Service) validatePlaybackLimitsTx(ctx context.Context, tx pgx.Tx, docum
 		case "playlistZone":
 			if err := tx.QueryRow(ctx, `SELECT EXISTS(
 				SELECT 1 FROM playlist_items i JOIN assets a ON a.id=i.asset_id
-				LEFT JOIN sources src ON src.asset_id=a.id
+				LEFT JOIN widgets src ON src.asset_id=a.id
 				WHERE i.playlist_id=$1 AND (a.type='video' OR src.provider IN ('website','youtube'))
 			)`, placement.PlaylistID).Scan(&video); err != nil {
 				return err
@@ -473,23 +473,20 @@ func (s *Service) validatePlaybackLimitsTx(ctx context.Context, tx pgx.Tx, docum
 	return nil
 }
 
+// validateStructuredBindingsTx checks that each custom text binding references an existing
+// Data Source of a bindable provider. Unlike Widgets, a bound Data Source is NOT placed in
+// the Layout; the binding references it directly by dataSourceId.
 func (s *Service) validateStructuredBindingsTx(ctx context.Context, tx pgx.Tx, document Document) error {
-	placedApps := map[uuid.UUID]bool{}
-	for _, placement := range document.Placements {
-		if placement.Type == "app" && placement.AppID != nil {
-			placedApps[*placement.AppID] = true
-		}
-	}
 	for _, placement := range document.Placements {
 		if placement.Primitive == nil || placement.Primitive.Binding == nil {
 			continue
 		}
 		binding := placement.Primitive.Binding
-		if !placedApps[binding.SourceID] {
-			return errors.New("structured binding requires its data Source to be placed in the Layout")
-		}
 		var provider string
-		if err := tx.QueryRow(ctx, `SELECT provider FROM sources WHERE asset_id=$1`, binding.SourceID).Scan(&provider); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT provider FROM data_sources WHERE id=$1 AND deleted_at IS NULL`, binding.DataSourceID).Scan(&provider); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return errors.New("structured binding references an unknown data Source")
+			}
 			return err
 		}
 		if provider != "csv" && provider != "json" {
@@ -511,8 +508,13 @@ func (s *Service) validateDependencyQuery(ctx context.Context, q queryer, deps [
 	for _, dep := range deps {
 		var valid bool
 		switch dep.Type {
-		case "app":
-			err := q.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM assets a JOIN sources s ON s.asset_id=a.id WHERE a.id=$1 AND a.deleted_at IS NULL AND a.processing_status='ready')`, dep.ID).Scan(&valid)
+		case "widget":
+			err := q.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM assets a JOIN widgets s ON s.asset_id=a.id WHERE a.id=$1 AND a.deleted_at IS NULL AND a.processing_status='ready')`, dep.ID).Scan(&valid)
+			if err != nil {
+				return err
+			}
+		case "data_source":
+			err := q.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM data_sources WHERE id=$1 AND deleted_at IS NULL)`, dep.ID).Scan(&valid)
 			if err != nil {
 				return err
 			}

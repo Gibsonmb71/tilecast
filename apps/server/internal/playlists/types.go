@@ -144,26 +144,27 @@ type AssignmentSchedule struct {
 }
 
 type Manifest struct {
-	SchemaVersion          int                `json:"schemaVersion"`
-	ManifestVersion        int64              `json:"manifestVersion"`
-	ScreenID               uuid.UUID          `json:"screenId"`
-	GeneratedAt            time.Time          `json:"generatedAt"`
-	Mode                   string             `json:"mode"`
-	Playlist               *ManifestPlaylist  `json:"playlist,omitempty"`
-	DirectFallbackPlaylist *ManifestPlaylist  `json:"directFallbackPlaylist,omitempty"`
-	Playlists              []ManifestPlaylist `json:"playlists"`
-	Schedules              []ManifestSchedule `json:"schedules"`
-	Assets                 []ManifestAsset    `json:"assets"`
-	ServerTime             time.Time          `json:"serverTime"`
-	PrefetchHorizonDays    int                `json:"prefetchHorizonDays"`
-	ActivationGraceSeconds int                `json:"activationGraceSeconds"`
-	Websites               []ManifestWebsite  `json:"websites"`
-	Sources                []ManifestSource   `json:"sources"`
-	Emergency              *ManifestEmergency `json:"emergency,omitempty"`
-	SyncGroup              *ManifestSyncGroup `json:"syncGroup,omitempty"`
-	Layout                 *ManifestLayout    `json:"layout,omitempty"`
-	DirectFallbackLayout   *ManifestLayout    `json:"directFallbackLayout,omitempty"`
-	Layouts                []ManifestLayout   `json:"layouts"`
+	SchemaVersion          int                  `json:"schemaVersion"`
+	ManifestVersion        int64                `json:"manifestVersion"`
+	ScreenID               uuid.UUID            `json:"screenId"`
+	GeneratedAt            time.Time            `json:"generatedAt"`
+	Mode                   string               `json:"mode"`
+	Playlist               *ManifestPlaylist    `json:"playlist,omitempty"`
+	DirectFallbackPlaylist *ManifestPlaylist    `json:"directFallbackPlaylist,omitempty"`
+	Playlists              []ManifestPlaylist   `json:"playlists"`
+	Schedules              []ManifestSchedule   `json:"schedules"`
+	Assets                 []ManifestAsset      `json:"assets"`
+	ServerTime             time.Time            `json:"serverTime"`
+	PrefetchHorizonDays    int                  `json:"prefetchHorizonDays"`
+	ActivationGraceSeconds int                  `json:"activationGraceSeconds"`
+	Websites               []ManifestWebsite    `json:"websites"`
+	Widgets                []ManifestWidget     `json:"widgets"`
+	DataSources            []ManifestDataSource `json:"dataSources"`
+	Emergency              *ManifestEmergency   `json:"emergency,omitempty"`
+	SyncGroup              *ManifestSyncGroup   `json:"syncGroup,omitempty"`
+	Layout                 *ManifestLayout      `json:"layout,omitempty"`
+	DirectFallbackLayout   *ManifestLayout      `json:"directFallbackLayout,omitempty"`
+	Layouts                []ManifestLayout     `json:"layouts"`
 }
 type ManifestLayout struct {
 	ID             uuid.UUID        `json:"id"`
@@ -176,8 +177,23 @@ type ManifestSyncGroup struct {
 	ID            uuid.UUID `json:"id"`
 	PlaybackEpoch time.Time `json:"playbackEpoch"`
 }
-type ManifestSource struct {
+
+// ManifestWidget is a renderable widget projected into the manifest. Its configuration
+// carries display settings only; a data-driven widget references a Data Source by id and
+// never embeds the cached dataset.
+type ManifestWidget struct {
 	AssetID       uuid.UUID       `json:"assetId"`
+	Name          string          `json:"name"`
+	Provider      string          `json:"provider"`
+	ConfigVersion int             `json:"configVersion"`
+	Configuration json.RawMessage `json:"configuration"`
+}
+
+// ManifestDataSource is a Data Source projected into the manifest exactly once and shared
+// across every widget or Layout binding that consumes it. Its configuration carries the
+// bounded cached dataset plus the date-selection policy the Player applies locally.
+type ManifestDataSource struct {
+	ID            uuid.UUID       `json:"id"`
 	Name          string          `json:"name"`
 	Provider      string          `json:"provider"`
 	ConfigVersion int             `json:"configVersion"`

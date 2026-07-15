@@ -99,7 +99,7 @@ type Asset struct {
 	Variants           []Variant      `json:"variants"`
 	ThumbnailURL       *string        `json:"thumbnailUrl,omitempty"`
 	Website            *WebsiteConfig `json:"website,omitempty"`
-	Source             *Source        `json:"source,omitempty"`
+	Widget             *Widget        `json:"widget,omitempty"`
 	PlaylistUsage      int            `json:"playlistUsage"`
 	LayoutUsage        []LayoutUsage  `json:"layoutUsage"`
 	FolderID           *uuid.UUID     `json:"folderId,omitempty"`
@@ -149,17 +149,71 @@ type BulkOrganizeInput struct {
 	RemoveCollectionIDs []uuid.UUID
 }
 
-type Source struct {
+// Widget is the visual configuration attached to a widget asset (assets.type='widget').
+type Widget struct {
 	Provider      string          `json:"provider"`
 	ConfigVersion int             `json:"configVersion"`
 	Configuration json.RawMessage `json:"configuration"`
 }
 
-type SourceInput struct {
+type WidgetInput struct {
 	Provider      string          `json:"provider"`
 	Name          string          `json:"name"`
 	Description   string          `json:"description"`
 	Configuration json.RawMessage `json:"configuration"`
+}
+
+// DataSource is a reusable, non-visual data connection. It is a top-level record
+// (not an asset) and can never be placed in a playlist or Layout as content.
+type DataSource struct {
+	ID            uuid.UUID       `json:"id"`
+	Provider      string          `json:"provider"`
+	Name          string          `json:"name"`
+	Description   string          `json:"description"`
+	ConfigVersion int             `json:"configVersion"`
+	Configuration json.RawMessage `json:"configuration"`
+	Creator       *Creator        `json:"creator,omitempty"`
+	CreatedAt     time.Time       `json:"createdAt"`
+	UpdatedAt     time.Time       `json:"updatedAt"`
+}
+
+type DataSourceInput struct {
+	Provider      string          `json:"provider"`
+	Name          string          `json:"name"`
+	Description   string          `json:"description"`
+	Configuration json.RawMessage `json:"configuration"`
+}
+
+// DataSourceField describes one field a Data Source exposes, for Widget field selection.
+type DataSourceField struct {
+	Key   string `json:"key"`
+	Label string `json:"label"`
+	Type  string `json:"type"`
+}
+
+// DataSourceWidgetUsage / DataSourceBindingUsage report where a Data Source is consumed.
+type DataSourceWidgetUsage struct {
+	ID       uuid.UUID `json:"id"`
+	Name     string    `json:"name"`
+	Provider string    `json:"provider"`
+}
+
+type DataSourceBindingUsage struct {
+	LayoutID   uuid.UUID `json:"layoutId"`
+	LayoutName string    `json:"layoutName"`
+	Field      string    `json:"field"`
+}
+
+// DataSourceDetail is the full detail view for one Data Source.
+type DataSourceDetail struct {
+	DataSource
+	Status        string                   `json:"status"`
+	Diagnostics   DataSourceDiagnostics    `json:"diagnostics"`
+	Fields        []DataSourceField        `json:"fields"`
+	DateSelection *DateSelection           `json:"dateSelection,omitempty"`
+	CachedRecords int                      `json:"cachedRecordCount"`
+	WidgetUsage   []DataSourceWidgetUsage  `json:"widgetUsage"`
+	BindingUsage  []DataSourceBindingUsage `json:"bindingUsage"`
 }
 
 type YouTubeConfig struct {
@@ -236,8 +290,8 @@ type CalendarPlayerConfig struct {
 	Data        CalendarPreparedData `json:"data"`
 }
 
-type SourceRefreshDiagnostics struct {
-	AssetID             uuid.UUID  `json:"assetId"`
+type DataSourceDiagnostics struct {
+	DataSourceID        uuid.UUID  `json:"dataSourceId"`
 	LastSuccessfulAt    *time.Time `json:"lastSuccessfulRefresh,omitempty"`
 	LastAttemptedAt     *time.Time `json:"lastAttemptedRefresh,omitempty"`
 	HTTPResultCategory  *string    `json:"httpResultCategory,omitempty"`
@@ -306,37 +360,38 @@ type DateSelection struct {
 	FallbackText    string `json:"fallbackText,omitempty"`
 }
 
-type ClockAppConfig struct {
+type ClockWidgetConfig struct {
 	Timezone        string `json:"timezone"`
 	Format          string `json:"format"`
 	ShowSeconds     bool   `json:"showSeconds"`
 	ForegroundColor string `json:"foregroundColor"`
 	BackgroundColor string `json:"backgroundColor"`
 }
-type DateAppConfig struct {
+type DateWidgetConfig struct {
 	Timezone        string `json:"timezone"`
 	Format          string `json:"format"`
 	ForegroundColor string `json:"foregroundColor"`
 	BackgroundColor string `json:"backgroundColor"`
 }
-type QRCodeAppConfig struct {
+type QRCodeWidgetConfig struct {
 	Value           string `json:"value"`
 	Label           string `json:"label,omitempty"`
 	ErrorCorrection string `json:"errorCorrection"`
 	ForegroundColor string `json:"foregroundColor"`
 	BackgroundColor string `json:"backgroundColor"`
 }
-type TickerAppConfig struct {
-	SourceAssetID   uuid.UUID `json:"sourceAssetId"`
+type TickerWidgetConfig struct {
+	DataSourceID    uuid.UUID `json:"dataSourceId"`
 	Field           string    `json:"field"`
 	Separator       string    `json:"separator"`
 	Speed           string    `json:"speed"`
+	Direction       string    `json:"direction"`
 	ForegroundColor string    `json:"foregroundColor"`
 	BackgroundColor string    `json:"backgroundColor"`
 }
 
-type DisplayAppConfig struct {
-	SourceAssetID   uuid.UUID `json:"sourceAssetId"`
+type DisplayWidgetConfig struct {
+	DataSourceID    uuid.UUID `json:"dataSourceId"`
 	Fields          []string  `json:"fields"`
 	MaximumItems    int       `json:"maximumItems"`
 	ForegroundColor string    `json:"foregroundColor"`
@@ -372,13 +427,13 @@ type StructuredPlayerConfig struct {
 }
 
 type StructuredPreview struct {
-	Configuration StructuredPlayerConfig   `json:"configuration"`
-	Diagnostics   SourceRefreshDiagnostics `json:"diagnostics"`
+	Configuration StructuredPlayerConfig `json:"configuration"`
+	Diagnostics   DataSourceDiagnostics  `json:"diagnostics"`
 }
 
 type CalendarPreview struct {
-	Configuration CalendarPlayerConfig     `json:"configuration"`
-	Diagnostics   SourceRefreshDiagnostics `json:"diagnostics"`
+	Configuration CalendarPlayerConfig  `json:"configuration"`
+	Diagnostics   DataSourceDiagnostics `json:"diagnostics"`
 }
 
 type WebsiteConfig struct {
@@ -429,6 +484,7 @@ type WebsiteReportingScreen struct {
 
 type AssetInvalidator interface {
 	AssetChanged(context.Context, uuid.UUID, string) error
+	DataSourceChanged(context.Context, uuid.UUID, string) error
 }
 
 type Creator struct {
@@ -466,9 +522,22 @@ type Upload struct {
 }
 
 type ListOptions struct {
-	Search, Type, SourceProvider, Status, Sort string
+	Search, Type, WidgetProvider, Status, Sort string
 	FolderID, CollectionID, TagID              *uuid.UUID
 	Page, PageSize                             int
+}
+
+// DataSourceListOptions filters the Data Source library.
+type DataSourceListOptions struct {
+	Search, Provider, Sort string
+	Page, PageSize         int
+}
+
+type DataSourceListResult struct {
+	Items    []DataSource `json:"items"`
+	Total    int          `json:"total"`
+	Page     int          `json:"page"`
+	PageSize int          `json:"pageSize"`
 }
 type ListResult struct {
 	Items    []Asset `json:"items"`

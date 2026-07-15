@@ -322,12 +322,12 @@ func (s *Service) GetAsset(ctx context.Context, id uuid.UUID) (Asset, error) {
 	if err != nil {
 		return Asset{}, err
 	}
-	if asset.Type == "source" {
-		asset.Source, err = s.loadSource(ctx, id)
+	if asset.Type == "widget" {
+		asset.Widget, err = s.loadWidget(ctx, id)
 		if err != nil {
 			return Asset{}, err
 		}
-		if asset.Source != nil && asset.Source.Provider == "website" {
+		if asset.Widget != nil && asset.Widget.Provider == "website" {
 			asset.Website, err = s.loadWebsite(ctx, id)
 			if err != nil {
 				return Asset{}, err
@@ -395,7 +395,7 @@ func (s *Service) variants(ctx context.Context, assetID uuid.UUID) ([]Variant, e
 }
 
 func (s *Service) layoutUsage(ctx context.Context, assetID uuid.UUID) ([]LayoutUsage, error) {
-	rows, err := s.db.Query(ctx, `SELECT l.id,l.name,bool_or(l.published_revision_id IS NOT NULL) FROM layouts l WHERE l.deleted_at IS NULL AND (EXISTS(SELECT 1 FROM layout_draft_dependencies d WHERE d.layout_id=l.id AND d.dependency_id=$1 AND d.dependency_type IN('app','asset')) OR EXISTS(SELECT 1 FROM layout_revisions r JOIN layout_revision_dependencies d ON d.revision_id=r.id WHERE r.layout_id=l.id AND d.dependency_id=$1 AND d.dependency_type IN('app','asset'))) GROUP BY l.id,l.name ORDER BY lower(l.name),l.id`, assetID)
+	rows, err := s.db.Query(ctx, `SELECT l.id,l.name,bool_or(l.published_revision_id IS NOT NULL) FROM layouts l WHERE l.deleted_at IS NULL AND (EXISTS(SELECT 1 FROM layout_draft_dependencies d WHERE d.layout_id=l.id AND d.dependency_id=$1 AND d.dependency_type IN('widget','asset')) OR EXISTS(SELECT 1 FROM layout_revisions r JOIN layout_revision_dependencies d ON d.revision_id=r.id WHERE r.layout_id=l.id AND d.dependency_id=$1 AND d.dependency_type IN('widget','asset'))) GROUP BY l.id,l.name ORDER BY lower(l.name),l.id`, assetID)
 	if err != nil {
 		return nil, err
 	}
@@ -446,8 +446,8 @@ func (s *Service) ListAssets(ctx context.Context, o ListOptions) (ListResult, er
 			add("a.type=$%d", o.Type)
 		}
 	}
-	if o.SourceProvider != "" {
-		add("EXISTS(SELECT 1 FROM sources sf WHERE sf.asset_id=a.id AND sf.provider=$%d)", o.SourceProvider)
+	if o.WidgetProvider != "" {
+		add("EXISTS(SELECT 1 FROM widgets wf WHERE wf.asset_id=a.id AND wf.provider=$%d)", o.WidgetProvider)
 	}
 	if o.Status != "" {
 		add("a.processing_status=$%d", o.Status)
@@ -478,12 +478,12 @@ func (s *Service) ListAssets(ctx context.Context, o ListOptions) (ListResult, er
 		if err != nil {
 			return ListResult{}, err
 		}
-		if a.Type == "source" {
-			a.Source, err = s.loadSource(ctx, a.ID)
+		if a.Type == "widget" {
+			a.Widget, err = s.loadWidget(ctx, a.ID)
 			if err != nil {
 				return ListResult{}, err
 			}
-			if a.Source != nil && a.Source.Provider == "website" {
+			if a.Widget != nil && a.Widget.Provider == "website" {
 				a.Website, err = s.loadWebsite(ctx, a.ID)
 				if err != nil {
 					return ListResult{}, err
@@ -567,7 +567,7 @@ func (s *Service) DeleteAsset(ctx context.Context, id, userID uuid.UUID) error {
 	}
 	defer tx.Rollback(ctx)
 	var inUse bool
-	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM playlist_items WHERE asset_id=$1) OR EXISTS(SELECT 1 FROM website_assets WHERE fallback_image_asset_id=$1) OR EXISTS(SELECT 1 FROM sources JOIN assets source_asset ON source_asset.id=sources.asset_id AND source_asset.deleted_at IS NULL WHERE sources.configuration->>'fallbackImageAssetId'=$1::text OR sources.configuration->>'sourceAssetId'=$1::text) OR EXISTS(SELECT 1 FROM organization_runtime_settings WHERE settings->>'branding.logo_asset_id'=$1::text OR settings->>'branding.icon_asset_id'=$1::text) OR EXISTS(SELECT 1 FROM layout_draft_dependencies WHERE dependency_id=$1 AND dependency_type IN('app','asset')) OR EXISTS(SELECT 1 FROM layout_revision_dependencies WHERE dependency_id=$1 AND dependency_type IN('app','asset'))`, id).Scan(&inUse); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM playlist_items WHERE asset_id=$1) OR EXISTS(SELECT 1 FROM website_assets WHERE fallback_image_asset_id=$1) OR EXISTS(SELECT 1 FROM widgets JOIN assets widget_asset ON widget_asset.id=widgets.asset_id AND widget_asset.deleted_at IS NULL WHERE widgets.configuration->>'fallbackImageAssetId'=$1::text) OR EXISTS(SELECT 1 FROM organization_runtime_settings WHERE settings->>'branding.logo_asset_id'=$1::text OR settings->>'branding.icon_asset_id'=$1::text) OR EXISTS(SELECT 1 FROM layout_draft_dependencies WHERE dependency_id=$1 AND dependency_type IN('widget','asset')) OR EXISTS(SELECT 1 FROM layout_revision_dependencies WHERE dependency_id=$1 AND dependency_type IN('widget','asset'))`, id).Scan(&inUse); err != nil {
 		return err
 	}
 	if inUse {
@@ -593,11 +593,11 @@ func (s *Service) DeleteAsset(ctx context.Context, id, userID uuid.UUID) error {
 		}
 		return nil
 	}
-	if assetType == "source" {
+	if assetType == "widget" {
 		if _, err = tx.Exec(ctx, `DELETE FROM website_assets WHERE asset_id=$1`, id); err != nil {
 			return err
 		}
-		if _, err = tx.Exec(ctx, `DELETE FROM sources WHERE asset_id=$1`, id); err != nil {
+		if _, err = tx.Exec(ctx, `DELETE FROM widgets WHERE asset_id=$1`, id); err != nil {
 			return err
 		}
 		if _, err = tx.Exec(ctx, `UPDATE assets SET processing_status='deleted' WHERE id=$1`, id); err != nil {
@@ -610,8 +610,8 @@ func (s *Service) DeleteAsset(ctx context.Context, id, userID uuid.UUID) error {
 		}
 	}
 	action := "media.asset_deleted"
-	if assetType == "source" {
-		action = "source.deleted"
+	if assetType == "widget" {
+		action = "widget.deleted"
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)VALUES($1,$2,$3,'asset',$4)`, uuid.New(), userID, action, id.String())
 	if err != nil {

@@ -18,8 +18,8 @@ var (
 )
 
 func ValidateDocument(document Document) error {
-	if document.SchemaVersion != 1 {
-		return errors.New("layout schemaVersion must be 1")
+	if document.SchemaVersion != 2 {
+		return errors.New("layout schemaVersion must be 2")
 	}
 	canvas := document.Canvas
 	if canvas.Width < 320 || canvas.Width > 7680 || canvas.Height < 320 || canvas.Height > 7680 {
@@ -66,7 +66,7 @@ func ValidateDocument(document Document) error {
 }
 
 func validatePlacement(p Placement, canvas Canvas) error {
-	if p.Type != "app" && p.Type != "asset" && p.Type != "playlistZone" && p.Type != "primitive" {
+	if p.Type != "widget" && p.Type != "asset" && p.Type != "playlistZone" && p.Type != "primitive" {
 		return errors.New("type is invalid")
 	}
 	if name := strings.TrimSpace(p.Name); name == "" || len(name) > 120 {
@@ -81,7 +81,7 @@ func validatePlacement(p Placement, canvas Canvas) error {
 	if len(p.Overrides) > 4096 || (len(p.Overrides) > 0 && !json.Valid(p.Overrides)) {
 		return errors.New("presentation overrides are invalid")
 	}
-	if p.Type == "app" && len(p.Overrides) > 0 {
+	if p.Type == "widget" && len(p.Overrides) > 0 {
 		var overrides struct {
 			Fit                string `json:"fit"`
 			Alignment          string `json:"alignment"`
@@ -93,23 +93,23 @@ func validatePlacement(p Placement, canvas Canvas) error {
 		decoder := json.NewDecoder(bytes.NewReader(p.Overrides))
 		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(&overrides); err != nil {
-			return errors.New("App placement contains unsupported overrides")
+			return errors.New("Widget placement contains unsupported overrides")
 		}
 		if overrides.Fit != "" && overrides.Fit != "contain" && overrides.Fit != "cover" && overrides.Fit != "stretch" {
-			return errors.New("App placement fit override is invalid")
+			return errors.New("Widget placement fit override is invalid")
 		}
 		if overrides.Alignment != "" && overrides.Alignment != "left" && overrides.Alignment != "center" && overrides.Alignment != "right" {
-			return errors.New("App placement alignment override is invalid")
+			return errors.New("Widget placement alignment override is invalid")
 		}
 		if overrides.ForegroundColor != "" && !validColor(overrides.ForegroundColor) || overrides.BackgroundColor != "" && !validColor(overrides.BackgroundColor) {
-			return errors.New("App placement color override is invalid")
+			return errors.New("Widget placement color override is invalid")
 		}
 		if overrides.FallbackVisibility != "" && overrides.FallbackVisibility != "show" && overrides.FallbackVisibility != "hide" {
-			return errors.New("App placement fallback override is invalid")
+			return errors.New("Widget placement fallback override is invalid")
 		}
 	}
 	references := 0
-	if p.AppID != nil {
+	if p.WidgetID != nil {
 		references++
 	}
 	if p.AssetID != nil {
@@ -125,9 +125,9 @@ func validatePlacement(p Placement, canvas Canvas) error {
 		return errors.New("must contain exactly one typed reference")
 	}
 	switch p.Type {
-	case "app":
-		if p.AppID == nil {
-			return errors.New("App placement requires appId")
+	case "widget":
+		if p.WidgetID == nil {
+			return errors.New("Widget placement requires widgetId")
 		}
 	case "asset":
 		if p.AssetID == nil {
@@ -186,7 +186,7 @@ func validatePrimitive(p Primitive) error {
 		if len(p.Binding.Prefix) > 500 || len(p.Binding.Suffix) > 500 || len(p.Binding.FallbackText) > 500 {
 			return errors.New("structured binding text is too long")
 		}
-		if p.Binding.SourceID == uuid.Nil || !fieldPattern.MatchString(p.Binding.Field) {
+		if p.Binding.DataSourceID == uuid.Nil || !fieldPattern.MatchString(p.Binding.Field) {
 			return errors.New("structured binding is invalid")
 		}
 		if p.Binding.Format != "" && p.Binding.Format != "text" && p.Binding.Format != "date-short" && p.Binding.Format != "date-long" && p.Binding.Format != "number" && p.Binding.Format != "integer" && p.Binding.Format != "currency" {
@@ -214,12 +214,12 @@ func Dependencies(document Document) []Dependency {
 	}
 	add("asset", document.Canvas.BackgroundAssetID)
 	for _, placement := range document.Placements {
-		add("app", placement.AppID)
+		add("widget", placement.WidgetID)
 		add("asset", placement.AssetID)
 		add("playlist", placement.PlaylistID)
 		if placement.Primitive != nil && placement.Primitive.Binding != nil {
-			id := placement.Primitive.Binding.SourceID
-			add("app", &id)
+			id := placement.Primitive.Binding.DataSourceID
+			add("data_source", &id)
 		}
 	}
 	return result
