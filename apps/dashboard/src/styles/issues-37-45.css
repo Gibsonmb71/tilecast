@@ -1,0 +1,303 @@
+/* Follow-up corrections for dashboard issues #37-#45. */
+
+/* #37: keep the user list compact and move editing into a dedicated dialog. */
+.user-list-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--tc-border-default);
+}
+
+.user-list-row:last-child {
+  border-bottom: 0;
+}
+
+.user-list-row__identity {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.user-list-row__identity span,
+.user-list-row__identity small {
+  overflow: hidden;
+  color: var(--tc-text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-edit-dialog {
+  display: grid;
+  gap: 18px;
+  width: min(560px, calc(100vw - 72px));
+  min-width: 0;
+}
+
+.user-edit-dialog__fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.user-edit-dialog__fields .checkbox-control {
+  grid-column: 1 / -1;
+}
+
+.user-edit-dialog select {
+  width: 100%;
+}
+
+.user-edit-dialog__actions {
+  display: grid;
+  grid-template-columns: auto minmax(16px, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  padding-top: 14px;
+  border-top: 1px solid var(--tc-border-default);
+}
+
+/* #38: constrain the presentation chooser to the dialog viewport. */
+.dialog:has(.schedule-picker-dialog) {
+  width: min(640px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+  overflow: hidden;
+}
+
+.schedule-picker-dialog,
+.schedule-picker-search,
+.schedule-picker-results,
+.schedule-picker-results button,
+.schedule-picker-results button > span {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.schedule-picker-dialog {
+  overflow: hidden;
+}
+
+.schedule-picker-search {
+  display: flex;
+}
+
+.schedule-picker-search input {
+  min-width: 0;
+  flex: 1;
+}
+
+.schedule-picker-results {
+  overflow-x: hidden;
+}
+
+.schedule-picker-results button {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.schedule-picker-results strong,
+.schedule-picker-results small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* #39 and #40: show visual Layout thumbnails and keep search on one line. */
+.layout-library-item__preview {
+  position: relative;
+  padding: 0;
+  overflow: hidden;
+  background: var(--tc-bg-subtle);
+}
+
+.layout-thumbnail {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.layout-thumbnail--loading {
+  display: grid;
+  place-items: center;
+  color: var(--tc-text-secondary);
+  font-size: 12px;
+}
+
+.layout-library-item__dimensions {
+  position: absolute;
+  right: 7px;
+  bottom: 7px;
+  padding: 3px 6px;
+  color: #fff;
+  background: rgb(15 23 42 / 72%);
+  border-radius: var(--tc-radius-sm);
+  font-size: 10px;
+  line-height: 1.2;
+  backdrop-filter: blur(4px);
+}
+
+.layouts-list-toolbar .search-control {
+  width: min(360px, 100%);
+  min-width: 220px;
+}
+
+.layouts-list-toolbar .search-control input {
+  min-width: 0;
+  white-space: nowrap;
+}
+
+/* #41: restore breathing room above Create playlist actions. */
+.confirm-dialog .field + .form-actions,
+.confirm-dialog .notice + .form-actions {
+  margin-top: 18px;
+}
+
+/* #42: keep App usage text clear by compacting duplicate/delete to icons. */
+.apps-page .source-card-actions button:nth-of-type(2),
+.apps-page .source-card-actions button:nth-of-type(3) {
+  width: 30px;
+  min-width: 30px;
+  padding: 4px;
+  overflow: hidden;
+  font-size: 0;
+}
+
+.apps-page .source-card-actions button:nth-of-type(2) svg,
+.apps-page .source-card-actions button:nth-of-type(3) svg {
+  margin: 0;
+}
+
+/* #43 and #44: replace the always-visible Assets controls with one popover. */
+.content-page:not(.apps-page) > .page-heading {
+  position: relative;
+}
+
+.content-page:not(.apps-page) .content-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.content-page:not(.apps-page) .content-toolbar > .content-type-filters,
+.content-page:not(.apps-page) .content-toolbar > select {
+  display: none;
+}
+
+.content-page:not(.apps-page) .content-toolbar .search-control {
+  width: min(480px, 100%);
+  flex: 1;
+}
+
+.content-page:not(.apps-page) .content-toolbar .view-switch {
+  margin-left: auto;
+}
+
+.asset-filter-menu {
+  position: relative;
+  margin-left: 0;
+}
+
+.asset-filter-menu > summary {
+  margin: 0;
+  list-style: none;
+  text-decoration: none;
+}
+
+.asset-filter-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.asset-filter-menu__count {
+  display: grid;
+  min-width: 18px;
+  height: 18px;
+  place-items: center;
+  padding: 0 5px;
+  color: var(--tc-text-inverse);
+  background: var(--tc-action-primary);
+  border-radius: var(--tc-radius-pill);
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.asset-filter-menu__panel {
+  position: absolute;
+  z-index: 25;
+  top: calc(100% + 8px);
+  right: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(170px, 1fr));
+  gap: 12px;
+  width: min(470px, calc(100vw - 48px));
+  padding: 16px;
+  color: var(--tc-text-primary);
+  background: var(--tc-bg-surface);
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-panel);
+  box-shadow: var(--tc-shadow-lg);
+}
+
+.asset-filter-menu__panel > header {
+  display: flex;
+  grid-column: 1 / -1;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: start;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--tc-border-default);
+}
+
+.asset-filter-menu__panel > header > div {
+  display: grid;
+  gap: 2px;
+}
+
+.asset-filter-menu__panel > header span {
+  color: var(--tc-text-secondary);
+  font-size: 12px;
+}
+
+.asset-filter-menu__panel > label {
+  display: grid;
+  gap: 5px;
+  color: var(--tc-text-secondary);
+  font-size: 12px;
+}
+
+.asset-filter-menu__panel select {
+  width: 100%;
+}
+
+/* #45: Links styled as buttons should not inherit anchor underlines. */
+.screens-page .heading-actions a.button {
+  text-decoration: none;
+}
+
+@media (max-width: 760px) {
+  .user-edit-dialog {
+    width: min(520px, calc(100vw - 40px));
+  }
+
+  .user-edit-dialog__fields,
+  .asset-filter-menu__panel {
+    grid-template-columns: 1fr;
+  }
+
+  .user-edit-dialog__actions {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .user-edit-dialog__actions > span {
+    display: none;
+  }
+
+  .user-edit-dialog__actions .button--danger-quiet {
+    grid-column: 1 / -1;
+  }
+
+  .asset-filter-menu__panel {
+    right: min(0px, calc(100vw - 100%));
+  }
+}
