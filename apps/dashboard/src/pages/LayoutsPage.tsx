@@ -44,6 +44,7 @@ export function LayoutsPage() {
   const [description, setDescription] = useState("");
   const [preset, setPreset] = useState(0);
   const [template, setTemplate] = useState<"blank" | "announcement">("blank");
+  const [actionError, setActionError] = useState("");
   const layouts = useQuery({
     queryKey: ["layouts", search],
     queryFn: () => api.layouts(search),
@@ -119,15 +120,29 @@ export function LayoutsPage() {
   });
   const duplicate = useMutation({
     mutationFn: (id: string) => api.duplicateLayout(id, csrf),
+    onMutate: () => setActionError(""),
     onSuccess: (layout) => {
       void queryClient.invalidateQueries({ queryKey: ["layouts"] });
       void navigate(`/layouts/${layout.id}`);
     },
+    onError: (error) =>
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "The Layout could not be duplicated.",
+      ),
   });
   const remove = useMutation({
     mutationFn: (id: string) => api.deleteLayout(id, csrf),
+    onMutate: () => setActionError(""),
     onSuccess: () =>
       void queryClient.invalidateQueries({ queryKey: ["layouts"] }),
+    onError: (error) =>
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "The Layout could not be deleted because it is still in use.",
+      ),
   });
   return (
     <section className="layouts-page">
@@ -157,6 +172,11 @@ export function LayoutsPage() {
           />
         </label>
       </div>
+      {actionError && (
+        <div className="notice notice--error" role="alert">
+          {actionError}
+        </div>
+      )}
       {layouts.isLoading ? (
         <p className="status-copy">Loading Layouts…</p>
       ) : layouts.data?.items.length ? (
@@ -177,7 +197,7 @@ export function LayoutsPage() {
                 </span>
               </button>
               <div className="layout-library-item__copy">
-                <strong>{layout.name}</strong>
+                <strong title={layout.name}>{layout.name}</strong>
                 <span>
                   {layout.orientation} ·{" "}
                   {layout.publishedRevision

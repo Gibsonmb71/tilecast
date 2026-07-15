@@ -3,6 +3,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router";
 import "@tilecast/design-tokens/tokens.css";
+import "./theme";
 import { App } from "./App";
 import { AuthProvider } from "./auth/AuthProvider";
 import "./styles.css";
@@ -11,6 +12,7 @@ import "./styles/signal.css";
 import "./styles/reliability.css";
 import "./styles/screens.css";
 import "./styles/account-menu.css";
+import "./styles/issue-fixes.css";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false } },
