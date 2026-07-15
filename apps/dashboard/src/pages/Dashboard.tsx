@@ -10,6 +10,7 @@ import {
   LogOut,
   Monitor,
   Settings,
+  Users,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -28,6 +29,7 @@ const nav = [
   ["Layouts", "/layouts", Layers3],
   ["Schedules", "/schedules", CalendarDays],
   ["Activity", "/activity", Activity],
+  ["Users", "/users", Users],
   ["Settings", "/settings", Settings],
 ] as const;
 
@@ -98,6 +100,11 @@ export function DashboardShell() {
       : (nav.find(
           (item) => item[1] !== "/" && location.pathname.startsWith(item[1]),
         )?.[0] ?? "Overview");
+  const visibleNav = nav.filter(
+    ([, to]) =>
+      to !== "/users" ||
+      ["owner", "administrator"].includes(auth.status?.user?.role ?? ""),
+  );
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -105,7 +112,7 @@ export function DashboardShell() {
           <Brand compact />
         </div>
         <nav aria-label="Primary">
-          {nav.map(([label, to, Icon]) => (
+          {visibleNav.map(([label, to, Icon]) => (
             <NavLink key={to} to={to} end={to === "/"} aria-label={label}>
               <Icon size={18} strokeWidth={1.8} aria-hidden="true" />
               <span>{label}</span>
