@@ -3,8 +3,9 @@ import { Copy, LayoutTemplate, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import { api } from "../api/client";
-import { useAuth } from "../auth/AuthProvider";
 import type { LayoutOrientation } from "../api/types";
+import { useAuth } from "../auth/AuthProvider";
+import { LayoutThumbnail } from "../components/LayoutThumbnail";
 
 const presets = [
   {
@@ -166,6 +167,7 @@ export function LayoutsPage() {
         <label className="search-control">
           <span className="sr-only">Search Layouts</span>
           <input
+            type="search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search Layouts"
@@ -191,8 +193,8 @@ export function LayoutsPage() {
                 }}
                 aria-label={`Edit ${layout.name}`}
               >
-                <LayoutTemplate size={28} />
-                <span>
+                <LayoutThumbnail layoutId={layout.id} name={layout.name} />
+                <span className="layout-library-item__dimensions">
                   {layout.canvasWidth} × {layout.canvasHeight}
                 </span>
               </button>

@@ -13,6 +13,7 @@ import "./styles/reliability.css";
 import "./styles/screens.css";
 import "./styles/account-menu.css";
 import "./styles/issue-fixes.css";
+import "./styles/issues-37-45.css";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false } },

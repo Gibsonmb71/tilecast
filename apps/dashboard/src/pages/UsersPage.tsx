@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Save, UserRoundX } from "lucide-react";
+import { Pencil, Plus, Save, UserRoundX } from "lucide-react";
 import type { User } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
+import { Dialog } from "../components/ui";
 
 type UserRole = User["role"];
 type UserInput = {
@@ -67,6 +68,7 @@ export function UsersPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<UserRole>("viewer");
+  const [editing, setEditing] = useState<User>();
   const create = useMutation({
     mutationFn: (input: UserInput) =>
       userRequest<User>("/users", csrf, {
@@ -186,40 +188,76 @@ export function UsersPage() {
         </div>
       ) : (
         <div className="user-management__list">
-          {users.data?.items.map((user) => (
-            <UserRow
-              key={user.id}
-              user={user}
-              currentUser={currentUser!}
-              allowedRoles={
-                isOwner || user.role === "editor" || user.role === "viewer"
-                  ? allowedRoles
-                  : [user.role]
-              }
-              csrf={csrf}
-              onChanged={() =>
-                client.invalidateQueries({ queryKey: ["users"] })
-              }
-            />
-          ))}
+          {users.data?.items.map((user) => {
+            const canEdit =
+              currentUser?.role === "owner" ||
+              (currentUser?.role === "administrator" &&
+                ["editor", "viewer"].includes(user.role));
+            return (
+              <article className="user-list-row" key={user.id}>
+                <span className="avatar" aria-hidden="true">
+                  {user.name.slice(0, 1).toUpperCase()}
+                </span>
+                <div className="user-list-row__identity">
+                  <strong>{user.name}</strong>
+                  <span>{user.username}</span>
+                  <small>
+                    {roleLabels[user.role]} ·{" "}
+                    {user.active ? "Active" : "Inactive"}
+                    {user.lastLoginAt
+                      ? ` · Last signed in ${new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(user.lastLoginAt))}`
+                      : " · Never signed in"}
+                  </small>
+                </div>
+                <button
+                  type="button"
+                  className="button button--secondary button--compact"
+                  disabled={!canEdit}
+                  onClick={() => setEditing(user)}
+                >
+                  <Pencil size={15} /> Edit
+                </button>
+              </article>
+            );
+          })}
         </div>
+      )}
+
+      {editing && currentUser && (
+        <UserEditorDialog
+          user={editing}
+          currentUser={currentUser}
+          allowedRoles={
+            isOwner || editing.role === "editor" || editing.role === "viewer"
+              ? allowedRoles
+              : [editing.role]
+          }
+          csrf={csrf}
+          onClose={() => setEditing(undefined)}
+          onChanged={async () => {
+            await client.invalidateQueries({ queryKey: ["users"] });
+            setEditing(undefined);
+          }}
+        />
       )}
     </section>
   );
 }
 
-function UserRow({
+function UserEditorDialog({
   user,
   currentUser,
   allowedRoles,
   csrf,
+  onClose,
   onChanged,
 }: {
   user: User;
   currentUser: User;
   allowedRoles: UserRole[];
   csrf: string;
-  onChanged: () => Promise<unknown>;
+  onClose: () => void;
+  onChanged: () => Promise<void>;
 }) {
   const [name, setName] = useState(user.name);
   const [username, setUsername] = useState(user.username);
@@ -245,119 +283,114 @@ function UserRow({
           ...(password ? { password } : {}),
         }),
       }),
-    onSuccess: async () => {
-      setPassword("");
-      await onChanged();
-    },
+    onSuccess: onChanged,
   });
-  const remove = useMutation({
+  const deactivate = useMutation({
     mutationFn: () =>
       userRequest<void>(`/users/${user.id}`, csrf, { method: "DELETE" }),
     onSuccess: onChanged,
   });
   const isSelf = user.id === currentUser.id;
-  const canEdit =
-    currentUser.role === "owner" ||
-    (currentUser.role === "administrator" &&
-      ["editor", "viewer"].includes(user.role));
 
   return (
-    <article className="user-row">
-      <div className="user-row__identity">
-        <strong>{user.name}</strong>
-        <span>{user.username}</span>
-        <small>
-          {roleLabels[user.role]} · {user.active ? "Active" : "Inactive"}
-          {user.lastLoginAt
-            ? ` · Last signed in ${new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(user.lastLoginAt))}`
-            : " · Never signed in"}
-        </small>
-      </div>
-      <div className="user-row__editor">
-        <label>
-          Name
-          <input
-            value={name}
-            disabled={!canEdit}
-            onChange={(event) => setName(event.target.value)}
-          />
-        </label>
-        <label>
-          Username
-          <input
-            value={username}
-            disabled={!canEdit}
-            autoCapitalize="none"
-            autoCorrect="off"
-            onChange={(event) => setUsername(event.target.value)}
-          />
-        </label>
-        <label>
-          Role
-          <select
-            value={role}
-            disabled={!canEdit}
-            onChange={(event) => setRole(event.target.value as UserRole)}
-          >
-            {allowedRoles.map((value) => (
-              <option key={value} value={value}>
-                {roleLabels[value]}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          New password
-          <input
-            type="password"
-            value={password}
-            disabled={!canEdit}
-            placeholder="Leave unchanged"
-            autoComplete="new-password"
-            onChange={(event) => setPassword(event.target.value)}
-          />
-        </label>
-        <label className="user-row__active">
-          <input
-            type="checkbox"
-            checked={active}
-            disabled={!canEdit || isSelf}
-            onChange={(event) => setActive(event.target.checked)}
-          />
-          Active
-        </label>
-      </div>
-      <div className="user-row__actions">
-        <button
-          type="button"
-          className="button button--secondary button--compact"
-          disabled={
-            !canEdit ||
-            update.isPending ||
-            name.trim().length < 2 ||
-            username.trim().length < 3 ||
-            (password.length > 0 && password.length < 12)
-          }
-          onClick={() => update.mutate()}
-        >
-          <Save size={15} /> {update.isPending ? "Saving…" : "Save"}
-        </button>
-        <button
-          type="button"
-          className="button button--danger-quiet button--compact"
-          disabled={!canEdit || isSelf || remove.isPending || !user.active}
-          onClick={() => {
-            if (confirm(`Deactivate ${user.name}?`)) remove.mutate();
-          }}
-        >
-          <UserRoundX size={15} /> Deactivate
-        </button>
-      </div>
-      {(update.error || remove.error) && (
-        <div className="notice notice--error" role="alert">
-          {(update.error ?? remove.error)?.message}
+    <Dialog open title={`Edit ${user.name}`} onClose={onClose}>
+      <form
+        className="user-edit-dialog"
+        onSubmit={(event) => {
+          event.preventDefault();
+          update.mutate();
+        }}
+      >
+        <div className="user-edit-dialog__fields">
+          <label className="field">
+            <span className="field__label">Name</span>
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </label>
+          <label className="field">
+            <span className="field__label">Username</span>
+            <input
+              value={username}
+              autoCapitalize="none"
+              autoCorrect="off"
+              onChange={(event) => setUsername(event.target.value)}
+            />
+          </label>
+          <label className="field">
+            <span className="field__label">Role</span>
+            <select
+              value={role}
+              onChange={(event) => setRole(event.target.value as UserRole)}
+            >
+              {allowedRoles.map((value) => (
+                <option key={value} value={value}>
+                  {roleLabels[value]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span className="field__label">New password</span>
+            <input
+              type="password"
+              value={password}
+              placeholder="Leave unchanged"
+              autoComplete="new-password"
+              onChange={(event) => setPassword(event.target.value)}
+            />
+            <span className="field__hint">At least 12 characters.</span>
+          </label>
+          <label className="checkbox-control">
+            <input
+              type="checkbox"
+              checked={active}
+              disabled={isSelf}
+              onChange={(event) => setActive(event.target.checked)}
+            />
+            <span>Account active</span>
+          </label>
         </div>
-      )}
-    </article>
+        {(update.error || deactivate.error) && (
+          <div className="notice notice--error" role="alert">
+            {(update.error ?? deactivate.error)?.message}
+          </div>
+        )}
+        <footer className="user-edit-dialog__actions">
+          <button
+            type="button"
+            className="button button--danger-quiet"
+            disabled={isSelf || deactivate.isPending || !user.active}
+            onClick={() => {
+              if (confirm(`Deactivate ${user.name}?`)) deactivate.mutate();
+            }}
+          >
+            <UserRoundX size={15} />
+            {deactivate.isPending ? "Deactivating…" : "Deactivate"}
+          </button>
+          <span />
+          <button
+            type="button"
+            className="button button--quiet"
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="button button--primary"
+            disabled={
+              update.isPending ||
+              name.trim().length < 2 ||
+              username.trim().length < 3 ||
+              (password.length > 0 && password.length < 12)
+            }
+          >
+            <Save size={15} /> {update.isPending ? "Saving…" : "Save changes"}
+          </button>
+        </footer>
+      </form>
+    </Dialog>
   );
 }
