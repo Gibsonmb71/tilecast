@@ -41,6 +41,8 @@ import type {
   ContentCollection,
   ContentTag,
   BulkOrganizeInput,
+  StructuredSourceConfig,
+  StructuredPreview,
 } from "./types";
 
 type DataResponse<T> = { data: T };
@@ -521,6 +523,16 @@ export const api = {
     }),
   previewCalendarSource: (configuration: CalendarConfig, csrfToken: string) =>
     request<CalendarPreview>("/sources/calendar/preview", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ configuration }),
+    }),
+  previewStructuredSource: (
+    provider: "rss" | "atom" | "json" | "csv",
+    configuration: StructuredSourceConfig,
+    csrfToken: string,
+  ) =>
+    request<StructuredPreview>(`/sources/${provider}/preview`, {
       method: "POST",
       headers: { "X-CSRF-Token": csrfToken },
       body: JSON.stringify({ configuration }),

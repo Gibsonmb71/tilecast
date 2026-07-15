@@ -19,6 +19,8 @@ The single `org.tilecast.player` application ID is suitable for Play Store and d
 
 Calendar Sources are rendered by `CalendarPlayback.kt` from sanitized manifest data. The Player does not fetch ICS, receive feed URLs, or use WebView for calendar content. Manifest validation bounds event counts and text before activation; cached manifest startup preserves last-known-good prepared events.
 
+RSS, Atom, JSON, and CSV Sources use manifest v8 and the native `StructuredSourcePlayback` renderer. The Player validates provider, presentation, record count, and text/value bounds before activation. It never fetches feed/data URLs, executes expressions, or routes structured Sources through WebView. Prepared records live in the verified cached manifest, so offline startup uses the same last-known-good data.
+
 Unit tests cover URL policy, state transitions, player-generated identity, secure-storage abstractions, pairing enrollment, revocation, and reconnect backoff. Instrumented tests require an emulator or device:
 
 Milestone 4 uses Room schema version 2 and AndroidX Media3. `MIGRATION_1_2` preserves pairing configuration while adding manifest and cache metadata; media bytes live under the application-controlled `files/media-cache` directory. Startup loads verified active content before network reconciliation. Animated GIFs render a safe static frame because portable animation cannot be guaranteed across Fire TV and Google TV.

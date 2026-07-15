@@ -236,10 +236,86 @@ type SourceRefreshDiagnostics struct {
 	HTTPResultCategory  *string    `json:"httpResultCategory,omitempty"`
 	ParseStatus         string     `json:"parseStatus"`
 	AvailableEventCount int        `json:"availableEventCount"`
+	AvailableItemCount  int        `json:"availableItemCount"`
 	UsingCachedData     bool       `json:"usingCachedData"`
 	CacheUpdatedAt      *time.Time `json:"cacheUpdatedAt,omitempty"`
 	CacheExpiresAt      *time.Time `json:"cacheExpiresAt,omitempty"`
 	ErrorCode           *string    `json:"errorCode,omitempty"`
+}
+
+type StructuredFields struct {
+	Title       bool `json:"title"`
+	Subtitle    bool `json:"subtitle"`
+	Date        bool `json:"date"`
+	Author      bool `json:"author"`
+	Description bool `json:"description"`
+	Image       bool `json:"image"`
+	Link        bool `json:"link"`
+}
+
+type StructuredMapping struct {
+	RootList    string            `json:"rootList"`
+	Title       string            `json:"title"`
+	Subtitle    string            `json:"subtitle"`
+	Date        string            `json:"date"`
+	ImageURL    string            `json:"imageUrl"`
+	Link        string            `json:"link"`
+	ValueFields map[string]string `json:"valueFields,omitempty"`
+}
+
+type StructuredFilter struct {
+	Field    string `json:"field"`
+	Operator string `json:"operator"`
+	Value    string `json:"value"`
+}
+
+type StructuredSourceConfig struct {
+	URL                    string             `json:"url,omitempty"`
+	UploadedContent        string             `json:"uploadedContent,omitempty"`
+	Uploaded               bool               `json:"uploaded,omitempty"`
+	Presentation           string             `json:"presentation"`
+	MaxItems               int                `json:"maxItems"`
+	Fields                 StructuredFields   `json:"fields"`
+	FilterKeyword          string             `json:"filterKeyword,omitempty"`
+	Sort                   string             `json:"sort"`
+	Mapping                *StructuredMapping `json:"mapping,omitempty"`
+	Delimiter              string             `json:"delimiter,omitempty"`
+	Filters                []StructuredFilter `json:"filters,omitempty"`
+	RefreshIntervalSeconds int                `json:"refreshIntervalSeconds"`
+	StalenessLimitHours    int                `json:"stalenessLimitHours"`
+	EmptyState             string             `json:"emptyState"`
+}
+
+type StructuredRecord struct {
+	ID          string            `json:"id"`
+	Title       string            `json:"title"`
+	Subtitle    string            `json:"subtitle,omitempty"`
+	Date        string            `json:"date,omitempty"`
+	Author      string            `json:"author,omitempty"`
+	Description string            `json:"description,omitempty"`
+	ImageURL    string            `json:"imageUrl,omitempty"`
+	Link        string            `json:"link,omitempty"`
+	Values      map[string]string `json:"values,omitempty"`
+}
+
+type StructuredPreparedData struct {
+	Records         []StructuredRecord `json:"records"`
+	CachedAt        time.Time          `json:"cachedAt"`
+	StaleAt         time.Time          `json:"staleAt"`
+	UsingCachedData bool               `json:"usingCachedData"`
+	Unavailable     bool               `json:"unavailable"`
+}
+
+type StructuredPlayerConfig struct {
+	Presentation string                 `json:"presentation"`
+	Fields       StructuredFields       `json:"fields"`
+	EmptyState   string                 `json:"emptyState"`
+	Data         StructuredPreparedData `json:"data"`
+}
+
+type StructuredPreview struct {
+	Configuration StructuredPlayerConfig   `json:"configuration"`
+	Diagnostics   SourceRefreshDiagnostics `json:"diagnostics"`
 }
 
 type CalendarPreview struct {

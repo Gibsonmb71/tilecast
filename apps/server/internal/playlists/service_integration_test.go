@@ -113,7 +113,7 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 	if err != nil || same.ManifestVersion != manifest.ManifestVersion || sameETag != etag {
 		t.Fatal("manifest read changed version or ETag")
 	}
-	if manifest.SchemaVersion != 7 || manifest.DirectFallbackPlaylist == nil || len(manifest.DirectFallbackPlaylist.Items) != 2 || len(manifest.Assets) != 2 {
+	if manifest.SchemaVersion != 8 || manifest.DirectFallbackPlaylist == nil || len(manifest.DirectFallbackPlaylist.Items) != 2 || len(manifest.Assets) != 2 {
 		t.Fatalf("manifest=%#v", manifest)
 	}
 	emergencyID := uuid.New()
@@ -220,7 +220,7 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	webManifest, _, err := service.BuildManifest(ctx, screenID)
-	if err != nil || webManifest.SchemaVersion != 7 || len(webManifest.Sources) != 1 || webManifest.Sources[0].Provider != "website" || len(webManifest.Assets) != 1 {
+	if err != nil || webManifest.SchemaVersion != 8 || len(webManifest.Sources) != 1 || webManifest.Sources[0].Provider != "website" || len(webManifest.Assets) != 1 {
 		t.Fatalf("website manifest=%#v %v", webManifest, err)
 	}
 	calendarID := uuid.New()

@@ -569,17 +569,80 @@ export type BulkOrganizeInput = {
   addCollectionIds?: string[];
   removeCollectionIds?: string[];
 };
-export type SourceProvider = "website" | "youtube" | "calendar";
+export type SourceProvider =
+  "website" | "youtube" | "calendar" | "rss" | "atom" | "json" | "csv";
 export type Source = {
   provider: SourceProvider;
   configVersion: number;
-  configuration: WebsiteConfig | YouTubeConfig | CalendarConfig;
+  configuration:
+    WebsiteConfig | YouTubeConfig | CalendarConfig | StructuredSourceConfig;
 };
 export type SourceInput = {
   provider: SourceProvider;
   name: string;
   description: string;
-  configuration: WebsiteConfigInput | YouTubeConfig | CalendarConfig;
+  configuration:
+    | WebsiteConfigInput
+    | YouTubeConfig
+    | CalendarConfig
+    | StructuredSourceConfig;
+};
+export type StructuredSourceConfig = {
+  url?: string;
+  uploadedContent?: string;
+  uploaded?: boolean;
+  presentation: "list" | "agenda" | "cards" | "ticker";
+  maxItems: number;
+  fields: {
+    title: boolean;
+    subtitle: boolean;
+    date: boolean;
+    author: boolean;
+    description: boolean;
+    image: boolean;
+    link: boolean;
+  };
+  filterKeyword?: string;
+  sort: "newest" | "oldest" | "title" | "source";
+  mapping?: {
+    rootList: string;
+    title: string;
+    subtitle: string;
+    date: string;
+    imageUrl: string;
+    link: string;
+    valueFields?: Record<string, string>;
+  };
+  delimiter?: "" | "," | ";" | "\t" | "|";
+  filters?: { field: string; operator: "equals" | "contains"; value: string }[];
+  refreshIntervalSeconds: number;
+  stalenessLimitHours: number;
+  emptyState: string;
+};
+export type StructuredRecord = {
+  id: string;
+  title: string;
+  subtitle?: string;
+  date?: string;
+  author?: string;
+  description?: string;
+  imageUrl?: string;
+  link?: string;
+  values?: Record<string, string>;
+};
+export type StructuredPreview = {
+  configuration: {
+    presentation: StructuredSourceConfig["presentation"];
+    fields: StructuredSourceConfig["fields"];
+    emptyState: string;
+    data: {
+      records: StructuredRecord[];
+      cachedAt: string;
+      staleAt: string;
+      usingCachedData: boolean;
+    };
+  };
+  diagnostics: SourceRefreshDiagnostics;
 };
 export type WebsiteConfig = {
   url: string;
@@ -663,6 +726,7 @@ export type SourceRefreshDiagnostics = {
   httpResultCategory?: string;
   parseStatus: string;
   availableEventCount: number;
+  availableItemCount: number;
   usingCachedData: boolean;
   cacheUpdatedAt?: string;
   cacheExpiresAt?: string;

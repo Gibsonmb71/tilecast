@@ -40,6 +40,7 @@ import { useAuth } from "../auth/AuthProvider";
 import {
   CalendarSourceEditor,
   SourceProviderGallery,
+  StructuredSourceEditor,
   YouTubeSourceEditor,
 } from "../content/SourceEditors";
 
@@ -138,6 +139,9 @@ export function ContentPage() {
   const [youtubeEditor, setYouTubeEditor] = useState(false);
   const [calendarEditor, setCalendarEditor] = useState(false);
   const [sourceGallery, setSourceGallery] = useState(false);
+  const [structuredEditor, setStructuredEditor] = useState<
+    "rss" | "atom" | "json" | "csv"
+  >();
   const controllers = useRef(new Map<string, AbortController>());
   const fileInput = useRef<HTMLInputElement>(null);
   const params = new URLSearchParams({ page: "1", pageSize: "48", sort });
@@ -145,7 +149,11 @@ export function ContentPage() {
   if (contentFilter === "media") params.set("type", "media");
   if (["image", "video", "source"].includes(contentFilter))
     params.set("type", contentFilter);
-  if (["website", "youtube", "calendar"].includes(contentFilter)) {
+  if (
+    ["website", "youtube", "calendar", "rss", "atom", "json", "csv"].includes(
+      contentFilter,
+    )
+  ) {
     params.set("type", "source");
     params.set("provider", contentFilter);
   }
@@ -419,6 +427,10 @@ export function ContentPage() {
               ["website", "Websites"],
               ["youtube", "YouTube"],
               ["calendar", "Calendars"],
+              ["rss", "RSS"],
+              ["atom", "Atom"],
+              ["json", "JSON"],
+              ["csv", "CSV"],
             ] as const
           ).map(([value, label]) => (
             <button
@@ -619,6 +631,18 @@ export function ContentPage() {
           }}
         />
       )}
+      {structuredEditor && (
+        <StructuredSourceEditor
+          provider={structuredEditor}
+          csrf={csrf}
+          onClose={() => setStructuredEditor(undefined)}
+          onSaved={(asset) => {
+            setStructuredEditor(undefined);
+            setSelected(asset);
+            void queryClient.invalidateQueries({ queryKey: ["assets"] });
+          }}
+        />
+      )}
       {sourceGallery && (
         <SourceProviderGallery
           onClose={() => setSourceGallery(false)}
@@ -626,7 +650,8 @@ export function ContentPage() {
             setSourceGallery(false);
             if (provider === "website") setWebsiteEditor(true);
             else if (provider === "youtube") setYouTubeEditor(true);
-            else setCalendarEditor(true);
+            else if (provider === "calendar") setCalendarEditor(true);
+            else setStructuredEditor(provider);
           }}
         />
       )}
@@ -721,6 +746,10 @@ export function AssetCollection({
                   <Youtube size={28} />
                 ) : asset.source?.provider === "calendar" ? (
                   <CalendarDays size={28} />
+                ) : ["rss", "atom", "json", "csv"].includes(
+                    asset.source?.provider ?? "",
+                  ) ? (
+                  <Library size={28} />
                 ) : (
                   <Globe2 size={28} />
                 )
@@ -738,7 +767,9 @@ export function AssetCollection({
                     ? "YouTube"
                     : asset.source?.provider === "calendar"
                       ? "Calendar"
-                      : asset.website?.displayUrl)}
+                      : asset.source?.provider
+                        ? asset.source.provider.toUpperCase()
+                        : asset.website?.displayUrl)}
                 {asset.width && asset.height
                   ? `${asset.type === "video" ? " · " : ""}${asset.width} × ${asset.height}`
                   : ""}
@@ -981,6 +1012,17 @@ function AssetDetails(props: {
   ) : props.asset.type === "source" &&
     props.asset.source?.provider === "calendar" ? (
     <CalendarSourceEditor
+      asset={props.asset}
+      csrf={props.csrf}
+      readOnly={!props.canManage}
+      onClose={props.onClose}
+      onSaved={props.onChanged}
+    />
+  ) : props.asset.type === "source" &&
+    props.asset.source &&
+    ["rss", "atom", "json", "csv"].includes(props.asset.source.provider) ? (
+    <StructuredSourceEditor
+      provider={props.asset.source.provider as "rss" | "atom" | "json" | "csv"}
       asset={props.asset}
       csrf={props.csrf}
       readOnly={!props.canManage}

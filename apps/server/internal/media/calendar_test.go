@@ -49,7 +49,7 @@ func TestParseCalendarSupportsAllDayEvents(t *testing.T) {
 
 func TestCalendarURLBlocksPrivateNetworksByDefault(t *testing.T) {
 	service := &Service{cfg: Config{SourceFetch: SourceFetchPolicy{Timeout: time.Second}}}
-	if _, err := service.validateSourceURL(context.Background(), "http://127.0.0.1/calendar.ics"); err == nil || !strings.Contains(err.Error(), "public calendar URLs") {
+	if _, err := service.validateSourceURL(context.Background(), "http://127.0.0.1/calendar.ics"); err == nil || !strings.Contains(err.Error(), "public Source URLs") {
 		t.Fatalf("private HTTP URL was accepted: %v", err)
 	}
 	if _, err := service.validateSourceURL(context.Background(), "https://127.0.0.1/calendar.ics"); err == nil || !strings.Contains(err.Error(), "private network") {

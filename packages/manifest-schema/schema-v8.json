@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tilecast.org/schemas/player-manifest-v8.json",
+  "title": "Tilecast structured Source player manifest v8",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "manifestVersion",
+    "screenId",
+    "generatedAt",
+    "serverTime",
+    "mode",
+    "playlists",
+    "schedules",
+    "assets",
+    "websites",
+    "sources",
+    "prefetchHorizonDays",
+    "activationGraceSeconds"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 8 },
+    "manifestVersion": { "type": "integer", "minimum": 1 },
+    "screenId": { "type": "string", "format": "uuid" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "serverTime": { "type": "string", "format": "date-time" },
+    "mode": { "const": "single-zone" },
+    "playlist": { "$ref": "schema-v5.json#/$defs/playlist" },
+    "directFallbackPlaylist": { "$ref": "schema-v5.json#/$defs/playlist" },
+    "playlists": {
+      "type": "array",
+      "items": { "$ref": "schema-v5.json#/$defs/playlist" }
+    },
+    "schedules": {
+      "type": "array",
+      "items": { "$ref": "schema-v2.json#/$defs/schedule" }
+    },
+    "assets": {
+      "type": "array",
+      "items": { "$ref": "schema-v1.json#/$defs/asset" }
+    },
+    "websites": {
+      "type": "array",
+      "items": { "$ref": "schema-v4.json#/$defs/website" }
+    },
+    "sources": { "type": "array", "items": { "$ref": "#/$defs/source" } },
+    "emergency": { "$ref": "schema-v4.json#/$defs/emergency" },
+    "syncGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "playbackEpoch"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "playbackEpoch": { "type": "string", "format": "date-time" }
+      }
+    },
+    "prefetchHorizonDays": { "type": "integer", "minimum": 1, "maximum": 90 },
+    "activationGraceSeconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3600
+    }
+  },
+  "$defs": {
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assetId",
+        "name",
+        "provider",
+        "configVersion",
+        "configuration"
+      ],
+      "properties": {
+        "assetId": { "type": "string", "format": "uuid" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 180 },
+        "provider": {
+          "enum": [
+            "website",
+            "youtube",
+            "calendar",
+            "rss",
+            "atom",
+            "json",
+            "csv"
+          ]
+        },
+        "configVersion": { "type": "integer", "minimum": 1 },
+        "configuration": { "type": "object" }
+      }
+    }
+  }
+}

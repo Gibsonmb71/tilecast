@@ -226,6 +226,27 @@ func (s *server) createSource(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"data": asset})
 }
 
+func (s *server) previewStructuredSource(w http.ResponseWriter, r *http.Request) {
+	provider := chi.URLParam(r, "provider")
+	if provider != "rss" && provider != "atom" && provider != "json" && provider != "csv" {
+		writeError(w, http.StatusNotFound, "source_provider_not_found", "The requested Source provider was not found.")
+		return
+	}
+	var body struct {
+		Configuration json.RawMessage `json:"configuration"`
+	}
+	if err := decodeJSON(w, r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	preview, err := s.media.StructuredPreview(r.Context(), provider, body.Configuration)
+	if err != nil {
+		s.writeMediaError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": preview})
+}
+
 func (s *server) updateSource(w http.ResponseWriter, r *http.Request) {
 	id, ok := urlUUID(w, r, "id")
 	if !ok {
@@ -441,7 +462,7 @@ func (s *server) writeMediaError(w http.ResponseWriter, r *http.Request, err err
 		writeError(w, http.StatusConflict, "media_not_ready", "This media asset is not ready.")
 	case strings.Contains(err.Error(), "in use by a playlist"):
 		writeError(w, http.StatusConflict, "asset_in_use", "This asset is used by a playlist or website fallback and cannot be deleted.")
-	case strings.Contains(err.Error(), "must be") || strings.Contains(err.Error(), "only failed") || strings.Contains(err.Error(), "invalid") || strings.Contains(err.Error(), "outside the configured") || strings.Contains(err.Error(), "exceeds the configured") || strings.Contains(err.Error(), "requires a fallback") || strings.Contains(err.Error(), "source limit") || strings.Contains(err.Error(), "source provider") || strings.Contains(err.Error(), "YouTube") || strings.Contains(err.Error(), "youtube.com") || strings.Contains(err.Error(), "calendar") || strings.Contains(err.Error(), "volume") || strings.Contains(err.Error(), "start time") || strings.Contains(err.Error(), "end time") || strings.Contains(err.Error(), "caption language") || strings.Contains(err.Error(), "failure behavior") || strings.Contains(err.Error(), "fixed duration"):
+	case strings.Contains(err.Error(), "must be") || strings.Contains(err.Error(), "only failed") || strings.Contains(err.Error(), "invalid") || strings.Contains(err.Error(), "outside the configured") || strings.Contains(err.Error(), "exceeds the configured") || strings.Contains(err.Error(), "requires a fallback") || strings.Contains(strings.ToLower(err.Error()), "source") || strings.Contains(err.Error(), "CSV") || strings.Contains(err.Error(), "JSON") || strings.Contains(err.Error(), "YouTube") || strings.Contains(err.Error(), "youtube.com") || strings.Contains(err.Error(), "calendar") || strings.Contains(err.Error(), "volume") || strings.Contains(err.Error(), "start time") || strings.Contains(err.Error(), "end time") || strings.Contains(err.Error(), "caption language") || strings.Contains(err.Error(), "failure behavior") || strings.Contains(err.Error(), "fixed duration"):
 		writeError(w, http.StatusUnprocessableEntity, "validation_failed", err.Error())
 	default:
 		s.internalError(w, r, err)

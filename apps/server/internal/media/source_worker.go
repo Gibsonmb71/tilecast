@@ -37,7 +37,7 @@ func (worker *SourceRefreshWorker) Start(parent context.Context) {
 		for {
 			worked, err := worker.runOne(ctx)
 			if err != nil && ctx.Err() == nil {
-				worker.logger.Error("calendar source refresh failed", "error", err)
+				worker.logger.Error("source refresh failed", "error", err)
 			}
 			if worked {
 				continue
@@ -65,15 +65,16 @@ func (worker *SourceRefreshWorker) runOne(ctx context.Context) (bool, error) {
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 	var assetID uuid.UUID
+	var provider string
 	var raw json.RawMessage
-	err = tx.QueryRow(ctx, `SELECT state.asset_id,source.configuration
+	err = tx.QueryRow(ctx, `SELECT state.asset_id,source.provider,source.configuration
 		FROM source_refresh_states state
-		JOIN sources source ON source.asset_id=state.asset_id AND source.provider='calendar'
+		JOIN sources source ON source.asset_id=state.asset_id AND source.provider IN ('calendar','rss','atom','json','csv')
 		JOIN assets asset ON asset.id=state.asset_id AND asset.deleted_at IS NULL
 		WHERE state.next_refresh_at<=now()
 		  AND (state.locked_at IS NULL OR state.locked_at<now()-interval '10 minutes')
 		ORDER BY state.next_refresh_at,state.asset_id
-		LIMIT 1 FOR UPDATE OF state SKIP LOCKED`).Scan(&assetID, &raw)
+		LIMIT 1 FOR UPDATE OF state SKIP LOCKED`).Scan(&assetID, &provider, &raw)
 	if err == pgx.ErrNoRows {
 		return false, tx.Commit(ctx)
 	}
@@ -86,27 +87,42 @@ func (worker *SourceRefreshWorker) runOne(ctx context.Context) (bool, error) {
 	if err = tx.Commit(ctx); err != nil {
 		return false, err
 	}
-	var config CalendarConfig
-	if err = json.Unmarshal(raw, &config); err != nil {
-		return true, worker.fail(ctx, assetID, config.RefreshIntervalSeconds, SourceRefreshDiagnostics{ParseStatus: "invalid_configuration"}, "invalid_configuration")
+	refreshSeconds := 300
+	var prepared any
+	var diagnostics SourceRefreshDiagnostics
+	var refreshErr error
+	if provider == "calendar" {
+		var config CalendarConfig
+		if err = json.Unmarshal(raw, &config); err == nil {
+			refreshSeconds = config.RefreshIntervalSeconds
+			prepared, diagnostics, refreshErr = worker.service.refreshCalendar(ctx, assetID, config)
+		}
+	} else {
+		var config StructuredSourceConfig
+		if err = json.Unmarshal(raw, &config); err == nil {
+			refreshSeconds = config.RefreshIntervalSeconds
+			prepared, diagnostics, refreshErr = worker.service.refreshStructured(ctx, assetID, provider, config)
+		}
 	}
-	prepared, diagnostics, refreshErr := worker.service.refreshCalendar(ctx, assetID, config)
+	if err != nil {
+		return true, worker.fail(ctx, assetID, refreshSeconds, SourceRefreshDiagnostics{ParseStatus: "invalid_configuration"}, "invalid_configuration")
+	}
 	if refreshErr != nil {
-		return true, worker.fail(ctx, assetID, config.RefreshIntervalSeconds, diagnostics, "source_refresh_failed")
+		return true, worker.fail(ctx, assetID, refreshSeconds, diagnostics, "source_refresh_failed")
 	}
 	payload, err := json.Marshal(prepared)
 	if err != nil {
-		return true, worker.fail(ctx, assetID, config.RefreshIntervalSeconds, diagnostics, "cache_encoding_failed")
+		return true, worker.fail(ctx, assetID, refreshSeconds, diagnostics, "cache_encoding_failed")
 	}
-	next := time.Now().Add(time.Duration(config.RefreshIntervalSeconds) * time.Second)
+	next := time.Now().Add(time.Duration(refreshSeconds) * time.Second)
 	var playerDataChanged bool
 	err = worker.service.db.QueryRow(ctx, `WITH previous AS MATERIALIZED (
 		SELECT cached_payload,using_cached_data,error_code FROM source_refresh_states WHERE asset_id=$1
 	), updated AS (
-		UPDATE source_refresh_states SET next_refresh_at=$2,last_success_at=now(),http_result_category=$3,parse_status=$4,available_event_count=$5,using_cached_data=FALSE,cache_updated_at=$6,cache_expires_at=$7,cached_payload=$8::jsonb,error_code=NULL,locked_at=NULL,locked_by=NULL,updated_at=now() WHERE asset_id=$1 RETURNING asset_id
-	) SELECT previous.cached_payload->'events' IS DISTINCT FROM ($8::jsonb)->'events' OR previous.using_cached_data OR previous.error_code IS NOT NULL FROM previous,updated`, assetID, next, diagnostics.HTTPResultCategory, diagnostics.ParseStatus, diagnostics.AvailableEventCount, prepared.CachedAt, prepared.StaleAt, string(payload)).Scan(&playerDataChanged)
+		UPDATE source_refresh_states SET next_refresh_at=$2,last_success_at=now(),http_result_category=$3,parse_status=$4,available_event_count=$5,available_item_count=$6,using_cached_data=FALSE,cache_updated_at=$7,cache_expires_at=$8,cached_payload=$9::jsonb,error_code=NULL,locked_at=NULL,locked_by=NULL,updated_at=now() WHERE asset_id=$1 RETURNING asset_id
+	) SELECT previous.cached_payload IS DISTINCT FROM $9::jsonb OR previous.using_cached_data OR previous.error_code IS NOT NULL FROM previous,updated`, assetID, next, diagnostics.HTTPResultCategory, diagnostics.ParseStatus, diagnostics.AvailableEventCount, diagnostics.AvailableItemCount, diagnostics.CacheUpdatedAt, diagnostics.CacheExpiresAt, string(payload)).Scan(&playerDataChanged)
 	if err == nil && playerDataChanged && worker.service.invalidator != nil {
-		err = worker.service.invalidator.AssetChanged(ctx, assetID, "calendar_source.refreshed")
+		err = worker.service.invalidator.AssetChanged(ctx, assetID, "source.refreshed")
 	}
 	return true, err
 }
@@ -123,7 +139,7 @@ func (worker *SourceRefreshWorker) fail(ctx context.Context, assetID uuid.UUID, 
 		UPDATE source_refresh_states SET next_refresh_at=$2,http_result_category=$3,parse_status=$4,using_cached_data=(cache_updated_at IS NOT NULL AND cache_expires_at>now()),error_code=$5,locked_at=NULL,locked_by=NULL,updated_at=now() WHERE asset_id=$1 RETURNING using_cached_data,error_code
 	) SELECT previous.using_cached_data IS DISTINCT FROM updated.using_cached_data OR (previous.error_code IS NULL) IS DISTINCT FROM (updated.error_code IS NULL) FROM previous,updated`, assetID, next, diagnostics.HTTPResultCategory, diagnostics.ParseStatus, code).Scan(&playerDataChanged)
 	if err == nil && playerDataChanged && worker.service.invalidator != nil {
-		err = worker.service.invalidator.AssetChanged(ctx, assetID, "calendar_source.cache_state_changed")
+		err = worker.service.invalidator.AssetChanged(ctx, assetID, "source.cache_state_changed")
 	}
 	return err
 }

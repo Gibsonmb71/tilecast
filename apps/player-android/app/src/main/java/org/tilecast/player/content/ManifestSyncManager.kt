@@ -15,6 +15,7 @@ import org.tilecast.player.data.PlayerDatabase
 import org.tilecast.player.data.StoredManifest
 import org.tilecast.player.network.ManifestAsset
 import org.tilecast.player.network.CalendarSourceConfig
+import org.tilecast.player.network.StructuredSourceConfig
 import org.tilecast.player.network.PlayerManifest
 import org.tilecast.player.network.TilecastApi
 import java.io.File
@@ -39,7 +40,7 @@ class ManifestSyncManager(
     suspend fun loadActive(): PreparedContent? {
         val stored = database.manifests().active() ?: return null
         val manifest = runCatching { api.decodeManifest(stored.rawJson) }.getOrNull() ?: return null
-        if (manifest.schemaVersion !in 1..7) return null
+        if (manifest.schemaVersion !in 1..8) return null
         val records = database.cachedAssets().all().associateBy { it.variantId }
         val local = records.filterValues { it.downloadStatus == "ready" && File(it.localPath).let { file -> file.exists() && file.length() == it.expectedFileSize } }.mapValues { it.value.localPath }
         val required = records.values.filter { it.requiredByActiveManifest }
@@ -148,7 +149,7 @@ class ManifestSyncManager(
     private fun finalFile(asset: ManifestAsset) = File(mediaDirectory(), "${asset.variantId}.${extension(asset.mimeType)}")
     private fun extension(mime: String) = when (mime) { "video/mp4" -> "mp4"; "image/png" -> "png"; "image/webp" -> "webp"; "image/gif" -> "gif"; else -> "jpg" }
 	private fun validateManifest(manifest: PlayerManifest, screenId: String) {
-		require(manifest.schemaVersion in 1..7 && manifest.mode == "single-zone" && manifest.screenId == screenId) { "Manifest validation failed" }
+		require(manifest.schemaVersion in 1..8 && manifest.mode == "single-zone" && manifest.screenId == screenId) { "Manifest validation failed" }
 		val assets = manifest.assets.associateBy { it.variantId }
 		val websites = manifest.websites.associateBy { it.assetId }
 		val sources = manifest.sources.associateBy { it.assetId }
@@ -158,7 +159,7 @@ class ManifestSyncManager(
 		playlists.flatMap { it.items }.forEach { item ->
 			when (item.assetType) {
 				"website" -> require(websites[item.assetId] != null && (item.durationMs ?: 0) > 0 && item.deliveryPolicy == "stream") { "Website item is invalid" }
-				"source" -> require(sources[item.assetId]?.provider in setOf("website", "youtube", "calendar") && item.deliveryPolicy == "stream") { "Source item is invalid" }
+				"source" -> require(sources[item.assetId]?.provider in setOf("website", "youtube", "calendar", "rss", "atom", "json", "csv") && item.deliveryPolicy == "stream") { "Source item is invalid" }
 				else -> require(item.variantId != null && assets[item.variantId]?.assetId == item.assetId) { "Manifest item references an unavailable variant" }
 			}
 			require(item.fitMode in listOf("contain", "cover", "stretch") && item.transition in listOf("none", "fade") && item.deliveryPolicy in listOf("download", "stream", "automatic") && item.volume in 0f..1f) { "Manifest item settings are invalid" }
@@ -178,6 +179,13 @@ class ManifestSyncManager(
 				val start = Instant.parse(event.start)
 				val end = Instant.parse(event.end)
 				require(!end.isBefore(start)) { "Calendar event range is invalid" }
+			}
+		}
+		manifest.sources.filter { it.provider in setOf("rss", "atom", "json", "csv") }.forEach { source ->
+			val config = Json.decodeFromJsonElement<StructuredSourceConfig>(source.configuration)
+			require(config.presentation in setOf("list", "agenda", "cards", "ticker") && config.emptyState.length <= 240 && config.data.records.size <= 200) { "Structured source configuration is invalid" }
+			config.data.records.forEach { record ->
+				require(record.id.length <= 64 && record.title.length <= 240 && record.subtitle.length <= 240 && record.description.length <= 500 && record.values.size <= 12) { "Structured source record is invalid" }
 			}
 		}
 	}

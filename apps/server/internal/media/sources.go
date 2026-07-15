@@ -139,6 +139,8 @@ func (s *Service) sourceProvider(name string) (sourceProvider, error) {
 		return youtubeSourceProvider{s}, nil
 	case "calendar":
 		return calendarSourceProvider{s}, nil
+	case "rss", "atom", "json", "csv":
+		return structuredSourceProvider{s, name}, nil
 	default:
 		return nil, errors.New("source provider is not supported")
 	}
@@ -189,7 +191,7 @@ func (s *Service) CreateSource(ctx context.Context, user uuid.UUID, input Source
 	if _, err = tx.Exec(ctx, `INSERT INTO sources(asset_id,provider,config_version,configuration) VALUES($1,$2,1,$3::jsonb)`, id, input.Provider, string(encoded)); err != nil {
 		return Asset{}, err
 	}
-	if input.Provider == "calendar" {
+	if isRefreshableSource(input.Provider) {
 		if _, err = tx.Exec(ctx, `INSERT INTO source_refresh_states(asset_id) VALUES($1)`, id); err != nil {
 			return Asset{}, err
 		}
@@ -213,6 +215,20 @@ func (s *Service) UpdateSource(ctx context.Context, id, user uuid.UUID, input So
 	}
 	if input.Provider != existing.Source.Provider {
 		return Asset{}, errors.New("source provider cannot be changed")
+	}
+	if input.Provider == "csv" {
+		var incoming StructuredSourceConfig
+		if json.Unmarshal(input.Configuration, &incoming) == nil && incoming.Uploaded && incoming.UploadedContent == "" {
+			var stored json.RawMessage
+			if err := s.db.QueryRow(ctx, `SELECT configuration FROM sources WHERE asset_id=$1`, id).Scan(&stored); err != nil {
+				return Asset{}, err
+			}
+			var previous StructuredSourceConfig
+			if json.Unmarshal(stored, &previous) == nil {
+				incoming.UploadedContent = previous.UploadedContent
+				input.Configuration, _ = json.Marshal(incoming)
+			}
+		}
 	}
 	provider, err := s.sourceProvider(input.Provider)
 	if err != nil {
@@ -243,7 +259,7 @@ func (s *Service) UpdateSource(ctx context.Context, id, user uuid.UUID, input So
 	if _, err = tx.Exec(ctx, `UPDATE sources SET configuration=$2::jsonb,config_version=1,updated_at=now() WHERE asset_id=$1`, id, string(encoded)); err != nil {
 		return Asset{}, err
 	}
-	if input.Provider == "calendar" {
+	if isRefreshableSource(input.Provider) {
 		if _, err = tx.Exec(ctx, `INSERT INTO source_refresh_states(asset_id,next_refresh_at) VALUES($1,now()) ON CONFLICT(asset_id) DO UPDATE SET next_refresh_at=now(),error_code=NULL,locked_at=NULL,locked_by=NULL,updated_at=now()`, id); err != nil {
 			return Asset{}, err
 		}
@@ -265,7 +281,11 @@ func (s *Service) DuplicateSource(ctx context.Context, id, user uuid.UUID) (Asse
 	if err != nil || asset.Source == nil {
 		return Asset{}, ErrNotFound
 	}
-	return s.CreateSource(ctx, user, SourceInput{Provider: asset.Source.Provider, Name: asset.Name + " copy", Description: asset.Description, Configuration: asset.Source.Configuration})
+	configuration := asset.Source.Configuration
+	if asset.Source.Provider == "csv" {
+		_ = s.db.QueryRow(ctx, `SELECT configuration FROM sources WHERE asset_id=$1`, id).Scan(&configuration)
+	}
+	return s.CreateSource(ctx, user, SourceInput{Provider: asset.Source.Provider, Name: asset.Name + " copy", Description: asset.Description, Configuration: configuration})
 }
 
 func (s *Service) loadSource(ctx context.Context, id uuid.UUID) (*Source, error) {
@@ -274,5 +294,19 @@ func (s *Service) loadSource(ctx context.Context, id uuid.UUID) (*Source, error)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
+	if err == nil && source.Provider == "csv" {
+		var config map[string]any
+		if json.Unmarshal(source.Configuration, &config) == nil {
+			if _, uploaded := config["uploadedContent"]; uploaded {
+				delete(config, "uploadedContent")
+				config["uploaded"] = true
+				source.Configuration, _ = json.Marshal(config)
+			}
+		}
+	}
 	return &source, err
+}
+
+func isRefreshableSource(provider string) bool {
+	return provider == "calendar" || provider == "rss" || provider == "atom" || provider == "json" || provider == "csv"
 }

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"image"
 	"image/png"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -164,6 +165,28 @@ func TestMediaUploadProcessingAndDeletionLifecycle(t *testing.T) {
 	projected, err := service.PlayerSourceConfiguration(ctx, calendarAsset.ID, "calendar", calendarConfiguration)
 	if err != nil || strings.Contains(string(projected), calendarServer.URL) || !strings.Contains(string(projected), "Board meeting") {
 		t.Fatalf("calendar projection=%s err=%v", projected, err)
+	}
+	jsonServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"items":[{"name":"Lunch menu","room":"Cafeteria"}]}`)
+	}))
+	defer jsonServer.Close()
+	structuredConfiguration, _ := json.Marshal(StructuredSourceConfig{URL: jsonServer.URL, Presentation: "list", MaxItems: 10, Fields: StructuredFields{Title: true, Subtitle: true}, Sort: "source", Mapping: &StructuredMapping{RootList: "/items", Title: "/name", Subtitle: "/room"}, RefreshIntervalSeconds: 300, StalenessLimitHours: 168, EmptyState: "No items"})
+	structuredAsset, err := service.CreateSource(ctx, owner.User.ID, SourceInput{Provider: "json", Name: "Lunch data", Configuration: structuredConfiguration})
+	if err != nil {
+		t.Fatal(err)
+	}
+	worked, err = sourceWorker.runOne(ctx)
+	if err != nil || !worked {
+		t.Fatalf("structured refresh worked=%t err=%v", worked, err)
+	}
+	structuredDiagnostics, err := service.SourceDiagnostics(ctx, structuredAsset.ID)
+	if err != nil || structuredDiagnostics.AvailableItemCount != 1 || structuredDiagnostics.ParseStatus != "success" {
+		t.Fatalf("structured diagnostics=%#v err=%v", structuredDiagnostics, err)
+	}
+	structuredProjection, err := service.PlayerSourceConfiguration(ctx, structuredAsset.ID, "json", structuredConfiguration)
+	if err != nil || strings.Contains(string(structuredProjection), jsonServer.URL) || strings.Contains(string(structuredProjection), "rootList") || !strings.Contains(string(structuredProjection), "Lunch menu") {
+		t.Fatalf("structured projection=%s err=%v", structuredProjection, err)
 	}
 	var compatible Variant
 	for _, variant := range ready.Variants {

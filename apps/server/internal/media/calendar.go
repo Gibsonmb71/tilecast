@@ -113,17 +113,17 @@ func (p calendarSourceProvider) Normalize(ctx context.Context, raw json.RawMessa
 func (s *Service) validateSourceURL(ctx context.Context, raw string) (*url.URL, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || u.Hostname() == "" || u.User != nil || u.Fragment != "" {
-		return nil, errors.New("calendar URL is invalid")
+		return nil, errors.New("Source URL is invalid")
 	}
 	if u.Scheme != "https" && u.Scheme != "http" {
-		return nil, errors.New("calendar URL must use HTTP or HTTPS")
+		return nil, errors.New("Source URL must use HTTP or HTTPS")
 	}
 	if port := u.Port(); port != "" && !((u.Scheme == "https" && port == "443") || (u.Scheme == "http" && port == "80")) {
 		host := strings.ToLower(u.Hostname())
 		ip := net.ParseIP(host)
 		localName := host == "localhost" || strings.HasSuffix(host, ".local")
 		if !s.cfg.SourceFetch.AllowPrivateNetworks || (!localName && (ip == nil || !isPrivateSourceIP(ip))) {
-			return nil, errors.New("public calendar URL uses a disallowed port")
+			return nil, errors.New("public Source URL uses a disallowed port")
 		}
 	}
 	if u.Scheme == "http" {
@@ -131,17 +131,17 @@ func (s *Service) validateSourceURL(ctx context.Context, raw string) (*url.URL, 
 		ip := net.ParseIP(host)
 		localName := host == "localhost" || strings.HasSuffix(host, ".local")
 		if !s.cfg.SourceFetch.AllowPrivateNetworks || (!localName && (ip == nil || !isPrivateSourceIP(ip))) {
-			return nil, errors.New("public calendar URLs must use HTTPS")
+			return nil, errors.New("public Source URLs must use HTTPS")
 		}
 	}
 	addresses, err := net.DefaultResolver.LookupIPAddr(ctx, u.Hostname())
 	if err != nil || len(addresses) == 0 {
-		return nil, errors.New("calendar URL host could not be resolved")
+		return nil, errors.New("Source URL host could not be resolved")
 	}
 	if !s.cfg.SourceFetch.AllowPrivateNetworks {
 		for _, address := range addresses {
 			if isPrivateSourceIP(address.IP) {
-				return nil, errors.New("calendar URL resolves to a private network")
+				return nil, errors.New("Source URL resolves to a private network")
 			}
 		}
 	}
@@ -177,7 +177,7 @@ func (s *Service) sourceHTTPClient() *http.Client {
 					return connection, nil
 				}
 			}
-			return nil, errors.New("calendar URL has no permitted address")
+			return nil, errors.New("Source URL has no permitted address")
 		},
 		TLSHandshakeTimeout:   s.cfg.SourceFetch.Timeout,
 		ResponseHeaderTimeout: s.cfg.SourceFetch.Timeout,
@@ -188,7 +188,7 @@ func (s *Service) sourceHTTPClient() *http.Client {
 		Timeout:   s.cfg.SourceFetch.Timeout,
 		CheckRedirect: func(request *http.Request, via []*http.Request) error {
 			if len(via) >= s.cfg.SourceFetch.MaximumRedirects {
-				return errors.New("calendar redirect limit exceeded")
+				return errors.New("Source redirect limit exceeded")
 			}
 			_, err := s.validateSourceURL(request.Context(), request.URL.String())
 			return err
@@ -421,7 +421,7 @@ func (s *Service) CalendarPreview(ctx context.Context, raw json.RawMessage) (Cal
 func (s *Service) SourceDiagnostics(ctx context.Context, id uuid.UUID) (SourceRefreshDiagnostics, error) {
 	var diagnostics SourceRefreshDiagnostics
 	diagnostics.AssetID = id
-	err := s.db.QueryRow(ctx, `SELECT last_success_at,last_attempt_at,http_result_category,parse_status,available_event_count,using_cached_data,cache_updated_at,cache_expires_at,error_code FROM source_refresh_states WHERE asset_id=$1`, id).Scan(&diagnostics.LastSuccessfulAt, &diagnostics.LastAttemptedAt, &diagnostics.HTTPResultCategory, &diagnostics.ParseStatus, &diagnostics.AvailableEventCount, &diagnostics.UsingCachedData, &diagnostics.CacheUpdatedAt, &diagnostics.CacheExpiresAt, &diagnostics.ErrorCode)
+	err := s.db.QueryRow(ctx, `SELECT last_success_at,last_attempt_at,http_result_category,parse_status,available_event_count,available_item_count,using_cached_data,cache_updated_at,cache_expires_at,error_code FROM source_refresh_states WHERE asset_id=$1`, id).Scan(&diagnostics.LastSuccessfulAt, &diagnostics.LastAttemptedAt, &diagnostics.HTTPResultCategory, &diagnostics.ParseStatus, &diagnostics.AvailableEventCount, &diagnostics.AvailableItemCount, &diagnostics.UsingCachedData, &diagnostics.CacheUpdatedAt, &diagnostics.CacheExpiresAt, &diagnostics.ErrorCode)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return SourceRefreshDiagnostics{}, ErrNotFound
 	}
@@ -429,8 +429,32 @@ func (s *Service) SourceDiagnostics(ctx context.Context, id uuid.UUID) (SourceRe
 }
 
 func (s *Service) PlayerSourceConfiguration(ctx context.Context, assetID uuid.UUID, provider string, raw json.RawMessage) (json.RawMessage, error) {
-	if provider != "calendar" {
+	if provider != "calendar" && provider != "rss" && provider != "atom" && provider != "json" && provider != "csv" {
 		return raw, nil
+	}
+	if provider != "calendar" {
+		var config StructuredSourceConfig
+		if err := json.Unmarshal(raw, &config); err != nil {
+			return nil, err
+		}
+		prepared := StructuredPreparedData{Records: []StructuredRecord{}}
+		var payload json.RawMessage
+		var expires *time.Time
+		var usingCache bool
+		var errorCode *string
+		err := s.db.QueryRow(ctx, `SELECT cached_payload,cache_expires_at,using_cached_data,error_code FROM source_refresh_states WHERE asset_id=$1`, assetID).Scan(&payload, &expires, &usingCache, &errorCode)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return nil, err
+		}
+		if err == nil && expires != nil && expires.After(time.Now()) {
+			if err = json.Unmarshal(payload, &prepared); err != nil {
+				return nil, err
+			}
+			prepared.UsingCachedData = usingCache
+		} else if errorCode != nil {
+			prepared.Unavailable = true
+		}
+		return json.Marshal(StructuredPlayerConfig{Presentation: config.Presentation, Fields: config.Fields, EmptyState: config.EmptyState, Data: prepared})
 	}
 	var config CalendarConfig
 	if err := json.Unmarshal(raw, &config); err != nil {

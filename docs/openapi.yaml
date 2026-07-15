@@ -118,6 +118,27 @@ paths:
         "200": { description: All selected assets organized atomically }
         "404": { description: An asset or organization record was not found }
         "422": { description: Validation failed }
+  /api/v1/sources/{provider}/preview:
+    post:
+      operationId: previewStructuredSource
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema: { enum: [rss, atom, json, csv] }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [configuration]
+              properties:
+                configuration: { type: object }
+      responses:
+        "200": { description: Sanitized mapped records and typed diagnostics }
+        "404": { description: Provider not found }
+        "422": { description: Fetch, mapping, or parsing validation failed }
   /api/v1/player/pairing-sessions:
     post:
       operationId: createPairingSession

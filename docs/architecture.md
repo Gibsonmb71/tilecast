@@ -67,6 +67,8 @@ Calendar Sources add a server-owned refresh boundary. `source_refresh_states` is
 
 Content organization remains inside the media domain. Folders are a nullable asset relationship with database-level `ON DELETE SET NULL`; collections and tags are many-to-many metadata. Bulk changes validate all referenced rows and commit atomically, with one bounded audit event per request. Organization metadata is intentionally absent from Player manifests, so rearranging Studio content cannot interrupt playback or invalidate otherwise unchanged manifests.
 
+RSS, Atom, JSON, and CSV extend the Calendar refresh boundary rather than adding provider-specific workers. One `source_refresh_states` row is the restart-safe `SKIP LOCKED` queue, current typed diagnostics, and bounded last-known-good payload. Provider-specific parsers normalize into a renderer-neutral record contract; manifest v8 carries only prepared records. Android validates that contract and shares native list, agenda, card, and ticker primitives across all four providers.
+
 ## Milestone 7 operations
 
 Emergency takeovers are separate lifecycle records rather than schedules. Manifest v4 references an emergency playlist and expiration only for affected screens. Persistent typed player commands use PostgreSQL as the delivery source of truth; WebSockets only announce availability. See [emergency-and-operations.md](emergency-and-operations.md).
