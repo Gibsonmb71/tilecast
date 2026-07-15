@@ -202,7 +202,8 @@ export function UsersPage() {
                   <strong>{user.name}</strong>
                   <span>{user.username}</span>
                   <small>
-                    {roleLabels[user.role]} · {user.active ? "Active" : "Inactive"}
+                    {roleLabels[user.role]} ·{" "}
+                    {user.active ? "Active" : "Inactive"}
                     {user.lastLoginAt
                       ? ` · Last signed in ${new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(user.lastLoginAt))}`
                       : " · Never signed in"}
