@@ -1,11 +1,7 @@
 import { useId } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
-import type {
-  LayoutDocument,
-  LayoutPlacement,
-  LayoutPrimitive,
-} from "../api/types";
+import type { LayoutPlacement, LayoutPrimitive } from "../api/types";
 
 export function LayoutThumbnail({
   layoutId,
@@ -24,7 +20,10 @@ export function LayoutThumbnail({
 
   if (!document) {
     return (
-      <span className="layout-thumbnail layout-thumbnail--loading" aria-hidden="true">
+      <span
+        className="layout-thumbnail layout-thumbnail--loading"
+        aria-hidden="true"
+      >
         <span>{query.isError ? "Preview unavailable" : "Loading preview…"}</span>
       </span>
     );
@@ -50,7 +49,6 @@ export function LayoutThumbnail({
           <PlacementThumbnail
             key={placement.id}
             placement={placement}
-            document={document}
             clipId={`${clipPrefix}-${placement.id}`}
           />
         ))}
@@ -60,17 +58,14 @@ export function LayoutThumbnail({
 
 function PlacementThumbnail({
   placement,
-  document,
   clipId,
 }: {
   placement: LayoutPlacement;
-  document: LayoutDocument;
   clipId: string;
 }) {
   const primitive = placement.primitive;
-  const opacity = Math.max(0, Math.min(1, placement.opacity));
   const common = {
-    opacity,
+    opacity: Math.max(0, Math.min(1, placement.opacity)),
     clipPath: `url(#${clipId})`,
   };
 
@@ -95,7 +90,6 @@ function PlacementThumbnail({
       ) : (
         <ContentThumbnail placement={placement} common={common} />
       )}
-      {document.canvas.safeAreaPercent > 0 && false ? <g /> : null}
     </g>
   );
 }
@@ -146,18 +140,19 @@ function PrimitiveThumbnail({
           : placement.x;
     return (
       <g {...common}>
-        {primitive.backgroundColor && primitive.backgroundColor !== "#00000000" && (
-          <rect
-            x={placement.x}
-            y={placement.y}
-            width={placement.width}
-            height={placement.height}
-            rx={primitive.cornerRadius ?? 0}
-            fill={primitive.backgroundColor}
-            stroke={primitive.borderColor ?? "transparent"}
-            strokeWidth={primitive.borderWidth ?? 0}
-          />
-        )}
+        {primitive.backgroundColor &&
+          primitive.backgroundColor !== "#00000000" && (
+            <rect
+              x={placement.x}
+              y={placement.y}
+              width={placement.width}
+              height={placement.height}
+              rx={primitive.cornerRadius ?? 0}
+              fill={primitive.backgroundColor}
+              stroke={primitive.borderColor ?? "transparent"}
+              strokeWidth={primitive.borderWidth ?? 0}
+            />
+          )}
         <text
           x={x}
           y={placement.y + placement.height / 2}
