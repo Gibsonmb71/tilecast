@@ -54,10 +54,12 @@
 
 .search-control:focus-within {
   border-color: var(--tc-action-primary);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--tc-focus-ring) 24%, transparent);
+  box-shadow: 0 0 0 3px
+    color-mix(in srgb, var(--tc-focus-ring) 24%, transparent);
 }
 
-.search-control input:not([type="checkbox"]):not([type="radio"]):not([type="color"]),
+.search-control
+  input:not([type="checkbox"]):not([type="radio"]):not([type="color"]),
 .search-control input:hover:not(:disabled),
 .search-control input:focus {
   min-height: 0;
@@ -146,7 +148,9 @@
   background-position:
     calc(100% - 15px) calc(50% - 2px),
     calc(100% - 10px) calc(50% - 2px);
-  background-size: 5px 5px, 5px 5px;
+  background-size:
+    5px 5px,
+    5px 5px;
   background-repeat: no-repeat;
   border-color: var(--tc-input-border);
 }
@@ -231,7 +235,9 @@
   background: var(--tc-border-strong);
   border: 1px solid var(--tc-border-strong);
   border-radius: var(--tc-radius-pill);
-  transition: background var(--tc-motion-fast), border-color var(--tc-motion-fast);
+  transition:
+    background var(--tc-motion-fast),
+    border-color var(--tc-motion-fast);
 }
 
 .setting-switch > span::before {
@@ -469,7 +475,10 @@
 
 .user-row__editor {
   display: grid;
-  grid-template-columns: minmax(120px, 1fr) minmax(130px, 1fr) 145px minmax(150px, 1fr) auto;
+  grid-template-columns: minmax(120px, 1fr) minmax(130px, 1fr) 145px minmax(
+      150px,
+      1fr
+    ) auto;
   gap: 8px;
   align-items: end;
 }
