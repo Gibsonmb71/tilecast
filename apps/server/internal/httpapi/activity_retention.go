@@ -55,6 +55,16 @@ func (s *server) updateActivityRetention(w http.ResponseWriter, r *http.Request)
 	s.getActivityRetention(w, r)
 }
 
+func (s *server) runActivityRetentionWorker() {
+	timer := time.NewTimer(time.Minute)
+	defer timer.Stop()
+	for {
+		<-timer.C
+		s.cleanupActivityBounded(context.Background(), 500)
+		timer.Reset(6 * time.Hour)
+	}
+}
+
 func (s *server) cleanupActivityBounded(ctx context.Context, batch int) {
 	if batch < 1 || batch > 5000 {
 		batch = 500
@@ -62,13 +72,32 @@ func (s *server) cleanupActivityBounded(ctx context.Context, batch int) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	var rawDays, sessionDays, stateDays, auditDays, diagnosticDays int
-	if s.db.QueryRow(ctx, `SELECT raw_event_days,playback_session_days,screen_state_days,audit_log_days,diagnostic_metadata_days FROM activity_retention_settings WHERE singleton=TRUE`).Scan(&rawDays, &sessionDays, &stateDays, &auditDays, &diagnosticDays) != nil {
+	if err := s.db.QueryRow(ctx, `SELECT raw_event_days,playback_session_days,screen_state_days,audit_log_days,diagnostic_metadata_days FROM activity_retention_settings WHERE singleton=TRUE`).Scan(&rawDays, &sessionDays, &stateDays, &auditDays, &diagnosticDays); err != nil {
+		s.logger.Warn("activity retention settings unavailable", "error", err)
 		return
 	}
-	_, _ = s.db.Exec(ctx, `WITH expired AS (SELECT id FROM playback_sessions WHERE started_at<now()-make_interval(days=>$1) ORDER BY started_at LIMIT $2) DELETE FROM playback_sessions p USING expired e WHERE p.id=e.id`, sessionDays, batch)
-	_, _ = s.db.Exec(ctx, `WITH expired AS (SELECT id FROM screen_state_intervals WHERE started_at<now()-make_interval(days=>$1) ORDER BY started_at LIMIT $2) DELETE FROM screen_state_intervals s USING expired e WHERE s.id=e.id`, stateDays, batch)
-	_, _ = s.db.Exec(ctx, `WITH expired AS (SELECT id FROM player_activity_events WHERE occurred_at<now()-make_interval(days=>$1) ORDER BY occurred_at LIMIT $2) DELETE FROM player_activity_events p USING expired e WHERE p.id=e.id`, rawDays, batch)
-	_, _ = s.db.Exec(ctx, `WITH expired AS (SELECT id FROM audit_logs WHERE created_at<now()-make_interval(days=>$1) ORDER BY created_at LIMIT $2) DELETE FROM audit_logs a USING expired e WHERE a.id=e.id`, auditDays, batch)
-	_, _ = s.db.Exec(ctx, `WITH targets AS (SELECT id FROM player_activity_events WHERE received_at<now()-make_interval(days=>$1) AND metadata<>'{}'::jsonb ORDER BY received_at LIMIT $2) UPDATE player_activity_events e SET metadata='{}'::jsonb,failure_message=NULL FROM targets t WHERE e.id=t.id`, diagnosticDays, batch)
-	_, _ = s.db.Exec(ctx, `WITH targets AS (SELECT id FROM audit_logs WHERE created_at<now()-make_interval(days=>$1) AND metadata_sensitive=TRUE AND metadata<>'{}'::jsonb ORDER BY created_at LIMIT $2) UPDATE audit_logs a SET metadata='{}'::jsonb FROM targets t WHERE a.id=t.id`, diagnosticDays, batch)
+
+	counts := map[string]int64{}
+	exec := func(name, query string, args ...any) {
+		tag, err := s.db.Exec(ctx, query, args...)
+		if err != nil {
+			s.logger.Warn("activity retention batch failed", "dataset", name, "error", err)
+			return
+		}
+		counts[name] = tag.RowsAffected()
+	}
+	exec("playback_sessions", `WITH expired AS (SELECT id FROM playback_sessions WHERE ended_at IS NOT NULL AND ended_at<now()-make_interval(days=>$1) ORDER BY ended_at LIMIT $2) DELETE FROM playback_sessions p USING expired e WHERE p.id=e.id`, sessionDays, batch)
+	exec("screen_state_intervals", `WITH expired AS (SELECT id FROM screen_state_intervals WHERE ended_at IS NOT NULL AND ended_at<now()-make_interval(days=>$1) ORDER BY ended_at LIMIT $2) DELETE FROM screen_state_intervals s USING expired e WHERE s.id=e.id`, stateDays, batch)
+	exec("player_activity_events", `WITH expired AS (SELECT id FROM player_activity_events WHERE occurred_at<now()-make_interval(days=>$1) ORDER BY occurred_at LIMIT $2) DELETE FROM player_activity_events p USING expired e WHERE p.id=e.id`, rawDays, batch)
+	exec("audit_logs", `WITH expired AS (SELECT id FROM audit_logs WHERE created_at<now()-make_interval(days=>$1) ORDER BY created_at LIMIT $2) DELETE FROM audit_logs a USING expired e WHERE a.id=e.id`, auditDays, batch)
+	exec("player_diagnostics", `WITH targets AS (SELECT id FROM player_activity_events WHERE received_at<now()-make_interval(days=>$1) AND (metadata<>'{}'::jsonb OR failure_message IS NOT NULL) ORDER BY received_at LIMIT $2) UPDATE player_activity_events e SET metadata='{}'::jsonb,failure_message=NULL FROM targets t WHERE e.id=t.id`, diagnosticDays, batch)
+	exec("audit_diagnostics", `WITH targets AS (SELECT id FROM audit_logs WHERE created_at<now()-make_interval(days=>$1) AND metadata_sensitive=TRUE AND metadata<>'{}'::jsonb ORDER BY created_at LIMIT $2) UPDATE audit_logs a SET metadata='{}'::jsonb FROM targets t WHERE a.id=t.id`, diagnosticDays, batch)
+
+	total := int64(0)
+	for _, count := range counts {
+		total += count
+	}
+	if total > 0 {
+		s.logger.Info("activity retention batch completed", "rows_changed", total, "playback_sessions", counts["playback_sessions"], "screen_state_intervals", counts["screen_state_intervals"], "player_activity_events", counts["player_activity_events"], "audit_logs", counts["audit_logs"], "diagnostic_rows", counts["player_diagnostics"]+counts["audit_diagnostics"])
+	}
 }
