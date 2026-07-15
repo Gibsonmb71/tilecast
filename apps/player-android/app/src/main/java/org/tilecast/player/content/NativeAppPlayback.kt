@@ -5,8 +5,10 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -20,10 +22,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.zxing.BarcodeFormat
@@ -69,12 +73,135 @@ fun NativeAppItem(item: ManifestItem, app: ManifestSource, session: PlaybackSess
     }
 }
 
-@Composable private fun ClockApp(config: ClockAppConfig) { var now by remember { mutableStateOf(Instant.now()) }; LaunchedEffect(config.timezone, config.showSeconds) { while (true) { now = Instant.now(); delay(if (config.showSeconds) 1_000 else 15_000) } }; val pattern = if (config.format == "24") { if (config.showSeconds) "HH:mm:ss" else "HH:mm" } else { if (config.showSeconds) "h:mm:ss a" else "h:mm a" }; CenteredApp(config.backgroundColor) { Text(now.atZone(ZoneId.of(config.timezone)).format(DateTimeFormatter.ofPattern(pattern)), color = parseColor(config.foregroundColor), fontSize = 86.sp, fontWeight = FontWeight.SemiBold) } }
-@Composable private fun DateApp(config: DateAppConfig) { var now by remember { mutableStateOf(Instant.now()) }; LaunchedEffect(config.timezone) { while (true) { now = Instant.now(); delay(30_000) } }; val style = when (config.format) { "short" -> FormatStyle.SHORT; "medium" -> FormatStyle.MEDIUM; "long" -> FormatStyle.LONG; else -> FormatStyle.FULL }; CenteredApp(config.backgroundColor) { Text(now.atZone(ZoneId.of(config.timezone)).format(DateTimeFormatter.ofLocalizedDate(style)), color = parseColor(config.foregroundColor), fontSize = 58.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center) } }
+@Composable
+private fun ClockApp(config: ClockAppConfig) {
+    var now by remember { mutableStateOf(Instant.now()) }
+    LaunchedEffect(config.timezone, config.showSeconds) {
+        while (true) {
+            now = Instant.now()
+            delay(if (config.showSeconds) 1_000 else 15_000)
+        }
+    }
+    val pattern = if (config.format == "24") {
+        if (config.showSeconds) "HH:mm:ss" else "HH:mm"
+    } else {
+        if (config.showSeconds) "h:mm:ss a" else "h:mm a"
+    }
+    val text = now.atZone(ZoneId.of(config.timezone)).format(DateTimeFormatter.ofPattern(pattern))
+    CenteredApp(config.backgroundColor) {
+        FittedAppText(text, parseColor(config.foregroundColor), 86f, FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun DateApp(config: DateAppConfig) {
+    var now by remember { mutableStateOf(Instant.now()) }
+    LaunchedEffect(config.timezone) {
+        while (true) {
+            now = Instant.now()
+            delay(30_000)
+        }
+    }
+    val style = when (config.format) {
+        "short" -> FormatStyle.SHORT
+        "medium" -> FormatStyle.MEDIUM
+        "long" -> FormatStyle.LONG
+        else -> FormatStyle.FULL
+    }
+    val text = now.atZone(ZoneId.of(config.timezone)).format(DateTimeFormatter.ofLocalizedDate(style))
+    CenteredApp(config.backgroundColor) {
+        FittedAppText(text, parseColor(config.foregroundColor), 58f, FontWeight.Medium)
+    }
+}
 @Composable private fun QRCodeApp(config: QRCodeAppConfig) { val bitmap = remember(config) { qrBitmap(config) }; CenteredApp(config.backgroundColor) { Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(18.dp)) { Image(bitmap.asImageBitmap(), null); if (config.label.isNotBlank()) Text(config.label, color = parseColor(config.foregroundColor), fontSize = 24.sp, textAlign = TextAlign.Center) } } }
-@Composable private fun TickerApp(config: TickerAppConfig, data: StructuredSourceConfig) { var now by remember { mutableStateOf(Instant.now()) }; LaunchedEffect(data.dateSelection.timezone) { while (true) { now = Instant.now(); delay(30_000) } }; val records = selectDateAwareRecords(data, now); val text = records.mapNotNull { record -> when (config.field) { "title" -> record.title; "subtitle" -> record.subtitle; "date" -> record.date; "author" -> record.author; "description" -> record.description; else -> record.values[config.field] }.takeIf { !it.isNullOrBlank() } }.joinToString(config.separator); CenteredApp(config.backgroundColor) { Text(text.ifBlank { data.emptyState }, color = parseColor(config.foregroundColor), fontSize = 34.sp, maxLines = 2, textAlign = TextAlign.Center) } }
+@Composable
+private fun TickerApp(config: TickerAppConfig, data: StructuredSourceConfig) {
+    var now by remember { mutableStateOf(Instant.now()) }
+    LaunchedEffect(data.dateSelection.timezone) {
+        while (true) {
+            now = Instant.now()
+            delay(30_000)
+        }
+    }
+    val records = selectDateAwareRecords(data, now)
+    val text = records.mapNotNull { record ->
+        when (config.field) {
+            "title" -> record.title
+            "subtitle" -> record.subtitle
+            "date" -> record.date
+            "author" -> record.author
+            "description" -> record.description
+            else -> record.values[config.field]
+        }.takeIf { !it.isNullOrBlank() }
+    }.joinToString(config.separator).ifBlank { data.emptyState }
+    CenteredApp(config.backgroundColor) {
+        FittedAppText(text, parseColor(config.foregroundColor), 34f, FontWeight.Normal, maxLines = 2)
+    }
+}
 @Composable private fun DisplayStructuredApp(config: DisplayAppConfig, data: StructuredSourceConfig) { var now by remember { mutableStateOf(Instant.now()) }; LaunchedEffect(data.dateSelection.timezone) { while (true) { now = Instant.now(); delay(30_000) } }; val records = selectDateAwareRecords(data, now).take(config.maximumItems); Box(Modifier.fillMaxSize().background(parseColor(config.backgroundColor)).padding(36.dp)) { LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp)) { items(records, key = { it.id }) { record -> Text(config.fields.mapNotNull { field -> when(field) { "title" -> record.title; "subtitle" -> record.subtitle; "date" -> record.date; "author" -> record.author; "description" -> record.description; else -> record.values[field] }.takeIf { !it.isNullOrBlank() } }.joinToString("  "), color = parseColor(config.foregroundColor), fontSize = 26.sp) } } } }
 @Composable private fun DisplayCalendarApp(config: DisplayAppConfig, data: org.tilecast.player.network.CalendarSourceConfig) { Box(Modifier.fillMaxSize().background(parseColor(config.backgroundColor)).padding(36.dp)) { LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp)) { items(data.data.events.take(config.maximumItems), key = { it.id }) { event -> Text(listOf(event.start, event.title, event.location).filter(String::isNotBlank).joinToString("  "), color = parseColor(config.foregroundColor), fontSize = 26.sp) } } } }
-@Composable private fun CenteredApp(background: String, content: @Composable () -> Unit) = Box(Modifier.fillMaxSize().background(parseColor(background)).padding(40.dp), contentAlignment = Alignment.Center) { content() }
+@Composable
+private fun CenteredApp(background: String, content: @Composable () -> Unit) {
+    BoxWithConstraints(Modifier.fillMaxSize().background(parseColor(background))) {
+        val inset = minOf(40f, minOf(maxWidth.value, maxHeight.value) * 0.08f).dp
+        Box(Modifier.fillMaxSize().padding(inset), contentAlignment = Alignment.Center) { content() }
+    }
+}
+
+@Composable
+private fun FittedAppText(
+    text: String,
+    color: Color,
+    maximumFontSizeSp: Float,
+    weight: FontWeight,
+    maxLines: Int = 1,
+) {
+    BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        val fontScale = LocalDensity.current.fontScale
+        val initialSize = fittedFontSizeSp(
+            textLength = text.length,
+            widthDp = maxWidth.value,
+            heightDp = maxHeight.value,
+            fontScale = fontScale,
+            maximumFontSizeSp = maximumFontSizeSp,
+            maxLines = maxLines,
+        )
+        var fontSize by remember(text, maxWidth, maxHeight, fontScale, maximumFontSizeSp, maxLines) {
+            mutableStateOf(initialSize)
+        }
+        Text(
+            text = text,
+            modifier = Modifier.fillMaxWidth(),
+            color = color,
+            fontSize = fontSize.sp,
+            fontWeight = weight,
+            maxLines = maxLines,
+            softWrap = maxLines > 1,
+            overflow = TextOverflow.Clip,
+            textAlign = TextAlign.Center,
+            onTextLayout = { result ->
+                if ((result.didOverflowWidth || result.didOverflowHeight) && fontSize > 8f) {
+                    fontSize = (fontSize * 0.9f).coerceAtLeast(8f)
+                }
+            },
+        )
+    }
+}
+
+internal fun fittedFontSizeSp(
+    textLength: Int,
+    widthDp: Float,
+    heightDp: Float,
+    fontScale: Float,
+    maximumFontSizeSp: Float,
+    maxLines: Int = 1,
+): Float {
+    val lines = maxLines.coerceAtLeast(1)
+    val charactersPerLine = ((textLength.coerceAtLeast(1) + lines - 1) / lines).toFloat()
+    val scale = fontScale.coerceAtLeast(0.5f)
+    val widthLimit = widthDp / (charactersPerLine * 0.62f) / scale
+    val heightLimit = heightDp * 0.72f / lines / scale
+    return minOf(maximumFontSizeSp, widthLimit, heightLimit).coerceAtLeast(minOf(8f, maximumFontSizeSp))
+}
 private fun parseColor(value: String) = runCatching { Color(android.graphics.Color.parseColor(value)) }.getOrDefault(Color.Black)
 private fun qrBitmap(config: QRCodeAppConfig): Bitmap { val level = when (config.errorCorrection) { "low" -> ErrorCorrectionLevel.L; "quartile" -> ErrorCorrectionLevel.Q; "high" -> ErrorCorrectionLevel.H; else -> ErrorCorrectionLevel.M }; val matrix = QRCodeWriter().encode(config.value, BarcodeFormat.QR_CODE, 480, 480, mapOf(EncodeHintType.ERROR_CORRECTION to level, EncodeHintType.MARGIN to 2)); val foreground = android.graphics.Color.parseColor(config.foregroundColor); val background = android.graphics.Color.parseColor(config.backgroundColor); return Bitmap.createBitmap(480, 480, Bitmap.Config.RGB_565).apply { for (x in 0 until 480) for (y in 0 until 480) setPixel(x, y, if (matrix[x, y]) foreground else background) } }
