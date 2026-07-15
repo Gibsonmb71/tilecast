@@ -705,7 +705,11 @@ export type SourceProvider =
   | "clock"
   | "date"
   | "qrcode"
-  | "ticker";
+  | "ticker"
+  | "menu"
+  | "list"
+  | "table"
+  | "agenda";
 export type Source = {
   provider: SourceProvider;
   configVersion: number;
@@ -717,7 +721,8 @@ export type Source = {
     | ClockAppConfig
     | DateAppConfig
     | QRCodeAppConfig
-    | TickerAppConfig;
+    | TickerAppConfig
+    | DisplayAppConfig;
 };
 export type SourceInput = {
   provider: SourceProvider;
@@ -731,7 +736,8 @@ export type SourceInput = {
     | ClockAppConfig
     | DateAppConfig
     | QRCodeAppConfig
-    | TickerAppConfig;
+    | TickerAppConfig
+    | DisplayAppConfig;
 };
 export type StructuredSourceConfig = {
   url?: string;
@@ -805,6 +811,13 @@ export type TickerAppConfig = {
   field: string;
   separator: string;
   speed: "slow" | "normal" | "fast";
+  foregroundColor: string;
+  backgroundColor: string;
+};
+export type DisplayAppConfig = {
+  sourceAssetId: string;
+  fields: string[];
+  maximumItems: number;
   foregroundColor: string;
   backgroundColor: string;
 };

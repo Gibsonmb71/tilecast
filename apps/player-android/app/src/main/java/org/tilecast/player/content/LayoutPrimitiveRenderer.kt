@@ -12,6 +12,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -28,9 +33,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.tilecast.player.network.LayoutDocument
 import org.tilecast.player.network.LayoutPlacement
+import org.tilecast.player.network.StructuredSourceConfig
+import java.time.Instant
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
+import java.text.NumberFormat
 
 @Composable
-fun LayoutPrimitiveCanvas(document: LayoutDocument, modifier: Modifier = Modifier) {
+fun LayoutPrimitiveCanvas(document: LayoutDocument, modifier: Modifier = Modifier, structuredSources: Map<String, StructuredSourceConfig> = emptyMap()) {
+    var now by remember { mutableStateOf(Instant.now()) }
+    LaunchedEffect(structuredSources) { while (true) { now = Instant.now(); kotlinx.coroutines.delay(30_000) } }
     BoxWithConstraints(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         val sourceRatio = document.canvas.width.toFloat() / document.canvas.height
         val targetRatio = maxWidth.value / maxHeight.value
@@ -45,16 +58,22 @@ fun LayoutPrimitiveCanvas(document: LayoutDocument, modifier: Modifier = Modifie
         }
         val sx = width.value / document.canvas.width
         val sy = height.value / document.canvas.height
+        val hiddenGroups = document.placements.filter { it.primitive?.kind == "group" && it.primitive.binding?.hideWhenEmpty == true }.filter { group ->
+            val binding = group.primitive?.binding ?: return@filter false
+            structuredSources[binding.sourceId]?.let { resolveLayoutBinding(binding, it, now).isBlank() } ?: true
+        }.map { it.id }.toSet()
         Box(Modifier.size(width, height).background(layoutColor(document.canvas.backgroundColor))) {
-            document.placements.filter { it.visible && it.type == "primitive" && it.primitive?.kind != "group" }.sortedBy { it.layer }.forEach { placement ->
-                PrimitivePlacement(placement, sx, sy)
+            document.placements.filter { it.visible && it.type == "primitive" && it.primitive?.kind != "group" && placementGroupVisible(it, hiddenGroups) }.sortedBy { it.layer }.forEach { placement ->
+                PrimitivePlacement(placement, sx, sy, structuredSources, now)
             }
         }
     }
 }
 
+private fun placementGroupVisible(placement: LayoutPlacement, hiddenGroups: Set<String>) = placement.groupId == null || placement.groupId !in hiddenGroups
+
 @Composable
-private fun PrimitivePlacement(placement: LayoutPlacement, sx: Float, sy: Float) {
+private fun PrimitivePlacement(placement: LayoutPlacement, sx: Float, sy: Float, structuredSources: Map<String, StructuredSourceConfig>, now: Instant) {
     val primitive = placement.primitive ?: return
     val shape = RoundedCornerShape((primitive.cornerRadius * minOf(sx, sy)).dp)
     val box = Modifier.offset((placement.x * sx).dp, (placement.y * sy).dp).size((placement.width * sx).dp, (placement.height * sy).dp).alpha(placement.opacity).clip(shape)
@@ -66,8 +85,10 @@ private fun PrimitivePlacement(placement: LayoutPlacement, sx: Float, sy: Float)
             textModifier.padding((primitive.padding * sx).dp),
             contentAlignment = when (primitive.verticalAlign) { "top" -> Alignment.TopStart; "bottom" -> Alignment.BottomStart; else -> Alignment.CenterStart },
         ) {
+            val resolved = primitive.binding?.let { binding -> structuredSources[binding.sourceId]?.let { resolveLayoutBinding(binding, it, now) } }
+            if (primitive.binding?.hideWhenEmpty == true && resolved.isNullOrEmpty()) return@Box
             Text(
-                text = primitive.text,
+                text = resolved ?: primitive.text,
                 modifier = Modifier.fillMaxSize(),
                 color = layoutColor(primitive.color),
                 fontSize = (primitive.fontSize * sx).sp,
@@ -91,6 +112,20 @@ private fun PrimitivePlacement(placement: LayoutPlacement, sx: Float, sy: Float)
         }
         "line" -> Canvas(box) { drawLine(layoutColor(primitive.strokeColor), Offset(0f, size.height / 2), Offset(size.width, size.height / 2), (primitive.strokeWidth * sx).coerceAtLeast(1f)) }
     }
+}
+
+internal fun resolveLayoutBinding(binding: org.tilecast.player.network.LayoutBinding, source: StructuredSourceConfig, now: Instant): String {
+    val record = selectDateAwareRecords(source, now).firstOrNull()
+    val raw = record?.let { when (binding.field) { "title" -> it.title; "subtitle" -> it.subtitle; "date" -> it.date; "author" -> it.author; "description" -> it.description; else -> it.values[binding.field] } }.orEmpty()
+    if (raw.isBlank()) return binding.fallbackText
+    val formatted = when (binding.format) {
+        "date-short", "date-long" -> runCatching { LocalDate.parse(raw.take(10)).format(DateTimeFormatter.ofLocalizedDate(if (binding.format == "date-long") FormatStyle.LONG else FormatStyle.SHORT)) }.getOrDefault(raw)
+        "number" -> raw.toDoubleOrNull()?.let(NumberFormat.getNumberInstance()::format) ?: raw
+        "integer" -> raw.toDoubleOrNull()?.let { NumberFormat.getIntegerInstance().format(it) } ?: raw
+        "currency" -> raw.toDoubleOrNull()?.let(NumberFormat.getCurrencyInstance()::format) ?: raw
+        else -> raw
+    }
+    return binding.prefix + formatted + binding.suffix
 }
 
 internal fun layoutColor(value: String): Color = runCatching { Color(android.graphics.Color.parseColor(value)) }.getOrDefault(Color.Transparent)

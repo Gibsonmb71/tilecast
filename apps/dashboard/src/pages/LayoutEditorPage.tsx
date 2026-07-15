@@ -609,6 +609,12 @@ export function LayoutEditorPage() {
   const playlistByID = new Map(
     playlistsQuery.data?.items.map((playlist) => [playlist.id, playlist]),
   );
+  const structuredApps = document.placements
+    .filter((placement) => placement.type === "app" && placement.appId)
+    .map((placement) => contentByID.get(placement.appId!))
+    .filter((asset): asset is Asset =>
+      Boolean(asset?.source && ["csv", "json"].includes(asset.source.provider)),
+    );
   return (
     <div className="layout-editor">
       <div className="layout-editor-toolbar">
@@ -918,6 +924,7 @@ export function LayoutEditorPage() {
                 ? playlistByID.get(primary.playlistId)
                 : undefined
             }
+            structuredApps={structuredApps}
             update={(change) => mutateSelected(change)}
             duplicate={duplicateSelection}
             group={groupSelection}
@@ -1114,7 +1121,9 @@ function PlacementView({
             overflow: primitive.overflow === "clip" ? "hidden" : "hidden",
           }}
         >
-          {primitive.text}
+          {primitive.binding
+            ? `${primitive.binding.prefix ?? ""}{{${primitive.binding.field}}}${primitive.binding.suffix ?? ""}`
+            : primitive.text}
         </div>
       ) : primitive?.kind === "circle" ? (
         <div
@@ -1256,6 +1265,7 @@ function PlacementInspector({
   item,
   content,
   playlist,
+  structuredApps,
   update,
   duplicate,
   group,
@@ -1265,6 +1275,7 @@ function PlacementInspector({
   item: LayoutPlacement;
   content?: Asset;
   playlist?: Playlist;
+  structuredApps: Asset[];
   update: (change: (item: LayoutPlacement) => void) => void;
   duplicate: () => void;
   group: () => void;
@@ -1673,24 +1684,252 @@ function PlacementInspector({
         </button>
       )}
       {primitive?.kind === "group" && (
-        <button className="button button--secondary" onClick={ungroup}>
-          <Ungroup size={16} />
-          Ungroup
-        </button>
+        <>
+          <button className="button button--secondary" onClick={ungroup}>
+            <Ungroup size={16} />
+            Ungroup
+          </button>
+          <label className="field">
+            <span className="field__label">Visibility</span>
+            <select
+              value={primitive.binding ? "field" : "always"}
+              disabled={!primitive.binding && structuredApps.length === 0}
+              onChange={(event) =>
+                update((target) => {
+                  if (event.target.value === "always") {
+                    delete target.primitive!.binding;
+                    return;
+                  }
+                  const source = structuredApps[0];
+                  if (source)
+                    target.primitive!.binding = {
+                      sourceId: source.id,
+                      field: structuredFields(source)[0] ?? "title",
+                      hideWhenEmpty: true,
+                    };
+                })
+              }
+            >
+              <option value="always">Always visible</option>
+              <option value="field">Hide when field is empty</option>
+            </select>
+          </label>
+          {primitive.binding && (
+            <div className="form-grid form-grid--2">
+              <label className="field">
+                <span className="field__label">Data Source</span>
+                <select
+                  value={primitive.binding.sourceId}
+                  onChange={(event) =>
+                    update(
+                      (target) =>
+                        (target.primitive!.binding!.sourceId =
+                          event.target.value),
+                    )
+                  }
+                >
+                  {structuredApps.map((asset) => (
+                    <option key={asset.id} value={asset.id}>
+                      {asset.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span className="field__label">Field</span>
+                <select
+                  value={primitive.binding.field}
+                  onChange={(event) =>
+                    update(
+                      (target) =>
+                        (target.primitive!.binding!.field = event.target.value),
+                    )
+                  }
+                >
+                  {structuredFields(
+                    structuredApps.find(
+                      (asset) => asset.id === primitive.binding!.sourceId,
+                    ),
+                  ).map((field) => (
+                    <option key={field} value={field}>
+                      {field}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          )}
+        </>
       )}
       {primitive?.kind === "text" && (
         <>
           <label className="field">
-            <span className="field__label">Text</span>
-            <textarea
-              value={primitive.text ?? ""}
+            <span className="field__label">Content mode</span>
+            <select
+              value={primitive.binding ? "dynamic" : "static"}
               onChange={(event) =>
                 update((target) => {
-                  target.primitive!.text = event.target.value;
+                  if (event.target.value === "static") {
+                    delete target.primitive!.binding;
+                    return;
+                  }
+                  const source = structuredApps[0];
+                  if (source)
+                    target.primitive!.binding = {
+                      sourceId: source.id,
+                      field: structuredFields(source)[0] ?? "title",
+                      format: "text",
+                    };
                 })
               }
-            />
+              disabled={!primitive.binding && structuredApps.length === 0}
+            >
+              <option value="static">Static</option>
+              <option value="dynamic">Dynamic field</option>
+            </select>
           </label>
+          {primitive.binding && (
+            <div className="layout-placement-settings">
+              <label className="field">
+                <span className="field__label">Data Source</span>
+                <select
+                  value={primitive.binding.sourceId}
+                  onChange={(event) =>
+                    update((target) => {
+                      const source = structuredApps.find(
+                        (asset) => asset.id === event.target.value,
+                      );
+                      target.primitive!.binding = {
+                        ...target.primitive!.binding!,
+                        sourceId: event.target.value,
+                        field: source
+                          ? (structuredFields(source)[0] ?? "title")
+                          : "title",
+                      };
+                    })
+                  }
+                >
+                  {structuredApps.map((asset) => (
+                    <option key={asset.id} value={asset.id}>
+                      {asset.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span className="field__label">Field</span>
+                <select
+                  value={primitive.binding.field}
+                  onChange={(event) =>
+                    update(
+                      (target) =>
+                        (target.primitive!.binding!.field = event.target.value),
+                    )
+                  }
+                >
+                  {structuredFields(
+                    structuredApps.find(
+                      (asset) => asset.id === primitive.binding!.sourceId,
+                    ),
+                  ).map((field) => (
+                    <option key={field} value={field}>
+                      {field}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="form-grid form-grid--2">
+                <label className="field">
+                  <span className="field__label">Prefix</span>
+                  <input
+                    value={primitive.binding.prefix ?? ""}
+                    onChange={(event) =>
+                      update(
+                        (target) =>
+                          (target.primitive!.binding!.prefix =
+                            event.target.value),
+                      )
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span className="field__label">Suffix</span>
+                  <input
+                    value={primitive.binding.suffix ?? ""}
+                    onChange={(event) =>
+                      update(
+                        (target) =>
+                          (target.primitive!.binding!.suffix =
+                            event.target.value),
+                      )
+                    }
+                  />
+                </label>
+              </div>
+              <label className="field">
+                <span className="field__label">Fallback text</span>
+                <input
+                  value={primitive.binding.fallbackText ?? ""}
+                  onChange={(event) =>
+                    update(
+                      (target) =>
+                        (target.primitive!.binding!.fallbackText =
+                          event.target.value),
+                    )
+                  }
+                />
+              </label>
+              <label className="field">
+                <span className="field__label">Format</span>
+                <select
+                  value={primitive.binding.format ?? "text"}
+                  onChange={(event) =>
+                    update(
+                      (target) =>
+                        (target.primitive!.binding!.format = event.target
+                          .value as NonNullable<
+                          LayoutPrimitive["binding"]
+                        >["format"]),
+                    )
+                  }
+                >
+                  <option value="text">Text</option>
+                  <option value="date-short">Short date</option>
+                  <option value="date-long">Long date</option>
+                  <option value="number">Number</option>
+                  <option value="integer">Integer</option>
+                  <option value="currency">Currency</option>
+                </select>
+              </label>
+              <label className="switch-row">
+                <input
+                  type="checkbox"
+                  checked={primitive.binding.hideWhenEmpty ?? false}
+                  onChange={(event) =>
+                    update(
+                      (target) =>
+                        (target.primitive!.binding!.hideWhenEmpty =
+                          event.target.checked),
+                    )
+                  }
+                />
+                <span>Hide when empty</span>
+              </label>
+            </div>
+          )}
+          {!primitive.binding && (
+            <label className="field">
+              <span className="field__label">Text</span>
+              <textarea
+                value={primitive.text ?? ""}
+                onChange={(event) =>
+                  update((target) => {
+                    target.primitive!.text = event.target.value;
+                  })
+                }
+              />
+            </label>
+          )}
           <div className="form-grid form-grid--2">
             <label className="field">
               <span className="field__label">Font</span>
@@ -1889,6 +2128,22 @@ function PlacementInspector({
         )}
     </div>
   );
+}
+
+function structuredFields(asset?: Asset): string[] {
+  if (!asset?.source || !["csv", "json"].includes(asset.source.provider))
+    return [];
+  const config = asset.source.configuration as {
+    mapping?: { valueFields?: Record<string, string> };
+  };
+  return [
+    "title",
+    "subtitle",
+    "date",
+    "author",
+    "description",
+    ...Object.keys(config.mapping?.valueFields ?? {}),
+  ];
 }
 function CanvasInspector({
   document,

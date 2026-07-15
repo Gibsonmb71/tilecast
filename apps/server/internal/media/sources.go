@@ -149,6 +149,8 @@ func (s *Service) sourceProvider(name string) (sourceProvider, error) {
 		return qrCodeAppProvider{}, nil
 	case "ticker":
 		return tickerAppProvider{s}, nil
+	case "menu", "list", "table", "agenda":
+		return displayAppProvider{s, name}, nil
 	default:
 		return nil, errors.New("source provider is not supported")
 	}

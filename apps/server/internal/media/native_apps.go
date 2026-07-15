@@ -122,6 +122,56 @@ func (p tickerAppProvider) Normalize(ctx context.Context, raw json.RawMessage) (
 	return c, nil
 }
 
+type displayAppProvider struct {
+	service      *Service
+	presentation string
+}
+
+func (p displayAppProvider) Normalize(ctx context.Context, raw json.RawMessage) (any, error) {
+	var c DisplayAppConfig
+	if err := decodeSourceConfig(raw, &c); err != nil {
+		return nil, err
+	}
+	var provider string
+	if err := p.service.db.QueryRow(ctx, `SELECT s.provider FROM sources s JOIN assets a ON a.id=s.asset_id WHERE s.asset_id=$1 AND a.deleted_at IS NULL`, c.SourceAssetID).Scan(&provider); err != nil {
+		return nil, errors.New("display App data Source was not found")
+	}
+	allowed := map[string]bool{"csv": true, "json": true, "calendar": true, "rss": true, "atom": true}
+	if !allowed[provider] {
+		return nil, errors.New("display App requires a CSV, JSON, Calendar, RSS, or Atom data Source")
+	}
+	if p.presentation == "menu" || p.presentation == "table" {
+		if provider != "csv" && provider != "json" {
+			return nil, errors.New("Menu and Table Apps require a CSV or JSON data Source")
+		}
+	}
+	if p.presentation == "agenda" && provider != "calendar" && provider != "csv" && provider != "json" {
+		return nil, errors.New("Agenda Apps require a Calendar, CSV, or JSON data Source")
+	}
+	if c.MaximumItems == 0 {
+		c.MaximumItems = 20
+	}
+	if c.MaximumItems < 1 || c.MaximumItems > 100 {
+		return nil, errors.New("display App maximum items must be between 1 and 100")
+	}
+	if len(c.Fields) == 0 || len(c.Fields) > 12 {
+		return nil, errors.New("display App must select between 1 and 12 fields")
+	}
+	seen := map[string]bool{}
+	for index, field := range c.Fields {
+		field = sanitizeCalendarText(field, 80)
+		if field == "" || seen[field] {
+			return nil, errors.New("display App fields must be unique and non-empty")
+		}
+		seen[field] = true
+		c.Fields[index] = field
+	}
+	if err := normalizeAppColors(&c.ForegroundColor, &c.BackgroundColor); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
 func normalizeAppColors(foreground, background *string) error {
 	if *foreground == "" {
 		*foreground = "#F5F7FA"

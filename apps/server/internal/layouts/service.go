@@ -193,6 +193,9 @@ func (s *Service) Publish(ctx context.Context, id, userID uuid.UUID, expected in
 	if err = s.validatePlaybackLimitsTx(ctx, tx, document); err != nil {
 		return Revision{}, err
 	}
+	if err = s.validateStructuredBindingsTx(ctx, tx, document); err != nil {
+		return Revision{}, err
+	}
 	canonical, _ := json.Marshal(document)
 	sum := sha256.Sum256(canonical)
 	digest := hex.EncodeToString(sum[:])
@@ -396,6 +399,32 @@ func (s *Service) validatePlaybackLimitsTx(ctx context.Context, tx pgx.Tx, docum
 	}
 	if audioEmitting > 1 {
 		return errors.New("layout may contain only one audio-emitting placement or playlist zone")
+	}
+	return nil
+}
+
+func (s *Service) validateStructuredBindingsTx(ctx context.Context, tx pgx.Tx, document Document) error {
+	placedApps := map[uuid.UUID]bool{}
+	for _, placement := range document.Placements {
+		if placement.Type == "app" && placement.AppID != nil {
+			placedApps[*placement.AppID] = true
+		}
+	}
+	for _, placement := range document.Placements {
+		if placement.Primitive == nil || placement.Primitive.Binding == nil {
+			continue
+		}
+		binding := placement.Primitive.Binding
+		if !placedApps[binding.SourceID] {
+			return errors.New("structured binding requires its data Source to be placed in the Layout")
+		}
+		var provider string
+		if err := tx.QueryRow(ctx, `SELECT provider FROM sources WHERE asset_id=$1`, binding.SourceID).Scan(&provider); err != nil {
+			return err
+		}
+		if provider != "csv" && provider != "json" {
+			return errors.New("structured binding requires a CSV or JSON data Source")
+		}
 	}
 	return nil
 }

@@ -335,6 +335,14 @@ type TickerAppConfig struct {
 	BackgroundColor string    `json:"backgroundColor"`
 }
 
+type DisplayAppConfig struct {
+	SourceAssetID   uuid.UUID `json:"sourceAssetId"`
+	Fields          []string  `json:"fields"`
+	MaximumItems    int       `json:"maximumItems"`
+	ForegroundColor string    `json:"foregroundColor"`
+	BackgroundColor string    `json:"backgroundColor"`
+}
+
 type StructuredRecord struct {
 	ID          string            `json:"id"`
 	Title       string            `json:"title"`

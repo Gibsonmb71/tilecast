@@ -119,7 +119,7 @@ internal fun effectiveDurationMs(item:ManifestItem,assets:List<ManifestAsset>):L
 		val structuredSource=source ?: return
 		val config=runCatching{Json.decodeFromJsonElement<StructuredSourceConfig>(structuredSource.configuration)}.getOrElse{onFailure("Structured source configuration is invalid");return}
 		StructuredSourceItem(item,structuredSource,config,onDone,onSourceStatus,startOffsetMs)
-	} else if(source?.provider in setOf("clock","date","qrcode","ticker")){
+	} else if(source?.provider in setOf("clock","date","qrcode","ticker","menu","list","table","agenda")){
 		NativeAppItem(item,source ?: return,session,onDone,onFailure,onSourceStatus,startOffsetMs)
     } else if(website!=null) WebsiteItem(item,website,session,onDone,startOffsetMs,onWebsiteStatus)
     else if(asset?.mimeType?.startsWith("image/")==true)ImageItem(item,asset,session,startOffsetMs,onDone,onFailure,onProgress)

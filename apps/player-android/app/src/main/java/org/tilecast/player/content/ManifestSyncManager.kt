@@ -163,7 +163,7 @@ class ManifestSyncManager(
 		playlists.flatMap { it.items }.forEach { item ->
 			when (item.assetType) {
 				"website" -> require(websites[item.assetId] != null && (item.durationMs ?: 0) > 0 && item.deliveryPolicy == "stream") { "Website item is invalid" }
-				"source" -> require(sources[item.assetId]?.provider in setOf("website", "youtube", "calendar", "rss", "atom", "json", "csv", "clock", "date", "qrcode", "ticker") && item.deliveryPolicy == "stream") { "App item is invalid" }
+				"source" -> require(sources[item.assetId]?.provider in setOf("website", "youtube", "calendar", "rss", "atom", "json", "csv", "clock", "date", "qrcode", "ticker", "menu", "list", "table", "agenda") && item.deliveryPolicy == "stream") { "App item is invalid" }
 				else -> require(item.variantId != null && assets[item.variantId]?.assetId == item.assetId) { "Manifest item references an unavailable variant" }
 			}
 			require(item.fitMode in listOf("contain", "cover", "stretch") && item.transition in listOf("none", "fade") && item.deliveryPolicy in listOf("download", "stream", "automatic") && item.volume in 0f..1f) { "Manifest item settings are invalid" }
@@ -198,6 +198,7 @@ class ManifestSyncManager(
 			"date"->{val config=Json.decodeFromJsonElement<DateAppConfig>(app.configuration);java.time.ZoneId.of(config.timezone);require(config.format in setOf("full","long","medium","short"))}
 			"qrcode"->{val config=Json.decodeFromJsonElement<QRCodeAppConfig>(app.configuration);require(config.value.isNotBlank()&&config.value.length<=2048)}
 			"ticker"->{val config=Json.decodeFromJsonElement<TickerAppConfig>(app.configuration);require(sources[config.sourceAssetId]?.provider in setOf("rss","atom","json","csv")&&config.field.length<=80)}
+			"menu", "list", "table", "agenda"->{val config=Json.decodeFromJsonElement<org.tilecast.player.network.DisplayAppConfig>(app.configuration);require(sources[config.sourceAssetId]?.provider in setOf("calendar","rss","atom","json","csv")&&config.fields.isNotEmpty()&&config.fields.size<=12&&config.maximumItems in 1..100)}
 		}}
 	}
 }

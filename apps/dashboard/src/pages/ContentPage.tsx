@@ -144,7 +144,14 @@ export function ContentPage() {
     "rss" | "atom" | "json" | "csv"
   >();
   const [nativeEditor, setNativeEditor] = useState<
-    "clock" | "date" | "qrcode" | "ticker"
+    | "clock"
+    | "date"
+    | "qrcode"
+    | "ticker"
+    | "menu"
+    | "list"
+    | "table"
+    | "agenda"
   >();
   const controllers = useRef(new Map<string, AbortController>());
   const fileInput = useRef<HTMLInputElement>(null);
@@ -685,7 +692,15 @@ export function ContentPage() {
               setStructuredEditor(provider as "rss" | "atom" | "json" | "csv");
             else
               setNativeEditor(
-                provider as "clock" | "date" | "qrcode" | "ticker",
+                provider as
+                  | "clock"
+                  | "date"
+                  | "qrcode"
+                  | "ticker"
+                  | "menu"
+                  | "list"
+                  | "table"
+                  | "agenda",
               );
           }}
         />
@@ -1067,12 +1082,27 @@ function AssetDetails(props: {
     />
   ) : props.asset.type === "source" &&
     props.asset.source &&
-    ["clock", "date", "qrcode", "ticker"].includes(
-      props.asset.source.provider,
-    ) ? (
+    [
+      "clock",
+      "date",
+      "qrcode",
+      "ticker",
+      "menu",
+      "list",
+      "table",
+      "agenda",
+    ].includes(props.asset.source.provider) ? (
     <NativeAppEditor
       provider={
-        props.asset.source.provider as "clock" | "date" | "qrcode" | "ticker"
+        props.asset.source.provider as
+          | "clock"
+          | "date"
+          | "qrcode"
+          | "ticker"
+          | "menu"
+          | "list"
+          | "table"
+          | "agenda"
       }
       asset={props.asset}
       csrf={props.csrf}

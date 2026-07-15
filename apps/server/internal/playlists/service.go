@@ -937,7 +937,7 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 		}
 	}
 	for _, app := range append([]ManifestSource(nil), manifest.Sources...) {
-		if app.Provider != "ticker" {
+		if app.Provider != "ticker" && app.Provider != "menu" && app.Provider != "list" && app.Provider != "table" && app.Provider != "agenda" {
 			continue
 		}
 		var config struct {
@@ -959,7 +959,7 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 		var dependency ManifestSource
 		dependency.AssetID = config.SourceAssetID
 		if err = s.db.QueryRow(ctx, `SELECT a.name,s.provider,s.config_version,s.configuration FROM sources s JOIN assets a ON a.id=s.asset_id AND a.deleted_at IS NULL WHERE s.asset_id=$1`, config.SourceAssetID).Scan(&dependency.Name, &dependency.Provider, &dependency.ConfigVersion, &dependency.Configuration); err != nil {
-			return Manifest{}, "", fmt.Errorf("%w: ticker data Source unavailable", ErrConflict)
+			return Manifest{}, "", fmt.Errorf("%w: display App data Source unavailable", ErrConflict)
 		}
 		if s.sources != nil {
 			dependency.Configuration, err = s.sources.PlayerSourceConfiguration(ctx, dependency.AssetID, dependency.Provider, dependency.Configuration)
@@ -985,7 +985,11 @@ func (s *Service) AssetChanged(ctx context.Context, assetID uuid.UUID, reason st
 		return err
 	}
 	defer tx.Rollback(ctx)
-	rows, err := tx.Query(ctx, `SELECT DISTINCT playlist_id FROM playlist_items WHERE asset_id=$1`, assetID)
+	rows, err := tx.Query(ctx, `SELECT DISTINCT i.playlist_id FROM playlist_items i
+		WHERE i.asset_id=$1 OR i.asset_id IN (
+			SELECT s.asset_id FROM sources s JOIN assets a ON a.id=s.asset_id AND a.deleted_at IS NULL
+			WHERE s.configuration->>'sourceAssetId'=$1::text
+		)`, assetID)
 	if err != nil {
 		return err
 	}

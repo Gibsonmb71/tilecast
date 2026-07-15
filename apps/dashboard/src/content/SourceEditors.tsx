@@ -9,6 +9,9 @@ import {
   Globe2,
   Plus,
   Rss,
+  ListTree,
+  Table2,
+  Utensils,
   Trash2,
   X,
   Youtube,
@@ -27,6 +30,7 @@ import type {
   DateAppConfig,
   QRCodeAppConfig,
   TickerAppConfig,
+  DisplayAppConfig,
   YouTubeConfig,
 } from "../api/types";
 
@@ -125,6 +129,26 @@ export function SourceProviderGallery({
             <TextQuote size={30} />
             <strong>Ticker</strong>
             <span>Present a selected field from a reusable data App.</span>
+          </button>
+          <button type="button" onClick={() => onChoose("menu")}>
+            <Utensils size={30} />
+            <strong>Menu</strong>
+            <span>Format selected CSV or JSON fields as a signage menu.</span>
+          </button>
+          <button type="button" onClick={() => onChoose("list")}>
+            <ListTree size={30} />
+            <strong>List</strong>
+            <span>Present records from a reusable structured Source.</span>
+          </button>
+          <button type="button" onClick={() => onChoose("table")}>
+            <Table2 size={30} />
+            <strong>Table</strong>
+            <span>Show selected CSV or JSON fields in columns.</span>
+          </button>
+          <button type="button" onClick={() => onChoose("agenda")}>
+            <CalendarDays size={30} />
+            <strong>Agenda</strong>
+            <span>Display dated Source records in agenda form.</span>
           </button>
         </div>
       </section>
@@ -973,9 +997,14 @@ export function StructuredSourceEditor({
   );
 }
 
-type NativeProvider = "clock" | "date" | "qrcode" | "ticker";
+type NativeProvider =
+  "clock" | "date" | "qrcode" | "ticker" | "menu" | "list" | "table" | "agenda";
 type NativeConfig =
-  ClockAppConfig | DateAppConfig | QRCodeAppConfig | TickerAppConfig;
+  | ClockAppConfig
+  | DateAppConfig
+  | QRCodeAppConfig
+  | TickerAppConfig
+  | DisplayAppConfig;
 const nativeDefault = (provider: NativeProvider): NativeConfig => {
   const colors = { foregroundColor: "#F5F7FA", backgroundColor: "#0E141B" };
   if (provider === "clock")
@@ -998,6 +1027,13 @@ const nativeDefault = (provider: NativeProvider): NativeConfig => {
       errorCorrection: "medium",
       foregroundColor: "#000000",
       backgroundColor: "#FFFFFF",
+    };
+  if (["menu", "list", "table", "agenda"].includes(provider))
+    return {
+      sourceAssetId: "",
+      fields: ["title", "subtitle"],
+      maximumItems: 20,
+      ...colors,
     };
   return {
     sourceAssetId: "",
@@ -1041,7 +1077,7 @@ export function NativeAppEditor({
           sort: "name",
         }),
       ),
-    enabled: provider === "ticker",
+    enabled: ["ticker", "menu", "list", "table", "agenda"].includes(provider),
   });
   const save = useMutation({
     mutationFn: () => {
@@ -1285,6 +1321,79 @@ export function NativeAppEditor({
                   />
                 </label>
               </div>
+            </>
+          )}
+          {["menu", "list", "table", "agenda"].includes(provider) && (
+            <>
+              <label className="field">
+                <span className="field__label">Data Source</span>
+                <select
+                  value={(configuration as DisplayAppConfig).sourceAssetId}
+                  disabled={readOnly}
+                  onChange={(event) =>
+                    setConfiguration((current) => ({
+                      ...current,
+                      sourceAssetId: event.target.value,
+                    }))
+                  }
+                >
+                  <option value="">Select data</option>
+                  {dataApps.data?.items
+                    .filter((item) => {
+                      const source = item.source?.provider;
+                      if (provider === "menu" || provider === "table")
+                        return source === "csv" || source === "json";
+                      if (provider === "agenda")
+                        return ["calendar", "csv", "json"].includes(
+                          source ?? "",
+                        );
+                      return [
+                        "calendar",
+                        "rss",
+                        "atom",
+                        "csv",
+                        "json",
+                      ].includes(source ?? "");
+                    })
+                    .map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <label className="field">
+                <span className="field__label">Fields</span>
+                <input
+                  value={(configuration as DisplayAppConfig).fields.join(", ")}
+                  disabled={readOnly}
+                  onChange={(event) =>
+                    setConfiguration((current) => ({
+                      ...current,
+                      fields: event.target.value
+                        .split(",")
+                        .map((field) => field.trim())
+                        .filter(Boolean),
+                    }))
+                  }
+                />
+              </label>
+              <label className="field">
+                <span className="field__label">Maximum items</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={(configuration as DisplayAppConfig).maximumItems}
+                  disabled={readOnly}
+                  onChange={(event) =>
+                    setConfiguration((current) => ({
+                      ...current,
+                      maximumItems: Number(event.target.value),
+                    }))
+                  }
+                />
+              </label>
             </>
           )}
           <div className="form-grid form-grid--2">
