@@ -2,7 +2,7 @@ import { Navigate, Route, Routes } from "react-router";
 import { AssetFilterPortal } from "./components/AssetFilterPortal";
 import { GitHubOAuthSetupPortal } from "./components/GitHubOAuthSetupPortal";
 import { AuthPage } from "./pages/AuthPage";
-import { DashboardShell, FoundationPage, PlannedPage } from "./pages/Dashboard";
+import { DashboardShell, FoundationPage } from "./pages/Dashboard";
 import { PairScreenPage, ScreensPage } from "./pages/ScreensPage";
 import { ScreenDetailWithPreviewPage } from "./pages/ScreenDetailWithPreviewPage";
 import { ContentPage } from "./pages/ContentPage";
@@ -18,6 +18,7 @@ import { LayoutsPage } from "./pages/LayoutsPage";
 import { LayoutEditorPage } from "./pages/LayoutEditorPage";
 import { AppEditorPage, AppsPage } from "./pages/AppsPage";
 import { UsersPage } from "./pages/UsersPage";
+import { ActivityPage } from "./pages/ActivityPage";
 
 export function App() {
   return (
@@ -53,10 +54,7 @@ export function App() {
           <Route path="schedules/new" element={<ScheduleEditorPage />} />
           <Route path="schedules/:id" element={<ScheduleEditorPage />} />
           <Route path="users" element={<UsersPage />} />
-          <Route
-            path="activity"
-            element={<PlannedPage feature="Activity reports" milestone={9} />}
-          />
+          <Route path="activity" element={<ActivityPage />} />
           <Route path="settings/*" element={<SettingsPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

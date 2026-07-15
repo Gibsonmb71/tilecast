@@ -1,0 +1,106 @@
+.screen-activity-route .screen-overview {
+  display: none;
+}
+.screen-activity-panel {
+  display: grid;
+  gap: 16px;
+  margin-top: 16px;
+}
+.screen-activity-panel > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.screen-activity-panel h3,
+.screen-activity-panel h4,
+.screen-activity-panel p {
+  margin: 0;
+}
+.screen-activity-panel header p {
+  margin-top: 4px;
+  color: var(--tc-text-secondary);
+}
+.screen-activity-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.screen-activity-cards article {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 5px 9px;
+  padding: 15px;
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-panel);
+  background: var(--tc-bg-surface);
+}
+.screen-activity-cards svg {
+  grid-row: 1 / span 2;
+  color: var(--tc-action-primary);
+}
+.screen-activity-cards span {
+  color: var(--tc-text-secondary);
+  font-size: 12px;
+}
+.screen-activity-cards strong {
+  overflow-wrap: anywhere;
+}
+.screen-activity-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.screen-activity-columns > section {
+  overflow: hidden;
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-panel);
+  background: var(--tc-bg-surface);
+}
+.screen-activity-columns header {
+  padding: 13px 15px;
+  border-bottom: 1px solid var(--tc-border-default);
+}
+.screen-activity-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 15px;
+  border-bottom: 1px solid var(--tc-border-subtle);
+}
+.screen-activity-row:last-child {
+  border-bottom: 0;
+}
+.screen-activity-row span:first-child {
+  display: grid;
+  gap: 2px;
+}
+.screen-activity-row small,
+.screen-activity-empty {
+  color: var(--tc-text-secondary);
+  font-size: 12px;
+}
+.screen-activity-empty {
+  padding: 20px;
+}
+.screen-activity-issue {
+  margin: 0;
+}
+@media (max-width: 980px) {
+  .screen-activity-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .screen-activity-columns {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 620px) {
+  .screen-activity-cards {
+    grid-template-columns: 1fr;
+  }
+  .screen-activity-panel > header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
