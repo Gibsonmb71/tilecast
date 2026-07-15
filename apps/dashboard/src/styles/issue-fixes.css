@@ -475,10 +475,9 @@
 
 .user-row__editor {
   display: grid;
-  grid-template-columns: minmax(120px, 1fr) minmax(130px, 1fr) 145px minmax(
-      150px,
-      1fr
-    ) auto;
+  grid-template-columns:
+    minmax(120px, 1fr) minmax(130px, 1fr) 145px minmax(150px, 1fr)
+    auto;
   gap: 8px;
   align-items: end;
 }
