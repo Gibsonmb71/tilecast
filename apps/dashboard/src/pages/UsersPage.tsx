@@ -14,7 +14,11 @@ type UserInput = {
 };
 type ErrorResponse = { error?: { message?: string } };
 
-async function userRequest<T>(path: string, csrfToken: string, init?: RequestInit) {
+async function userRequest<T>(
+  path: string,
+  csrfToken: string,
+  init?: RequestInit,
+) {
   const response = await fetch(`/api/v1${path}`, {
     ...init,
     credentials: "same-origin",
@@ -26,7 +30,9 @@ async function userRequest<T>(path: string, csrfToken: string, init?: RequestIni
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as ErrorResponse;
-    throw new Error(body.error?.message ?? "Tilecast could not update this account.");
+    throw new Error(
+      body.error?.message ?? "Tilecast could not update this account.",
+    );
   }
   if (response.status === 204) return undefined as T;
   return ((await response.json()) as { data: T }).data;
@@ -48,7 +54,9 @@ export function UsersPage() {
   const client = useQueryClient();
   const csrf = auth.status?.csrfToken ?? "";
   const currentUser = auth.status?.user;
-  const canManage = ["owner", "administrator"].includes(currentUser?.role ?? "");
+  const canManage = ["owner", "administrator"].includes(
+    currentUser?.role ?? "",
+  );
   const isOwner = currentUser?.role === "owner";
   const users = useQuery({
     queryKey: ["users"],
@@ -92,18 +100,24 @@ export function UsersPage() {
         <h2>Studio users</h2>
         <p>
           Give each person an individual sign-in and assign only the permissions
-          they need. Appearance and density preferences remain separate for every
-          account.
+          they need. Appearance and density preferences remain separate for
+          every account.
         </p>
       </header>
 
-      <section className="user-management__form" aria-labelledby="add-user-title">
+      <section
+        className="user-management__form"
+        aria-labelledby="add-user-title"
+      >
         <h3 id="add-user-title">Add a user</h3>
         <p>Passwords must contain at least 12 characters.</p>
         <div className="user-management__fields">
           <label>
             Name
-            <input value={name} onChange={(event) => setName(event.target.value)} />
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
           </label>
           <label>
             Username
@@ -183,7 +197,9 @@ export function UsersPage() {
                   : [user.role]
               }
               csrf={csrf}
-              onChanged={() => client.invalidateQueries({ queryKey: ["users"] })}
+              onChanged={() =>
+                client.invalidateQueries({ queryKey: ["users"] })
+              }
             />
           ))}
         </div>
