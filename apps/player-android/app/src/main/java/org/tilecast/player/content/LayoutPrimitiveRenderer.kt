@@ -41,7 +41,13 @@ import java.time.format.FormatStyle
 import java.text.NumberFormat
 
 @Composable
-fun LayoutPrimitiveCanvas(document: LayoutDocument, modifier: Modifier = Modifier, structuredSources: Map<String, StructuredSourceConfig> = emptyMap()) {
+fun LayoutPrimitiveCanvas(
+    document: LayoutDocument,
+    modifier: Modifier = Modifier,
+    structuredSources: Map<String, StructuredSourceConfig> = emptyMap(),
+    placementIds: Set<String>? = null,
+    drawBackground: Boolean = true,
+) {
     var now by remember { mutableStateOf(Instant.now()) }
     LaunchedEffect(structuredSources) { while (true) { now = Instant.now(); kotlinx.coroutines.delay(30_000) } }
     BoxWithConstraints(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -62,8 +68,19 @@ fun LayoutPrimitiveCanvas(document: LayoutDocument, modifier: Modifier = Modifie
             val binding = group.primitive?.binding ?: return@filter false
             structuredSources[binding.sourceId]?.let { resolveLayoutBinding(binding, it, now).isBlank() } ?: true
         }.map { it.id }.toSet()
-        Box(Modifier.size(width, height).background(layoutColor(document.canvas.backgroundColor))) {
-            document.placements.filter { it.visible && it.type == "primitive" && it.primitive?.kind != "group" && placementGroupVisible(it, hiddenGroups) }.sortedBy { it.layer }.forEach { placement ->
+        val canvasModifier = if (drawBackground) {
+            Modifier.size(width, height).background(layoutColor(document.canvas.backgroundColor))
+        } else {
+            Modifier.size(width, height)
+        }
+        Box(canvasModifier) {
+            document.placements.filter {
+                it.visible &&
+                    it.type == "primitive" &&
+                    it.primitive?.kind != "group" &&
+                    placementGroupVisible(it, hiddenGroups) &&
+                    (placementIds == null || it.id in placementIds)
+            }.sortedBy { it.layer }.forEach { placement ->
                 PrimitivePlacement(placement, sx, sy, structuredSources, now)
             }
         }

@@ -153,13 +153,19 @@ class ManifestSyncManager(
     private fun finalFile(asset: ManifestAsset) = File(mediaDirectory(), "${asset.variantId}.${extension(asset.mimeType)}")
     private fun extension(mime: String) = when (mime) { "video/mp4" -> "mp4"; "image/png" -> "png"; "image/webp" -> "webp"; "image/gif" -> "gif"; else -> "jpg" }
 	private fun validateManifest(manifest: PlayerManifest, screenId: String) {
-		require(manifest.schemaVersion in 1..9 && manifest.mode == "single-zone" && manifest.screenId == screenId) { "Manifest validation failed" }
+		require(manifest.schemaVersion in 1..10 && manifest.mode in setOf("single-zone", "presentation") && manifest.screenId == screenId) { "Manifest validation failed" }
 		val assets = manifest.assets.associateBy { it.variantId }
 		val websites = manifest.websites.associateBy { it.assetId }
 		val sources = manifest.sources.associateBy { it.assetId }
 		val playlists = manifest.playlists + listOfNotNull(manifest.directFallbackPlaylist, manifest.playlist)
 		val playlistIds = playlists.map { it.id }.toSet()
-		require(playlistIds.containsAll(manifest.schedules.map { it.playlistId }) && manifest.emergency?.playlistId?.let(playlistIds::contains) != false) { "Manifest references an unavailable playlist" }
+		val layoutIds = manifest.layouts.map { it.id }.toSet()
+		require(manifest.schedules.all { schedule -> schedule.layoutId?.let(layoutIds::contains) ?: (schedule.playlistId?.let(playlistIds::contains) ?: false) } && manifest.emergency?.playlistId?.let(playlistIds::contains) != false) { "Manifest references an unavailable presentation" }
+		manifest.layouts.forEach { layout ->
+			LayoutValidator.validate(layout.document)
+			require(layout.document.placements.all { placement -> when (placement.type) { "app" -> placement.appId?.let(sources::containsKey) == true; "asset" -> manifest.assets.any { it.assetId == placement.assetId }; "playlistZone" -> placement.playlistId?.let(playlistIds::contains) == true; else -> true } }) { "Layout dependency is unavailable" }
+		}
+		require(manifest.layout?.id?.let(layoutIds::contains) != false && manifest.directFallbackLayout?.id?.let(layoutIds::contains) != false) { "Root Layout is unavailable" }
 		playlists.flatMap { it.items }.forEach { item ->
 			when (item.assetType) {
 				"website" -> require(websites[item.assetId] != null && (item.durationMs ?: 0) > 0 && item.deliveryPolicy == "stream") { "Website item is invalid" }

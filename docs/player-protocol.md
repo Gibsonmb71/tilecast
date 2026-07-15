@@ -39,6 +39,8 @@ Delivery is deterministic: Download always caches; Stream requires connectivity;
 
 Manifest schema v2 is activated atomically only after all Download-policy content for the direct fallback and included schedules is verified. Selection uses `[start, end)` intervals. The player evaluates with its device clock, wakes at the next transition, and restores the direct assignment whenever no schedule is active. Weekly schedules continue offline indefinitely while their definitions and assets remain cached. A future one-time schedule that was not received before disconnection cannot activate. Stream-policy media still requires connectivity and is not guaranteed offline.
 
+Manifest schema v10 adds published Layout presentations. The Player validates the Layout document and its dependency references, prepares every required media file with size and SHA-256 checks, and activates the complete presentation atomically. Playlist zones advance independently, Apps use native provider renderers, and structured bindings reevaluate cached Source data at local date and clock transitions. A failed secondary placement is isolated; an invalid root Layout leaves the previous verified presentation active.
+
 Clock changes, timezone changes, app foregrounding, startup, manifest activation, and transition wake-ups cause reevaluation. The manifest server timestamp is used only to report approximate skew; it never silently replaces the device clock for offline scheduling.
 
 ## Website playback

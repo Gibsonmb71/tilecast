@@ -557,13 +557,25 @@ func (s *Service) notify(items []notification) {
 }
 
 func (s *Service) Assign(ctx context.Context, screenID, playlistID, userID uuid.UUID) (Assignment, error) {
+	return s.AssignPresentation(ctx, screenID, &playlistID, nil, userID)
+}
+
+func (s *Service) AssignPresentation(ctx context.Context, screenID uuid.UUID, playlistID, layoutID *uuid.UUID, userID uuid.UUID) (Assignment, error) {
+	if (playlistID == nil) == (layoutID == nil) {
+		return Assignment{}, errors.New("assignment requires exactly one presentation")
+	}
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return Assignment{}, err
 	}
 	defer tx.Rollback(ctx)
 	var exists bool
-	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM playlists WHERE id=$1 AND deleted_at IS NULL)`, playlistID).Scan(&exists); err != nil {
+	if playlistID != nil {
+		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM playlists WHERE id=$1 AND deleted_at IS NULL)`, playlistID).Scan(&exists)
+	} else {
+		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM layouts WHERE id=$1 AND deleted_at IS NULL AND published_revision_id IS NOT NULL)`, layoutID).Scan(&exists)
+	}
+	if err != nil {
 		return Assignment{}, err
 	}
 	if !exists {
@@ -574,7 +586,7 @@ func (s *Service) Assign(ctx context.Context, screenID, playlistID, userID uuid.
 		return Assignment{}, err
 	}
 	if groupID != nil {
-		_, err = tx.Exec(ctx, `INSERT INTO screen_group_playlist_assignments(screen_group_id,playlist_id,assigned_by)VALUES($1,$2,$3) ON CONFLICT(screen_group_id)DO UPDATE SET playlist_id=EXCLUDED.playlist_id,assigned_by=EXCLUDED.assigned_by,updated_at=now()`, *groupID, playlistID, userID)
+		_, err = tx.Exec(ctx, `INSERT INTO screen_group_playlist_assignments(screen_group_id,playlist_id,layout_id,assigned_by)VALUES($1,$2,$3,$4) ON CONFLICT(screen_group_id)DO UPDATE SET playlist_id=EXCLUDED.playlist_id,layout_id=EXCLUDED.layout_id,assigned_by=EXCLUDED.assigned_by,updated_at=now()`, *groupID, playlistID, layoutID, userID)
 		if err == nil {
 			_, err = tx.Exec(ctx, `DELETE FROM screen_playlist_assignments WHERE screen_id IN(SELECT screen_id FROM screen_group_memberships WHERE screen_group_id=$1)`, *groupID)
 		}
@@ -582,7 +594,7 @@ func (s *Service) Assign(ctx context.Context, screenID, playlistID, userID uuid.
 			_, err = tx.Exec(ctx, `UPDATE screen_groups SET playback_epoch=now(),updated_at=now() WHERE id=$1`, *groupID)
 		}
 	} else {
-		_, err = tx.Exec(ctx, `INSERT INTO screen_playlist_assignments(id,screen_id,playlist_id,assigned_by)VALUES($1,$2,$3,$4) ON CONFLICT(screen_id)DO UPDATE SET playlist_id=EXCLUDED.playlist_id,assigned_by=EXCLUDED.assigned_by,updated_at=now()`, uuid.New(), screenID, playlistID, userID)
+		_, err = tx.Exec(ctx, `INSERT INTO screen_playlist_assignments(id,screen_id,playlist_id,layout_id,assigned_by)VALUES($1,$2,$3,$4,$5) ON CONFLICT(screen_id)DO UPDATE SET playlist_id=EXCLUDED.playlist_id,layout_id=EXCLUDED.layout_id,assigned_by=EXCLUDED.assigned_by,updated_at=now()`, uuid.New(), screenID, playlistID, layoutID, userID)
 	}
 	if err != nil {
 		return Assignment{}, err
@@ -591,7 +603,11 @@ func (s *Service) Assign(ctx context.Context, screenID, playlistID, userID uuid.
 	if err != nil {
 		return Assignment{}, err
 	}
-	if err = insertAudit(ctx, tx, userID, "screen.playlist_assigned", screenID); err != nil {
+	action := "screen.playlist_assigned"
+	if layoutID != nil {
+		action = "screen.layout_assigned"
+	}
+	if err = insertAudit(ctx, tx, userID, action, screenID); err != nil {
 		return Assignment{}, err
 	}
 	if err = tx.Commit(ctx); err != nil {
@@ -636,19 +652,31 @@ func (s *Service) Unassign(ctx context.Context, screenID, userID uuid.UUID) (Ass
 }
 
 func (s *Service) AssignGroup(ctx context.Context, groupID, playlistID, userID uuid.UUID) error {
+	return s.AssignGroupPresentation(ctx, groupID, &playlistID, nil, userID)
+}
+
+func (s *Service) AssignGroupPresentation(ctx context.Context, groupID uuid.UUID, playlistID, layoutID *uuid.UUID, userID uuid.UUID) error {
+	if (playlistID == nil) == (layoutID == nil) {
+		return errors.New("assignment requires exactly one presentation")
+	}
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
 	var valid bool
-	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM screen_groups g JOIN playlists p ON p.organization_id=g.organization_id WHERE g.id=$1 AND g.deleted_at IS NULL AND p.id=$2 AND p.deleted_at IS NULL)`, groupID, playlistID).Scan(&valid); err != nil {
+	if playlistID != nil {
+		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM screen_groups g JOIN playlists p ON p.organization_id=g.organization_id WHERE g.id=$1 AND g.deleted_at IS NULL AND p.id=$2 AND p.deleted_at IS NULL)`, groupID, playlistID).Scan(&valid)
+	} else {
+		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM screen_groups g JOIN layouts l ON l.organization_id=g.organization_id WHERE g.id=$1 AND g.deleted_at IS NULL AND l.id=$2 AND l.deleted_at IS NULL AND l.published_revision_id IS NOT NULL)`, groupID, layoutID).Scan(&valid)
+	}
+	if err != nil {
 		return err
 	}
 	if !valid {
 		return ErrNotFound
 	}
-	if _, err = tx.Exec(ctx, `INSERT INTO screen_group_playlist_assignments(screen_group_id,playlist_id,assigned_by)VALUES($1,$2,$3) ON CONFLICT(screen_group_id)DO UPDATE SET playlist_id=EXCLUDED.playlist_id,assigned_by=EXCLUDED.assigned_by,updated_at=now()`, groupID, playlistID, userID); err != nil {
+	if _, err = tx.Exec(ctx, `INSERT INTO screen_group_playlist_assignments(screen_group_id,playlist_id,layout_id,assigned_by)VALUES($1,$2,$3,$4) ON CONFLICT(screen_group_id)DO UPDATE SET playlist_id=EXCLUDED.playlist_id,layout_id=EXCLUDED.layout_id,assigned_by=EXCLUDED.assigned_by,updated_at=now()`, groupID, playlistID, layoutID, userID); err != nil {
 		return err
 	}
 	if _, err = tx.Exec(ctx, `UPDATE screen_groups SET playback_epoch=now(),updated_at=now() WHERE id=$1`, groupID); err != nil {
@@ -658,7 +686,11 @@ func (s *Service) AssignGroup(ctx context.Context, groupID, playlistID, userID u
 	if err != nil {
 		return err
 	}
-	if err = insertAudit(ctx, tx, userID, "sync_group.playlist_assigned", groupID); err != nil {
+	action := "sync_group.playlist_assigned"
+	if layoutID != nil {
+		action = "sync_group.layout_assigned"
+	}
+	if err = insertAudit(ctx, tx, userID, action, groupID); err != nil {
 		return err
 	}
 	if err = tx.Commit(ctx); err != nil {
@@ -705,7 +737,7 @@ func (s *Service) Assignment(ctx context.Context, screenID uuid.UUID) (Assignmen
 	}
 	var a Assignment
 	a.ScreenID = screenID
-	err = s.db.QueryRow(ctx, `SELECT COALESCE(ga.playlist_id,pa.playlist_id),p.name,p.revision,ms.manifest_version,ps.active_manifest_version,ps.pending_manifest_version,ps.download_queue_count,ps.downloaded_bytes,ps.required_bytes,ps.cache_used_bytes,ps.cache_limit_bytes,ps.current_item_id,ps.current_asset_id,ps.playback_state,ps.last_sync_error,ps.last_playback_error,ps.current_schedule_id,ps.current_playlist_id,ps.selection_source,ps.next_transition_at,ps.device_clock_offset_seconds,ps.schedule_evaluation_error,ps.schedule_manifest_version,ps.current_website_asset_id,ps.website_state,ps.website_load_started_at,ps.website_load_completed_at,ps.website_failure_category,ps.website_blocked_navigation_count,ps.website_current_host,ps.website_fallback_shown,ps.website_renderer_recovery_count FROM screen_manifest_state ms LEFT JOIN screen_group_memberships gm ON gm.screen_id=ms.screen_id LEFT JOIN screen_group_playlist_assignments ga ON ga.screen_group_id=gm.screen_group_id LEFT JOIN screen_playlist_assignments pa ON pa.screen_id=ms.screen_id LEFT JOIN playlists p ON p.id=COALESCE(ga.playlist_id,pa.playlist_id) LEFT JOIN screen_player_status ps ON ps.screen_id=ms.screen_id WHERE ms.screen_id=$1`, screenID).Scan(&a.PlaylistID, &a.PlaylistName, &a.PlaylistRevision, &a.ManifestVersion, &a.PlayerActiveManifestVersion, &a.PlayerPendingManifestVersion, &a.DownloadQueueCount, &a.DownloadedBytes, &a.RequiredBytes, &a.CacheUsedBytes, &a.CacheLimitBytes, &a.CurrentItemID, &a.CurrentAssetID, &a.PlaybackState, &a.LastSyncError, &a.LastPlaybackError, &a.CurrentScheduleID, &a.CurrentPlaylistID, &a.SelectionSource, &a.NextTransitionAt, &a.DeviceClockOffsetSeconds, &a.ScheduleEvaluationError, &a.ScheduleManifestVersion, &a.CurrentWebsiteAssetID, &a.WebsiteState, &a.WebsiteLoadStartedAt, &a.WebsiteLoadCompletedAt, &a.WebsiteFailureCategory, &a.WebsiteBlockedNavigationCount, &a.WebsiteCurrentHost, &a.WebsiteFallbackShown, &a.WebsiteRendererRecoveryCount)
+	err = s.db.QueryRow(ctx, `SELECT COALESCE(ga.playlist_id,pa.playlist_id),p.name,p.revision,COALESCE(ga.layout_id,pa.layout_id),l.name,lr.revision,CASE WHEN COALESCE(ga.layout_id,pa.layout_id) IS NOT NULL THEN 'layout' WHEN COALESCE(ga.playlist_id,pa.playlist_id) IS NOT NULL THEN 'playlist' END,ms.manifest_version,ps.active_manifest_version,ps.pending_manifest_version,ps.download_queue_count,ps.downloaded_bytes,ps.required_bytes,ps.cache_used_bytes,ps.cache_limit_bytes,ps.current_item_id,ps.current_asset_id,ps.playback_state,ps.last_sync_error,ps.last_playback_error,ps.current_schedule_id,ps.current_playlist_id,ps.selection_source,ps.next_transition_at,ps.device_clock_offset_seconds,ps.schedule_evaluation_error,ps.schedule_manifest_version,ps.current_website_asset_id,ps.website_state,ps.website_load_started_at,ps.website_load_completed_at,ps.website_failure_category,ps.website_blocked_navigation_count,ps.website_current_host,ps.website_fallback_shown,ps.website_renderer_recovery_count FROM screen_manifest_state ms LEFT JOIN screen_group_memberships gm ON gm.screen_id=ms.screen_id LEFT JOIN screen_group_playlist_assignments ga ON ga.screen_group_id=gm.screen_group_id LEFT JOIN screen_playlist_assignments pa ON pa.screen_id=ms.screen_id LEFT JOIN playlists p ON p.id=COALESCE(ga.playlist_id,pa.playlist_id) LEFT JOIN layouts l ON l.id=COALESCE(ga.layout_id,pa.layout_id) LEFT JOIN layout_revisions lr ON lr.id=l.published_revision_id LEFT JOIN screen_player_status ps ON ps.screen_id=ms.screen_id WHERE ms.screen_id=$1`, screenID).Scan(&a.PlaylistID, &a.PlaylistName, &a.PlaylistRevision, &a.LayoutID, &a.LayoutName, &a.LayoutRevision, &a.PresentationType, &a.ManifestVersion, &a.PlayerActiveManifestVersion, &a.PlayerPendingManifestVersion, &a.DownloadQueueCount, &a.DownloadedBytes, &a.RequiredBytes, &a.CacheUsedBytes, &a.CacheLimitBytes, &a.CurrentItemID, &a.CurrentAssetID, &a.PlaybackState, &a.LastSyncError, &a.LastPlaybackError, &a.CurrentScheduleID, &a.CurrentPlaylistID, &a.SelectionSource, &a.NextTransitionAt, &a.DeviceClockOffsetSeconds, &a.ScheduleEvaluationError, &a.ScheduleManifestVersion, &a.CurrentWebsiteAssetID, &a.WebsiteState, &a.WebsiteLoadStartedAt, &a.WebsiteLoadCompletedAt, &a.WebsiteFailureCategory, &a.WebsiteBlockedNavigationCount, &a.WebsiteCurrentHost, &a.WebsiteFallbackShown, &a.WebsiteRendererRecoveryCount)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Assignment{}, ErrNotFound
 	}
@@ -733,13 +765,13 @@ func (s *Service) Assignment(ctx context.Context, screenID uuid.UUID) (Assignmen
 	if s.scheduling != nil {
 		_, _, a.ClockSkewWarningSeconds = s.scheduling.Config()
 	}
-	scheduleRows, e := s.db.Query(ctx, `SELECT DISTINCT s.id,s.name,p.name,s.priority,s.enabled FROM schedules s JOIN playlists p ON p.id=s.playlist_id JOIN schedule_targets t ON t.schedule_id=s.id LEFT JOIN screen_group_memberships m ON m.screen_group_id=t.screen_group_id AND m.screen_id=$1 WHERE s.deleted_at IS NULL AND (t.screen_id=$1 OR m.screen_id=$1) ORDER BY s.priority DESC,s.id`, screenID)
+	scheduleRows, e := s.db.Query(ctx, `SELECT DISTINCT s.id,s.name,COALESCE(p.name,l.name),CASE WHEN s.layout_id IS NOT NULL THEN 'layout' ELSE 'playlist' END,s.priority,s.enabled FROM schedules s LEFT JOIN playlists p ON p.id=s.playlist_id LEFT JOIN layouts l ON l.id=s.layout_id JOIN schedule_targets t ON t.schedule_id=s.id LEFT JOIN screen_group_memberships m ON m.screen_group_id=t.screen_group_id AND m.screen_id=$1 WHERE s.deleted_at IS NULL AND (t.screen_id=$1 OR m.screen_id=$1) ORDER BY s.priority DESC,s.id`, screenID)
 	if e != nil {
 		return Assignment{}, e
 	}
 	for scheduleRows.Next() {
 		var x AssignmentSchedule
-		if e = scheduleRows.Scan(&x.ID, &x.Name, &x.PlaylistName, &x.Priority, &x.Enabled); e != nil {
+		if e = scheduleRows.Scan(&x.ID, &x.Name, &x.PlaylistName, &x.PresentationType, &x.Priority, &x.Enabled); e != nil {
 			scheduleRows.Close()
 			return Assignment{}, e
 		}
@@ -785,7 +817,7 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 	if s.scheduling != nil {
 		prefetch, grace, _ = s.scheduling.Config()
 	}
-	manifest := Manifest{SchemaVersion: 9, ManifestVersion: assignment.ManifestVersion, ScreenID: screenID, GeneratedAt: changed, ServerTime: now, Mode: "single-zone", Assets: []ManifestAsset{}, Playlists: []ManifestPlaylist{}, Schedules: []ManifestSchedule{}, Websites: []ManifestWebsite{}, Sources: []ManifestSource{}, PrefetchHorizonDays: prefetch, ActivationGraceSeconds: grace}
+	manifest := Manifest{SchemaVersion: 10, ManifestVersion: assignment.ManifestVersion, ScreenID: screenID, GeneratedAt: changed, ServerTime: now, Mode: "presentation", Assets: []ManifestAsset{}, Playlists: []ManifestPlaylist{}, Layouts: []ManifestLayout{}, Schedules: []ManifestSchedule{}, Websites: []ManifestWebsite{}, Sources: []ManifestSource{}, PrefetchHorizonDays: prefetch, ActivationGraceSeconds: grace}
 	var syncGroup ManifestSyncGroup
 	if groupErr := s.db.QueryRow(ctx, `SELECT g.id,g.playback_epoch FROM screen_group_memberships m JOIN screen_groups g ON g.id=m.screen_group_id WHERE m.screen_id=$1 AND g.deleted_at IS NULL`, screenID).Scan(&syncGroup.ID, &syncGroup.PlaybackEpoch); groupErr == nil {
 		manifest.SyncGroup = &syncGroup
@@ -793,8 +825,12 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 		return Manifest{}, "", groupErr
 	}
 	playlistIDs := []uuid.UUID{}
+	layoutIDs := []uuid.UUID{}
 	if assignment.PlaylistID != nil {
 		playlistIDs = append(playlistIDs, *assignment.PlaylistID)
+	}
+	if assignment.LayoutID != nil {
+		layoutIDs = append(layoutIDs, *assignment.LayoutID)
 	}
 	var emergency ManifestEmergency
 	if emergencyErr := s.db.QueryRow(ctx, `SELECT e.id,e.playlist_id,e.activated_at,e.expires_at FROM emergency_takeovers e JOIN emergency_screen_states es ON es.emergency_id=e.id WHERE es.screen_id=$1 AND e.status='active' AND e.expires_at>now() AND es.state NOT IN ('restored','cancelled','expired') ORDER BY e.activated_at DESC,e.id DESC LIMIT 1`, screenID).Scan(&emergency.ID, &emergency.PlaylistID, &emergency.ActivatedAt, &emergency.ExpiresAt); emergencyErr == nil {
@@ -818,8 +854,54 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 					continue
 				}
 			}
-			manifest.Schedules = append(manifest.Schedules, ManifestSchedule{ID: record.ID, PlaylistID: record.PlaylistID, Type: string(record.Type), Timezone: record.Timezone, Priority: record.Priority, Specificity: record.Specificity, StartDate: record.StartDate, EndDate: record.EndDate, OneTimeStart: record.OneTimeStart, OneTimeEnd: record.OneTimeEnd, DailyStart: record.DailyStart, DailyEnd: record.DailyEnd, DaysOfWeek: record.DaysOfWeek})
-			playlistIDs = append(playlistIDs, record.PlaylistID)
+			var schedulePlaylistID *uuid.UUID
+			if record.LayoutID == nil {
+				value := record.PlaylistID
+				schedulePlaylistID = &value
+			}
+			manifest.Schedules = append(manifest.Schedules, ManifestSchedule{ID: record.ID, PlaylistID: schedulePlaylistID, LayoutID: record.LayoutID, Type: string(record.Type), Timezone: record.Timezone, Priority: record.Priority, Specificity: record.Specificity, StartDate: record.StartDate, EndDate: record.EndDate, OneTimeStart: record.OneTimeStart, OneTimeEnd: record.OneTimeEnd, DailyStart: record.DailyStart, DailyEnd: record.DailyEnd, DaysOfWeek: record.DaysOfWeek})
+			if record.LayoutID != nil {
+				layoutIDs = append(layoutIDs, *record.LayoutID)
+			} else {
+				playlistIDs = append(playlistIDs, record.PlaylistID)
+			}
+		}
+	}
+	type layoutManifestDependency struct {
+		Type string
+		ID   uuid.UUID
+	}
+	layoutDependencies := []layoutManifestDependency{}
+	for _, layoutID := range uniqueUUIDs(layoutIDs) {
+		item := ManifestLayout{ID: layoutID}
+		var raw []byte
+		if err = s.db.QueryRow(ctx, `SELECT r.id,r.revision,r.document_sha256,r.document FROM layouts l JOIN layout_revisions r ON r.id=l.published_revision_id WHERE l.id=$1 AND l.deleted_at IS NULL`, layoutID).Scan(&item.RevisionID, &item.Revision, &item.DocumentSHA256, &raw); err != nil {
+			return Manifest{}, "", fmt.Errorf("%w: published Layout unavailable", ErrConflict)
+		}
+		if err = json.Unmarshal(raw, &item.Document); err != nil {
+			return Manifest{}, "", err
+		}
+		rows, queryErr := s.db.Query(ctx, `SELECT dependency_type,dependency_id FROM layout_revision_dependencies WHERE revision_id=$1`, item.RevisionID)
+		if queryErr != nil {
+			return Manifest{}, "", queryErr
+		}
+		for rows.Next() {
+			var dependency layoutManifestDependency
+			if queryErr = rows.Scan(&dependency.Type, &dependency.ID); queryErr != nil {
+				rows.Close()
+				return Manifest{}, "", queryErr
+			}
+			layoutDependencies = append(layoutDependencies, dependency)
+			if dependency.Type == "playlist" {
+				playlistIDs = append(playlistIDs, dependency.ID)
+			}
+		}
+		rows.Close()
+		manifest.Layouts = append(manifest.Layouts, item)
+		if assignment.LayoutID != nil && layoutID == *assignment.LayoutID {
+			fallback := item
+			manifest.DirectFallbackLayout = &fallback
+			manifest.Layout = &fallback
 		}
 	}
 	seen := map[uuid.UUID]bool{}
@@ -936,6 +1018,52 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 			manifest.DirectFallbackPlaylist = &fallback
 		}
 	}
+	for _, dependency := range layoutDependencies {
+		switch dependency.Type {
+		case "asset":
+			var asset ManifestAsset
+			err = s.db.QueryRow(ctx, `SELECT v.asset_id,v.id,v.mime_type,encode(v.sha256,'hex'),v.file_size,v.width,v.height,v.duration_seconds FROM asset_variants v WHERE v.asset_id=$1 AND v.deleted_at IS NULL AND v.player_compatible=TRUE ORDER BY CASE v.kind WHEN 'playback' THEN 0 WHEN 'original' THEN 1 ELSE 2 END LIMIT 1`, dependency.ID).Scan(&asset.AssetID, &asset.VariantID, &asset.MIMEType, &asset.SHA256, &asset.FileSize, &asset.Width, &asset.Height, &asset.DurationSeconds)
+			if err != nil {
+				return Manifest{}, "", fmt.Errorf("%w: Layout Asset unavailable", ErrConflict)
+			}
+			asset.DownloadPath = "/api/v1/player/assets/" + asset.AssetID.String() + "/variants/" + asset.VariantID.String()
+			if !seen[asset.VariantID] {
+				manifest.Assets = append(manifest.Assets, asset)
+				seen[asset.VariantID] = true
+			}
+		case "app":
+			found := false
+			for _, source := range manifest.Sources {
+				if source.AssetID == dependency.ID {
+					found = true
+					break
+				}
+			}
+			if found {
+				continue
+			}
+			var source ManifestSource
+			source.AssetID = dependency.ID
+			if err = s.db.QueryRow(ctx, `SELECT a.name,s.provider,s.config_version,s.configuration FROM sources s JOIN assets a ON a.id=s.asset_id AND a.deleted_at IS NULL WHERE s.asset_id=$1`, dependency.ID).Scan(&source.Name, &source.Provider, &source.ConfigVersion, &source.Configuration); err != nil {
+				return Manifest{}, "", fmt.Errorf("%w: Layout App unavailable", ErrConflict)
+			}
+			if source.Provider == "website" {
+				var website ManifestWebsite
+				if err = json.Unmarshal(source.Configuration, &website); err != nil {
+					return Manifest{}, "", err
+				}
+				website.AssetID, website.Name = source.AssetID, source.Name
+				manifest.Websites = append(manifest.Websites, website)
+			}
+			if s.sources != nil {
+				source.Configuration, err = s.sources.PlayerSourceConfiguration(ctx, source.AssetID, source.Provider, source.Configuration)
+				if err != nil {
+					return Manifest{}, "", err
+				}
+			}
+			manifest.Sources = append(manifest.Sources, source)
+		}
+	}
 	for _, app := range append([]ManifestSource(nil), manifest.Sources...) {
 		if app.Provider != "ticker" && app.Provider != "menu" && app.Provider != "list" && app.Provider != "table" && app.Provider != "agenda" {
 			continue
@@ -977,6 +1105,19 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 		return Manifest{}, "", fmt.Errorf("%w: manifest exceeds the five MiB limit", ErrConflict)
 	}
 	return manifest, manifestETag(screenID, assignment.ManifestVersion), nil
+}
+
+func uniqueUUIDs(values []uuid.UUID) []uuid.UUID {
+	seen := map[uuid.UUID]bool{}
+	result := make([]uuid.UUID, 0, len(values))
+	for _, value := range values {
+		if value == uuid.Nil || seen[value] {
+			continue
+		}
+		seen[value] = true
+		result = append(result, value)
+	}
+	return result
 }
 
 func (s *Service) AssetChanged(ctx context.Context, assetID uuid.UUID, reason string) error {
@@ -1026,7 +1167,7 @@ func (s *Service) ReportStatus(ctx context.Context, screenID uuid.UUID, status P
 	if len(status.PlaybackState) > 80 || len(status.LastSyncError) > 500 || len(status.LastPlaybackError) > 500 || len(status.ScheduleEvaluationError) > 500 || len(status.WebsiteState) > 40 || len(status.WebsiteFailureCategory) > 80 || len(status.WebsiteCurrentHost) > 253 || len(status.SourceState) > 40 || len(status.SourceError) > 120 {
 		return errors.New("player status is invalid")
 	}
-	if status.SourceProvider != "" && status.SourceProvider != "website" && status.SourceProvider != "youtube" && status.SourceProvider != "calendar" && status.SourceProvider != "rss" && status.SourceProvider != "atom" && status.SourceProvider != "json" && status.SourceProvider != "csv" && status.SourceProvider != "clock" && status.SourceProvider != "date" && status.SourceProvider != "qrcode" && status.SourceProvider != "ticker" {
+	if status.SourceProvider != "" && status.SourceProvider != "website" && status.SourceProvider != "youtube" && status.SourceProvider != "calendar" && status.SourceProvider != "rss" && status.SourceProvider != "atom" && status.SourceProvider != "json" && status.SourceProvider != "csv" && status.SourceProvider != "clock" && status.SourceProvider != "date" && status.SourceProvider != "qrcode" && status.SourceProvider != "ticker" && status.SourceProvider != "menu" && status.SourceProvider != "list" && status.SourceProvider != "table" && status.SourceProvider != "agenda" {
 		return errors.New("player source status is invalid")
 	}
 	if status.SelectionSource != "" && status.SelectionSource != "emergency" && status.SelectionSource != "schedule" && status.SelectionSource != "direct_fallback" && status.SelectionSource != "none" {

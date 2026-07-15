@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/tilecast/tilecast/apps/server/internal/layouts"
 )
 
 var (
@@ -81,6 +82,10 @@ type Assignment struct {
 	PlaylistID                    *uuid.UUID           `json:"playlistId,omitempty"`
 	PlaylistName                  *string              `json:"playlistName,omitempty"`
 	PlaylistRevision              *int64               `json:"playlistRevision,omitempty"`
+	LayoutID                      *uuid.UUID           `json:"layoutId,omitempty"`
+	LayoutName                    *string              `json:"layoutName,omitempty"`
+	LayoutRevision                *int64               `json:"layoutRevision,omitempty"`
+	PresentationType              *string              `json:"presentationType,omitempty"`
 	ManifestVersion               int64                `json:"manifestVersion"`
 	PlayerActiveManifestVersion   *int64               `json:"playerActiveManifestVersion,omitempty"`
 	PlayerPendingManifestVersion  *int64               `json:"playerPendingManifestVersion,omitempty"`
@@ -130,11 +135,12 @@ type AssignmentGroup struct {
 	Name string    `json:"name"`
 }
 type AssignmentSchedule struct {
-	ID           uuid.UUID `json:"id"`
-	Name         string    `json:"name"`
-	PlaylistName string    `json:"playlistName"`
-	Priority     int       `json:"priority"`
-	Enabled      bool      `json:"enabled"`
+	ID               uuid.UUID `json:"id"`
+	Name             string    `json:"name"`
+	PlaylistName     string    `json:"playlistName"`
+	PresentationType string    `json:"presentationType"`
+	Priority         int       `json:"priority"`
+	Enabled          bool      `json:"enabled"`
 }
 
 type Manifest struct {
@@ -155,6 +161,16 @@ type Manifest struct {
 	Sources                []ManifestSource   `json:"sources"`
 	Emergency              *ManifestEmergency `json:"emergency,omitempty"`
 	SyncGroup              *ManifestSyncGroup `json:"syncGroup,omitempty"`
+	Layout                 *ManifestLayout    `json:"layout,omitempty"`
+	DirectFallbackLayout   *ManifestLayout    `json:"directFallbackLayout,omitempty"`
+	Layouts                []ManifestLayout   `json:"layouts"`
+}
+type ManifestLayout struct {
+	ID             uuid.UUID        `json:"id"`
+	RevisionID     uuid.UUID        `json:"revisionId"`
+	Revision       int64            `json:"revision"`
+	DocumentSHA256 string           `json:"documentSha256"`
+	Document       layouts.Document `json:"document"`
 }
 type ManifestSyncGroup struct {
 	ID            uuid.UUID `json:"id"`
@@ -195,7 +211,8 @@ type ManifestWebsite struct {
 }
 type ManifestSchedule struct {
 	ID           uuid.UUID  `json:"id"`
-	PlaylistID   uuid.UUID  `json:"playlistId"`
+	PlaylistID   *uuid.UUID `json:"playlistId,omitempty"`
+	LayoutID     *uuid.UUID `json:"layoutId,omitempty"`
 	Type         string     `json:"type"`
 	Timezone     string     `json:"timezone"`
 	Priority     int        `json:"priority"`

@@ -43,13 +43,13 @@ Manifest versions are persisted per screen and advance only when its assignment 
 
 Android Room stores pending, ready, active, failed, and superseded manifests plus cache metadata. A pending manifest activates only after every required file is size-checked, SHA-256 verified, and atomically renamed. The prior active manifest remains untouched during preparation, and startup loads verified active content before attempting the network.
 
-Playback is one fullscreen zone with sequential looping, image timers, Media3 video, fit/audio/offset settings, bounded failure skipping, and safe fallback states. Multi-zone layouts, compositions, schedules, and advanced commands remain deferred.
+Playback supports either a fullscreen playlist or a published Layout. Layouts render natively, scale landscape and portrait canvases without distortion, and run positioned playlist zones independently alongside Apps, Assets, and primitives. Publishing limits a Layout to one active video-capable placement or zone and one audio-emitting placement or zone. An invalid or incompletely prepared Layout never replaces the previous verified presentation.
 
 ## Scheduling and sync groups
 
 Sync groups own synchronized fallback content and schedule targeting. A screen belongs to zero or one group; PostgreSQL enforces the invariant with a unique membership constraint. Assigning content through any member updates the group assignment, and a schedule aimed at a grouped screen is normalized to the group target. Ungrouped screens keep independent assignments and schedules. `internal/scheduling` remains the server authority for half-open interval evaluation and deterministic precedence: priority, later effective start, then stable ID. The Android `ScheduleEngine` implements the same transport semantics for offline evaluation.
 
-Player manifests contain only schedules relevant to the authenticated screen, its fallback, required playlists and variants, server time, preparation policy, and optional sync-group playback epoch. Group members calculate the same current item and elapsed offset from the shared clock, including after reconnecting late. Recurring rules use calendar calculations rather than fixed-duration days. A repeated local time uses the earlier occurrence for a start and later occurrence for an end; a nonexistent local time advances to the first valid time after the DST gap.
+Player manifests contain only schedules relevant to the authenticated screen, its playlist or Layout fallback, referenced published Layout revisions, required Apps, playlist zones, structured datasets, media variants, server time, preparation policy, and optional sync-group playback epoch. Group members calculate the same current item and elapsed offset from the shared clock, including after reconnecting late. Recurring rules use calendar calculations rather than fixed-duration days. A repeated local time uses the earlier occurrence for a start and later occurrence for an end; a nonexistent local time advances to the first valid time after the DST gap.
 
 ## Milestone 6 website playback
 
@@ -65,7 +65,7 @@ Layouts place generic references to Apps, data Sources, Assets, and playlists. A
 
 Layout drafts are mutable JSON documents guarded by an optimistic draft revision. Publishing inserts an immutable revision with a canonical document SHA-256 and materialized App, Asset, and playlist dependencies. Published history is append-only; restoring history creates a new draft. This keeps usage checks relational and ensures Players can only activate a stable published document.
 
-Studio's Layout editor uses the same v1 document as the server validator. Its local command history supports undo/redo independently from autosaved server revisions; pointer and keyboard edits always resolve to canvas coordinates so portrait and landscape documents remain resolution-independent. Android's native primitive renderer scales that canvas into the available display bounds without WebView.
+Studio's Layout editor uses the same v1 document as the server validator. Its local command history supports undo/redo independently from autosaved server revisions; pointer and keyboard edits always resolve to canvas coordinates so portrait and landscape documents remain resolution-independent. Android's native renderer scales that canvas into the available display bounds without WebView, resolves structured bindings against cached date-aware data, and preserves global layer order across primitives, Apps, Assets, and playlist zones.
 
 Manifest v5 contains only Sources referenced by playlists relevant to the authenticated screen. Source items use stream delivery; fallback images continue through the verified media-variant preparation path. The provider boundary is internal—Tilecast does not load third-party provider code or expose a marketplace.
 

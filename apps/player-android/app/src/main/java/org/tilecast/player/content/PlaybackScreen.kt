@@ -84,6 +84,7 @@ internal fun effectiveDurationMs(item:ManifestItem,assets:List<ManifestAsset>):L
 }
 
 @Composable fun FullscreenPlayback(session: PlaybackSession, onBoundary: (String, String) -> Unit, onError: (String) -> Unit,onWebsiteStatus:(WebsitePlaybackStatus)->Unit={},onSourceStatus:(SourcePlaybackStatus)->Unit={},onProgress:()->Unit={}) {
+    session.content.manifest.layout?.let { layout -> FullscreenLayoutPlayback(session, layout, onError, onWebsiteStatus, onSourceStatus, onProgress); return }
     val playlist = session.content.manifest.playlist
     if (playlist == null || playlist.items.isEmpty()) { EmptyPlayback("No content assigned"); return }
     var cursor by remember(session.content.manifest.manifestVersion) { mutableStateOf(session.initialCursor) }
@@ -105,7 +106,7 @@ internal fun effectiveDurationMs(item:ManifestItem,assets:List<ManifestAsset>):L
 	} else key(item.id,cursor.cycle){RenderedItem(item,asset,website,source,session,if(cursor==session.initialCursor)session.initialOffsetMs else 0,{advance()},{onError(it);advance(true)},onWebsiteStatus,onSourceStatus,onProgress)}
 }
 
-@Composable private fun RenderedItem(item:ManifestItem,asset:ManifestAsset?,website:ManifestWebsite?,source:ManifestSource?,session:PlaybackSession,startOffsetMs:Long,onDone:()->Unit,onFailure:(String)->Unit,onWebsiteStatus:(WebsitePlaybackStatus)->Unit,onSourceStatus:(SourcePlaybackStatus)->Unit,onProgress:()->Unit){
+@Composable internal fun RenderedItem(item:ManifestItem,asset:ManifestAsset?,website:ManifestWebsite?,source:ManifestSource?,session:PlaybackSession,startOffsetMs:Long,onDone:()->Unit,onFailure:(String)->Unit,onWebsiteStatus:(WebsitePlaybackStatus)->Unit,onSourceStatus:(SourcePlaybackStatus)->Unit,onProgress:()->Unit){
     if(source?.provider=="website"){
         val config=runCatching{Json.decodeFromJsonElement<WebsiteSourceConfig>(source.configuration)}.getOrElse{onFailure("Website source configuration is invalid");return}
         WebsiteItem(item,ManifestWebsite(source.assetId,source.name,config.url,config.allowedHosts,config.javascriptEnabled,config.domStorageEnabled,config.cookiePolicy,config.reloadPolicy,config.refreshIntervalSeconds,config.loadTimeoutSeconds,config.zoomPercent,config.scrollX,config.scrollY,config.customUserAgent,config.backgroundColor,config.failureBehavior,config.fallbackImageAssetId,config.fallbackVariantId),session,onDone,startOffsetMs){status->onWebsiteStatus(status);onSourceStatus(SourcePlaybackStatus(source.assetId,"website",status.state,status.failureCategory))}

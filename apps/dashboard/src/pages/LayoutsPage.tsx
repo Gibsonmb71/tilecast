@@ -43,13 +43,14 @@ export function LayoutsPage() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [preset, setPreset] = useState(0);
+  const [template, setTemplate] = useState<"blank" | "announcement">("blank");
   const layouts = useQuery({
     queryKey: ["layouts", search],
     queryFn: () => api.layouts(search),
   });
   const create = useMutation({
-    mutationFn: () =>
-      api.createLayout(
+    mutationFn: async () => {
+      const created = await api.createLayout(
         {
           name,
           description,
@@ -58,7 +59,59 @@ export function LayoutsPage() {
           canvasHeight: presets[preset]!.height,
         },
         csrf,
-      ),
+      );
+      if (template === "blank") return created;
+      const document = structuredClone(created.draft);
+      document.placements.push(
+        {
+          id: crypto.randomUUID(),
+          type: "primitive",
+          name: "Accent",
+          x: 0,
+          y: 0,
+          width: Math.max(24, document.canvas.width * 0.025),
+          height: document.canvas.height,
+          layer: 1,
+          opacity: 1,
+          visible: true,
+          locked: false,
+          primitive: { kind: "rectangle", fillColor: "#2D7FF9" },
+        },
+        {
+          id: crypto.randomUUID(),
+          type: "primitive",
+          name: "Headline",
+          x: document.canvas.width * 0.1,
+          y: document.canvas.height * 0.24,
+          width: document.canvas.width * 0.8,
+          height: document.canvas.height * 0.5,
+          layer: 2,
+          opacity: 1,
+          visible: true,
+          locked: false,
+          primitive: {
+            kind: "text",
+            text: "Announcement",
+            fontFamily: "Inter",
+            fontSize: 112,
+            fontWeight: 700,
+            textAlign: "left",
+            verticalAlign: "center",
+            color: "#F5F7FA",
+            backgroundColor: "#00000000",
+            lineHeight: 1.1,
+            maximumLines: 3,
+            overflow: "ellipsis",
+          },
+        },
+      );
+      return api.saveLayoutDraft(
+        created.id,
+        created.draftRevision,
+        document,
+        csrf,
+      );
+    },
     onSuccess: (layout) => {
       void queryClient.invalidateQueries({ queryKey: ["layouts"] });
       void navigate(`/layouts/${layout.id}`);
@@ -222,6 +275,18 @@ export function LayoutsPage() {
                   </button>
                 ))}
               </div>
+              <label className="field">
+                <span className="field__label">Starting point</span>
+                <select
+                  value={template}
+                  onChange={(event) =>
+                    setTemplate(event.target.value as "blank" | "announcement")
+                  }
+                >
+                  <option value="blank">Blank canvas</option>
+                  <option value="announcement">Announcement</option>
+                </select>
+              </label>
             </div>
             <footer>
               <button

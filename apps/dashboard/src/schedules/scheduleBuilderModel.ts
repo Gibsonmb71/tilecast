@@ -117,7 +117,8 @@ export function oneTimeDuration(input: ScheduleInput) {
 export function validateScheduleInput(input: ScheduleInput) {
   const errors: Record<string, string> = {};
   if (!input.name.trim()) errors.name = "Enter a schedule name.";
-  if (!input.playlistId) errors.playlistId = "Choose a playlist.";
+  if (!input.playlistId && !input.layoutId)
+    errors.playlistId = "Choose a playlist or published Layout.";
   if (!input.timezone) errors.timezone = "Choose a timezone.";
   if (!input.targets.length)
     errors.targets = "Select at least one screen or group.";

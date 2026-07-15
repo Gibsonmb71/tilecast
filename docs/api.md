@@ -98,15 +98,15 @@ Responses include a hash-derived ETag, correct MIME type and length, and `Accept
 
 Owner, Administrator, and Editor may create, edit, duplicate, reorder, or delete unassigned playlists; Viewer is read-only. Items accept only ready image/video assets with a player-compatible variant. Images require a positive duration, video offsets must remain within trusted duration, and reordering must contain every item exactly once.
 
-Direct assignment routes are `/api/v1/screens/{id}/playlist-assignment`; only Owner and Administrator may mutate them. For an ungrouped screen the assignment remains independent. For a sync-group member the same route updates the group-owned assignment and revises every member manifest. Sync groups can also be assigned explicitly with `PUT` or `DELETE /api/v1/screen-groups/{id}/playlist-assignment`. Responses contain the server manifest version and only status actually reported by the player.
+Direct assignment routes remain `/api/v1/screens/{id}/playlist-assignment` for compatibility; only Owner and Administrator may mutate them. A `PUT` body contains exactly one of `playlistId` or `layoutId`, and a Layout must have a published revision. For a sync-group member the route updates the group-owned presentation and revises every member manifest. Sync groups use the same exclusive body on `/api/v1/screen-groups/{id}/playlist-assignment`. Existing playlist assignments remain intact after migration.
 
-`GET /api/v1/player/manifest` requires an active device credential, supports stable ETags and 304, and returns `playlist: null` when unassigned. Reads never advance the manifest version.
+`GET /api/v1/player/manifest` requires an active device credential, supports stable ETags and 304, and returns manifest v10 with a root playlist or Layout presentation. Layout projection contains the immutable published document plus only its required Apps, playlist zones, structured datasets, and verified media variants. Reads never advance the manifest version.
 
 ## Sync groups and schedules
 
 The API retains `/screen-groups` paths for compatibility, while Studio calls these resources Sync Groups. A database unique constraint permits each screen in at most one sync group. Adding an already-grouped screen returns `409`; removing a screen preserves the group fallback as that screen's independent assignment. Authenticated read routes are `GET /api/v1/screen-groups`, `GET /api/v1/screen-groups/{id}`, `GET /api/v1/schedules`, and `GET /api/v1/schedules/{id}`. Owner and Administrator mutations use the documented CSRF header on group create/update/delete and membership routes, schedule create/update/delete, and enable/disable routes.
 
-Schedule targets for a grouped screen are normalized to its sync group, so every member receives the same schedule set. `POST /api/v1/schedules/preview` accepts `screenId`, an optional absolute `timestamp`, and an optional unsaved `proposedSchedule`; it returns precedence-ordered applicable schedules, conflicts, fallback content, winner, and next transition using the production resolver. Player manifests include an optional sync-group ID and playback epoch. Players combine that epoch or the active schedule window start with server-adjusted time to select the shared playlist item and media offset.
+Schedule targets for a grouped screen are normalized to its sync group, so every member receives the same schedule set. Schedule create, update, and preview inputs contain exactly one of `playlistId` or `layoutId`; existing playlist schedules remain intact. `POST /api/v1/schedules/preview` returns precedence-ordered applicable schedules, conflicts, fallback content, winner, and next transition using the production resolver. Players resolve the active playlist or Layout locally, including while offline.
 
 Weekly weekdays are integers `0` (Sunday) through `6` (Saturday). Times are `HH:MM`, dates are `YYYY-MM-DD`, timezones are IANA identifiers, and an end time less than or equal to its start denotes an overnight window.
 
@@ -139,6 +139,8 @@ Manifest v9 adds Clock, Date, QR Code, and Ticker Apps and projects date-selecti
 `GET /api/v1/layouts/{id}/revisions` returns paginated immutable history. `POST /api/v1/layouts/{id}/revisions/{revisionId}/restore` copies an old document into a new draft revision without changing history. Duplicate and delete operations are `POST /api/v1/layouts/{id}/duplicate` and `DELETE /api/v1/layouts/{id}`. Validation errors use `layout_validation_failed`; stale draft writes use `layout_revision_conflict`.
 
 Content responses include `layoutUsage` with stable Layout IDs, names, and published state. Content deletion returns `asset_in_use` when a draft or published revision depends on the item. Layout App placements contain only the Content ID and approved presentation overrides; shared provider configuration remains in Content.
+
+Manifest v10 adds root and scheduled Layout presentations. A Layout entry includes its published revision, document SHA-256, validated document, and materialized dependencies. Layout deletion is blocked while assigned or scheduled; dependency deletion is blocked while referenced by a draft or published revision.
 
 ## Emergency takeover and commands
 

@@ -20,6 +20,7 @@ const (
 type Schedule struct {
 	ID           uuid.UUID  `json:"id"`
 	PlaylistID   uuid.UUID  `json:"playlistId"`
+	LayoutID     *uuid.UUID `json:"layoutId,omitempty"`
 	Type         Kind       `json:"type"`
 	Timezone     string     `json:"timezone"`
 	Priority     int        `json:"priority"`

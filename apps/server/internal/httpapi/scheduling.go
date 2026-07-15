@@ -112,14 +112,15 @@ func (s *server) assignSyncGroupPlaylist(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var body struct {
-		PlaylistID uuid.UUID `json:"playlistId"`
+		PlaylistID *uuid.UUID `json:"playlistId"`
+		LayoutID   *uuid.UUID `json:"layoutId"`
 	}
 	if err := decodeJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
 	user := r.Context().Value(sessionContextKey).(auth.Session).User
-	if err := s.playlists.AssignGroup(r.Context(), id, body.PlaylistID, user.ID); err != nil {
+	if err := s.playlists.AssignGroupPresentation(r.Context(), id, body.PlaylistID, body.LayoutID, user.ID); err != nil {
 		s.writePlaylistError(w, r, err)
 		return
 	}

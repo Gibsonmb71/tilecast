@@ -196,14 +196,15 @@ func (s *server) assignPlaylist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		PlaylistID uuid.UUID `json:"playlistId"`
+		PlaylistID *uuid.UUID `json:"playlistId"`
+		LayoutID   *uuid.UUID `json:"layoutId"`
 	}
 	if err := decodeJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
 	user := r.Context().Value(sessionContextKey).(auth.Session).User
-	result, err := s.playlists.Assign(r.Context(), id, body.PlaylistID, user.ID)
+	result, err := s.playlists.AssignPresentation(r.Context(), id, body.PlaylistID, body.LayoutID, user.ID)
 	if err != nil {
 		s.writePlaylistError(w, r, err)
 		return

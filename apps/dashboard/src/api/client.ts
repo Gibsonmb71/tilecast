@@ -752,6 +752,12 @@ export const api = {
       headers: { "X-CSRF-Token": csrfToken },
       body: JSON.stringify({ playlistId }),
     }),
+  assignLayout: (screenId: string, layoutId: string, csrfToken: string) =>
+    request<PlaylistAssignment>(`/screens/${screenId}/playlist-assignment`, {
+      method: "PUT",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ layoutId }),
+    }),
   unassignPlaylist: (screenId: string, csrfToken: string) =>
     request<PlaylistAssignment>(`/screens/${screenId}/playlist-assignment`, {
       method: "DELETE",
@@ -806,6 +812,12 @@ export const api = {
       method: "PUT",
       headers: { "X-CSRF-Token": csrfToken },
       body: JSON.stringify({ playlistId }),
+    }),
+  assignSyncGroupLayout: (id: string, layoutId: string, csrfToken: string) =>
+    request<ScreenGroup>(`/screen-groups/${id}/playlist-assignment`, {
+      method: "PUT",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ layoutId }),
     }),
   unassignSyncGroupPlaylist: (id: string, csrfToken: string) =>
     request<ScreenGroup>(`/screen-groups/${id}/playlist-assignment`, {

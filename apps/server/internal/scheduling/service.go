@@ -32,16 +32,19 @@ func NewService(db *pgxpool.Pool, n Notifier, l Limits) *Service {
 }
 
 type Group struct {
-	ID              uuid.UUID     `json:"id"`
-	Name            string        `json:"name"`
-	Description     string        `json:"description"`
-	PlaylistID      *uuid.UUID    `json:"playlistId,omitempty"`
-	PlaylistName    *string       `json:"playlistName,omitempty"`
-	PlaybackEpoch   time.Time     `json:"playbackEpoch"`
-	MembershipCount int           `json:"membershipCount"`
-	Screens         []GroupScreen `json:"screens"`
-	CreatedAt       time.Time     `json:"createdAt"`
-	UpdatedAt       time.Time     `json:"updatedAt"`
+	ID               uuid.UUID     `json:"id"`
+	Name             string        `json:"name"`
+	Description      string        `json:"description"`
+	PlaylistID       *uuid.UUID    `json:"playlistId,omitempty"`
+	PlaylistName     *string       `json:"playlistName,omitempty"`
+	LayoutID         *uuid.UUID    `json:"layoutId,omitempty"`
+	LayoutName       *string       `json:"layoutName,omitempty"`
+	PresentationType *string       `json:"presentationType,omitempty"`
+	PlaybackEpoch    time.Time     `json:"playbackEpoch"`
+	MembershipCount  int           `json:"membershipCount"`
+	Screens          []GroupScreen `json:"screens"`
+	CreatedAt        time.Time     `json:"createdAt"`
+	UpdatedAt        time.Time     `json:"updatedAt"`
 }
 type GroupScreen struct {
 	ID       uuid.UUID `json:"id"`
@@ -61,12 +64,14 @@ type Target struct {
 }
 type Record struct {
 	Schedule
-	Name         string    `json:"name"`
-	Description  string    `json:"description"`
-	PlaylistName string    `json:"playlistName"`
-	Targets      []Target  `json:"targets"`
-	CreatedAt    time.Time `json:"createdAt"`
-	UpdatedAt    time.Time `json:"updatedAt"`
+	Name             string    `json:"name"`
+	Description      string    `json:"description"`
+	PlaylistName     string    `json:"playlistName"`
+	LayoutName       *string   `json:"layoutName,omitempty"`
+	PresentationType string    `json:"presentationType"`
+	Targets          []Target  `json:"targets"`
+	CreatedAt        time.Time `json:"createdAt"`
+	UpdatedAt        time.Time `json:"updatedAt"`
 }
 type List struct {
 	Items           []Record `json:"items"`
@@ -79,6 +84,7 @@ type Input struct {
 	Name         string     `json:"name"`
 	Description  string     `json:"description"`
 	PlaylistID   uuid.UUID  `json:"playlistId"`
+	LayoutID     *uuid.UUID `json:"layoutId,omitempty"`
 	Type         Kind       `json:"type"`
 	Timezone     string     `json:"timezone"`
 	Priority     int        `json:"priority"`
@@ -105,7 +111,7 @@ func (s *Service) ListGroups(ctx context.Context, search string, page, size int)
 	if err := s.db.QueryRow(ctx, `SELECT count(*) FROM screen_groups WHERE deleted_at IS NULL AND ($1='' OR name ILIKE '%'||$1||'%')`, strings.TrimSpace(search)).Scan(&out.Total); err != nil {
 		return out, err
 	}
-	rows, err := s.db.Query(ctx, `SELECT g.id,g.name,g.description,a.playlist_id,p.name,g.playback_epoch,g.created_at,g.updated_at,count(m.screen_id) FROM screen_groups g LEFT JOIN screen_group_memberships m ON m.screen_group_id=g.id LEFT JOIN screen_group_playlist_assignments a ON a.screen_group_id=g.id LEFT JOIN playlists p ON p.id=a.playlist_id WHERE g.deleted_at IS NULL AND ($1='' OR g.name ILIKE '%'||$1||'%') GROUP BY g.id,a.playlist_id,p.name ORDER BY lower(g.name),g.id LIMIT $2 OFFSET $3`, strings.TrimSpace(search), size, (page-1)*size)
+	rows, err := s.db.Query(ctx, `SELECT g.id,g.name,g.description,a.playlist_id,p.name,a.layout_id,l.name,CASE WHEN a.layout_id IS NOT NULL THEN 'layout' WHEN a.playlist_id IS NOT NULL THEN 'playlist' END,g.playback_epoch,g.created_at,g.updated_at,count(m.screen_id) FROM screen_groups g LEFT JOIN screen_group_memberships m ON m.screen_group_id=g.id LEFT JOIN screen_group_playlist_assignments a ON a.screen_group_id=g.id LEFT JOIN playlists p ON p.id=a.playlist_id LEFT JOIN layouts l ON l.id=a.layout_id WHERE g.deleted_at IS NULL AND ($1='' OR g.name ILIKE '%'||$1||'%') GROUP BY g.id,a.playlist_id,p.name,a.layout_id,l.name ORDER BY lower(g.name),g.id LIMIT $2 OFFSET $3`, strings.TrimSpace(search), size, (page-1)*size)
 	if err != nil {
 		return out, err
 	}
@@ -113,7 +119,7 @@ func (s *Service) ListGroups(ctx context.Context, search string, page, size int)
 	out.Items = []Group{}
 	for rows.Next() {
 		var g Group
-		if err = rows.Scan(&g.ID, &g.Name, &g.Description, &g.PlaylistID, &g.PlaylistName, &g.PlaybackEpoch, &g.CreatedAt, &g.UpdatedAt, &g.MembershipCount); err != nil {
+		if err = rows.Scan(&g.ID, &g.Name, &g.Description, &g.PlaylistID, &g.PlaylistName, &g.LayoutID, &g.LayoutName, &g.PresentationType, &g.PlaybackEpoch, &g.CreatedAt, &g.UpdatedAt, &g.MembershipCount); err != nil {
 			return out, err
 		}
 		g.Screens = []GroupScreen{}
@@ -172,7 +178,7 @@ func (s *Service) CreateGroup(ctx context.Context, user uuid.UUID, name, descrip
 }
 func (s *Service) GetGroup(ctx context.Context, id uuid.UUID) (Group, error) {
 	var g Group
-	err := s.db.QueryRow(ctx, `SELECT g.id,g.name,g.description,a.playlist_id,p.name,g.playback_epoch,g.created_at,g.updated_at,count(m.screen_id) FROM screen_groups g LEFT JOIN screen_group_memberships m ON m.screen_group_id=g.id LEFT JOIN screen_group_playlist_assignments a ON a.screen_group_id=g.id LEFT JOIN playlists p ON p.id=a.playlist_id WHERE g.id=$1 AND g.deleted_at IS NULL GROUP BY g.id,a.playlist_id,p.name`, id).Scan(&g.ID, &g.Name, &g.Description, &g.PlaylistID, &g.PlaylistName, &g.PlaybackEpoch, &g.CreatedAt, &g.UpdatedAt, &g.MembershipCount)
+	err := s.db.QueryRow(ctx, `SELECT g.id,g.name,g.description,a.playlist_id,p.name,a.layout_id,l.name,CASE WHEN a.layout_id IS NOT NULL THEN 'layout' WHEN a.playlist_id IS NOT NULL THEN 'playlist' END,g.playback_epoch,g.created_at,g.updated_at,count(m.screen_id) FROM screen_groups g LEFT JOIN screen_group_memberships m ON m.screen_group_id=g.id LEFT JOIN screen_group_playlist_assignments a ON a.screen_group_id=g.id LEFT JOIN playlists p ON p.id=a.playlist_id LEFT JOIN layouts l ON l.id=a.layout_id WHERE g.id=$1 AND g.deleted_at IS NULL GROUP BY g.id,a.playlist_id,p.name,a.layout_id,l.name`, id).Scan(&g.ID, &g.Name, &g.Description, &g.PlaylistID, &g.PlaylistName, &g.LayoutID, &g.LayoutName, &g.PresentationType, &g.PlaybackEpoch, &g.CreatedAt, &g.UpdatedAt, &g.MembershipCount)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return g, ErrNotFound
 	}
@@ -363,15 +369,24 @@ func (s *Service) validateInput(ctx context.Context, in Input) error {
 	if len(in.Targets) > s.limits.MaxTargetsPerSchedule {
 		return ErrLimit
 	}
-	if err := Validate(Schedule{PlaylistID: in.PlaylistID, Type: in.Type, Timezone: in.Timezone, Priority: in.Priority, Enabled: in.Enabled, StartDate: in.StartDate, EndDate: in.EndDate, OneTimeStart: in.OneTimeStart, OneTimeEnd: in.OneTimeEnd, DailyStart: in.DailyStart, DailyEnd: in.DailyEnd, DaysOfWeek: in.DaysOfWeek}); err != nil {
+	if (in.PlaylistID == uuid.Nil) == (in.LayoutID == nil) {
+		return errors.New("schedule requires exactly one presentation")
+	}
+	if err := Validate(Schedule{PlaylistID: in.PlaylistID, LayoutID: in.LayoutID, Type: in.Type, Timezone: in.Timezone, Priority: in.Priority, Enabled: in.Enabled, StartDate: in.StartDate, EndDate: in.EndDate, OneTimeStart: in.OneTimeStart, OneTimeEnd: in.OneTimeEnd, DailyStart: in.DailyStart, DailyEnd: in.DailyEnd, DaysOfWeek: in.DaysOfWeek}); err != nil {
 		return err
 	}
 	var ok bool
-	if err := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM playlists WHERE id=$1 AND deleted_at IS NULL)`, in.PlaylistID).Scan(&ok); err != nil {
-		return err
+	var presentationErr error
+	if in.LayoutID != nil {
+		presentationErr = s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM layouts WHERE id=$1 AND deleted_at IS NULL AND published_revision_id IS NOT NULL)`, in.LayoutID).Scan(&ok)
+	} else {
+		presentationErr = s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM playlists WHERE id=$1 AND deleted_at IS NULL)`, in.PlaylistID).Scan(&ok)
+	}
+	if presentationErr != nil {
+		return presentationErr
 	}
 	if !ok {
-		return errors.New("playlist is deleted or invalid")
+		return errors.New("presentation is unpublished, deleted, or invalid")
 	}
 	seen := map[string]bool{}
 	for _, t := range in.Targets {
@@ -517,9 +532,9 @@ func (s *Service) write(ctx context.Context, id, user uuid.UUID, in Input, creat
 		return err
 	}
 	if create {
-		_, err = tx.Exec(ctx, `INSERT INTO schedules(id,organization_id,name,description,playlist_id,type,timezone,priority,enabled,start_date,end_date,one_time_start,one_time_end,daily_start,daily_end,days_of_week,created_by)SELECT $1,id,$2,$3,$4,$5,$6,$7,$8,$9::date,$10::date,$11,$12,$13::time,$14::time,COALESCE($15::smallint[],'{}'::smallint[]),$16 FROM organization_settings WHERE singleton`, id, strings.TrimSpace(in.Name), in.Description, in.PlaylistID, in.Type, in.Timezone, in.Priority, in.Enabled, in.StartDate, in.EndDate, in.OneTimeStart, in.OneTimeEnd, in.DailyStart, in.DailyEnd, in.DaysOfWeek, user)
+		_, err = tx.Exec(ctx, `INSERT INTO schedules(id,organization_id,name,description,playlist_id,layout_id,type,timezone,priority,enabled,start_date,end_date,one_time_start,one_time_end,daily_start,daily_end,days_of_week,created_by)SELECT $1,id,$2,$3,NULLIF($4,$18::uuid),$5,$6,$7,$8,$9,$10::date,$11::date,$12,$13,$14::time,$15::time,COALESCE($16::smallint[],'{}'::smallint[]),$17 FROM organization_settings WHERE singleton`, id, strings.TrimSpace(in.Name), in.Description, in.PlaylistID, in.LayoutID, in.Type, in.Timezone, in.Priority, in.Enabled, in.StartDate, in.EndDate, in.OneTimeStart, in.OneTimeEnd, in.DailyStart, in.DailyEnd, in.DaysOfWeek, user, uuid.Nil)
 	} else {
-		tag, e := tx.Exec(ctx, `UPDATE schedules SET name=$2,description=$3,playlist_id=$4,type=$5,timezone=$6,priority=$7,enabled=$8,start_date=$9::date,end_date=$10::date,one_time_start=$11,one_time_end=$12,daily_start=$13::time,daily_end=$14::time,days_of_week=COALESCE($15::smallint[],'{}'::smallint[]),updated_at=now() WHERE id=$1 AND deleted_at IS NULL`, id, strings.TrimSpace(in.Name), in.Description, in.PlaylistID, in.Type, in.Timezone, in.Priority, in.Enabled, in.StartDate, in.EndDate, in.OneTimeStart, in.OneTimeEnd, in.DailyStart, in.DailyEnd, in.DaysOfWeek)
+		tag, e := tx.Exec(ctx, `UPDATE schedules SET name=$2,description=$3,playlist_id=NULLIF($4,$17::uuid),layout_id=$5,type=$6,timezone=$7,priority=$8,enabled=$9,start_date=$10::date,end_date=$11::date,one_time_start=$12,one_time_end=$13,daily_start=$14::time,daily_end=$15::time,days_of_week=COALESCE($16::smallint[],'{}'::smallint[]),updated_at=now() WHERE id=$1 AND deleted_at IS NULL`, id, strings.TrimSpace(in.Name), in.Description, in.PlaylistID, in.LayoutID, in.Type, in.Timezone, in.Priority, in.Enabled, in.StartDate, in.EndDate, in.OneTimeStart, in.OneTimeEnd, in.DailyStart, in.DailyEnd, in.DaysOfWeek, uuid.Nil)
 		err = e
 		if err == nil && tag.RowsAffected() == 0 {
 			return ErrNotFound
@@ -625,11 +640,11 @@ func (s *Service) SetEnabled(ctx context.Context, id, user uuid.UUID, enabled bo
 	return s.Get(ctx, id)
 }
 
-const recordSelect = `SELECT s.id,s.name,s.description,s.playlist_id,p.name,s.type,s.timezone,s.priority,s.enabled,to_char(s.start_date,'YYYY-MM-DD'),to_char(s.end_date,'YYYY-MM-DD'),s.one_time_start,s.one_time_end,to_char(s.daily_start,'HH24:MI'),to_char(s.daily_end,'HH24:MI'),s.days_of_week,s.created_at,s.updated_at FROM schedules s JOIN playlists p ON p.id=s.playlist_id`
+const recordSelect = `SELECT s.id,s.name,s.description,COALESCE(s.playlist_id,'00000000-0000-0000-0000-000000000000'::uuid),COALESCE(p.name,l.name),s.layout_id,l.name,CASE WHEN s.layout_id IS NOT NULL THEN 'layout' ELSE 'playlist' END,s.type,s.timezone,s.priority,s.enabled,to_char(s.start_date,'YYYY-MM-DD'),to_char(s.end_date,'YYYY-MM-DD'),s.one_time_start,s.one_time_end,to_char(s.daily_start,'HH24:MI'),to_char(s.daily_end,'HH24:MI'),s.days_of_week,s.created_at,s.updated_at FROM schedules s LEFT JOIN playlists p ON p.id=s.playlist_id LEFT JOIN layouts l ON l.id=s.layout_id`
 
 func scanRecord(row pgx.Row) (Record, error) {
 	var r Record
-	err := row.Scan(&r.ID, &r.Name, &r.Description, &r.PlaylistID, &r.PlaylistName, &r.Type, &r.Timezone, &r.Priority, &r.Enabled, &r.StartDate, &r.EndDate, &r.OneTimeStart, &r.OneTimeEnd, &r.DailyStart, &r.DailyEnd, &r.DaysOfWeek, &r.CreatedAt, &r.UpdatedAt)
+	err := row.Scan(&r.ID, &r.Name, &r.Description, &r.PlaylistID, &r.PlaylistName, &r.LayoutID, &r.LayoutName, &r.PresentationType, &r.Type, &r.Timezone, &r.Priority, &r.Enabled, &r.StartDate, &r.EndDate, &r.OneTimeStart, &r.OneTimeEnd, &r.DailyStart, &r.DailyEnd, &r.DaysOfWeek, &r.CreatedAt, &r.UpdatedAt)
 	r.Targets = []Target{}
 	return r, err
 }
@@ -764,7 +779,7 @@ func (s *Service) Preview(ctx context.Context, screen uuid.UUID, at time.Time, p
 			}
 		}
 		if specificity >= 0 {
-			records = append(records, Record{Schedule: Schedule{ID: uuid.Nil, PlaylistID: proposed.PlaylistID, Type: proposed.Type, Timezone: proposed.Timezone, Priority: proposed.Priority, Specificity: specificity, Enabled: proposed.Enabled, StartDate: proposed.StartDate, EndDate: proposed.EndDate, OneTimeStart: proposed.OneTimeStart, OneTimeEnd: proposed.OneTimeEnd, DailyStart: proposed.DailyStart, DailyEnd: proposed.DailyEnd, DaysOfWeek: proposed.DaysOfWeek}, Name: proposed.Name})
+			records = append(records, Record{Schedule: Schedule{ID: uuid.Nil, PlaylistID: proposed.PlaylistID, LayoutID: proposed.LayoutID, Type: proposed.Type, Timezone: proposed.Timezone, Priority: proposed.Priority, Specificity: specificity, Enabled: proposed.Enabled, StartDate: proposed.StartDate, EndDate: proposed.EndDate, OneTimeStart: proposed.OneTimeStart, OneTimeEnd: proposed.OneTimeEnd, DailyStart: proposed.DailyStart, DailyEnd: proposed.DailyEnd, DaysOfWeek: proposed.DaysOfWeek}, Name: proposed.Name})
 		}
 	}
 	base := make([]Schedule, len(records))

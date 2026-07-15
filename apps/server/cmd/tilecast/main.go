@@ -68,6 +68,7 @@ func main() {
 	})
 	playlistService := playlists.NewService(db, deviceService)
 	layoutService := layouts.NewService(db)
+	layoutService.SetNotifier(deviceService)
 	mediaService.SetAssetInvalidator(playlistService)
 	playlistService.SetSourceProjector(mediaService)
 	schedulingService := scheduling.NewService(db, deviceService, scheduling.Limits{MaxSchedules: cfg.Scheduling.MaxSchedules, MaxTargetsPerSchedule: cfg.Scheduling.MaxTargetsPerSchedule, MaxGroupsPerScreen: cfg.Scheduling.MaxGroupsPerScreen, PrefetchDays: cfg.Scheduling.PrefetchDays, ActivationGraceSeconds: cfg.Scheduling.ActivationGraceSeconds, ClockSkewWarningSeconds: cfg.Scheduling.ClockSkewWarningSeconds})

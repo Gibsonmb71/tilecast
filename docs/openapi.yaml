@@ -564,11 +564,16 @@ paths:
           },
       }
     put:
-      operationId: assignPlaylist
+      operationId: assignPresentation
       parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PresentationReference" }
       responses:
         {
-          "200": { description: Direct playlist assignment replaced },
+          "200": { description: Direct playlist or Layout assignment replaced },
           "403": { description: Owner or Administrator required },
         }
     delete:
@@ -646,7 +651,12 @@ paths:
         { "204": { description: Screen removed and affected manifest revised } }
   /api/v1/screen-groups/{id}/playlist-assignment:
     put:
-      operationId: assignSyncGroupPlaylist
+      operationId: assignSyncGroupPresentation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PresentationReference" }
       responses:
         {
           "200":
@@ -1279,6 +1289,16 @@ components:
             enum: [download, stream, automatic],
             default: download,
           }
+    PresentationReference:
+      type: object
+      additionalProperties: false
+      oneOf:
+        - required: [playlistId]
+          properties:
+            playlistId: { type: string, format: uuid }
+        - required: [layoutId]
+          properties:
+            layoutId: { type: string, format: uuid }
     PlayerManifest:
       type: object
       additionalProperties: false
@@ -1293,12 +1313,14 @@ components:
           assets,
         ]
       properties:
-        schemaVersion: { type: integer, const: 1 }
+        schemaVersion: { type: integer, const: 10 }
         manifestVersion: { type: integer, format: int64, minimum: 1 }
         screenId: { type: string, format: uuid }
         generatedAt: { type: string, format: date-time }
-        mode: { type: string, const: single-zone }
+        mode: { type: string, const: presentation }
         playlist: { oneOf: [{ type: "null" }, { type: object }] }
+        layout: { oneOf: [{ type: "null" }, { type: object }] }
+        layouts: { type: array, items: { type: object } }
         assets: { type: array, items: { type: object } }
     ManifestResponse:
       type: object

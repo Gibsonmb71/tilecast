@@ -142,6 +142,12 @@ export function LayoutEditorPage() {
   const [snap, setSnap] = useState(true);
   const [safeArea, setSafeArea] = useState(true);
   const [preview, setPreview] = useState(false);
+  const [previewDate, setPreviewDate] = useState(
+    new Date().toISOString().slice(0, 10),
+  );
+  const [previewValues, setPreviewValues] = useState<
+    Record<string, Record<string, string>>
+  >({});
   const [historyOpen, setHistoryOpen] = useState(false);
   const [guides, setGuides] = useState<{ x?: number; y?: number }>({});
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -347,6 +353,46 @@ export function LayoutEditorPage() {
     };
     update((draft) => draft.placements.push(item));
     setSelection(new Set([item.id]));
+  };
+  const loadStructuredPreview = async (date: string) => {
+    const current = documentRef.current;
+    if (!current) return;
+    const ids = new Set(
+      current.placements
+        .filter((placement) => placement.type === "app" && placement.appId)
+        .map((placement) => placement.appId!),
+    );
+    const assets = (contentQuery.data?.items ?? []).filter(
+      (asset) =>
+        ids.has(asset.id) &&
+        asset.source &&
+        ["csv", "json"].includes(asset.source.provider),
+    );
+    const values: Record<string, Record<string, string>> = {};
+    await Promise.all(
+      assets.map(async (asset) => {
+        const provider = asset.source!.provider as "csv" | "json";
+        const result = await api.previewStructuredSource(
+          provider,
+          asset.source!
+            .configuration as import("../api/types").StructuredSourceConfig,
+          csrf,
+          date,
+        );
+        const record = result.configuration.data.records[0];
+        values[asset.id] = record
+          ? {
+              title: record.title,
+              subtitle: record.subtitle ?? "",
+              date: record.date ?? "",
+              author: record.author ?? "",
+              description: record.description ?? "",
+              ...(record.values ?? {}),
+            }
+          : {};
+      }),
+    );
+    setPreviewValues(values);
   };
   const duplicateSelection = useCallback(() => {
     const current = documentRef.current;
@@ -637,7 +683,10 @@ export function LayoutEditorPage() {
         <span className="toolbar-divider" />
         <button
           className="button button--compact button--secondary"
-          onClick={() => setPreview(true)}
+          onClick={() => {
+            setPreview(true);
+            void loadStructuredPreview(previewDate);
+          }}
         >
           <Scan size={16} />
           Preview
@@ -934,6 +983,24 @@ export function LayoutEditorPage() {
         ) : (
           <CanvasInspector document={document} update={update} />
         )}
+        {(layoutQuery.data?.usage.screens.length ||
+          layoutQuery.data?.usage.schedules.length) && (
+          <div className="content-usage-list">
+            <h3>Used in</h3>
+            {layoutQuery.data.usage.screens.map((screen) => (
+              <a key={screen.id} href={`/screens/${screen.id}`}>
+                <span>{screen.name}</span>
+                <small>Screen</small>
+              </a>
+            ))}
+            {layoutQuery.data.usage.schedules.map((schedule) => (
+              <a key={schedule.id} href={`/schedules/${schedule.id}`}>
+                <span>{schedule.name}</span>
+                <small>Schedule</small>
+              </a>
+            ))}
+          </div>
+        )}
       </aside>
       {preview && (
         <div className="layout-preview-overlay" role="dialog" aria-modal="true">
@@ -942,6 +1009,15 @@ export function LayoutEditorPage() {
             <span>
               {document.canvas.width} × {document.canvas.height}
             </span>
+            <input
+              type="date"
+              aria-label="Preview date"
+              value={previewDate}
+              onChange={(event) => {
+                setPreviewDate(event.target.value);
+                void loadStructuredPreview(event.target.value);
+              }}
+            />
             <button
               className="button button--secondary"
               onClick={() => setPreview(false)}
@@ -975,6 +1051,7 @@ export function LayoutEditorPage() {
                       ? playlistByID.get(item.playlistId)
                       : undefined
                   }
+                  previewValues={previewValues}
                 />
               ))}
           </div>
@@ -1038,6 +1115,7 @@ function PlacementView({
   canvas,
   content,
   playlist,
+  previewValues,
   selected = false,
   onPointerDown,
   onResize,
@@ -1046,6 +1124,7 @@ function PlacementView({
   canvas: LayoutDocument["canvas"];
   content?: Asset;
   playlist?: Playlist;
+  previewValues?: Record<string, Record<string, string>>;
   selected?: boolean;
   onPointerDown?: (event: ReactPointerEvent) => void;
   onResize?: (event: ReactPointerEvent) => void;
@@ -1122,7 +1201,15 @@ function PlacementView({
           }}
         >
           {primitive.binding
-            ? `${primitive.binding.prefix ?? ""}{{${primitive.binding.field}}}${primitive.binding.suffix ?? ""}`
+            ? (() => {
+                const binding = primitive.binding;
+                const value =
+                  previewValues?.[binding.sourceId]?.[binding.field];
+                return value
+                  ? `${binding.prefix ?? ""}${value}${binding.suffix ?? ""}`
+                  : binding.fallbackText ||
+                      `${binding.prefix ?? ""}{{${binding.field}}}${binding.suffix ?? ""}`;
+              })()
             : primitive.text}
         </div>
       ) : primitive?.kind === "circle" ? (

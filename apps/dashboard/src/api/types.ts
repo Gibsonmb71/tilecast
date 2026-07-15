@@ -198,10 +198,14 @@ export type Layout = {
   createdAt: string;
   updatedAt: string;
   dependencies: LayoutDependency[];
+  usage: {
+    screens: { id: string; name: string }[];
+    schedules: { id: string; name: string }[];
+  };
 };
 export type LayoutSummary = Omit<
   Layout,
-  "draft" | "dependencies" | "publishedRevisionId"
+  "draft" | "dependencies" | "usage" | "publishedRevisionId"
 >;
 export type LayoutList = {
   items: LayoutSummary[];
@@ -240,6 +244,10 @@ export type PlaylistAssignment = {
   playlistId?: string;
   playlistName?: string;
   playlistRevision?: number;
+  layoutId?: string;
+  layoutName?: string;
+  layoutRevision?: number;
+  presentationType?: "playlist" | "layout";
   manifestVersion: number;
   playerActiveManifestVersion?: number;
   playerPendingManifestVersion?: number;
@@ -267,6 +275,7 @@ export type PlaylistAssignment = {
     id: string;
     name: string;
     playlistName: string;
+    presentationType: "playlist" | "layout";
     priority: number;
     enabled: boolean;
   }[];
@@ -437,6 +446,9 @@ export type ScreenGroup = {
   description: string;
   playlistId?: string;
   playlistName?: string;
+  layoutId?: string;
+  layoutName?: string;
+  presentationType?: "playlist" | "layout";
   playbackEpoch: string;
   membershipCount: number;
   screens: { id: string; name: string; location: string }[];
@@ -458,8 +470,11 @@ export type Schedule = {
   id: string;
   name: string;
   description: string;
-  playlistId: string;
+  playlistId?: string;
   playlistName: string;
+  layoutId?: string;
+  layoutName?: string;
+  presentationType: "playlist" | "layout";
   type: "one_time" | "weekly";
   timezone: string;
   priority: number;
@@ -478,7 +493,13 @@ export type Schedule = {
 };
 export type ScheduleInput = Omit<
   Schedule,
-  "id" | "playlistName" | "specificity" | "createdAt" | "updatedAt"
+  | "id"
+  | "playlistName"
+  | "layoutName"
+  | "presentationType"
+  | "specificity"
+  | "createdAt"
+  | "updatedAt"
 >;
 export type ScheduleList = {
   items: Schedule[];

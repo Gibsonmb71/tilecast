@@ -29,6 +29,16 @@ type Layout struct {
 	CreatedAt           time.Time    `json:"createdAt"`
 	UpdatedAt           time.Time    `json:"updatedAt"`
 	Dependencies        []Dependency `json:"dependencies"`
+	Usage               Usage        `json:"usage"`
+}
+
+type Usage struct {
+	Screens   []UsageItem `json:"screens"`
+	Schedules []UsageItem `json:"schedules"`
+}
+type UsageItem struct {
+	ID   uuid.UUID `json:"id"`
+	Name string    `json:"name"`
 }
 
 type Summary struct {

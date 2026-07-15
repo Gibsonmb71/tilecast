@@ -68,7 +68,7 @@ export function GroupDetailPage() {
     csrf = auth.status?.csrfToken ?? "",
     client = useQueryClient();
   const [screenSearch, setScreenSearch] = useState("");
-  const [selectedPlaylist, setSelectedPlaylist] = useState("");
+  const [selectedPresentation, setSelectedPresentation] = useState("");
   const group = useQuery({
       queryKey: ["screen-groups", id],
       queryFn: () => api.screenGroup(id),
@@ -81,6 +81,10 @@ export function GroupDetailPage() {
     playlists = useQuery({
       queryKey: ["playlists", "sync-group"],
       queryFn: () => api.playlists(),
+    }),
+    layouts = useQuery({
+      queryKey: ["layouts", "sync-group"],
+      queryFn: () => api.layouts(""),
     });
   const refresh = () =>
     client.invalidateQueries({ queryKey: ["screen-groups", id] });
@@ -104,15 +108,25 @@ export function GroupDetailPage() {
       onSuccess: () => navigate("/groups"),
     }),
     assignContent = useMutation({
-      mutationFn: (playlistId: string) =>
-        playlistId
-          ? api.assignSyncGroupPlaylist(id, playlistId, csrf)
-          : api.unassignSyncGroupPlaylist(id, csrf),
+      mutationFn: (value: string) => {
+        const [type, presentationId] = value.split(":");
+        if (type === "layout" && presentationId)
+          return api.assignSyncGroupLayout(id, presentationId, csrf);
+        if (type === "playlist" && presentationId)
+          return api.assignSyncGroupPlaylist(id, presentationId, csrf);
+        return api.unassignSyncGroupPlaylist(id, csrf);
+      },
       onSuccess: refresh,
     });
   useEffect(() => {
-    setSelectedPlaylist(group.data?.playlistId ?? "");
-  }, [group.data?.playlistId]);
+    setSelectedPresentation(
+      group.data?.layoutId
+        ? `layout:${group.data.layoutId}`
+        : group.data?.playlistId
+          ? `playlist:${group.data.playlistId}`
+          : "",
+    );
+  }, [group.data?.layoutId, group.data?.playlistId]);
   if (!group.data) return <div className="table-loading">Loading group…</div>;
   const groupData = group.data;
   const assignedElsewhere = new Set(
@@ -180,29 +194,49 @@ export function GroupDetailPage() {
           <div className="assignment-controls">
             <select
               aria-label="Sync group content"
-              value={selectedPlaylist}
-              onChange={(event) => setSelectedPlaylist(event.target.value)}
+              value={selectedPresentation}
+              onChange={(event) => setSelectedPresentation(event.target.value)}
             >
-              <option value="">No fallback playlist</option>
-              {playlists.data?.items.map((playlist) => (
-                <option key={playlist.id} value={playlist.id}>
-                  {playlist.name}
-                </option>
-              ))}
+              <option value="">No fallback presentation</option>
+              <optgroup label="Playlists">
+                {playlists.data?.items.map((playlist) => (
+                  <option key={playlist.id} value={`playlist:${playlist.id}`}>
+                    {playlist.name}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="Published Layouts">
+                {layouts.data?.items
+                  .filter((layout) => layout.publishedRevision)
+                  .map((layout) => (
+                    <option key={layout.id} value={`layout:${layout.id}`}>
+                      {layout.name}
+                    </option>
+                  ))}
+              </optgroup>
             </select>
             <button
               className="button button--primary"
               disabled={
                 assignContent.isPending ||
-                selectedPlaylist === (groupData.playlistId ?? "")
+                selectedPresentation ===
+                  (groupData.layoutId
+                    ? `layout:${groupData.layoutId}`
+                    : groupData.playlistId
+                      ? `playlist:${groupData.playlistId}`
+                      : "")
               }
-              onClick={() => assignContent.mutate(selectedPlaylist)}
+              onClick={() => assignContent.mutate(selectedPresentation)}
             >
               {assignContent.isPending ? "Applying…" : "Apply to sync group"}
             </button>
           </div>
         ) : (
-          <strong>{groupData.playlistName ?? "No fallback playlist"}</strong>
+          <strong>
+            {groupData.layoutName ??
+              groupData.playlistName ??
+              "No fallback presentation"}
+          </strong>
         )}
       </section>
       {canManage(auth.status?.user?.role) && (

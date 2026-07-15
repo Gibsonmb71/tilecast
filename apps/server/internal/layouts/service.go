@@ -14,9 +14,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type Service struct{ db *pgxpool.Pool }
+type Notifier interface{ ManifestChanged(uuid.UUID, int64) }
+type Service struct {
+	db       *pgxpool.Pool
+	notifier Notifier
+}
 
-func NewService(db *pgxpool.Pool) *Service { return &Service{db: db} }
+func NewService(db *pgxpool.Pool) *Service       { return &Service{db: db} }
+func (s *Service) SetNotifier(notifier Notifier) { s.notifier = notifier }
 
 func defaultDocument(orientation string, width, height int) Document {
 	return Document{SchemaVersion: 1, Canvas: Canvas{Width: width, Height: height, Orientation: orientation, BackgroundColor: "#0E141B", SafeAreaPercent: 5}, Placements: []Placement{}}
@@ -100,7 +105,37 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (Layout, error) {
 		return Layout{}, err
 	}
 	result.Dependencies, err = s.draftDependencies(ctx, id)
-	return result, err
+	if err != nil {
+		return Layout{}, err
+	}
+	result.Usage = Usage{Screens: []UsageItem{}, Schedules: []UsageItem{}}
+	rows, err := s.db.Query(ctx, `SELECT DISTINCT sc.id,sc.name FROM screens sc LEFT JOIN screen_playlist_assignments a ON a.screen_id=sc.id LEFT JOIN screen_group_memberships m ON m.screen_id=sc.id LEFT JOIN screen_group_playlist_assignments ga ON ga.screen_group_id=m.screen_group_id WHERE a.layout_id=$1 OR ga.layout_id=$1 ORDER BY sc.name`, id)
+	if err != nil {
+		return Layout{}, err
+	}
+	for rows.Next() {
+		var item UsageItem
+		if err = rows.Scan(&item.ID, &item.Name); err != nil {
+			rows.Close()
+			return Layout{}, err
+		}
+		result.Usage.Screens = append(result.Usage.Screens, item)
+	}
+	rows.Close()
+	rows, err = s.db.Query(ctx, `SELECT id,name FROM schedules WHERE layout_id=$1 AND deleted_at IS NULL ORDER BY name`, id)
+	if err != nil {
+		return Layout{}, err
+	}
+	for rows.Next() {
+		var item UsageItem
+		if err = rows.Scan(&item.ID, &item.Name); err != nil {
+			rows.Close()
+			return Layout{}, err
+		}
+		result.Usage.Schedules = append(result.Usage.Schedules, item)
+	}
+	rows.Close()
+	return result, rows.Err()
 }
 
 func (s *Service) UpdateDetails(ctx context.Context, id, userID uuid.UUID, name, description string) (Layout, error) {
@@ -220,8 +255,36 @@ func (s *Service) Publish(ctx context.Context, id, userID uuid.UUID, expected in
 	if err = insertAuditTx(ctx, tx, userID, "layout.published", id); err != nil {
 		return Revision{}, err
 	}
+	rows, err := tx.Query(ctx, `WITH affected AS (
+		SELECT screen_id FROM screen_playlist_assignments WHERE layout_id=$1
+		UNION SELECT m.screen_id FROM screen_group_playlist_assignments a JOIN screen_group_memberships m ON m.screen_group_id=a.screen_group_id WHERE a.layout_id=$1
+		UNION SELECT t.screen_id FROM schedules s JOIN schedule_targets t ON t.schedule_id=s.id WHERE s.layout_id=$1 AND s.deleted_at IS NULL AND t.screen_id IS NOT NULL
+		UNION SELECT m.screen_id FROM schedules s JOIN schedule_targets t ON t.schedule_id=s.id JOIN screen_group_memberships m ON m.screen_group_id=t.screen_group_id WHERE s.layout_id=$1 AND s.deleted_at IS NULL
+	) UPDATE screen_manifest_state state SET manifest_version=manifest_version+1,changed_at=now(),change_reason='layout.published' FROM affected WHERE state.screen_id=affected.screen_id RETURNING state.screen_id,state.manifest_version`, id)
+	if err != nil {
+		return Revision{}, err
+	}
+	type notice struct {
+		screen  uuid.UUID
+		version int64
+	}
+	notices := []notice{}
+	for rows.Next() {
+		var n notice
+		if err = rows.Scan(&n.screen, &n.version); err != nil {
+			rows.Close()
+			return Revision{}, err
+		}
+		notices = append(notices, n)
+	}
+	rows.Close()
 	if err = tx.Commit(ctx); err != nil {
 		return Revision{}, err
+	}
+	if s.notifier != nil {
+		for _, n := range notices {
+			s.notifier.ManifestChanged(n.screen, n.version)
+		}
 	}
 	return s.GetRevision(ctx, id, revisionID)
 }
@@ -306,6 +369,13 @@ func (s *Service) Duplicate(ctx context.Context, id, userID uuid.UUID) (Layout, 
 }
 
 func (s *Service) Delete(ctx context.Context, id, userID uuid.UUID) error {
+	var inUse bool
+	if err := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM screen_playlist_assignments WHERE layout_id=$1) OR EXISTS(SELECT 1 FROM screen_group_playlist_assignments WHERE layout_id=$1) OR EXISTS(SELECT 1 FROM schedules WHERE layout_id=$1 AND deleted_at IS NULL)`, id).Scan(&inUse); err != nil {
+		return err
+	}
+	if inUse {
+		return ErrInUse
+	}
 	command, err := s.db.Exec(ctx, `UPDATE layouts SET deleted_at=now(),updated_by=$1,updated_at=now() WHERE id=$2 AND deleted_at IS NULL`, userID, id)
 	if err != nil {
 		return err

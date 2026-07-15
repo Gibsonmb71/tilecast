@@ -799,7 +799,7 @@ export function ScreenDetailPage() {
   const [confirmRevoke, setConfirmRevoke] = useState(false);
   const [editingDetails, setEditingDetails] = useState(false);
   const [policyDirty, setPolicyDirty] = useState(false);
-  const [selectedPlaylist, setSelectedPlaylist] = useState("");
+  const [selectedPresentation, setSelectedPresentation] = useState("");
   const query = useQuery({
     queryKey: ["screens", id],
     queryFn: () => api.screen(id),
@@ -836,14 +836,37 @@ export function ScreenDetailPage() {
     queryFn: () => api.playlists(),
     enabled: canManageScreens(auth.status?.user),
   });
+  const layouts = useQuery({
+    queryKey: ["layouts", "assignment-picker"],
+    queryFn: () => api.layouts(""),
+    enabled: canManageScreens(auth.status?.user),
+  });
   useEffect(() => {
-    setSelectedPlaylist(assignment.data?.playlistId ?? "");
-  }, [assignment.data?.playlistId]);
+    setSelectedPresentation(
+      assignment.data?.layoutId
+        ? `layout:${assignment.data.layoutId}`
+        : assignment.data?.playlistId
+          ? `playlist:${assignment.data.playlistId}`
+          : "",
+    );
+  }, [assignment.data?.layoutId, assignment.data?.playlistId]);
   const assign = useMutation({
-    mutationFn: () =>
-      selectedPlaylist
-        ? api.assignPlaylist(id, selectedPlaylist, auth.status?.csrfToken ?? "")
-        : api.unassignPlaylist(id, auth.status?.csrfToken ?? ""),
+    mutationFn: () => {
+      const [type, presentationId] = selectedPresentation.split(":");
+      if (type === "layout" && presentationId)
+        return api.assignLayout(
+          id,
+          presentationId,
+          auth.status?.csrfToken ?? "",
+        );
+      if (type === "playlist" && presentationId)
+        return api.assignPlaylist(
+          id,
+          presentationId,
+          auth.status?.csrfToken ?? "",
+        );
+      return api.unassignPlaylist(id, auth.status?.csrfToken ?? "");
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: ["screens", id, "playlist-assignment"],
@@ -1129,22 +1152,40 @@ export function ScreenDetailPage() {
           {canManageScreens(auth.status?.user) ? (
             <div className="assignment-controls">
               <select
-                aria-label="Assigned playlist"
-                value={selectedPlaylist}
-                onChange={(event) => setSelectedPlaylist(event.target.value)}
+                aria-label="Assigned presentation"
+                value={selectedPresentation}
+                onChange={(event) =>
+                  setSelectedPresentation(event.target.value)
+                }
               >
-                <option value="">No playlist assigned</option>
-                {playlists.data?.items.map((playlist) => (
-                  <option key={playlist.id} value={playlist.id}>
-                    {playlist.name}
-                  </option>
-                ))}
+                <option value="">No presentation assigned</option>
+                <optgroup label="Playlists">
+                  {playlists.data?.items.map((playlist) => (
+                    <option key={playlist.id} value={`playlist:${playlist.id}`}>
+                      {playlist.name}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Published Layouts">
+                  {layouts.data?.items
+                    .filter((layout) => layout.publishedRevision)
+                    .map((layout) => (
+                      <option key={layout.id} value={`layout:${layout.id}`}>
+                        {layout.name}
+                      </option>
+                    ))}
+                </optgroup>
               </select>
               <button
                 className="button button--primary"
                 disabled={
                   assign.isPending ||
-                  selectedPlaylist === (assignment.data?.playlistId ?? "")
+                  selectedPresentation ===
+                    (assignment.data?.layoutId
+                      ? `layout:${assignment.data.layoutId}`
+                      : assignment.data?.playlistId
+                        ? `playlist:${assignment.data.playlistId}`
+                        : "")
                 }
                 onClick={() => assign.mutate()}
               >
@@ -1158,8 +1199,12 @@ export function ScreenDetailPage() {
           )}
           <dl className="detail-list">
             <div>
-              <dt>Direct fallback playlist</dt>
-              <dd>{assignment.data?.playlistName ?? "No fallback assigned"}</dd>
+              <dt>Direct fallback</dt>
+              <dd>
+                {assignment.data?.layoutName ??
+                  assignment.data?.playlistName ??
+                  "No fallback assigned"}
+              </dd>
             </div>
             <div>
               <dt>Current selection</dt>

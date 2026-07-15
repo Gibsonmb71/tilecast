@@ -18,6 +18,7 @@ import { Link, useNavigate, useParams } from "react-router";
 import { api } from "../api/client";
 import type {
   Playlist,
+  LayoutSummary,
   ScheduleInput,
   SchedulePreview,
   ScheduleTarget,
@@ -43,6 +44,7 @@ const initialSchedule = (): ScheduleInput => ({
   name: "",
   description: "",
   playlistId: "",
+  layoutId: undefined,
   type: "weekly",
   timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
   priority: 0,
@@ -60,6 +62,7 @@ function scheduleToInput(
     name: schedule.name,
     description: schedule.description,
     playlistId: schedule.playlistId,
+    layoutId: schedule.layoutId,
     type: schedule.type,
     timezone: schedule.timezone,
     priority: schedule.priority,
@@ -89,6 +92,10 @@ export function ScheduleEditorPage() {
   const playlists = useQuery({
     queryKey: ["playlists", "schedule"],
     queryFn: () => api.playlists(),
+  });
+  const layouts = useQuery({
+    queryKey: ["layouts", "schedule"],
+    queryFn: () => api.layouts(""),
   });
   const screens = useQuery({ queryKey: ["screens"], queryFn: api.screens });
   const groups = useQuery({
@@ -140,9 +147,12 @@ export function ScheduleEditorPage() {
   const selectedPlaylist = playlists.data?.items.find(
     (playlist) => playlist.id === input.playlistId,
   );
+  const selectedLayout = layouts.data?.items.find(
+    (layout) => layout.id === input.layoutId,
+  );
   const playlistDetails = useQuery({
     queryKey: ["playlists", input.playlistId, "schedule-card"],
-    queryFn: () => api.playlist(input.playlistId),
+    queryFn: () => api.playlist(input.playlistId!),
     enabled: Boolean(input.playlistId),
   });
   const selectedPlaylistData = playlistDetails.data ?? selectedPlaylist;
@@ -170,7 +180,9 @@ export function ScheduleEditorPage() {
         schedulePreviewTimestamp(input),
         input,
       ),
-    enabled: Boolean(previewScreenId && input.playlistId && valid),
+    enabled: Boolean(
+      previewScreenId && (input.playlistId || input.layoutId) && valid,
+    ),
   });
   const targetCount = countTargetScreens(
     input.targets,
@@ -239,6 +251,7 @@ export function ScheduleEditorPage() {
             </Field>
             <PlaylistSelection
               playlist={selectedPlaylistData}
+              layout={selectedLayout}
               onChoose={() => setPlaylistOpen(true)}
               error={attempted ? errors.playlistId : undefined}
             />
@@ -363,6 +376,7 @@ export function ScheduleEditorPage() {
         <ScheduleSummary
           input={input}
           playlist={selectedPlaylistData}
+          layout={selectedLayout}
           targetCount={targetCount}
           preview={preview}
         />
@@ -415,10 +429,19 @@ export function ScheduleEditorPage() {
       <PlaylistPicker
         open={playlistOpen}
         playlists={playlists.data?.items ?? []}
-        selectedId={input.playlistId}
+        layouts={(layouts.data?.items ?? []).filter(
+          (layout) => layout.publishedRevision,
+        )}
+        selectedId={input.layoutId ?? input.playlistId ?? ""}
         onClose={() => setPlaylistOpen(false)}
         onSelect={(playlist) => {
           set("playlistId", playlist.id);
+          set("layoutId", undefined);
+          setPlaylistOpen(false);
+        }}
+        onSelectLayout={(layout) => {
+          set("playlistId", undefined);
+          set("layoutId", layout.id);
           setPlaylistOpen(false);
         }}
       />
@@ -457,10 +480,12 @@ function BuilderSection({
 
 function PlaylistSelection({
   playlist,
+  layout,
   onChoose,
   error,
 }: {
   playlist?: Playlist;
+  layout?: LayoutSummary;
   onChoose: () => void;
   error?: string;
 }) {
@@ -469,18 +494,23 @@ function PlaylistSelection({
   return (
     <div className="schedule-playlist-field">
       <span className="field__label">
-        Playlist <span aria-hidden="true">*</span>
+        Presentation <span aria-hidden="true">*</span>
       </span>
-      {playlist ? (
+      {playlist || layout ? (
         <div className="schedule-playlist-card">
           <div className="schedule-playlist-card__thumb">
-            {thumbnail ? <img src={thumbnail} alt="" /> : <span>Playlist</span>}
+            {thumbnail ? (
+              <img src={thumbnail} alt="" />
+            ) : (
+              <span>{layout ? "Layout" : "Playlist"}</span>
+            )}
           </div>
           <div>
-            <strong>{playlist.name}</strong>
+            <strong>{layout?.name ?? playlist?.name}</strong>
             <span>
-              {playlist.itemCount} item{playlist.itemCount === 1 ? "" : "s"} ·{" "}
-              {duration}
+              {layout
+                ? `${layout.canvasWidth} × ${layout.canvasHeight} · revision ${layout.publishedRevision}`
+                : `${playlist!.itemCount} item${playlist!.itemCount === 1 ? "" : "s"} · ${duration}`}
             </span>
           </div>
           <Button type="button" variant="quiet" compact onClick={onChoose}>
@@ -489,7 +519,7 @@ function PlaylistSelection({
         </div>
       ) : (
         <Button type="button" variant="secondary" onClick={onChoose}>
-          Choose playlist
+          Choose presentation
         </Button>
       )}
       {error && <span className="field__error">{error}</span>}
@@ -500,22 +530,26 @@ function PlaylistSelection({
 function PlaylistPicker({
   open,
   playlists,
+  layouts,
   selectedId,
   onClose,
   onSelect,
+  onSelectLayout,
 }: {
   open: boolean;
   playlists: Playlist[];
+  layouts: LayoutSummary[];
   selectedId: string;
   onClose: () => void;
   onSelect: (playlist: Playlist) => void;
+  onSelectLayout: (layout: LayoutSummary) => void;
 }) {
   const [search, setSearch] = useState("");
   const filtered = playlists.filter((playlist) =>
     playlist.name.toLowerCase().includes(search.toLowerCase()),
   );
   return (
-    <Dialog open={open} title="Choose playlist" onClose={onClose}>
+    <Dialog open={open} title="Choose presentation" onClose={onClose}>
       <div className="schedule-picker-dialog">
         <label className="schedule-picker-search">
           <Search size={17} />
@@ -523,7 +557,7 @@ function PlaylistPicker({
             type="search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search playlists"
+            placeholder="Search presentations"
             autoFocus
           />
         </label>
@@ -544,6 +578,24 @@ function PlaylistPicker({
               {selectedId === playlist.id && <Check size={18} />}
             </button>
           ))}
+          {layouts
+            .filter((layout) =>
+              layout.name.toLowerCase().includes(search.toLowerCase()),
+            )
+            .map((layout) => (
+              <button
+                type="button"
+                key={layout.id}
+                className={selectedId === layout.id ? "selected" : ""}
+                onClick={() => onSelectLayout(layout)}
+              >
+                <span>
+                  <strong>{layout.name}</strong>
+                  <small>Layout · revision {layout.publishedRevision}</small>
+                </span>
+                {selectedId === layout.id && <Check size={18} />}
+              </button>
+            ))}
           {!filtered.length && <p>No playlists match this search.</p>}
         </div>
       </div>
@@ -975,11 +1027,13 @@ function PriorityControl({
 function ScheduleSummary({
   input,
   playlist,
+  layout,
   targetCount,
   preview,
 }: {
   input: ScheduleInput;
   playlist?: Playlist;
+  layout?: LayoutSummary;
   targetCount: number;
   preview: UseQueryResult<SchedulePreview, Error>;
 }) {
@@ -1001,7 +1055,11 @@ function ScheduleSummary({
         <div>
           <dt>Content</dt>
           <dd>
-            {playlist ? `Plays ${playlist.name}` : "No playlist selected"}
+            {layout
+              ? `Shows Layout ${layout.name}`
+              : playlist
+                ? `Plays ${playlist.name}`
+                : "No presentation selected"}
           </dd>
         </div>
         <div>
@@ -1019,7 +1077,7 @@ function ScheduleSummary({
       </dl>
       <div className="schedule-conflicts">
         <h4>Conflict preview</h4>
-        {!input.targets.length || !input.playlistId ? (
+        {!input.targets.length || (!input.playlistId && !input.layoutId) ? (
           <Notice variant="neutral">
             Choose content and targets to check conflicts.
           </Notice>
