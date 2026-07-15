@@ -101,4 +101,22 @@ func TestLayoutDraftPublishAndRestoreLifecycle(t *testing.T) {
 	if layout.Draft.Placements[0].Primitive.Text != "Welcome" {
 		t.Fatal("revision was not restored as draft")
 	}
+	videoA, videoB := uuid.New(), uuid.New()
+	for _, videoID := range []uuid.UUID{videoA, videoB} {
+		if _, err = pool.Exec(ctx, `INSERT INTO assets(id,organization_id,name,type,original_filename,detected_mime_type,sha256,original_size,processing_status,created_by)VALUES($1,$2,'Video','video','video.mp4','video/mp4',$3,100,'ready',$4)`, videoID, organizationID, make([]byte, 32), owner.User.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	document = layout.Draft
+	document.Placements = append(document.Placements,
+		Placement{ID: uuid.New(), Type: "asset", Name: "Video A", X: 0, Y: 500, Width: 400, Height: 300, Layer: 4, Opacity: 1, Visible: true, AssetID: &videoA, Playback: &Playback{Muted: true}},
+		Placement{ID: uuid.New(), Type: "asset", Name: "Video B", X: 500, Y: 500, Width: 400, Height: 300, Layer: 5, Opacity: 1, Visible: true, AssetID: &videoB, Playback: &Playback{Muted: true}},
+	)
+	layout, err = service.SaveDraft(ctx, layout.ID, owner.User.ID, layout.DraftRevision, document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = service.Publish(ctx, layout.ID, owner.User.ID, layout.DraftRevision); err == nil || !strings.Contains(err.Error(), "one visible video-capable") {
+		t.Fatalf("expected video capability validation, got %v", err)
+	}
 }

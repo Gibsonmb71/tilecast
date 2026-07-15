@@ -190,6 +190,9 @@ func (s *Service) Publish(ctx context.Context, id, userID uuid.UUID, expected in
 	if err = s.validateDependenciesTx(ctx, tx, deps); err != nil {
 		return Revision{}, err
 	}
+	if err = s.validatePlaybackLimitsTx(ctx, tx, document); err != nil {
+		return Revision{}, err
+	}
 	canonical, _ := json.Marshal(document)
 	sum := sha256.Sum256(canonical)
 	digest := hex.EncodeToString(sum[:])
@@ -341,6 +344,62 @@ func (s *Service) replaceDraftDependencies(ctx context.Context, tx pgx.Tx, id uu
 func (s *Service) validateDependencies(ctx context.Context, deps []Dependency) error {
 	return s.validateDependencyQuery(ctx, s.db, deps)
 }
+func (s *Service) validatePlaybackLimitsTx(ctx context.Context, tx pgx.Tx, document Document) error {
+	videoCapable, audioEmitting := 0, 0
+	for _, placement := range document.Placements {
+		if !placement.Visible {
+			continue
+		}
+		video, audio := false, false
+		switch placement.Type {
+		case "asset":
+			var assetType string
+			if err := tx.QueryRow(ctx, `SELECT type FROM assets WHERE id=$1`, placement.AssetID).Scan(&assetType); err != nil {
+				return err
+			}
+			video = assetType == "video"
+			audio = video && (placement.Playback == nil || !placement.Playback.Muted)
+		case "app":
+			var provider string
+			if err := tx.QueryRow(ctx, `SELECT provider FROM sources WHERE asset_id=$1`, placement.AppID).Scan(&provider); err != nil {
+				return err
+			}
+			video = provider == "website" || provider == "youtube"
+			muted := false
+			if len(placement.Overrides) > 0 {
+				var overrides struct {
+					Muted *bool `json:"muted"`
+				}
+				_ = json.Unmarshal(placement.Overrides, &overrides)
+				muted = overrides.Muted != nil && *overrides.Muted
+			}
+			audio = video && !muted
+		case "playlistZone":
+			if err := tx.QueryRow(ctx, `SELECT EXISTS(
+				SELECT 1 FROM playlist_items i JOIN assets a ON a.id=i.asset_id
+				LEFT JOIN sources src ON src.asset_id=a.id
+				WHERE i.playlist_id=$1 AND (a.type='video' OR src.provider IN ('website','youtube'))
+			)`, placement.PlaylistID).Scan(&video); err != nil {
+				return err
+			}
+			audio = video && (placement.Playback == nil || !placement.Playback.Muted)
+		}
+		if video {
+			videoCapable++
+		}
+		if audio {
+			audioEmitting++
+		}
+	}
+	if videoCapable > 1 {
+		return errors.New("layout may contain only one visible video-capable placement or playlist zone")
+	}
+	if audioEmitting > 1 {
+		return errors.New("layout may contain only one audio-emitting placement or playlist zone")
+	}
+	return nil
+}
+
 func (s *Service) validateDependenciesTx(ctx context.Context, tx pgx.Tx, deps []Dependency) error {
 	return s.validateDependencyQuery(ctx, tx, deps)
 }

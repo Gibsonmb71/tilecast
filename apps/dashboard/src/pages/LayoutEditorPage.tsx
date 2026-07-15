@@ -14,6 +14,7 @@ import {
   Image as ImageIcon,
   Lock,
   LockOpen,
+  ListVideo,
   Minus,
   Redo2,
   RectangleHorizontal,
@@ -40,6 +41,7 @@ import type {
   LayoutDocument,
   LayoutPlacement,
   LayoutPrimitive,
+  Playlist,
 } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 
@@ -120,6 +122,10 @@ export function LayoutEditorPage() {
           sort: "name",
         }),
       ),
+  });
+  const playlistsQuery = useQuery({
+    queryKey: ["layout-playlists"],
+    queryFn: () => api.playlists(""),
   });
   const revisions = useQuery({
     queryKey: ["layout-revisions", id],
@@ -296,7 +302,12 @@ export function LayoutEditorPage() {
       appId: isApp ? asset.id : undefined,
       assetId: isApp ? undefined : asset.id,
       overrides: isApp
-        ? { fit: "contain", alignment: "center", fallbackVisibility: "show" }
+        ? {
+            fit: "contain",
+            alignment: "center",
+            fallbackVisibility: "show",
+            muted: true,
+          }
         : undefined,
       playback: !isApp
         ? {
@@ -307,6 +318,32 @@ export function LayoutEditorPage() {
             cornerRadius: 0,
           }
         : undefined,
+    };
+    update((draft) => draft.placements.push(item));
+    setSelection(new Set([item.id]));
+  };
+  const addPlaylistZone = (playlist: Playlist) => {
+    if (!document) return;
+    const item: LayoutPlacement = {
+      id: crypto.randomUUID(),
+      type: "playlistZone",
+      name: playlist.name,
+      x: document.canvas.width * 0.2,
+      y: document.canvas.height * 0.2,
+      width: document.canvas.width * 0.4,
+      height: document.canvas.height * 0.4,
+      layer: Math.max(0, ...document.placements.map((p) => p.layer)) + 1,
+      opacity: 1,
+      visible: true,
+      locked: false,
+      playlistId: playlist.id,
+      playback: {
+        fit: "contain",
+        muted: true,
+        loop: true,
+        fallback: "background",
+        cornerRadius: 0,
+      },
     };
     update((draft) => draft.placements.push(item));
     setSelection(new Set([item.id]));
@@ -569,6 +606,9 @@ export function LayoutEditorPage() {
   const contentByID = new Map(
     contentQuery.data?.items.map((asset) => [asset.id, asset]),
   );
+  const playlistByID = new Map(
+    playlistsQuery.data?.items.map((playlist) => [playlist.id, playlist]),
+  );
   return (
     <div className="layout-editor">
       <div className="layout-editor-toolbar">
@@ -672,6 +712,27 @@ export function LayoutEditorPage() {
               <span>
                 <strong>{asset.name}</strong>
                 <small>{asset.source?.provider ?? asset.type}</small>
+              </span>
+            </button>
+          ))}
+        </div>
+        <div className="layout-panel-heading">
+          <strong>Playlist zones</strong>
+          <span>{playlistsQuery.data?.items.length ?? 0}</span>
+        </div>
+        <div className="layout-content-shelf">
+          {playlistsQuery.data?.items.map((playlist) => (
+            <button
+              key={playlist.id}
+              onClick={() => addPlaylistZone(playlist)}
+              title={`Add ${playlist.name} zone`}
+            >
+              <span className="layout-content-shelf__preview">
+                <ListVideo size={18} />
+              </span>
+              <span>
+                <strong>{playlist.name}</strong>
+                <small>{playlist.itemCount} items</small>
               </span>
             </button>
           ))}
@@ -821,6 +882,11 @@ export function LayoutEditorPage() {
                         ? contentByID.get(item.assetId)
                         : undefined
                   }
+                  playlist={
+                    item.playlistId
+                      ? playlistByID.get(item.playlistId)
+                      : undefined
+                  }
                   canvas={document.canvas}
                   selected={selection.has(item.id)}
                   onPointerDown={(event) => beginMove(event, item)}
@@ -846,6 +912,11 @@ export function LayoutEditorPage() {
                 : primary.assetId
                   ? contentByID.get(primary.assetId)
                   : undefined
+            }
+            playlist={
+              primary.playlistId
+                ? playlistByID.get(primary.playlistId)
+                : undefined
             }
             update={(change) => mutateSelected(change)}
             duplicate={duplicateSelection}
@@ -891,6 +962,11 @@ export function LayoutEditorPage() {
                       : item.assetId
                         ? contentByID.get(item.assetId)
                         : undefined
+                  }
+                  playlist={
+                    item.playlistId
+                      ? playlistByID.get(item.playlistId)
+                      : undefined
                   }
                 />
               ))}
@@ -954,6 +1030,7 @@ function PlacementView({
   item,
   canvas,
   content,
+  playlist,
   selected = false,
   onPointerDown,
   onResize,
@@ -961,6 +1038,7 @@ function PlacementView({
   item: LayoutPlacement;
   canvas: LayoutDocument["canvas"];
   content?: Asset;
+  playlist?: Playlist;
   selected?: boolean;
   onPointerDown?: (event: ReactPointerEvent) => void;
   onResize?: (event: ReactPointerEvent) => void;
@@ -981,7 +1059,13 @@ function PlacementView({
       style={style}
       onPointerDown={onPointerDown}
     >
-      {item.type === "asset" ? (
+      {item.type === "playlistZone" ? (
+        <div className="layout-playlist-zone">
+          <ListVideo size={22} />
+          <strong>{playlist?.name ?? item.name}</strong>
+          <span>{playlist?.itemCount ?? 0} items · independent loop</span>
+        </div>
+      ) : item.type === "asset" ? (
         content?.thumbnailUrl ? (
           <img
             className="layout-asset-placement"
@@ -1171,6 +1255,7 @@ function NumberField({
 function PlacementInspector({
   item,
   content,
+  playlist,
   update,
   duplicate,
   group,
@@ -1179,6 +1264,7 @@ function PlacementInspector({
 }: {
   item: LayoutPlacement;
   content?: Asset;
+  playlist?: Playlist;
   update: (change: (item: LayoutPlacement) => void) => void;
   duplicate: () => void;
   group: () => void;
@@ -1365,6 +1451,24 @@ function PlacementInspector({
               <option value="hide">Hide placement</option>
             </select>
           </label>
+          {(content?.source?.provider === "website" ||
+            content?.source?.provider === "youtube") && (
+            <label className="check-row">
+              <input
+                type="checkbox"
+                checked={(item.overrides?.muted as boolean | undefined) ?? true}
+                onChange={(event) =>
+                  update((target) => {
+                    target.overrides = {
+                      ...target.overrides,
+                      muted: event.target.checked,
+                    };
+                  })
+                }
+              />
+              Muted in this Layout
+            </label>
+          )}
           <button
             className="button button--secondary"
             onClick={() => {
@@ -1378,6 +1482,100 @@ function PlacementInspector({
           >
             <AppWindow size={16} />
             Edit shared App
+          </button>
+        </div>
+      )}
+      {item.type === "playlistZone" && (
+        <div className="layout-placement-settings">
+          <div className="notice notice--neutral">
+            <strong>{playlist?.name ?? item.name}</strong>
+            <span>{playlist?.itemCount ?? 0} items</span>
+          </div>
+          <div className="form-grid form-grid--2">
+            <label className="field">
+              <span className="field__label">Fit</span>
+              <select
+                value={item.playback?.fit ?? "contain"}
+                onChange={(event) =>
+                  update((target) => {
+                    target.playback = {
+                      ...target.playback,
+                      fit: event.target.value as
+                        "contain" | "cover" | "stretch",
+                    };
+                  })
+                }
+              >
+                <option value="contain">Fit</option>
+                <option value="cover">Fill</option>
+                <option value="stretch">Stretch</option>
+              </select>
+            </label>
+            <label className="field">
+              <span className="field__label">Fallback</span>
+              <select
+                value={item.playback?.fallback ?? "background"}
+                onChange={(event) =>
+                  update((target) => {
+                    target.playback = {
+                      ...target.playback,
+                      fallback: event.target.value as
+                        "hide" | "background" | "previous",
+                    };
+                  })
+                }
+              >
+                <option value="background">Zone background</option>
+                <option value="previous">Previous item</option>
+                <option value="hide">Hide zone</option>
+              </select>
+            </label>
+          </div>
+          <label className="check-row">
+            <input
+              type="checkbox"
+              checked={item.playback?.loop ?? true}
+              onChange={(event) =>
+                update((target) => {
+                  target.playback = {
+                    ...target.playback,
+                    loop: event.target.checked,
+                  };
+                })
+              }
+            />
+            Loop independently
+          </label>
+          <label className="check-row">
+            <input
+              type="checkbox"
+              checked={item.playback?.muted ?? true}
+              onChange={(event) =>
+                update((target) => {
+                  target.playback = {
+                    ...target.playback,
+                    muted: event.target.checked,
+                  };
+                })
+              }
+            />
+            Muted
+          </label>
+          <NumberField
+            label="Corner radius"
+            value={item.playback?.cornerRadius ?? 0}
+            max={1000}
+            onChange={(value) =>
+              update((target) => {
+                target.playback = { ...target.playback, cornerRadius: value };
+              })
+            }
+          />
+          <button
+            className="button button--secondary"
+            onClick={() => void navigate(`/playlists/${item.playlistId}`)}
+          >
+            Edit playlist
           </button>
         </div>
       )}

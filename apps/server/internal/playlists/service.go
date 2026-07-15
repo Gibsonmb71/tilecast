@@ -100,6 +100,7 @@ func (s *Service) List(ctx context.Context, search string, page, pageSize int) (
 		}
 		p.Items = []Item{}
 		p.Warnings = []string{}
+		p.LayoutUsage = []LayoutUsage{}
 		items = append(items, p)
 	}
 	return ListResult{Items: items, Total: total, Page: page, PageSize: pageSize}, rows.Err()
@@ -121,6 +122,7 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (Playlist, error) {
 	defer rows.Close()
 	p.Items = []Item{}
 	p.Warnings = []string{}
+	p.LayoutUsage = []LayoutUsage{}
 	for rows.Next() {
 		var item Item
 		if err := rows.Scan(&item.ID, &item.AssetID, &item.Position, &item.DurationMS, &item.FitMode, &item.Transition, &item.AudioEnabled, &item.Volume, &item.VideoStartOffsetMS, &item.VideoEndOffsetMS, &item.DeliveryPolicy, &item.AssetName, &item.AssetType, &item.SourceProvider, &item.AssetStatus, &item.AssetDurationSeconds, &item.VariantID, &item.CreatedAt, &item.UpdatedAt); err != nil {
@@ -133,7 +135,29 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (Playlist, error) {
 		p.Items = append(p.Items, item)
 	}
 	p.ItemCount = len(p.Items)
-	return p, rows.Err()
+	if err = rows.Err(); err != nil {
+		return Playlist{}, err
+	}
+	usageRows, err := s.db.Query(ctx, `
+		SELECT l.id,l.name,bool_or(COALESCE(r.id=l.published_revision_id,FALSE))
+		FROM layouts l
+		LEFT JOIN layout_draft_dependencies d ON d.layout_id=l.id AND d.dependency_type='playlist' AND d.dependency_id=$1
+		LEFT JOIN layout_revision_dependencies rd ON rd.dependency_type='playlist' AND rd.dependency_id=$1
+		LEFT JOIN layout_revisions r ON r.id=rd.revision_id AND r.layout_id=l.id
+		WHERE l.deleted_at IS NULL AND (d.layout_id IS NOT NULL OR r.id IS NOT NULL)
+		GROUP BY l.id,l.name ORDER BY l.name`, id)
+	if err != nil {
+		return Playlist{}, err
+	}
+	defer usageRows.Close()
+	for usageRows.Next() {
+		var usage LayoutUsage
+		if err = usageRows.Scan(&usage.ID, &usage.Name, &usage.Published); err != nil {
+			return Playlist{}, err
+		}
+		p.LayoutUsage = append(p.LayoutUsage, usage)
+	}
+	return p, usageRows.Err()
 }
 
 func (s *Service) Update(ctx context.Context, id, userID uuid.UUID, name, description string) (Playlist, error) {
@@ -202,11 +226,15 @@ func (s *Service) Delete(ctx context.Context, id, userID uuid.UUID) error {
 	}
 	defer tx.Rollback(ctx)
 	var assigned int
-	if err = tx.QueryRow(ctx, `SELECT (SELECT count(*) FROM screen_playlist_assignments WHERE playlist_id=$1)+(SELECT count(*) FROM schedules WHERE playlist_id=$1 AND deleted_at IS NULL)`, id).Scan(&assigned); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT
+		(SELECT count(*) FROM screen_playlist_assignments WHERE playlist_id=$1)+
+		(SELECT count(*) FROM schedules WHERE playlist_id=$1 AND deleted_at IS NULL)+
+		(SELECT count(*) FROM layout_draft_dependencies WHERE dependency_type='playlist' AND dependency_id=$1)+
+		(SELECT count(*) FROM layout_revision_dependencies WHERE dependency_type='playlist' AND dependency_id=$1)`, id).Scan(&assigned); err != nil {
 		return err
 	}
 	if assigned > 0 {
-		return fmt.Errorf("%w: playlist is assigned to a screen", ErrConflict)
+		return fmt.Errorf("%w: playlist is assigned or required by a Layout", ErrConflict)
 	}
 	tag, err := tx.Exec(ctx, `UPDATE playlists SET deleted_at=now(),updated_at=now() WHERE id=$1 AND deleted_at IS NULL`, id)
 	if err != nil {

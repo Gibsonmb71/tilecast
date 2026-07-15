@@ -16,15 +16,22 @@ var (
 )
 
 type Playlist struct {
-	ID          uuid.UUID `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	Revision    int64     `json:"revision"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
-	Items       []Item    `json:"items"`
-	ItemCount   int       `json:"itemCount"`
-	Warnings    []string  `json:"warnings"`
+	ID          uuid.UUID     `json:"id"`
+	Name        string        `json:"name"`
+	Description string        `json:"description"`
+	Revision    int64         `json:"revision"`
+	CreatedAt   time.Time     `json:"createdAt"`
+	UpdatedAt   time.Time     `json:"updatedAt"`
+	Items       []Item        `json:"items"`
+	ItemCount   int           `json:"itemCount"`
+	Warnings    []string      `json:"warnings"`
+	LayoutUsage []LayoutUsage `json:"layoutUsage"`
+}
+
+type LayoutUsage struct {
+	ID        uuid.UUID `json:"id"`
+	Name      string    `json:"name"`
+	Published bool      `json:"published"`
 }
 
 type Item struct {

@@ -299,6 +299,20 @@ export function PlaylistEditorPage() {
           {w}
         </div>
       ))}
+      {playlist.layoutUsage?.length > 0 && (
+        <div className="notice notice--neutral">
+          <strong>Used in Layouts</strong>
+          <span>
+            {playlist.layoutUsage.map((layout, index) => (
+              <span key={layout.id}>
+                {index > 0 ? ", " : ""}
+                <Link to={`/layouts/${layout.id}`}>{layout.name}</Link>
+                {layout.published ? " (published)" : " (draft)"}
+              </span>
+            ))}
+          </span>
+        </div>
+      )}
       <section className="playlist-settings">
         <label className="field">
           <span className="field__label">Name</span>

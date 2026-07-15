@@ -401,7 +401,8 @@ code,
 }
 
 .layout-placement-placeholder,
-.layout-app-placement {
+.layout-app-placement,
+.layout-playlist-zone {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -414,6 +415,16 @@ code,
   text-align: center;
   background: #18232d;
   overflow: hidden;
+}
+
+.layout-playlist-zone {
+  border: 1px solid var(--tc-border-strong);
+  background: #18232d;
+}
+
+.layout-playlist-zone span {
+  color: var(--tc-text-secondary);
+  font-size: 0.72em;
 }
 
 .layout-app-placement__provider {

@@ -88,6 +88,7 @@ func validatePlacement(p Placement, canvas Canvas) error {
 			ForegroundColor    string `json:"foregroundColor"`
 			BackgroundColor    string `json:"backgroundColor"`
 			FallbackVisibility string `json:"fallbackVisibility"`
+			Muted              *bool  `json:"muted"`
 		}
 		decoder := json.NewDecoder(bytes.NewReader(p.Overrides))
 		decoder.DisallowUnknownFields()

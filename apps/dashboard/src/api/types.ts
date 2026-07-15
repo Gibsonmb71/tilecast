@@ -92,6 +92,7 @@ export type Playlist = {
   items: PlaylistItem[];
   itemCount: number;
   warnings: string[];
+  layoutUsage: { id: string; name: string; published: boolean }[];
 };
 
 export type PlaylistList = {
