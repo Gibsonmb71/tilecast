@@ -135,6 +135,79 @@ type YouTubeConfig struct {
 	FixedDurationSeconds *int       `json:"fixedDurationSeconds,omitempty"`
 }
 
+type CalendarFeed struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
+}
+
+type CalendarFields struct {
+	Title              bool `json:"title"`
+	StartTime          bool `json:"startTime"`
+	EndTime            bool `json:"endTime"`
+	Date               bool `json:"date"`
+	Location           bool `json:"location"`
+	DescriptionExcerpt bool `json:"descriptionExcerpt"`
+}
+
+type CalendarConfig struct {
+	Calendars              []CalendarFeed `json:"calendars"`
+	DisplayMode            string         `json:"displayMode"`
+	MaxEvents              int            `json:"maxEvents"`
+	Fields                 CalendarFields `json:"fields"`
+	FilterKeyword          string         `json:"filterKeyword,omitempty"`
+	FilterCalendars        []string       `json:"filterCalendars,omitempty"`
+	Timezone               string         `json:"timezone"`
+	RefreshIntervalSeconds int            `json:"refreshIntervalSeconds"`
+	StalenessLimitHours    int            `json:"stalenessLimitHours"`
+	EmptyState             string         `json:"emptyState"`
+}
+
+type CalendarEvent struct {
+	ID                 string    `json:"id"`
+	Calendar           string    `json:"calendar"`
+	Title              string    `json:"title"`
+	Start              time.Time `json:"start"`
+	End                time.Time `json:"end"`
+	AllDay             bool      `json:"allDay"`
+	Location           string    `json:"location,omitempty"`
+	DescriptionExcerpt string    `json:"descriptionExcerpt,omitempty"`
+}
+
+type CalendarPreparedData struct {
+	Events          []CalendarEvent `json:"events"`
+	CachedAt        time.Time       `json:"cachedAt"`
+	StaleAt         time.Time       `json:"staleAt"`
+	UsingCachedData bool            `json:"usingCachedData"`
+	Unavailable     bool            `json:"unavailable"`
+}
+
+type CalendarPlayerConfig struct {
+	DisplayMode string               `json:"displayMode"`
+	MaxEvents   int                  `json:"maxEvents"`
+	Fields      CalendarFields       `json:"fields"`
+	Timezone    string               `json:"timezone"`
+	EmptyState  string               `json:"emptyState"`
+	Data        CalendarPreparedData `json:"data"`
+}
+
+type SourceRefreshDiagnostics struct {
+	AssetID             uuid.UUID  `json:"assetId"`
+	LastSuccessfulAt    *time.Time `json:"lastSuccessfulRefresh,omitempty"`
+	LastAttemptedAt     *time.Time `json:"lastAttemptedRefresh,omitempty"`
+	HTTPResultCategory  *string    `json:"httpResultCategory,omitempty"`
+	ParseStatus         string     `json:"parseStatus"`
+	AvailableEventCount int        `json:"availableEventCount"`
+	UsingCachedData     bool       `json:"usingCachedData"`
+	CacheUpdatedAt      *time.Time `json:"cacheUpdatedAt,omitempty"`
+	CacheExpiresAt      *time.Time `json:"cacheExpiresAt,omitempty"`
+	ErrorCode           *string    `json:"errorCode,omitempty"`
+}
+
+type CalendarPreview struct {
+	Configuration CalendarPlayerConfig     `json:"configuration"`
+	Diagnostics   SourceRefreshDiagnostics `json:"diagnostics"`
+}
+
 type WebsiteConfig struct {
 	URL                    string     `json:"url"`
 	DisplayURL             string     `json:"displayUrl"`

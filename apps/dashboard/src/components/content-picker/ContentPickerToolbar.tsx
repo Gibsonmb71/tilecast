@@ -1,7 +1,7 @@
 import { Grid2X2, List, Search } from "lucide-react";
 
 export type ContentPickerFilter =
-  "all" | "image" | "video" | "source" | "website" | "youtube";
+  "all" | "image" | "video" | "source" | "website" | "youtube" | "calendar";
 
 export function ContentPickerToolbar({
   search,
@@ -29,6 +29,7 @@ export function ContentPickerToolbar({
     ["source", "Sources"],
     ["website", "Websites"],
     ["youtube", "YouTube"],
+    ["calendar", "Calendars"],
   ];
   return (
     <div className="content-picker-toolbar">

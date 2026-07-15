@@ -655,7 +655,7 @@ paths:
   /api/v1/sources:
     post:
       operationId: createSource
-      description: Creates a validated built-in Website or YouTube Source.
+      description: Creates a validated built-in Website, YouTube, or Calendar Source.
       requestBody:
         required: true
         content:
@@ -680,6 +680,29 @@ paths:
       operationId: duplicateSource
       responses:
         "201": { description: Source duplicated }
+  /api/v1/sources/calendar/preview:
+    post:
+      operationId: previewCalendarSource
+      description: Fetches and parses configured public ICS feeds under the Source fetch policy without saving raw calendar data.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [configuration]
+              properties: { configuration: { type: object } }
+      responses:
+        "200":
+          { description: Sanitized real-data Calendar preview and diagnostics }
+        "422": { description: Calendar validation or safe fetch failed }
+  /api/v1/sources/{id}/diagnostics:
+    get:
+      operationId: sourceRefreshDiagnostics
+      responses:
+        "200": { description: Current bounded Source refresh diagnostics }
+        "404": { description: Source refresh diagnostics unavailable }
   /api/v1/emergencies:
     get:
       summary: List emergency takeovers
@@ -1085,7 +1108,7 @@ components:
       enum: [image, video, source]
     SourceProvider:
       type: string
-      enum: [website, youtube]
+      enum: [website, youtube, calendar]
     Source:
       type: object
       additionalProperties: false

@@ -1,4 +1,11 @@
-import { Check, FileImage, FileVideo, Globe2, Youtube } from "lucide-react";
+import {
+  CalendarDays,
+  Check,
+  FileImage,
+  FileVideo,
+  Globe2,
+  Youtube,
+} from "lucide-react";
 import type { Asset, YouTubeConfig } from "../../api/types";
 
 function statusLabel(status: Asset["processingStatus"]) {
@@ -39,6 +46,7 @@ export function ContentLibraryGrid({
         const disabled =
           disabledIds.has(asset.id) || asset.processingStatus !== "ready";
         const youtube = asset.source?.provider === "youtube";
+        const calendar = asset.source?.provider === "calendar";
         const videoId = youtube
           ? (asset.source?.configuration as YouTubeConfig).videoId
           : undefined;
@@ -66,6 +74,8 @@ export function ContentLibraryGrid({
                 <FileVideo size={30} />
               ) : youtube ? (
                 <Youtube size={30} />
+              ) : calendar ? (
+                <CalendarDays size={30} />
               ) : (
                 <Globe2 size={30} />
               )}
@@ -81,7 +91,9 @@ export function ContentLibraryGrid({
                 {asset.type === "source"
                   ? asset.source?.provider === "youtube"
                     ? "YouTube Source"
-                    : "Website Source"
+                    : asset.source?.provider === "calendar"
+                      ? "Calendar Source"
+                      : "Website Source"
                   : asset.type === "image"
                     ? "Image"
                     : "Video"}

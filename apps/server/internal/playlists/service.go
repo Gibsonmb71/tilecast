@@ -20,13 +20,19 @@ type Service struct {
 	db         *pgxpool.Pool
 	notifier   Notifier
 	scheduling *scheduling.Service
+	sources    SourceProjector
+}
+
+type SourceProjector interface {
+	PlayerSourceConfiguration(context.Context, uuid.UUID, string, json.RawMessage) (json.RawMessage, error)
 }
 
 func NewService(db *pgxpool.Pool, notifier Notifier) *Service {
 	return &Service{db: db, notifier: notifier}
 }
 
-func (s *Service) SetScheduling(service *scheduling.Service) { s.scheduling = service }
+func (s *Service) SetScheduling(service *scheduling.Service)    { s.scheduling = service }
+func (s *Service) SetSourceProjector(projector SourceProjector) { s.sources = projector }
 
 func (s *Service) Create(ctx context.Context, userID uuid.UUID, name, description string) (Playlist, error) {
 	name = strings.TrimSpace(name)
@@ -751,7 +757,7 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 	if s.scheduling != nil {
 		prefetch, grace, _ = s.scheduling.Config()
 	}
-	manifest := Manifest{SchemaVersion: 6, ManifestVersion: assignment.ManifestVersion, ScreenID: screenID, GeneratedAt: changed, ServerTime: now, Mode: "single-zone", Assets: []ManifestAsset{}, Playlists: []ManifestPlaylist{}, Schedules: []ManifestSchedule{}, Websites: []ManifestWebsite{}, Sources: []ManifestSource{}, PrefetchHorizonDays: prefetch, ActivationGraceSeconds: grace}
+	manifest := Manifest{SchemaVersion: 7, ManifestVersion: assignment.ManifestVersion, ScreenID: screenID, GeneratedAt: changed, ServerTime: now, Mode: "single-zone", Assets: []ManifestAsset{}, Playlists: []ManifestPlaylist{}, Schedules: []ManifestSchedule{}, Websites: []ManifestWebsite{}, Sources: []ManifestSource{}, PrefetchHorizonDays: prefetch, ActivationGraceSeconds: grace}
 	var syncGroup ManifestSyncGroup
 	if groupErr := s.db.QueryRow(ctx, `SELECT g.id,g.playback_epoch FROM screen_group_memberships m JOIN screen_groups g ON g.id=m.screen_group_id WHERE m.screen_id=$1 AND g.deleted_at IS NULL`, screenID).Scan(&syncGroup.ID, &syncGroup.PlaybackEpoch); groupErr == nil {
 		manifest.SyncGroup = &syncGroup
@@ -810,6 +816,12 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 				source.Name = item.AssetName
 				if err = s.db.QueryRow(ctx, `SELECT provider,config_version,configuration FROM sources WHERE asset_id=$1`, item.AssetID).Scan(&source.Provider, &source.ConfigVersion, &source.Configuration); err != nil {
 					return Manifest{}, "", err
+				}
+				if s.sources != nil {
+					source.Configuration, err = s.sources.PlayerSourceConfiguration(ctx, item.AssetID, source.Provider, source.Configuration)
+					if err != nil {
+						return Manifest{}, "", err
+					}
 				}
 				var configuration map[string]any
 				if err = json.Unmarshal(source.Configuration, &configuration); err != nil {

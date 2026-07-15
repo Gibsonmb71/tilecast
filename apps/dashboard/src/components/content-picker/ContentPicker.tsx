@@ -2,7 +2,7 @@ import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { Globe2, Upload, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api/client";
-import type { Asset } from "../../api/types";
+import type { Asset, SourceProvider } from "../../api/types";
 import { ContentLibraryGrid } from "./ContentLibraryGrid";
 import {
   ContentPickerToolbar,
@@ -21,7 +21,7 @@ export type ContentPickerProps = {
   mode: "single" | "multiple";
   csrf: string;
   allowedTypes?: Array<"image" | "video" | "source">;
-  allowedProviders?: Array<"website" | "youtube">;
+  allowedProviders?: SourceProvider[];
   disabledItemIds?: string[];
   selectedIds?: string[];
   confirmLabel?: string;
@@ -67,7 +67,11 @@ export function ContentPicker({
       if (search) params.set("search", search);
       if (["image", "video", "source"].includes(filter))
         params.set("type", filter);
-      if (filter === "website" || filter === "youtube") {
+      if (
+        filter === "website" ||
+        filter === "youtube" ||
+        filter === "calendar"
+      ) {
         params.set("type", "source");
         params.set("provider", filter);
       }

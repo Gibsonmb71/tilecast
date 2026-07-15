@@ -12,6 +12,7 @@ import {
   Trash2,
   Youtube,
   X,
+  CalendarDays,
 } from "lucide-react";
 import { signalColors } from "@tilecast/design-tokens/values";
 import {
@@ -31,6 +32,7 @@ import type {
 } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import {
+  CalendarSourceEditor,
   SourceProviderGallery,
   YouTubeSourceEditor,
 } from "../content/SourceEditors";
@@ -122,6 +124,7 @@ export function ContentPage() {
   const [selected, setSelected] = useState<Asset>();
   const [websiteEditor, setWebsiteEditor] = useState(false);
   const [youtubeEditor, setYouTubeEditor] = useState(false);
+  const [calendarEditor, setCalendarEditor] = useState(false);
   const [sourceGallery, setSourceGallery] = useState(false);
   const controllers = useRef(new Map<string, AbortController>());
   const fileInput = useRef<HTMLInputElement>(null);
@@ -130,7 +133,7 @@ export function ContentPage() {
   if (contentFilter === "media") params.set("type", "media");
   if (["image", "video", "source"].includes(contentFilter))
     params.set("type", contentFilter);
-  if (["website", "youtube"].includes(contentFilter)) {
+  if (["website", "youtube", "calendar"].includes(contentFilter)) {
     params.set("type", "source");
     params.set("provider", contentFilter);
   }
@@ -388,6 +391,7 @@ export function ContentPage() {
               ["video", "Videos"],
               ["website", "Websites"],
               ["youtube", "YouTube"],
+              ["calendar", "Calendars"],
             ] as const
           ).map(([value, label]) => (
             <button
@@ -511,13 +515,25 @@ export function ContentPage() {
           }}
         />
       )}
+      {calendarEditor && (
+        <CalendarSourceEditor
+          csrf={csrf}
+          onClose={() => setCalendarEditor(false)}
+          onSaved={(asset) => {
+            setCalendarEditor(false);
+            setSelected(asset);
+            void queryClient.invalidateQueries({ queryKey: ["assets"] });
+          }}
+        />
+      )}
       {sourceGallery && (
         <SourceProviderGallery
           onClose={() => setSourceGallery(false)}
           onChoose={(provider) => {
             setSourceGallery(false);
             if (provider === "website") setWebsiteEditor(true);
-            else setYouTubeEditor(true);
+            else if (provider === "youtube") setYouTubeEditor(true);
+            else setCalendarEditor(true);
           }}
         />
       )}
@@ -596,6 +612,8 @@ export function AssetCollection({
               ) : asset.type === "source" ? (
                 asset.source?.provider === "youtube" ? (
                   <Youtube size={28} />
+                ) : asset.source?.provider === "calendar" ? (
+                  <CalendarDays size={28} />
                 ) : (
                   <Globe2 size={28} />
                 )
@@ -611,7 +629,9 @@ export function AssetCollection({
                 {asset.type === "source" &&
                   (asset.source?.provider === "youtube"
                     ? "YouTube"
-                    : asset.website?.displayUrl)}
+                    : asset.source?.provider === "calendar"
+                      ? "Calendar"
+                      : asset.website?.displayUrl)}
                 {asset.width && asset.height
                   ? `${asset.type === "video" ? " · " : ""}${asset.width} × ${asset.height}`
                   : ""}
@@ -678,6 +698,15 @@ function AssetDetails(props: {
   ) : props.asset.type === "source" &&
     props.asset.source?.provider === "youtube" ? (
     <YouTubeSourceEditor
+      asset={props.asset}
+      csrf={props.csrf}
+      readOnly={!props.canManage}
+      onClose={props.onClose}
+      onSaved={props.onChanged}
+    />
+  ) : props.asset.type === "source" &&
+    props.asset.source?.provider === "calendar" ? (
+    <CalendarSourceEditor
       asset={props.asset}
       csrf={props.csrf}
       readOnly={!props.canManage}

@@ -534,17 +534,17 @@ export type Asset = {
   source?: Source;
   playlistUsage?: number;
 };
-export type SourceProvider = "website" | "youtube";
+export type SourceProvider = "website" | "youtube" | "calendar";
 export type Source = {
   provider: SourceProvider;
   configVersion: number;
-  configuration: WebsiteConfig | YouTubeConfig;
+  configuration: WebsiteConfig | YouTubeConfig | CalendarConfig;
 };
 export type SourceInput = {
   provider: SourceProvider;
   name: string;
   description: string;
-  configuration: WebsiteConfigInput | YouTubeConfig;
+  configuration: WebsiteConfigInput | YouTubeConfig | CalendarConfig;
 };
 export type WebsiteConfig = {
   url: string;
@@ -591,6 +591,58 @@ export type YouTubeConfig = {
   fallbackImageAssetId?: string;
   playlistPlaybackMode: "until_end" | "fixed_duration";
   fixedDurationSeconds?: number;
+};
+export type CalendarConfig = {
+  calendars: { name: string; url: string }[];
+  displayMode: "today" | "upcoming" | "this_week" | "agenda";
+  maxEvents: number;
+  fields: {
+    title: boolean;
+    startTime: boolean;
+    endTime: boolean;
+    date: boolean;
+    location: boolean;
+    descriptionExcerpt: boolean;
+  };
+  filterKeyword?: string;
+  filterCalendars?: string[];
+  timezone: string;
+  refreshIntervalSeconds: number;
+  stalenessLimitHours: number;
+  emptyState: string;
+};
+export type CalendarEvent = {
+  id: string;
+  calendar: string;
+  title: string;
+  start: string;
+  end: string;
+  allDay: boolean;
+  location?: string;
+  descriptionExcerpt?: string;
+};
+export type SourceRefreshDiagnostics = {
+  assetId: string;
+  lastSuccessfulRefresh?: string;
+  lastAttemptedRefresh?: string;
+  httpResultCategory?: string;
+  parseStatus: string;
+  availableEventCount: number;
+  usingCachedData: boolean;
+  cacheUpdatedAt?: string;
+  cacheExpiresAt?: string;
+  errorCode?: string;
+};
+export type CalendarPreview = {
+  configuration: CalendarConfig & {
+    data: {
+      events: CalendarEvent[];
+      cachedAt: string;
+      staleAt: string;
+      usingCachedData: boolean;
+    };
+  };
+  diagnostics: SourceRefreshDiagnostics;
 };
 export type WebsiteDiagnostics = {
   assetId: string;

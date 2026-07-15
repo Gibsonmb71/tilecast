@@ -100,7 +100,7 @@ Direct assignment routes are `/api/v1/screens/{id}/playlist-assignment`; only Ow
 
 The API retains `/screen-groups` paths for compatibility, while Studio calls these resources Sync Groups. A database unique constraint permits each screen in at most one sync group. Adding an already-grouped screen returns `409`; removing a screen preserves the group fallback as that screen's independent assignment. Authenticated read routes are `GET /api/v1/screen-groups`, `GET /api/v1/screen-groups/{id}`, `GET /api/v1/schedules`, and `GET /api/v1/schedules/{id}`. Owner and Administrator mutations use the documented CSRF header on group create/update/delete and membership routes, schedule create/update/delete, and enable/disable routes.
 
-Schedule targets for a grouped screen are normalized to its sync group, so every member receives the same schedule set. `POST /api/v1/schedules/preview` accepts `screenId`, an optional absolute `timestamp`, and an optional unsaved `proposedSchedule`; it returns precedence-ordered applicable schedules, conflicts, fallback content, winner, and next transition using the production resolver. Player manifest v6 includes an optional sync-group ID and playback epoch. Players combine that epoch or the active schedule window start with server-adjusted time to select the shared playlist item and media offset.
+Schedule targets for a grouped screen are normalized to its sync group, so every member receives the same schedule set. `POST /api/v1/schedules/preview` accepts `screenId`, an optional absolute `timestamp`, and an optional unsaved `proposedSchedule`; it returns precedence-ordered applicable schedules, conflicts, fallback content, winner, and next transition using the production resolver. Player manifests include an optional sync-group ID and playback epoch. Players combine that epoch or the active schedule window start with server-adjusted time to select the shared playlist item and media offset.
 
 Weekly weekdays are integers `0` (Sunday) through `6` (Saturday). Times are `HH:MM`, dates are `YYYY-MM-DD`, timezones are IANA identifiers, and an end time less than or equal to its start denotes an overnight window.
 
@@ -114,9 +114,11 @@ Website data clearing is the typed `clear_website_data` persistent player comman
 
 ## Sources
 
-`POST /api/v1/sources` creates a Website or YouTube Source, `PATCH /api/v1/sources/{id}` edits its name and provider configuration, and `POST /api/v1/sources/{id}/duplicate` creates a reusable copy. A request contains a closed `provider` (`website` or `youtube`), name, optional description, and provider configuration object. Strict JSON decoding applies to both the request and provider configuration; unknown providers and fields are rejected.
+`POST /api/v1/sources` creates a Website, YouTube, or Calendar Source, `PATCH /api/v1/sources/{id}` edits its name and provider configuration, and `POST /api/v1/sources/{id}/duplicate` creates a reusable copy. A request contains a closed `provider` (`website`, `youtube`, or `calendar`), name, optional description, and provider configuration object. Strict JSON decoding applies to both the request and provider configuration; unknown providers and fields are rejected.
 
-`GET /api/v1/assets` returns Sources with normal Content results. Use `type=source` for all Sources or `provider=website|youtube` for one provider. Existing Website assets are migrated in place, keep their asset IDs and playlist relationships, and continue to work through the compatibility Website routes. Manifest v5 projects relevant provider configurations into `sources`; it never sends unrelated Sources.
+`POST /api/v1/sources/calendar/preview` performs a bounded fetch and returns real sanitized event data before save. `GET /api/v1/sources/{id}/diagnostics` returns last attempt/success, HTTP category, parse state, event count, cache usage, and cache lifetime without returning raw ICS. `GET /api/v1/assets` returns Sources with normal Content results. Use `type=source` for all Sources or `provider=website|youtube|calendar` for one provider.
+
+Manifest v7 projects only Sources referenced by relevant playlists. Calendar projection contains presentation settings and bounded prepared events, never feed URLs or raw calendar bytes. Existing v1-v6 manifests remain readable by the updated Player. Stable calendar failures use `validation_failed`; inaccessible resources remain `not_found`.
 
 ## Emergency takeover and commands
 

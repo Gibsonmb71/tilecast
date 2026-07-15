@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/tilecast/tilecast/apps/server/internal/auth"
 	"github.com/tilecast/tilecast/apps/server/internal/database"
+	"github.com/tilecast/tilecast/apps/server/internal/media"
 	"github.com/tilecast/tilecast/apps/server/internal/scheduling"
 )
 
@@ -111,7 +113,7 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 	if err != nil || same.ManifestVersion != manifest.ManifestVersion || sameETag != etag {
 		t.Fatal("manifest read changed version or ETag")
 	}
-	if manifest.SchemaVersion != 6 || manifest.DirectFallbackPlaylist == nil || len(manifest.DirectFallbackPlaylist.Items) != 2 || len(manifest.Assets) != 2 {
+	if manifest.SchemaVersion != 7 || manifest.DirectFallbackPlaylist == nil || len(manifest.DirectFallbackPlaylist.Items) != 2 || len(manifest.Assets) != 2 {
 		t.Fatalf("manifest=%#v", manifest)
 	}
 	emergencyID := uuid.New()
@@ -218,8 +220,37 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	webManifest, _, err := service.BuildManifest(ctx, screenID)
-	if err != nil || webManifest.SchemaVersion != 6 || len(webManifest.Sources) != 1 || webManifest.Sources[0].Provider != "website" || len(webManifest.Assets) != 1 {
+	if err != nil || webManifest.SchemaVersion != 7 || len(webManifest.Sources) != 1 || webManifest.Sources[0].Provider != "website" || len(webManifest.Assets) != 1 {
 		t.Fatalf("website manifest=%#v %v", webManifest, err)
+	}
+	calendarID := uuid.New()
+	calendarConfiguration := `{"calendars":[{"name":"School","url":"https://private.example/calendar.ics"}],"displayMode":"upcoming","maxEvents":10,"fields":{"title":true,"startTime":true,"endTime":false,"date":true,"location":true,"descriptionExcerpt":false},"timezone":"UTC","refreshIntervalSeconds":900,"stalenessLimitHours":168,"emptyState":"No events"}`
+	_, err = pool.Exec(ctx, `INSERT INTO assets(id,organization_id,name,type,original_filename,detected_mime_type,sha256,original_size,processing_status,created_by)VALUES($1,$2,'School calendar','source','','application/vnd.tilecast.source+json',''::bytea,0,'ready',$3)`, calendarID, org, owner.User.ID)
+	if err == nil {
+		_, err = pool.Exec(ctx, `INSERT INTO sources(asset_id,provider,configuration)VALUES($1,'calendar',$2::jsonb)`, calendarID, calendarConfiguration)
+	}
+	if err == nil {
+		_, err = pool.Exec(ctx, `INSERT INTO source_refresh_states(asset_id,last_success_at,parse_status,available_event_count,cache_updated_at,cache_expires_at,cached_payload)VALUES($1,now(),'success',1,now(),now()+interval '7 days',jsonb_build_object('events',jsonb_build_array(jsonb_build_object('id','event-1','calendar','School','title','Board meeting','start',to_jsonb(now()+interval '1 day'),'end',to_jsonb(now()+interval '2 hours 1 day'),'allDay',false)),'cachedAt',to_jsonb(now()),'staleAt',to_jsonb(now()+interval '7 days'),'usingCachedData',false,'unavailable',false))`, calendarID)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	calendarPlaylist, err := service.Create(ctx, owner.User.ID, "Calendar rotation", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	calendarDuration := int64(30_000)
+	calendarPlaylist, err = service.AddItem(ctx, calendarPlaylist.ID, owner.User.ID, ItemInput{AssetID: calendarID, DurationMS: &calendarDuration})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.SetSourceProjector(media.NewService(pool, nil, media.Config{}))
+	if _, err = service.Assign(ctx, screenID, calendarPlaylist.ID, owner.User.ID); err != nil {
+		t.Fatal(err)
+	}
+	calendarManifest, _, err := service.BuildManifest(ctx, screenID)
+	if err != nil || len(calendarManifest.Sources) != 1 || calendarManifest.Sources[0].Provider != "calendar" || strings.Contains(string(calendarManifest.Sources[0].Configuration), "private.example") || !strings.Contains(string(calendarManifest.Sources[0].Configuration), "Board meeting") {
+		t.Fatalf("calendar manifest=%#v err=%v", calendarManifest.Sources, err)
 	}
 	if len(notifier.versions) < 3 {
 		t.Fatalf("notifications=%v", notifier.versions)

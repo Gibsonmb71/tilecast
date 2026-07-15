@@ -137,6 +137,8 @@ func (s *Service) sourceProvider(name string) (sourceProvider, error) {
 		return websiteSourceProvider{s}, nil
 	case "youtube":
 		return youtubeSourceProvider{s}, nil
+	case "calendar":
+		return calendarSourceProvider{s}, nil
 	default:
 		return nil, errors.New("source provider is not supported")
 	}
@@ -187,6 +189,11 @@ func (s *Service) CreateSource(ctx context.Context, user uuid.UUID, input Source
 	if _, err = tx.Exec(ctx, `INSERT INTO sources(asset_id,provider,config_version,configuration) VALUES($1,$2,1,$3::jsonb)`, id, input.Provider, string(encoded)); err != nil {
 		return Asset{}, err
 	}
+	if input.Provider == "calendar" {
+		if _, err = tx.Exec(ctx, `INSERT INTO source_refresh_states(asset_id) VALUES($1)`, id); err != nil {
+			return Asset{}, err
+		}
+	}
 	if _, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,metadata) VALUES($1,$2,'source.created','source',$3,jsonb_build_object('provider',$4::text))`, uuid.New(), user, id.String(), input.Provider); err != nil {
 		return Asset{}, err
 	}
@@ -235,6 +242,11 @@ func (s *Service) UpdateSource(ctx context.Context, id, user uuid.UUID, input So
 	}
 	if _, err = tx.Exec(ctx, `UPDATE sources SET configuration=$2::jsonb,config_version=1,updated_at=now() WHERE asset_id=$1`, id, string(encoded)); err != nil {
 		return Asset{}, err
+	}
+	if input.Provider == "calendar" {
+		if _, err = tx.Exec(ctx, `INSERT INTO source_refresh_states(asset_id,next_refresh_at) VALUES($1,now()) ON CONFLICT(asset_id) DO UPDATE SET next_refresh_at=now(),error_code=NULL,locked_at=NULL,locked_by=NULL,updated_at=now()`, id); err != nil {
+			return Asset{}, err
+		}
 	}
 	if _, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id) VALUES($1,$2,'source.updated','source',$3)`, uuid.New(), user, id.String()); err != nil {
 		return Asset{}, err

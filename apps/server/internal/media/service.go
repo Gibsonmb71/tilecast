@@ -27,6 +27,7 @@ type Config struct {
 	Workers                 int
 	KeepOriginals           bool
 	Website                 WebsitePolicy
+	SourceFetch             SourceFetchPolicy
 }
 type Service struct {
 	db          *pgxpool.Pool

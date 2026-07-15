@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Asset, SourceProvider } from "../../api/types";
 import {
+  CalendarSourceEditor,
   SourceProviderGallery,
   YouTubeSourceEditor,
 } from "../../content/SourceEditors";
@@ -62,6 +63,14 @@ export function CreateSourceDialog({
   if (provider === "website")
     return (
       <WebsiteEditor
+        csrf={csrf}
+        onClose={() => setProvider(undefined)}
+        onSaved={saved}
+      />
+    );
+  if (provider === "calendar")
+    return (
+      <CalendarSourceEditor
         csrf={csrf}
         onClose={() => setProvider(undefined)}
         onSaved={saved}

@@ -3,12 +3,16 @@ package media
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
 	"image/png"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -72,7 +76,7 @@ func TestMediaUploadProcessingAndDeletionLifecycle(t *testing.T) {
 	if err := os.WriteFile(fake, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	service := NewService(pool, storage, Config{MaxUploadBytes: 1 << 20, ReservedFreeBytes: 1, FFmpegPath: fake, Workers: 1, Profile: CompatibilityProfile{MaxWidth: 1920, MaxHeight: 1080, MaxFrameRate: 60}, Website: WebsitePolicy{DefaultTimeoutSeconds: 20, MaxTimeoutSeconds: 120, MinRefreshSeconds: 30, MaxAllowedHosts: 25, MaxWebsites: 500}})
+	service := NewService(pool, storage, Config{MaxUploadBytes: 1 << 20, ReservedFreeBytes: 1, FFmpegPath: fake, Workers: 1, Profile: CompatibilityProfile{MaxWidth: 1920, MaxHeight: 1080, MaxFrameRate: 60}, Website: WebsitePolicy{DefaultTimeoutSeconds: 20, MaxTimeoutSeconds: 120, MinRefreshSeconds: 30, MaxAllowedHosts: 25, MaxWebsites: 500}, SourceFetch: SourceFetchPolicy{AllowPrivateNetworks: true, Timeout: 5 * time.Second, MaximumBytes: 1 << 20, MaximumRedirects: 3, MinimumRefresh: 5 * time.Minute, MaximumRefresh: 24 * time.Hour}})
 	upload, err := service.CreateUpload(ctx, owner.User.ID, "misleading-video.mp4", "video/mp4", int64(content.Len()))
 	if err != nil {
 		t.Fatal(err)
@@ -136,6 +140,30 @@ func TestMediaUploadProcessingAndDeletionLifecycle(t *testing.T) {
 	}
 	if err = service.DeleteAsset(ctx, website.ID, owner.User.ID); err != nil {
 		t.Fatal(err)
+	}
+	calendarServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/calendar")
+		start := time.Now().UTC().Add(24 * time.Hour)
+		_, _ = fmt.Fprintf(w, "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:integration-event\r\nDTSTART:%s\r\nDTEND:%s\r\nSUMMARY:Board meeting\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n", start.Format("20060102T150405Z"), start.Add(time.Hour).Format("20060102T150405Z"))
+	}))
+	defer calendarServer.Close()
+	calendarConfiguration, _ := json.Marshal(CalendarConfig{Calendars: []CalendarFeed{{Name: "District", URL: calendarServer.URL}}, DisplayMode: "upcoming", MaxEvents: 10, Fields: CalendarFields{Title: true, StartTime: true}, Timezone: "UTC", RefreshIntervalSeconds: 300, StalenessLimitHours: 168, EmptyState: "No events"})
+	calendarAsset, err := service.CreateSource(ctx, owner.User.ID, SourceInput{Provider: "calendar", Name: "District calendar", Configuration: calendarConfiguration})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceWorker := NewSourceRefreshWorker(service, nil)
+	worked, err := sourceWorker.runOne(ctx)
+	if err != nil || !worked {
+		t.Fatalf("calendar refresh worked=%t err=%v", worked, err)
+	}
+	calendarDiagnostics, err := service.SourceDiagnostics(ctx, calendarAsset.ID)
+	if err != nil || calendarDiagnostics.ParseStatus != "success" || calendarDiagnostics.AvailableEventCount != 1 || calendarDiagnostics.LastSuccessfulAt == nil {
+		t.Fatalf("calendar diagnostics=%#v err=%v", calendarDiagnostics, err)
+	}
+	projected, err := service.PlayerSourceConfiguration(ctx, calendarAsset.ID, "calendar", calendarConfiguration)
+	if err != nil || strings.Contains(string(projected), calendarServer.URL) || !strings.Contains(string(projected), "Board meeting") {
+		t.Fatalf("calendar projection=%s err=%v", projected, err)
 	}
 	var compatible Variant
 	for _, variant := range ready.Variants {

@@ -21,6 +21,7 @@ type Config struct {
 	Media        MediaConfig
 	Scheduling   SchedulingConfig
 	Website      WebsiteConfig
+	Sources      SourcesConfig
 	Operations   OperationsConfig
 	Updates      UpdatesConfig
 }
@@ -47,6 +48,15 @@ type OperationsConfig struct {
 type WebsiteConfig struct {
 	AllowPrivateHTTP                                                                          bool
 	DefaultTimeoutSeconds, MaxTimeoutSeconds, MinRefreshSeconds, MaxAllowedHosts, MaxWebsites int
+}
+
+type SourcesConfig struct {
+	AllowPrivateNetworks  bool
+	TimeoutSeconds        int
+	MaximumResponseBytes  int64
+	MaximumRedirects      int
+	MinimumRefreshSeconds int
+	MaximumRefreshSeconds int
 }
 
 type SchedulingConfig struct {
@@ -132,6 +142,28 @@ func Load() (Config, error) {
 	}
 	if cfg.Website.DefaultTimeoutSeconds > cfg.Website.MaxTimeoutSeconds {
 		return Config{}, errors.New("TILECAST_WEBSITE_DEFAULT_TIMEOUT_SECONDS must not exceed TILECAST_WEBSITE_MAX_TIMEOUT_SECONDS")
+	}
+	cfg.Sources.AllowPrivateNetworks, err = strconv.ParseBool(get("TILECAST_SOURCE_ALLOW_PRIVATE_NETWORKS", "false"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parse TILECAST_SOURCE_ALLOW_PRIVATE_NETWORKS: %w", err)
+	}
+	if cfg.Sources.TimeoutSeconds, err = parsePositiveInt("TILECAST_SOURCE_FETCH_TIMEOUT_SECONDS", "15", 120); err != nil {
+		return Config{}, err
+	}
+	if cfg.Sources.MaximumResponseBytes, err = parsePositiveInt64("TILECAST_SOURCE_MAX_RESPONSE_BYTES", "2097152"); err != nil {
+		return Config{}, err
+	}
+	if cfg.Sources.MaximumRedirects, err = parsePositiveInt("TILECAST_SOURCE_MAX_REDIRECTS", "3", 10); err != nil {
+		return Config{}, err
+	}
+	if cfg.Sources.MinimumRefreshSeconds, err = parsePositiveInt("TILECAST_SOURCE_MIN_REFRESH_SECONDS", "300", 86400); err != nil {
+		return Config{}, err
+	}
+	if cfg.Sources.MaximumRefreshSeconds, err = parsePositiveInt("TILECAST_SOURCE_MAX_REFRESH_SECONDS", "86400", 604800); err != nil {
+		return Config{}, err
+	}
+	if cfg.Sources.MinimumRefreshSeconds > cfg.Sources.MaximumRefreshSeconds {
+		return Config{}, errors.New("TILECAST_SOURCE_MIN_REFRESH_SECONDS must not exceed TILECAST_SOURCE_MAX_REFRESH_SECONDS")
 	}
 	operationValues := []struct {
 		name, fallback string

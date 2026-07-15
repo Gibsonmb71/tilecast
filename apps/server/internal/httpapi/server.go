@@ -213,6 +213,8 @@ func New(deps Dependencies) http.Handler {
 			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/assets/websites", s.createWebsite)
 			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Patch("/assets/{id}/website", s.updateWebsite)
 			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/sources", s.createSource)
+			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.operationsRateLimit, s.requireCSRF).Post("/sources/calendar/preview", s.previewCalendarSource)
+			dashboard.Get("/sources/{id}/diagnostics", s.sourceDiagnostics)
 			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Patch("/sources/{id}", s.updateSource)
 			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/sources/{id}/duplicate", s.duplicateSource)
 			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Delete("/assets/{id}", s.deleteAsset)

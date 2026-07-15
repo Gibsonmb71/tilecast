@@ -62,10 +62,12 @@ func main() {
 		FFmpegPath: cfg.Media.FFmpegPath, FFprobePath: cfg.Media.FFprobePath,
 		Profile: media.CompatibilityProfile{MaxWidth: cfg.Media.VideoMaxWidth, MaxHeight: cfg.Media.VideoMaxHeight, MaxFrameRate: cfg.Media.VideoMaxFrameRate},
 		Workers: cfg.Media.Workers, KeepOriginals: cfg.Media.KeepOriginals,
-		Website: media.WebsitePolicy{AllowPrivateHTTP: cfg.Website.AllowPrivateHTTP, DefaultTimeoutSeconds: cfg.Website.DefaultTimeoutSeconds, MaxTimeoutSeconds: cfg.Website.MaxTimeoutSeconds, MinRefreshSeconds: cfg.Website.MinRefreshSeconds, MaxAllowedHosts: cfg.Website.MaxAllowedHosts, MaxWebsites: cfg.Website.MaxWebsites},
+		Website:     media.WebsitePolicy{AllowPrivateHTTP: cfg.Website.AllowPrivateHTTP, DefaultTimeoutSeconds: cfg.Website.DefaultTimeoutSeconds, MaxTimeoutSeconds: cfg.Website.MaxTimeoutSeconds, MinRefreshSeconds: cfg.Website.MinRefreshSeconds, MaxAllowedHosts: cfg.Website.MaxAllowedHosts, MaxWebsites: cfg.Website.MaxWebsites},
+		SourceFetch: media.SourceFetchPolicy{AllowPrivateNetworks: cfg.Sources.AllowPrivateNetworks, Timeout: time.Duration(cfg.Sources.TimeoutSeconds) * time.Second, MaximumBytes: cfg.Sources.MaximumResponseBytes, MaximumRedirects: cfg.Sources.MaximumRedirects, MinimumRefresh: time.Duration(cfg.Sources.MinimumRefreshSeconds) * time.Second, MaximumRefresh: time.Duration(cfg.Sources.MaximumRefreshSeconds) * time.Second},
 	})
 	playlistService := playlists.NewService(db, deviceService)
 	mediaService.SetAssetInvalidator(playlistService)
+	playlistService.SetSourceProjector(mediaService)
 	schedulingService := scheduling.NewService(db, deviceService, scheduling.Limits{MaxSchedules: cfg.Scheduling.MaxSchedules, MaxTargetsPerSchedule: cfg.Scheduling.MaxTargetsPerSchedule, MaxGroupsPerScreen: cfg.Scheduling.MaxGroupsPerScreen, PrefetchDays: cfg.Scheduling.PrefetchDays, ActivationGraceSeconds: cfg.Scheduling.ActivationGraceSeconds, ClockSkewWarningSeconds: cfg.Scheduling.ClockSkewWarningSeconds})
 	playlistService.SetScheduling(schedulingService)
 	settingsService := settings.NewService(db, deviceService, settings.HardLimits{MaxUploadBytes: cfg.Media.MaxUploadBytes, MaxEmergencyMinutes: cfg.Operations.MaxEmergencyDurationHours * 60, MaxWebsiteTimeout: cfg.Website.MaxTimeoutSeconds, MaxPrefetchDays: cfg.Scheduling.PrefetchDays, PrivateHTTPAllowed: cfg.Website.AllowPrivateHTTP})
@@ -77,6 +79,9 @@ func main() {
 	mediaWorkers := media.NewWorkerPool(mediaService, logger)
 	mediaWorkers.Start(ctx)
 	defer mediaWorkers.Stop()
+	sourceWorker := media.NewSourceRefreshWorker(mediaService, logger)
+	sourceWorker.Start(ctx)
+	defer sourceWorker.Stop()
 	if cfg.MDNSEnabled {
 		identity, identityErr := deviceService.Identity(ctx)
 		if identityErr != nil {

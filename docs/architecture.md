@@ -49,7 +49,7 @@ Playback is one fullscreen zone with sequential looping, image timers, Media3 vi
 
 Sync groups own synchronized fallback content and schedule targeting. A screen belongs to zero or one group; PostgreSQL enforces the invariant with a unique membership constraint. Assigning content through any member updates the group assignment, and a schedule aimed at a grouped screen is normalized to the group target. Ungrouped screens keep independent assignments and schedules. `internal/scheduling` remains the server authority for half-open interval evaluation and deterministic precedence: priority, later effective start, then stable ID. The Android `ScheduleEngine` implements the same transport semantics for offline evaluation.
 
-Player manifest v6 contains only schedules relevant to the authenticated screen, its fallback, required playlists and variants, server time, preparation policy, and optional sync-group playback epoch. Group members calculate the same current item and elapsed offset from the shared clock, including after reconnecting late. Recurring rules use calendar calculations rather than fixed-duration days. A repeated local time uses the earlier occurrence for a start and later occurrence for an end; a nonexistent local time advances to the first valid time after the DST gap.
+Player manifests contain only schedules relevant to the authenticated screen, its fallback, required playlists and variants, server time, preparation policy, and optional sync-group playback epoch. Group members calculate the same current item and elapsed offset from the shared clock, including after reconnecting late. Recurring rules use calendar calculations rather than fixed-duration days. A repeated local time uses the earlier occurrence for a start and later occurrence for an end; a nonexistent local time advances to the first valid time after the DST gap.
 
 ## Milestone 6 website playback
 
@@ -62,6 +62,8 @@ The server validates URLs without fetching them, avoiding SSRF and network-topol
 Sources are reusable dynamic Content items. The `sources` table stores a built-in provider name, a provider configuration version, and a validated JSON object; clients cannot invent provider names or arbitrary keys. Provider implementations own normalization, validation, manifest projection, Studio editing, and player rendering. Website is migrated into the Source model while retaining the existing website validation and WebView renderer. YouTube has a dedicated IFrame API renderer and does not pass through the generic Website renderer.
 
 Manifest v5 contains only Sources referenced by playlists relevant to the authenticated screen. Source items use stream delivery; fallback images continue through the verified media-variant preparation path. The provider boundary is internal—Tilecast does not load third-party provider code or expose a marketplace.
+
+Calendar Sources add a server-owned refresh boundary. `source_refresh_states` is both the restart-safe `SKIP LOCKED` claim queue and the bounded last-known-good cache; it stores only sanitized, expanded event occurrences and current diagnostics. Fetches use a dedicated no-proxy HTTP transport with DNS and dial-time private-address checks, timeouts, redirect and response limits, and content validation. Manifest v7 strips configured feed URLs and sends only the prepared data required by that screen. Android renders it natively in Compose and never opens structured calendar data in WebView.
 
 ## Milestone 7 operations
 

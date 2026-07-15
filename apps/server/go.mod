@@ -6,6 +6,7 @@ require (
 	github.com/avast/apkparser v0.0.0-20251022140151-7294e274bf65
 	github.com/avast/apkverifier v0.0.0-20260710162049-d0e1a791cd5a
 	github.com/coder/websocket v1.8.14
+	github.com/emersion/go-ical v0.0.0-20250609112844-439c63cef608
 	github.com/go-chi/chi/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/grandcat/zeroconf v1.0.0
@@ -25,6 +26,7 @@ require (
 	github.com/mfridman/interpolate v0.0.2 // indirect
 	github.com/miekg/dns v1.1.27 // indirect
 	github.com/sethvargo/go-retry v0.3.0 // indirect
+	github.com/teambition/rrule-go v1.8.2 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/net v0.56.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect

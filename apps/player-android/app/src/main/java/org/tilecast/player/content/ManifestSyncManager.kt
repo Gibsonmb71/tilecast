@@ -8,10 +8,13 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.decodeFromJsonElement
 import org.tilecast.player.data.CachedAsset
 import org.tilecast.player.data.PlayerDatabase
 import org.tilecast.player.data.StoredManifest
 import org.tilecast.player.network.ManifestAsset
+import org.tilecast.player.network.CalendarSourceConfig
 import org.tilecast.player.network.PlayerManifest
 import org.tilecast.player.network.TilecastApi
 import java.io.File
@@ -36,7 +39,7 @@ class ManifestSyncManager(
     suspend fun loadActive(): PreparedContent? {
         val stored = database.manifests().active() ?: return null
         val manifest = runCatching { api.decodeManifest(stored.rawJson) }.getOrNull() ?: return null
-        if (manifest.schemaVersion !in 1..6) return null
+        if (manifest.schemaVersion !in 1..7) return null
         val records = database.cachedAssets().all().associateBy { it.variantId }
         val local = records.filterValues { it.downloadStatus == "ready" && File(it.localPath).let { file -> file.exists() && file.length() == it.expectedFileSize } }.mapValues { it.value.localPath }
         val required = records.values.filter { it.requiredByActiveManifest }
@@ -145,7 +148,7 @@ class ManifestSyncManager(
     private fun finalFile(asset: ManifestAsset) = File(mediaDirectory(), "${asset.variantId}.${extension(asset.mimeType)}")
     private fun extension(mime: String) = when (mime) { "video/mp4" -> "mp4"; "image/png" -> "png"; "image/webp" -> "webp"; "image/gif" -> "gif"; else -> "jpg" }
 	private fun validateManifest(manifest: PlayerManifest, screenId: String) {
-		require(manifest.schemaVersion in 1..6 && manifest.mode == "single-zone" && manifest.screenId == screenId) { "Manifest validation failed" }
+		require(manifest.schemaVersion in 1..7 && manifest.mode == "single-zone" && manifest.screenId == screenId) { "Manifest validation failed" }
 		val assets = manifest.assets.associateBy { it.variantId }
 		val websites = manifest.websites.associateBy { it.assetId }
 		val sources = manifest.sources.associateBy { it.assetId }
@@ -155,7 +158,7 @@ class ManifestSyncManager(
 		playlists.flatMap { it.items }.forEach { item ->
 			when (item.assetType) {
 				"website" -> require(websites[item.assetId] != null && (item.durationMs ?: 0) > 0 && item.deliveryPolicy == "stream") { "Website item is invalid" }
-				"source" -> require(sources[item.assetId]?.provider in setOf("website", "youtube") && item.deliveryPolicy == "stream") { "Source item is invalid" }
+				"source" -> require(sources[item.assetId]?.provider in setOf("website", "youtube", "calendar") && item.deliveryPolicy == "stream") { "Source item is invalid" }
 				else -> require(item.variantId != null && assets[item.variantId]?.assetId == item.assetId) { "Manifest item references an unavailable variant" }
 			}
 			require(item.fitMode in listOf("contain", "cover", "stretch") && item.transition in listOf("none", "fade") && item.deliveryPolicy in listOf("download", "stream", "automatic") && item.volume in 0f..1f) { "Manifest item settings are invalid" }
@@ -165,6 +168,17 @@ class ManifestSyncManager(
 		manifest.websites.forEach { site ->
 			require(site.allowedHosts.isNotEmpty() && site.allowedHosts.size <= 25 && site.url.length <= 2048 && site.loadTimeoutSeconds in 1..120 && site.zoomPercent in 50..200) { "Website configuration is invalid" }
 			site.fallbackVariantId?.let { require(assets[it]?.assetId == site.fallbackImageAssetId) { "Website fallback is invalid" } }
+		}
+		manifest.sources.filter { it.provider == "calendar" }.forEach { source ->
+			val config = Json.decodeFromJsonElement<CalendarSourceConfig>(source.configuration)
+			require(config.displayMode in listOf("today", "upcoming", "this_week", "agenda") && config.maxEvents in 1..100 && config.emptyState.length <= 240 && config.data.events.size <= 2000) { "Calendar source configuration is invalid" }
+			java.time.ZoneId.of(config.timezone)
+			config.data.events.forEach { event ->
+				require(event.id.length <= 64 && event.title.length <= 300 && event.location.length <= 300 && event.descriptionExcerpt.length <= 500) { "Calendar event is invalid" }
+				val start = Instant.parse(event.start)
+				val end = Instant.parse(event.end)
+				require(!end.isBefore(start)) { "Calendar event range is invalid" }
+			}
 		}
 	}
 }

@@ -87,12 +87,14 @@ describe("content library", () => {
     expect(statusLabel("failed")).toBe("Failed");
   });
 
-  it("offers the built-in Website and YouTube Source providers", () => {
+  it("offers the built-in Website, YouTube, and Calendar Source providers", () => {
     const choose = vi.fn();
     render(<SourceProviderGallery onChoose={choose} onClose={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /YouTube/ }));
     expect(choose).toHaveBeenCalledWith("youtube");
     expect(screen.getByText(/Display a website/)).toBeInTheDocument();
     expect(screen.getByText(/without an API key/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Calendar/ }));
+    expect(choose).toHaveBeenCalledWith("calendar");
   });
 });

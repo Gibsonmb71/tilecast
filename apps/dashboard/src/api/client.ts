@@ -34,6 +34,9 @@ import type {
   UpdateDeployment,
   ReliabilityStatus,
   PowerAssistResults,
+  CalendarConfig,
+  CalendarPreview,
+  SourceRefreshDiagnostics,
 } from "./types";
 
 type DataResponse<T> = { data: T };
@@ -460,6 +463,14 @@ export const api = {
       method: "POST",
       headers: { "X-CSRF-Token": csrfToken },
     }),
+  previewCalendarSource: (configuration: CalendarConfig, csrfToken: string) =>
+    request<CalendarPreview>("/sources/calendar/preview", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ configuration }),
+    }),
+  sourceDiagnostics: (id: string) =>
+    request<SourceRefreshDiagnostics>(`/sources/${id}/diagnostics`),
   retryAsset: (id: string, csrfToken: string) =>
     request<Asset>(`/assets/${id}/retry`, {
       method: "POST",

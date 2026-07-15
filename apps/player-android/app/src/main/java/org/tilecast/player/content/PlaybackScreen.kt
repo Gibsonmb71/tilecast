@@ -47,6 +47,7 @@ import org.tilecast.player.network.ManifestWebsite
 import org.tilecast.player.network.ManifestPlaylist
 import org.tilecast.player.network.WebsiteSourceConfig
 import org.tilecast.player.network.YouTubeSourceConfig
+import org.tilecast.player.network.CalendarSourceConfig
 import org.tilecast.player.ui.theme.SignalBackground
 import org.tilecast.player.ui.theme.SignalText
 import java.io.File
@@ -106,6 +107,9 @@ internal fun effectiveDurationMs(item:ManifestItem,assets:List<ManifestAsset>):L
     } else if(source?.provider=="youtube"){
         val config=runCatching{Json.decodeFromJsonElement<YouTubeSourceConfig>(source.configuration)}.getOrElse{onFailure("YouTube source configuration is invalid");return}
         YouTubeSourceItem(item,source,config,session,onDone,onFailure,onSourceStatus,startOffsetMs)
+    } else if(source?.provider=="calendar"){
+        val config=runCatching{Json.decodeFromJsonElement<CalendarSourceConfig>(source.configuration)}.getOrElse{onFailure("Calendar source configuration is invalid");return}
+        CalendarSourceItem(item,source,config,onDone,onSourceStatus,startOffsetMs)
     } else if(website!=null) WebsiteItem(item,website,session,onDone,startOffsetMs,onWebsiteStatus)
     else if(asset?.mimeType?.startsWith("image/")==true)ImageItem(item,asset,session,startOffsetMs,onDone,onFailure,onProgress)
     else if(asset!=null)VideoItem(item,asset,session,startOffsetMs,onDone,onFailure,onProgress)
