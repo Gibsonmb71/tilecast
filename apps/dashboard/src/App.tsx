@@ -12,6 +12,8 @@ import {
   ScheduleEditorPage,
 } from "./pages/SchedulesPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { LayoutsPage } from "./pages/LayoutsPage";
+import { LayoutEditorPage } from "./pages/LayoutEditorPage";
 
 export function App() {
   return (
@@ -33,10 +35,8 @@ export function App() {
         <Route path="content" element={<ContentPage />} />
         <Route path="playlists" element={<PlaylistsPage />} />
         <Route path="playlists/:id" element={<PlaylistEditorPage />} />
-        <Route
-          path="layouts"
-          element={<PlannedPage feature="Layouts" milestone={5} />}
-        />
+        <Route path="layouts" element={<LayoutsPage />} />
+        <Route path="layouts/:id" element={<LayoutEditorPage />} />
         <Route path="schedules" element={<SchedulesPage />} />
         <Route path="schedules/new" element={<ScheduleEditorPage />} />
         <Route path="schedules/:id" element={<ScheduleEditorPage />} />

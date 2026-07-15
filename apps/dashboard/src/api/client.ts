@@ -43,6 +43,11 @@ import type {
   BulkOrganizeInput,
   StructuredSourceConfig,
   StructuredPreview,
+  Layout,
+  LayoutDocument,
+  LayoutList,
+  LayoutRevision,
+  LayoutRevisionList,
 } from "./types";
 
 type DataResponse<T> = { data: T };
@@ -88,6 +93,80 @@ async function apiFailure(response: Response): Promise<never> {
 type SessionResult = { user: User; csrfToken: string };
 
 export const api = {
+  layouts: (search = "") =>
+    request<LayoutList>(
+      `/layouts?${new URLSearchParams({ search, page: "1", pageSize: "100" })}`,
+    ),
+  layout: (id: string) => request<Layout>(`/layouts/${id}`),
+  createLayout: (
+    input: {
+      name: string;
+      description: string;
+      orientation: string;
+      canvasWidth: number;
+      canvasHeight: number;
+    },
+    csrfToken: string,
+  ) =>
+    request<Layout>("/layouts", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  updateLayout: (
+    id: string,
+    input: { name: string; description: string },
+    csrfToken: string,
+  ) =>
+    request<Layout>(`/layouts/${id}`, {
+      method: "PATCH",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  saveLayoutDraft: (
+    id: string,
+    expectedDraftRevision: number,
+    document: LayoutDocument,
+    csrfToken: string,
+  ) =>
+    request<Layout>(`/layouts/${id}/draft`, {
+      method: "PUT",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ expectedDraftRevision, document }),
+    }),
+  publishLayout: (
+    id: string,
+    expectedDraftRevision: number,
+    csrfToken: string,
+  ) =>
+    request<LayoutRevision>(`/layouts/${id}/publish`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ expectedDraftRevision }),
+    }),
+  duplicateLayout: (id: string, csrfToken: string) =>
+    request<Layout>(`/layouts/${id}/duplicate`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
+  deleteLayout: (id: string, csrfToken: string) =>
+    request<void>(`/layouts/${id}`, {
+      method: "DELETE",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
+  layoutRevisions: (id: string) =>
+    request<LayoutRevisionList>(`/layouts/${id}/revisions?page=1&pageSize=100`),
+  restoreLayoutRevision: (
+    id: string,
+    revisionId: string,
+    expectedDraftRevision: number,
+    csrfToken: string,
+  ) =>
+    request<Layout>(`/layouts/${id}/revisions/${revisionId}/restore`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ expectedDraftRevision }),
+    }),
   playerReleases: () => request<PlayerReleaseList>("/player-releases"),
   checkPlayerReleases: (csrfToken: string) =>
     request<{ checked: boolean }>("/player-releases/check", {

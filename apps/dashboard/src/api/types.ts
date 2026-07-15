@@ -100,6 +100,129 @@ export type PlaylistList = {
   page: number;
   pageSize: number;
 };
+
+export type LayoutOrientation = "landscape" | "portrait" | "custom";
+export type LayoutPlacementType =
+  "app" | "asset" | "playlistZone" | "primitive";
+export type LayoutBinding = {
+  sourceId: string;
+  field: string;
+  prefix?: string;
+  suffix?: string;
+  fallbackText?: string;
+  hideWhenEmpty?: boolean;
+  format?:
+    "text" | "date-short" | "date-long" | "number" | "integer" | "currency";
+};
+export type LayoutPrimitive = {
+  kind: "text" | "rectangle" | "circle" | "line" | "group";
+  text?: string;
+  fontFamily?: "Inter" | "Roboto" | "Source Sans 3" | "Noto Sans";
+  fontSize?: number;
+  fontWeight?: 400 | 500 | 600 | 700 | 800;
+  textAlign?: "left" | "center" | "right";
+  verticalAlign?: "top" | "center" | "bottom";
+  color?: string;
+  backgroundColor?: string;
+  lineHeight?: number;
+  letterSpacing?: number;
+  padding?: number;
+  borderWidth?: number;
+  borderColor?: string;
+  cornerRadius?: number;
+  maximumLines?: number;
+  overflow?: "clip" | "ellipsis";
+  autoFit?: boolean;
+  minimumFontSize?: number;
+  fillColor?: string;
+  strokeColor?: string;
+  strokeWidth?: number;
+  binding?: LayoutBinding;
+};
+export type LayoutPlayback = {
+  fit?: "contain" | "cover" | "stretch";
+  muted?: boolean;
+  loop?: boolean;
+  fallback?: "hide" | "background" | "previous";
+  cornerRadius?: number;
+};
+export type LayoutPlacement = {
+  id: string;
+  type: LayoutPlacementType;
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  layer: number;
+  opacity: number;
+  visible: boolean;
+  locked: boolean;
+  groupId?: string;
+  appId?: string;
+  assetId?: string;
+  playlistId?: string;
+  overrides?: Record<string, unknown>;
+  primitive?: LayoutPrimitive;
+  playback?: LayoutPlayback;
+};
+export type LayoutDocument = {
+  schemaVersion: 1;
+  canvas: {
+    width: number;
+    height: number;
+    orientation: LayoutOrientation;
+    backgroundColor: string;
+    backgroundAssetId?: string;
+    safeAreaPercent: number;
+  };
+  placements: LayoutPlacement[];
+};
+export type LayoutDependency = {
+  type: "app" | "asset" | "playlist";
+  id: string;
+};
+export type Layout = {
+  id: string;
+  name: string;
+  description: string;
+  orientation: LayoutOrientation;
+  canvasWidth: number;
+  canvasHeight: number;
+  draft: LayoutDocument;
+  draftRevision: number;
+  publishedRevisionId?: string;
+  publishedRevision?: number;
+  publishedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  dependencies: LayoutDependency[];
+};
+export type LayoutSummary = Omit<
+  Layout,
+  "draft" | "dependencies" | "publishedRevisionId"
+>;
+export type LayoutList = {
+  items: LayoutSummary[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+export type LayoutRevision = {
+  id: string;
+  layoutId: string;
+  revision: number;
+  document: LayoutDocument;
+  documentSha256: string;
+  publishedBy?: string;
+  publishedAt: string;
+};
+export type LayoutRevisionList = {
+  items: LayoutRevision[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
 export type PlaylistItemInput = {
   assetId: string;
   durationMs?: number;
