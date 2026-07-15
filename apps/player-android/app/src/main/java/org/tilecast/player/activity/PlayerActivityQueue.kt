@@ -6,14 +6,15 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import org.tilecast.player.data.ConfigurationRepository
 import org.tilecast.player.data.PlayerDatabase
@@ -234,7 +235,7 @@ class PlaybackActivityReporter(
             trigger = trigger,
             scheduleId = scheduleId,
             emergencyId = emergencyId,
-            metadata = buildJsonObject { put("presentationName", presentationId) },
+            metadata = buildJsonObject { put("presentationName", JsonPrimitive(presentationId)) },
             priority = 8,
         )
     }
@@ -294,7 +295,7 @@ class PlaybackActivityReporter(
             sourceCachedAt = sourceCachedAt,
             sourceRevision = sourceRevision,
             snapshotHash = snapshotHash,
-            metadata = buildJsonObject { put("parentActivitySessionId", rootSession) },
+            metadata = buildJsonObject { put("parentActivitySessionId", JsonPrimitive(rootSession)) },
             priority = 6,
         )
         return ChildSession(id, started, contentType, contentId, playlistItemId, layoutPlacementId)

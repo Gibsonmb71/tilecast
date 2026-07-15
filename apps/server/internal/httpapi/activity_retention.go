@@ -1,0 +1,74 @@
+package httpapi
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"time"
+
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/google/uuid"
+)
+
+func (s *server) ingestPlayerActivityWithCleanup(w http.ResponseWriter, r *http.Request) {
+	s.ingestPlayerActivity(w, r)
+	go s.cleanupActivityBounded(activityContextWithoutCancel(r.Context()), 500)
+}
+
+type activityRetentionSettings struct {
+	RawEventDays           int       `json:"rawEventDays"`
+	PlaybackSessionDays    int       `json:"playbackSessionDays"`
+	ScreenStateDays        int       `json:"screenStateDays"`
+	AuditLogDays           int       `json:"auditLogDays"`
+	DiagnosticMetadataDays int       `json:"diagnosticMetadataDays"`
+	UpdatedAt              time.Time `json:"updatedAt"`
+}
+
+func (s *server) getActivityRetention(w http.ResponseWriter, r *http.Request) {
+	var value activityRetentionSettings
+	if err := s.db.QueryRow(r.Context(), `SELECT raw_event_days,playback_session_days,screen_state_days,audit_log_days,diagnostic_metadata_days,updated_at FROM activity_retention_settings WHERE singleton=TRUE`).Scan(&value.RawEventDays, &value.PlaybackSessionDays, &value.ScreenStateDays, &value.AuditLogDays, &value.DiagnosticMetadataDays, &value.UpdatedAt); err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": value})
+}
+
+func (s *server) updateActivityRetention(w http.ResponseWriter, r *http.Request) {
+	var input activityRetentionSettings
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, "activity_retention_invalid", err.Error())
+		return
+	}
+	if input.RawEventDays < 7 || input.RawEventDays > 365 || input.PlaybackSessionDays < 30 || input.PlaybackSessionDays > 2555 || input.ScreenStateDays < 30 || input.ScreenStateDays > 2555 || input.AuditLogDays < 90 || input.AuditLogDays > 3650 || input.DiagnosticMetadataDays < 7 || input.DiagnosticMetadataDays > 180 {
+		writeError(w, http.StatusUnprocessableEntity, "activity_retention_out_of_bounds", "Activity retention values exceed deployment hard limits.")
+		return
+	}
+	user := activitySession(r).User
+	if _, err := s.db.Exec(r.Context(), `UPDATE activity_retention_settings SET raw_event_days=$1,playback_session_days=$2,screen_state_days=$3,audit_log_days=$4,diagnostic_metadata_days=$5,updated_by=$6,updated_at=now() WHERE singleton=TRUE`, input.RawEventDays, input.PlaybackSessionDays, input.ScreenStateDays, input.AuditLogDays, input.DiagnosticMetadataDays, user.ID); err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	metadata := map[string]any{"rawEventDays": input.RawEventDays, "playbackSessionDays": input.PlaybackSessionDays, "screenStateDays": input.ScreenStateDays, "auditLogDays": input.AuditLogDays, "diagnosticMetadataDays": input.DiagnosticMetadataDays}
+	encoded, _ := json.Marshal(metadata)
+	_, _ = s.db.Exec(r.Context(), `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,resource_name,result,request_id,summary,metadata) VALUES($1,$2,'settings.activity_retention_changed','settings','activity-retention','Activity retention','success',$3,'Activity retention changed',$4::jsonb)`, uuid.New(), user.ID, middleware.GetReqID(r.Context()), string(encoded))
+	go s.cleanupActivityBounded(activityContextWithoutCancel(r.Context()), 500)
+	s.getActivityRetention(w, r)
+}
+
+func (s *server) cleanupActivityBounded(ctx context.Context, batch int) {
+	if batch < 1 || batch > 5000 {
+		batch = 500
+	}
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	var rawDays, sessionDays, stateDays, auditDays, diagnosticDays int
+	if s.db.QueryRow(ctx, `SELECT raw_event_days,playback_session_days,screen_state_days,audit_log_days,diagnostic_metadata_days FROM activity_retention_settings WHERE singleton=TRUE`).Scan(&rawDays, &sessionDays, &stateDays, &auditDays, &diagnosticDays) != nil {
+		return
+	}
+	_, _ = s.db.Exec(ctx, `WITH expired AS (SELECT id FROM playback_sessions WHERE started_at<now()-make_interval(days=>$1) ORDER BY started_at LIMIT $2) DELETE FROM playback_sessions p USING expired e WHERE p.id=e.id`, sessionDays, batch)
+	_, _ = s.db.Exec(ctx, `WITH expired AS (SELECT id FROM screen_state_intervals WHERE started_at<now()-make_interval(days=>$1) ORDER BY started_at LIMIT $2) DELETE FROM screen_state_intervals s USING expired e WHERE s.id=e.id`, stateDays, batch)
+	_, _ = s.db.Exec(ctx, `WITH expired AS (SELECT id FROM player_activity_events WHERE occurred_at<now()-make_interval(days=>$1) ORDER BY occurred_at LIMIT $2) DELETE FROM player_activity_events p USING expired e WHERE p.id=e.id`, rawDays, batch)
+	_, _ = s.db.Exec(ctx, `WITH expired AS (SELECT id FROM audit_logs WHERE created_at<now()-make_interval(days=>$1) ORDER BY created_at LIMIT $2) DELETE FROM audit_logs a USING expired e WHERE a.id=e.id`, auditDays, batch)
+	_, _ = s.db.Exec(ctx, `WITH targets AS (SELECT id FROM player_activity_events WHERE received_at<now()-make_interval(days=>$1) AND metadata<>'{}'::jsonb ORDER BY received_at LIMIT $2) UPDATE player_activity_events e SET metadata='{}'::jsonb,failure_message=NULL FROM targets t WHERE e.id=t.id`, diagnosticDays, batch)
+	_, _ = s.db.Exec(ctx, `WITH targets AS (SELECT id FROM audit_logs WHERE created_at<now()-make_interval(days=>$1) AND metadata_sensitive=TRUE AND metadata<>'{}'::jsonb ORDER BY created_at LIMIT $2) UPDATE audit_logs a SET metadata='{}'::jsonb FROM targets t WHERE a.id=t.id`, diagnosticDays, batch)
+}

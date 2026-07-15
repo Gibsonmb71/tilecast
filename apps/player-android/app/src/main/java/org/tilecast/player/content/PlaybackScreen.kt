@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -41,16 +42,12 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.tilecast.player.activity.PlaybackActivityReporter
 import org.tilecast.player.network.CalendarSourceConfig
-import org.tilecast.player.network.ClockAppConfig
-import org.tilecast.player.network.DateAppConfig
 import org.tilecast.player.network.ManifestAsset
 import org.tilecast.player.network.ManifestItem
 import org.tilecast.player.network.ManifestPlaylist
 import org.tilecast.player.network.ManifestSource
 import org.tilecast.player.network.ManifestWebsite
-import org.tilecast.player.network.QRCodeAppConfig
 import org.tilecast.player.network.StructuredSourceConfig
-import org.tilecast.player.network.TickerAppConfig
 import org.tilecast.player.network.WebsiteSourceConfig
 import org.tilecast.player.network.YouTubeSourceConfig
 import org.tilecast.player.ui.theme.SignalBackground
@@ -131,3 +128,48 @@ internal fun effectiveDurationMs(item:ManifestItem,assets:List<ManifestAsset>):L
 }
 
 @Composable private fun EmptyPlayback(message: String) { Box(Modifier.fillMaxSize().background(SignalBackground), contentAlignment = Alignment.Center) { androidx.compose.material3.Text(message, color = SignalText) } }
+
+@Composable private fun ImageItem(item: ManifestItem, asset: ManifestAsset, session: PlaybackSession,startOffsetMs:Long, onDone: () -> Unit, onFailure: (String) -> Unit, onProgress: () -> Unit) {
+	val variantId=item.variantId?:return
+    var bitmap by remember(item.id) { mutableStateOf(session.content.localFiles[variantId]?.let { BitmapFactory.decodeFile(it) }) }
+    LaunchedEffect(item.id) {
+		if (bitmap == null) bitmap = runCatching { withContext(Dispatchers.IO) {
+            session.content.localFiles[variantId]?.let { BitmapFactory.decodeFile(it) } ?: OkHttpClient().newCall(Request.Builder().url(session.serverUrl + asset.downloadPath).header("Authorization", "Bearer ${session.credential}").build()).execute().use { response -> if (!response.isSuccessful) error("Image stream unavailable"); BitmapFactory.decodeStream(response.body?.byteStream()) }
+        } }.getOrElse { onFailure("Image could not be displayed"); return@LaunchedEffect }
+        onProgress(); delay(((item.durationMs ?: 10_000)-startOffsetMs).coerceAtLeast(1)); onDone()
+    }
+    bitmap?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize().background(Color.Black), contentScale = scale(item.fitMode)) }
+}
+
+@OptIn(UnstableApi::class)
+@Composable private fun VideoItem(item: ManifestItem, asset: ManifestAsset, session: PlaybackSession,startOffsetMs:Long, onDone: () -> Unit, onFailure: (String) -> Unit, onProgress: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val player = remember(item.id) {
+        val http = OkHttpDataSource.Factory(OkHttpClient()).setDefaultRequestProperties(mapOf("Authorization" to "Bearer ${session.credential}"))
+        val source = DefaultMediaSourceFactory(DefaultDataSource.Factory(context, http))
+        ExoPlayer.Builder(context).setMediaSourceFactory(source).build().apply {
+            volume = if (item.audioEnabled) item.volume else 0f
+            setMediaItem(MediaItem.fromUri(item.variantId?.let{session.content.localFiles[it]}?.let { Uri.fromFile(File(it)) } ?: Uri.parse(session.serverUrl + asset.downloadPath)))
+            prepare(); seekTo((item.videoStartOffsetMs ?: 0)+startOffsetMs); playWhenReady = true
+        }
+    }
+    DisposableEffect(player) {
+        val listener = object : Player.Listener {
+            override fun onPlaybackStateChanged(state: Int) { if (state == Player.STATE_ENDED) onDone() }
+            override fun onPlayerError(error: PlaybackException) { onFailure("Video playback failed") }
+        }; player.addListener(listener); onDispose { player.removeListener(listener); player.release() }
+    }
+    LaunchedEffect(player) {
+        var previousPosition = -1L
+        while (true) {
+            delay(5_000)
+            val position = player.currentPosition
+            if (player.isPlaying && position > previousPosition) onProgress()
+            previousPosition = position
+        }
+    }
+    item.videoEndOffsetMs?.let { end -> LaunchedEffect(player, end) { while (true) { delay(250); if (player.currentPosition >= end) { player.pause(); onDone(); break } } } }
+    AndroidView(factory = { PlayerView(it).apply { useController=false; this.player=player; resizeMode=resize(item.fitMode) } }, modifier=Modifier.fillMaxSize(), update={it.resizeMode=resize(item.fitMode)})
+}
+private fun scale(mode:String)=when(mode){"cover"->ContentScale.Crop;"stretch"->ContentScale.FillBounds;else->ContentScale.Fit}
+@UnstableApi private fun resize(mode:String)=when(mode){"cover"->AspectRatioFrameLayout.RESIZE_MODE_ZOOM;"stretch"->AspectRatioFrameLayout.RESIZE_MODE_FILL;else->AspectRatioFrameLayout.RESIZE_MODE_FIT}

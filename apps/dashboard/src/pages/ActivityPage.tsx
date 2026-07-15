@@ -181,59 +181,171 @@ export function ActivityPage() {
           )}
           {tab === "proof" && (
             <>
-              <input value={media} onChange={(e) => setMedia(e.target.value)} placeholder="Media ID" aria-label="Filter by Media" />
-              <input value={widget} onChange={(e) => setWidget(e.target.value)} placeholder="Widget ID" aria-label="Filter by Widget" />
-              <input value={playlist} onChange={(e) => setPlaylist(e.target.value)} placeholder="Playlist ID" aria-label="Filter by Playlist" />
-              <input value={layout} onChange={(e) => setLayout(e.target.value)} placeholder="Layout ID" aria-label="Filter by Layout" />
-              <input value={schedule} onChange={(e) => setSchedule(e.target.value)} placeholder="Schedule ID" aria-label="Filter by Schedule" />
-              <input value={emergency} onChange={(e) => setEmergency(e.target.value)} placeholder="Emergency ID" aria-label="Filter by Emergency" />
+              <input
+                value={media}
+                onChange={(e) => setMedia(e.target.value)}
+                placeholder="Media ID"
+                aria-label="Filter by Media"
+              />
+              <input
+                value={widget}
+                onChange={(e) => setWidget(e.target.value)}
+                placeholder="Widget ID"
+                aria-label="Filter by Widget"
+              />
+              <input
+                value={playlist}
+                onChange={(e) => setPlaylist(e.target.value)}
+                placeholder="Playlist ID"
+                aria-label="Filter by Playlist"
+              />
+              <input
+                value={layout}
+                onChange={(e) => setLayout(e.target.value)}
+                placeholder="Layout ID"
+                aria-label="Filter by Layout"
+              />
+              <input
+                value={schedule}
+                onChange={(e) => setSchedule(e.target.value)}
+                placeholder="Schedule ID"
+                aria-label="Filter by Schedule"
+              />
+              <input
+                value={emergency}
+                onChange={(e) => setEmergency(e.target.value)}
+                placeholder="Emergency ID"
+                aria-label="Filter by Emergency"
+              />
             </>
           )}
           {tab === "events" && (
             <>
-              <select value={category} onChange={(e) => setCategory(e.target.value)}>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+              >
                 <option value="">All categories</option>
-                {["connectivity", "manifest", "playback", "scheduling", "commands", "reliability", "updates", "emergencies"].map((value) => <option key={value}>{value}</option>)}
+                {[
+                  "connectivity",
+                  "manifest",
+                  "playback",
+                  "scheduling",
+                  "commands",
+                  "reliability",
+                  "updates",
+                  "emergencies",
+                ].map((value) => (
+                  <option key={value}>{value}</option>
+                ))}
               </select>
-              <select value={severity} onChange={(e) => setSeverity(e.target.value)}>
+              <select
+                value={severity}
+                onChange={(e) => setSeverity(e.target.value)}
+              >
                 <option value="">All severities</option>
-                {["info", "warning", "error", "critical"].map((value) => <option key={value}>{value}</option>)}
+                {["info", "warning", "error", "critical"].map((value) => (
+                  <option key={value}>{value}</option>
+                ))}
               </select>
             </>
           )}
           {tab === "audit" && (
             <>
               {users.data && (
-                <select value={actor} onChange={(e) => setActor(e.target.value)} aria-label="Filter by actor">
+                <select
+                  value={actor}
+                  onChange={(e) => setActor(e.target.value)}
+                  aria-label="Filter by actor"
+                >
                   <option value="">All actors</option>
-                  {users.data.items.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}
+                  {users.data.items.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.name}
+                    </option>
+                  ))}
                 </select>
               )}
-              <input value={action} onChange={(e) => setAction(e.target.value)} placeholder="Action" aria-label="Filter by action" />
-              <input value={resourceType} onChange={(e) => setResourceType(e.target.value)} placeholder="Resource type" aria-label="Filter by resource type" />
+              <input
+                value={action}
+                onChange={(e) => setAction(e.target.value)}
+                placeholder="Action"
+                aria-label="Filter by action"
+              />
+              <input
+                value={resourceType}
+                onChange={(e) => setResourceType(e.target.value)}
+                placeholder="Resource type"
+                aria-label="Filter by resource type"
+              />
             </>
           )}
           <select value={result} onChange={(e) => setResult(e.target.value)}>
             <option value="">All results</option>
-            {(tab === "audit" ? ["success", "failure", "denied", "partial"] : ["playing", "completed", "partial", "skipped", "failed", "unknown", "recovered"]).map((value) => <option key={value}>{value}</option>)}
+            {(tab === "audit"
+              ? ["success", "failure", "denied", "partial"]
+              : [
+                  "playing",
+                  "completed",
+                  "partial",
+                  "skipped",
+                  "failed",
+                  "unknown",
+                  "recovered",
+                ]
+            ).map((value) => (
+              <option key={value}>{value}</option>
+            ))}
           </select>
         </div>
       )}
 
-      {tab === "overview" && <OverviewTab range={range} canManageRetention={["owner", "administrator"].includes(auth.status?.user?.role ?? "")} csrfToken={auth.status?.csrfToken ?? ""} />}
-      {tab === "proof" && <ProofTab range={range} filters={proofFilters} canExport={canExport} dimension={summaryDimension} setDimension={setSummaryDimension} />}
-      {tab === "events" && <EventsTab range={range} filters={{ ...filters, category, severity }} />}
-      {tab === "audit" && <AuditTab range={range} filters={{ search, result, action, resourceType, actor }} canExport={canExport} />}
+      {tab === "overview" && (
+        <OverviewTab
+          range={range}
+          canManageRetention={["owner", "administrator"].includes(
+            auth.status?.user?.role ?? "",
+          )}
+          csrfToken={auth.status?.csrfToken ?? ""}
+        />
+      )}
+      {tab === "proof" && (
+        <ProofTab
+          range={range}
+          filters={proofFilters}
+          canExport={canExport}
+          dimension={summaryDimension}
+          setDimension={setSummaryDimension}
+        />
+      )}
+      {tab === "events" && (
+        <EventsTab range={range} filters={{ ...filters, category, severity }} />
+      )}
+      {tab === "audit" && (
+        <AuditTab
+          range={range}
+          filters={{ search, result, action, resourceType, actor }}
+          canExport={canExport}
+        />
+      )}
     </section>
   );
 }
 
 function normalizeTab(value: string | null): ActivityTab {
-  return value === "proof" || value === "events" || value === "audit" ? value : "overview";
+  return value === "proof" || value === "events" || value === "audit"
+    ? value
+    : "overview";
 }
 
 function dateRange(preset: string, customFrom: string, customTo: string) {
   const to = preset === "custom" && customTo ? new Date(customTo) : new Date();
-  const from = preset === "custom" && customFrom ? new Date(customFrom) : new Date(to.getTime() - (preset === "30d" ? 30 : preset === "7d" ? 7 : 1) * 86_400_000);
+  const from =
+    preset === "custom" && customFrom
+      ? new Date(customFrom)
+      : new Date(
+          to.getTime() -
+            (preset === "30d" ? 30 : preset === "7d" ? 7 : 1) * 86_400_000,
+        );
   return { from: from.toISOString(), to: to.toISOString() };
 }

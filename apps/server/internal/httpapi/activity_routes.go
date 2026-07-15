@@ -16,7 +16,7 @@ func (s *server) activityRoutes(next http.Handler) http.Handler {
 			return
 		}
 		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/player/activity-events" {
-			s.requireDevice(http.HandlerFunc(s.ingestPlayerActivity)).ServeHTTP(w, r)
+			s.requireDevice(http.HandlerFunc(s.ingestPlayerActivityWithCleanup)).ServeHTTP(w, r)
 			return
 		}
 		if !strings.HasPrefix(r.URL.Path, "/api/v1/activity/") && r.URL.Path != "/api/v1/activity" {
