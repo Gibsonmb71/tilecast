@@ -1,3 +1,4 @@
+import { Select } from "../components/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlignCenter,
@@ -51,6 +52,7 @@ import type {
   LayoutPlacement,
   LayoutPrimitive,
   Playlist,
+  PlaylistItem,
   QRCodeWidgetConfig,
   StructuredPreview,
   StructuredRecord,
@@ -188,6 +190,10 @@ export function LayoutEditorPage() {
     Record<string, Record<string, string>>
   >({});
   const [liveData, setLiveData] = useState<LivePreviewData>({});
+  const [previewAssets, setPreviewAssets] = useState<Asset[]>([]);
+  const [previewPlaylists, setPreviewPlaylists] = useState<Playlist[]>([]);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState("");
   const [previewScale, setPreviewScale] = useState(0);
   const previewFrameRef = useRef<HTMLDivElement>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -411,11 +417,17 @@ export function LayoutEditorPage() {
   // Resolve the same date-selected records/events the Player receives so previews
   // show real values without copying data into the Layout document. Collects Data
   // Sources referenced by both text bindings and native widgets.
-  const loadStructuredPreview = async () => {
+  const loadStructuredPreview = async (
+    date = previewDate,
+    resolvedAssets: Asset[] = [],
+  ) => {
     const current = documentRef.current;
     if (!current) return;
     const assetsById = new Map(
-      (contentQuery.data?.items ?? []).map((asset) => [asset.id, asset]),
+      [...(contentQuery.data?.items ?? []), ...resolvedAssets].map((asset) => [
+        asset.id,
+        asset,
+      ]),
     );
     const dataSourceIds = new Set<string>();
     current.placements.forEach((placement) => {
@@ -426,15 +438,16 @@ export function LayoutEditorPage() {
         : undefined;
       if (widgetSourceId) dataSourceIds.add(widgetSourceId);
     });
+    resolvedAssets.forEach((asset) => {
+      const dataSourceID = widgetDataSourceId(asset);
+      if (dataSourceID) dataSourceIds.add(dataSourceID);
+    });
     try {
       const resolved = await Promise.all(
         Array.from(dataSourceIds).map(async (dataSourceId) => {
           // Preview the saved Source by id so uploaded CSV content (stripped from
           // the detail response) is resolved server-side, exactly as the Player sees it.
-          const preview = await api.previewSavedDataSource(
-            dataSourceId,
-            previewDate,
-          );
+          const preview = await api.previewSavedDataSource(dataSourceId, date);
           if ("events" in preview.configuration.data) {
             const calendar = preview as CalendarPreview;
             return [
@@ -478,6 +491,65 @@ export function LayoutEditorPage() {
       setLiveData({});
       setPreviewValues({});
     }
+  };
+  const loadLayoutPreview = async (date = previewDate) => {
+    const current = documentRef.current;
+    if (!current) return;
+    setPreviewLoading(true);
+    setPreviewError("");
+    const playlistIDs = Array.from(
+      new Set(
+        current.placements
+          .map((placement) => placement.playlistId)
+          .filter((value): value is string => Boolean(value)),
+      ),
+    );
+    const playlistResults = await Promise.allSettled(
+      playlistIDs.map((playlistID) => api.playlist(playlistID)),
+    );
+    const playlists = playlistResults.flatMap((result) =>
+      result.status === "fulfilled" ? [result.value] : [],
+    );
+    setPreviewPlaylists(playlists);
+
+    const assetIDs = new Set<string>();
+    if (current.canvas.backgroundAssetId)
+      assetIDs.add(current.canvas.backgroundAssetId);
+    current.placements.forEach((placement) => {
+      if (placement.assetId) assetIDs.add(placement.assetId);
+      if (placement.widgetId) assetIDs.add(placement.widgetId);
+    });
+    playlists.forEach((playlist) =>
+      playlist.items.forEach((item) => assetIDs.add(item.assetId)),
+    );
+    const knownAssets = new Map(
+      (contentQuery.data?.items ?? []).map((asset) => [asset.id, asset]),
+    );
+    const missingIDs = Array.from(assetIDs).filter(
+      (assetID) => !knownAssets.has(assetID),
+    );
+    const assetResults = await Promise.allSettled(
+      missingIDs.map((assetID) => api.asset(assetID)),
+    );
+    const assets = [
+      ...Array.from(assetIDs).flatMap((assetID) => {
+        const asset = knownAssets.get(assetID);
+        return asset ? [asset] : [];
+      }),
+      ...assetResults.flatMap((result) =>
+        result.status === "fulfilled" ? [result.value] : [],
+      ),
+    ];
+    setPreviewAssets(assets);
+    await loadStructuredPreview(date, assets);
+    const failures =
+      playlistResults.filter((result) => result.status === "rejected").length +
+      assetResults.filter((result) => result.status === "rejected").length;
+    if (failures)
+      setPreviewError(
+        `${failures} referenced item${failures === 1 ? " is" : "s are"} unavailable.`,
+      );
+    setPreviewLoading(false);
   };
   const duplicateSelection = useCallback(() => {
     const current = documentRef.current;
@@ -740,6 +812,17 @@ export function LayoutEditorPage() {
   const playlistByID = new Map(
     playlistsQuery.data?.items.map((playlist) => [playlist.id, playlist]),
   );
+  const previewContentByID = new Map(
+    [...(contentQuery.data?.items ?? []), ...previewAssets].map((asset) => [
+      asset.id,
+      asset,
+    ]),
+  );
+  const previewPlaylistByID = new Map(
+    [...(playlistsQuery.data?.items ?? []), ...previewPlaylists].map(
+      (playlist) => [playlist.id, playlist],
+    ),
+  );
   const dataSources = dataSourcesQuery.data?.items ?? [];
   return (
     <div className="layout-editor">
@@ -765,7 +848,7 @@ export function LayoutEditorPage() {
           className="button button--compact button--secondary"
           onClick={() => {
             setPreview(true);
-            void loadStructuredPreview();
+            void loadLayoutPreview();
           }}
         >
           <Scan size={16} />
@@ -1094,10 +1177,19 @@ export function LayoutEditorPage() {
               aria-label="Preview date"
               value={previewDate}
               onChange={(event) => {
-                setPreviewDate(event.target.value);
-                void loadStructuredPreview();
+                const date = event.target.value;
+                setPreviewDate(date);
+                void loadLayoutPreview(date);
               }}
             />
+            {previewLoading && (
+              <span className="layout-preview-status">Loading content…</span>
+            )}
+            {!previewLoading && previewError && (
+              <span className="layout-preview-status layout-preview-status--warning">
+                {previewError}
+              </span>
+            )}
             <button
               className="button button--secondary"
               onClick={() => setPreview(false)}
@@ -1113,6 +1205,15 @@ export function LayoutEditorPage() {
               backgroundColor: document.canvas.backgroundColor,
             }}
           >
+            {document.canvas.backgroundAssetId &&
+              previewContentByID.get(document.canvas.backgroundAssetId)
+                ?.type === "image" && (
+                <img
+                  className="layout-preview-background"
+                  src={api.assetPreviewUrl(document.canvas.backgroundAssetId)}
+                  alt=""
+                />
+              )}
             {previewScale > 0 &&
               [...document.placements]
                 .sort((a, b) => a.layer - b.layer)
@@ -1123,19 +1224,21 @@ export function LayoutEditorPage() {
                     canvas={document.canvas}
                     content={
                       item.widgetId
-                        ? contentByID.get(item.widgetId)
+                        ? previewContentByID.get(item.widgetId)
                         : item.assetId
-                          ? contentByID.get(item.assetId)
+                          ? previewContentByID.get(item.assetId)
                           : undefined
                     }
                     playlist={
                       item.playlistId
-                        ? playlistByID.get(item.playlistId)
+                        ? previewPlaylistByID.get(item.playlistId)
                         : undefined
                     }
+                    assetsById={previewContentByID}
                     previewValues={previewValues}
                     live={liveData}
                     previewScale={previewScale}
+                    playbackPreview
                   />
                 ))}
           </div>
@@ -1199,9 +1302,11 @@ function PlacementView({
   canvas,
   content,
   playlist,
+  assetsById,
   previewValues,
   live,
   previewScale = 0,
+  playbackPreview = false,
   selected = false,
   onPointerDown,
   onResize,
@@ -1210,9 +1315,11 @@ function PlacementView({
   canvas: LayoutDocument["canvas"];
   content?: Asset;
   playlist?: Playlist;
+  assetsById?: Map<string, Asset>;
   previewValues?: Record<string, Record<string, string>>;
   live?: LivePreviewData;
   previewScale?: number;
+  playbackPreview?: boolean;
   selected?: boolean;
   onPointerDown?: (event: ReactPointerEvent) => void;
   onResize?: (event: ReactPointerEvent) => void;
@@ -1234,26 +1341,33 @@ function PlacementView({
       onPointerDown={onPointerDown}
     >
       {item.type === "playlistZone" ? (
-        <div className="layout-playlist-zone">
-          <ListVideo size={22} />
-          <strong>{playlist?.name ?? item.name}</strong>
-          <span>{playlist?.itemCount ?? 0} items · independent loop</span>
-        </div>
+        playbackPreview && playlist?.items.length ? (
+          <PlaylistZonePreview
+            placement={item}
+            playlist={playlist}
+            assetsById={assetsById ?? new Map()}
+            live={live ?? {}}
+            scale={previewScale}
+          />
+        ) : (
+          <div className="layout-playlist-zone">
+            <ListVideo size={22} />
+            <strong>{playlist?.name ?? item.name}</strong>
+            <span>{playlist?.itemCount ?? 0} items · independent loop</span>
+          </div>
+        )
       ) : item.type === "asset" ? (
-        content?.thumbnailUrl ? (
+        playbackPreview && content ? (
+          <AssetPlaybackPreview asset={content} placement={item} />
+        ) : content?.thumbnailUrl ? (
           <img
             className="layout-asset-placement"
             src={content.thumbnailUrl}
             alt=""
-            style={{
-              objectFit:
-                item.playback?.fit === "cover"
-                  ? "cover"
-                  : item.playback?.fit === "stretch"
-                    ? "fill"
-                    : "contain",
-              borderRadius: item.playback?.cornerRadius,
-            }}
+            style={assetPreviewStyle(
+              item.playback?.fit,
+              item.playback?.cornerRadius,
+            )}
           />
         ) : (
           <div className="layout-placement-placeholder">
@@ -1348,6 +1462,180 @@ function PlacementView({
         />
       )}
     </div>
+  );
+}
+
+function assetPreviewStyle(
+  fit: NonNullable<LayoutPlacement["playback"]>["fit"],
+  cornerRadius?: number,
+): React.CSSProperties {
+  return {
+    objectFit:
+      fit === "cover" ? "cover" : fit === "stretch" ? "fill" : "contain",
+    borderRadius: cornerRadius,
+  };
+}
+
+function AssetPlaybackPreview({
+  asset,
+  placement,
+}: {
+  asset: Asset;
+  placement: LayoutPlacement;
+}) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [asset.id]);
+  if (failed || (asset.type !== "image" && asset.type !== "video"))
+    return (
+      <div className="layout-placement-placeholder">
+        <ImageIcon size={22} />
+        <span>{asset.name}</span>
+      </div>
+    );
+  const common = {
+    className: "layout-asset-placement layout-asset-placement--playback",
+    src: api.assetPreviewUrl(asset.id),
+    style: assetPreviewStyle(
+      placement.playback?.fit,
+      placement.playback?.cornerRadius,
+    ),
+    onError: () => setFailed(true),
+  };
+  if (asset.type === "video")
+    return (
+      <video
+        {...common}
+        autoPlay
+        playsInline
+        loop={placement.playback?.loop ?? true}
+        muted={placement.playback?.muted ?? true}
+        preload="auto"
+      />
+    );
+  return <img {...common} alt="" />;
+}
+
+export function playlistPreviewDuration(item: PlaylistItem) {
+  if (item.durationMs && item.durationMs > 0) return item.durationMs;
+  return item.assetType === "video" ? undefined : 10_000;
+}
+
+export function nextPlaylistPreviewIndex(
+  index: number,
+  length: number,
+  loop: boolean,
+) {
+  if (!length) return 0;
+  if (index + 1 >= length) return loop ? 0 : index;
+  return index + 1;
+}
+
+function PlaylistZonePreview({
+  placement,
+  playlist,
+  assetsById,
+  live,
+  scale,
+}: {
+  placement: LayoutPlacement;
+  playlist: Playlist;
+  assetsById: Map<string, Asset>;
+  live: LivePreviewData;
+  scale: number;
+}) {
+  const items = playlist.items.filter((item) => item.assetStatus === "ready");
+  const [index, setIndex] = useState(0);
+  const current = items[index % Math.max(1, items.length)];
+  const asset = current ? assetsById.get(current.assetId) : undefined;
+  const advance = useCallback(
+    () =>
+      setIndex((value) => {
+        return nextPlaylistPreviewIndex(
+          value,
+          items.length,
+          placement.playback?.loop !== false,
+        );
+      }),
+    [items.length, placement.playback?.loop],
+  );
+  useEffect(() => setIndex(0), [playlist.id, playlist.revision]);
+  useEffect(() => {
+    if (!current) return;
+    const duration = playlistPreviewDuration(current);
+    if (!duration) return;
+    const timer = window.setTimeout(advance, duration);
+    return () => window.clearTimeout(timer);
+  }, [advance, current]);
+
+  if (!current)
+    return (
+      <div className="layout-playlist-zone">
+        <ListVideo size={22} />
+        <strong>{playlist.name}</strong>
+        <span>No ready items</span>
+      </div>
+    );
+  if (!asset)
+    return (
+      <div className="layout-placement-placeholder">
+        <ListVideo size={22} />
+        <span>{current.assetName}</span>
+      </div>
+    );
+  const fit = placement.playback?.fit ?? current.fitMode;
+  const radius = placement.playback?.cornerRadius;
+  const className = `layout-playlist-preview${current.transition === "fade" ? " layout-playlist-preview--fade" : ""}`;
+  if (asset.type === "widget")
+    return (
+      <div className={className} key={`${playlist.id}-${current.id}`}>
+        {asset.widget ? (
+          <WidgetLivePreview
+            asset={asset}
+            item={placement}
+            live={live}
+            scale={scale}
+          />
+        ) : (
+          <AppPlacementPreview asset={asset} item={placement} />
+        )}
+      </div>
+    );
+  if (asset.type === "video")
+    return (
+      <video
+        key={`${playlist.id}-${current.id}`}
+        className={className}
+        src={api.assetPreviewUrl(asset.id)}
+        style={assetPreviewStyle(fit, radius)}
+        autoPlay
+        playsInline
+        muted={(placement.playback?.muted ?? true) || !current.audioEnabled}
+        preload="auto"
+        onLoadedMetadata={(event) => {
+          event.currentTarget.volume = current.volume;
+          if (current.videoStartOffsetMs)
+            event.currentTarget.currentTime = current.videoStartOffsetMs / 1000;
+        }}
+        onTimeUpdate={(event) => {
+          if (
+            current.videoEndOffsetMs &&
+            event.currentTarget.currentTime >= current.videoEndOffsetMs / 1000
+          )
+            advance();
+        }}
+        onEnded={advance}
+        onError={advance}
+      />
+    );
+  return (
+    <img
+      key={`${playlist.id}-${current.id}`}
+      className={className}
+      src={api.assetPreviewUrl(asset.id)}
+      style={assetPreviewStyle(fit, radius)}
+      alt=""
+      onError={advance}
+    />
   );
 }
 
@@ -2059,7 +2347,7 @@ function PlacementInspector({
           <div className="form-grid form-grid--2">
             <label className="field">
               <span className="field__label">Fit</span>
-              <select
+              <Select
                 value={(item.overrides?.fit as string | undefined) ?? "contain"}
                 onChange={(event) =>
                   update((target) => {
@@ -2073,11 +2361,11 @@ function PlacementInspector({
                 <option value="contain">Fit</option>
                 <option value="cover">Fill</option>
                 <option value="stretch">Stretch</option>
-              </select>
+              </Select>
             </label>
             <label className="field">
               <span className="field__label">Alignment</span>
-              <select
+              <Select
                 value={
                   (item.overrides?.alignment as string | undefined) ?? "center"
                 }
@@ -2093,7 +2381,7 @@ function PlacementInspector({
                 <option value="left">Left</option>
                 <option value="center">Center</option>
                 <option value="right">Right</option>
-              </select>
+              </Select>
             </label>
             <label className="field">
               <span className="field__label">Foreground</span>
@@ -2134,7 +2422,7 @@ function PlacementInspector({
           </div>
           <label className="field">
             <span className="field__label">When unavailable</span>
-            <select
+            <Select
               value={
                 (item.overrides?.fallbackVisibility as string | undefined) ??
                 "show"
@@ -2150,7 +2438,7 @@ function PlacementInspector({
             >
               <option value="show">Show App fallback</option>
               <option value="hide">Hide placement</option>
-            </select>
+            </Select>
           </label>
           {(content?.widget?.provider === "website" ||
             content?.widget?.provider === "youtube") && (
@@ -2195,7 +2483,7 @@ function PlacementInspector({
           <div className="form-grid form-grid--2">
             <label className="field">
               <span className="field__label">Fit</span>
-              <select
+              <Select
                 value={item.playback?.fit ?? "contain"}
                 onChange={(event) =>
                   update((target) => {
@@ -2210,11 +2498,11 @@ function PlacementInspector({
                 <option value="contain">Fit</option>
                 <option value="cover">Fill</option>
                 <option value="stretch">Stretch</option>
-              </select>
+              </Select>
             </label>
             <label className="field">
               <span className="field__label">Fallback</span>
-              <select
+              <Select
                 value={item.playback?.fallback ?? "background"}
                 onChange={(event) =>
                   update((target) => {
@@ -2229,7 +2517,7 @@ function PlacementInspector({
                 <option value="background">Zone background</option>
                 <option value="previous">Previous item</option>
                 <option value="hide">Hide zone</option>
-              </select>
+              </Select>
             </label>
           </div>
           <label className="check-row">
@@ -2284,7 +2572,7 @@ function PlacementInspector({
         <div className="layout-placement-settings">
           <label className="field">
             <span className="field__label">Fit</span>
-            <select
+            <Select
               value={item.playback?.fit ?? "contain"}
               onChange={(event) =>
                 update((target) => {
@@ -2298,7 +2586,7 @@ function PlacementInspector({
               <option value="contain">Fit</option>
               <option value="cover">Fill</option>
               <option value="stretch">Stretch</option>
-            </select>
+            </Select>
           </label>
           <div className="form-grid form-grid--2">
             <NumberField
@@ -2313,7 +2601,7 @@ function PlacementInspector({
             />
             <label className="field">
               <span className="field__label">Fallback</span>
-              <select
+              <Select
                 value={item.playback?.fallback ?? "hide"}
                 onChange={(event) =>
                   update((target) => {
@@ -2328,7 +2616,7 @@ function PlacementInspector({
                 <option value="hide">Hide</option>
                 <option value="background">Background</option>
                 <option value="previous">Previous frame</option>
-              </select>
+              </Select>
             </label>
           </div>
           {content?.type === "video" && (
@@ -2381,7 +2669,7 @@ function PlacementInspector({
           </button>
           <label className="field">
             <span className="field__label">Visibility</span>
-            <select
+            <Select
               value={primitive.binding ? "field" : "always"}
               disabled={!primitive.binding && dataSources.length === 0}
               onChange={(event) =>
@@ -2402,13 +2690,13 @@ function PlacementInspector({
             >
               <option value="always">Always visible</option>
               <option value="field">Hide when field is empty</option>
-            </select>
+            </Select>
           </label>
           {primitive.binding && (
             <div className="form-grid form-grid--2">
               <label className="field">
                 <span className="field__label">Data Source</span>
-                <select
+                <Select
                   value={primitive.binding.dataSourceId}
                   onChange={(event) =>
                     update(
@@ -2423,11 +2711,11 @@ function PlacementInspector({
                       {asset.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
               <label className="field">
                 <span className="field__label">Field</span>
-                <select
+                <Select
                   value={primitive.binding.field}
                   onChange={(event) =>
                     update(
@@ -2445,7 +2733,7 @@ function PlacementInspector({
                       {field}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
             </div>
           )}
@@ -2455,7 +2743,7 @@ function PlacementInspector({
         <>
           <label className="field">
             <span className="field__label">Content mode</span>
-            <select
+            <Select
               value={primitive.binding ? "dynamic" : "static"}
               onChange={(event) =>
                 update((target) => {
@@ -2476,13 +2764,13 @@ function PlacementInspector({
             >
               <option value="static">Static</option>
               <option value="dynamic">Dynamic field</option>
-            </select>
+            </Select>
           </label>
           {primitive.binding && (
             <div className="layout-placement-settings">
               <label className="field">
                 <span className="field__label">Data Source</span>
-                <select
+                <Select
                   value={primitive.binding.dataSourceId}
                   onChange={(event) =>
                     update((target) => {
@@ -2504,11 +2792,11 @@ function PlacementInspector({
                       {asset.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
               <label className="field">
                 <span className="field__label">Field</span>
-                <select
+                <Select
                   value={primitive.binding.field}
                   onChange={(event) =>
                     update(
@@ -2526,7 +2814,7 @@ function PlacementInspector({
                       {field}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
               <div className="form-grid form-grid--2">
                 <label className="field">
@@ -2571,7 +2859,7 @@ function PlacementInspector({
               </label>
               <label className="field">
                 <span className="field__label">Format</span>
-                <select
+                <Select
                   value={primitive.binding.format ?? "text"}
                   onChange={(event) =>
                     update(
@@ -2589,7 +2877,7 @@ function PlacementInspector({
                   <option value="number">Number</option>
                   <option value="integer">Integer</option>
                   <option value="currency">Currency</option>
-                </select>
+                </Select>
               </label>
               <label className="switch-row">
                 <input
@@ -2623,7 +2911,7 @@ function PlacementInspector({
           <div className="form-grid form-grid--2">
             <label className="field">
               <span className="field__label">Font</span>
-              <select
+              <Select
                 value={primitive.fontFamily}
                 onChange={(event) =>
                   update(
@@ -2637,7 +2925,7 @@ function PlacementInspector({
                 <option>Roboto</option>
                 <option>Source Sans 3</option>
                 <option>Noto Sans</option>
-              </select>
+              </Select>
             </label>
             <NumberField
               label="Size"
@@ -2650,7 +2938,7 @@ function PlacementInspector({
             />
             <label className="field">
               <span className="field__label">Weight</span>
-              <select
+              <Select
                 value={primitive.fontWeight}
                 onChange={(event) =>
                   update(
@@ -2664,11 +2952,11 @@ function PlacementInspector({
                 {[400, 500, 600, 700, 800].map((weight) => (
                   <option key={weight}>{weight}</option>
                 ))}
-              </select>
+              </Select>
             </label>
             <label className="field">
               <span className="field__label">Align</span>
-              <select
+              <Select
                 value={primitive.textAlign}
                 onChange={(event) =>
                   update(
@@ -2681,7 +2969,7 @@ function PlacementInspector({
                 <option value="left">Left</option>
                 <option value="center">Center</option>
                 <option value="right">Right</option>
-              </select>
+              </Select>
             </label>
             <label className="field">
               <span className="field__label">Text color</span>
@@ -2845,7 +3133,7 @@ function CanvasInspector({
     <div className="layout-inspector">
       <label className="field">
         <span className="field__label">Canvas preset</span>
-        <select
+        <Select
           value={`${document.canvas.width}x${document.canvas.height}`}
           onChange={(event) => {
             const [width, height] = event.target.value.split("x").map(Number);
@@ -2866,7 +3154,7 @@ function CanvasInspector({
           <option value="1080x1920">1080 × 1920</option>
           <option value="3840x2160">3840 × 2160</option>
           <option value="2160x3840">2160 × 3840</option>
-        </select>
+        </Select>
       </label>
       <div className="form-grid form-grid--2">
         <NumberField

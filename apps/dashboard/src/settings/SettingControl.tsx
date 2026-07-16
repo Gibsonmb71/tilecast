@@ -1,3 +1,4 @@
+import { Select } from "../components/ui";
 import { useId, useMemo, useState } from "react";
 import { signalColors } from "@tilecast/design-tokens/values";
 import type { SettingDefinition } from "../api/types";
@@ -39,7 +40,7 @@ export function SettingControl({
     );
   if (definition.type === "enum")
     return (
-      <select
+      <Select
         id={id}
         aria-label={definition.title}
         value={String(value)}
@@ -51,7 +52,7 @@ export function SettingControl({
             {enumLabel(option)}
           </option>
         ))}
-      </select>
+      </Select>
     );
   if (definition.type === "weekday_list")
     return (
@@ -293,7 +294,7 @@ function ByteInput({
           onChange(Math.round(Number(event.target.value) * byteUnits[unit]))
         }
       />
-      <select
+      <Select
         aria-label={`${definition.title} unit`}
         value={unit}
         disabled={disabled}
@@ -304,7 +305,7 @@ function ByteInput({
         {Object.keys(byteUnits).map((item) => (
           <option key={item}>{item}</option>
         ))}
-      </select>
+      </Select>
     </div>
   );
 }
@@ -374,7 +375,7 @@ function DurationInput({
           onChange(Math.round(Number(event.target.value) * multiplier))
         }
       />
-      <select
+      <Select
         aria-label={`${definition.title} unit`}
         value={unit}
         disabled={disabled}
@@ -383,7 +384,7 @@ function DurationInput({
         {Object.keys(units).map((option) => (
           <option key={option}>{option}</option>
         ))}
-      </select>
+      </Select>
     </div>
   );
 }

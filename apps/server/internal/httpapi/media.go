@@ -284,6 +284,12 @@ func (s *server) duplicateWidget(w http.ResponseWriter, r *http.Request) {
 
 // --- Data Sources ---
 
+func (s *server) decodeDataSourceJSON(w http.ResponseWriter, r *http.Request, target any) error {
+	// uploadedContent is JSON-escaped, so allow bounded encoding overhead before
+	// the media service applies the configured decoded source-byte limit.
+	return decodeJSONLimit(w, r, target, s.media.MaximumSourceBytes()*6+(64<<10))
+}
+
 func (s *server) listDataSources(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	page, _ := strconv.Atoi(query.Get("page"))
@@ -298,7 +304,7 @@ func (s *server) listDataSources(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) createDataSource(w http.ResponseWriter, r *http.Request) {
 	var body media.DataSourceInput
-	if err := decodeJSON(w, r, &body); err != nil {
+	if err := s.decodeDataSourceJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
@@ -346,7 +352,7 @@ func (s *server) updateDataSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body media.DataSourceInput
-	if err := decodeJSON(w, r, &body); err != nil {
+	if err := s.decodeDataSourceJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
@@ -407,7 +413,7 @@ func (s *server) previewDataSource(w http.ResponseWriter, r *http.Request) {
 		Configuration json.RawMessage `json:"configuration"`
 		PreviewDate   string          `json:"previewDate"`
 	}
-	if err := decodeJSON(w, r, &body); err != nil {
+	if err := s.decodeDataSourceJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
@@ -491,6 +497,18 @@ func (s *server) assetThumbnail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	delivery, err := s.media.Preview(r.Context(), id)
+	if err != nil {
+		s.writeMediaError(w, r, err)
+		return
+	}
+	serveDelivery(w, r, delivery)
+}
+func (s *server) assetPlaybackPreview(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	delivery, err := s.media.PlaybackPreview(r.Context(), id)
 	if err != nil {
 		s.writeMediaError(w, r, err)
 		return

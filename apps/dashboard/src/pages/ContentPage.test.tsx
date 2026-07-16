@@ -80,6 +80,55 @@ describe("content library", () => {
     ).toBeInTheDocument();
   });
 
+  it("renders a configured widget preview instead of an empty thumbnail", () => {
+    const widget: Asset = {
+      ...asset,
+      id: "widget-1",
+      name: "Lobby clock",
+      type: "widget",
+      originalFilename: "",
+      widget: {
+        provider: "clock",
+        configVersion: 1,
+        configuration: {
+          timezone: "UTC",
+          format: "24",
+          showSeconds: false,
+          foregroundColor: "#ffffff",
+          backgroundColor: "#111111",
+        },
+      },
+    };
+    render(<AssetCollection items={[widget]} view="grid" onSelect={vi.fn()} />);
+    expect(screen.getByText("clock")).toBeInTheDocument();
+    const preview = document.querySelector<HTMLElement>(
+      ".asset-widget-preview",
+    );
+    expect(preview?.style.getPropertyValue("--asset-widget-foreground")).toBe(
+      "#ffffff",
+    );
+    expect(preview?.style.getPropertyValue("--asset-widget-background")).toBe(
+      "#111111",
+    );
+  });
+
+  it("falls back to a widget tile when a remote thumbnail fails", () => {
+    const widget: Asset = {
+      ...asset,
+      id: "widget-2",
+      type: "widget",
+      thumbnailUrl: "/broken-thumbnail",
+      widget: {
+        provider: "website",
+        configVersion: 1,
+        configuration: {} as never,
+      },
+    };
+    render(<AssetCollection items={[widget]} view="grid" onSelect={vi.fn()} />);
+    fireEvent.error(document.querySelector(".asset-preview img")!);
+    expect(screen.getByText("website")).toBeInTheDocument();
+  });
+
   it("uses honest processing labels", () => {
     expect(statusLabel("queued")).toBe("Waiting");
     expect(statusLabel("inspecting")).toBe("Inspecting");

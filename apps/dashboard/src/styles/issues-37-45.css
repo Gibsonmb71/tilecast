@@ -213,7 +213,8 @@
 }
 
 .content-page:not(.apps-page) .content-toolbar > .content-type-filters,
-.content-page:not(.apps-page) .content-toolbar > select {
+.content-page:not(.apps-page) .content-toolbar > select,
+.content-page:not(.apps-page) .content-toolbar > .signal-select {
   display: none;
 }
 

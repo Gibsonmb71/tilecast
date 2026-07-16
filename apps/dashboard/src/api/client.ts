@@ -563,6 +563,8 @@ export const api = {
       body: JSON.stringify(input),
     }),
   asset: (id: string) => request<Asset>(`/assets/${id}`),
+  assetPreviewUrl: (id: string) =>
+    `/api/v1/assets/${encodeURIComponent(id)}/preview`,
   updateAsset: (
     id: string,
     input: { name?: string; description?: string },

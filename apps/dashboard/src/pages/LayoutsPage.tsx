@@ -1,3 +1,4 @@
+import { Select } from "../components/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Copy, LayoutTemplate, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
@@ -6,6 +7,10 @@ import { api } from "../api/client";
 import type { LayoutOrientation } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { LayoutThumbnail } from "../components/LayoutThumbnail";
+import {
+  DashboardListToolbar,
+  DashboardSearch,
+} from "../components/DashboardListToolbar";
 
 const presets = [
   {
@@ -163,17 +168,14 @@ export function LayoutsPage() {
           New Layout
         </button>
       </header>
-      <div className="toolbar layouts-list-toolbar">
-        <label className="search-control">
-          <span className="sr-only">Search Layouts</span>
-          <input
-            type="search"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search Layouts"
-          />
-        </label>
-      </div>
+      <DashboardListToolbar>
+        <DashboardSearch
+          value={search}
+          onValueChange={setSearch}
+          label="Search Layouts"
+          placeholder="Search Layouts"
+        />
+      </DashboardListToolbar>
       {actionError && (
         <div className="notice notice--error" role="alert">
           {actionError}
@@ -299,7 +301,7 @@ export function LayoutsPage() {
               </div>
               <label className="field">
                 <span className="field__label">Starting point</span>
-                <select
+                <Select
                   value={template}
                   onChange={(event) =>
                     setTemplate(event.target.value as "blank" | "announcement")
@@ -307,7 +309,7 @@ export function LayoutsPage() {
                 >
                   <option value="blank">Blank canvas</option>
                   <option value="announcement">Announcement</option>
-                </select>
+                </Select>
               </label>
             </div>
             <footer>

@@ -1,3 +1,4 @@
+import { Select } from "../components/ui";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -10,7 +11,6 @@ import {
   List,
   Plus,
   Rss,
-  Search,
   X,
 } from "lucide-react";
 import { useState } from "react";
@@ -18,6 +18,10 @@ import { useNavigate, useParams } from "react-router";
 import { api, ApiError } from "../api/client";
 import type { DataSourceProvider } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
+import {
+  DashboardListToolbar,
+  DashboardSearch,
+} from "../components/DashboardListToolbar";
 import { DataSourceEditor } from "../content/DataSourceEditors";
 import { canManageContent } from "./ContentPage";
 
@@ -276,17 +280,15 @@ export function DataSourcesPage() {
           </button>
         )}
       </header>
-      <div className="content-toolbar">
-        <label className="search-control">
-          <Search size={15} />
-          <span className="visually-hidden">Search Data Sources</span>
-          <input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search Data Sources"
-          />
-        </label>
-        <select
+      <DashboardListToolbar>
+        <DashboardSearch
+          value={search}
+          onValueChange={setSearch}
+          label="Search Data Sources"
+          placeholder="Search Data Sources"
+        />
+        <Select
+          className="dashboard-list-toolbar__filter"
           aria-label="Filter by Data Source provider"
           value={provider}
           onChange={(event) => setProvider(event.target.value)}
@@ -297,7 +299,7 @@ export function DataSourcesPage() {
               {providerLabel(item)}
             </option>
           ))}
-        </select>
+        </Select>
         <span className="view-switch" aria-label="View">
           <button
             aria-label="Grid view"
@@ -314,7 +316,7 @@ export function DataSourcesPage() {
             <List size={16} />
           </button>
         </span>
-      </div>
+      </DashboardListToolbar>
       {dataSources.isError && (
         <div className="notice notice--error">
           {dataSources.error instanceof ApiError

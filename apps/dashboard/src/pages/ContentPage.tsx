@@ -1,15 +1,12 @@
+import { Select } from "../components/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   FileImage,
-  FileVideo,
   Grid2X2,
   List,
-  Search,
   Upload,
-  Globe2,
   Copy,
   Trash2,
-  Youtube,
   X,
   FolderPlus,
   Tags,
@@ -24,18 +21,22 @@ import {
   type DragEvent,
 } from "react";
 import { api, ApiError } from "../api/client";
+import {
+  DashboardListToolbar,
+  DashboardSearch,
+} from "../components/DashboardListToolbar";
 import type {
   Asset,
   AssetStatus,
   User,
   WebsiteInput,
-  YouTubeConfig,
   ContentFolder,
   ContentCollection,
   ContentTag,
 } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { NativeAppEditor, YouTubeSourceEditor } from "../content/SourceEditors";
+import { AssetPreview } from "../components/content/AssetPreview";
 
 type QueueItem = {
   localId: string;
@@ -369,16 +370,13 @@ export function ContentPage() {
         </section>
       )}
 
-      <div className="content-toolbar">
-        <label className="search-control">
-          <Search size={15} />
-          <span className="visually-hidden">Search media</span>
-          <input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search media"
-          />
-        </label>
+      <DashboardListToolbar className="content-toolbar dashboard-list-toolbar--dense">
+        <DashboardSearch
+          value={search}
+          onValueChange={setSearch}
+          label="Search media"
+          placeholder="Search media"
+        />
         <div className="content-type-filters" aria-label="Content type filters">
           {(
             [
@@ -397,7 +395,8 @@ export function ContentPage() {
             </button>
           ))}
         </div>
-        <select
+        <Select
+          className="dashboard-list-toolbar__filter"
           aria-label="Filter by status"
           value={status}
           onChange={(event) => setStatus(event.target.value)}
@@ -408,8 +407,9 @@ export function ContentPage() {
           <option value="inspecting">Inspecting</option>
           <option value="processing">Processing</option>
           <option value="failed">Failed</option>
-        </select>
-        <select
+        </Select>
+        <Select
+          className="dashboard-list-toolbar__filter"
           aria-label="Filter by folder"
           value={folderFilter}
           onChange={(event) => setFolderFilter(event.target.value)}
@@ -420,8 +420,9 @@ export function ContentPage() {
               {folder.name} ({folder.assetCount})
             </option>
           ))}
-        </select>
-        <select
+        </Select>
+        <Select
+          className="dashboard-list-toolbar__filter"
           aria-label="Filter by collection"
           value={collectionFilter}
           onChange={(event) => setCollectionFilter(event.target.value)}
@@ -432,8 +433,9 @@ export function ContentPage() {
               {collection.name} ({collection.assetCount})
             </option>
           ))}
-        </select>
-        <select
+        </Select>
+        <Select
+          className="dashboard-list-toolbar__filter"
           aria-label="Filter by tag"
           value={tagFilter}
           onChange={(event) => setTagFilter(event.target.value)}
@@ -444,8 +446,9 @@ export function ContentPage() {
               {tag.name} ({tag.assetCount ?? 0})
             </option>
           ))}
-        </select>
-        <select
+        </Select>
+        <Select
+          className="dashboard-list-toolbar__filter"
           aria-label="Sort media"
           value={sort}
           onChange={(event) => setSort(event.target.value)}
@@ -454,7 +457,7 @@ export function ContentPage() {
           <option value="newest">Newest</option>
           <option value="oldest">Oldest</option>
           <option value="name">Name</option>
-        </select>
+        </Select>
         <span className="view-switch" aria-label="View">
           <button
             aria-label="Grid view"
@@ -471,7 +474,7 @@ export function ContentPage() {
             <List size={16} />
           </button>
         </span>
-      </div>
+      </DashboardListToolbar>
 
       {canManage && (
         <ContentOrganizer
@@ -627,31 +630,7 @@ export function AssetCollection({
             aria-label={`Edit ${asset.name}`}
           >
             <span className="asset-preview">
-              {asset.widget?.provider === "youtube" &&
-              typeof (asset.widget.configuration as YouTubeConfig).videoId ===
-                "string" ? (
-                <img
-                  src={`https://i.ytimg.com/vi/${(asset.widget.configuration as YouTubeConfig).videoId}/hqdefault.jpg`}
-                  alt=""
-                  referrerPolicy="origin"
-                />
-              ) : asset.thumbnailUrl ? (
-                <img src={asset.thumbnailUrl} alt="" />
-              ) : asset.type === "video" ? (
-                <FileVideo size={28} />
-              ) : asset.type === "widget" ? (
-                asset.widget?.provider === "youtube" ? (
-                  <Youtube size={28} />
-                ) : ["ticker", "menu", "list", "table", "agenda"].includes(
-                    asset.widget?.provider ?? "",
-                  ) ? (
-                  <Library size={28} />
-                ) : (
-                  <Globe2 size={28} />
-                )
-              ) : (
-                <FileImage size={28} />
-              )}
+              <AssetPreview asset={asset} />
             </span>
             <span className="asset-card__body">
               <strong>{asset.name}</strong>
@@ -817,7 +796,7 @@ function ContentOrganizer({
       {assetIds.length > 0 && (
         <div className="content-organizer__bulk">
           <strong>{assetIds.length} selected</strong>
-          <select
+          <Select
             aria-label="Move selected content to folder"
             value={folderId}
             onChange={(e) => setFolderId(e.target.value)}
@@ -829,8 +808,8 @@ function ContentOrganizer({
                 {v.name}
               </option>
             ))}
-          </select>
-          <select
+          </Select>
+          <Select
             aria-label="Tag selected content"
             value={tagId}
             onChange={(e) => setTagId(e.target.value)}
@@ -846,8 +825,8 @@ function ContentOrganizer({
                 Remove {v.name}
               </option>
             ))}
-          </select>
-          <select
+          </Select>
+          <Select
             aria-label="Add selected content to collection"
             value={collectionId}
             onChange={(e) => setCollectionId(e.target.value)}
@@ -863,7 +842,7 @@ function ContentOrganizer({
                 Remove from {v.name}
               </option>
             ))}
-          </select>
+          </Select>
           <button
             type="button"
             className="button button--primary"
@@ -1239,7 +1218,7 @@ export function WebsiteEditor({
         </label>
         <label className="field">
           <span className="field__label">Reload policy</span>
-          <select
+          <Select
             disabled={readOnly}
             value={input.reloadPolicy}
             onChange={(e) =>
@@ -1254,7 +1233,7 @@ export function WebsiteEditor({
               Reload on each activation
             </option>
             <option value="interval">Reload on interval</option>
-          </select>
+          </Select>
         </label>
         {input.reloadPolicy === "interval" && (
           <label className="field">
@@ -1272,7 +1251,7 @@ export function WebsiteEditor({
         )}
         <label className="field">
           <span className="field__label">Failure behavior</span>
-          <select
+          <Select
             disabled={readOnly}
             value={input.failureBehavior}
             onChange={(e) =>
@@ -1286,11 +1265,11 @@ export function WebsiteEditor({
             <option value="last_success">Keep last rendered page</option>
             <option value="fallback_image">Show fallback image</option>
             <option value="skip">Skip item</option>
-          </select>
+          </Select>
         </label>
         <label className="field">
           <span className="field__label">Fallback image</span>
-          <select
+          <Select
             disabled={readOnly}
             value={input.fallbackImageAssetId ?? ""}
             onChange={(e) =>
@@ -1303,7 +1282,7 @@ export function WebsiteEditor({
                 {image.name}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
         <details>
           <summary>Advanced website settings</summary>
@@ -1349,7 +1328,7 @@ export function WebsiteEditor({
           </label>
           <label className="field">
             <span className="field__label">Cookies</span>
-            <select
+            <Select
               disabled={readOnly}
               value={input.cookiePolicy}
               onChange={(e) =>
@@ -1364,7 +1343,7 @@ export function WebsiteEditor({
               <option value="first_and_third_party">
                 First- and third-party
               </option>
-            </select>
+            </Select>
           </label>
           <label className="field">
             <span className="field__label">Load timeout (seconds)</span>

@@ -1,3 +1,4 @@
+import { Select } from "../components/ui";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -254,7 +255,7 @@ function EmergencyPanel({
           </label>
           <label>
             Playlist
-            <select
+            <Select
               value={playlistId}
               onChange={(e) => setPlaylistId(e.target.value)}
             >
@@ -264,11 +265,11 @@ function EmergencyPanel({
                   {p.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <label>
             Expires in
-            <select
+            <Select
               value={minutes}
               onChange={(e) => setMinutes(Number(e.target.value))}
             >
@@ -276,7 +277,7 @@ function EmergencyPanel({
               <option value={60}>1 hour</option>
               <option value={240}>4 hours</option>
               <option value={1440}>24 hours</option>
-            </select>
+            </Select>
           </label>
           <fieldset>
             <legend>Target screens</legend>
@@ -1151,7 +1152,7 @@ export function ScreenDetailPage() {
           )}
           {canManageScreens(auth.status?.user) ? (
             <div className="assignment-controls">
-              <select
+              <Select
                 aria-label="Assigned presentation"
                 value={selectedPresentation}
                 onChange={(event) =>
@@ -1175,7 +1176,7 @@ export function ScreenDetailPage() {
                       </option>
                     ))}
                 </optgroup>
-              </select>
+              </Select>
               <button
                 className="button button--primary"
                 disabled={

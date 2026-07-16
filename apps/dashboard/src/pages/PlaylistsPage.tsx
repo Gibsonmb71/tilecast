@@ -1,3 +1,4 @@
+import { Select } from "../components/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Copy,
@@ -17,6 +18,10 @@ import type {
   PlaylistItemInput,
 } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
+import {
+  DashboardListToolbar,
+  DashboardSearch,
+} from "../components/DashboardListToolbar";
 import {
   ContentPicker,
   type ContentPickerResult,
@@ -78,14 +83,14 @@ export function PlaylistsPage() {
           </button>
         )}
       </header>
-      <label className="search-control playlist-search">
-        <span className="visually-hidden">Search playlists</span>
-        <input
-          placeholder="Search playlists"
+      <DashboardListToolbar>
+        <DashboardSearch
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onValueChange={setSearch}
+          label="Search playlists"
+          placeholder="Search playlists"
         />
-      </label>
+      </DashboardListToolbar>
       {query.isLoading ? (
         <div className="table-loading">Loading playlists…</div>
       ) : query.data?.items.length === 0 ? (
@@ -468,7 +473,7 @@ function TimelineItem({
       </span>
       <label>
         Fit
-        <select
+        <Select
           disabled={!canManage}
           value={item.fitMode}
           onChange={(e) =>
@@ -478,11 +483,11 @@ function TimelineItem({
           <option value="contain">Contain</option>
           <option value="cover">Cover</option>
           <option value="stretch">Stretch</option>
-        </select>
+        </Select>
       </label>
       <label>
         Transition
-        <select
+        <Select
           disabled={!canManage}
           value={item.transition}
           onChange={(e) =>
@@ -491,11 +496,11 @@ function TimelineItem({
         >
           <option value="none">None</option>
           <option value="fade">Fade</option>
-        </select>
+        </Select>
       </label>
       <label>
         Delivery
-        <select
+        <Select
           disabled={!canManage}
           value={item.deliveryPolicy}
           onChange={(e) =>
@@ -514,13 +519,13 @@ function TimelineItem({
               <option value="automatic">Automatic</option>
             </>
           )}
-        </select>
+        </Select>
       </label>
       {item.assetType === "widget" && item.widgetProvider === "youtube" ? (
         <>
           <label>
             Playback behavior
-            <select
+            <Select
               disabled={!canManage}
               value={item.durationMs == null ? "until_end" : "fixed_duration"}
               onChange={(event) =>
@@ -532,7 +537,7 @@ function TimelineItem({
             >
               <option value="until_end">Play until video ends</option>
               <option value="fixed_duration">Play for a fixed duration</option>
-            </select>
+            </Select>
           </label>
           {item.durationMs != null && (
             <label>

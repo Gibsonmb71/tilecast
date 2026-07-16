@@ -119,6 +119,10 @@ func TestMediaUploadProcessingAndDeletionLifecycle(t *testing.T) {
 	if err != nil || ready.ProcessingStatus != StatusReady || ready.ThumbnailURL == nil {
 		t.Fatalf("processed asset: %#v %v", ready, err)
 	}
+	listed, err := service.ListAssets(ctx, ListOptions{Page: 1, PageSize: 24})
+	if err != nil || len(listed.Items) != 1 || listed.Items[0].ThumbnailURL == nil {
+		t.Fatalf("listed asset thumbnail: %#v %v", listed, err)
+	}
 	websiteInput := validWebsite()
 	websiteInput.FallbackImageAssetID = &ready.ID
 	websiteInput.FailureBehavior = "fallback_image"
@@ -201,6 +205,10 @@ func TestMediaUploadProcessingAndDeletionLifecycle(t *testing.T) {
 	delivery, err := service.Delivery(ctx, asset.ID, compatible.ID)
 	if err != nil || delivery.Size != int64(content.Len()) {
 		t.Fatalf("delivery: %#v %v", delivery, err)
+	}
+	previewDelivery, err := service.PlaybackPreview(ctx, asset.ID)
+	if err != nil || previewDelivery.AssetID != asset.ID || previewDelivery.VariantID.String() == "00000000-0000-0000-0000-000000000000" {
+		t.Fatalf("playback preview: %#v %v", previewDelivery, err)
 	}
 	if err := os.Remove(delivery.Path); err != nil {
 		t.Fatal(err)

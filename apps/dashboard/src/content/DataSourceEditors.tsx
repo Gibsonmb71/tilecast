@@ -1,3 +1,4 @@
+import { Select } from "../components/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2, X } from "lucide-react";
 import { useState } from "react";
@@ -10,6 +11,7 @@ import type {
   StructuredPreview,
   StructuredSourceConfig,
 } from "../api/types";
+import { CsvSourceInput, type CsvInspection } from "./CsvSourceInput";
 
 export type StructuredProvider = "rss" | "atom" | "json" | "csv";
 
@@ -144,6 +146,7 @@ export function StructuredDataSourceEditor({
     },
   });
   const [preview, setPreview] = useState<StructuredPreview>();
+  const [csvColumns, setCsvColumns] = useState<string[]>([]);
   const [previewDate, setPreviewDate] = useState(
     new Date().toISOString().slice(0, 10),
   );
@@ -175,6 +178,37 @@ export function StructuredDataSourceEditor({
     onSuccess: setPreview,
   });
   const mapping = configuration.mapping;
+  const updateConfiguration = (patch: Partial<StructuredSourceConfig>) =>
+    setConfiguration((current) => ({ ...current, ...patch }));
+  const applyCsvInspection = (inspection: CsvInspection) => {
+    setCsvColumns(inspection.columns);
+    setConfiguration((current) => {
+      const currentMapping = current.mapping!;
+      const findColumn = (...names: string[]) =>
+        inspection.columns.find((column) =>
+          names.includes(column.trim().toLowerCase()),
+        ) ?? "";
+      const title = findColumn("title", "name", "item", "event");
+      return {
+        ...current,
+        delimiter: inspection.delimiter,
+        mapping: {
+          ...currentMapping,
+          title: title || currentMapping.title,
+          subtitle:
+            findColumn("subtitle", "description", "room", "location") ||
+            currentMapping.subtitle,
+          date:
+            findColumn("date", "start date", "start_date", "datetime") ||
+            currentMapping.date,
+          imageUrl:
+            findColumn("image", "image url", "image_url", "photo") ||
+            currentMapping.imageUrl,
+          link: findColumn("link", "url", "website") || currentMapping.link,
+        },
+      };
+    });
+  };
   const updateMapping = (
     key: keyof NonNullable<StructuredSourceConfig["mapping"]>,
     value: string | Record<string, string>,
@@ -231,33 +265,26 @@ export function StructuredDataSourceEditor({
             />
           </label>
           {provider === "csv" && (
-            <label className="field">
-              <span className="field__label">CSV file</span>
-              <input
-                type="file"
-                accept=".csv,text/csv"
-                disabled={readOnly}
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (file)
-                    void file.text().then((uploadedContent) =>
-                      setConfiguration((c) => ({
-                        ...c,
-                        url: "",
-                        uploadedContent,
-                        uploaded: true,
-                      })),
-                    );
-                }}
-              />
-            </label>
+            <CsvSourceInput
+              configuration={configuration}
+              readOnly={readOnly}
+              onChange={updateConfiguration}
+              onColumnsDetected={applyCsvInspection}
+            />
           )}
-          {!(provider === "csv" && configuration.uploadedContent) && (
+          {provider !== "csv" && (
             <label className="field">
-              <span className="field__label">Feed or data URL</span>
+              <span className="field__label">
+                {provider === "json" ? "API endpoint URL" : "Feed URL"}
+              </span>
               <input
                 type="url"
                 value={configuration.url ?? ""}
+                placeholder={
+                  provider === "json"
+                    ? "https://api.example.org/items"
+                    : "https://example.org/feed.xml"
+                }
                 disabled={readOnly}
                 onChange={(e) =>
                   setConfiguration((c) => ({
@@ -273,7 +300,7 @@ export function StructuredDataSourceEditor({
           <div className="form-grid form-grid--2">
             <label className="field">
               <span className="field__label">Presentation</span>
-              <select
+              <Select
                 value={configuration.presentation}
                 disabled={readOnly}
                 onChange={(e) =>
@@ -288,7 +315,7 @@ export function StructuredDataSourceEditor({
                 <option value="agenda">Agenda</option>
                 <option value="cards">Cards</option>
                 <option value="ticker">Ticker</option>
-              </select>
+              </Select>
             </label>
             <label className="field">
               <span className="field__label">Maximum items</span>
@@ -351,7 +378,7 @@ export function StructuredDataSourceEditor({
             </label>
             <label className="field">
               <span className="field__label">Sort</span>
-              <select
+              <Select
                 value={configuration.sort}
                 disabled={readOnly}
                 onChange={(e) =>
@@ -365,7 +392,7 @@ export function StructuredDataSourceEditor({
                 <option value="oldest">Oldest</option>
                 <option value="title">Title</option>
                 <option value="source">Original order</option>
-              </select>
+              </Select>
             </label>
           </div>
           {(provider === "json" || provider === "csv") && mapping && (
@@ -391,6 +418,7 @@ export function StructuredDataSourceEditor({
                       {mappingFieldLabels[key] ?? key}
                     </span>
                     <input
+                      list={provider === "csv" ? "csv-columns" : undefined}
                       value={mapping[key]}
                       placeholder={mappingPlaceholders[provider][key]}
                       disabled={readOnly}
@@ -399,10 +427,17 @@ export function StructuredDataSourceEditor({
                   </label>
                 ))}
               </div>
+              {provider === "csv" && csvColumns.length > 0 && (
+                <datalist id="csv-columns">
+                  {csvColumns.map((column) => (
+                    <option value={column} key={column} />
+                  ))}
+                </datalist>
+              )}
               {provider === "csv" && (
                 <label className="field">
                   <span className="field__label">Delimiter</span>
-                  <select
+                  <Select
                     value={configuration.delimiter ?? ""}
                     disabled={readOnly}
                     onChange={(e) =>
@@ -418,7 +453,7 @@ export function StructuredDataSourceEditor({
                     <option value=";">Semicolon</option>
                     <option value="\t">Tab</option>
                     <option value="|">Pipe</option>
-                  </select>
+                  </Select>
                 </label>
               )}
               <fieldset>
@@ -451,7 +486,7 @@ export function StructuredDataSourceEditor({
                     <div className="form-grid form-grid--2">
                       <label className="field">
                         <span className="field__label">Date format</span>
-                        <select
+                        <Select
                           value={configuration.dateSelection.dateFormat}
                           disabled={readOnly}
                           onChange={(event) =>
@@ -471,7 +506,7 @@ export function StructuredDataSourceEditor({
                           <option value="us_short">M/D/YYYY</option>
                           <option value="day_month_name">DD-Mon-YYYY</option>
                           <option value="rfc3339">RFC 3339</option>
-                        </select>
+                        </Select>
                       </label>
                       <label className="field">
                         <span className="field__label">Timezone</span>
@@ -491,7 +526,7 @@ export function StructuredDataSourceEditor({
                       </label>
                       <label className="field">
                         <span className="field__label">Selection</span>
-                        <select
+                        <Select
                           value={configuration.dateSelection.mode}
                           disabled={readOnly}
                           onChange={(event) =>
@@ -514,11 +549,11 @@ export function StructuredDataSourceEditor({
                           <option value="custom_range">
                             Custom date range
                           </option>
-                        </select>
+                        </Select>
                       </label>
                       <label className="field">
                         <span className="field__label">No match</span>
-                        <select
+                        <Select
                           value={configuration.dateSelection.noMatchBehavior}
                           disabled={readOnly}
                           onChange={(event) =>
@@ -543,7 +578,7 @@ export function StructuredDataSourceEditor({
                           <option value="last_known_good">
                             Use last-known-good record
                           </option>
-                        </select>
+                        </Select>
                       </label>
                     </div>
                     {configuration.dateSelection.mode === "custom_range" && (
@@ -723,7 +758,7 @@ export function StructuredDataSourceEditor({
                       }))
                     }
                   />
-                  <select
+                  <Select
                     aria-label="Filter operator"
                     value={filter.operator}
                     disabled={readOnly}
@@ -745,7 +780,7 @@ export function StructuredDataSourceEditor({
                   >
                     <option value="equals">Equals</option>
                     <option value="contains">Contains</option>
-                  </select>
+                  </Select>
                   <input
                     aria-label="Filter value"
                     value={filter.value}
@@ -801,7 +836,7 @@ export function StructuredDataSourceEditor({
           <div className="form-grid form-grid--2">
             <label className="field">
               <span className="field__label">Refresh interval</span>
-              <select
+              <Select
                 value={configuration.refreshIntervalSeconds}
                 disabled={readOnly || Boolean(configuration.uploaded)}
                 onChange={(e) =>
@@ -815,7 +850,7 @@ export function StructuredDataSourceEditor({
                 <option value="900">15 minutes</option>
                 <option value="3600">Hourly</option>
                 <option value="21600">6 hours</option>
-              </select>
+              </Select>
             </label>
             <label className="field">
               <span className="field__label">Empty state</span>
@@ -1102,7 +1137,7 @@ export function CalendarDataSourceEditor({
         <div className="source-editor__columns">
           <label className="field">
             <span className="field__label">Display</span>
-            <select
+            <Select
               disabled={readOnly}
               value={configuration.displayMode}
               onChange={(event) =>
@@ -1117,7 +1152,7 @@ export function CalendarDataSourceEditor({
               <option value="upcoming">Upcoming</option>
               <option value="this_week">This week</option>
               <option value="agenda">Agenda</option>
-            </select>
+            </Select>
           </label>
           <label className="field">
             <span className="field__label">Maximum events</span>
@@ -1232,7 +1267,7 @@ export function CalendarDataSourceEditor({
           </label>
           <label className="field">
             <span className="field__label">Refresh interval</span>
-            <select
+            <Select
               disabled={readOnly}
               value={configuration.refreshIntervalSeconds}
               onChange={(event) =>
@@ -1247,7 +1282,7 @@ export function CalendarDataSourceEditor({
               <option value={3600}>1 hour</option>
               <option value={21600}>6 hours</option>
               <option value={86400}>1 day</option>
-            </select>
+            </Select>
           </label>
           <label className="field">
             <span className="field__label">Empty state</span>
@@ -1264,7 +1299,7 @@ export function CalendarDataSourceEditor({
           </label>
           <label className="field">
             <span className="field__label">Keep cached data</span>
-            <select
+            <Select
               disabled={readOnly}
               value={configuration.stalenessLimitHours}
               onChange={(event) =>
@@ -1278,7 +1313,7 @@ export function CalendarDataSourceEditor({
               <option value={72}>3 days</option>
               <option value={168}>7 days</option>
               <option value={720}>30 days</option>
-            </select>
+            </Select>
           </label>
         </div>
         {diagnostic && (

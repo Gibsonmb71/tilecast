@@ -105,6 +105,8 @@ func (s *server) routes() http.Handler {
 			dashboard.Get("/assets/{id}", s.getAsset)
 			dashboard.Get("/assets/{id}/website/diagnostics", s.websiteDiagnostics)
 			dashboard.Get("/assets/{id}/thumbnail", s.assetThumbnail)
+			dashboard.Get("/assets/{id}/preview", s.assetPlaybackPreview)
+			dashboard.Head("/assets/{id}/preview", s.assetPlaybackPreview)
 			dashboard.Get("/content-folders", s.listContentFolders)
 			dashboard.Get("/content-collections", s.listContentCollections)
 			dashboard.Get("/content-tags", s.listContentTags)

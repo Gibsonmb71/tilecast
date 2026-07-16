@@ -1,3 +1,4 @@
+import { Select } from "../components/ui";
 import { Link, useNavigate } from "react-router";
 import {
   settingsNavigation,
@@ -23,7 +24,7 @@ export function SettingsShell({
       <aside className="settings-nav" aria-label="Settings sections">
         <label className="settings-mobile-select">
           <span>Settings section</span>
-          <select
+          <Select
             value={active}
             onChange={(event) => {
               const item = settingsNavigation
@@ -41,7 +42,7 @@ export function SettingsShell({
                   {dirty.has(item.id) ? " • Unsaved" : ""}
                 </option>
               ))}
-          </select>
+          </Select>
         </label>
         {settingsNavigation.map((group) => (
           <div className="settings-nav-group" key={group.label}>

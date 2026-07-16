@@ -15,7 +15,6 @@ import {
   type HTMLAttributes,
   type InputHTMLAttributes,
   type ReactNode,
-  type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
 } from "react";
 
@@ -75,12 +74,7 @@ export const Textarea = forwardRef<
   return <textarea ref={ref} {...props} />;
 });
 
-export const Select = forwardRef<
-  HTMLSelectElement,
-  SelectHTMLAttributes<HTMLSelectElement>
->(function Select(props, ref) {
-  return <select ref={ref} {...props} />;
-});
+export { Select } from "./SignalSelect";
 
 export function Field({
   label,
