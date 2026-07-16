@@ -38,6 +38,7 @@ jobs:
         shell: bash
         run: |
           git fetch origin fix/lunch-menu-workflow
+          git rm -f --ignore-unmatch .github/lunch-menu-clean-trigger
           for path in \
             apps/dashboard/src/content/SourceEditors.tsx \
             apps/dashboard/src/pages/LayoutEditorPage.tsx \
@@ -82,11 +83,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add apps/dashboard/src/content/SourceEditors.tsx \
-            apps/dashboard/src/pages/LayoutEditorPage.tsx \
-            apps/player-android/app/src/main/java/org/tilecast/player/content/NativeWidgetPlayback.kt \
-            apps/player-android/app/src/test/java/org/tilecast/player/content/MenuWidgetTest.kt \
-            apps/server/internal/media/structured_sources.go \
-            apps/server/internal/media/structured_sources_test.go
+          git add -A
           git commit -m "Fix lunch menu data and rendering"
           git push origin HEAD:fix/lunch-menu-clean
