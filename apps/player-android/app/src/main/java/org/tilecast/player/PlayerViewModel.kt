@@ -88,10 +88,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val backoff = ReconnectBackoff()
     private val offlineEscalation = OfflineEscalationPolicy()
     private val activityQueue by lazy { org.tilecast.player.activity.PlayerActivityQueue.get(application) }
-    // Elapsed-realtime timestamp of the current healthy socket, and the most drastic
-    // self-heal action taken during the current outage; both reset when a socket opens.
+    // Elapsed-realtime timestamp of the current healthy socket; used to decide whether a
+    // connection was healthy long enough to reset reconnect backoff. Offline self-heal
+    // escalation state is persisted in SharedPreferences (see maybeSelfHeal), not here, so
+    // it survives a process restart.
     private var socketOpenedAtElapsed: Long = 0L
-    private var lastOfflineAction: OfflineAction = OfflineAction.NONE
     private var current: PlayerConfiguration? = null
     private var selectedIdentity: ServerIdentity? = null
     private var selectedUrl: NormalizedServerUrl? = null
@@ -281,7 +282,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 reconnectJob?.cancel(); reconnectJob = null
                 if (attempt > 0) recordReliabilityEvent("connection.restored", "info", result = "recovered", failureMessage = "Reconnected after $attempt attempt(s)")
                 socketOpenedAtElapsed = SystemClock.elapsedRealtime()
-                lastOfflineAction = OfflineAction.NONE
+                // Server reachable again: clear this outage's self-heal escalation state.
+                getApplication<Application>().getSharedPreferences("tilecast-reliability", Application.MODE_PRIVATE).edit().putString("offline-last-action", "NONE").apply()
                 webSocket.send("{\"type\":\"player.hello\",\"protocolVersion\":1,\"playerVersion\":\"${BuildConfig.VERSION_NAME}\"}")
                 webSocket.send(Json.encodeToString(kotlinx.serialization.json.JsonObject.serializer(), statusMessage()))
                 viewModelScope.launch { emit(PlayerEvent.Connected(screenName)) }
@@ -326,7 +328,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         reconnectJob = viewModelScope.launch {
             emit(PlayerEvent.Disconnected(name, reason))
             if (attempt <= 1) recordReliabilityEvent("connection.lost", "warning", result = "failed", failureMessage = reason ?: "Connection lost")
-            maybeSelfHeal(url, credential)
+            maybeSelfHeal()
             delay(backoff.delayMillis(attempt))
             try {
                 val actual = api.identity(url)
@@ -343,28 +345,45 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    // maybeSelfHeal escalates only a Player that has lost server contact AND is not
-    // presenting anything. A screen still showing cached content is left untouched.
-    private fun maybeSelfHeal(url: String, credential: String) {
+    // maybeSelfHeal escalates a Player that has lost server contact AND is no longer
+    // rendering. "Rendering" is judged by real playback progress, not by the presence of a
+    // playback session, because a session can exist while the screen is blank or frozen.
+    // Escalation state is persisted so it survives a process restart and cannot loop: a
+    // relaunched process reads that it already restarted this outage and holds. State clears
+    // as soon as playback progresses again or the server becomes reachable (see onOpen).
+    private fun maybeSelfHeal() {
         val prefs = getApplication<Application>().getSharedPreferences("tilecast-reliability", Application.MODE_PRIVATE)
+        val now = System.currentTimeMillis()
         val lastContact = prefs.getLong("last-server-connection-at", 0)
         if (lastContact <= 0) return // never connected yet; enrollment path handles first contact
-        val offlineFor = java.time.Duration.ofMillis((System.currentTimeMillis() - lastContact).coerceAtLeast(0))
-        val playbackHealthy = mutableContent.value != null
-        val action = offlineEscalation.decide(offlineFor, playbackHealthy, lastOfflineAction)
-        if (action == OfflineAction.NONE) return
-        lastOfflineAction = action
+        val offlineFor = java.time.Duration.ofMillis((now - lastContact).coerceAtLeast(0))
+        val lastProgress = prefs.getLong("last-playback-progress-at", 0)
+        val progressStaleFor = if (lastProgress > 0) java.time.Duration.ofMillis((now - lastProgress).coerceAtLeast(0)) else java.time.Duration.ofDays(3650)
+        val lastAction = runCatching { OfflineAction.valueOf(prefs.getString("offline-last-action", "NONE")!!) }.getOrDefault(OfflineAction.NONE)
+        val action = offlineEscalation.decide(offlineFor, progressStaleFor, lastAction)
+        if (action == OfflineAction.NONE) {
+            // Progress resumed (or we never went stale): clear escalation so a later outage starts fresh.
+            if (progressStaleFor.toMinutes() < 2 && lastAction != OfflineAction.NONE) prefs.edit().putString("offline-last-action", "NONE").apply()
+            return
+        }
+        // Backstop against a restart loop even if persisted state is lost: never restart the
+        // process more than once per restart interval.
+        if (action == OfflineAction.RESTART_PROCESS && now - prefs.getLong("offline-restart-process-at", 0) < 30 * 60_000L && prefs.getLong("offline-restart-process-at", 0) > 0) return
+        prefs.edit().putString("offline-last-action", action.name).apply()
+        // An attempt, not a confirmed recovery: recovery is only reported once the socket
+        // actually reopens (connection.restored) or playback progress resumes.
         recordReliabilityEvent(
             "watchdog.offline_recovery",
             if (action == OfflineAction.VERIFY_FALLBACK) "warning" else "error",
-            result = "recovered",
+            result = "unknown",
             failureCode = action.name.lowercase(),
-            failureMessage = "Offline ${offlineFor.toMinutes()}m with no playback; ${action.name.lowercase()}",
+            failureMessage = "Offline ${offlineFor.toMinutes()}m, no playback progress for ${progressStaleFor.toMinutes()}m; attempting ${action.name.lowercase()}",
         )
         when (action) {
-            OfflineAction.VERIFY_FALLBACK -> viewModelScope.launch { runCatching { reconcileManifest(url, credential) } }
+            // Re-show cached content locally; this never contacts the unavailable server.
+            OfflineAction.VERIFY_FALLBACK -> recalculateSchedule()
             OfflineAction.RESTART_ACTIVITY -> reliabilityController.restartActivity()
-            OfflineAction.RESTART_PROCESS -> reliabilityController.restartProcess()
+            OfflineAction.RESTART_PROCESS -> { prefs.edit().putLong("offline-restart-process-at", now).commit(); reliabilityController.restartProcess() }
             OfflineAction.NONE -> {}
         }
     }
