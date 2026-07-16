@@ -52,8 +52,8 @@ func TestActivityRetentionPreservesOpenSessions(t *testing.T) {
 		closedID, openID := uuid.New(), uuid.New()
 		if _, err := env.pool.Exec(ctx, `
 			INSERT INTO playback_sessions(id,screen_id,activity_session_id,started_at,ended_at,result)
-			VALUES($1,$3,'closed-old',$4,$4 + interval '1 minute','completed'),
-			      ($2,$3,'open-old',$4,NULL,'playing')`, closedID, openID, env.screenID, old); err != nil {
+			VALUES($1,$3,'closed-old',$4::timestamptz,$4::timestamptz + interval '1 minute','completed'),
+			      ($2,$3,'open-old',$4::timestamptz,NULL,'playing')`, closedID, openID, env.screenID, old); err != nil {
 			t.Fatal(err)
 		}
 
