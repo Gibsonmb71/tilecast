@@ -19,48 +19,53 @@ paths:
                   type: array
                   minItems: 1
                   maxItems: 200
-                  items: { $ref: '#/components/schemas/PlayerActivityEvent' }
+                  items: { $ref: "#/components/schemas/PlayerActivityEvent" }
       responses:
-        '202':
+        "202":
           description: Events accepted or idempotently acknowledged
   /api/v1/activity/overview:
     get:
       summary: Read the derived operational overview
-      parameters: [{ $ref: '#/components/parameters/From' }, { $ref: '#/components/parameters/To' }]
-      responses: { '200': { description: Activity overview } }
+      parameters:
+        [
+          { $ref: "#/components/parameters/From" },
+          { $ref: "#/components/parameters/To" },
+        ]
+      responses: { "200": { description: Activity overview } }
   /api/v1/activity/proof-of-play:
     get:
       summary: List Player-confirmed playback sessions
       parameters:
-        - { $ref: '#/components/parameters/From' }
-        - { $ref: '#/components/parameters/To' }
-        - { $ref: '#/components/parameters/Cursor' }
-        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: "#/components/parameters/From" }
+        - { $ref: "#/components/parameters/To" }
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/Limit" }
         - { name: screen, in: query, schema: { type: string, format: uuid } }
         - { name: group, in: query, schema: { type: string, format: uuid } }
         - { name: result, in: query, schema: { type: string } }
         - { name: search, in: query, schema: { type: string } }
-      responses: { '200': { description: Stable page of proof-of-play sessions } }
+      responses:
+        { "200": { description: Stable page of proof-of-play sessions } }
   /api/v1/activity/proof-of-play/summary:
     get:
       summary: Summarize proof of play by screen, content, presentation, or schedule
-      responses: { '200': { description: Aggregated proof-of-play coverage } }
+      responses: { "200": { description: Aggregated proof-of-play coverage } }
   /api/v1/activity/proof-of-play/export.csv:
     get:
       summary: Export proof of play as CSV
-      responses: { '200': { description: CSV export } }
+      responses: { "200": { description: CSV export } }
   /api/v1/activity/screen-events:
     get:
       summary: List technical screen events
-      responses: { '200': { description: Stable page of screen events } }
+      responses: { "200": { description: Stable page of screen events } }
   /api/v1/activity/audit:
     get:
       summary: List authenticated administrative changes
-      responses: { '200': { description: Stable page of audit records } }
+      responses: { "200": { description: Stable page of audit records } }
   /api/v1/activity/audit/export.csv:
     get:
       summary: Export audit records as CSV
-      responses: { '200': { description: CSV export } }
+      responses: { "200": { description: CSV export } }
   /api/v1/activity/screens/{screenId}:
     get:
       summary: Read the Activity section for one screen
@@ -69,14 +74,14 @@ paths:
           in: path
           required: true
           schema: { type: string, format: uuid }
-      responses: { '200': { description: Screen Activity summary } }
+      responses: { "200": { description: Screen Activity summary } }
   /api/v1/activity/retention:
     get:
       summary: Read Activity retention settings
-      responses: { '200': { description: Retention settings } }
+      responses: { "200": { description: Retention settings } }
     patch:
       summary: Update bounded Activity retention settings
-      responses: { '200': { description: Updated retention settings } }
+      responses: { "200": { description: Updated retention settings } }
 components:
   securitySchemes:
     playerCredential:
@@ -86,7 +91,12 @@ components:
     From: { name: from, in: query, schema: { type: string, format: date-time } }
     To: { name: to, in: query, schema: { type: string, format: date-time } }
     Cursor: { name: cursor, in: query, schema: { type: string } }
-    Limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 250, default: 50 } }
+    Limit:
+      {
+        name: limit,
+        in: query,
+        schema: { type: integer, minimum: 1, maximum: 250, default: 50 },
+      }
   schemas:
     PlayerActivityEvent:
       type: object
@@ -96,7 +106,8 @@ components:
         sequence: { type: integer, format: int64, minimum: 1 }
         eventType: { type: string }
         category: { type: string }
-        severity: { type: string, enum: [debug, info, warning, error, critical] }
+        severity:
+          { type: string, enum: [debug, info, warning, error, critical] }
         occurredAt: { type: string, format: date-time }
         elapsedRealtimeMs: { type: integer, format: int64, minimum: 0 }
         playerTimezone: { type: string }
@@ -109,7 +120,21 @@ components:
         playlistItemId: { type: string }
         layoutPlacementId: { type: string }
         activitySessionId: { type: string }
-        result: { type: string, enum: [playing, completed, partial, skipped, failed, unknown, recovered, success] }
+        result:
+          {
+            type: string,
+            enum:
+              [
+                playing,
+                completed,
+                partial,
+                skipped,
+                failed,
+                unknown,
+                recovered,
+                success,
+              ],
+          }
         durationMs: { type: integer, format: int64, minimum: 0 }
         expectedDurationMs: { type: integer, format: int64, minimum: 0 }
         failureCode: { type: string }
