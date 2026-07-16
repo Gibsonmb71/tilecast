@@ -48,10 +48,10 @@ func TestActivityRetentionStatementDiagnostic(t *testing.T) {
 		ctx := context.Background()
 		old := time.Now().UTC().Add(-400 * 24 * time.Hour).Truncate(time.Microsecond)
 		closedID := uuid.New()
-		if _, err := env.pool.Exec(ctx, `INSERT INTO playback_sessions(id,screen_id,activity_session_id,started_at,ended_at,result) VALUES($1,$2,'retention-diagnostic',$3,$3 + interval '1 minute','completed')`, closedID, env.screenID, old); err != nil {
+		if _, err := env.pool.Exec(ctx, `INSERT INTO playback_sessions(id,screen_id,activity_session_id,started_at,ended_at,result) VALUES($1,$2,'retention-diagnostic',$3::timestamptz,$3::timestamptz + interval '1 minute','completed')`, closedID, env.screenID, old); err != nil {
 			t.Fatal(err)
 		}
-		tag, err := env.pool.Exec(ctx, `WITH expired AS (SELECT id FROM playback_sessions WHERE ended_at IS NOT NULL AND ended_at<now()-($1::int * interval '1 day') ORDER BY ended_at LIMIT $2) DELETE FROM playback_sessions p USING expired e WHERE p.id=e.id`, 365, 100)
+		tag, err := env.pool.Exec(ctx, `WITH expired AS (SELECT id FROM playback_sessions WHERE ended_at IS NOT NULL AND ended_at<now()-($1::int * interval '1 day') ORDER BY ended_at LIMIT $2::int) DELETE FROM playback_sessions p USING expired e WHERE p.id=e.id`, 365, 100)
 		if err != nil {
 			t.Fatalf("session retention statement: %v", err)
 		}
@@ -60,10 +60,10 @@ func TestActivityRetentionStatementDiagnostic(t *testing.T) {
 		}
 
 		eventID := uuid.New()
-		if _, err := env.pool.Exec(ctx, `INSERT INTO player_activity_events(id,screen_id,sequence,event_type,category,severity,occurred_at,player_timezone,result) VALUES($1,$2,1,'player.connected','connectivity','info',$3,'UTC','success')`, eventID, env.screenID, old); err != nil {
+		if _, err := env.pool.Exec(ctx, `INSERT INTO player_activity_events(id,screen_id,sequence,event_type,category,severity,occurred_at,player_timezone,result) VALUES($1,$2,1,'player.connected','connectivity','info',$3::timestamptz,'UTC','success')`, eventID, env.screenID, old); err != nil {
 			t.Fatal(err)
 		}
-		tag, err = env.pool.Exec(ctx, `WITH expired AS (SELECT id FROM player_activity_events WHERE occurred_at<now()-($1::int * interval '1 day') ORDER BY occurred_at LIMIT $2) DELETE FROM player_activity_events p USING expired e WHERE p.id=e.id`, 60, 100)
+		tag, err = env.pool.Exec(ctx, `WITH expired AS (SELECT id FROM player_activity_events WHERE occurred_at<now()-($1::int * interval '1 day') ORDER BY occurred_at LIMIT $2::int) DELETE FROM player_activity_events p USING expired e WHERE p.id=e.id`, 60, 100)
 		if err != nil {
 			t.Fatalf("raw event retention statement: %v", err)
 		}
