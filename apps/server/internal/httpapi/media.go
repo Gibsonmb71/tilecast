@@ -426,6 +426,24 @@ func (s *server) previewDataSource(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"data": preview})
 		return
 	}
+	if provider == "manual" {
+		preview, err := s.media.ManualPreview(r.Context(), body.Configuration)
+		if err != nil {
+			s.writeMediaError(w, r, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"data": preview})
+		return
+	}
+	if provider == "weather" {
+		preview, err := s.media.WeatherPreview(r.Context(), body.Configuration)
+		if err != nil {
+			s.writeMediaError(w, r, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"data": preview})
+		return
+	}
 	if provider != "rss" && provider != "atom" && provider != "json" && provider != "csv" {
 		writeError(w, http.StatusNotFound, "data_source_provider_not_found", "The requested Data Source provider was not found.")
 		return

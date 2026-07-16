@@ -91,11 +91,26 @@ func (worker *DataSourceRefreshWorker) runOne(ctx context.Context) (bool, error)
 	var prepared any
 	var diagnostics DataSourceDiagnostics
 	var refreshErr error
+	var upstreamLastModified string
+	var upstreamExpiresAt *time.Time
+	var notModified bool
 	if provider == "calendar" {
 		var config CalendarConfig
 		if err = json.Unmarshal(raw, &config); err == nil {
 			refreshSeconds = config.RefreshIntervalSeconds
 			prepared, diagnostics, refreshErr = worker.service.refreshCalendar(ctx, dataSourceID, config)
+		}
+	} else if provider == "weather" {
+		var config WeatherSourceConfig
+		if err = json.Unmarshal(raw, &config); err == nil {
+			refreshSeconds = config.RefreshIntervalSeconds
+			var previousLastModified *string
+			_ = worker.service.db.QueryRow(ctx, `SELECT upstream_last_modified FROM data_source_refresh_states WHERE data_source_id=$1`, dataSourceID).Scan(&previousLastModified)
+			lastModified := ""
+			if previousLastModified != nil {
+				lastModified = *previousLastModified
+			}
+			prepared, diagnostics, upstreamLastModified, upstreamExpiresAt, notModified, refreshErr = worker.service.refreshWeather(ctx, dataSourceID, config, lastModified)
 		}
 	} else {
 		var config StructuredSourceConfig
@@ -110,21 +125,34 @@ func (worker *DataSourceRefreshWorker) runOne(ctx context.Context) (bool, error)
 	if refreshErr != nil {
 		return true, worker.fail(ctx, dataSourceID, refreshSeconds, diagnostics, "source_refresh_failed")
 	}
+	if notModified {
+		next := nextDataSourceRefresh(refreshSeconds, upstreamExpiresAt)
+		_, err = worker.service.db.Exec(ctx, `UPDATE data_source_refresh_states SET next_refresh_at=$2,last_success_at=now(),http_result_category=$3,parse_status='success',using_cached_data=FALSE,error_code=NULL,upstream_expires_at=$4,locked_at=NULL,locked_by=NULL,updated_at=now() WHERE data_source_id=$1`, dataSourceID, next, diagnostics.HTTPResultCategory, upstreamExpiresAt)
+		return true, err
+	}
 	payload, err := json.Marshal(prepared)
 	if err != nil {
 		return true, worker.fail(ctx, dataSourceID, refreshSeconds, diagnostics, "cache_encoding_failed")
 	}
-	next := time.Now().Add(time.Duration(refreshSeconds) * time.Second)
+	next := nextDataSourceRefresh(refreshSeconds, upstreamExpiresAt)
 	var playerDataChanged bool
 	err = worker.service.db.QueryRow(ctx, `WITH previous AS MATERIALIZED (
 		SELECT cached_payload,using_cached_data,error_code FROM data_source_refresh_states WHERE data_source_id=$1
 	), updated AS (
-		UPDATE data_source_refresh_states SET next_refresh_at=$2,last_success_at=now(),http_result_category=$3,parse_status=$4,available_event_count=$5,available_item_count=$6,using_cached_data=FALSE,cache_updated_at=$7,cache_expires_at=$8,cached_payload=$9::jsonb,error_code=NULL,locked_at=NULL,locked_by=NULL,updated_at=now() WHERE data_source_id=$1 RETURNING data_source_id
-	) SELECT previous.cached_payload IS DISTINCT FROM $9::jsonb OR previous.using_cached_data OR previous.error_code IS NOT NULL FROM previous,updated`, dataSourceID, next, diagnostics.HTTPResultCategory, diagnostics.ParseStatus, diagnostics.AvailableEventCount, diagnostics.AvailableItemCount, diagnostics.CacheUpdatedAt, diagnostics.CacheExpiresAt, string(payload)).Scan(&playerDataChanged)
+		UPDATE data_source_refresh_states SET next_refresh_at=$2,last_success_at=now(),http_result_category=$3,parse_status=$4,available_event_count=$5,available_item_count=$6,using_cached_data=FALSE,cache_updated_at=$7,cache_expires_at=$8,cached_payload=$9::jsonb,error_code=NULL,upstream_last_modified=NULLIF($10,''),upstream_expires_at=$11,locked_at=NULL,locked_by=NULL,updated_at=now() WHERE data_source_id=$1 RETURNING data_source_id
+	) SELECT previous.cached_payload IS DISTINCT FROM $9::jsonb OR previous.using_cached_data OR previous.error_code IS NOT NULL FROM previous,updated`, dataSourceID, next, diagnostics.HTTPResultCategory, diagnostics.ParseStatus, diagnostics.AvailableEventCount, diagnostics.AvailableItemCount, diagnostics.CacheUpdatedAt, diagnostics.CacheExpiresAt, string(payload), upstreamLastModified, upstreamExpiresAt).Scan(&playerDataChanged)
 	if err == nil && playerDataChanged && worker.service.invalidator != nil {
 		err = worker.service.invalidator.DataSourceChanged(ctx, dataSourceID, "data_source.refreshed")
 	}
 	return true, err
+}
+
+func nextDataSourceRefresh(refreshSeconds int, upstreamExpiresAt *time.Time) time.Time {
+	next := time.Now().Add(time.Duration(refreshSeconds) * time.Second)
+	if upstreamExpiresAt != nil && upstreamExpiresAt.After(next) {
+		return *upstreamExpiresAt
+	}
+	return next
 }
 
 func (worker *DataSourceRefreshWorker) fail(ctx context.Context, dataSourceID uuid.UUID, refreshSeconds int, diagnostics DataSourceDiagnostics, code string) error {

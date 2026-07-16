@@ -21,7 +21,7 @@ A Data Source is a reusable, non-visual connection. It owns everything about acq
 - offline cached data and diagnostics
 - a typed field schema
 
-Initial providers: **Calendar, RSS, Atom, JSON, CSV**. A Data Source cannot be assigned to a screen, added to a playlist, or dragged into a Layout as visual content. The only way a Layout may reference one directly is a custom dynamic text binding that names one declared field.
+Providers: **Calendar, RSS, Atom, JSON, CSV, Manual Table, Weather**. Manual Table stores a bounded typed dataset directly in Studio. Weather caches a normalized global forecast from MET Norway and projects mandatory attribution without exposing coordinates or the installation contact to the Player. A Data Source cannot be assigned to a screen, added to a playlist, or dragged into a Layout as visual content. The only way a Layout may reference one directly is a custom dynamic text binding that names one declared field.
 
 Data Sources appear in their own Studio section. Each detail view shows the provider, current status, last successful and last attempted refresh, cached record count, available fields, date-selection policy, errors and diagnostics, the Widgets using the Data Source, and the Layout text bindings using it.
 
@@ -29,8 +29,8 @@ Data Sources appear in their own Studio section. Each detail view shows the prov
 
 A Widget owns how content appears. A Widget is either **standalone** or references exactly **one** Data Source. It owns visual settings, the selected Data Source, selected fields, labels, typography, colors, spacing, record count, empty-state presentation, and provider-specific behavior. It does **not** own fetching, parsing, source refresh, cached records, date selection, or source diagnostics — those belong to the Data Source.
 
-- Standalone providers: **Website, YouTube, Clock, Date, QR Code**.
-- Data-driven providers: **Ticker, Menu, List, Table, Agenda**.
+- Standalone providers: **Website, YouTube, Clock, Date, QR Code, Countdown**.
+- Data-driven providers: **Ticker, Menu / Price Board, List, Table, Agenda, Metric, Cards, Weather**.
 
 A Widget is a Content record (an asset of type `widget`) and may play fullscreen in a playlist or be placed inside a Layout. Editing a Widget placement in a Layout must not mutate the shared Widget; Studio offers an explicit **Edit shared Widget** action and reports every playlist and Layout that consumes it.
 
@@ -40,13 +40,16 @@ Native Widget content automatically follows the Widget's rendered bounds, whethe
 
 The server validates that the selected Data Source provider is compatible with the Widget provider and that every selected field exists in the Data Source schema.
 
-| Widget | Accepted Data Sources                     |
-| ------ | ----------------------------------------- |
-| Ticker | RSS, Atom, Calendar, JSON, CSV            |
-| Menu   | CSV, JSON                                 |
-| List   | Calendar, RSS, Atom, JSON, CSV            |
-| Table  | JSON, CSV                                 |
-| Agenda | Calendar, date-aware JSON, date-aware CSV |
+| Widget             | Accepted Data Sources                    |
+| ------------------ | ---------------------------------------- |
+| Ticker             | Any record-based Data Source             |
+| Menu / Price Board | Any record-based Data Source             |
+| List               | Any record-based Data Source             |
+| Table              | Any record-based Data Source             |
+| Agenda             | Calendar or another temporal Data Source |
+| Metric             | A Data Source exposing a numeric field   |
+| Cards              | Any record-based Data Source             |
+| Weather            | Weather Data Source                      |
 
 The registry never loads third-party code and rejects unknown providers, unknown configuration keys, scripts, HTML templates, and executable expressions.
 
@@ -64,7 +67,9 @@ Date-aware Data Sources store a mapped date field, a fixed or detected format, a
 
 ## Manifest and the Player
 
-The Player manifest projects Widgets and Data Sources as separate arrays. A Layout or playlist manifest contains the required Widget configurations, the required Media, and only the Data Sources needed by those Widgets or Layout bindings, each with a bounded cached dataset, date-selection policy, and integrity metadata. The Player renders Widgets natively, keeps Data Source fetching and selection separate from rendering, shares one cached Data Source dataset across multiple Widgets, continues date-aware selection locally, never copies a dataset into each Widget runtime, and preserves offline playback and cached Layout recovery.
+The Player manifest projects Widgets and Data Sources as separate arrays. Manifest v12 normalizes every Data Source into typed field definitions and bounded records, with cache state, optional date-selection policy, and optional attribution. The Player renders Widgets natively, shares one dataset across consumers, continues date-aware selection locally, and preserves offline playback. Players supporting v12 continue accepting cached v11 manifests.
+
+Presentations containing only legacy Widget configurations continue using manifest v11. Saving a generalized data-driven Widget upgrades it to configuration version 2 and requires manifest v12. Studio refuses to assign v12 content to a screen or synchronized group until every target reports a compatible Player version.
 
 ## Deletion and usage
 

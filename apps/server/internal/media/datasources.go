@@ -18,6 +18,10 @@ func (s *Service) dataSourceProvider(name string) (configNormalizer, error) {
 		return calendarSourceProvider{s}, nil
 	case "rss", "atom", "json", "csv":
 		return structuredSourceProvider{s, name}, nil
+	case "manual":
+		return manualSourceProvider{}, nil
+	case "weather":
+		return weatherSourceProvider{}, nil
 	default:
 		return nil, errors.New("data source provider is not supported")
 	}
@@ -52,7 +56,13 @@ func (s *Service) CreateDataSource(ctx context.Context, user uuid.UUID, input Da
 	if _, err = tx.Exec(ctx, `INSERT INTO data_sources(id,organization_id,name,description,provider,config_version,configuration,created_by) VALUES($1,$2,$3,$4,$5,1,$6::jsonb,$7)`, id, organizationID, input.Name, input.Description, input.Provider, string(encoded), user); err != nil {
 		return DataSource{}, err
 	}
-	if _, err = tx.Exec(ctx, `INSERT INTO data_source_refresh_states(data_source_id) VALUES($1)`, id); err != nil {
+	if input.Provider == "manual" {
+		manual := configuration.(ManualSourceConfig)
+		payload, _ := json.Marshal(manualPlayerData(manual))
+		if _, err = tx.Exec(ctx, `INSERT INTO data_source_refresh_states(data_source_id,next_refresh_at,last_attempt_at,last_success_at,http_result_category,parse_status,available_item_count,cache_updated_at,cache_expires_at,cached_payload) VALUES($1,now()+interval '100 years',now(),now(),'manual','success',$2,now(),now()+interval '100 years',$3::jsonb)`, id, len(manual.Rows), string(payload)); err != nil {
+			return DataSource{}, err
+		}
+	} else if _, err = tx.Exec(ctx, `INSERT INTO data_source_refresh_states(data_source_id) VALUES($1)`, id); err != nil {
 		return DataSource{}, err
 	}
 	if _, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,metadata) VALUES($1,$2,'data_source.created','data_source',$3,jsonb_build_object('provider',$4::text))`, uuid.New(), user, id.String(), input.Provider); err != nil {
@@ -108,7 +118,13 @@ func (s *Service) UpdateDataSource(ctx context.Context, id, user uuid.UUID, inpu
 	if err != nil || tag.RowsAffected() == 0 {
 		return DataSource{}, ErrNotFound
 	}
-	if _, err = tx.Exec(ctx, `INSERT INTO data_source_refresh_states(data_source_id,next_refresh_at) VALUES($1,now()) ON CONFLICT(data_source_id) DO UPDATE SET next_refresh_at=now(),error_code=NULL,locked_at=NULL,locked_by=NULL,updated_at=now()`, id); err != nil {
+	if input.Provider == "manual" {
+		manual := configuration.(ManualSourceConfig)
+		payload, _ := json.Marshal(manualPlayerData(manual))
+		if _, err = tx.Exec(ctx, `UPDATE data_source_refresh_states SET next_refresh_at=now()+interval '100 years',last_attempt_at=now(),last_success_at=now(),http_result_category='manual',parse_status='success',available_event_count=0,available_item_count=$2,using_cached_data=FALSE,cache_updated_at=now(),cache_expires_at=now()+interval '100 years',cached_payload=$3::jsonb,error_code=NULL,locked_at=NULL,locked_by=NULL,updated_at=now() WHERE data_source_id=$1`, id, len(manual.Rows), string(payload)); err != nil {
+			return DataSource{}, err
+		}
+	} else if _, err = tx.Exec(ctx, `INSERT INTO data_source_refresh_states(data_source_id,next_refresh_at) VALUES($1,now()) ON CONFLICT(data_source_id) DO UPDATE SET next_refresh_at=now(),error_code=NULL,locked_at=NULL,locked_by=NULL,updated_at=now()`, id); err != nil {
 		return DataSource{}, err
 	}
 	if _, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id) VALUES($1,$2,'data_source.updated','data_source',$3)`, uuid.New(), user, id.String()); err != nil {
@@ -176,6 +192,12 @@ func (s *Service) PreviewDataSourceByID(ctx context.Context, id uuid.UUID, previ
 	}
 	if raw.Provider == "calendar" {
 		return s.CalendarPreview(ctx, raw.Configuration)
+	}
+	if raw.Provider == "manual" {
+		return s.ManualPreview(ctx, raw.Configuration)
+	}
+	if raw.Provider == "weather" {
+		return s.WeatherPreview(ctx, raw.Configuration)
 	}
 	return s.StructuredPreview(ctx, raw.Provider, raw.Configuration, previewDate)
 }
@@ -265,8 +287,15 @@ func (s *Service) GetDataSourceDetail(ctx context.Context, id uuid.UUID) (DataSo
 	detail.Fields = availableDataSourceFields(raw.Provider, raw.Configuration)
 	detail.CachedRecords = detail.Diagnostics.AvailableEventCount + detail.Diagnostics.AvailableItemCount
 	detail.Status = dataSourceStatus(detail.Diagnostics)
-	if raw.Provider != "calendar" {
+	if raw.Provider != "calendar" && raw.Provider != "weather" && raw.Provider != "manual" {
 		var config StructuredSourceConfig
+		if json.Unmarshal(raw.Configuration, &config) == nil && config.DateSelection.Enabled {
+			selection := config.DateSelection
+			detail.DateSelection = &selection
+		}
+	}
+	if raw.Provider == "manual" {
+		var config ManualSourceConfig
 		if json.Unmarshal(raw.Configuration, &config) == nil && config.DateSelection.Enabled {
 			selection := config.DateSelection
 			detail.DateSelection = &selection
@@ -311,6 +340,20 @@ func (s *Service) dataSourceProviderAndFields(ctx context.Context, id uuid.UUID)
 	return provider, fields, nil
 }
 
+func (s *Service) dataSourceProviderAndTypedFields(ctx context.Context, id uuid.UUID) (string, map[string]string, error) {
+	var provider string
+	var configuration json.RawMessage
+	err := s.db.QueryRow(ctx, `SELECT provider,configuration FROM data_sources WHERE id=$1 AND deleted_at IS NULL`, id).Scan(&provider, &configuration)
+	if err != nil {
+		return "", nil, err
+	}
+	fields := map[string]string{}
+	for _, field := range availableDataSourceFields(provider, configuration) {
+		fields[field.Key] = field.Type
+	}
+	return provider, fields, nil
+}
+
 // availableDataSourceFields derives the typed field schema a Data Source exposes.
 func availableDataSourceFields(provider string, raw json.RawMessage) []DataSourceField {
 	fields := []DataSourceField{}
@@ -329,6 +372,31 @@ func availableDataSourceFields(provider string, raw json.RawMessage) []DataSourc
 		add(config.Fields.Location, "location", "Location", "text")
 		add(config.Fields.DescriptionExcerpt, "descriptionExcerpt", "Description", "text")
 		return fields
+	}
+	if provider == "manual" {
+		var config ManualSourceConfig
+		_ = json.Unmarshal(raw, &config)
+		for _, column := range config.Columns {
+			fields = append(fields, DataSourceField{Key: column.Key, Label: column.Label, Type: column.Type})
+		}
+		return fields
+	}
+	if provider == "weather" {
+		return []DataSourceField{
+			{Key: "kind", Label: "Kind", Type: "text"},
+			{Key: "location", Label: "Location", Type: "text"},
+			{Key: "date", Label: "Date", Type: "date"},
+			{Key: "condition", Label: "Condition", Type: "text"},
+			{Key: "temperature", Label: "Temperature", Type: "number"},
+			{Key: "temperatureUnit", Label: "Temperature unit", Type: "text"},
+			{Key: "high", Label: "High", Type: "number"},
+			{Key: "low", Label: "Low", Type: "number"},
+			{Key: "humidity", Label: "Humidity", Type: "percent"},
+			{Key: "windSpeed", Label: "Wind speed", Type: "number"},
+			{Key: "windUnit", Label: "Wind unit", Type: "text"},
+			{Key: "precipitation", Label: "Precipitation", Type: "number"},
+			{Key: "precipitationUnit", Label: "Precipitation unit", Type: "text"},
+		}
 	}
 	var config StructuredSourceConfig
 	_ = json.Unmarshal(raw, &config)

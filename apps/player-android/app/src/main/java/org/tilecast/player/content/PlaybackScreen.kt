@@ -111,7 +111,7 @@ internal fun effectiveDurationMs(item:ManifestItem,assets:List<ManifestAsset>):L
     } else if(widget?.provider=="youtube"){
         val config=runCatching{Json.decodeFromJsonElement<YouTubeSourceConfig>(widget.configuration)}.getOrElse{failed("YouTube widget configuration is invalid");return}
         YouTubeWidgetItem(item,widget,config,session,done,failed,onWidgetStatus,startOffsetMs)
-    } else if(widget?.provider in setOf("clock","date","qrcode","ticker","menu","list","table","agenda")){
+    } else if(widget?.provider in setOf("clock","date","qrcode","countdown","ticker","menu","list","table","agenda","metric","cards","weather")){
         WidgetItem(item,widget ?: return,session,done,failed,onWidgetStatus,startOffsetMs)
     } else if(website!=null) WebsiteItem(item,website,session,done,startOffsetMs,onWebsiteStatus)
     else if(asset?.mimeType?.startsWith("image/")==true)ImageItem(item,asset,session,startOffsetMs,done,failed,onProgress)
