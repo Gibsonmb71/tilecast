@@ -19,6 +19,10 @@ func (s *server) providerCatalog(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"revision": 1, "providers": media.ProviderCatalog()}})
 }
 
+func (s *server) contentDefinitions(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"data": s.media.ContentDefinitions()})
+}
+
 func (s *server) compileWidgetPreview(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Provider      string          `json:"provider"`

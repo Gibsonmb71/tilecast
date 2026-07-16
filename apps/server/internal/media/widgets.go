@@ -136,6 +136,9 @@ func (p youtubeWidgetProvider) Normalize(ctx context.Context, raw json.RawMessag
 }
 
 func (s *Service) widgetProvider(name string) (configNormalizer, error) {
+	if definition, ok := s.definitions.Widget(name); ok && !definition.LegacyEditor {
+		return definitionConfigNormalizer{service: s, schema: definition.ConfigurationSchema}, nil
+	}
 	switch name {
 	case "website":
 		return websiteWidgetProvider{s}, nil

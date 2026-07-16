@@ -12,37 +12,16 @@ import {
 } from "../components/DashboardListToolbar";
 import {
   NativeAppEditor,
+  type NativeProvider,
   WidgetProviderGallery,
   YouTubeSourceEditor,
 } from "../content/SourceEditors";
+import { GenericWidgetEditor } from "../content/GenericDefinitionEditors";
 import {
   AssetCollection,
   WebsiteEditor,
   canManageContent,
 } from "./ContentPage";
-
-const providers: WidgetProvider[] = [
-  "website",
-  "youtube",
-  "clock",
-  "date",
-  "qrcode",
-  "countdown",
-  "ticker",
-  "menu",
-  "list",
-  "table",
-  "agenda",
-  "metric",
-  "cards",
-  "weather",
-  "spotlight",
-  "stat_grid",
-  "chart",
-  "progress",
-  "timeline",
-  "world_clock",
-];
 
 export function WidgetsPage() {
   const auth = useAuth();
@@ -64,6 +43,11 @@ export function WidgetsPage() {
     queryKey: ["assets", "widgets", params.toString()],
     queryFn: () => api.assets(params),
   });
+  const definitions = useQuery({
+    queryKey: ["content-definitions"],
+    queryFn: api.contentDefinitions,
+  });
+  const filterProviders = definitions.data?.widgets ?? [];
   const duplicate = useMutation({
     mutationFn: (id: string) => api.duplicateWidget(id, csrf),
     onSuccess: (widget) => {
@@ -107,9 +91,9 @@ export function WidgetsPage() {
           onChange={(event) => setProvider(event.target.value)}
         >
           <option value="">All Widget types</option>
-          {providers.map((item) => (
-            <option key={item} value={item}>
-              {providerLabel(item)}
+          {filterProviders.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.name}
             </option>
           ))}
         </Select>
@@ -180,6 +164,10 @@ export function WidgetEditorPage() {
     queryFn: () => api.asset(id!),
     enabled: Boolean(id),
   });
+  const definitions = useQuery({
+    queryKey: ["content-definitions"],
+    queryFn: api.contentDefinitions,
+  });
   const asset = widget.data;
   const provider = (providerParam ?? asset?.widget?.provider) as
     WidgetProvider | undefined;
@@ -189,6 +177,9 @@ export function WidgetEditorPage() {
   const saved = (value: Asset) => {
     void navigate(`/widgets/${value.id}`, { replace: true });
   };
+  const definition = definitions.data?.widgets.find(
+    (candidate) => candidate.id === provider,
+  );
 
   if (!id && !providerParam) {
     return (
@@ -207,7 +198,9 @@ export function WidgetEditorPage() {
   }
   if (id && widget.isLoading)
     return <div className="table-loading">Loading Widget...</div>;
-  if ((id && !asset) || !provider || !providers.includes(provider)) {
+  if (definitions.isLoading)
+    return <div className="table-loading">Loading Widget definition...</div>;
+  if ((id && !asset) || !provider || !definition) {
     return (
       <section className="empty-state">
         <h2>Widget unavailable</h2>
@@ -231,24 +224,15 @@ export function WidgetEditorPage() {
         <WebsiteEditor {...common} />
       ) : provider === "youtube" ? (
         <YouTubeSourceEditor {...common} />
+      ) : definition && !definition.legacyEditor ? (
+        <GenericWidgetEditor {...common} definition={definition} />
       ) : (
         <NativeAppEditor
           {...common}
-          provider={provider}
+          provider={provider as NativeProvider}
           presetId={asset?.widget?.presetId ?? presetId ?? undefined}
         />
       )}
     </section>
-  );
-}
-
-function providerLabel(provider: WidgetProvider) {
-  return (
-    (
-      {
-        qrcode: "QR Code",
-        youtube: "YouTube",
-      } as Record<string, string>
-    )[provider] ?? provider.charAt(0).toUpperCase() + provider.slice(1)
   );
 }

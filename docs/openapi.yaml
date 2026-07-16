@@ -758,6 +758,12 @@ paths:
       responses:
         "200":
           description: Closed Widget and Data Source provider metadata
+  /api/v1/content-definitions:
+    get:
+      operationId: contentDefinitions
+      responses:
+        "200":
+          description: Authoritative release-owned Widget and Data Source definitions, schemas, templates, adapters, and capability requirements
   /api/v1/widgets/compile-preview:
     post:
       operationId: compileWidgetPreview

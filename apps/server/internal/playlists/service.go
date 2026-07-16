@@ -13,14 +13,16 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/tilecast/tilecast/apps/server/internal/contentdefs"
 	"github.com/tilecast/tilecast/apps/server/internal/scheduling"
 )
 
 type Service struct {
-	db         *pgxpool.Pool
-	notifier   Notifier
-	scheduling *scheduling.Service
-	sources    SourceProjector
+	db          *pgxpool.Pool
+	notifier    Notifier
+	scheduling  *scheduling.Service
+	sources     SourceProjector
+	definitions *contentdefs.Catalog
 }
 
 type SourceProjector interface {
@@ -29,11 +31,12 @@ type SourceProjector interface {
 }
 
 func NewService(db *pgxpool.Pool, notifier Notifier) *Service {
-	return &Service{db: db, notifier: notifier}
+	return &Service{db: db, notifier: notifier, definitions: contentdefs.MustLoad()}
 }
 
-func (s *Service) SetScheduling(service *scheduling.Service)    { s.scheduling = service }
-func (s *Service) SetSourceProjector(projector SourceProjector) { s.sources = projector }
+func (s *Service) SetScheduling(service *scheduling.Service)          { s.scheduling = service }
+func (s *Service) SetSourceProjector(projector SourceProjector)       { s.sources = projector }
+func (s *Service) SetContentDefinitions(catalog *contentdefs.Catalog) { s.definitions = catalog }
 
 func (s *Service) Create(ctx context.Context, userID uuid.UUID, name, description string) (Playlist, error) {
 	name = strings.TrimSpace(name)
@@ -586,6 +589,30 @@ func (s *Service) AssignPresentation(ctx context.Context, screenID uuid.UUID, pl
 	if err = tx.QueryRow(ctx, `SELECT m.screen_group_id FROM screens sc LEFT JOIN screen_group_memberships m ON m.screen_id=sc.id WHERE sc.id=$1`, screenID).Scan(&groupID); err != nil {
 		return Assignment{}, err
 	}
+	targetScreens := []uuid.UUID{screenID}
+	if groupID != nil {
+		rows, queryErr := tx.Query(ctx, `SELECT screen_id FROM screen_group_memberships WHERE screen_group_id=$1 ORDER BY screen_id`, *groupID)
+		if queryErr != nil {
+			return Assignment{}, queryErr
+		}
+		targetScreens = targetScreens[:0]
+		for rows.Next() {
+			var target uuid.UUID
+			if queryErr = rows.Scan(&target); queryErr != nil {
+				rows.Close()
+				return Assignment{}, queryErr
+			}
+			targetScreens = append(targetScreens, target)
+		}
+		if queryErr = rows.Err(); queryErr != nil {
+			rows.Close()
+			return Assignment{}, queryErr
+		}
+		rows.Close()
+	}
+	if err = validatePresentationForScreens(ctx, tx, playlistID, layoutID, targetScreens); err != nil {
+		return Assignment{}, err
+	}
 	requiresV12, err := presentationRequiresManifestV12(ctx, tx, playlistID, layoutID)
 	if err != nil {
 		return Assignment{}, err
@@ -698,6 +725,27 @@ func (s *Service) AssignGroupPresentation(ctx context.Context, groupID uuid.UUID
 	}
 	if !valid {
 		return ErrNotFound
+	}
+	rows, err := tx.Query(ctx, `SELECT screen_id FROM screen_group_memberships WHERE screen_group_id=$1 ORDER BY screen_id`, groupID)
+	if err != nil {
+		return err
+	}
+	targetScreens := []uuid.UUID{}
+	for rows.Next() {
+		var screenID uuid.UUID
+		if err = rows.Scan(&screenID); err != nil {
+			rows.Close()
+			return err
+		}
+		targetScreens = append(targetScreens, screenID)
+	}
+	if err = rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	if err = validatePresentationForScreens(ctx, tx, playlistID, layoutID, targetScreens); err != nil {
+		return err
 	}
 	requiresV12, err := presentationRequiresManifestV12(ctx, tx, playlistID, layoutID)
 	if err != nil {
@@ -1168,53 +1216,62 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 	}
 	requiresV13 := false
 	for _, widget := range manifest.Widgets {
-		if map[string]bool{"spotlight": true, "stat_grid": true, "chart": true, "progress": true, "timeline": true, "world_clock": true}[widget.Provider] {
+		if providerRequiresV13(widget.Provider) {
 			requiresV13 = true
 		}
 	}
 	for _, source := range manifest.DataSources {
-		if source.Provider == "transit" || source.Provider == "cap_alerts" || source.Provider == "air_quality" {
+		if source.Provider == "transit" || source.Provider == "cap_alerts" || source.Provider == "air_quality" || source.Provider == "school-status" {
 			requiresV13 = true
 		}
 	}
-	if supported, capabilityErr := s.screenSupportsV13(ctx, screenID); capabilityErr != nil {
+	compiled := make([]*WidgetPresentation, len(manifest.Widgets))
+	canCompileV13 := true
+	for index := range manifest.Widgets {
+		compiled[index], _ = compileWidgetPresentationForPreset(manifest.Widgets[index].Provider, manifest.Widgets[index].PresetID, manifest.Widgets[index].Configuration)
+		if compiled[index] == nil {
+			canCompileV13 = false
+			break
+		}
+	}
+	playerCapabilities, capabilityErr := readPlayerPresentationCapabilities(ctx, s.db, screenID)
+	if capabilityErr != nil {
 		return Manifest{}, "", capabilityErr
-	} else if requiresV13 && !supported {
-		return Manifest{}, "", fmt.Errorf("%w: Player update required for declarative information Widgets", ErrConflict)
-	} else if supported {
-		compiled := make([]*WidgetPresentation, len(manifest.Widgets))
-		canUseV13 := true
-		for index := range manifest.Widgets {
-			compiled[index], _ = compileWidgetPresentationForPreset(manifest.Widgets[index].Provider, manifest.Widgets[index].PresetID, manifest.Widgets[index].Configuration)
-			if compiled[index] == nil {
-				canUseV13 = false
-				break
+	}
+	useV13 := false
+	if playerCapabilities.Reported && canCompileV13 {
+		for index, presentation := range compiled {
+			if err = checkPresentationCompatibility(manifest.Widgets[index].Name, presentation, playerCapabilities); err != nil {
+				return Manifest{}, "", fmt.Errorf("%w: %v", ErrConflict, err)
 			}
 		}
-		if canUseV13 {
-			ids := make([]uuid.UUID, 0, len(manifest.DataSources))
-			for _, source := range manifest.DataSources {
-				ids = append(ids, source.ID)
+		useV13 = true
+	} else if requiresV13 {
+		return Manifest{}, "", fmt.Errorf("%w: Player update required for declarative information Widgets", ErrConflict)
+	}
+	if useV13 {
+		ids := make([]uuid.UUID, 0, len(manifest.DataSources))
+		for _, source := range manifest.DataSources {
+			ids = append(ids, source.ID)
+		}
+		manifest.SchemaVersion = 13
+		manifest.DataSources = []ManifestDataSource{}
+		for _, id := range ids {
+			if err = s.projectDataSource(ctx, &manifest, id); err != nil {
+				return Manifest{}, "", err
 			}
-			manifest.SchemaVersion = 13
-			manifest.DataSources = []ManifestDataSource{}
-			for _, id := range ids {
-				if err = s.projectDataSource(ctx, &manifest, id); err != nil {
-					return Manifest{}, "", err
-				}
+		}
+		for index := range manifest.DataSources {
+			document, projectionErr := projectDataDocument(manifest.DataSources[index].Configuration)
+			if projectionErr != nil {
+				return Manifest{}, "", fmt.Errorf("%w: Data Source cannot be projected to v13: %v", ErrConflict, projectionErr)
 			}
-			for index := range manifest.DataSources {
-				document, projectionErr := projectDataDocument(manifest.DataSources[index].Configuration)
-				if projectionErr != nil {
-					return Manifest{}, "", fmt.Errorf("%w: Data Source cannot be projected to v13: %v", ErrConflict, projectionErr)
-				}
-				manifest.DataSources[index].DataDocument = document
-				manifest.DataSources[index].Configuration = nil
-			}
-			for index := range manifest.Widgets {
-				manifest.Widgets[index].Presentation = compiled[index]
-				manifest.Widgets[index].Configuration = nil
-			}
+			manifest.DataSources[index].DataDocument = document
+			manifest.DataSources[index].Configuration = nil
+		}
+		for index := range manifest.Widgets {
+			manifest.Widgets[index].Presentation = compiled[index]
+			manifest.Widgets[index].Configuration = nil
 		}
 	}
 	encoded, encodeErr := json.Marshal(manifest)
@@ -1227,37 +1284,6 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 	return manifest, manifestETagForSchema(screenID, assignment.ManifestVersion, manifest.SchemaVersion), nil
 }
 
-func (s *Service) screenSupportsV13(ctx context.Context, screenID uuid.UUID) (bool, error) {
-	var presentationSchemas []int32
-	var nativeCapabilities map[string]int
-	var webRuntimeVersion int
-	err := s.db.QueryRow(ctx, `
-		SELECT COALESCE(presentation_schema_versions,'{}'::int[]),
-		       COALESCE(native_presentation_capabilities,'{}'::jsonb),
-		       COALESCE(web_runtime_version,0)
-		FROM screen_player_status WHERE screen_id=$1`, screenID).
-		Scan(&presentationSchemas, &nativeCapabilities, &webRuntimeVersion)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	hasSchema := false
-	for _, version := range presentationSchemas {
-		hasSchema = hasSchema || version == PresentationSchemaVersion
-	}
-	if !hasSchema || webRuntimeVersion < WebRuntimeVersion {
-		return false, nil
-	}
-	for capability, version := range NativePresentationCapabilities {
-		if nativeCapabilities[capability] < version {
-			return false, nil
-		}
-	}
-	return true, nil
-}
-
 func (s *Service) reconcilePresentationCatalog(ctx context.Context) error {
 	_, err := s.db.Exec(ctx, `
 		WITH changed AS (
@@ -1268,12 +1294,27 @@ func (s *Service) reconcilePresentationCatalog(ctx context.Context) error {
 		)
 		UPDATE screen_manifest_state
 		SET manifest_version=manifest_version+1,changed_at=now(),change_reason='presentation.catalog_changed'
-		WHERE EXISTS(SELECT 1 FROM changed)`, presentationCatalogFingerprint)
+		WHERE EXISTS(SELECT 1 FROM changed)`, s.definitions.Fingerprint)
 	return err
 }
 
 // widgetDataSourceID returns the Data Source a data-driven widget consumes, or Nil.
 func widgetDataSourceID(provider string, configuration json.RawMessage) uuid.UUID {
+	if definition, ok := contentdefs.MustLoad().Widget(provider); ok && !definition.LegacyEditor {
+		var values map[string]json.RawMessage
+		if json.Unmarshal(configuration, &values) == nil {
+			for _, field := range definition.ConfigurationSchema.Fields {
+				if field.Control != "data_source" {
+					continue
+				}
+				var id uuid.UUID
+				if json.Unmarshal(values[field.Key], &id) == nil {
+					return id
+				}
+			}
+		}
+		return uuid.Nil
+	}
 	switch provider {
 	case "ticker", "menu", "list", "table", "agenda", "metric", "cards", "weather", "spotlight", "stat_grid", "chart", "progress", "timeline":
 		var c struct {

@@ -75,11 +75,15 @@ Manifest v13 adds a stable declarative runtime boundary. Data Sources project pr
 
 Capability revision 2 implements native icons, downloaded Tilecast asset images, line/bar/donut charts, target progress, repeat indexes, numeric/date conditions, legends, bounded chart axes, and collection empty states. Remote images remain unsupported.
 
-Provider creation remains limited to Tilecast releases. Studio does not expose raw presentation JSON, uploaded scripts, arbitrary templates, or third-party runtime code. New providers using existing data kinds, nodes, formatters, and web capabilities therefore need only a server and Studio release; genuinely new native primitives still require a capability-bearing Player update.
+Provider creation remains limited to Tilecast releases. The Server embeds and validates one content-definition catalog and exposes it through `GET /api/v1/content-definitions`; Studio does not maintain a second provider list for newly release-defined content. Supported generated controls are text, multiline text, number, integer, boolean, select, color, date, datetime, timezone, URL, Data Source, Data Source field, media asset, and bounded repeating group. Raw JSON, scripts, executable expressions, arbitrary HTML, uploaded definitions, and user-provided presentation trees are not exposed.
+
+The School Status Source and School Status Banner are the reference implementation. The Source uses the registered `manual_object` Server adapter and emits a Data Document v1 object. The Banner resolves configuration placeholders on the Server and uses only existing `surface`, `column`, `badge`, `text`, and `conditional` nodes. Neither provider appears in Android production source.
+
+New Data Source adapters that normalize to Data Document v1 and new native Widgets using existing declarative nodes therefore require only Server and Studio updates. A new Android rendering primitive, presentation schema, or playback capability still requires a Player update.
 
 Presentations containing only legacy Widget configurations continue using manifest v11. Saving a generalized data-driven Widget upgrades it to configuration version 2 and requires manifest v12. Studio refuses to assign v12 content to a screen or synchronized group until every target reports a compatible Player version.
 
-The v13-compatible Player reports presentation schema versions, native capability identifiers and versions, web runtime version, and bundle size limits. The server emits v13 only after that report and retains v11/v12 dual projection for staged upgrades.
+The v13-compatible Player reports presentation schema versions, native capability identifiers and versions, web runtime version, and bundle size limits. The Server checks only the exact requirements of presentations reachable from the assigned playlist, Layout, schedules, dependencies, or emergency. Missing capability errors name the Widget and required/reported versions. Player-version checks remain only for Players that have not reported presentation capabilities; v11/v12 dual projection remains available for staged upgrades.
 
 ## Deletion and usage
 

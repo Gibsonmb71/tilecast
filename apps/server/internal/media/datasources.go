@@ -6,31 +6,63 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/tilecast/tilecast/apps/server/internal/contentdefs"
 )
 
-// dataSourceProvider returns the normalizer for one Data Source provider.
+type dataSourceAdapterFactory func(*Service, string) configNormalizer
+
+var dataSourceAdapterRegistry = map[string]dataSourceAdapterFactory{
+	"calendar": func(service *Service, _ string) configNormalizer {
+		return calendarSourceProvider{service}
+	},
+	"structured": func(service *Service, provider string) configNormalizer {
+		return structuredSourceProvider{service, provider}
+	},
+	"manual_table": func(_ *Service, _ string) configNormalizer {
+		return manualSourceProvider{}
+	},
+	"weather": func(_ *Service, _ string) configNormalizer {
+		return weatherSourceProvider{}
+	},
+	"transit": func(service *Service, _ string) configNormalizer {
+		return transitSourceProvider{service}
+	},
+	"cap_alerts": func(service *Service, _ string) configNormalizer {
+		return capAlertsSourceProvider{service}
+	},
+	"air_quality": func(service *Service, _ string) configNormalizer {
+		return airQualitySourceProvider{service}
+	},
+	"manual_object": func(service *Service, provider string) configNormalizer {
+		definition, _ := service.definitions.DataSource(provider)
+		return definitionConfigNormalizer{service: service, schema: definition.ConfigurationSchema}
+	},
+}
+
+func ValidateContentAdapters(catalog *contentdefs.Catalog) error {
+	for _, definition := range catalog.DataSources {
+		if _, ok := dataSourceAdapterRegistry[definition.AdapterID]; !ok {
+			return fmt.Errorf("Data Source definition %q references unregistered adapter %q", definition.ID, definition.AdapterID)
+		}
+	}
+	return nil
+}
+
+// dataSourceProvider resolves a release definition to a trusted Server adapter.
 func (s *Service) dataSourceProvider(name string) (configNormalizer, error) {
-	switch name {
-	case "calendar":
-		return calendarSourceProvider{s}, nil
-	case "rss", "atom", "json", "csv":
-		return structuredSourceProvider{s, name}, nil
-	case "manual":
-		return manualSourceProvider{}, nil
-	case "weather":
-		return weatherSourceProvider{}, nil
-	case "transit":
-		return transitSourceProvider{s}, nil
-	case "cap_alerts":
-		return capAlertsSourceProvider{s}, nil
-	case "air_quality":
-		return airQualitySourceProvider{s}, nil
-	default:
+	definition, ok := s.definitions.DataSource(name)
+	if !ok {
 		return nil, errors.New("data source provider is not supported")
 	}
+	factory, ok := dataSourceAdapterRegistry[definition.AdapterID]
+	if !ok {
+		return nil, fmt.Errorf("data source adapter %q is not registered", definition.AdapterID)
+	}
+	return factory(s, name), nil
 }
 
 func (s *Service) DataSourceNormalizer(name string) (configNormalizer, error) {
@@ -70,6 +102,15 @@ func (s *Service) CreateDataSource(ctx context.Context, user uuid.UUID, input Da
 		manual := configuration.(ManualSourceConfig)
 		payload, _ := json.Marshal(manualPlayerData(manual))
 		if _, err = tx.Exec(ctx, `INSERT INTO data_source_refresh_states(data_source_id,next_refresh_at,last_attempt_at,last_success_at,http_result_category,parse_status,available_item_count,cache_updated_at,cache_expires_at,cached_payload) VALUES($1,now()+interval '100 years',now(),now(),'manual','success',$2,now(),now()+interval '100 years',$3::jsonb)`, id, len(manual.Rows), string(payload)); err != nil {
+			return DataSource{}, err
+		}
+	} else if input.Provider == "school-status" {
+		var config schoolStatusSourceConfig
+		encodedConfiguration, _ := json.Marshal(configuration)
+		_ = json.Unmarshal(encodedConfiguration, &config)
+		now := time.Now().UTC()
+		payload, _ := json.Marshal(schoolStatusPayload(config, now))
+		if _, err = tx.Exec(ctx, `INSERT INTO data_source_refresh_states(data_source_id,next_refresh_at,last_attempt_at,last_success_at,http_result_category,parse_status,available_item_count,cache_updated_at,cache_expires_at,cached_payload) VALUES($1,now()+interval '100 years',now(),now(),'manual','success',1,now(),now()+interval '100 years',$2::jsonb)`, id, string(payload)); err != nil {
 			return DataSource{}, err
 		}
 	} else if _, err = tx.Exec(ctx, `INSERT INTO data_source_refresh_states(data_source_id) VALUES($1)`, id); err != nil {
@@ -132,6 +173,15 @@ func (s *Service) UpdateDataSource(ctx context.Context, id, user uuid.UUID, inpu
 		manual := configuration.(ManualSourceConfig)
 		payload, _ := json.Marshal(manualPlayerData(manual))
 		if _, err = tx.Exec(ctx, `UPDATE data_source_refresh_states SET next_refresh_at=now()+interval '100 years',last_attempt_at=now(),last_success_at=now(),http_result_category='manual',parse_status='success',available_event_count=0,available_item_count=$2,using_cached_data=FALSE,cache_updated_at=now(),cache_expires_at=now()+interval '100 years',cached_payload=$3::jsonb,error_code=NULL,locked_at=NULL,locked_by=NULL,updated_at=now() WHERE data_source_id=$1`, id, len(manual.Rows), string(payload)); err != nil {
+			return DataSource{}, err
+		}
+	} else if input.Provider == "school-status" {
+		var config schoolStatusSourceConfig
+		encodedConfiguration, _ := json.Marshal(configuration)
+		_ = json.Unmarshal(encodedConfiguration, &config)
+		now := time.Now().UTC()
+		payload, _ := json.Marshal(schoolStatusPayload(config, now))
+		if _, err = tx.Exec(ctx, `UPDATE data_source_refresh_states SET next_refresh_at=now()+interval '100 years',last_attempt_at=now(),last_success_at=now(),http_result_category='manual',parse_status='success',available_item_count=1,using_cached_data=FALSE,cache_updated_at=now(),cache_expires_at=now()+interval '100 years',cached_payload=$2::jsonb,error_code=NULL,locked_at=NULL,locked_by=NULL,updated_at=now() WHERE data_source_id=$1`, id, string(payload)); err != nil {
 			return DataSource{}, err
 		}
 	} else if _, err = tx.Exec(ctx, `INSERT INTO data_source_refresh_states(data_source_id,next_refresh_at) VALUES($1,now()) ON CONFLICT(data_source_id) DO UPDATE SET next_refresh_at=now(),error_code=NULL,locked_at=NULL,locked_by=NULL,updated_at=now()`, id); err != nil {
@@ -205,6 +255,17 @@ func (s *Service) PreviewDataSourceByID(ctx context.Context, id uuid.UUID, previ
 	}
 	if raw.Provider == "manual" {
 		return s.ManualPreview(ctx, raw.Configuration)
+	}
+	if raw.Provider == "school-status" {
+		projected, projectErr := s.PlayerTypedDataSourceConfiguration(ctx, raw.ID, raw.Provider, raw.Configuration)
+		if projectErr != nil {
+			return nil, projectErr
+		}
+		var payload TypedDatasetPayload
+		if err := json.Unmarshal(projected, &payload); err != nil {
+			return nil, err
+		}
+		return payload, nil
 	}
 	if raw.Provider == "weather" {
 		return s.WeatherPreview(ctx, raw.Configuration)
@@ -401,6 +462,16 @@ func availableDataSourceFields(provider string, raw json.RawMessage) []DataSourc
 			fields = append(fields, DataSourceField{Key: column.Key, Label: column.Label, Type: column.Type})
 		}
 		return fields
+	}
+	if provider == "school-status" {
+		return []DataSourceField{
+			{Key: "status", Label: "Status", Type: "text"},
+			{Key: "message", Label: "Message", Type: "text"},
+			{Key: "severity", Label: "Severity", Type: "text"},
+			{Key: "effectiveAt", Label: "Effective time", Type: "datetime"},
+			{Key: "expiresAt", Label: "Expiration time", Type: "datetime"},
+			{Key: "updatedAt", Label: "Updated time", Type: "datetime"},
+		}
 	}
 	if provider == "weather" {
 		return []DataSourceField{

@@ -123,15 +123,19 @@ Website data clearing is the typed `clear_website_data` persistent player comman
 
 Tilecast separates renderable **Widgets** from non-visual **Data Sources**. See [widgets-and-layouts.md](widgets-and-layouts.md) for the full model.
 
-`POST /api/v1/widgets` creates a reusable Widget from the closed Widget registry. In addition to the established providers, the universal-information release adds Spotlight, Stat Grid, Chart, Progress, Timeline, and World Clock. Data-driven Widgets reference exactly one compatible Data Source by `dataSourceId`; the server validates typed fields and provider capabilities. Saving a data-driven Widget writes configuration version 2.
+`POST /api/v1/widgets` creates a reusable Widget from the release-owned definition catalog or a retained trusted legacy provider. Data-driven Widgets reference compatible Data Sources by ID; the server validates source existence, output kind, required fields and types, bounds, enums, colors, URLs, and media references.
 
 Widget requests and responses may include nullable authoring-only `presetId` metadata for Leaderboard, Status Board, Queue Board, Schedule / Departures, Opening Hours, and Directory. Presets compile through their underlying generic provider and `presetId` is omitted from Player presentation logic.
 
-`GET /api/v1/data-sources` includes Calendar, RSS, Atom, JSON, CSV, Manual Table, Weather, Transit, CAP Alerts, and Air Quality. Transit joins bounded public GTFS Static and Realtime data; CAP Alerts resolves active public CAP 1.2 records; Air Quality projects attributed current and hourly Open-Meteo/CAMS data. Player manifests never contain fetch URLs, uploaded CSV bytes, coordinates, contacts, source credentials, or upstream request details.
+`GET /api/v1/content-definitions` returns the Server-owned catalog used by Studio to build galleries, categories, defaults, forms, compatibility filters, field selectors, and validation guidance. Definitions are embedded in Tilecast releases; this endpoint does not accept uploads or third-party code. `GET /api/v1/provider-catalog` remains as a compatibility endpoint.
+
+`GET /api/v1/data-sources` includes the established providers plus the release-defined School Status manual object Source. School Status emits Data Document v1 object fields `status`, `message`, `severity`, `effectiveAt`, `expiresAt`, and `updatedAt`. Player manifests never contain fetch URLs, uploaded CSV bytes, coordinates, contacts, source credentials, or upstream request details.
 
 `POST /api/v1/data-sources/{provider}/preview` performs a bounded real fetch and returns sanitized prepared data plus diagnostics before save. JSON mappings use only RFC 6901 JSON Pointer; CSV uses exact header names. An optional `previewDate` evaluates configured date selection without changing saved data. `GET /api/v1/data-sources/{id}/diagnostics` returns bounded refresh and cache diagnostics without raw payloads.
 
 Manifest v11 and v12 remain accepted for staged upgrades. Compatible Players receive manifest v13, where provider-neutral typed documents may contain multiple named datasets and Widget presentations dispatch by kind and required capabilities rather than provider name. Date-only records remain calendar dates and timestamps remain RFC 3339.
+
+The School Status Banner demonstrates the release-definition path. Studio generates its form from the catalog, the Server validates and compiles it to existing `surface`, `column`, `badge`, `text`, and `conditional` nodes, and Android receives no provider-specific configuration or template.
 
 ## Layouts
 
@@ -155,6 +159,6 @@ Stable settings errors include `unknown_setting`, `invalid_setting_value`, `sett
 
 ## Declarative presentation runtime
 
-`GET /api/v1/provider-catalog` returns the closed Tilecast provider catalog used by Studio. `POST /api/v1/widgets/compile-preview` compiles an authorized draft into the same declarative presentation document used by v13 manifests.
+`GET /api/v1/provider-catalog` returns the legacy compatibility catalog. `GET /api/v1/content-definitions` returns the authoritative release definitions. `POST /api/v1/widgets/compile-preview` compiles an authorized draft into the same resolved declarative presentation document used by v13 manifests.
 
 Player heartbeats may include `presentationSchemaVersions`, `nativePresentationCapabilities`, `webRuntimeVersion`, and `webBundleLimitBytes`. The server uses these bounded fields for v13 negotiation; they never authorize arbitrary executable features.

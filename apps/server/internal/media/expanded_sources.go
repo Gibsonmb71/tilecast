@@ -508,6 +508,13 @@ func (s *Service) PlayerTypedDataSourceConfiguration(ctx context.Context, id uui
 		}
 		return json.Marshal(manualPlayerData(config))
 	}
+	if provider == "school-status" {
+		var payload json.RawMessage
+		if err := s.db.QueryRow(ctx, `SELECT cached_payload FROM data_source_refresh_states WHERE data_source_id=$1`, id).Scan(&payload); err != nil {
+			return nil, err
+		}
+		return payload, nil
+	}
 	var payload json.RawMessage
 	var expires *time.Time
 	var usingCache bool

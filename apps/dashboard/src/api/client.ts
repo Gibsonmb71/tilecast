@@ -60,6 +60,7 @@ import type {
   LayoutRevision,
   LayoutRevisionList,
   ProviderCatalog,
+  ContentDefinitionCatalog,
   WidgetPresentation,
 } from "./types";
 
@@ -107,6 +108,8 @@ type SessionResult = { user: User; csrfToken: string };
 
 export const api = {
   providerCatalog: () => request<ProviderCatalog>("/provider-catalog"),
+  contentDefinitions: () =>
+    request<ContentDefinitionCatalog>("/content-definitions"),
   compileWidgetPreview: (
     provider: WidgetInput["provider"],
     configuration: WidgetInput["configuration"],

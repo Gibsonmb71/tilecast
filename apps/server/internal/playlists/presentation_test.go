@@ -2,6 +2,7 @@ package playlists
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -99,5 +100,59 @@ func TestCompileWorldClockAndChartCapabilities(t *testing.T) {
 	chart, err := compileWidgetPresentation("chart", json.RawMessage(`{"dataSourceId":"11111111-1111-1111-1111-111111111111","dataset":"hourly","chartType":"line","series":[{"field":"pm2_5","label":"PM2.5"}]}`))
 	if err != nil || chart.RequiredCapabilities["content.line_chart"] != 2 {
 		t.Fatalf("chart=%+v err=%v", chart, err)
+	}
+}
+
+func TestSchoolStatusBannerCompilesFromReleaseDefinition(t *testing.T) {
+	raw := json.RawMessage(`{
+		"dataSourceId":"11111111-1111-1111-1111-111111111111",
+		"heading":"District status","statusField":"status","messageField":"message",
+		"severityField":"severity","showUpdatedTime":true,
+		"foregroundColor":"#ffffff","backgroundColor":"#17324d",
+		"emptyState":"Status unavailable"
+	}`)
+	presentation, err := compileWidgetPresentation("school-status-banner", raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if presentation.Native == nil || presentation.Native.Root.Type != "surface" {
+		t.Fatal("release definition did not compile to a native surface")
+	}
+	if presentation.RequiredCapabilities["content.badge"] != 1 ||
+		presentation.RequiredCapabilities["collection.conditional"] != 2 {
+		t.Fatalf("unexpected capabilities: %#v", presentation.RequiredCapabilities)
+	}
+	encoded, _ := json.Marshal(presentation)
+	if strings.Contains(string(encoded), "$config") || strings.Contains(string(encoded), "$ifConfig") {
+		t.Fatal("Player presentation contains unresolved Server placeholders")
+	}
+}
+
+func TestCompatibilityChecksOnlyPresentationRequirements(t *testing.T) {
+	presentation := &WidgetPresentation{
+		SchemaVersion: 1,
+		Kind:          "native",
+		RequiredCapabilities: map[string]int{
+			"layout.surface": 1,
+			"content.text":   1,
+		},
+	}
+	player := playerPresentationCapabilities{
+		SchemaVersions: []int32{1},
+		Native: map[string]int{
+			"layout.surface": 1,
+			"content.text":   1,
+		},
+		Reported: true,
+	}
+	if err := checkPresentationCompatibility("Enrollment Chart", presentation, player); err != nil {
+		t.Fatalf("unrelated global capabilities made content incompatible: %v", err)
+	}
+	presentation.RequiredCapabilities["content.line_chart"] = 2
+	player.Native["content.line_chart"] = 1
+	err := checkPresentationCompatibility("Enrollment Chart", presentation, player)
+	if err == nil || !strings.Contains(err.Error(), "content.line_chart@2") ||
+		!strings.Contains(err.Error(), "content.line_chart@1") {
+		t.Fatalf("missing capability was not identified exactly: %v", err)
 	}
 }

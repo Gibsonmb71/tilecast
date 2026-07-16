@@ -22,6 +22,7 @@ import type {
   TypedDatasetPayload,
 } from "../api/types";
 import { CsvSourceInput, type CsvInspection } from "./CsvSourceInput";
+import { GenericDataSourceEditor } from "./GenericDefinitionEditors";
 
 export type StructuredProvider = "rss" | "atom" | "json" | "csv";
 
@@ -1418,6 +1419,28 @@ export function DataSourceEditor({
   onSaved: (dataSource: DataSourceDetail) => void;
   page?: boolean;
 }) {
+  const definitions = useQuery({
+    queryKey: ["content-definitions"],
+    queryFn: api.contentDefinitions,
+  });
+  const definition = definitions.data?.dataSources.find(
+    (candidate) => candidate.id === provider,
+  );
+  if (provider === "school-status" && definitions.isLoading)
+    return (
+      <div className="table-loading">Loading Data Source definition...</div>
+    );
+  if (definition && !definition.legacyEditor)
+    return (
+      <GenericDataSourceEditor
+        definition={definition}
+        dataSource={dataSource}
+        csrf={csrf}
+        readOnly={readOnly}
+        onClose={onClose}
+        onSaved={onSaved}
+      />
+    );
   if (provider === "manual")
     return (
       <ManualDataSourceEditor
@@ -1469,7 +1492,7 @@ export function DataSourceEditor({
     );
   return (
     <StructuredDataSourceEditor
-      provider={provider}
+      provider={provider as StructuredProvider}
       dataSource={dataSource}
       csrf={csrf}
       readOnly={readOnly}

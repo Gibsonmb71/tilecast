@@ -160,6 +160,10 @@ func (s *server) createSchedule(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", e.Error())
 		return
 	}
+	if err := s.validateSchedulePresentation(r, b); err != nil {
+		s.writePlaylistError(w, r, err)
+		return
+	}
 	u := r.Context().Value(sessionContextKey).(auth.Session).User
 	x, e := s.scheduling.Create(r.Context(), u.ID, b)
 	s.scheduleResponse(w, r, x, e, http.StatusCreated)
@@ -174,9 +178,30 @@ func (s *server) updateSchedule(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", e.Error())
 		return
 	}
+	if err := s.validateSchedulePresentation(r, b); err != nil {
+		s.writePlaylistError(w, r, err)
+		return
+	}
 	u := r.Context().Value(sessionContextKey).(auth.Session).User
 	x, e := s.scheduling.Update(r.Context(), id, u.ID, b)
 	s.scheduleResponse(w, r, x, e, http.StatusOK)
+}
+
+func (s *server) validateSchedulePresentation(r *http.Request, input scheduling.Input) error {
+	var playlistID *uuid.UUID
+	if input.LayoutID == nil {
+		playlistID = &input.PlaylistID
+	}
+	screenIDs := []uuid.UUID{}
+	groupIDs := []uuid.UUID{}
+	for _, target := range input.Targets {
+		if target.Type == "screen" {
+			screenIDs = append(screenIDs, target.ID)
+		} else if target.Type == "group" {
+			groupIDs = append(groupIDs, target.ID)
+		}
+	}
+	return s.playlists.ValidatePresentationTargets(r.Context(), playlistID, input.LayoutID, screenIDs, groupIDs)
 }
 func (s *server) deleteSchedule(w http.ResponseWriter, r *http.Request) {
 	id, ok := urlUUID(w, r, "id")

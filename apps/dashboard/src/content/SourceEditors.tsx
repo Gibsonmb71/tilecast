@@ -61,6 +61,15 @@ export function WidgetProviderGallery({
   });
   const widgetProviders =
     catalog.data?.providers.filter((entry) => entry.role === "widget") ?? [];
+  const definitions = useQuery({
+    queryKey: ["content-definitions"],
+    queryFn: api.contentDefinitions,
+    staleTime: 5 * 60_000,
+  });
+  const releaseDefined =
+    definitions.data?.widgets.filter(
+      (definition) => !definition.legacyEditor,
+    ) ?? [];
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -94,6 +103,24 @@ export function WidgetProviderGallery({
           </button>
         </header>
         <div className="source-provider-groups">
+          {releaseDefined.length > 0 && (
+            <section className="source-provider-group">
+              <h3>Release-defined</h3>
+              <div className="source-provider-grid">
+                {releaseDefined.map((definition) => (
+                  <button
+                    type="button"
+                    key={definition.id}
+                    onClick={() => onChoose(definition.id)}
+                  >
+                    <LayoutGrid size={26} />
+                    <strong>{definition.name}</strong>
+                    <span>{definition.description}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
           <section className="source-provider-group">
             <h3>Web and video</h3>
             <div className="source-provider-grid">
@@ -283,7 +310,7 @@ export function WidgetProviderGallery({
   );
 }
 
-type NativeProvider =
+export type NativeProvider =
   | "clock"
   | "date"
   | "qrcode"

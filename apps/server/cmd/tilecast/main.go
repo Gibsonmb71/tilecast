@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/tilecast/tilecast/apps/server/internal/auth"
 	"github.com/tilecast/tilecast/apps/server/internal/config"
+	"github.com/tilecast/tilecast/apps/server/internal/contentdefs"
 	"github.com/tilecast/tilecast/apps/server/internal/database"
 	"github.com/tilecast/tilecast/apps/server/internal/devices"
 	"github.com/tilecast/tilecast/apps/server/internal/discovery"
@@ -44,6 +45,13 @@ func main() {
 		fail("database connection failed", err)
 	}
 	defer db.Close()
+	contentDefinitions, err := contentdefs.Load()
+	if err != nil {
+		fail("content definition validation failed", err)
+	}
+	if err = media.ValidateContentAdapters(contentDefinitions); err != nil {
+		fail("content adapter validation failed", err)
+	}
 
 	authService := auth.NewService(db, cfg.SessionTTL)
 	presence := devices.NewPresenceHub()
@@ -68,6 +76,8 @@ func main() {
 		AirQualityBaseURL: cfg.Sources.AirQualityBaseURL,
 	})
 	playlistService := playlists.NewService(db, deviceService)
+	mediaService.SetContentDefinitions(contentDefinitions)
+	playlistService.SetContentDefinitions(contentDefinitions)
 	layoutService := layouts.NewService(db)
 	layoutService.SetNotifier(deviceService)
 	mediaService.SetAssetInvalidator(playlistService)

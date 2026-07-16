@@ -27,19 +27,6 @@ import {
 import { DataSourceEditor } from "../content/DataSourceEditors";
 import { canManageContent } from "./ContentPage";
 
-const providers: DataSourceProvider[] = [
-  "calendar",
-  "rss",
-  "atom",
-  "json",
-  "csv",
-  "manual",
-  "weather",
-  "transit",
-  "cap_alerts",
-  "air_quality",
-];
-
 function providerLabel(provider: DataSourceProvider) {
   return (
     (
@@ -169,6 +156,17 @@ const createCopy: Record<
       "Confirm endpoint policy, preview, then save.",
     ],
   },
+  "school-status": {
+    eyebrow: "Release-defined information",
+    description:
+      "Maintain the current school status and publish it as a typed object Data Document.",
+    tip: "Use expiration for temporary closures or delayed-opening notices.",
+    steps: [
+      "Enter the current status, message, and severity.",
+      "Optionally set effective and expiration times.",
+      "Save and select it in a School Status Banner Widget.",
+    ],
+  },
 };
 
 function providerIcon(provider: DataSourceProvider, size = 28) {
@@ -275,6 +273,15 @@ function DataSourceProviderGallery({
   const sourceCount =
     catalog.data?.providers.filter((entry) => entry.role === "data_source")
       .length ?? 0;
+  const definitions = useQuery({
+    queryKey: ["content-definitions"],
+    queryFn: api.contentDefinitions,
+    staleTime: 5 * 60_000,
+  });
+  const releaseDefined =
+    definitions.data?.dataSources.filter(
+      (definition) => !definition.legacyEditor,
+    ) ?? [];
   return (
     <div className="details-backdrop" role={page ? undefined : "presentation"}>
       <section
@@ -297,6 +304,17 @@ function DataSourceProviderGallery({
           </button>
         </header>
         <div className="source-provider-grid">
+          {releaseDefined.map((definition) => (
+            <button
+              type="button"
+              key={definition.id}
+              onClick={() => onChoose(definition.id)}
+            >
+              <TableProperties size={30} />
+              <strong>{definition.name}</strong>
+              <span>{definition.description}</span>
+            </button>
+          ))}
           <button type="button" onClick={() => onChoose("calendar")}>
             <CalendarDays size={30} />
             <strong>Calendar</strong>
@@ -371,6 +389,10 @@ export function DataSourcesPage() {
     queryKey: ["data-sources", params.toString()],
     queryFn: () => api.listDataSources(params),
   });
+  const definitions = useQuery({
+    queryKey: ["content-definitions"],
+    queryFn: api.contentDefinitions,
+  });
 
   return (
     <section className="content-page apps-page">
@@ -402,9 +424,9 @@ export function DataSourcesPage() {
           onChange={(event) => setProvider(event.target.value)}
         >
           <option value="">All Data Source types</option>
-          {providers.map((item) => (
-            <option key={item} value={item}>
-              {providerLabel(item)}
+          {(definitions.data?.dataSources ?? []).map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.name}
             </option>
           ))}
         </Select>
@@ -491,6 +513,10 @@ export function DataSourceEditorPage() {
     queryFn: () => api.getDataSource(id!),
     enabled: Boolean(id),
   });
+  const definitions = useQuery({
+    queryKey: ["content-definitions"],
+    queryFn: api.contentDefinitions,
+  });
   const dataSource = detail.data;
   const provider = (providerParam ?? dataSource?.provider) as
     DataSourceProvider | undefined;
@@ -498,6 +524,9 @@ export function DataSourceEditorPage() {
   const saved = (value: { id: string }) => {
     void navigate(`/data-sources/${value.id}`, { replace: true });
   };
+  const definition = definitions.data?.dataSources.find(
+    (candidate) => candidate.id === provider,
+  );
 
   if (!id && !providerParam) {
     return (
@@ -512,7 +541,11 @@ export function DataSourceEditorPage() {
   }
   if (id && detail.isLoading)
     return <div className="table-loading">Loading Data Source...</div>;
-  if ((id && !dataSource) || !provider || !providers.includes(provider)) {
+  if (definitions.isLoading)
+    return (
+      <div className="table-loading">Loading Data Source definition...</div>
+    );
+  if ((id && !dataSource) || !provider || !definition) {
     return (
       <section className="empty-state">
         <h2>Data Source unavailable</h2>

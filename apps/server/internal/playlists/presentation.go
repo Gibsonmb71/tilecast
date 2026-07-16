@@ -8,13 +8,14 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/tilecast/tilecast/apps/server/internal/contentdefs"
 )
 
 const (
-	DataDocumentSchemaVersion      = 1
-	PresentationSchemaVersion      = 1
-	WebRuntimeVersion              = 1
-	presentationCatalogFingerprint = "v13-data1-presentation1-information-widgets-2026-07-16"
+	DataDocumentSchemaVersion = 1
+	PresentationSchemaVersion = 1
+	WebRuntimeVersion         = 1
 )
 
 var NativePresentationCapabilities = map[string]int{
@@ -350,6 +351,9 @@ func coerceDocumentValue(kind, raw string) DocumentValue {
 }
 
 func compileWidgetPresentation(provider string, raw json.RawMessage) (*WidgetPresentation, error) {
+	if definition, ok := contentdefs.MustLoad().Widget(provider); ok && !definition.LegacyEditor {
+		return compileDefinitionPresentation(definition, raw)
+	}
 	switch provider {
 	case "website", "youtube", "clock", "date", "qrcode", "countdown", "ticker", "menu", "list", "table", "agenda", "metric", "cards", "weather", "spotlight", "stat_grid", "chart", "progress", "timeline", "world_clock":
 	default:
@@ -370,6 +374,95 @@ func compileWidgetPresentation(provider string, raw json.RawMessage) (*WidgetPre
 		SchemaVersion: PresentationSchemaVersion, Kind: "native", RequiredCapabilities: capabilities,
 		Native: &NativePresentation{Root: root},
 	}, nil
+}
+
+func compileDefinitionPresentation(definition contentdefs.WidgetDefinition, raw json.RawMessage) (*WidgetPresentation, error) {
+	var configuration map[string]any
+	if err := json.Unmarshal(raw, &configuration); err != nil {
+		return nil, err
+	}
+	var template any
+	if err := json.Unmarshal(definition.PresentationTemplate, &template); err != nil {
+		return nil, err
+	}
+	resolved, included, err := resolveDefinitionTemplate(template, configuration)
+	if err != nil {
+		return nil, err
+	}
+	if !included {
+		return nil, errors.New("presentation template resolved to no content")
+	}
+	encoded, err := json.Marshal(resolved)
+	if err != nil {
+		return nil, err
+	}
+	var root PresentationNode
+	if err = json.Unmarshal(encoded, &root); err != nil {
+		return nil, fmt.Errorf("decode resolved presentation: %w", err)
+	}
+	if root.Type == "" {
+		return nil, errors.New("resolved presentation has no root node")
+	}
+	return &WidgetPresentation{
+		SchemaVersion:        definition.PresentationSchemaVersion,
+		Kind:                 "native",
+		RequiredCapabilities: definition.RequiredCapabilities,
+		Native:               &NativePresentation{Root: root},
+	}, nil
+}
+
+func resolveDefinitionTemplate(value any, configuration map[string]any) (any, bool, error) {
+	switch typed := value.(type) {
+	case []any:
+		result := make([]any, 0, len(typed))
+		for _, item := range typed {
+			resolved, included, err := resolveDefinitionTemplate(item, configuration)
+			if err != nil {
+				return nil, false, err
+			}
+			if included {
+				result = append(result, resolved)
+			}
+		}
+		return result, true, nil
+	case map[string]any:
+		if key, ok := typed["$config"].(string); ok {
+			resolved, exists := configuration[key]
+			if !exists {
+				return nil, false, fmt.Errorf("presentation template references missing configuration %q", key)
+			}
+			if suffix, ok := typed["suffix"].(string); ok {
+				text, textOK := resolved.(string)
+				if !textOK {
+					return nil, false, fmt.Errorf("presentation template suffix requires text configuration %q", key)
+				}
+				resolved = text + suffix
+			}
+			return resolved, true, nil
+		}
+		if key, ok := typed["$ifConfig"].(string); ok {
+			enabled, _ := configuration[key].(bool)
+			if !enabled {
+				return nil, false, nil
+			}
+		}
+		result := make(map[string]any, len(typed))
+		for key, item := range typed {
+			if key == "$ifConfig" {
+				continue
+			}
+			resolved, included, err := resolveDefinitionTemplate(item, configuration)
+			if err != nil {
+				return nil, false, err
+			}
+			if included {
+				result[key] = resolved
+			}
+		}
+		return result, true, nil
+	default:
+		return value, true, nil
+	}
 }
 
 func compileWidgetPresentationForPreset(provider string, presetID *string, raw json.RawMessage) (*WidgetPresentation, error) {

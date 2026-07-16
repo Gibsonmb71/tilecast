@@ -776,21 +776,21 @@ function ContentOrganizer({
           className="button button--quiet"
           onClick={() => void createFolder()}
         >
-          <FolderPlus size={15} /> Folder
+          <FolderPlus size={15} /> Create folder
         </button>
         <button
           type="button"
           className="button button--quiet"
           onClick={() => void createCollection()}
         >
-          <Library size={15} /> Collection
+          <Library size={15} /> Create collection
         </button>
         <button
           type="button"
           className="button button--quiet"
           onClick={() => void createTag()}
         >
-          <Tags size={15} /> Tag
+          <Tags size={15} /> Create tag
         </button>
       </div>
       {assetIds.length > 0 && (
