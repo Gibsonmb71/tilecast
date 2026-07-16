@@ -1,0 +1,92 @@
+name: Apply clean lunch menu fix
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    if: github.event.pull_request.head.ref == 'fix/lunch-menu-clean'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/lunch-menu-clean
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache-dependency-path: apps/server/go.sum
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Copy finished files from old branch
+        shell: bash
+        run: |
+          git fetch origin fix/lunch-menu-workflow
+          for path in \
+            apps/dashboard/src/content/SourceEditors.tsx \
+            apps/dashboard/src/pages/LayoutEditorPage.tsx \
+            apps/player-android/app/src/main/java/org/tilecast/player/content/NativeWidgetPlayback.kt \
+            apps/player-android/app/src/test/java/org/tilecast/player/content/MenuWidgetTest.kt \
+            apps/server/internal/media/structured_sources.go \
+            apps/server/internal/media/structured_sources_test.go
+          do
+            mkdir -p "$(dirname "$path")"
+            git show "origin/fix/lunch-menu-workflow:$path" > "$path"
+          done
+
+      - name: Format
+        run: |
+          gofmt -w apps/server/internal/media/structured_sources.go apps/server/internal/media/structured_sources_test.go
+          npm ci
+          npx prettier --write apps/dashboard/src/content/SourceEditors.tsx apps/dashboard/src/pages/LayoutEditorPage.tsx
+
+      - name: Verify server
+        working-directory: apps/server
+        run: |
+          go test ./internal/media
+          go vet ./internal/media
+
+      - name: Verify Studio
+        working-directory: apps/dashboard
+        run: |
+          npm run format:check
+          npm run lint
+          npm test -- --run
+          npm run build
+
+      - name: Verify Android
+        working-directory: apps/player-android
+        run: ./gradlew testDebugUnitTest lintDebug assembleDebug
+
+      - name: Check diff
+        run: git diff --check
+
+      - name: Commit clean fix
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/dashboard/src/content/SourceEditors.tsx \
+            apps/dashboard/src/pages/LayoutEditorPage.tsx \
+            apps/player-android/app/src/main/java/org/tilecast/player/content/NativeWidgetPlayback.kt \
+            apps/player-android/app/src/test/java/org/tilecast/player/content/MenuWidgetTest.kt \
+            apps/server/internal/media/structured_sources.go \
+            apps/server/internal/media/structured_sources_test.go
+          git commit -m "Fix lunch menu data and rendering"
+          git push origin HEAD:fix/lunch-menu-clean
