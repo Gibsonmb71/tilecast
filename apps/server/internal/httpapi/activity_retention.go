@@ -71,6 +71,10 @@ func (s *server) cleanupActivityBounded(ctx context.Context, batch int) {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
+	if _, err := s.db.Exec(ctx, `INSERT INTO activity_retention_settings(singleton) VALUES(TRUE) ON CONFLICT(singleton) DO NOTHING`); err != nil {
+		s.logger.Warn("activity retention defaults unavailable", "error", err)
+		return
+	}
 	var rawDays, sessionDays, stateDays, auditDays, diagnosticDays int
 	if err := s.db.QueryRow(ctx, `SELECT raw_event_days,playback_session_days,screen_state_days,audit_log_days,diagnostic_metadata_days FROM activity_retention_settings WHERE singleton=TRUE`).Scan(&rawDays, &sessionDays, &stateDays, &auditDays, &diagnosticDays); err != nil {
 		s.logger.Warn("activity retention settings unavailable", "error", err)
