@@ -156,7 +156,7 @@ const nativeDefault = (provider: NativeProvider): NativeConfig => {
     return {
       dataSourceId: "",
       fields: ["title", "subtitle"],
-      maximumItems: 20,
+      maximumItems: provider === "menu" ? 2 : 20,
       ...colors,
     };
   return {
@@ -211,6 +211,21 @@ export function NativeAppEditor({
   const compatibleDataSources = (dataSources.data?.items ?? []).filter(
     (source) => (acceptedProviders[provider] ?? []).includes(source.provider),
   );
+  const selectedDataSourceId = [
+    "ticker",
+    "menu",
+    "list",
+    "table",
+    "agenda",
+  ].includes(provider)
+    ? (configuration as TickerWidgetConfig | DisplayWidgetConfig).dataSourceId
+    : "";
+  const selectedDataSource = useQuery({
+    queryKey: ["widget-data-source", selectedDataSourceId],
+    queryFn: () => api.getDataSource(selectedDataSourceId),
+    enabled: Boolean(selectedDataSourceId),
+  });
+  const availableFields = selectedDataSource.data?.fields ?? [];
   const save = useMutation({
     mutationFn: () => {
       const input = { provider, name, description, configuration };
@@ -242,9 +257,9 @@ export function NativeAppEditor({
               {provider === "qrcode"
                 ? "QR Code"
                 : provider[0]!.toUpperCase() + provider.slice(1)}{" "}
-              App
+              Widget
             </h2>
-            <p>Reusable native App configuration.</p>
+            <p>Reusable native Widget configuration.</p>
           </div>
           <button className="icon-button" aria-label="Close" onClick={onClose}>
             <X size={18} />
@@ -401,7 +416,7 @@ export function NativeAppEditor({
           {provider === "ticker" && (
             <>
               <label className="field">
-                <span className="field__label">Data App</span>
+                <span className="field__label">Data Source</span>
                 <select
                   value={(configuration as TickerWidgetConfig).dataSourceId}
                   disabled={readOnly}
@@ -423,16 +438,25 @@ export function NativeAppEditor({
               <div className="form-grid form-grid--2">
                 <label className="field">
                   <span className="field__label">Field</span>
-                  <input
+                  <select
                     value={(configuration as TickerWidgetConfig).field}
-                    disabled={readOnly}
+                    disabled={readOnly || !availableFields.length}
                     onChange={(e) =>
                       setConfiguration((current) => ({
                         ...current,
                         field: e.target.value,
                       }))
                     }
-                  />
+                  >
+                    {!availableFields.length && (
+                      <option value="">Select a Data Source first</option>
+                    )}
+                    {availableFields.map((field) => (
+                      <option key={field.key} value={field.key}>
+                        {field.label}
+                      </option>
+                    ))}
+                  </select>
                 </label>
                 <label className="field">
                   <span className="field__label">Separator</span>
@@ -472,24 +496,46 @@ export function NativeAppEditor({
                   ))}
                 </select>
               </label>
-              <label className="field">
-                <span className="field__label">Fields</span>
-                <input
-                  value={(configuration as DisplayWidgetConfig).fields.join(
-                    ", ",
-                  )}
-                  disabled={readOnly}
-                  onChange={(event) =>
-                    setConfiguration((current) => ({
-                      ...current,
-                      fields: event.target.value
-                        .split(",")
-                        .map((field) => field.trim())
-                        .filter(Boolean),
-                    }))
-                  }
-                />
-              </label>
+              <fieldset>
+                <legend>Displayed fields</legend>
+                {!availableFields.length ? (
+                  <small>Select a Data Source to choose its fields.</small>
+                ) : (
+                  <div className="checkbox-grid">
+                    {availableFields.map((field) => {
+                      const selected = (
+                        configuration as DisplayWidgetConfig
+                      ).fields.includes(field.key);
+                      return (
+                        <label key={field.key}>
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            disabled={readOnly}
+                            onChange={(event) =>
+                              setConfiguration((current) => {
+                                const config = current as DisplayWidgetConfig;
+                                const fields = event.target.checked
+                                  ? [
+                                      ...config.fields.filter(
+                                        (item) => item !== field.key,
+                                      ),
+                                      field.key,
+                                    ]
+                                  : config.fields.filter(
+                                      (item) => item !== field.key,
+                                    );
+                                return { ...config, fields };
+                              })
+                            }
+                          />
+                          <span>{field.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </fieldset>
               <label className="field">
                 <span className="field__label">Maximum items</span>
                 <input
@@ -556,7 +602,7 @@ export function NativeAppEditor({
                 configuration={configuration as QRCodeWidgetConfig}
               />
             ) : (
-              "Ticker preview uses the selected data App."
+              "Preview uses the selected Data Source."
             )}
           </div>
           {save.error && <p className="form-error">{save.error.message}</p>}
@@ -568,7 +614,7 @@ export function NativeAppEditor({
               disabled={save.isPending || !name.trim()}
               onClick={() => save.mutate()}
             >
-              {save.isPending ? "Saving…" : "Save App"}
+              {save.isPending ? "Saving…" : "Save Widget"}
             </button>
           )}
         </footer>
@@ -686,13 +732,13 @@ export function YouTubeSourceEditor({
     },
   });
   const close = () => {
-    if (!dirty || confirm("Discard unsaved YouTube App changes?")) onClose();
+    if (!dirty || confirm("Discard unsaved YouTube Widget changes?")) onClose();
   };
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.stopPropagation();
-        if (!dirty || confirm("Discard unsaved YouTube App changes?"))
+        if (!dirty || confirm("Discard unsaved YouTube Widget changes?"))
           onClose();
       }
     };
@@ -710,7 +756,7 @@ export function YouTubeSourceEditor({
         <header>
           <div>
             <h2 id="youtube-source-title">
-              {asset ? "Edit YouTube App" : "Create YouTube App"}
+              {asset ? "Edit YouTube Widget" : "Create YouTube Widget"}
             </h2>
             <p>
               Videos and playlists play fullscreen through YouTube’s embedded
@@ -902,7 +948,7 @@ export function YouTubeSourceEditor({
               disabled={save.isPending || !name.trim()}
               onClick={() => save.mutate()}
             >
-              {save.isPending ? "Saving…" : "Save App"}
+              {save.isPending ? "Saving…" : "Save Widget"}
             </button>
           )}
           <button className="button button--quiet" onClick={close}>

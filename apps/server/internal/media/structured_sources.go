@@ -165,8 +165,8 @@ func validateStructuredMapping(m StructuredMapping, provider string) error {
 			return errors.New("source mapping path is too long")
 		}
 	}
-	if m.Title == "" {
-		return errors.New("source title mapping is required")
+	if m.Title == "" && m.Subtitle == "" && m.Date == "" && len(m.ValueFields) == 0 {
+		return errors.New("source mapping must include at least one display or value field")
 	}
 	if len(m.ValueFields) > 12 {
 		return errors.New("source value fields are limited to twelve")
@@ -314,7 +314,10 @@ func parseJSONRecords(body []byte, c StructuredSourceConfig) ([]StructuredRecord
 			values[sanitizeCalendarText(name, 80)] = sanitizeCalendarText(value(path), 240)
 		}
 		title := sanitizeCalendarText(value(c.Mapping.Title), 240)
-		records = append(records, StructuredRecord{ID: stableRecordID(fmt.Sprintf("%d:%s", index, title)), Title: title, Subtitle: sanitizeCalendarText(value(c.Mapping.Subtitle), 240), Date: normalizeStructuredDate(value(c.Mapping.Date), c.DateSelection), ImageURL: safeRemoteRecordURL(value(c.Mapping.ImageURL)), Link: safeRemoteRecordURL(value(c.Mapping.Link)), Values: values})
+		subtitle := sanitizeCalendarText(value(c.Mapping.Subtitle), 240)
+		date := normalizeStructuredDate(value(c.Mapping.Date), c.DateSelection)
+		identity := structuredRecordIdentity(title, subtitle, date, values)
+		records = append(records, StructuredRecord{ID: stableRecordID(fmt.Sprintf("%d:%s", index, identity)), Title: title, Subtitle: subtitle, Date: date, ImageURL: safeRemoteRecordURL(value(c.Mapping.ImageURL)), Link: safeRemoteRecordURL(value(c.Mapping.Link)), Values: values})
 	}
 	return applyStructuredOptions(records, c), nil
 }
@@ -392,11 +395,11 @@ func parseCSVRecords(body []byte, c StructuredSourceConfig) ([]StructuredRecord,
 		for name, column := range c.Mapping.ValueFields {
 			values[sanitizeCalendarText(name, 80)] = sanitizeCalendarText(value(column), 240)
 		}
-		title, err := field(row, c.Mapping.Title)
-		if err != nil {
-			return nil, err
-		}
-		records = append(records, StructuredRecord{ID: stableRecordID(fmt.Sprintf("%d:%s", index, title)), Title: sanitizeCalendarText(title, 240), Subtitle: sanitizeCalendarText(value(c.Mapping.Subtitle), 240), Date: normalizeStructuredDate(value(c.Mapping.Date), c.DateSelection), ImageURL: safeRemoteRecordURL(value(c.Mapping.ImageURL)), Link: safeRemoteRecordURL(value(c.Mapping.Link)), Values: values})
+		title := sanitizeCalendarText(value(c.Mapping.Title), 240)
+		subtitle := sanitizeCalendarText(value(c.Mapping.Subtitle), 240)
+		date := normalizeStructuredDate(value(c.Mapping.Date), c.DateSelection)
+		identity := structuredRecordIdentity(title, subtitle, date, values)
+		records = append(records, StructuredRecord{ID: stableRecordID(fmt.Sprintf("%d:%s", index, identity)), Title: title, Subtitle: subtitle, Date: date, ImageURL: safeRemoteRecordURL(value(c.Mapping.ImageURL)), Link: safeRemoteRecordURL(value(c.Mapping.Link)), Values: values})
 	}
 	return applyStructuredOptions(records, c), nil
 }
@@ -452,6 +455,23 @@ func applyStructuredOptions(records []StructuredRecord, c StructuredSourceConfig
 	}
 	return result
 }
+func structuredRecordIdentity(title, subtitle, date string, values map[string]string) string {
+	if identity := firstNonempty(title, subtitle, date); identity != "" {
+		return identity
+	}
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if value := strings.TrimSpace(values[key]); value != "" {
+			return key + ":" + value
+		}
+	}
+	return "record"
+}
+
 func mapValues(values map[string]string) []string {
 	result := make([]string, 0, len(values))
 	for _, v := range values {

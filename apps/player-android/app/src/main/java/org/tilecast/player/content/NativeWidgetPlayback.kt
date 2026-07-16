@@ -63,7 +63,14 @@ fun WidgetItem(item: ManifestItem, widget: ManifestWidget, session: PlaybackSess
             val structured = runCatching { Json.decodeFromJsonElement<StructuredSourceConfig>(data.configuration) }.getOrElse { return@onSuccess onFailure("Ticker data is invalid") }
             TickerWidget(config, structured)
         }.onFailure { onFailure("Ticker Widget configuration is invalid") }
-        "menu", "list", "table", "agenda" -> runCatching { Json.decodeFromJsonElement<DisplayWidgetConfig>(widget.configuration) }.onSuccess { config ->
+        "menu" -> runCatching { Json.decodeFromJsonElement<DisplayWidgetConfig>(widget.configuration) }.onSuccess { config ->
+            val data = session.content.manifest.dataSources.firstOrNull { it.id == config.dataSourceId } ?: return@onSuccess onFailure("Menu data is unavailable")
+            if (data.provider != "csv" && data.provider != "json") return@onSuccess onFailure("Menu data is incompatible")
+            runCatching { Json.decodeFromJsonElement<StructuredSourceConfig>(data.configuration) }
+                .onSuccess { MenuWidget(widget.name, config, it) }
+                .onFailure { onFailure("Menu data is invalid") }
+        }.onFailure { onFailure("Menu Widget configuration is invalid") }
+        "list", "table", "agenda" -> runCatching { Json.decodeFromJsonElement<DisplayWidgetConfig>(widget.configuration) }.onSuccess { config ->
             val data = session.content.manifest.dataSources.firstOrNull { it.id == config.dataSourceId } ?: return@onSuccess onFailure("Widget data is unavailable")
             when (data.provider) {
                 "calendar" -> runCatching { Json.decodeFromJsonElement<org.tilecast.player.network.CalendarSourceConfig>(data.configuration) }.onSuccess { DisplayCalendarWidget(config, it) }.onFailure { onFailure("Agenda data is invalid") }
@@ -125,20 +132,82 @@ private fun TickerWidget(config: TickerWidgetConfig, data: StructuredSourceConfi
     }
     val records = selectDateAwareRecords(data, now)
     val text = records.mapNotNull { record ->
-        when (config.field) {
-            "title" -> record.title
-            "subtitle" -> record.subtitle
-            "date" -> record.date
-            "author" -> record.author
-            "description" -> record.description
-            else -> record.values[config.field]
-        }.takeIf { !it.isNullOrBlank() }
+        structuredFieldValue(record, config.field).takeIf { it.isNotBlank() }
     }.joinToString(config.separator).ifBlank { data.emptyState }
     CenteredWidget(config.backgroundColor) {
         FittedWidgetText(text, parseColor(config.foregroundColor), 34f, FontWeight.Normal, maxLines = 2)
     }
 }
-@Composable private fun DisplayStructuredWidget(config: DisplayWidgetConfig, data: StructuredSourceConfig) { var now by remember { mutableStateOf(Instant.now()) }; LaunchedEffect(data.dateSelection.timezone) { while (true) { now = Instant.now(); delay(30_000) } }; val records = selectDateAwareRecords(data, now).take(config.maximumItems); Box(Modifier.fillMaxSize().background(parseColor(config.backgroundColor)).padding(36.dp)) { LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp)) { items(records, key = { it.id }) { record -> Text(config.fields.mapNotNull { field -> when(field) { "title" -> record.title; "subtitle" -> record.subtitle; "date" -> record.date; "author" -> record.author; "description" -> record.description; else -> record.values[field] }.takeIf { !it.isNullOrBlank() } }.joinToString("  "), color = parseColor(config.foregroundColor), fontSize = 26.sp) } } } }
+@Composable
+private fun MenuWidget(name: String, config: DisplayWidgetConfig, data: StructuredSourceConfig) {
+    var now by remember { mutableStateOf(Instant.now()) }
+    LaunchedEffect(data.dateSelection.timezone) {
+        while (true) {
+            now = Instant.now()
+            delay(30_000)
+        }
+    }
+    val record = selectDateAwareRecords(data, now).firstOrNull()
+    Box(Modifier.fillMaxSize().background(parseColor(config.backgroundColor)).padding(48.dp), contentAlignment = Alignment.Center) {
+        if (record == null) {
+            FittedWidgetText(data.emptyState, parseColor(config.foregroundColor), 42f, FontWeight.Medium, maxLines = 3)
+            return@Box
+        }
+        val values = config.fields.mapNotNull { field ->
+            structuredFieldValue(record, field).takeIf(String::isNotBlank)?.let { field to it }
+        }.take(config.maximumItems.coerceAtMost(8))
+        if (values.isEmpty()) {
+            FittedWidgetText(data.emptyState, parseColor(config.foregroundColor), 42f, FontWeight.Medium, maxLines = 3)
+            return@Box
+        }
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text(name.uppercase(), color = parseColor(config.foregroundColor), fontSize = 24.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+            if (record.date.isNotBlank()) Text(record.date, color = parseColor(config.foregroundColor).copy(alpha = 0.72f), fontSize = 18.sp, textAlign = TextAlign.Center)
+            values.forEachIndexed { index, (field, value) ->
+                Text(
+                    if (index == 0) "TODAY'S LUNCH" else menuFieldLabel(field).uppercase(),
+                    color = parseColor(config.foregroundColor).copy(alpha = 0.72f),
+                    fontSize = if (index == 0) 20.sp else 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = if (index == 0) 28.dp else 22.dp),
+                )
+                Text(
+                    value,
+                    color = parseColor(config.foregroundColor),
+                    fontSize = if (index == 0) 52.sp else 34.sp,
+                    fontWeight = if (index == 0) FontWeight.Bold else FontWeight.Medium,
+                    textAlign = TextAlign.Center,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@Composable private fun DisplayStructuredWidget(config: DisplayWidgetConfig, data: StructuredSourceConfig) { var now by remember { mutableStateOf(Instant.now()) }; LaunchedEffect(data.dateSelection.timezone) { while (true) { now = Instant.now(); delay(30_000) } }; val records = selectDateAwareRecords(data, now).take(config.maximumItems); Box(Modifier.fillMaxSize().background(parseColor(config.backgroundColor)).padding(36.dp)) { LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp)) { items(records, key = { it.id }) { record -> Text(config.fields.mapNotNull { field -> structuredFieldValue(record, field).takeIf(String::isNotBlank) }.joinToString("  "), color = parseColor(config.foregroundColor), fontSize = 26.sp) } } } }
+
+private fun structuredFieldValue(record: org.tilecast.player.network.StructuredRecord, field: String): String = when (field) {
+    "title" -> record.title
+    "subtitle" -> record.subtitle
+    "date" -> record.date
+    "author" -> record.author
+    "description" -> record.description
+    else -> record.values[field].orEmpty()
+}
+
+internal fun menuFieldLabel(field: String): String {
+    return when (field.lowercase()) {
+        "option_2", "alternative", "secondary", "secondary_option" -> "Alternative"
+        "option_1", "primary", "primary_option", "entree", "entrée" -> "Entrée"
+        else -> field.replace('_', ' ').replace('-', ' ').trim().split(Regex("\\s+")).filter(String::isNotBlank).joinToString(" ") { token -> token.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() } }
+    }
+}
 @Composable private fun DisplayCalendarWidget(config: DisplayWidgetConfig, data: org.tilecast.player.network.CalendarSourceConfig) { Box(Modifier.fillMaxSize().background(parseColor(config.backgroundColor)).padding(36.dp)) { LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp)) { items(data.data.events.take(config.maximumItems), key = { it.id }) { event -> Text(listOf(event.start, event.title, event.location).filter(String::isNotBlank).joinToString("  "), color = parseColor(config.foregroundColor), fontSize = 26.sp) } } } }
 @Composable
 private fun CenteredWidget(background: String, content: @Composable () -> Unit) {

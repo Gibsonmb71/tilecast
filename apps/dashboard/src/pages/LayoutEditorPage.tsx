@@ -362,11 +362,53 @@ export function LayoutEditorPage() {
     update((draft) => draft.placements.push(item));
     setSelection(new Set([item.id]));
   };
-  // Text-binding preview values are keyed by Data Source id. Field values come from
-  // each Data Source's own cached, date-selected records (owned by the Data Source,
-  // not duplicated into the Layout), so previewing here just re-reads current caches.
-  const loadStructuredPreview = () => {
-    setPreviewValues({});
+  // Resolve the same date-selected records the Player receives so Studio previews
+  // show real values without copying data into the Layout document.
+  const loadStructuredPreview = async () => {
+    const current = documentRef.current;
+    if (!current) return;
+    const dataSourceIds = Array.from(
+      new Set(
+        current.placements
+          .map((placement) => placement.primitive?.binding?.dataSourceId)
+          .filter((value): value is string => Boolean(value)),
+      ),
+    );
+    try {
+      const resolved = await Promise.all(
+        dataSourceIds.map(async (dataSourceId) => {
+          const source = await api.getDataSource(dataSourceId);
+          if (source.provider !== "csv" && source.provider !== "json")
+            return [dataSourceId, {}] as const;
+          const preview = await api.previewDataSource(
+            source.provider,
+            source.configuration,
+            csrf,
+            previewDate,
+          );
+          if (!("records" in preview.configuration.data))
+            return [dataSourceId, {}] as const;
+          const record = preview.configuration.data.records[0];
+          const fields: Record<string, string> = { ...(record?.values ?? {}) };
+          if (record) {
+            const standardFields = {
+              title: record.title,
+              subtitle: record.subtitle,
+              date: record.date,
+              author: record.author,
+              description: record.description,
+            };
+            Object.entries(standardFields).forEach(([key, value]) => {
+              if (value) fields[key] = value;
+            });
+          }
+          return [dataSourceId, fields] as const;
+        }),
+      );
+      setPreviewValues(Object.fromEntries(resolved));
+    } catch {
+      setPreviewValues({});
+    }
   };
   const duplicateSelection = useCallback(() => {
     const current = documentRef.current;
@@ -1281,7 +1323,7 @@ function AppPlacementPreview({
       }}
     >
       <span className="layout-app-placement__provider">
-        {provider ?? "App"}
+        {provider ?? "Widget"}
       </span>
       <strong>{value}</strong>
     </div>
@@ -1541,14 +1583,14 @@ function PlacementInspector({
             onClick={() => {
               if (
                 window.confirm(
-                  `${content?.name ?? "This App"} may be used by other playlists and Layouts. Open the shared App editor?`,
+                  `${content?.name ?? "This Widget"} may be used by other playlists and Layouts. Open the shared Widget editor?`,
                 )
               )
-                void navigate("/apps");
+                void navigate("/widgets");
             }}
           >
             <AppWindow size={16} />
-            Edit shared App
+            Edit shared Widget
           </button>
         </div>
       )}
