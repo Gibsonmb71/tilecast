@@ -366,12 +366,14 @@ type ClockWidgetConfig struct {
 	ShowSeconds     bool   `json:"showSeconds"`
 	ForegroundColor string `json:"foregroundColor"`
 	BackgroundColor string `json:"backgroundColor"`
+	TextScale       *int   `json:"textScale,omitempty"`
 }
 type DateWidgetConfig struct {
 	Timezone        string `json:"timezone"`
 	Format          string `json:"format"`
 	ForegroundColor string `json:"foregroundColor"`
 	BackgroundColor string `json:"backgroundColor"`
+	TextScale       *int   `json:"textScale,omitempty"`
 }
 type QRCodeWidgetConfig struct {
 	Value           string `json:"value"`
@@ -379,6 +381,7 @@ type QRCodeWidgetConfig struct {
 	ErrorCorrection string `json:"errorCorrection"`
 	ForegroundColor string `json:"foregroundColor"`
 	BackgroundColor string `json:"backgroundColor"`
+	TextScale       *int   `json:"textScale,omitempty"`
 }
 type TickerWidgetConfig struct {
 	DataSourceID    uuid.UUID `json:"dataSourceId"`
@@ -388,6 +391,7 @@ type TickerWidgetConfig struct {
 	Direction       string    `json:"direction"`
 	ForegroundColor string    `json:"foregroundColor"`
 	BackgroundColor string    `json:"backgroundColor"`
+	TextScale       *int      `json:"textScale,omitempty"`
 }
 
 type DisplayWidgetConfig struct {
@@ -396,6 +400,7 @@ type DisplayWidgetConfig struct {
 	MaximumItems    int       `json:"maximumItems"`
 	ForegroundColor string    `json:"foregroundColor"`
 	BackgroundColor string    `json:"backgroundColor"`
+	TextScale       *int      `json:"textScale,omitempty"`
 }
 
 type StructuredRecord struct {

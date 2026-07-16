@@ -853,12 +853,14 @@ export type ClockWidgetConfig = {
   showSeconds: boolean;
   foregroundColor: string;
   backgroundColor: string;
+  textScale?: number;
 };
 export type DateWidgetConfig = {
   timezone: string;
   format: "full" | "long" | "medium" | "short";
   foregroundColor: string;
   backgroundColor: string;
+  textScale?: number;
 };
 export type QRCodeWidgetConfig = {
   value: string;
@@ -866,6 +868,7 @@ export type QRCodeWidgetConfig = {
   errorCorrection: "low" | "medium" | "quartile" | "high";
   foregroundColor: string;
   backgroundColor: string;
+  textScale?: number;
 };
 export type TickerWidgetConfig = {
   dataSourceId: string;
@@ -875,6 +878,7 @@ export type TickerWidgetConfig = {
   speed: "slow" | "normal" | "fast";
   foregroundColor: string;
   backgroundColor: string;
+  textScale?: number;
 };
 export type DisplayWidgetConfig = {
   dataSourceId: string;
@@ -882,6 +886,7 @@ export type DisplayWidgetConfig = {
   maximumItems: number;
   foregroundColor: string;
   backgroundColor: string;
+  textScale?: number;
 };
 export type StructuredRecord = {
   id: string;

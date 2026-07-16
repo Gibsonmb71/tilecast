@@ -9,9 +9,8 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -96,7 +95,7 @@ private fun ClockWidget(config: ClockWidgetConfig) {
     }
     val text = now.atZone(ZoneId.of(config.timezone)).format(DateTimeFormatter.ofPattern(pattern))
     CenteredWidget(config.backgroundColor) {
-        FittedWidgetText(text, parseColor(config.foregroundColor), 86f, FontWeight.SemiBold)
+        FittedWidgetText(text, parseColor(config.foregroundColor), 86f, FontWeight.SemiBold, textScale = config.textScale)
     }
 }
 
@@ -117,10 +116,35 @@ private fun DateWidget(config: DateWidgetConfig) {
     }
     val text = now.atZone(ZoneId.of(config.timezone)).format(DateTimeFormatter.ofLocalizedDate(style))
     CenteredWidget(config.backgroundColor) {
-        FittedWidgetText(text, parseColor(config.foregroundColor), 58f, FontWeight.Medium)
+        FittedWidgetText(text, parseColor(config.foregroundColor), 58f, FontWeight.Medium, textScale = config.textScale)
     }
 }
-@Composable private fun QRCodeWidget(config: QRCodeWidgetConfig) { val bitmap = remember(config) { qrBitmap(config) }; CenteredWidget(config.backgroundColor) { Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(18.dp)) { Image(bitmap.asImageBitmap(), null); if (config.label.isNotBlank()) Text(config.label, color = parseColor(config.foregroundColor), fontSize = 24.sp, textAlign = TextAlign.Center) } } }
+@Composable
+private fun QRCodeWidget(config: QRCodeWidgetConfig) {
+    val bitmap = remember(config) { qrBitmap(config) }
+    CenteredWidget(config.backgroundColor) {
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            val scale = responsiveWidgetScale(maxWidth.value, maxHeight.value, config.textScale)
+            Column(
+                Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy((18f * scale).dp),
+            ) {
+                Image(bitmap.asImageBitmap(), null, Modifier.weight(1f))
+                if (config.label.isNotBlank()) {
+                    Text(
+                        config.label,
+                        color = parseColor(config.foregroundColor),
+                        fontSize = (24f * scale).sp,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
 @Composable
 private fun TickerWidget(config: TickerWidgetConfig, data: StructuredSourceConfig) {
     var now by remember { mutableStateOf(Instant.now()) }
@@ -135,7 +159,7 @@ private fun TickerWidget(config: TickerWidgetConfig, data: StructuredSourceConfi
         structuredFieldValue(record, config.field).takeIf { it.isNotBlank() }
     }.joinToString(config.separator).ifBlank { data.emptyState }
     CenteredWidget(config.backgroundColor) {
-        FittedWidgetText(text, parseColor(config.foregroundColor), 34f, FontWeight.Normal, maxLines = 2)
+        FittedWidgetText(text, parseColor(config.foregroundColor), 34f, FontWeight.Normal, maxLines = 2, textScale = config.textScale)
     }
 }
 @Composable
@@ -148,49 +172,75 @@ private fun MenuWidget(name: String, config: DisplayWidgetConfig, data: Structur
         }
     }
     val record = selectDateAwareRecords(data, now).firstOrNull()
-    Box(Modifier.fillMaxSize().background(parseColor(config.backgroundColor)).padding(48.dp), contentAlignment = Alignment.Center) {
-        if (record == null) {
-            FittedWidgetText(data.emptyState, parseColor(config.foregroundColor), 42f, FontWeight.Medium, maxLines = 3)
-            return@Box
-        }
-        val values = config.fields.mapNotNull { field ->
-            structuredFieldValue(record, field).takeIf(String::isNotBlank)?.let { field to it }
-        }.take(config.maximumItems.coerceAtMost(8))
-        if (values.isEmpty()) {
-            FittedWidgetText(data.emptyState, parseColor(config.foregroundColor), 42f, FontWeight.Medium, maxLines = 3)
-            return@Box
-        }
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Text(name.uppercase(), color = parseColor(config.foregroundColor), fontSize = 24.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
-            if (record.date.isNotBlank()) Text(record.date, color = parseColor(config.foregroundColor).copy(alpha = 0.72f), fontSize = 18.sp, textAlign = TextAlign.Center)
-            values.forEachIndexed { index, (field, value) ->
-                Text(
-                    if (index == 0) "TODAY'S LUNCH" else menuFieldLabel(field).uppercase(),
-                    color = parseColor(config.foregroundColor).copy(alpha = 0.72f),
-                    fontSize = if (index == 0) 20.sp else 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(top = if (index == 0) 28.dp else 22.dp),
-                )
-                Text(
-                    value,
-                    color = parseColor(config.foregroundColor),
-                    fontSize = if (index == 0) 52.sp else 34.sp,
-                    fontWeight = if (index == 0) FontWeight.Bold else FontWeight.Medium,
-                    textAlign = TextAlign.Center,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                )
+    BoxWithConstraints(Modifier.fillMaxSize().background(parseColor(config.backgroundColor))) {
+        val scale = responsiveWidgetScale(maxWidth.value, maxHeight.value, config.textScale)
+        val inset = minOf(48f, minOf(maxWidth.value, maxHeight.value) * 0.08f).dp
+        val availableHeight = maxHeight.value - inset.value * 2
+        Box(Modifier.fillMaxSize().padding(inset), contentAlignment = Alignment.Center) {
+            if (record == null) {
+                FittedWidgetText(data.emptyState, parseColor(config.foregroundColor), 42f, FontWeight.Medium, maxLines = 3, textScale = config.textScale)
+                return@Box
+            }
+            val values = config.fields.mapNotNull { field ->
+                structuredFieldValue(record, field).takeIf(String::isNotBlank)?.let { field to it }
+            }.take(config.maximumItems.coerceAtMost(8))
+            if (values.isEmpty()) {
+                FittedWidgetText(data.emptyState, parseColor(config.foregroundColor), 42f, FontWeight.Medium, maxLines = 3, textScale = config.textScale)
+                return@Box
+            }
+            val contentScale = menuContentScale(scale, values.size, availableHeight)
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text(name.uppercase(), color = parseColor(config.foregroundColor), fontSize = (24f * contentScale).sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (record.date.isNotBlank()) Text(record.date, color = parseColor(config.foregroundColor).copy(alpha = 0.72f), fontSize = (18f * contentScale).sp, textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                values.forEachIndexed { index, (field, value) ->
+                    Text(
+                        if (index == 0) "TODAY'S LUNCH" else menuFieldLabel(field).uppercase(),
+                        color = parseColor(config.foregroundColor).copy(alpha = 0.72f),
+                        fontSize = ((if (index == 0) 20f else 16f) * contentScale).sp,
+                        fontWeight = FontWeight.SemiBold,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(top = ((if (index == 0) 28f else 22f) * contentScale).dp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        value,
+                        color = parseColor(config.foregroundColor),
+                        fontSize = ((if (index == 0) 52f else 34f) * contentScale).sp,
+                        fontWeight = if (index == 0) FontWeight.Bold else FontWeight.Medium,
+                        textAlign = TextAlign.Center,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }
 }
 
-@Composable private fun DisplayStructuredWidget(config: DisplayWidgetConfig, data: StructuredSourceConfig) { var now by remember { mutableStateOf(Instant.now()) }; LaunchedEffect(data.dateSelection.timezone) { while (true) { now = Instant.now(); delay(30_000) } }; val records = selectDateAwareRecords(data, now).take(config.maximumItems); Box(Modifier.fillMaxSize().background(parseColor(config.backgroundColor)).padding(36.dp)) { LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp)) { items(records, key = { it.id }) { record -> Text(config.fields.mapNotNull { field -> structuredFieldValue(record, field).takeIf(String::isNotBlank) }.joinToString("  "), color = parseColor(config.foregroundColor), fontSize = 26.sp) } } } }
+internal fun menuContentScale(baseScale: Float, itemCount: Int, availableHeightDp: Float): Float {
+    val estimatedBaseHeight = 50f + itemCount.coerceAtLeast(1) * 150f
+    return minOf(baseScale, availableHeightDp / estimatedBaseHeight).coerceAtLeast(0.05f)
+}
+
+@Composable
+private fun DisplayStructuredWidget(config: DisplayWidgetConfig, data: StructuredSourceConfig) {
+    var now by remember { mutableStateOf(Instant.now()) }
+    LaunchedEffect(data.dateSelection.timezone) {
+        while (true) {
+            now = Instant.now()
+            delay(30_000)
+        }
+    }
+    val rows = selectDateAwareRecords(data, now).take(config.maximumItems).map { record ->
+        config.fields.mapNotNull { field -> structuredFieldValue(record, field).takeIf(String::isNotBlank) }.joinToString("  ")
+    }.filter(String::isNotBlank)
+    DisplayRows(config, rows, data.emptyState)
+}
 
 private fun structuredFieldValue(record: org.tilecast.player.network.StructuredRecord, field: String): String = when (field) {
     "title" -> record.title
@@ -208,7 +258,50 @@ internal fun menuFieldLabel(field: String): String {
         else -> field.replace('_', ' ').replace('-', ' ').trim().split(Regex("\\s+")).filter(String::isNotBlank).joinToString(" ") { token -> token.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() } }
     }
 }
-@Composable private fun DisplayCalendarWidget(config: DisplayWidgetConfig, data: org.tilecast.player.network.CalendarSourceConfig) { Box(Modifier.fillMaxSize().background(parseColor(config.backgroundColor)).padding(36.dp)) { LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp)) { items(data.data.events.take(config.maximumItems), key = { it.id }) { event -> Text(listOf(event.start, event.title, event.location).filter(String::isNotBlank).joinToString("  "), color = parseColor(config.foregroundColor), fontSize = 26.sp) } } } }
+@Composable
+private fun DisplayCalendarWidget(config: DisplayWidgetConfig, data: org.tilecast.player.network.CalendarSourceConfig) {
+    val rows = data.data.events.take(config.maximumItems).map { event ->
+        listOf(event.start, event.title, event.location).filter(String::isNotBlank).joinToString("  ")
+    }
+    DisplayRows(config, rows, "No items available")
+}
+
+@Composable
+private fun DisplayRows(config: DisplayWidgetConfig, rows: List<String>, emptyState: String) {
+    BoxWithConstraints(Modifier.fillMaxSize().background(parseColor(config.backgroundColor))) {
+        val inset = minOf(36f, minOf(maxWidth.value, maxHeight.value) * 0.08f)
+        val availableWidth = (maxWidth.value - inset * 2).coerceAtLeast(1f)
+        val availableHeight = (maxHeight.value - inset * 2).coerceAtLeast(1f)
+        if (rows.isEmpty()) {
+            Box(Modifier.fillMaxSize().padding(inset.dp), contentAlignment = Alignment.Center) {
+                FittedWidgetText(emptyState, parseColor(config.foregroundColor), 26f, FontWeight.Normal, maxLines = 3, textScale = config.textScale)
+            }
+            return@BoxWithConstraints
+        }
+        val gap = (14f * responsiveWidgetScale(maxWidth.value, maxHeight.value, config.textScale)).coerceAtLeast(2f)
+        val fontScale = LocalDensity.current.fontScale
+        val maximumRows = (availableHeight / (8f * fontScale * 1.2f + gap)).toInt().coerceAtLeast(1)
+        val visibleRows = rows.take(maximumRows)
+        val rowHeight = ((availableHeight - gap * (visibleRows.size - 1)) / visibleRows.size).coerceAtLeast(1f)
+        val maximumFontSize = responsiveFontSizeSp(26f, maxWidth.value, maxHeight.value, config.textScale)
+        Column(
+            Modifier.fillMaxSize().padding(inset.dp),
+            verticalArrangement = Arrangement.spacedBy(gap.dp),
+        ) {
+            visibleRows.forEach { row ->
+                val size = fittedFontSizeSp(row.length, availableWidth, rowHeight, fontScale, maximumFontSize)
+                Text(
+                    row,
+                    modifier = Modifier.fillMaxWidth().height(rowHeight.dp),
+                    color = parseColor(config.foregroundColor),
+                    fontSize = size.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
 @Composable
 private fun CenteredWidget(background: String, content: @Composable () -> Unit) {
     BoxWithConstraints(Modifier.fillMaxSize().background(parseColor(background))) {
@@ -224,6 +317,7 @@ private fun FittedWidgetText(
     maximumFontSizeSp: Float,
     weight: FontWeight,
     maxLines: Int = 1,
+    textScale: Int? = null,
 ) {
     BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         val fontScale = LocalDensity.current.fontScale
@@ -232,10 +326,15 @@ private fun FittedWidgetText(
             widthDp = maxWidth.value,
             heightDp = maxHeight.value,
             fontScale = fontScale,
-            maximumFontSizeSp = maximumFontSizeSp,
+            maximumFontSizeSp = responsiveFontSizeSp(
+                maximumFontSizeSp,
+                maxWidth.value,
+                maxHeight.value,
+                textScale,
+            ),
             maxLines = maxLines,
         )
-        var fontSize by remember(text, maxWidth, maxHeight, fontScale, maximumFontSizeSp, maxLines) {
+        var fontSize by remember(text, maxWidth, maxHeight, fontScale, maximumFontSizeSp, maxLines, textScale) {
             mutableStateOf(initialSize)
         }
         Text(
@@ -256,6 +355,23 @@ private fun FittedWidgetText(
         )
     }
 }
+
+internal fun responsiveWidgetScale(
+    widthDp: Float,
+    heightDp: Float,
+    textScale: Int? = null,
+): Float {
+    val availableScale = minOf(widthDp / 880f, heightDp / 460f)
+    val authorScale = (textScale ?: 100).coerceIn(50, 200) / 100f
+    return (availableScale * authorScale).coerceIn(0.05f, 4f)
+}
+
+internal fun responsiveFontSizeSp(
+    baseFontSizeSp: Float,
+    widthDp: Float,
+    heightDp: Float,
+    textScale: Int? = null,
+): Float = baseFontSizeSp * responsiveWidgetScale(widthDp, heightDp, textScale)
 
 internal fun fittedFontSizeSp(
     textLength: Int,

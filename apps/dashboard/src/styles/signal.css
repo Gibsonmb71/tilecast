@@ -802,6 +802,8 @@ code,
 .wpv-display__row {
   width: 100%;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   line-height: 1.15;
 }
 .layout-history {

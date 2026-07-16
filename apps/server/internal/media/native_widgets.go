@@ -35,6 +35,9 @@ func (clockWidgetProvider) Normalize(_ context.Context, raw json.RawMessage) (an
 	if err := normalizeWidgetColors(&c.ForegroundColor, &c.BackgroundColor); err != nil {
 		return nil, err
 	}
+	if err := validateWidgetTextScale(c.TextScale); err != nil {
+		return nil, err
+	}
 	return c, nil
 }
 
@@ -58,6 +61,9 @@ func (dateWidgetProvider) Normalize(_ context.Context, raw json.RawMessage) (any
 		return nil, errors.New("date format is invalid")
 	}
 	if err := normalizeWidgetColors(&c.ForegroundColor, &c.BackgroundColor); err != nil {
+		return nil, err
+	}
+	if err := validateWidgetTextScale(c.TextScale); err != nil {
 		return nil, err
 	}
 	return c, nil
@@ -85,6 +91,9 @@ func (qrCodeWidgetProvider) Normalize(_ context.Context, raw json.RawMessage) (a
 		return nil, errors.New("QR Code error correction is invalid")
 	}
 	if err := normalizeWidgetColors(&c.ForegroundColor, &c.BackgroundColor); err != nil {
+		return nil, err
+	}
+	if err := validateWidgetTextScale(c.TextScale); err != nil {
 		return nil, err
 	}
 	return c, nil
@@ -130,6 +139,9 @@ func (p tickerWidgetProvider) Normalize(ctx context.Context, raw json.RawMessage
 	if err := normalizeWidgetColors(&c.ForegroundColor, &c.BackgroundColor); err != nil {
 		return nil, err
 	}
+	if err := validateWidgetTextScale(c.TextScale); err != nil {
+		return nil, err
+	}
 	return c, nil
 }
 
@@ -164,7 +176,17 @@ func (p displayWidgetProvider) Normalize(ctx context.Context, raw json.RawMessag
 	if err := normalizeWidgetColors(&c.ForegroundColor, &c.BackgroundColor); err != nil {
 		return nil, err
 	}
+	if err := validateWidgetTextScale(c.TextScale); err != nil {
+		return nil, err
+	}
 	return c, nil
+}
+
+func validateWidgetTextScale(scale *int) error {
+	if scale != nil && (*scale < 50 || *scale > 200) {
+		return errors.New("widget text scale must be between 50 and 200 percent")
+	}
+	return nil
 }
 
 func normalizeDisplayWidgetFields(presentation string, selected []string, available map[string]bool) ([]string, error) {

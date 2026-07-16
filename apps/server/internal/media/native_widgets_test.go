@@ -5,6 +5,20 @@ import (
 	"testing"
 )
 
+func TestValidateWidgetTextScale(t *testing.T) {
+	tooSmall, minimum, maximum, tooLarge := 49, 50, 200, 201
+	for _, scale := range []*int{nil, &minimum, &maximum} {
+		if err := validateWidgetTextScale(scale); err != nil {
+			t.Fatalf("validateWidgetTextScale(%v): %v", scale, err)
+		}
+	}
+	for _, scale := range []*int{&tooSmall, &tooLarge} {
+		if err := validateWidgetTextScale(scale); err == nil {
+			t.Fatalf("validateWidgetTextScale(%d) unexpectedly succeeded", *scale)
+		}
+	}
+}
+
 func TestNormalizeDisplayWidgetFieldsDropsStaleMenuDefaults(t *testing.T) {
 	fields, err := normalizeDisplayWidgetFields(
 		"menu",
