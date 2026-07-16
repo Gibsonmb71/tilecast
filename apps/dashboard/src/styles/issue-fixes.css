@@ -281,27 +281,6 @@
   background: var(--tc-action-primary-soft);
 }
 
-/* Make organizer actions say what they create. */
-.content-organizer__create button {
-  font-size: 0;
-}
-
-.content-organizer__create button::after {
-  font-size: 12px;
-}
-
-.content-organizer__create button:nth-child(1)::after {
-  content: "Create folder";
-}
-
-.content-organizer__create button:nth-child(2)::after {
-  content: "Create collection";
-}
-
-.content-organizer__create button:nth-child(3)::after {
-  content: "Create tag";
-}
-
 /* Compact App usage and actions into one stable footer row. */
 .source-card-actions {
   display: grid;
