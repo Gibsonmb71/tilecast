@@ -2,18 +2,18 @@
 
 Tilecast Activity is divided into four reporting domains. They intentionally use separate storage and APIs so an assigned schedule is never mistaken for proof that content actually appeared on a screen.
 
-| Domain        | Question answered                                                       | Source                                                            |
-| ------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| Overview      | What needs attention across this installation?                          | Derived from the other Activity domains                           |
-| Proof of Play | What did a Player confirm was displayed, where, when, and for how long? | `playback_sessions` derived from Player events                    |
-| Screen Events | What did a Player or the server do?                                     | Append-only `player_activity_events` and `screen_state_intervals` |
-| Audit Log     | What did an authenticated user or administrator change?                 | `audit_logs`                                                      |
+| Domain | Question answered | Source |
+| --- | --- | --- |
+| Overview | What needs attention across this installation? | Derived from the other Activity domains |
+| Proof of Play | What did a Player confirm was displayed, where, when, and for how long? | `playback_sessions` derived from Player events |
+| Screen Events | What did a Player or the server do? | Append-only `player_activity_events` and `screen_state_intervals` |
+| Audit Log | What did an authenticated user or administrator change? | `audit_logs` |
 
 ## Player event ingestion
 
 Paired Players upload bounded batches to `POST /api/v1/player/activity-events` with their existing device credential. The server always obtains the screen identity from that credential and ignores any screen identity supplied by a client payload.
 
-Every Player event has a UUID and a per-screen sequence. UUID and sequence constraints make retries idempotent. The Player persists its queue in app-private storage, increments the sequence across process restarts, retries in batches of at most 100, and removes events only after the server acknowledges their IDs. Queue writes and uploads run off the playback thread. When the local cap is reached, the oldest low-priority routine events are removed before failures, recovery events, or presentation boundaries.
+Every Player event has a UUID and a per-screen sequence. UUID and sequence constraints make retries idempotent. The Player persists its queue in app-private storage, increments the sequence across process restarts, retries in batches of at most 100 with bounded exponential backoff, and removes events only after the server acknowledges their IDs. Queue writes and uploads run off the playback thread. When the local cap is reached, the oldest low-priority routine events are removed before failures, recovery events, or presentation boundaries.
 
 `occurredAt` is the Player wall-clock timestamp. `receivedAt` is assigned by the server. Durations are measured with Android elapsed realtime so wall-clock changes cannot create negative or inflated playback intervals.
 
@@ -21,8 +21,8 @@ Every Player event has a UUID and a per-screen sequence. UUID and sequence const
 
 The server derives `playback_sessions` from matching start and terminal events. A session is not considered completed until the Player reports a completion. Missing terminal events become:
 
-- `partial` when a new incompatible root presentation starts;
-- `unknown` after the bounded open-session timeout or a reporting gap;
+- `partial` when a new incompatible root presentation or replacement item starts;
+- `unknown` after the bounded open-session timeout, Player restart, or reporting gap;
 - `failed` only when the Player reports a failure;
 - `recovered` only when the Player reports successful recovery.
 
@@ -49,15 +49,15 @@ The API applies permissions independently of the Studio UI so future department-
 
 Defaults and deployment hard limits:
 
-| Data                         |  Default |   Hard limits |
-| ---------------------------- | -------: | ------------: |
-| Raw Player events            |  60 days |    7–365 days |
-| Proof-of-play sessions       | 365 days | 30–2,555 days |
-| Screen-state intervals       | 365 days | 30–2,555 days |
-| Audit logs                   | 730 days | 90–3,650 days |
-| Detailed diagnostic metadata |  30 days |    7–180 days |
+| Data | Default | Hard limits |
+| --- | ---: | ---: |
+| Raw Player events | 60 days | 7–365 days |
+| Proof-of-play sessions | 365 days | 30–2,555 days |
+| Screen-state intervals | 365 days | 30–2,555 days |
+| Audit logs | 730 days | 90–3,650 days |
+| Detailed diagnostic metadata | 30 days | 7–180 days |
 
-Cleanup deletes or redacts at most 500 rows per invocation and runs outside the playback request path. Derived sessions retain the evidence needed for reporting after their source raw events age out.
+Cleanup runs periodically and after Activity ingestion, changing at most 500 rows per dataset per invocation in short statements. It never deletes open playback sessions or open screen-state intervals, restores the default singleton safely if it is missing, and logs only safe row counts and errors. Derived sessions retain the evidence needed for reporting after their source raw events age out.
 
 ## API summary
 
