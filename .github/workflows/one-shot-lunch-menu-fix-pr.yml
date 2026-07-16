@@ -44,6 +44,17 @@ jobs:
           end = workflow.index("\n          PY", start)
           lines = workflow[start:end].splitlines()
           script = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines) + '\n'
+          broken_start = script.index('replacements = {')
+          broken_end = script.index('editor.write_text(text)', broken_start) + len('editor.write_text(text)')
+          fixed = '''text = text.replace('Reusable native App configuration.', 'Reusable native Widget configuration.')
+text = text.replace('Ticker preview uses the selected data App.', 'Preview uses the selected Data Source.')
+text = text.replace('Save App', 'Save Widget')
+text = text.replace('Create YouTube App', 'Create YouTube Widget')
+text = text.replace('Edit YouTube App', 'Edit YouTube Widget')
+text = text.replace('Discard unsaved YouTube App changes?', 'Discard unsaved YouTube Widget changes?')
+text = text.replace('              App\\n            </h2>', '              Widget\\n            </h2>')
+editor.write_text(text)'''
+          script = script[:broken_start] + fixed + script[broken_end:]
           Path('/tmp/apply-lunch-menu-fix.py').write_text(script)
           PY
           python3 /tmp/apply-lunch-menu-fix.py
