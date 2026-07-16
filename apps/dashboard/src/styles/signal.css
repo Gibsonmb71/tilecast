@@ -157,10 +157,6 @@ code,
   flex: 1 1 auto;
 }
 
-.sidebar__brand-logo--mark {
-  display: none;
-}
-
 .sidebar__compact-toggle {
   display: grid;
   flex: 0 0 30px;
@@ -187,15 +183,7 @@ code,
   padding: 11px 8px;
 }
 
-.app-shell--sidebar-compact .sidebar__brand-logo--full {
-  display: none;
-}
-
-.app-shell--sidebar-compact .sidebar__brand-logo--mark {
-  display: block;
-}
-
-.app-shell--sidebar-compact .sidebar__brand-logo--mark .brand__name {
+.app-shell--sidebar-compact .sidebar__brand-logo {
   display: none;
 }
 
@@ -1832,16 +1820,8 @@ tbody tr:hover {
     padding: 14px 8px 11px;
   }
 
-  .sidebar__brand-logo--full,
+  .sidebar__brand-logo,
   .sidebar__compact-toggle {
-    display: none;
-  }
-
-  .sidebar__brand-logo--mark {
-    display: block;
-  }
-
-  .sidebar__brand-logo--mark .brand__name {
     display: none;
   }
 

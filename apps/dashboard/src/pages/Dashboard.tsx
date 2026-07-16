@@ -133,9 +133,6 @@ export function DashboardShell() {
           <span className="sidebar__brand-logo sidebar__brand-logo--full">
             <Brand compact />
           </span>
-          <span className="sidebar__brand-logo sidebar__brand-logo--mark">
-            <Brand />
-          </span>
           <button
             className="sidebar__compact-toggle"
             type="button"
