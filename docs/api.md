@@ -135,7 +135,7 @@ Widget requests and responses may include nullable authoring-only `presetId` met
 
 Manifest v11 and v12 remain accepted for staged upgrades. Compatible Players receive manifest v13, where provider-neutral typed documents may contain multiple named datasets and Widget presentations dispatch by kind and required capabilities rather than provider name. Date-only records remain calendar dates and timestamps remain RFC 3339.
 
-The School Status Banner demonstrates the release-definition path. Studio generates its form from the catalog, the Server validates and compiles it to existing `surface`, `column`, `badge`, `text`, and `conditional` nodes, and Android receives no provider-specific configuration or template.
+The School Status Banner and School Status Source demonstrate the release-definition path. Studio generates their forms and gallery entries from the catalog, the Server validates and compiles the Banner to existing `surface`, `column`, `badge`, `text`, and `conditional` nodes, the Source runs through the generic `manual_object` adapter, and Android receives no provider-specific configuration or template. A new release-defined Widget (using existing Player capabilities) or `manual_object` Data Source (emitting Data Document v1) is added as a catalog definition alone: no Android update, no TypeScript provider-union edit, no Studio gallery code, and no database provider-constraint migration. The `provider` columns are constrained only by identifier shape; the catalog decides which providers are supported and rejects unknown IDs before insertion.
 
 ## Layouts
 

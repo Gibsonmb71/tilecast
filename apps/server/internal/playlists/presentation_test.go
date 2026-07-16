@@ -1,10 +1,20 @@
 package playlists
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/google/uuid"
+	"github.com/tilecast/tilecast/apps/server/internal/contentdefs"
 )
+
+// presentationTestService builds a Service backed by the embedded default catalog
+// for unit tests that exercise compilation without dependency injection.
+func presentationTestService() *Service {
+	return &Service{definitions: contentdefs.MustLoad()}
+}
 
 func TestProjectDataDocumentCoercesTypedValues(t *testing.T) {
 	raw := json.RawMessage(`{
@@ -38,7 +48,7 @@ func TestCompileWidgetPresentationUsesNodesNotProviderDispatch(t *testing.T) {
 		"foregroundColor":"#FFFFFF",
 		"backgroundColor":"#000000"
 	}`)
-	presentation, err := compileWidgetPresentation("list", raw)
+	presentation, err := presentationTestService().compileWidgetPresentation("list", raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,14 +76,14 @@ func TestCompileWebPresentationIsHTTPSAndLifecycleBounded(t *testing.T) {
 		"lifecycle":"keep_warm",
 		"warmSeconds":900
 	}`)
-	presentation, err := compileWidgetPresentation("website", raw)
+	presentation, err := presentationTestService().compileWidgetPresentation("website", raw)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if presentation.Web == nil || presentation.Web.Mode != "remote" || presentation.Web.WarmSeconds != 300 {
 		t.Fatalf("unexpected web descriptor: %#v", presentation.Web)
 	}
-	if _, err = compileWidgetPresentation("website", json.RawMessage(`{"url":"http://example.org"}`)); err == nil {
+	if _, err = presentationTestService().compileWidgetPresentation("website", json.RawMessage(`{"url":"http://example.org"}`)); err == nil {
 		t.Fatal("public insecure web presentation was accepted")
 	}
 }
@@ -93,11 +103,11 @@ func TestProjectMultiDatasetDocument(t *testing.T) {
 }
 
 func TestCompileWorldClockAndChartCapabilities(t *testing.T) {
-	clock, err := compileWidgetPresentation("world_clock", json.RawMessage(`{"zones":[{"label":"New York","timezone":"America/New_York"}],"format":"12","showDate":true,"columns":1}`))
+	clock, err := presentationTestService().compileWidgetPresentation("world_clock", json.RawMessage(`{"zones":[{"label":"New York","timezone":"America/New_York"}],"format":"12","showDate":true,"columns":1}`))
 	if err != nil || clock.Native == nil || clock.RequiredCapabilities["environment.time"] != 1 {
 		t.Fatalf("clock=%+v err=%v", clock, err)
 	}
-	chart, err := compileWidgetPresentation("chart", json.RawMessage(`{"dataSourceId":"11111111-1111-1111-1111-111111111111","dataset":"hourly","chartType":"line","series":[{"field":"pm2_5","label":"PM2.5"}]}`))
+	chart, err := presentationTestService().compileWidgetPresentation("chart", json.RawMessage(`{"dataSourceId":"11111111-1111-1111-1111-111111111111","dataset":"hourly","chartType":"line","series":[{"field":"pm2_5","label":"PM2.5"}]}`))
 	if err != nil || chart.RequiredCapabilities["content.line_chart"] != 2 {
 		t.Fatalf("chart=%+v err=%v", chart, err)
 	}
@@ -111,7 +121,7 @@ func TestSchoolStatusBannerCompilesFromReleaseDefinition(t *testing.T) {
 		"foregroundColor":"#ffffff","backgroundColor":"#17324d",
 		"emptyState":"Status unavailable"
 	}`)
-	presentation, err := compileWidgetPresentation("school-status-banner", raw)
+	presentation, err := presentationTestService().compileWidgetPresentation("school-status-banner", raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,12 +155,12 @@ func TestCompatibilityChecksOnlyPresentationRequirements(t *testing.T) {
 		},
 		Reported: true,
 	}
-	if err := checkPresentationCompatibility("Enrollment Chart", presentation, player); err != nil {
+	if err := checkPresentationCompatibility(context.Background(), nil, uuid.Nil, "Enrollment Chart", presentation, player); err != nil {
 		t.Fatalf("unrelated global capabilities made content incompatible: %v", err)
 	}
 	presentation.RequiredCapabilities["content.line_chart"] = 2
 	player.Native["content.line_chart"] = 1
-	err := checkPresentationCompatibility("Enrollment Chart", presentation, player)
+	err := checkPresentationCompatibility(context.Background(), nil, uuid.Nil, "Enrollment Chart", presentation, player)
 	if err == nil || !strings.Contains(err.Error(), "content.line_chart@2") ||
 		!strings.Contains(err.Error(), "content.line_chart@1") {
 		t.Fatalf("missing capability was not identified exactly: %v", err)

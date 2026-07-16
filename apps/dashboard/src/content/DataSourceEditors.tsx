@@ -1402,6 +1402,21 @@ export function CalendarDataSourceEditor({
   );
 }
 
+// Providers handled by a dedicated legacy editor below. Anything not listed here is a
+// release-defined Source that routes to the generic, definition-driven editor.
+const legacyDataSourceProviders = new Set<string>([
+  "manual",
+  "weather",
+  "calendar",
+  "transit",
+  "cap_alerts",
+  "air_quality",
+  "rss",
+  "atom",
+  "json",
+  "csv",
+]);
+
 export function DataSourceEditor({
   provider,
   dataSource,
@@ -1426,7 +1441,10 @@ export function DataSourceEditor({
   const definition = definitions.data?.dataSources.find(
     (candidate) => candidate.id === provider,
   );
-  if (provider === "school-status" && definitions.isLoading)
+  // Release-defined providers are anything the legacy editors below do not handle. Wait for
+  // the catalog before routing them, so a new definition renders through the generic editor
+  // without a hardcoded provider check here.
+  if (!legacyDataSourceProviders.has(provider) && definitions.isLoading)
     return (
       <div className="table-loading">Loading Data Source definition...</div>
     );
@@ -1481,7 +1499,7 @@ export function DataSourceEditor({
   )
     return (
       <LiveDataSourceEditor
-        provider={provider}
+        provider={provider as LiveProvider}
         dataSource={dataSource}
         csrf={csrf}
         readOnly={readOnly}

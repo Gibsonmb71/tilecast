@@ -508,7 +508,7 @@ func (s *Service) PlayerTypedDataSourceConfiguration(ctx context.Context, id uui
 		}
 		return json.Marshal(manualPlayerData(config))
 	}
-	if provider == "school-status" {
+	if definition, ok := s.definitions.DataSource(provider); ok && definition.AdapterID == "manual_object" {
 		var payload json.RawMessage
 		if err := s.db.QueryRow(ctx, `SELECT cached_payload FROM data_source_refresh_states WHERE data_source_id=$1`, id).Scan(&payload); err != nil {
 			return nil, err
@@ -545,7 +545,7 @@ func (s *Service) PlayerTypedDataSourceConfiguration(ctx context.Context, id uui
 		return json.Marshal(data)
 	}
 	if provider == "weather" {
-		data := TypedRecordData{Fields: availableDataSourceFields(provider, raw), Records: []TypedRecord{}}
+		data := TypedRecordData{Fields: s.availableDataSourceFields(provider, raw), Records: []TypedRecord{}}
 		if expires != nil && expires.After(time.Now()) {
 			if err := json.Unmarshal(payload, &data); err != nil {
 				return nil, err
@@ -571,7 +571,7 @@ func (s *Service) PlayerTypedDataSourceConfiguration(ctx context.Context, id uui
 		} else if errorCode != nil {
 			prepared.Unavailable = true
 		}
-		fields := availableDataSourceFields(provider, raw)
+		fields := s.availableDataSourceFields(provider, raw)
 		records := make([]TypedRecord, 0, len(prepared.Events))
 		location, _ := time.LoadLocation(config.Timezone)
 		for _, event := range prepared.Events {
@@ -616,7 +616,7 @@ func (s *Service) PlayerTypedDataSourceConfiguration(ctx context.Context, id uui
 	}
 	cachedAt, staleAt := prepared.CachedAt, prepared.StaleAt
 	return json.Marshal(TypedRecordData{
-		Fields: availableDataSourceFields(provider, raw), Records: records,
+		Fields: s.availableDataSourceFields(provider, raw), Records: records,
 		CachedAt: &cachedAt, StaleAt: &staleAt, UsingCachedData: prepared.UsingCachedData,
 		Unavailable: prepared.Unavailable, DateSelection: selection, DateField: "date",
 	})

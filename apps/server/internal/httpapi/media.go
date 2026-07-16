@@ -500,6 +500,15 @@ func (s *server) previewDataSource(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"data": preview})
 		return
 	}
+	if definition, ok := s.media.ContentDefinitions().DataSource(provider); ok && definition.AdapterID == "manual_object" {
+		preview, err := s.media.ManualObjectPreview(r.Context(), provider, body.Configuration)
+		if err != nil {
+			s.writeMediaError(w, r, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"data": preview})
+		return
+	}
 	if provider != "rss" && provider != "atom" && provider != "json" && provider != "csv" {
 		writeError(w, http.StatusNotFound, "data_source_provider_not_found", "The requested Data Source provider was not found.")
 		return

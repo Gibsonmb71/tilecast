@@ -2,10 +2,13 @@ import { Select } from "../components/ui";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft,
+  AlertTriangle,
   Braces,
   CalendarDays,
+  Database,
   FileSpreadsheet,
   CloudSun,
+  School,
   TableProperties,
   Check,
   Grid2X2,
@@ -14,11 +17,12 @@ import {
   Plus,
   Rss,
   X,
+  type LucideIcon,
 } from "lucide-react";
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { api, ApiError } from "../api/client";
-import type { DataSourceProvider } from "../api/types";
+import type { DataSourceDefinition, DataSourceProvider } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import {
   DashboardListToolbar,
@@ -42,10 +46,77 @@ function providerLabel(provider: DataSourceProvider) {
   );
 }
 
-const createCopy: Record<
-  DataSourceProvider,
-  { eyebrow: string; description: string; tip: string; steps: string[] }
-> = {
+// A generic icon mapping by icon identifier. Release-defined definitions declare an icon
+// name; unknown identifiers fall back to a safe default so a new definition never breaks
+// the gallery.
+const sourceIconMap: Record<string, LucideIcon> = {
+  calendar: CalendarDays,
+  csv: FileSpreadsheet,
+  spreadsheet: FileSpreadsheet,
+  json: Braces,
+  braces: Braces,
+  table: TableProperties,
+  manual: TableProperties,
+  cloud_sun: CloudSun,
+  weather: CloudSun,
+  rss: Rss,
+  feed: Rss,
+  alert: AlertTriangle,
+  transit: CalendarDays,
+  school: School,
+};
+
+export function iconForIdentifier(icon: string | undefined, size = 28) {
+  const Icon = (icon && sourceIconMap[icon]) || Database;
+  return <Icon size={size} />;
+}
+
+export type SetupCopy = {
+  eyebrow: string;
+  description: string;
+  tip: string;
+  steps: string[];
+};
+
+// resolveSetup returns the Studio setup copy for a Data Source. Release-defined sources use
+// their catalog metadata (description and optional setup guidance); legacy providers keep
+// their hardcoded editor copy.
+export function resolveSetup(
+  provider: DataSourceProvider,
+  definition: DataSourceDefinition | undefined,
+): SetupCopy {
+  if (definition && !definition.legacyEditor) {
+    return {
+      eyebrow: definition.setup?.eyebrow ?? "Release-defined information",
+      description: definition.description,
+      tip: definition.setup?.tip ?? "",
+      steps: definition.setup?.steps ?? [],
+    };
+  }
+  return (
+    createCopy[provider] ?? {
+      eyebrow: definition?.category ?? "Data Source",
+      description: definition?.description ?? "",
+      tip: "",
+      steps: [],
+    }
+  );
+}
+
+// sourceIcon prefers a release-defined definition's declared icon and falls back to the
+// legacy provider icon.
+export function sourceIcon(
+  provider: DataSourceProvider,
+  definition: DataSourceDefinition | undefined,
+  size = 28,
+) {
+  if (definition && !definition.legacyEditor) {
+    return iconForIdentifier(definition.icon, size);
+  }
+  return providerIcon(provider, size);
+}
+
+const createCopy: Record<string, SetupCopy> = {
   calendar: {
     eyebrow: "iCalendar feed",
     description:
@@ -156,17 +227,6 @@ const createCopy: Record<
       "Confirm endpoint policy, preview, then save.",
     ],
   },
-  "school-status": {
-    eyebrow: "Release-defined information",
-    description:
-      "Maintain the current school status and publish it as a typed object Data Document.",
-    tip: "Use expiration for temporary closures or delayed-opening notices.",
-    steps: [
-      "Enter the current status, message, and severity.",
-      "Optionally set effective and expiration times.",
-      "Save and select it in a School Status Banner Widget.",
-    ],
-  },
 };
 
 function providerIcon(provider: DataSourceProvider, size = 28) {
@@ -183,16 +243,22 @@ function providerIcon(provider: DataSourceProvider, size = 28) {
 
 function DataSourceCreateShell({
   provider,
+  definition,
   csrf,
   onClose,
   onSaved,
 }: {
   provider: DataSourceProvider;
+  definition?: DataSourceDefinition;
   csrf: string;
   onClose: () => void;
   onSaved: (value: { id: string }) => void;
 }) {
-  const copy = createCopy[provider];
+  const copy = resolveSetup(provider, definition);
+  const label =
+    definition && !definition.legacyEditor
+      ? definition.name
+      : providerLabel(provider);
   return (
     <div
       className={`data-source-create-shell data-source-create-shell--${provider}`}
@@ -207,11 +273,11 @@ function DataSourceCreateShell({
         </button>
         <div>
           <span className="data-source-create-shell__icon">
-            {providerIcon(provider)}
+            {sourceIcon(provider, definition)}
           </span>
           <div>
             <p className="eyebrow">{copy.eyebrow}</p>
-            <h2>Create {providerLabel(provider)} Data Source</h2>
+            <h2>Create {label} Data Source</h2>
             <p>{copy.description}</p>
           </div>
         </div>
@@ -221,22 +287,28 @@ function DataSourceCreateShell({
           className="data-source-create-shell__guide"
           aria-label="Data Source setup guidance"
         >
-          <h3>Setup checklist</h3>
-          <ol>
-            {copy.steps.map((step, index) => (
-              <li key={step}>
-                <span>{index + 1}</span>
-                <p>{step}</p>
-              </li>
-            ))}
-          </ol>
-          <div className="data-source-create-shell__tip">
-            <Lightbulb size={17} />
-            <div>
-              <strong>Good to know</strong>
-              <p>{copy.tip}</p>
+          {copy.steps.length > 0 && (
+            <>
+              <h3>Setup checklist</h3>
+              <ol>
+                {copy.steps.map((step, index) => (
+                  <li key={step}>
+                    <span>{index + 1}</span>
+                    <p>{step}</p>
+                  </li>
+                ))}
+              </ol>
+            </>
+          )}
+          {copy.tip && (
+            <div className="data-source-create-shell__tip">
+              <Lightbulb size={17} />
+              <div>
+                <strong>Good to know</strong>
+                <p>{copy.tip}</p>
+              </div>
             </div>
-          </div>
+          )}
           <p className="data-source-create-shell__advanced-note">
             <Check size={15} /> Advanced filtering and cache controls are
             optional.
@@ -310,7 +382,7 @@ function DataSourceProviderGallery({
               key={definition.id}
               onClick={() => onChoose(definition.id)}
             >
-              <TableProperties size={30} />
+              {iconForIdentifier(definition.icon, 30)}
               <strong>{definition.name}</strong>
               <span>{definition.description}</span>
             </button>
@@ -393,6 +465,9 @@ export function DataSourcesPage() {
     queryKey: ["content-definitions"],
     queryFn: api.contentDefinitions,
   });
+  const definitionsByProvider = new Map<string, DataSourceDefinition>(
+    (definitions.data?.dataSources ?? []).map((item) => [item.id, item]),
+  );
 
   return (
     <section className="content-page apps-page">
@@ -480,13 +555,17 @@ export function DataSourcesPage() {
                 aria-label={`Edit ${source.name}`}
               >
                 <span className="asset-preview">
-                  {providerIcon(source.provider)}
+                  {sourceIcon(
+                    source.provider,
+                    definitionsByProvider.get(source.provider),
+                  )}
                 </span>
                 <span className="asset-card__body">
                   <strong>{source.name}</strong>
                   <small>
-                    {providerLabel(source.provider)} ·{" "}
-                    {source.cachedRecordCount} cached records
+                    {definitionsByProvider.get(source.provider)?.name ??
+                      providerLabel(source.provider)}{" "}
+                    · {source.cachedRecordCount} cached records
                   </small>
                 </span>
                 <span
@@ -518,8 +597,7 @@ export function DataSourceEditorPage() {
     queryFn: api.contentDefinitions,
   });
   const dataSource = detail.data;
-  const provider = (providerParam ?? dataSource?.provider) as
-    DataSourceProvider | undefined;
+  const provider = providerParam ?? dataSource?.provider;
   const close = () => void navigate("/data-sources");
   const saved = (value: { id: string }) => {
     void navigate(`/data-sources/${value.id}`, { replace: true });
@@ -570,6 +648,7 @@ export function DataSourceEditorPage() {
       ) : canManageContent(auth.status?.user) ? (
         <DataSourceCreateShell
           provider={provider}
+          definition={definition}
           csrf={csrf}
           onClose={close}
           onSaved={saved}
