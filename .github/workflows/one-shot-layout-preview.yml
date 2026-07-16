@@ -1,3 +1,4 @@
+# Temporary one-shot workflow; removed after the verified commit.
 name: One-shot layout preview fix
 
 on:
