@@ -69,6 +69,49 @@ const defaultStructured = (
   },
 });
 
+const structuredFieldLabels: Record<string, string> = {
+  title: "Title",
+  subtitle: "Subtitle",
+  date: "Date",
+  author: "Author",
+  description: "Description",
+  image: "Image",
+  link: "Link",
+};
+
+const mappingFieldLabels: Record<string, string> = {
+  rootList: "Root list path",
+  title: "Title",
+  subtitle: "Subtitle",
+  date: "Date",
+  imageUrl: "Image URL",
+  link: "Link",
+};
+
+const mappingPlaceholders: Record<
+  StructuredProvider,
+  Record<string, string>
+> = {
+  json: {
+    rootList: "/items",
+    title: "/title",
+    subtitle: "/subtitle",
+    date: "/date",
+    imageUrl: "/image",
+    link: "/link",
+  },
+  csv: {
+    rootList: "",
+    title: "title",
+    subtitle: "subtitle",
+    date: "date",
+    imageUrl: "image_url",
+    link: "link",
+  },
+  rss: {},
+  atom: {},
+};
+
 export function StructuredDataSourceEditor({
   provider,
   dataSource,
@@ -287,7 +330,7 @@ export function StructuredDataSourceEditor({
                       }))
                     }
                   />
-                  <span>{field}</span>
+                  <span>{structuredFieldLabels[field] ?? field}</span>
                 </label>
               ))}
             </div>
@@ -333,9 +376,49 @@ export function StructuredDataSourceEditor({
                   <span className="field__label">Root list path</span>
                   <input
                     value={mapping.rootList}
+                    placeholder="/items"
                     disabled={readOnly}
                     onChange={(e) => updateMapping("rootList", e.target.value)}
                   />
+                </label>
+              )}
+              <div className="form-grid form-grid--2">
+                {(
+                  ["title", "subtitle", "date", "imageUrl", "link"] as const
+                ).map((key) => (
+                  <label className="field" key={key}>
+                    <span className="field__label">
+                      {mappingFieldLabels[key] ?? key}
+                    </span>
+                    <input
+                      value={mapping[key]}
+                      placeholder={mappingPlaceholders[provider][key]}
+                      disabled={readOnly}
+                      onChange={(e) => updateMapping(key, e.target.value)}
+                    />
+                  </label>
+                ))}
+              </div>
+              {provider === "csv" && (
+                <label className="field">
+                  <span className="field__label">Delimiter</span>
+                  <select
+                    value={configuration.delimiter ?? ""}
+                    disabled={readOnly}
+                    onChange={(e) =>
+                      setConfiguration((c) => ({
+                        ...c,
+                        delimiter: e.target
+                          .value as StructuredSourceConfig["delimiter"],
+                      }))
+                    }
+                  >
+                    <option value="">Detect</option>
+                    <option value=",">Comma</option>
+                    <option value=";">Semicolon</option>
+                    <option value="\t">Tab</option>
+                    <option value="|">Pipe</option>
+                  </select>
                 </label>
               )}
               <fieldset>
@@ -552,47 +635,14 @@ export function StructuredDataSourceEditor({
                   </>
                 )}
               </fieldset>
-              <div className="form-grid form-grid--2">
-                {(
-                  ["title", "subtitle", "date", "imageUrl", "link"] as const
-                ).map((key) => (
-                  <label className="field" key={key}>
-                    <span className="field__label">{key}</span>
-                    <input
-                      value={mapping[key]}
-                      disabled={readOnly}
-                      onChange={(e) => updateMapping(key, e.target.value)}
-                    />
-                  </label>
-                ))}
-              </div>
-              {provider === "csv" && (
-                <label className="field">
-                  <span className="field__label">Delimiter</span>
-                  <select
-                    value={configuration.delimiter ?? ""}
-                    disabled={readOnly}
-                    onChange={(e) =>
-                      setConfiguration((c) => ({
-                        ...c,
-                        delimiter: e.target
-                          .value as StructuredSourceConfig["delimiter"],
-                      }))
-                    }
-                  >
-                    <option value="">Detect</option>
-                    <option value=",">Comma</option>
-                    <option value=";">Semicolon</option>
-                    <option value="\t">Tab</option>
-                    <option value="|">Pipe</option>
-                  </select>
-                </label>
-              )}
               <div className="source-mapping-list">
                 <strong>Optional values</strong>
                 {Object.entries(mapping.valueFields ?? {}).map(
                   ([label, path]) => (
-                    <div className="source-mapping-row" key={label}>
+                    <div
+                      className="source-mapping-row source-mapping-row--value"
+                      key={label}
+                    >
                       <input
                         aria-label="Value label"
                         value={label}
@@ -653,7 +703,10 @@ export function StructuredDataSourceEditor({
             <legend>Record filters</legend>
             <div className="source-mapping-list">
               {(configuration.filters ?? []).map((filter, index) => (
-                <div className="source-mapping-row" key={index}>
+                <div
+                  className="source-mapping-row source-mapping-row--filter"
+                  key={index}
+                >
                   <input
                     aria-label="Filter field"
                     value={filter.field}
