@@ -25,6 +25,8 @@ import org.tilecast.player.core.NormalizedServerUrl
 import org.tilecast.player.core.PlayerEvent
 import org.tilecast.player.core.PlayerState
 import org.tilecast.player.core.PlayerStateMachine
+import org.tilecast.player.core.OfflineAction
+import org.tilecast.player.core.OfflineEscalationPolicy
 import org.tilecast.player.core.ReconnectBackoff
 import org.tilecast.player.core.ServerUrlPolicy
 import org.tilecast.player.data.ConfigurationRepository
@@ -84,6 +86,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val api = TilecastApi()
     private val discovery = LanDiscovery(application)
     private val backoff = ReconnectBackoff()
+    private val offlineEscalation = OfflineEscalationPolicy()
+    private val activityQueue by lazy { org.tilecast.player.activity.PlayerActivityQueue.get(application) }
+    // Elapsed-realtime timestamp of the current healthy socket, and the most drastic
+    // self-heal action taken during the current outage; both reset when a socket opens.
+    private var socketOpenedAtElapsed: Long = 0L
+    private var lastOfflineAction: OfflineAction = OfflineAction.NONE
     private var current: PlayerConfiguration? = null
     private var selectedIdentity: ServerIdentity? = null
     private var selectedUrl: NormalizedServerUrl? = null
@@ -271,6 +279,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         socket = api.socket(url, credential, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 reconnectJob?.cancel(); reconnectJob = null
+                if (attempt > 0) recordReliabilityEvent("connection.restored", "info", result = "recovered", failureMessage = "Reconnected after $attempt attempt(s)")
+                socketOpenedAtElapsed = SystemClock.elapsedRealtime()
+                lastOfflineAction = OfflineAction.NONE
                 webSocket.send("{\"type\":\"player.hello\",\"protocolVersion\":1,\"playerVersion\":\"${BuildConfig.VERSION_NAME}\"}")
                 webSocket.send(Json.encodeToString(kotlinx.serialization.json.JsonObject.serializer(), statusMessage()))
                 viewModelScope.launch { emit(PlayerEvent.Connected(screenName)) }
@@ -291,22 +302,31 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 				manifestPollJob?.cancel()
 				configPollJob?.cancel()
                 webSocket.close(code, reason)
-                scheduleReconnect(url, screenName, credential, attempt + 1, reason)
+                scheduleReconnect(url, screenName, credential, nextReconnectAttempt(attempt), reason)
             }
             override fun onFailure(webSocket: WebSocket, error: Throwable, response: Response?) {
 				manifestPollJob?.cancel()
 				configPollJob?.cancel()
                 if (response?.code == 401) { viewModelScope.launch { verifyAfterAuthFailure(url, screenName, credential) }; return }
-                scheduleReconnect(url, screenName, credential, attempt + 1, error.message)
+                scheduleReconnect(url, screenName, credential, nextReconnectAttempt(attempt), error.message)
             }
-            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { scheduleReconnect(url, screenName, credential, attempt + 1, reason) }
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { scheduleReconnect(url, screenName, credential, nextReconnectAttempt(attempt), reason) }
         })
+    }
+
+    // nextReconnectAttempt resets the escalation index when the socket that just closed had
+    // been healthy long enough, so a brief blip after a stable connection reconnects fast.
+    private fun nextReconnectAttempt(attempt: Int): Int {
+        val connectedFor = if (socketOpenedAtElapsed > 0) SystemClock.elapsedRealtime() - socketOpenedAtElapsed else 0L
+        return backoff.nextAttempt(attempt, connectedFor)
     }
 
     private fun scheduleReconnect(url: String, name: String, credential: String, attempt: Int, reason: String?) {
         if (reconnectJob?.isActive == true) return
         reconnectJob = viewModelScope.launch {
             emit(PlayerEvent.Disconnected(name, reason))
+            if (attempt <= 1) recordReliabilityEvent("connection.lost", "warning", result = "failed", failureMessage = reason ?: "Connection lost")
+            maybeSelfHeal(url, credential)
             delay(backoff.delayMillis(attempt))
             try {
                 val actual = api.identity(url)
@@ -320,6 +340,46 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 reconnectJob = null
                 scheduleReconnect(url, name, credential, attempt + 1, "Server unavailable")
             }
+        }
+    }
+
+    // maybeSelfHeal escalates only a Player that has lost server contact AND is not
+    // presenting anything. A screen still showing cached content is left untouched.
+    private fun maybeSelfHeal(url: String, credential: String) {
+        val prefs = getApplication<Application>().getSharedPreferences("tilecast-reliability", Application.MODE_PRIVATE)
+        val lastContact = prefs.getLong("last-server-connection-at", 0)
+        if (lastContact <= 0) return // never connected yet; enrollment path handles first contact
+        val offlineFor = java.time.Duration.ofMillis((System.currentTimeMillis() - lastContact).coerceAtLeast(0))
+        val playbackHealthy = mutableContent.value != null
+        val action = offlineEscalation.decide(offlineFor, playbackHealthy, lastOfflineAction)
+        if (action == OfflineAction.NONE) return
+        lastOfflineAction = action
+        recordReliabilityEvent(
+            "watchdog.offline_recovery",
+            if (action == OfflineAction.VERIFY_FALLBACK) "warning" else "error",
+            result = "recovered",
+            failureCode = action.name.lowercase(),
+            failureMessage = "Offline ${offlineFor.toMinutes()}m with no playback; ${action.name.lowercase()}",
+        )
+        when (action) {
+            OfflineAction.VERIFY_FALLBACK -> viewModelScope.launch { runCatching { reconcileManifest(url, credential) } }
+            OfflineAction.RESTART_ACTIVITY -> reliabilityController.restartActivity()
+            OfflineAction.RESTART_PROCESS -> reliabilityController.restartProcess()
+            OfflineAction.NONE -> {}
+        }
+    }
+
+    private fun recordReliabilityEvent(eventType: String, severity: String, result: String = "unknown", failureCode: String = "", failureMessage: String = "") {
+        runCatching {
+            activityQueue.record(
+                eventType = eventType,
+                severity = severity,
+                result = result,
+                failureCode = failureCode,
+                failureMessage = failureMessage,
+                manifestVersion = activeManifestVersion,
+                priority = 2,
+            )
         }
     }
 
