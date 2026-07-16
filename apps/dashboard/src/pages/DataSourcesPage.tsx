@@ -122,7 +122,11 @@ function DataSourceCreateShell({
       className={`data-source-create-shell data-source-create-shell--${provider}`}
     >
       <header className="data-source-create-shell__header">
-        <button className="button button--quiet" type="button" onClick={onClose}>
+        <button
+          className="button button--quiet"
+          type="button"
+          onClick={onClose}
+        >
           <ArrowLeft size={16} /> Data Sources
         </button>
         <div>
@@ -137,25 +141,26 @@ function DataSourceCreateShell({
         </div>
       </header>
       <div className="data-source-create-shell__layout">
-        <aside className="data-source-create-shell__guide">
-          <section>
-            <h3>Three steps</h3>
-            <ol>
-              {copy.steps.map((step, index) => (
-                <li key={step}>
-                  <span>{index + 1}</span>
-                  <p>{step}</p>
-                </li>
-              ))}
-            </ol>
-          </section>
-          <section className="data-source-create-shell__tip">
+        <aside
+          className="data-source-create-shell__guide"
+          aria-label="Data Source setup guidance"
+        >
+          <h3>Setup checklist</h3>
+          <ol>
+            {copy.steps.map((step, index) => (
+              <li key={step}>
+                <span>{index + 1}</span>
+                <p>{step}</p>
+              </li>
+            ))}
+          </ol>
+          <div className="data-source-create-shell__tip">
             <Lightbulb size={17} />
             <div>
               <strong>Good to know</strong>
               <p>{copy.tip}</p>
             </div>
-          </section>
+          </div>
           <p className="data-source-create-shell__advanced-note">
             <Check size={15} /> Advanced filtering and cache controls are
             optional.
@@ -196,8 +201,8 @@ function DataSourceProviderGallery({
           <div>
             <h2 id="data-source-gallery-title">Create Data Source</h2>
             <p>
-              Choose what you are connecting. Each setup page starts with the
-              essentials and keeps advanced options out of the way.
+              Choose what you are connecting. Every provider uses the same
+              compact, predictable setup pattern.
             </p>
           </div>
           <button className="icon-button" aria-label="Close" onClick={onClose}>
@@ -208,7 +213,9 @@ function DataSourceProviderGallery({
           <button type="button" onClick={() => onChoose("calendar")}>
             <CalendarDays size={30} />
             <strong>Calendar</strong>
-            <span>Public Google, Microsoft, Apple, or other ICS calendars.</span>
+            <span>
+              Public Google, Microsoft, Apple, or other ICS calendars.
+            </span>
           </button>
           <button type="button" onClick={() => onChoose("rss")}>
             <Rss size={30} />
@@ -228,7 +235,9 @@ function DataSourceProviderGallery({
           <button type="button" onClick={() => onChoose("csv")}>
             <FileSpreadsheet size={30} />
             <strong>CSV</strong>
-            <span>Upload a spreadsheet export or connect a hosted CSV URL.</span>
+            <span>
+              Upload a spreadsheet export or connect a hosted CSV URL.
+            </span>
           </button>
         </div>
       </section>
@@ -352,8 +361,8 @@ export function DataSourcesPage() {
                 <span className="asset-card__body">
                   <strong>{source.name}</strong>
                   <small>
-                    {providerLabel(source.provider)} · {source.cachedRecordCount}{" "}
-                    cached records
+                    {providerLabel(source.provider)} ·{" "}
+                    {source.cachedRecordCount} cached records
                   </small>
                 </span>
                 <span
@@ -382,8 +391,7 @@ export function DataSourceEditorPage() {
   });
   const dataSource = detail.data;
   const provider = (providerParam ?? dataSource?.provider) as
-    | DataSourceProvider
-    | undefined;
+    DataSourceProvider | undefined;
   const close = () => void navigate("/data-sources");
   const saved = (value: { id: string }) => {
     void navigate(`/data-sources/${value.id}`, { replace: true });
