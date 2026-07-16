@@ -38,6 +38,7 @@ type LayoutUsage struct {
 type Item struct {
 	ID                   uuid.UUID  `json:"id"`
 	AssetID              uuid.UUID  `json:"assetId"`
+	LayoutID             *uuid.UUID `json:"layoutId,omitempty"`
 	Position             int        `json:"position"`
 	DurationMS           *int64     `json:"durationMs,omitempty"`
 	FitMode              string     `json:"fitMode"`
@@ -59,15 +60,16 @@ type Item struct {
 }
 
 type ItemInput struct {
-	AssetID            uuid.UUID `json:"assetId"`
-	DurationMS         *int64    `json:"durationMs"`
-	FitMode            string    `json:"fitMode"`
-	Transition         string    `json:"transition"`
-	AudioEnabled       *bool     `json:"audioEnabled"`
-	Volume             *float64  `json:"volume"`
-	VideoStartOffsetMS *int64    `json:"videoStartOffsetMs"`
-	VideoEndOffsetMS   *int64    `json:"videoEndOffsetMs"`
-	DeliveryPolicy     string    `json:"deliveryPolicy"`
+	AssetID            uuid.UUID  `json:"assetId"`
+	LayoutID           *uuid.UUID `json:"layoutId"`
+	DurationMS         *int64     `json:"durationMs"`
+	FitMode            string     `json:"fitMode"`
+	Transition         string     `json:"transition"`
+	AudioEnabled       *bool      `json:"audioEnabled"`
+	Volume             *float64   `json:"volume"`
+	VideoStartOffsetMS *int64     `json:"videoStartOffsetMs"`
+	VideoEndOffsetMS   *int64     `json:"videoEndOffsetMs"`
+	DeliveryPolicy     string     `json:"deliveryPolicy"`
 }
 
 type ListResult struct {
@@ -253,6 +255,7 @@ type ManifestPlaylist struct {
 type ManifestItem struct {
 	ID                 uuid.UUID  `json:"id"`
 	AssetID            uuid.UUID  `json:"assetId"`
+	LayoutID           *uuid.UUID `json:"layoutId,omitempty"`
 	VariantID          *uuid.UUID `json:"variantId,omitempty"`
 	AssetType          string     `json:"assetType"`
 	DurationMS         *int64     `json:"durationMs,omitempty"`

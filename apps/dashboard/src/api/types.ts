@@ -64,6 +64,7 @@ export type Screen = {
 export type PlaylistItem = {
   id: string;
   assetId: string;
+  layoutId?: string;
   position: number;
   durationMs?: number;
   fitMode: "contain" | "cover" | "stretch";
@@ -74,7 +75,7 @@ export type PlaylistItem = {
   videoEndOffsetMs?: number;
   deliveryPolicy: "download" | "stream" | "automatic";
   assetName: string;
-  assetType: "image" | "video" | "widget";
+  assetType: "image" | "video" | "widget" | "layout";
   widgetProvider?: WidgetProvider;
   assetStatus: AssetStatus;
   assetDurationSeconds?: number;
@@ -229,7 +230,8 @@ export type LayoutRevisionList = {
   pageSize: number;
 };
 export type PlaylistItemInput = {
-  assetId: string;
+  assetId?: string;
+  layoutId?: string;
   durationMs?: number;
   fitMode: PlaylistItem["fitMode"];
   transition: PlaylistItem["transition"];

@@ -119,7 +119,7 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (Playlist, error) {
 	if err != nil {
 		return Playlist{}, err
 	}
-	rows, err := s.db.Query(ctx, `SELECT i.id,i.asset_id,i.position,i.duration_ms,i.fit_mode,i.transition,i.audio_enabled,i.volume,i.video_start_offset_ms,i.video_end_offset_ms,i.delivery_policy,a.name,a.type,COALESCE(s.provider,''),a.processing_status,a.duration_seconds,v.id,i.created_at,i.updated_at FROM playlist_items i JOIN assets a ON a.id=i.asset_id LEFT JOIN widgets s ON s.asset_id=a.id LEFT JOIN LATERAL(SELECT id FROM asset_variants WHERE asset_id=a.id AND deleted_at IS NULL AND player_compatible=TRUE ORDER BY CASE kind WHEN 'playback' THEN 0 WHEN 'original' THEN 1 ELSE 2 END LIMIT 1)v ON TRUE WHERE i.playlist_id=$1 ORDER BY i.position`, id)
+	rows, err := s.db.Query(ctx, `SELECT i.id,COALESCE(i.asset_id,'00000000-0000-0000-0000-000000000000'::uuid),i.layout_id,i.position,i.duration_ms,i.fit_mode,i.transition,i.audio_enabled,i.volume,i.video_start_offset_ms,i.video_end_offset_ms,i.delivery_policy,COALESCE(a.name,l.name),CASE WHEN i.layout_id IS NOT NULL THEN 'layout' ELSE a.type END,COALESCE(s.provider,''),CASE WHEN i.layout_id IS NOT NULL THEN CASE WHEN l.published_revision_id IS NOT NULL THEN 'ready' ELSE 'draft' END ELSE a.processing_status END,a.duration_seconds,v.id,i.created_at,i.updated_at FROM playlist_items i LEFT JOIN assets a ON a.id=i.asset_id LEFT JOIN layouts l ON l.id=i.layout_id AND l.deleted_at IS NULL LEFT JOIN widgets s ON s.asset_id=a.id LEFT JOIN LATERAL(SELECT id FROM asset_variants WHERE asset_id=a.id AND deleted_at IS NULL AND player_compatible=TRUE ORDER BY CASE kind WHEN 'playback' THEN 0 WHEN 'original' THEN 1 ELSE 2 END LIMIT 1)v ON TRUE WHERE i.playlist_id=$1 ORDER BY i.position`, id)
 	if err != nil {
 		return Playlist{}, err
 	}
@@ -129,11 +129,13 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (Playlist, error) {
 	p.LayoutUsage = []LayoutUsage{}
 	for rows.Next() {
 		var item Item
-		if err := rows.Scan(&item.ID, &item.AssetID, &item.Position, &item.DurationMS, &item.FitMode, &item.Transition, &item.AudioEnabled, &item.Volume, &item.VideoStartOffsetMS, &item.VideoEndOffsetMS, &item.DeliveryPolicy, &item.AssetName, &item.AssetType, &item.WidgetProvider, &item.AssetStatus, &item.AssetDurationSeconds, &item.VariantID, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.AssetID, &item.LayoutID, &item.Position, &item.DurationMS, &item.FitMode, &item.Transition, &item.AudioEnabled, &item.Volume, &item.VideoStartOffsetMS, &item.VideoEndOffsetMS, &item.DeliveryPolicy, &item.AssetName, &item.AssetType, &item.WidgetProvider, &item.AssetStatus, &item.AssetDurationSeconds, &item.VariantID, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			return Playlist{}, err
 		}
-		item.ThumbnailURL = "/api/v1/assets/" + item.AssetID.String() + "/thumbnail"
-		if item.AssetStatus != "ready" || (item.AssetType != "widget" && item.VariantID == nil) {
+		if item.AssetID != uuid.Nil {
+			item.ThumbnailURL = "/api/v1/assets/" + item.AssetID.String() + "/thumbnail"
+		}
+		if item.AssetStatus != "ready" || (item.AssetType != "widget" && item.AssetType != "layout" && item.VariantID == nil) {
 			p.Warnings = append(p.Warnings, "Asset "+item.AssetName+" is no longer ready for playback.")
 		}
 		p.Items = append(p.Items, item)
@@ -210,7 +212,7 @@ func (s *Service) Duplicate(ctx context.Context, id, userID uuid.UUID) (Playlist
 		return Playlist{}, err
 	}
 	defer tx.Rollback(ctx)
-	_, err = tx.Exec(ctx, `INSERT INTO playlist_items(id,playlist_id,asset_id,position,duration_ms,fit_mode,transition,audio_enabled,volume,video_start_offset_ms,video_end_offset_ms,delivery_policy) SELECT gen_random_uuid(),$2,asset_id,position,duration_ms,fit_mode,transition,audio_enabled,volume,video_start_offset_ms,video_end_offset_ms,delivery_policy FROM playlist_items WHERE playlist_id=$1`, id, created.ID)
+	_, err = tx.Exec(ctx, `INSERT INTO playlist_items(id,playlist_id,asset_id,layout_id,position,duration_ms,fit_mode,transition,audio_enabled,volume,video_start_offset_ms,video_end_offset_ms,delivery_policy) SELECT gen_random_uuid(),$2,asset_id,layout_id,position,duration_ms,fit_mode,transition,audio_enabled,volume,video_start_offset_ms,video_end_offset_ms,delivery_policy FROM playlist_items WHERE playlist_id=$1`, id, created.ID)
 	if err != nil {
 		return Playlist{}, err
 	}
@@ -263,6 +265,9 @@ type assetInfo struct {
 func (s *Service) validateItem(ctx context.Context, q interface {
 	QueryRow(context.Context, string, ...any) pgx.Row
 }, input ItemInput) (ItemInput, assetInfo, error) {
+	if (input.AssetID == uuid.Nil) == (input.LayoutID == nil) {
+		return input, assetInfo{}, errors.New("playlist item must reference exactly one asset or Layout")
+	}
 	if input.FitMode == "" {
 		input.FitMode = "contain"
 	}
@@ -291,6 +296,24 @@ func (s *Service) validateItem(ctx context.Context, q interface {
 	}
 	if *input.Volume < 0 || *input.Volume > 1 {
 		return input, assetInfo{}, errors.New("volume must be between 0 and 1")
+	}
+	if input.LayoutID != nil {
+		var published bool
+		err := q.QueryRow(ctx, `SELECT published_revision_id IS NOT NULL FROM layouts WHERE id=$1 AND deleted_at IS NULL`, *input.LayoutID).Scan(&published)
+		if errors.Is(err, pgx.ErrNoRows) || !published {
+			return input, assetInfo{}, errors.New("Layout must be published before it can be added")
+		}
+		if err != nil {
+			return input, assetInfo{}, err
+		}
+		if input.DurationMS == nil || *input.DurationMS <= 0 {
+			return input, assetInfo{}, errors.New("Layout durationMs must be positive")
+		}
+		input.DeliveryPolicy = "stream"
+		input.VideoStartOffsetMS, input.VideoEndOffsetMS = nil, nil
+		off, zero := false, 0.0
+		input.AudioEnabled, input.Volume = &off, &zero
+		return input, assetInfo{Type: "layout"}, nil
 	}
 	var a assetInfo
 	err := q.QueryRow(ctx, `SELECT a.type,COALESCE(s.provider,''),a.duration_seconds,v.id FROM assets a LEFT JOIN widgets s ON s.asset_id=a.id LEFT JOIN LATERAL(SELECT id FROM asset_variants WHERE asset_id=a.id AND deleted_at IS NULL AND player_compatible=TRUE ORDER BY CASE kind WHEN 'playback' THEN 0 ELSE 1 END LIMIT 1)v ON TRUE WHERE a.id=$1 AND a.deleted_at IS NULL AND a.processing_status='ready' AND (a.type='widget' OR v.id IS NOT NULL)`, input.AssetID).Scan(&a.Type, &a.Provider, &a.Duration, &a.Variant)
@@ -338,9 +361,49 @@ func (s *Service) validateItem(ctx context.Context, q interface {
 	return input, a, nil
 }
 
+func validateLayoutItemCycle(ctx context.Context, q interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}, playlistID uuid.UUID, layoutID *uuid.UUID) error {
+	if layoutID == nil {
+		return nil
+	}
+	var reachesPlaylist bool
+	err := q.QueryRow(ctx, `
+		WITH RECURSIVE refs(kind,id) AS (
+			SELECT 'layout', $1::uuid
+			UNION
+			SELECT next.kind,next.id
+			FROM refs ref
+			CROSS JOIN LATERAL (
+				SELECT 'playlist'::text AS kind,dependency.dependency_id AS id
+				FROM layouts layout
+				JOIN layout_revision_dependencies dependency
+				  ON dependency.revision_id=layout.published_revision_id
+				 AND dependency.dependency_type='playlist'
+				WHERE ref.kind='layout' AND layout.id=ref.id
+				UNION
+				SELECT 'layout'::text,item.layout_id
+				FROM playlist_items item
+				WHERE ref.kind='playlist' AND item.playlist_id=ref.id AND item.layout_id IS NOT NULL
+			) next
+		)
+		SELECT EXISTS(SELECT 1 FROM refs WHERE kind='playlist' AND id=$2)`,
+		*layoutID, playlistID).Scan(&reachesPlaylist)
+	if err != nil {
+		return err
+	}
+	if reachesPlaylist {
+		return errors.New("Layout cannot be added because it contains this playlist")
+	}
+	return nil
+}
+
 func (s *Service) AddItem(ctx context.Context, playlistID, userID uuid.UUID, input ItemInput) (Playlist, error) {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
+		return Playlist{}, err
+	}
+	if err = validateLayoutItemCycle(ctx, tx, playlistID, input.LayoutID); err != nil {
 		return Playlist{}, err
 	}
 	defer tx.Rollback(ctx)
@@ -359,7 +422,11 @@ func (s *Service) AddItem(ctx context.Context, playlistID, userID uuid.UUID, inp
 	if tag.RowsAffected() == 0 {
 		return Playlist{}, ErrNotFound
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO playlist_items(id,playlist_id,asset_id,position,duration_ms,fit_mode,transition,audio_enabled,volume,video_start_offset_ms,video_end_offset_ms,delivery_policy)VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, uuid.New(), playlistID, input.AssetID, position, input.DurationMS, input.FitMode, input.Transition, *input.AudioEnabled, *input.Volume, input.VideoStartOffsetMS, input.VideoEndOffsetMS, input.DeliveryPolicy)
+	var assetID any = input.AssetID
+	if input.LayoutID != nil {
+		assetID = nil
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO playlist_items(id,playlist_id,asset_id,layout_id,position,duration_ms,fit_mode,transition,audio_enabled,volume,video_start_offset_ms,video_end_offset_ms,delivery_policy)VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`, uuid.New(), playlistID, assetID, input.LayoutID, position, input.DurationMS, input.FitMode, input.Transition, *input.AudioEnabled, *input.Volume, input.VideoStartOffsetMS, input.VideoEndOffsetMS, input.DeliveryPolicy)
 	if err != nil {
 		return Playlist{}, err
 	}
@@ -387,7 +454,14 @@ func (s *Service) UpdateItem(ctx context.Context, playlistID, itemID, userID uui
 	if err != nil {
 		return Playlist{}, err
 	}
-	tag, err := tx.Exec(ctx, `UPDATE playlist_items SET asset_id=$3,duration_ms=$4,fit_mode=$5,transition=$6,audio_enabled=$7,volume=$8,video_start_offset_ms=$9,video_end_offset_ms=$10,delivery_policy=$11,updated_at=now() WHERE playlist_id=$1 AND id=$2`, playlistID, itemID, input.AssetID, input.DurationMS, input.FitMode, input.Transition, *input.AudioEnabled, *input.Volume, input.VideoStartOffsetMS, input.VideoEndOffsetMS, input.DeliveryPolicy)
+	if err = validateLayoutItemCycle(ctx, tx, playlistID, input.LayoutID); err != nil {
+		return Playlist{}, err
+	}
+	var assetID any = input.AssetID
+	if input.LayoutID != nil {
+		assetID = nil
+	}
+	tag, err := tx.Exec(ctx, `UPDATE playlist_items SET asset_id=$3,layout_id=$4,duration_ms=$5,fit_mode=$6,transition=$7,audio_enabled=$8,volume=$9,video_start_offset_ms=$10,video_end_offset_ms=$11,delivery_policy=$12,updated_at=now() WHERE playlist_id=$1 AND id=$2`, playlistID, itemID, assetID, input.LayoutID, input.DurationMS, input.FitMode, input.Transition, *input.AudioEnabled, *input.Volume, input.VideoStartOffsetMS, input.VideoEndOffsetMS, input.DeliveryPolicy)
 	if err != nil {
 		return Playlist{}, err
 	}
@@ -984,6 +1058,50 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 			}
 		}
 	}
+	// Expand the complete presentation graph before projecting it. Playlists may contain
+	// published Layouts, and Layouts may contain playlist zones; UNION makes cycles finite.
+	graphRows, graphErr := s.db.Query(ctx, `
+		WITH RECURSIVE refs(kind,id) AS (
+			SELECT 'playlist', unnest($1::uuid[])
+			UNION
+			SELECT 'layout', unnest($2::uuid[])
+			UNION
+			SELECT next.kind,next.id
+			FROM refs ref
+			CROSS JOIN LATERAL (
+				SELECT 'layout'::text AS kind,item.layout_id AS id
+				FROM playlist_items item
+				WHERE ref.kind='playlist' AND item.playlist_id=ref.id AND item.layout_id IS NOT NULL
+				UNION
+				SELECT 'playlist'::text,dependency.dependency_id
+				FROM layouts layout
+				JOIN layout_revision_dependencies dependency
+				  ON dependency.revision_id=layout.published_revision_id
+				 AND dependency.dependency_type='playlist'
+				WHERE ref.kind='layout' AND layout.id=ref.id AND layout.deleted_at IS NULL
+			) next
+		)
+		SELECT kind,id FROM refs`, uniqueUUIDs(playlistIDs), uniqueUUIDs(layoutIDs))
+	if graphErr != nil {
+		return Manifest{}, "", graphErr
+	}
+	for graphRows.Next() {
+		var kind string
+		var id uuid.UUID
+		if graphErr = graphRows.Scan(&kind, &id); graphErr != nil {
+			graphRows.Close()
+			return Manifest{}, "", graphErr
+		}
+		if kind == "layout" {
+			layoutIDs = append(layoutIDs, id)
+		} else {
+			playlistIDs = append(playlistIDs, id)
+		}
+	}
+	graphRows.Close()
+	if graphErr = graphRows.Err(); graphErr != nil {
+		return Manifest{}, "", graphErr
+	}
 	type layoutManifestDependency struct {
 		Type string
 		ID   uuid.UUID
@@ -1034,8 +1152,18 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 		}
 		mp := ManifestPlaylist{ID: playlist.ID, Revision: playlist.Revision, Name: playlist.Name, Items: []ManifestItem{}}
 		for _, item := range playlist.Items {
-			if item.AssetStatus != "ready" || (item.AssetType != "widget" && item.VariantID == nil) {
+			if item.AssetStatus != "ready" || (item.AssetType != "widget" && item.AssetType != "layout" && item.VariantID == nil) {
 				return Manifest{}, "", fmt.Errorf("%w: playlist contains an unavailable asset", ErrConflict)
+			}
+			if item.AssetType == "layout" {
+				if item.LayoutID == nil {
+					return Manifest{}, "", fmt.Errorf("%w: playlist Layout is unavailable", ErrConflict)
+				}
+				mp.Items = append(mp.Items, ManifestItem{ID: item.ID, AssetID: *item.LayoutID, LayoutID: item.LayoutID, AssetType: "layout", DurationMS: item.DurationMS, FitMode: item.FitMode, Transition: item.Transition, AudioEnabled: false, Volume: 0, DeliveryPolicy: "stream"})
+				continue
+			}
+			if item.AssetID == uuid.Nil {
+				return Manifest{}, "", fmt.Errorf("%w: playlist asset is unavailable", ErrConflict)
 			}
 			if item.AssetType == "widget" {
 				var widget ManifestWidget
