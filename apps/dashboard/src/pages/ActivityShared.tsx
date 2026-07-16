@@ -242,7 +242,7 @@ export function TechnicalDetails({
   value: Record<string, unknown>;
 }) {
   const entries = Object.entries(value).filter(
-    ([, item]) => item != null && item !== "" && item !== false,
+    ([, item]) => item != null && item !== "",
   );
   if (!entries.length) return <span>—</span>;
   return (
