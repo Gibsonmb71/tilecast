@@ -413,11 +413,52 @@ code,
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--tc-radius-control);
+  cursor: grab;
 }
 
 .layout-content-shelf > button:hover {
   background: var(--tc-bg-subtle);
   border-color: var(--tc-border-default);
+}
+
+.layout-content-shelf > button:active {
+  cursor: grabbing;
+}
+
+.layout-content-shelf__empty {
+  margin: 0;
+  padding: var(--tc-space-3);
+  color: var(--tc-text-secondary);
+  font: var(--tc-text-caption);
+  text-align: center;
+}
+
+.layout-library-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--tc-space-1);
+  padding: var(--tc-space-3);
+  border-bottom: 1px solid var(--tc-border-default);
+}
+
+.layout-library-tabs button {
+  display: grid;
+  place-items: center;
+  gap: 5px;
+  min-width: 0;
+  min-height: 54px;
+  padding: 6px 2px;
+  color: var(--tc-text-secondary);
+  font: var(--tc-text-caption);
+  background: var(--tc-bg-subtle);
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-control);
+}
+
+.layout-library-tabs button.is-selected {
+  color: var(--tc-text-primary);
+  background: var(--tc-accent-soft);
+  border-color: var(--tc-accent);
 }
 
 .layout-content-shelf > button > span:last-child {
@@ -564,6 +605,8 @@ code,
   top: 10px;
   left: 50%;
   display: flex;
+  min-width: 330px;
+  justify-content: center;
   gap: var(--tc-space-2);
   align-items: center;
   min-height: 36px;
@@ -580,6 +623,7 @@ code,
   gap: 4px;
   align-items: center;
   font: var(--tc-text-caption);
+  white-space: nowrap;
 }
 
 .layout-stage-scroll {

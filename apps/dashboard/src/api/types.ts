@@ -721,12 +721,17 @@ export type WidgetProvider =
   | "clock"
   | "date"
   | "qrcode"
+  | "countdown"
   | "ticker"
   | "menu"
   | "list"
   | "table"
-  | "agenda";
-export type DataSourceProvider = "calendar" | "rss" | "atom" | "json" | "csv";
+  | "agenda"
+  | "metric"
+  | "cards"
+  | "weather";
+export type DataSourceProvider =
+  "calendar" | "rss" | "atom" | "json" | "csv" | "manual" | "weather";
 export type Widget = {
   provider: WidgetProvider;
   configVersion: number;
@@ -736,8 +741,12 @@ export type Widget = {
     | ClockWidgetConfig
     | DateWidgetConfig
     | QRCodeWidgetConfig
+    | CountdownWidgetConfig
     | TickerWidgetConfig
-    | DisplayWidgetConfig;
+    | DisplayWidgetConfig
+    | MetricWidgetConfig
+    | CardsWidgetConfig
+    | WeatherWidgetConfig;
 };
 export type WidgetInput = {
   provider: WidgetProvider;
@@ -749,8 +758,12 @@ export type WidgetInput = {
     | ClockWidgetConfig
     | DateWidgetConfig
     | QRCodeWidgetConfig
+    | CountdownWidgetConfig
     | TickerWidgetConfig
-    | DisplayWidgetConfig;
+    | DisplayWidgetConfig
+    | MetricWidgetConfig
+    | CardsWidgetConfig
+    | WeatherWidgetConfig;
 };
 export type DataSourceField = {
   key: string;
@@ -763,7 +776,11 @@ export type DataSource = {
   name: string;
   description: string;
   configVersion: number;
-  configuration: CalendarConfig | StructuredSourceConfig;
+  configuration:
+    | CalendarConfig
+    | StructuredSourceConfig
+    | ManualSourceConfig
+    | WeatherSourceConfig;
   status: string;
   cachedRecordCount: number;
   createdAt: string;
@@ -776,7 +793,11 @@ export type DataSourceDetail = {
   name: string;
   description: string;
   configVersion: number;
-  configuration: CalendarConfig | StructuredSourceConfig;
+  configuration:
+    | CalendarConfig
+    | StructuredSourceConfig
+    | ManualSourceConfig
+    | WeatherSourceConfig;
   creator?: { id: string; name: string };
   createdAt: string;
   updatedAt: string;
@@ -792,7 +813,11 @@ export type DataSourceInput = {
   provider: DataSourceProvider;
   name: string;
   description: string;
-  configuration: CalendarConfig | StructuredSourceConfig;
+  configuration:
+    | CalendarConfig
+    | StructuredSourceConfig
+    | ManualSourceConfig
+    | WeatherSourceConfig;
 };
 export type DataSourceListResult = {
   items: DataSource[];
@@ -847,6 +872,49 @@ export type DateSelection = {
     "fallback_text" | "next_available" | "empty" | "hide" | "last_known_good";
   fallbackText?: string;
 };
+export type ManualColumn = {
+  key: string;
+  label: string;
+  type:
+    | "text"
+    | "number"
+    | "integer"
+    | "percent"
+    | "currency"
+    | "boolean"
+    | "date"
+    | "datetime"
+    | "url";
+  currency?: string;
+};
+export type ManualSourceConfig = {
+  columns: ManualColumn[];
+  rows: { id: string; values: Record<string, string> }[];
+  dateField?: string;
+  dateSelection: DateSelection;
+};
+export type WeatherSourceConfig = {
+  locationLabel: string;
+  latitude: number;
+  longitude: number;
+  timezone: string;
+  units: "metric" | "imperial";
+  forecastDays: number;
+  contact: string;
+  refreshIntervalSeconds: number;
+  stalenessLimitHours: number;
+};
+export type TypedRecordData = {
+  fields: DataSourceField[];
+  records: { id: string; values: Record<string, string> }[];
+  cachedAt?: string;
+  staleAt?: string;
+  usingCachedData: boolean;
+  unavailable: boolean;
+  dateSelection?: DateSelection;
+  dateField?: string;
+  attribution?: string;
+};
 export type ClockWidgetConfig = {
   timezone: string;
   format: "12" | "24";
@@ -873,11 +941,30 @@ export type QRCodeWidgetConfig = {
   textScale?: number;
   contentPadding?: number;
 };
+export type CountdownWidgetConfig = {
+  target: string;
+  timezone: string;
+  mode: "countdown" | "count_up";
+  label?: string;
+  completionText?: string;
+  completionAction: "completed_text" | "hide" | "count_up";
+  showDays: boolean;
+  showHours: boolean;
+  showMinutes: boolean;
+  showSeconds: boolean;
+  foregroundColor: string;
+  backgroundColor: string;
+  textScale?: number;
+  contentPadding?: number;
+};
 export type TickerWidgetConfig = {
   dataSourceId: string;
   field: string;
+  fields?: string[];
   separator: string;
+  fieldSeparator?: string;
   direction: "left" | "right";
+  emptyState?: string;
   speed: "slow" | "normal" | "fast";
   foregroundColor: string;
   backgroundColor: string;
@@ -888,6 +975,87 @@ export type DisplayWidgetConfig = {
   dataSourceId: string;
   fields: string[];
   maximumItems: number;
+  foregroundColor: string;
+  backgroundColor: string;
+  textScale?: number;
+  contentPadding?: number;
+  emptyState?: string;
+  primaryField?: string;
+  secondaryField?: string;
+  leadingField?: string;
+  trailingField?: string;
+  showDividers?: boolean;
+  rowSpacing?: "compact" | "comfortable";
+  mode?: "single_record" | "records";
+  labelField?: string;
+  valueField?: string;
+  columns?: FieldFormat[];
+  showHeader?: boolean;
+  alternatingRows?: boolean;
+  dateField?: string;
+  timeField?: string;
+  titleField?: string;
+  locationField?: string;
+  descriptionField?: string;
+  groupByDay?: boolean;
+};
+export type FieldFormat = {
+  field: string;
+  label?: string;
+  format?:
+    | "text"
+    | "number"
+    | "integer"
+    | "percent"
+    | "currency"
+    | "date-short"
+    | "date-long";
+  precision?: number;
+  prefix?: string;
+  suffix?: string;
+  alignment?: "left" | "center" | "right";
+  width?: number;
+};
+export type MetricWidgetConfig = {
+  dataSourceId: string;
+  valueField: string;
+  label?: string;
+  labelField?: string;
+  secondaryField?: string;
+  format: "number" | "integer" | "percent" | "currency";
+  precision: number;
+  prefix?: string;
+  suffix?: string;
+  alignment: "left" | "center" | "right";
+  emptyState: string;
+  foregroundColor: string;
+  backgroundColor: string;
+  textScale?: number;
+  contentPadding?: number;
+};
+export type CardsWidgetConfig = {
+  dataSourceId: string;
+  titleField: string;
+  subtitleField?: string;
+  bodyField?: string;
+  badgeField?: string;
+  columns: number;
+  maximumItems: number;
+  density: "compact" | "comfortable";
+  emptyState: string;
+  foregroundColor: string;
+  backgroundColor: string;
+  textScale?: number;
+  contentPadding?: number;
+};
+export type WeatherWidgetConfig = {
+  dataSourceId: string;
+  showLocation: boolean;
+  showCurrent: boolean;
+  showHumidity: boolean;
+  showWind: boolean;
+  showPrecipitation: boolean;
+  forecastDays: number;
   foregroundColor: string;
   backgroundColor: string;
   textScale?: number;

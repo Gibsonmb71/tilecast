@@ -191,6 +191,23 @@ type DataSourceField struct {
 	Type  string `json:"type"`
 }
 
+type TypedRecord struct {
+	ID     string            `json:"id"`
+	Values map[string]string `json:"values"`
+}
+
+type TypedRecordData struct {
+	Fields          []DataSourceField `json:"fields"`
+	Records         []TypedRecord     `json:"records"`
+	CachedAt        *time.Time        `json:"cachedAt,omitempty"`
+	StaleAt         *time.Time        `json:"staleAt,omitempty"`
+	UsingCachedData bool              `json:"usingCachedData"`
+	Unavailable     bool              `json:"unavailable"`
+	DateSelection   *DateSelection    `json:"dateSelection,omitempty"`
+	DateField       string            `json:"dateField,omitempty"`
+	Attribution     string            `json:"attribution,omitempty"`
+}
+
 // DataSourceWidgetUsage / DataSourceBindingUsage report where a Data Source is consumed.
 type DataSourceWidgetUsage struct {
 	ID       uuid.UUID `json:"id"`
@@ -360,6 +377,65 @@ type DateSelection struct {
 	FallbackText    string `json:"fallbackText,omitempty"`
 }
 
+type ManualColumn struct {
+	Key      string `json:"key"`
+	Label    string `json:"label"`
+	Type     string `json:"type"`
+	Currency string `json:"currency,omitempty"`
+}
+
+type ManualRow struct {
+	ID     string            `json:"id"`
+	Values map[string]string `json:"values"`
+}
+
+type ManualSourceConfig struct {
+	Columns       []ManualColumn `json:"columns"`
+	Rows          []ManualRow    `json:"rows"`
+	DateField     string         `json:"dateField,omitempty"`
+	DateSelection DateSelection  `json:"dateSelection"`
+}
+
+type WeatherSourceConfig struct {
+	LocationLabel          string  `json:"locationLabel"`
+	Latitude               float64 `json:"latitude"`
+	Longitude              float64 `json:"longitude"`
+	Timezone               string  `json:"timezone"`
+	Units                  string  `json:"units"`
+	ForecastDays           int     `json:"forecastDays"`
+	Contact                string  `json:"contact"`
+	RefreshIntervalSeconds int     `json:"refreshIntervalSeconds"`
+	StalenessLimitHours    int     `json:"stalenessLimitHours"`
+}
+
+type CountdownWidgetConfig struct {
+	Target           string `json:"target"`
+	Timezone         string `json:"timezone"`
+	Mode             string `json:"mode"`
+	Label            string `json:"label,omitempty"`
+	CompletionText   string `json:"completionText,omitempty"`
+	CompletionAction string `json:"completionAction"`
+	ShowDays         bool   `json:"showDays"`
+	ShowHours        bool   `json:"showHours"`
+	ShowMinutes      bool   `json:"showMinutes"`
+	ShowSeconds      bool   `json:"showSeconds"`
+	ForegroundColor  string `json:"foregroundColor"`
+	BackgroundColor  string `json:"backgroundColor"`
+	TextScale        *int   `json:"textScale,omitempty"`
+	ContentPadding   *int   `json:"contentPadding,omitempty"`
+}
+
+type FieldFormat struct {
+	Field     string `json:"field"`
+	Label     string `json:"label,omitempty"`
+	Format    string `json:"format,omitempty"`
+	Precision int    `json:"precision,omitempty"`
+	Prefix    string `json:"prefix,omitempty"`
+	Suffix    string `json:"suffix,omitempty"`
+	Alignment string `json:"alignment,omitempty"`
+	Width     int    `json:"width,omitempty"`
+}
+
 type ClockWidgetConfig struct {
 	Timezone        string `json:"timezone"`
 	Format          string `json:"format"`
@@ -389,9 +465,12 @@ type QRCodeWidgetConfig struct {
 type TickerWidgetConfig struct {
 	DataSourceID    uuid.UUID `json:"dataSourceId"`
 	Field           string    `json:"field"`
+	Fields          []string  `json:"fields,omitempty"`
 	Separator       string    `json:"separator"`
+	FieldSeparator  string    `json:"fieldSeparator,omitempty"`
 	Speed           string    `json:"speed"`
 	Direction       string    `json:"direction"`
+	EmptyState      string    `json:"emptyState,omitempty"`
 	ForegroundColor string    `json:"foregroundColor"`
 	BackgroundColor string    `json:"backgroundColor"`
 	TextScale       *int      `json:"textScale,omitempty"`
@@ -399,13 +478,80 @@ type TickerWidgetConfig struct {
 }
 
 type DisplayWidgetConfig struct {
+	DataSourceID     uuid.UUID     `json:"dataSourceId"`
+	Fields           []string      `json:"fields"`
+	MaximumItems     int           `json:"maximumItems"`
+	ForegroundColor  string        `json:"foregroundColor"`
+	BackgroundColor  string        `json:"backgroundColor"`
+	TextScale        *int          `json:"textScale,omitempty"`
+	ContentPadding   *int          `json:"contentPadding,omitempty"`
+	EmptyState       string        `json:"emptyState,omitempty"`
+	PrimaryField     string        `json:"primaryField,omitempty"`
+	SecondaryField   string        `json:"secondaryField,omitempty"`
+	LeadingField     string        `json:"leadingField,omitempty"`
+	TrailingField    string        `json:"trailingField,omitempty"`
+	ShowDividers     bool          `json:"showDividers,omitempty"`
+	RowSpacing       string        `json:"rowSpacing,omitempty"`
+	Mode             string        `json:"mode,omitempty"`
+	LabelField       string        `json:"labelField,omitempty"`
+	ValueField       string        `json:"valueField,omitempty"`
+	Columns          []FieldFormat `json:"columns,omitempty"`
+	ShowHeader       bool          `json:"showHeader,omitempty"`
+	AlternatingRows  bool          `json:"alternatingRows,omitempty"`
+	DateField        string        `json:"dateField,omitempty"`
+	TimeField        string        `json:"timeField,omitempty"`
+	TitleField       string        `json:"titleField,omitempty"`
+	LocationField    string        `json:"locationField,omitempty"`
+	DescriptionField string        `json:"descriptionField,omitempty"`
+	GroupByDay       bool          `json:"groupByDay,omitempty"`
+}
+
+type MetricWidgetConfig struct {
 	DataSourceID    uuid.UUID `json:"dataSourceId"`
-	Fields          []string  `json:"fields"`
-	MaximumItems    int       `json:"maximumItems"`
+	ValueField      string    `json:"valueField"`
+	Label           string    `json:"label,omitempty"`
+	LabelField      string    `json:"labelField,omitempty"`
+	SecondaryField  string    `json:"secondaryField,omitempty"`
+	Format          string    `json:"format"`
+	Precision       int       `json:"precision"`
+	Prefix          string    `json:"prefix,omitempty"`
+	Suffix          string    `json:"suffix,omitempty"`
+	Alignment       string    `json:"alignment"`
+	EmptyState      string    `json:"emptyState"`
 	ForegroundColor string    `json:"foregroundColor"`
 	BackgroundColor string    `json:"backgroundColor"`
 	TextScale       *int      `json:"textScale,omitempty"`
 	ContentPadding  *int      `json:"contentPadding,omitempty"`
+}
+
+type CardsWidgetConfig struct {
+	DataSourceID    uuid.UUID `json:"dataSourceId"`
+	TitleField      string    `json:"titleField"`
+	SubtitleField   string    `json:"subtitleField,omitempty"`
+	BodyField       string    `json:"bodyField,omitempty"`
+	BadgeField      string    `json:"badgeField,omitempty"`
+	Columns         int       `json:"columns"`
+	MaximumItems    int       `json:"maximumItems"`
+	Density         string    `json:"density"`
+	EmptyState      string    `json:"emptyState"`
+	ForegroundColor string    `json:"foregroundColor"`
+	BackgroundColor string    `json:"backgroundColor"`
+	TextScale       *int      `json:"textScale,omitempty"`
+	ContentPadding  *int      `json:"contentPadding,omitempty"`
+}
+
+type WeatherWidgetConfig struct {
+	DataSourceID      uuid.UUID `json:"dataSourceId"`
+	ShowLocation      bool      `json:"showLocation"`
+	ShowCurrent       bool      `json:"showCurrent"`
+	ShowHumidity      bool      `json:"showHumidity"`
+	ShowWind          bool      `json:"showWind"`
+	ShowPrecipitation bool      `json:"showPrecipitation"`
+	ForecastDays      int       `json:"forecastDays"`
+	ForegroundColor   string    `json:"foregroundColor"`
+	BackgroundColor   string    `json:"backgroundColor"`
+	TextScale         *int      `json:"textScale,omitempty"`
+	ContentPadding    *int      `json:"contentPadding,omitempty"`
 }
 
 type StructuredRecord struct {

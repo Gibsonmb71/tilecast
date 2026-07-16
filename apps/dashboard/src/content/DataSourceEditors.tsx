@@ -2,14 +2,20 @@ import { Select } from "../components/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2, X } from "lucide-react";
 import { useState } from "react";
+import type { ReactNode } from "react";
 import { api } from "../api/client";
 import type {
   CalendarConfig,
   CalendarPreview,
   DataSourceDetail,
   DataSourceProvider,
+  DateSelection,
+  ManualColumn,
+  ManualSourceConfig,
   StructuredPreview,
   StructuredSourceConfig,
+  TypedRecordData,
+  WeatherSourceConfig,
 } from "../api/types";
 import { CsvSourceInput, type CsvInspection } from "./CsvSourceInput";
 
@@ -1408,6 +1414,28 @@ export function DataSourceEditor({
   onSaved: (dataSource: DataSourceDetail) => void;
   page?: boolean;
 }) {
+  if (provider === "manual")
+    return (
+      <ManualDataSourceEditor
+        dataSource={dataSource}
+        csrf={csrf}
+        readOnly={readOnly}
+        onClose={onClose}
+        onSaved={onSaved}
+        page={page}
+      />
+    );
+  if (provider === "weather")
+    return (
+      <WeatherDataSourceEditor
+        dataSource={dataSource}
+        csrf={csrf}
+        readOnly={readOnly}
+        onClose={onClose}
+        onSaved={onSaved}
+        page={page}
+      />
+    );
   if (provider === "calendar")
     return (
       <CalendarDataSourceEditor
@@ -1429,5 +1457,651 @@ export function DataSourceEditor({
       onSaved={onSaved}
       page={page}
     />
+  );
+}
+
+function EditorFrame({
+  title,
+  description,
+  page,
+  onClose,
+  children,
+  footer,
+}: {
+  title: string;
+  description: string;
+  page?: boolean;
+  onClose: () => void;
+  children: ReactNode;
+  footer: ReactNode;
+}) {
+  return (
+    <div className="details-backdrop" role={page ? undefined : "presentation"}>
+      <section
+        className="source-editor"
+        role={page ? undefined : "dialog"}
+        aria-modal={page ? undefined : true}
+      >
+        <header>
+          <div>
+            <h2>{title}</h2>
+            <p>{description}</p>
+          </div>
+          <button className="icon-button" aria-label="Close" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </header>
+        <div className="source-editor__body">{children}</div>
+        <footer>{footer}</footer>
+      </section>
+    </div>
+  );
+}
+
+function ManualDataSourceEditor({
+  dataSource,
+  csrf,
+  readOnly = false,
+  onClose,
+  onSaved,
+  page,
+}: {
+  dataSource?: DataSourceDetail;
+  csrf: string;
+  readOnly?: boolean;
+  onClose: () => void;
+  onSaved: (dataSource: DataSourceDetail) => void;
+  page?: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const [name, setName] = useState(dataSource?.name ?? "");
+  const [description, setDescription] = useState(dataSource?.description ?? "");
+  const [configuration, setConfiguration] = useState<ManualSourceConfig>(
+    (dataSource?.configuration as ManualSourceConfig | undefined) ?? {
+      columns: [{ key: "title", label: "Title", type: "text" }],
+      rows: [{ id: crypto.randomUUID(), values: { title: "" } }],
+      dateSelection: {
+        enabled: false,
+        dateFormat: "auto",
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+        mode: "today",
+        excludePast: false,
+        noMatchBehavior: "empty",
+      },
+    },
+  );
+  const save = useMutation({
+    mutationFn: () => {
+      const input = {
+        provider: "manual" as const,
+        name,
+        description,
+        configuration,
+      };
+      return dataSource
+        ? api.updateDataSource(dataSource.id, input, csrf)
+        : api.createDataSource(input, csrf);
+    },
+    onSuccess: (saved) => {
+      void queryClient.invalidateQueries({ queryKey: ["data-sources"] });
+      onSaved(saved);
+    },
+  });
+  const updateColumn = (index: number, patch: Partial<ManualColumn>) =>
+    setConfiguration((current) => ({
+      ...current,
+      columns: current.columns.map((column, columnIndex) =>
+        columnIndex === index ? { ...column, ...patch } : column,
+      ),
+    }));
+  return (
+    <EditorFrame
+      title={`${dataSource ? "Edit" : "Create"} Manual Table Data Source`}
+      description="Maintain a small typed dataset directly in Tilecast Studio."
+      page={page}
+      onClose={onClose}
+      footer={
+        !readOnly && (
+          <button
+            className="button button--primary"
+            disabled={save.isPending || !name.trim()}
+            onClick={() => save.mutate()}
+          >
+            {save.isPending ? "Saving…" : "Save Data Source"}
+          </button>
+        )
+      }
+    >
+      <label className="field">
+        <span className="field__label">Name</span>
+        <input
+          value={name}
+          disabled={readOnly}
+          onChange={(event) => setName(event.target.value)}
+        />
+      </label>
+      <label className="field">
+        <span className="field__label">Description</span>
+        <input
+          value={description}
+          disabled={readOnly}
+          onChange={(event) => setDescription(event.target.value)}
+        />
+      </label>
+      <fieldset>
+        <legend>Columns</legend>
+        {configuration.columns.map((column, index) => (
+          <div
+            className="form-grid form-grid--3"
+            key={`${column.key}-${index}`}
+          >
+            <label className="field">
+              <span className="field__label">Key</span>
+              <input
+                value={column.key}
+                disabled={readOnly}
+                onChange={(event) =>
+                  updateColumn(index, { key: event.target.value })
+                }
+              />
+            </label>
+            <label className="field">
+              <span className="field__label">Label</span>
+              <input
+                value={column.label}
+                disabled={readOnly}
+                onChange={(event) =>
+                  updateColumn(index, { label: event.target.value })
+                }
+              />
+            </label>
+            <label className="field">
+              <span className="field__label">Type</span>
+              <Select
+                value={column.type}
+                disabled={readOnly}
+                onChange={(event) =>
+                  updateColumn(index, {
+                    type: event.target.value as ManualColumn["type"],
+                  })
+                }
+              >
+                {[
+                  "text",
+                  "number",
+                  "integer",
+                  "percent",
+                  "currency",
+                  "boolean",
+                  "date",
+                  "datetime",
+                  "url",
+                ].map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </Select>
+            </label>
+            {column.type === "currency" && (
+              <label className="field">
+                <span className="field__label">Currency</span>
+                <input
+                  value={column.currency ?? "USD"}
+                  maxLength={3}
+                  disabled={readOnly}
+                  onChange={(event) =>
+                    updateColumn(index, {
+                      currency: event.target.value.toUpperCase(),
+                    })
+                  }
+                />
+              </label>
+            )}
+            {!readOnly && configuration.columns.length > 1 && (
+              <button
+                className="button button--danger"
+                type="button"
+                onClick={() =>
+                  setConfiguration((current) => ({
+                    ...current,
+                    columns: current.columns.filter((_, i) => i !== index),
+                    rows: current.rows.map((row) => {
+                      const values = { ...row.values };
+                      delete values[column.key];
+                      return { ...row, values };
+                    }),
+                  }))
+                }
+              >
+                <Trash2 size={15} /> Remove
+              </button>
+            )}
+          </div>
+        ))}
+        {!readOnly && configuration.columns.length < 12 && (
+          <button
+            className="button"
+            type="button"
+            onClick={() =>
+              setConfiguration((current) => ({
+                ...current,
+                columns: [
+                  ...current.columns,
+                  {
+                    key: `field_${current.columns.length + 1}`,
+                    label: `Field ${current.columns.length + 1}`,
+                    type: "text",
+                  },
+                ],
+              }))
+            }
+          >
+            <Plus size={15} /> Add column
+          </button>
+        )}
+      </fieldset>
+      <fieldset>
+        <legend>Rows ({configuration.rows.length}/200)</legend>
+        <div className="manual-data-table">
+          {configuration.rows.map((row, rowIndex) => (
+            <div className="manual-data-table__row" key={row.id}>
+              {configuration.columns.map((column) => (
+                <label className="field" key={column.key}>
+                  <span className="field__label">{column.label}</span>
+                  {column.type === "boolean" ? (
+                    <Select
+                      value={row.values[column.key] ?? ""}
+                      disabled={readOnly}
+                      onChange={(event) =>
+                        setConfiguration((current) => ({
+                          ...current,
+                          rows: current.rows.map((item, index) =>
+                            index === rowIndex
+                              ? {
+                                  ...item,
+                                  values: {
+                                    ...item.values,
+                                    [column.key]: event.target.value,
+                                  },
+                                }
+                              : item,
+                          ),
+                        }))
+                      }
+                    >
+                      <option value="">Empty</option>
+                      <option value="true">True</option>
+                      <option value="false">False</option>
+                    </Select>
+                  ) : (
+                    <input
+                      type={
+                        column.type === "date"
+                          ? "date"
+                          : column.type === "datetime"
+                            ? "text"
+                            : [
+                                  "number",
+                                  "integer",
+                                  "percent",
+                                  "currency",
+                                ].includes(column.type)
+                              ? "number"
+                              : "text"
+                      }
+                      value={row.values[column.key] ?? ""}
+                      disabled={readOnly}
+                      onChange={(event) =>
+                        setConfiguration((current) => ({
+                          ...current,
+                          rows: current.rows.map((item, index) =>
+                            index === rowIndex
+                              ? {
+                                  ...item,
+                                  values: {
+                                    ...item.values,
+                                    [column.key]: event.target.value,
+                                  },
+                                }
+                              : item,
+                          ),
+                        }))
+                      }
+                    />
+                  )}
+                </label>
+              ))}
+              {!readOnly && (
+                <button
+                  className="icon-button"
+                  aria-label={`Remove row ${rowIndex + 1}`}
+                  onClick={() =>
+                    setConfiguration((current) => ({
+                      ...current,
+                      rows: current.rows.filter(
+                        (_, index) => index !== rowIndex,
+                      ),
+                    }))
+                  }
+                >
+                  <Trash2 size={15} />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+        {!readOnly && configuration.rows.length < 200 && (
+          <button
+            className="button"
+            type="button"
+            onClick={() =>
+              setConfiguration((current) => ({
+                ...current,
+                rows: [
+                  ...current.rows,
+                  { id: crypto.randomUUID(), values: {} },
+                ],
+              }))
+            }
+          >
+            <Plus size={15} /> Add row
+          </button>
+        )}
+      </fieldset>
+      <fieldset>
+        <legend>Date-aware selection</legend>
+        <label className="switch-row">
+          <input
+            type="checkbox"
+            checked={configuration.dateSelection.enabled}
+            disabled={readOnly}
+            onChange={(event) =>
+              setConfiguration((current) => ({
+                ...current,
+                dateSelection: {
+                  ...current.dateSelection,
+                  enabled: event.target.checked,
+                },
+              }))
+            }
+          />
+          <span>Select rows from the Player&apos;s local date</span>
+        </label>
+        {configuration.dateSelection.enabled && (
+          <div className="form-grid form-grid--2">
+            <label className="field">
+              <span className="field__label">Date field</span>
+              <Select
+                value={configuration.dateField ?? ""}
+                disabled={readOnly}
+                onChange={(event) =>
+                  setConfiguration((current) => ({
+                    ...current,
+                    dateField: event.target.value,
+                  }))
+                }
+              >
+                <option value="">Select a date column</option>
+                {configuration.columns
+                  .filter((column) =>
+                    ["date", "datetime"].includes(column.type),
+                  )
+                  .map((column) => (
+                    <option key={column.key} value={column.key}>
+                      {column.label}
+                    </option>
+                  ))}
+              </Select>
+            </label>
+            <label className="field">
+              <span className="field__label">Timezone</span>
+              <input
+                value={configuration.dateSelection.timezone}
+                disabled={readOnly}
+                onChange={(event) =>
+                  setConfiguration((current) => ({
+                    ...current,
+                    dateSelection: {
+                      ...current.dateSelection,
+                      timezone: event.target.value,
+                    },
+                  }))
+                }
+              />
+            </label>
+            <label className="field">
+              <span className="field__label">Selection</span>
+              <Select
+                value={configuration.dateSelection.mode}
+                disabled={readOnly}
+                onChange={(event) =>
+                  setConfiguration((current) => ({
+                    ...current,
+                    dateSelection: {
+                      ...current.dateSelection,
+                      mode: event.target.value as DateSelection["mode"],
+                    },
+                  }))
+                }
+              >
+                <option value="today">Today</option>
+                <option value="tomorrow">Tomorrow</option>
+                <option value="next_available">Next available date</option>
+                <option value="current_week">Current week</option>
+              </Select>
+            </label>
+          </div>
+        )}
+      </fieldset>
+      {save.error && <p className="form-error">{save.error.message}</p>}
+    </EditorFrame>
+  );
+}
+
+function WeatherDataSourceEditor({
+  dataSource,
+  csrf,
+  readOnly = false,
+  onClose,
+  onSaved,
+  page,
+}: {
+  dataSource?: DataSourceDetail;
+  csrf: string;
+  readOnly?: boolean;
+  onClose: () => void;
+  onSaved: (dataSource: DataSourceDetail) => void;
+  page?: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const [name, setName] = useState(dataSource?.name ?? "");
+  const [description, setDescription] = useState(dataSource?.description ?? "");
+  const [configuration, setConfiguration] = useState<WeatherSourceConfig>(
+    (dataSource?.configuration as WeatherSourceConfig | undefined) ?? {
+      locationLabel: "",
+      latitude: 0,
+      longitude: 0,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+      units: "imperial",
+      forecastDays: 5,
+      contact: "",
+      refreshIntervalSeconds: 1800,
+      stalenessLimitHours: 24,
+    },
+  );
+  const [preview, setPreview] = useState<TypedRecordData>();
+  const previewMutation = useMutation({
+    mutationFn: () =>
+      api.previewDataSource(
+        "weather",
+        configuration,
+        csrf,
+      ) as unknown as Promise<TypedRecordData>,
+    onSuccess: setPreview,
+  });
+  const save = useMutation({
+    mutationFn: () => {
+      const input = {
+        provider: "weather" as const,
+        name,
+        description,
+        configuration,
+      };
+      return dataSource
+        ? api.updateDataSource(dataSource.id, input, csrf)
+        : api.createDataSource(input, csrf);
+    },
+    onSuccess: (saved) => {
+      void queryClient.invalidateQueries({ queryKey: ["data-sources"] });
+      onSaved(saved);
+    },
+  });
+  const set = <K extends keyof WeatherSourceConfig>(
+    key: K,
+    value: WeatherSourceConfig[K],
+  ) => setConfiguration((current) => ({ ...current, [key]: value }));
+  return (
+    <EditorFrame
+      title={`${dataSource ? "Edit" : "Create"} Weather Data Source`}
+      description="Fetch a cached global forecast from MET Norway."
+      page={page}
+      onClose={onClose}
+      footer={
+        !readOnly && (
+          <button
+            className="button button--primary"
+            disabled={save.isPending || !name.trim()}
+            onClick={() => save.mutate()}
+          >
+            {save.isPending ? "Saving…" : "Save Data Source"}
+          </button>
+        )
+      }
+    >
+      <label className="field">
+        <span className="field__label">Name</span>
+        <input
+          value={name}
+          disabled={readOnly}
+          onChange={(event) => setName(event.target.value)}
+        />
+      </label>
+      <label className="field">
+        <span className="field__label">Description</span>
+        <input
+          value={description}
+          disabled={readOnly}
+          onChange={(event) => setDescription(event.target.value)}
+        />
+      </label>
+      <div className="form-grid form-grid--2">
+        <label className="field">
+          <span className="field__label">Location label</span>
+          <input
+            value={configuration.locationLabel}
+            disabled={readOnly}
+            onChange={(event) => set("locationLabel", event.target.value)}
+          />
+        </label>
+        <label className="field">
+          <span className="field__label">Timezone</span>
+          <input
+            value={configuration.timezone}
+            disabled={readOnly}
+            onChange={(event) => set("timezone", event.target.value)}
+          />
+        </label>
+        <label className="field">
+          <span className="field__label">Latitude</span>
+          <input
+            type="number"
+            step="0.0001"
+            value={configuration.latitude}
+            disabled={readOnly}
+            onChange={(event) => set("latitude", Number(event.target.value))}
+          />
+        </label>
+        <label className="field">
+          <span className="field__label">Longitude</span>
+          <input
+            type="number"
+            step="0.0001"
+            value={configuration.longitude}
+            disabled={readOnly}
+            onChange={(event) => set("longitude", Number(event.target.value))}
+          />
+        </label>
+        <label className="field">
+          <span className="field__label">Units</span>
+          <Select
+            value={configuration.units}
+            disabled={readOnly}
+            onChange={(event) =>
+              set("units", event.target.value as WeatherSourceConfig["units"])
+            }
+          >
+            <option value="imperial">Imperial</option>
+            <option value="metric">Metric</option>
+          </Select>
+        </label>
+        <label className="field">
+          <span className="field__label">Forecast days</span>
+          <input
+            type="number"
+            min={1}
+            max={7}
+            value={configuration.forecastDays}
+            disabled={readOnly}
+            onChange={(event) =>
+              set("forecastDays", Number(event.target.value))
+            }
+          />
+        </label>
+      </div>
+      <label className="field">
+        <span className="field__label">Contact email or HTTPS URL</span>
+        <input
+          value={configuration.contact}
+          disabled={readOnly}
+          onChange={(event) => set("contact", event.target.value)}
+        />
+        <small>
+          MET Norway requires an identifying contact in each request. It is
+          stored only on the server.
+        </small>
+      </label>
+      {!readOnly && (
+        <button
+          className="button"
+          type="button"
+          disabled={previewMutation.isPending}
+          onClick={() => previewMutation.mutate()}
+        >
+          {previewMutation.isPending ? "Loading…" : "Preview forecast"}
+        </button>
+      )}
+      {preview && (
+        <div className="source-preview">
+          {preview.records.slice(0, 4).map((record) => (
+            <div key={record.id}>
+              <strong>{record.values.date ?? "Current"}</strong>
+              <span>
+                {record.values.condition}{" "}
+                {record.values.temperature
+                  ? `${record.values.temperature}${record.values.temperatureUnit}`
+                  : `${record.values.high}${record.values.temperatureUnit} / ${record.values.low}${record.values.temperatureUnit}`}
+              </span>
+            </div>
+          ))}
+          <small>{preview.attribution}</small>
+        </div>
+      )}
+      {(save.error || previewMutation.error) && (
+        <p className="form-error">
+          {(save.error ?? previewMutation.error)?.message}
+        </p>
+      )}
+    </EditorFrame>
   );
 }

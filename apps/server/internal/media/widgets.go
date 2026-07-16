@@ -147,10 +147,18 @@ func (s *Service) widgetProvider(name string) (configNormalizer, error) {
 		return dateWidgetProvider{}, nil
 	case "qrcode":
 		return qrCodeWidgetProvider{}, nil
+	case "countdown":
+		return countdownWidgetProvider{}, nil
 	case "ticker":
 		return tickerWidgetProvider{s}, nil
 	case "menu", "list", "table", "agenda":
 		return displayWidgetProvider{s, name}, nil
+	case "metric":
+		return metricWidgetProvider{s}, nil
+	case "cards":
+		return cardsWidgetProvider{s}, nil
+	case "weather":
+		return weatherWidgetProvider{s}, nil
 	default:
 		return nil, errors.New("widget provider is not supported")
 	}
@@ -189,7 +197,7 @@ func (s *Service) CreateWidget(ctx context.Context, user uuid.UUID, input Widget
 	if _, err = tx.Exec(ctx, `INSERT INTO assets(id,organization_id,name,description,type,original_filename,detected_mime_type,sha256,original_size,processing_status,created_by) VALUES($1,$2,$3,$4,'widget','','application/vnd.tilecast.widget+json',''::bytea,0,'ready',$5)`, id, organizationID, input.Name, input.Description, user); err != nil {
 		return Asset{}, err
 	}
-	if _, err = tx.Exec(ctx, `INSERT INTO widgets(asset_id,provider,config_version,configuration) VALUES($1,$2,1,$3::jsonb)`, id, input.Provider, string(encoded)); err != nil {
+	if _, err = tx.Exec(ctx, `INSERT INTO widgets(asset_id,provider,config_version,configuration) VALUES($1,$2,$3,$4::jsonb)`, id, input.Provider, widgetConfigVersion(input.Provider), string(encoded)); err != nil {
 		return Asset{}, err
 	}
 	if _, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,metadata) VALUES($1,$2,'widget.created','widget',$3,jsonb_build_object('provider',$4::text))`, uuid.New(), user, id.String(), input.Provider); err != nil {
@@ -238,7 +246,7 @@ func (s *Service) UpdateWidget(ctx context.Context, id, user uuid.UUID, input Wi
 	if err != nil || tag.RowsAffected() == 0 {
 		return Asset{}, ErrNotFound
 	}
-	if _, err = tx.Exec(ctx, `UPDATE widgets SET configuration=$2::jsonb,config_version=1,updated_at=now() WHERE asset_id=$1`, id, string(encoded)); err != nil {
+	if _, err = tx.Exec(ctx, `UPDATE widgets SET configuration=$2::jsonb,config_version=$3,updated_at=now() WHERE asset_id=$1`, id, string(encoded), widgetConfigVersion(input.Provider)); err != nil {
 		return Asset{}, err
 	}
 	if _, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id) VALUES($1,$2,'widget.updated','widget',$3)`, uuid.New(), user, id.String()); err != nil {
@@ -251,6 +259,15 @@ func (s *Service) UpdateWidget(ctx context.Context, id, user uuid.UUID, input Wi
 		_ = s.invalidator.AssetChanged(ctx, id, "widget.updated")
 	}
 	return s.GetAsset(ctx, id)
+}
+
+func widgetConfigVersion(provider string) int {
+	switch provider {
+	case "ticker", "menu", "list", "table", "agenda", "metric", "cards", "weather":
+		return 2
+	default:
+		return 1
+	}
 }
 
 func (s *Service) DuplicateWidget(ctx context.Context, id, user uuid.UUID) (Asset, error) {

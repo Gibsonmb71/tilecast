@@ -23,7 +23,7 @@ RSS, Atom, JSON, and CSV Sources use manifest v8 and the native `StructuredSourc
 
 Manifest v9 adds native Clock, Date, QR Code, and Ticker Apps. Structured date selection runs locally against the configured IANA timezone and uses calendar arithmetic rather than 24-hour durations. The Player reevaluates while running and after process restart; `empty`, `hide`, `fallback_text`, and `next_available` do not silently reuse an old record. `last_known_good` is an explicit administrator choice.
 
-Layout schema v1 is decoded into typed Kotlin models and validated before rendering. Static text, rectangles, circles, and lines use native Compose primitives; groups are structural and never inject markup. Canvas coordinates scale uniformly into landscape or portrait display bounds, and only the bundled sans-serif font family is used on Player.
+Layout schema v1 is decoded into typed Kotlin models and validated before rendering. Static text, rectangles, circles, and lines use native Compose primitives; groups are structural and never inject markup. Canvas coordinates scale uniformly into landscape or portrait display bounds. Text primitives use the selected bundled Inter, Roboto, Source Sans 3, or Noto Sans family, with a generic sans-serif fallback for malformed legacy values.
 
 Unit tests cover URL policy, state transitions, player-generated identity, secure-storage abstractions, pairing enrollment, revocation, and reconnect backoff. Instrumented tests require an emulator or device:
 
@@ -43,3 +43,5 @@ Milestone 6 uses the system Android WebView through a dedicated website playback
 Milestone 8 adds `PlayerConfigManager`, the validated source for effective branding, playback defaults, cache/download policy, and reporting intervals. Room schema 3 preserves current and previous valid configuration revisions independently of content manifests.
 
 Production Player release signing is free and independent of app stores. Preserve one permanent Android keystore and a separate Ed25519 manifest key. Gradle reads signing values only from local environment variables, and `scripts/build-player-release.sh` fails closed when any secret is missing. See [player-updates.md](player-updates.md). Emulator/debug builds do not validate production-key replacement.
+
+Manifest v12 adds the common typed Data Source contract and native Countdown, Metric, Cards, and Weather renderers. This Player accepts both v11 and v12. Release version code 22 or later before assigning v12 presentations; Studio blocks assignments when any target screen in the assignment reports an older or unknown Player version.

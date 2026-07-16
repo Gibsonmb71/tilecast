@@ -1327,7 +1327,7 @@ components:
       enum: [image, video, widget]
     WidgetProvider:
       type: string
-      description: Renderable widget providers. Standalone (website, youtube, clock, date, qrcode) or data-driven (ticker, menu, list, table, agenda).
+      description: Closed renderable Widget provider registry.
       enum:
         [
           website,
@@ -1335,16 +1335,20 @@ components:
           clock,
           date,
           qrcode,
+          countdown,
           ticker,
           menu,
           list,
           table,
           agenda,
+          metric,
+          cards,
+          weather,
         ]
     DataSourceProvider:
       type: string
       description: Non-visual Data Source providers.
-      enum: [calendar, rss, atom, json, csv]
+      enum: [calendar, rss, atom, json, csv, manual, weather]
     Widget:
       type: object
       additionalProperties: false
