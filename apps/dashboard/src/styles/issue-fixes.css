@@ -43,7 +43,7 @@
   border-color: var(--tc-input-border);
 }
 
-/* Remove the generic input chrome that was rendering a second box in searches. */
+/* Remove generic input chrome from inputs whose wrapper owns the search field. */
 .search-control {
   min-width: 0;
   color: var(--tc-text-secondary);
@@ -58,10 +58,32 @@
     color-mix(in srgb, var(--tc-focus-ring) 24%, transparent);
 }
 
-.search-control
+:is(
+    .search-control,
+    .dashboard-search,
+    .activity-search,
+    .schedule-picker-search,
+    .schedule-timezone__menu > label
+  )
   input:not([type="checkbox"]):not([type="radio"]):not([type="color"]),
-.search-control input:hover:not(:disabled),
-.search-control input:focus {
+:is(
+    .search-control,
+    .dashboard-search,
+    .activity-search,
+    .schedule-picker-search,
+    .schedule-timezone__menu > label
+  )
+  input:hover:not(:disabled),
+:is(
+    .search-control,
+    .dashboard-search,
+    .activity-search,
+    .schedule-picker-search,
+    .schedule-timezone__menu > label
+  )
+  input:focus {
+  width: 100%;
+  min-width: 0;
   min-height: 0;
   padding: 0;
   color: var(--tc-text-primary);
@@ -70,6 +92,7 @@
   border-radius: 0;
   outline: 0;
   box-shadow: none;
+  appearance: none;
 }
 
 /* Shared list-page toolbar: one compact search treatment and bounded filters. */
@@ -102,21 +125,6 @@
   border-color: var(--tc-action-primary);
   box-shadow: 0 0 0 3px
     color-mix(in srgb, var(--tc-focus-ring) 24%, transparent);
-}
-
-.dashboard-search input,
-.dashboard-search input:hover:not(:disabled),
-.dashboard-search input:focus {
-  width: 100%;
-  min-width: 0;
-  min-height: 0;
-  padding: 0;
-  color: var(--tc-text-primary);
-  background: transparent;
-  border: 0;
-  border-radius: 0;
-  outline: 0;
-  box-shadow: none;
 }
 
 .dashboard-search input::-webkit-search-cancel-button {

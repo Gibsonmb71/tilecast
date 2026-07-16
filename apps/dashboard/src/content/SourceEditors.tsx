@@ -62,60 +62,74 @@ export function WidgetProviderGallery({
             <X size={18} />
           </button>
         </header>
-        <div className="source-provider-grid">
-          <h3 className="source-provider-group-title">Web and video</h3>
-          <button type="button" onClick={() => onChoose("website")}>
-            <Globe2 size={30} />
-            <strong>Website</strong>
-            <span>Display an approved webpage.</span>
-          </button>
-          <button type="button" onClick={() => onChoose("youtube")}>
-            <Youtube size={30} />
-            <strong>YouTube</strong>
-            <span>Play a YouTube video or playlist without an API key.</span>
-          </button>
-          <h3 className="source-provider-group-title">Basic</h3>
-          <button type="button" onClick={() => onChoose("clock")}>
-            <Clock3 size={30} />
-            <strong>Clock</strong>
-            <span>Show a live local time using a configured timezone.</span>
-          </button>
-          <button type="button" onClick={() => onChoose("date")}>
-            <CalendarDays size={30} />
-            <strong>Date</strong>
-            <span>Show a live localized calendar date.</span>
-          </button>
-          <button type="button" onClick={() => onChoose("qrcode")}>
-            <QrCode size={30} />
-            <strong>QR Code</strong>
-            <span>Display validated text or a URL as a scannable code.</span>
-          </button>
-          <h3 className="source-provider-group-title">Data</h3>
-          <button type="button" onClick={() => onChoose("ticker")}>
-            <TextQuote size={30} />
-            <strong>Ticker</strong>
-            <span>Scroll a selected field from a Data Source.</span>
-          </button>
-          <button type="button" onClick={() => onChoose("menu")}>
-            <Utensils size={30} />
-            <strong>Menu</strong>
-            <span>Format selected CSV or JSON fields as a signage menu.</span>
-          </button>
-          <button type="button" onClick={() => onChoose("list")}>
-            <ListTree size={30} />
-            <strong>List</strong>
-            <span>Present records from a reusable Data Source.</span>
-          </button>
-          <button type="button" onClick={() => onChoose("table")}>
-            <Table2 size={30} />
-            <strong>Table</strong>
-            <span>Show selected CSV or JSON fields in columns.</span>
-          </button>
-          <button type="button" onClick={() => onChoose("agenda")}>
-            <CalendarDays size={30} />
-            <strong>Agenda</strong>
-            <span>Display dated Data Source records in agenda form.</span>
-          </button>
+        <div className="source-provider-groups">
+          <section className="source-provider-group">
+            <h3>Web and video</h3>
+            <div className="source-provider-grid">
+              <button type="button" onClick={() => onChoose("website")}>
+                <Globe2 size={26} />
+                <strong>Website</strong>
+                <span>Display an approved webpage.</span>
+              </button>
+              <button type="button" onClick={() => onChoose("youtube")}>
+                <Youtube size={26} />
+                <strong>YouTube</strong>
+                <span>
+                  Play a YouTube video or playlist without an API key.
+                </span>
+              </button>
+            </div>
+          </section>
+          <section className="source-provider-group">
+            <h3>Essentials</h3>
+            <div className="source-provider-grid">
+              <button type="button" onClick={() => onChoose("clock")}>
+                <Clock3 size={26} />
+                <strong>Clock</strong>
+                <span>Show live local time in a configured timezone.</span>
+              </button>
+              <button type="button" onClick={() => onChoose("date")}>
+                <CalendarDays size={26} />
+                <strong>Date</strong>
+                <span>Show a live localized calendar date.</span>
+              </button>
+              <button type="button" onClick={() => onChoose("qrcode")}>
+                <QrCode size={26} />
+                <strong>QR Code</strong>
+                <span>Display text or a URL as a scannable code.</span>
+              </button>
+            </div>
+          </section>
+          <section className="source-provider-group">
+            <h3>Data-driven</h3>
+            <div className="source-provider-grid">
+              <button type="button" onClick={() => onChoose("ticker")}>
+                <TextQuote size={26} />
+                <strong>Ticker</strong>
+                <span>Scroll a selected field from a Data Source.</span>
+              </button>
+              <button type="button" onClick={() => onChoose("menu")}>
+                <Utensils size={26} />
+                <strong>Menu</strong>
+                <span>Format selected fields as a signage menu.</span>
+              </button>
+              <button type="button" onClick={() => onChoose("list")}>
+                <ListTree size={26} />
+                <strong>List</strong>
+                <span>Present records from a reusable Data Source.</span>
+              </button>
+              <button type="button" onClick={() => onChoose("table")}>
+                <Table2 size={26} />
+                <strong>Table</strong>
+                <span>Show selected fields in structured columns.</span>
+              </button>
+              <button type="button" onClick={() => onChoose("agenda")}>
+                <CalendarDays size={26} />
+                <strong>Agenda</strong>
+                <span>Display dated records in agenda form.</span>
+              </button>
+            </div>
+          </section>
         </div>
       </section>
     </div>
@@ -556,7 +570,7 @@ export function NativeAppEditor({
             </>
           )}
           <fieldset>
-            <legend>Text size</legend>
+            <legend>Content sizing</legend>
             <label className="switch-row">
               <input
                 type="checkbox"
@@ -581,9 +595,9 @@ export function NativeAppEditor({
                 </span>
                 <input
                   type="range"
-                  min={50}
-                  max={200}
-                  step={5}
+                  min={25}
+                  max={500}
+                  step={25}
                   value={configuration.textScale}
                   disabled={readOnly}
                   onChange={(event) =>
@@ -595,10 +609,29 @@ export function NativeAppEditor({
                 />
               </label>
             )}
+            <label className="field">
+              <span className="field__label">
+                Padding ({configuration.contentPadding ?? 10}%)
+              </span>
+              <input
+                type="range"
+                min={0}
+                max={40}
+                step={1}
+                value={configuration.contentPadding ?? 10}
+                disabled={readOnly}
+                onChange={(event) =>
+                  setConfiguration((current) => ({
+                    ...current,
+                    contentPadding: Number(event.target.value),
+                  }))
+                }
+              />
+            </label>
             <small>
-              Automatic sizing responds to the Widget’s actual space. A custom
-              scale adjusts that result and still shrinks long text to avoid
-              clipping.
+              By default, content uses the center 80% of the Widget. Reduce
+              padding to let it fill more space; custom scale ranges up to 500%
+              and still fits long text within the available area.
             </small>
           </fieldset>
           <div className="form-grid form-grid--2">
@@ -631,6 +664,7 @@ export function NativeAppEditor({
               color: configuration.foregroundColor,
               backgroundColor: configuration.backgroundColor,
               fontSize: `${configuration.textScale ?? 100}%`,
+              padding: `${configuration.contentPadding ?? 10}%`,
             }}
           >
             {provider === "clock" ? (

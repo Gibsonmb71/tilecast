@@ -41,27 +41,32 @@ class NativeAppSizingTest {
 
     @Test
     fun automaticTextSizeGrowsWithWidgetBounds() {
-        val small = responsiveFontSizeSp(86f, 220f, 115f)
-        val standalone = responsiveFontSizeSp(86f, 880f, 460f)
+        val small = scaledFittedFontSizeSp(5, 176f, 92f, 1f)
+        val standalone = scaledFittedFontSizeSp(5, 704f, 368f, 1f)
 
         assertTrue(small < standalone)
-        assertEquals(86f, standalone, 0.01f)
     }
 
     @Test
-    fun customTextScaleAdjustsAutomaticResult() {
-        val automatic = responsiveFontSizeSp(58f, 440f, 230f)
-        val larger = responsiveFontSizeSp(58f, 440f, 230f, textScale = 150)
+    fun customTextScaleCanReduceTheFittedResult() {
+        val automatic = scaledFittedFontSizeSp(12, 440f, 230f, 1f)
+        val smaller = scaledFittedFontSizeSp(12, 440f, 230f, 1f, textScale = 50)
 
-        assertEquals(automatic * 1.5f, larger, 0.01f)
+        assertEquals(automatic * 0.5f, smaller, 0.01f)
     }
 
     @Test
     fun denseMenuContentScalesToAvailableHeight() {
-        val roomy = menuContentScale(1f, itemCount = 2, availableHeightDp = 460f)
-        val compact = menuContentScale(1f, itemCount = 5, availableHeightDp = 180f)
+        val roomy = menuContentScale(itemCount = 2, availableHeightDp = 460f)
+        val compact = menuContentScale(itemCount = 5, availableHeightDp = 180f)
 
-        assertEquals(1f, roomy, 0.01f)
+        assertEquals(460f / 350f, roomy, 0.01f)
         assertTrue(compact < roomy)
+    }
+
+    @Test
+    fun defaultPaddingCreatesAnEightyPercentContentArea() {
+        assertEquals(0.1f, widgetPaddingFraction(null), 0.001f)
+        assertEquals(0f, widgetPaddingFraction(0), 0.001f)
     }
 }

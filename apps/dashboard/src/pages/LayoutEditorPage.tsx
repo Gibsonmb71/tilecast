@@ -1792,16 +1792,17 @@ function tickerText(
     : source?.emptyState || "No items available";
 }
 
-// Native Widget typography is designed around a 1920x1080 canvas. Scale that
-// design to the placement first, then apply the optional author adjustment.
-// FittedText remains the final guard for unusually long content.
-export function widgetTextFactor(
+export function widgetContentArea(
   item: Pick<LayoutPlacement, "width" | "height">,
-  cfg: { textScale?: number },
-): number {
-  const responsive = Math.min(item.width / 1920, item.height / 1080);
-  const manual = (cfg.textScale ?? 100) / 100;
-  return Math.max(0.1, Math.min(4, responsive * manual));
+  cfg: { contentPadding?: number },
+) {
+  const padding = Math.max(0, Math.min(40, cfg.contentPadding ?? 10)) / 100;
+  return {
+    width: item.width * (1 - padding * 2),
+    height: item.height * (1 - padding * 2),
+    horizontalPadding: item.width * padding,
+    verticalPadding: item.height * padding,
+  };
 }
 
 // Shrinks text to fit its box, matching the Player's FittedWidgetText.
@@ -1811,12 +1812,14 @@ function FittedText({
   fontPx,
   weight,
   maxLines = 1,
+  textScale = 100,
 }: {
   text: string;
   color: string;
   fontPx: number;
   weight: number;
   maxLines?: number;
+  textScale?: number;
 }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const spanRef = useRef<HTMLSpanElement>(null);
@@ -1836,7 +1839,10 @@ function FittedText({
       size = Math.max(4, size * 0.9);
       span.style.fontSize = `${size}px`;
     }
-  }, [text, fontPx, maxLines]);
+    const authorScale = Math.max(25, Math.min(500, textScale)) / 100;
+    size = Math.max(4, size * Math.min(authorScale, 1));
+    span.style.fontSize = `${size}px`;
+  }, [text, fontPx, maxLines, textScale]);
   return (
     <div ref={boxRef} className="wpv-fit-box">
       <span
@@ -1855,18 +1861,23 @@ function CenteredWidget({
   background,
   item,
   scale,
+  contentPadding,
   children,
 }: {
   background: string;
   item: LayoutPlacement;
   scale: number;
+  contentPadding?: number;
   children: React.ReactNode;
 }) {
-  const inset = Math.min(40, 0.08 * Math.min(item.width, item.height)) * scale;
+  const area = widgetContentArea(item, { contentPadding });
   return (
     <div
       className="wpv-root wpv-centered"
-      style={{ background, padding: inset }}
+      style={{
+        background,
+        padding: `${area.verticalPadding * scale}px ${area.horizontalPadding * scale}px`,
+      }}
     >
       {children}
     </div>
@@ -1907,27 +1918,28 @@ function QrWidget({
     cfg.foregroundColor,
     cfg.backgroundColor,
   ]);
-  const inset = Math.min(40, 0.08 * Math.min(item.width, item.height)) * scale;
-  const textFactor = widgetTextFactor(item, cfg);
+  const area = widgetContentArea(item, cfg);
   const label = cfg.label?.trim();
   return (
     <div
       className="wpv-root wpv-qr"
       style={{
         background: colorToCss(cfg.backgroundColor, "#FFFFFF"),
-        padding: inset,
-        gap: 18 * scale,
+        padding: `${area.verticalPadding * scale}px ${area.horizontalPadding * scale}px`,
+        gap: area.height * scale * 0.025,
       }}
     >
       {dataUrl && <img className="wpv-qr__image" src={dataUrl} alt="" />}
       {label && (
-        <div
-          style={{
-            color: colorToCss(cfg.foregroundColor, "#000000"),
-            fontSize: 24 * scale * textFactor,
-          }}
-        >
-          {label}
+        <div style={{ width: "100%", height: "18%" }}>
+          <FittedText
+            text={label}
+            color={colorToCss(cfg.foregroundColor, "#000000")}
+            fontPx={Math.max(area.width, area.height) * scale}
+            weight={400}
+            maxLines={2}
+            textScale={cfg.textScale}
+          />
         </div>
       )}
     </div>
@@ -1958,30 +1970,34 @@ function MenuWidget({
         .filter((entry) => entry.value.trim().length > 0)
         .slice(0, Math.min(cfg.maximumItems ?? 8, 8))
     : [];
-  const textFactor = widgetTextFactor(item, cfg);
-  const pad = Math.min(48, 0.08 * Math.min(item.width, item.height)) * scale;
+  const area = widgetContentArea(item, cfg);
+  const padding = `${area.verticalPadding * scale}px ${area.horizontalPadding * scale}px`;
   if (!values.length)
     return (
       <div
         className="wpv-root wpv-centered"
-        style={{ background: bg, padding: pad }}
+        style={{ background: bg, padding }}
       >
         <FittedText
           text={source?.emptyState || "No items available"}
           color={fg}
-          fontPx={42 * scale * textFactor}
+          fontPx={Math.max(area.width, area.height) * scale}
           weight={500}
           maxLines={3}
+          textScale={cfg.textScale}
         />
       </div>
     );
-  const availableHeight = Math.max(1, item.height - (2 * pad) / scale);
+  const authorScale = Math.max(25, Math.min(500, cfg.textScale ?? 100)) / 100;
   const contentFactor = Math.max(
     0.05,
-    Math.min(textFactor, availableHeight / (50 + values.length * 150)),
+    Math.min(
+      area.height / (50 + values.length * 150),
+      (area.height / (50 + values.length * 150)) * authorScale,
+    ),
   );
   return (
-    <div className="wpv-root wpv-menu" style={{ background: bg, padding: pad }}>
+    <div className="wpv-root wpv-menu" style={{ background: bg, padding }}>
       <div
         className="wpv-menu__header"
         style={{ color: fg, fontSize: 24 * scale * contentFactor }}
@@ -2063,25 +2079,26 @@ function DisplayWidget({
       )
       .filter((row) => row.trim().length > 0);
   }
-  const textFactor = widgetTextFactor(item, cfg);
-  const pad = Math.min(36, 0.08 * Math.min(item.width, item.height)) * scale;
+  const area = widgetContentArea(item, cfg);
+  const padding = `${area.verticalPadding * scale}px ${area.horizontalPadding * scale}px`;
   if (!rows.length)
     return (
       <div
         className="wpv-root wpv-centered"
-        style={{ background: bg, padding: pad }}
+        style={{ background: bg, padding }}
       >
         <FittedText
           text={source?.emptyState || "No items available"}
           color={fg}
-          fontPx={26 * scale * textFactor}
+          fontPx={Math.max(area.width, area.height) * scale}
           weight={400}
           maxLines={3}
+          textScale={cfg.textScale}
         />
       </div>
     );
-  const gap = 14 * scale * textFactor;
-  const availableHeight = Math.max(1, item.height * scale - 2 * pad);
+  const gap = Math.max(2, area.height * scale * 0.025);
+  const availableHeight = Math.max(1, area.height * scale);
   const maximumRows = Math.max(
     1,
     Math.floor((availableHeight + gap) / (4 * 1.15 + gap)),
@@ -2092,7 +2109,7 @@ function DisplayWidget({
       className="wpv-root wpv-display"
       style={{
         background: bg,
-        padding: pad,
+        padding,
         gap,
       }}
     >
@@ -2102,10 +2119,11 @@ function DisplayWidget({
           className="wpv-display__row"
           style={{
             color: fg,
-            fontSize: Math.min(
-              26 * scale * textFactor,
-              Math.max(4, availableHeight / visibleRows.length / 1.15),
-            ),
+            fontSize:
+              Math.min(
+                (area.width * scale) / Math.max(1, row.length * 0.62),
+                Math.max(4, availableHeight / visibleRows.length / 1.15),
+              ) * Math.min(1, Math.max(25, cfg.textScale ?? 100) / 100),
           }}
         >
           {row}
@@ -2136,27 +2154,38 @@ function WidgetLivePreview({
   );
   const sourceId = cfg.dataSourceId as string | undefined;
   const source = sourceId ? live[sourceId] : undefined;
-  const textFactor = widgetTextFactor(item, cfg);
   switch (provider) {
     case "clock":
       return (
-        <CenteredWidget background={bg} item={item} scale={scale}>
+        <CenteredWidget
+          background={bg}
+          item={item}
+          scale={scale}
+          contentPadding={(cfg as unknown as ClockWidgetConfig).contentPadding}
+        >
           <FittedText
             text={clockText(cfg as unknown as ClockWidgetConfig)}
             color={fg}
-            fontPx={86 * scale * textFactor}
+            fontPx={Math.max(item.width, item.height) * scale}
             weight={600}
+            textScale={(cfg as unknown as ClockWidgetConfig).textScale}
           />
         </CenteredWidget>
       );
     case "date":
       return (
-        <CenteredWidget background={bg} item={item} scale={scale}>
+        <CenteredWidget
+          background={bg}
+          item={item}
+          scale={scale}
+          contentPadding={(cfg as unknown as DateWidgetConfig).contentPadding}
+        >
           <FittedText
             text={dateText(cfg as unknown as DateWidgetConfig)}
             color={fg}
-            fontPx={58 * scale * textFactor}
+            fontPx={Math.max(item.width, item.height) * scale}
             weight={500}
+            textScale={(cfg as unknown as DateWidgetConfig).textScale}
           />
         </CenteredWidget>
       );
@@ -2170,13 +2199,19 @@ function WidgetLivePreview({
       );
     case "ticker":
       return (
-        <CenteredWidget background={bg} item={item} scale={scale}>
+        <CenteredWidget
+          background={bg}
+          item={item}
+          scale={scale}
+          contentPadding={(cfg as unknown as TickerWidgetConfig).contentPadding}
+        >
           <FittedText
             text={tickerText(cfg as unknown as TickerWidgetConfig, source)}
             color={fg}
-            fontPx={34 * scale * textFactor}
+            fontPx={Math.max(item.width, item.height) * scale}
             weight={400}
             maxLines={2}
+            textScale={(cfg as unknown as TickerWidgetConfig).textScale}
           />
         </CenteredWidget>
       );

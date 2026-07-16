@@ -367,6 +367,7 @@ type ClockWidgetConfig struct {
 	ForegroundColor string `json:"foregroundColor"`
 	BackgroundColor string `json:"backgroundColor"`
 	TextScale       *int   `json:"textScale,omitempty"`
+	ContentPadding  *int   `json:"contentPadding,omitempty"`
 }
 type DateWidgetConfig struct {
 	Timezone        string `json:"timezone"`
@@ -374,6 +375,7 @@ type DateWidgetConfig struct {
 	ForegroundColor string `json:"foregroundColor"`
 	BackgroundColor string `json:"backgroundColor"`
 	TextScale       *int   `json:"textScale,omitempty"`
+	ContentPadding  *int   `json:"contentPadding,omitempty"`
 }
 type QRCodeWidgetConfig struct {
 	Value           string `json:"value"`
@@ -382,6 +384,7 @@ type QRCodeWidgetConfig struct {
 	ForegroundColor string `json:"foregroundColor"`
 	BackgroundColor string `json:"backgroundColor"`
 	TextScale       *int   `json:"textScale,omitempty"`
+	ContentPadding  *int   `json:"contentPadding,omitempty"`
 }
 type TickerWidgetConfig struct {
 	DataSourceID    uuid.UUID `json:"dataSourceId"`
@@ -392,6 +395,7 @@ type TickerWidgetConfig struct {
 	ForegroundColor string    `json:"foregroundColor"`
 	BackgroundColor string    `json:"backgroundColor"`
 	TextScale       *int      `json:"textScale,omitempty"`
+	ContentPadding  *int      `json:"contentPadding,omitempty"`
 }
 
 type DisplayWidgetConfig struct {
@@ -401,6 +405,7 @@ type DisplayWidgetConfig struct {
 	ForegroundColor string    `json:"foregroundColor"`
 	BackgroundColor string    `json:"backgroundColor"`
 	TextScale       *int      `json:"textScale,omitempty"`
+	ContentPadding  *int      `json:"contentPadding,omitempty"`
 }
 
 type StructuredRecord struct {

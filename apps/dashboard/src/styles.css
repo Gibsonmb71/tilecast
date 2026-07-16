@@ -1190,7 +1190,8 @@ a {
   gap: 9px;
 }
 .timeline-item {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
   gap: 12px;
   align-items: center;
   padding: 11px;
@@ -1214,21 +1215,46 @@ a {
 }
 .timeline-name {
   display: grid;
-  min-width: 150px;
-  flex: 1;
+  min-width: 0;
+}
+.timeline-name strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .timeline-name small {
   color: var(--tc-ink-muted);
 }
+.timeline-item__controls {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+  min-width: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--tc-border);
+}
 .timeline-item label {
   display: grid;
+  flex: 1 1 112px;
+  min-width: 0;
+  max-width: 180px;
   gap: 3px;
   color: var(--tc-ink-muted);
   font-size: 11px;
 }
+.timeline-item label.timeline-item__playback-behavior {
+  flex-basis: 210px;
+  max-width: 260px;
+}
+.timeline-item .timeline-item__controls .signal-select {
+  width: 100%;
+  min-width: 0;
+}
 .timeline-item select,
 .timeline-item input[type="number"] {
-  width: 92px;
+  width: 100%;
   height: 32px;
   padding: 4px;
   border: 1px solid var(--tc-border-strong);
@@ -1239,8 +1265,14 @@ a {
 }
 .timeline-item .audio-toggle {
   display: flex;
+  flex: 0 0 auto;
   flex-direction: row;
   align-items: center;
+  min-height: 32px;
+}
+.timeline-item__remove {
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 .asset-picker {
   width: min(780px, 90vw);
@@ -1286,11 +1318,16 @@ a {
   .playlist-settings {
     grid-template-columns: 1fr;
   }
+}
+@media (max-width: 520px) {
   .timeline-item {
-    flex-wrap: wrap;
+    grid-template-columns: auto 52px minmax(0, 1fr);
   }
-  .timeline-name {
-    min-width: calc(100% - 145px);
+  .timeline-item > img {
+    width: 52px;
+  }
+  .timeline-item label {
+    max-width: none;
   }
 }
 .policy-editor {

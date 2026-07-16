@@ -1,15 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { widgetTextFactor } from "./LayoutEditorPage";
+import { widgetContentArea } from "./LayoutEditorPage";
 
 describe("Widget text sizing", () => {
-  it("scales automatic text with the Widget bounds", () => {
-    expect(widgetTextFactor({ width: 480, height: 270 }, {})).toBeCloseTo(0.25);
-    expect(widgetTextFactor({ width: 1920, height: 1080 }, {})).toBe(1);
+  it("uses the center 80 percent of a Widget by default", () => {
+    expect(widgetContentArea({ width: 1920, height: 1080 }, {})).toEqual({
+      width: 1536,
+      height: 864,
+      horizontalPadding: 192,
+      verticalPadding: 108,
+    });
   });
 
-  it("applies a custom scale to the responsive result", () => {
+  it("allows content to use the full Widget when padding is zero", () => {
     expect(
-      widgetTextFactor({ width: 960, height: 540 }, { textScale: 150 }),
-    ).toBeCloseTo(0.75);
+      widgetContentArea({ width: 960, height: 540 }, { contentPadding: 0 }),
+    ).toEqual({
+      width: 960,
+      height: 540,
+      horizontalPadding: 0,
+      verticalPadding: 0,
+    });
   });
 });
