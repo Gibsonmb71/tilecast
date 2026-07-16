@@ -1,0 +1,45 @@
+name: Report Tilecast Player release status
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/report-player-release-status.yml"
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report release status
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          runs="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow player-release.yml --limit 5 --json databaseId,status,conclusion,displayTitle,headSha,url,createdAt)"
+          release="$(gh release view player-v0.13.0 --repo "$GITHUB_REPOSITORY" --json url,isDraft,isPrerelease,assets 2>/dev/null || true)"
+          {
+            echo '### Tilecast Player 0.13.0 release status'
+            echo
+            if [ -n "$release" ]; then
+              echo 'Release exists.'
+              echo
+              echo '```json'
+              jq . <<<"$release"
+              echo '```'
+            else
+              echo 'Release has not been published yet.'
+            fi
+            echo
+            echo 'Recent Player release workflow runs:'
+            echo
+            echo '```json'
+            jq . <<<"$runs"
+            echo '```'
+          } > "$RUNNER_TEMP/release-status.md"
+          gh pr comment 65 --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/release-status.md"
