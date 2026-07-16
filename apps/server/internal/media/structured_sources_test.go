@@ -1,9 +1,44 @@
 package media
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
+
+// TestUploadedCSVContentDrivesRecords documents why saved Data Sources must be
+// previewed by id: the uploaded CSV payload parses into records, but the API
+// strips that payload from detail responses, so re-parsing a stripped config
+// (as an older Layout preview did) yields nothing — hence "No items available".
+func TestUploadedCSVContentDrivesRecords(t *testing.T) {
+	body := "title,option_2\nGrilled Cheese,Veggie Wrap\n"
+	config := StructuredSourceConfig{
+		MaxItems: 10,
+		Sort:     "source",
+		Mapping: &StructuredMapping{
+			Title:       "title",
+			ValueFields: map[string]string{"option_2": "option_2"},
+		},
+	}
+	records, err := parseCSVRecords([]byte(body), config)
+	if err != nil || len(records) != 1 || records[0].Title != "Grilled Cheese" ||
+		records[0].Values["option_2"] != "Veggie Wrap" {
+		t.Fatalf("records=%#v err=%v", records, err)
+	}
+
+	raw, _ := json.Marshal(StructuredSourceConfig{Uploaded: true, UploadedContent: body})
+	stripped := stripUploadedContent("csv", raw)
+	var got StructuredSourceConfig
+	if err := json.Unmarshal(stripped, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.UploadedContent != "" {
+		t.Fatalf("expected uploadedContent to be stripped, got %q", got.UploadedContent)
+	}
+	if !got.Uploaded {
+		t.Fatal("expected uploaded flag to be retained after stripping")
+	}
+}
 
 func TestStructuredSourceParsers(t *testing.T) {
 	config := StructuredSourceConfig{MaxItems: 10, Sort: "source", Mapping: &StructuredMapping{RootList: "/items", Title: "/name", Subtitle: "/room"}}

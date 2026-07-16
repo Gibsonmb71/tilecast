@@ -650,6 +650,16 @@ export const api = {
         body: JSON.stringify({ configuration, previewDate }),
       },
     ),
+  // Preview a saved Data Source by id using its full stored configuration
+  // (including uploaded CSV content the detail response strips).
+  previewSavedDataSource: (id: string, previewDate?: string) => {
+    const query = previewDate
+      ? `?previewDate=${encodeURIComponent(previewDate)}`
+      : "";
+    return request<StructuredPreview | CalendarPreview>(
+      `/data-sources/${id}/preview${query}`,
+    );
+  },
   retryAsset: (id: string, csrfToken: string) =>
     request<Asset>(`/assets/${id}/retry`, {
       method: "POST",

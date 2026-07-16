@@ -324,6 +324,22 @@ func (s *server) getDataSource(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": detail})
 }
 
+// previewSavedDataSource resolves an already-saved Data Source by id using its full
+// stored configuration (including uploaded CSV content the detail response strips),
+// so consumers such as the Layout preview see the same records/events as the Player.
+func (s *server) previewSavedDataSource(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	preview, err := s.media.PreviewDataSourceByID(r.Context(), id, r.URL.Query().Get("previewDate"))
+	if err != nil {
+		s.writeMediaError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": preview})
+}
+
 func (s *server) updateDataSource(w http.ResponseWriter, r *http.Request) {
 	id, ok := urlUUID(w, r, "id")
 	if !ok {
