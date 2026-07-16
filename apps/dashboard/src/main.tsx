@@ -7,6 +7,7 @@ import "./theme";
 import { App } from "./App";
 import { AuthProvider } from "./auth/AuthProvider";
 import "./styles.css";
+import "./styles/layout-fonts.css";
 import "./styles/signal.css";
 // Page-specific refinements intentionally load after shared Signal styles.
 import "./styles/reliability.css";

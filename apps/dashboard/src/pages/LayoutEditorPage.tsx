@@ -59,6 +59,7 @@ import type {
   TickerWidgetConfig,
 } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
+import { layoutFontStack } from "../layoutFonts";
 
 type SaveState = "saved" | "unsaved" | "saving" | "conflict" | "error";
 
@@ -1408,7 +1409,7 @@ function PlacementView({
         <div
           className="layout-text-primitive"
           style={{
-            fontFamily: primitive.fontFamily,
+            fontFamily: layoutFontStack(primitive.fontFamily),
             fontSize: `${((primitive.fontSize ?? 48) / canvas.width) * 100}cqw`,
             fontWeight: primitive.fontWeight,
             textAlign: primitive.textAlign,

@@ -2,6 +2,7 @@ import { useId } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
 import type { LayoutPlacement, LayoutPrimitive } from "../api/types";
+import { layoutFontStack } from "../layoutFonts";
 
 export function LayoutThumbnail({
   layoutId,
@@ -159,7 +160,7 @@ function PrimitiveThumbnail({
           x={x}
           y={placement.y + placement.height / 2}
           fill={primitive.color ?? "#ffffff"}
-          fontFamily={primitive.fontFamily ?? "Inter"}
+          fontFamily={layoutFontStack(primitive.fontFamily)}
           fontSize={Math.max(12, primitive.fontSize ?? 48)}
           fontWeight={primitive.fontWeight ?? 600}
           textAnchor={
