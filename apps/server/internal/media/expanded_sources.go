@@ -516,6 +516,27 @@ func (s *Service) PlayerTypedDataSourceConfiguration(ctx context.Context, id uui
 	if err != nil {
 		return nil, err
 	}
+	if provider == "transit" || provider == "cap_alerts" || provider == "air_quality" {
+		data := TypedDatasetPayload{Datasets: []TypedDataset{}}
+		if expires != nil && expires.After(time.Now()) {
+			if err := json.Unmarshal(payload, &data); err != nil {
+				return nil, err
+			}
+			for index := range data.Datasets {
+				data.Datasets[index].UsingCachedData = usingCache
+			}
+		} else if errorCode != nil {
+			for index := range data.Datasets {
+				data.Datasets[index].Unavailable = true
+			}
+		}
+		if provider == "air_quality" {
+			for index := range data.Datasets {
+				data.Datasets[index].Attribution = liveSourceAttributionAirQuality
+			}
+		}
+		return json.Marshal(data)
+	}
 	if provider == "weather" {
 		data := TypedRecordData{Fields: availableDataSourceFields(provider, raw), Records: []TypedRecord{}}
 		if expires != nil && expires.After(time.Now()) {

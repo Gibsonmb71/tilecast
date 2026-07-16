@@ -35,6 +35,9 @@ const providers: DataSourceProvider[] = [
   "csv",
   "manual",
   "weather",
+  "transit",
+  "cap_alerts",
+  "air_quality",
 ];
 
 function providerLabel(provider: DataSourceProvider) {
@@ -45,6 +48,8 @@ function providerLabel(provider: DataSourceProvider) {
         csv: "CSV",
         json: "JSON",
         manual: "Manual Table",
+        cap_alerts: "CAP Alerts",
+        air_quality: "Air Quality",
       } as Record<string, string>
     )[provider] ?? provider.charAt(0).toUpperCase() + provider.slice(1)
   );
@@ -131,6 +136,39 @@ const createCopy: Record<
       "Preview the normalized forecast, then save.",
     ],
   },
+  transit: {
+    eyebrow: "Public transport",
+    description:
+      "Join public GTFS schedules with realtime trip updates and optional service alerts.",
+    tip: "Use stable stop IDs from the agency’s GTFS Static feed.",
+    steps: [
+      "Enter the Static and Realtime feed URLs.",
+      "Choose stop IDs, route filters, and timezone.",
+      "Preview departures and alerts, then save.",
+    ],
+  },
+  cap_alerts: {
+    eyebrow: "Public warnings",
+    description:
+      "Normalize active public CAP 1.2 warnings from direct XML or a feed index.",
+    tip: "Area filters match the alert’s published area description.",
+    steps: [
+      "Enter the CAP document or index URL.",
+      "Choose language, severity, and area filters.",
+      "Preview active alerts, then save.",
+    ],
+  },
+  air_quality: {
+    eyebrow: "Environmental conditions",
+    description:
+      "Cache current AQI and hourly pollutant forecasts for one location.",
+    tip: "Hosted Open-Meteo access requires noncommercial acknowledgement; commercial deployments use a self-hosted endpoint.",
+    steps: [
+      "Enter the location coordinates and timezone.",
+      "Choose AQI standard and measurements.",
+      "Confirm endpoint policy, preview, then save.",
+    ],
+  },
 };
 
 function providerIcon(provider: DataSourceProvider, size = 28) {
@@ -139,6 +177,9 @@ function providerIcon(provider: DataSourceProvider, size = 28) {
   if (provider === "json") return <Braces size={size} />;
   if (provider === "manual") return <TableProperties size={size} />;
   if (provider === "weather") return <CloudSun size={size} />;
+  if (provider === "air_quality") return <CloudSun size={size} />;
+  if (provider === "transit") return <CalendarDays size={size} />;
+  if (provider === "cap_alerts") return <Rss size={size} />;
   return <Rss size={size} />;
 }
 
@@ -294,6 +335,21 @@ function DataSourceProviderGallery({
             <CloudSun size={30} />
             <strong>Weather</strong>
             <span>Cached current conditions and daily forecasts.</span>
+          </button>
+          <button type="button" onClick={() => onChoose("transit")}>
+            <CalendarDays size={30} />
+            <strong>Transit</strong>
+            <span>Public GTFS departures and service alerts.</span>
+          </button>
+          <button type="button" onClick={() => onChoose("cap_alerts")}>
+            <Rss size={30} />
+            <strong>CAP Alerts</strong>
+            <span>Active public emergency alerts and instructions.</span>
+          </button>
+          <button type="button" onClick={() => onChoose("air_quality")}>
+            <CloudSun size={30} />
+            <strong>Air Quality</strong>
+            <span>Current AQI, pollutants, pollen, and hourly forecasts.</span>
           </button>
         </div>
       </section>

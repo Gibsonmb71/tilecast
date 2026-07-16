@@ -7,3 +7,5 @@ Manifest v11 splits the former single `sources` array into two independent proje
 Manifest v12 adds a common typed record projection for Calendar, RSS, Atom, JSON, CSV, Manual Table, and Weather Data Sources. It also adds Countdown, Metric, Cards, and Weather Widgets and version 2 configurations for the generalized data-driven Widgets. Players supporting this release accept both v11 and v12; servers retain v11 for presentations containing only legacy Widget configurations.
 
 Manifest v13 removes provider enums from Player validation. Data Sources carry version 1 typed data documents and Widgets carry version 1 native presentation trees or constrained web sandbox descriptors. Provider fields are diagnostics metadata only. Capability-reporting Players receive v13; older Players continue receiving v11 or v12 during rollout.
+
+Time-series points may carry one `value` or a bounded `values` object for multi-series charts. Capability revision 2 covers native charts, asset images, target progress, repeat indexes, and richer conditions without changing the presentation schema version.

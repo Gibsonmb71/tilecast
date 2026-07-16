@@ -18,8 +18,8 @@ object PlayerPresentationSupport {
     val schemas = listOf(1)
     val native = mapOf(
         "layout.surface" to 1, "layout.box" to 1, "layout.row" to 1, "layout.column" to 1, "layout.stack" to 1, "layout.grid" to 1, "layout.spacer" to 1, "layout.divider" to 1,
-        "content.text" to 1, "content.icon" to 1, "content.asset_image" to 1, "content.badge" to 1, "content.progress" to 1, "content.qr_code" to 1, "content.marquee" to 1, "content.line_chart" to 1, "content.bar_chart" to 1, "content.donut_chart" to 1,
-        "collection.repeat" to 1, "collection.conditional" to 1, "collection.grouped_sections" to 1, "binding.core" to 1, "format.typed" to 1, "selection.relative_date" to 1,
+        "content.text" to 1, "content.icon" to 2, "content.asset_image" to 2, "content.badge" to 1, "content.progress" to 2, "content.qr_code" to 1, "content.marquee" to 1, "content.line_chart" to 2, "content.bar_chart" to 2, "content.donut_chart" to 2,
+        "collection.repeat" to 2, "collection.conditional" to 2, "collection.grouped_sections" to 1, "binding.core" to 2, "format.typed" to 1, "selection.relative_date" to 1,
     )
     const val webRuntimeVersion = 1
     const val webBundleLimitBytes = 20L * 1024 * 1024
@@ -54,7 +54,7 @@ object PlayerPresentationSupport {
 @Serializable data class DocumentDataset(val id:String,val kind:String,val fields:List<DocumentField> = emptyList(),val scalar:DocumentValue?=null,val records:List<DocumentRecord> = emptyList(),val points:List<DocumentPoint> = emptyList(),val value:DocumentValue?=null,val cache:DocumentCacheState=DocumentCacheState(),val attribution:String="",val timezone:String="",val dateSelection:DocumentDateSelection?=null,val units:Map<String,String> = emptyMap())
 @Serializable data class DocumentField(val key:String,val label:String,val type:String,val unit:String="",val currency:String="")
 @Serializable data class DocumentRecord(val id:String,val values:Map<String,DocumentValue> = emptyMap())
-@Serializable data class DocumentPoint(val at:String,val value:DocumentValue)
+@Serializable data class DocumentPoint(val at:String,val value:DocumentValue?=null,val values:Map<String,DocumentValue> = emptyMap())
 @Serializable data class DocumentValue(val kind:String,val text:String?=null,val number:Double?=null,val integer:Long?=null,val boolean:Boolean?=null,val date:String?=null,val datetime:String?=null,val durationSeconds:Long?=null,val url:String?=null,val assetId:String?=null,val list:List<DocumentValue> = emptyList(),@SerialName("object") val objectValue:Map<String,DocumentValue> = emptyMap())
 @Serializable data class DocumentCacheState(val cachedAt:String?=null,val staleAt:String?=null,val usingCachedData:Boolean=false,val unavailable:Boolean=false,val lastModified:String="",val upstreamExpiry:String?=null)
 @Serializable data class DocumentDateSelection(val field:String,val timezone:String,val mode:String,val customStartDate:String="",val customEndDate:String="",val excludePast:Boolean=false,val noMatchBehavior:String="",val fallbackText:String="")

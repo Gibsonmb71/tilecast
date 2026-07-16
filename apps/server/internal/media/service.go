@@ -28,6 +28,7 @@ type Config struct {
 	KeepOriginals           bool
 	Website                 WebsitePolicy
 	SourceFetch             SourceFetchPolicy
+	AirQualityBaseURL       string
 }
 type Service struct {
 	db          *pgxpool.Pool

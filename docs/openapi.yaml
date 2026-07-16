@@ -789,7 +789,7 @@ paths:
         "200": { description: Paginated Data Source summaries }
     post:
       operationId: createDataSource
-      description: Creates a reusable Data Source (calendar, rss, atom, json, or csv). Data Sources are not assets and cannot be placed in playlists or Layouts.
+      description: Creates a reusable provider-neutral Data Source. Supported providers include calendar, structured feeds, Manual Table, Weather, Transit, CAP Alerts, and Air Quality. Data Sources are not assets and cannot be placed in playlists or Layouts.
       requestBody:
         required: true
         content:
@@ -850,7 +850,22 @@ paths:
         - in: path
           name: provider
           required: true
-          schema: { enum: [calendar, rss, atom, json, csv] }
+          schema:
+            {
+              enum:
+                [
+                  calendar,
+                  rss,
+                  atom,
+                  json,
+                  csv,
+                  manual,
+                  weather,
+                  transit,
+                  cap_alerts,
+                  air_quality,
+                ],
+            }
       requestBody:
         required: true
         content:
@@ -1358,17 +1373,49 @@ components:
           metric,
           cards,
           weather,
+          spotlight,
+          stat_grid,
+          chart,
+          progress,
+          timeline,
+          world_clock,
         ]
     DataSourceProvider:
       type: string
       description: Non-visual Data Source providers.
-      enum: [calendar, rss, atom, json, csv, manual, weather]
+      enum:
+        [
+          calendar,
+          rss,
+          atom,
+          json,
+          csv,
+          manual,
+          weather,
+          transit,
+          cap_alerts,
+          air_quality,
+        ]
     Widget:
       type: object
       additionalProperties: false
       required: [provider, configVersion, configuration]
       properties:
         provider: { $ref: "#/components/schemas/WidgetProvider" }
+        presetId:
+          {
+            type: string,
+            enum:
+              [
+                leaderboard,
+                status_board,
+                queue_board,
+                schedule_departures,
+                opening_hours,
+                directory,
+              ],
+            nullable: true,
+          }
         configVersion: { type: integer, minimum: 1 }
         configuration:
           {
@@ -1381,6 +1428,20 @@ components:
       required: [provider, name, configuration]
       properties:
         provider: { $ref: "#/components/schemas/WidgetProvider" }
+        presetId:
+          {
+            type: string,
+            enum:
+              [
+                leaderboard,
+                status_board,
+                queue_board,
+                schedule_departures,
+                opening_hours,
+                directory,
+              ],
+            nullable: true,
+          }
         name: { type: string, minLength: 1, maxLength: 180 }
         description: { type: string, maxLength: 2000 }
         configuration:

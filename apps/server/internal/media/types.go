@@ -152,12 +152,14 @@ type BulkOrganizeInput struct {
 // Widget is the visual configuration attached to a widget asset (assets.type='widget').
 type Widget struct {
 	Provider      string          `json:"provider"`
+	PresetID      *string         `json:"presetId,omitempty"`
 	ConfigVersion int             `json:"configVersion"`
 	Configuration json.RawMessage `json:"configuration"`
 }
 
 type WidgetInput struct {
 	Provider      string          `json:"provider"`
+	PresetID      *string         `json:"presetId,omitempty"`
 	Name          string          `json:"name"`
 	Description   string          `json:"description"`
 	Configuration json.RawMessage `json:"configuration"`
@@ -206,6 +208,33 @@ type TypedRecordData struct {
 	DateSelection   *DateSelection    `json:"dateSelection,omitempty"`
 	DateField       string            `json:"dateField,omitempty"`
 	Attribution     string            `json:"attribution,omitempty"`
+}
+
+// TypedDatasetPayload is the cached provider-neutral boundary used by live
+// sources that expose more than one named dataset.
+type TypedDatasetPayload struct {
+	Datasets []TypedDataset `json:"datasets"`
+}
+
+type TypedDataset struct {
+	ID              string            `json:"id"`
+	Kind            string            `json:"kind"`
+	Fields          []DataSourceField `json:"fields,omitempty"`
+	Records         []TypedRecord     `json:"records,omitempty"`
+	Points          []TypedPoint      `json:"points,omitempty"`
+	Values          map[string]string `json:"values,omitempty"`
+	CachedAt        *time.Time        `json:"cachedAt,omitempty"`
+	StaleAt         *time.Time        `json:"staleAt,omitempty"`
+	Attribution     string            `json:"attribution,omitempty"`
+	Timezone        string            `json:"timezone,omitempty"`
+	Units           map[string]string `json:"units,omitempty"`
+	UsingCachedData bool              `json:"usingCachedData"`
+	Unavailable     bool              `json:"unavailable"`
+}
+
+type TypedPoint struct {
+	At     time.Time         `json:"at"`
+	Values map[string]string `json:"values"`
 }
 
 // DataSourceWidgetUsage / DataSourceBindingUsage report where a Data Source is consumed.
@@ -406,6 +435,137 @@ type WeatherSourceConfig struct {
 	Contact                string  `json:"contact"`
 	RefreshIntervalSeconds int     `json:"refreshIntervalSeconds"`
 	StalenessLimitHours    int     `json:"stalenessLimitHours"`
+}
+
+type TransitSourceConfig struct {
+	StaticURL              string   `json:"staticUrl"`
+	TripUpdatesURL         string   `json:"tripUpdatesUrl"`
+	ServiceAlertsURL       string   `json:"serviceAlertsUrl,omitempty"`
+	StopIDs                []string `json:"stopIds"`
+	RouteIDs               []string `json:"routeIds,omitempty"`
+	Timezone               string   `json:"timezone"`
+	MaximumDepartures      int      `json:"maximumDepartures"`
+	RealtimeRefreshSeconds int      `json:"realtimeRefreshSeconds"`
+	StaticRefreshHours     int      `json:"staticRefreshHours"`
+	StalenessLimitMinutes  int      `json:"stalenessLimitMinutes"`
+}
+
+type CAPAlertsSourceConfig struct {
+	URL                    string   `json:"url"`
+	FeedMode               string   `json:"feedMode"`
+	PreferredLanguage      string   `json:"preferredLanguage,omitempty"`
+	MinimumSeverity        string   `json:"minimumSeverity"`
+	IncludeAreaKeywords    []string `json:"includeAreaKeywords,omitempty"`
+	ExcludeAreaKeywords    []string `json:"excludeAreaKeywords,omitempty"`
+	MaximumAlerts          int      `json:"maximumAlerts"`
+	RefreshIntervalSeconds int      `json:"refreshIntervalSeconds"`
+	StalenessLimitHours    int      `json:"stalenessLimitHours"`
+}
+
+type AirQualitySourceConfig struct {
+	LocationLabel          string   `json:"locationLabel"`
+	Latitude               float64  `json:"latitude"`
+	Longitude              float64  `json:"longitude"`
+	Timezone               string   `json:"timezone"`
+	AQIStandard            string   `json:"aqiStandard"`
+	Pollutants             []string `json:"pollutants"`
+	ForecastHours          int      `json:"forecastHours"`
+	NonCommercialAccepted  bool     `json:"nonCommercialAccepted"`
+	RefreshIntervalSeconds int      `json:"refreshIntervalSeconds"`
+	StalenessLimitHours    int      `json:"stalenessLimitHours"`
+}
+
+type WidgetVisualConfig struct {
+	ForegroundColor string `json:"foregroundColor"`
+	BackgroundColor string `json:"backgroundColor"`
+	TextScale       *int   `json:"textScale,omitempty"`
+	ContentPadding  *int   `json:"contentPadding,omitempty"`
+	EmptyState      string `json:"emptyState,omitempty"`
+}
+
+type SpotlightWidgetConfig struct {
+	WidgetVisualConfig
+	DataSourceID  uuid.UUID  `json:"dataSourceId"`
+	TitleField    string     `json:"titleField"`
+	SubtitleField string     `json:"subtitleField,omitempty"`
+	BodyField     string     `json:"bodyField,omitempty"`
+	BadgeField    string     `json:"badgeField,omitempty"`
+	DateField     string     `json:"dateField,omitempty"`
+	ImageAssetID  *uuid.UUID `json:"imageAssetId,omitempty"`
+}
+
+type StatGridMetric struct {
+	Label      string `json:"label,omitempty"`
+	LabelField string `json:"labelField,omitempty"`
+	ValueField string `json:"valueField"`
+	Format     string `json:"format,omitempty"`
+	Precision  int    `json:"precision,omitempty"`
+	Prefix     string `json:"prefix,omitempty"`
+	Suffix     string `json:"suffix,omitempty"`
+}
+
+type StatGridWidgetConfig struct {
+	WidgetVisualConfig
+	DataSourceID uuid.UUID        `json:"dataSourceId"`
+	Metrics      []StatGridMetric `json:"metrics"`
+	Columns      int              `json:"columns"`
+}
+
+type ChartSeries struct {
+	Field string `json:"field"`
+	Label string `json:"label,omitempty"`
+	Color string `json:"color,omitempty"`
+}
+
+type ChartWidgetConfig struct {
+	WidgetVisualConfig
+	DataSourceID  uuid.UUID     `json:"dataSourceId"`
+	Dataset       string        `json:"dataset,omitempty"`
+	ChartType     string        `json:"chartType"`
+	CategoryField string        `json:"categoryField,omitempty"`
+	TimeField     string        `json:"timeField,omitempty"`
+	Series        []ChartSeries `json:"series"`
+	ShowLegend    bool          `json:"showLegend"`
+	ShowAxes      bool          `json:"showAxes"`
+	Minimum       *float64      `json:"minimum,omitempty"`
+	Maximum       *float64      `json:"maximum,omitempty"`
+}
+
+type ProgressWidgetConfig struct {
+	WidgetVisualConfig
+	DataSourceID   uuid.UUID `json:"dataSourceId"`
+	ValueField     string    `json:"valueField"`
+	TargetField    string    `json:"targetField,omitempty"`
+	StaticTarget   *float64  `json:"staticTarget,omitempty"`
+	Label          string    `json:"label,omitempty"`
+	LabelField     string    `json:"labelField,omitempty"`
+	ShowPercent    bool      `json:"showPercent"`
+	CompletionText string    `json:"completionText,omitempty"`
+}
+
+type TimelineWidgetConfig struct {
+	WidgetVisualConfig
+	DataSourceID uuid.UUID `json:"dataSourceId"`
+	DateField    string    `json:"dateField"`
+	TitleField   string    `json:"titleField"`
+	BodyField    string    `json:"bodyField,omitempty"`
+	StatusField  string    `json:"statusField,omitempty"`
+	Orientation  string    `json:"orientation"`
+	MaximumItems int       `json:"maximumItems"`
+}
+
+type WorldClockZone struct {
+	Label    string `json:"label"`
+	Timezone string `json:"timezone"`
+}
+
+type WorldClockWidgetConfig struct {
+	WidgetVisualConfig
+	Zones       []WorldClockZone `json:"zones"`
+	Format      string           `json:"format"`
+	ShowSeconds bool             `json:"showSeconds"`
+	ShowDate    bool             `json:"showDate"`
+	Columns     int              `json:"columns"`
 }
 
 type CountdownWidgetConfig struct {

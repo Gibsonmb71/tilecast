@@ -21,7 +21,7 @@ A Data Source is a reusable, non-visual connection. It owns everything about acq
 - offline cached data and diagnostics
 - a typed field schema
 
-Providers: **Calendar, RSS, Atom, JSON, CSV, Manual Table, Weather**. Manual Table stores a bounded typed dataset directly in Studio. Weather caches a normalized global forecast from MET Norway and projects mandatory attribution without exposing coordinates or the installation contact to the Player. A Data Source cannot be assigned to a screen, added to a playlist, or dragged into a Layout as visual content. The only way a Layout may reference one directly is a custom dynamic text binding that names one declared field.
+Providers: **Calendar, RSS, Atom, JSON, CSV, Manual Table, Weather, Transit, CAP Alerts, and Air Quality**. Transit joins public GTFS Static metadata with Realtime trip updates and optional service alerts. CAP Alerts normalizes active public CAP 1.2 warnings. Air Quality exposes current and hourly Open-Meteo/CAMS values with mandatory attribution and a noncommercial-or-self-hosted endpoint policy. A Data Source cannot be assigned to a screen, added to a playlist, or dragged into a Layout as visual content.
 
 Data Sources appear in their own Studio section. Each detail view shows the provider, current status, last successful and last attempted refresh, cached record count, available fields, date-selection policy, errors and diagnostics, the Widgets using the Data Source, and the Layout text bindings using it.
 
@@ -29,8 +29,10 @@ Data Sources appear in their own Studio section. Each detail view shows the prov
 
 A Widget owns how content appears. A Widget is either **standalone** or references exactly **one** Data Source. It owns visual settings, the selected Data Source, selected fields, labels, typography, colors, spacing, record count, empty-state presentation, and provider-specific behavior. It does **not** own fetching, parsing, source refresh, cached records, date selection, or source diagnostics — those belong to the Data Source.
 
-- Standalone providers: **Website, YouTube, Clock, Date, QR Code, Countdown**.
-- Data-driven providers: **Ticker, Menu / Price Board, List, Table, Agenda, Metric, Cards, Weather**.
+- Standalone providers: **Website, YouTube, Clock, Date, QR Code, Countdown, World Clock**.
+- Data-driven providers: **Ticker, Menu / Price Board, List, Table, Agenda, Metric, Cards, Weather, Spotlight, Stat Grid, Chart, Progress, Timeline**.
+
+Studio also offers the guided presets **Leaderboard, Status Board, Queue Board, Schedule / Departures, Opening Hours, and Directory**. Presets persist authoring-only `presetId` metadata and compile through their underlying generic provider; the Player does not dispatch on preset identity.
 
 A Widget is a Content record (an asset of type `widget`) and may play fullscreen in a playlist or be placed inside a Layout. Editing a Widget placement in a Layout must not mutate the shared Widget; Studio offers an explicit **Edit shared Widget** action and reports every playlist and Layout that consumes it.
 
@@ -70,6 +72,8 @@ Date-aware Data Sources store a mapped date field, a fixed or detected format, a
 The Player manifest projects Widgets and Data Sources as separate arrays. Manifest v12 normalizes every Data Source into typed field definitions and bounded records, with cache state, optional date-selection policy, and optional attribution. The Player renders Widgets natively, shares one dataset across consumers, continues date-aware selection locally, and preserves offline playback. Players supporting v12 continue accepting cached v11 manifests.
 
 Manifest v13 adds a stable declarative runtime boundary. Data Sources project provider-neutral scalar, record, time-series, list, or object datasets. Native Widgets compile to a closed, non-executable tree of layout, content, and bounded collection nodes. Website and YouTube Widgets compile to constrained web descriptors with explicit hosts, timeouts, fallback behavior, and lifecycle. The Player dispatches on presentation kind and node type rather than provider names.
+
+Capability revision 2 implements native icons, downloaded Tilecast asset images, line/bar/donut charts, target progress, repeat indexes, numeric/date conditions, legends, bounded chart axes, and collection empty states. Remote images remain unsupported.
 
 Provider creation remains limited to Tilecast releases. Studio does not expose raw presentation JSON, uploaded scripts, arbitrary templates, or third-party runtime code. New providers using existing data kinds, nodes, formatters, and web capabilities therefore need only a server and Studio release; genuinely new native primitives still require a capability-bearing Player update.
 

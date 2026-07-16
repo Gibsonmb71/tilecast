@@ -16,6 +16,10 @@ import type {
   StructuredSourceConfig,
   TypedRecordData,
   WeatherSourceConfig,
+  TransitSourceConfig,
+  CAPAlertsSourceConfig,
+  AirQualitySourceConfig,
+  TypedDatasetPayload,
 } from "../api/types";
 import { CsvSourceInput, type CsvInspection } from "./CsvSourceInput";
 
@@ -1447,6 +1451,22 @@ export function DataSourceEditor({
         page={page}
       />
     );
+  if (
+    provider === "transit" ||
+    provider === "cap_alerts" ||
+    provider === "air_quality"
+  )
+    return (
+      <LiveDataSourceEditor
+        provider={provider}
+        dataSource={dataSource}
+        csrf={csrf}
+        readOnly={readOnly}
+        onClose={onClose}
+        onSaved={onSaved}
+        page={page}
+      />
+    );
   return (
     <StructuredDataSourceEditor
       provider={provider}
@@ -2101,6 +2121,485 @@ function WeatherDataSourceEditor({
         <p className="form-error">
           {(save.error ?? previewMutation.error)?.message}
         </p>
+      )}
+    </EditorFrame>
+  );
+}
+
+type LiveProvider = "transit" | "cap_alerts" | "air_quality";
+type LiveConfiguration =
+  TransitSourceConfig | CAPAlertsSourceConfig | AirQualitySourceConfig;
+
+function defaultLiveConfiguration(provider: LiveProvider): LiveConfiguration {
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  if (provider === "transit")
+    return {
+      staticUrl: "https://",
+      tripUpdatesUrl: "https://",
+      serviceAlertsUrl: "",
+      stopIds: [],
+      routeIds: [],
+      timezone,
+      maximumDepartures: 40,
+      realtimeRefreshSeconds: 60,
+      staticRefreshHours: 24,
+      stalenessLimitMinutes: 30,
+    };
+  if (provider === "cap_alerts")
+    return {
+      url: "https://",
+      feedMode: "auto",
+      preferredLanguage: "",
+      minimumSeverity: "minor",
+      includeAreaKeywords: [],
+      excludeAreaKeywords: [],
+      maximumAlerts: 50,
+      refreshIntervalSeconds: 300,
+      stalenessLimitHours: 24,
+    };
+  return {
+    locationLabel: "",
+    latitude: 0,
+    longitude: 0,
+    timezone,
+    aqiStandard: "us",
+    pollutants: ["pm2_5", "pm10", "ozone", "nitrogen_dioxide"],
+    forecastHours: 48,
+    nonCommercialAccepted: false,
+    refreshIntervalSeconds: 3600,
+    stalenessLimitHours: 24,
+  };
+}
+
+function LiveDataSourceEditor({
+  provider,
+  dataSource,
+  csrf,
+  readOnly = false,
+  onClose,
+  onSaved,
+  page,
+}: {
+  provider: LiveProvider;
+  dataSource?: DataSourceDetail;
+  csrf: string;
+  readOnly?: boolean;
+  onClose: () => void;
+  onSaved: (dataSource: DataSourceDetail) => void;
+  page?: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const [name, setName] = useState(dataSource?.name ?? "");
+  const [description, setDescription] = useState(dataSource?.description ?? "");
+  const [configuration, setConfiguration] = useState<LiveConfiguration>(
+    (dataSource?.configuration as LiveConfiguration | undefined) ??
+      defaultLiveConfiguration(provider),
+  );
+  const [preview, setPreview] = useState<TypedDatasetPayload>();
+  const previewMutation = useMutation({
+    mutationFn: () =>
+      api.previewDataSource(
+        provider,
+        configuration,
+        csrf,
+      ) as unknown as Promise<TypedDatasetPayload>,
+    onSuccess: setPreview,
+  });
+  const save = useMutation({
+    mutationFn: () => {
+      const input = { provider, name, description, configuration };
+      return dataSource
+        ? api.updateDataSource(dataSource.id, input, csrf)
+        : api.createDataSource(input, csrf);
+    },
+    onSuccess: (saved) => {
+      void queryClient.invalidateQueries({ queryKey: ["data-sources"] });
+      onSaved(saved);
+    },
+  });
+  const patch = (values: Partial<LiveConfiguration>) =>
+    setConfiguration((current) => ({ ...current, ...values }));
+  return (
+    <EditorFrame
+      title={`${dataSource ? "Edit" : "Create"} ${
+        provider === "transit"
+          ? "Transit"
+          : provider === "cap_alerts"
+            ? "CAP Alerts"
+            : "Air Quality"
+      } Data Source`}
+      description={
+        provider === "transit"
+          ? "Join a public GTFS Static archive with GTFS Realtime departures and alerts."
+          : provider === "cap_alerts"
+            ? "Normalize active public CAP 1.2 alerts from XML or a bounded feed index."
+            : "Cache current and hourly air-quality values from the installation endpoint."
+      }
+      page={page}
+      onClose={onClose}
+      footer={
+        !readOnly && (
+          <button
+            className="button button--primary"
+            disabled={save.isPending || !name.trim()}
+            onClick={() => save.mutate()}
+          >
+            {save.isPending ? "Saving…" : "Save Data Source"}
+          </button>
+        )
+      }
+    >
+      <div className="form-grid form-grid--2">
+        <label className="field">
+          <span className="field__label">Name</span>
+          <input
+            value={name}
+            disabled={readOnly}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </label>
+        <label className="field">
+          <span className="field__label">Description</span>
+          <input
+            value={description}
+            disabled={readOnly}
+            onChange={(event) => setDescription(event.target.value)}
+          />
+        </label>
+      </div>
+      {provider === "transit" && (
+        <>
+          <div className="form-grid form-grid--2">
+            <label className="field">
+              <span className="field__label">GTFS Static ZIP URL</span>
+              <input
+                value={(configuration as TransitSourceConfig).staticUrl}
+                disabled={readOnly}
+                onChange={(event) => patch({ staticUrl: event.target.value })}
+              />
+            </label>
+            <label className="field">
+              <span className="field__label">Trip Updates URL</span>
+              <input
+                value={(configuration as TransitSourceConfig).tripUpdatesUrl}
+                disabled={readOnly}
+                onChange={(event) =>
+                  patch({ tripUpdatesUrl: event.target.value })
+                }
+              />
+            </label>
+            <label className="field">
+              <span className="field__label">
+                Service Alerts URL (optional)
+              </span>
+              <input
+                value={
+                  (configuration as TransitSourceConfig).serviceAlertsUrl ?? ""
+                }
+                disabled={readOnly}
+                onChange={(event) =>
+                  patch({ serviceAlertsUrl: event.target.value })
+                }
+              />
+            </label>
+            <label className="field">
+              <span className="field__label">IANA timezone</span>
+              <input
+                value={(configuration as TransitSourceConfig).timezone}
+                disabled={readOnly}
+                onChange={(event) => patch({ timezone: event.target.value })}
+              />
+            </label>
+          </div>
+          <label className="field">
+            <span className="field__label">
+              Stop IDs (comma or newline separated)
+            </span>
+            <textarea
+              value={(configuration as TransitSourceConfig).stopIds.join("\n")}
+              disabled={readOnly}
+              onChange={(event) =>
+                patch({
+                  stopIds: event.target.value
+                    .split(/[\n,]/)
+                    .map((value) => value.trim())
+                    .filter(Boolean),
+                })
+              }
+            />
+          </label>
+          <label className="field">
+            <span className="field__label">Route IDs (optional)</span>
+            <input
+              value={
+                (configuration as TransitSourceConfig).routeIds?.join(", ") ??
+                ""
+              }
+              disabled={readOnly}
+              onChange={(event) =>
+                patch({
+                  routeIds: event.target.value
+                    .split(",")
+                    .map((value) => value.trim())
+                    .filter(Boolean),
+                })
+              }
+            />
+          </label>
+        </>
+      )}
+      {provider === "cap_alerts" && (
+        <>
+          <div className="form-grid form-grid--2">
+            <label className="field">
+              <span className="field__label">CAP or feed-index URL</span>
+              <input
+                value={(configuration as CAPAlertsSourceConfig).url}
+                disabled={readOnly}
+                onChange={(event) => patch({ url: event.target.value })}
+              />
+            </label>
+            <label className="field">
+              <span className="field__label">Feed mode</span>
+              <Select
+                value={(configuration as CAPAlertsSourceConfig).feedMode}
+                disabled={readOnly}
+                onChange={(event) =>
+                  patch({
+                    feedMode: event.target
+                      .value as CAPAlertsSourceConfig["feedMode"],
+                  })
+                }
+              >
+                <option value="auto">Detect automatically</option>
+                <option value="cap">Direct CAP XML</option>
+                <option value="index">Atom/RSS index</option>
+              </Select>
+            </label>
+            <label className="field">
+              <span className="field__label">Preferred language</span>
+              <input
+                placeholder="en-US"
+                value={
+                  (configuration as CAPAlertsSourceConfig).preferredLanguage ??
+                  ""
+                }
+                disabled={readOnly}
+                onChange={(event) =>
+                  patch({ preferredLanguage: event.target.value })
+                }
+              />
+            </label>
+            <label className="field">
+              <span className="field__label">Minimum severity</span>
+              <Select
+                value={(configuration as CAPAlertsSourceConfig).minimumSeverity}
+                disabled={readOnly}
+                onChange={(event) =>
+                  patch({
+                    minimumSeverity: event.target
+                      .value as CAPAlertsSourceConfig["minimumSeverity"],
+                  })
+                }
+              >
+                <option value="unknown">Unknown</option>
+                <option value="minor">Minor</option>
+                <option value="moderate">Moderate</option>
+                <option value="severe">Severe</option>
+                <option value="extreme">Extreme</option>
+              </Select>
+            </label>
+          </div>
+          <label className="field">
+            <span className="field__label">Include area keywords</span>
+            <input
+              value={
+                (
+                  configuration as CAPAlertsSourceConfig
+                ).includeAreaKeywords?.join(", ") ?? ""
+              }
+              disabled={readOnly}
+              onChange={(event) =>
+                patch({
+                  includeAreaKeywords: event.target.value
+                    .split(",")
+                    .map((value) => value.trim())
+                    .filter(Boolean),
+                })
+              }
+            />
+          </label>
+          <label className="field">
+            <span className="field__label">Exclude area keywords</span>
+            <input
+              value={
+                (
+                  configuration as CAPAlertsSourceConfig
+                ).excludeAreaKeywords?.join(", ") ?? ""
+              }
+              disabled={readOnly}
+              onChange={(event) =>
+                patch({
+                  excludeAreaKeywords: event.target.value
+                    .split(",")
+                    .map((value) => value.trim())
+                    .filter(Boolean),
+                })
+              }
+            />
+          </label>
+        </>
+      )}
+      {provider === "air_quality" && (
+        <>
+          <div className="form-grid form-grid--2">
+            {(
+              [
+                ["locationLabel", "Location label", "text"],
+                ["timezone", "IANA timezone", "text"],
+                ["latitude", "Latitude", "number"],
+                ["longitude", "Longitude", "number"],
+              ] as const
+            ).map(([key, label, type]) => (
+              <label className="field" key={key}>
+                <span className="field__label">{label}</span>
+                <input
+                  type={type}
+                  step={type === "number" ? "0.0001" : undefined}
+                  value={
+                    (
+                      configuration as unknown as Record<
+                        string,
+                        string | number
+                      >
+                    )[key]
+                  }
+                  disabled={readOnly}
+                  onChange={(event) =>
+                    patch({
+                      [key]:
+                        type === "number"
+                          ? Number(event.target.value)
+                          : event.target.value,
+                    })
+                  }
+                />
+              </label>
+            ))}
+            <label className="field">
+              <span className="field__label">AQI standard</span>
+              <Select
+                value={(configuration as AirQualitySourceConfig).aqiStandard}
+                disabled={readOnly}
+                onChange={(event) =>
+                  patch({
+                    aqiStandard: event.target
+                      .value as AirQualitySourceConfig["aqiStandard"],
+                  })
+                }
+              >
+                <option value="us">US AQI</option>
+                <option value="european">European AQI</option>
+              </Select>
+            </label>
+          </div>
+          <fieldset>
+            <legend>Measurements</legend>
+            <div className="checkbox-grid">
+              {[
+                "pm2_5",
+                "pm10",
+                "ozone",
+                "nitrogen_dioxide",
+                "alder_pollen",
+                "birch_pollen",
+                "grass_pollen",
+                "ragweed_pollen",
+              ].map((pollutant) => (
+                <label key={pollutant}>
+                  <input
+                    type="checkbox"
+                    checked={(
+                      configuration as AirQualitySourceConfig
+                    ).pollutants.includes(pollutant)}
+                    disabled={readOnly}
+                    onChange={(event) => {
+                      const values = (configuration as AirQualitySourceConfig)
+                        .pollutants;
+                      patch({
+                        pollutants: event.target.checked
+                          ? [...values, pollutant]
+                          : values.filter((value) => value !== pollutant),
+                      });
+                    }}
+                  />
+                  <span>{pollutant.replaceAll("_", " ").toUpperCase()}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <label className="switch-row">
+            <input
+              type="checkbox"
+              checked={
+                (configuration as AirQualitySourceConfig).nonCommercialAccepted
+              }
+              disabled={readOnly}
+              onChange={(event) =>
+                patch({ nonCommercialAccepted: event.target.checked })
+              }
+            />
+            <span>
+              This installation’s hosted Open-Meteo use is noncommercial
+            </span>
+          </label>
+          <small>
+            Commercial installations must configure a self-hosted air-quality
+            endpoint at deployment time. API keys are not stored by Tilecast.
+          </small>
+        </>
+      )}
+      {!readOnly && (
+        <button
+          type="button"
+          className="button"
+          disabled={previewMutation.isPending}
+          onClick={() => previewMutation.mutate()}
+        >
+          {previewMutation.isPending ? "Loading preview…" : "Preview real data"}
+        </button>
+      )}
+      {preview && (
+        <div className="source-preview">
+          {preview.datasets.map((dataset) => (
+            <div key={dataset.id}>
+              <strong>{dataset.id}</strong>
+              <span>
+                {dataset.records?.length ??
+                  dataset.points?.length ??
+                  Object.keys(dataset.values ?? {}).length}{" "}
+                values
+              </span>
+              {dataset.attribution && <small>{dataset.attribution}</small>}
+            </div>
+          ))}
+        </div>
+      )}
+      {(save.error || previewMutation.error) && (
+        <p className="form-error">
+          {(save.error ?? previewMutation.error)?.message}
+        </p>
+      )}
+      {dataSource && (
+        <div className="notice">
+          Suggested Widgets:{" "}
+          {provider === "transit"
+            ? "Schedule / Departures, Timeline, Status Board"
+            : provider === "cap_alerts"
+              ? "Spotlight, Status Board, Timeline"
+              : "Stat Grid, Chart, Progress"}
+          .
+        </div>
       )}
     </EditorFrame>
   );

@@ -123,13 +123,15 @@ Website data clearing is the typed `clear_website_data` persistent player comman
 
 Tilecast separates renderable **Widgets** from non-visual **Data Sources**. See [widgets-and-layouts.md](widgets-and-layouts.md) for the full model.
 
-`POST /api/v1/widgets` creates a reusable Widget from the closed Widget registry: Website, YouTube, Clock, Date, QR Code, Countdown, Ticker, Menu / Price Board, List, Table, Agenda, Metric, Cards, and Weather. Data-driven Widgets reference exactly one compatible Data Source by `dataSourceId`; the server validates typed fields and provider capabilities. Saving a data-driven Widget writes configuration version 2.
+`POST /api/v1/widgets` creates a reusable Widget from the closed Widget registry. In addition to the established providers, the universal-information release adds Spotlight, Stat Grid, Chart, Progress, Timeline, and World Clock. Data-driven Widgets reference exactly one compatible Data Source by `dataSourceId`; the server validates typed fields and provider capabilities. Saving a data-driven Widget writes configuration version 2.
 
-`GET /api/v1/data-sources` lists Calendar, RSS, Atom, JSON, CSV, Manual Table, and Weather Data Sources. Manual Table stores typed columns and bounded rows directly. Weather stores server-only location/contact settings and caches MET Norway forecasts. Player manifests never contain fetch URLs, uploaded CSV bytes, coordinates, contacts, or mapping details.
+Widget requests and responses may include nullable authoring-only `presetId` metadata for Leaderboard, Status Board, Queue Board, Schedule / Departures, Opening Hours, and Directory. Presets compile through their underlying generic provider and `presetId` is omitted from Player presentation logic.
 
-`POST /api/v1/data-sources/{provider}/preview` performs a bounded real fetch and returns sanitized prepared data plus diagnostics before save, for `calendar`, `rss`, `atom`, `json`, or `csv`. JSON mappings use only RFC 6901 JSON Pointer; CSV uses exact header names. An optional `previewDate` evaluates the configured date selection without changing saved data. Feed URLs, uploaded CSV bytes, mappings, and filters are server-only and never projected. `GET /api/v1/data-sources/{id}/diagnostics` returns last attempt/success, HTTP category, parse state, event and item counts, cache usage, and cache lifetime without raw payloads.
+`GET /api/v1/data-sources` includes Calendar, RSS, Atom, JSON, CSV, Manual Table, Weather, Transit, CAP Alerts, and Air Quality. Transit joins bounded public GTFS Static and Realtime data; CAP Alerts resolves active public CAP 1.2 records; Air Quality projects attributed current and hourly Open-Meteo/CAMS data. Player manifests never contain fetch URLs, uploaded CSV bytes, coordinates, contacts, source credentials, or upstream request details.
 
-Manifest v11 remains the legacy Widget/Data Source projection. Manifest v12 uses one typed record contract for every Data Source and adds the new providers. A data-driven Widget references its Data Source by `dataSourceId`; the dataset is included once and shared across consumers. Date-only records remain calendar dates and timestamps remain RFC 3339.
+`POST /api/v1/data-sources/{provider}/preview` performs a bounded real fetch and returns sanitized prepared data plus diagnostics before save. JSON mappings use only RFC 6901 JSON Pointer; CSV uses exact header names. An optional `previewDate` evaluates configured date selection without changing saved data. `GET /api/v1/data-sources/{id}/diagnostics` returns bounded refresh and cache diagnostics without raw payloads.
+
+Manifest v11 and v12 remain accepted for staged upgrades. Compatible Players receive manifest v13, where provider-neutral typed documents may contain multiple named datasets and Widget presentations dispatch by kind and required capabilities rather than provider name. Date-only records remain calendar dates and timestamps remain RFC 3339.
 
 ## Layouts
 

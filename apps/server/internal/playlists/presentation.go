@@ -14,17 +14,17 @@ const (
 	DataDocumentSchemaVersion      = 1
 	PresentationSchemaVersion      = 1
 	WebRuntimeVersion              = 1
-	presentationCatalogFingerprint = "v13-data1-presentation1-builtins-2026-07-16"
+	presentationCatalogFingerprint = "v13-data1-presentation1-information-widgets-2026-07-16"
 )
 
 var NativePresentationCapabilities = map[string]int{
 	"layout.surface": 1, "layout.box": 1, "layout.row": 1, "layout.column": 1,
 	"layout.stack": 1, "layout.grid": 1, "layout.spacer": 1, "layout.divider": 1,
-	"content.text": 1, "content.icon": 1, "content.asset_image": 1, "content.badge": 1,
-	"content.progress": 1, "content.qr_code": 1, "content.marquee": 1,
-	"content.line_chart": 1, "content.bar_chart": 1, "content.donut_chart": 1,
-	"collection.repeat": 1, "collection.conditional": 1, "collection.grouped_sections": 1,
-	"binding.core": 1, "format.typed": 1, "selection.relative_date": 1,
+	"content.text": 1, "content.icon": 2, "content.asset_image": 2, "content.badge": 1,
+	"content.progress": 2, "content.qr_code": 1, "content.marquee": 1,
+	"content.line_chart": 2, "content.bar_chart": 2, "content.donut_chart": 2,
+	"collection.repeat": 2, "collection.conditional": 2, "collection.grouped_sections": 1,
+	"binding.core": 2, "format.typed": 1, "selection.relative_date": 1,
 }
 
 type DataDocument struct {
@@ -61,8 +61,9 @@ type DocumentRecord struct {
 }
 
 type DocumentPoint struct {
-	At    string        `json:"at"`
-	Value DocumentValue `json:"value"`
+	At     string                   `json:"at"`
+	Value  *DocumentValue           `json:"value,omitempty"`
+	Values map[string]DocumentValue `json:"values,omitempty"`
 }
 
 type DocumentValue struct {
@@ -192,6 +193,74 @@ type typedRecordProjection struct {
 }
 
 func projectDataDocument(raw json.RawMessage) (*DataDocument, error) {
+	var multiple struct {
+		Datasets []struct {
+			ID     string `json:"id"`
+			Kind   string `json:"kind"`
+			Fields []struct {
+				Key, Label, Type string
+			} `json:"fields"`
+			Records []struct {
+				ID     string            `json:"id"`
+				Values map[string]string `json:"values"`
+			} `json:"records"`
+			Points []struct {
+				At     time.Time         `json:"at"`
+				Values map[string]string `json:"values"`
+			} `json:"points"`
+			Values          map[string]string `json:"values"`
+			CachedAt        *time.Time        `json:"cachedAt"`
+			StaleAt         *time.Time        `json:"staleAt"`
+			UsingCachedData bool              `json:"usingCachedData"`
+			Unavailable     bool              `json:"unavailable"`
+			Attribution     string            `json:"attribution"`
+			Timezone        string            `json:"timezone"`
+			Units           map[string]string `json:"units"`
+		} `json:"datasets"`
+	}
+	if json.Unmarshal(raw, &multiple) == nil && len(multiple.Datasets) > 0 {
+		if len(multiple.Datasets) > 16 {
+			return nil, errors.New("projected data exceeds dataset bounds")
+		}
+		document := &DataDocument{SchemaVersion: DataDocumentSchemaVersion, Datasets: make([]DocumentDataset, 0, len(multiple.Datasets))}
+		for _, source := range multiple.Datasets {
+			if source.ID == "" || len(source.ID) > 80 || (source.Kind != "records" && source.Kind != "time_series" && source.Kind != "object") || len(source.Fields) > 16 || len(source.Records) > 2000 || len(source.Points) > 5000 {
+				return nil, errors.New("projected dataset is invalid")
+			}
+			dataset := DocumentDataset{ID: source.ID, Kind: source.Kind, Cache: DocumentCacheState{CachedAt: source.CachedAt, StaleAt: source.StaleAt, UsingCached: source.UsingCachedData, Unavailable: source.Unavailable}, Attribution: source.Attribution, Timezone: source.Timezone, Units: source.Units}
+			fieldTypes := map[string]string{}
+			for _, field := range source.Fields {
+				if !validScalarKind(field.Type) || field.Key == "" {
+					return nil, errors.New("projected dataset field is invalid")
+				}
+				fieldTypes[field.Key] = field.Type
+				dataset.Fields = append(dataset.Fields, DocumentField{Key: field.Key, Label: field.Label, Type: field.Type, Unit: source.Units[field.Key]})
+			}
+			for _, record := range source.Records {
+				values := map[string]DocumentValue{}
+				for key, value := range record.Values {
+					values[key] = coerceDocumentValue(fieldTypes[key], value)
+				}
+				dataset.Records = append(dataset.Records, DocumentRecord{ID: record.ID, Values: values})
+			}
+			for _, point := range source.Points {
+				values := map[string]DocumentValue{}
+				for key, value := range point.Values {
+					values[key] = coerceDocumentValue(fieldTypes[key], value)
+				}
+				dataset.Points = append(dataset.Points, DocumentPoint{At: point.At.UTC().Format(time.RFC3339), Values: values})
+			}
+			if source.Kind == "object" {
+				object := map[string]DocumentValue{}
+				for key, value := range source.Values {
+					object[key] = coerceDocumentValue(fieldTypes[key], value)
+				}
+				dataset.Value = &DocumentValue{Kind: "object", Object: object}
+			}
+			document.Datasets = append(document.Datasets, dataset)
+		}
+		return document, nil
+	}
 	var projected typedRecordProjection
 	if err := json.Unmarshal(raw, &projected); err != nil {
 		return nil, fmt.Errorf("decode projected data: %w", err)
@@ -282,7 +351,7 @@ func coerceDocumentValue(kind, raw string) DocumentValue {
 
 func compileWidgetPresentation(provider string, raw json.RawMessage) (*WidgetPresentation, error) {
 	switch provider {
-	case "website", "youtube", "clock", "date", "qrcode", "countdown", "ticker", "menu", "list", "table", "agenda", "metric", "cards", "weather":
+	case "website", "youtube", "clock", "date", "qrcode", "countdown", "ticker", "menu", "list", "table", "agenda", "metric", "cards", "weather", "spotlight", "stat_grid", "chart", "progress", "timeline", "world_clock":
 	default:
 		return nil, errors.New("widget provider is not supported")
 	}
@@ -301,6 +370,50 @@ func compileWidgetPresentation(provider string, raw json.RawMessage) (*WidgetPre
 		SchemaVersion: PresentationSchemaVersion, Kind: "native", RequiredCapabilities: capabilities,
 		Native: &NativePresentation{Root: root},
 	}, nil
+}
+
+func compileWidgetPresentationForPreset(provider string, presetID *string, raw json.RawMessage) (*WidgetPresentation, error) {
+	presentation, err := compileWidgetPresentation(provider, raw)
+	if err != nil || presetID == nil || presentation.Native == nil {
+		return presentation, err
+	}
+	switch *presetID {
+	case "leaderboard", "queue_board":
+		prependRepeatIndex(&presentation.Native.Root)
+		presentation.RequiredCapabilities["binding.core"] = 2
+		presentation.RequiredCapabilities["collection.repeat"] = 2
+	case "status_board":
+		promoteLastTextToBadge(&presentation.Native.Root)
+		presentation.RequiredCapabilities["content.badge"] = 1
+	}
+	return presentation, nil
+}
+
+func prependRepeatIndex(node *PresentationNode) bool {
+	if node.Type == "repeat" && len(node.Children) > 0 {
+		template := &node.Children[0]
+		template.Children = append([]PresentationNode{{Type: "text", Props: map[string]any{"role": "label"}, Binding: &PresentationBinding{Source: "repeat_index", Format: "integer", Suffix: "."}}}, template.Children...)
+		return true
+	}
+	for index := range node.Children {
+		if prependRepeatIndex(&node.Children[index]) {
+			return true
+		}
+	}
+	return false
+}
+
+func promoteLastTextToBadge(node *PresentationNode) bool {
+	for index := len(node.Children) - 1; index >= 0; index-- {
+		if node.Children[index].Type == "text" {
+			node.Children[index].Type = "badge"
+			return true
+		}
+		if promoteLastTextToBadge(&node.Children[index]) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) CompileWidgetPresentation(provider string, raw json.RawMessage) (*WidgetPresentation, error) {
@@ -369,6 +482,21 @@ func compileNativeRoot(provider string, c map[string]any) (PresentationNode, map
 	case "qrcode":
 		surface.Children = []PresentationNode{{Type: "qr_code", Props: map[string]any{"errorCorrection": stringValue(c, "errorCorrection", "medium")}, Binding: &PresentationBinding{Source: "literal", Value: stringValue(c, "value", "")}}, text(PresentationBinding{Source: "literal", Value: stringValue(c, "label", "")}, "label")}
 		caps["content.qr_code"] = 1
+	case "world_clock":
+		zones, _ := c["zones"].([]any)
+		children := make([]PresentationNode, 0, len(zones))
+		for _, rawZone := range zones {
+			zone, _ := rawZone.(map[string]any)
+			timeNode := text(PresentationBinding{Source: "environment", Path: "currentTime", Format: "time:" + stringValue(c, "format", "12") + ":" + strconv.FormatBool(boolValue(c["showSeconds"])) + ":" + stringValue(zone, "timezone", "UTC")}, "metric")
+			zoneChildren := []PresentationNode{text(PresentationBinding{Source: "literal", Value: stringValue(zone, "label", "")}, "label"), timeNode}
+			if boolValue(c["showDate"]) {
+				zoneChildren = append(zoneChildren, text(PresentationBinding{Source: "environment", Path: "currentTime", Format: "date:medium:" + stringValue(zone, "timezone", "UTC")}, "body"))
+			}
+			children = append(children, PresentationNode{Type: "column", Props: map[string]any{"card": true}, Children: zoneChildren})
+		}
+		surface.Children = []PresentationNode{{Type: "grid", Props: map[string]any{"columns": intValue(c["columns"], 2)}, Children: children}}
+		caps["layout.grid"] = 1
+		caps["environment.time"] = 1
 	case "ticker":
 		fields := stringSlice(c["fields"])
 		if len(fields) == 0 {
@@ -376,6 +504,86 @@ func compileNativeRoot(provider string, c map[string]any) (PresentationNode, map
 		}
 		surface.Children = []PresentationNode{{Type: "marquee", Props: map[string]any{"color": foreground, "speed": stringValue(c, "speed", "normal"), "direction": stringValue(c, "direction", "left")}, Binding: &PresentationBinding{Source: "dataset", Dataset: stringValue(c, "dataSourceId", "") + ":records", Fields: fields, Separator: stringValue(c, "separator", " • "), Fallback: stringValue(c, "emptyState", "")}}}
 		caps["content.marquee"] = 1
+	case "spotlight":
+		data := stringValue(c, "dataSourceId", "") + ":records"
+		children := []PresentationNode{}
+		if variant := stringValue(c, "imageVariantId", ""); variant != "" {
+			children = append(children, PresentationNode{Type: "asset_image", Props: map[string]any{"variantId": variant, "fit": "cover"}})
+			caps["content.asset_image"] = 2
+		}
+		if field := stringValue(c, "badgeField", ""); field != "" {
+			children = append(children, PresentationNode{Type: "badge", Binding: &PresentationBinding{Source: "dataset", Dataset: data, Path: field}})
+			caps["content.badge"] = 1
+		}
+		for _, roleField := range [][2]string{{"title", stringValue(c, "titleField", "")}, {"subtitle", stringValue(c, "subtitleField", "")}, {"body", stringValue(c, "bodyField", "")}, {"label", stringValue(c, "dateField", "")}} {
+			if roleField[1] != "" {
+				children = append(children, text(PresentationBinding{Source: "dataset", Dataset: data, Path: roleField[1], Fallback: stringValue(c, "emptyState", "")}, roleField[0]))
+			}
+		}
+		surface.Children = []PresentationNode{{Type: "column", Children: children}}
+		caps["layout.column"] = 1
+	case "stat_grid":
+		data := stringValue(c, "dataSourceId", "") + ":records"
+		metrics, _ := c["metrics"].([]any)
+		children := make([]PresentationNode, 0, len(metrics))
+		for _, rawMetric := range metrics {
+			metric, _ := rawMetric.(map[string]any)
+			labelBinding := PresentationBinding{Source: "literal", Value: stringValue(metric, "label", "")}
+			if field := stringValue(metric, "labelField", ""); field != "" {
+				labelBinding = PresentationBinding{Source: "dataset", Dataset: data, Path: field}
+			}
+			children = append(children, PresentationNode{Type: "column", Props: map[string]any{"card": true}, Children: []PresentationNode{
+				text(labelBinding, "label"),
+				text(PresentationBinding{Source: "dataset", Dataset: data, Path: stringValue(metric, "valueField", ""), Format: stringValue(metric, "format", "number"), Prefix: stringValue(metric, "prefix", ""), Suffix: stringValue(metric, "suffix", ""), Fallback: stringValue(c, "emptyState", "")}, "metric"),
+			}})
+		}
+		surface.Children = []PresentationNode{{Type: "grid", Props: map[string]any{"columns": intValue(c["columns"], 2)}, Children: children}}
+		caps["layout.grid"] = 1
+	case "chart":
+		series, _ := c["series"].([]any)
+		fields, labels, colors := []string{}, []string{}, []string{}
+		for _, rawSeries := range series {
+			value, _ := rawSeries.(map[string]any)
+			fields = append(fields, stringValue(value, "field", ""))
+			labels = append(labels, stringValue(value, "label", stringValue(value, "field", "")))
+			colors = append(colors, stringValue(value, "color", ""))
+		}
+		nodeType := stringValue(c, "chartType", "line") + "_chart"
+		dataset := stringValue(c, "dataSourceId", "") + ":" + stringValue(c, "dataset", "records")
+		surface.Children = []PresentationNode{{Type: nodeType, Props: map[string]any{"seriesLabels": labels, "seriesColors": colors, "categoryField": stringValue(c, "categoryField", ""), "timeField": stringValue(c, "timeField", ""), "showLegend": boolValue(c["showLegend"]), "showAxes": boolValue(c["showAxes"]), "minimum": c["minimum"], "maximum": c["maximum"]}, Binding: &PresentationBinding{Source: "dataset", Dataset: dataset, Fields: fields}}}
+		caps["content."+nodeType] = 2
+	case "progress":
+		data := stringValue(c, "dataSourceId", "") + ":records"
+		label := PresentationBinding{Source: "literal", Value: stringValue(c, "label", "")}
+		if field := stringValue(c, "labelField", ""); field != "" {
+			label = PresentationBinding{Source: "dataset", Dataset: data, Path: field}
+		}
+		target := c["staticTarget"]
+		if field := stringValue(c, "targetField", ""); field != "" {
+			target = field
+		}
+		surface.Children = []PresentationNode{
+			text(label, "title"),
+			{Type: "progress", Props: map[string]any{"target": target, "targetIsField": stringValue(c, "targetField", "") != "", "showPercent": boolValue(c["showPercent"]), "completionText": stringValue(c, "completionText", "")}, Binding: &PresentationBinding{Source: "dataset", Dataset: data, Path: stringValue(c, "valueField", "")}},
+		}
+		caps["content.progress"] = 2
+	case "timeline":
+		data := stringValue(c, "dataSourceId", "") + ":records"
+		children := []PresentationNode{text(PresentationBinding{Source: "repeat", Path: stringValue(c, "dateField", "")}, "label"), text(PresentationBinding{Source: "repeat", Path: stringValue(c, "titleField", "")}, "title")}
+		if field := stringValue(c, "bodyField", ""); field != "" {
+			children = append(children, text(PresentationBinding{Source: "repeat", Path: field}, "body"))
+		}
+		if field := stringValue(c, "statusField", ""); field != "" {
+			children = append(children, PresentationNode{Type: "badge", Binding: &PresentationBinding{Source: "repeat", Path: field}})
+		}
+		repeat := PresentationNode{Type: "repeat", Repeat: &PresentationRepeat{Dataset: data, Limit: intValue(c["maximumItems"], 8)}, Children: []PresentationNode{{Type: "row", Children: children}}}
+		container := "column"
+		if stringValue(c, "orientation", "vertical") == "horizontal" {
+			container = "row"
+		}
+		surface.Children = []PresentationNode{{Type: container, Children: []PresentationNode{repeat}}}
+		caps["collection.repeat"] = 2
+		caps["layout."+container] = 1
 	default:
 		dataSourceID := stringValue(c, "dataSourceId", "")
 		limit := intValue(c["maximumItems"], 20)

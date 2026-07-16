@@ -35,6 +35,10 @@ Website defaults are `TILECAST_WEBSITE_ALLOW_PRIVATE_HTTP=false`, `TILECAST_WEBS
 
 Structured Source fetch defaults are `TILECAST_SOURCE_ALLOW_PRIVATE_NETWORKS=false`, a 15-second timeout, 2 MiB response limit, three redirects, five-minute minimum refresh, and one-day maximum refresh. Enable private networks only when administrators intentionally need an internal ICS endpoint. The fetcher never uses calendar credentials or environment HTTP proxies.
 
+Air Quality uses `TILECAST_AIR_QUALITY_BASE_URL`, defaulting to `https://air-quality-api.open-meteo.com`. The hosted endpoint is accepted only when a source explicitly acknowledges noncommercial use. Commercial installations must point this setting at an operator-managed self-hosted compatible endpoint; Tilecast does not store Open-Meteo API keys.
+
+Transit accepts public GTFS Static ZIP and GTFS Realtime protobuf feeds. Static archives are cached for 6–168 hours while realtime departures refresh every 30–300 seconds. CAP Alerts accepts public CAP 1.2 XML or bounded Atom/RSS indexes.
+
 Weather Data Sources are optional and make outbound HTTPS requests from Tilecast Server to MET Norway. Each Weather source stores a contact email or HTTPS URL for the required identifying User-Agent, uses conditional cache headers, keeps last-known-good prepared records, and projects “Data from MET Norway” attribution. Coordinates and contact details never enter Player manifests. Weather does not become a required Tilecast cloud dependency.
 
 Deploy the v13-capable Player before the declarative server/dashboard release. The server remains in dual-projection mode: capability-reporting Players receive v13 while older Players continue receiving v11/v12. Presentation compiler catalog changes invalidate manifests automatically and do not install code on Players.

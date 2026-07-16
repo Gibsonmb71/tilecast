@@ -2,7 +2,7 @@ import { Select } from "../components/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Grid2X2, List, Plus } from "lucide-react";
 import { useState } from "react";
-import { useNavigate, useParams } from "react-router";
+import { useLocation, useNavigate, useParams } from "react-router";
 import { api, ApiError } from "../api/client";
 import type { Asset, WidgetProvider } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
@@ -36,6 +36,12 @@ const providers: WidgetProvider[] = [
   "metric",
   "cards",
   "weather",
+  "spotlight",
+  "stat_grid",
+  "chart",
+  "progress",
+  "timeline",
+  "world_clock",
 ];
 
 export function WidgetsPage() {
@@ -166,6 +172,7 @@ export function WidgetsPage() {
 export function WidgetEditorPage() {
   const auth = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const { id, provider: providerParam } = useParams();
   const csrf = auth.status?.csrfToken ?? "";
   const widget = useQuery({
@@ -176,6 +183,8 @@ export function WidgetEditorPage() {
   const asset = widget.data;
   const provider = (providerParam ?? asset?.widget?.provider) as
     WidgetProvider | undefined;
+  const presetId = new URLSearchParams(location.search).get("preset") as
+    import("../api/types").WidgetPreset | null;
   const close = () => void navigate("/widgets");
   const saved = (value: Asset) => {
     void navigate(`/widgets/${value.id}`, { replace: true });
@@ -187,7 +196,11 @@ export function WidgetEditorPage() {
         <WidgetProviderGallery
           page
           onClose={close}
-          onChoose={(choice) => void navigate(`/widgets/new/${choice}`)}
+          onChoose={(choice, preset) =>
+            void navigate(
+              `/widgets/new/${choice}${preset ? `?preset=${preset}` : ""}`,
+            )
+          }
         />
       </section>
     );
@@ -219,7 +232,11 @@ export function WidgetEditorPage() {
       ) : provider === "youtube" ? (
         <YouTubeSourceEditor {...common} />
       ) : (
-        <NativeAppEditor {...common} provider={provider} />
+        <NativeAppEditor
+          {...common}
+          provider={provider}
+          presetId={asset?.widget?.presetId ?? presetId ?? undefined}
+        />
       )}
     </section>
   );

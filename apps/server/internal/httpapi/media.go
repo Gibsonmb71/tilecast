@@ -469,6 +469,33 @@ func (s *server) previewDataSource(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"data": preview})
 		return
 	}
+	if provider == "transit" || provider == "cap_alerts" || provider == "air_quality" {
+		normalizer, err := s.media.DataSourceNormalizer(provider)
+		if err != nil {
+			s.writeMediaError(w, r, err)
+			return
+		}
+		normalized, err := normalizer.Normalize(r.Context(), body.Configuration)
+		if err != nil {
+			s.writeMediaError(w, r, err)
+			return
+		}
+		var preview any
+		switch provider {
+		case "transit":
+			preview, _, err = s.media.RefreshTransitPreview(r.Context(), normalized.(media.TransitSourceConfig))
+		case "cap_alerts":
+			preview, _, err = s.media.RefreshCAPPreview(r.Context(), normalized.(media.CAPAlertsSourceConfig))
+		case "air_quality":
+			preview, _, err = s.media.RefreshAirQualityPreview(r.Context(), normalized.(media.AirQualitySourceConfig))
+		}
+		if err != nil {
+			s.writeMediaError(w, r, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"data": preview})
+		return
+	}
 	if provider != "rss" && provider != "atom" && provider != "json" && provider != "csv" {
 		writeError(w, http.StatusNotFound, "data_source_provider_not_found", "The requested Data Source provider was not found.")
 		return

@@ -10,6 +10,8 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import org.tilecast.player.data.CachedAsset
 import org.tilecast.player.data.PlayerDatabase
 import org.tilecast.player.data.StoredManifest
@@ -113,6 +115,13 @@ class ManifestSyncManager(
             }
 		}.distinctBy { it.variantId }.toMutableList()
 		manifest.websites.mapNotNull{it.fallbackVariantId?.let(byVariant::get)}.forEach{if(explicit.none{x->x.variantId==it.variantId})explicit+=it}
+		fun presentationAssets(node: org.tilecast.player.network.PresentationNode): List<String> {
+			val own = if (node.type == "asset_image") listOfNotNull(node.props["variantId"]?.jsonPrimitive?.contentOrNull) else emptyList()
+			return own + node.children.flatMap(::presentationAssets)
+		}
+		manifest.widgets.flatMap { widget -> widget.presentation?.native?.root?.let(::presentationAssets).orEmpty() }
+			.mapNotNull(byVariant::get)
+			.forEach { asset -> if (explicit.none { it.variantId == asset.variantId }) explicit += asset }
 		val media=mediaDirectory();val used=media.walkTopDown().filter{it.isFile}.sumOf{it.length()};var remaining=minOf((cacheLimitBytes-used).coerceAtLeast(0),(media.usableSpace-minimumFreeBytes).coerceAtLeast(0))-explicit.sumOf{it.fileSize}
 		items.filter{it.deliveryPolicy=="automatic"}.mapNotNull{it.variantId?.let(byVariant::get)}.filter{it.mimeType.startsWith("video/")&&it.fileSize<=automaticVideoThresholdBytes}.distinctBy{it.variantId}.forEach{if(it.fileSize<=remaining){explicit+=it;remaining-=it.fileSize}}
 		return explicit
@@ -241,7 +250,7 @@ class ManifestSyncManager(
 			require(dataset.fields.all{it.type in setOf("text","number","integer","percent","currency","boolean","date","datetime","duration","url","asset","null")})
 			dataset.records.forEach{record->require(record.id.length in 1..80&&record.values.size<=16);record.values.values.forEach{validateValue(it,0)}}
 			dataset.scalar?.let{validateValue(it,0)};dataset.value?.let{validateValue(it,0)}
-			dataset.points.forEach{point->Instant.parse(point.at);validateValue(point.value,0)}
+			dataset.points.forEach{point->Instant.parse(point.at);require((point.value!=null) xor point.values.isNotEmpty());point.value?.let{validateValue(it,0)};require(point.values.size<=16);point.values.values.forEach{validateValue(it,0)}}
 			dataset.dateSelection?.let{selection->require(selection.field.length<=80&&selection.mode in setOf("today","tomorrow","next_available","current_week","custom_range"));java.time.ZoneId.of(selection.timezone)}
 		}
 	}
@@ -268,6 +277,13 @@ class ManifestSyncManager(
 			fun visit(value:org.tilecast.player.network.PresentationNode,depth:Int){
 				require(depth<=24);nodes++;require(nodes<=500)
 				require(value.type in setOf("surface","box","row","column","stack","grid","spacer","divider","text","icon","asset_image","badge","progress","qr_code","marquee","line_chart","bar_chart","donut_chart","repeat","conditional","grouped_sections"))
+				value.binding?.let { binding ->
+					require(binding.source in setOf("literal","dataset","repeat","repeat_index","environment"))
+					require(binding.fields.size <= 16 && binding.value.length <= 4096 && binding.path.length <= 180)
+				}
+				value.condition?.let { condition ->
+					require(condition.op in setOf("equals","not_equals","empty","not_empty","greater_than","greater_or_equal","less_than","less_or_equal","before","after"))
+				}
 				if(value.type=="marquee")animations++
 				value.repeat?.let{repeat->require(repeat.limit in 1..200&&repeat.dataset.substringBefore(':') in dataSources)}
 				value.children.forEach{visit(it,depth+1)}

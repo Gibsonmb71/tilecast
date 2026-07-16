@@ -25,4 +25,24 @@ class DeclarativeContractTest {
         )
         assertTrue(presentation.requiredCapabilities.all { (name, version) -> (PresentationCapabilities.native[name] ?: 0) >= version })
     }
+
+    @Test
+    fun decodesMultiSeriesTimeDataAndAdvancedBindings() {
+        val document = json.decodeFromString<DataDocument>(
+            """{"schemaVersion":1,"datasets":[{"id":"hourly","kind":"time_series","fields":[{"key":"pm2_5","label":"PM2.5","type":"number"},{"key":"aqi","label":"AQI","type":"integer"}],"points":[{"at":"2026-07-16T12:00:00Z","values":{"pm2_5":{"kind":"number","number":8.5},"aqi":{"kind":"integer","integer":42}}}],"cache":{"usingCachedData":false,"unavailable":false}}]}"""
+        )
+        assertEquals(8.5, document.datasets.single().points.single().values.getValue("pm2_5").number!!, 0.0)
+        val presentation = json.decodeFromString<WidgetPresentation>(
+            """{"schemaVersion":1,"kind":"native","requiredCapabilities":{"content.line_chart":2,"binding.core":2},"native":{"root":{"type":"line_chart","binding":{"source":"dataset","dataset":"source:hourly","fields":["pm2_5","aqi"]}}}}"""
+        )
+        assertTrue(presentation.requiredCapabilities.all { (name, version) -> (PresentationCapabilities.native[name] ?: 0) >= version })
+    }
+
+    @Test
+    fun advancedPrimitiveCapabilitiesAreVersioned() {
+        assertTrue((PresentationCapabilities.native["content.asset_image"] ?: 0) >= 2)
+        assertTrue((PresentationCapabilities.native["content.progress"] ?: 0) >= 2)
+        assertTrue((PresentationCapabilities.native["content.donut_chart"] ?: 0) >= 2)
+        assertTrue((PresentationCapabilities.native["collection.conditional"] ?: 0) >= 2)
+    }
 }

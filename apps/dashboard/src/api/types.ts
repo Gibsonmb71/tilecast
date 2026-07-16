@@ -729,9 +729,24 @@ export type WidgetProvider =
   | "agenda"
   | "metric"
   | "cards"
-  | "weather";
+  | "weather"
+  | "spotlight"
+  | "stat_grid"
+  | "chart"
+  | "progress"
+  | "timeline"
+  | "world_clock";
 export type DataSourceProvider =
-  "calendar" | "rss" | "atom" | "json" | "csv" | "manual" | "weather";
+  | "calendar"
+  | "rss"
+  | "atom"
+  | "json"
+  | "csv"
+  | "manual"
+  | "weather"
+  | "transit"
+  | "cap_alerts"
+  | "air_quality";
 export type ProviderCatalogEntry = {
   id: WidgetProvider | DataSourceProvider;
   role: "widget" | "data_source";
@@ -748,7 +763,7 @@ export type ProviderCatalog = {
   providers: ProviderCatalogEntry[];
 };
 export type PresentationBinding = {
-  source: "literal" | "dataset" | "repeat" | "environment";
+  source: "literal" | "dataset" | "repeat" | "repeat_index" | "environment";
   dataset?: string;
   path?: string;
   value?: string;
@@ -783,6 +798,7 @@ export type WidgetPresentation = {
 };
 export type Widget = {
   provider: WidgetProvider;
+  presetId?: WidgetPreset;
   configVersion: number;
   configuration:
     | WebsiteConfig
@@ -795,10 +811,24 @@ export type Widget = {
     | DisplayWidgetConfig
     | MetricWidgetConfig
     | CardsWidgetConfig
-    | WeatherWidgetConfig;
+    | WeatherWidgetConfig
+    | SpotlightWidgetConfig
+    | StatGridWidgetConfig
+    | ChartWidgetConfig
+    | ProgressWidgetConfig
+    | TimelineWidgetConfig
+    | WorldClockWidgetConfig;
 };
+export type WidgetPreset =
+  | "leaderboard"
+  | "status_board"
+  | "queue_board"
+  | "schedule_departures"
+  | "opening_hours"
+  | "directory";
 export type WidgetInput = {
   provider: WidgetProvider;
+  presetId?: WidgetPreset;
   name: string;
   description: string;
   configuration:
@@ -812,7 +842,13 @@ export type WidgetInput = {
     | DisplayWidgetConfig
     | MetricWidgetConfig
     | CardsWidgetConfig
-    | WeatherWidgetConfig;
+    | WeatherWidgetConfig
+    | SpotlightWidgetConfig
+    | StatGridWidgetConfig
+    | ChartWidgetConfig
+    | ProgressWidgetConfig
+    | TimelineWidgetConfig
+    | WorldClockWidgetConfig;
 };
 export type DataSourceField = {
   key: string;
@@ -829,7 +865,10 @@ export type DataSource = {
     | CalendarConfig
     | StructuredSourceConfig
     | ManualSourceConfig
-    | WeatherSourceConfig;
+    | WeatherSourceConfig
+    | TransitSourceConfig
+    | CAPAlertsSourceConfig
+    | AirQualitySourceConfig;
   status: string;
   cachedRecordCount: number;
   createdAt: string;
@@ -846,7 +885,10 @@ export type DataSourceDetail = {
     | CalendarConfig
     | StructuredSourceConfig
     | ManualSourceConfig
-    | WeatherSourceConfig;
+    | WeatherSourceConfig
+    | TransitSourceConfig
+    | CAPAlertsSourceConfig
+    | AirQualitySourceConfig;
   creator?: { id: string; name: string };
   createdAt: string;
   updatedAt: string;
@@ -866,7 +908,10 @@ export type DataSourceInput = {
     | CalendarConfig
     | StructuredSourceConfig
     | ManualSourceConfig
-    | WeatherSourceConfig;
+    | WeatherSourceConfig
+    | TransitSourceConfig
+    | CAPAlertsSourceConfig
+    | AirQualitySourceConfig;
 };
 export type DataSourceListResult = {
   items: DataSource[];
@@ -953,6 +998,41 @@ export type WeatherSourceConfig = {
   refreshIntervalSeconds: number;
   stalenessLimitHours: number;
 };
+export type TransitSourceConfig = {
+  staticUrl: string;
+  tripUpdatesUrl: string;
+  serviceAlertsUrl?: string;
+  stopIds: string[];
+  routeIds?: string[];
+  timezone: string;
+  maximumDepartures: number;
+  realtimeRefreshSeconds: number;
+  staticRefreshHours: number;
+  stalenessLimitMinutes: number;
+};
+export type CAPAlertsSourceConfig = {
+  url: string;
+  feedMode: "auto" | "cap" | "index";
+  preferredLanguage?: string;
+  minimumSeverity: "unknown" | "minor" | "moderate" | "severe" | "extreme";
+  includeAreaKeywords?: string[];
+  excludeAreaKeywords?: string[];
+  maximumAlerts: number;
+  refreshIntervalSeconds: number;
+  stalenessLimitHours: number;
+};
+export type AirQualitySourceConfig = {
+  locationLabel: string;
+  latitude: number;
+  longitude: number;
+  timezone: string;
+  aqiStandard: "us" | "european";
+  pollutants: string[];
+  forecastHours: number;
+  nonCommercialAccepted: boolean;
+  refreshIntervalSeconds: number;
+  stalenessLimitHours: number;
+};
 export type TypedRecordData = {
   fields: DataSourceField[];
   records: { id: string; values: Record<string, string> }[];
@@ -963,6 +1043,17 @@ export type TypedRecordData = {
   dateSelection?: DateSelection;
   dateField?: string;
   attribution?: string;
+};
+export type TypedDatasetPayload = {
+  datasets: {
+    id: string;
+    kind: "records" | "time_series" | "object";
+    fields?: DataSourceField[];
+    records?: { id: string; values: Record<string, string> }[];
+    points?: { at: string; values: Record<string, string> }[];
+    values?: Record<string, string>;
+    attribution?: string;
+  }[];
 };
 export type ClockWidgetConfig = {
   timezone: string;
@@ -1109,6 +1200,73 @@ export type WeatherWidgetConfig = {
   backgroundColor: string;
   textScale?: number;
   contentPadding?: number;
+};
+export type WidgetVisualConfig = {
+  foregroundColor: string;
+  backgroundColor: string;
+  textScale?: number;
+  contentPadding?: number;
+  emptyState?: string;
+};
+export type SpotlightWidgetConfig = WidgetVisualConfig & {
+  dataSourceId: string;
+  titleField: string;
+  subtitleField?: string;
+  bodyField?: string;
+  badgeField?: string;
+  dateField?: string;
+  imageAssetId?: string;
+};
+export type StatGridWidgetConfig = WidgetVisualConfig & {
+  dataSourceId: string;
+  metrics: {
+    label?: string;
+    labelField?: string;
+    valueField: string;
+    format?: "number" | "integer" | "percent" | "currency";
+    precision?: number;
+    prefix?: string;
+    suffix?: string;
+  }[];
+  columns: number;
+};
+export type ChartWidgetConfig = WidgetVisualConfig & {
+  dataSourceId: string;
+  dataset?: string;
+  chartType: "line" | "bar" | "donut";
+  categoryField?: string;
+  timeField?: string;
+  series: { field: string; label?: string; color?: string }[];
+  showLegend: boolean;
+  showAxes: boolean;
+  minimum?: number;
+  maximum?: number;
+};
+export type ProgressWidgetConfig = WidgetVisualConfig & {
+  dataSourceId: string;
+  valueField: string;
+  targetField?: string;
+  staticTarget?: number;
+  label?: string;
+  labelField?: string;
+  showPercent: boolean;
+  completionText?: string;
+};
+export type TimelineWidgetConfig = WidgetVisualConfig & {
+  dataSourceId: string;
+  dateField: string;
+  titleField: string;
+  bodyField?: string;
+  statusField?: string;
+  orientation: "vertical" | "horizontal";
+  maximumItems: number;
+};
+export type WorldClockWidgetConfig = WidgetVisualConfig & {
+  zones: { label: string; timezone: string }[];
+  format: "12" | "24";
+  showSeconds: boolean;
+  showDate: boolean;
+  columns: number;
 };
 export type StructuredRecord = {
   id: string;

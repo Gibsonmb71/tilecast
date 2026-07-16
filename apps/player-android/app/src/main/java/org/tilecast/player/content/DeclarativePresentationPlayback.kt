@@ -7,6 +7,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,6 +17,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -34,6 +37,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
@@ -41,6 +47,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.layout.ContentScale
+import android.graphics.BitmapFactory
+import java.io.File
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
@@ -68,7 +77,9 @@ import org.tilecast.player.network.PresentationNode
 
 data class PresentationContext(
     val datasets: Map<String, DocumentDataset>,
+    val localFiles: Map<String, String>,
     val record: DocumentRecord? = null,
+    val repeatIndex: Int = 0,
     val now: Instant = Instant.now(),
 )
 
@@ -95,7 +106,7 @@ fun DeclarativeWidgetItem(item:ManifestItem,widget: ManifestWidget, session: Pla
             }
         }
     }
-    PresentationNodeView(native.root, PresentationContext(datasets, now = now))
+    PresentationNodeView(native.root, PresentationContext(datasets, session.content.localFiles, now = now))
 }
 
 @Composable
@@ -119,20 +130,35 @@ private fun PresentationNodeView(node: PresentationNode, context: PresentationCo
         ) { node.children.forEach { PresentationNodeView(it, context) } }
         "grid" -> {
             val repeated = node.children.firstOrNull { it.type == "repeat" }
-            val records = repeated?.repeat?.let { selectedRecords(context.datasets[it.dataset], context.now).take(it.limit) }.orEmpty()
-            val template = repeated?.children?.firstOrNull()
+            if (repeated == null) {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(node.int("columns", 1).coerceIn(1, 4)),
+                    horizontalArrangement = Arrangement.spacedBy(node.int("gap", 10).dp),
+                    verticalArrangement = Arrangement.spacedBy(node.int("gap", 10).dp),
+                ) { items(node.children.size) { index -> PresentationNodeView(node.children[index], context) } }
+                return
+            }
+            val records = repeated.repeat?.let { selectedRecords(context.datasets[it.dataset], context.now).take(it.limit) }.orEmpty()
+            val template = repeated.children.firstOrNull()
             LazyVerticalGrid(
                 columns = GridCells.Fixed(node.int("columns", 1).coerceIn(1, 4)),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) { items(records, key = { it.id }) { record -> template?.let { PresentationNodeView(it, context.copy(record = record)) } } }
+            ) {
+                if (records.isEmpty()) item { Text(repeated.string("emptyState", "No information available"), color = Color.White) }
+                items(records.size, key = { records[it].id }) { index -> template?.let { PresentationNodeView(it, context.copy(record = records[index], repeatIndex = index + 1)) } }
+            }
         }
         "spacer" -> Spacer(Modifier.height(node.int("height", 8).dp))
         "divider" -> HorizontalDivider(color = node.color("color", Color.White.copy(alpha = .18f)))
         "repeat" -> {
             val repeat = node.repeat ?: return
-            selectedRecords(context.datasets[repeat.dataset], context.now).take(repeat.limit).forEach { record ->
-                node.children.forEach { PresentationNodeView(it, context.copy(record = record)) }
+            val records = selectedRecords(context.datasets[repeat.dataset], context.now).take(repeat.limit)
+            if (records.isEmpty()) {
+                Text(node.string("emptyState", "No information available"), color = Color.White)
+            }
+            records.forEachIndexed { index, record ->
+                node.children.forEach { PresentationNodeView(it, context.copy(record = record, repeatIndex = index + 1)) }
             }
         }
         "text", "badge" -> {
@@ -151,10 +177,10 @@ private fun PresentationNodeView(node: PresentationNode, context: PresentationCo
         }
         "marquee" -> MarqueeNode(node, resolve(node.binding, context))
         "qr_code" -> QRNode(resolve(node.binding, context))
-        "progress", "line_chart", "bar_chart", "donut_chart" -> {
-            val progress = resolve(node.binding, context).toFloatOrNull()?.coerceIn(0f, 1f) ?: 0f
-            LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
-        }
+        "icon" -> IconNode(node, resolve(node.binding, context))
+        "asset_image" -> AssetImageNode(node, context)
+        "progress" -> ProgressNode(node, context)
+        "line_chart", "bar_chart", "donut_chart" -> ChartNode(node, context)
         "conditional" -> node.children.forEach { PresentationNodeView(it, context) }
     }
 }
@@ -191,12 +217,18 @@ private fun resolve(binding: PresentationBinding?, context: PresentationContext)
     val raw = when (binding.source) {
         "literal" -> binding.value
         "repeat" -> context.record?.values?.get(binding.path)?.display().orEmpty()
+        "repeat_index" -> context.repeatIndex.toString()
         "dataset" -> {
             val dataset = context.datasets[binding.dataset] ?: context.datasets.values.firstOrNull()
+            if (binding.path.isNotBlank()) {
+                val objectValue = dataset?.value?.objectValue?.get(binding.path)?.display()
+                objectValue ?: selectedRecords(dataset, context.now).firstOrNull()?.values?.get(binding.path)?.display().orEmpty()
+            } else {
             selectedRecords(dataset, context.now).mapNotNull { record ->
                 binding.fields.mapNotNull { record.values[it]?.display()?.takeIf(String::isNotBlank) }
                     .joinToString(" ").takeIf(String::isNotBlank)
             }.joinToString(binding.separator)
+            }
         }
         "environment" -> formatEnvironment(binding, context.now)
         else -> ""
@@ -276,8 +308,143 @@ private fun selectedRecords(dataset: DocumentDataset?, now: Instant): List<Docum
 private fun conditionMatches(node: PresentationNode, context: PresentationContext): Boolean {
     val condition = node.condition ?: return true
     val value = resolve(condition.binding, context)
-    return when (condition.op) { "equals" -> value == condition.value; "not_equals" -> value != condition.value; "empty" -> value.isEmpty(); "not_empty" -> value.isNotEmpty(); else -> false }
+    val numeric = value.toDoubleOrNull()
+    val expected = condition.value.toDoubleOrNull()
+    val instant = parseComparableInstant(value)
+    val expectedInstant = parseComparableInstant(condition.value)
+    return when (condition.op) {
+        "equals" -> value == condition.value
+        "not_equals" -> value != condition.value
+        "empty" -> value.isEmpty()
+        "not_empty" -> value.isNotEmpty()
+        "greater_than" -> numeric != null && expected != null && numeric > expected
+        "greater_or_equal" -> numeric != null && expected != null && numeric >= expected
+        "less_than" -> numeric != null && expected != null && numeric < expected
+        "less_or_equal" -> numeric != null && expected != null && numeric <= expected
+        "before" -> instant != null && expectedInstant != null && instant.isBefore(expectedInstant)
+        "after" -> instant != null && expectedInstant != null && instant.isAfter(expectedInstant)
+        else -> false
+    }
 }
+
+@Composable
+private fun AssetImageNode(node: PresentationNode, context: PresentationContext) {
+    val path = context.localFiles[node.string("variantId", "")]
+    val bitmap = remember(path) { path?.let(BitmapFactory::decodeFile) }
+    if (bitmap != null) {
+        Image(
+            bitmap.asImageBitmap(),
+            contentDescription = node.string("contentDescription", ""),
+            modifier = Modifier.fillMaxSize(),
+            contentScale = when (node.string("fit", "contain")) {
+                "cover" -> ContentScale.Crop
+                "stretch" -> ContentScale.FillBounds
+                else -> ContentScale.Fit
+            },
+        )
+    } else {
+        Box(Modifier.fillMaxSize().background(node.color("fallbackColor", Color.DarkGray)))
+    }
+}
+
+@Composable
+private fun IconNode(node: PresentationNode, value: String) {
+    val glyph = when (value.ifBlank { node.string("name", "info") }) {
+        "check", "operational", "complete" -> "✓"
+        "warning", "degraded" -> "!"
+        "error", "down", "cancelled" -> "×"
+        "clock", "scheduled" -> "◷"
+        "location" -> "●"
+        "up" -> "↑"
+        "down_arrow" -> "↓"
+        else -> "•"
+    }
+    Text(glyph, color = node.color("color", Color.White), fontSize = node.int("fontSize", 28).sp)
+}
+
+@Composable
+private fun ProgressNode(node: PresentationNode, context: PresentationContext) {
+    val value = resolve(node.binding, context).toFloatOrNull() ?: 0f
+    val target = if (node.bool("targetIsField", false)) {
+        val field = node.string("target", "")
+        val binding = node.binding?.copy(path = field)
+        resolve(binding, context).toFloatOrNull() ?: 0f
+    } else node.float("target", 100f)
+    val ratio = if (target > 0) (value / target).coerceIn(0f, 1f) else 0f
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        LinearProgressIndicator(progress = { ratio }, modifier = Modifier.fillMaxWidth())
+        if (node.bool("showPercent", true)) {
+            Text(if (ratio >= 1f && node.string("completionText", "").isNotBlank()) node.string("completionText", "") else "${(ratio * 100).toInt()}%", color = node.color("color", Color.White), fontSize = 24.sp)
+        }
+    }
+}
+
+private data class ChartSeriesValues(val label: String, val color: Color, val values: List<Float>)
+
+@Composable
+private fun ChartNode(node: PresentationNode, context: PresentationContext) {
+    val binding = node.binding ?: return
+    val dataset = context.datasets[binding.dataset] ?: return
+    val labels = node.stringList("seriesLabels")
+    val colors = node.stringList("seriesColors")
+    val palette = listOf(Color(0xFF4DB6FF), Color(0xFFFFB547), Color(0xFF57D38C), Color(0xFFE879F9))
+    val series = binding.fields.mapIndexed { index, field ->
+        val values = if (dataset.kind == "time_series") dataset.points.mapNotNull { it.values[field]?.display()?.toFloatOrNull() }
+        else selectedRecords(dataset, context.now).mapNotNull { it.values[field]?.display()?.toFloatOrNull() }
+        ChartSeriesValues(labels.getOrNull(index).orEmpty().ifBlank { field }, parseOptionalColor(colors.getOrNull(index)) ?: palette[index % palette.size], values)
+    }.filter { it.values.isNotEmpty() }
+    if (series.isEmpty()) {
+        Text(node.string("emptyState", "No chart data available"), color = Color.White)
+        return
+    }
+    val explicitMin = node.optionalFloat("minimum")
+    val explicitMax = node.optionalFloat("maximum")
+    val minimum = explicitMin ?: minOf(0f, series.minOf { it.values.min() })
+    val maximum = explicitMax ?: maxOf(1f, series.maxOf { it.values.max() })
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Canvas(Modifier.fillMaxWidth().weight(1f)) {
+            val span = (maximum - minimum).takeIf { it > 0 } ?: 1f
+            if (node.type == "donut_chart") {
+                val totals = series.map { it.values.sum().coerceAtLeast(0f) }
+                val total = totals.sum().takeIf { it > 0 } ?: 1f
+                var start = -90f
+                totals.forEachIndexed { index, value ->
+                    val sweep = value / total * 360f
+                    drawArc(series[index].color, start, sweep, false, style = Stroke(width = size.minDimension * .18f, cap = StrokeCap.Butt))
+                    start += sweep
+                }
+            } else if (node.type == "bar_chart") {
+                val count = series.maxOf { it.values.size }.coerceAtLeast(1)
+                val groupWidth = size.width / count
+                val barWidth = groupWidth / (series.size + 1)
+                series.forEachIndexed { seriesIndex, item ->
+                    item.values.forEachIndexed { index, value ->
+                        val height = (value - minimum) / span * size.height
+                        drawRect(item.color, topLeft = androidx.compose.ui.geometry.Offset(index * groupWidth + seriesIndex * barWidth, size.height - height), size = androidx.compose.ui.geometry.Size(barWidth * .8f, height))
+                    }
+                }
+            } else {
+                series.forEach { item ->
+                    val path = Path()
+                    item.values.forEachIndexed { index, value ->
+                        val x = if (item.values.size == 1) size.width / 2 else index.toFloat() / (item.values.size - 1) * size.width
+                        val y = size.height - (value - minimum) / span * size.height
+                        if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                    }
+                    drawPath(path, item.color, style = Stroke(width = 4f, cap = StrokeCap.Round))
+                }
+            }
+        }
+        if (node.bool("showLegend", true)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                series.forEach { item -> Row(verticalAlignment = Alignment.CenterVertically) { Box(Modifier.size(10.dp).background(item.color)); Spacer(Modifier.width(5.dp)); Text(item.label, color = Color.White, fontSize = 14.sp) } }
+            }
+        }
+    }
+}
+
+private fun parseComparableInstant(value: String): Instant? =
+    runCatching { Instant.parse(value) }.getOrElse { runCatching { LocalDate.parse(value).atStartOfDay(ZoneId.of("UTC")).toInstant() }.getOrNull() }
 
 private fun DocumentValue.display(): String = when (kind) {
     "number", "percent", "currency" -> number?.toString()
@@ -293,4 +460,9 @@ private fun DocumentValue.display(): String = when (kind) {
 
 private fun PresentationNode.string(key: String, fallback: String): String = props[key]?.jsonPrimitive?.contentOrNull ?: fallback
 private fun PresentationNode.int(key: String, fallback: Int): Int = props[key]?.jsonPrimitive?.intOrNull ?: fallback
+private fun PresentationNode.float(key: String, fallback: Float): Float = props[key]?.jsonPrimitive?.contentOrNull?.toFloatOrNull() ?: fallback
+private fun PresentationNode.optionalFloat(key: String): Float? = props[key]?.jsonPrimitive?.contentOrNull?.toFloatOrNull()
+private fun PresentationNode.bool(key: String, fallback: Boolean): Boolean = props[key]?.jsonPrimitive?.booleanOrNull ?: fallback
+private fun PresentationNode.stringList(key: String): List<String> = (props[key] as? kotlinx.serialization.json.JsonArray)?.mapNotNull { it.jsonPrimitive.contentOrNull }.orEmpty()
 private fun PresentationNode.color(key: String, fallback: Color): Color = runCatching { Color(android.graphics.Color.parseColor(string(key, ""))) }.getOrDefault(fallback)
+private fun parseOptionalColor(value: String?): Color? = value?.takeIf(String::isNotBlank)?.let { runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull() }
