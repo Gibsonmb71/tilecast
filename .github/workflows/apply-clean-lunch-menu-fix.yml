@@ -76,7 +76,7 @@ jobs:
       - name: Verify Studio
         working-directory: apps/dashboard
         run: |
-          npm run format:check
+          npx prettier --check src
           npm run lint
           npm test -- --run
           npm run build
