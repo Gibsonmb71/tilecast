@@ -93,6 +93,28 @@ internal class ActivityQueueStore(
     }
 }
 
+internal class ActivityRetryBackoff(
+    private val minimumDelayMs: Long = 5_000,
+    private val maximumDelayMs: Long = 300_000,
+) {
+    private var delayMs = minimumDelayMs
+    private var nextAttemptAt = 0L
+
+    fun canAttempt(nowElapsedMs: Long): Boolean = nowElapsedMs >= nextAttemptAt
+
+    fun failed(nowElapsedMs: Long) {
+        nextAttemptAt = nowElapsedMs + delayMs
+        delayMs = (delayMs * 2).coerceAtMost(maximumDelayMs)
+    }
+
+    fun succeeded() {
+        delayMs = minimumDelayMs
+        nextAttemptAt = 0L
+    }
+
+    fun nextAttemptAtElapsedMs(): Long = nextAttemptAt
+}
+
 class PlayerActivityQueue private constructor(
     context: Context,
     private val api: TilecastApi = TilecastApi(),
@@ -100,6 +122,7 @@ class PlayerActivityQueue private constructor(
     private val app = context.applicationContext
     private val store = ActivityQueueStore(File(app.filesDir, "activity/player-activity.json"))
     private val flushMutex = Mutex()
+    private val retryBackoff = ActivityRetryBackoff()
     private val persistenceDispatcher = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "tilecast-activity-queue").apply { isDaemon = true }
     }.asCoroutineDispatcher()
@@ -108,7 +131,7 @@ class PlayerActivityQueue private constructor(
     init {
         persistenceScope.launch {
             while (true) {
-                delay(60_000)
+                delay(5_000)
                 runCatching { flushConfigured() }
             }
         }
@@ -184,16 +207,30 @@ class PlayerActivityQueue private constructor(
 
     suspend fun flushConfigured() = withContext(Dispatchers.IO) {
         flushMutex.withLock {
+            val now = SystemClock.elapsedRealtime()
+            if (!retryBackoff.canAttempt(now)) return@withLock
             val configuration = ConfigurationRepository(PlayerDatabase.get(app).configuration()).getOrCreate()
             val serverUrl = configuration.serverUrl ?: return@withLock
             val credential = KeystoreCredentialStore(app).read() ?: return@withLock
             while (true) {
                 val batch = store.peek(100)
-                if (batch.isEmpty()) return@withLock
-                val response = runCatching { api.activityEvents(serverUrl, credential, PlayerActivityBatch(batch)) }.getOrElse { return@withLock }
+                if (batch.isEmpty()) {
+                    retryBackoff.succeeded()
+                    return@withLock
+                }
+                val response = runCatching {
+                    api.activityEvents(serverUrl, credential, PlayerActivityBatch(batch))
+                }.getOrElse {
+                    retryBackoff.failed(SystemClock.elapsedRealtime())
+                    return@withLock
+                }
                 val acknowledged = response.acknowledgedEventIds.toSet()
-                if (acknowledged.isEmpty()) return@withLock
+                if (acknowledged.isEmpty()) {
+                    retryBackoff.failed(SystemClock.elapsedRealtime())
+                    return@withLock
+                }
                 store.acknowledge(acknowledged)
+                retryBackoff.succeeded()
                 if (batch.size < 100) return@withLock
             }
         }
