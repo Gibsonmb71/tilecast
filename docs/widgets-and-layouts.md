@@ -69,7 +69,13 @@ Date-aware Data Sources store a mapped date field, a fixed or detected format, a
 
 The Player manifest projects Widgets and Data Sources as separate arrays. Manifest v12 normalizes every Data Source into typed field definitions and bounded records, with cache state, optional date-selection policy, and optional attribution. The Player renders Widgets natively, shares one dataset across consumers, continues date-aware selection locally, and preserves offline playback. Players supporting v12 continue accepting cached v11 manifests.
 
+Manifest v13 adds a stable declarative runtime boundary. Data Sources project provider-neutral scalar, record, time-series, list, or object datasets. Native Widgets compile to a closed, non-executable tree of layout, content, and bounded collection nodes. Website and YouTube Widgets compile to constrained web descriptors with explicit hosts, timeouts, fallback behavior, and lifecycle. The Player dispatches on presentation kind and node type rather than provider names.
+
+Provider creation remains limited to Tilecast releases. Studio does not expose raw presentation JSON, uploaded scripts, arbitrary templates, or third-party runtime code. New providers using existing data kinds, nodes, formatters, and web capabilities therefore need only a server and Studio release; genuinely new native primitives still require a capability-bearing Player update.
+
 Presentations containing only legacy Widget configurations continue using manifest v11. Saving a generalized data-driven Widget upgrades it to configuration version 2 and requires manifest v12. Studio refuses to assign v12 content to a screen or synchronized group until every target reports a compatible Player version.
+
+The v13-compatible Player reports presentation schema versions, native capability identifiers and versions, web runtime version, and bundle size limits. The server emits v13 only after that report and retains v11/v12 dual projection for staged upgrades.
 
 ## Deletion and usage
 

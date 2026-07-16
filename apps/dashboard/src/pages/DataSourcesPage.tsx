@@ -226,6 +226,14 @@ function DataSourceProviderGallery({
   onClose: () => void;
   page?: boolean;
 }) {
+  const catalog = useQuery({
+    queryKey: ["provider-catalog"],
+    queryFn: api.providerCatalog,
+    staleTime: 5 * 60_000,
+  });
+  const sourceCount =
+    catalog.data?.providers.filter((entry) => entry.role === "data_source")
+      .length ?? 0;
   return (
     <div className="details-backdrop" role={page ? undefined : "presentation"}>
       <section
@@ -239,7 +247,8 @@ function DataSourceProviderGallery({
             <h2 id="data-source-gallery-title">Create Data Source</h2>
             <p>
               Choose what you are connecting. Every provider uses the same
-              compact, predictable setup pattern.
+              compact, predictable setup pattern. {sourceCount || 7} typed
+              projectors are available in the current server catalog.
             </p>
           </div>
           <button className="icon-button" aria-label="Close" onClick={onClose}>

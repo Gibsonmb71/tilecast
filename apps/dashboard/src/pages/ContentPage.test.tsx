@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Asset, User } from "../api/types";
 import { WidgetProviderGallery } from "../content/SourceEditors";
@@ -138,7 +139,15 @@ describe("content library", () => {
 
   it("offers the built-in Website and YouTube Widget providers", () => {
     const choose = vi.fn();
-    render(<WidgetProviderGallery onChoose={choose} onClose={vi.fn()} />);
+    render(
+      <QueryClientProvider
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      >
+        <WidgetProviderGallery onChoose={choose} onClose={vi.fn()} />
+      </QueryClientProvider>,
+    );
     fireEvent.click(screen.getByRole("button", { name: /YouTube/ }));
     expect(choose).toHaveBeenCalledWith("youtube");
     expect(screen.getByText(/Display an approved webpage/)).toBeInTheDocument();

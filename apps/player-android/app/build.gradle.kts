@@ -15,7 +15,7 @@ android {
         minSdk = 23
         targetSdk = 35
         // Keep versionCode monotonic for signed GitHub releases.
-        versionCode = 22
+        versionCode = 23
         versionName = "0.13.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true

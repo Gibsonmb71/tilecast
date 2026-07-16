@@ -15,6 +15,31 @@ import (
 	"github.com/tilecast/tilecast/apps/server/internal/media"
 )
 
+func (s *server) providerCatalog(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"revision": 1, "providers": media.ProviderCatalog()}})
+}
+
+func (s *server) compileWidgetPreview(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Provider      string          `json:"provider"`
+		Configuration json.RawMessage `json:"configuration"`
+	}
+	if err := decodeJSON(w, r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	if s.playlists == nil {
+		writeError(w, http.StatusServiceUnavailable, "runtime_unavailable", "The presentation compiler is unavailable.")
+		return
+	}
+	presentation, err := s.playlists.CompileWidgetPresentation(body.Provider, body.Configuration)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_presentation", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": presentation})
+}
+
 type createUploadRequest struct {
 	Filename  string `json:"filename"`
 	MIMEType  string `json:"mimeType"`

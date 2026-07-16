@@ -182,11 +182,12 @@ type ManifestSyncGroup struct {
 // carries display settings only; a data-driven widget references a Data Source by id and
 // never embeds the cached dataset.
 type ManifestWidget struct {
-	AssetID       uuid.UUID       `json:"assetId"`
-	Name          string          `json:"name"`
-	Provider      string          `json:"provider"`
-	ConfigVersion int             `json:"configVersion"`
-	Configuration json.RawMessage `json:"configuration"`
+	AssetID       uuid.UUID           `json:"assetId"`
+	Name          string              `json:"name"`
+	Provider      string              `json:"provider,omitempty"`
+	ConfigVersion int                 `json:"configVersion,omitempty"`
+	Configuration json.RawMessage     `json:"configuration,omitempty"`
+	Presentation  *WidgetPresentation `json:"presentation,omitempty"`
 }
 
 // ManifestDataSource is a Data Source projected into the manifest exactly once and shared
@@ -195,9 +196,10 @@ type ManifestWidget struct {
 type ManifestDataSource struct {
 	ID            uuid.UUID       `json:"id"`
 	Name          string          `json:"name"`
-	Provider      string          `json:"provider"`
-	ConfigVersion int             `json:"configVersion"`
-	Configuration json.RawMessage `json:"configuration"`
+	Provider      string          `json:"provider,omitempty"`
+	ConfigVersion int             `json:"configVersion,omitempty"`
+	Configuration json.RawMessage `json:"configuration,omitempty"`
+	DataDocument  *DataDocument   `json:"dataDocument,omitempty"`
 }
 type ManifestEmergency struct {
 	ID          uuid.UUID `json:"id"`
