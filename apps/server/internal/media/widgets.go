@@ -48,7 +48,9 @@ func (p websiteWidgetProvider) Normalize(ctx context.Context, raw json.RawMessag
 	if err := decodeConfig(raw, &config); err != nil {
 		return nil, err
 	}
-	input := WebsiteInput{WebsiteConfig: config, javascriptSet: true, domStorageSet: true}
+	// normalizeWebsite also validates asset metadata. Supply a bounded placeholder here;
+	// CreateWidget and UpdateWidget apply the real name and description afterward.
+	input := WebsiteInput{Name: "Website", WebsiteConfig: config, javascriptSet: true, domStorageSet: true}
 	normalized, err := p.service.normalizeWebsite(ctx, input)
 	return normalized.WebsiteConfig, err
 }
