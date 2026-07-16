@@ -282,7 +282,9 @@ function DefinitionControl({
         onChange={(event) =>
           setValue(
             field.control === "number" || field.control === "integer"
-              ? Number(event.target.value)
+              ? event.target.value === ""
+                ? undefined
+                : Number(event.target.value)
               : field.control === "datetime" && event.target.value
                 ? new Date(event.target.value).toISOString()
                 : event.target.value,
