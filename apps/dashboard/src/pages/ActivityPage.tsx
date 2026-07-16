@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router";
-import { Search } from "lucide-react";
+import { Download, Search, SlidersHorizontal, X } from "lucide-react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
 import { OverviewTab } from "./ActivityOverviewPanel";
 import { AuditTab, EventsTab, ProofTab } from "./ActivityReportTabs";
+import { activityParams } from "./ActivityShared";
 import "./ActivityPage.css";
 
 type ActivityTab = "overview" | "proof" | "events" | "audit";
@@ -63,6 +64,64 @@ export function ActivityPage() {
     schedule,
     emergency,
   };
+  const auditFilters = { search, result, action, resourceType, actor };
+  const advancedProofFilters = [
+    { key: "media", label: "Media", value: media, setValue: setMedia },
+    { key: "widget", label: "Widget", value: widget, setValue: setWidget },
+    {
+      key: "playlist",
+      label: "Playlist",
+      value: playlist,
+      setValue: setPlaylist,
+    },
+    { key: "layout", label: "Layout", value: layout, setValue: setLayout },
+    {
+      key: "schedule",
+      label: "Schedule",
+      value: schedule,
+      setValue: setSchedule,
+    },
+    {
+      key: "emergency",
+      label: "Emergency",
+      value: emergency,
+      setValue: setEmergency,
+    },
+  ];
+  const activeAdvancedFilters = advancedProofFilters.filter(
+    (filter) => filter.value,
+  );
+  const hasActiveProofFilters = Object.values(proofFilters).some(Boolean);
+  const exportHref =
+    canExport && tab === "proof"
+      ? `/api/v1/activity/proof-of-play/export.csv?${activityParams(range, proofFilters)}`
+      : canExport && tab === "audit"
+        ? `/api/v1/activity/audit/export.csv?${activityParams(range, auditFilters)}`
+        : undefined;
+
+  function selectTab(value: ActivityTab) {
+    const next = new URLSearchParams(searchParams);
+    if (value === "overview") next.delete("tab");
+    else next.set("tab", value);
+    setSearchParams(next);
+  }
+
+  function clearAdvancedProofFilters() {
+    setMedia("");
+    setWidget("");
+    setPlaylist("");
+    setLayout("");
+    setSchedule("");
+    setEmergency("");
+  }
+
+  function clearProofFilters() {
+    setSearch("");
+    setScreen("");
+    setGroup("");
+    setResult("");
+    clearAdvancedProofFilters();
+  }
 
   return (
     <section className="activity-page">
@@ -74,35 +133,49 @@ export function ActivityPage() {
             screen events, and administrator history.
           </p>
         </div>
-        <div className="activity-range">
-          <label>
-            <span>Date range</span>
-            <select value={preset} onChange={(e) => setPreset(e.target.value)}>
-              <option value="24h">Last 24 hours</option>
-              <option value="7d">Last 7 days</option>
-              <option value="30d">Last 30 days</option>
-              <option value="custom">Custom range</option>
-            </select>
-          </label>
-          {preset === "custom" && (
-            <>
-              <label>
-                <span>From</span>
-                <input
-                  type="datetime-local"
-                  value={customFrom}
-                  onChange={(e) => setCustomFrom(e.target.value)}
-                />
-              </label>
-              <label>
-                <span>To</span>
-                <input
-                  type="datetime-local"
-                  value={customTo}
-                  onChange={(e) => setCustomTo(e.target.value)}
-                />
-              </label>
-            </>
+        <div className="activity-heading-actions">
+          <div className="activity-range">
+            <label>
+              <span>Date range</span>
+              <select
+                value={preset}
+                onChange={(e) => setPreset(e.target.value)}
+              >
+                <option value="24h">Last 24 hours</option>
+                <option value="7d">Last 7 days</option>
+                <option value="30d">Last 30 days</option>
+                <option value="custom">Custom range</option>
+              </select>
+            </label>
+            {preset === "custom" && (
+              <>
+                <label>
+                  <span>From</span>
+                  <input
+                    type="datetime-local"
+                    value={customFrom}
+                    onChange={(e) => setCustomFrom(e.target.value)}
+                  />
+                </label>
+                <label>
+                  <span>To</span>
+                  <input
+                    type="datetime-local"
+                    value={customTo}
+                    onChange={(e) => setCustomTo(e.target.value)}
+                  />
+                </label>
+              </>
+            )}
+          </div>
+          {exportHref && (
+            <a
+              className="button button--secondary activity-export"
+              href={exportHref}
+              title="Export the current date range and filters"
+            >
+              <Download size={15} /> Export CSV
+            </a>
           )}
         </div>
       </header>
@@ -128,12 +201,7 @@ export function ActivityPage() {
             key={value}
             type="button"
             aria-current={tab === value ? "page" : undefined}
-            onClick={() => {
-              const next = new URLSearchParams(searchParams);
-              if (value === "overview") next.delete("tab");
-              else next.set("tab", value);
-              setSearchParams(next);
-            }}
+            onClick={() => selectTab(value)}
           >
             {label}
           </button>
@@ -141,162 +209,194 @@ export function ActivityPage() {
       </nav>
 
       {tab !== "overview" && (
-        <div className="activity-filters">
-          <label className="activity-search">
-            <Search size={15} aria-hidden="true" />
-            <span className="visually-hidden">Search activity</span>
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search activity"
-            />
-          </label>
-          {(tab === "proof" || tab === "events") && (
-            <>
-              <select
-                aria-label="Filter by screen"
-                value={screen}
-                onChange={(e) => setScreen(e.target.value)}
-              >
-                <option value="">All screens</option>
-                {screens.data?.items.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-              <select
-                aria-label="Filter by group"
-                value={group}
-                onChange={(e) => setGroup(e.target.value)}
-              >
-                <option value="">All groups</option>
-                {groups.data?.items.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-            </>
-          )}
-          {tab === "proof" && (
-            <>
+        <div className="activity-filter-area">
+          <div className="activity-filters">
+            <label className="activity-search">
+              <Search size={15} aria-hidden="true" />
+              <span className="visually-hidden">Search activity</span>
               <input
-                value={media}
-                onChange={(e) => setMedia(e.target.value)}
-                placeholder="Media ID"
-                aria-label="Filter by Media"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={
+                  tab === "proof"
+                    ? "Search proof of play…"
+                    : tab === "events"
+                      ? "Search screen events…"
+                      : "Search audit log…"
+                }
               />
-              <input
-                value={widget}
-                onChange={(e) => setWidget(e.target.value)}
-                placeholder="Widget ID"
-                aria-label="Filter by Widget"
-              />
-              <input
-                value={playlist}
-                onChange={(e) => setPlaylist(e.target.value)}
-                placeholder="Playlist ID"
-                aria-label="Filter by Playlist"
-              />
-              <input
-                value={layout}
-                onChange={(e) => setLayout(e.target.value)}
-                placeholder="Layout ID"
-                aria-label="Filter by Layout"
-              />
-              <input
-                value={schedule}
-                onChange={(e) => setSchedule(e.target.value)}
-                placeholder="Schedule ID"
-                aria-label="Filter by Schedule"
-              />
-              <input
-                value={emergency}
-                onChange={(e) => setEmergency(e.target.value)}
-                placeholder="Emergency ID"
-                aria-label="Filter by Emergency"
-              />
-            </>
-          )}
-          {tab === "events" && (
-            <>
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-              >
-                <option value="">All categories</option>
-                {[
-                  "connectivity",
-                  "manifest",
-                  "playback",
-                  "scheduling",
-                  "commands",
-                  "reliability",
-                  "updates",
-                  "emergencies",
-                ].map((value) => (
-                  <option key={value}>{value}</option>
-                ))}
-              </select>
-              <select
-                value={severity}
-                onChange={(e) => setSeverity(e.target.value)}
-              >
-                <option value="">All severities</option>
-                {["info", "warning", "error", "critical"].map((value) => (
-                  <option key={value}>{value}</option>
-                ))}
-              </select>
-            </>
-          )}
-          {tab === "audit" && (
-            <>
-              {users.data && (
+            </label>
+            {(tab === "proof" || tab === "events") && (
+              <>
                 <select
-                  value={actor}
-                  onChange={(e) => setActor(e.target.value)}
-                  aria-label="Filter by actor"
+                  aria-label="Filter by screen"
+                  value={screen}
+                  onChange={(e) => setScreen(e.target.value)}
                 >
-                  <option value="">All actors</option>
-                  {users.data.items.map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.name}
+                  <option value="">All screens</option>
+                  {screens.data?.items.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
                     </option>
                   ))}
                 </select>
-              )}
-              <input
-                value={action}
-                onChange={(e) => setAction(e.target.value)}
-                placeholder="Action"
-                aria-label="Filter by action"
-              />
-              <input
-                value={resourceType}
-                onChange={(e) => setResourceType(e.target.value)}
-                placeholder="Resource type"
-                aria-label="Filter by resource type"
-              />
-            </>
+                <select
+                  aria-label="Filter by group"
+                  value={group}
+                  onChange={(e) => setGroup(e.target.value)}
+                >
+                  <option value="">All groups</option>
+                  {groups.data?.items.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
+            {tab === "proof" && (
+              <>
+                <ResultFilter value={result} onChange={setResult} />
+                <details className="activity-more-filters">
+                  <summary>
+                    <SlidersHorizontal size={15} />
+                    <span>More filters</span>
+                    {activeAdvancedFilters.length > 0 && (
+                      <span className="activity-filter-count">
+                        {activeAdvancedFilters.length}
+                      </span>
+                    )}
+                  </summary>
+                  <div className="activity-more-filters-panel">
+                    <header>
+                      <span>
+                        <strong>Advanced filters</strong>
+                        <small>Filter by an exact resource ID.</small>
+                      </span>
+                      {activeAdvancedFilters.length > 0 && (
+                        <button
+                          type="button"
+                          className="button button--quiet button--compact"
+                          onClick={clearAdvancedProofFilters}
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </header>
+                    <div className="activity-advanced-filter-grid">
+                      {advancedProofFilters.map((filter) => (
+                        <label key={filter.key}>
+                          <span>{filter.label} ID</span>
+                          <input
+                            value={filter.value}
+                            onChange={(e) => filter.setValue(e.target.value)}
+                            placeholder={`${filter.label} ID`}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </details>
+              </>
+            )}
+            {tab === "events" && (
+              <>
+                <select
+                  aria-label="Filter by category"
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                >
+                  <option value="">All categories</option>
+                  {[
+                    "connectivity",
+                    "manifest",
+                    "playback",
+                    "scheduling",
+                    "commands",
+                    "reliability",
+                    "updates",
+                    "emergencies",
+                  ].map((value) => (
+                    <option key={value}>{value}</option>
+                  ))}
+                </select>
+                <select
+                  aria-label="Filter by severity"
+                  value={severity}
+                  onChange={(e) => setSeverity(e.target.value)}
+                >
+                  <option value="">All severities</option>
+                  {["info", "warning", "error", "critical"].map((value) => (
+                    <option key={value}>{value}</option>
+                  ))}
+                </select>
+                <ResultFilter value={result} onChange={setResult} />
+              </>
+            )}
+            {tab === "audit" && (
+              <>
+                {users.data && (
+                  <select
+                    value={actor}
+                    onChange={(e) => setActor(e.target.value)}
+                    aria-label="Filter by actor"
+                  >
+                    <option value="">All actors</option>
+                    {users.data.items.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <input
+                  value={action}
+                  onChange={(e) => setAction(e.target.value)}
+                  placeholder="Action"
+                  aria-label="Filter by action"
+                />
+                <input
+                  value={resourceType}
+                  onChange={(e) => setResourceType(e.target.value)}
+                  placeholder="Resource type"
+                  aria-label="Filter by resource type"
+                />
+                <select
+                  aria-label="Filter by result"
+                  value={result}
+                  onChange={(e) => setResult(e.target.value)}
+                >
+                  <option value="">All results</option>
+                  {["success", "failure", "denied", "partial"].map((value) => (
+                    <option key={value}>{value}</option>
+                  ))}
+                </select>
+              </>
+            )}
+          </div>
+          {tab === "proof" && activeAdvancedFilters.length > 0 && (
+            <div className="activity-filter-chips" aria-label="Active filters">
+              {activeAdvancedFilters.map((filter) => (
+                <button
+                  key={filter.key}
+                  type="button"
+                  onClick={() => filter.setValue("")}
+                  title={`Remove ${filter.label} filter`}
+                >
+                  <strong>{filter.label}:</strong>
+                  <span>{filter.value}</span>
+                  <X size={13} aria-hidden="true" />
+                </button>
+              ))}
+              <button
+                type="button"
+                className="activity-clear-filters"
+                onClick={clearAdvancedProofFilters}
+              >
+                Clear all
+              </button>
+            </div>
           )}
-          <select value={result} onChange={(e) => setResult(e.target.value)}>
-            <option value="">All results</option>
-            {(tab === "audit"
-              ? ["success", "failure", "denied", "partial"]
-              : [
-                  "playing",
-                  "completed",
-                  "partial",
-                  "skipped",
-                  "failed",
-                  "unknown",
-                  "recovered",
-                ]
-            ).map((value) => (
-              <option key={value}>{value}</option>
-            ))}
-          </select>
         </div>
       )}
 
@@ -313,22 +413,49 @@ export function ActivityPage() {
         <ProofTab
           range={range}
           filters={proofFilters}
-          canExport={canExport}
           dimension={summaryDimension}
           setDimension={setSummaryDimension}
+          hasActiveFilters={hasActiveProofFilters}
+          canExtendRange={preset === "24h"}
+          onClearFilters={clearProofFilters}
+          onExtendRange={() => setPreset("7d")}
+          onViewScreenEvents={() => selectTab("events")}
         />
       )}
       {tab === "events" && (
         <EventsTab range={range} filters={{ ...filters, category, severity }} />
       )}
-      {tab === "audit" && (
-        <AuditTab
-          range={range}
-          filters={{ search, result, action, resourceType, actor }}
-          canExport={canExport}
-        />
-      )}
+      {tab === "audit" && <AuditTab range={range} filters={auditFilters} />}
     </section>
+  );
+}
+
+function ResultFilter({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <select
+      aria-label="Filter by result"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    >
+      <option value="">All results</option>
+      {[
+        "playing",
+        "completed",
+        "partial",
+        "skipped",
+        "failed",
+        "unknown",
+        "recovered",
+      ].map((option) => (
+        <option key={option}>{option}</option>
+      ))}
+    </select>
   );
 }
 
