@@ -1,0 +1,46 @@
+name: Release Tilecast Player 0.13.0
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/release-player-0.13.0.yml"
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  tag-and-dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create Player release tag
+        env:
+          RELEASE_TAG: player-v0.13.0
+          RELEASE_COMMIT: a3595be23e7c11b599279d145c1a69d5ea782470
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "$RELEASE_TAG already exists"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$RELEASE_TAG" "$RELEASE_COMMIT" -m "Tilecast Player 0.13.0"
+            git push origin "$RELEASE_TAG"
+          fi
+
+      - name: Start signed Player release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run player-release.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f tag=player-v0.13.0 \
+            -f channel=stable \
+            -f release_notes='Tilecast Player 0.13.0 adds Player-confirmed proof-of-play reporting for paired screens, including reliable playback intervals, richer playback context, and improved Activity reporting in Studio.'
