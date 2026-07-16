@@ -122,6 +122,11 @@ code,
 .app-shell {
   grid-template-columns: 232px minmax(0, 1fr);
   background: var(--tc-bg-canvas);
+  transition: grid-template-columns var(--tc-motion-fast);
+}
+
+.app-shell--sidebar-compact {
+  grid-template-columns: 68px minmax(0, 1fr);
 }
 
 .sidebar {
@@ -133,6 +138,75 @@ code,
 .sidebar__brand,
 .sidebar__account {
   border-color: var(--tc-sidebar-border);
+}
+
+.sidebar__brand {
+  display: flex;
+  min-height: 60px;
+  align-items: center;
+  gap: var(--tc-space-2);
+  padding: 16px 10px 13px 19px;
+}
+
+.sidebar__brand-logo {
+  display: block;
+  min-width: 0;
+}
+
+.sidebar__brand-logo--full {
+  flex: 1 1 auto;
+}
+
+.sidebar__compact-toggle {
+  display: grid;
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  padding: 0;
+  color: var(--tc-sidebar-text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--tc-radius-control);
+}
+
+.sidebar__compact-toggle:hover {
+  color: var(--tc-sidebar-text-active);
+  background: var(--tc-sidebar-hover);
+  border-color: var(--tc-sidebar-border);
+}
+
+.app-shell--sidebar-compact .sidebar__brand {
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--tc-space-1);
+  padding: 11px 8px;
+}
+
+.app-shell--sidebar-compact .sidebar__brand-logo {
+  display: none;
+}
+
+.app-shell--sidebar-compact .sidebar nav a {
+  justify-content: center;
+}
+
+.app-shell--sidebar-compact .sidebar nav a span,
+.app-shell--sidebar-compact .sidebar__account-copy {
+  display: none;
+}
+
+.app-shell--sidebar-compact .sidebar__account {
+  grid-template-columns: 1fr;
+  justify-items: center;
+  gap: 7px;
+  padding: 12px 8px;
+}
+
+.app-shell--sidebar-compact .account-menu__popover {
+  right: auto;
+  bottom: 0;
+  left: calc(100% + 8px);
 }
 
 .sidebar nav {
@@ -1739,6 +1813,38 @@ tbody tr:hover {
 @media (max-width: 900px) {
   .app-shell {
     grid-template-columns: 68px minmax(0, 1fr);
+  }
+
+  .sidebar__brand {
+    justify-content: center;
+    padding: 14px 8px 11px;
+  }
+
+  .sidebar__brand-logo,
+  .sidebar__compact-toggle {
+    display: none;
+  }
+
+  .sidebar nav a {
+    justify-content: center;
+  }
+
+  .sidebar nav a span,
+  .sidebar__account-copy {
+    display: none;
+  }
+
+  .sidebar__account {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    gap: 7px;
+    padding: 12px 8px;
+  }
+
+  .account-menu__popover {
+    right: auto;
+    bottom: 0;
+    left: calc(100% + 8px);
   }
 
   .settings-shell,

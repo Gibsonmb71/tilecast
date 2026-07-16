@@ -10,6 +10,8 @@ import {
   ListVideo,
   LogOut,
   Monitor,
+  PanelLeftClose,
+  PanelLeftOpen,
   Settings,
   Users,
 } from "lucide-react";
@@ -34,12 +36,20 @@ const nav = [
   ["Users", "/users", Users],
   ["Settings", "/settings", Settings],
 ] as const;
+const sidebarCompactKey = "tilecast.sidebar.compact";
 
 export function DashboardShell() {
   const auth = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [sidebarCompact, setSidebarCompact] = useState(() => {
+    try {
+      return window.localStorage.getItem(sidebarCompactKey) === "true";
+    } catch {
+      return false;
+    }
+  });
   const accountMenuRef = useRef<HTMLDivElement>(null);
   const accountMenuButtonRef = useRef<HTMLButtonElement>(null);
   const preferences = useQuery({
@@ -47,6 +57,13 @@ export function DashboardShell() {
     queryFn: api.preferences,
     enabled: Boolean(auth.status?.authenticated),
   });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(sidebarCompactKey, String(sidebarCompact));
+    } catch {
+      // The sidebar still works when browser storage is unavailable.
+    }
+  }, [sidebarCompact]);
   useEffect(() => {
     const values = preferences.data?.values;
     if (!values) return;
@@ -108,10 +125,27 @@ export function DashboardShell() {
       ["owner", "administrator"].includes(auth.status?.user?.role ?? ""),
   );
   return (
-    <div className="app-shell">
+    <div
+      className={`app-shell${sidebarCompact ? " app-shell--sidebar-compact" : ""}`}
+    >
       <aside className="sidebar">
         <div className="sidebar__brand">
-          <Brand compact />
+          <span className="sidebar__brand-logo sidebar__brand-logo--full">
+            <Brand compact />
+          </span>
+          <button
+            className="sidebar__compact-toggle"
+            type="button"
+            aria-label={sidebarCompact ? "Expand sidebar" : "Compact sidebar"}
+            title={sidebarCompact ? "Expand sidebar" : "Compact sidebar"}
+            onClick={() => setSidebarCompact((compact) => !compact)}
+          >
+            {sidebarCompact ? (
+              <PanelLeftOpen size={18} aria-hidden="true" />
+            ) : (
+              <PanelLeftClose size={18} aria-hidden="true" />
+            )}
+          </button>
         </div>
         <nav aria-label="Primary">
           {visibleNav.map(([label, to, Icon]) => (
