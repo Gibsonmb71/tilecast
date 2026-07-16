@@ -1,0 +1,97 @@
+name: One-shot layout preview fix
+
+on:
+  push:
+    branches:
+      - fix/lunch-menu-workflow
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/lunch-menu-workflow
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Apply Layout preview and field-default fixes
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text()
+              if old not in text:
+                  raise SystemExit(f"Expected block not found in {path}: {old[:120]!r}")
+              file.write_text(text.replace(old, new, 1))
+
+          replace_once(
+              'apps/dashboard/src/pages/LayoutEditorPage.tsx',
+              '''  LayoutPrimitive,\n  Playlist,\n} from "../api/types";\n''',
+              '''  LayoutPrimitive,\n  Playlist,\n  StructuredPreview,\n} from "../api/types";\n''',
+          )
+          replace_once(
+              'apps/dashboard/src/pages/LayoutEditorPage.tsx',
+              '''  // Text-binding preview values are keyed by Data Source id. Field values come from\n  // each Data Source's own cached, date-selected records (owned by the Data Source,\n  // not duplicated into the Layout), so previewing here just re-reads current caches.\n  const loadStructuredPreview = () => {\n    setPreviewValues({});\n  };\n''',
+              '''  // Resolve the same date-selected records the Player receives so Studio previews\n  // show real values without copying data into the Layout document.\n  const loadStructuredPreview = async () => {\n    const current = documentRef.current;\n    if (!current) return;\n    const dataSourceIds = Array.from(\n      new Set(\n        current.placements\n          .map((placement) => placement.primitive?.binding?.dataSourceId)\n          .filter((value): value is string => Boolean(value)),\n      ),\n    );\n    try {\n      const resolved = await Promise.all(\n        dataSourceIds.map(async (dataSourceId) => {\n          const source = await api.getDataSource(dataSourceId);\n          if (source.provider !== "csv" && source.provider !== "json")\n            return [dataSourceId, {}] as const;\n          const preview = (await api.previewDataSource(\n            source.provider,\n            source.configuration,\n            csrf,\n            previewDate,\n          )) as StructuredPreview;\n          const record = preview.configuration.data.records[0];\n          const fields: Record<string, string> = { ...(record?.values ?? {}) };\n          if (record) {\n            const standardFields = {\n              title: record.title,\n              subtitle: record.subtitle,\n              date: record.date,\n              author: record.author,\n              description: record.description,\n            };\n            Object.entries(standardFields).forEach(([key, value]) => {\n              if (value) fields[key] = value;\n            });\n          }\n          return [dataSourceId, fields] as const;\n        }),\n      );\n      setPreviewValues(Object.fromEntries(resolved));\n    } catch {\n      setPreviewValues({});\n    }\n  };\n''',
+          )
+          replace_once(
+              'apps/dashboard/src/pages/LayoutEditorPage.tsx',
+              '''                  `${content?.name ?? "This App"} may be used by other playlists and Layouts. Open the shared App editor?`,\n''',
+              '''                  `${content?.name ?? "This Widget"} may be used by other playlists and Layouts. Open the shared Widget editor?`,\n''',
+          )
+          replace_once(
+              'apps/dashboard/src/pages/LayoutEditorPage.tsx',
+              '''                void navigate("/apps");\n''',
+              '''                void navigate("/widgets");\n''',
+          )
+          replace_once(
+              'apps/dashboard/src/pages/LayoutEditorPage.tsx',
+              '''            Edit shared App\n''',
+              '''            Edit shared Widget\n''',
+          )
+          replace_once(
+              'apps/dashboard/src/pages/LayoutEditorPage.tsx',
+              '''        {provider ?? "App"}\n''',
+              '''        {provider ?? "Widget"}\n''',
+          )
+
+          editor = Path('apps/dashboard/src/content/SourceEditors.tsx')
+          text = editor.read_text()
+          anchor = '''  const availableFields = selectedDataSource.data?.fields ?? [];\n  const save = useMutation({\n'''
+          insertion = '''  const availableFields = selectedDataSource.data?.fields ?? [];\n  useEffect(() => {\n    if (!availableFields.length) return;\n    const keys = new Set(availableFields.map((field) => field.key));\n    setConfiguration((current) => {\n      if (provider === "ticker") {\n        const config = current as TickerWidgetConfig;\n        if (keys.has(config.field)) return current;\n        return { ...config, field: availableFields[0]!.key };\n      }\n      if (["menu", "list", "table", "agenda"].includes(provider)) {\n        const config = current as DisplayWidgetConfig;\n        const valid = config.fields.filter((field) => keys.has(field));\n        if (valid.length) return valid.length === config.fields.length ? current : { ...config, fields: valid };\n        const count = provider === "menu" ? 2 : Math.min(3, availableFields.length);\n        return { ...config, fields: availableFields.slice(0, count).map((field) => field.key) };\n      }\n      return current;\n    });\n  }, [availableFields, provider]);\n  const save = useMutation({\n'''
+          if anchor not in text:
+              raise SystemExit('Source editor field-default anchor not found')
+          editor.write_text(text.replace(anchor, insertion, 1))
+          PY
+
+      - name: Install and verify Studio
+        run: |
+          npm ci
+          npx prettier --write apps/dashboard/src/pages/LayoutEditorPage.tsx apps/dashboard/src/content/SourceEditors.tsx
+          cd apps/dashboard
+          npm run lint
+          npm test -- --run
+          npm run build
+          cd ../..
+          git diff --check
+
+      - name: Commit fixes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/dashboard/src/pages/LayoutEditorPage.tsx apps/dashboard/src/content/SourceEditors.tsx
+          git commit -m "Load real lunch data in Layout previews"
+          git push origin HEAD:fix/lunch-menu-workflow
