@@ -383,9 +383,10 @@ function ProofDetailsDrawer({
     snapshotHash: record.snapshotHash,
     ...record.details,
   };
-  const entries = Object.entries(technicalDetails).filter(
-    ([, value]) => value != null && value !== "" && value !== false,
-  );
+  const entries = Object.entries(technicalDetails).filter(([, value]) => {
+    if (value == null || value === "") return false;
+    return typeof value !== "boolean" || value;
+  });
 
   return (
     <div className="activity-drawer-layer">
