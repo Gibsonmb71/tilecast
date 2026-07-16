@@ -1,6 +1,7 @@
 import { Navigate, useParams, useSearchParams } from "react-router";
 import { FireTvAccessibilityAdbPanel } from "../components/FireTvAccessibilityAdbPanel";
 import { LivePreviewPanel } from "../components/LivePreviewPanel";
+import { ScreenActivityPanel } from "../components/ScreenActivityPanel";
 import { ScreenDetailPage } from "./ScreensPage";
 
 export function ScreenDetailWithPreviewPage() {
@@ -16,6 +17,14 @@ export function ScreenDetailWithPreviewPage() {
           <ScreenDetailPage />
         </div>
         <LivePreviewPanel screenId={id} />
+      </div>
+    );
+  }
+  if (tab === "activity") {
+    return (
+      <div className="screen-activity-route">
+        <ScreenDetailPage />
+        <ScreenActivityPanel screenId={id} />
       </div>
     );
   }
