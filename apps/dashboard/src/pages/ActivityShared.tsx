@@ -252,14 +252,25 @@ export function TechnicalDetails({
         {entries.map(([key, item]) => (
           <div key={key}>
             <dt>{humanize(key)}</dt>
-            <dd>
-              {typeof item === "object" ? JSON.stringify(item) : String(item)}
-            </dd>
+            <dd>{formatTechnicalValue(item)}</dd>
           </div>
         ))}
       </dl>
     </details>
   );
+}
+
+function formatTechnicalValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (value == null) return "";
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "Details unavailable";
+  }
 }
 
 export function ResultBadge({ value }: { value: string }) {
