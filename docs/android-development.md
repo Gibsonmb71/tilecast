@@ -47,3 +47,5 @@ Production Player release signing is free and independent of app stores. Preserv
 Manifest v12 adds the common typed Data Source contract and native Countdown, Metric, Cards, and Weather renderers. This Player accepts both v11 and v12. Release version code 22 or later before assigning v12 presentations; Studio blocks assignments when any target screen in the assignment reports an older or unknown Player version.
 
 Manifest v13 adds the provider-neutral data document, declarative native interpreter, and constrained web descriptor host. The Player reports presentation schema 1, versioned native capabilities, web runtime version 1, and its bundle limit in heartbeat metadata. Validation enforces dataset, nesting, node, repeat, animation, URL, and capability bounds before activation; v11/v12 remain readable for cached startup and staged rollout.
+
+Capability revision 2 adds actual line/bar/donut drawing, downloaded asset images, built-in status icons, target progress, repeat indexes, numeric/date conditions, and multi-series time data. Chart and image content must remain within manifest verification and offline cache policy.

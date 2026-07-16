@@ -3,6 +3,7 @@ module github.com/tilecast/tilecast/apps/server
 go 1.25.0
 
 require (
+	github.com/MobilityData/gtfs-realtime-bindings/golang/gtfs v1.0.0
 	github.com/avast/apkparser v0.0.0-20251022140151-7294e274bf65
 	github.com/avast/apkverifier v0.0.0-20260710162049-d0e1a791cd5a
 	github.com/coder/websocket v1.8.14
@@ -15,6 +16,7 @@ require (
 	github.com/pressly/goose/v3 v3.24.3
 	golang.org/x/crypto v0.54.0
 	golang.org/x/image v0.44.0
+	google.golang.org/protobuf v1.36.6
 )
 
 require (

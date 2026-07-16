@@ -993,7 +993,7 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 				var widget ManifestWidget
 				widget.AssetID = item.AssetID
 				widget.Name = item.AssetName
-				if err = s.db.QueryRow(ctx, `SELECT provider,config_version,configuration FROM widgets WHERE asset_id=$1`, item.AssetID).Scan(&widget.Provider, &widget.ConfigVersion, &widget.Configuration); err != nil {
+				if err = s.db.QueryRow(ctx, `SELECT provider,preset_id,config_version,configuration FROM widgets WHERE asset_id=$1`, item.AssetID).Scan(&widget.Provider, &widget.PresetID, &widget.ConfigVersion, &widget.Configuration); err != nil {
 					return Manifest{}, "", err
 				}
 				var configuration map[string]any
@@ -1107,7 +1107,7 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 			}
 			var widget ManifestWidget
 			widget.AssetID = dependency.ID
-			if err = s.db.QueryRow(ctx, `SELECT a.name,w.provider,w.config_version,w.configuration FROM widgets w JOIN assets a ON a.id=w.asset_id AND a.deleted_at IS NULL WHERE w.asset_id=$1`, dependency.ID).Scan(&widget.Name, &widget.Provider, &widget.ConfigVersion, &widget.Configuration); err != nil {
+			if err = s.db.QueryRow(ctx, `SELECT a.name,w.provider,w.preset_id,w.config_version,w.configuration FROM widgets w JOIN assets a ON a.id=w.asset_id AND a.deleted_at IS NULL WHERE w.asset_id=$1`, dependency.ID).Scan(&widget.Name, &widget.Provider, &widget.PresetID, &widget.ConfigVersion, &widget.Configuration); err != nil {
 				return Manifest{}, "", fmt.Errorf("%w: Layout Widget unavailable", ErrConflict)
 			}
 			if widget.Provider == "website" {
@@ -1123,6 +1123,11 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 			if err = s.projectDataSource(ctx, &manifest, dependency.ID); err != nil {
 				return Manifest{}, "", err
 			}
+		}
+	}
+	for index := range manifest.Widgets {
+		if err = s.projectWidgetAssets(ctx, &manifest, &manifest.Widgets[index], seen); err != nil {
+			return Manifest{}, "", err
 		}
 	}
 	// Project the single shared dataset for every data-driven widget in the manifest.
@@ -1161,13 +1166,26 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 			}
 		}
 	}
+	requiresV13 := false
+	for _, widget := range manifest.Widgets {
+		if map[string]bool{"spotlight": true, "stat_grid": true, "chart": true, "progress": true, "timeline": true, "world_clock": true}[widget.Provider] {
+			requiresV13 = true
+		}
+	}
+	for _, source := range manifest.DataSources {
+		if source.Provider == "transit" || source.Provider == "cap_alerts" || source.Provider == "air_quality" {
+			requiresV13 = true
+		}
+	}
 	if supported, capabilityErr := s.screenSupportsV13(ctx, screenID); capabilityErr != nil {
 		return Manifest{}, "", capabilityErr
+	} else if requiresV13 && !supported {
+		return Manifest{}, "", fmt.Errorf("%w: Player update required for declarative information Widgets", ErrConflict)
 	} else if supported {
 		compiled := make([]*WidgetPresentation, len(manifest.Widgets))
 		canUseV13 := true
 		for index := range manifest.Widgets {
-			compiled[index], _ = compileWidgetPresentation(manifest.Widgets[index].Provider, manifest.Widgets[index].Configuration)
+			compiled[index], _ = compileWidgetPresentationForPreset(manifest.Widgets[index].Provider, manifest.Widgets[index].PresetID, manifest.Widgets[index].Configuration)
 			if compiled[index] == nil {
 				canUseV13 = false
 				break
@@ -1257,7 +1275,7 @@ func (s *Service) reconcilePresentationCatalog(ctx context.Context) error {
 // widgetDataSourceID returns the Data Source a data-driven widget consumes, or Nil.
 func widgetDataSourceID(provider string, configuration json.RawMessage) uuid.UUID {
 	switch provider {
-	case "ticker", "menu", "list", "table", "agenda", "metric", "cards", "weather":
+	case "ticker", "menu", "list", "table", "agenda", "metric", "cards", "weather", "spotlight", "stat_grid", "chart", "progress", "timeline":
 		var c struct {
 			DataSourceID uuid.UUID `json:"dataSourceId"`
 		}
@@ -1266,6 +1284,34 @@ func widgetDataSourceID(provider string, configuration json.RawMessage) uuid.UUI
 	default:
 		return uuid.Nil
 	}
+}
+
+func (s *Service) projectWidgetAssets(ctx context.Context, manifest *Manifest, widget *ManifestWidget, seen map[uuid.UUID]bool) error {
+	var configuration map[string]any
+	if json.Unmarshal(widget.Configuration, &configuration) != nil {
+		return errors.New("widget configuration is invalid")
+	}
+	rawID, _ := configuration["imageAssetId"].(string)
+	if rawID == "" {
+		return nil
+	}
+	assetID, err := uuid.Parse(rawID)
+	if err != nil {
+		return fmt.Errorf("%w: widget image reference is invalid", ErrConflict)
+	}
+	var asset ManifestAsset
+	err = s.db.QueryRow(ctx, `SELECT v.asset_id,v.id,v.mime_type,encode(v.sha256,'hex'),v.file_size,v.width,v.height,v.duration_seconds FROM asset_variants v JOIN assets a ON a.id=v.asset_id AND a.type='image' AND a.deleted_at IS NULL WHERE v.asset_id=$1 AND v.deleted_at IS NULL AND v.player_compatible=TRUE ORDER BY CASE v.kind WHEN 'playback' THEN 0 WHEN 'original' THEN 1 ELSE 2 END LIMIT 1`, assetID).Scan(&asset.AssetID, &asset.VariantID, &asset.MIMEType, &asset.SHA256, &asset.FileSize, &asset.Width, &asset.Height, &asset.DurationSeconds)
+	if err != nil {
+		return fmt.Errorf("%w: widget image unavailable", ErrConflict)
+	}
+	asset.DownloadPath = "/api/v1/player/assets/" + asset.AssetID.String() + "/variants/" + asset.VariantID.String()
+	configuration["imageVariantId"] = asset.VariantID.String()
+	widget.Configuration, _ = json.Marshal(configuration)
+	if !seen[asset.VariantID] {
+		manifest.Assets = append(manifest.Assets, asset)
+		seen[asset.VariantID] = true
+	}
+	return nil
 }
 
 // projectDataSource adds a Data Source to the manifest exactly once, projecting its bounded

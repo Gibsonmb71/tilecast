@@ -185,6 +185,7 @@ type ManifestWidget struct {
 	AssetID       uuid.UUID           `json:"assetId"`
 	Name          string              `json:"name"`
 	Provider      string              `json:"provider,omitempty"`
+	PresetID      *string             `json:"-"`
 	ConfigVersion int                 `json:"configVersion,omitempty"`
 	Configuration json.RawMessage     `json:"configuration,omitempty"`
 	Presentation  *WidgetPresentation `json:"presentation,omitempty"`

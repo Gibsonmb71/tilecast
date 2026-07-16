@@ -63,8 +63,9 @@ func main() {
 		FFmpegPath: cfg.Media.FFmpegPath, FFprobePath: cfg.Media.FFprobePath,
 		Profile: media.CompatibilityProfile{MaxWidth: cfg.Media.VideoMaxWidth, MaxHeight: cfg.Media.VideoMaxHeight, MaxFrameRate: cfg.Media.VideoMaxFrameRate},
 		Workers: cfg.Media.Workers, KeepOriginals: cfg.Media.KeepOriginals,
-		Website:     media.WebsitePolicy{AllowPrivateHTTP: cfg.Website.AllowPrivateHTTP, DefaultTimeoutSeconds: cfg.Website.DefaultTimeoutSeconds, MaxTimeoutSeconds: cfg.Website.MaxTimeoutSeconds, MinRefreshSeconds: cfg.Website.MinRefreshSeconds, MaxAllowedHosts: cfg.Website.MaxAllowedHosts, MaxWebsites: cfg.Website.MaxWebsites},
-		SourceFetch: media.SourceFetchPolicy{AllowPrivateNetworks: cfg.Sources.AllowPrivateNetworks, Timeout: time.Duration(cfg.Sources.TimeoutSeconds) * time.Second, MaximumBytes: cfg.Sources.MaximumResponseBytes, MaximumRedirects: cfg.Sources.MaximumRedirects, MinimumRefresh: time.Duration(cfg.Sources.MinimumRefreshSeconds) * time.Second, MaximumRefresh: time.Duration(cfg.Sources.MaximumRefreshSeconds) * time.Second},
+		Website:           media.WebsitePolicy{AllowPrivateHTTP: cfg.Website.AllowPrivateHTTP, DefaultTimeoutSeconds: cfg.Website.DefaultTimeoutSeconds, MaxTimeoutSeconds: cfg.Website.MaxTimeoutSeconds, MinRefreshSeconds: cfg.Website.MinRefreshSeconds, MaxAllowedHosts: cfg.Website.MaxAllowedHosts, MaxWebsites: cfg.Website.MaxWebsites},
+		SourceFetch:       media.SourceFetchPolicy{AllowPrivateNetworks: cfg.Sources.AllowPrivateNetworks, Timeout: time.Duration(cfg.Sources.TimeoutSeconds) * time.Second, MaximumBytes: cfg.Sources.MaximumResponseBytes, MaximumRedirects: cfg.Sources.MaximumRedirects, MinimumRefresh: time.Duration(cfg.Sources.MinimumRefreshSeconds) * time.Second, MaximumRefresh: time.Duration(cfg.Sources.MaximumRefreshSeconds) * time.Second},
+		AirQualityBaseURL: cfg.Sources.AirQualityBaseURL,
 	})
 	playlistService := playlists.NewService(db, deviceService)
 	layoutService := layouts.NewService(db)

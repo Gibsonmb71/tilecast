@@ -22,9 +22,19 @@ func (s *Service) dataSourceProvider(name string) (configNormalizer, error) {
 		return manualSourceProvider{}, nil
 	case "weather":
 		return weatherSourceProvider{}, nil
+	case "transit":
+		return transitSourceProvider{s}, nil
+	case "cap_alerts":
+		return capAlertsSourceProvider{s}, nil
+	case "air_quality":
+		return airQualitySourceProvider{s}, nil
 	default:
 		return nil, errors.New("data source provider is not supported")
 	}
+}
+
+func (s *Service) DataSourceNormalizer(name string) (configNormalizer, error) {
+	return s.dataSourceProvider(name)
 }
 
 func (s *Service) CreateDataSource(ctx context.Context, user uuid.UUID, input DataSourceInput) (DataSource, error) {
@@ -199,6 +209,17 @@ func (s *Service) PreviewDataSourceByID(ctx context.Context, id uuid.UUID, previ
 	if raw.Provider == "weather" {
 		return s.WeatherPreview(ctx, raw.Configuration)
 	}
+	if raw.Provider == "transit" || raw.Provider == "cap_alerts" || raw.Provider == "air_quality" {
+		projected, projectErr := s.PlayerTypedDataSourceConfiguration(ctx, raw.ID, raw.Provider, raw.Configuration)
+		if projectErr != nil {
+			return nil, projectErr
+		}
+		var payload TypedDatasetPayload
+		if err := json.Unmarshal(projected, &payload); err != nil {
+			return nil, err
+		}
+		return payload, nil
+	}
 	return s.StructuredPreview(ctx, raw.Provider, raw.Configuration, previewDate)
 }
 
@@ -287,7 +308,7 @@ func (s *Service) GetDataSourceDetail(ctx context.Context, id uuid.UUID) (DataSo
 	detail.Fields = availableDataSourceFields(raw.Provider, raw.Configuration)
 	detail.CachedRecords = detail.Diagnostics.AvailableEventCount + detail.Diagnostics.AvailableItemCount
 	detail.Status = dataSourceStatus(detail.Diagnostics)
-	if raw.Provider != "calendar" && raw.Provider != "weather" && raw.Provider != "manual" {
+	if raw.Provider == "rss" || raw.Provider == "atom" || raw.Provider == "json" || raw.Provider == "csv" {
 		var config StructuredSourceConfig
 		if json.Unmarshal(raw.Configuration, &config) == nil && config.DateSelection.Enabled {
 			selection := config.DateSelection
@@ -398,6 +419,19 @@ func availableDataSourceFields(provider string, raw json.RawMessage) []DataSourc
 			{Key: "precipitationUnit", Label: "Precipitation unit", Type: "text"},
 		}
 	}
+	if provider == "transit" {
+		fields := transitDepartureFields()
+		fields = append(fields, transitAlertFields()...)
+		return uniqueDataSourceFields(fields)
+	}
+	if provider == "cap_alerts" {
+		return capAlertFields()
+	}
+	if provider == "air_quality" {
+		var config AirQualitySourceConfig
+		_ = json.Unmarshal(raw, &config)
+		return airQualityFields(config)
+	}
 	var config StructuredSourceConfig
 	_ = json.Unmarshal(raw, &config)
 	add := func(on bool, key, label, typ string) {
@@ -418,6 +452,18 @@ func availableDataSourceFields(provider string, raw json.RawMessage) []DataSourc
 		}
 	}
 	return fields
+}
+
+func uniqueDataSourceFields(fields []DataSourceField) []DataSourceField {
+	result := make([]DataSourceField, 0, len(fields))
+	seen := map[string]bool{}
+	for _, field := range fields {
+		if !seen[field.Key] {
+			result = append(result, field)
+			seen[field.Key] = true
+		}
+	}
+	return result
 }
 
 func (s *Service) dataSourceWidgetUsage(ctx context.Context, id uuid.UUID) ([]DataSourceWidgetUsage, error) {

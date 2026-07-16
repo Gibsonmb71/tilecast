@@ -40,13 +40,16 @@ type ProviderCatalogEntry struct {
 
 var dataSourceProviderRegistry = map[string]ProviderDescriptor{
 	// Data Sources — provide data, never rendered directly.
-	"calendar": {ID: "calendar", Role: RoleDataSource, ProducesFields: true, RecordBased: true, Temporal: true},
-	"rss":      {ID: "rss", Role: RoleDataSource, ProducesFields: true, SupportsDateSelection: true, RecordBased: true},
-	"atom":     {ID: "atom", Role: RoleDataSource, ProducesFields: true, SupportsDateSelection: true, RecordBased: true},
-	"json":     {ID: "json", Role: RoleDataSource, ProducesFields: true, SupportsDateSelection: true, RecordBased: true, Temporal: true, Numeric: true},
-	"csv":      {ID: "csv", Role: RoleDataSource, ProducesFields: true, SupportsDateSelection: true, RecordBased: true, Temporal: true, Numeric: true},
-	"manual":   {ID: "manual", Role: RoleDataSource, ProducesFields: true, SupportsDateSelection: true, RecordBased: true, Temporal: true, Numeric: true},
-	"weather":  {ID: "weather", Role: RoleDataSource, ProducesFields: true, RecordBased: true, Temporal: true, Numeric: true, Weather: true},
+	"calendar":    {ID: "calendar", Role: RoleDataSource, ProducesFields: true, RecordBased: true, Temporal: true},
+	"rss":         {ID: "rss", Role: RoleDataSource, ProducesFields: true, SupportsDateSelection: true, RecordBased: true},
+	"atom":        {ID: "atom", Role: RoleDataSource, ProducesFields: true, SupportsDateSelection: true, RecordBased: true},
+	"json":        {ID: "json", Role: RoleDataSource, ProducesFields: true, SupportsDateSelection: true, RecordBased: true, Temporal: true, Numeric: true},
+	"csv":         {ID: "csv", Role: RoleDataSource, ProducesFields: true, SupportsDateSelection: true, RecordBased: true, Temporal: true, Numeric: true},
+	"manual":      {ID: "manual", Role: RoleDataSource, ProducesFields: true, SupportsDateSelection: true, RecordBased: true, Temporal: true, Numeric: true},
+	"weather":     {ID: "weather", Role: RoleDataSource, ProducesFields: true, RecordBased: true, Temporal: true, Numeric: true, Weather: true},
+	"transit":     {ID: "transit", Role: RoleDataSource, ProducesFields: true, RecordBased: true, Temporal: true},
+	"cap_alerts":  {ID: "cap_alerts", Role: RoleDataSource, ProducesFields: true, RecordBased: true, Temporal: true},
+	"air_quality": {ID: "air_quality", Role: RoleDataSource, ProducesFields: true, RecordBased: true, Temporal: true, Numeric: true},
 }
 
 var widgetProviderRegistry = map[string]ProviderDescriptor{
@@ -59,14 +62,20 @@ var widgetProviderRegistry = map[string]ProviderDescriptor{
 	"countdown": {ID: "countdown", Role: RoleWidget, Renderable: true, Temporal: true},
 
 	// Data-driven Widgets — display one compatible Data Source.
-	"ticker":  {ID: "ticker", Role: RoleWidget, Renderable: true, RequiresDataSource: true, RecordBased: true},
-	"menu":    {ID: "menu", Role: RoleWidget, Renderable: true, RequiresDataSource: true, RecordBased: true},
-	"list":    {ID: "list", Role: RoleWidget, Renderable: true, RequiresDataSource: true, RecordBased: true},
-	"table":   {ID: "table", Role: RoleWidget, Renderable: true, RequiresDataSource: true, RecordBased: true},
-	"agenda":  {ID: "agenda", Role: RoleWidget, Renderable: true, RequiresDataSource: true, RecordBased: true, Temporal: true},
-	"metric":  {ID: "metric", Role: RoleWidget, Renderable: true, RequiresDataSource: true, RecordBased: true, Numeric: true},
-	"cards":   {ID: "cards", Role: RoleWidget, Renderable: true, RequiresDataSource: true, RecordBased: true},
-	"weather": {ID: "weather", Role: RoleWidget, Renderable: true, RequiresDataSource: true, RecordBased: true, Weather: true},
+	"ticker":      {ID: "ticker", Role: RoleWidget, Renderable: true, RequiresDataSource: true, RecordBased: true},
+	"menu":        {ID: "menu", Role: RoleWidget, Renderable: true, RequiresDataSource: true, RecordBased: true},
+	"list":        {ID: "list", Role: RoleWidget, Renderable: true, RequiresDataSource: true, RecordBased: true},
+	"table":       {ID: "table", Role: RoleWidget, Renderable: true, RequiresDataSource: true, RecordBased: true},
+	"agenda":      {ID: "agenda", Role: RoleWidget, Renderable: true, RequiresDataSource: true, RecordBased: true, Temporal: true},
+	"metric":      {ID: "metric", Role: RoleWidget, Renderable: true, RequiresDataSource: true, RecordBased: true, Numeric: true},
+	"cards":       {ID: "cards", Role: RoleWidget, Renderable: true, RequiresDataSource: true, RecordBased: true},
+	"weather":     {ID: "weather", Role: RoleWidget, Renderable: true, RequiresDataSource: true, RecordBased: true, Weather: true},
+	"spotlight":   {ID: "spotlight", Role: RoleWidget, Renderable: true, RequiresDataSource: true, RecordBased: true},
+	"stat_grid":   {ID: "stat_grid", Role: RoleWidget, Renderable: true, RequiresDataSource: true, RecordBased: true, Numeric: true},
+	"chart":       {ID: "chart", Role: RoleWidget, Renderable: true, RequiresDataSource: true, RecordBased: true, Numeric: true},
+	"progress":    {ID: "progress", Role: RoleWidget, Renderable: true, RequiresDataSource: true, RecordBased: true, Numeric: true},
+	"timeline":    {ID: "timeline", Role: RoleWidget, Renderable: true, RequiresDataSource: true, RecordBased: true, Temporal: true},
+	"world_clock": {ID: "world_clock", Role: RoleWidget, Renderable: true},
 }
 
 func lookupProvider(id string) (ProviderDescriptor, bool) {
@@ -120,7 +129,7 @@ func dataSourceProviderAccepted(widgetProvider, dataSourceProvider string) bool 
 
 func ProviderCatalog() []ProviderCatalogEntry {
 	result := make([]ProviderCatalogEntry, 0, len(widgetProviderRegistry)+len(dataSourceProviderRegistry))
-	for _, id := range []string{"website", "youtube", "clock", "date", "qrcode", "countdown", "ticker", "menu", "list", "table", "agenda", "metric", "cards", "weather"} {
+	for _, id := range []string{"website", "youtube", "clock", "date", "qrcode", "countdown", "world_clock", "ticker", "menu", "list", "table", "agenda", "metric", "cards", "weather", "spotlight", "stat_grid", "chart", "progress", "timeline"} {
 		descriptor := widgetProviderRegistry[id]
 		label, group, description := providerCopy(id, RoleWidget)
 		kind := "native"
@@ -129,7 +138,7 @@ func ProviderCatalog() []ProviderCatalogEntry {
 			kind = "web"
 			required["web.remote"] = 1
 		} else {
-			required["binding.core"] = 1
+			required["binding.core"] = 2
 		}
 		result = append(result, ProviderCatalogEntry{
 			ID: id, Role: RoleWidget, Label: label, Group: group, Description: description,
@@ -137,7 +146,7 @@ func ProviderCatalog() []ProviderCatalogEntry {
 			RequiredCapabilities: required, UIHints: map[string]string{"editor": id, "preview": "compiled"},
 		})
 	}
-	for _, id := range []string{"calendar", "rss", "atom", "json", "csv", "manual", "weather"} {
+	for _, id := range []string{"calendar", "rss", "atom", "json", "csv", "manual", "weather", "transit", "cap_alerts", "air_quality"} {
 		descriptor := dataSourceProviderRegistry[id]
 		label, group, description := providerCopy(id, RoleDataSource)
 		result = append(result, ProviderCatalogEntry{
@@ -157,26 +166,35 @@ func descriptorCapabilities(d ProviderDescriptor) map[string]bool {
 
 func providerCopy(id string, role ProviderRole) (string, string, string) {
 	copy := map[string][3]string{
-		"website":   {"Website", "Web and video", "Display an approved public webpage."},
-		"youtube":   {"YouTube", "Web and video", "Play a public YouTube video or playlist."},
-		"clock":     {"Clock", "Essentials", "Show live local time in a configured timezone."},
-		"date":      {"Date", "Essentials", "Show a localized calendar date."},
-		"qrcode":    {"QR Code", "Essentials", "Display text or a URL as a scannable code."},
-		"countdown": {"Countdown", "Essentials", "Count down to or up from a date and time."},
-		"ticker":    {"Ticker", "Data-driven", "Scroll selected fields from a Data Source."},
-		"menu":      {"Menu / Price Board", "Data-driven", "Display fields or label/value rows."},
-		"list":      {"List", "Data-driven", "Display flexible primary and secondary rows."},
-		"table":     {"Table", "Data-driven", "Display typed records in configurable columns."},
-		"agenda":    {"Agenda", "Data-driven", "Group temporal records into an agenda."},
-		"metric":    {"Metric", "Data-driven", "Highlight a numeric value and supporting label."},
-		"cards":     {"Cards", "Data-driven", "Display records in a responsive card grid."},
-		"weather":   {"Weather", "Data-driven", "Display current conditions and forecast records."},
-		"calendar":  {"Calendar", "Feeds", "Project public calendar events into typed records."},
-		"rss":       {"RSS", "Feeds", "Project a public RSS feed into typed records."},
-		"atom":      {"Atom", "Feeds", "Project a public Atom feed into typed records."},
-		"json":      {"JSON", "Structured", "Map public JSON into typed records."},
-		"csv":       {"CSV", "Structured", "Map uploaded or public CSV into typed records."},
-		"manual":    {"Manual Table", "Structured", "Maintain a bounded typed table in Studio."},
+		"website":     {"Website", "Web and video", "Display an approved public webpage."},
+		"youtube":     {"YouTube", "Web and video", "Play a public YouTube video or playlist."},
+		"clock":       {"Clock", "Essentials", "Show live local time in a configured timezone."},
+		"date":        {"Date", "Essentials", "Show a localized calendar date."},
+		"qrcode":      {"QR Code", "Essentials", "Display text or a URL as a scannable code."},
+		"countdown":   {"Countdown", "Essentials", "Count down to or up from a date and time."},
+		"ticker":      {"Ticker", "Data-driven", "Scroll selected fields from a Data Source."},
+		"menu":        {"Menu / Price Board", "Data-driven", "Display fields or label/value rows."},
+		"list":        {"List", "Data-driven", "Display flexible primary and secondary rows."},
+		"table":       {"Table", "Data-driven", "Display typed records in configurable columns."},
+		"agenda":      {"Agenda", "Data-driven", "Group temporal records into an agenda."},
+		"metric":      {"Metric", "Data-driven", "Highlight a numeric value and supporting label."},
+		"cards":       {"Cards", "Data-driven", "Display records in a responsive card grid."},
+		"weather":     {"Weather", "Data-driven", "Display current conditions and forecast records."},
+		"spotlight":   {"Spotlight", "Data Display", "Feature one record with optional uploaded artwork."},
+		"stat_grid":   {"Stat Grid", "Data Display", "Display a responsive grid of numeric values."},
+		"chart":       {"Chart", "Data Display", "Plot record or time-series values as a line, bar, or donut chart."},
+		"progress":    {"Progress", "Data Display", "Show progress toward a numeric target."},
+		"timeline":    {"Timeline", "Schedules", "Display ordered dated milestones and statuses."},
+		"world_clock": {"World Clock", "Essentials", "Show live time in multiple configured timezones."},
+		"calendar":    {"Calendar", "Feeds", "Project public calendar events into typed records."},
+		"rss":         {"RSS", "Feeds", "Project a public RSS feed into typed records."},
+		"atom":        {"Atom", "Feeds", "Project a public Atom feed into typed records."},
+		"json":        {"JSON", "Structured", "Map public JSON into typed records."},
+		"csv":         {"CSV", "Structured", "Map uploaded or public CSV into typed records."},
+		"manual":      {"Manual Table", "Structured", "Maintain a bounded typed table in Studio."},
+		"transit":     {"Transit", "Live Information", "Join public GTFS schedules with realtime departures and alerts."},
+		"cap_alerts":  {"CAP Alerts", "Live Information", "Display active public Common Alerting Protocol warnings."},
+		"air_quality": {"Air Quality", "Live Information", "Display current and forecast air-quality measurements."},
 	}
 	if id == "weather" && role == RoleDataSource {
 		return "Weather", "External", "Fetch and normalize public MET Norway forecasts."

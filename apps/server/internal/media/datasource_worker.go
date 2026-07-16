@@ -112,6 +112,24 @@ func (worker *DataSourceRefreshWorker) runOne(ctx context.Context) (bool, error)
 			}
 			prepared, diagnostics, upstreamLastModified, upstreamExpiresAt, notModified, refreshErr = worker.service.refreshWeather(ctx, dataSourceID, config, lastModified)
 		}
+	} else if provider == "transit" {
+		var config TransitSourceConfig
+		if err = json.Unmarshal(raw, &config); err == nil {
+			refreshSeconds = config.RealtimeRefreshSeconds
+			prepared, diagnostics, refreshErr = worker.service.refreshTransit(ctx, dataSourceID, config)
+		}
+	} else if provider == "cap_alerts" {
+		var config CAPAlertsSourceConfig
+		if err = json.Unmarshal(raw, &config); err == nil {
+			refreshSeconds = config.RefreshIntervalSeconds
+			prepared, diagnostics, refreshErr = worker.service.refreshCAPAlerts(ctx, config)
+		}
+	} else if provider == "air_quality" {
+		var config AirQualitySourceConfig
+		if err = json.Unmarshal(raw, &config); err == nil {
+			refreshSeconds = config.RefreshIntervalSeconds
+			prepared, diagnostics, refreshErr = worker.service.refreshAirQuality(ctx, config)
+		}
 	} else {
 		var config StructuredSourceConfig
 		if err = json.Unmarshal(raw, &config); err == nil {
@@ -156,8 +174,8 @@ func nextDataSourceRefresh(refreshSeconds int, upstreamExpiresAt *time.Time) tim
 }
 
 func (worker *DataSourceRefreshWorker) fail(ctx context.Context, dataSourceID uuid.UUID, refreshSeconds int, diagnostics DataSourceDiagnostics, code string) error {
-	if refreshSeconds < 300 {
-		refreshSeconds = 300
+	if refreshSeconds < 30 {
+		refreshSeconds = 30
 	}
 	next := time.Now().Add(time.Duration(refreshSeconds) * time.Second)
 	var playerDataChanged bool

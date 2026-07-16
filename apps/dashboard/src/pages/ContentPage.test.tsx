@@ -137,7 +137,7 @@ describe("content library", () => {
     expect(statusLabel("failed")).toBe("Failed");
   });
 
-  it("offers the built-in Website and YouTube Widget providers", () => {
+  it("offers web, universal-information, and preset Widget entries", () => {
     const choose = vi.fn();
     render(
       <QueryClientProvider
@@ -154,5 +154,9 @@ describe("content library", () => {
     expect(screen.getByText(/without an API key/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Website/ }));
     expect(choose).toHaveBeenCalledWith("website");
+    fireEvent.click(screen.getByRole("button", { name: /Spotlight/ }));
+    expect(choose).toHaveBeenCalledWith("spotlight");
+    fireEvent.click(screen.getByRole("button", { name: /Leaderboard/ }));
+    expect(choose).toHaveBeenCalledWith("list", "leaderboard");
   });
 });

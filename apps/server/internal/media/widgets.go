@@ -159,6 +159,18 @@ func (s *Service) widgetProvider(name string) (configNormalizer, error) {
 		return cardsWidgetProvider{s}, nil
 	case "weather":
 		return weatherWidgetProvider{s}, nil
+	case "spotlight":
+		return spotlightWidgetProvider{s}, nil
+	case "stat_grid":
+		return statGridWidgetProvider{s}, nil
+	case "chart":
+		return chartWidgetProvider{s}, nil
+	case "progress":
+		return progressWidgetProvider{s}, nil
+	case "timeline":
+		return timelineWidgetProvider{s}, nil
+	case "world_clock":
+		return worldClockWidgetProvider{}, nil
 	default:
 		return nil, errors.New("widget provider is not supported")
 	}
@@ -170,6 +182,9 @@ func (s *Service) CreateWidget(ctx context.Context, user uuid.UUID, input Widget
 	input.Description = strings.TrimSpace(input.Description)
 	if input.Name == "" || len(input.Name) > 180 || len(input.Description) > 2000 {
 		return Asset{}, errors.New("widget name or description is invalid")
+	}
+	if err := validatePreset(input.Provider, input.PresetID); err != nil {
+		return Asset{}, err
 	}
 	provider, err := s.widgetProvider(input.Provider)
 	if err != nil {
@@ -197,7 +212,7 @@ func (s *Service) CreateWidget(ctx context.Context, user uuid.UUID, input Widget
 	if _, err = tx.Exec(ctx, `INSERT INTO assets(id,organization_id,name,description,type,original_filename,detected_mime_type,sha256,original_size,processing_status,created_by) VALUES($1,$2,$3,$4,'widget','','application/vnd.tilecast.widget+json',''::bytea,0,'ready',$5)`, id, organizationID, input.Name, input.Description, user); err != nil {
 		return Asset{}, err
 	}
-	if _, err = tx.Exec(ctx, `INSERT INTO widgets(asset_id,provider,config_version,configuration) VALUES($1,$2,$3,$4::jsonb)`, id, input.Provider, widgetConfigVersion(input.Provider), string(encoded)); err != nil {
+	if _, err = tx.Exec(ctx, `INSERT INTO widgets(asset_id,provider,preset_id,config_version,configuration) VALUES($1,$2,$3,$4,$5::jsonb)`, id, input.Provider, input.PresetID, widgetConfigVersion(input.Provider), string(encoded)); err != nil {
 		return Asset{}, err
 	}
 	if _, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,metadata) VALUES($1,$2,'widget.created','widget',$3,jsonb_build_object('provider',$4::text))`, uuid.New(), user, id.String(), input.Provider); err != nil {
@@ -219,6 +234,12 @@ func (s *Service) UpdateWidget(ctx context.Context, id, user uuid.UUID, input Wi
 	}
 	if input.Provider != existing.Widget.Provider {
 		return Asset{}, errors.New("widget provider cannot be changed")
+	}
+	if input.PresetID == nil {
+		input.PresetID = existing.Widget.PresetID
+	}
+	if err := validatePreset(input.Provider, input.PresetID); err != nil {
+		return Asset{}, err
 	}
 	provider, err := s.widgetProvider(input.Provider)
 	if err != nil {
@@ -246,7 +267,7 @@ func (s *Service) UpdateWidget(ctx context.Context, id, user uuid.UUID, input Wi
 	if err != nil || tag.RowsAffected() == 0 {
 		return Asset{}, ErrNotFound
 	}
-	if _, err = tx.Exec(ctx, `UPDATE widgets SET configuration=$2::jsonb,config_version=$3,updated_at=now() WHERE asset_id=$1`, id, string(encoded), widgetConfigVersion(input.Provider)); err != nil {
+	if _, err = tx.Exec(ctx, `UPDATE widgets SET configuration=$2::jsonb,config_version=$3,preset_id=$4,updated_at=now() WHERE asset_id=$1`, id, string(encoded), widgetConfigVersion(input.Provider), input.PresetID); err != nil {
 		return Asset{}, err
 	}
 	if _, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id) VALUES($1,$2,'widget.updated','widget',$3)`, uuid.New(), user, id.String()); err != nil {
@@ -263,7 +284,7 @@ func (s *Service) UpdateWidget(ctx context.Context, id, user uuid.UUID, input Wi
 
 func widgetConfigVersion(provider string) int {
 	switch provider {
-	case "ticker", "menu", "list", "table", "agenda", "metric", "cards", "weather":
+	case "ticker", "menu", "list", "table", "agenda", "metric", "cards", "weather", "spotlight", "stat_grid", "chart", "progress", "timeline":
 		return 2
 	default:
 		return 1
@@ -275,14 +296,28 @@ func (s *Service) DuplicateWidget(ctx context.Context, id, user uuid.UUID) (Asse
 	if err != nil || asset.Widget == nil {
 		return Asset{}, ErrNotFound
 	}
-	return s.CreateWidget(ctx, user, WidgetInput{Provider: asset.Widget.Provider, Name: asset.Name + " copy", Description: asset.Description, Configuration: asset.Widget.Configuration})
+	return s.CreateWidget(ctx, user, WidgetInput{Provider: asset.Widget.Provider, PresetID: asset.Widget.PresetID, Name: asset.Name + " copy", Description: asset.Description, Configuration: asset.Widget.Configuration})
 }
 
 func (s *Service) loadWidget(ctx context.Context, id uuid.UUID) (*Widget, error) {
 	var widget Widget
-	err := s.db.QueryRow(ctx, `SELECT provider,config_version,configuration FROM widgets WHERE asset_id=$1`, id).Scan(&widget.Provider, &widget.ConfigVersion, &widget.Configuration)
+	err := s.db.QueryRow(ctx, `SELECT provider,preset_id,config_version,configuration FROM widgets WHERE asset_id=$1`, id).Scan(&widget.Provider, &widget.PresetID, &widget.ConfigVersion, &widget.Configuration)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
 	return &widget, err
+}
+
+func validatePreset(provider string, presetID *string) error {
+	if presetID == nil {
+		return nil
+	}
+	allowed := map[string]string{
+		"leaderboard": "list", "status_board": "cards", "queue_board": "list",
+		"schedule_departures": "agenda", "opening_hours": "table", "directory": "cards",
+	}
+	if allowed[*presetID] != provider {
+		return errors.New("widget preset is not compatible with the provider")
+	}
+	return nil
 }

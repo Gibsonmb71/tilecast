@@ -50,6 +50,10 @@ import type {
   ManualSourceConfig,
   WeatherSourceConfig,
   TypedRecordData,
+  TypedDatasetPayload,
+  TransitSourceConfig,
+  CAPAlertsSourceConfig,
+  AirQualitySourceConfig,
   Layout,
   LayoutDocument,
   LayoutList,
@@ -660,18 +664,23 @@ export const api = {
       | CalendarConfig
       | StructuredSourceConfig
       | ManualSourceConfig
-      | WeatherSourceConfig,
+      | WeatherSourceConfig
+      | TransitSourceConfig
+      | CAPAlertsSourceConfig
+      | AirQualitySourceConfig,
     csrfToken: string,
     previewDate?: string,
   ) =>
-    request<StructuredPreview | CalendarPreview | TypedRecordData>(
-      `/data-sources/${provider}/preview`,
-      {
-        method: "POST",
-        headers: { "X-CSRF-Token": csrfToken },
-        body: JSON.stringify({ configuration, previewDate }),
-      },
-    ),
+    request<
+      | StructuredPreview
+      | CalendarPreview
+      | TypedRecordData
+      | TypedDatasetPayload
+    >(`/data-sources/${provider}/preview`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ configuration, previewDate }),
+    }),
   // Preview a saved Data Source by id using its full stored configuration
   // (including uploaded CSV content the detail response strips).
   previewSavedDataSource: (id: string, previewDate?: string) => {

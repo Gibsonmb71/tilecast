@@ -184,10 +184,19 @@
     "point": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["at", "value"],
+      "required": ["at"],
+      "oneOf": [
+        { "required": ["value"], "not": { "required": ["values"] } },
+        { "required": ["values"], "not": { "required": ["value"] } }
+      ],
       "properties": {
         "at": { "type": "string", "format": "date-time" },
-        "value": { "$ref": "#/$defs/value" }
+        "value": { "$ref": "#/$defs/value" },
+        "values": {
+          "type": "object",
+          "maxProperties": 16,
+          "additionalProperties": { "$ref": "#/$defs/value" }
+        }
       }
     },
     "value": {
@@ -343,7 +352,15 @@
       "additionalProperties": false,
       "required": ["source"],
       "properties": {
-        "source": { "enum": ["literal", "dataset", "repeat", "environment"] },
+        "source": {
+          "enum": [
+            "literal",
+            "dataset",
+            "repeat",
+            "repeat_index",
+            "environment"
+          ]
+        },
         "dataset": { "type": "string", "maxLength": 180 },
         "path": { "type": "string", "maxLength": 180 },
         "value": { "type": "string", "maxLength": 4096 },
@@ -375,7 +392,20 @@
       "required": ["binding", "op"],
       "properties": {
         "binding": { "$ref": "#/$defs/binding" },
-        "op": { "enum": ["equals", "not_equals", "empty", "not_empty"] },
+        "op": {
+          "enum": [
+            "equals",
+            "not_equals",
+            "empty",
+            "not_empty",
+            "greater_than",
+            "greater_or_equal",
+            "less_than",
+            "less_or_equal",
+            "before",
+            "after"
+          ]
+        },
         "value": { "type": "string", "maxLength": 240 }
       }
     },

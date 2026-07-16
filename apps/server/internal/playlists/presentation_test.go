@@ -76,3 +76,28 @@ func TestCompileWebPresentationIsHTTPSAndLifecycleBounded(t *testing.T) {
 		t.Fatal("public insecure web presentation was accepted")
 	}
 }
+
+func TestProjectMultiDatasetDocument(t *testing.T) {
+	raw := json.RawMessage(`{"datasets":[{"id":"current","kind":"object","fields":[{"key":"aqi","label":"AQI","type":"integer"}],"values":{"aqi":"42"},"attribution":"Example"},{"id":"hourly","kind":"time_series","fields":[{"key":"pm2_5","label":"PM2.5","type":"number"}],"points":[{"at":"2026-07-16T12:00:00Z","values":{"pm2_5":"8.5"}}]}]}`)
+	document, err := projectDataDocument(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(document.Datasets) != 2 || document.Datasets[0].Value == nil || document.Datasets[0].Value.Object["aqi"].Integer == nil {
+		t.Fatalf("document=%+v", document)
+	}
+	if len(document.Datasets[1].Points) != 1 || document.Datasets[1].Points[0].Values["pm2_5"].Number == nil {
+		t.Fatalf("points=%+v", document.Datasets[1].Points)
+	}
+}
+
+func TestCompileWorldClockAndChartCapabilities(t *testing.T) {
+	clock, err := compileWidgetPresentation("world_clock", json.RawMessage(`{"zones":[{"label":"New York","timezone":"America/New_York"}],"format":"12","showDate":true,"columns":1}`))
+	if err != nil || clock.Native == nil || clock.RequiredCapabilities["environment.time"] != 1 {
+		t.Fatalf("clock=%+v err=%v", clock, err)
+	}
+	chart, err := compileWidgetPresentation("chart", json.RawMessage(`{"dataSourceId":"11111111-1111-1111-1111-111111111111","dataset":"hourly","chartType":"line","series":[{"field":"pm2_5","label":"PM2.5"}]}`))
+	if err != nil || chart.RequiredCapabilities["content.line_chart"] != 2 {
+		t.Fatalf("chart=%+v err=%v", chart, err)
+	}
+}

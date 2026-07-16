@@ -57,6 +57,7 @@ type SourcesConfig struct {
 	MaximumRedirects      int
 	MinimumRefreshSeconds int
 	MaximumRefreshSeconds int
+	AirQualityBaseURL     string
 }
 
 type SchedulingConfig struct {
@@ -165,6 +166,7 @@ func Load() (Config, error) {
 	if cfg.Sources.MinimumRefreshSeconds > cfg.Sources.MaximumRefreshSeconds {
 		return Config{}, errors.New("TILECAST_SOURCE_MIN_REFRESH_SECONDS must not exceed TILECAST_SOURCE_MAX_REFRESH_SECONDS")
 	}
+	cfg.Sources.AirQualityBaseURL = get("TILECAST_AIR_QUALITY_BASE_URL", "https://air-quality-api.open-meteo.com")
 	operationValues := []struct {
 		name, fallback string
 		max            int
