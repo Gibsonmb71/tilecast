@@ -148,6 +148,7 @@ func (s *server) routes() http.Handler {
 			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/widgets", s.createWidget)
 			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/widgets/compile-preview", s.compileWidgetPreview)
 			dashboard.Get("/provider-catalog", s.providerCatalog)
+			dashboard.Get("/content-definitions", s.contentDefinitions)
 			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Patch("/widgets/{id}", s.updateWidget)
 			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/widgets/{id}/duplicate", s.duplicateWidget)
 			// Data Sources — reusable non-visual data connections.

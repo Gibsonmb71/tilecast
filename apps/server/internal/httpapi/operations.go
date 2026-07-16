@@ -156,6 +156,10 @@ func (s *server) activateEmergency(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
+	if err := s.playlists.ValidatePresentationTargets(r.Context(), &input.PlaylistID, nil, input.ScreenIDs, input.GroupIDs); err != nil {
+		s.writePlaylistError(w, r, err)
+		return
+	}
 	tx, err := s.db.Begin(r.Context())
 	if err != nil {
 		s.internalError(w, r, err)
