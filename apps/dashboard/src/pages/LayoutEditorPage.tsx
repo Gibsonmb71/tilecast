@@ -38,6 +38,7 @@ import { useNavigate, useParams } from "react-router";
 import { api, ApiError } from "../api/client";
 import type {
   Asset,
+  DataSource,
   LayoutDocument,
   LayoutPlacement,
   LayoutPrimitive,
@@ -126,6 +127,13 @@ export function LayoutEditorPage() {
   const playlistsQuery = useQuery({
     queryKey: ["layout-playlists"],
     queryFn: () => api.playlists(""),
+  });
+  const dataSourcesQuery = useQuery({
+    queryKey: ["layout-data-sources"],
+    queryFn: () =>
+      api.listDataSources(
+        new URLSearchParams({ page: "1", pageSize: "100", sort: "name" }),
+      ),
   });
   const revisions = useQuery({
     queryKey: ["layout-revisions", id],
@@ -288,10 +296,10 @@ export function LayoutEditorPage() {
   };
   const addContent = (asset: Asset) => {
     if (!document) return;
-    const isApp = asset.type === "source";
+    const isApp = asset.type === "widget";
     const item: LayoutPlacement = {
       id: crypto.randomUUID(),
-      type: isApp ? "app" : "asset",
+      type: isApp ? "widget" : "asset",
       name: asset.name,
       x: document.canvas.width * 0.2,
       y: document.canvas.height * 0.2,
@@ -305,7 +313,7 @@ export function LayoutEditorPage() {
       opacity: 1,
       visible: true,
       locked: false,
-      appId: isApp ? asset.id : undefined,
+      widgetId: isApp ? asset.id : undefined,
       assetId: isApp ? undefined : asset.id,
       overrides: isApp
         ? {
@@ -354,45 +362,11 @@ export function LayoutEditorPage() {
     update((draft) => draft.placements.push(item));
     setSelection(new Set([item.id]));
   };
-  const loadStructuredPreview = async (date: string) => {
-    const current = documentRef.current;
-    if (!current) return;
-    const ids = new Set(
-      current.placements
-        .filter((placement) => placement.type === "app" && placement.appId)
-        .map((placement) => placement.appId!),
-    );
-    const assets = (contentQuery.data?.items ?? []).filter(
-      (asset) =>
-        ids.has(asset.id) &&
-        asset.source &&
-        ["csv", "json"].includes(asset.source.provider),
-    );
-    const values: Record<string, Record<string, string>> = {};
-    await Promise.all(
-      assets.map(async (asset) => {
-        const provider = asset.source!.provider as "csv" | "json";
-        const result = await api.previewStructuredSource(
-          provider,
-          asset.source!
-            .configuration as import("../api/types").StructuredSourceConfig,
-          csrf,
-          date,
-        );
-        const record = result.configuration.data.records[0];
-        values[asset.id] = record
-          ? {
-              title: record.title,
-              subtitle: record.subtitle ?? "",
-              date: record.date ?? "",
-              author: record.author ?? "",
-              description: record.description ?? "",
-              ...(record.values ?? {}),
-            }
-          : {};
-      }),
-    );
-    setPreviewValues(values);
+  // Text-binding preview values are keyed by Data Source id. Field values come from
+  // each Data Source's own cached, date-selected records (owned by the Data Source,
+  // not duplicated into the Layout), so previewing here just re-reads current caches.
+  const loadStructuredPreview = () => {
+    setPreviewValues({});
   };
   const duplicateSelection = useCallback(() => {
     const current = documentRef.current;
@@ -655,12 +629,7 @@ export function LayoutEditorPage() {
   const playlistByID = new Map(
     playlistsQuery.data?.items.map((playlist) => [playlist.id, playlist]),
   );
-  const structuredApps = document.placements
-    .filter((placement) => placement.type === "app" && placement.appId)
-    .map((placement) => contentByID.get(placement.appId!))
-    .filter((asset): asset is Asset =>
-      Boolean(asset?.source && ["csv", "json"].includes(asset.source.provider)),
-    );
+  const dataSources = dataSourcesQuery.data?.items ?? [];
   return (
     <div className="layout-editor">
       <div className="layout-editor-toolbar">
@@ -685,7 +654,7 @@ export function LayoutEditorPage() {
           className="button button--compact button--secondary"
           onClick={() => {
             setPreview(true);
-            void loadStructuredPreview(previewDate);
+            void loadStructuredPreview();
           }}
         >
           <Scan size={16} />
@@ -758,7 +727,7 @@ export function LayoutEditorPage() {
               <span className="layout-content-shelf__preview">
                 {asset.thumbnailUrl ? (
                   <img src={asset.thumbnailUrl} alt="" />
-                ) : asset.type === "source" ? (
+                ) : asset.type === "widget" ? (
                   <AppWindow size={18} />
                 ) : (
                   <ImageIcon size={18} />
@@ -766,7 +735,7 @@ export function LayoutEditorPage() {
               </span>
               <span>
                 <strong>{asset.name}</strong>
-                <small>{asset.source?.provider ?? asset.type}</small>
+                <small>{asset.widget?.provider ?? asset.type}</small>
               </span>
             </button>
           ))}
@@ -931,8 +900,8 @@ export function LayoutEditorPage() {
                   key={item.id}
                   item={item}
                   content={
-                    item.appId
-                      ? contentByID.get(item.appId)
+                    item.widgetId
+                      ? contentByID.get(item.widgetId)
                       : item.assetId
                         ? contentByID.get(item.assetId)
                         : undefined
@@ -962,8 +931,8 @@ export function LayoutEditorPage() {
           <PlacementInspector
             item={primary}
             content={
-              primary.appId
-                ? contentByID.get(primary.appId)
+              primary.widgetId
+                ? contentByID.get(primary.widgetId)
                 : primary.assetId
                   ? contentByID.get(primary.assetId)
                   : undefined
@@ -973,7 +942,7 @@ export function LayoutEditorPage() {
                 ? playlistByID.get(primary.playlistId)
                 : undefined
             }
-            structuredApps={structuredApps}
+            dataSources={dataSources}
             update={(change) => mutateSelected(change)}
             duplicate={duplicateSelection}
             group={groupSelection}
@@ -1015,7 +984,7 @@ export function LayoutEditorPage() {
               value={previewDate}
               onChange={(event) => {
                 setPreviewDate(event.target.value);
-                void loadStructuredPreview(event.target.value);
+                void loadStructuredPreview();
               }}
             />
             <button
@@ -1040,8 +1009,8 @@ export function LayoutEditorPage() {
                   item={item}
                   canvas={document.canvas}
                   content={
-                    item.appId
-                      ? contentByID.get(item.appId)
+                    item.widgetId
+                      ? contentByID.get(item.widgetId)
                       : item.assetId
                         ? contentByID.get(item.assetId)
                         : undefined
@@ -1173,7 +1142,7 @@ function PlacementView({
             <span>{content?.name ?? item.name}</span>
           </div>
         )
-      ) : item.type === "app" ? (
+      ) : item.type === "widget" ? (
         <AppPlacementPreview asset={content} item={item} />
       ) : primitive?.kind === "text" ? (
         <div
@@ -1204,7 +1173,7 @@ function PlacementView({
             ? (() => {
                 const binding = primitive.binding;
                 const value =
-                  previewValues?.[binding.sourceId]?.[binding.field];
+                  previewValues?.[binding.dataSourceId]?.[binding.field];
                 return value
                   ? `${binding.prefix ?? ""}${value}${binding.suffix ?? ""}`
                   : binding.fallbackText ||
@@ -1261,8 +1230,8 @@ function AppPlacementPreview({
   asset?: Asset;
   item: LayoutPlacement;
 }) {
-  const provider = asset?.source?.provider;
-  const config = (asset?.source?.configuration ?? {}) as Record<
+  const provider = asset?.widget?.provider;
+  const config = (asset?.widget?.configuration ?? {}) as Record<
     string,
     unknown
   >;
@@ -1352,7 +1321,7 @@ function PlacementInspector({
   item,
   content,
   playlist,
-  structuredApps,
+  dataSources,
   update,
   duplicate,
   group,
@@ -1362,7 +1331,7 @@ function PlacementInspector({
   item: LayoutPlacement;
   content?: Asset;
   playlist?: Playlist;
-  structuredApps: Asset[];
+  dataSources: DataSource[];
   update: (change: (item: LayoutPlacement) => void) => void;
   duplicate: () => void;
   group: () => void;
@@ -1451,7 +1420,7 @@ function PlacementInspector({
           {item.visible ? <Eye size={16} /> : <EyeOff size={16} />}
         </button>
       </div>
-      {item.type === "app" && (
+      {item.type === "widget" && (
         <div className="layout-placement-settings">
           <div className="form-grid form-grid--2">
             <label className="field">
@@ -1549,8 +1518,8 @@ function PlacementInspector({
               <option value="hide">Hide placement</option>
             </select>
           </label>
-          {(content?.source?.provider === "website" ||
-            content?.source?.provider === "youtube") && (
+          {(content?.widget?.provider === "website" ||
+            content?.widget?.provider === "youtube") && (
             <label className="check-row">
               <input
                 type="checkbox"
@@ -1780,17 +1749,17 @@ function PlacementInspector({
             <span className="field__label">Visibility</span>
             <select
               value={primitive.binding ? "field" : "always"}
-              disabled={!primitive.binding && structuredApps.length === 0}
+              disabled={!primitive.binding && dataSources.length === 0}
               onChange={(event) =>
                 update((target) => {
                   if (event.target.value === "always") {
                     delete target.primitive!.binding;
                     return;
                   }
-                  const source = structuredApps[0];
+                  const source = dataSources[0];
                   if (source)
                     target.primitive!.binding = {
-                      sourceId: source.id,
+                      dataSourceId: source.id,
                       field: structuredFields(source)[0] ?? "title",
                       hideWhenEmpty: true,
                     };
@@ -1806,16 +1775,16 @@ function PlacementInspector({
               <label className="field">
                 <span className="field__label">Data Source</span>
                 <select
-                  value={primitive.binding.sourceId}
+                  value={primitive.binding.dataSourceId}
                   onChange={(event) =>
                     update(
                       (target) =>
-                        (target.primitive!.binding!.sourceId =
+                        (target.primitive!.binding!.dataSourceId =
                           event.target.value),
                     )
                   }
                 >
-                  {structuredApps.map((asset) => (
+                  {dataSources.map((asset) => (
                     <option key={asset.id} value={asset.id}>
                       {asset.name}
                     </option>
@@ -1834,8 +1803,8 @@ function PlacementInspector({
                   }
                 >
                   {structuredFields(
-                    structuredApps.find(
-                      (asset) => asset.id === primitive.binding!.sourceId,
+                    dataSources.find(
+                      (asset) => asset.id === primitive.binding!.dataSourceId,
                     ),
                   ).map((field) => (
                     <option key={field} value={field}>
@@ -1860,16 +1829,16 @@ function PlacementInspector({
                     delete target.primitive!.binding;
                     return;
                   }
-                  const source = structuredApps[0];
+                  const source = dataSources[0];
                   if (source)
                     target.primitive!.binding = {
-                      sourceId: source.id,
+                      dataSourceId: source.id,
                       field: structuredFields(source)[0] ?? "title",
                       format: "text",
                     };
                 })
               }
-              disabled={!primitive.binding && structuredApps.length === 0}
+              disabled={!primitive.binding && dataSources.length === 0}
             >
               <option value="static">Static</option>
               <option value="dynamic">Dynamic field</option>
@@ -1880,15 +1849,15 @@ function PlacementInspector({
               <label className="field">
                 <span className="field__label">Data Source</span>
                 <select
-                  value={primitive.binding.sourceId}
+                  value={primitive.binding.dataSourceId}
                   onChange={(event) =>
                     update((target) => {
-                      const source = structuredApps.find(
+                      const source = dataSources.find(
                         (asset) => asset.id === event.target.value,
                       );
                       target.primitive!.binding = {
                         ...target.primitive!.binding!,
-                        sourceId: event.target.value,
+                        dataSourceId: event.target.value,
                         field: source
                           ? (structuredFields(source)[0] ?? "title")
                           : "title",
@@ -1896,7 +1865,7 @@ function PlacementInspector({
                     })
                   }
                 >
-                  {structuredApps.map((asset) => (
+                  {dataSources.map((asset) => (
                     <option key={asset.id} value={asset.id}>
                       {asset.name}
                     </option>
@@ -1915,8 +1884,8 @@ function PlacementInspector({
                   }
                 >
                   {structuredFields(
-                    structuredApps.find(
-                      (asset) => asset.id === primitive.binding!.sourceId,
+                    dataSources.find(
+                      (asset) => asset.id === primitive.binding!.dataSourceId,
                     ),
                   ).map((field) => (
                     <option key={field} value={field}>
@@ -2217,10 +2186,9 @@ function PlacementInspector({
   );
 }
 
-function structuredFields(asset?: Asset): string[] {
-  if (!asset?.source || !["csv", "json"].includes(asset.source.provider))
-    return [];
-  const config = asset.source.configuration as {
+function structuredFields(source?: DataSource): string[] {
+  if (!source || !["csv", "json"].includes(source.provider)) return [];
+  const config = source.configuration as {
     mapping?: { valueFields?: Record<string, string> };
   };
   return [

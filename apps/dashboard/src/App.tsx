@@ -14,7 +14,8 @@ import {
 import { SettingsPage } from "./pages/SettingsPage";
 import { LayoutsPage } from "./pages/LayoutsPage";
 import { LayoutEditorPage } from "./pages/LayoutEditorPage";
-import { AppEditorPage, AppsPage } from "./pages/AppsPage";
+import { WidgetEditorPage, WidgetsPage } from "./pages/WidgetsPage";
+import { DataSourceEditorPage, DataSourcesPage } from "./pages/DataSourcesPage";
 
 export function App() {
   return (
@@ -35,10 +36,17 @@ export function App() {
         <Route path="groups/:id" element={<GroupDetailPage />} />
         <Route path="assets" element={<ContentPage />} />
         <Route path="content" element={<Navigate to="/assets" replace />} />
-        <Route path="apps" element={<AppsPage />} />
-        <Route path="apps/new" element={<AppEditorPage />} />
-        <Route path="apps/new/:provider" element={<AppEditorPage />} />
-        <Route path="apps/:id" element={<AppEditorPage />} />
+        <Route path="widgets" element={<WidgetsPage />} />
+        <Route path="widgets/new" element={<WidgetEditorPage />} />
+        <Route path="widgets/new/:provider" element={<WidgetEditorPage />} />
+        <Route path="widgets/:id" element={<WidgetEditorPage />} />
+        <Route path="data-sources" element={<DataSourcesPage />} />
+        <Route path="data-sources/new" element={<DataSourceEditorPage />} />
+        <Route
+          path="data-sources/new/:provider"
+          element={<DataSourceEditorPage />}
+        />
+        <Route path="data-sources/:id" element={<DataSourceEditorPage />} />
         <Route path="playlists" element={<PlaylistsPage />} />
         <Route path="playlists/:id" element={<PlaylistEditorPage />} />
         <Route path="layouts" element={<LayoutsPage />} />

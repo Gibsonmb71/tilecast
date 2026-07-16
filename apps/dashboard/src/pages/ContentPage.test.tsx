@@ -3,7 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Asset, User } from "../api/types";
-import { SourceProviderGallery } from "../content/SourceEditors";
+import { WidgetProviderGallery } from "../content/SourceEditors";
 import {
   AssetCollection,
   canManageContent,
@@ -87,14 +87,14 @@ describe("content library", () => {
     expect(statusLabel("failed")).toBe("Failed");
   });
 
-  it("offers the built-in Website, YouTube, and Calendar Source providers", () => {
+  it("offers the built-in Website and YouTube Widget providers", () => {
     const choose = vi.fn();
-    render(<SourceProviderGallery onChoose={choose} onClose={vi.fn()} />);
+    render(<WidgetProviderGallery onChoose={choose} onClose={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /YouTube/ }));
     expect(choose).toHaveBeenCalledWith("youtube");
-    expect(screen.getByText(/Display a website/)).toBeInTheDocument();
+    expect(screen.getByText(/Display an approved webpage/)).toBeInTheDocument();
     expect(screen.getByText(/without an API key/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Calendar/ }));
-    expect(choose).toHaveBeenCalledWith("calendar");
+    fireEvent.click(screen.getByRole("button", { name: /Website/ }));
+    expect(choose).toHaveBeenCalledWith("website");
   });
 });

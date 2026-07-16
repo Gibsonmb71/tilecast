@@ -38,13 +38,13 @@ A Widget is a Content record (an asset of type `widget`) and may play fullscreen
 
 The server validates that the selected Data Source provider is compatible with the Widget provider and that every selected field exists in the Data Source schema.
 
-| Widget  | Accepted Data Sources                |
-| ------- | ------------------------------------ |
-| Ticker  | RSS, Atom, Calendar, JSON, CSV       |
-| Menu    | CSV, JSON                            |
-| List    | Calendar, RSS, Atom, JSON, CSV       |
-| Table   | JSON, CSV                            |
-| Agenda  | Calendar, date-aware JSON, date-aware CSV |
+| Widget | Accepted Data Sources                     |
+| ------ | ----------------------------------------- |
+| Ticker | RSS, Atom, Calendar, JSON, CSV            |
+| Menu   | CSV, JSON                                 |
+| List   | Calendar, RSS, Atom, JSON, CSV            |
+| Table  | JSON, CSV                                 |
+| Agenda | Calendar, date-aware JSON, date-aware CSV |
 
 The registry never loads third-party code and rejects unknown providers, unknown configuration keys, scripts, HTML templates, and executable expressions.
 

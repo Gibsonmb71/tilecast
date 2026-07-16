@@ -1,6 +1,7 @@
 import {
   Activity,
   CalendarDays,
+  Database,
   Ellipsis,
   Home,
   Image,
@@ -22,8 +23,9 @@ import { OperationsDashboard } from "./OperationsDashboard";
 const nav = [
   ["Overview", "/", Home],
   ["Screens", "/screens", Monitor],
-  ["Assets", "/assets", Image],
-  ["Apps", "/apps", Blocks],
+  ["Media", "/assets", Image],
+  ["Widgets", "/widgets", Blocks],
+  ["Data Sources", "/data-sources", Database],
   ["Playlists", "/playlists", ListVideo],
   ["Layouts", "/layouts", Layers3],
   ["Schedules", "/schedules", CalendarDays],

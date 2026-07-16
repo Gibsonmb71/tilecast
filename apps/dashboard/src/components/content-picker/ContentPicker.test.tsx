@@ -18,9 +18,9 @@ const asset = (id: string, name: string, type: Asset["type"]): Asset => ({
   name,
   description: "",
   type,
-  originalFilename: type === "source" ? "" : `${name}.png`,
-  declaredMimeType: type === "source" ? "application/json" : "image/png",
-  detectedMimeType: type === "source" ? "application/json" : "image/png",
+  originalFilename: type === "widget" ? "" : `${name}.png`,
+  declaredMimeType: type === "widget" ? "application/json" : "image/png",
+  detectedMimeType: type === "widget" ? "application/json" : "image/png",
   sha256: "aabb",
   originalSize: 100,
   metadata: {},
@@ -28,15 +28,15 @@ const asset = (id: string, name: string, type: Asset["type"]): Asset => ({
   createdAt: "2026-01-01T00:00:00Z",
   updatedAt: "2026-01-01T00:00:00Z",
   variants: [],
-  source:
-    type === "source"
+  widget:
+    type === "widget"
       ? { provider: "website", configVersion: 1, configuration: {} as never }
       : undefined,
 });
 
 const items = [
   asset("one", "Welcome", "image"),
-  asset("two", "Menu", "source"),
+  asset("two", "Menu", "widget"),
 ];
 
 function picker(mode: "single" | "multiple", onConfirm = vi.fn()) {

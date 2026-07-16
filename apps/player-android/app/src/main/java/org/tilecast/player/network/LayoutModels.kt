@@ -23,7 +23,7 @@ data class LayoutPlacement(
     val visible: Boolean,
     val locked: Boolean,
     val groupId: String? = null,
-    val appId: String? = null,
+    val widgetId: String? = null,
     val assetId: String? = null,
     val playlistId: String? = null,
     val overrides: JsonObject? = null,
@@ -59,7 +59,7 @@ data class LayoutPrimitive(
 )
 
 @Serializable
-data class LayoutBinding(val sourceId: String, val field: String, val prefix: String = "", val suffix: String = "", val fallbackText: String = "", val hideWhenEmpty: Boolean = false, val format: String = "text")
+data class LayoutBinding(val dataSourceId: String, val field: String, val prefix: String = "", val suffix: String = "", val fallbackText: String = "", val hideWhenEmpty: Boolean = false, val format: String = "text")
 
 @Serializable
 data class LayoutPlayback(val fit: String = "contain", val muted: Boolean = true, val loop: Boolean = true, val fallback: String = "hide", val cornerRadius: Float = 0f)

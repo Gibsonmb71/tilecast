@@ -736,7 +736,9 @@ paths:
         "201": { description: Widget created }
         "422":
           {
-            description: Provider unknown, Data Source incompatible, or a selected field does not exist,
+            description: Provider unknown,
+            Data Source incompatible,
+            or a selected field does not exist,
           }
   /api/v1/widgets/{id}:
     patch:
@@ -776,7 +778,12 @@ paths:
       responses:
         "200":
           {
-            description: Data Source detail including status, diagnostics, cached record count, typed fields, date-selection policy, and Widget and Layout-binding usage,
+            description: Data Source detail including status,
+            diagnostics,
+            cached record count,
+            typed fields,
+            date-selection policy,
+            and Widget and Layout-binding usage,
           }
         "404": { description: Data Source not found }
     patch:
@@ -829,7 +836,8 @@ paths:
                 configuration: { type: object }
                 previewDate: { type: string, format: date }
       responses:
-        "200": { description: Sanitized real-data preview and typed diagnostics }
+        "200":
+          { description: Sanitized real-data preview and typed diagnostics }
         "404": { description: Data Source provider not found }
         "422": { description: Validation or safe fetch failed }
   /api/v1/layouts:

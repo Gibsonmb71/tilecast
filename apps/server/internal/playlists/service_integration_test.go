@@ -113,7 +113,7 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 	if err != nil || same.ManifestVersion != manifest.ManifestVersion || sameETag != etag {
 		t.Fatal("manifest read changed version or ETag")
 	}
-	if manifest.SchemaVersion != 10 || manifest.DirectFallbackPlaylist == nil || len(manifest.DirectFallbackPlaylist.Items) != 2 || len(manifest.Assets) != 2 {
+	if manifest.SchemaVersion != 11 || manifest.DirectFallbackPlaylist == nil || len(manifest.DirectFallbackPlaylist.Items) != 2 || len(manifest.Assets) != 2 {
 		t.Fatalf("manifest=%#v", manifest)
 	}
 	emergencyID := uuid.New()

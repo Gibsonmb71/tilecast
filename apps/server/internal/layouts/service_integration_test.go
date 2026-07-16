@@ -120,3 +120,84 @@ func TestLayoutDraftPublishAndRestoreLifecycle(t *testing.T) {
 		t.Fatalf("expected video capability validation, got %v", err)
 	}
 }
+
+// TestLayoutDataSourceBindingAndPlacementRules verifies that a text primitive may bind
+// directly to a Data Source field, and that a Data Source can never be a widget placement.
+func TestLayoutDataSourceBindingAndPlacementRules(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	lockPool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lockPool.Close()
+	lock, err := lockPool.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Release()
+	if _, err = lock.Exec(ctx, `SELECT pg_advisory_lock(7421999)`); err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Exec(ctx, `SELECT pg_advisory_unlock(7421999)`) //nolint:errcheck
+	if err = database.Migrate(ctx, databaseURL); err != nil {
+		t.Fatal(err)
+	}
+	pool, err := database.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if _, err = pool.Exec(ctx, `TRUNCATE layouts, data_sources, widgets, assets, sessions, audit_logs, users, organization_settings CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+	owner, err := auth.NewService(pool, time.Hour).Setup(ctx, auth.SetupInput{OrganizationName: "Binding Test", OwnerName: "Owner", Username: "owner", Password: "correct horse battery staple"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(pool)
+	var organizationID uuid.UUID
+	if err = pool.QueryRow(ctx, `SELECT id FROM organization_settings WHERE singleton=TRUE`).Scan(&organizationID); err != nil {
+		t.Fatal(err)
+	}
+	dataSourceID := uuid.New()
+	if _, err = pool.Exec(ctx, `INSERT INTO data_sources(id,organization_id,name,provider,configuration,created_by)VALUES($1,$2,'Lunch data','csv',jsonb_build_object('presentation','list'),$3)`, dataSourceID, organizationID, owner.User.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	layout, err := service.Create(ctx, owner.User.ID, "Binding board", "", "landscape", 1920, 1080)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rev := layout.DraftRevision
+
+	// A widget placement that points at a Data Source id (not a widget asset) is rejected:
+	// Data Sources can never be placed in a Layout as visual content. A failed draft save
+	// rolls back, so the draft revision is unchanged for the next attempt.
+	rejected := validTestDocument()
+	rejected.Placements = append(rejected.Placements, Placement{ID: uuid.New(), Type: "widget", Name: "Bad", X: 0, Y: 0, Width: 200, Height: 100, Layer: 3, Opacity: 1, Visible: true, WidgetID: &dataSourceID})
+	if _, err = service.SaveDraft(ctx, layout.ID, owner.User.ID, rev, rejected); err == nil {
+		t.Fatal("expected a Data Source placed as a widget to be rejected")
+	}
+
+	// A binding to an unknown Data Source is rejected.
+	missing := validTestDocument()
+	missing.Placements[0].Primitive.Binding = &Binding{DataSourceID: uuid.New(), Field: "title"}
+	if _, err = service.SaveDraft(ctx, layout.ID, owner.User.ID, rev, missing); err == nil {
+		t.Fatal("expected a binding to an unknown Data Source to be rejected")
+	}
+
+	// A text primitive that binds directly to a CSV Data Source field publishes cleanly.
+	document := validTestDocument()
+	document.Placements[0].Primitive.Binding = &Binding{DataSourceID: dataSourceID, Field: "title"}
+	layout, err = service.SaveDraft(ctx, layout.ID, owner.User.ID, rev, document)
+	if err != nil {
+		t.Fatalf("save draft with data source binding: %v", err)
+	}
+	if _, err = service.Publish(ctx, layout.ID, owner.User.ID, layout.DraftRevision); err != nil {
+		t.Fatalf("publish with data source binding: %v", err)
+	}
+}
