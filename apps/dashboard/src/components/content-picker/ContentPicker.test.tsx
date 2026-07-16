@@ -92,6 +92,11 @@ describe("ContentPicker", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Welcome/ }));
     fireEvent.click(screen.getByRole("button", { name: /Menu/ }));
     expect(screen.getByText("1 selected")).toBeInTheDocument();
-    expect(screen.getAllByText("Menu")).toHaveLength(2);
+    expect(document.querySelector(".selected-content-tray")).toHaveTextContent(
+      "Menu",
+    );
+    expect(
+      document.querySelector(".selected-content-tray"),
+    ).not.toHaveTextContent("Welcome");
   });
 });

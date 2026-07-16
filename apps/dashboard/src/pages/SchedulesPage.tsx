@@ -1,3 +1,4 @@
+import { Select } from "../components/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
@@ -192,7 +193,7 @@ export function GroupDetailPage() {
         </p>
         {canManage(auth.status?.user?.role) ? (
           <div className="assignment-controls">
-            <select
+            <Select
               aria-label="Sync group content"
               value={selectedPresentation}
               onChange={(event) => setSelectedPresentation(event.target.value)}
@@ -214,7 +215,7 @@ export function GroupDetailPage() {
                     </option>
                   ))}
               </optgroup>
-            </select>
+            </Select>
             <button
               className="button button--primary"
               disabled={
@@ -248,14 +249,14 @@ export function GroupDetailPage() {
             value={screenSearch}
             onChange={(e) => setScreenSearch(e.target.value)}
           />
-          <select value="" onChange={(e) => add.mutate(e.target.value)}>
+          <Select value="" onChange={(e) => add.mutate(e.target.value)}>
             <option value="">Choose a screen…</option>
             {available.map((s) => (
               <option value={s.id} key={s.id}>
                 {s.name}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
       )}
       <div className="schedule-list">

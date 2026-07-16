@@ -67,9 +67,15 @@ describe("settings presentation", () => {
         onChange={change}
       />,
     );
-    expect(
-      screen.getByRole("option", { name: "First-party cookies" }),
-    ).toHaveValue("first_party");
+    const control = screen.getByRole("combobox", { name: "Cookie policy" });
+    expect(control).toHaveTextContent("First-party cookies");
+    fireEvent.click(control);
+    fireEvent.click(
+      screen.getByRole("option", {
+        name: "First- and third-party cookies",
+      }),
+    );
+    expect(change).toHaveBeenCalledWith("first_and_third_party");
   });
 
   it("edits weekdays without exposing numeric ISO values", () => {
@@ -135,7 +141,7 @@ describe("settings presentation", () => {
       screen.getByRole("combobox", {
         name: "Manifest reconciliation interval unit",
       }),
-    ).toHaveValue("minutes");
+    ).toHaveTextContent("minutes");
     fireEvent.change(
       screen.getByRole("spinbutton", {
         name: "Manifest reconciliation interval",

@@ -1,10 +1,15 @@
+import { Select } from "../components/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Grid2X2, List, Plus, Search } from "lucide-react";
+import { Grid2X2, List, Plus } from "lucide-react";
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { api, ApiError } from "../api/client";
 import type { Asset, WidgetProvider } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
+import {
+  DashboardListToolbar,
+  DashboardSearch,
+} from "../components/DashboardListToolbar";
 import {
   NativeAppEditor,
   WidgetProviderGallery,
@@ -78,17 +83,15 @@ export function WidgetsPage() {
           </button>
         )}
       </header>
-      <div className="content-toolbar">
-        <label className="search-control">
-          <Search size={15} />
-          <span className="visually-hidden">Search Widgets</span>
-          <input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search Widgets"
-          />
-        </label>
-        <select
+      <DashboardListToolbar>
+        <DashboardSearch
+          value={search}
+          onValueChange={setSearch}
+          label="Search Widgets"
+          placeholder="Search Widgets"
+        />
+        <Select
+          className="dashboard-list-toolbar__filter"
           aria-label="Filter by Widget provider"
           value={provider}
           onChange={(event) => setProvider(event.target.value)}
@@ -99,7 +102,7 @@ export function WidgetsPage() {
               {providerLabel(item)}
             </option>
           ))}
-        </select>
+        </Select>
         <span className="view-switch" aria-label="View">
           <button
             aria-label="Grid view"
@@ -116,7 +119,7 @@ export function WidgetsPage() {
             <List size={16} />
           </button>
         </span>
-      </div>
+      </DashboardListToolbar>
       {widgets.isError && (
         <div className="notice notice--error">
           {widgets.error instanceof ApiError

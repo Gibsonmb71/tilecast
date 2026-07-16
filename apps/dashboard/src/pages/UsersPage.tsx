@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Plus, Save, UserRoundX } from "lucide-react";
 import type { User } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
-import { Dialog } from "../components/ui";
+import { Dialog, Select } from "../components/ui";
 
 type UserRole = User["role"];
 type UserInput = {
@@ -141,7 +141,7 @@ export function UsersPage() {
           </label>
           <label>
             Role
-            <select
+            <Select
               value={role}
               onChange={(event) => setRole(event.target.value as UserRole)}
             >
@@ -150,7 +150,7 @@ export function UsersPage() {
                   {roleLabels[value]}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <button
             type="button"
@@ -320,7 +320,7 @@ function UserEditorDialog({
           </label>
           <label className="field">
             <span className="field__label">Role</span>
-            <select
+            <Select
               value={role}
               onChange={(event) => setRole(event.target.value as UserRole)}
             >
@@ -329,7 +329,7 @@ function UserEditorDialog({
                   {roleLabels[value]}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <label className="field">
             <span className="field__label">New password</span>

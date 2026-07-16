@@ -11,6 +11,60 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+.asset-widget-preview {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 14px;
+  align-content: space-between;
+  gap: 8px;
+  color: var(--asset-widget-foreground);
+  background: var(--asset-widget-background);
+}
+
+.asset-widget-preview__topline {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font: var(--tc-text-caption);
+  text-transform: uppercase;
+}
+
+.asset-widget-preview__topline span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.asset-widget-preview strong {
+  overflow: hidden;
+  font: var(--tc-text-panel-title);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.asset-widget-preview__rows {
+  display: grid;
+  gap: 5px;
+}
+
+.asset-widget-preview__rows i {
+  width: 100%;
+  height: 3px;
+  background: currentColor;
+  opacity: 0.38;
+}
+
+.asset-widget-preview__rows i:nth-child(2) {
+  width: 78%;
+}
+
+.asset-widget-preview__rows i:nth-child(3) {
+  width: 58%;
+}
+
 h1,
 h2,
 h3,
@@ -696,11 +750,55 @@ code,
 .layout-preview-toolbar .button {
   margin-left: auto;
 }
+.layout-preview-status {
+  color: var(--tc-text-secondary);
+  font: var(--tc-text-supporting);
+}
+
+.layout-preview-status--warning {
+  color: var(--tc-status-warning);
+}
+
 .layout-preview-frame {
   align-self: center;
   justify-self: center;
   width: min(90vw, 1280px);
   max-height: calc(100vh - 96px);
+}
+
+.layout-preview-background {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.layout-asset-placement--playback,
+.layout-playlist-preview {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.layout-playlist-preview--fade {
+  animation: layout-preview-fade-in 300ms ease-out;
+}
+
+@keyframes layout-preview-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .layout-playlist-preview--fade {
+    animation: none;
+  }
 }
 
 /* Faithful native-widget rendering inside the Layout preview overlay. Mirrors the
@@ -962,6 +1060,194 @@ textarea:disabled {
   color: var(--tc-text-disabled);
   background: var(--tc-input-disabled-bg);
   cursor: not-allowed;
+}
+
+.signal-select {
+  position: relative;
+  display: inline-grid;
+  min-width: min(144px, 100%);
+  max-width: 100%;
+  color: var(--tc-text-primary);
+  vertical-align: middle;
+}
+
+label > .signal-select,
+.field > .signal-select,
+.form-grid .signal-select,
+.source-mapping-row .signal-select,
+.setting-control > .signal-select,
+.assignment-controls .signal-select,
+.timeline-item .signal-select {
+  width: 100%;
+}
+
+.signal-select__native {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  clip: rect(0 0 0 0) !important;
+  clip-path: inset(50%) !important;
+  border: 0 !important;
+  white-space: nowrap !important;
+}
+
+.signal-select__trigger {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 16px;
+  width: 100%;
+  min-height: 40px;
+  align-items: center;
+  gap: var(--tc-space-2);
+  padding: 7px 10px;
+  color: var(--tc-text-primary);
+  text-align: left;
+  background: var(--tc-input-bg);
+  border: 1px solid var(--tc-input-border);
+  border-radius: var(--tc-radius-control);
+  cursor: pointer;
+  font: var(--tc-text-body);
+  transition:
+    color var(--tc-motion-fast),
+    background var(--tc-motion-fast),
+    border-color var(--tc-motion-fast);
+}
+
+.signal-select__trigger > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.signal-select__trigger > svg {
+  color: var(--tc-text-secondary);
+  transition: transform var(--tc-motion-fast);
+}
+
+.signal-select__trigger[aria-expanded="true"] {
+  border-color: var(--tc-action-primary);
+}
+
+.signal-select__trigger[aria-expanded="true"] > svg {
+  transform: rotate(180deg);
+}
+
+.signal-select__trigger:hover:not(:disabled) {
+  border-color: var(--tc-action-primary);
+}
+
+.signal-select__trigger:focus-visible {
+  outline: 3px solid var(--tc-focus-ring);
+  outline-offset: 2px;
+}
+
+.signal-select__trigger:disabled {
+  color: var(--tc-text-disabled);
+  background: var(--tc-input-disabled-bg);
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.signal-select__menu {
+  z-index: 3200;
+  padding: var(--tc-space-1);
+  overflow: auto;
+  color: var(--tc-text-primary);
+  background: var(--tc-bg-elevated);
+  border: 1px solid var(--tc-border-strong);
+  border-radius: var(--tc-radius-overlay);
+  box-shadow: var(--tc-shadow-overlay);
+}
+
+.signal-select__menu > button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 18px;
+  width: 100%;
+  min-height: 40px;
+  align-items: center;
+  gap: var(--tc-space-2);
+  padding: var(--tc-space-2) var(--tc-space-3);
+  color: var(--tc-text-primary);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: var(--tc-radius-control);
+  cursor: pointer;
+}
+
+.signal-select__menu > button > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.signal-select__menu > button > svg {
+  color: var(--tc-action-primary);
+}
+
+.signal-select__menu > button:hover:not(:disabled),
+.signal-select__menu > button.is-active {
+  background: var(--tc-table-row-hover);
+}
+
+.signal-select__menu > button[aria-selected="true"] {
+  color: var(--tc-action-primary);
+  background: var(--tc-action-primary-soft);
+  font-weight: 650;
+}
+
+.signal-select__menu > button:disabled {
+  color: var(--tc-text-disabled);
+  cursor: not-allowed;
+}
+
+.signal-select__group {
+  padding: var(--tc-space-3) var(--tc-space-3) var(--tc-space-1);
+  color: var(--tc-text-secondary);
+  font: var(--tc-text-supporting);
+  font-weight: 650;
+}
+
+.content-toolbar > .signal-select,
+.content-organizer__bulk .signal-select,
+.content-picker-toolbar > .signal-select {
+  flex: 0 0 auto;
+}
+
+.timeline-item .signal-select {
+  width: 112px;
+  min-width: 112px;
+}
+
+.unit-input .signal-select {
+  width: 104px;
+  min-width: 104px;
+}
+
+.settings-mobile-select .signal-select,
+.setting-row .signal-select,
+.setting-control > .signal-select {
+  width: 100%;
+}
+
+.assignment-controls .signal-select {
+  min-width: 260px;
+}
+
+.power-assist-field .signal-select {
+  width: 100%;
+}
+
+@media (max-width: 680px) {
+  .content-picker-toolbar > .signal-select,
+  .content-toolbar > .signal-select,
+  .assignment-controls .signal-select {
+    width: 100%;
+    min-width: 0;
+  }
 }
 
 .field__label,

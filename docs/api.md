@@ -79,6 +79,7 @@ All routes below require a dashboard session. Owner, Administrator, and Editor m
 - `GET`, `PATCH`, and `DELETE /api/v1/assets/{id}` read, edit, or soft-delete an asset.
 - `POST /api/v1/assets/{id}/retry` retries a failed processing pipeline.
 - `GET /api/v1/assets/{id}/thumbnail` streams the authenticated thumbnail or poster.
+- `GET` and `HEAD /api/v1/assets/{id}/preview` stream the authenticated, player-compatible image or video variant for Studio previews, including byte-range requests.
 
 Uploaded filenames are display metadata only. API responses never include a storage key or filesystem path. Safe media errors include `unsupported_media_type`, `upload_too_large`, `upload_offset_mismatch`, `upload_expired`, `upload_incomplete`, `insufficient_storage`, `media_inspection_failed`, `media_processing_failed`, and `media_variant_unavailable`.
 

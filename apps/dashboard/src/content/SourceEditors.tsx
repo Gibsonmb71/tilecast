@@ -1,3 +1,4 @@
+import { Select } from "../components/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CalendarDays,
@@ -304,7 +305,7 @@ export function NativeAppEditor({
             <div className="form-grid form-grid--2">
               <label className="field">
                 <span className="field__label">Time format</span>
-                <select
+                <Select
                   value={(configuration as ClockWidgetConfig).format}
                   disabled={readOnly}
                   onChange={(e) =>
@@ -316,7 +317,7 @@ export function NativeAppEditor({
                 >
                   <option value="12">12-hour</option>
                   <option value="24">24-hour</option>
-                </select>
+                </Select>
               </label>
               <label className="switch-row">
                 <input
@@ -337,7 +338,7 @@ export function NativeAppEditor({
           {provider === "date" && (
             <label className="field">
               <span className="field__label">Date format</span>
-              <select
+              <Select
                 value={(configuration as DateWidgetConfig).format}
                 disabled={readOnly}
                 onChange={(e) =>
@@ -351,7 +352,7 @@ export function NativeAppEditor({
                 <option value="long">Long</option>
                 <option value="medium">Medium</option>
                 <option value="short">Short</option>
-              </select>
+              </Select>
             </label>
           )}
           {provider === "qrcode" && (
@@ -386,7 +387,7 @@ export function NativeAppEditor({
                 </label>
                 <label className="field">
                   <span className="field__label">Error correction</span>
-                  <select
+                  <Select
                     value={
                       (configuration as QRCodeWidgetConfig).errorCorrection
                     }
@@ -403,7 +404,7 @@ export function NativeAppEditor({
                     <option value="medium">Medium</option>
                     <option value="quartile">Quartile</option>
                     <option value="high">High</option>
-                  </select>
+                  </Select>
                 </label>
               </div>
               {(configuration as QRCodeWidgetConfig).value.length > 500 && (
@@ -417,7 +418,7 @@ export function NativeAppEditor({
             <>
               <label className="field">
                 <span className="field__label">Data Source</span>
-                <select
+                <Select
                   value={(configuration as TickerWidgetConfig).dataSourceId}
                   disabled={readOnly}
                   onChange={(e) =>
@@ -433,12 +434,12 @@ export function NativeAppEditor({
                       {item.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
               <div className="form-grid form-grid--2">
                 <label className="field">
                   <span className="field__label">Field</span>
-                  <select
+                  <Select
                     value={(configuration as TickerWidgetConfig).field}
                     disabled={readOnly || !availableFields.length}
                     onChange={(e) =>
@@ -456,7 +457,7 @@ export function NativeAppEditor({
                         {field.label}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </label>
                 <label className="field">
                   <span className="field__label">Separator</span>
@@ -478,7 +479,7 @@ export function NativeAppEditor({
             <>
               <label className="field">
                 <span className="field__label">Data Source</span>
-                <select
+                <Select
                   value={(configuration as DisplayWidgetConfig).dataSourceId}
                   disabled={readOnly}
                   onChange={(event) =>
@@ -494,7 +495,7 @@ export function NativeAppEditor({
                       {item.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
               <fieldset>
                 <legend>Displayed fields</legend>
@@ -922,7 +923,7 @@ export function YouTubeSourceEditor({
         </div>
         <label className="field">
           <span className="field__label">Playlist item behavior</span>
-          <select
+          <Select
             disabled={readOnly}
             value={configuration.playlistPlaybackMode}
             onChange={(event) =>
@@ -934,7 +935,7 @@ export function YouTubeSourceEditor({
           >
             <option value="until_end">Play until video ends</option>
             <option value="fixed_duration">Play for a fixed duration</option>
-          </select>
+          </Select>
         </label>
         {configuration.playlistPlaybackMode === "fixed_duration" && (
           <label className="field">
@@ -953,7 +954,7 @@ export function YouTubeSourceEditor({
         )}
         <label className="field">
           <span className="field__label">Failure behavior</span>
-          <select
+          <Select
             disabled={readOnly}
             value={configuration.failureBehavior}
             onChange={(event) =>
@@ -966,11 +967,11 @@ export function YouTubeSourceEditor({
             <option value="placeholder">Show Tilecast placeholder</option>
             <option value="fallback_image">Show fallback image</option>
             <option value="skip">Skip playlist item</option>
-          </select>
+          </Select>
         </label>
         <label className="field">
           <span className="field__label">Fallback image</span>
-          <select
+          <Select
             disabled={readOnly}
             value={configuration.fallbackImageAssetId ?? ""}
             onChange={(event) =>
@@ -983,7 +984,7 @@ export function YouTubeSourceEditor({
                 {image.name}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
         {save.error && (
           <div className="notice notice--error">{save.error.message}</div>

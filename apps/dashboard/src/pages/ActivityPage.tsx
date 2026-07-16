@@ -1,9 +1,11 @@
+import { Select } from "../components/ui";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router";
-import { Download, Search, SlidersHorizontal, X } from "lucide-react";
+import { Download, SlidersHorizontal, X } from "lucide-react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
+import { DashboardSearch } from "../components/DashboardListToolbar";
 import { OverviewTab } from "./ActivityOverviewPanel";
 import { AuditTab, EventsTab, ProofTab } from "./ActivityReportTabs";
 import { activityParams } from "./ActivityShared";
@@ -137,7 +139,7 @@ export function ActivityPage() {
           <div className="activity-range">
             <label>
               <span>Date range</span>
-              <select
+              <Select
                 value={preset}
                 onChange={(e) => setPreset(e.target.value)}
               >
@@ -145,7 +147,7 @@ export function ActivityPage() {
                 <option value="7d">Last 7 days</option>
                 <option value="30d">Last 30 days</option>
                 <option value="custom">Custom range</option>
-              </select>
+              </Select>
             </label>
             {preset === "custom" && (
               <>
@@ -211,24 +213,21 @@ export function ActivityPage() {
       {tab !== "overview" && (
         <div className="activity-filter-area">
           <div className="activity-filters">
-            <label className="activity-search">
-              <Search size={15} aria-hidden="true" />
-              <span className="visually-hidden">Search activity</span>
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={
-                  tab === "proof"
-                    ? "Search proof of play…"
-                    : tab === "events"
-                      ? "Search screen events…"
-                      : "Search audit log…"
-                }
-              />
-            </label>
+            <DashboardSearch
+              value={search}
+              onValueChange={setSearch}
+              label="Search activity"
+              placeholder={
+                tab === "proof"
+                  ? "Search proof of play…"
+                  : tab === "events"
+                    ? "Search screen events…"
+                    : "Search audit log…"
+              }
+            />
             {(tab === "proof" || tab === "events") && (
               <>
-                <select
+                <Select
                   aria-label="Filter by screen"
                   value={screen}
                   onChange={(e) => setScreen(e.target.value)}
@@ -239,8 +238,8 @@ export function ActivityPage() {
                       {item.name}
                     </option>
                   ))}
-                </select>
-                <select
+                </Select>
+                <Select
                   aria-label="Filter by group"
                   value={group}
                   onChange={(e) => setGroup(e.target.value)}
@@ -251,7 +250,7 @@ export function ActivityPage() {
                       {item.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </>
             )}
             {tab === "proof" && (
@@ -301,7 +300,7 @@ export function ActivityPage() {
             )}
             {tab === "events" && (
               <>
-                <select
+                <Select
                   aria-label="Filter by category"
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
@@ -319,8 +318,8 @@ export function ActivityPage() {
                   ].map((value) => (
                     <option key={value}>{value}</option>
                   ))}
-                </select>
-                <select
+                </Select>
+                <Select
                   aria-label="Filter by severity"
                   value={severity}
                   onChange={(e) => setSeverity(e.target.value)}
@@ -329,14 +328,14 @@ export function ActivityPage() {
                   {["info", "warning", "error", "critical"].map((value) => (
                     <option key={value}>{value}</option>
                   ))}
-                </select>
+                </Select>
                 <ResultFilter value={result} onChange={setResult} />
               </>
             )}
             {tab === "audit" && (
               <>
                 {users.data && (
-                  <select
+                  <Select
                     value={actor}
                     onChange={(e) => setActor(e.target.value)}
                     aria-label="Filter by actor"
@@ -347,7 +346,7 @@ export function ActivityPage() {
                         {user.name}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 )}
                 <input
                   value={action}
@@ -361,7 +360,7 @@ export function ActivityPage() {
                   placeholder="Resource type"
                   aria-label="Filter by resource type"
                 />
-                <select
+                <Select
                   aria-label="Filter by result"
                   value={result}
                   onChange={(e) => setResult(e.target.value)}
@@ -370,7 +369,7 @@ export function ActivityPage() {
                   {["success", "failure", "denied", "partial"].map((value) => (
                     <option key={value}>{value}</option>
                   ))}
-                </select>
+                </Select>
               </>
             )}
           </div>
@@ -438,7 +437,7 @@ function ResultFilter({
   onChange: (value: string) => void;
 }) {
   return (
-    <select
+    <Select
       aria-label="Filter by result"
       value={value}
       onChange={(e) => onChange(e.target.value)}
@@ -455,7 +454,7 @@ function ResultFilter({
       ].map((option) => (
         <option key={option}>{option}</option>
       ))}
-    </select>
+    </Select>
   );
 }
 

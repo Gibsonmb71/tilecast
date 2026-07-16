@@ -1,3 +1,4 @@
+import { Select } from "../components/ui";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -675,7 +676,7 @@ export function PlayerUpdatesPanel({
           <div className="deployment-fields deployment-fields--primary">
             <label>
               Verified release
-              <select
+              <Select
                 value={releaseId}
                 onChange={(event) => setReleaseId(event.target.value)}
               >
@@ -691,11 +692,11 @@ export function PlayerUpdatesPanel({
                       {item.versionName} · {item.channel}
                     </option>
                   ))}
-              </select>
+              </Select>
             </label>
             <label>
               Deployment mode
-              <select
+              <Select
                 value={mode}
                 onChange={(event) => setMode(event.target.value)}
               >
@@ -704,7 +705,7 @@ export function PlayerUpdatesPanel({
                   Download and request installation
                 </option>
                 <option value="maintenance_window">Maintenance window</option>
-              </select>
+              </Select>
             </label>
             {mode === "maintenance_window" && (
               <label>

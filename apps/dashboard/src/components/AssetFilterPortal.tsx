@@ -1,3 +1,4 @@
+import { Select } from "./ui";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Filter, RotateCcw } from "lucide-react";
@@ -159,7 +160,7 @@ function AssetFilterMenu() {
         </header>
         <label>
           Type
-          <select
+          <Select
             value={type}
             onChange={(event) => {
               setType(event.target.value);
@@ -169,12 +170,12 @@ function AssetFilterMenu() {
             <option value="media">All media</option>
             <option value="image">Images</option>
             <option value="video">Videos</option>
-          </select>
+          </Select>
         </label>
         {filters.map((filter) => (
           <label key={filter.label}>
             {filter.title}
-            <select
+            <Select
               value={filter.element?.value ?? ""}
               disabled={!filter.element}
               onChange={(event) => {
@@ -188,7 +189,7 @@ function AssetFilterMenu() {
                   {option.text}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
         ))}
       </div>

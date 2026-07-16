@@ -41,6 +41,7 @@ func NewService(db *pgxpool.Pool, storage Storage, cfg Config) *Service {
 }
 func (s *Service) Storage() Storage                                 { return s.storage }
 func (s *Service) SetAssetInvalidator(invalidator AssetInvalidator) { s.invalidator = invalidator }
+func (s *Service) MaximumSourceBytes() int64                        { return s.cfg.SourceFetch.MaximumBytes }
 
 func (s *Service) CreateUpload(ctx context.Context, userID uuid.UUID, filename, mimeType string, size int64) (Upload, error) {
 	filename = strings.TrimSpace(filename)
@@ -352,7 +353,7 @@ func (s *Service) GetAsset(ctx context.Context, id uuid.UUID) (Asset, error) {
 	return asset, nil
 }
 
-const assetSelect = `SELECT a.id,a.name,a.description,a.type,a.original_filename,a.declared_mime_type,a.detected_mime_type,encode(a.sha256,'hex'),a.original_size,a.width,a.height,a.duration_seconds,a.frame_rate,a.video_codec,a.audio_codec,a.audio_channels,a.metadata,a.processing_status,a.processing_progress,a.error_code,a.error_message,u.id,u.name,a.created_at,a.updated_at FROM assets a LEFT JOIN users u ON u.id=a.created_by`
+const assetSelect = `SELECT a.id,a.name,a.description,a.type,a.original_filename,a.declared_mime_type,a.detected_mime_type,encode(a.sha256,'hex'),a.original_size,a.width,a.height,a.duration_seconds,a.frame_rate,a.video_codec,a.audio_codec,a.audio_channels,a.metadata,a.processing_status,a.processing_progress,a.error_code,a.error_message,u.id,u.name,a.created_at,a.updated_at,EXISTS(SELECT 1 FROM asset_variants preview WHERE preview.asset_id=a.id AND preview.deleted_at IS NULL AND preview.kind IN ('thumbnail','poster')) FROM assets a LEFT JOIN users u ON u.id=a.created_by`
 
 type rowScanner interface{ Scan(...any) error }
 
@@ -361,7 +362,8 @@ func scanAsset(row rowScanner) (Asset, error) {
 	var metadata []byte
 	var creatorID *uuid.UUID
 	var creatorName *string
-	err := row.Scan(&a.ID, &a.Name, &a.Description, &a.Type, &a.OriginalFilename, &a.DeclaredMIMEType, &a.DetectedMIMEType, &a.SHA256, &a.OriginalSize, &a.Width, &a.Height, &a.Duration, &a.FrameRate, &a.VideoCodec, &a.AudioCodec, &a.AudioChannels, &metadata, &a.ProcessingStatus, &a.ProcessingProgress, &a.ErrorCode, &a.ErrorMessage, &creatorID, &creatorName, &a.CreatedAt, &a.UpdatedAt)
+	var hasPreview bool
+	err := row.Scan(&a.ID, &a.Name, &a.Description, &a.Type, &a.OriginalFilename, &a.DeclaredMIMEType, &a.DetectedMIMEType, &a.SHA256, &a.OriginalSize, &a.Width, &a.Height, &a.Duration, &a.FrameRate, &a.VideoCodec, &a.AudioCodec, &a.AudioChannels, &metadata, &a.ProcessingStatus, &a.ProcessingProgress, &a.ErrorCode, &a.ErrorMessage, &creatorID, &creatorName, &a.CreatedAt, &a.UpdatedAt, &hasPreview)
 	if err != nil {
 		return Asset{}, err
 	}
@@ -371,6 +373,10 @@ func scanAsset(row rowScanner) (Asset, error) {
 	}
 	if creatorID != nil {
 		a.Creator = &Creator{ID: *creatorID, Name: *creatorName}
+	}
+	if hasPreview {
+		url := "/api/v1/assets/" + a.ID.String() + "/thumbnail"
+		a.ThumbnailURL = &url
 	}
 	a.Variants = []Variant{}
 	a.LayoutUsage = []LayoutUsage{}
@@ -656,6 +662,18 @@ func (s *Service) Preview(ctx context.Context, assetID uuid.UUID) (Delivery, err
 	}
 	d.Path, err = s.storage.Path(key)
 	return d, err
+}
+
+func (s *Service) PlaybackPreview(ctx context.Context, assetID uuid.UUID) (Delivery, error) {
+	var variantID uuid.UUID
+	err := s.db.QueryRow(ctx, `SELECT v.id FROM asset_variants v JOIN assets a ON a.id=v.asset_id WHERE a.id=$1 AND a.deleted_at IS NULL AND a.processing_status='ready' AND a.type IN ('image','video') AND v.deleted_at IS NULL AND v.player_compatible=TRUE ORDER BY CASE v.kind WHEN 'playback' THEN 0 WHEN 'original' THEN 1 ELSE 2 END LIMIT 1`, assetID).Scan(&variantID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Delivery{}, ErrVariantUnavailable
+	}
+	if err != nil {
+		return Delivery{}, err
+	}
+	return s.Delivery(ctx, assetID, variantID)
 }
 
 func ETag(hashHex string) string {

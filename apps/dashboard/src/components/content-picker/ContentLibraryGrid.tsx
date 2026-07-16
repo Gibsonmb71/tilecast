@@ -1,5 +1,6 @@
-import { Check, FileImage, FileVideo, Globe2, Youtube } from "lucide-react";
-import type { Asset, YouTubeConfig } from "../../api/types";
+import { Check } from "lucide-react";
+import type { Asset } from "../../api/types";
+import { AssetPreview } from "../content/AssetPreview";
 
 function statusLabel(status: Asset["processingStatus"]) {
   return (
@@ -38,10 +39,6 @@ export function ContentLibraryGrid({
         const selected = selectedIds.has(asset.id);
         const disabled =
           disabledIds.has(asset.id) || asset.processingStatus !== "ready";
-        const youtube = asset.widget?.provider === "youtube";
-        const videoId = youtube
-          ? (asset.widget?.configuration as YouTubeConfig).videoId
-          : undefined;
         return (
           <button
             type="button"
@@ -52,23 +49,7 @@ export function ContentLibraryGrid({
             onClick={() => onToggle(asset)}
           >
             <span className="picker-content-card__preview">
-              {videoId ? (
-                <img
-                  src={`https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`}
-                  alt=""
-                  referrerPolicy="origin"
-                />
-              ) : asset.thumbnailUrl ? (
-                <img src={asset.thumbnailUrl} alt="" />
-              ) : asset.type === "image" ? (
-                <FileImage size={30} />
-              ) : asset.type === "video" ? (
-                <FileVideo size={30} />
-              ) : youtube ? (
-                <Youtube size={30} />
-              ) : (
-                <Globe2 size={30} />
-              )}
+              <AssetPreview asset={asset} />
               {selected && (
                 <span className="picker-selection-mark" aria-hidden="true">
                   <Check size={16} />

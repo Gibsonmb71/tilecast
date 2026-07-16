@@ -397,6 +397,18 @@ paths:
       operationId: getAssetThumbnail
       parameters: [{ $ref: "#/components/parameters/ResourceID" }]
       responses: { "200": { description: Authenticated thumbnail or poster } }
+  /api/v1/assets/{id}/preview:
+    parameters: [{ $ref: "#/components/parameters/ResourceID" }]
+    get:
+      operationId: getAssetPlaybackPreview
+      responses:
+        {
+          "200": { description: Player-compatible image or video bytes },
+          "206": { description: Partial image or video bytes },
+        }
+    head:
+      operationId: headAssetPlaybackPreview
+      responses: { "200": { description: Preview headers } }
   /api/v1/player/assets/{assetId}/variants/{variantId}:
     parameters:
       - {

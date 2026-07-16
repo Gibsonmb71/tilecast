@@ -57,6 +57,8 @@ Buttons are primary, secondary, quiet, danger, or icon actions. Default height i
 
 Labels sit above controls, supporting text follows the label, and validation follows the control. Controls use shared 40 px sizing, focus rings, disabled treatment, and semantic switches. Settings translate bytes, durations, weekdays, enums, colors, and Android package lists at the UI boundary without changing stored values.
 
+Studio option controls use the shared Signal Select rather than a browser-rendered menu. Its trigger remains at least 40 px tall, menus use the elevated Signal surface, and options support groups, disabled states, visible selection, Escape, arrows, Home, End, Enter, and Space. The hidden native select preserves form values and change-event compatibility; it is not the visible interaction surface.
+
 ## Statuses and notices
 
 Status presentation always includes text and a dot or icon. Compact badges are appropriate for verified, failed, scheduled, or updating states; inline dot labels are preferred in dense tables. Never display raw internal state names.

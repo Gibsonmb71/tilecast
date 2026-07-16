@@ -1,4 +1,6 @@
-import { Grid2X2, List, Search } from "lucide-react";
+import { Select } from "../ui";
+import { Grid2X2, List } from "lucide-react";
+import { DashboardSearch } from "../DashboardListToolbar";
 
 export type ContentPickerFilter =
   "all" | "image" | "video" | "source" | "website" | "youtube" | "calendar";
@@ -33,16 +35,13 @@ export function ContentPickerToolbar({
   ];
   return (
     <div className="content-picker-toolbar">
-      <label className="search-control">
-        <Search size={16} />
-        <span className="visually-hidden">Search content</span>
-        <input
-          autoFocus
-          value={search}
-          placeholder="Search content"
-          onChange={(event) => onSearch(event.target.value)}
-        />
-      </label>
+      <DashboardSearch
+        autoFocus
+        value={search}
+        onValueChange={onSearch}
+        label="Search content"
+        placeholder="Search content"
+      />
       <div className="content-picker-filters" aria-label="Content type">
         {filters.map(([value, label]) => (
           <button
@@ -55,7 +54,7 @@ export function ContentPickerToolbar({
           </button>
         ))}
       </div>
-      <select
+      <Select
         aria-label="Sort content"
         value={sort}
         onChange={(event) => onSort(event.target.value)}
@@ -64,7 +63,7 @@ export function ContentPickerToolbar({
         <option value="newest">Newest</option>
         <option value="oldest">Oldest</option>
         <option value="name">Name</option>
-      </select>
+      </Select>
       <span className="view-switch" aria-label="Content view">
         <button
           type="button"

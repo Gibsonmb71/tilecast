@@ -1,3 +1,4 @@
+import { Select } from "../components/ui";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
@@ -126,7 +127,7 @@ export function ProofTab({
             </div>
             <label className="activity-group-by">
               <span>Group by</span>
-              <select
+              <Select
                 value={dimension}
                 onChange={(e) => setDimension(e.target.value)}
               >
@@ -134,7 +135,7 @@ export function ProofTab({
                 <option value="content">Content</option>
                 <option value="presentation">Playlist or Layout</option>
                 <option value="schedule">Schedule</option>
-              </select>
+              </Select>
             </label>
           </header>
           <div className="activity-proof-metrics">
