@@ -35,16 +35,25 @@ jobs:
           PY
           python3 /tmp/apply-layout-preview.py
 
-      - name: Install and verify Studio
+      - name: Install and format
         run: |
           npm ci
           npx prettier --write apps/dashboard/src/pages/LayoutEditorPage.tsx apps/dashboard/src/content/SourceEditors.tsx
-          cd apps/dashboard
-          npm run lint
-          npm test -- --run
-          npm run build
-          cd ../..
-          git diff --check
+
+      - name: Lint Studio
+        working-directory: apps/dashboard
+        run: npm run lint
+
+      - name: Test Studio
+        working-directory: apps/dashboard
+        run: npm test -- --run
+
+      - name: Build Studio
+        working-directory: apps/dashboard
+        run: npm run build
+
+      - name: Check diff
+        run: git diff --check
 
       - name: Commit fixes
         shell: bash
