@@ -2,12 +2,12 @@
 
 Tilecast Activity is divided into four reporting domains. They intentionally use separate storage and APIs so an assigned schedule is never mistaken for proof that content actually appeared on a screen.
 
-| Domain | Question answered | Source |
-| --- | --- | --- |
-| Overview | What needs attention across this installation? | Derived from the other Activity domains |
-| Proof of Play | What did a Player confirm was displayed, where, when, and for how long? | `playback_sessions` derived from Player events |
-| Screen Events | What did a Player or the server do? | Append-only `player_activity_events` and `screen_state_intervals` |
-| Audit Log | What did an authenticated user or administrator change? | `audit_logs` |
+| Domain        | Question answered                                                       | Source                                                            |
+| ------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| Overview      | What needs attention across this installation?                          | Derived from the other Activity domains                           |
+| Proof of Play | What did a Player confirm was displayed, where, when, and for how long? | `playback_sessions` derived from Player events                    |
+| Screen Events | What did a Player or the server do?                                     | Append-only `player_activity_events` and `screen_state_intervals` |
+| Audit Log     | What did an authenticated user or administrator change?                 | `audit_logs`                                                      |
 
 ## Player event ingestion
 
@@ -49,13 +49,13 @@ The API applies permissions independently of the Studio UI so future department-
 
 Defaults and deployment hard limits:
 
-| Data | Default | Hard limits |
-| --- | ---: | ---: |
-| Raw Player events | 60 days | 7–365 days |
-| Proof-of-play sessions | 365 days | 30–2,555 days |
-| Screen-state intervals | 365 days | 30–2,555 days |
-| Audit logs | 730 days | 90–3,650 days |
-| Detailed diagnostic metadata | 30 days | 7–180 days |
+| Data                         |  Default |   Hard limits |
+| ---------------------------- | -------: | ------------: |
+| Raw Player events            |  60 days |    7–365 days |
+| Proof-of-play sessions       | 365 days | 30–2,555 days |
+| Screen-state intervals       | 365 days | 30–2,555 days |
+| Audit logs                   | 730 days | 90–3,650 days |
+| Detailed diagnostic metadata |  30 days |    7–180 days |
 
 Cleanup runs periodically and after Activity ingestion, changing at most 500 rows per dataset per invocation in short statements. It never deletes open playback sessions or open screen-state intervals, restores the default singleton safely if it is missing, and logs only safe row counts and errors. Derived sessions retain the evidence needed for reporting after their source raw events age out.
 
