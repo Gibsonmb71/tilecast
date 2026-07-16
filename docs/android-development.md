@@ -23,7 +23,7 @@ RSS, Atom, JSON, and CSV Sources use manifest v8 and the native `StructuredSourc
 
 Manifest v9 adds native Clock, Date, QR Code, and Ticker Apps. Structured date selection runs locally against the configured IANA timezone and uses calendar arithmetic rather than 24-hour durations. The Player reevaluates while running and after process restart; `empty`, `hide`, `fallback_text`, and `next_available` do not silently reuse an old record. `last_known_good` is an explicit administrator choice.
 
-Layout schema v1 is decoded into typed Kotlin models and validated before rendering. Static text, rectangles, circles, and lines use native Compose primitives; groups are structural and never inject markup. Canvas coordinates scale uniformly into landscape or portrait display bounds, and only the bundled sans-serif font family is used on Player.
+Layout schema v1 is decoded into typed Kotlin models and validated before rendering. Static text, rectangles, circles, and lines use native Compose primitives; groups are structural and never inject markup. Canvas coordinates scale uniformly into landscape or portrait display bounds. Text primitives use the selected bundled Inter, Roboto, Source Sans 3, or Noto Sans family, with a generic sans-serif fallback for malformed legacy values.
 
 Unit tests cover URL policy, state transitions, player-generated identity, secure-storage abstractions, pairing enrollment, revocation, and reconnect backoff. Instrumented tests require an emulator or device:
 

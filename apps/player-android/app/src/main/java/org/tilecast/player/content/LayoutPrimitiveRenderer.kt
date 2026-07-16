@@ -24,6 +24,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -34,6 +35,7 @@ import androidx.compose.ui.unit.sp
 import org.tilecast.player.network.LayoutDocument
 import org.tilecast.player.network.LayoutPlacement
 import org.tilecast.player.network.StructuredSourceConfig
+import org.tilecast.player.R
 import java.time.Instant
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -109,7 +111,7 @@ private fun PrimitivePlacement(placement: LayoutPlacement, sx: Float, sy: Float,
                 modifier = Modifier.fillMaxSize(),
                 color = layoutColor(primitive.color),
                 fontSize = (primitive.fontSize * sx).sp,
-                fontFamily = FontFamily.SansSerif,
+                fontFamily = layoutFontFamily(primitive.fontFamily),
                 fontWeight = FontWeight(primitive.fontWeight),
                 textAlign = when (primitive.textAlign) { "center" -> TextAlign.Center; "right" -> TextAlign.Right; else -> TextAlign.Left },
                 lineHeight = (primitive.fontSize * primitive.lineHeight * sx).sp,
@@ -129,6 +131,19 @@ private fun PrimitivePlacement(placement: LayoutPlacement, sx: Float, sy: Float,
         }
         "line" -> Canvas(box) { drawLine(layoutColor(primitive.strokeColor), Offset(0f, size.height / 2), Offset(size.width, size.height / 2), (primitive.strokeWidth * sx).coerceAtLeast(1f)) }
     }
+}
+
+private val interLayoutFont = FontFamily(Font(R.font.inter_variable))
+private val robotoLayoutFont = FontFamily(Font(R.font.roboto_variable))
+private val sourceSans3LayoutFont = FontFamily(Font(R.font.source_sans_3_variable))
+private val notoSansLayoutFont = FontFamily(Font(R.font.noto_sans_variable))
+
+internal fun layoutFontFamily(name: String): FontFamily = when (name) {
+    "Inter" -> interLayoutFont
+    "Roboto" -> robotoLayoutFont
+    "Source Sans 3" -> sourceSans3LayoutFont
+    "Noto Sans" -> notoSansLayoutFont
+    else -> FontFamily.SansSerif
 }
 
 internal fun resolveLayoutBinding(binding: org.tilecast.player.network.LayoutBinding, source: StructuredSourceConfig, now: Instant): String {
