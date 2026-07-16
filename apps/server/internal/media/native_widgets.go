@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 )
@@ -155,25 +156,87 @@ func (p displayWidgetProvider) Normalize(ctx context.Context, raw json.RawMessag
 	if c.MaximumItems < 1 || c.MaximumItems > 100 {
 		return nil, errors.New("maximum items must be between 1 and 100")
 	}
-	if len(c.Fields) == 0 || len(c.Fields) > 12 {
-		return nil, errors.New("a widget must select between 1 and 12 fields")
+	normalizedFields, err := normalizeDisplayWidgetFields(p.presentation, c.Fields, fields)
+	if err != nil {
+		return nil, err
 	}
-	seen := map[string]bool{}
-	for index, field := range c.Fields {
-		field = sanitizeCalendarText(field, 80)
-		if field == "" || seen[field] {
-			return nil, errors.New("widget fields must be unique and non-empty")
-		}
-		if len(fields) > 0 && !fields[field] {
-			return nil, fmt.Errorf("field %q is not provided by the selected data Source", field)
-		}
-		seen[field] = true
-		c.Fields[index] = field
-	}
+	c.Fields = normalizedFields
 	if err := normalizeWidgetColors(&c.ForegroundColor, &c.BackgroundColor); err != nil {
 		return nil, err
 	}
 	return c, nil
+}
+
+func normalizeDisplayWidgetFields(presentation string, selected []string, available map[string]bool) ([]string, error) {
+	if len(selected) > 12 {
+		return nil, errors.New("a widget must select between 1 and 12 fields")
+	}
+
+	normalized := make([]string, 0, len(selected))
+	seen := map[string]bool{}
+	for _, rawField := range selected {
+		field := sanitizeCalendarText(rawField, 80)
+		if field == "" || seen[field] {
+			return nil, errors.New("widget fields must be unique and non-empty")
+		}
+		if len(available) == 0 || available[field] {
+			seen[field] = true
+			normalized = append(normalized, field)
+			continue
+		}
+		// The Studio historically initialized Menu Widgets with title/subtitle.
+		// When a custom CSV or JSON Source does not expose those fields, discard
+		// only those stale implicit defaults while preserving real user choices.
+		if presentation == "menu" && (field == "title" || field == "subtitle") {
+			continue
+		}
+		return nil, fmt.Errorf("field %q is not provided by the selected data Source", field)
+	}
+
+	if presentation == "menu" && len(normalized) == 0 && len(available) > 0 {
+		preferred := []string{
+			"option_1",
+			"option_2",
+			"entree",
+			"entrée",
+			"primary",
+			"primary_option",
+			"alternative",
+			"secondary",
+			"secondary_option",
+			"title",
+			"subtitle",
+		}
+		for _, field := range preferred {
+			if available[field] && !seen[field] {
+				normalized = append(normalized, field)
+				seen[field] = true
+			}
+			if len(normalized) == 2 {
+				break
+			}
+		}
+		if len(normalized) == 0 {
+			fallback := make([]string, 0, len(available))
+			for field := range available {
+				switch field {
+				case "date", "imageUrl", "link":
+					continue
+				}
+				fallback = append(fallback, field)
+			}
+			sort.Strings(fallback)
+			if len(fallback) > 2 {
+				fallback = fallback[:2]
+			}
+			normalized = append(normalized, fallback...)
+		}
+	}
+
+	if len(normalized) == 0 {
+		return nil, errors.New("a widget must select between 1 and 12 fields")
+	}
+	return normalized, nil
 }
 
 func normalizeWidgetColors(foreground, background *string) error {
