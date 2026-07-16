@@ -15,6 +15,7 @@ import "./styles/account-menu.css";
 import "./styles/issue-fixes.css";
 import "./styles/issues-37-45.css";
 import "./styles/issues-48-49.css";
+import "./styles/data-sources.css";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false } },
