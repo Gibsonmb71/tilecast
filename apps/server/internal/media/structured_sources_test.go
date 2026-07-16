@@ -68,3 +68,18 @@ func TestSelectStructuredRecordsDoesNotReusePastByDefault(t *testing.T) {
 		t.Fatalf("selected=%#v", selected)
 	}
 }
+
+func TestStructuredSourceParsersAllowDataOnlyMappings(t *testing.T) {
+	mapping := StructuredMapping{Date: "date", ValueFields: map[string]string{"option_1": "option_1", "option_2": "option_2"}}
+	if err := validateStructuredMapping(mapping, "csv"); err != nil {
+		t.Fatalf("data-only mapping rejected: %v", err)
+	}
+	config := StructuredSourceConfig{MaxItems: 10, Sort: "source", Mapping: &mapping, DateSelection: DateSelection{Enabled: true, DateFormat: "iso_date", Timezone: "America/New_York", Mode: "today", NoMatchBehavior: "empty"}}
+	records, err := parseCSVRecords([]byte("date,option_1,option_2\n2026-08-03,Chicken tenders,Cheeseburger\n"), config)
+	if err != nil || len(records) != 1 {
+		t.Fatalf("records=%#v err=%v", records, err)
+	}
+	if records[0].Title != "" || records[0].Values["option_1"] != "Chicken tenders" || records[0].Values["option_2"] != "Cheeseburger" {
+		t.Fatalf("unexpected data-only record: %#v", records[0])
+	}
+}
