@@ -4,7 +4,7 @@ import { Grid2X2, List, Plus } from "lucide-react";
 import { useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
 import { api, ApiError } from "../api/client";
-import type { Asset, WidgetProvider } from "../api/types";
+import type { Asset } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import {
   DashboardListToolbar,
@@ -169,8 +169,7 @@ export function WidgetEditorPage() {
     queryFn: api.contentDefinitions,
   });
   const asset = widget.data;
-  const provider = (providerParam ?? asset?.widget?.provider) as
-    WidgetProvider | undefined;
+  const provider = providerParam ?? asset?.widget?.provider;
   const presetId = new URLSearchParams(location.search).get("preset") as
     import("../api/types").WidgetPreset | null;
   const close = () => void navigate("/widgets");

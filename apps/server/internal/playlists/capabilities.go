@@ -10,7 +10,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/tilecast/tilecast/apps/server/internal/contentdefs"
 )
 
 type presentationWidgetRequirement struct {
@@ -62,11 +61,11 @@ func (s *Service) ValidatePresentationTargets(ctx context.Context, playlistID, l
 	if err = rows.Err(); err != nil {
 		return err
 	}
-	return validatePresentationForScreens(ctx, s.db, playlistID, layoutID, targets)
+	return s.validatePresentationForScreens(ctx, s.db, playlistID, layoutID, targets)
 }
 
-func validatePresentationForScreens(ctx context.Context, q presentationQuery, playlistID, layoutID *uuid.UUID, screenIDs []uuid.UUID) error {
-	requirements, requiresV13, err := presentationRequirements(ctx, q, playlistID, layoutID)
+func (s *Service) validatePresentationForScreens(ctx context.Context, q presentationQuery, playlistID, layoutID *uuid.UUID, screenIDs []uuid.UUID) error {
+	requirements, v13Blocker, err := s.presentationRequirements(ctx, q, playlistID, layoutID)
 	if err != nil {
 		return err
 	}
@@ -76,13 +75,14 @@ func validatePresentationForScreens(ctx context.Context, q presentationQuery, pl
 			return err
 		}
 		if !player.Reported {
-			if requiresV13 {
-				return fmt.Errorf("%w: Player update required before assigning content that requires manifest v13", ErrConflict)
+			if v13Blocker != "" {
+				screenName := screenDisplayName(ctx, q, screenID)
+				return fmt.Errorf("%w: %s", ErrConflict, sourceCapabilityError(screenName, v13Blocker))
 			}
 			continue
 		}
 		for _, requirement := range requirements {
-			if err := checkPresentationCompatibility(requirement.Name, requirement.Presentation, player); err != nil {
+			if err := checkPresentationCompatibility(ctx, q, screenID, requirement.Name, requirement.Presentation, player); err != nil {
 				return fmt.Errorf("%w: %v", ErrConflict, err)
 			}
 		}
@@ -90,7 +90,13 @@ func validatePresentationForScreens(ctx context.Context, q presentationQuery, pl
 	return nil
 }
 
-func presentationRequirements(ctx context.Context, q presentationQuery, playlistID, layoutID *uuid.UUID) ([]presentationWidgetRequirement, bool, error) {
+// presentationRequirements returns the compiled Widget presentation requirements
+// reachable from a playlist or Layout, plus the name of a Data Source (or Widget)
+// that requires manifest v13 when one is reachable ("" otherwise). Reachability
+// mirrors manifest generation: playlist items, nested playlists, Layout widget,
+// data_source, and playlist dependencies, and every Data Source referenced by a
+// reachable Widget's configuration.
+func (s *Service) presentationRequirements(ctx context.Context, q presentationQuery, playlistID, layoutID *uuid.UUID) ([]presentationWidgetRequirement, string, error) {
 	rows, err := q.Query(ctx, `
 		WITH selected_playlists AS (
 			SELECT $1::uuid AS id WHERE $1::uuid IS NOT NULL
@@ -121,41 +127,102 @@ func presentationRequirements(ctx context.Context, q presentationQuery, playlist
 		WHERE asset.deleted_at IS NULL
 		ORDER BY asset.name,widget.asset_id`, playlistID, layoutID)
 	if err != nil {
-		return nil, false, err
+		return nil, "", err
 	}
 	defer rows.Close()
 	requirements := []presentationWidgetRequirement{}
-	requiresV13 := false
+	v13Blocker := ""
+	sourceIDs := []uuid.UUID{}
 	for rows.Next() {
 		var requirement presentationWidgetRequirement
 		if err = rows.Scan(&requirement.Name, &requirement.Provider, &requirement.PresetID, &requirement.Configuration); err != nil {
-			return nil, false, err
+			return nil, "", err
 		}
-		requirement.Presentation, err = compileWidgetPresentationForPreset(requirement.Provider, requirement.PresetID, requirement.Configuration)
+		sourceIDs = append(sourceIDs, s.widgetDataSourceIDs(requirement.Provider, requirement.Configuration)...)
+		requirement.Presentation, err = s.compileWidgetPresentationForPreset(requirement.Provider, requirement.PresetID, requirement.Configuration)
 		if err != nil {
-			return nil, false, fmt.Errorf("compile Widget %q: %w", requirement.Name, err)
+			return nil, "", fmt.Errorf("compile Widget %q: %w", requirement.Name, err)
 		}
 		if requirement.Presentation == nil {
 			continue
 		}
-		if providerRequiresV13(requirement.Provider) {
-			requiresV13 = true
+		if v13Blocker == "" && s.widgetRequiresV13(requirement.Provider) {
+			v13Blocker = "Widget “" + requirement.Name + "”"
 		}
 		requirements = append(requirements, requirement)
 	}
-	return requirements, requiresV13, rows.Err()
+	if err = rows.Err(); err != nil {
+		return nil, "", err
+	}
+	// Data Sources bound directly through Layout text or visibility bindings are
+	// reachable without any Widget; include them alongside Widget-referenced Sources.
+	if layoutID != nil {
+		bindingRows, bindingErr := q.Query(ctx, `
+			SELECT dependency.dependency_id
+			FROM layouts layout
+			JOIN layout_revision_dependencies dependency
+			  ON dependency.revision_id=layout.published_revision_id
+			 AND dependency.dependency_type='data_source'
+			WHERE layout.id=$1::uuid`, layoutID)
+		if bindingErr != nil {
+			return nil, "", bindingErr
+		}
+		for bindingRows.Next() {
+			var id uuid.UUID
+			if err = bindingRows.Scan(&id); err != nil {
+				bindingRows.Close()
+				return nil, "", err
+			}
+			sourceIDs = append(sourceIDs, id)
+		}
+		if err = bindingRows.Err(); err != nil {
+			bindingRows.Close()
+			return nil, "", err
+		}
+		bindingRows.Close()
+	}
+	if v13Blocker == "" {
+		blocker, blockerErr := s.reachableSourceRequiringV13(ctx, q, uniqueUUIDs(sourceIDs))
+		if blockerErr != nil {
+			return nil, "", blockerErr
+		}
+		v13Blocker = blocker
+	}
+	return requirements, v13Blocker, nil
 }
 
-func providerRequiresV13(provider string) bool {
-	if definition, ok := contentdefs.MustLoad().Widget(provider); ok {
-		return definition.RequiresManifestV13
+// reachableSourceRequiringV13 returns the name of the first Data Source among the
+// given IDs that requires manifest v13, or "" when none do. The requirement is
+// read from the injected definition catalog, never from hardcoded provider lists.
+func (s *Service) reachableSourceRequiringV13(ctx context.Context, q presentationQuery, sourceIDs []uuid.UUID) (string, error) {
+	for _, id := range sourceIDs {
+		var provider, name string
+		err := q.QueryRow(ctx, `SELECT provider,name FROM data_sources WHERE id=$1 AND deleted_at IS NULL`, id).Scan(&provider, &name)
+		if errors.Is(err, pgx.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		if s.sourceRequiresV13(provider) {
+			return "Data Source “" + name + "”", nil
+		}
 	}
-	switch provider {
-	case "spotlight", "stat_grid", "chart", "progress", "timeline", "world_clock":
-		return true
-	default:
-		return false
-	}
+	return "", nil
+}
+
+// widgetRequiresV13 reports whether a Widget provider needs manifest v13, using
+// the injected definition catalog as the single source of truth.
+func (s *Service) widgetRequiresV13(provider string) bool {
+	definition, ok := s.definitions.Widget(provider)
+	return ok && definition.RequiresManifestV13
+}
+
+// sourceRequiresV13 reports whether a Data Source provider needs manifest v13,
+// using the injected definition catalog as the single source of truth.
+func (s *Service) sourceRequiresV13(provider string) bool {
+	definition, ok := s.definitions.DataSource(provider)
+	return ok && definition.RequiresManifestV13
 }
 
 func readPlayerPresentationCapabilities(ctx context.Context, q presentationQuery, screenID uuid.UUID) (playerPresentationCapabilities, error) {
@@ -178,7 +245,7 @@ func readPlayerPresentationCapabilities(ctx context.Context, q presentationQuery
 	return result, nil
 }
 
-func checkPresentationCompatibility(name string, presentation *WidgetPresentation, player playerPresentationCapabilities) error {
+func checkPresentationCompatibility(ctx context.Context, q presentationQuery, screenID uuid.UUID, name string, presentation *WidgetPresentation, player playerPresentationCapabilities) error {
 	if presentation == nil {
 		return nil
 	}
@@ -189,27 +256,75 @@ func checkPresentationCompatibility(name string, presentation *WidgetPresentatio
 			break
 		}
 	}
-	if !hasSchema {
-		return fmt.Errorf("This screen cannot display %q. Required presentation schema: %d. Reported: %s",
-			name, presentation.SchemaVersion, reportedSchemaVersions(player.SchemaVersions))
-	}
 	capabilities := make([]string, 0, len(presentation.RequiredCapabilities))
 	for capability := range presentation.RequiredCapabilities {
 		capabilities = append(capabilities, capability)
 	}
 	sort.Strings(capabilities)
+	missing := false
 	for _, capability := range capabilities {
-		required := presentation.RequiredCapabilities[capability]
 		reported := player.Native[capability]
 		if capability == "web.remote" {
 			reported = player.WebRuntime
 		}
-		if reported < required {
-			return fmt.Errorf("This screen cannot display %q. Required: %s@%d. Reported: %s@%d",
-				name, capability, required, capability, reported)
+		if reported < presentation.RequiredCapabilities[capability] {
+			missing = true
+			break
 		}
 	}
-	return nil
+	if hasSchema && !missing {
+		return nil
+	}
+	return errors.New(widgetCapabilityError(screenDisplayName(ctx, q, screenID), name, presentation, player, capabilities))
+}
+
+// widgetCapabilityError describes exactly why a screen cannot display a Widget:
+// the screen (when known), the Widget name, and the required and reported
+// presentation schema and capability versions. It never exposes database IDs.
+func widgetCapabilityError(screen, name string, presentation *WidgetPresentation, player playerPresentationCapabilities, capabilities []string) string {
+	var b strings.Builder
+	b.WriteString(screenClause(screen))
+	fmt.Fprintf(&b, " cannot display “%s”.\n\nRequired:\npresentation schema v%d", name, presentation.SchemaVersion)
+	for _, capability := range capabilities {
+		fmt.Fprintf(&b, "\n%s@%d", capability, presentation.RequiredCapabilities[capability])
+	}
+	fmt.Fprintf(&b, "\n\nReported:\npresentation schema %s", reportedSchemaVersions(player.SchemaVersions))
+	for _, capability := range capabilities {
+		reported := player.Native[capability]
+		if capability == "web.remote" {
+			reported = player.WebRuntime
+		}
+		fmt.Fprintf(&b, "\n%s@%d", capability, reported)
+	}
+	return b.String()
+}
+
+// sourceCapabilityError describes why a screen cannot use content that needs
+// manifest v13 when the target Player has not reported compatible capabilities.
+// blocker names the reachable Widget or Data Source (already quoted).
+func sourceCapabilityError(screen, blocker string) string {
+	return fmt.Sprintf("%s cannot use %s.\n\nRequired:\nData Document v1 and manifest v13\n\nThe Player has not reported compatible presentation capabilities.",
+		screenClause(screen), blocker)
+}
+
+func screenClause(screen string) string {
+	if screen == "" {
+		return "This screen"
+	}
+	return fmt.Sprintf("This screen “%s”", screen)
+}
+
+// screenDisplayName returns the screen's name for user-facing messages, or ""
+// when it cannot be resolved. Errors are non-fatal: messages simply omit the name.
+func screenDisplayName(ctx context.Context, q presentationQuery, screenID uuid.UUID) string {
+	if q == nil || screenID == uuid.Nil {
+		return ""
+	}
+	var name string
+	if err := q.QueryRow(ctx, `SELECT name FROM screens WHERE id=$1 AND deleted_at IS NULL`, screenID).Scan(&name); err != nil {
+		return ""
+	}
+	return name
 }
 
 func reportedSchemaVersions(versions []int32) string {

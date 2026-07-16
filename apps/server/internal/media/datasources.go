@@ -69,6 +69,47 @@ func (s *Service) DataSourceNormalizer(name string) (configNormalizer, error) {
 	return s.dataSourceProvider(name)
 }
 
+// manualObjectRefreshPayload builds the cached typed-object payload for a manual_object
+// Data Source from its normalized configuration. ok is false when the provider is not a
+// manual_object definition, letting callers fall back to the default refresh behavior.
+func (s *Service) manualObjectRefreshPayload(provider string, configuration any) ([]byte, bool, error) {
+	definition, ok := s.definitions.DataSource(provider)
+	if !ok || definition.AdapterID != "manual_object" {
+		return nil, false, nil
+	}
+	config, err := manualObjectConfiguration(configuration)
+	if err != nil {
+		return nil, false, err
+	}
+	payload, err := json.Marshal(manualObjectPayload(definition, config, time.Now().UTC()))
+	if err != nil {
+		return nil, false, err
+	}
+	return payload, true, nil
+}
+
+// ManualObjectPreview projects an unsaved manual_object configuration into the same
+// typed object payload the Player receives, so Studio previews match stored behavior.
+func (s *Service) ManualObjectPreview(ctx context.Context, provider string, raw json.RawMessage) (TypedDatasetPayload, error) {
+	definition, ok := s.definitions.DataSource(provider)
+	if !ok || definition.AdapterID != "manual_object" {
+		return TypedDatasetPayload{}, errors.New("data source provider is not a manual object")
+	}
+	normalizer, err := s.dataSourceProvider(provider)
+	if err != nil {
+		return TypedDatasetPayload{}, err
+	}
+	configuration, err := normalizer.Normalize(ctx, raw)
+	if err != nil {
+		return TypedDatasetPayload{}, err
+	}
+	config, err := manualObjectConfiguration(configuration)
+	if err != nil {
+		return TypedDatasetPayload{}, err
+	}
+	return manualObjectPayload(definition, config, time.Now().UTC()), nil
+}
+
 func (s *Service) CreateDataSource(ctx context.Context, user uuid.UUID, input DataSourceInput) (DataSource, error) {
 	input.Provider = strings.ToLower(strings.TrimSpace(input.Provider))
 	input.Name = strings.TrimSpace(input.Name)
@@ -104,12 +145,10 @@ func (s *Service) CreateDataSource(ctx context.Context, user uuid.UUID, input Da
 		if _, err = tx.Exec(ctx, `INSERT INTO data_source_refresh_states(data_source_id,next_refresh_at,last_attempt_at,last_success_at,http_result_category,parse_status,available_item_count,cache_updated_at,cache_expires_at,cached_payload) VALUES($1,now()+interval '100 years',now(),now(),'manual','success',$2,now(),now()+interval '100 years',$3::jsonb)`, id, len(manual.Rows), string(payload)); err != nil {
 			return DataSource{}, err
 		}
-	} else if input.Provider == "school-status" {
-		var config schoolStatusSourceConfig
-		encodedConfiguration, _ := json.Marshal(configuration)
-		_ = json.Unmarshal(encodedConfiguration, &config)
-		now := time.Now().UTC()
-		payload, _ := json.Marshal(schoolStatusPayload(config, now))
+	} else if payload, ok, payloadErr := s.manualObjectRefreshPayload(input.Provider, configuration); ok {
+		if payloadErr != nil {
+			return DataSource{}, payloadErr
+		}
 		if _, err = tx.Exec(ctx, `INSERT INTO data_source_refresh_states(data_source_id,next_refresh_at,last_attempt_at,last_success_at,http_result_category,parse_status,available_item_count,cache_updated_at,cache_expires_at,cached_payload) VALUES($1,now()+interval '100 years',now(),now(),'manual','success',1,now(),now()+interval '100 years',$2::jsonb)`, id, string(payload)); err != nil {
 			return DataSource{}, err
 		}
@@ -175,12 +214,10 @@ func (s *Service) UpdateDataSource(ctx context.Context, id, user uuid.UUID, inpu
 		if _, err = tx.Exec(ctx, `UPDATE data_source_refresh_states SET next_refresh_at=now()+interval '100 years',last_attempt_at=now(),last_success_at=now(),http_result_category='manual',parse_status='success',available_event_count=0,available_item_count=$2,using_cached_data=FALSE,cache_updated_at=now(),cache_expires_at=now()+interval '100 years',cached_payload=$3::jsonb,error_code=NULL,locked_at=NULL,locked_by=NULL,updated_at=now() WHERE data_source_id=$1`, id, len(manual.Rows), string(payload)); err != nil {
 			return DataSource{}, err
 		}
-	} else if input.Provider == "school-status" {
-		var config schoolStatusSourceConfig
-		encodedConfiguration, _ := json.Marshal(configuration)
-		_ = json.Unmarshal(encodedConfiguration, &config)
-		now := time.Now().UTC()
-		payload, _ := json.Marshal(schoolStatusPayload(config, now))
+	} else if payload, ok, payloadErr := s.manualObjectRefreshPayload(input.Provider, configuration); ok {
+		if payloadErr != nil {
+			return DataSource{}, payloadErr
+		}
 		if _, err = tx.Exec(ctx, `UPDATE data_source_refresh_states SET next_refresh_at=now()+interval '100 years',last_attempt_at=now(),last_success_at=now(),http_result_category='manual',parse_status='success',available_item_count=1,using_cached_data=FALSE,cache_updated_at=now(),cache_expires_at=now()+interval '100 years',cached_payload=$2::jsonb,error_code=NULL,locked_at=NULL,locked_by=NULL,updated_at=now() WHERE data_source_id=$1`, id, string(payload)); err != nil {
 			return DataSource{}, err
 		}
@@ -256,7 +293,7 @@ func (s *Service) PreviewDataSourceByID(ctx context.Context, id uuid.UUID, previ
 	if raw.Provider == "manual" {
 		return s.ManualPreview(ctx, raw.Configuration)
 	}
-	if raw.Provider == "school-status" {
+	if definition, ok := s.definitions.DataSource(raw.Provider); ok && definition.AdapterID == "manual_object" {
 		projected, projectErr := s.PlayerTypedDataSourceConfiguration(ctx, raw.ID, raw.Provider, raw.Configuration)
 		if projectErr != nil {
 			return nil, projectErr
@@ -366,7 +403,7 @@ func (s *Service) GetDataSourceDetail(ctx context.Context, id uuid.UUID) (DataSo
 		return DataSourceDetail{}, err
 	}
 	detail.Diagnostics.DataSourceID = id
-	detail.Fields = availableDataSourceFields(raw.Provider, raw.Configuration)
+	detail.Fields = s.availableDataSourceFields(raw.Provider, raw.Configuration)
 	detail.CachedRecords = detail.Diagnostics.AvailableEventCount + detail.Diagnostics.AvailableItemCount
 	detail.Status = dataSourceStatus(detail.Diagnostics)
 	if raw.Provider == "rss" || raw.Provider == "atom" || raw.Provider == "json" || raw.Provider == "csv" {
@@ -416,7 +453,7 @@ func (s *Service) dataSourceProviderAndFields(ctx context.Context, id uuid.UUID)
 		return "", nil, err
 	}
 	fields := map[string]bool{}
-	for _, f := range availableDataSourceFields(provider, configuration) {
+	for _, f := range s.availableDataSourceFields(provider, configuration) {
 		fields[f.Key] = true
 	}
 	return provider, fields, nil
@@ -430,14 +467,26 @@ func (s *Service) dataSourceProviderAndTypedFields(ctx context.Context, id uuid.
 		return "", nil, err
 	}
 	fields := map[string]string{}
-	for _, field := range availableDataSourceFields(provider, configuration) {
+	for _, field := range s.availableDataSourceFields(provider, configuration) {
 		fields[field.Key] = field.Type
 	}
 	return provider, fields, nil
 }
 
 // availableDataSourceFields derives the typed field schema a Data Source exposes.
-func availableDataSourceFields(provider string, raw json.RawMessage) []DataSourceField {
+// Release-defined (non-legacy) Sources derive their selectable fields directly from
+// the definition's output schema, so new definitions need no entry in the legacy
+// provider switch below. Only legacy Sources whose fields depend on their runtime
+// configuration (CSV, JSON mappings, manual tables, calendar selections) keep their
+// provider-specific logic.
+func (s *Service) availableDataSourceFields(provider string, raw json.RawMessage) []DataSourceField {
+	if definition, ok := s.definitions.DataSource(provider); ok && !definition.LegacyEditor {
+		fields := make([]DataSourceField, 0, len(definition.OutputSchema.Fields))
+		for _, field := range definition.OutputSchema.Fields {
+			fields = append(fields, DataSourceField{Key: field.Key, Label: field.Label, Type: field.Type})
+		}
+		return fields
+	}
 	fields := []DataSourceField{}
 	if provider == "calendar" {
 		var config CalendarConfig
@@ -462,16 +511,6 @@ func availableDataSourceFields(provider string, raw json.RawMessage) []DataSourc
 			fields = append(fields, DataSourceField{Key: column.Key, Label: column.Label, Type: column.Type})
 		}
 		return fields
-	}
-	if provider == "school-status" {
-		return []DataSourceField{
-			{Key: "status", Label: "Status", Type: "text"},
-			{Key: "message", Label: "Message", Type: "text"},
-			{Key: "severity", Label: "Severity", Type: "text"},
-			{Key: "effectiveAt", Label: "Effective time", Type: "datetime"},
-			{Key: "expiresAt", Label: "Expiration time", Type: "datetime"},
-			{Key: "updatedAt", Label: "Updated time", Type: "datetime"},
-		}
 	}
 	if provider == "weather" {
 		return []DataSourceField{
@@ -538,7 +577,12 @@ func uniqueDataSourceFields(fields []DataSourceField) []DataSourceField {
 }
 
 func (s *Service) dataSourceWidgetUsage(ctx context.Context, id uuid.UUID) ([]DataSourceWidgetUsage, error) {
-	rows, err := s.db.Query(ctx, `SELECT a.id,a.name,w.provider FROM widgets w JOIN assets a ON a.id=w.asset_id AND a.deleted_at IS NULL WHERE w.configuration->>'dataSourceId'=$1::text ORDER BY lower(a.name),a.id`, id.String())
+	// A Widget references a Data Source whenever one of its configuration values is
+	// the Source's ID. Matching any configured value (rather than a single fixed
+	// dataSourceId key) covers release-defined Widgets that expose one or more
+	// data_source selectors under arbitrary keys; Data Source IDs are globally
+	// unique, so this never collides with an unrelated reference.
+	rows, err := s.db.Query(ctx, `SELECT a.id,a.name,w.provider FROM widgets w JOIN assets a ON a.id=w.asset_id AND a.deleted_at IS NULL WHERE EXISTS(SELECT 1 FROM jsonb_each_text(w.configuration) field WHERE field.value=$1::text) ORDER BY lower(a.name),a.id`, id.String())
 	if err != nil {
 		return nil, err
 	}

@@ -755,6 +755,7 @@
       "adapterId": "transit",
       "refreshBehavior": "interval",
       "legacyEditor": true,
+      "requiresManifestV13": true,
       "deprecation": {}
     },
     {
@@ -770,6 +771,7 @@
       "adapterId": "cap_alerts",
       "refreshBehavior": "interval",
       "legacyEditor": true,
+      "requiresManifestV13": true,
       "deprecation": {}
     },
     {
@@ -785,6 +787,7 @@
       "adapterId": "air_quality",
       "refreshBehavior": "interval",
       "legacyEditor": true,
+      "requiresManifestV13": true,
       "deprecation": {}
     },
     {
@@ -886,6 +889,16 @@
       },
       "adapterId": "manual_object",
       "refreshBehavior": "manual",
+      "requiresManifestV13": true,
+      "setup": {
+        "eyebrow": "Release-defined information",
+        "tip": "Use expiration for temporary closures or delayed-opening notices.",
+        "steps": [
+          "Enter the current status, message, and severity.",
+          "Optionally set effective and expiration times.",
+          "Save and select it in a School Status Banner Widget."
+        ]
+      },
       "deprecation": {}
     }
   ]

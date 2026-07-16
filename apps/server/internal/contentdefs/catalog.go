@@ -29,6 +29,63 @@ var supportedNodes = map[string]bool{
 	"repeat": true, "conditional": true, "grouped_sections": true,
 }
 
+// supportedOutputFieldTypes bounds the typed values a Data Source may declare. The set
+// mirrors the scalar kinds the Player's Data Document projector understands.
+var supportedOutputFieldTypes = map[string]bool{
+	"text": true, "number": true, "integer": true, "percent": true, "currency": true,
+	"boolean": true, "date": true, "datetime": true, "duration": true, "url": true, "asset": true,
+}
+
+// supportedCapabilities enumerates every presentation capability a Widget may require.
+// It must stay in agreement with the Player's declared native capabilities and the web
+// runtime capability; unknown names are rejected at startup.
+var supportedCapabilities = map[string]bool{
+	"layout.surface": true, "layout.box": true, "layout.row": true, "layout.column": true,
+	"layout.stack": true, "layout.grid": true, "layout.spacer": true, "layout.divider": true,
+	"content.text": true, "content.icon": true, "content.asset_image": true, "content.badge": true,
+	"content.progress": true, "content.qr_code": true, "content.marquee": true,
+	"content.line_chart": true, "content.bar_chart": true, "content.donut_chart": true,
+	"collection.repeat": true, "collection.conditional": true, "collection.grouped_sections": true,
+	"binding.core": true, "format.typed": true, "selection.relative_date": true,
+	"environment.time": true, "web.remote": true,
+}
+
+// supportedBindingSources and supportedConditionOperators mirror the vocabularies the
+// Player enforces in ManifestSyncManager, keeping Server validation and Player playback
+// in agreement.
+var supportedBindingSources = map[string]bool{
+	"literal": true, "dataset": true, "repeat": true, "repeat_index": true, "environment": true,
+}
+
+var supportedConditionOperators = map[string]bool{
+	"equals": true, "not_equals": true, "empty": true, "not_empty": true,
+	"greater_than": true, "greater_or_equal": true, "less_than": true, "less_or_equal": true,
+	"before": true, "after": true,
+}
+
+// Conservative, documented bounds on release-defined presentation templates. They keep
+// compiled presentations small enough to verify, cache, and render offline on the Player.
+const (
+	maxPresentationDepth = 24
+	maxPresentationNodes = 256
+)
+
+// nodeCapability maps a presentation node type to the capability a definition must
+// declare to use it, or "" for structural nodes that need no explicit declaration.
+func nodeCapability(nodeType string) string {
+	switch nodeType {
+	case "surface", "box", "row", "column", "stack", "grid", "spacer", "divider":
+		return "layout." + nodeType
+	case "repeat", "conditional", "grouped_sections":
+		return "collection." + nodeType
+	case "text", "icon", "asset_image", "badge", "progress", "qr_code", "marquee",
+		"line_chart", "bar_chart", "donut_chart":
+		return "content." + nodeType
+	default:
+		return ""
+	}
+}
+
 //go:embed definitions/*.json
 var definitionFiles embed.FS
 
@@ -46,6 +103,15 @@ type Deprecation struct {
 	Deprecated  bool   `json:"deprecated"`
 	Replacement string `json:"replacement,omitempty"`
 	Message     string `json:"message,omitempty"`
+}
+
+// Setup carries optional Studio presentation copy for a release-defined definition, so the
+// gallery and editor can render provider-specific guidance without hardcoded Studio code.
+type Setup struct {
+	Eyebrow    string   `json:"eyebrow,omitempty"`
+	Tip        string   `json:"tip,omitempty"`
+	Steps      []string `json:"steps,omitempty"`
+	EmptyState string   `json:"emptyState,omitempty"`
 }
 
 type ConfigurationSchema struct {
@@ -108,6 +174,7 @@ type WidgetDefinition struct {
 	EmptyStateBehavior        string              `json:"emptyStateBehavior"`
 	LegacyEditor              bool                `json:"legacyEditor,omitempty"`
 	RequiresManifestV13       bool                `json:"requiresManifestV13,omitempty"`
+	Setup                     Setup               `json:"setup,omitempty"`
 	Deprecation               Deprecation         `json:"deprecation"`
 }
 
@@ -125,6 +192,8 @@ type DataSourceDefinition struct {
 	RefreshBehavior      string              `json:"refreshBehavior"`
 	Attribution          string              `json:"attribution,omitempty"`
 	LegacyEditor         bool                `json:"legacyEditor,omitempty"`
+	RequiresManifestV13  bool                `json:"requiresManifestV13,omitempty"`
+	Setup                Setup               `json:"setup,omitempty"`
 	Deprecation          Deprecation         `json:"deprecation"`
 }
 
@@ -147,6 +216,42 @@ func MustLoad() *Catalog {
 		panic(err)
 	}
 	return catalog
+}
+
+// New builds a catalog from explicit definitions. It validates the definitions and
+// derives a deterministic fingerprint, mirroring the embedded loader. It exists so
+// callers (and tests) can inject an alternate catalog through dependency injection
+// instead of relying on the embedded default.
+func New(widgets []WidgetDefinition, dataSources []DataSourceDefinition) (*Catalog, error) {
+	catalog := &Catalog{
+		CompilerVersion: CompilerVersion,
+		Widgets:         widgets,
+		DataSources:     dataSources,
+		widgetsByID:     map[string]WidgetDefinition{},
+		dataSourcesByID: map[string]DataSourceDefinition{},
+	}
+	if catalog.Widgets == nil {
+		catalog.Widgets = []WidgetDefinition{}
+	}
+	if catalog.DataSources == nil {
+		catalog.DataSources = []DataSourceDefinition{}
+	}
+	if err := catalog.validate(); err != nil {
+		return nil, err
+	}
+	hasher := sha256.New()
+	hasher.Write([]byte(CompilerVersion))
+	encoded, err := json.Marshal(struct {
+		Widgets     []WidgetDefinition     `json:"widgets"`
+		DataSources []DataSourceDefinition `json:"dataSources"`
+	}{catalog.Widgets, catalog.DataSources})
+	if err != nil {
+		return nil, err
+	}
+	hasher.Write(encoded)
+	catalog.Fingerprint = hex.EncodeToString(hasher.Sum(nil))
+	catalog.Revision = catalog.Fingerprint[:16]
+	return catalog, nil
 }
 
 func load() (*Catalog, error) {
@@ -210,11 +315,14 @@ func (c *Catalog) validate() error {
 		if definition.PresentationSchemaVersion < 1 || len(definition.RequiredCapabilities) == 0 {
 			return fmt.Errorf("Widget definition %q has invalid presentation requirements", definition.ID)
 		}
+		if err := validateCapabilities(definition.RequiredCapabilities); err != nil {
+			return fmt.Errorf("Widget definition %q: %w", definition.ID, err)
+		}
 		if !definition.LegacyEditor {
 			if len(definition.PresentationTemplate) == 0 {
 				return fmt.Errorf("Widget definition %q is missing a presentation template", definition.ID)
 			}
-			if err := validateTemplate(definition.PresentationTemplate, definition.ConfigurationSchema); err != nil {
+			if err := validateTemplate(definition.PresentationTemplate, definition.ConfigurationSchema, definition.RequiredCapabilities); err != nil {
 				return fmt.Errorf("Widget definition %q: %w", definition.ID, err)
 			}
 		}
@@ -241,7 +349,63 @@ func (c *Catalog) validate() error {
 			definition.OutputSchema.Kind != "object" {
 			return fmt.Errorf("Data Source definition %q has an invalid output kind", definition.ID)
 		}
+		if err := validateOutputSchema(definition.OutputSchema); err != nil {
+			return fmt.Errorf("Data Source definition %q: %w", definition.ID, err)
+		}
 		c.dataSourcesByID[definition.ID] = definition
+	}
+	for _, definition := range c.Widgets {
+		if err := validateDeprecation("Widget", definition.ID, definition.Deprecation, func(id string) bool { _, ok := c.widgetsByID[id]; return ok }); err != nil {
+			return err
+		}
+	}
+	for _, definition := range c.DataSources {
+		if err := validateDeprecation("Data Source", definition.ID, definition.Deprecation, func(id string) bool { _, ok := c.dataSourcesByID[id]; return ok }); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateOutputSchema rejects duplicate output field keys and unsupported field types.
+func validateOutputSchema(schema OutputSchema) error {
+	seen := map[string]bool{}
+	for _, field := range schema.Fields {
+		if field.Key == "" || seen[field.Key] {
+			return errors.New("output schema contains a missing or duplicate field key")
+		}
+		seen[field.Key] = true
+		if !supportedOutputFieldTypes[field.Type] {
+			return fmt.Errorf("output field %q uses unsupported type %q", field.Key, field.Type)
+		}
+	}
+	return nil
+}
+
+// validateCapabilities rejects unknown capability names and versions below one.
+func validateCapabilities(capabilities map[string]int) error {
+	for name, version := range capabilities {
+		if !supportedCapabilities[name] {
+			return fmt.Errorf("declares unknown capability %q", name)
+		}
+		if version < 1 {
+			return fmt.Errorf("capability %q must require version 1 or higher", name)
+		}
+	}
+	return nil
+}
+
+// validateDeprecation rejects a deprecation whose replacement points at a definition of
+// the same kind that does not exist, and a replacement that points back at itself.
+func validateDeprecation(kind, id string, deprecation Deprecation, exists func(string) bool) error {
+	if deprecation.Replacement == "" {
+		return nil
+	}
+	if deprecation.Replacement == id {
+		return fmt.Errorf("%s definition %q deprecation replacement cannot reference itself", kind, id)
+	}
+	if !exists(deprecation.Replacement) {
+		return fmt.Errorf("%s definition %q deprecation replacement %q does not exist", kind, id, deprecation.Replacement)
 	}
 	return nil
 }
@@ -266,12 +430,28 @@ func validateSchema(schema ConfigurationSchema) error {
 		if !supportedControls[field.Control] {
 			return fmt.Errorf("configuration schema uses unsupported form control %q", field.Control)
 		}
-		if field.Control == "select" && len(field.Options) == 0 {
-			return fmt.Errorf("select field %q has no options", field.Key)
+		if err := validateFieldBounds(field); err != nil {
+			return err
+		}
+		if field.Control == "select" {
+			if len(field.Options) == 0 {
+				return fmt.Errorf("select field %q has no options", field.Key)
+			}
+			if err := validateSelectDefault(field); err != nil {
+				return err
+			}
+		}
+		if field.Required {
+			if text, ok := field.Default.(string); ok && strings.TrimSpace(text) == "" {
+				return fmt.Errorf("required field %q declares an empty default", field.Key)
+			}
 		}
 		if field.Control == "repeating_group" {
 			if field.MaximumItems < 1 || field.MaximumItems > 100 {
 				return fmt.Errorf("repeating group %q has invalid bounds", field.Key)
+			}
+			if len(field.ItemFields) == 0 {
+				return fmt.Errorf("repeating group %q declares no item fields", field.Key)
 			}
 			if err := validateSchema(ConfigurationSchema{Fields: field.ItemFields}); err != nil {
 				return err
@@ -279,6 +459,37 @@ func validateSchema(schema ConfigurationSchema) error {
 		}
 	}
 	return nil
+}
+
+// validateFieldBounds rejects contradictory numeric and string bounds.
+func validateFieldBounds(field FieldDefinition) error {
+	if field.Minimum != nil && field.Maximum != nil && *field.Minimum > *field.Maximum {
+		return fmt.Errorf("field %q has a minimum greater than its maximum", field.Key)
+	}
+	if field.MinLength < 0 || field.MaxLength < 0 {
+		return fmt.Errorf("field %q has a negative length bound", field.Key)
+	}
+	if field.MaxLength > 0 && field.MinLength > field.MaxLength {
+		return fmt.Errorf("field %q has a minimum length greater than its maximum length", field.Key)
+	}
+	return nil
+}
+
+// validateSelectDefault rejects a select default that is not one of its options.
+func validateSelectDefault(field FieldDefinition) error {
+	if field.Default == nil {
+		return nil
+	}
+	value, ok := field.Default.(string)
+	if !ok {
+		return fmt.Errorf("select field %q default must be text", field.Key)
+	}
+	for _, option := range field.Options {
+		if option.Value == value {
+			return nil
+		}
+	}
+	return fmt.Errorf("select field %q default is not one of its options", field.Key)
 }
 
 func validateDefaults(schema ConfigurationSchema, defaults map[string]any) error {
@@ -313,7 +524,7 @@ func validateDefaults(schema ConfigurationSchema, defaults map[string]any) error
 	return nil
 }
 
-func validateTemplate(raw json.RawMessage, schema ConfigurationSchema) error {
+func validateTemplate(raw json.RawMessage, schema ConfigurationSchema, capabilities map[string]int) error {
 	var root any
 	if err := json.Unmarshal(raw, &root); err != nil {
 		return err
@@ -322,7 +533,103 @@ func validateTemplate(raw json.RawMessage, schema ConfigurationSchema) error {
 	for _, field := range schema.Fields {
 		fields[field.Key] = field
 	}
-	return walkTemplate(root, fields)
+	if err := walkTemplate(root, fields); err != nil {
+		return err
+	}
+	used := map[string]bool{}
+	count := 0
+	if err := validateTemplateNode(root, 1, &count, used); err != nil {
+		return err
+	}
+	// Every node type the template renders must have its capability declared, so the
+	// Player can reject content it cannot present rather than failing at render time.
+	for nodeType := range used {
+		capability := nodeCapability(nodeType)
+		if capability == "" {
+			continue
+		}
+		if _, declared := capabilities[capability]; !declared {
+			return fmt.Errorf("presentation uses node %q but does not declare required capability %q", nodeType, capability)
+		}
+	}
+	return nil
+}
+
+// validateTemplateNode enforces the presentation node structure: each node is an object
+// with a supported type, bounded nesting depth and total count, well-formed bindings and
+// conditions, and list-typed children.
+func validateTemplateNode(value any, depth int, count *int, used map[string]bool) error {
+	if depth > maxPresentationDepth {
+		return fmt.Errorf("presentation template exceeds the maximum depth of %d", maxPresentationDepth)
+	}
+	node, ok := value.(map[string]any)
+	if !ok {
+		return errors.New("presentation template node is not an object")
+	}
+	nodeType, ok := node["type"].(string)
+	if !ok || !supportedNodes[nodeType] {
+		return fmt.Errorf("presentation template node has a missing or unsupported type")
+	}
+	used[nodeType] = true
+	*count++
+	if *count > maxPresentationNodes {
+		return fmt.Errorf("presentation template exceeds the maximum of %d nodes", maxPresentationNodes)
+	}
+	if binding, present := node["binding"]; present {
+		if err := validateTemplateBinding(binding); err != nil {
+			return err
+		}
+	}
+	if condition, present := node["condition"]; present {
+		if err := validateTemplateCondition(condition); err != nil {
+			return err
+		}
+	}
+	if children, present := node["children"]; present {
+		list, ok := children.([]any)
+		if !ok {
+			return errors.New("presentation template children must be a list")
+		}
+		for _, child := range list {
+			if err := validateTemplateNode(child, depth+1, count, used); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func validateTemplateBinding(value any) error {
+	binding, ok := value.(map[string]any)
+	if !ok {
+		return errors.New("presentation binding is not an object")
+	}
+	source, ok := binding["source"].(string)
+	if !ok || !supportedBindingSources[source] {
+		return errors.New("presentation binding has a missing or unknown source")
+	}
+	if source == "dataset" {
+		if _, present := binding["dataset"]; !present {
+			return errors.New("dataset binding is missing a dataset reference")
+		}
+	}
+	return nil
+}
+
+func validateTemplateCondition(value any) error {
+	condition, ok := value.(map[string]any)
+	if !ok {
+		return errors.New("presentation condition is not an object")
+	}
+	op, ok := condition["op"].(string)
+	if !ok || !supportedConditionOperators[op] {
+		return errors.New("presentation condition has a missing or unknown operator")
+	}
+	binding, present := condition["binding"]
+	if !present {
+		return errors.New("presentation condition is missing a binding")
+	}
+	return validateTemplateBinding(binding)
 }
 
 func walkTemplate(value any, fields map[string]FieldDefinition) error {

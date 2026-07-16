@@ -610,7 +610,7 @@ func (s *Service) AssignPresentation(ctx context.Context, screenID uuid.UUID, pl
 		}
 		rows.Close()
 	}
-	if err = validatePresentationForScreens(ctx, tx, playlistID, layoutID, targetScreens); err != nil {
+	if err = s.validatePresentationForScreens(ctx, tx, playlistID, layoutID, targetScreens); err != nil {
 		return Assignment{}, err
 	}
 	requiresV12, err := presentationRequiresManifestV12(ctx, tx, playlistID, layoutID)
@@ -744,7 +744,7 @@ func (s *Service) AssignGroupPresentation(ctx context.Context, groupID uuid.UUID
 		return err
 	}
 	rows.Close()
-	if err = validatePresentationForScreens(ctx, tx, playlistID, layoutID, targetScreens); err != nil {
+	if err = s.validatePresentationForScreens(ctx, tx, playlistID, layoutID, targetScreens); err != nil {
 		return err
 	}
 	requiresV12, err := presentationRequiresManifestV12(ctx, tx, playlistID, layoutID)
@@ -1178,9 +1178,10 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 			return Manifest{}, "", err
 		}
 	}
-	// Project the single shared dataset for every data-driven widget in the manifest.
+	// Project the shared dataset for every Data Source every data-driven widget in
+	// the manifest references. Release-defined widgets may reference more than one.
 	for _, widget := range append([]ManifestWidget(nil), manifest.Widgets...) {
-		if id := widgetDataSourceID(widget.Provider, widget.Configuration); id != uuid.Nil {
+		for _, id := range s.widgetDataSourceIDs(widget.Provider, widget.Configuration) {
 			if err = s.projectDataSource(ctx, &manifest, id); err != nil {
 				return Manifest{}, "", err
 			}
@@ -1215,20 +1216,27 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 		}
 	}
 	requiresV13 := false
+	v13Blocker := ""
 	for _, widget := range manifest.Widgets {
-		if providerRequiresV13(widget.Provider) {
+		if s.widgetRequiresV13(widget.Provider) {
 			requiresV13 = true
+			if v13Blocker == "" {
+				v13Blocker = "Widget “" + widget.Name + "”"
+			}
 		}
 	}
 	for _, source := range manifest.DataSources {
-		if source.Provider == "transit" || source.Provider == "cap_alerts" || source.Provider == "air_quality" || source.Provider == "school-status" {
+		if s.sourceRequiresV13(source.Provider) {
 			requiresV13 = true
+			if v13Blocker == "" {
+				v13Blocker = "Data Source “" + source.Name + "”"
+			}
 		}
 	}
 	compiled := make([]*WidgetPresentation, len(manifest.Widgets))
 	canCompileV13 := true
 	for index := range manifest.Widgets {
-		compiled[index], _ = compileWidgetPresentationForPreset(manifest.Widgets[index].Provider, manifest.Widgets[index].PresetID, manifest.Widgets[index].Configuration)
+		compiled[index], _ = s.compileWidgetPresentationForPreset(manifest.Widgets[index].Provider, manifest.Widgets[index].PresetID, manifest.Widgets[index].Configuration)
 		if compiled[index] == nil {
 			canCompileV13 = false
 			break
@@ -1241,13 +1249,13 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 	useV13 := false
 	if playerCapabilities.Reported && canCompileV13 {
 		for index, presentation := range compiled {
-			if err = checkPresentationCompatibility(manifest.Widgets[index].Name, presentation, playerCapabilities); err != nil {
+			if err = checkPresentationCompatibility(ctx, s.db, screenID, manifest.Widgets[index].Name, presentation, playerCapabilities); err != nil {
 				return Manifest{}, "", fmt.Errorf("%w: %v", ErrConflict, err)
 			}
 		}
 		useV13 = true
 	} else if requiresV13 {
-		return Manifest{}, "", fmt.Errorf("%w: Player update required for declarative information Widgets", ErrConflict)
+		return Manifest{}, "", fmt.Errorf("%w: %v", ErrConflict, sourceCapabilityError(screenDisplayName(ctx, s.db, screenID), v13Blocker))
 	}
 	if useV13 {
 		ids := make([]uuid.UUID, 0, len(manifest.DataSources))
@@ -1298,22 +1306,26 @@ func (s *Service) reconcilePresentationCatalog(ctx context.Context) error {
 	return err
 }
 
-// widgetDataSourceID returns the Data Source a data-driven widget consumes, or Nil.
-func widgetDataSourceID(provider string, configuration json.RawMessage) uuid.UUID {
-	if definition, ok := contentdefs.MustLoad().Widget(provider); ok && !definition.LegacyEditor {
+// widgetDataSourceIDs returns every Data Source a widget consumes. Release-defined
+// widgets may declare more than one data_source configuration field, so every such
+// field is inspected; legacy widgets keep their single dataSourceId behavior. The
+// injected definition catalog is the single source of truth for release-defined widgets.
+func (s *Service) widgetDataSourceIDs(provider string, configuration json.RawMessage) []uuid.UUID {
+	if definition, ok := s.definitions.Widget(provider); ok && !definition.LegacyEditor {
 		var values map[string]json.RawMessage
+		ids := []uuid.UUID{}
 		if json.Unmarshal(configuration, &values) == nil {
 			for _, field := range definition.ConfigurationSchema.Fields {
 				if field.Control != "data_source" {
 					continue
 				}
 				var id uuid.UUID
-				if json.Unmarshal(values[field.Key], &id) == nil {
-					return id
+				if json.Unmarshal(values[field.Key], &id) == nil && id != uuid.Nil {
+					ids = append(ids, id)
 				}
 			}
 		}
-		return uuid.Nil
+		return ids
 	}
 	switch provider {
 	case "ticker", "menu", "list", "table", "agenda", "metric", "cards", "weather", "spotlight", "stat_grid", "chart", "progress", "timeline":
@@ -1321,10 +1333,11 @@ func widgetDataSourceID(provider string, configuration json.RawMessage) uuid.UUI
 			DataSourceID uuid.UUID `json:"dataSourceId"`
 		}
 		_ = json.Unmarshal(configuration, &c)
-		return c.DataSourceID
-	default:
-		return uuid.Nil
+		if c.DataSourceID != uuid.Nil {
+			return []uuid.UUID{c.DataSourceID}
+		}
 	}
+	return nil
 }
 
 func (s *Service) projectWidgetAssets(ctx context.Context, manifest *Manifest, widget *ManifestWidget, seen map[uuid.UUID]bool) error {
@@ -1455,7 +1468,7 @@ func (s *Service) DataSourceChanged(ctx context.Context, dataSourceID uuid.UUID,
 	rows, err := tx.Query(ctx, `SELECT DISTINCT i.playlist_id FROM playlist_items i
 		JOIN widgets w ON w.asset_id=i.asset_id
 		JOIN assets a ON a.id=w.asset_id AND a.deleted_at IS NULL
-		WHERE w.configuration->>'dataSourceId'=$1::text`, dataSourceID.String())
+		WHERE EXISTS(SELECT 1 FROM jsonb_each_text(w.configuration) field WHERE field.value=$1::text)`, dataSourceID.String())
 	if err != nil {
 		return err
 	}
@@ -1482,10 +1495,10 @@ func (s *Service) DataSourceChanged(ctx context.Context, dataSourceID uuid.UUID,
 			SELECT DISTINCT l.id FROM layouts l WHERE l.deleted_at IS NULL AND (
 				EXISTS(SELECT 1 FROM layout_draft_dependencies d WHERE d.layout_id=l.id AND (
 					(d.dependency_type='data_source' AND d.dependency_id=$1)
-					OR (d.dependency_type='widget' AND d.dependency_id IN (SELECT asset_id FROM widgets WHERE configuration->>'dataSourceId'=$1::text))))
+					OR (d.dependency_type='widget' AND d.dependency_id IN (SELECT asset_id FROM widgets WHERE EXISTS(SELECT 1 FROM jsonb_each_text(configuration) field WHERE field.value=$1::text)))))
 				OR EXISTS(SELECT 1 FROM layout_revision_dependencies d WHERE d.revision_id=l.published_revision_id AND (
 					(d.dependency_type='data_source' AND d.dependency_id=$1)
-					OR (d.dependency_type='widget' AND d.dependency_id IN (SELECT asset_id FROM widgets WHERE configuration->>'dataSourceId'=$1::text))))))
+					OR (d.dependency_type='widget' AND d.dependency_id IN (SELECT asset_id FROM widgets WHERE EXISTS(SELECT 1 FROM jsonb_each_text(configuration) field WHERE field.value=$1::text)))))))
 		INSERT INTO screen_manifest_state(screen_id,manifest_version,previous_manifest_version,changed_at,change_reason)
 		SELECT DISTINCT affected.screen_id,1,NULL::bigint,now(),$2 FROM (
 			SELECT screen_id FROM screen_playlist_assignments WHERE layout_id IN (SELECT id FROM affected_layouts)

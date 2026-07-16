@@ -8,6 +8,7 @@ import (
 	"math"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -252,30 +253,62 @@ func containsString(values []string, wanted string) bool {
 	return false
 }
 
-type schoolStatusSourceConfig struct {
-	Status      string `json:"status"`
-	Message     string `json:"message"`
-	Severity    string `json:"severity"`
-	EffectiveAt string `json:"effectiveAt,omitempty"`
-	ExpiresAt   string `json:"expiresAt,omitempty"`
-}
-
-func schoolStatusPayload(configuration schoolStatusSourceConfig, updatedAt time.Time) TypedDatasetPayload {
-	fields := []DataSourceField{
-		{Key: "status", Label: "Status", Type: "text"},
-		{Key: "message", Label: "Message", Type: "text"},
-		{Key: "severity", Label: "Severity", Type: "text"},
-		{Key: "effectiveAt", Label: "Effective time", Type: "datetime"},
-		{Key: "expiresAt", Label: "Expiration time", Type: "datetime"},
-		{Key: "updatedAt", Label: "Updated time", Type: "datetime"},
+// manualObjectPayload projects a manual_object Data Source's normalized configuration
+// into the typed object payload stored in the refresh cache and returned to the Player.
+// Every field is taken from the definition's output schema: output fields that match a
+// configuration key receive the configured value, while declared fields with no matching
+// configuration key are generated (only updatedAt is generated today). This is fully
+// generic — a new manual_object definition needs no provider-specific code here.
+func manualObjectPayload(definition contentdefs.DataSourceDefinition, configuration map[string]any, updatedAt time.Time) TypedDatasetPayload {
+	fields := make([]DataSourceField, 0, len(definition.OutputSchema.Fields))
+	values := make(map[string]string, len(definition.OutputSchema.Fields))
+	for _, field := range definition.OutputSchema.Fields {
+		fields = append(fields, DataSourceField{Key: field.Key, Label: field.Label, Type: field.Type})
+		if raw, ok := configuration[field.Key]; ok {
+			values[field.Key] = manualObjectValueString(raw)
+			continue
+		}
+		if field.Key == "updatedAt" {
+			values[field.Key] = updatedAt.UTC().Format(time.RFC3339)
+			continue
+		}
+		values[field.Key] = ""
 	}
 	return TypedDatasetPayload{Datasets: []TypedDataset{{
-		ID: "object", Kind: "object", Fields: fields,
-		Values: map[string]string{
-			"status": configuration.Status, "message": configuration.Message,
-			"severity": configuration.Severity, "effectiveAt": configuration.EffectiveAt,
-			"expiresAt": configuration.ExpiresAt, "updatedAt": updatedAt.UTC().Format(time.RFC3339),
-		},
+		ID: "object", Kind: "object", Fields: fields, Values: values,
 		CachedAt: &updatedAt, StaleAt: &updatedAt,
 	}}}
+}
+
+func manualObjectValueString(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return typed
+	case bool:
+		return strconv.FormatBool(typed)
+	case float64:
+		return strconv.FormatFloat(typed, 'f', -1, 64)
+	case int:
+		return strconv.Itoa(typed)
+	default:
+		return fmt.Sprint(typed)
+	}
+}
+
+// manualObjectConfiguration coerces a normalized configuration into the map form the
+// generic manual_object projection consumes. The definition normalizer returns a map,
+// but stored configurations may arrive as raw JSON.
+func manualObjectConfiguration(configuration any) (map[string]any, error) {
+	if typed, ok := configuration.(map[string]any); ok {
+		return typed, nil
+	}
+	encoded, err := json.Marshal(configuration)
+	if err != nil {
+		return nil, err
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		return nil, err
+	}
+	return decoded, nil
 }

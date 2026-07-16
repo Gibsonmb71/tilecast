@@ -715,7 +715,11 @@ export type BulkOrganizeInput = {
   addCollectionIds?: string[];
   removeCollectionIds?: string[];
 };
-export type WidgetProvider =
+// Legacy provider IDs are the Widgets whose Studio editors and Player renderers predate
+// the release-defined content catalog. New release-defined Widgets arrive through the
+// catalog at runtime and must NOT be added here; the open `string` member keeps their IDs
+// assignable without editing this file.
+export type LegacyWidgetProvider =
   | "website"
   | "youtube"
   | "clock"
@@ -735,9 +739,11 @@ export type WidgetProvider =
   | "chart"
   | "progress"
   | "timeline"
-  | "world_clock"
-  | "school-status-banner";
-export type DataSourceProvider =
+  | "world_clock";
+// WidgetProvider accepts any catalog-provided ID while preserving autocomplete for the
+// known legacy IDs. `(string & {})` keeps the legacy literals in editor suggestions.
+export type WidgetProvider = LegacyWidgetProvider | (string & {});
+export type LegacyDataSourceProvider =
   | "calendar"
   | "rss"
   | "atom"
@@ -747,8 +753,8 @@ export type DataSourceProvider =
   | "weather"
   | "transit"
   | "cap_alerts"
-  | "air_quality"
-  | "school-status";
+  | "air_quality";
+export type DataSourceProvider = LegacyDataSourceProvider | (string & {});
 export type ContentDefinitionField = {
   key: string;
   label: string;
@@ -798,6 +804,13 @@ export type WidgetDefinition = {
   emptyStateBehavior: string;
   legacyEditor?: boolean;
   requiresManifestV13?: boolean;
+  setup?: ContentDefinitionSetup;
+};
+export type ContentDefinitionSetup = {
+  eyebrow?: string;
+  tip?: string;
+  steps?: string[];
+  emptyState?: string;
 };
 export type DataSourceDefinition = {
   id: DataSourceProvider;
@@ -816,6 +829,8 @@ export type DataSourceDefinition = {
   refreshBehavior: string;
   attribution?: string;
   legacyEditor?: boolean;
+  requiresManifestV13?: boolean;
+  setup?: ContentDefinitionSetup;
 };
 export type ContentDefinitionCatalog = {
   revision: string;

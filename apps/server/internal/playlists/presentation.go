@@ -350,8 +350,8 @@ func coerceDocumentValue(kind, raw string) DocumentValue {
 	return DocumentValue{Kind: "text", Text: &raw}
 }
 
-func compileWidgetPresentation(provider string, raw json.RawMessage) (*WidgetPresentation, error) {
-	if definition, ok := contentdefs.MustLoad().Widget(provider); ok && !definition.LegacyEditor {
+func (s *Service) compileWidgetPresentation(provider string, raw json.RawMessage) (*WidgetPresentation, error) {
+	if definition, ok := s.definitions.Widget(provider); ok && !definition.LegacyEditor {
 		return compileDefinitionPresentation(definition, raw)
 	}
 	switch provider {
@@ -465,8 +465,8 @@ func resolveDefinitionTemplate(value any, configuration map[string]any) (any, bo
 	}
 }
 
-func compileWidgetPresentationForPreset(provider string, presetID *string, raw json.RawMessage) (*WidgetPresentation, error) {
-	presentation, err := compileWidgetPresentation(provider, raw)
+func (s *Service) compileWidgetPresentationForPreset(provider string, presetID *string, raw json.RawMessage) (*WidgetPresentation, error) {
+	presentation, err := s.compileWidgetPresentation(provider, raw)
 	if err != nil || presetID == nil || presentation.Native == nil {
 		return presentation, err
 	}
@@ -510,7 +510,7 @@ func promoteLastTextToBadge(node *PresentationNode) bool {
 }
 
 func (s *Service) CompileWidgetPresentation(provider string, raw json.RawMessage) (*WidgetPresentation, error) {
-	return compileWidgetPresentation(provider, raw)
+	return s.compileWidgetPresentation(provider, raw)
 }
 
 func compileWebPresentation(provider string, c map[string]any) (*WidgetPresentation, error) {
