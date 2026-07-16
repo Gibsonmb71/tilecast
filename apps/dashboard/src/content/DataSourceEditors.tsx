@@ -1427,7 +1427,9 @@ export function DataSourceEditor({
     (candidate) => candidate.id === provider,
   );
   if (provider === "school-status" && definitions.isLoading)
-    return <div className="table-loading">Loading Data Source definition...</div>;
+    return (
+      <div className="table-loading">Loading Data Source definition...</div>
+    );
   if (definition && !definition.legacyEditor)
     return (
       <GenericDataSourceEditor

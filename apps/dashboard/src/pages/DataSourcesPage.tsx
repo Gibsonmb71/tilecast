@@ -542,7 +542,9 @@ export function DataSourceEditorPage() {
   if (id && detail.isLoading)
     return <div className="table-loading">Loading Data Source...</div>;
   if (definitions.isLoading)
-    return <div className="table-loading">Loading Data Source definition...</div>;
+    return (
+      <div className="table-loading">Loading Data Source definition...</div>
+    );
   if ((id && !dataSource) || !provider || !definition) {
     return (
       <section className="empty-state">

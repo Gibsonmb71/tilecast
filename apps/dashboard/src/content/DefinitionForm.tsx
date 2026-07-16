@@ -148,12 +148,13 @@ function DefinitionControl({
       field.control === "select"
         ? (field.options ?? [])
         : field.control === "data_source"
-          ? dataSources.map((source) => ({
-              source,
-              definition: dataSourceDefinitions.find(
-                (definition) => definition.id === source.provider,
-              ),
-            }))
+          ? dataSources
+              .map((source) => ({
+                source,
+                definition: dataSourceDefinitions.find(
+                  (definition) => definition.id === source.provider,
+                ),
+              }))
               .filter(({ definition }) => {
                 if (!definition) return false;
                 if (

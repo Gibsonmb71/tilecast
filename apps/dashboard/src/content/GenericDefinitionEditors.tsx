@@ -30,8 +30,7 @@ export function GenericWidgetEditor({
     asset?.description ?? definition.description,
   );
   const [configuration, setConfiguration] = useState<Record<string, unknown>>(
-    asset?.widget?.configuration ??
-      definition.defaultConfiguration,
+    asset?.widget?.configuration ?? definition.defaultConfiguration,
   );
   const save = useMutation({
     mutationFn: () => {
@@ -96,8 +95,7 @@ export function GenericDataSourceEditor({
     dataSource?.description ?? definition.description,
   );
   const [configuration, setConfiguration] = useState<Record<string, unknown>>(
-    dataSource?.configuration ??
-      definition.defaultConfiguration,
+    dataSource?.configuration ?? definition.defaultConfiguration,
   );
   const save = useMutation({
     mutationFn: () => {

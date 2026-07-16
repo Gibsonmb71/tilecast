@@ -67,8 +67,9 @@ export function WidgetProviderGallery({
     staleTime: 5 * 60_000,
   });
   const releaseDefined =
-    definitions.data?.widgets.filter((definition) => !definition.legacyEditor) ??
-    [];
+    definitions.data?.widgets.filter(
+      (definition) => !definition.legacyEditor,
+    ) ?? [];
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {

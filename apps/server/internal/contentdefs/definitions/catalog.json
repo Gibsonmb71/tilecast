@@ -1,92 +1,892 @@
 {
   "widgets": [
-    {"id":"website","version":1,"name":"Website","description":"Display an approved public webpage.","category":"Web and video","icon":"globe","runtime":"web","configurationSchema":{"fields":[]},"defaultConfiguration":{},"presentationSchemaVersion":1,"requiredCapabilities":{"web.remote":1},"emptyStateBehavior":"placeholder","legacyEditor":true,"deprecation":{}},
-    {"id":"youtube","version":1,"name":"YouTube","description":"Play a public YouTube video or playlist.","category":"Web and video","icon":"youtube","runtime":"web","configurationSchema":{"fields":[]},"defaultConfiguration":{},"presentationSchemaVersion":1,"requiredCapabilities":{"web.remote":1},"emptyStateBehavior":"placeholder","legacyEditor":true,"deprecation":{}},
-    {"id":"clock","version":1,"name":"Clock","description":"Show live local time in a configured timezone.","category":"Essentials","icon":"clock","runtime":"native","configurationSchema":{"fields":[]},"defaultConfiguration":{},"presentationSchemaVersion":1,"requiredCapabilities":{"layout.surface":1,"content.text":1,"binding.core":1},"emptyStateBehavior":"text","legacyEditor":true,"deprecation":{}},
-    {"id":"date","version":1,"name":"Date","description":"Show a localized calendar date.","category":"Essentials","icon":"calendar","runtime":"native","configurationSchema":{"fields":[]},"defaultConfiguration":{},"presentationSchemaVersion":1,"requiredCapabilities":{"layout.surface":1,"content.text":1,"binding.core":1},"emptyStateBehavior":"text","legacyEditor":true,"deprecation":{}},
-    {"id":"qrcode","version":1,"name":"QR Code","description":"Display text or a URL as a scannable code.","category":"Essentials","icon":"qr_code","runtime":"native","configurationSchema":{"fields":[]},"defaultConfiguration":{},"presentationSchemaVersion":1,"requiredCapabilities":{"layout.surface":1,"content.qr_code":1,"binding.core":1},"emptyStateBehavior":"text","legacyEditor":true,"deprecation":{}},
-    {"id":"countdown","version":1,"name":"Countdown","description":"Count down to or up from a date and time.","category":"Essentials","icon":"timer","runtime":"native","configurationSchema":{"fields":[]},"defaultConfiguration":{},"presentationSchemaVersion":1,"requiredCapabilities":{"layout.surface":1,"content.text":1,"binding.core":1},"emptyStateBehavior":"text","legacyEditor":true,"deprecation":{}},
-    {"id":"world_clock","version":1,"name":"World Clock","description":"Show live time in multiple configured timezones.","category":"Essentials","icon":"clock","runtime":"native","configurationSchema":{"fields":[]},"defaultConfiguration":{},"presentationSchemaVersion":1,"requiredCapabilities":{"layout.surface":1,"layout.grid":1,"layout.column":1,"content.text":1,"binding.core":1},"emptyStateBehavior":"text","legacyEditor":true,"requiresManifestV13":true,"deprecation":{}},
-    {"id":"ticker","version":1,"name":"Ticker","description":"Scroll selected fields from a Data Source.","category":"Data-driven","icon":"text","runtime":"native","configurationSchema":{"fields":[]},"defaultConfiguration":{},"presentationSchemaVersion":1,"requiredCapabilities":{"layout.surface":1,"content.marquee":1,"binding.core":1},"emptyStateBehavior":"text","legacyEditor":true,"deprecation":{}},
-    {"id":"menu","version":1,"name":"Menu / Price Board","description":"Display fields or label/value rows.","category":"Data-driven","icon":"utensils","runtime":"native","configurationSchema":{"fields":[]},"defaultConfiguration":{},"presentationSchemaVersion":1,"requiredCapabilities":{"layout.surface":1,"layout.column":1,"collection.repeat":2,"content.text":1,"binding.core":2},"emptyStateBehavior":"text","legacyEditor":true,"deprecation":{}},
-    {"id":"list","version":1,"name":"List","description":"Display flexible primary and secondary rows.","category":"Data-driven","icon":"list","runtime":"native","configurationSchema":{"fields":[]},"defaultConfiguration":{},"presentationSchemaVersion":1,"requiredCapabilities":{"layout.surface":1,"layout.column":1,"collection.repeat":2,"content.text":1,"binding.core":2},"emptyStateBehavior":"text","legacyEditor":true,"deprecation":{}},
-    {"id":"table","version":1,"name":"Table","description":"Display typed records in configurable columns.","category":"Data-driven","icon":"table","runtime":"native","configurationSchema":{"fields":[]},"defaultConfiguration":{},"presentationSchemaVersion":1,"requiredCapabilities":{"layout.surface":1,"layout.column":1,"collection.repeat":2,"content.text":1,"binding.core":2},"emptyStateBehavior":"text","legacyEditor":true,"deprecation":{}},
-    {"id":"agenda","version":1,"name":"Agenda","description":"Group temporal records into an agenda.","category":"Data-driven","icon":"calendar","runtime":"native","configurationSchema":{"fields":[]},"defaultConfiguration":{},"presentationSchemaVersion":1,"requiredCapabilities":{"layout.surface":1,"collection.grouped_sections":1,"collection.repeat":2,"content.text":1,"binding.core":2},"emptyStateBehavior":"text","legacyEditor":true,"deprecation":{}},
-    {"id":"metric","version":1,"name":"Metric","description":"Highlight a numeric value and supporting label.","category":"Data-driven","icon":"gauge","runtime":"native","configurationSchema":{"fields":[]},"defaultConfiguration":{},"presentationSchemaVersion":1,"requiredCapabilities":{"layout.surface":1,"content.text":1,"binding.core":2},"emptyStateBehavior":"text","legacyEditor":true,"deprecation":{}},
-    {"id":"cards","version":1,"name":"Cards","description":"Display records in a responsive card grid.","category":"Data-driven","icon":"grid","runtime":"native","configurationSchema":{"fields":[]},"defaultConfiguration":{},"presentationSchemaVersion":1,"requiredCapabilities":{"layout.surface":1,"layout.grid":1,"collection.repeat":2,"content.text":1,"binding.core":2},"emptyStateBehavior":"text","legacyEditor":true,"deprecation":{}},
-    {"id":"weather","version":1,"name":"Weather","description":"Display current conditions and forecast records.","category":"Data-driven","icon":"cloud_sun","runtime":"native","configurationSchema":{"fields":[]},"defaultConfiguration":{},"presentationSchemaVersion":1,"requiredCapabilities":{"layout.surface":1,"layout.column":1,"content.text":1,"binding.core":2},"emptyStateBehavior":"text","legacyEditor":true,"deprecation":{}},
-    {"id":"spotlight","version":1,"name":"Spotlight","description":"Feature one record with optional uploaded artwork.","category":"Data Display","icon":"spotlight","runtime":"native","configurationSchema":{"fields":[]},"defaultConfiguration":{},"presentationSchemaVersion":1,"requiredCapabilities":{"layout.surface":1,"layout.column":1,"content.text":1,"content.badge":1,"binding.core":2},"emptyStateBehavior":"text","legacyEditor":true,"requiresManifestV13":true,"deprecation":{}},
-    {"id":"stat_grid","version":1,"name":"Stat Grid","description":"Display a responsive grid of numeric values.","category":"Data Display","icon":"grid","runtime":"native","configurationSchema":{"fields":[]},"defaultConfiguration":{},"presentationSchemaVersion":1,"requiredCapabilities":{"layout.surface":1,"layout.grid":1,"layout.column":1,"content.text":1,"binding.core":2},"emptyStateBehavior":"text","legacyEditor":true,"requiresManifestV13":true,"deprecation":{}},
-    {"id":"chart","version":1,"name":"Chart","description":"Plot record or time-series values.","category":"Data Display","icon":"chart","runtime":"native","configurationSchema":{"fields":[]},"defaultConfiguration":{},"presentationSchemaVersion":1,"requiredCapabilities":{"layout.surface":1,"content.line_chart":2,"content.bar_chart":2,"content.donut_chart":2,"binding.core":2},"emptyStateBehavior":"text","legacyEditor":true,"requiresManifestV13":true,"deprecation":{}},
-    {"id":"progress","version":1,"name":"Progress","description":"Show progress toward a numeric target.","category":"Data Display","icon":"progress","runtime":"native","configurationSchema":{"fields":[]},"defaultConfiguration":{},"presentationSchemaVersion":1,"requiredCapabilities":{"layout.surface":1,"content.progress":2,"content.text":1,"binding.core":2},"emptyStateBehavior":"text","legacyEditor":true,"requiresManifestV13":true,"deprecation":{}},
-    {"id":"timeline","version":1,"name":"Timeline","description":"Display ordered dated milestones and statuses.","category":"Schedules","icon":"timeline","runtime":"native","configurationSchema":{"fields":[]},"defaultConfiguration":{},"presentationSchemaVersion":1,"requiredCapabilities":{"layout.surface":1,"layout.column":1,"collection.repeat":2,"content.text":1,"content.badge":1,"binding.core":2},"emptyStateBehavior":"text","legacyEditor":true,"requiresManifestV13":true,"deprecation":{}},
     {
-      "id":"school-status-banner","version":1,"name":"School Status Banner",
-      "description":"Displays a school status, severity, message, and update time.",
-      "category":"Information","icon":"school","runtime":"native",
-      "configurationSchema":{"fields":[
-        {"key":"dataSourceId","label":"Data Source","control":"data_source","required":true,"acceptedDataSourceKinds":["object"],"requiredFields":{"status":"text","message":"text","severity":"text","updatedAt":"datetime"}},
-        {"key":"heading","label":"Heading","control":"text","required":true,"minLength":1,"maxLength":120,"default":"School Status"},
-        {"key":"statusField","label":"Status field","control":"data_source_field","required":true,"dataSourceFieldTypes":["text"],"default":"status"},
-        {"key":"messageField","label":"Message field","control":"data_source_field","required":true,"dataSourceFieldTypes":["text"],"default":"message"},
-        {"key":"severityField","label":"Severity field","control":"data_source_field","required":true,"dataSourceFieldTypes":["text"],"default":"severity"},
-        {"key":"showUpdatedTime","label":"Show updated time","control":"boolean","default":true},
-        {"key":"foregroundColor","label":"Foreground color","control":"color","required":true,"default":"#ffffff"},
-        {"key":"backgroundColor","label":"Background color","control":"color","required":true,"default":"#17324d"},
-        {"key":"emptyState","label":"Empty-state text","control":"multiline_text","required":true,"maxLength":500,"default":"Status is unavailable"}
-      ]},
-      "defaultConfiguration":{"dataSourceId":"","heading":"School Status","statusField":"status","messageField":"message","severityField":"severity","showUpdatedTime":true,"foregroundColor":"#ffffff","backgroundColor":"#17324d","emptyState":"Status is unavailable"},
-      "acceptedDataSourceKinds":["object"],"requiredFieldTypes":{"status":"text","message":"text","severity":"text","updatedAt":"datetime"},
-      "presentationSchemaVersion":1,
-      "presentationTemplate":{
-        "type":"surface",
-        "props":{"backgroundColor":{"$config":"backgroundColor"},"padding":12},
-        "children":[{"type":"column","children":[
-          {"type":"text","props":{"color":{"$config":"foregroundColor"},"role":"title"},"binding":{"source":"literal","value":{"$config":"heading"}}},
-          {"type":"badge","props":{"color":{"$config":"foregroundColor"}},"binding":{"source":"dataset","dataset":{"$config":"dataSourceId","suffix":":object"},"path":{"$config":"severityField"},"fallback":{"$config":"emptyState"}}},
-          {"type":"text","props":{"color":{"$config":"foregroundColor"},"role":"metric"},"binding":{"source":"dataset","dataset":{"$config":"dataSourceId","suffix":":object"},"path":{"$config":"statusField"},"fallback":{"$config":"emptyState"}}},
-          {"type":"text","props":{"color":{"$config":"foregroundColor"},"role":"body"},"binding":{"source":"dataset","dataset":{"$config":"dataSourceId","suffix":":object"},"path":{"$config":"messageField"},"fallback":{"$config":"emptyState"}}},
-          {"$ifConfig":"showUpdatedTime","type":"conditional","condition":{"binding":{"source":"dataset","dataset":{"$config":"dataSourceId","suffix":":object"},"path":"updatedAt"},"op":"not_empty"},"children":[
-            {"type":"text","props":{"color":{"$config":"foregroundColor"},"role":"label"},"binding":{"source":"dataset","dataset":{"$config":"dataSourceId","suffix":":object"},"path":"updatedAt","format":"datetime","prefix":"Updated "}}
-          ]}
-        ]}
-      ]},
-      "requiredCapabilities":{"layout.surface":1,"layout.column":1,"content.text":1,"content.badge":1,"collection.conditional":2,"binding.core":2,"format.typed":1},
-      "emptyStateBehavior":"configured_text","requiresManifestV13":true,"deprecation":{}
+      "id": "website",
+      "version": 1,
+      "name": "Website",
+      "description": "Display an approved public webpage.",
+      "category": "Web and video",
+      "icon": "globe",
+      "runtime": "web",
+      "configurationSchema": { "fields": [] },
+      "defaultConfiguration": {},
+      "presentationSchemaVersion": 1,
+      "requiredCapabilities": { "web.remote": 1 },
+      "emptyStateBehavior": "placeholder",
+      "legacyEditor": true,
+      "deprecation": {}
+    },
+    {
+      "id": "youtube",
+      "version": 1,
+      "name": "YouTube",
+      "description": "Play a public YouTube video or playlist.",
+      "category": "Web and video",
+      "icon": "youtube",
+      "runtime": "web",
+      "configurationSchema": { "fields": [] },
+      "defaultConfiguration": {},
+      "presentationSchemaVersion": 1,
+      "requiredCapabilities": { "web.remote": 1 },
+      "emptyStateBehavior": "placeholder",
+      "legacyEditor": true,
+      "deprecation": {}
+    },
+    {
+      "id": "clock",
+      "version": 1,
+      "name": "Clock",
+      "description": "Show live local time in a configured timezone.",
+      "category": "Essentials",
+      "icon": "clock",
+      "runtime": "native",
+      "configurationSchema": { "fields": [] },
+      "defaultConfiguration": {},
+      "presentationSchemaVersion": 1,
+      "requiredCapabilities": {
+        "layout.surface": 1,
+        "content.text": 1,
+        "binding.core": 1
+      },
+      "emptyStateBehavior": "text",
+      "legacyEditor": true,
+      "deprecation": {}
+    },
+    {
+      "id": "date",
+      "version": 1,
+      "name": "Date",
+      "description": "Show a localized calendar date.",
+      "category": "Essentials",
+      "icon": "calendar",
+      "runtime": "native",
+      "configurationSchema": { "fields": [] },
+      "defaultConfiguration": {},
+      "presentationSchemaVersion": 1,
+      "requiredCapabilities": {
+        "layout.surface": 1,
+        "content.text": 1,
+        "binding.core": 1
+      },
+      "emptyStateBehavior": "text",
+      "legacyEditor": true,
+      "deprecation": {}
+    },
+    {
+      "id": "qrcode",
+      "version": 1,
+      "name": "QR Code",
+      "description": "Display text or a URL as a scannable code.",
+      "category": "Essentials",
+      "icon": "qr_code",
+      "runtime": "native",
+      "configurationSchema": { "fields": [] },
+      "defaultConfiguration": {},
+      "presentationSchemaVersion": 1,
+      "requiredCapabilities": {
+        "layout.surface": 1,
+        "content.qr_code": 1,
+        "binding.core": 1
+      },
+      "emptyStateBehavior": "text",
+      "legacyEditor": true,
+      "deprecation": {}
+    },
+    {
+      "id": "countdown",
+      "version": 1,
+      "name": "Countdown",
+      "description": "Count down to or up from a date and time.",
+      "category": "Essentials",
+      "icon": "timer",
+      "runtime": "native",
+      "configurationSchema": { "fields": [] },
+      "defaultConfiguration": {},
+      "presentationSchemaVersion": 1,
+      "requiredCapabilities": {
+        "layout.surface": 1,
+        "content.text": 1,
+        "binding.core": 1
+      },
+      "emptyStateBehavior": "text",
+      "legacyEditor": true,
+      "deprecation": {}
+    },
+    {
+      "id": "world_clock",
+      "version": 1,
+      "name": "World Clock",
+      "description": "Show live time in multiple configured timezones.",
+      "category": "Essentials",
+      "icon": "clock",
+      "runtime": "native",
+      "configurationSchema": { "fields": [] },
+      "defaultConfiguration": {},
+      "presentationSchemaVersion": 1,
+      "requiredCapabilities": {
+        "layout.surface": 1,
+        "layout.grid": 1,
+        "layout.column": 1,
+        "content.text": 1,
+        "binding.core": 1
+      },
+      "emptyStateBehavior": "text",
+      "legacyEditor": true,
+      "requiresManifestV13": true,
+      "deprecation": {}
+    },
+    {
+      "id": "ticker",
+      "version": 1,
+      "name": "Ticker",
+      "description": "Scroll selected fields from a Data Source.",
+      "category": "Data-driven",
+      "icon": "text",
+      "runtime": "native",
+      "configurationSchema": { "fields": [] },
+      "defaultConfiguration": {},
+      "presentationSchemaVersion": 1,
+      "requiredCapabilities": {
+        "layout.surface": 1,
+        "content.marquee": 1,
+        "binding.core": 1
+      },
+      "emptyStateBehavior": "text",
+      "legacyEditor": true,
+      "deprecation": {}
+    },
+    {
+      "id": "menu",
+      "version": 1,
+      "name": "Menu / Price Board",
+      "description": "Display fields or label/value rows.",
+      "category": "Data-driven",
+      "icon": "utensils",
+      "runtime": "native",
+      "configurationSchema": { "fields": [] },
+      "defaultConfiguration": {},
+      "presentationSchemaVersion": 1,
+      "requiredCapabilities": {
+        "layout.surface": 1,
+        "layout.column": 1,
+        "collection.repeat": 2,
+        "content.text": 1,
+        "binding.core": 2
+      },
+      "emptyStateBehavior": "text",
+      "legacyEditor": true,
+      "deprecation": {}
+    },
+    {
+      "id": "list",
+      "version": 1,
+      "name": "List",
+      "description": "Display flexible primary and secondary rows.",
+      "category": "Data-driven",
+      "icon": "list",
+      "runtime": "native",
+      "configurationSchema": { "fields": [] },
+      "defaultConfiguration": {},
+      "presentationSchemaVersion": 1,
+      "requiredCapabilities": {
+        "layout.surface": 1,
+        "layout.column": 1,
+        "collection.repeat": 2,
+        "content.text": 1,
+        "binding.core": 2
+      },
+      "emptyStateBehavior": "text",
+      "legacyEditor": true,
+      "deprecation": {}
+    },
+    {
+      "id": "table",
+      "version": 1,
+      "name": "Table",
+      "description": "Display typed records in configurable columns.",
+      "category": "Data-driven",
+      "icon": "table",
+      "runtime": "native",
+      "configurationSchema": { "fields": [] },
+      "defaultConfiguration": {},
+      "presentationSchemaVersion": 1,
+      "requiredCapabilities": {
+        "layout.surface": 1,
+        "layout.column": 1,
+        "collection.repeat": 2,
+        "content.text": 1,
+        "binding.core": 2
+      },
+      "emptyStateBehavior": "text",
+      "legacyEditor": true,
+      "deprecation": {}
+    },
+    {
+      "id": "agenda",
+      "version": 1,
+      "name": "Agenda",
+      "description": "Group temporal records into an agenda.",
+      "category": "Data-driven",
+      "icon": "calendar",
+      "runtime": "native",
+      "configurationSchema": { "fields": [] },
+      "defaultConfiguration": {},
+      "presentationSchemaVersion": 1,
+      "requiredCapabilities": {
+        "layout.surface": 1,
+        "collection.grouped_sections": 1,
+        "collection.repeat": 2,
+        "content.text": 1,
+        "binding.core": 2
+      },
+      "emptyStateBehavior": "text",
+      "legacyEditor": true,
+      "deprecation": {}
+    },
+    {
+      "id": "metric",
+      "version": 1,
+      "name": "Metric",
+      "description": "Highlight a numeric value and supporting label.",
+      "category": "Data-driven",
+      "icon": "gauge",
+      "runtime": "native",
+      "configurationSchema": { "fields": [] },
+      "defaultConfiguration": {},
+      "presentationSchemaVersion": 1,
+      "requiredCapabilities": {
+        "layout.surface": 1,
+        "content.text": 1,
+        "binding.core": 2
+      },
+      "emptyStateBehavior": "text",
+      "legacyEditor": true,
+      "deprecation": {}
+    },
+    {
+      "id": "cards",
+      "version": 1,
+      "name": "Cards",
+      "description": "Display records in a responsive card grid.",
+      "category": "Data-driven",
+      "icon": "grid",
+      "runtime": "native",
+      "configurationSchema": { "fields": [] },
+      "defaultConfiguration": {},
+      "presentationSchemaVersion": 1,
+      "requiredCapabilities": {
+        "layout.surface": 1,
+        "layout.grid": 1,
+        "collection.repeat": 2,
+        "content.text": 1,
+        "binding.core": 2
+      },
+      "emptyStateBehavior": "text",
+      "legacyEditor": true,
+      "deprecation": {}
+    },
+    {
+      "id": "weather",
+      "version": 1,
+      "name": "Weather",
+      "description": "Display current conditions and forecast records.",
+      "category": "Data-driven",
+      "icon": "cloud_sun",
+      "runtime": "native",
+      "configurationSchema": { "fields": [] },
+      "defaultConfiguration": {},
+      "presentationSchemaVersion": 1,
+      "requiredCapabilities": {
+        "layout.surface": 1,
+        "layout.column": 1,
+        "content.text": 1,
+        "binding.core": 2
+      },
+      "emptyStateBehavior": "text",
+      "legacyEditor": true,
+      "deprecation": {}
+    },
+    {
+      "id": "spotlight",
+      "version": 1,
+      "name": "Spotlight",
+      "description": "Feature one record with optional uploaded artwork.",
+      "category": "Data Display",
+      "icon": "spotlight",
+      "runtime": "native",
+      "configurationSchema": { "fields": [] },
+      "defaultConfiguration": {},
+      "presentationSchemaVersion": 1,
+      "requiredCapabilities": {
+        "layout.surface": 1,
+        "layout.column": 1,
+        "content.text": 1,
+        "content.badge": 1,
+        "binding.core": 2
+      },
+      "emptyStateBehavior": "text",
+      "legacyEditor": true,
+      "requiresManifestV13": true,
+      "deprecation": {}
+    },
+    {
+      "id": "stat_grid",
+      "version": 1,
+      "name": "Stat Grid",
+      "description": "Display a responsive grid of numeric values.",
+      "category": "Data Display",
+      "icon": "grid",
+      "runtime": "native",
+      "configurationSchema": { "fields": [] },
+      "defaultConfiguration": {},
+      "presentationSchemaVersion": 1,
+      "requiredCapabilities": {
+        "layout.surface": 1,
+        "layout.grid": 1,
+        "layout.column": 1,
+        "content.text": 1,
+        "binding.core": 2
+      },
+      "emptyStateBehavior": "text",
+      "legacyEditor": true,
+      "requiresManifestV13": true,
+      "deprecation": {}
+    },
+    {
+      "id": "chart",
+      "version": 1,
+      "name": "Chart",
+      "description": "Plot record or time-series values.",
+      "category": "Data Display",
+      "icon": "chart",
+      "runtime": "native",
+      "configurationSchema": { "fields": [] },
+      "defaultConfiguration": {},
+      "presentationSchemaVersion": 1,
+      "requiredCapabilities": {
+        "layout.surface": 1,
+        "content.line_chart": 2,
+        "content.bar_chart": 2,
+        "content.donut_chart": 2,
+        "binding.core": 2
+      },
+      "emptyStateBehavior": "text",
+      "legacyEditor": true,
+      "requiresManifestV13": true,
+      "deprecation": {}
+    },
+    {
+      "id": "progress",
+      "version": 1,
+      "name": "Progress",
+      "description": "Show progress toward a numeric target.",
+      "category": "Data Display",
+      "icon": "progress",
+      "runtime": "native",
+      "configurationSchema": { "fields": [] },
+      "defaultConfiguration": {},
+      "presentationSchemaVersion": 1,
+      "requiredCapabilities": {
+        "layout.surface": 1,
+        "content.progress": 2,
+        "content.text": 1,
+        "binding.core": 2
+      },
+      "emptyStateBehavior": "text",
+      "legacyEditor": true,
+      "requiresManifestV13": true,
+      "deprecation": {}
+    },
+    {
+      "id": "timeline",
+      "version": 1,
+      "name": "Timeline",
+      "description": "Display ordered dated milestones and statuses.",
+      "category": "Schedules",
+      "icon": "timeline",
+      "runtime": "native",
+      "configurationSchema": { "fields": [] },
+      "defaultConfiguration": {},
+      "presentationSchemaVersion": 1,
+      "requiredCapabilities": {
+        "layout.surface": 1,
+        "layout.column": 1,
+        "collection.repeat": 2,
+        "content.text": 1,
+        "content.badge": 1,
+        "binding.core": 2
+      },
+      "emptyStateBehavior": "text",
+      "legacyEditor": true,
+      "requiresManifestV13": true,
+      "deprecation": {}
+    },
+    {
+      "id": "school-status-banner",
+      "version": 1,
+      "name": "School Status Banner",
+      "description": "Displays a school status, severity, message, and update time.",
+      "category": "Information",
+      "icon": "school",
+      "runtime": "native",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "dataSourceId",
+            "label": "Data Source",
+            "control": "data_source",
+            "required": true,
+            "acceptedDataSourceKinds": ["object"],
+            "requiredFields": {
+              "status": "text",
+              "message": "text",
+              "severity": "text",
+              "updatedAt": "datetime"
+            }
+          },
+          {
+            "key": "heading",
+            "label": "Heading",
+            "control": "text",
+            "required": true,
+            "minLength": 1,
+            "maxLength": 120,
+            "default": "School Status"
+          },
+          {
+            "key": "statusField",
+            "label": "Status field",
+            "control": "data_source_field",
+            "required": true,
+            "dataSourceFieldTypes": ["text"],
+            "default": "status"
+          },
+          {
+            "key": "messageField",
+            "label": "Message field",
+            "control": "data_source_field",
+            "required": true,
+            "dataSourceFieldTypes": ["text"],
+            "default": "message"
+          },
+          {
+            "key": "severityField",
+            "label": "Severity field",
+            "control": "data_source_field",
+            "required": true,
+            "dataSourceFieldTypes": ["text"],
+            "default": "severity"
+          },
+          {
+            "key": "showUpdatedTime",
+            "label": "Show updated time",
+            "control": "boolean",
+            "default": true
+          },
+          {
+            "key": "foregroundColor",
+            "label": "Foreground color",
+            "control": "color",
+            "required": true,
+            "default": "#ffffff"
+          },
+          {
+            "key": "backgroundColor",
+            "label": "Background color",
+            "control": "color",
+            "required": true,
+            "default": "#17324d"
+          },
+          {
+            "key": "emptyState",
+            "label": "Empty-state text",
+            "control": "multiline_text",
+            "required": true,
+            "maxLength": 500,
+            "default": "Status is unavailable"
+          }
+        ]
+      },
+      "defaultConfiguration": {
+        "dataSourceId": "",
+        "heading": "School Status",
+        "statusField": "status",
+        "messageField": "message",
+        "severityField": "severity",
+        "showUpdatedTime": true,
+        "foregroundColor": "#ffffff",
+        "backgroundColor": "#17324d",
+        "emptyState": "Status is unavailable"
+      },
+      "acceptedDataSourceKinds": ["object"],
+      "requiredFieldTypes": {
+        "status": "text",
+        "message": "text",
+        "severity": "text",
+        "updatedAt": "datetime"
+      },
+      "presentationSchemaVersion": 1,
+      "presentationTemplate": {
+        "type": "surface",
+        "props": {
+          "backgroundColor": { "$config": "backgroundColor" },
+          "padding": 12
+        },
+        "children": [
+          {
+            "type": "column",
+            "children": [
+              {
+                "type": "text",
+                "props": {
+                  "color": { "$config": "foregroundColor" },
+                  "role": "title"
+                },
+                "binding": {
+                  "source": "literal",
+                  "value": { "$config": "heading" }
+                }
+              },
+              {
+                "type": "badge",
+                "props": { "color": { "$config": "foregroundColor" } },
+                "binding": {
+                  "source": "dataset",
+                  "dataset": { "$config": "dataSourceId", "suffix": ":object" },
+                  "path": { "$config": "severityField" },
+                  "fallback": { "$config": "emptyState" }
+                }
+              },
+              {
+                "type": "text",
+                "props": {
+                  "color": { "$config": "foregroundColor" },
+                  "role": "metric"
+                },
+                "binding": {
+                  "source": "dataset",
+                  "dataset": { "$config": "dataSourceId", "suffix": ":object" },
+                  "path": { "$config": "statusField" },
+                  "fallback": { "$config": "emptyState" }
+                }
+              },
+              {
+                "type": "text",
+                "props": {
+                  "color": { "$config": "foregroundColor" },
+                  "role": "body"
+                },
+                "binding": {
+                  "source": "dataset",
+                  "dataset": { "$config": "dataSourceId", "suffix": ":object" },
+                  "path": { "$config": "messageField" },
+                  "fallback": { "$config": "emptyState" }
+                }
+              },
+              {
+                "$ifConfig": "showUpdatedTime",
+                "type": "conditional",
+                "condition": {
+                  "binding": {
+                    "source": "dataset",
+                    "dataset": {
+                      "$config": "dataSourceId",
+                      "suffix": ":object"
+                    },
+                    "path": "updatedAt"
+                  },
+                  "op": "not_empty"
+                },
+                "children": [
+                  {
+                    "type": "text",
+                    "props": {
+                      "color": { "$config": "foregroundColor" },
+                      "role": "label"
+                    },
+                    "binding": {
+                      "source": "dataset",
+                      "dataset": {
+                        "$config": "dataSourceId",
+                        "suffix": ":object"
+                      },
+                      "path": "updatedAt",
+                      "format": "datetime",
+                      "prefix": "Updated "
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "requiredCapabilities": {
+        "layout.surface": 1,
+        "layout.column": 1,
+        "content.text": 1,
+        "content.badge": 1,
+        "collection.conditional": 2,
+        "binding.core": 2,
+        "format.typed": 1
+      },
+      "emptyStateBehavior": "configured_text",
+      "requiresManifestV13": true,
+      "deprecation": {}
     }
   ],
   "dataSources": [
-    {"id":"calendar","version":1,"name":"Calendar","description":"Project public calendar events into typed records.","category":"Feeds","icon":"calendar","configurationSchema":{"fields":[]},"defaultConfiguration":{},"outputSchema":{"kind":"records","fields":[]},"adapterId":"calendar","refreshBehavior":"interval","legacyEditor":true,"deprecation":{}},
-    {"id":"rss","version":1,"name":"RSS","description":"Project a public RSS feed into typed records.","category":"Feeds","icon":"rss","configurationSchema":{"fields":[]},"defaultConfiguration":{},"outputSchema":{"kind":"records","fields":[]},"adapterId":"structured","refreshBehavior":"interval","legacyEditor":true,"deprecation":{}},
-    {"id":"atom","version":1,"name":"Atom","description":"Project a public Atom feed into typed records.","category":"Feeds","icon":"rss","configurationSchema":{"fields":[]},"defaultConfiguration":{},"outputSchema":{"kind":"records","fields":[]},"adapterId":"structured","refreshBehavior":"interval","legacyEditor":true,"deprecation":{}},
-    {"id":"json","version":1,"name":"JSON","description":"Map public JSON into typed records.","category":"Structured","icon":"braces","configurationSchema":{"fields":[]},"defaultConfiguration":{},"outputSchema":{"kind":"records","fields":[]},"adapterId":"structured","refreshBehavior":"interval","legacyEditor":true,"deprecation":{}},
-    {"id":"csv","version":1,"name":"CSV","description":"Map uploaded or public CSV into typed records.","category":"Structured","icon":"spreadsheet","configurationSchema":{"fields":[]},"defaultConfiguration":{},"outputSchema":{"kind":"records","fields":[]},"adapterId":"structured","refreshBehavior":"interval","legacyEditor":true,"deprecation":{}},
-    {"id":"manual","version":1,"name":"Manual Table","description":"Maintain a bounded typed table in Studio.","category":"Structured","icon":"table","configurationSchema":{"fields":[]},"defaultConfiguration":{},"outputSchema":{"kind":"records","fields":[]},"adapterId":"manual_table","refreshBehavior":"manual","legacyEditor":true,"deprecation":{}},
-    {"id":"weather","version":1,"name":"Weather","description":"Fetch and normalize public forecasts.","category":"External","icon":"cloud_sun","configurationSchema":{"fields":[]},"defaultConfiguration":{},"outputSchema":{"kind":"records","fields":[]},"adapterId":"weather","refreshBehavior":"interval","attribution":"Data from MET Norway","legacyEditor":true,"deprecation":{}},
-    {"id":"transit","version":1,"name":"Transit","description":"Normalize public GTFS departures and alerts.","category":"Live Information","icon":"transit","configurationSchema":{"fields":[]},"defaultConfiguration":{},"outputSchema":{"kind":"records","fields":[]},"adapterId":"transit","refreshBehavior":"interval","legacyEditor":true,"deprecation":{}},
-    {"id":"cap_alerts","version":1,"name":"CAP Alerts","description":"Display active public CAP warnings.","category":"Live Information","icon":"alert","configurationSchema":{"fields":[]},"defaultConfiguration":{},"outputSchema":{"kind":"records","fields":[]},"adapterId":"cap_alerts","refreshBehavior":"interval","legacyEditor":true,"deprecation":{}},
-    {"id":"air_quality","version":1,"name":"Air Quality","description":"Display current and forecast air-quality measurements.","category":"Live Information","icon":"cloud_sun","configurationSchema":{"fields":[]},"defaultConfiguration":{},"outputSchema":{"kind":"time_series","fields":[]},"adapterId":"air_quality","refreshBehavior":"interval","legacyEditor":true,"deprecation":{}},
     {
-      "id":"school-status","version":1,"name":"School Status",
-      "description":"Maintain the current school status and message in Studio.",
-      "category":"Information","icon":"school",
-      "configurationSchema":{"fields":[
-        {"key":"status","label":"Status","control":"text","required":true,"minLength":1,"maxLength":120,"default":"Open"},
-        {"key":"message","label":"Message","control":"multiline_text","required":true,"maxLength":1000,"default":"School is operating normally."},
-        {"key":"severity","label":"Severity","control":"select","required":true,"default":"normal","options":[{"value":"normal","label":"Normal"},{"value":"notice","label":"Notice"},{"value":"warning","label":"Warning"},{"value":"critical","label":"Critical"}]},
-        {"key":"effectiveAt","label":"Effective time","control":"datetime"},
-        {"key":"expiresAt","label":"Expiration time","control":"datetime"}
-      ]},
-      "defaultConfiguration":{"status":"Open","message":"School is operating normally.","severity":"normal","effectiveAt":"","expiresAt":""},
-      "outputSchema":{"kind":"object","fields":[
-        {"key":"status","label":"Status","type":"text","required":true},
-        {"key":"message","label":"Message","type":"text","required":true},
-        {"key":"severity","label":"Severity","type":"text","required":true},
-        {"key":"effectiveAt","label":"Effective time","type":"datetime"},
-        {"key":"expiresAt","label":"Expiration time","type":"datetime"},
-        {"key":"updatedAt","label":"Updated time","type":"datetime","required":true}
-      ]},
-      "adapterId":"manual_object","refreshBehavior":"manual","deprecation":{}
+      "id": "calendar",
+      "version": 1,
+      "name": "Calendar",
+      "description": "Project public calendar events into typed records.",
+      "category": "Feeds",
+      "icon": "calendar",
+      "configurationSchema": { "fields": [] },
+      "defaultConfiguration": {},
+      "outputSchema": { "kind": "records", "fields": [] },
+      "adapterId": "calendar",
+      "refreshBehavior": "interval",
+      "legacyEditor": true,
+      "deprecation": {}
+    },
+    {
+      "id": "rss",
+      "version": 1,
+      "name": "RSS",
+      "description": "Project a public RSS feed into typed records.",
+      "category": "Feeds",
+      "icon": "rss",
+      "configurationSchema": { "fields": [] },
+      "defaultConfiguration": {},
+      "outputSchema": { "kind": "records", "fields": [] },
+      "adapterId": "structured",
+      "refreshBehavior": "interval",
+      "legacyEditor": true,
+      "deprecation": {}
+    },
+    {
+      "id": "atom",
+      "version": 1,
+      "name": "Atom",
+      "description": "Project a public Atom feed into typed records.",
+      "category": "Feeds",
+      "icon": "rss",
+      "configurationSchema": { "fields": [] },
+      "defaultConfiguration": {},
+      "outputSchema": { "kind": "records", "fields": [] },
+      "adapterId": "structured",
+      "refreshBehavior": "interval",
+      "legacyEditor": true,
+      "deprecation": {}
+    },
+    {
+      "id": "json",
+      "version": 1,
+      "name": "JSON",
+      "description": "Map public JSON into typed records.",
+      "category": "Structured",
+      "icon": "braces",
+      "configurationSchema": { "fields": [] },
+      "defaultConfiguration": {},
+      "outputSchema": { "kind": "records", "fields": [] },
+      "adapterId": "structured",
+      "refreshBehavior": "interval",
+      "legacyEditor": true,
+      "deprecation": {}
+    },
+    {
+      "id": "csv",
+      "version": 1,
+      "name": "CSV",
+      "description": "Map uploaded or public CSV into typed records.",
+      "category": "Structured",
+      "icon": "spreadsheet",
+      "configurationSchema": { "fields": [] },
+      "defaultConfiguration": {},
+      "outputSchema": { "kind": "records", "fields": [] },
+      "adapterId": "structured",
+      "refreshBehavior": "interval",
+      "legacyEditor": true,
+      "deprecation": {}
+    },
+    {
+      "id": "manual",
+      "version": 1,
+      "name": "Manual Table",
+      "description": "Maintain a bounded typed table in Studio.",
+      "category": "Structured",
+      "icon": "table",
+      "configurationSchema": { "fields": [] },
+      "defaultConfiguration": {},
+      "outputSchema": { "kind": "records", "fields": [] },
+      "adapterId": "manual_table",
+      "refreshBehavior": "manual",
+      "legacyEditor": true,
+      "deprecation": {}
+    },
+    {
+      "id": "weather",
+      "version": 1,
+      "name": "Weather",
+      "description": "Fetch and normalize public forecasts.",
+      "category": "External",
+      "icon": "cloud_sun",
+      "configurationSchema": { "fields": [] },
+      "defaultConfiguration": {},
+      "outputSchema": { "kind": "records", "fields": [] },
+      "adapterId": "weather",
+      "refreshBehavior": "interval",
+      "attribution": "Data from MET Norway",
+      "legacyEditor": true,
+      "deprecation": {}
+    },
+    {
+      "id": "transit",
+      "version": 1,
+      "name": "Transit",
+      "description": "Normalize public GTFS departures and alerts.",
+      "category": "Live Information",
+      "icon": "transit",
+      "configurationSchema": { "fields": [] },
+      "defaultConfiguration": {},
+      "outputSchema": { "kind": "records", "fields": [] },
+      "adapterId": "transit",
+      "refreshBehavior": "interval",
+      "legacyEditor": true,
+      "deprecation": {}
+    },
+    {
+      "id": "cap_alerts",
+      "version": 1,
+      "name": "CAP Alerts",
+      "description": "Display active public CAP warnings.",
+      "category": "Live Information",
+      "icon": "alert",
+      "configurationSchema": { "fields": [] },
+      "defaultConfiguration": {},
+      "outputSchema": { "kind": "records", "fields": [] },
+      "adapterId": "cap_alerts",
+      "refreshBehavior": "interval",
+      "legacyEditor": true,
+      "deprecation": {}
+    },
+    {
+      "id": "air_quality",
+      "version": 1,
+      "name": "Air Quality",
+      "description": "Display current and forecast air-quality measurements.",
+      "category": "Live Information",
+      "icon": "cloud_sun",
+      "configurationSchema": { "fields": [] },
+      "defaultConfiguration": {},
+      "outputSchema": { "kind": "time_series", "fields": [] },
+      "adapterId": "air_quality",
+      "refreshBehavior": "interval",
+      "legacyEditor": true,
+      "deprecation": {}
+    },
+    {
+      "id": "school-status",
+      "version": 1,
+      "name": "School Status",
+      "description": "Maintain the current school status and message in Studio.",
+      "category": "Information",
+      "icon": "school",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "status",
+            "label": "Status",
+            "control": "text",
+            "required": true,
+            "minLength": 1,
+            "maxLength": 120,
+            "default": "Open"
+          },
+          {
+            "key": "message",
+            "label": "Message",
+            "control": "multiline_text",
+            "required": true,
+            "maxLength": 1000,
+            "default": "School is operating normally."
+          },
+          {
+            "key": "severity",
+            "label": "Severity",
+            "control": "select",
+            "required": true,
+            "default": "normal",
+            "options": [
+              { "value": "normal", "label": "Normal" },
+              { "value": "notice", "label": "Notice" },
+              { "value": "warning", "label": "Warning" },
+              { "value": "critical", "label": "Critical" }
+            ]
+          },
+          {
+            "key": "effectiveAt",
+            "label": "Effective time",
+            "control": "datetime"
+          },
+          {
+            "key": "expiresAt",
+            "label": "Expiration time",
+            "control": "datetime"
+          }
+        ]
+      },
+      "defaultConfiguration": {
+        "status": "Open",
+        "message": "School is operating normally.",
+        "severity": "normal",
+        "effectiveAt": "",
+        "expiresAt": ""
+      },
+      "outputSchema": {
+        "kind": "object",
+        "fields": [
+          {
+            "key": "status",
+            "label": "Status",
+            "type": "text",
+            "required": true
+          },
+          {
+            "key": "message",
+            "label": "Message",
+            "type": "text",
+            "required": true
+          },
+          {
+            "key": "severity",
+            "label": "Severity",
+            "type": "text",
+            "required": true
+          },
+          {
+            "key": "effectiveAt",
+            "label": "Effective time",
+            "type": "datetime"
+          },
+          {
+            "key": "expiresAt",
+            "label": "Expiration time",
+            "type": "datetime"
+          },
+          {
+            "key": "updatedAt",
+            "label": "Updated time",
+            "type": "datetime",
+            "required": true
+          }
+        ]
+      },
+      "adapterId": "manual_object",
+      "refreshBehavior": "manual",
+      "deprecation": {}
     }
   ]
 }
