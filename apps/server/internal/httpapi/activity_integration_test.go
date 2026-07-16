@@ -44,10 +44,10 @@ func withActivityDatabase(t *testing.T, run func(activityTestEnvironment)) {
 		t.Fatal(err)
 	}
 	defer lock.Release()
-	if _, err = lock.Exec(ctx, `SELECT pg_advisory_lock(7422007)`); err != nil {
+	if _, err = lock.Exec(ctx, `SELECT pg_advisory_lock(7421999)`); err != nil {
 		t.Fatal(err)
 	}
-	defer lock.Exec(ctx, `SELECT pg_advisory_unlock(7422007)`) //nolint:errcheck
+	defer lock.Exec(ctx, `SELECT pg_advisory_unlock(7421999)`) //nolint:errcheck
 	if err = database.Migrate(ctx, databaseURL); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -56,7 +56,7 @@ func withActivityDatabase(t *testing.T, run func(activityTestEnvironment)) {
 		t.Fatal(err)
 	}
 	defer pool.Close()
-	if _, err = pool.Exec(ctx, `TRUNCATE organization_settings CASCADE`); err != nil {
+	if _, err = pool.Exec(ctx, `TRUNCATE organization_settings, users CASCADE`); err != nil {
 		t.Fatal(err)
 	}
 	organizationID, screenID, ownerID := uuid.New(), uuid.New(), uuid.New()
