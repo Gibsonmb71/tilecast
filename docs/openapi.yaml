@@ -1340,7 +1340,11 @@ components:
       properties:
         provider: { $ref: "#/components/schemas/WidgetProvider" }
         configVersion: { type: integer, minimum: 1 }
-        configuration: { type: object }
+        configuration:
+          {
+            type: object,
+            description: "Provider-specific configuration. Native text Widgets omit textScale for automatic bounds-aware sizing or use an integer from 50 through 200 percent.",
+          }
     WidgetInput:
       type: object
       additionalProperties: false
@@ -1349,7 +1353,11 @@ components:
         provider: { $ref: "#/components/schemas/WidgetProvider" }
         name: { type: string, minLength: 1, maxLength: 180 }
         description: { type: string, maxLength: 2000 }
-        configuration: { type: object }
+        configuration:
+          {
+            type: object,
+            description: "Provider-specific configuration. Native text Widgets omit textScale for automatic bounds-aware sizing or use an integer from 50 through 200 percent.",
+          }
     DataSource:
       type: object
       additionalProperties: false

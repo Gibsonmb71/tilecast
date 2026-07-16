@@ -1504,6 +1504,18 @@ function tickerText(
     : source?.emptyState || "No items available";
 }
 
+// Native Widget typography is designed around a 1920x1080 canvas. Scale that
+// design to the placement first, then apply the optional author adjustment.
+// FittedText remains the final guard for unusually long content.
+export function widgetTextFactor(
+  item: Pick<LayoutPlacement, "width" | "height">,
+  cfg: { textScale?: number },
+): number {
+  const responsive = Math.min(item.width / 1920, item.height / 1080);
+  const manual = (cfg.textScale ?? 100) / 100;
+  return Math.max(0.1, Math.min(4, responsive * manual));
+}
+
 // Shrinks text to fit its box, matching the Player's FittedWidgetText.
 function FittedText({
   text,
@@ -1608,6 +1620,7 @@ function QrWidget({
     cfg.backgroundColor,
   ]);
   const inset = Math.min(40, 0.08 * Math.min(item.width, item.height)) * scale;
+  const textFactor = widgetTextFactor(item, cfg);
   const label = cfg.label?.trim();
   return (
     <div
@@ -1623,7 +1636,7 @@ function QrWidget({
         <div
           style={{
             color: colorToCss(cfg.foregroundColor, "#000000"),
-            fontSize: 24 * scale,
+            fontSize: 24 * scale * textFactor,
           }}
         >
           {label}
@@ -1640,6 +1653,7 @@ function MenuWidget({
   fg,
   bg,
   scale,
+  item,
 }: {
   name: string;
   cfg: DisplayWidgetConfig;
@@ -1647,6 +1661,7 @@ function MenuWidget({
   fg: string;
   bg: string;
   scale: number;
+  item: LayoutPlacement;
 }) {
   const record = source?.records?.[0];
   const values = record
@@ -1655,7 +1670,8 @@ function MenuWidget({
         .filter((entry) => entry.value.trim().length > 0)
         .slice(0, Math.min(cfg.maximumItems ?? 8, 8))
     : [];
-  const pad = 48 * scale;
+  const textFactor = widgetTextFactor(item, cfg);
+  const pad = Math.min(48, 0.08 * Math.min(item.width, item.height)) * scale;
   if (!values.length)
     return (
       <div
@@ -1665,24 +1681,29 @@ function MenuWidget({
         <FittedText
           text={source?.emptyState || "No items available"}
           color={fg}
-          fontPx={42 * scale}
+          fontPx={42 * scale * textFactor}
           weight={500}
           maxLines={3}
         />
       </div>
     );
+  const availableHeight = Math.max(1, item.height - (2 * pad) / scale);
+  const contentFactor = Math.max(
+    0.05,
+    Math.min(textFactor, availableHeight / (50 + values.length * 150)),
+  );
   return (
     <div className="wpv-root wpv-menu" style={{ background: bg, padding: pad }}>
       <div
         className="wpv-menu__header"
-        style={{ color: fg, fontSize: 24 * scale }}
+        style={{ color: fg, fontSize: 24 * scale * contentFactor }}
       >
         {name.toUpperCase()}
       </div>
       {record?.date && (
         <div
           className="wpv-menu__date"
-          style={{ color: fg, fontSize: 18 * scale }}
+          style={{ color: fg, fontSize: 18 * scale * contentFactor }}
         >
           {record.date}
         </div>
@@ -1693,8 +1714,8 @@ function MenuWidget({
             className="wpv-menu__label"
             style={{
               color: fg,
-              fontSize: (index === 0 ? 20 : 16) * scale,
-              paddingTop: (index === 0 ? 28 : 22) * scale,
+              fontSize: (index === 0 ? 20 : 16) * scale * contentFactor,
+              paddingTop: (index === 0 ? 28 : 22) * scale * contentFactor,
             }}
           >
             {index === 0
@@ -1705,7 +1726,7 @@ function MenuWidget({
             className="wpv-menu__value"
             style={{
               color: fg,
-              fontSize: (index === 0 ? 52 : 34) * scale,
+              fontSize: (index === 0 ? 52 : 34) * scale * contentFactor,
               fontWeight: index === 0 ? 700 : 500,
             }}
           >
@@ -1723,12 +1744,14 @@ function DisplayWidget({
   fg,
   bg,
   scale,
+  item,
 }: {
   cfg: DisplayWidgetConfig;
   source?: LivePreviewSource;
   fg: string;
   bg: string;
   scale: number;
+  item: LayoutPlacement;
 }) {
   const max = cfg.maximumItems ?? 20;
   let rows: string[] = [];
@@ -1752,7 +1775,8 @@ function DisplayWidget({
       )
       .filter((row) => row.trim().length > 0);
   }
-  const pad = 36 * scale;
+  const textFactor = widgetTextFactor(item, cfg);
+  const pad = Math.min(36, 0.08 * Math.min(item.width, item.height)) * scale;
   if (!rows.length)
     return (
       <div
@@ -1762,22 +1786,39 @@ function DisplayWidget({
         <FittedText
           text={source?.emptyState || "No items available"}
           color={fg}
-          fontPx={26 * scale}
+          fontPx={26 * scale * textFactor}
           weight={400}
           maxLines={3}
         />
       </div>
     );
+  const gap = 14 * scale * textFactor;
+  const availableHeight = Math.max(1, item.height * scale - 2 * pad);
+  const maximumRows = Math.max(
+    1,
+    Math.floor((availableHeight + gap) / (4 * 1.15 + gap)),
+  );
+  const visibleRows = rows.slice(0, maximumRows);
   return (
     <div
       className="wpv-root wpv-display"
-      style={{ background: bg, padding: pad, gap: 14 * scale }}
+      style={{
+        background: bg,
+        padding: pad,
+        gap,
+      }}
     >
-      {rows.map((row, index) => (
+      {visibleRows.map((row, index) => (
         <div
           key={index}
           className="wpv-display__row"
-          style={{ color: fg, fontSize: 26 * scale }}
+          style={{
+            color: fg,
+            fontSize: Math.min(
+              26 * scale * textFactor,
+              Math.max(4, availableHeight / visibleRows.length / 1.15),
+            ),
+          }}
         >
           {row}
         </div>
@@ -1807,6 +1848,7 @@ function WidgetLivePreview({
   );
   const sourceId = cfg.dataSourceId as string | undefined;
   const source = sourceId ? live[sourceId] : undefined;
+  const textFactor = widgetTextFactor(item, cfg);
   switch (provider) {
     case "clock":
       return (
@@ -1814,7 +1856,7 @@ function WidgetLivePreview({
           <FittedText
             text={clockText(cfg as unknown as ClockWidgetConfig)}
             color={fg}
-            fontPx={86 * scale}
+            fontPx={86 * scale * textFactor}
             weight={600}
           />
         </CenteredWidget>
@@ -1825,7 +1867,7 @@ function WidgetLivePreview({
           <FittedText
             text={dateText(cfg as unknown as DateWidgetConfig)}
             color={fg}
-            fontPx={58 * scale}
+            fontPx={58 * scale * textFactor}
             weight={500}
           />
         </CenteredWidget>
@@ -1844,7 +1886,7 @@ function WidgetLivePreview({
           <FittedText
             text={tickerText(cfg as unknown as TickerWidgetConfig, source)}
             color={fg}
-            fontPx={34 * scale}
+            fontPx={34 * scale * textFactor}
             weight={400}
             maxLines={2}
           />
@@ -1859,6 +1901,7 @@ function WidgetLivePreview({
           fg={fg}
           bg={bg}
           scale={scale}
+          item={item}
         />
       );
     case "list":
@@ -1871,6 +1914,7 @@ function WidgetLivePreview({
           fg={fg}
           bg={bg}
           scale={scale}
+          item={item}
         />
       );
     default:

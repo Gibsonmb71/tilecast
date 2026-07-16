@@ -554,6 +554,52 @@ export function NativeAppEditor({
               </label>
             </>
           )}
+          <fieldset>
+            <legend>Text size</legend>
+            <label className="switch-row">
+              <input
+                type="checkbox"
+                checked={configuration.textScale !== undefined}
+                disabled={readOnly}
+                onChange={(event) =>
+                  setConfiguration((current) => {
+                    if (event.target.checked)
+                      return { ...current, textScale: 100 };
+                    const automatic = { ...current };
+                    delete automatic.textScale;
+                    return automatic;
+                  })
+                }
+              />
+              <span>Use a custom scale</span>
+            </label>
+            {configuration.textScale !== undefined && (
+              <label className="field">
+                <span className="field__label">
+                  Scale ({configuration.textScale}%)
+                </span>
+                <input
+                  type="range"
+                  min={50}
+                  max={200}
+                  step={5}
+                  value={configuration.textScale}
+                  disabled={readOnly}
+                  onChange={(event) =>
+                    setConfiguration((current) => ({
+                      ...current,
+                      textScale: Number(event.target.value),
+                    }))
+                  }
+                />
+              </label>
+            )}
+            <small>
+              Automatic sizing responds to the Widget’s actual space. A custom
+              scale adjusts that result and still shrinks long text to avoid
+              clipping.
+            </small>
+          </fieldset>
           <div className="form-grid form-grid--2">
             <label className="field">
               <span className="field__label">Foreground</span>
@@ -583,6 +629,7 @@ export function NativeAppEditor({
             style={{
               color: configuration.foregroundColor,
               backgroundColor: configuration.backgroundColor,
+              fontSize: `${configuration.textScale ?? 100}%`,
             }}
           >
             {provider === "clock" ? (
