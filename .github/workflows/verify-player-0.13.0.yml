@@ -1,0 +1,41 @@
+name: Verify Tilecast Player 0.13.0 release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/verify-player-0.13.0.yml"
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for signed GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: player-v0.13.0
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            if release="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease,assets,url 2>/dev/null)"; then
+              draft="$(jq -r .isDraft <<<"$release")"
+              prerelease="$(jq -r .isPrerelease <<<"$release")"
+              assets="$(jq -r '.assets[].name' <<<"$release")"
+              if [ "$draft" = false ] && [ "$prerelease" = false ] \
+                && grep -qx 'tilecast-player.apk' <<<"$assets" \
+                && grep -qx 'tilecast-player-update.json' <<<"$assets" \
+                && grep -qx 'tilecast-player-update.json.sig' <<<"$assets"; then
+                url="$(jq -r .url <<<"$release")"
+                gh pr comment 65 --repo "$GITHUB_REPOSITORY" --body "Tilecast Player 0.13.0 has been published successfully with the signed APK, update manifest, and manifest signature. $url"
+                exit 0
+              fi
+            fi
+            sleep 15
+          done
+          gh pr comment 65 --repo "$GITHUB_REPOSITORY" --body "Tilecast Player 0.13.0 release verification timed out. Check the Tilecast Player Release workflow."
+          exit 1
