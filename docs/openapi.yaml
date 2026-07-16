@@ -1355,7 +1355,7 @@ components:
         configuration:
           {
             type: object,
-            description: "Provider-specific configuration. Native text Widgets omit textScale for automatic bounds-aware sizing or use an integer from 50 through 200 percent.",
+            description: "Provider-specific configuration. Native text Widgets omit textScale for automatic bounds-first sizing or use 25–500 percent; contentPadding defaults to 10 percent per edge and accepts 0–40.",
           }
     WidgetInput:
       type: object
@@ -1368,7 +1368,7 @@ components:
         configuration:
           {
             type: object,
-            description: "Provider-specific configuration. Native text Widgets omit textScale for automatic bounds-aware sizing or use an integer from 50 through 200 percent.",
+            description: "Provider-specific configuration. Native text Widgets omit textScale for automatic bounds-first sizing or use 25–500 percent; contentPadding defaults to 10 percent per edge and accepts 0–40.",
           }
     DataSource:
       type: object

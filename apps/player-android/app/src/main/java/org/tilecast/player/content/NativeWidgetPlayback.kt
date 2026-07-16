@@ -94,8 +94,8 @@ private fun ClockWidget(config: ClockWidgetConfig) {
         if (config.showSeconds) "h:mm:ss a" else "h:mm a"
     }
     val text = now.atZone(ZoneId.of(config.timezone)).format(DateTimeFormatter.ofPattern(pattern))
-    CenteredWidget(config.backgroundColor) {
-        FittedWidgetText(text, parseColor(config.foregroundColor), 86f, FontWeight.SemiBold, textScale = config.textScale)
+    CenteredWidget(config.backgroundColor, config.contentPadding) {
+        FittedWidgetText(text, parseColor(config.foregroundColor), FontWeight.SemiBold, textScale = config.textScale)
     }
 }
 
@@ -115,27 +115,35 @@ private fun DateWidget(config: DateWidgetConfig) {
         else -> FormatStyle.FULL
     }
     val text = now.atZone(ZoneId.of(config.timezone)).format(DateTimeFormatter.ofLocalizedDate(style))
-    CenteredWidget(config.backgroundColor) {
-        FittedWidgetText(text, parseColor(config.foregroundColor), 58f, FontWeight.Medium, textScale = config.textScale)
+    CenteredWidget(config.backgroundColor, config.contentPadding) {
+        FittedWidgetText(text, parseColor(config.foregroundColor), FontWeight.Medium, textScale = config.textScale)
     }
 }
 @Composable
 private fun QRCodeWidget(config: QRCodeWidgetConfig) {
     val bitmap = remember(config) { qrBitmap(config) }
-    CenteredWidget(config.backgroundColor) {
+    CenteredWidget(config.backgroundColor, config.contentPadding) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
-            val scale = responsiveWidgetScale(maxWidth.value, maxHeight.value, config.textScale)
+            val labelHeight = maxHeight.value * 0.18f
+            val labelSize = scaledFittedFontSizeSp(
+                config.label.length,
+                maxWidth.value,
+                labelHeight,
+                LocalDensity.current.fontScale,
+                maxLines = 2,
+                textScale = config.textScale,
+            )
             Column(
                 Modifier.fillMaxSize(),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy((18f * scale).dp),
+                verticalArrangement = Arrangement.spacedBy((maxHeight.value * 0.025f).dp),
             ) {
                 Image(bitmap.asImageBitmap(), null, Modifier.weight(1f))
                 if (config.label.isNotBlank()) {
                     Text(
                         config.label,
                         color = parseColor(config.foregroundColor),
-                        fontSize = (24f * scale).sp,
+                        fontSize = labelSize.sp,
                         textAlign = TextAlign.Center,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
@@ -158,8 +166,8 @@ private fun TickerWidget(config: TickerWidgetConfig, data: StructuredSourceConfi
     val text = records.mapNotNull { record ->
         structuredFieldValue(record, config.field).takeIf { it.isNotBlank() }
     }.joinToString(config.separator).ifBlank { data.emptyState }
-    CenteredWidget(config.backgroundColor) {
-        FittedWidgetText(text, parseColor(config.foregroundColor), 34f, FontWeight.Normal, maxLines = 2, textScale = config.textScale)
+    CenteredWidget(config.backgroundColor, config.contentPadding) {
+        FittedWidgetText(text, parseColor(config.foregroundColor), FontWeight.Normal, maxLines = 2, textScale = config.textScale)
     }
 }
 @Composable
@@ -173,22 +181,25 @@ private fun MenuWidget(name: String, config: DisplayWidgetConfig, data: Structur
     }
     val record = selectDateAwareRecords(data, now).firstOrNull()
     BoxWithConstraints(Modifier.fillMaxSize().background(parseColor(config.backgroundColor))) {
-        val scale = responsiveWidgetScale(maxWidth.value, maxHeight.value, config.textScale)
-        val inset = minOf(48f, minOf(maxWidth.value, maxHeight.value) * 0.08f).dp
-        val availableHeight = maxHeight.value - inset.value * 2
-        Box(Modifier.fillMaxSize().padding(inset), contentAlignment = Alignment.Center) {
+        val horizontalInset = maxWidth.value * widgetPaddingFraction(config.contentPadding)
+        val verticalInset = maxHeight.value * widgetPaddingFraction(config.contentPadding)
+        val availableHeight = maxHeight.value - verticalInset * 2
+        Box(
+            Modifier.fillMaxSize().padding(horizontal = horizontalInset.dp, vertical = verticalInset.dp),
+            contentAlignment = Alignment.Center,
+        ) {
             if (record == null) {
-                FittedWidgetText(data.emptyState, parseColor(config.foregroundColor), 42f, FontWeight.Medium, maxLines = 3, textScale = config.textScale)
+                FittedWidgetText(data.emptyState, parseColor(config.foregroundColor), FontWeight.Medium, maxLines = 3, textScale = config.textScale)
                 return@Box
             }
             val values = config.fields.mapNotNull { field ->
                 structuredFieldValue(record, field).takeIf(String::isNotBlank)?.let { field to it }
             }.take(config.maximumItems.coerceAtMost(8))
             if (values.isEmpty()) {
-                FittedWidgetText(data.emptyState, parseColor(config.foregroundColor), 42f, FontWeight.Medium, maxLines = 3, textScale = config.textScale)
+                FittedWidgetText(data.emptyState, parseColor(config.foregroundColor), FontWeight.Medium, maxLines = 3, textScale = config.textScale)
                 return@Box
             }
-            val contentScale = menuContentScale(scale, values.size, availableHeight)
+            val contentScale = menuContentScale(values.size, availableHeight, config.textScale)
             Column(
                 modifier = Modifier.fillMaxSize(),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -222,9 +233,10 @@ private fun MenuWidget(name: String, config: DisplayWidgetConfig, data: Structur
     }
 }
 
-internal fun menuContentScale(baseScale: Float, itemCount: Int, availableHeightDp: Float): Float {
+internal fun menuContentScale(itemCount: Int, availableHeightDp: Float, textScale: Int? = null): Float {
     val estimatedBaseHeight = 50f + itemCount.coerceAtLeast(1) * 150f
-    return minOf(baseScale, availableHeightDp / estimatedBaseHeight).coerceAtLeast(0.05f)
+    val fitScale = availableHeightDp / estimatedBaseHeight
+    return (fitScale * widgetAuthorScale(textScale)).coerceIn(0.05f, fitScale)
 }
 
 @Composable
@@ -269,27 +281,36 @@ private fun DisplayCalendarWidget(config: DisplayWidgetConfig, data: org.tilecas
 @Composable
 private fun DisplayRows(config: DisplayWidgetConfig, rows: List<String>, emptyState: String) {
     BoxWithConstraints(Modifier.fillMaxSize().background(parseColor(config.backgroundColor))) {
-        val inset = minOf(36f, minOf(maxWidth.value, maxHeight.value) * 0.08f)
-        val availableWidth = (maxWidth.value - inset * 2).coerceAtLeast(1f)
-        val availableHeight = (maxHeight.value - inset * 2).coerceAtLeast(1f)
+        val horizontalInset = maxWidth.value * widgetPaddingFraction(config.contentPadding)
+        val verticalInset = maxHeight.value * widgetPaddingFraction(config.contentPadding)
+        val availableWidth = (maxWidth.value - horizontalInset * 2).coerceAtLeast(1f)
+        val availableHeight = (maxHeight.value - verticalInset * 2).coerceAtLeast(1f)
         if (rows.isEmpty()) {
-            Box(Modifier.fillMaxSize().padding(inset.dp), contentAlignment = Alignment.Center) {
-                FittedWidgetText(emptyState, parseColor(config.foregroundColor), 26f, FontWeight.Normal, maxLines = 3, textScale = config.textScale)
+            Box(
+                Modifier.fillMaxSize().padding(horizontal = horizontalInset.dp, vertical = verticalInset.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                FittedWidgetText(emptyState, parseColor(config.foregroundColor), FontWeight.Normal, maxLines = 3, textScale = config.textScale)
             }
             return@BoxWithConstraints
         }
-        val gap = (14f * responsiveWidgetScale(maxWidth.value, maxHeight.value, config.textScale)).coerceAtLeast(2f)
+        val gap = (availableHeight * 0.025f).coerceAtLeast(2f)
         val fontScale = LocalDensity.current.fontScale
         val maximumRows = (availableHeight / (8f * fontScale * 1.2f + gap)).toInt().coerceAtLeast(1)
         val visibleRows = rows.take(maximumRows)
         val rowHeight = ((availableHeight - gap * (visibleRows.size - 1)) / visibleRows.size).coerceAtLeast(1f)
-        val maximumFontSize = responsiveFontSizeSp(26f, maxWidth.value, maxHeight.value, config.textScale)
         Column(
-            Modifier.fillMaxSize().padding(inset.dp),
+            Modifier.fillMaxSize().padding(horizontal = horizontalInset.dp, vertical = verticalInset.dp),
             verticalArrangement = Arrangement.spacedBy(gap.dp),
         ) {
             visibleRows.forEach { row ->
-                val size = fittedFontSizeSp(row.length, availableWidth, rowHeight, fontScale, maximumFontSize)
+                val size = scaledFittedFontSizeSp(
+                    row.length,
+                    availableWidth,
+                    rowHeight,
+                    fontScale,
+                    textScale = config.textScale,
+                )
                 Text(
                     row,
                     modifier = Modifier.fillMaxWidth().height(rowHeight.dp),
@@ -303,10 +324,16 @@ private fun DisplayRows(config: DisplayWidgetConfig, rows: List<String>, emptySt
     }
 }
 @Composable
-private fun CenteredWidget(background: String, content: @Composable () -> Unit) {
+private fun CenteredWidget(background: String, contentPadding: Int?, content: @Composable () -> Unit) {
     BoxWithConstraints(Modifier.fillMaxSize().background(parseColor(background))) {
-        val inset = minOf(40f, minOf(maxWidth.value, maxHeight.value) * 0.08f).dp
-        Box(Modifier.fillMaxSize().padding(inset), contentAlignment = Alignment.Center) { content() }
+        val inset = widgetPaddingFraction(contentPadding)
+        Box(
+            Modifier.fillMaxSize().padding(
+                horizontal = (maxWidth.value * inset).dp,
+                vertical = (maxHeight.value * inset).dp,
+            ),
+            contentAlignment = Alignment.Center,
+        ) { content() }
     }
 }
 
@@ -314,27 +341,21 @@ private fun CenteredWidget(background: String, content: @Composable () -> Unit) 
 private fun FittedWidgetText(
     text: String,
     color: Color,
-    maximumFontSizeSp: Float,
     weight: FontWeight,
     maxLines: Int = 1,
     textScale: Int? = null,
 ) {
     BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         val fontScale = LocalDensity.current.fontScale
-        val initialSize = fittedFontSizeSp(
+        val initialSize = scaledFittedFontSizeSp(
             textLength = text.length,
             widthDp = maxWidth.value,
             heightDp = maxHeight.value,
             fontScale = fontScale,
-            maximumFontSizeSp = responsiveFontSizeSp(
-                maximumFontSizeSp,
-                maxWidth.value,
-                maxHeight.value,
-                textScale,
-            ),
             maxLines = maxLines,
+            textScale = textScale,
         )
-        var fontSize by remember(text, maxWidth, maxHeight, fontScale, maximumFontSizeSp, maxLines, textScale) {
+        var fontSize by remember(text, maxWidth, maxHeight, fontScale, maxLines, textScale) {
             mutableStateOf(initialSize)
         }
         Text(
@@ -356,22 +377,30 @@ private fun FittedWidgetText(
     }
 }
 
-internal fun responsiveWidgetScale(
+internal fun widgetAuthorScale(textScale: Int?): Float =
+    (textScale ?: 100).coerceIn(25, 500) / 100f
+
+internal fun widgetPaddingFraction(contentPadding: Int?): Float =
+    (contentPadding ?: 10).coerceIn(0, 40) / 100f
+
+internal fun scaledFittedFontSizeSp(
+    textLength: Int,
     widthDp: Float,
     heightDp: Float,
+    fontScale: Float,
+    maxLines: Int = 1,
     textScale: Int? = null,
 ): Float {
-    val availableScale = minOf(widthDp / 880f, heightDp / 460f)
-    val authorScale = (textScale ?: 100).coerceIn(50, 200) / 100f
-    return (availableScale * authorScale).coerceIn(0.05f, 4f)
+    val fitted = fittedFontSizeSp(
+        textLength,
+        widthDp,
+        heightDp,
+        fontScale,
+        Float.MAX_VALUE,
+        maxLines,
+    )
+    return (fitted * widgetAuthorScale(textScale)).coerceAtMost(fitted)
 }
-
-internal fun responsiveFontSizeSp(
-    baseFontSizeSp: Float,
-    widthDp: Float,
-    heightDp: Float,
-    textScale: Int? = null,
-): Float = baseFontSizeSp * responsiveWidgetScale(widthDp, heightDp, textScale)
 
 internal fun fittedFontSizeSp(
     textLength: Int,

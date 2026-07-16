@@ -34,7 +34,7 @@ A Widget owns how content appears. A Widget is either **standalone** or referenc
 
 A Widget is a Content record (an asset of type `widget`) and may play fullscreen in a playlist or be placed inside a Layout. Editing a Widget placement in a Layout must not mutate the shared Widget; Studio offers an explicit **Edit shared Widget** action and reports every playlist and Layout that consumes it.
 
-Native Widget text sizes automatically follow the Widget's rendered bounds, whether it is fullscreen, in a playlist zone, or directly placed in a Layout. Long text is fitted within those bounds, and dense list-style Widgets reduce their row typography or visible row count instead of clipping text. Authors may optionally set `textScale` from 50–200 percent to adjust the responsive result; omitting it keeps automatic sizing. A custom scale is still bounded by the fit behavior, so it cannot force text outside a small zone.
+Native Widget content automatically follows the Widget's rendered bounds, whether it is fullscreen, in a playlist zone, or directly placed in a Layout. The default `contentPadding` is 10 percent on each edge, giving the content the center 80 percent of the Widget; authors may set it from 0–40 percent. Long text is fitted within that area, and dense list-style Widgets reduce row typography or visible rows instead of clipping. Authors may optionally set `textScale` from 25–500 percent to reduce or enlarge provider typography; omitting it keeps automatic bounds-first sizing. Fit-to-bounds remains the final guard.
 
 ### Data-driven Widget compatibility
 

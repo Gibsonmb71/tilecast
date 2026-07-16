@@ -854,6 +854,7 @@ export type ClockWidgetConfig = {
   foregroundColor: string;
   backgroundColor: string;
   textScale?: number;
+  contentPadding?: number;
 };
 export type DateWidgetConfig = {
   timezone: string;
@@ -861,6 +862,7 @@ export type DateWidgetConfig = {
   foregroundColor: string;
   backgroundColor: string;
   textScale?: number;
+  contentPadding?: number;
 };
 export type QRCodeWidgetConfig = {
   value: string;
@@ -869,6 +871,7 @@ export type QRCodeWidgetConfig = {
   foregroundColor: string;
   backgroundColor: string;
   textScale?: number;
+  contentPadding?: number;
 };
 export type TickerWidgetConfig = {
   dataSourceId: string;
@@ -879,6 +882,7 @@ export type TickerWidgetConfig = {
   foregroundColor: string;
   backgroundColor: string;
   textScale?: number;
+  contentPadding?: number;
 };
 export type DisplayWidgetConfig = {
   dataSourceId: string;
@@ -887,6 +891,7 @@ export type DisplayWidgetConfig = {
   foregroundColor: string;
   backgroundColor: string;
   textScale?: number;
+  contentPadding?: number;
 };
 export type StructuredRecord = {
   id: string;

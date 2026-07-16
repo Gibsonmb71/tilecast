@@ -556,7 +556,7 @@ export function NativeAppEditor({
             </>
           )}
           <fieldset>
-            <legend>Text size</legend>
+            <legend>Content sizing</legend>
             <label className="switch-row">
               <input
                 type="checkbox"
@@ -581,9 +581,9 @@ export function NativeAppEditor({
                 </span>
                 <input
                   type="range"
-                  min={50}
-                  max={200}
-                  step={5}
+                  min={25}
+                  max={500}
+                  step={25}
                   value={configuration.textScale}
                   disabled={readOnly}
                   onChange={(event) =>
@@ -595,10 +595,29 @@ export function NativeAppEditor({
                 />
               </label>
             )}
+            <label className="field">
+              <span className="field__label">
+                Padding ({configuration.contentPadding ?? 10}%)
+              </span>
+              <input
+                type="range"
+                min={0}
+                max={40}
+                step={1}
+                value={configuration.contentPadding ?? 10}
+                disabled={readOnly}
+                onChange={(event) =>
+                  setConfiguration((current) => ({
+                    ...current,
+                    contentPadding: Number(event.target.value),
+                  }))
+                }
+              />
+            </label>
             <small>
-              Automatic sizing responds to the Widget’s actual space. A custom
-              scale adjusts that result and still shrinks long text to avoid
-              clipping.
+              By default, content uses the center 80% of the Widget. Reduce
+              padding to let it fill more space; custom scale ranges up to 500%
+              and still fits long text within the available area.
             </small>
           </fieldset>
           <div className="form-grid form-grid--2">
@@ -631,6 +650,7 @@ export function NativeAppEditor({
               color: configuration.foregroundColor,
               backgroundColor: configuration.backgroundColor,
               fontSize: `${configuration.textScale ?? 100}%`,
+              padding: `${configuration.contentPadding ?? 10}%`,
             }}
           >
             {provider === "clock" ? (

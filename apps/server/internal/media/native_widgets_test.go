@@ -5,16 +5,27 @@ import (
 	"testing"
 )
 
-func TestValidateWidgetTextScale(t *testing.T) {
-	tooSmall, minimum, maximum, tooLarge := 49, 50, 200, 201
+func TestValidateWidgetSizing(t *testing.T) {
+	tooSmall, minimum, maximum, tooLarge := 24, 25, 500, 501
 	for _, scale := range []*int{nil, &minimum, &maximum} {
-		if err := validateWidgetTextScale(scale); err != nil {
-			t.Fatalf("validateWidgetTextScale(%v): %v", scale, err)
+		if err := validateWidgetSizing(scale, nil); err != nil {
+			t.Fatalf("validateWidgetSizing(%v): %v", scale, err)
 		}
 	}
 	for _, scale := range []*int{&tooSmall, &tooLarge} {
-		if err := validateWidgetTextScale(scale); err == nil {
-			t.Fatalf("validateWidgetTextScale(%d) unexpectedly succeeded", *scale)
+		if err := validateWidgetSizing(scale, nil); err == nil {
+			t.Fatalf("validateWidgetSizing(%d) unexpectedly succeeded", *scale)
+		}
+	}
+	negativePadding, noPadding, maximumPadding, excessivePadding := -1, 0, 40, 41
+	for _, padding := range []*int{nil, &noPadding, &maximumPadding} {
+		if err := validateWidgetSizing(nil, padding); err != nil {
+			t.Fatalf("validateWidgetSizing padding %v: %v", padding, err)
+		}
+	}
+	for _, padding := range []*int{&negativePadding, &excessivePadding} {
+		if err := validateWidgetSizing(nil, padding); err == nil {
+			t.Fatalf("validateWidgetSizing padding %d unexpectedly succeeded", *padding)
 		}
 	}
 }

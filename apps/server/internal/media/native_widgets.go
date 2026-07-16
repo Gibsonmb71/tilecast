@@ -35,7 +35,7 @@ func (clockWidgetProvider) Normalize(_ context.Context, raw json.RawMessage) (an
 	if err := normalizeWidgetColors(&c.ForegroundColor, &c.BackgroundColor); err != nil {
 		return nil, err
 	}
-	if err := validateWidgetTextScale(c.TextScale); err != nil {
+	if err := validateWidgetSizing(c.TextScale, c.ContentPadding); err != nil {
 		return nil, err
 	}
 	return c, nil
@@ -63,7 +63,7 @@ func (dateWidgetProvider) Normalize(_ context.Context, raw json.RawMessage) (any
 	if err := normalizeWidgetColors(&c.ForegroundColor, &c.BackgroundColor); err != nil {
 		return nil, err
 	}
-	if err := validateWidgetTextScale(c.TextScale); err != nil {
+	if err := validateWidgetSizing(c.TextScale, c.ContentPadding); err != nil {
 		return nil, err
 	}
 	return c, nil
@@ -93,7 +93,7 @@ func (qrCodeWidgetProvider) Normalize(_ context.Context, raw json.RawMessage) (a
 	if err := normalizeWidgetColors(&c.ForegroundColor, &c.BackgroundColor); err != nil {
 		return nil, err
 	}
-	if err := validateWidgetTextScale(c.TextScale); err != nil {
+	if err := validateWidgetSizing(c.TextScale, c.ContentPadding); err != nil {
 		return nil, err
 	}
 	return c, nil
@@ -139,7 +139,7 @@ func (p tickerWidgetProvider) Normalize(ctx context.Context, raw json.RawMessage
 	if err := normalizeWidgetColors(&c.ForegroundColor, &c.BackgroundColor); err != nil {
 		return nil, err
 	}
-	if err := validateWidgetTextScale(c.TextScale); err != nil {
+	if err := validateWidgetSizing(c.TextScale, c.ContentPadding); err != nil {
 		return nil, err
 	}
 	return c, nil
@@ -176,15 +176,18 @@ func (p displayWidgetProvider) Normalize(ctx context.Context, raw json.RawMessag
 	if err := normalizeWidgetColors(&c.ForegroundColor, &c.BackgroundColor); err != nil {
 		return nil, err
 	}
-	if err := validateWidgetTextScale(c.TextScale); err != nil {
+	if err := validateWidgetSizing(c.TextScale, c.ContentPadding); err != nil {
 		return nil, err
 	}
 	return c, nil
 }
 
-func validateWidgetTextScale(scale *int) error {
-	if scale != nil && (*scale < 50 || *scale > 200) {
-		return errors.New("widget text scale must be between 50 and 200 percent")
+func validateWidgetSizing(scale, padding *int) error {
+	if scale != nil && (*scale < 25 || *scale > 500) {
+		return errors.New("widget text scale must be between 25 and 500 percent")
+	}
+	if padding != nil && (*padding < 0 || *padding > 40) {
+		return errors.New("widget content padding must be between 0 and 40 percent")
 	}
 	return nil
 }
