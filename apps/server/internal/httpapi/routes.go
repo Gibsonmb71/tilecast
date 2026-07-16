@@ -149,6 +149,7 @@ func (s *server) routes() http.Handler {
 			// Data Sources — reusable non-visual data connections.
 			dashboard.Get("/data-sources", s.listDataSources)
 			dashboard.Get("/data-sources/{id}", s.getDataSource)
+			dashboard.Get("/data-sources/{id}/preview", s.previewSavedDataSource)
 			dashboard.Get("/data-sources/{id}/diagnostics", s.dataSourceDiagnostics)
 			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/data-sources", s.createDataSource)
 			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Patch("/data-sources/{id}", s.updateDataSource)

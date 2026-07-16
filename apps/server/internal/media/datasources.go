@@ -165,6 +165,21 @@ func (s *Service) GetDataSource(ctx context.Context, id uuid.UUID) (DataSource, 
 	return d, nil
 }
 
+// PreviewDataSourceByID resolves a saved Data Source using its full stored
+// configuration, including any uploaded CSV payload that the API responses strip.
+// It returns the same StructuredPreview/CalendarPreview shape the provider preview
+// endpoint produces so consumers (e.g. the Layout preview) get the Player's records.
+func (s *Service) PreviewDataSourceByID(ctx context.Context, id uuid.UUID, previewDate string) (any, error) {
+	raw, err := s.rawDataSource(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if raw.Provider == "calendar" {
+		return s.CalendarPreview(ctx, raw.Configuration)
+	}
+	return s.StructuredPreview(ctx, raw.Provider, raw.Configuration, previewDate)
+}
+
 func stripUploadedContent(provider string, raw json.RawMessage) json.RawMessage {
 	if provider != "csv" {
 		return raw

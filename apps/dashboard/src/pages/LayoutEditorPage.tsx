@@ -429,19 +429,18 @@ export function LayoutEditorPage() {
     try {
       const resolved = await Promise.all(
         Array.from(dataSourceIds).map(async (dataSourceId) => {
-          const source = await api.getDataSource(dataSourceId);
-          const preview = await api.previewDataSource(
-            source.provider,
-            source.configuration,
-            csrf,
+          // Preview the saved Source by id so uploaded CSV content (stripped from
+          // the detail response) is resolved server-side, exactly as the Player sees it.
+          const preview = await api.previewSavedDataSource(
+            dataSourceId,
             previewDate,
           );
-          if (source.provider === "calendar") {
+          if ("events" in preview.configuration.data) {
             const calendar = preview as CalendarPreview;
             return [
               dataSourceId,
               {
-                provider: source.provider,
+                provider: "calendar" as const,
                 events: calendar.configuration.data.events,
                 emptyState: calendar.configuration.emptyState,
               },
@@ -451,7 +450,7 @@ export function LayoutEditorPage() {
           return [
             dataSourceId,
             {
-              provider: source.provider,
+              provider: "json" as const,
               records: structured.configuration.data.records,
               emptyState: structured.configuration.emptyState,
             },
