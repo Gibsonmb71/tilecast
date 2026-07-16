@@ -59,20 +59,33 @@ func (s *server) playerSocket(w http.ResponseWriter, r *http.Request) {
 	pingDone := make(chan struct{})
 	go func() {
 		defer close(pingDone)
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
+		pingTicker := time.NewTicker(30 * time.Second)
+		commandTicker := time.NewTicker(5 * time.Second)
+		defer pingTicker.Stop()
+		defer commandTicker.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case timestamp := <-ticker.C:
-				var commandsWaiting bool
-				if err := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM player_commands WHERE screen_id=$1 AND state IN ('pending','delivered','acknowledged','running') AND expires_at>now())`, principal.ScreenID).Scan(&commandsWaiting); err == nil && commandsWaiting {
+			case <-commandTicker.C:
+				var commandsWaiting, commandStuck bool
+				if err := s.db.QueryRow(ctx, `SELECT
+					EXISTS(SELECT 1 FROM player_commands WHERE screen_id=$1 AND state IN ('pending','delivered','acknowledged','running') AND expires_at>now()),
+					EXISTS(SELECT 1 FROM player_commands WHERE screen_id=$1 AND state='pending' AND created_at<=now()-interval '15 seconds' AND expires_at>now())`, principal.ScreenID).Scan(&commandsWaiting, &commandStuck); err != nil {
+					continue
+				}
+				if commandsWaiting {
 					if err := send(map[string]any{"type": "commands.available"}); err != nil {
 						cancel()
 						return
 					}
 				}
+				if commandStuck {
+					_ = connection.Close(websocket.StatusNormalClosure, "retry pending commands")
+					cancel()
+					return
+				}
+			case timestamp := <-pingTicker.C:
 				if err := send(map[string]any{"type": "server.ping", "timestamp": timestamp.UTC().Format(time.RFC3339)}); err != nil {
 					cancel()
 					return
