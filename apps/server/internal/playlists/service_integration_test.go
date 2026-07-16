@@ -2,6 +2,7 @@ package playlists
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"strings"
@@ -269,6 +270,20 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 	}
 	if len(calendarManifest.Widgets) != 1 || calendarManifest.Widgets[0].Provider != "agenda" {
 		t.Fatalf("calendar manifest widgets=%#v", calendarManifest.Widgets)
+	}
+	capabilities, _ := json.Marshal(NativePresentationCapabilities)
+	if _, err = pool.Exec(ctx, `UPDATE screen_player_status SET presentation_schema_versions='{1}',native_presentation_capabilities=$2,web_runtime_version=1,web_bundle_limit_bytes=20971520 WHERE screen_id=$1`, screenID, capabilities); err != nil {
+		t.Fatal(err)
+	}
+	declarativeManifest, declarativeETag, err := service.BuildManifest(ctx, screenID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if declarativeManifest.SchemaVersion != 13 || declarativeETag == "" || declarativeManifest.DataSources[0].DataDocument == nil || declarativeManifest.Widgets[0].Presentation == nil {
+		t.Fatalf("declarative manifest was not projected: %#v", declarativeManifest)
+	}
+	if len(declarativeManifest.DataSources[0].Configuration) != 0 || len(declarativeManifest.Widgets[0].Configuration) != 0 {
+		t.Fatal("v13 leaked Player-facing provider configuration")
 	}
 	if len(notifier.versions) < 3 {
 		t.Fatalf("notifications=%v", notifier.versions)

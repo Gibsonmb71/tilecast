@@ -732,6 +732,55 @@ export type WidgetProvider =
   | "weather";
 export type DataSourceProvider =
   "calendar" | "rss" | "atom" | "json" | "csv" | "manual" | "weather";
+export type ProviderCatalogEntry = {
+  id: WidgetProvider | DataSourceProvider;
+  role: "widget" | "data_source";
+  label: string;
+  group: string;
+  description: string;
+  presentationKind?: "native" | "web";
+  capabilities: Record<string, boolean>;
+  requiredCapabilities?: Record<string, number>;
+  uiHints: Record<string, string>;
+};
+export type ProviderCatalog = {
+  revision: number;
+  providers: ProviderCatalogEntry[];
+};
+export type PresentationBinding = {
+  source: "literal" | "dataset" | "repeat" | "environment";
+  dataset?: string;
+  path?: string;
+  value?: string;
+  fields?: string[];
+  format?: string;
+  precision?: number;
+  prefix?: string;
+  suffix?: string;
+  fallback?: string;
+  separator?: string;
+};
+export type PresentationNode = {
+  id?: string;
+  type: string;
+  props?: Record<string, unknown>;
+  binding?: PresentationBinding;
+  repeat?: { dataset: string; limit: number };
+  children?: PresentationNode[];
+};
+export type WidgetPresentation = {
+  schemaVersion: 1;
+  kind: "native" | "web";
+  requiredCapabilities: Record<string, number>;
+  native?: { root: PresentationNode };
+  web?: {
+    mode: "remote" | "bundle";
+    url?: string;
+    allowedHosts: string[];
+    onlineOnly: boolean;
+    lifecycle: "destroy_on_hide" | "keep_warm";
+  };
+};
 export type Widget = {
   provider: WidgetProvider;
   configVersion: number;

@@ -105,7 +105,13 @@ internal fun effectiveDurationMs(item:ManifestItem,assets:List<ManifestAsset>):L
     val tracker=rememberActivityChild(activityReporter,item,widget,layoutPlacementId,session.content.manifest.dataSources)
     val done={tracker?.complete();onDone()}
     val failed: (String) -> Unit = { message -> tracker?.fail(message); onFailure(message) }
-    if(widget?.provider=="website"){
+    if(session.content.manifest.schemaVersion>=13&&widget?.presentation?.kind=="native"){
+        DeclarativeWidgetItem(item,widget,session,done,failed,onWidgetStatus,startOffsetMs)
+    } else if(session.content.manifest.schemaVersion>=13&&widget?.presentation?.kind=="web"){
+        val descriptor=widget.presentation.web
+        if(descriptor==null||descriptor.mode!="remote"){failed("Web presentation is unavailable");return}
+        WebsiteItem(item,ManifestWebsite(widget.assetId,widget.name,descriptor.url,descriptor.allowedHosts,true,false,"none","on_each_activation",null,descriptor.loadTimeoutSeconds,100,0,0,"","#0E141B",descriptor.fallbackBehavior,null,null),session,done,startOffsetMs){status->onWebsiteStatus(status);onWidgetStatus(WidgetPlaybackStatus(widget.assetId,"web",status.state,status.failureCategory))}
+    } else if(widget?.provider=="website"){
         val config=runCatching{Json.decodeFromJsonElement<WebsiteSourceConfig>(widget.configuration)}.getOrElse{failed("Website widget configuration is invalid");return}
         WebsiteItem(item,ManifestWebsite(widget.assetId,widget.name,config.url,config.allowedHosts,config.javascriptEnabled,config.domStorageEnabled,config.cookiePolicy,config.reloadPolicy,config.refreshIntervalSeconds,config.loadTimeoutSeconds,config.zoomPercent,config.scrollX,config.scrollY,config.customUserAgent,config.backgroundColor,config.failureBehavior,config.fallbackImageAssetId,config.fallbackVariantId),session,done,startOffsetMs){status->onWebsiteStatus(status);onWidgetStatus(WidgetPlaybackStatus(widget.assetId,"website",status.state,status.failureCategory))}
     } else if(widget?.provider=="youtube"){

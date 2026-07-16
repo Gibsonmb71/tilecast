@@ -21,6 +21,7 @@ import {
   RectangleHorizontal,
   Save,
   Scan,
+  Settings,
   Type,
   Undo2,
   Ungroup,
@@ -64,6 +65,8 @@ import { layoutFontStack } from "../layoutFonts";
 
 type SaveState = "saved" | "unsaved" | "saving" | "conflict" | "error";
 type LayoutLibrarySection = "widgets" | "media" | "playlists";
+type LayoutSidebarSection =
+  LayoutLibrarySection | "elements" | "layers" | "settings";
 type LayoutLibraryItem =
   | { kind: "asset"; createdAt: string; asset: Asset }
   | { kind: "playlist"; createdAt: string; playlist: Playlist };
@@ -242,8 +245,8 @@ export function LayoutEditorPage() {
   const [zoom, setZoom] = useState(1);
   const [snap, setSnap] = useState(true);
   const [safeArea, setSafeArea] = useState(true);
-  const [librarySection, setLibrarySection] =
-    useState<LayoutLibrarySection>("widgets");
+  const [sidebarSection, setSidebarSection] =
+    useState<LayoutSidebarSection>("media");
   const [preview, setPreview] = useState(false);
   const [previewDate, setPreviewDate] = useState(
     new Date().toISOString().slice(0, 10),
@@ -420,12 +423,16 @@ export function LayoutEditorPage() {
   );
   const recentLibraryItems = useMemo(
     () =>
-      recentLayoutLibraryItems(
-        librarySection,
-        contentQuery.data?.items ?? [],
-        playlistsQuery.data?.items ?? [],
-      ),
-    [contentQuery.data?.items, librarySection, playlistsQuery.data?.items],
+      sidebarSection === "widgets" ||
+      sidebarSection === "media" ||
+      sidebarSection === "playlists"
+        ? recentLayoutLibraryItems(
+            sidebarSection,
+            contentQuery.data?.items ?? [],
+            playlistsQuery.data?.items ?? [],
+          )
+        : [],
+    [contentQuery.data?.items, sidebarSection, playlistsQuery.data?.items],
   );
   const primary = selected.at(-1);
   const mutateSelected = useCallback(
@@ -1064,176 +1071,259 @@ export function LayoutEditorPage() {
         </button>
       </div>
       <aside className="layout-editor-left">
-        <div className="layout-panel-heading">
-          <strong>Add</strong>
-          <span>Primitives</span>
-        </div>
-        <div className="layout-add-grid">
-          <button onClick={() => addPrimitive("text")}>
-            <Type size={20} />
-            Text
-          </button>
-          <button onClick={() => addPrimitive("rectangle")}>
-            <RectangleHorizontal size={20} />
-            Rectangle
-          </button>
-          <button onClick={() => addPrimitive("circle")}>
-            <Circle size={20} />
-            Circle
-          </button>
-          <button onClick={() => addPrimitive("line")}>
-            <Minus size={20} />
-            Line
-          </button>
-        </div>
-        <div
-          className="layout-library-tabs"
-          role="group"
-          aria-label="Content type"
-        >
-          {(["widgets", "media", "playlists"] as const).map((section) => (
+        <nav className="layout-sidebar-nav" aria-label="Layout builder">
+          {(
+            [
+              ["media", "Media", ImageIcon],
+              ["widgets", "Widgets", AppWindow],
+              ["playlists", "Playlists", ListVideo],
+              ["elements", "Elements", RectangleHorizontal],
+              ["layers", "Layers", BoxSelect],
+              ["settings", "Settings", Settings],
+            ] as const
+          ).map(([section, label, Icon]) => (
             <button
               key={section}
-              className={librarySection === section ? "is-selected" : ""}
-              onClick={() => setLibrarySection(section)}
+              type="button"
+              className={sidebarSection === section ? "is-active" : ""}
+              aria-pressed={sidebarSection === section}
+              onClick={() => setSidebarSection(section)}
             >
-              {section === "widgets" ? (
-                <AppWindow size={17} />
-              ) : section === "media" ? (
-                <ImageIcon size={17} />
-              ) : (
-                <ListVideo size={17} />
-              )}
-              {
-                {
-                  widgets: "Widgets",
-                  media: "Media",
-                  playlists: "Playlists",
-                }[section]
-              }
+              <Icon size={18} />
+              <span>{label}</span>
             </button>
           ))}
-        </div>
-        <div className="layout-panel-heading">
-          <strong>Recently created</strong>
-          <span>Drag to canvas</span>
-        </div>
-        <div className="layout-content-shelf">
-          {recentLibraryItems.map((item) => {
-            const asset = item.kind === "asset" ? item.asset : undefined;
-            const playlist =
-              item.kind === "playlist" ? item.playlist : undefined;
-            const name = asset?.name ?? playlist?.name ?? "";
-            return (
-              <button
-                key={`${item.kind}-${asset?.id ?? playlist?.id}`}
-                draggable
-                onDragStart={(event) => {
-                  event.dataTransfer.effectAllowed = "copy";
-                  event.dataTransfer.setData(
-                    "application/x-tilecast-layout-library",
-                    JSON.stringify({
-                      kind: item.kind,
-                      id: asset?.id ?? playlist?.id,
-                    }),
+        </nav>
+        <div className="layout-sidebar-panel">
+          {(sidebarSection === "media" ||
+            sidebarSection === "widgets" ||
+            sidebarSection === "playlists") && (
+            <>
+              <div className="layout-panel-heading">
+                <strong>
+                  {
+                    {
+                      media: "Media",
+                      widgets: "Widgets",
+                      playlists: "Playlists",
+                    }[sidebarSection]
+                  }
+                </strong>
+                <span>Drag to canvas</span>
+              </div>
+              <div className="layout-content-shelf">
+                {recentLibraryItems.map((item) => {
+                  const asset = item.kind === "asset" ? item.asset : undefined;
+                  const playlist =
+                    item.kind === "playlist" ? item.playlist : undefined;
+                  const name = asset?.name ?? playlist?.name ?? "";
+                  return (
+                    <button
+                      key={`${item.kind}-${asset?.id ?? playlist?.id}`}
+                      draggable
+                      onDragStart={(event) => {
+                        event.dataTransfer.effectAllowed = "copy";
+                        event.dataTransfer.setData(
+                          "application/x-tilecast-layout-library",
+                          JSON.stringify({
+                            kind: item.kind,
+                            id: asset?.id ?? playlist?.id,
+                          }),
+                        );
+                      }}
+                      onClick={() => addLibraryItem(item)}
+                      title={`Add ${name}`}
+                    >
+                      <span className="layout-content-shelf__preview">
+                        {asset?.thumbnailUrl ? (
+                          <img src={asset.thumbnailUrl} alt="" />
+                        ) : asset?.type === "widget" ? (
+                          <AppWindow size={18} />
+                        ) : playlist ? (
+                          <ListVideo size={18} />
+                        ) : (
+                          <ImageIcon size={18} />
+                        )}
+                      </span>
+                      <span>
+                        <strong>{name}</strong>
+                        <small>
+                          {playlist
+                            ? `${playlist.itemCount} items`
+                            : (asset?.widget?.provider ?? asset?.type)}
+                        </small>
+                      </span>
+                    </button>
                   );
-                }}
-                onClick={() => addLibraryItem(item)}
-                title={`Add ${name}`}
-              >
-                <span className="layout-content-shelf__preview">
-                  {asset?.thumbnailUrl ? (
-                    <img src={asset.thumbnailUrl} alt="" />
-                  ) : asset?.type === "widget" ? (
-                    <AppWindow size={18} />
-                  ) : playlist ? (
-                    <ListVideo size={18} />
-                  ) : (
-                    <ImageIcon size={18} />
-                  )}
-                </span>
-                <span>
-                  <strong>{name}</strong>
-                  <small>
-                    {playlist
-                      ? `${playlist.itemCount} items`
-                      : (asset?.widget?.provider ?? asset?.type)}
-                  </small>
-                </span>
-              </button>
-            );
-          })}
-          {!recentLibraryItems.length && (
-            <p className="layout-content-shelf__empty">
-              No recently created {librarySection}.
-            </p>
+                })}
+                {!recentLibraryItems.length && (
+                  <p className="layout-content-shelf__empty">
+                    No recently created {sidebarSection}.
+                  </p>
+                )}
+              </div>
+            </>
           )}
-        </div>
-        <div className="layout-panel-heading">
-          <strong>Layers</strong>
-          <span>{document.placements.length}</span>
-        </div>
-        <div className="layout-layers">
-          {[...document.placements]
-            .sort((a, b) => b.layer - a.layer)
-            .map((item) => (
-              <button
-                key={item.id}
-                className={selection.has(item.id) ? "is-selected" : ""}
-                onClick={(event) =>
-                  setSelection(
-                    new Set(
-                      event.shiftKey ? [...selection, item.id] : [item.id],
-                    ),
-                  )
-                }
-              >
-                <span className="layout-layer-icon">
-                  {item.primitive?.kind === "text" ? (
-                    <Type size={14} />
-                  ) : item.primitive?.kind === "group" ? (
-                    <Group size={14} />
-                  ) : (
-                    <BoxSelect size={14} />
-                  )}
-                </span>
-                <span>{item.name}</span>
-                <span className="layout-layer-actions">
-                  <span
-                    role="button"
-                    tabIndex={0}
-                    title={item.visible ? "Hide" : "Show"}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      update((d) => {
-                        const target = d.placements.find(
-                          (x) => x.id === item.id,
-                        );
-                        if (target) target.visible = !target.visible;
-                      });
-                    }}
-                  >
-                    {item.visible ? <Eye size={13} /> : <EyeOff size={13} />}
-                  </span>
-                  <span
-                    role="button"
-                    tabIndex={0}
-                    title={item.locked ? "Unlock" : "Lock"}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      update((d) => {
-                        const target = d.placements.find(
-                          (x) => x.id === item.id,
-                        );
-                        if (target) target.locked = !target.locked;
-                      });
-                    }}
-                  >
-                    {item.locked ? <Lock size={13} /> : <LockOpen size={13} />}
-                  </span>
-                </span>
-              </button>
-            ))}
+          {sidebarSection === "elements" && (
+            <>
+              <div className="layout-panel-heading">
+                <strong>Elements</strong>
+              </div>
+              <div className="layout-add-grid">
+                <button onClick={() => addPrimitive("text")}>
+                  <Type size={20} />
+                  Text
+                </button>
+                <button onClick={() => addPrimitive("rectangle")}>
+                  <RectangleHorizontal size={20} />
+                  Rectangle
+                </button>
+                <button onClick={() => addPrimitive("circle")}>
+                  <Circle size={20} />
+                  Circle
+                </button>
+                <button onClick={() => addPrimitive("line")}>
+                  <Minus size={20} />
+                  Line
+                </button>
+              </div>
+            </>
+          )}
+          {sidebarSection === "layers" && (
+            <>
+              <div className="layout-panel-heading">
+                <strong>Layers</strong>
+                <span>{document.placements.length}</span>
+              </div>
+              <div className="layout-layers">
+                {[...document.placements]
+                  .sort((a, b) => b.layer - a.layer)
+                  .map((item) => (
+                    <button
+                      key={item.id}
+                      className={selection.has(item.id) ? "is-selected" : ""}
+                      onClick={(event) =>
+                        setSelection(
+                          new Set(
+                            event.shiftKey
+                              ? [...selection, item.id]
+                              : [item.id],
+                          ),
+                        )
+                      }
+                    >
+                      <span className="layout-layer-icon">
+                        {item.primitive?.kind === "text" ? (
+                          <Type size={14} />
+                        ) : item.primitive?.kind === "group" ? (
+                          <Group size={14} />
+                        ) : (
+                          <BoxSelect size={14} />
+                        )}
+                      </span>
+                      <span>{item.name}</span>
+                      <span className="layout-layer-actions">
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          title={item.visible ? "Hide" : "Show"}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            update((d) => {
+                              const target = d.placements.find(
+                                (x) => x.id === item.id,
+                              );
+                              if (target) target.visible = !target.visible;
+                            });
+                          }}
+                        >
+                          {item.visible ? (
+                            <Eye size={13} />
+                          ) : (
+                            <EyeOff size={13} />
+                          )}
+                        </span>
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          title={item.locked ? "Unlock" : "Lock"}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            update((d) => {
+                              const target = d.placements.find(
+                                (x) => x.id === item.id,
+                              );
+                              if (target) target.locked = !target.locked;
+                            });
+                          }}
+                        >
+                          {item.locked ? (
+                            <Lock size={13} />
+                          ) : (
+                            <LockOpen size={13} />
+                          )}
+                        </span>
+                      </span>
+                    </button>
+                  ))}
+              </div>
+              {primary && (
+                <div className="layout-layer-inspector">
+                  <div className="layout-panel-heading">
+                    <strong>Selected layer</strong>
+                    <span>{selected.length} selected</span>
+                  </div>
+                  <PlacementInspector
+                    item={primary}
+                    content={
+                      primary.widgetId
+                        ? contentByID.get(primary.widgetId)
+                        : primary.assetId
+                          ? contentByID.get(primary.assetId)
+                          : undefined
+                    }
+                    playlist={
+                      primary.playlistId
+                        ? playlistByID.get(primary.playlistId)
+                        : undefined
+                    }
+                    dataSources={dataSources}
+                    update={(change) => mutateSelected(change)}
+                    duplicate={duplicateSelection}
+                    group={groupSelection}
+                    ungroup={ungroupSelection}
+                    canGroup={selection.size > 1}
+                  />
+                </div>
+              )}
+            </>
+          )}
+          {sidebarSection === "settings" && (
+            <>
+              <div className="layout-panel-heading">
+                <strong>Layout settings</strong>
+              </div>
+              <CanvasInspector document={document} update={update} />
+              {(layoutQuery.data?.usage.screens.length ||
+                layoutQuery.data?.usage.schedules.length) && (
+                <div className="content-usage-list">
+                  <h3>Used in</h3>
+                  {layoutQuery.data.usage.screens.map((screen) => (
+                    <a key={screen.id} href={`/screens/${screen.id}`}>
+                      <span>{screen.name}</span>
+                      <small>Screen</small>
+                    </a>
+                  ))}
+                  {layoutQuery.data.usage.schedules.map((schedule) => (
+                    <a key={schedule.id} href={`/schedules/${schedule.id}`}>
+                      <span>{schedule.name}</span>
+                      <small>Schedule</small>
+                    </a>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
         </div>
       </aside>
       <main className="layout-stage">
@@ -1339,57 +1429,6 @@ export function LayoutEditorPage() {
           </div>
         </div>
       </main>
-      <aside className="layout-editor-right">
-        <div className="layout-panel-heading">
-          <strong>Inspector</strong>
-          <span>
-            {selected.length ? `${selected.length} selected` : "Canvas"}
-          </span>
-        </div>
-        {primary ? (
-          <PlacementInspector
-            item={primary}
-            content={
-              primary.widgetId
-                ? contentByID.get(primary.widgetId)
-                : primary.assetId
-                  ? contentByID.get(primary.assetId)
-                  : undefined
-            }
-            playlist={
-              primary.playlistId
-                ? playlistByID.get(primary.playlistId)
-                : undefined
-            }
-            dataSources={dataSources}
-            update={(change) => mutateSelected(change)}
-            duplicate={duplicateSelection}
-            group={groupSelection}
-            ungroup={ungroupSelection}
-            canGroup={selection.size > 1}
-          />
-        ) : (
-          <CanvasInspector document={document} update={update} />
-        )}
-        {(layoutQuery.data?.usage.screens.length ||
-          layoutQuery.data?.usage.schedules.length) && (
-          <div className="content-usage-list">
-            <h3>Used in</h3>
-            {layoutQuery.data.usage.screens.map((screen) => (
-              <a key={screen.id} href={`/screens/${screen.id}`}>
-                <span>{screen.name}</span>
-                <small>Screen</small>
-              </a>
-            ))}
-            {layoutQuery.data.usage.schedules.map((schedule) => (
-              <a key={schedule.id} href={`/schedules/${schedule.id}`}>
-                <span>{schedule.name}</span>
-                <small>Schedule</small>
-              </a>
-            ))}
-          </div>
-        )}
-      </aside>
       {preview && (
         <div className="layout-preview-overlay" role="dialog" aria-modal="true">
           <div className="layout-preview-toolbar">

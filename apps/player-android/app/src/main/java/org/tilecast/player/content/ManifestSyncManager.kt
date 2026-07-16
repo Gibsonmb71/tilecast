@@ -50,7 +50,7 @@ class ManifestSyncManager(
     suspend fun loadActive(): PreparedContent? {
         val stored = database.manifests().active() ?: return null
         val manifest = runCatching { api.decodeManifest(stored.rawJson) }.getOrNull() ?: return null
-        if (manifest.schemaVersion !in setOf(11,12)) return null
+        if (manifest.schemaVersion !in setOf(11,12,13)) return null
         val records = database.cachedAssets().all().associateBy { it.variantId }
         val local = records.filterValues { it.downloadStatus == "ready" && File(it.localPath).let { file -> file.exists() && file.length() == it.expectedFileSize } }.mapValues { it.value.localPath }
         val required = records.values.filter { it.requiredByActiveManifest }
@@ -159,7 +159,7 @@ class ManifestSyncManager(
     private fun finalFile(asset: ManifestAsset) = File(mediaDirectory(), "${asset.variantId}.${extension(asset.mimeType)}")
     private fun extension(mime: String) = when (mime) { "video/mp4" -> "mp4"; "image/png" -> "png"; "image/webp" -> "webp"; "image/gif" -> "gif"; else -> "jpg" }
 	private fun validateManifest(manifest: PlayerManifest, screenId: String) {
-		require(manifest.schemaVersion in setOf(11,12) && manifest.mode in setOf("single-zone", "presentation") && manifest.screenId == screenId) { "Manifest validation failed" }
+		require(manifest.schemaVersion in setOf(11,12,13) && manifest.mode in setOf("single-zone", "presentation") && manifest.screenId == screenId) { "Manifest validation failed" }
 		val assets = manifest.assets.associateBy { it.variantId }
 		val websites = manifest.websites.associateBy { it.assetId }
 		val widgets = manifest.widgets.associateBy { it.assetId }
@@ -177,7 +177,7 @@ class ManifestSyncManager(
 		playlists.flatMap { it.items }.forEach { item ->
 			when (item.assetType) {
 				"website" -> require(websites[item.assetId] != null && (item.durationMs ?: 0) > 0 && item.deliveryPolicy == "stream") { "Website item is invalid" }
-				"widget" -> require(widgets[item.assetId]?.provider in setOf("website", "youtube", "clock", "date", "qrcode", "countdown", "ticker", "menu", "list", "table", "agenda", "metric", "cards", "weather") && item.deliveryPolicy == "stream") { "Widget item is invalid" }
+				"widget" -> require((if(manifest.schemaVersion==13) widgets[item.assetId]?.presentation!=null else widgets[item.assetId]?.provider in setOf("website", "youtube", "clock", "date", "qrcode", "countdown", "ticker", "menu", "list", "table", "agenda", "metric", "cards", "weather")) && item.deliveryPolicy == "stream") { "Widget item is invalid" }
 				else -> require(item.variantId != null && assets[item.variantId]?.assetId == item.assetId) { "Manifest item references an unavailable variant" }
 			}
 			require(item.fitMode in listOf("contain", "cover", "stretch") && item.transition in listOf("none", "fade") && item.deliveryPolicy in listOf("download", "stream", "automatic") && item.volume in 0f..1f) { "Manifest item settings are invalid" }
@@ -214,6 +214,11 @@ class ManifestSyncManager(
 			require(data.records.all{it.id.length<=80&&it.values.size<=20&&it.values.values.all{value->value.length<=500}})
 			data.dateSelection?.let{selection->require(selection.mode in setOf("today","tomorrow","next_available","current_week","custom_range"));java.time.ZoneId.of(selection.timezone)}
 		}
+		if(manifest.schemaVersion==13){
+			manifest.dataSources.forEach{source->validateDataDocument(source.dataDocument?:error("Data document is missing"))}
+			manifest.widgets.forEach{widget->validatePresentation(widget.presentation?:error("Presentation is missing"),dataSources)}
+			return
+		}
 		manifest.widgets.forEach { widget -> when(widget.provider){
 			"clock"->{val config=Json.decodeFromJsonElement<ClockWidgetConfig>(widget.configuration);java.time.ZoneId.of(config.timezone);require(config.format in setOf("12","24"))}
 			"date"->{val config=Json.decodeFromJsonElement<DateWidgetConfig>(widget.configuration);java.time.ZoneId.of(config.timezone);require(config.format in setOf("full","long","medium","short"))}
@@ -225,5 +230,54 @@ class ManifestSyncManager(
 			"cards"->{val config=Json.decodeFromJsonElement<CardsWidgetConfig>(widget.configuration);require(dataSources[config.dataSourceId]!=null&&config.titleField.isNotBlank()&&config.columns in 1..4&&config.maximumItems in 1..12)}
 			"weather"->{val config=Json.decodeFromJsonElement<WeatherWidgetConfig>(widget.configuration);require(dataSources[config.dataSourceId]?.provider=="weather"&&config.forecastDays in 0..7)}
 		}}
+	}
+
+	private fun validateDataDocument(document:org.tilecast.player.network.DataDocument){
+		require(document.schemaVersion==1&&document.datasets.size<=16)
+		document.datasets.forEach{dataset->
+			require(dataset.id.length in 1..80&&dataset.kind in setOf("scalar","records","time_series","list","object"))
+			require(dataset.fields.size<=16&&dataset.records.size<=2000&&dataset.points.size<=5000)
+			require(dataset.fields.map{it.key}.toSet().size==dataset.fields.size)
+			require(dataset.fields.all{it.type in setOf("text","number","integer","percent","currency","boolean","date","datetime","duration","url","asset","null")})
+			dataset.records.forEach{record->require(record.id.length in 1..80&&record.values.size<=16);record.values.values.forEach{validateValue(it,0)}}
+			dataset.scalar?.let{validateValue(it,0)};dataset.value?.let{validateValue(it,0)}
+			dataset.points.forEach{point->Instant.parse(point.at);validateValue(point.value,0)}
+			dataset.dateSelection?.let{selection->require(selection.field.length<=80&&selection.mode in setOf("today","tomorrow","next_available","current_week","custom_range"));java.time.ZoneId.of(selection.timezone)}
+		}
+	}
+
+	private fun validateValue(value:org.tilecast.player.network.DocumentValue,depth:Int){
+		require(depth<=6&&value.kind in setOf("text","number","integer","percent","currency","boolean","date","datetime","duration","url","asset","null","list","object"))
+		value.text?.let{require(it.length<=4096)}
+		value.date?.let{java.time.LocalDate.parse(it)}
+		value.datetime?.let{Instant.parse(it)}
+		value.url?.let{require(android.net.Uri.parse(it).scheme in setOf("http","https"))}
+		require(value.list.size<=200&&value.objectValue.size<=64)
+		value.list.forEach{validateValue(it,depth+1)};value.objectValue.values.forEach{validateValue(it,depth+1)}
+	}
+
+	private fun validatePresentation(presentation:org.tilecast.player.network.WidgetPresentation,dataSources:Map<String,org.tilecast.player.network.ManifestDataSource>){
+		require(presentation.schemaVersion==1&&presentation.kind in setOf("native","web"))
+		presentation.requiredCapabilities.forEach{(capability,version)->
+			val supported=if(capability=="web.remote")PresentationCapabilities.webRuntimeVersion else PresentationCapabilities.native[capability]?:0
+			require(supported>=version){"Missing presentation capability $capability@$version"}
+		}
+		if(presentation.kind=="native"){
+			val root=presentation.native?.root?:error("Native root is missing")
+			var nodes=0;var animations=0
+			fun visit(value:org.tilecast.player.network.PresentationNode,depth:Int){
+				require(depth<=24);nodes++;require(nodes<=500)
+				require(value.type in setOf("surface","box","row","column","stack","grid","spacer","divider","text","icon","asset_image","badge","progress","qr_code","marquee","line_chart","bar_chart","donut_chart","repeat","conditional","grouped_sections"))
+				if(value.type=="marquee")animations++
+				value.repeat?.let{repeat->require(repeat.limit in 1..200&&repeat.dataset.substringBefore(':') in dataSources)}
+				value.children.forEach{visit(it,depth+1)}
+			}
+			visit(root,0);require(animations<=4)
+		}else{
+			val web=presentation.web?:error("Web descriptor is missing")
+			require(web.mode in setOf("remote","bundle")&&web.allowedHosts.size<=25&&web.loadTimeoutSeconds in 1..120&&web.warmSeconds in 0..300)
+			if(web.mode=="remote")require(web.onlineOnly&&android.net.Uri.parse(web.url).scheme=="https")
+			else require(web.packageSize in 1..PresentationCapabilities.webBundleLimitBytes&&Regex("^[0-9a-f]{64}$").matches(web.integritySha256))
+		}
 	}
 }

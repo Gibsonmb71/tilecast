@@ -1,6 +1,7 @@
 package org.tilecast.player.network
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerialName
 
 @Serializable data class DataEnvelope<T>(val data: T)
 @Serializable data class ErrorEnvelope(val error: ApiErrorBody? = null)
@@ -13,7 +14,17 @@ import kotlinx.serialization.Serializable
 @Serializable data class EnrollmentRequest(val pairingSessionId: String, val enrollmentToken: String)
 @Serializable data class EnrollmentResult(val screenId: String, val screenName: String, val deviceCredential: String)
 @Serializable data class PreviewSession(val active: Boolean = false, val expiresAt: String? = null, val captureIntervalSeconds: Int = 20, val captureNow: Boolean = false)
-@Serializable data class HeartbeatRequest(val screenWidth: Int, val screenHeight: Int, val availableStorageBytes: Long? = null, val uptimeSeconds: Long? = null, val playerVersion: String,val playerVersionCode:Long?=null,val androidSdk:Int?=null,val installerSource:String?=null,val installPermissionStatus:String?=null,
+object PlayerPresentationSupport {
+    val schemas = listOf(1)
+    val native = mapOf(
+        "layout.surface" to 1, "layout.box" to 1, "layout.row" to 1, "layout.column" to 1, "layout.stack" to 1, "layout.grid" to 1, "layout.spacer" to 1, "layout.divider" to 1,
+        "content.text" to 1, "content.icon" to 1, "content.asset_image" to 1, "content.badge" to 1, "content.progress" to 1, "content.qr_code" to 1, "content.marquee" to 1, "content.line_chart" to 1, "content.bar_chart" to 1, "content.donut_chart" to 1,
+        "collection.repeat" to 1, "collection.conditional" to 1, "collection.grouped_sections" to 1, "binding.core" to 1, "format.typed" to 1, "selection.relative_date" to 1,
+    )
+    const val webRuntimeVersion = 1
+    const val webBundleLimitBytes = 20L * 1024 * 1024
+}
+@Serializable data class HeartbeatRequest(val screenWidth: Int, val screenHeight: Int, val availableStorageBytes: Long? = null, val uptimeSeconds: Long? = null, val playerVersion: String,val playerVersionCode:Long?=null,val presentationSchemaVersions:List<Int> = PlayerPresentationSupport.schemas,val nativePresentationCapabilities:Map<String,Int> = PlayerPresentationSupport.native,val webRuntimeVersion:Int=PlayerPresentationSupport.webRuntimeVersion,val webBundleLimitBytes:Long=PlayerPresentationSupport.webBundleLimitBytes,val androidSdk:Int?=null,val installerSource:String?=null,val installPermissionStatus:String?=null,
     val activeManifestVersion: Long? = null, val pendingManifestVersion: Long? = null, val assignedPlaylistId: String? = null,
     val currentItemId: String? = null, val currentAssetId: String? = null, val playbackState: String? = null,
     val downloadQueueCount: Int? = null, val downloadedBytes: Long? = null, val requiredBytes: Long? = null,
@@ -37,8 +48,23 @@ import kotlinx.serialization.Serializable
 @Serializable data class ManifestSchedule(val id:String,val playlistId:String?=null,val type:String,val timezone:String,val priority:Int,val specificity:Int,val layoutId:String?=null,val startDate:String?=null,val endDate:String?=null,val oneTimeStart:String?=null,val oneTimeEnd:String?=null,val dailyStart:String?=null,val dailyEnd:String?=null,val daysOfWeek:List<Int> = emptyList())
 @Serializable data class ManifestItem(val id: String, val assetId: String, val variantId: String?=null,val assetType:String="", val durationMs: Long? = null, val fitMode: String, val transition: String, val audioEnabled: Boolean, val volume: Float, val videoStartOffsetMs: Long? = null, val videoEndOffsetMs: Long? = null, val deliveryPolicy: String)
 @Serializable data class ManifestWebsite(val assetId:String,val name:String,val url:String,val allowedHosts:List<String>,val javascriptEnabled:Boolean,val domStorageEnabled:Boolean,val cookiePolicy:String,val reloadPolicy:String,val refreshIntervalSeconds:Int?=null,val loadTimeoutSeconds:Int,val zoomPercent:Int,val scrollX:Int,val scrollY:Int,val customUserAgent:String="",val backgroundColor:String="#0E141B",val failureBehavior:String,val fallbackImageAssetId:String?=null,val fallbackVariantId:String?=null)
-@Serializable data class ManifestWidget(val assetId:String,val name:String,val provider:String,val configVersion:Int,val configuration:kotlinx.serialization.json.JsonObject)
-@Serializable data class ManifestDataSource(val id:String,val name:String,val provider:String,val configVersion:Int,val configuration:kotlinx.serialization.json.JsonObject)
+@Serializable data class ManifestWidget(val assetId:String,val name:String,val provider:String="",val configVersion:Int=0,val configuration:kotlinx.serialization.json.JsonObject=kotlinx.serialization.json.buildJsonObject{},val presentation:WidgetPresentation?=null)
+@Serializable data class ManifestDataSource(val id:String,val name:String,val provider:String="",val configVersion:Int=0,val configuration:kotlinx.serialization.json.JsonObject=kotlinx.serialization.json.buildJsonObject{},val dataDocument:DataDocument?=null)
+@Serializable data class DataDocument(val schemaVersion:Int,val datasets:List<DocumentDataset> = emptyList())
+@Serializable data class DocumentDataset(val id:String,val kind:String,val fields:List<DocumentField> = emptyList(),val scalar:DocumentValue?=null,val records:List<DocumentRecord> = emptyList(),val points:List<DocumentPoint> = emptyList(),val value:DocumentValue?=null,val cache:DocumentCacheState=DocumentCacheState(),val attribution:String="",val timezone:String="",val dateSelection:DocumentDateSelection?=null,val units:Map<String,String> = emptyMap())
+@Serializable data class DocumentField(val key:String,val label:String,val type:String,val unit:String="",val currency:String="")
+@Serializable data class DocumentRecord(val id:String,val values:Map<String,DocumentValue> = emptyMap())
+@Serializable data class DocumentPoint(val at:String,val value:DocumentValue)
+@Serializable data class DocumentValue(val kind:String,val text:String?=null,val number:Double?=null,val integer:Long?=null,val boolean:Boolean?=null,val date:String?=null,val datetime:String?=null,val durationSeconds:Long?=null,val url:String?=null,val assetId:String?=null,val list:List<DocumentValue> = emptyList(),@SerialName("object") val objectValue:Map<String,DocumentValue> = emptyMap())
+@Serializable data class DocumentCacheState(val cachedAt:String?=null,val staleAt:String?=null,val usingCachedData:Boolean=false,val unavailable:Boolean=false,val lastModified:String="",val upstreamExpiry:String?=null)
+@Serializable data class DocumentDateSelection(val field:String,val timezone:String,val mode:String,val customStartDate:String="",val customEndDate:String="",val excludePast:Boolean=false,val noMatchBehavior:String="",val fallbackText:String="")
+@Serializable data class WidgetPresentation(val schemaVersion:Int,val kind:String,val requiredCapabilities:Map<String,Int> = emptyMap(),val native:NativePresentation?=null,val web:WebSandboxPresentation?=null)
+@Serializable data class NativePresentation(val root:PresentationNode)
+@Serializable data class PresentationNode(val id:String="",val type:String,val props:kotlinx.serialization.json.JsonObject=kotlinx.serialization.json.buildJsonObject{},val binding:PresentationBinding?=null,val repeat:PresentationRepeat?=null,val condition:PresentationCondition?=null,val children:List<PresentationNode> = emptyList())
+@Serializable data class PresentationBinding(val source:String,val dataset:String="",val path:String="",val value:String="",val fields:List<String> = emptyList(),val format:String="",val precision:Int?=null,val prefix:String="",val suffix:String="",val fallback:String="",val separator:String="")
+@Serializable data class PresentationRepeat(val dataset:String,val limit:Int)
+@Serializable data class PresentationCondition(val binding:PresentationBinding,val op:String,val value:String="")
+@Serializable data class WebSandboxPresentation(val mode:String,val url:String="",val bundleId:String="",val entryPoint:String="",val integritySha256:String="",val packageSize:Long=0,val downloadPath:String="",val allowedHosts:List<String> = emptyList(),val externalNetworkAccess:Boolean=false,val onlineOnly:Boolean=false,val fallbackBehavior:String="placeholder",val loadTimeoutSeconds:Int=20,val lifecycle:String="destroy_on_hide",val warmSeconds:Int=0)
 @Serializable data class WebsiteSourceConfig(val url:String,val displayUrl:String="",val allowedHosts:List<String>,val javascriptEnabled:Boolean=true,val domStorageEnabled:Boolean=true,val cookiePolicy:String="first_party",val reloadPolicy:String="on_each_activation",val refreshIntervalSeconds:Int?=null,val loadTimeoutSeconds:Int=20,val zoomPercent:Int=100,val scrollX:Int=0,val scrollY:Int=0,val customUserAgent:String="",val backgroundColor:String="#0E141B",val failureBehavior:String="placeholder",val fallbackImageAssetId:String?=null,val fallbackVariantId:String?=null)
 @Serializable data class YouTubeSourceConfig(val url:String,val kind:String="video",val videoId:String?=null,val playlistId:String?=null,val startSeconds:Int=0,val endSeconds:Int?=null,val loop:Boolean=false,val muted:Boolean=false,val volume:Int=100,val captions:Boolean=false,val captionLanguage:String="",val controls:Boolean=false,val failureBehavior:String="placeholder",val fallbackImageAssetId:String?=null,val fallbackVariantId:String?=null,val playlistPlaybackMode:String="until_end",val fixedDurationSeconds:Int?=null)
 @Serializable data class CalendarSourceConfig(val displayMode:String="upcoming",val maxEvents:Int=10,val fields:CalendarFields=CalendarFields(),val timezone:String="UTC",val emptyState:String="No events scheduled",val data:CalendarPreparedData=CalendarPreparedData())

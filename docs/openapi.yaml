@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Tilecast API
-  version: 0.9.0
+  version: 0.10.0
   license:
     name: AGPL-3.0-only
 paths:
@@ -752,6 +752,20 @@ paths:
             Data Source incompatible,
             or a selected field does not exist,
           }
+  /api/v1/provider-catalog:
+    get:
+      operationId: providerCatalog
+      responses:
+        "200":
+          description: Closed Widget and Data Source provider metadata
+  /api/v1/widgets/compile-preview:
+    post:
+      operationId: compileWidgetPreview
+      responses:
+        "200":
+          description: Declarative presentation schema v1 document
+        "400":
+          description: Draft configuration cannot be compiled
   /api/v1/widgets/{id}:
     patch:
       operationId: updateWidget

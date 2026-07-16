@@ -16,8 +16,7 @@ import {
   X,
   Youtube,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import QRCode from "qrcode";
+import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type {
   Asset,
@@ -35,6 +34,8 @@ import type {
   CardsWidgetConfig,
   WeatherWidgetConfig,
   YouTubeConfig,
+  WidgetPresentation,
+  PresentationNode,
 } from "../api/types";
 
 export function WidgetProviderGallery({
@@ -46,6 +47,13 @@ export function WidgetProviderGallery({
   onClose: () => void;
   page?: boolean;
 }) {
+  const catalog = useQuery({
+    queryKey: ["provider-catalog"],
+    queryFn: api.providerCatalog,
+    staleTime: 5 * 60_000,
+  });
+  const widgetProviders =
+    catalog.data?.providers.filter((entry) => entry.role === "widget") ?? [];
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -67,7 +75,12 @@ export function WidgetProviderGallery({
         <header>
           <div>
             <h2 id="source-gallery-title">Create Widget</h2>
-            <p>Choose a built-in Widget provider.</p>
+            <p>
+              Choose a Tilecast provider compiled to the declarative runtime.
+              {widgetProviders.length > 0
+                ? ` ${widgetProviders.filter((entry) => entry.presentationKind === "native").length} native and ${widgetProviders.filter((entry) => entry.presentationKind === "web").length} sandboxed web providers are available.`
+                : ""}
+            </p>
           </div>
           <button className="icon-button" aria-label="Close" onClick={onClose}>
             <X size={18} />
@@ -300,6 +313,14 @@ export function NativeAppEditor({
   page?: boolean;
 }) {
   const queryClient = useQueryClient();
+  const catalog = useQuery({
+    queryKey: ["provider-catalog"],
+    queryFn: api.providerCatalog,
+    staleTime: 5 * 60_000,
+  });
+  const providerRuntime = catalog.data?.providers.find(
+    (entry) => entry.role === "widget" && entry.id === provider,
+  );
   const [name, setName] = useState(asset?.name ?? "");
   const [description, setDescription] = useState(asset?.description ?? "");
   const [configuration, setConfiguration] = useState<NativeConfig>(
@@ -365,6 +386,16 @@ export function NativeAppEditor({
     queryFn: () => api.previewSavedDataSource(selectedDataSourceId),
     enabled: Boolean(selectedDataSourceId),
   });
+  const compiledPreview = useQuery({
+    queryKey: ["compiled-widget-preview", provider, configuration],
+    queryFn: () =>
+      api.compileWidgetPreview(
+        provider,
+        configuration as Parameters<typeof api.compileWidgetPreview>[1],
+        csrf,
+      ),
+    retry: false,
+  });
   const availableFields = selectedDataSource.data?.fields ?? [];
   const save = useMutation({
     mutationFn: () => {
@@ -399,7 +430,11 @@ export function NativeAppEditor({
                 : provider[0]!.toUpperCase() + provider.slice(1)}{" "}
               Widget
             </h2>
-            <p>Reusable native Widget configuration.</p>
+            <p>
+              Reusable Widget configuration. Runtime:{" "}
+              <strong>{providerRuntime?.presentationKind ?? "native"}</strong>.
+              The Player interprets its compiled presentation document.
+            </p>
           </div>
           <button className="icon-button" aria-label="Close" onClick={onClose}>
             <X size={18} />
@@ -1607,35 +1642,15 @@ export function NativeAppEditor({
               padding: `${configuration.contentPadding ?? 10}%`,
             }}
           >
-            {provider === "clock" ? (
-              new Intl.DateTimeFormat(undefined, {
-                timeStyle: (configuration as ClockWidgetConfig).showSeconds
-                  ? "medium"
-                  : "short",
-                timeZone: (configuration as ClockWidgetConfig).timezone,
-              }).format(new Date())
-            ) : provider === "date" ? (
-              new Intl.DateTimeFormat(undefined, {
-                dateStyle: (configuration as DateWidgetConfig).format,
-                timeZone: (configuration as DateWidgetConfig).timezone,
-              }).format(new Date())
-            ) : provider === "qrcode" ? (
-              <QRCodePreview
-                configuration={configuration as QRCodeWidgetConfig}
+            {compiledPreview.data ? (
+              <DeclarativePresentationPreview
+                presentation={compiledPreview.data}
+                source={sourcePreview.data}
               />
-            ) : provider === "countdown" ? (
-              (configuration as CountdownWidgetConfig).label ||
-              "Countdown preview"
-            ) : sourcePreview.isLoading ? (
-              "Loading Data Source preview…"
-            ) : sourcePreview.data ? (
-              <ul className="native-app-preview__records">
-                {previewLines(sourcePreview.data).map((line, index) => (
-                  <li key={`${line}-${index}`}>{line}</li>
-                ))}
-              </ul>
+            ) : compiledPreview.isLoading || sourcePreview.isLoading ? (
+              "Compiling presentation preview…"
             ) : (
-              "Select a Data Source to preview real records."
+              "The current configuration cannot be compiled yet."
             )}
           </div>
           {save.error && <p className="form-error">{save.error.message}</p>}
@@ -1656,46 +1671,160 @@ export function NativeAppEditor({
   );
 }
 
-function previewLines(value: unknown): string[] {
+function DeclarativePresentationPreview({
+  presentation,
+  source,
+}: {
+  presentation: WidgetPresentation;
+  source: unknown;
+}) {
+  if (presentation.kind === "web") {
+    return (
+      <div>
+        <strong>Sandboxed web</strong>
+        <br />
+        {presentation.web?.url ?? "Local signed bundle"}
+        <br />
+        <small>{presentation.web?.lifecycle ?? "destroy_on_hide"}</small>
+      </div>
+    );
+  }
+  const records = previewRecordMaps(source);
+  const root = presentation.native?.root;
+  return root ? (
+    <PreviewNode node={root} records={records} />
+  ) : (
+    "Presentation root is unavailable."
+  );
+}
+
+function PreviewNode({
+  node,
+  records,
+  record,
+}: {
+  node: PresentationNode;
+  records: Record<string, string>[];
+  record?: Record<string, string>;
+}) {
+  const props = node.props ?? {};
+  const binding = node.binding;
+  const resolve = () => {
+    if (!binding) return "";
+    if (binding.source === "literal") return binding.value ?? "";
+    if (binding.source === "repeat")
+      return record?.[binding.path ?? ""] ?? binding.fallback ?? "";
+    if (binding.source === "dataset")
+      return records
+        .map((item) =>
+          (binding.fields ?? [])
+            .map((field) => item[field])
+            .filter(Boolean)
+            .join(" "),
+        )
+        .filter(Boolean)
+        .join(binding.separator ?? " ");
+    if (binding.source === "environment") {
+      const format = binding.format?.split(":") ?? [];
+      const timezone = format.at(-1) || "UTC";
+      if (format[0] === "date")
+        return new Intl.DateTimeFormat(undefined, {
+          dateStyle:
+            (format[1] as "full" | "long" | "medium" | "short") ?? "full",
+          timeZone: timezone,
+        }).format(new Date());
+      if (format[0] === "time")
+        return new Intl.DateTimeFormat(undefined, {
+          timeStyle: format[2] === "true" ? "medium" : "short",
+          hour12: format[1] !== "24",
+          timeZone: timezone,
+        }).format(new Date());
+      if (format[0] === "countdown") return "12d 4h 32m";
+    }
+    return binding.fallback ?? "";
+  };
+  if (node.type === "repeat") {
+    return (
+      <>
+        {records.slice(0, node.repeat?.limit ?? 20).map((item, index) => (
+          <div key={item.id ?? index}>
+            {node.children?.map((child, childIndex) => (
+              <PreviewNode
+                key={child.id ?? childIndex}
+                node={child}
+                records={records}
+                record={item}
+              />
+            ))}
+          </div>
+        ))}
+      </>
+    );
+  }
+  if (node.type === "qr_code")
+    return <div aria-label="QR Code preview">▦ {resolve()}</div>;
+  if (["text", "badge", "marquee"].includes(node.type))
+    return (
+      <span className={`presentation-preview__${node.type}`}>{resolve()}</span>
+    );
+  const direction = node.type === "row" ? "row" : "column";
+  return (
+    <div
+      className={`presentation-preview__${node.type}`}
+      style={{
+        display: "flex",
+        flexDirection: direction,
+        gap: `${Number(props.gap ?? 8)}px`,
+        background:
+          typeof props.backgroundColor === "string"
+            ? props.backgroundColor
+            : undefined,
+        padding: `${Number(props.padding ?? 0)}px`,
+      }}
+    >
+      {node.children?.map((child, index) => (
+        <PreviewNode
+          key={child.id ?? index}
+          node={child}
+          records={records}
+          record={record}
+        />
+      ))}
+    </div>
+  );
+}
+
+function previewRecordMaps(value: unknown): Record<string, string>[] {
   if (!value || typeof value !== "object") return [];
   const root = value as Record<string, unknown>;
-  const typedRecords = Array.isArray(root.records) ? root.records : undefined;
-  if (typedRecords) {
-    return typedRecords.slice(0, 5).map((record) => {
-      if (!record || typeof record !== "object") return "";
-      const values = (record as Record<string, unknown>).values;
-      if (!values || typeof values !== "object") return "";
-      return Object.values(values as Record<string, unknown>)
-        .filter((item): item is string => typeof item === "string" && !!item)
-        .slice(0, 4)
-        .join(" · ");
-    });
-  }
-  const configuration = root.configuration;
-  if (!configuration || typeof configuration !== "object") return [];
-  const data = (configuration as Record<string, unknown>).data;
-  if (!data || typeof data !== "object") return [];
-  const records = (data as Record<string, unknown>).records;
-  if (Array.isArray(records)) {
-    return records.slice(0, 5).map((record) => {
-      if (!record || typeof record !== "object") return "";
-      const item = record as Record<string, unknown>;
-      return [item.title, item.subtitle, item.date]
-        .filter((part): part is string => typeof part === "string" && !!part)
-        .join(" · ");
-    });
-  }
-  const events = (data as Record<string, unknown>).events;
-  if (Array.isArray(events)) {
-    return events.slice(0, 5).map((event) => {
-      if (!event || typeof event !== "object") return "";
-      const item = event as Record<string, unknown>;
-      return [item.start, item.title, item.location]
-        .filter((part): part is string => typeof part === "string" && !!part)
-        .join(" · ");
-    });
-  }
-  return [];
+  const direct = Array.isArray(root.records) ? root.records : undefined;
+  const configuration =
+    root.configuration && typeof root.configuration === "object"
+      ? (root.configuration as Record<string, unknown>)
+      : undefined;
+  const data =
+    configuration?.data && typeof configuration.data === "object"
+      ? (configuration.data as Record<string, unknown>)
+      : undefined;
+  const records = direct ?? (Array.isArray(data?.records) ? data.records : []);
+  return records.slice(0, 12).map((item, index) => {
+    if (!item || typeof item !== "object") return { id: String(index) };
+    const record = item as Record<string, unknown>;
+    const values =
+      record.values && typeof record.values === "object"
+        ? (record.values as Record<string, unknown>)
+        : record;
+    return Object.fromEntries(
+      Object.entries(values).map(([key, entry]) => [
+        key,
+        typeof entry === "string" ||
+        typeof entry === "number" ||
+        typeof entry === "boolean"
+          ? String(entry)
+          : "",
+      ]),
+    );
+  });
 }
 
 function DataSourceSelect({
@@ -1761,34 +1890,6 @@ function FieldSelect({
         ))}
       </Select>
     </label>
-  );
-}
-
-function QRCodePreview({
-  configuration,
-}: {
-  configuration: QRCodeWidgetConfig;
-}) {
-  const canvas = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    if (!canvas.current || !configuration.value) return;
-    void QRCode.toCanvas(canvas.current, configuration.value, {
-      width: 220,
-      margin: 2,
-      errorCorrectionLevel: { low: "L", medium: "M", quartile: "Q", high: "H" }[
-        configuration.errorCorrection
-      ] as "L" | "M" | "Q" | "H",
-      color: {
-        dark: configuration.foregroundColor,
-        light: configuration.backgroundColor,
-      },
-    });
-  }, [configuration]);
-  return (
-    <>
-      <canvas ref={canvas} aria-label="QR Code preview" />
-      {configuration.label && <small>{configuration.label}</small>}
-    </>
   );
 }
 

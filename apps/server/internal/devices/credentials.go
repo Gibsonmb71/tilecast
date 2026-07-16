@@ -100,6 +100,14 @@ func (s *Service) Heartbeat(ctx context.Context, principal DevicePrincipal, hear
 	if len(heartbeat.CommissioningState) > 40 || len(heartbeat.CommissioningStep) > 80 || len(heartbeat.UpdateReadiness) > 40 || len(heartbeat.SelfTestResult) > 120 || heartbeat.BootAttemptCount != nil && (*heartbeat.BootAttemptCount < 0 || *heartbeat.BootAttemptCount > 1000) {
 		return errors.New("heartbeat reliability metadata is invalid")
 	}
+	if len(heartbeat.PresentationSchemaVersions) > 8 || len(heartbeat.NativePresentationCapabilities) > 64 || heartbeat.WebRuntimeVersion < 0 || heartbeat.WebBundleLimitBytes < 0 {
+		return errors.New("heartbeat presentation capabilities are invalid")
+	}
+	for capability, version := range heartbeat.NativePresentationCapabilities {
+		if len(capability) < 1 || len(capability) > 80 || version < 1 || version > 100 {
+			return errors.New("heartbeat presentation capabilities are invalid")
+		}
+	}
 	ip := remoteAddress(address)
 	_, err := s.db.Exec(ctx, `UPDATE screens SET screen_width=$2,screen_height=$3,available_storage_bytes=$4,uptime_seconds=$5,player_version=COALESCE(NULLIF($6,''),player_version),last_heartbeat_at=now(),last_known_ip=$7,updated_at=now() WHERE id=$1`, principal.ScreenID, heartbeat.ScreenWidth, heartbeat.ScreenHeight, heartbeat.AvailableStorageBytes, heartbeat.UptimeSeconds, heartbeat.PlayerVersion, addressString(ip))
 	if err != nil {
@@ -107,6 +115,7 @@ func (s *Service) Heartbeat(ctx context.Context, principal DevicePrincipal, hear
 	}
 	_, _ = s.db.Exec(ctx, `INSERT INTO screen_player_status(screen_id) VALUES($1) ON CONFLICT DO NOTHING`, principal.ScreenID)
 	_, _ = s.db.Exec(ctx, `UPDATE screen_player_status SET player_version_code=$2,android_sdk=$3,installer_source=NULLIF($4,''),install_permission_status=NULLIF($5,''),current_update_deployment_id=$6,update_state=NULLIF($7,''),update_downloaded_bytes=$8,update_expected_bytes=$9,update_error=NULLIF($10,'') WHERE screen_id=$1`, principal.ScreenID, heartbeat.PlayerVersionCode, heartbeat.AndroidSDK, heartbeat.InstallerSource, heartbeat.InstallPermissionStatus, heartbeat.CurrentUpdateDeploymentID, heartbeat.UpdateState, heartbeat.UpdateDownloadedBytes, heartbeat.UpdateExpectedBytes, heartbeat.UpdateError)
+	_, _ = s.db.Exec(ctx, `UPDATE screen_player_status SET presentation_schema_versions=$2,native_presentation_capabilities=$3,web_runtime_version=$4,web_bundle_limit_bytes=$5 WHERE screen_id=$1`, principal.ScreenID, heartbeat.PresentationSchemaVersions, heartbeat.NativePresentationCapabilities, heartbeat.WebRuntimeVersion, heartbeat.WebBundleLimitBytes)
 	if heartbeat.ConfiguredReliabilityMode != "" || heartbeat.SafeMode != nil {
 		var previousSafeMode bool
 		var previousMaintenance, previousPINChange *time.Time

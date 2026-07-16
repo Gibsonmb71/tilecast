@@ -858,6 +858,9 @@ func (s *Service) Assignment(ctx context.Context, screenID uuid.UUID) (Assignmen
 }
 
 func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manifest, string, error) {
+	if err := s.reconcilePresentationCatalog(ctx); err != nil {
+		return Manifest{}, "", err
+	}
 	// Expiration is persisted during reconciliation so an unchanged ETag can never
 	// hide the removal of an emergency from a player.
 	var expired bool
@@ -1158,6 +1161,44 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 			}
 		}
 	}
+	if supported, capabilityErr := s.screenSupportsV13(ctx, screenID); capabilityErr != nil {
+		return Manifest{}, "", capabilityErr
+	} else if supported {
+		compiled := make([]*WidgetPresentation, len(manifest.Widgets))
+		canUseV13 := true
+		for index := range manifest.Widgets {
+			compiled[index], _ = compileWidgetPresentation(manifest.Widgets[index].Provider, manifest.Widgets[index].Configuration)
+			if compiled[index] == nil {
+				canUseV13 = false
+				break
+			}
+		}
+		if canUseV13 {
+			ids := make([]uuid.UUID, 0, len(manifest.DataSources))
+			for _, source := range manifest.DataSources {
+				ids = append(ids, source.ID)
+			}
+			manifest.SchemaVersion = 13
+			manifest.DataSources = []ManifestDataSource{}
+			for _, id := range ids {
+				if err = s.projectDataSource(ctx, &manifest, id); err != nil {
+					return Manifest{}, "", err
+				}
+			}
+			for index := range manifest.DataSources {
+				document, projectionErr := projectDataDocument(manifest.DataSources[index].Configuration)
+				if projectionErr != nil {
+					return Manifest{}, "", fmt.Errorf("%w: Data Source cannot be projected to v13: %v", ErrConflict, projectionErr)
+				}
+				manifest.DataSources[index].DataDocument = document
+				manifest.DataSources[index].Configuration = nil
+			}
+			for index := range manifest.Widgets {
+				manifest.Widgets[index].Presentation = compiled[index]
+				manifest.Widgets[index].Configuration = nil
+			}
+		}
+	}
 	encoded, encodeErr := json.Marshal(manifest)
 	if encodeErr != nil {
 		return Manifest{}, "", encodeErr
@@ -1165,7 +1206,52 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 	if len(encoded) > 5*1024*1024 {
 		return Manifest{}, "", fmt.Errorf("%w: manifest exceeds the five MiB limit", ErrConflict)
 	}
-	return manifest, manifestETag(screenID, assignment.ManifestVersion), nil
+	return manifest, manifestETagForSchema(screenID, assignment.ManifestVersion, manifest.SchemaVersion), nil
+}
+
+func (s *Service) screenSupportsV13(ctx context.Context, screenID uuid.UUID) (bool, error) {
+	var presentationSchemas []int32
+	var nativeCapabilities map[string]int
+	var webRuntimeVersion int
+	err := s.db.QueryRow(ctx, `
+		SELECT COALESCE(presentation_schema_versions,'{}'::int[]),
+		       COALESCE(native_presentation_capabilities,'{}'::jsonb),
+		       COALESCE(web_runtime_version,0)
+		FROM screen_player_status WHERE screen_id=$1`, screenID).
+		Scan(&presentationSchemas, &nativeCapabilities, &webRuntimeVersion)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	hasSchema := false
+	for _, version := range presentationSchemas {
+		hasSchema = hasSchema || version == PresentationSchemaVersion
+	}
+	if !hasSchema || webRuntimeVersion < WebRuntimeVersion {
+		return false, nil
+	}
+	for capability, version := range NativePresentationCapabilities {
+		if nativeCapabilities[capability] < version {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func (s *Service) reconcilePresentationCatalog(ctx context.Context) error {
+	_, err := s.db.Exec(ctx, `
+		WITH changed AS (
+			UPDATE presentation_catalog_state
+			SET revision=revision+1,compiler_fingerprint=$1,updated_at=now()
+			WHERE singleton=true AND compiler_fingerprint<>$1
+			RETURNING revision
+		)
+		UPDATE screen_manifest_state
+		SET manifest_version=manifest_version+1,changed_at=now(),change_reason='presentation.catalog_changed'
+		WHERE EXISTS(SELECT 1 FROM changed)`, presentationCatalogFingerprint)
+	return err
 }
 
 // widgetDataSourceID returns the Data Source a data-driven widget consumes, or Nil.
@@ -1341,6 +1427,14 @@ func (s *Service) DataSourceChanged(ctx context.Context, dataSourceID uuid.UUID,
 func manifestETag(screenID uuid.UUID, version int64) string {
 	sum := sha256.Sum256([]byte(fmt.Sprintf("%s:%d", screenID, version)))
 	return `"manifest-` + hex.EncodeToString(sum[:]) + `"`
+}
+
+func manifestETagForSchema(screenID uuid.UUID, version int64, schemaVersion int) string {
+	if schemaVersion <= 12 {
+		return manifestETag(screenID, version)
+	}
+	value := sha256.Sum256([]byte(fmt.Sprintf("%s:%d:%d", screenID, version, schemaVersion)))
+	return `"sha256-` + hex.EncodeToString(value[:]) + `"`
 }
 
 func (s *Service) ReportStatus(ctx context.Context, screenID uuid.UUID, status PlayerStatus) error {

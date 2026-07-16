@@ -150,3 +150,9 @@ Dashboard routes include `GET/POST /emergencies`, `GET /emergencies/{id}`, `POST
 Organization settings use `GET/PATCH /settings` with optimistic revision checking. Preferences use `GET/PATCH /me/preferences`. Group and screen policies have typed GET/PUT/DELETE routes; `/screens/{id}/effective-policy` returns values and administrative sources. Players receive source-free effective values from `/player/config` with ETag support. System status and fixed maintenance actions expose health without secrets. Owner import/export requires preview before apply.
 
 Stable settings errors include `unknown_setting`, `invalid_setting_value`, `setting_not_allowed_at_scope`, `setting_exceeds_hard_limit`, `settings_revision_conflict`, `settings_import_invalid`, `settings_import_version_unsupported`, and `branding_asset_invalid`.
+
+## Declarative presentation runtime
+
+`GET /api/v1/provider-catalog` returns the closed Tilecast provider catalog used by Studio. `POST /api/v1/widgets/compile-preview` compiles an authorized draft into the same declarative presentation document used by v13 manifests.
+
+Player heartbeats may include `presentationSchemaVersions`, `nativePresentationCapabilities`, `webRuntimeVersion`, and `webBundleLimitBytes`. The server uses these bounded fields for v13 negotiation; they never authorize arbitrary executable features.

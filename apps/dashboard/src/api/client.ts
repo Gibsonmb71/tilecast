@@ -55,6 +55,8 @@ import type {
   LayoutList,
   LayoutRevision,
   LayoutRevisionList,
+  ProviderCatalog,
+  WidgetPresentation,
 } from "./types";
 
 type DataResponse<T> = { data: T };
@@ -100,6 +102,17 @@ async function apiFailure(response: Response): Promise<never> {
 type SessionResult = { user: User; csrfToken: string };
 
 export const api = {
+  providerCatalog: () => request<ProviderCatalog>("/provider-catalog"),
+  compileWidgetPreview: (
+    provider: WidgetInput["provider"],
+    configuration: WidgetInput["configuration"],
+    csrfToken: string,
+  ) =>
+    request<WidgetPresentation>("/widgets/compile-preview", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ provider, configuration }),
+    }),
   layouts: (search = "") =>
     request<LayoutList>(
       `/layouts?${new URLSearchParams({ search, page: "1", pageSize: "100" })}`,
