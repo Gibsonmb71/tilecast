@@ -24,7 +24,7 @@ jobs:
           node-version: '22'
           cache: npm
 
-      - name: Apply Layout preview and field-default fixes
+      - name: Apply Layout preview fix
         shell: bash
         run: |
           python3 <<'PY'
@@ -67,20 +67,12 @@ jobs:
               '''        {provider ?? "App"}\n''',
               '''        {provider ?? "Widget"}\n''',
           )
-
-          editor = Path('apps/dashboard/src/content/SourceEditors.tsx')
-          text = editor.read_text()
-          anchor = '''  const availableFields = selectedDataSource.data?.fields ?? [];\n  const save = useMutation({\n'''
-          insertion = '''  const availableFields = selectedDataSource.data?.fields ?? [];\n  useEffect(() => {\n    if (!availableFields.length) return;\n    const keys = new Set(availableFields.map((field) => field.key));\n    setConfiguration((current) => {\n      if (provider === "ticker") {\n        const config = current as TickerWidgetConfig;\n        if (keys.has(config.field)) return current;\n        return { ...config, field: availableFields[0]!.key };\n      }\n      if (["menu", "list", "table", "agenda"].includes(provider)) {\n        const config = current as DisplayWidgetConfig;\n        const valid = config.fields.filter((field) => keys.has(field));\n        if (valid.length) return valid.length === config.fields.length ? current : { ...config, fields: valid };\n        const count = provider === "menu" ? 2 : Math.min(3, availableFields.length);\n        return { ...config, fields: availableFields.slice(0, count).map((field) => field.key) };\n      }\n      return current;\n    });\n  }, [availableFields, provider]);\n  const save = useMutation({\n'''
-          if anchor not in text:
-              raise SystemExit('Source editor field-default anchor not found')
-          editor.write_text(text.replace(anchor, insertion, 1))
           PY
 
       - name: Install and verify Studio
         run: |
           npm ci
-          npx prettier --write apps/dashboard/src/pages/LayoutEditorPage.tsx apps/dashboard/src/content/SourceEditors.tsx
+          npx prettier --write apps/dashboard/src/pages/LayoutEditorPage.tsx
           cd apps/dashboard
           npm run lint
           npm test -- --run
@@ -93,6 +85,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add apps/dashboard/src/pages/LayoutEditorPage.tsx apps/dashboard/src/content/SourceEditors.tsx
+          git add apps/dashboard/src/pages/LayoutEditorPage.tsx
           git commit -m "Load real lunch data in Layout previews"
           git push origin HEAD:fix/lunch-menu-workflow
