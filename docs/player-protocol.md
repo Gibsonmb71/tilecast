@@ -25,6 +25,8 @@ Only the latest pending or approved pairing session for a player installation is
 
 Player endpoints accept `Authorization: Bearer <device-credential>`. Dashboard cookies are never accepted. `/api/v1/player/socket` uses protocol version 1 and supports `player.hello`, `player.status`, `server.ping`, and `player.pong`. `/api/v1/player/heartbeat` is the lower-frequency fallback.
 
+Both sides actively detect a wedged socket instead of trusting an open connection. The Player sends WebSocket protocol pings every 30 seconds and fails the socket (driving normal reconnect) when a pong does not return. The server bounds every socket write to 10 seconds so a dead peer cannot block its notification loop, and closes a connection that has been silent for more than 95 seconds — a healthy Player answers each 30-second `server.ping` with `player.pong`, so three missed pongs mean the peer is gone. Because notification delivery can still be lost, the Player also polls `GET /api/v1/player/commands` on a fixed few-second interval independent of socket state, starting after its first successful paired command fetch and stopping only on credential rejection or shutdown. The command mutex and persisted idempotency keys make overlapping notification and timer polls execute each command once. `commands.available` remains the fast path.
+
 Status thresholds are centralized on the server: connected socket is `online`, contact within two minutes is `recent`, contact within fifteen minutes is `stale`, and older contact is `offline`. Administrative disable and credential revocation override those states.
 
 ## Manifest synchronization and playback

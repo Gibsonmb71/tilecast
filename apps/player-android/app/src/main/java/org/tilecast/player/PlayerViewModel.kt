@@ -120,6 +120,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 	private var websiteStatus=WebsitePlaybackStatus()
 	private var widgetStatus=WidgetPlaybackStatus()
 	private val commandCoordinator=CommandCoordinator(application,api)
+	private val commandFallbackPoller=org.tilecast.player.content.CommandFallbackPoller()
 	private val mutablePlaybackDisabled=MutableStateFlow(commandCoordinator.playbackDisabled)
 	val playbackDisabled:StateFlow<Boolean> = mutablePlaybackDisabled.asStateFlow()
 	private val mutableIdentify=MutableStateFlow<String?>(null)
@@ -407,7 +408,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         catch (error: ApiException) { if (error.code == "device_credential_revoked" || error.code == "device_credential_invalid") revokeLocally(name) else emit(PlayerEvent.Disconnected(name, error.message)) }
     }
 
-    private suspend fun revokeLocally(screenName: String?) { socket?.cancel(); credentials.clear(); configuration.clearPairing(); emit(PlayerEvent.Revoked(screenName)) }
+    private suspend fun revokeLocally(screenName: String?) { commandFallbackPoller.stop(); socket?.cancel(); credentials.clear(); configuration.clearPairing(); emit(PlayerEvent.Revoked(screenName)) }
     fun reconnectAfterRevocation() { viewModelScope.launch { credentials.clear(); configuration.clearPairing(); selectedIdentity?.let { emit(PlayerEvent.IdentityConfirmed(selectedUrl ?: return@launch, it)) } ?: discover() } }
     fun cancelPairing() { discover() }
     fun resetServer() { viewModelScope.launch { socket?.cancel(); credentials.clear(); WebsiteDataManager.clear(getApplication()){};configuration.reset(); current = configuration.getOrCreate(); discover() } }
@@ -453,6 +454,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 	}
 
 	private suspend fun runCommands(url:String,credential:String){
+		var pollFailed=false
 		runCommandPollSafely(
 			poll={commandCoordinator.fetchAndRun(url,credential,onOperationFailure={recordCommandPollFailure(it)}){command->
 		lastCommandId=command.id;lastCommandState="running"
@@ -480,9 +482,14 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 			else->CommandOutcome(false,"command_unsupported","Command is not supported")}
 		lastCommandState=if(outcome.success)"succeeded" else "failed";lastCommandResult=outcome.code;lastCommandCompletedAt=Instant.now().toString();outcome
 		}},
-			onFailure={recordCommandPollFailure(it)},
-			onCredentialRejected={revokeLocally(current?.screenName)},
+			onFailure={pollFailed=true;recordCommandPollFailure(it)},
+			onCredentialRejected={commandFallbackPoller.stop();revokeLocally(current?.screenName)},
 		)
+		// A wedged WebSocket still looks open while delivering nothing, so commands must not
+		// depend on socket notifications alone. After the first successful paired fetch, keep
+		// an HTTP fallback poll running for the life of the ViewModel; the coordinator's mutex
+		// and idempotency store make overlapping notification and timer polls execute-once.
+		if(!pollFailed)commandFallbackPoller.ensureStarted(viewModelScope,"$url|${credential.hashCode()}"){runCommands(url,credential)}
 	}
 	private fun recordCommandPollFailure(code:String){lastCommandState="poll_failed";lastCommandResult=code;lastCommandCompletedAt=Instant.now().toString()}
 	private suspend fun reconcilePlayerConfig(url:String,credential:String){try{configManager.reconcile(url,credential)?.let{mutablePlayerConfig.value=it;applyPlayerConfig(it)};configurationError=null}catch(_:Exception){configurationError="Player configuration could not be applied"}}

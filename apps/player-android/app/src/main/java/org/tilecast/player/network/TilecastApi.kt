@@ -14,7 +14,11 @@ import java.io.FileOutputStream
 import java.security.MessageDigest
 
 class TilecastApi(
-    private val client: OkHttpClient = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS).build(),
+    // pingInterval keeps the Player WebSocket honest: readTimeout stops applying after the
+    // upgrade, so without protocol-level pings a half-open TCP connection looks "open"
+    // forever and the Player silently stops receiving manifest/command notifications. A
+    // missed pong fails the socket, which drives the normal reconnect path.
+    private val client: OkHttpClient = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS).pingInterval(30, TimeUnit.SECONDS).build(),
     private val json: Json = Json { ignoreUnknownKeys = true; encodeDefaults = true },
 ) {
     private val mediaType = "application/json".toMediaType()

@@ -35,7 +35,12 @@ func (s *server) playerSocket(w http.ResponseWriter, r *http.Request) {
 	send := func(message any) error {
 		writeMu.Lock()
 		defer writeMu.Unlock()
-		return wsjson.Write(ctx, connection, message)
+		// A write to a dead peer can otherwise block indefinitely behind full TCP buffers,
+		// wedging the ping goroutine (and every other sender) on the mutex. A bounded write
+		// converts that into an error that tears the connection down.
+		writeCtx, cancelWrite := context.WithTimeout(ctx, 10*time.Second)
+		defer cancelWrite()
+		return wsjson.Write(writeCtx, connection, message)
 	}
 	unregister := s.devices.RegisterPresenceWithNotifier(principal.ScreenID, func() {
 		cancel()
@@ -95,8 +100,14 @@ func (s *server) playerSocket(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	for ctx.Err() == nil {
+		// The Player answers each 30-second server.ping with player.pong, so a healthy
+		// connection is never silent this long. Without a read deadline a vanished peer
+		// keeps this read blocked and the screen pinned "online" until TCP gives up.
+		readCtx, cancelRead := context.WithTimeout(ctx, 95*time.Second)
 		var message socketMessage
-		if err := wsjson.Read(ctx, connection, &message); err != nil {
+		err := wsjson.Read(readCtx, connection, &message)
+		cancelRead()
+		if err != nil {
 			break
 		}
 		switch message.Type {
