@@ -370,7 +370,9 @@
   margin-left: 20px;
 }
 
-.data-source-create-shell--calendar .source-editor > .source-editor__columns:first-of-type::before {
+.data-source-create-shell--calendar
+  .source-editor
+  > .source-editor__columns:first-of-type::before {
   content: "Name and description";
   grid-column: 1 / -1;
   margin-bottom: 2px;
@@ -378,7 +380,9 @@
   font-weight: 700;
 }
 
-.data-source-create-shell--calendar .source-editor > .source-editor__columns:nth-of-type(2)::before {
+.data-source-create-shell--calendar
+  .source-editor
+  > .source-editor__columns:nth-of-type(2)::before {
   content: "Default event view";
   grid-column: 1 / -1;
   margin-bottom: 2px;
@@ -386,7 +390,9 @@
   font-weight: 700;
 }
 
-.data-source-create-shell--calendar .source-editor > .source-editor__columns:last-of-type::before {
+.data-source-create-shell--calendar
+  .source-editor
+  > .source-editor__columns:last-of-type::before {
   content: "Optional filtering and cache behavior";
   grid-column: 1 / -1;
   margin-bottom: 2px;
