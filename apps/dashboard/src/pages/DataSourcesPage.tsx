@@ -1,9 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import {
+  ArrowLeft,
   Braces,
   CalendarDays,
   FileSpreadsheet,
+  Check,
   Grid2X2,
+  Lightbulb,
   List,
   Plus,
   Rss,
@@ -34,6 +37,144 @@ function providerLabel(provider: DataSourceProvider) {
   );
 }
 
+const createCopy: Record<
+  DataSourceProvider,
+  { eyebrow: string; description: string; tip: string; steps: string[] }
+> = {
+  calendar: {
+    eyebrow: "iCalendar feed",
+    description:
+      "Connect one or more public ICS calendars, choose which event details to expose, then preview real events before saving.",
+    tip: "Use the public or secret iCalendar subscription URL, not the normal calendar webpage.",
+    steps: [
+      "Name the connection and paste the public ICS URL.",
+      "Choose the event window, fields, and timezone.",
+      "Preview real events, then save the Data Source.",
+    ],
+  },
+  rss: {
+    eyebrow: "News and updates",
+    description:
+      "Turn an RSS feed into clean, cached records for lists, tickers, tables, and layouts.",
+    tip: "Paste the direct feed URL. It often ends in /feed, .xml, or .rss.",
+    steps: [
+      "Name the connection and paste the RSS feed URL.",
+      "Choose the fields, item limit, and sort order.",
+      "Preview the mapped posts, then save.",
+    ],
+  },
+  atom: {
+    eyebrow: "Published entries",
+    description:
+      "Turn an Atom feed into reusable records without making editors work through every technical option first.",
+    tip: "Use the direct Atom XML URL rather than the website homepage.",
+    steps: [
+      "Name the connection and paste the Atom feed URL.",
+      "Choose the fields, item limit, and sort order.",
+      "Preview the mapped entries, then save.",
+    ],
+  },
+  json: {
+    eyebrow: "Structured API data",
+    description:
+      "Connect a public JSON endpoint, map its record paths, and verify the normalized result before saving.",
+    tip: 'JSON Pointer paths begin with a slash. Use / for a top-level array or /items for { "items": [...] }.',
+    steps: [
+      "Paste the public JSON endpoint URL.",
+      "Map the list path and the fields your Widgets need.",
+      "Preview the mapped records, then save.",
+    ],
+  },
+  csv: {
+    eyebrow: "Spreadsheet data",
+    description:
+      "Upload a CSV or connect a hosted CSV, map its columns, and preview the rows Tilecast will cache.",
+    tip: "Column names must match the first row of the CSV. Start with the title column; the others are optional.",
+    steps: [
+      "Upload a CSV file or paste a direct CSV URL.",
+      "Map the column names and choose displayed fields.",
+      "Preview the mapped rows, then save.",
+    ],
+  },
+};
+
+function providerIcon(provider: DataSourceProvider, size = 28) {
+  if (provider === "calendar") return <CalendarDays size={size} />;
+  if (provider === "csv") return <FileSpreadsheet size={size} />;
+  if (provider === "json") return <Braces size={size} />;
+  return <Rss size={size} />;
+}
+
+function DataSourceCreateShell({
+  provider,
+  csrf,
+  onClose,
+  onSaved,
+}: {
+  provider: DataSourceProvider;
+  csrf: string;
+  onClose: () => void;
+  onSaved: (value: { id: string }) => void;
+}) {
+  const copy = createCopy[provider];
+  return (
+    <div
+      className={`data-source-create-shell data-source-create-shell--${provider}`}
+    >
+      <header className="data-source-create-shell__header">
+        <button className="button button--quiet" type="button" onClick={onClose}>
+          <ArrowLeft size={16} /> Data Sources
+        </button>
+        <div>
+          <span className="data-source-create-shell__icon">
+            {providerIcon(provider)}
+          </span>
+          <div>
+            <p className="eyebrow">{copy.eyebrow}</p>
+            <h2>Create {providerLabel(provider)} Data Source</h2>
+            <p>{copy.description}</p>
+          </div>
+        </div>
+      </header>
+      <div className="data-source-create-shell__layout">
+        <aside className="data-source-create-shell__guide">
+          <section>
+            <h3>Three steps</h3>
+            <ol>
+              {copy.steps.map((step, index) => (
+                <li key={step}>
+                  <span>{index + 1}</span>
+                  <p>{step}</p>
+                </li>
+              ))}
+            </ol>
+          </section>
+          <section className="data-source-create-shell__tip">
+            <Lightbulb size={17} />
+            <div>
+              <strong>Good to know</strong>
+              <p>{copy.tip}</p>
+            </div>
+          </section>
+          <p className="data-source-create-shell__advanced-note">
+            <Check size={15} /> Advanced filtering and cache controls are
+            optional.
+          </p>
+        </aside>
+        <div className="data-source-create-shell__editor">
+          <DataSourceEditor
+            provider={provider}
+            csrf={csrf}
+            onClose={onClose}
+            onSaved={onSaved}
+            page
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DataSourceProviderGallery({
   onChoose,
   onClose,
@@ -54,7 +195,10 @@ function DataSourceProviderGallery({
         <header>
           <div>
             <h2 id="data-source-gallery-title">Create Data Source</h2>
-            <p>Choose a built-in Data Source provider.</p>
+            <p>
+              Choose what you are connecting. Each setup page starts with the
+              essentials and keeps advanced options out of the way.
+            </p>
           </div>
           <button className="icon-button" aria-label="Close" onClick={onClose}>
             <X size={18} />
@@ -64,29 +208,27 @@ function DataSourceProviderGallery({
           <button type="button" onClick={() => onChoose("calendar")}>
             <CalendarDays size={30} />
             <strong>Calendar</strong>
-            <span>Fetch and cache events from an ICS feed URL.</span>
+            <span>Public Google, Microsoft, Apple, or other ICS calendars.</span>
           </button>
           <button type="button" onClick={() => onChoose("rss")}>
             <Rss size={30} />
             <strong>RSS</strong>
-            <span>Fetch and cache posts from an RSS feed.</span>
+            <span>News, announcements, blog posts, and published updates.</span>
           </button>
           <button type="button" onClick={() => onChoose("atom")}>
             <Rss size={30} />
             <strong>Atom</strong>
-            <span>Fetch and cache entries from an Atom feed.</span>
+            <span>Atom entries from publishing systems and update feeds.</span>
           </button>
           <button type="button" onClick={() => onChoose("json")}>
             <Braces size={30} />
             <strong>JSON</strong>
-            <span>
-              Map a public JSON array using constrained JSON Pointers.
-            </span>
+            <span>Public API data mapped with simple JSON Pointer paths.</span>
           </button>
           <button type="button" onClick={() => onChoose("csv")}>
             <FileSpreadsheet size={30} />
             <strong>CSV</strong>
-            <span>Map a hosted or uploaded UTF-8 CSV file.</span>
+            <span>Upload a spreadsheet export or connect a hosted CSV URL.</span>
           </button>
         </div>
       </section>
@@ -210,8 +352,8 @@ export function DataSourcesPage() {
                 <span className="asset-card__body">
                   <strong>{source.name}</strong>
                   <small>
-                    {providerLabel(source.provider)} ·{" "}
-                    {source.cachedRecordCount} cached records
+                    {providerLabel(source.provider)} · {source.cachedRecordCount}{" "}
+                    cached records
                   </small>
                 </span>
                 <span
@@ -240,7 +382,8 @@ export function DataSourceEditorPage() {
   });
   const dataSource = detail.data;
   const provider = (providerParam ?? dataSource?.provider) as
-    DataSourceProvider | undefined;
+    | DataSourceProvider
+    | undefined;
   const close = () => void navigate("/data-sources");
   const saved = (value: { id: string }) => {
     void navigate(`/data-sources/${value.id}`, { replace: true });
@@ -271,15 +414,31 @@ export function DataSourceEditorPage() {
   }
   return (
     <section className="app-editor-route">
-      <DataSourceEditor
-        provider={provider}
-        dataSource={dataSource}
-        csrf={csrf}
-        readOnly={!canManageContent(auth.status?.user)}
-        onClose={close}
-        onSaved={saved}
-        page
-      />
+      {dataSource ? (
+        <DataSourceEditor
+          provider={provider}
+          dataSource={dataSource}
+          csrf={csrf}
+          readOnly={!canManageContent(auth.status?.user)}
+          onClose={close}
+          onSaved={saved}
+          page
+        />
+      ) : canManageContent(auth.status?.user) ? (
+        <DataSourceCreateShell
+          provider={provider}
+          csrf={csrf}
+          onClose={close}
+          onSaved={saved}
+        />
+      ) : (
+        <section className="empty-state">
+          <h2>You do not have permission to create Data Sources</h2>
+          <button className="button" onClick={close}>
+            Back to Data Sources
+          </button>
+        </section>
+      )}
       {dataSource && (
         <aside className="source-diagnostics">
           <strong>Usage</strong>
