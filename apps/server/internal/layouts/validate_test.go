@@ -9,7 +9,7 @@ import (
 
 func validTestDocument() Document {
 	return Document{
-		SchemaVersion: 1,
+		SchemaVersion: 2,
 		Canvas:        Canvas{Width: 1920, Height: 1080, Orientation: "landscape", BackgroundColor: "#101820", SafeAreaPercent: 5},
 		Placements: []Placement{{
 			ID: uuid.New(), Type: "primitive", Name: "Heading", X: 80, Y: 80, Width: 900, Height: 180,
@@ -21,7 +21,7 @@ func validTestDocument() Document {
 func TestValidateDocumentRestrictsAppPlacementOverrides(t *testing.T) {
 	document := validTestDocument()
 	appID := uuid.New()
-	document.Placements = []Placement{{ID: uuid.New(), Type: "app", Name: "Clock", X: 0, Y: 0, Width: 400, Height: 200, Layer: 1, Opacity: 1, Visible: true, AppID: &appID, Overrides: json.RawMessage(`{"fit":"contain","alignment":"center"}`)}}
+	document.Placements = []Placement{{ID: uuid.New(), Type: "widget", Name: "Clock", X: 0, Y: 0, Width: 400, Height: 200, Layer: 1, Opacity: 1, Visible: true, WidgetID: &appID, Overrides: json.RawMessage(`{"fit":"contain","alignment":"center"}`)}}
 	if err := ValidateDocument(document); err != nil {
 		t.Fatal(err)
 	}
@@ -54,12 +54,12 @@ func TestDependenciesAreTypedAndDeduplicated(t *testing.T) {
 	document := validTestDocument()
 	appID, assetID := uuid.New(), uuid.New()
 	document.Placements = append(document.Placements,
-		Placement{ID: uuid.New(), Type: "app", Name: "Clock", X: 0, Y: 0, Width: 200, Height: 100, Opacity: 1, Visible: true, AppID: &appID},
-		Placement{ID: uuid.New(), Type: "app", Name: "Clock copy", X: 200, Y: 0, Width: 200, Height: 100, Opacity: 1, Visible: true, AppID: &appID},
+		Placement{ID: uuid.New(), Type: "widget", Name: "Clock", X: 0, Y: 0, Width: 200, Height: 100, Opacity: 1, Visible: true, WidgetID: &appID},
+		Placement{ID: uuid.New(), Type: "widget", Name: "Clock copy", X: 200, Y: 0, Width: 200, Height: 100, Opacity: 1, Visible: true, WidgetID: &appID},
 		Placement{ID: uuid.New(), Type: "asset", Name: "Logo", X: 0, Y: 200, Width: 200, Height: 100, Opacity: 1, Visible: true, AssetID: &assetID},
 	)
 	dependencies := Dependencies(document)
-	if len(dependencies) != 2 || dependencies[0].Type != "app" || dependencies[1].Type != "asset" {
+	if len(dependencies) != 2 || dependencies[0].Type != "widget" || dependencies[1].Type != "asset" {
 		t.Fatalf("dependencies=%#v", dependencies)
 	}
 }

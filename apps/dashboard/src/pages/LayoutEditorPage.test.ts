@@ -15,7 +15,7 @@ describe("Layout editor primitives", () => {
     expect(placement.type).toBe("primitive");
     expect(placement.primitive?.kind).toBe("text");
     expect(placement.primitive?.fontFamily).toBe("Inter");
-    expect(placement.appId).toBeUndefined();
+    expect(placement.widgetId).toBeUndefined();
     expect(placement.x + placement.width).toBeLessThanOrEqual(canvas.width);
   });
 

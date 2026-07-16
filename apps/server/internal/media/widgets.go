@@ -14,16 +14,20 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-type sourceProvider interface {
+// configNormalizer validates and canonicalizes one provider's configuration.
+// Both widget providers and Data Source providers satisfy it.
+type configNormalizer interface {
 	Normalize(context.Context, json.RawMessage) (any, error)
 }
 
-type websiteSourceProvider struct{ service *Service }
-type youtubeSourceProvider struct{ service *Service }
+type websiteWidgetProvider struct{ service *Service }
+type youtubeWidgetProvider struct{ service *Service }
 
 var youtubeIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{6,128}$`)
 
-func decodeSourceConfig(raw json.RawMessage, target any) error {
+// decodeConfig strictly decodes exactly one JSON object into target, rejecting unknown
+// fields and any trailing content. Shared by widget and Data Source normalizers.
+func decodeConfig(raw json.RawMessage, target any) error {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
@@ -32,16 +36,16 @@ func decodeSourceConfig(raw json.RawMessage, target any) error {
 	var extra any
 	if err := decoder.Decode(&extra); err != io.EOF {
 		if err == nil {
-			return errors.New("source configuration must contain one JSON object")
+			return errors.New("configuration must contain one JSON object")
 		}
 		return err
 	}
 	return nil
 }
 
-func (p websiteSourceProvider) Normalize(ctx context.Context, raw json.RawMessage) (any, error) {
+func (p websiteWidgetProvider) Normalize(ctx context.Context, raw json.RawMessage) (any, error) {
 	var config WebsiteConfig
-	if err := decodeSourceConfig(raw, &config); err != nil {
+	if err := decodeConfig(raw, &config); err != nil {
 		return nil, err
 	}
 	input := WebsiteInput{WebsiteConfig: config, javascriptSet: true, domStorageSet: true}
@@ -49,9 +53,9 @@ func (p websiteSourceProvider) Normalize(ctx context.Context, raw json.RawMessag
 	return normalized.WebsiteConfig, err
 }
 
-func (p youtubeSourceProvider) Normalize(ctx context.Context, raw json.RawMessage) (any, error) {
+func (p youtubeWidgetProvider) Normalize(ctx context.Context, raw json.RawMessage) (any, error) {
 	var config YouTubeConfig
-	if err := decodeSourceConfig(raw, &config); err != nil {
+	if err := decodeConfig(raw, &config); err != nil {
 		return nil, err
 	}
 	config.URL = strings.TrimSpace(config.URL)
@@ -131,50 +135,37 @@ func (p youtubeSourceProvider) Normalize(ctx context.Context, raw json.RawMessag
 	return config, nil
 }
 
-func (s *Service) sourceProvider(name string) (sourceProvider, error) {
+func (s *Service) widgetProvider(name string) (configNormalizer, error) {
 	switch name {
 	case "website":
-		return websiteSourceProvider{s}, nil
+		return websiteWidgetProvider{s}, nil
 	case "youtube":
-		return youtubeSourceProvider{s}, nil
-	case "calendar":
-		return calendarSourceProvider{s}, nil
-	case "rss", "atom", "json", "csv":
-		return structuredSourceProvider{s, name}, nil
+		return youtubeWidgetProvider{s}, nil
 	case "clock":
-		return clockAppProvider{}, nil
+		return clockWidgetProvider{}, nil
 	case "date":
-		return dateAppProvider{}, nil
+		return dateWidgetProvider{}, nil
 	case "qrcode":
-		return qrCodeAppProvider{}, nil
+		return qrCodeWidgetProvider{}, nil
 	case "ticker":
-		return tickerAppProvider{s}, nil
+		return tickerWidgetProvider{s}, nil
 	case "menu", "list", "table", "agenda":
-		return displayAppProvider{s, name}, nil
+		return displayWidgetProvider{s, name}, nil
 	default:
-		return nil, errors.New("source provider is not supported")
+		return nil, errors.New("widget provider is not supported")
 	}
 }
 
-func (s *Service) CreateSource(ctx context.Context, user uuid.UUID, input SourceInput) (Asset, error) {
+func (s *Service) CreateWidget(ctx context.Context, user uuid.UUID, input WidgetInput) (Asset, error) {
 	input.Provider = strings.ToLower(strings.TrimSpace(input.Provider))
 	input.Name = strings.TrimSpace(input.Name)
 	input.Description = strings.TrimSpace(input.Description)
 	if input.Name == "" || len(input.Name) > 180 || len(input.Description) > 2000 {
-		return Asset{}, errors.New("source name or description is invalid")
+		return Asset{}, errors.New("widget name or description is invalid")
 	}
-	provider, err := s.sourceProvider(input.Provider)
+	provider, err := s.widgetProvider(input.Provider)
 	if err != nil {
 		return Asset{}, err
-	}
-	if input.Provider != "website" {
-		var count int
-		if err = s.db.QueryRow(ctx, `SELECT count(*) FROM sources JOIN assets ON assets.id=sources.asset_id WHERE assets.deleted_at IS NULL`).Scan(&count); err != nil {
-			return Asset{}, err
-		}
-		if count >= s.cfg.Website.MaxWebsites {
-			return Asset{}, errors.New("source limit reached")
-		}
 	}
 	configuration, err := provider.Normalize(ctx, input.Configuration)
 	if err != nil {
@@ -195,18 +186,13 @@ func (s *Service) CreateSource(ctx context.Context, user uuid.UUID, input Source
 		return Asset{}, err
 	}
 	id := uuid.New()
-	if _, err = tx.Exec(ctx, `INSERT INTO assets(id,organization_id,name,description,type,original_filename,detected_mime_type,sha256,original_size,processing_status,created_by) VALUES($1,$2,$3,$4,'source','','application/vnd.tilecast.source+json',''::bytea,0,'ready',$5)`, id, organizationID, input.Name, input.Description, user); err != nil {
+	if _, err = tx.Exec(ctx, `INSERT INTO assets(id,organization_id,name,description,type,original_filename,detected_mime_type,sha256,original_size,processing_status,created_by) VALUES($1,$2,$3,$4,'widget','','application/vnd.tilecast.widget+json',''::bytea,0,'ready',$5)`, id, organizationID, input.Name, input.Description, user); err != nil {
 		return Asset{}, err
 	}
-	if _, err = tx.Exec(ctx, `INSERT INTO sources(asset_id,provider,config_version,configuration) VALUES($1,$2,1,$3::jsonb)`, id, input.Provider, string(encoded)); err != nil {
+	if _, err = tx.Exec(ctx, `INSERT INTO widgets(asset_id,provider,config_version,configuration) VALUES($1,$2,1,$3::jsonb)`, id, input.Provider, string(encoded)); err != nil {
 		return Asset{}, err
 	}
-	if isRefreshableSource(input.Provider) {
-		if _, err = tx.Exec(ctx, `INSERT INTO source_refresh_states(asset_id) VALUES($1)`, id); err != nil {
-			return Asset{}, err
-		}
-	}
-	if _, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,metadata) VALUES($1,$2,'source.created','source',$3,jsonb_build_object('provider',$4::text))`, uuid.New(), user, id.String(), input.Provider); err != nil {
+	if _, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,metadata) VALUES($1,$2,'widget.created','widget',$3,jsonb_build_object('provider',$4::text))`, uuid.New(), user, id.String(), input.Provider); err != nil {
 		return Asset{}, err
 	}
 	if err = tx.Commit(ctx); err != nil {
@@ -215,32 +201,18 @@ func (s *Service) CreateSource(ctx context.Context, user uuid.UUID, input Source
 	return s.GetAsset(ctx, id)
 }
 
-func (s *Service) UpdateSource(ctx context.Context, id, user uuid.UUID, input SourceInput) (Asset, error) {
+func (s *Service) UpdateWidget(ctx context.Context, id, user uuid.UUID, input WidgetInput) (Asset, error) {
 	existing, err := s.GetAsset(ctx, id)
-	if err != nil || existing.Source == nil {
+	if err != nil || existing.Widget == nil {
 		return Asset{}, ErrNotFound
 	}
 	if input.Provider == "" {
-		input.Provider = existing.Source.Provider
+		input.Provider = existing.Widget.Provider
 	}
-	if input.Provider != existing.Source.Provider {
-		return Asset{}, errors.New("source provider cannot be changed")
+	if input.Provider != existing.Widget.Provider {
+		return Asset{}, errors.New("widget provider cannot be changed")
 	}
-	if input.Provider == "csv" {
-		var incoming StructuredSourceConfig
-		if json.Unmarshal(input.Configuration, &incoming) == nil && incoming.Uploaded && incoming.UploadedContent == "" {
-			var stored json.RawMessage
-			if err := s.db.QueryRow(ctx, `SELECT configuration FROM sources WHERE asset_id=$1`, id).Scan(&stored); err != nil {
-				return Asset{}, err
-			}
-			var previous StructuredSourceConfig
-			if json.Unmarshal(stored, &previous) == nil {
-				incoming.UploadedContent = previous.UploadedContent
-				input.Configuration, _ = json.Marshal(incoming)
-			}
-		}
-	}
-	provider, err := s.sourceProvider(input.Provider)
+	provider, err := s.widgetProvider(input.Provider)
 	if err != nil {
 		return Asset{}, err
 	}
@@ -254,7 +226,7 @@ func (s *Service) UpdateSource(ctx context.Context, id, user uuid.UUID, input So
 	}
 	input.Name = strings.TrimSpace(input.Name)
 	if input.Name == "" || len(input.Name) > 180 || len(input.Description) > 2000 {
-		return Asset{}, errors.New("source name or description is invalid")
+		return Asset{}, errors.New("widget name or description is invalid")
 	}
 	encoded, _ := json.Marshal(configuration)
 	tx, err := s.db.Begin(ctx)
@@ -262,61 +234,38 @@ func (s *Service) UpdateSource(ctx context.Context, id, user uuid.UUID, input So
 		return Asset{}, err
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
-	tag, err := tx.Exec(ctx, `UPDATE assets SET name=$2,description=$3,updated_at=now() WHERE id=$1 AND type='source' AND deleted_at IS NULL`, id, input.Name, strings.TrimSpace(input.Description))
+	tag, err := tx.Exec(ctx, `UPDATE assets SET name=$2,description=$3,updated_at=now() WHERE id=$1 AND type='widget' AND deleted_at IS NULL`, id, input.Name, strings.TrimSpace(input.Description))
 	if err != nil || tag.RowsAffected() == 0 {
 		return Asset{}, ErrNotFound
 	}
-	if _, err = tx.Exec(ctx, `UPDATE sources SET configuration=$2::jsonb,config_version=1,updated_at=now() WHERE asset_id=$1`, id, string(encoded)); err != nil {
+	if _, err = tx.Exec(ctx, `UPDATE widgets SET configuration=$2::jsonb,config_version=1,updated_at=now() WHERE asset_id=$1`, id, string(encoded)); err != nil {
 		return Asset{}, err
 	}
-	if isRefreshableSource(input.Provider) {
-		if _, err = tx.Exec(ctx, `INSERT INTO source_refresh_states(asset_id,next_refresh_at) VALUES($1,now()) ON CONFLICT(asset_id) DO UPDATE SET next_refresh_at=now(),error_code=NULL,locked_at=NULL,locked_by=NULL,updated_at=now()`, id); err != nil {
-			return Asset{}, err
-		}
-	}
-	if _, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id) VALUES($1,$2,'source.updated','source',$3)`, uuid.New(), user, id.String()); err != nil {
+	if _, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id) VALUES($1,$2,'widget.updated','widget',$3)`, uuid.New(), user, id.String()); err != nil {
 		return Asset{}, err
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return Asset{}, err
 	}
 	if s.invalidator != nil {
-		_ = s.invalidator.AssetChanged(ctx, id, "source.updated")
+		_ = s.invalidator.AssetChanged(ctx, id, "widget.updated")
 	}
 	return s.GetAsset(ctx, id)
 }
 
-func (s *Service) DuplicateSource(ctx context.Context, id, user uuid.UUID) (Asset, error) {
+func (s *Service) DuplicateWidget(ctx context.Context, id, user uuid.UUID) (Asset, error) {
 	asset, err := s.GetAsset(ctx, id)
-	if err != nil || asset.Source == nil {
+	if err != nil || asset.Widget == nil {
 		return Asset{}, ErrNotFound
 	}
-	configuration := asset.Source.Configuration
-	if asset.Source.Provider == "csv" {
-		_ = s.db.QueryRow(ctx, `SELECT configuration FROM sources WHERE asset_id=$1`, id).Scan(&configuration)
-	}
-	return s.CreateSource(ctx, user, SourceInput{Provider: asset.Source.Provider, Name: asset.Name + " copy", Description: asset.Description, Configuration: configuration})
+	return s.CreateWidget(ctx, user, WidgetInput{Provider: asset.Widget.Provider, Name: asset.Name + " copy", Description: asset.Description, Configuration: asset.Widget.Configuration})
 }
 
-func (s *Service) loadSource(ctx context.Context, id uuid.UUID) (*Source, error) {
-	var source Source
-	err := s.db.QueryRow(ctx, `SELECT provider,config_version,configuration FROM sources WHERE asset_id=$1`, id).Scan(&source.Provider, &source.ConfigVersion, &source.Configuration)
+func (s *Service) loadWidget(ctx context.Context, id uuid.UUID) (*Widget, error) {
+	var widget Widget
+	err := s.db.QueryRow(ctx, `SELECT provider,config_version,configuration FROM widgets WHERE asset_id=$1`, id).Scan(&widget.Provider, &widget.ConfigVersion, &widget.Configuration)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
-	if err == nil && source.Provider == "csv" {
-		var config map[string]any
-		if json.Unmarshal(source.Configuration, &config) == nil {
-			if _, uploaded := config["uploadedContent"]; uploaded {
-				delete(config, "uploadedContent")
-				config["uploaded"] = true
-				source.Configuration, _ = json.Marshal(config)
-			}
-		}
-	}
-	return &source, err
-}
-
-func isRefreshableSource(provider string) bool {
-	return provider == "calendar" || provider == "rss" || provider == "atom" || provider == "json" || provider == "csv"
+	return &widget, err
 }

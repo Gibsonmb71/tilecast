@@ -129,7 +129,7 @@ func (s *server) listAssets(w http.ResponseWriter, r *http.Request) {
 			*target = &id
 		}
 	}
-	result, err := s.media.ListAssets(r.Context(), media.ListOptions{Search: query.Get("search"), Type: query.Get("type"), SourceProvider: query.Get("provider"), Status: query.Get("status"), Sort: query.Get("sort"), FolderID: folderID, CollectionID: collectionID, TagID: tagID, Page: page, PageSize: pageSize})
+	result, err := s.media.ListAssets(r.Context(), media.ListOptions{Search: query.Get("search"), Type: query.Get("type"), WidgetProvider: query.Get("provider"), Status: query.Get("status"), Sort: query.Get("sort"), FolderID: folderID, CollectionID: collectionID, TagID: tagID, Page: page, PageSize: pageSize})
 	if err != nil {
 		s.writeMediaError(w, r, err)
 		return
@@ -207,18 +207,20 @@ func (s *server) websiteDiagnostics(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
-func (s *server) createSource(w http.ResponseWriter, r *http.Request) {
-	var body media.SourceInput
+// --- Widgets ---
+
+func (s *server) createWidget(w http.ResponseWriter, r *http.Request) {
+	var body media.WidgetInput
 	if err := decodeJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	if body.Provider == "website" && !s.sourcePrivateHTTPAllowed(r, body.Configuration) {
+	if body.Provider == "website" && !s.widgetPrivateHTTPAllowed(r, body.Configuration) {
 		writeError(w, 422, "setting_exceeds_hard_limit", "Private HTTP websites are disabled by runtime settings.")
 		return
 	}
 	user := r.Context().Value(sessionContextKey).(auth.Session).User
-	asset, err := s.media.CreateSource(r.Context(), user.ID, body)
+	asset, err := s.media.CreateWidget(r.Context(), user.ID, body)
 	if err != nil {
 		s.writeMediaError(w, r, err)
 		return
@@ -226,49 +228,27 @@ func (s *server) createSource(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"data": asset})
 }
 
-func (s *server) previewStructuredSource(w http.ResponseWriter, r *http.Request) {
-	provider := chi.URLParam(r, "provider")
-	if provider != "rss" && provider != "atom" && provider != "json" && provider != "csv" {
-		writeError(w, http.StatusNotFound, "source_provider_not_found", "The requested Source provider was not found.")
-		return
-	}
-	var body struct {
-		Configuration json.RawMessage `json:"configuration"`
-		PreviewDate   string          `json:"previewDate"`
-	}
-	if err := decodeJSON(w, r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
-		return
-	}
-	preview, err := s.media.StructuredPreview(r.Context(), provider, body.Configuration, body.PreviewDate)
-	if err != nil {
-		s.writeMediaError(w, r, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": preview})
-}
-
-func (s *server) updateSource(w http.ResponseWriter, r *http.Request) {
+func (s *server) updateWidget(w http.ResponseWriter, r *http.Request) {
 	id, ok := urlUUID(w, r, "id")
 	if !ok {
 		return
 	}
-	var body media.SourceInput
+	var body media.WidgetInput
 	if err := decodeJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
 	if body.Provider == "" {
-		if existing, err := s.media.GetAsset(r.Context(), id); err == nil && existing.Source != nil {
-			body.Provider = existing.Source.Provider
+		if existing, err := s.media.GetAsset(r.Context(), id); err == nil && existing.Widget != nil {
+			body.Provider = existing.Widget.Provider
 		}
 	}
-	if body.Provider == "website" && !s.sourcePrivateHTTPAllowed(r, body.Configuration) {
+	if body.Provider == "website" && !s.widgetPrivateHTTPAllowed(r, body.Configuration) {
 		writeError(w, 422, "setting_exceeds_hard_limit", "Private HTTP websites are disabled by runtime settings.")
 		return
 	}
 	user := r.Context().Value(sessionContextKey).(auth.Session).User
-	asset, err := s.media.UpdateSource(r.Context(), id, user.ID, body)
+	asset, err := s.media.UpdateWidget(r.Context(), id, user.ID, body)
 	if err != nil {
 		s.writeMediaError(w, r, err)
 		return
@@ -276,7 +256,7 @@ func (s *server) updateSource(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": asset})
 }
 
-func (s *server) sourcePrivateHTTPAllowed(r *http.Request, configuration json.RawMessage) bool {
+func (s *server) widgetPrivateHTTPAllowed(r *http.Request, configuration json.RawMessage) bool {
 	var value struct {
 		URL string `json:"url"`
 	}
@@ -288,13 +268,13 @@ func (s *server) sourcePrivateHTTPAllowed(r *http.Request, configuration json.Ra
 	return enabled
 }
 
-func (s *server) duplicateSource(w http.ResponseWriter, r *http.Request) {
+func (s *server) duplicateWidget(w http.ResponseWriter, r *http.Request) {
 	id, ok := urlUUID(w, r, "id")
 	if !ok {
 		return
 	}
 	user := r.Context().Value(sessionContextKey).(auth.Session).User
-	asset, err := s.media.DuplicateSource(r.Context(), id, user.ID)
+	asset, err := s.media.DuplicateWidget(r.Context(), id, user.ID)
 	if err != nil {
 		s.writeMediaError(w, r, err)
 		return
@@ -302,33 +282,138 @@ func (s *server) duplicateSource(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"data": asset})
 }
 
-func (s *server) previewCalendarSource(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Configuration json.RawMessage `json:"configuration"`
-	}
-	if err := decodeJSON(w, r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
-		return
-	}
-	preview, err := s.media.CalendarPreview(r.Context(), body.Configuration)
+// --- Data Sources ---
+
+func (s *server) listDataSources(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+	page, _ := strconv.Atoi(query.Get("page"))
+	pageSize, _ := strconv.Atoi(query.Get("pageSize"))
+	result, err := s.media.ListDataSources(r.Context(), media.DataSourceListOptions{Search: query.Get("search"), Provider: query.Get("provider"), Sort: query.Get("sort"), Page: page, PageSize: pageSize})
 	if err != nil {
 		s.writeMediaError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": preview})
+	writeJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
-func (s *server) sourceDiagnostics(w http.ResponseWriter, r *http.Request) {
+func (s *server) createDataSource(w http.ResponseWriter, r *http.Request) {
+	var body media.DataSourceInput
+	if err := decodeJSON(w, r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	user := r.Context().Value(sessionContextKey).(auth.Session).User
+	dataSource, err := s.media.CreateDataSource(r.Context(), user.ID, body)
+	if err != nil {
+		s.writeMediaError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"data": dataSource})
+}
+
+func (s *server) getDataSource(w http.ResponseWriter, r *http.Request) {
 	id, ok := urlUUID(w, r, "id")
 	if !ok {
 		return
 	}
-	diagnostics, err := s.media.SourceDiagnostics(r.Context(), id)
+	detail, err := s.media.GetDataSourceDetail(r.Context(), id)
+	if err != nil {
+		s.writeMediaError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": detail})
+}
+
+func (s *server) updateDataSource(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	var body media.DataSourceInput
+	if err := decodeJSON(w, r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	user := r.Context().Value(sessionContextKey).(auth.Session).User
+	dataSource, err := s.media.UpdateDataSource(r.Context(), id, user.ID, body)
+	if err != nil {
+		s.writeMediaError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": dataSource})
+}
+
+func (s *server) duplicateDataSource(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	user := r.Context().Value(sessionContextKey).(auth.Session).User
+	dataSource, err := s.media.DuplicateDataSource(r.Context(), id, user.ID)
+	if err != nil {
+		s.writeMediaError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"data": dataSource})
+}
+
+func (s *server) deleteDataSource(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	user := r.Context().Value(sessionContextKey).(auth.Session).User
+	if err := s.media.DeleteDataSource(r.Context(), id, user.ID); err != nil {
+		s.writeMediaError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *server) dataSourceDiagnostics(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	diagnostics, err := s.media.DataSourceRefreshDiagnostics(r.Context(), id)
 	if err != nil {
 		s.writeMediaError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": diagnostics})
+}
+
+// previewDataSource tests a candidate Data Source configuration before it is saved.
+// For calendar the provider is fixed; for structured providers the {provider} path segment selects it.
+func (s *server) previewDataSource(w http.ResponseWriter, r *http.Request) {
+	provider := chi.URLParam(r, "provider")
+	var body struct {
+		Configuration json.RawMessage `json:"configuration"`
+		PreviewDate   string          `json:"previewDate"`
+	}
+	if err := decodeJSON(w, r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	if provider == "calendar" {
+		preview, err := s.media.CalendarPreview(r.Context(), body.Configuration)
+		if err != nil {
+			s.writeMediaError(w, r, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"data": preview})
+		return
+	}
+	if provider != "rss" && provider != "atom" && provider != "json" && provider != "csv" {
+		writeError(w, http.StatusNotFound, "data_source_provider_not_found", "The requested Data Source provider was not found.")
+		return
+	}
+	preview, err := s.media.StructuredPreview(r.Context(), provider, body.Configuration, body.PreviewDate)
+	if err != nil {
+		s.writeMediaError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": preview})
 }
 
 type updateAssetRequest struct {
@@ -438,7 +523,10 @@ func (s *server) mediaDiagnostics(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) writeMediaError(w http.ResponseWriter, r *http.Request, err error) {
+	var dependency *media.DependencyError
 	switch {
+	case errors.As(err, &dependency):
+		writeError(w, http.StatusConflict, "resource_in_use", dependency.Error())
 	case errors.Is(err, media.ErrNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "The requested media resource was not found.")
 	case errors.Is(err, media.ErrUploadTooLarge):

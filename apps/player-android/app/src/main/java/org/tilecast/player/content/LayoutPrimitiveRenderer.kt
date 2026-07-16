@@ -66,7 +66,7 @@ fun LayoutPrimitiveCanvas(
         val sy = height.value / document.canvas.height
         val hiddenGroups = document.placements.filter { it.primitive?.kind == "group" && it.primitive.binding?.hideWhenEmpty == true }.filter { group ->
             val binding = group.primitive?.binding ?: return@filter false
-            structuredSources[binding.sourceId]?.let { resolveLayoutBinding(binding, it, now).isBlank() } ?: true
+            structuredSources[binding.dataSourceId]?.let { resolveLayoutBinding(binding, it, now).isBlank() } ?: true
         }.map { it.id }.toSet()
         val canvasModifier = if (drawBackground) {
             Modifier.size(width, height).background(layoutColor(document.canvas.backgroundColor))
@@ -102,7 +102,7 @@ private fun PrimitivePlacement(placement: LayoutPlacement, sx: Float, sy: Float,
             textModifier.padding((primitive.padding * sx).dp),
             contentAlignment = when (primitive.verticalAlign) { "top" -> Alignment.TopStart; "bottom" -> Alignment.BottomStart; else -> Alignment.CenterStart },
         ) {
-            val resolved = primitive.binding?.let { binding -> structuredSources[binding.sourceId]?.let { resolveLayoutBinding(binding, it, now) } }
+            val resolved = primitive.binding?.let { binding -> structuredSources[binding.dataSourceId]?.let { resolveLayoutBinding(binding, it, now) } }
             if (primitive.binding?.hideWhenEmpty == true && resolved.isNullOrEmpty()) return@Box
             Text(
                 text = resolved ?: primitive.text,

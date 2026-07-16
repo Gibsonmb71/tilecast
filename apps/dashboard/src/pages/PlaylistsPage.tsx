@@ -28,9 +28,7 @@ export function canManagePlaylists(role?: string) {
 export function playlistDuration(items: PlaylistItem[]) {
   return items.reduce<number | null>((total, item) => {
     const duration =
-      item.assetType === "image" ||
-      item.assetType === "source" ||
-      item.assetType === "website"
+      item.assetType === "image" || item.assetType === "widget"
         ? item.durationMs
         : item.videoEndOffsetMs != null
           ? item.videoEndOffsetMs - (item.videoStartOffsetMs ?? 0)
@@ -217,15 +215,15 @@ export function PlaylistEditorPage() {
             durationMs:
               asset.type === "image"
                 ? 10000
-                : asset.type === "source" &&
-                    asset.source?.provider === "website"
+                : asset.type === "widget" &&
+                    asset.widget?.provider === "website"
                   ? 30000
                   : undefined,
             fitMode: "contain",
             transition: "none",
-            audioEnabled: asset.type !== "source",
-            volume: asset.type === "source" ? 0 : 1,
-            deliveryPolicy: asset.type === "source" ? "stream" : "download",
+            audioEnabled: asset.type !== "widget",
+            volume: asset.type === "widget" ? 0 : 1,
+            deliveryPolicy: asset.type === "widget" ? "stream" : "download",
           },
           csrf,
         );
@@ -395,7 +393,7 @@ export function PlaylistEditorPage() {
           open
           mode="multiple"
           csrf={csrf}
-          allowedTypes={["image", "video", "source"]}
+          allowedTypes={["image", "video", "widget"]}
           confirmLabel="Add to playlist"
           onConfirm={add}
           onClose={() => setPicker(false)}
@@ -451,7 +449,7 @@ function TimelineItem({
         <GripVertical size={18} />
         <b>{index + 1}</b>
       </span>
-      {item.assetType === "source" || item.assetType === "website" ? (
+      {item.assetType === "widget" ? (
         <span className="timeline-website-icon">
           <Globe2 size={24} />
         </span>
@@ -461,9 +459,7 @@ function TimelineItem({
       <span className="timeline-name">
         <strong>{item.assetName}</strong>
         <small>
-          {item.assetType === "image" ||
-          item.assetType === "source" ||
-          item.assetType === "website"
+          {item.assetType === "image" || item.assetType === "widget"
             ? item.durationMs
               ? `${item.durationMs / 1000} seconds`
               : "Until source ends"
@@ -509,7 +505,7 @@ function TimelineItem({
             )
           }
         >
-          {item.assetType === "source" || item.assetType === "website" ? (
+          {item.assetType === "widget" ? (
             <option value="stream">Stream</option>
           ) : (
             <>
@@ -520,7 +516,7 @@ function TimelineItem({
           )}
         </select>
       </label>
-      {item.assetType === "source" && item.sourceProvider === "youtube" ? (
+      {item.assetType === "widget" && item.widgetProvider === "youtube" ? (
         <>
           <label>
             Playback behavior
@@ -554,8 +550,7 @@ function TimelineItem({
           )}
         </>
       ) : item.assetType === "image" ||
-        item.assetType === "website" ||
-        (item.assetType === "source" && item.sourceProvider === "website") ? (
+        (item.assetType === "widget" && item.widgetProvider === "website") ? (
         <label>
           Seconds
           <input

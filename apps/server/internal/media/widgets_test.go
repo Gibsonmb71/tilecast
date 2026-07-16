@@ -8,7 +8,7 @@ import (
 )
 
 func TestYouTubeSourceNormalizesVideoAndPlaylistURLs(t *testing.T) {
-	provider := youtubeSourceProvider{service: &Service{}}
+	provider := youtubeWidgetProvider{service: &Service{}}
 	video, err := provider.Normalize(context.Background(), json.RawMessage(`{"url":"https://youtu.be/dQw4w9WgXcQ","volume":75}`))
 	if err != nil {
 		t.Fatal(err)
@@ -28,7 +28,7 @@ func TestYouTubeSourceNormalizesVideoAndPlaylistURLs(t *testing.T) {
 }
 
 func TestYouTubeSourceRejectsUnsupportedAndMalformedConfiguration(t *testing.T) {
-	provider := youtubeSourceProvider{service: &Service{}}
+	provider := youtubeWidgetProvider{service: &Service{}}
 	for _, raw := range []string{
 		`{"url":"https://example.com/watch?v=dQw4w9WgXcQ"}`,
 		`{"url":"http://youtube.com/watch?v=dQw4w9WgXcQ"}`,
@@ -43,7 +43,7 @@ func TestYouTubeSourceRejectsUnsupportedAndMalformedConfiguration(t *testing.T) 
 
 func TestSourceConfigurationRequiresOneJSONObject(t *testing.T) {
 	var config YouTubeConfig
-	err := decodeSourceConfig(json.RawMessage(`{"url":"https://youtu.be/dQw4w9WgXcQ"} {}`), &config)
+	err := decodeConfig(json.RawMessage(`{"url":"https://youtu.be/dQw4w9WgXcQ"} {}`), &config)
 	if err == nil || !strings.Contains(err.Error(), "one JSON object") {
 		t.Fatalf("expected one-object error, got %v", err)
 	}

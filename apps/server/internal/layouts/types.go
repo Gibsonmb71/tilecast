@@ -107,7 +107,7 @@ type Placement struct {
 	Visible    bool            `json:"visible"`
 	Locked     bool            `json:"locked"`
 	GroupID    *uuid.UUID      `json:"groupId,omitempty"`
-	AppID      *uuid.UUID      `json:"appId,omitempty"`
+	WidgetID   *uuid.UUID      `json:"widgetId,omitempty"`
 	AssetID    *uuid.UUID      `json:"assetId,omitempty"`
 	PlaylistID *uuid.UUID      `json:"playlistId,omitempty"`
 	Overrides  json.RawMessage `json:"overrides,omitempty"`
@@ -142,7 +142,7 @@ type Primitive struct {
 }
 
 type Binding struct {
-	SourceID      uuid.UUID `json:"sourceId"`
+	DataSourceID  uuid.UUID `json:"dataSourceId"`
 	Field         string    `json:"field"`
 	Prefix        string    `json:"prefix,omitempty"`
 	Suffix        string    `json:"suffix,omitempty"`

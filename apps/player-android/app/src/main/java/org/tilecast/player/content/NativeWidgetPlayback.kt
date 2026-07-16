@@ -41,40 +41,40 @@ import java.time.format.FormatStyle
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromJsonElement
-import org.tilecast.player.network.ClockAppConfig
-import org.tilecast.player.network.DateAppConfig
-import org.tilecast.player.network.DisplayAppConfig
+import org.tilecast.player.network.ClockWidgetConfig
+import org.tilecast.player.network.DateWidgetConfig
+import org.tilecast.player.network.DisplayWidgetConfig
 import org.tilecast.player.network.ManifestItem
-import org.tilecast.player.network.ManifestSource
-import org.tilecast.player.network.QRCodeAppConfig
+import org.tilecast.player.network.ManifestWidget
+import org.tilecast.player.network.QRCodeWidgetConfig
 import org.tilecast.player.network.StructuredSourceConfig
-import org.tilecast.player.network.TickerAppConfig
+import org.tilecast.player.network.TickerWidgetConfig
 
 @Composable
-fun NativeAppItem(item: ManifestItem, app: ManifestSource, session: PlaybackSession, onDone: () -> Unit, onFailure: (String) -> Unit, onStatus: (SourcePlaybackStatus) -> Unit, startOffsetMs: Long = 0) {
-    DisposableEffect(app.assetId) { onStatus(SourcePlaybackStatus(app.assetId, app.provider, "ready")); onDispose { onStatus(SourcePlaybackStatus()) } }
+fun WidgetItem(item: ManifestItem, widget: ManifestWidget, session: PlaybackSession, onDone: () -> Unit, onFailure: (String) -> Unit, onStatus: (WidgetPlaybackStatus) -> Unit, startOffsetMs: Long = 0) {
+    DisposableEffect(widget.assetId) { onStatus(WidgetPlaybackStatus(widget.assetId, widget.provider, "ready")); onDispose { onStatus(WidgetPlaybackStatus()) } }
     LaunchedEffect(item.id, startOffsetMs) { delay(((item.durationMs ?: 30_000) - startOffsetMs).coerceAtLeast(1)); onDone() }
-    when (app.provider) {
-        "clock" -> runCatching { Json.decodeFromJsonElement<ClockAppConfig>(app.configuration) }.onSuccess { ClockApp(it) }.onFailure { onFailure("Clock App configuration is invalid") }
-        "date" -> runCatching { Json.decodeFromJsonElement<DateAppConfig>(app.configuration) }.onSuccess { DateApp(it) }.onFailure { onFailure("Date App configuration is invalid") }
-        "qrcode" -> runCatching { Json.decodeFromJsonElement<QRCodeAppConfig>(app.configuration) }.onSuccess { QRCodeApp(it) }.onFailure { onFailure("QR Code App configuration is invalid") }
-        "ticker" -> runCatching { Json.decodeFromJsonElement<TickerAppConfig>(app.configuration) }.onSuccess { config ->
-            val data = session.content.manifest.sources.firstOrNull { it.assetId == config.sourceAssetId } ?: return@onSuccess onFailure("Ticker data is unavailable")
+    when (widget.provider) {
+        "clock" -> runCatching { Json.decodeFromJsonElement<ClockWidgetConfig>(widget.configuration) }.onSuccess { ClockWidget(it) }.onFailure { onFailure("Clock Widget configuration is invalid") }
+        "date" -> runCatching { Json.decodeFromJsonElement<DateWidgetConfig>(widget.configuration) }.onSuccess { DateWidget(it) }.onFailure { onFailure("Date Widget configuration is invalid") }
+        "qrcode" -> runCatching { Json.decodeFromJsonElement<QRCodeWidgetConfig>(widget.configuration) }.onSuccess { QRCodeWidget(it) }.onFailure { onFailure("QR Code Widget configuration is invalid") }
+        "ticker" -> runCatching { Json.decodeFromJsonElement<TickerWidgetConfig>(widget.configuration) }.onSuccess { config ->
+            val data = session.content.manifest.dataSources.firstOrNull { it.id == config.dataSourceId } ?: return@onSuccess onFailure("Ticker data is unavailable")
             val structured = runCatching { Json.decodeFromJsonElement<StructuredSourceConfig>(data.configuration) }.getOrElse { return@onSuccess onFailure("Ticker data is invalid") }
-            TickerApp(config, structured)
-        }.onFailure { onFailure("Ticker App configuration is invalid") }
-        "menu", "list", "table", "agenda" -> runCatching { Json.decodeFromJsonElement<DisplayAppConfig>(app.configuration) }.onSuccess { config ->
-            val data = session.content.manifest.sources.firstOrNull { it.assetId == config.sourceAssetId } ?: return@onSuccess onFailure("Display App data is unavailable")
+            TickerWidget(config, structured)
+        }.onFailure { onFailure("Ticker Widget configuration is invalid") }
+        "menu", "list", "table", "agenda" -> runCatching { Json.decodeFromJsonElement<DisplayWidgetConfig>(widget.configuration) }.onSuccess { config ->
+            val data = session.content.manifest.dataSources.firstOrNull { it.id == config.dataSourceId } ?: return@onSuccess onFailure("Widget data is unavailable")
             when (data.provider) {
-                "calendar" -> runCatching { Json.decodeFromJsonElement<org.tilecast.player.network.CalendarSourceConfig>(data.configuration) }.onSuccess { DisplayCalendarApp(config, it) }.onFailure { onFailure("Agenda data is invalid") }
-                else -> runCatching { Json.decodeFromJsonElement<StructuredSourceConfig>(data.configuration) }.onSuccess { DisplayStructuredApp(config, it) }.onFailure { onFailure("Display App data is invalid") }
+                "calendar" -> runCatching { Json.decodeFromJsonElement<org.tilecast.player.network.CalendarSourceConfig>(data.configuration) }.onSuccess { DisplayCalendarWidget(config, it) }.onFailure { onFailure("Agenda data is invalid") }
+                else -> runCatching { Json.decodeFromJsonElement<StructuredSourceConfig>(data.configuration) }.onSuccess { DisplayStructuredWidget(config, it) }.onFailure { onFailure("Widget data is invalid") }
             }
-        }.onFailure { onFailure("Display App configuration is invalid") }
+        }.onFailure { onFailure("Widget configuration is invalid") }
     }
 }
 
 @Composable
-private fun ClockApp(config: ClockAppConfig) {
+private fun ClockWidget(config: ClockWidgetConfig) {
     var now by remember { mutableStateOf(Instant.now()) }
     LaunchedEffect(config.timezone, config.showSeconds) {
         while (true) {
@@ -88,13 +88,13 @@ private fun ClockApp(config: ClockAppConfig) {
         if (config.showSeconds) "h:mm:ss a" else "h:mm a"
     }
     val text = now.atZone(ZoneId.of(config.timezone)).format(DateTimeFormatter.ofPattern(pattern))
-    CenteredApp(config.backgroundColor) {
-        FittedAppText(text, parseColor(config.foregroundColor), 86f, FontWeight.SemiBold)
+    CenteredWidget(config.backgroundColor) {
+        FittedWidgetText(text, parseColor(config.foregroundColor), 86f, FontWeight.SemiBold)
     }
 }
 
 @Composable
-private fun DateApp(config: DateAppConfig) {
+private fun DateWidget(config: DateWidgetConfig) {
     var now by remember { mutableStateOf(Instant.now()) }
     LaunchedEffect(config.timezone) {
         while (true) {
@@ -109,13 +109,13 @@ private fun DateApp(config: DateAppConfig) {
         else -> FormatStyle.FULL
     }
     val text = now.atZone(ZoneId.of(config.timezone)).format(DateTimeFormatter.ofLocalizedDate(style))
-    CenteredApp(config.backgroundColor) {
-        FittedAppText(text, parseColor(config.foregroundColor), 58f, FontWeight.Medium)
+    CenteredWidget(config.backgroundColor) {
+        FittedWidgetText(text, parseColor(config.foregroundColor), 58f, FontWeight.Medium)
     }
 }
-@Composable private fun QRCodeApp(config: QRCodeAppConfig) { val bitmap = remember(config) { qrBitmap(config) }; CenteredApp(config.backgroundColor) { Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(18.dp)) { Image(bitmap.asImageBitmap(), null); if (config.label.isNotBlank()) Text(config.label, color = parseColor(config.foregroundColor), fontSize = 24.sp, textAlign = TextAlign.Center) } } }
+@Composable private fun QRCodeWidget(config: QRCodeWidgetConfig) { val bitmap = remember(config) { qrBitmap(config) }; CenteredWidget(config.backgroundColor) { Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(18.dp)) { Image(bitmap.asImageBitmap(), null); if (config.label.isNotBlank()) Text(config.label, color = parseColor(config.foregroundColor), fontSize = 24.sp, textAlign = TextAlign.Center) } } }
 @Composable
-private fun TickerApp(config: TickerAppConfig, data: StructuredSourceConfig) {
+private fun TickerWidget(config: TickerWidgetConfig, data: StructuredSourceConfig) {
     var now by remember { mutableStateOf(Instant.now()) }
     LaunchedEffect(data.dateSelection.timezone) {
         while (true) {
@@ -134,14 +134,14 @@ private fun TickerApp(config: TickerAppConfig, data: StructuredSourceConfig) {
             else -> record.values[config.field]
         }.takeIf { !it.isNullOrBlank() }
     }.joinToString(config.separator).ifBlank { data.emptyState }
-    CenteredApp(config.backgroundColor) {
-        FittedAppText(text, parseColor(config.foregroundColor), 34f, FontWeight.Normal, maxLines = 2)
+    CenteredWidget(config.backgroundColor) {
+        FittedWidgetText(text, parseColor(config.foregroundColor), 34f, FontWeight.Normal, maxLines = 2)
     }
 }
-@Composable private fun DisplayStructuredApp(config: DisplayAppConfig, data: StructuredSourceConfig) { var now by remember { mutableStateOf(Instant.now()) }; LaunchedEffect(data.dateSelection.timezone) { while (true) { now = Instant.now(); delay(30_000) } }; val records = selectDateAwareRecords(data, now).take(config.maximumItems); Box(Modifier.fillMaxSize().background(parseColor(config.backgroundColor)).padding(36.dp)) { LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp)) { items(records, key = { it.id }) { record -> Text(config.fields.mapNotNull { field -> when(field) { "title" -> record.title; "subtitle" -> record.subtitle; "date" -> record.date; "author" -> record.author; "description" -> record.description; else -> record.values[field] }.takeIf { !it.isNullOrBlank() } }.joinToString("  "), color = parseColor(config.foregroundColor), fontSize = 26.sp) } } } }
-@Composable private fun DisplayCalendarApp(config: DisplayAppConfig, data: org.tilecast.player.network.CalendarSourceConfig) { Box(Modifier.fillMaxSize().background(parseColor(config.backgroundColor)).padding(36.dp)) { LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp)) { items(data.data.events.take(config.maximumItems), key = { it.id }) { event -> Text(listOf(event.start, event.title, event.location).filter(String::isNotBlank).joinToString("  "), color = parseColor(config.foregroundColor), fontSize = 26.sp) } } } }
+@Composable private fun DisplayStructuredWidget(config: DisplayWidgetConfig, data: StructuredSourceConfig) { var now by remember { mutableStateOf(Instant.now()) }; LaunchedEffect(data.dateSelection.timezone) { while (true) { now = Instant.now(); delay(30_000) } }; val records = selectDateAwareRecords(data, now).take(config.maximumItems); Box(Modifier.fillMaxSize().background(parseColor(config.backgroundColor)).padding(36.dp)) { LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp)) { items(records, key = { it.id }) { record -> Text(config.fields.mapNotNull { field -> when(field) { "title" -> record.title; "subtitle" -> record.subtitle; "date" -> record.date; "author" -> record.author; "description" -> record.description; else -> record.values[field] }.takeIf { !it.isNullOrBlank() } }.joinToString("  "), color = parseColor(config.foregroundColor), fontSize = 26.sp) } } } }
+@Composable private fun DisplayCalendarWidget(config: DisplayWidgetConfig, data: org.tilecast.player.network.CalendarSourceConfig) { Box(Modifier.fillMaxSize().background(parseColor(config.backgroundColor)).padding(36.dp)) { LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp)) { items(data.data.events.take(config.maximumItems), key = { it.id }) { event -> Text(listOf(event.start, event.title, event.location).filter(String::isNotBlank).joinToString("  "), color = parseColor(config.foregroundColor), fontSize = 26.sp) } } } }
 @Composable
-private fun CenteredApp(background: String, content: @Composable () -> Unit) {
+private fun CenteredWidget(background: String, content: @Composable () -> Unit) {
     BoxWithConstraints(Modifier.fillMaxSize().background(parseColor(background))) {
         val inset = minOf(40f, minOf(maxWidth.value, maxHeight.value) * 0.08f).dp
         Box(Modifier.fillMaxSize().padding(inset), contentAlignment = Alignment.Center) { content() }
@@ -149,7 +149,7 @@ private fun CenteredApp(background: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun FittedAppText(
+private fun FittedWidgetText(
     text: String,
     color: Color,
     maximumFontSizeSp: Float,
@@ -204,4 +204,4 @@ internal fun fittedFontSizeSp(
     return minOf(maximumFontSizeSp, widthLimit, heightLimit).coerceAtLeast(minOf(8f, maximumFontSizeSp))
 }
 private fun parseColor(value: String) = runCatching { Color(android.graphics.Color.parseColor(value)) }.getOrDefault(Color.Black)
-private fun qrBitmap(config: QRCodeAppConfig): Bitmap { val level = when (config.errorCorrection) { "low" -> ErrorCorrectionLevel.L; "quartile" -> ErrorCorrectionLevel.Q; "high" -> ErrorCorrectionLevel.H; else -> ErrorCorrectionLevel.M }; val matrix = QRCodeWriter().encode(config.value, BarcodeFormat.QR_CODE, 480, 480, mapOf(EncodeHintType.ERROR_CORRECTION to level, EncodeHintType.MARGIN to 2)); val foreground = android.graphics.Color.parseColor(config.foregroundColor); val background = android.graphics.Color.parseColor(config.backgroundColor); return Bitmap.createBitmap(480, 480, Bitmap.Config.RGB_565).apply { for (x in 0 until 480) for (y in 0 until 480) setPixel(x, y, if (matrix[x, y]) foreground else background) } }
+private fun qrBitmap(config: QRCodeWidgetConfig): Bitmap { val level = when (config.errorCorrection) { "low" -> ErrorCorrectionLevel.L; "quartile" -> ErrorCorrectionLevel.Q; "high" -> ErrorCorrectionLevel.H; else -> ErrorCorrectionLevel.M }; val matrix = QRCodeWriter().encode(config.value, BarcodeFormat.QR_CODE, 480, 480, mapOf(EncodeHintType.ERROR_CORRECTION to level, EncodeHintType.MARGIN to 2)); val foreground = android.graphics.Color.parseColor(config.foregroundColor); val background = android.graphics.Color.parseColor(config.backgroundColor); return Bitmap.createBitmap(480, 480, Bitmap.Config.RGB_565).apply { for (x in 0 until 480) for (y in 0 until 480) setPixel(x, y, if (matrix[x, y]) foreground else background) } }

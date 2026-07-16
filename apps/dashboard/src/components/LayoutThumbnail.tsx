@@ -216,14 +216,14 @@ function ContentThumbnail({
   const fill =
     placement.type === "playlistZone"
       ? "#1d4ed8"
-      : placement.type === "app"
+      : placement.type === "widget"
         ? "#0f766e"
         : "#334155";
   const label =
     placement.type === "playlistZone"
       ? `Playlist · ${placement.name}`
-      : placement.type === "app"
-        ? `App · ${placement.name}`
+      : placement.type === "widget"
+        ? `Widget · ${placement.name}`
         : placement.name;
   return (
     <g {...common}>

@@ -34,13 +34,14 @@ fun FullscreenLayoutPlayback(
     layout: ManifestLayout,
     onError: (String) -> Unit,
     onWebsiteStatus: (WebsitePlaybackStatus) -> Unit = {},
-    onSourceStatus: (SourcePlaybackStatus) -> Unit = {},
+    onWidgetStatus: (WidgetPlaybackStatus) -> Unit = {},
     onProgress: () -> Unit = {},
 ) {
     val document = layout.document
-    val sources = session.content.manifest.sources.associateBy { it.assetId }
-    val structured = sources.values.filter { it.provider == "csv" || it.provider == "json" }.mapNotNull { source ->
-        runCatching { source.assetId to Json.decodeFromJsonElement<StructuredSourceConfig>(source.configuration) }.getOrNull()
+    val widgets = session.content.manifest.widgets.associateBy { it.assetId }
+    // One cached Data Source dataset is shared by every text binding in the Layout.
+    val structured = session.content.manifest.dataSources.filter { it.provider == "csv" || it.provider == "json" }.mapNotNull { source ->
+        runCatching { source.id to Json.decodeFromJsonElement<StructuredSourceConfig>(source.configuration) }.getOrNull()
     }.toMap()
     var now by remember { mutableStateOf(Instant.now()) }
     LaunchedEffect(structured) {
@@ -53,7 +54,7 @@ fun FullscreenLayoutPlayback(
         it.primitive?.kind == "group" && it.primitive.binding?.hideWhenEmpty == true
     }.filter { group ->
         val binding = group.primitive?.binding ?: return@filter false
-        structured[binding.sourceId]?.let { resolveLayoutBinding(binding, it, now).isBlank() } ?: true
+        structured[binding.dataSourceId]?.let { resolveLayoutBinding(binding, it, now).isBlank() } ?: true
     }.map { it.id }.toSet()
     BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         val sourceRatio = document.canvas.width.toFloat() / document.canvas.height
@@ -87,15 +88,15 @@ fun FullscreenLayoutPlayback(
                 Box(modifier) {
                     when (placement.type) {
                         "playlistZone" -> session.content.manifest.playlists.firstOrNull { it.id == placement.playlistId }?.let { playlist ->
-                            IndependentPlaylistZone(session, playlist, placement.playback?.muted ?: true, onError, onWebsiteStatus, onSourceStatus, onProgress)
+                            IndependentPlaylistZone(session, playlist, placement.playback?.muted ?: true, onError, onWebsiteStatus, onWidgetStatus, onProgress)
                         }
-                        "app" -> sources[placement.appId]?.let { source ->
-                            val item = ManifestItem("layout-${placement.id}", source.assetId, assetType = "source", durationMs = Long.MAX_VALUE, fitMode = placement.playback?.fit ?: "contain", transition = "none", audioEnabled = !(placement.playback?.muted ?: true), volume = 1f, deliveryPolicy = "stream")
-                            RenderedItem(item, null, session.content.manifest.websites.firstOrNull { it.assetId == source.assetId }, source, session, 0, {}, onError, onWebsiteStatus, onSourceStatus, onProgress)
+                        "widget" -> widgets[placement.widgetId]?.let { widget ->
+                            val item = ManifestItem("layout-${placement.id}", widget.assetId, assetType = "widget", durationMs = Long.MAX_VALUE, fitMode = placement.playback?.fit ?: "contain", transition = "none", audioEnabled = !(placement.playback?.muted ?: true), volume = 1f, deliveryPolicy = "stream")
+                            RenderedItem(item, null, session.content.manifest.websites.firstOrNull { it.assetId == widget.assetId }, widget, session, 0, {}, onError, onWebsiteStatus, onWidgetStatus, onProgress)
                         }
                         "asset" -> session.content.manifest.assets.firstOrNull { it.assetId == placement.assetId }?.let { asset ->
                             val item = ManifestItem("layout-${placement.id}", asset.assetId, asset.variantId, if (asset.mimeType.startsWith("video/")) "video" else "image", if (asset.mimeType.startsWith("image/")) Long.MAX_VALUE else null, placement.playback?.fit ?: "contain", "none", !(placement.playback?.muted ?: true), 1f, deliveryPolicy = "download")
-                            RenderedItem(item, asset, null, null, session, 0, {}, onError, onWebsiteStatus, onSourceStatus, onProgress)
+                            RenderedItem(item, asset, null, null, session, 0, {}, onError, onWebsiteStatus, onWidgetStatus, onProgress)
                         }
                     }
                 }
@@ -105,13 +106,13 @@ fun FullscreenLayoutPlayback(
 }
 
 @Composable
-private fun IndependentPlaylistZone(session: PlaybackSession, playlist: ManifestPlaylist, muted: Boolean, onError: (String) -> Unit, onWebsiteStatus: (WebsitePlaybackStatus) -> Unit, onSourceStatus: (SourcePlaybackStatus) -> Unit, onProgress: () -> Unit) {
+private fun IndependentPlaylistZone(session: PlaybackSession, playlist: ManifestPlaylist, muted: Boolean, onError: (String) -> Unit, onWebsiteStatus: (WebsitePlaybackStatus) -> Unit, onWidgetStatus: (WidgetPlaybackStatus) -> Unit, onProgress: () -> Unit) {
     if (playlist.items.isEmpty()) return
     var index by remember(playlist.id, playlist.revision) { mutableIntStateOf(0) }
     val sourceItem = playlist.items[index.coerceIn(0, playlist.items.lastIndex)]
     val item = if (muted) sourceItem.copy(audioEnabled = false, volume = 0f) else sourceItem
     val asset = item.variantId?.let { id -> session.content.manifest.assets.firstOrNull { it.variantId == id } }
     val website = session.content.manifest.websites.firstOrNull { it.assetId == item.assetId }
-    val source = session.content.manifest.sources.firstOrNull { it.assetId == item.assetId }
-    RenderedItem(item, asset, website, source, session, 0, { index = (index + 1) % playlist.items.size }, { onError(it); index = (index + 1) % playlist.items.size }, onWebsiteStatus, onSourceStatus, onProgress)
+    val widget = session.content.manifest.widgets.firstOrNull { it.assetId == item.assetId }
+    RenderedItem(item, asset, website, widget, session, 0, { index = (index + 1) % playlist.items.size }, { onError(it); index = (index + 1) % playlist.items.size }, onWebsiteStatus, onWidgetStatus, onProgress)
 }

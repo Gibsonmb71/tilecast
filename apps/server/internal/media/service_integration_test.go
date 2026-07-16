@@ -126,7 +126,7 @@ func TestMediaUploadProcessingAndDeletionLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if website.Type != "source" || website.Source == nil || website.Source.Provider != "website" || website.Website == nil || len(website.Variants) != 0 || website.Website.FallbackImageAssetID == nil {
+	if website.Type != "widget" || website.Widget == nil || website.Widget.Provider != "website" || website.Website == nil || len(website.Variants) != 0 || website.Website.FallbackImageAssetID == nil {
 		t.Fatalf("website=%#v", website)
 	}
 	websiteInput.URL = "https://status.example.org/display"
@@ -149,20 +149,20 @@ func TestMediaUploadProcessingAndDeletionLifecycle(t *testing.T) {
 	}))
 	defer calendarServer.Close()
 	calendarConfiguration, _ := json.Marshal(CalendarConfig{Calendars: []CalendarFeed{{Name: "District", URL: calendarServer.URL}}, DisplayMode: "upcoming", MaxEvents: 10, Fields: CalendarFields{Title: true, StartTime: true}, Timezone: "UTC", RefreshIntervalSeconds: 300, StalenessLimitHours: 168, EmptyState: "No events"})
-	calendarAsset, err := service.CreateSource(ctx, owner.User.ID, SourceInput{Provider: "calendar", Name: "District calendar", Configuration: calendarConfiguration})
+	calendarAsset, err := service.CreateDataSource(ctx, owner.User.ID, DataSourceInput{Provider: "calendar", Name: "District calendar", Configuration: calendarConfiguration})
 	if err != nil {
 		t.Fatal(err)
 	}
-	sourceWorker := NewSourceRefreshWorker(service, nil)
+	sourceWorker := NewDataSourceRefreshWorker(service, nil)
 	worked, err := sourceWorker.runOne(ctx)
 	if err != nil || !worked {
 		t.Fatalf("calendar refresh worked=%t err=%v", worked, err)
 	}
-	calendarDiagnostics, err := service.SourceDiagnostics(ctx, calendarAsset.ID)
+	calendarDiagnostics, err := service.DataSourceRefreshDiagnostics(ctx, calendarAsset.ID)
 	if err != nil || calendarDiagnostics.ParseStatus != "success" || calendarDiagnostics.AvailableEventCount != 1 || calendarDiagnostics.LastSuccessfulAt == nil {
 		t.Fatalf("calendar diagnostics=%#v err=%v", calendarDiagnostics, err)
 	}
-	projected, err := service.PlayerSourceConfiguration(ctx, calendarAsset.ID, "calendar", calendarConfiguration)
+	projected, err := service.PlayerDataSourceConfiguration(ctx, calendarAsset.ID, "calendar", calendarConfiguration)
 	if err != nil || strings.Contains(string(projected), calendarServer.URL) || !strings.Contains(string(projected), "Board meeting") {
 		t.Fatalf("calendar projection=%s err=%v", projected, err)
 	}
@@ -172,7 +172,7 @@ func TestMediaUploadProcessingAndDeletionLifecycle(t *testing.T) {
 	}))
 	defer jsonServer.Close()
 	structuredConfiguration, _ := json.Marshal(StructuredSourceConfig{URL: jsonServer.URL, Presentation: "list", MaxItems: 10, Fields: StructuredFields{Title: true, Subtitle: true}, Sort: "source", Mapping: &StructuredMapping{RootList: "/items", Title: "/name", Subtitle: "/room"}, RefreshIntervalSeconds: 300, StalenessLimitHours: 168, EmptyState: "No items"})
-	structuredAsset, err := service.CreateSource(ctx, owner.User.ID, SourceInput{Provider: "json", Name: "Lunch data", Configuration: structuredConfiguration})
+	structuredAsset, err := service.CreateDataSource(ctx, owner.User.ID, DataSourceInput{Provider: "json", Name: "Lunch data", Configuration: structuredConfiguration})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,11 +180,11 @@ func TestMediaUploadProcessingAndDeletionLifecycle(t *testing.T) {
 	if err != nil || !worked {
 		t.Fatalf("structured refresh worked=%t err=%v", worked, err)
 	}
-	structuredDiagnostics, err := service.SourceDiagnostics(ctx, structuredAsset.ID)
+	structuredDiagnostics, err := service.DataSourceRefreshDiagnostics(ctx, structuredAsset.ID)
 	if err != nil || structuredDiagnostics.AvailableItemCount != 1 || structuredDiagnostics.ParseStatus != "success" {
 		t.Fatalf("structured diagnostics=%#v err=%v", structuredDiagnostics, err)
 	}
-	structuredProjection, err := service.PlayerSourceConfiguration(ctx, structuredAsset.ID, "json", structuredConfiguration)
+	structuredProjection, err := service.PlayerDataSourceConfiguration(ctx, structuredAsset.ID, "json", structuredConfiguration)
 	if err != nil || strings.Contains(string(structuredProjection), jsonServer.URL) || strings.Contains(string(structuredProjection), "rootList") || !strings.Contains(string(structuredProjection), "Lunch menu") {
 		t.Fatalf("structured projection=%s err=%v", structuredProjection, err)
 	}
