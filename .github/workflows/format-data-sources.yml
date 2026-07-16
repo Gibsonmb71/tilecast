@@ -1,0 +1,33 @@
+name: Format Data Source changes
+
+on:
+  push:
+    branches:
+      - fix/format-data-source-pages
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/format-data-source-pages
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Format changed files
+        run: npx prettier --write apps/dashboard/src/pages/DataSourcesPage.tsx apps/dashboard/src/styles/data-sources.css
+      - name: Commit formatted files and remove one-time workflow
+        run: |
+          rm .github/workflows/format-data-sources.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/dashboard/src/pages/DataSourcesPage.tsx apps/dashboard/src/styles/data-sources.css .github/workflows/format-data-sources.yml
+          git diff --cached --quiet || git commit -m "Format Data Source creation files"
+          git push origin HEAD:fix/format-data-source-pages
