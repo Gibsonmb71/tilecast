@@ -551,7 +551,7 @@
 }
 
 .app-editor-route .source-gallery {
-  width: min(880px, 100%);
+  width: min(960px, 100%);
   max-width: none;
   margin: 0 auto;
   overflow: hidden;
@@ -581,9 +581,27 @@
 
 .app-editor-route .source-provider-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--tc-space-2);
+  padding: 0;
+}
+
+.app-editor-route .source-gallery > .source-provider-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   padding: var(--tc-space-4);
+}
+
+.app-editor-route .source-provider-groups {
+  gap: var(--tc-space-5);
+  padding: var(--tc-space-4);
+}
+
+.app-editor-route .source-provider-group {
+  gap: var(--tc-space-2);
+}
+
+.app-editor-route .source-provider-group > h3 {
+  padding-inline: var(--tc-space-1);
 }
 
 .app-editor-route .source-provider-grid button {
@@ -593,7 +611,7 @@
   column-gap: var(--tc-space-3);
   row-gap: 2px;
   align-items: center;
-  min-height: 76px;
+  min-height: 82px;
   padding: var(--tc-space-3);
   color: var(--tc-text-primary);
   text-align: left;
@@ -635,6 +653,10 @@
 
   .data-source-create-shell__guide {
     position: static;
+  }
+
+  .app-editor-route .source-provider-group .source-provider-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

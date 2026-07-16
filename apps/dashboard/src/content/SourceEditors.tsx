@@ -62,60 +62,74 @@ export function WidgetProviderGallery({
             <X size={18} />
           </button>
         </header>
-        <div className="source-provider-grid">
-          <h3 className="source-provider-group-title">Web and video</h3>
-          <button type="button" onClick={() => onChoose("website")}>
-            <Globe2 size={30} />
-            <strong>Website</strong>
-            <span>Display an approved webpage.</span>
-          </button>
-          <button type="button" onClick={() => onChoose("youtube")}>
-            <Youtube size={30} />
-            <strong>YouTube</strong>
-            <span>Play a YouTube video or playlist without an API key.</span>
-          </button>
-          <h3 className="source-provider-group-title">Basic</h3>
-          <button type="button" onClick={() => onChoose("clock")}>
-            <Clock3 size={30} />
-            <strong>Clock</strong>
-            <span>Show a live local time using a configured timezone.</span>
-          </button>
-          <button type="button" onClick={() => onChoose("date")}>
-            <CalendarDays size={30} />
-            <strong>Date</strong>
-            <span>Show a live localized calendar date.</span>
-          </button>
-          <button type="button" onClick={() => onChoose("qrcode")}>
-            <QrCode size={30} />
-            <strong>QR Code</strong>
-            <span>Display validated text or a URL as a scannable code.</span>
-          </button>
-          <h3 className="source-provider-group-title">Data</h3>
-          <button type="button" onClick={() => onChoose("ticker")}>
-            <TextQuote size={30} />
-            <strong>Ticker</strong>
-            <span>Scroll a selected field from a Data Source.</span>
-          </button>
-          <button type="button" onClick={() => onChoose("menu")}>
-            <Utensils size={30} />
-            <strong>Menu</strong>
-            <span>Format selected CSV or JSON fields as a signage menu.</span>
-          </button>
-          <button type="button" onClick={() => onChoose("list")}>
-            <ListTree size={30} />
-            <strong>List</strong>
-            <span>Present records from a reusable Data Source.</span>
-          </button>
-          <button type="button" onClick={() => onChoose("table")}>
-            <Table2 size={30} />
-            <strong>Table</strong>
-            <span>Show selected CSV or JSON fields in columns.</span>
-          </button>
-          <button type="button" onClick={() => onChoose("agenda")}>
-            <CalendarDays size={30} />
-            <strong>Agenda</strong>
-            <span>Display dated Data Source records in agenda form.</span>
-          </button>
+        <div className="source-provider-groups">
+          <section className="source-provider-group">
+            <h3>Web and video</h3>
+            <div className="source-provider-grid">
+              <button type="button" onClick={() => onChoose("website")}>
+                <Globe2 size={26} />
+                <strong>Website</strong>
+                <span>Display an approved webpage.</span>
+              </button>
+              <button type="button" onClick={() => onChoose("youtube")}>
+                <Youtube size={26} />
+                <strong>YouTube</strong>
+                <span>
+                  Play a YouTube video or playlist without an API key.
+                </span>
+              </button>
+            </div>
+          </section>
+          <section className="source-provider-group">
+            <h3>Essentials</h3>
+            <div className="source-provider-grid">
+              <button type="button" onClick={() => onChoose("clock")}>
+                <Clock3 size={26} />
+                <strong>Clock</strong>
+                <span>Show live local time in a configured timezone.</span>
+              </button>
+              <button type="button" onClick={() => onChoose("date")}>
+                <CalendarDays size={26} />
+                <strong>Date</strong>
+                <span>Show a live localized calendar date.</span>
+              </button>
+              <button type="button" onClick={() => onChoose("qrcode")}>
+                <QrCode size={26} />
+                <strong>QR Code</strong>
+                <span>Display text or a URL as a scannable code.</span>
+              </button>
+            </div>
+          </section>
+          <section className="source-provider-group">
+            <h3>Data-driven</h3>
+            <div className="source-provider-grid">
+              <button type="button" onClick={() => onChoose("ticker")}>
+                <TextQuote size={26} />
+                <strong>Ticker</strong>
+                <span>Scroll a selected field from a Data Source.</span>
+              </button>
+              <button type="button" onClick={() => onChoose("menu")}>
+                <Utensils size={26} />
+                <strong>Menu</strong>
+                <span>Format selected fields as a signage menu.</span>
+              </button>
+              <button type="button" onClick={() => onChoose("list")}>
+                <ListTree size={26} />
+                <strong>List</strong>
+                <span>Present records from a reusable Data Source.</span>
+              </button>
+              <button type="button" onClick={() => onChoose("table")}>
+                <Table2 size={26} />
+                <strong>Table</strong>
+                <span>Show selected fields in structured columns.</span>
+              </button>
+              <button type="button" onClick={() => onChoose("agenda")}>
+                <CalendarDays size={26} />
+                <strong>Agenda</strong>
+                <span>Display dated records in agenda form.</span>
+              </button>
+            </div>
+          </section>
         </div>
       </section>
     </div>
