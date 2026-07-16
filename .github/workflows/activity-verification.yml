@@ -50,12 +50,15 @@ jobs:
           echo "$?" > "$RUNNER_TEMP/server-test.status"
           go build ./cmd/tilecast > "$RUNNER_TEMP/server-build.log" 2>&1
           echo "$?" > "$RUNNER_TEMP/server-build.status"
+          cp internal/httpapi/activity_ingest.go "$RUNNER_TEMP/activity_ingest.go"
           exit 0
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: activity-server-verification
-          path: ${{ runner.temp }}/server-*
+          path: |
+            ${{ runner.temp }}/server-*
+            ${{ runner.temp }}/activity_ingest.go
           retention-days: 1
 
   android:
