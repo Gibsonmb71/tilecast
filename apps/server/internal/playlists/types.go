@@ -49,7 +49,7 @@ type Item struct {
 	DeliveryPolicy       string     `json:"deliveryPolicy"`
 	AssetName            string     `json:"assetName"`
 	AssetType            string     `json:"assetType"`
-	SourceProvider       string     `json:"sourceProvider,omitempty"`
+	WidgetProvider       string     `json:"widgetProvider,omitempty"`
 	AssetStatus          string     `json:"assetStatus"`
 	AssetDurationSeconds *float64   `json:"assetDurationSeconds,omitempty"`
 	ThumbnailURL         string     `json:"thumbnailUrl"`
@@ -303,10 +303,10 @@ type PlayerStatus struct {
 	WebsiteCurrentHost            string     `json:"websiteCurrentHost,omitempty"`
 	WebsiteFallbackShown          *bool      `json:"websiteFallbackShown,omitempty"`
 	WebsiteRendererRecoveryCount  *int       `json:"websiteRendererRecoveryCount,omitempty"`
-	CurrentSourceID               *uuid.UUID `json:"currentSourceId,omitempty"`
-	SourceProvider                string     `json:"sourceProvider,omitempty"`
-	SourceState                   string     `json:"sourceState,omitempty"`
-	SourceError                   string     `json:"sourceError,omitempty"`
+	CurrentWidgetID               *uuid.UUID `json:"currentWidgetId,omitempty"`
+	WidgetProvider                string     `json:"widgetProvider,omitempty"`
+	WidgetState                   string     `json:"widgetState,omitempty"`
+	WidgetError                   string     `json:"widgetError,omitempty"`
 	ActiveEmergencyID             *uuid.UUID `json:"activeEmergencyId,omitempty"`
 	EmergencyState                string     `json:"emergencyState,omitempty"`
 	EmergencyPreparationProgress  *int       `json:"emergencyPreparationProgress,omitempty"`

@@ -125,7 +125,7 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (Playlist, error) {
 	p.LayoutUsage = []LayoutUsage{}
 	for rows.Next() {
 		var item Item
-		if err := rows.Scan(&item.ID, &item.AssetID, &item.Position, &item.DurationMS, &item.FitMode, &item.Transition, &item.AudioEnabled, &item.Volume, &item.VideoStartOffsetMS, &item.VideoEndOffsetMS, &item.DeliveryPolicy, &item.AssetName, &item.AssetType, &item.SourceProvider, &item.AssetStatus, &item.AssetDurationSeconds, &item.VariantID, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.AssetID, &item.Position, &item.DurationMS, &item.FitMode, &item.Transition, &item.AudioEnabled, &item.Volume, &item.VideoStartOffsetMS, &item.VideoEndOffsetMS, &item.DeliveryPolicy, &item.AssetName, &item.AssetType, &item.WidgetProvider, &item.AssetStatus, &item.AssetDurationSeconds, &item.VariantID, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			return Playlist{}, err
 		}
 		item.ThumbnailURL = "/api/v1/assets/" + item.AssetID.String() + "/thumbnail"
@@ -1244,11 +1244,11 @@ func manifestETag(screenID uuid.UUID, version int64) string {
 }
 
 func (s *Service) ReportStatus(ctx context.Context, screenID uuid.UUID, status PlayerStatus) error {
-	if len(status.PlaybackState) > 80 || len(status.LastSyncError) > 500 || len(status.LastPlaybackError) > 500 || len(status.ScheduleEvaluationError) > 500 || len(status.WebsiteState) > 40 || len(status.WebsiteFailureCategory) > 80 || len(status.WebsiteCurrentHost) > 253 || len(status.SourceState) > 40 || len(status.SourceError) > 120 {
+	if len(status.PlaybackState) > 80 || len(status.LastSyncError) > 500 || len(status.LastPlaybackError) > 500 || len(status.ScheduleEvaluationError) > 500 || len(status.WebsiteState) > 40 || len(status.WebsiteFailureCategory) > 80 || len(status.WebsiteCurrentHost) > 253 || len(status.WidgetState) > 40 || len(status.WidgetError) > 120 {
 		return errors.New("player status is invalid")
 	}
 	widgetProviders := map[string]bool{"": true, "website": true, "youtube": true, "clock": true, "date": true, "qrcode": true, "ticker": true, "menu": true, "list": true, "table": true, "agenda": true}
-	if !widgetProviders[status.SourceProvider] {
+	if !widgetProviders[status.WidgetProvider] {
 		return errors.New("player widget status is invalid")
 	}
 	if status.SelectionSource != "" && status.SelectionSource != "emergency" && status.SelectionSource != "schedule" && status.SelectionSource != "direct_fallback" && status.SelectionSource != "none" {
@@ -1287,7 +1287,7 @@ func (s *Service) ReportStatus(ctx context.Context, screenID uuid.UUID, status P
 		_, err = s.db.Exec(ctx, `UPDATE screen_player_status SET website_failure_at=now() WHERE screen_id=$1`, screenID)
 	}
 	if err == nil {
-		_, err = s.db.Exec(ctx, `UPDATE screen_player_status SET current_widget_id=$2,widget_provider=NULLIF($3,''),widget_state=NULLIF($4,''),widget_error=NULLIF($5,'') WHERE screen_id=$1`, screenID, status.CurrentSourceID, status.SourceProvider, status.SourceState, status.SourceError)
+		_, err = s.db.Exec(ctx, `UPDATE screen_player_status SET current_widget_id=$2,widget_provider=NULLIF($3,''),widget_state=NULLIF($4,''),widget_error=NULLIF($5,'') WHERE screen_id=$1`, screenID, status.CurrentWidgetID, status.WidgetProvider, status.WidgetState, status.WidgetError)
 	}
 	if err == nil {
 		_, err = s.db.Exec(ctx, `UPDATE screen_player_status SET active_emergency_id=$2,emergency_state=NULLIF($3,''),emergency_preparation_progress=$4,playback_disabled=COALESCE($5,playback_disabled),last_command_id=COALESCE($6,last_command_id),last_command_state=COALESCE(NULLIF($7,''),last_command_state),last_command_result=COALESCE(NULLIF($8,''),last_command_result),last_command_completed_at=COALESCE($9,last_command_completed_at) WHERE screen_id=$1`, screenID, status.ActiveEmergencyID, status.EmergencyState, status.EmergencyPreparationProgress, status.PlaybackDisabled, status.LastCommandID, status.LastCommandState, status.LastCommandResult, status.LastCommandCompletedAt)

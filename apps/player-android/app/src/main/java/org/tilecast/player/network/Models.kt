@@ -20,7 +20,7 @@ import kotlinx.serialization.Serializable
     val cacheUsedBytes: Long? = null, val cacheLimitBytes: Long? = null, val lastSynchronizationError: String? = null, val lastPlaybackError: String? = null,
     val currentScheduleId:String?=null,val currentPlaylistId:String?=null,val selectionSource:String?=null,val nextTransitionAt:String?=null,val deviceClockOffsetSeconds:Long?=null,val scheduleEvaluationError:String?=null,val scheduleManifestVersion:Long?=null,
     val currentWebsiteAssetId:String?=null,val websiteState:String?=null,val websiteLoadStartedAt:String?=null,val websiteLoadCompletedAt:String?=null,val websiteFailureCategory:String?=null,val websiteBlockedNavigationCount:Int?=null,val websiteCurrentHost:String?=null,val websiteFallbackShown:Boolean?=null,val websiteRendererRecoveryCount:Int?=null,
-    val currentSourceId:String?=null,val sourceProvider:String?=null,val sourceState:String?=null,val sourceError:String?=null,
+    val currentWidgetId:String?=null,val widgetProvider:String?=null,val widgetState:String?=null,val widgetError:String?=null,
     val activeEmergencyId:String?=null,val emergencyState:String?=null,val emergencyPreparationProgress:Int?=null,val playbackDisabled:Boolean?=null,val lastCommandId:String?=null,val lastCommandState:String?=null,val lastCommandResult:String?=null,val lastCommandCompletedAt:String?=null,val activeConfigRevision:Long?=null,val configurationError:String?=null,
     val currentUpdateDeploymentId:String?=null,val updateState:String?=null,val updateDownloadedBytes:Long?=null,val updateExpectedBytes:Long?=null,val updateError:String?=null,
     val configuredReliabilityMode:String?=null,val effectiveReliabilityMode:String?=null,val foregroundState:String?=null,val lastForegroundExitAt:String?=null,val lastForegroundPackage:String?=null,
@@ -80,7 +80,7 @@ data class PlayerConfigResponse(val config:PlayerConfig?,val rawJson:String?,val
     val cacheUsedBytes: Long? = null, val cacheLimitBytes: Long? = null, val lastSynchronizationError: String? = null,
     val lastPlaybackError: String? = null,val currentScheduleId:String?=null,val currentPlaylistId:String?=null,val selectionSource:String?=null,val nextTransitionAt:String?=null,val deviceClockOffsetSeconds:Long?=null,val scheduleEvaluationError:String?=null,val scheduleManifestVersion:Long?=null,
     val currentWebsiteAssetId:String?=null,val websiteState:String?=null,val websiteLoadStartedAt:String?=null,val websiteLoadCompletedAt:String?=null,val websiteFailureCategory:String?=null,val websiteBlockedNavigationCount:Int?=null,val websiteCurrentHost:String?=null,val websiteFallbackShown:Boolean?=null,val websiteRendererRecoveryCount:Int?=null,
-    val currentSourceId:String?=null,val sourceProvider:String?=null,val sourceState:String?=null,val sourceError:String?=null,
+    val currentWidgetId:String?=null,val widgetProvider:String?=null,val widgetState:String?=null,val widgetError:String?=null,
 )
 
 class ApiException(val status: Int, val code: String, override val message: String) : Exception(message)
