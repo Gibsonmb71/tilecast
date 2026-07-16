@@ -471,162 +471,168 @@ function TimelineItem({
             : "Full video"}
         </small>
       </span>
-      <label>
-        Fit
-        <Select
-          disabled={!canManage}
-          value={item.fitMode}
-          onChange={(e) =>
-            set("fitMode", e.target.value as PlaylistItem["fitMode"])
-          }
-        >
-          <option value="contain">Contain</option>
-          <option value="cover">Cover</option>
-          <option value="stretch">Stretch</option>
-        </Select>
-      </label>
-      <label>
-        Transition
-        <Select
-          disabled={!canManage}
-          value={item.transition}
-          onChange={(e) =>
-            set("transition", e.target.value as PlaylistItem["transition"])
-          }
-        >
-          <option value="none">None</option>
-          <option value="fade">Fade</option>
-        </Select>
-      </label>
-      <label>
-        Delivery
-        <Select
-          disabled={!canManage}
-          value={item.deliveryPolicy}
-          onChange={(e) =>
-            set(
-              "deliveryPolicy",
-              e.target.value as PlaylistItem["deliveryPolicy"],
-            )
-          }
-        >
-          {item.assetType === "widget" ? (
-            <option value="stream">Stream</option>
-          ) : (
-            <>
-              <option value="download">Download</option>
+      <div className="timeline-item__controls">
+        <label>
+          Fit
+          <Select
+            disabled={!canManage}
+            value={item.fitMode}
+            onChange={(e) =>
+              set("fitMode", e.target.value as PlaylistItem["fitMode"])
+            }
+          >
+            <option value="contain">Contain</option>
+            <option value="cover">Cover</option>
+            <option value="stretch">Stretch</option>
+          </Select>
+        </label>
+        <label>
+          Transition
+          <Select
+            disabled={!canManage}
+            value={item.transition}
+            onChange={(e) =>
+              set("transition", e.target.value as PlaylistItem["transition"])
+            }
+          >
+            <option value="none">None</option>
+            <option value="fade">Fade</option>
+          </Select>
+        </label>
+        <label>
+          Delivery
+          <Select
+            disabled={!canManage}
+            value={item.deliveryPolicy}
+            onChange={(e) =>
+              set(
+                "deliveryPolicy",
+                e.target.value as PlaylistItem["deliveryPolicy"],
+              )
+            }
+          >
+            {item.assetType === "widget" ? (
               <option value="stream">Stream</option>
-              <option value="automatic">Automatic</option>
-            </>
-          )}
-        </Select>
-      </label>
-      {item.assetType === "widget" && item.widgetProvider === "youtube" ? (
-        <>
+            ) : (
+              <>
+                <option value="download">Download</option>
+                <option value="stream">Stream</option>
+                <option value="automatic">Automatic</option>
+              </>
+            )}
+          </Select>
+        </label>
+        {item.assetType === "widget" && item.widgetProvider === "youtube" ? (
+          <>
+            <label className="timeline-item__playback-behavior">
+              Playback behavior
+              <Select
+                disabled={!canManage}
+                value={item.durationMs == null ? "until_end" : "fixed_duration"}
+                onChange={(event) =>
+                  set(
+                    "durationMs",
+                    event.target.value === "until_end" ? undefined : 30_000,
+                  )
+                }
+              >
+                <option value="until_end">Play until video ends</option>
+                <option value="fixed_duration">
+                  Play for a fixed duration
+                </option>
+              </Select>
+            </label>
+            {item.durationMs != null && (
+              <label>
+                Seconds
+                <input
+                  disabled={!canManage}
+                  type="number"
+                  min="1"
+                  value={item.durationMs / 1000}
+                  onChange={(event) =>
+                    set("durationMs", Number(event.target.value) * 1000)
+                  }
+                />
+              </label>
+            )}
+          </>
+        ) : item.assetType === "image" ||
+          (item.assetType === "widget" && item.widgetProvider === "website") ? (
           <label>
-            Playback behavior
-            <Select
+            Seconds
+            <input
               disabled={!canManage}
-              value={item.durationMs == null ? "until_end" : "fixed_duration"}
-              onChange={(event) =>
-                set(
-                  "durationMs",
-                  event.target.value === "until_end" ? undefined : 30_000,
-                )
-              }
-            >
-              <option value="until_end">Play until video ends</option>
-              <option value="fixed_duration">Play for a fixed duration</option>
-            </Select>
+              type="number"
+              min="1"
+              value={(item.durationMs ?? 10000) / 1000}
+              onChange={(e) => set("durationMs", Number(e.target.value) * 1000)}
+            />
           </label>
-          {item.durationMs != null && (
+        ) : (
+          <>
             <label>
-              Seconds
+              Start (s)
               <input
                 disabled={!canManage}
                 type="number"
-                min="1"
-                value={item.durationMs / 1000}
-                onChange={(event) =>
-                  set("durationMs", Number(event.target.value) * 1000)
+                min="0"
+                value={(item.videoStartOffsetMs ?? 0) / 1000}
+                onChange={(e) =>
+                  set("videoStartOffsetMs", Number(e.target.value) * 1000)
                 }
               />
             </label>
-          )}
-        </>
-      ) : item.assetType === "image" ||
-        (item.assetType === "widget" && item.widgetProvider === "website") ? (
-        <label>
-          Seconds
-          <input
-            disabled={!canManage}
-            type="number"
-            min="1"
-            value={(item.durationMs ?? 10000) / 1000}
-            onChange={(e) => set("durationMs", Number(e.target.value) * 1000)}
-          />
-        </label>
-      ) : (
-        <>
-          <label>
-            Start (s)
-            <input
-              disabled={!canManage}
-              type="number"
-              min="0"
-              value={(item.videoStartOffsetMs ?? 0) / 1000}
-              onChange={(e) =>
-                set("videoStartOffsetMs", Number(e.target.value) * 1000)
-              }
-            />
-          </label>
-          <label>
-            End (s)
-            <input
-              disabled={!canManage}
-              type="number"
-              min="0"
-              value={item.videoEndOffsetMs ? item.videoEndOffsetMs / 1000 : ""}
-              onChange={(e) =>
-                set(
-                  "videoEndOffsetMs",
-                  e.target.value ? Number(e.target.value) * 1000 : undefined,
-                )
-              }
-            />
-          </label>
-          <label className="audio-toggle">
-            <input
-              disabled={!canManage}
-              type="checkbox"
-              checked={item.audioEnabled}
-              onChange={(e) => set("audioEnabled", e.target.checked)}
-            />
-            Audio
-          </label>
-          <label>
-            Volume
-            <input
-              disabled={!canManage}
-              type="range"
-              min="0"
-              max="1"
-              step="0.05"
-              value={item.volume}
-              onChange={(e) => set("volume", Number(e.target.value))}
-            />
-          </label>
-        </>
-      )}
-      {canManage && (
-        <button
-          className="icon-button"
-          aria-label={`Remove ${item.assetName}`}
-          onClick={onDelete}
-        >
-          <Trash2 size={16} />
-        </button>
-      )}
+            <label>
+              End (s)
+              <input
+                disabled={!canManage}
+                type="number"
+                min="0"
+                value={
+                  item.videoEndOffsetMs ? item.videoEndOffsetMs / 1000 : ""
+                }
+                onChange={(e) =>
+                  set(
+                    "videoEndOffsetMs",
+                    e.target.value ? Number(e.target.value) * 1000 : undefined,
+                  )
+                }
+              />
+            </label>
+            <label className="audio-toggle">
+              <input
+                disabled={!canManage}
+                type="checkbox"
+                checked={item.audioEnabled}
+                onChange={(e) => set("audioEnabled", e.target.checked)}
+              />
+              Audio
+            </label>
+            <label>
+              Volume
+              <input
+                disabled={!canManage}
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={item.volume}
+                onChange={(e) => set("volume", Number(e.target.value))}
+              />
+            </label>
+          </>
+        )}
+        {canManage && (
+          <button
+            className="icon-button timeline-item__remove"
+            aria-label={`Remove ${item.assetName}`}
+            onClick={onDelete}
+          >
+            <Trash2 size={16} />
+          </button>
+        )}
+      </div>
     </article>
   );
 }

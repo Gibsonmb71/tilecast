@@ -140,7 +140,14 @@ export function DashboardShell() {
               aria-controls="sidebar-account-menu"
               onClick={() => setAccountMenuOpen((open) => !open)}
             >
-              <Ellipsis size={18} aria-hidden="true" />
+              <Ellipsis
+                className="account-menu__ellipsis"
+                size={18}
+                aria-hidden="true"
+              />
+              <span className="account-menu__mobile-avatar" aria-hidden="true">
+                {auth.status.user?.name.slice(0, 1).toUpperCase()}
+              </span>
             </button>
             {accountMenuOpen && (
               <div
