@@ -87,12 +87,12 @@ func (s *server) cleanupActivityBounded(ctx context.Context, batch int) {
 		counts[name] = tag.RowsAffected()
 	}
 	cutoff := `now()-($1::int * interval '1 day')`
-	exec("playback_sessions", `WITH expired AS (SELECT id FROM playback_sessions WHERE ended_at IS NOT NULL AND ended_at<`+cutoff+` ORDER BY ended_at LIMIT $2) DELETE FROM playback_sessions p USING expired e WHERE p.id=e.id`, sessionDays, batch)
-	exec("screen_state_intervals", `WITH expired AS (SELECT id FROM screen_state_intervals WHERE ended_at IS NOT NULL AND ended_at<`+cutoff+` ORDER BY ended_at LIMIT $2) DELETE FROM screen_state_intervals s USING expired e WHERE s.id=e.id`, stateDays, batch)
-	exec("player_activity_events", `WITH expired AS (SELECT id FROM player_activity_events WHERE occurred_at<`+cutoff+` ORDER BY occurred_at LIMIT $2) DELETE FROM player_activity_events p USING expired e WHERE p.id=e.id`, rawDays, batch)
-	exec("audit_logs", `WITH expired AS (SELECT id FROM audit_logs WHERE created_at<`+cutoff+` ORDER BY created_at LIMIT $2) DELETE FROM audit_logs a USING expired e WHERE a.id=e.id`, auditDays, batch)
-	exec("player_diagnostics", `WITH targets AS (SELECT id FROM player_activity_events WHERE received_at<`+cutoff+` AND (metadata<>'{}'::jsonb OR failure_message IS NOT NULL) ORDER BY received_at LIMIT $2) UPDATE player_activity_events e SET metadata='{}'::jsonb,failure_message=NULL FROM targets t WHERE e.id=t.id`, diagnosticDays, batch)
-	exec("audit_diagnostics", `WITH targets AS (SELECT id FROM audit_logs WHERE created_at<`+cutoff+` AND metadata_sensitive=TRUE AND metadata<>'{}'::jsonb ORDER BY created_at LIMIT $2) UPDATE audit_logs a SET metadata='{}'::jsonb FROM targets t WHERE a.id=t.id`, diagnosticDays, batch)
+	exec("playback_sessions", `WITH expired AS (SELECT id FROM playback_sessions WHERE ended_at IS NOT NULL AND ended_at<`+cutoff+` ORDER BY ended_at LIMIT $2::int) DELETE FROM playback_sessions p USING expired e WHERE p.id=e.id`, sessionDays, batch)
+	exec("screen_state_intervals", `WITH expired AS (SELECT id FROM screen_state_intervals WHERE ended_at IS NOT NULL AND ended_at<`+cutoff+` ORDER BY ended_at LIMIT $2::int) DELETE FROM screen_state_intervals s USING expired e WHERE s.id=e.id`, stateDays, batch)
+	exec("player_activity_events", `WITH expired AS (SELECT id FROM player_activity_events WHERE occurred_at<`+cutoff+` ORDER BY occurred_at LIMIT $2::int) DELETE FROM player_activity_events p USING expired e WHERE p.id=e.id`, rawDays, batch)
+	exec("audit_logs", `WITH expired AS (SELECT id FROM audit_logs WHERE created_at<`+cutoff+` ORDER BY created_at LIMIT $2::int) DELETE FROM audit_logs a USING expired e WHERE a.id=e.id`, auditDays, batch)
+	exec("player_diagnostics", `WITH targets AS (SELECT id FROM player_activity_events WHERE received_at<`+cutoff+` AND (metadata<>'{}'::jsonb OR failure_message IS NOT NULL) ORDER BY received_at LIMIT $2::int) UPDATE player_activity_events e SET metadata='{}'::jsonb,failure_message=NULL FROM targets t WHERE e.id=t.id`, diagnosticDays, batch)
+	exec("audit_diagnostics", `WITH targets AS (SELECT id FROM audit_logs WHERE created_at<`+cutoff+` AND metadata_sensitive=TRUE AND metadata<>'{}'::jsonb ORDER BY created_at LIMIT $2::int) UPDATE audit_logs a SET metadata='{}'::jsonb FROM targets t WHERE a.id=t.id`, diagnosticDays, batch)
 
 	total := int64(0)
 	for _, count := range counts {
