@@ -3,13 +3,11 @@ import { Grid2X2, List, Plus, Search } from "lucide-react";
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { api, ApiError } from "../api/client";
-import type { Asset, SourceProvider } from "../api/types";
+import type { Asset, WidgetProvider } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import {
-  CalendarSourceEditor,
   NativeAppEditor,
-  SourceProviderGallery,
-  StructuredSourceEditor,
+  WidgetProviderGallery,
   YouTubeSourceEditor,
 } from "../content/SourceEditors";
 import {
@@ -18,14 +16,9 @@ import {
   canManageContent,
 } from "./ContentPage";
 
-const providers: SourceProvider[] = [
+const providers: WidgetProvider[] = [
   "website",
   "youtube",
-  "calendar",
-  "rss",
-  "atom",
-  "json",
-  "csv",
   "clock",
   "date",
   "qrcode",
@@ -36,7 +29,7 @@ const providers: SourceProvider[] = [
   "agenda",
 ];
 
-export function AppsPage() {
+export function WidgetsPage() {
   const auth = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -48,19 +41,19 @@ export function AppsPage() {
   const params = new URLSearchParams({
     page: "1",
     pageSize: "100",
-    type: "source",
+    type: "widget",
   });
   if (search) params.set("search", search);
   if (provider) params.set("provider", provider);
-  const apps = useQuery({
-    queryKey: ["assets", "apps", params.toString()],
+  const widgets = useQuery({
+    queryKey: ["assets", "widgets", params.toString()],
     queryFn: () => api.assets(params),
   });
   const duplicate = useMutation({
-    mutationFn: (id: string) => api.duplicateSource(id, csrf),
-    onSuccess: (app) => {
+    mutationFn: (id: string) => api.duplicateWidget(id, csrf),
+    onSuccess: (widget) => {
       void queryClient.invalidateQueries({ queryKey: ["assets"] });
-      void navigate(`/apps/${app.id}`);
+      void navigate(`/widgets/${widget.id}`);
     },
   });
   const remove = useMutation({
@@ -73,34 +66,34 @@ export function AppsPage() {
     <section className="content-page apps-page">
       <header className="page-heading">
         <div>
-          <h2>Apps</h2>
-          <p>Reusable dynamic signage content for playlists and Layouts.</p>
+          <h2>Widgets</h2>
+          <p>Reusable visual content for playlists and Layouts.</p>
         </div>
         {canManage && (
           <button
             className="button button--primary"
-            onClick={() => void navigate("/apps/new")}
+            onClick={() => void navigate("/widgets/new")}
           >
-            <Plus size={16} /> Create App
+            <Plus size={16} /> Create Widget
           </button>
         )}
       </header>
       <div className="content-toolbar">
         <label className="search-control">
           <Search size={15} />
-          <span className="visually-hidden">Search Apps</span>
+          <span className="visually-hidden">Search Widgets</span>
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search Apps"
+            placeholder="Search Widgets"
           />
         </label>
         <select
-          aria-label="Filter by App provider"
+          aria-label="Filter by Widget provider"
           value={provider}
           onChange={(event) => setProvider(event.target.value)}
         >
-          <option value="">All App types</option>
+          <option value="">All Widget types</option>
           {providers.map((item) => (
             <option key={item} value={item}>
               {providerLabel(item)}
@@ -124,38 +117,38 @@ export function AppsPage() {
           </button>
         </span>
       </div>
-      {apps.isError && (
+      {widgets.isError && (
         <div className="notice notice--error">
-          {apps.error instanceof ApiError
-            ? apps.error.message
-            : "Apps could not be loaded."}
+          {widgets.error instanceof ApiError
+            ? widgets.error.message
+            : "Widgets could not be loaded."}
         </div>
       )}
-      {apps.isLoading ? (
-        <div className="table-loading">Loading Apps...</div>
-      ) : apps.data?.items.length === 0 ? (
+      {widgets.isLoading ? (
+        <div className="table-loading">Loading Widgets...</div>
+      ) : widgets.data?.items.length === 0 ? (
         <div className="content-empty">
           <Plus size={30} />
-          <h3>No Apps yet</h3>
-          <p>Create a reusable App for dynamic or data-driven signage.</p>
+          <h3>No Widgets yet</h3>
+          <p>Create a reusable Widget for signage content.</p>
           {canManage && (
             <button
               className="button button--primary"
-              onClick={() => void navigate("/apps/new")}
+              onClick={() => void navigate("/widgets/new")}
             >
-              Create App
+              Create Widget
             </button>
           )}
         </div>
       ) : (
         <AssetCollection
-          items={apps.data?.items ?? []}
+          items={widgets.data?.items ?? []}
           view={view}
-          onSelect={(app) => void navigate(`/apps/${app.id}`)}
+          onSelect={(widget) => void navigate(`/widgets/${widget.id}`)}
           canManage={canManage}
-          onDuplicate={(app) => duplicate.mutate(app.id)}
-          onDelete={(app) => {
-            if (confirm(`Delete ${app.name}?`)) remove.mutate(app.id);
+          onDuplicate={(widget) => duplicate.mutate(widget.id)}
+          onDelete={(widget) => {
+            if (confirm(`Delete ${widget.name}?`)) remove.mutate(widget.id);
           }}
         />
       )}
@@ -163,43 +156,43 @@ export function AppsPage() {
   );
 }
 
-export function AppEditorPage() {
+export function WidgetEditorPage() {
   const auth = useAuth();
   const navigate = useNavigate();
   const { id, provider: providerParam } = useParams();
   const csrf = auth.status?.csrfToken ?? "";
-  const app = useQuery({
+  const widget = useQuery({
     queryKey: ["assets", id],
     queryFn: () => api.asset(id!),
     enabled: Boolean(id),
   });
-  const asset = app.data;
-  const provider = (providerParam ?? asset?.source?.provider) as
-    SourceProvider | undefined;
-  const close = () => void navigate("/apps");
+  const asset = widget.data;
+  const provider = (providerParam ?? asset?.widget?.provider) as
+    WidgetProvider | undefined;
+  const close = () => void navigate("/widgets");
   const saved = (value: Asset) => {
-    void navigate(`/apps/${value.id}`, { replace: true });
+    void navigate(`/widgets/${value.id}`, { replace: true });
   };
 
   if (!id && !providerParam) {
     return (
       <section className="app-editor-route">
-        <SourceProviderGallery
+        <WidgetProviderGallery
           page
           onClose={close}
-          onChoose={(choice) => void navigate(`/apps/new/${choice}`)}
+          onChoose={(choice) => void navigate(`/widgets/new/${choice}`)}
         />
       </section>
     );
   }
-  if (id && app.isLoading)
-    return <div className="table-loading">Loading App...</div>;
+  if (id && widget.isLoading)
+    return <div className="table-loading">Loading Widget...</div>;
   if ((id && !asset) || !provider || !providers.includes(provider)) {
     return (
       <section className="empty-state">
-        <h2>App unavailable</h2>
+        <h2>Widget unavailable</h2>
         <button className="button" onClick={close}>
-          Back to Apps
+          Back to Widgets
         </button>
       </section>
     );
@@ -218,41 +211,18 @@ export function AppEditorPage() {
         <WebsiteEditor {...common} />
       ) : provider === "youtube" ? (
         <YouTubeSourceEditor {...common} />
-      ) : provider === "calendar" ? (
-        <CalendarSourceEditor {...common} />
-      ) : ["rss", "atom", "json", "csv"].includes(provider) ? (
-        <StructuredSourceEditor
-          {...common}
-          provider={provider as "rss" | "atom" | "json" | "csv"}
-        />
       ) : (
-        <NativeAppEditor
-          {...common}
-          provider={
-            provider as
-              | "clock"
-              | "date"
-              | "qrcode"
-              | "ticker"
-              | "menu"
-              | "list"
-              | "table"
-              | "agenda"
-          }
-        />
+        <NativeAppEditor {...common} provider={provider} />
       )}
     </section>
   );
 }
 
-function providerLabel(provider: SourceProvider) {
+function providerLabel(provider: WidgetProvider) {
   return (
     (
       {
         qrcode: "QR Code",
-        rss: "RSS",
-        csv: "CSV",
-        json: "JSON",
         youtube: "YouTube",
       } as Record<string, string>
     )[provider] ?? provider.charAt(0).toUpperCase() + provider.slice(1)

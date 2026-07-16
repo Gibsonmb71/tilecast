@@ -118,28 +118,6 @@ paths:
         "200": { description: All selected assets organized atomically }
         "404": { description: An asset or organization record was not found }
         "422": { description: Validation failed }
-  /api/v1/sources/{provider}/preview:
-    post:
-      operationId: previewStructuredSource
-      parameters:
-        - in: path
-          name: provider
-          required: true
-          schema: { enum: [rss, atom, json, csv] }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [configuration]
-              properties:
-                configuration: { type: object }
-                previewDate: { type: string, format: date }
-      responses:
-        "200": { description: Sanitized mapped records and typed diagnostics }
-        "404": { description: Provider not found }
-        "422": { description: Fetch, mapping, or parsing validation failed }
   /api/v1/player/pairing-sessions:
     post:
       operationId: createPairingSession
@@ -745,93 +723,108 @@ paths:
       operationId: websiteDiagnostics
       responses:
         { "200": { description: Safe categorized player website diagnostics } }
-  /api/v1/sources:
+  /api/v1/widgets:
     post:
-      operationId: createSource
-      description: Compatibility alias that creates a validated built-in App or data Source.
+      operationId: createWidget
+      description: Creates a reusable Widget from the closed widget provider registry. Data-driven Widgets reference one compatible Data Source by dataSourceId.
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/SourceInput" }
+            schema: { $ref: "#/components/schemas/WidgetInput" }
       responses:
-        "201": { description: Source created }
-        "422": { description: Provider configuration rejected }
-  /api/v1/sources/{id}:
+        "201": { description: Widget created }
+        "422":
+          {
+            description: Provider unknown,
+            Data Source incompatible,
+            or a selected field does not exist,
+          }
+  /api/v1/widgets/{id}:
     patch:
-      operationId: updateSource
+      operationId: updateWidget
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/SourceInput" }
+            schema: { $ref: "#/components/schemas/WidgetInput" }
       responses:
-        "200": { description: Source updated and affected manifests revised }
+        "200": { description: Widget updated and affected manifests revised }
         "422": { description: Provider configuration rejected }
-  /api/v1/sources/{id}/duplicate:
+  /api/v1/widgets/{id}/duplicate:
     post:
-      operationId: duplicateSource
+      operationId: duplicateWidget
       responses:
-        "201": { description: Source duplicated }
-  /api/v1/sources/calendar/preview:
+        "201": { description: Widget duplicated }
+  /api/v1/data-sources:
+    get:
+      operationId: listDataSources
+      responses:
+        "200": { description: Paginated Data Source summaries }
     post:
-      operationId: previewCalendarSource
-      description: Fetches and parses configured public ICS feeds under the Source fetch policy without saving raw calendar data.
+      operationId: createDataSource
+      description: Creates a reusable Data Source (calendar, rss, atom, json, or csv). Data Sources are not assets and cannot be placed in playlists or Layouts.
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              required: [configuration]
-              properties: { configuration: { type: object } }
+            schema: { $ref: "#/components/schemas/DataSourceInput" }
+      responses:
+        "201": { description: Data Source created }
+        "422": { description: Provider configuration rejected }
+  /api/v1/data-sources/{id}:
+    get:
+      operationId: getDataSource
       responses:
         "200":
-          { description: Sanitized real-data Calendar preview and diagnostics }
-        "422": { description: Calendar validation or safe fetch failed }
-  /api/v1/sources/{id}/diagnostics:
-    get:
-      operationId: sourceRefreshDiagnostics
-      responses:
-        "200": { description: Current bounded Source refresh diagnostics }
-        "404": { description: Source refresh diagnostics unavailable }
-  /api/v1/apps:
-    post:
-      operationId: createApp
-      description: Creates a reusable configured App or data Source from the closed provider registry.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/SourceInput" }
-      responses:
-        "201": { description: App created }
-        "422": { description: Provider configuration rejected }
-  /api/v1/apps/{id}:
+          {
+            description: Data Source detail including status,
+            diagnostics,
+            cached record count,
+            typed fields,
+            date-selection policy,
+            and Widget and Layout-binding usage,
+          }
+        "404": { description: Data Source not found }
     patch:
-      operationId: updateApp
+      operationId: updateDataSource
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/SourceInput" }
+            schema: { $ref: "#/components/schemas/DataSourceInput" }
       responses:
-        "200": { description: App updated and affected manifests revised }
+        "200":
+          { description: Data Source updated and dependent manifests revised }
         "422": { description: Provider configuration rejected }
-  /api/v1/apps/{id}/duplicate:
-    post:
-      operationId: duplicateApp
+    delete:
+      operationId: deleteDataSource
       responses:
-        "201": { description: App duplicated }
-  /api/v1/apps/{provider}/preview:
+        "204": { description: Data Source deleted }
+        "409":
+          {
+            description: Data Source is in use by a Widget or Layout binding and cannot be deleted,
+          }
+  /api/v1/data-sources/{id}/duplicate:
     post:
-      operationId: previewAppData
+      operationId: duplicateDataSource
+      responses:
+        "201": { description: Data Source duplicated }
+  /api/v1/data-sources/{id}/diagnostics:
+    get:
+      operationId: dataSourceRefreshDiagnostics
+      responses:
+        "200": { description: Current bounded Data Source refresh diagnostics }
+        "404": { description: Data Source refresh diagnostics unavailable }
+  /api/v1/data-sources/{provider}/preview:
+    post:
+      operationId: previewDataSource
+      description: Fetches and parses a candidate Data Source configuration under the safe fetch policy without saving raw data. A previewDate exercises date-aware selection.
       parameters:
         - in: path
           name: provider
           required: true
-          schema: { enum: [rss, atom, json, csv] }
+          schema: { enum: [calendar, rss, atom, json, csv] }
       requestBody:
         required: true
         content:
@@ -843,21 +836,10 @@ paths:
                 configuration: { type: object }
                 previewDate: { type: string, format: date }
       responses:
-        "200": { description: Sanitized mapped records and typed diagnostics }
-        "404": { description: Provider not found }
-  /api/v1/apps/calendar/preview:
-    post:
-      operationId: previewCalendarApp
-      description: Fetches and parses public ICS feeds under the safe Source fetch policy.
-      responses:
-        "200": { description: Sanitized real-data Calendar preview }
-        "422": { description: Calendar validation or safe fetch failed }
-  /api/v1/apps/{id}/diagnostics:
-    get:
-      operationId: appRefreshDiagnostics
-      responses:
-        "200": { description: Current bounded App refresh diagnostics }
-        "404": { description: Diagnostics unavailable }
+        "200":
+          { description: Sanitized real-data preview and typed diagnostics }
+        "404": { description: Data Source provider not found }
+        "422": { description: Validation or safe fetch failed }
   /api/v1/layouts:
     get:
       operationId: listLayouts
@@ -1313,7 +1295,7 @@ components:
           assets,
         ]
       properties:
-        schemaVersion: { type: integer, const: 10 }
+        schemaVersion: { type: integer, const: 11 }
         manifestVersion: { type: integer, format: int64, minimum: 1 }
         screenId: { type: string, format: uuid }
         generatedAt: { type: string, format: date-time }
@@ -1322,43 +1304,69 @@ components:
         layout: { oneOf: [{ type: "null" }, { type: object }] }
         layouts: { type: array, items: { type: object } }
         assets: { type: array, items: { type: object } }
+        widgets: { type: array, items: { type: object } }
+        dataSources: { type: array, items: { type: object } }
     ManifestResponse:
       type: object
       required: [data]
       properties: { data: { $ref: "#/components/schemas/PlayerManifest" } }
     AssetType:
       type: string
-      enum: [image, video, source]
-    SourceProvider:
+      enum: [image, video, widget]
+    WidgetProvider:
       type: string
+      description: Renderable widget providers. Standalone (website, youtube, clock, date, qrcode) or data-driven (ticker, menu, list, table, agenda).
       enum:
         [
           website,
           youtube,
-          calendar,
-          rss,
-          atom,
-          json,
-          csv,
           clock,
           date,
           qrcode,
           ticker,
+          menu,
+          list,
+          table,
+          agenda,
         ]
-    Source:
+    DataSourceProvider:
+      type: string
+      description: Non-visual Data Source providers.
+      enum: [calendar, rss, atom, json, csv]
+    Widget:
       type: object
       additionalProperties: false
       required: [provider, configVersion, configuration]
       properties:
-        provider: { $ref: "#/components/schemas/SourceProvider" }
+        provider: { $ref: "#/components/schemas/WidgetProvider" }
         configVersion: { type: integer, minimum: 1 }
         configuration: { type: object }
-    SourceInput:
+    WidgetInput:
       type: object
       additionalProperties: false
       required: [provider, name, configuration]
       properties:
-        provider: { $ref: "#/components/schemas/SourceProvider" }
+        provider: { $ref: "#/components/schemas/WidgetProvider" }
+        name: { type: string, minLength: 1, maxLength: 180 }
+        description: { type: string, maxLength: 2000 }
+        configuration: { type: object }
+    DataSource:
+      type: object
+      additionalProperties: false
+      required: [id, provider, name, configVersion, configuration]
+      properties:
+        id: { type: string, format: uuid }
+        provider: { $ref: "#/components/schemas/DataSourceProvider" }
+        name: { type: string, minLength: 1, maxLength: 180 }
+        description: { type: string, maxLength: 2000 }
+        configVersion: { type: integer, minimum: 1 }
+        configuration: { type: object }
+    DataSourceInput:
+      type: object
+      additionalProperties: false
+      required: [provider, name, configuration]
+      properties:
+        provider: { $ref: "#/components/schemas/DataSourceProvider" }
         name: { type: string, minLength: 1, maxLength: 180 }
         description: { type: string, maxLength: 2000 }
         configuration: { type: object }
@@ -1480,7 +1488,7 @@ components:
         variants:
           type: array
           items: { $ref: "#/components/schemas/AssetVariant" }
-        source: { $ref: "#/components/schemas/Source" }
+        widget: { $ref: "#/components/schemas/Widget" }
         playlistUsage: { type: integer, minimum: 0 }
     SetupRequest:
       type: object

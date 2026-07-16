@@ -10,7 +10,7 @@ import org.tilecast.player.network.LayoutPrimitive
 
 class LayoutValidatorTest {
     private fun document() = LayoutDocument(
-        1,
+        2,
         LayoutCanvas(1920, 1080, "landscape", "#101820"),
         listOf(LayoutPlacement(UUID.randomUUID().toString(), "primitive", "Heading", 20f, 20f, 800f, 180f, 1, 1f, true, false, primitive = LayoutPrimitive("text", text = "Welcome", fontSize = 72f, minimumFontSize = 18f))),
     )

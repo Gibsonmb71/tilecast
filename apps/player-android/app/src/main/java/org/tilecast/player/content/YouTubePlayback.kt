@@ -31,7 +31,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.delay
 import org.tilecast.player.network.ManifestItem
-import org.tilecast.player.network.ManifestSource
+import org.tilecast.player.network.ManifestWidget
 import org.tilecast.player.network.YouTubeSourceConfig
 
 private class YouTubeBridge(private val callback: (String, String?) -> Unit) {
@@ -79,14 +79,14 @@ private class YouTubeChromeClient(private val container: FrameLayout) : WebChrom
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun YouTubeSourceItem(
+fun YouTubeWidgetItem(
     item: ManifestItem,
-    source: ManifestSource,
+    widget: ManifestWidget,
     config: YouTubeSourceConfig,
     session: PlaybackSession,
     onDone: () -> Unit,
     onFailure: (String) -> Unit,
-    onStatus: (SourcePlaybackStatus) -> Unit,
+    onStatus: (WidgetPlaybackStatus) -> Unit,
     startOffsetMs: Long = 0,
 ) {
     var state by remember(item.id) { mutableStateOf("loading") }
@@ -94,10 +94,10 @@ fun YouTubeSourceItem(
     val report: (String, String?) -> Unit = { next, detail ->
         state = next
         error = detail
-        onStatus(SourcePlaybackStatus(source.assetId, "youtube", next, detail))
+        onStatus(WidgetPlaybackStatus(widget.assetId, "youtube", next, detail))
         if (next == "ended" && item.durationMs == null && config.fixedDurationSeconds == null) onDone()
     }
-    DisposableEffect(item.id) { onDispose { onStatus(SourcePlaybackStatus()) } }
+    DisposableEffect(item.id) { onDispose { onStatus(WidgetPlaybackStatus()) } }
     LaunchedEffect(item.id) {
         delay(config.loadTimeoutSeconds())
         if (state == "loading") report("autoplay_blocked", "youtube_autoplay_blocked")
@@ -121,7 +121,7 @@ fun YouTubeSourceItem(
         return
     }
     val origin = session.serverUrl.trimEnd('/')
-    val html = remember(item.id, source.configVersion, startOffsetMs) {
+    val html = remember(item.id, widget.configVersion, startOffsetMs) {
         youtubeHTML(config, origin, startOffsetMs)
     }
     AndroidView(

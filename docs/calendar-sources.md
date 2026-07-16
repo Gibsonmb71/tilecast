@@ -1,6 +1,6 @@
 # Calendar Sources
 
-Calendar Sources turn one to eight public iCalendar feeds into reusable Tilecast Content. Studio supports Today, Upcoming, This week, and Agenda views; bounded event counts; field visibility; keyword and calendar filters; IANA timezones; empty text; live preview; and typed refresh diagnostics. Calendar Sources can be added to normal playlists and schedules.
+A Calendar Data Source turns one to eight public iCalendar feeds into a reusable, non-visual data connection. It owns the ICS URLs, refresh, parsing, timezone handling, bounded cached events, keyword and calendar filters, and typed refresh diagnostics, with live preview. A Calendar Data Source cannot be added directly to a playlist, schedule, or Layout; its events are displayed by an Agenda, List, or Ticker Widget that references it.
 
 The server fetches and parses ICS. It expands RFC 5545 recurrence rules into a bounded 90-day occurrence window using the configured timezone, including all-day events and DST transitions. Titles, locations, and description excerpts are converted to plain bounded text. Raw ICS is not retained or returned by the API.
 

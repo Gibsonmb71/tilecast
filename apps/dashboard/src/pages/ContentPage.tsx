@@ -11,7 +11,6 @@ import {
   Trash2,
   Youtube,
   X,
-  CalendarDays,
   FolderPlus,
   Tags,
   Library,
@@ -36,12 +35,7 @@ import type {
   ContentTag,
 } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
-import {
-  CalendarSourceEditor,
-  StructuredSourceEditor,
-  NativeAppEditor,
-  YouTubeSourceEditor,
-} from "../content/SourceEditors";
+import { NativeAppEditor, YouTubeSourceEditor } from "../content/SourceEditors";
 
 type QueueItem = {
   localId: string;
@@ -523,7 +517,7 @@ export function ContentPage() {
           canManage={canManage}
           onDuplicate={(asset) =>
             void api
-              .duplicateSource(asset.id, csrf)
+              .duplicateWidget(asset.id, csrf)
               .then(() =>
                 queryClient.invalidateQueries({ queryKey: ["assets"] }),
               )
@@ -633,11 +627,11 @@ export function AssetCollection({
             aria-label={`Edit ${asset.name}`}
           >
             <span className="asset-preview">
-              {asset.source?.provider === "youtube" &&
-              typeof (asset.source.configuration as YouTubeConfig).videoId ===
+              {asset.widget?.provider === "youtube" &&
+              typeof (asset.widget.configuration as YouTubeConfig).videoId ===
                 "string" ? (
                 <img
-                  src={`https://i.ytimg.com/vi/${(asset.source.configuration as YouTubeConfig).videoId}/hqdefault.jpg`}
+                  src={`https://i.ytimg.com/vi/${(asset.widget.configuration as YouTubeConfig).videoId}/hqdefault.jpg`}
                   alt=""
                   referrerPolicy="origin"
                 />
@@ -645,13 +639,11 @@ export function AssetCollection({
                 <img src={asset.thumbnailUrl} alt="" />
               ) : asset.type === "video" ? (
                 <FileVideo size={28} />
-              ) : asset.type === "source" ? (
-                asset.source?.provider === "youtube" ? (
+              ) : asset.type === "widget" ? (
+                asset.widget?.provider === "youtube" ? (
                   <Youtube size={28} />
-                ) : asset.source?.provider === "calendar" ? (
-                  <CalendarDays size={28} />
-                ) : ["rss", "atom", "json", "csv"].includes(
-                    asset.source?.provider ?? "",
+                ) : ["ticker", "menu", "list", "table", "agenda"].includes(
+                    asset.widget?.provider ?? "",
                   ) ? (
                   <Library size={28} />
                 ) : (
@@ -666,14 +658,12 @@ export function AssetCollection({
               <small>
                 {asset.type === "video" &&
                   formatDuration(asset.durationSeconds)}
-                {asset.type === "source" &&
-                  (asset.source?.provider === "youtube"
+                {asset.type === "widget" &&
+                  (asset.widget?.provider === "youtube"
                     ? "YouTube"
-                    : asset.source?.provider === "calendar"
-                      ? "Calendar"
-                      : asset.source?.provider
-                        ? asset.source.provider.toUpperCase()
-                        : asset.website?.displayUrl)}
+                    : asset.widget?.provider
+                      ? asset.widget.provider.toUpperCase()
+                      : asset.website?.displayUrl)}
                 {asset.width && asset.height
                   ? `${asset.type === "video" ? " · " : ""}${asset.width} × ${asset.height}`
                   : ""}
@@ -686,7 +676,7 @@ export function AssetCollection({
               {statusLabel(asset.processingStatus)}
             </span>
           </button>
-          {asset.type === "source" && (
+          {asset.type === "widget" && (
             <footer className="source-card-actions">
               <span>
                 {asset.playlistUsage ?? 0} playlist
@@ -896,8 +886,8 @@ function AssetDetails(props: {
   onClose: () => void;
   onChanged: (asset: Asset) => void;
 }) {
-  return props.asset.type === "source" &&
-    props.asset.source?.provider === "website" ? (
+  return props.asset.type === "widget" &&
+    props.asset.widget?.provider === "website" ? (
     <WebsiteEditor
       asset={props.asset}
       csrf={props.csrf}
@@ -905,8 +895,8 @@ function AssetDetails(props: {
       onClose={props.onClose}
       onSaved={props.onChanged}
     />
-  ) : props.asset.type === "source" &&
-    props.asset.source?.provider === "youtube" ? (
+  ) : props.asset.type === "widget" &&
+    props.asset.widget?.provider === "youtube" ? (
     <YouTubeSourceEditor
       asset={props.asset}
       csrf={props.csrf}
@@ -914,28 +904,8 @@ function AssetDetails(props: {
       onClose={props.onClose}
       onSaved={props.onChanged}
     />
-  ) : props.asset.type === "source" &&
-    props.asset.source?.provider === "calendar" ? (
-    <CalendarSourceEditor
-      asset={props.asset}
-      csrf={props.csrf}
-      readOnly={!props.canManage}
-      onClose={props.onClose}
-      onSaved={props.onChanged}
-    />
-  ) : props.asset.type === "source" &&
-    props.asset.source &&
-    ["rss", "atom", "json", "csv"].includes(props.asset.source.provider) ? (
-    <StructuredSourceEditor
-      provider={props.asset.source.provider as "rss" | "atom" | "json" | "csv"}
-      asset={props.asset}
-      csrf={props.csrf}
-      readOnly={!props.canManage}
-      onClose={props.onClose}
-      onSaved={props.onChanged}
-    />
-  ) : props.asset.type === "source" &&
-    props.asset.source &&
+  ) : props.asset.type === "widget" &&
+    props.asset.widget &&
     [
       "clock",
       "date",
@@ -945,10 +915,10 @@ function AssetDetails(props: {
       "list",
       "table",
       "agenda",
-    ].includes(props.asset.source.provider) ? (
+    ].includes(props.asset.widget.provider) ? (
     <NativeAppEditor
       provider={
-        props.asset.source.provider as
+        props.asset.widget.provider as
           | "clock"
           | "date"
           | "qrcode"
@@ -1193,8 +1163,8 @@ export function WebsiteEditor({
         configuration,
       };
       return asset
-        ? api.updateSource(asset.id, sourceInput, csrf)
-        : api.createSource(sourceInput, csrf);
+        ? api.updateWidget(asset.id, sourceInput, csrf)
+        : api.createWidget(sourceInput, csrf);
     },
     onSuccess: (value) => {
       setDirty(false);

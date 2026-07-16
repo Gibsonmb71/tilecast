@@ -74,8 +74,8 @@ export type PlaylistItem = {
   videoEndOffsetMs?: number;
   deliveryPolicy: "download" | "stream" | "automatic";
   assetName: string;
-  assetType: "image" | "video" | "source" | "website";
-  sourceProvider?: SourceProvider;
+  assetType: "image" | "video" | "widget";
+  widgetProvider?: WidgetProvider;
   assetStatus: AssetStatus;
   assetDurationSeconds?: number;
   thumbnailUrl: string;
@@ -104,9 +104,9 @@ export type PlaylistList = {
 
 export type LayoutOrientation = "landscape" | "portrait" | "custom";
 export type LayoutPlacementType =
-  "app" | "asset" | "playlistZone" | "primitive";
+  "widget" | "asset" | "playlistZone" | "primitive";
 export type LayoutBinding = {
-  sourceId: string;
+  dataSourceId: string;
   field: string;
   prefix?: string;
   suffix?: string;
@@ -160,7 +160,7 @@ export type LayoutPlacement = {
   visible: boolean;
   locked: boolean;
   groupId?: string;
-  appId?: string;
+  widgetId?: string;
   assetId?: string;
   playlistId?: string;
   overrides?: Record<string, unknown>;
@@ -168,7 +168,7 @@ export type LayoutPlacement = {
   playback?: LayoutPlayback;
 };
 export type LayoutDocument = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   canvas: {
     width: number;
     height: number;
@@ -180,7 +180,7 @@ export type LayoutDocument = {
   placements: LayoutPlacement[];
 };
 export type LayoutDependency = {
-  type: "app" | "asset" | "playlist";
+  type: "widget" | "asset" | "playlist" | "data_source";
   id: string;
 };
 export type Layout = {
@@ -652,7 +652,7 @@ export type Asset = {
   id: string;
   name: string;
   description: string;
-  type: "image" | "video" | "source";
+  type: "image" | "video" | "widget";
   originalFilename: string;
   declaredMimeType: string;
   detectedMimeType: string;
@@ -676,7 +676,7 @@ export type Asset = {
   variants: AssetVariant[];
   thumbnailUrl?: string;
   website?: WebsiteConfig;
-  source?: Source;
+  widget?: Widget;
   playlistUsage?: number;
   layoutUsage?: { id: string; name: string; published: boolean }[];
   folderId?: string;
@@ -715,14 +715,9 @@ export type BulkOrganizeInput = {
   addCollectionIds?: string[];
   removeCollectionIds?: string[];
 };
-export type SourceProvider =
+export type WidgetProvider =
   | "website"
   | "youtube"
-  | "calendar"
-  | "rss"
-  | "atom"
-  | "json"
-  | "csv"
   | "clock"
   | "date"
   | "qrcode"
@@ -731,34 +726,79 @@ export type SourceProvider =
   | "list"
   | "table"
   | "agenda";
-export type Source = {
-  provider: SourceProvider;
+export type DataSourceProvider = "calendar" | "rss" | "atom" | "json" | "csv";
+export type Widget = {
+  provider: WidgetProvider;
   configVersion: number;
   configuration:
     | WebsiteConfig
     | YouTubeConfig
-    | CalendarConfig
-    | StructuredSourceConfig
-    | ClockAppConfig
-    | DateAppConfig
-    | QRCodeAppConfig
-    | TickerAppConfig
-    | DisplayAppConfig;
+    | ClockWidgetConfig
+    | DateWidgetConfig
+    | QRCodeWidgetConfig
+    | TickerWidgetConfig
+    | DisplayWidgetConfig;
 };
-export type SourceInput = {
-  provider: SourceProvider;
+export type WidgetInput = {
+  provider: WidgetProvider;
   name: string;
   description: string;
   configuration:
     | WebsiteConfigInput
     | YouTubeConfig
-    | CalendarConfig
-    | StructuredSourceConfig
-    | ClockAppConfig
-    | DateAppConfig
-    | QRCodeAppConfig
-    | TickerAppConfig
-    | DisplayAppConfig;
+    | ClockWidgetConfig
+    | DateWidgetConfig
+    | QRCodeWidgetConfig
+    | TickerWidgetConfig
+    | DisplayWidgetConfig;
+};
+export type DataSourceField = {
+  key: string;
+  label: string;
+  type: string;
+};
+export type DataSource = {
+  id: string;
+  provider: DataSourceProvider;
+  name: string;
+  description: string;
+  configVersion: number;
+  configuration: CalendarConfig | StructuredSourceConfig;
+  status: string;
+  cachedRecordCount: number;
+  createdAt: string;
+  updatedAt: string;
+  creator?: { id: string; name: string };
+};
+export type DataSourceDetail = {
+  id: string;
+  provider: DataSourceProvider;
+  name: string;
+  description: string;
+  configVersion: number;
+  configuration: CalendarConfig | StructuredSourceConfig;
+  creator?: { id: string; name: string };
+  createdAt: string;
+  updatedAt: string;
+  status: string;
+  diagnostics: SourceRefreshDiagnostics;
+  fields: DataSourceField[];
+  dateSelection?: DateSelection;
+  cachedRecordCount: number;
+  widgetUsage: { id: string; name: string; provider: WidgetProvider }[];
+  bindingUsage: { layoutId: string; layoutName: string; field: string }[];
+};
+export type DataSourceInput = {
+  provider: DataSourceProvider;
+  name: string;
+  description: string;
+  configuration: CalendarConfig | StructuredSourceConfig;
+};
+export type DataSourceListResult = {
+  items: DataSource[];
+  total: number;
+  page: number;
+  pageSize: number;
 };
 export type StructuredSourceConfig = {
   url?: string;
@@ -807,36 +847,37 @@ export type DateSelection = {
     "fallback_text" | "next_available" | "empty" | "hide" | "last_known_good";
   fallbackText?: string;
 };
-export type ClockAppConfig = {
+export type ClockWidgetConfig = {
   timezone: string;
   format: "12" | "24";
   showSeconds: boolean;
   foregroundColor: string;
   backgroundColor: string;
 };
-export type DateAppConfig = {
+export type DateWidgetConfig = {
   timezone: string;
   format: "full" | "long" | "medium" | "short";
   foregroundColor: string;
   backgroundColor: string;
 };
-export type QRCodeAppConfig = {
+export type QRCodeWidgetConfig = {
   value: string;
   label?: string;
   errorCorrection: "low" | "medium" | "quartile" | "high";
   foregroundColor: string;
   backgroundColor: string;
 };
-export type TickerAppConfig = {
-  sourceAssetId: string;
+export type TickerWidgetConfig = {
+  dataSourceId: string;
   field: string;
   separator: string;
+  direction: "left" | "right";
   speed: "slow" | "normal" | "fast";
   foregroundColor: string;
   backgroundColor: string;
 };
-export type DisplayAppConfig = {
-  sourceAssetId: string;
+export type DisplayWidgetConfig = {
+  dataSourceId: string;
   fields: string[];
   maximumItems: number;
   foregroundColor: string;

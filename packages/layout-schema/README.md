@@ -9,6 +9,6 @@ This package owns the future renderer-neutral, versioned layout contract. Layout
 
 Every placement carries bounded geometry, layer, opacity, visibility, and only type-approved display overrides. Shared App configuration and fetched structured data are not copied into layout revisions. Data bindings reference a Source plus a validated field path; they are not executable templates, HTML, CSS, JavaScript, or arbitrary expressions.
 
-See `docs/apps-and-layouts.md` for the ownership and compatibility contract that layout schema versions must preserve.
+See `docs/widgets-and-layouts.md` for the ownership contract that layout schema versions must preserve.
 
-`schema-v1.json` is the first published contract. Server and Player validators enforce the same hard limits in code before accepting or activating a document.
+`schema-v2.json` is the current contract. Placements use `type: "widget"` with a `widgetId`; text primitives may bind to one field of a declared Data Source through `binding.dataSourceId`. A Data Source is never itself a placement. Server and Player validators enforce the same hard limits in code before accepting or activating a document.

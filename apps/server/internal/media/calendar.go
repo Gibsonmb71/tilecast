@@ -43,7 +43,7 @@ type calendarSourceProvider struct{ service *Service }
 
 func (p calendarSourceProvider) Normalize(ctx context.Context, raw json.RawMessage) (any, error) {
 	var config CalendarConfig
-	if err := decodeSourceConfig(raw, &config); err != nil {
+	if err := decodeConfig(raw, &config); err != nil {
 		return nil, err
 	}
 	if len(config.Calendars) < 1 || len(config.Calendars) > calendarMaxFeeds {
@@ -365,7 +365,7 @@ func filterCalendarEvents(events []CalendarEvent, config CalendarConfig) []Calen
 	return filtered
 }
 
-func (s *Service) refreshCalendar(ctx context.Context, assetID uuid.UUID, config CalendarConfig) (CalendarPreparedData, SourceRefreshDiagnostics, error) {
+func (s *Service) refreshCalendar(ctx context.Context, assetID uuid.UUID, config CalendarConfig) (CalendarPreparedData, DataSourceDiagnostics, error) {
 	loc, _ := time.LoadLocation(config.Timezone)
 	now := time.Now().UTC()
 	windowStart := now.Add(-24 * time.Hour)
@@ -392,7 +392,7 @@ func (s *Service) refreshCalendar(ctx context.Context, assetID uuid.UUID, config
 		all = append(all, events...)
 	}
 	if successfulFeeds == 0 {
-		return CalendarPreparedData{}, SourceRefreshDiagnostics{AssetID: assetID, HTTPResultCategory: &httpCategory, ParseStatus: parseStatus}, errors.New("no calendar could be refreshed")
+		return CalendarPreparedData{}, DataSourceDiagnostics{DataSourceID: assetID, HTTPResultCategory: &httpCategory, ParseStatus: parseStatus}, errors.New("no calendar could be refreshed")
 	}
 	if successfulFeeds != len(config.Calendars) {
 		parseStatus = "partial"
@@ -401,7 +401,7 @@ func (s *Service) refreshCalendar(ctx context.Context, assetID uuid.UUID, config
 	all = filterCalendarEvents(all, config)
 	sort.Slice(all, func(i, j int) bool { return all[i].Start.Before(all[j].Start) })
 	prepared := CalendarPreparedData{Events: all, CachedAt: now, StaleAt: now.Add(time.Duration(config.StalenessLimitHours) * time.Hour)}
-	diagnostics := SourceRefreshDiagnostics{AssetID: assetID, HTTPResultCategory: &httpCategory, ParseStatus: parseStatus, AvailableEventCount: len(all), CacheUpdatedAt: &prepared.CachedAt, CacheExpiresAt: &prepared.StaleAt}
+	diagnostics := DataSourceDiagnostics{DataSourceID: assetID, HTTPResultCategory: &httpCategory, ParseStatus: parseStatus, AvailableEventCount: len(all), CacheUpdatedAt: &prepared.CachedAt, CacheExpiresAt: &prepared.StaleAt}
 	return prepared, diagnostics, nil
 }
 
@@ -418,17 +418,17 @@ func (s *Service) CalendarPreview(ctx context.Context, raw json.RawMessage) (Cal
 	return CalendarPreview{Configuration: CalendarPlayerConfig{DisplayMode: config.DisplayMode, MaxEvents: config.MaxEvents, Fields: config.Fields, Timezone: config.Timezone, EmptyState: config.EmptyState, Data: prepared}, Diagnostics: diagnostics}, nil
 }
 
-func (s *Service) SourceDiagnostics(ctx context.Context, id uuid.UUID) (SourceRefreshDiagnostics, error) {
-	var diagnostics SourceRefreshDiagnostics
-	diagnostics.AssetID = id
-	err := s.db.QueryRow(ctx, `SELECT last_success_at,last_attempt_at,http_result_category,parse_status,available_event_count,available_item_count,using_cached_data,cache_updated_at,cache_expires_at,error_code FROM source_refresh_states WHERE asset_id=$1`, id).Scan(&diagnostics.LastSuccessfulAt, &diagnostics.LastAttemptedAt, &diagnostics.HTTPResultCategory, &diagnostics.ParseStatus, &diagnostics.AvailableEventCount, &diagnostics.AvailableItemCount, &diagnostics.UsingCachedData, &diagnostics.CacheUpdatedAt, &diagnostics.CacheExpiresAt, &diagnostics.ErrorCode)
+func (s *Service) DataSourceRefreshDiagnostics(ctx context.Context, id uuid.UUID) (DataSourceDiagnostics, error) {
+	var diagnostics DataSourceDiagnostics
+	diagnostics.DataSourceID = id
+	err := s.db.QueryRow(ctx, `SELECT last_success_at,last_attempt_at,http_result_category,parse_status,available_event_count,available_item_count,using_cached_data,cache_updated_at,cache_expires_at,error_code FROM data_source_refresh_states WHERE data_source_id=$1`, id).Scan(&diagnostics.LastSuccessfulAt, &diagnostics.LastAttemptedAt, &diagnostics.HTTPResultCategory, &diagnostics.ParseStatus, &diagnostics.AvailableEventCount, &diagnostics.AvailableItemCount, &diagnostics.UsingCachedData, &diagnostics.CacheUpdatedAt, &diagnostics.CacheExpiresAt, &diagnostics.ErrorCode)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return SourceRefreshDiagnostics{}, ErrNotFound
+		return DataSourceDiagnostics{}, ErrNotFound
 	}
 	return diagnostics, err
 }
 
-func (s *Service) PlayerSourceConfiguration(ctx context.Context, assetID uuid.UUID, provider string, raw json.RawMessage) (json.RawMessage, error) {
+func (s *Service) PlayerDataSourceConfiguration(ctx context.Context, assetID uuid.UUID, provider string, raw json.RawMessage) (json.RawMessage, error) {
 	if provider != "calendar" && provider != "rss" && provider != "atom" && provider != "json" && provider != "csv" {
 		return raw, nil
 	}
@@ -442,7 +442,7 @@ func (s *Service) PlayerSourceConfiguration(ctx context.Context, assetID uuid.UU
 		var expires *time.Time
 		var usingCache bool
 		var errorCode *string
-		err := s.db.QueryRow(ctx, `SELECT cached_payload,cache_expires_at,using_cached_data,error_code FROM source_refresh_states WHERE asset_id=$1`, assetID).Scan(&payload, &expires, &usingCache, &errorCode)
+		err := s.db.QueryRow(ctx, `SELECT cached_payload,cache_expires_at,using_cached_data,error_code FROM data_source_refresh_states WHERE data_source_id=$1`, assetID).Scan(&payload, &expires, &usingCache, &errorCode)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return nil, err
 		}
@@ -465,7 +465,7 @@ func (s *Service) PlayerSourceConfiguration(ctx context.Context, assetID uuid.UU
 	var expires *time.Time
 	var usingCache bool
 	var errorCode *string
-	err := s.db.QueryRow(ctx, `SELECT cached_payload,cache_expires_at,using_cached_data,error_code FROM source_refresh_states WHERE asset_id=$1`, assetID).Scan(&payload, &expires, &usingCache, &errorCode)
+	err := s.db.QueryRow(ctx, `SELECT cached_payload,cache_expires_at,using_cached_data,error_code FROM data_source_refresh_states WHERE data_source_id=$1`, assetID).Scan(&payload, &expires, &usingCache, &errorCode)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, err
 	}

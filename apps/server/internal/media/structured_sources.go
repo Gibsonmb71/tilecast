@@ -29,7 +29,7 @@ type structuredSourceProvider struct {
 
 func (p structuredSourceProvider) Normalize(ctx context.Context, raw json.RawMessage) (any, error) {
 	var c StructuredSourceConfig
-	if err := decodeSourceConfig(raw, &c); err != nil {
+	if err := decodeConfig(raw, &c); err != nil {
 		return nil, err
 	}
 	if p.provider != "csv" || c.UploadedContent == "" {
@@ -533,9 +533,9 @@ func firstNonempty(values ...string) string {
 	return ""
 }
 
-func (s *Service) refreshStructured(ctx context.Context, assetID uuid.UUID, provider string, c StructuredSourceConfig) (StructuredPreparedData, SourceRefreshDiagnostics, error) {
+func (s *Service) refreshStructured(ctx context.Context, assetID uuid.UUID, provider string, c StructuredSourceConfig) (StructuredPreparedData, DataSourceDiagnostics, error) {
 	body, category, err := s.fetchStructured(ctx, provider, c)
-	diagnostics := SourceRefreshDiagnostics{AssetID: assetID, HTTPResultCategory: &category, ParseStatus: "failed"}
+	diagnostics := DataSourceDiagnostics{DataSourceID: assetID, HTTPResultCategory: &category, ParseStatus: "failed"}
 	if err != nil {
 		return StructuredPreparedData{}, diagnostics, err
 	}

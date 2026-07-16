@@ -1,6 +1,6 @@
 # Structured Sources
 
-Tilecast provides native RSS, Atom, JSON, and CSV Sources. Each Source is a reusable Content item that can be placed in playlists. The server keeps one bounded last-known-good payload and projects only the prepared records required by a screen into manifest v8.
+Tilecast provides native RSS, Atom, JSON, and CSV **Data Sources**. Each is a reusable, non-visual data connection — it cannot be placed in a playlist or Layout directly and is instead displayed by a compatible Widget (Ticker, Menu, List, Table, or Agenda) or referenced by a custom Layout text binding. The server keeps one bounded last-known-good payload and projects only the prepared records required by a screen into the manifest `dataSources` array, shared across every Widget that consumes it.
 
 ## Providers
 
@@ -16,4 +16,4 @@ Dynamic Sources use the same dedicated fetch policy as Calendar Sources. Public 
 
 Displayed strings are stripped of markup, control characters, and excessive length. URLs in records must be credential-free HTTPS URLs. Uploaded CSV bytes remain in the server configuration for refresh and backup but are removed from Studio API responses and Player manifests. Manifest data contains no fetch URL, uploaded bytes, mapping paths, filters, or executable content.
 
-The Player validates manifest v8 before activation, keeps its previous verified manifest, and renders structured records with native Compose primitives. WebView remains limited to Website and YouTube Sources. Cached prepared records remain available during server or upstream outages until their configured staleness deadline.
+The Player validates the manifest before activation, keeps its previous verified manifest, and renders structured records with native Compose primitives inside the consuming Widget. WebView remains limited to Website and YouTube Widgets. One cached Data Source dataset is shared across every Widget that references it. Cached prepared records remain available during server or upstream outages until their configured staleness deadline.

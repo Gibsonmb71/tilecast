@@ -20,7 +20,10 @@ import type {
   SchedulePreview,
   WebsiteInput,
   WebsiteDiagnostics,
-  SourceInput,
+  WidgetInput,
+  DataSourceDetail,
+  DataSourceInput,
+  DataSourceListResult,
   PlayerCommand,
   EmergencyTakeover,
   SettingsDocument,
@@ -36,6 +39,7 @@ import type {
   PowerAssistResults,
   CalendarConfig,
   CalendarPreview,
+  DataSourceProvider,
   SourceRefreshDiagnostics,
   ContentFolder,
   ContentCollection,
@@ -583,42 +587,69 @@ export const api = {
     }),
   websiteDiagnostics: (id: string) =>
     request<WebsiteDiagnostics>(`/assets/${id}/website/diagnostics`),
-  createSource: (input: SourceInput, csrfToken: string) =>
-    request<Asset>("/apps", {
+  createWidget: (input: WidgetInput, csrfToken: string) =>
+    request<Asset>("/widgets", {
       method: "POST",
       headers: { "X-CSRF-Token": csrfToken },
       body: JSON.stringify(input),
     }),
-  updateSource: (id: string, input: SourceInput, csrfToken: string) =>
-    request<Asset>(`/apps/${id}`, {
+  updateWidget: (id: string, input: WidgetInput, csrfToken: string) =>
+    request<Asset>(`/widgets/${id}`, {
       method: "PATCH",
       headers: { "X-CSRF-Token": csrfToken },
       body: JSON.stringify(input),
     }),
-  duplicateSource: (id: string, csrfToken: string) =>
-    request<Asset>(`/apps/${id}/duplicate`, {
+  duplicateWidget: (id: string, csrfToken: string) =>
+    request<Asset>(`/widgets/${id}/duplicate`, {
       method: "POST",
       headers: { "X-CSRF-Token": csrfToken },
     }),
-  previewCalendarSource: (configuration: CalendarConfig, csrfToken: string) =>
-    request<CalendarPreview>("/apps/calendar/preview", {
+  listDataSources: (params?: URLSearchParams) =>
+    request<DataSourceListResult>(
+      `/data-sources?${(
+        params ?? new URLSearchParams({ page: "1", pageSize: "100" })
+      ).toString()}`,
+    ),
+  getDataSource: (id: string) =>
+    request<DataSourceDetail>(`/data-sources/${id}`),
+  createDataSource: (input: DataSourceInput, csrfToken: string) =>
+    request<DataSourceDetail>("/data-sources", {
       method: "POST",
       headers: { "X-CSRF-Token": csrfToken },
-      body: JSON.stringify({ configuration }),
+      body: JSON.stringify(input),
     }),
-  previewStructuredSource: (
-    provider: "rss" | "atom" | "json" | "csv",
-    configuration: StructuredSourceConfig,
+  updateDataSource: (id: string, input: DataSourceInput, csrfToken: string) =>
+    request<DataSourceDetail>(`/data-sources/${id}`, {
+      method: "PATCH",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  duplicateDataSource: (id: string, csrfToken: string) =>
+    request<DataSourceDetail>(`/data-sources/${id}/duplicate`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
+  deleteDataSource: (id: string, csrfToken: string) =>
+    request<void>(`/data-sources/${id}`, {
+      method: "DELETE",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
+  dataSourceDiagnostics: (id: string) =>
+    request<SourceRefreshDiagnostics>(`/data-sources/${id}/diagnostics`),
+  previewDataSource: (
+    provider: DataSourceProvider,
+    configuration: CalendarConfig | StructuredSourceConfig,
     csrfToken: string,
     previewDate?: string,
   ) =>
-    request<StructuredPreview>(`/apps/${provider}/preview`, {
-      method: "POST",
-      headers: { "X-CSRF-Token": csrfToken },
-      body: JSON.stringify({ configuration, previewDate }),
-    }),
-  sourceDiagnostics: (id: string) =>
-    request<SourceRefreshDiagnostics>(`/apps/${id}/diagnostics`),
+    request<StructuredPreview | CalendarPreview>(
+      `/data-sources/${provider}/preview`,
+      {
+        method: "POST",
+        headers: { "X-CSRF-Token": csrfToken },
+        body: JSON.stringify({ configuration, previewDate }),
+      },
+    ),
   retryAsset: (id: string, csrfToken: string) =>
     request<Asset>(`/assets/${id}/retry`, {
       method: "POST",

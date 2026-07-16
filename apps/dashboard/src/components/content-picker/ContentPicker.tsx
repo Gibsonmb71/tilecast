@@ -2,7 +2,7 @@ import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { Globe2, Upload, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api/client";
-import type { Asset, SourceProvider } from "../../api/types";
+import type { Asset, WidgetProvider } from "../../api/types";
 import { ContentLibraryGrid } from "./ContentLibraryGrid";
 import {
   ContentPickerToolbar,
@@ -19,8 +19,8 @@ export type ContentPickerProps = {
   open: boolean;
   mode: "single" | "multiple";
   csrf: string;
-  allowedTypes?: Array<"image" | "video" | "source">;
-  allowedProviders?: SourceProvider[];
+  allowedTypes?: Array<"image" | "video" | "widget">;
+  allowedProviders?: WidgetProvider[];
   disabledItemIds?: string[];
   selectedIds?: string[];
   confirmLabel?: string;
@@ -32,7 +32,7 @@ export function ContentPicker({
   open,
   mode,
   csrf,
-  allowedTypes = ["image", "video", "source"],
+  allowedTypes = ["image", "video", "widget"],
   allowedProviders,
   disabledItemIds = [],
   selectedIds = [],
@@ -64,14 +64,10 @@ export function ContentPicker({
         sort,
       });
       if (search) params.set("search", search);
-      if (["image", "video", "source"].includes(filter))
+      if (["image", "video", "widget"].includes(filter))
         params.set("type", filter);
-      if (
-        filter === "website" ||
-        filter === "youtube" ||
-        filter === "calendar"
-      ) {
-        params.set("type", "source");
+      if (filter === "website" || filter === "youtube") {
+        params.set("type", "widget");
         params.set("provider", filter);
       }
       return api.assets(params);
@@ -170,9 +166,9 @@ export function ContentPicker({
     (asset, index, values) =>
       values.findIndex((candidate) => candidate.id === asset.id) === index &&
       allowed.has(asset.type) &&
-      (asset.type !== "source" ||
+      (asset.type !== "widget" ||
         !providers ||
-        (asset.source != null && providers.has(asset.source.provider))),
+        (asset.widget != null && providers.has(asset.widget.provider))),
   );
   const disabled = new Set(disabledItemIds);
   const chosen = [...selected.values()];

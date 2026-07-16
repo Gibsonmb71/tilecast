@@ -24,7 +24,7 @@ type Service struct {
 }
 
 type SourceProjector interface {
-	PlayerSourceConfiguration(context.Context, uuid.UUID, string, json.RawMessage) (json.RawMessage, error)
+	PlayerDataSourceConfiguration(context.Context, uuid.UUID, string, json.RawMessage) (json.RawMessage, error)
 }
 
 func NewService(db *pgxpool.Pool, notifier Notifier) *Service {
@@ -115,7 +115,7 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (Playlist, error) {
 	if err != nil {
 		return Playlist{}, err
 	}
-	rows, err := s.db.Query(ctx, `SELECT i.id,i.asset_id,i.position,i.duration_ms,i.fit_mode,i.transition,i.audio_enabled,i.volume,i.video_start_offset_ms,i.video_end_offset_ms,i.delivery_policy,a.name,a.type,COALESCE(s.provider,''),a.processing_status,a.duration_seconds,v.id,i.created_at,i.updated_at FROM playlist_items i JOIN assets a ON a.id=i.asset_id LEFT JOIN sources s ON s.asset_id=a.id LEFT JOIN LATERAL(SELECT id FROM asset_variants WHERE asset_id=a.id AND deleted_at IS NULL AND player_compatible=TRUE ORDER BY CASE kind WHEN 'playback' THEN 0 WHEN 'original' THEN 1 ELSE 2 END LIMIT 1)v ON TRUE WHERE i.playlist_id=$1 ORDER BY i.position`, id)
+	rows, err := s.db.Query(ctx, `SELECT i.id,i.asset_id,i.position,i.duration_ms,i.fit_mode,i.transition,i.audio_enabled,i.volume,i.video_start_offset_ms,i.video_end_offset_ms,i.delivery_policy,a.name,a.type,COALESCE(s.provider,''),a.processing_status,a.duration_seconds,v.id,i.created_at,i.updated_at FROM playlist_items i JOIN assets a ON a.id=i.asset_id LEFT JOIN widgets s ON s.asset_id=a.id LEFT JOIN LATERAL(SELECT id FROM asset_variants WHERE asset_id=a.id AND deleted_at IS NULL AND player_compatible=TRUE ORDER BY CASE kind WHEN 'playback' THEN 0 WHEN 'original' THEN 1 ELSE 2 END LIMIT 1)v ON TRUE WHERE i.playlist_id=$1 ORDER BY i.position`, id)
 	if err != nil {
 		return Playlist{}, err
 	}
@@ -125,11 +125,11 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (Playlist, error) {
 	p.LayoutUsage = []LayoutUsage{}
 	for rows.Next() {
 		var item Item
-		if err := rows.Scan(&item.ID, &item.AssetID, &item.Position, &item.DurationMS, &item.FitMode, &item.Transition, &item.AudioEnabled, &item.Volume, &item.VideoStartOffsetMS, &item.VideoEndOffsetMS, &item.DeliveryPolicy, &item.AssetName, &item.AssetType, &item.SourceProvider, &item.AssetStatus, &item.AssetDurationSeconds, &item.VariantID, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.AssetID, &item.Position, &item.DurationMS, &item.FitMode, &item.Transition, &item.AudioEnabled, &item.Volume, &item.VideoStartOffsetMS, &item.VideoEndOffsetMS, &item.DeliveryPolicy, &item.AssetName, &item.AssetType, &item.WidgetProvider, &item.AssetStatus, &item.AssetDurationSeconds, &item.VariantID, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			return Playlist{}, err
 		}
 		item.ThumbnailURL = "/api/v1/assets/" + item.AssetID.String() + "/thumbnail"
-		if item.AssetStatus != "ready" || (item.AssetType != "source" && item.VariantID == nil) {
+		if item.AssetStatus != "ready" || (item.AssetType != "widget" && item.VariantID == nil) {
 			p.Warnings = append(p.Warnings, "Asset "+item.AssetName+" is no longer ready for playback.")
 		}
 		p.Items = append(p.Items, item)
@@ -289,7 +289,7 @@ func (s *Service) validateItem(ctx context.Context, q interface {
 		return input, assetInfo{}, errors.New("volume must be between 0 and 1")
 	}
 	var a assetInfo
-	err := q.QueryRow(ctx, `SELECT a.type,COALESCE(s.provider,''),a.duration_seconds,v.id FROM assets a LEFT JOIN sources s ON s.asset_id=a.id LEFT JOIN LATERAL(SELECT id FROM asset_variants WHERE asset_id=a.id AND deleted_at IS NULL AND player_compatible=TRUE ORDER BY CASE kind WHEN 'playback' THEN 0 ELSE 1 END LIMIT 1)v ON TRUE WHERE a.id=$1 AND a.deleted_at IS NULL AND a.processing_status='ready' AND (a.type='source' OR v.id IS NOT NULL)`, input.AssetID).Scan(&a.Type, &a.Provider, &a.Duration, &a.Variant)
+	err := q.QueryRow(ctx, `SELECT a.type,COALESCE(s.provider,''),a.duration_seconds,v.id FROM assets a LEFT JOIN widgets s ON s.asset_id=a.id LEFT JOIN LATERAL(SELECT id FROM asset_variants WHERE asset_id=a.id AND deleted_at IS NULL AND player_compatible=TRUE ORDER BY CASE kind WHEN 'playback' THEN 0 ELSE 1 END LIMIT 1)v ON TRUE WHERE a.id=$1 AND a.deleted_at IS NULL AND a.processing_status='ready' AND (a.type='widget' OR v.id IS NOT NULL)`, input.AssetID).Scan(&a.Type, &a.Provider, &a.Duration, &a.Variant)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return input, a, ErrInvalidAsset
 	}
@@ -299,7 +299,7 @@ func (s *Service) validateItem(ctx context.Context, q interface {
 	if a.Type == "image" && (input.DurationMS == nil || *input.DurationMS <= 0) {
 		return input, a, errors.New("image durationMs must be positive")
 	}
-	if a.Type == "source" {
+	if a.Type == "widget" {
 		if input.DurationMS == nil || *input.DurationMS <= 0 {
 			if a.Provider == "website" {
 				return input, a, errors.New("website source durationMs must be positive")
@@ -817,7 +817,7 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 	if s.scheduling != nil {
 		prefetch, grace, _ = s.scheduling.Config()
 	}
-	manifest := Manifest{SchemaVersion: 10, ManifestVersion: assignment.ManifestVersion, ScreenID: screenID, GeneratedAt: changed, ServerTime: now, Mode: "presentation", Assets: []ManifestAsset{}, Playlists: []ManifestPlaylist{}, Layouts: []ManifestLayout{}, Schedules: []ManifestSchedule{}, Websites: []ManifestWebsite{}, Sources: []ManifestSource{}, PrefetchHorizonDays: prefetch, ActivationGraceSeconds: grace}
+	manifest := Manifest{SchemaVersion: 11, ManifestVersion: assignment.ManifestVersion, ScreenID: screenID, GeneratedAt: changed, ServerTime: now, Mode: "presentation", Assets: []ManifestAsset{}, Playlists: []ManifestPlaylist{}, Layouts: []ManifestLayout{}, Schedules: []ManifestSchedule{}, Websites: []ManifestWebsite{}, Widgets: []ManifestWidget{}, DataSources: []ManifestDataSource{}, PrefetchHorizonDays: prefetch, ActivationGraceSeconds: grace}
 	var syncGroup ManifestSyncGroup
 	if groupErr := s.db.QueryRow(ctx, `SELECT g.id,g.playback_epoch FROM screen_group_memberships m JOIN screen_groups g ON g.id=m.screen_group_id WHERE m.screen_id=$1 AND g.deleted_at IS NULL`, screenID).Scan(&syncGroup.ID, &syncGroup.PlaybackEpoch); groupErr == nil {
 		manifest.SyncGroup = &syncGroup
@@ -917,35 +917,29 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 		}
 		mp := ManifestPlaylist{ID: playlist.ID, Revision: playlist.Revision, Name: playlist.Name, Items: []ManifestItem{}}
 		for _, item := range playlist.Items {
-			if item.AssetStatus != "ready" || (item.AssetType != "source" && item.VariantID == nil) {
+			if item.AssetStatus != "ready" || (item.AssetType != "widget" && item.VariantID == nil) {
 				return Manifest{}, "", fmt.Errorf("%w: playlist contains an unavailable asset", ErrConflict)
 			}
-			if item.AssetType == "source" {
-				var source ManifestSource
-				source.AssetID = item.AssetID
-				source.Name = item.AssetName
-				if err = s.db.QueryRow(ctx, `SELECT provider,config_version,configuration FROM sources WHERE asset_id=$1`, item.AssetID).Scan(&source.Provider, &source.ConfigVersion, &source.Configuration); err != nil {
+			if item.AssetType == "widget" {
+				var widget ManifestWidget
+				widget.AssetID = item.AssetID
+				widget.Name = item.AssetName
+				if err = s.db.QueryRow(ctx, `SELECT provider,config_version,configuration FROM widgets WHERE asset_id=$1`, item.AssetID).Scan(&widget.Provider, &widget.ConfigVersion, &widget.Configuration); err != nil {
 					return Manifest{}, "", err
 				}
-				if s.sources != nil {
-					source.Configuration, err = s.sources.PlayerSourceConfiguration(ctx, item.AssetID, source.Provider, source.Configuration)
-					if err != nil {
-						return Manifest{}, "", err
-					}
-				}
 				var configuration map[string]any
-				if err = json.Unmarshal(source.Configuration, &configuration); err != nil {
+				if err = json.Unmarshal(widget.Configuration, &configuration); err != nil {
 					return Manifest{}, "", err
 				}
 				if rawFallback, ok := configuration["fallbackImageAssetId"].(string); ok && rawFallback != "" {
 					fallbackID, parseErr := uuid.Parse(rawFallback)
 					if parseErr != nil {
-						return Manifest{}, "", fmt.Errorf("%w: source fallback image is invalid", ErrConflict)
+						return Manifest{}, "", fmt.Errorf("%w: widget fallback image is invalid", ErrConflict)
 					}
 					var fallback ManifestAsset
 					err = s.db.QueryRow(ctx, `SELECT v.asset_id,v.id,v.mime_type,encode(v.sha256,'hex'),v.file_size,v.width,v.height,v.duration_seconds FROM asset_variants v WHERE v.asset_id=$1 AND v.deleted_at IS NULL AND v.player_compatible=TRUE ORDER BY CASE kind WHEN 'playback' THEN 0 WHEN 'original' THEN 1 ELSE 2 END LIMIT 1`, fallbackID).Scan(&fallback.AssetID, &fallback.VariantID, &fallback.MIMEType, &fallback.SHA256, &fallback.FileSize, &fallback.Width, &fallback.Height, &fallback.DurationSeconds)
 					if err != nil {
-						return Manifest{}, "", fmt.Errorf("%w: source fallback image unavailable", ErrConflict)
+						return Manifest{}, "", fmt.Errorf("%w: widget fallback image unavailable", ErrConflict)
 					}
 					fallback.DownloadPath = "/api/v1/player/assets/" + fallback.AssetID.String() + "/variants/" + fallback.VariantID.String()
 					configuration["fallbackVariantId"] = fallback.VariantID.String()
@@ -954,17 +948,17 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 						seen[fallback.VariantID] = true
 					}
 				}
-				source.Configuration, _ = json.Marshal(configuration)
-				foundSource := false
-				for _, existing := range manifest.Sources {
-					if existing.AssetID == source.AssetID {
-						foundSource = true
+				widget.Configuration, _ = json.Marshal(configuration)
+				foundWidget := false
+				for _, existing := range manifest.Widgets {
+					if existing.AssetID == widget.AssetID {
+						foundWidget = true
 					}
 				}
-				if !foundSource {
-					manifest.Sources = append(manifest.Sources, source)
+				if !foundWidget {
+					manifest.Widgets = append(manifest.Widgets, widget)
 				}
-				mp.Items = append(mp.Items, ManifestItem{ID: item.ID, AssetID: item.AssetID, AssetType: "source", DurationMS: item.DurationMS, FitMode: item.FitMode, Transition: item.Transition, AudioEnabled: item.AudioEnabled, Volume: item.Volume, DeliveryPolicy: "stream"})
+				mp.Items = append(mp.Items, ManifestItem{ID: item.ID, AssetID: item.AssetID, AssetType: "widget", DurationMS: item.DurationMS, FitMode: item.FitMode, Transition: item.Transition, AudioEnabled: item.AudioEnabled, Volume: item.Volume, DeliveryPolicy: "stream"})
 				continue
 			}
 			if item.AssetType == "website" {
@@ -1031,10 +1025,10 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 				manifest.Assets = append(manifest.Assets, asset)
 				seen[asset.VariantID] = true
 			}
-		case "app":
+		case "widget":
 			found := false
-			for _, source := range manifest.Sources {
-				if source.AssetID == dependency.ID {
+			for _, widget := range manifest.Widgets {
+				if widget.AssetID == dependency.ID {
 					found = true
 					break
 				}
@@ -1042,60 +1036,33 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 			if found {
 				continue
 			}
-			var source ManifestSource
-			source.AssetID = dependency.ID
-			if err = s.db.QueryRow(ctx, `SELECT a.name,s.provider,s.config_version,s.configuration FROM sources s JOIN assets a ON a.id=s.asset_id AND a.deleted_at IS NULL WHERE s.asset_id=$1`, dependency.ID).Scan(&source.Name, &source.Provider, &source.ConfigVersion, &source.Configuration); err != nil {
-				return Manifest{}, "", fmt.Errorf("%w: Layout App unavailable", ErrConflict)
+			var widget ManifestWidget
+			widget.AssetID = dependency.ID
+			if err = s.db.QueryRow(ctx, `SELECT a.name,w.provider,w.config_version,w.configuration FROM widgets w JOIN assets a ON a.id=w.asset_id AND a.deleted_at IS NULL WHERE w.asset_id=$1`, dependency.ID).Scan(&widget.Name, &widget.Provider, &widget.ConfigVersion, &widget.Configuration); err != nil {
+				return Manifest{}, "", fmt.Errorf("%w: Layout Widget unavailable", ErrConflict)
 			}
-			if source.Provider == "website" {
+			if widget.Provider == "website" {
 				var website ManifestWebsite
-				if err = json.Unmarshal(source.Configuration, &website); err != nil {
+				if err = json.Unmarshal(widget.Configuration, &website); err != nil {
 					return Manifest{}, "", err
 				}
-				website.AssetID, website.Name = source.AssetID, source.Name
+				website.AssetID, website.Name = widget.AssetID, widget.Name
 				manifest.Websites = append(manifest.Websites, website)
 			}
-			if s.sources != nil {
-				source.Configuration, err = s.sources.PlayerSourceConfiguration(ctx, source.AssetID, source.Provider, source.Configuration)
-				if err != nil {
-					return Manifest{}, "", err
-				}
-			}
-			manifest.Sources = append(manifest.Sources, source)
-		}
-	}
-	for _, app := range append([]ManifestSource(nil), manifest.Sources...) {
-		if app.Provider != "ticker" && app.Provider != "menu" && app.Provider != "list" && app.Provider != "table" && app.Provider != "agenda" {
-			continue
-		}
-		var config struct {
-			SourceAssetID uuid.UUID `json:"sourceAssetId"`
-		}
-		if err = json.Unmarshal(app.Configuration, &config); err != nil {
-			return Manifest{}, "", err
-		}
-		found := false
-		for _, existing := range manifest.Sources {
-			if existing.AssetID == config.SourceAssetID {
-				found = true
-				break
-			}
-		}
-		if found {
-			continue
-		}
-		var dependency ManifestSource
-		dependency.AssetID = config.SourceAssetID
-		if err = s.db.QueryRow(ctx, `SELECT a.name,s.provider,s.config_version,s.configuration FROM sources s JOIN assets a ON a.id=s.asset_id AND a.deleted_at IS NULL WHERE s.asset_id=$1`, config.SourceAssetID).Scan(&dependency.Name, &dependency.Provider, &dependency.ConfigVersion, &dependency.Configuration); err != nil {
-			return Manifest{}, "", fmt.Errorf("%w: display App data Source unavailable", ErrConflict)
-		}
-		if s.sources != nil {
-			dependency.Configuration, err = s.sources.PlayerSourceConfiguration(ctx, dependency.AssetID, dependency.Provider, dependency.Configuration)
-			if err != nil {
+			manifest.Widgets = append(manifest.Widgets, widget)
+		case "data_source":
+			if err = s.projectDataSource(ctx, &manifest, dependency.ID); err != nil {
 				return Manifest{}, "", err
 			}
 		}
-		manifest.Sources = append(manifest.Sources, dependency)
+	}
+	// Project the single shared dataset for every data-driven widget in the manifest.
+	for _, widget := range append([]ManifestWidget(nil), manifest.Widgets...) {
+		if id := widgetDataSourceID(widget.Provider, widget.Configuration); id != uuid.Nil {
+			if err = s.projectDataSource(ctx, &manifest, id); err != nil {
+				return Manifest{}, "", err
+			}
+		}
 	}
 	encoded, encodeErr := json.Marshal(manifest)
 	if encodeErr != nil {
@@ -1105,6 +1072,50 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 		return Manifest{}, "", fmt.Errorf("%w: manifest exceeds the five MiB limit", ErrConflict)
 	}
 	return manifest, manifestETag(screenID, assignment.ManifestVersion), nil
+}
+
+// widgetDataSourceID returns the Data Source a data-driven widget consumes, or Nil.
+func widgetDataSourceID(provider string, configuration json.RawMessage) uuid.UUID {
+	switch provider {
+	case "ticker", "menu", "list", "table", "agenda":
+		var c struct {
+			DataSourceID uuid.UUID `json:"dataSourceId"`
+		}
+		_ = json.Unmarshal(configuration, &c)
+		return c.DataSourceID
+	default:
+		return uuid.Nil
+	}
+}
+
+// projectDataSource adds a Data Source to the manifest exactly once, projecting its bounded
+// cached dataset and date-selection policy. The dataset is shared by every widget or binding
+// that references the Data Source; it is never copied into a widget configuration.
+func (s *Service) projectDataSource(ctx context.Context, manifest *Manifest, dataSourceID uuid.UUID) error {
+	if dataSourceID == uuid.Nil {
+		return nil
+	}
+	for _, existing := range manifest.DataSources {
+		if existing.ID == dataSourceID {
+			return nil
+		}
+	}
+	var dataSource ManifestDataSource
+	dataSource.ID = dataSourceID
+	var raw json.RawMessage
+	if err := s.db.QueryRow(ctx, `SELECT name,provider,config_version,configuration FROM data_sources WHERE id=$1 AND deleted_at IS NULL`, dataSourceID).Scan(&dataSource.Name, &dataSource.Provider, &dataSource.ConfigVersion, &raw); err != nil {
+		return fmt.Errorf("%w: required data Source unavailable", ErrConflict)
+	}
+	dataSource.Configuration = raw
+	if s.sources != nil {
+		projected, err := s.sources.PlayerDataSourceConfiguration(ctx, dataSourceID, dataSource.Provider, raw)
+		if err != nil {
+			return err
+		}
+		dataSource.Configuration = projected
+	}
+	manifest.DataSources = append(manifest.DataSources, dataSource)
+	return nil
 }
 
 func uniqueUUIDs(values []uuid.UUID) []uuid.UUID {
@@ -1120,17 +1131,14 @@ func uniqueUUIDs(values []uuid.UUID) []uuid.UUID {
 	return result
 }
 
+// AssetChanged bumps manifests for screens whose assigned playlists contain the asset.
 func (s *Service) AssetChanged(ctx context.Context, assetID uuid.UUID, reason string) error {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
-	rows, err := tx.Query(ctx, `SELECT DISTINCT i.playlist_id FROM playlist_items i
-		WHERE i.asset_id=$1 OR i.asset_id IN (
-			SELECT s.asset_id FROM sources s JOIN assets a ON a.id=s.asset_id AND a.deleted_at IS NULL
-			WHERE s.configuration->>'sourceAssetId'=$1::text
-		)`, assetID)
+	rows, err := tx.Query(ctx, `SELECT DISTINCT i.playlist_id FROM playlist_items i WHERE i.asset_id=$1`, assetID)
 	if err != nil {
 		return err
 	}
@@ -1158,17 +1166,90 @@ func (s *Service) AssetChanged(ctx context.Context, assetID uuid.UUID, reason st
 	s.notify(notes)
 	return nil
 }
+
+// DataSourceChanged bumps manifests for screens whose widgets consume the Data Source
+// (through any assigned playlist) or whose assigned Layout uses it via a contained widget
+// or a direct text binding. The cached dataset is projected into the manifest, so a data
+// change requires a fresh manifest for the affected screens.
+func (s *Service) DataSourceChanged(ctx context.Context, dataSourceID uuid.UUID, reason string) error {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	notes := []notification{}
+	// Playlists that sequence a widget consuming this Data Source.
+	rows, err := tx.Query(ctx, `SELECT DISTINCT i.playlist_id FROM playlist_items i
+		JOIN widgets w ON w.asset_id=i.asset_id
+		JOIN assets a ON a.id=w.asset_id AND a.deleted_at IS NULL
+		WHERE w.configuration->>'dataSourceId'=$1::text`, dataSourceID.String())
+	if err != nil {
+		return err
+	}
+	playlistIDs := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err = rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		playlistIDs = append(playlistIDs, id)
+	}
+	rows.Close()
+	for _, id := range playlistIDs {
+		changed, e := bumpAssigned(ctx, tx, id, reason)
+		if e != nil {
+			return e
+		}
+		notes = append(notes, changed...)
+	}
+	// Screens (and group members) assigned a Layout that uses this Data Source, either
+	// via a contained widget placement or a direct text binding dependency.
+	layoutRows, err := tx.Query(ctx, `WITH affected_layouts AS (
+			SELECT DISTINCT l.id FROM layouts l WHERE l.deleted_at IS NULL AND (
+				EXISTS(SELECT 1 FROM layout_draft_dependencies d WHERE d.layout_id=l.id AND (
+					(d.dependency_type='data_source' AND d.dependency_id=$1)
+					OR (d.dependency_type='widget' AND d.dependency_id IN (SELECT asset_id FROM widgets WHERE configuration->>'dataSourceId'=$1::text))))
+				OR EXISTS(SELECT 1 FROM layout_revision_dependencies d WHERE d.revision_id=l.published_revision_id AND (
+					(d.dependency_type='data_source' AND d.dependency_id=$1)
+					OR (d.dependency_type='widget' AND d.dependency_id IN (SELECT asset_id FROM widgets WHERE configuration->>'dataSourceId'=$1::text))))))
+		INSERT INTO screen_manifest_state(screen_id,manifest_version,previous_manifest_version,changed_at,change_reason)
+		SELECT DISTINCT affected.screen_id,1,NULL::bigint,now(),$2 FROM (
+			SELECT screen_id FROM screen_playlist_assignments WHERE layout_id IN (SELECT id FROM affected_layouts)
+			UNION SELECT m.screen_id FROM screen_group_playlist_assignments a JOIN screen_group_memberships m ON m.screen_group_id=a.screen_group_id WHERE a.layout_id IN (SELECT id FROM affected_layouts)
+		) affected
+		ON CONFLICT(screen_id) DO UPDATE SET previous_manifest_version=screen_manifest_state.manifest_version,manifest_version=screen_manifest_state.manifest_version+1,changed_at=now(),change_reason=$2
+		RETURNING screen_id,manifest_version`, dataSourceID, reason)
+	if err != nil {
+		return err
+	}
+	for layoutRows.Next() {
+		var n notification
+		if err = layoutRows.Scan(&n.screen, &n.version); err != nil {
+			layoutRows.Close()
+			return err
+		}
+		notes = append(notes, n)
+	}
+	layoutRows.Close()
+	if err = tx.Commit(ctx); err != nil {
+		return err
+	}
+	s.notify(notes)
+	return nil
+}
 func manifestETag(screenID uuid.UUID, version int64) string {
 	sum := sha256.Sum256([]byte(fmt.Sprintf("%s:%d", screenID, version)))
 	return `"manifest-` + hex.EncodeToString(sum[:]) + `"`
 }
 
 func (s *Service) ReportStatus(ctx context.Context, screenID uuid.UUID, status PlayerStatus) error {
-	if len(status.PlaybackState) > 80 || len(status.LastSyncError) > 500 || len(status.LastPlaybackError) > 500 || len(status.ScheduleEvaluationError) > 500 || len(status.WebsiteState) > 40 || len(status.WebsiteFailureCategory) > 80 || len(status.WebsiteCurrentHost) > 253 || len(status.SourceState) > 40 || len(status.SourceError) > 120 {
+	if len(status.PlaybackState) > 80 || len(status.LastSyncError) > 500 || len(status.LastPlaybackError) > 500 || len(status.ScheduleEvaluationError) > 500 || len(status.WebsiteState) > 40 || len(status.WebsiteFailureCategory) > 80 || len(status.WebsiteCurrentHost) > 253 || len(status.WidgetState) > 40 || len(status.WidgetError) > 120 {
 		return errors.New("player status is invalid")
 	}
-	if status.SourceProvider != "" && status.SourceProvider != "website" && status.SourceProvider != "youtube" && status.SourceProvider != "calendar" && status.SourceProvider != "rss" && status.SourceProvider != "atom" && status.SourceProvider != "json" && status.SourceProvider != "csv" && status.SourceProvider != "clock" && status.SourceProvider != "date" && status.SourceProvider != "qrcode" && status.SourceProvider != "ticker" && status.SourceProvider != "menu" && status.SourceProvider != "list" && status.SourceProvider != "table" && status.SourceProvider != "agenda" {
-		return errors.New("player source status is invalid")
+	widgetProviders := map[string]bool{"": true, "website": true, "youtube": true, "clock": true, "date": true, "qrcode": true, "ticker": true, "menu": true, "list": true, "table": true, "agenda": true}
+	if !widgetProviders[status.WidgetProvider] {
+		return errors.New("player widget status is invalid")
 	}
 	if status.SelectionSource != "" && status.SelectionSource != "emergency" && status.SelectionSource != "schedule" && status.SelectionSource != "direct_fallback" && status.SelectionSource != "none" {
 		return errors.New("player status is invalid")
@@ -1206,7 +1287,7 @@ func (s *Service) ReportStatus(ctx context.Context, screenID uuid.UUID, status P
 		_, err = s.db.Exec(ctx, `UPDATE screen_player_status SET website_failure_at=now() WHERE screen_id=$1`, screenID)
 	}
 	if err == nil {
-		_, err = s.db.Exec(ctx, `UPDATE screen_player_status SET current_source_id=$2,source_provider=NULLIF($3,''),source_state=NULLIF($4,''),source_error=NULLIF($5,'') WHERE screen_id=$1`, screenID, status.CurrentSourceID, status.SourceProvider, status.SourceState, status.SourceError)
+		_, err = s.db.Exec(ctx, `UPDATE screen_player_status SET current_widget_id=$2,widget_provider=NULLIF($3,''),widget_state=NULLIF($4,''),widget_error=NULLIF($5,'') WHERE screen_id=$1`, screenID, status.CurrentWidgetID, status.WidgetProvider, status.WidgetState, status.WidgetError)
 	}
 	if err == nil {
 		_, err = s.db.Exec(ctx, `UPDATE screen_player_status SET active_emergency_id=$2,emergency_state=NULLIF($3,''),emergency_preparation_progress=$4,playback_disabled=COALESCE($5,playback_disabled),last_command_id=COALESCE($6,last_command_id),last_command_state=COALESCE(NULLIF($7,''),last_command_state),last_command_result=COALESCE(NULLIF($8,''),last_command_result),last_command_completed_at=COALESCE($9,last_command_completed_at) WHERE screen_id=$1`, screenID, status.ActiveEmergencyID, status.EmergencyState, status.EmergencyPreparationProgress, status.PlaybackDisabled, status.LastCommandID, status.LastCommandState, status.LastCommandResult, status.LastCommandCompletedAt)

@@ -5,12 +5,12 @@ import org.tilecast.player.network.LayoutDocument
 
 object LayoutValidator {
     private val color = Regex("^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$")
-    private val placementTypes = setOf("app", "asset", "playlistZone", "primitive")
+    private val placementTypes = setOf("widget", "asset", "playlistZone", "primitive")
     private val primitiveTypes = setOf("text", "rectangle", "circle", "line", "group")
     private val fonts = setOf("Inter", "Roboto", "Source Sans 3", "Noto Sans")
 
     fun validate(document: LayoutDocument) {
-        require(document.schemaVersion == 1)
+        require(document.schemaVersion == 2)
         val canvas = document.canvas
         require(canvas.width in 320..7680 && canvas.height in 320..7680)
         require(canvas.orientation in setOf("landscape", "portrait", "custom"))
@@ -23,8 +23,8 @@ object LayoutValidator {
             require(placement.x >= 0 && placement.y >= 0 && placement.width > 0 && placement.height > 0)
             require(placement.x + placement.width <= canvas.width + .01f && placement.y + placement.height <= canvas.height + .01f)
             require(placement.layer in 0..999 && placement.opacity in 0f..1f)
-            require(listOfNotNull(placement.appId, placement.assetId, placement.playlistId, placement.primitive).size == 1)
-            require((placement.type != "app" || placement.appId != null) && (placement.type != "asset" || placement.assetId != null) && (placement.type != "playlistZone" || placement.playlistId != null))
+            require(listOfNotNull(placement.widgetId, placement.assetId, placement.playlistId, placement.primitive).size == 1)
+            require((placement.type != "widget" || placement.widgetId != null) && (placement.type != "asset" || placement.assetId != null) && (placement.type != "playlistZone" || placement.playlistId != null))
             placement.primitive?.let { primitive ->
                 require(placement.type == "primitive" && primitive.kind in primitiveTypes)
                 require(primitive.text.length <= 4000 && primitive.fontFamily in fonts)

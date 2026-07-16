@@ -16,9 +16,10 @@ import kotlinx.serialization.json.decodeFromJsonElement
 import org.tilecast.player.activity.PlaybackActivityReporter
 import org.tilecast.player.activity.PlayerActivityQueue
 import org.tilecast.player.network.ManifestItem
-import org.tilecast.player.network.ManifestSource
-import org.tilecast.player.network.DisplayAppConfig
-import org.tilecast.player.network.TickerAppConfig
+import org.tilecast.player.network.ManifestDataSource
+import org.tilecast.player.network.ManifestWidget
+import org.tilecast.player.network.DisplayWidgetConfig
+import org.tilecast.player.network.TickerWidgetConfig
 import org.tilecast.player.network.StructuredSourceConfig
 import java.security.MessageDigest
 import java.time.LocalDate
@@ -77,15 +78,18 @@ internal data class DateAwareAttribution(
 internal fun rememberActivityChild(
     reporter: PlaybackActivityReporter?,
     item: ManifestItem,
-    source: ManifestSource?,
+    widget: ManifestWidget?,
     layoutPlacementId: String,
-    allSources: List<ManifestSource>,
+    dataSources: List<ManifestDataSource>,
+    boundDataSource: ManifestDataSource? = null,
 ): ActivityChildTracker? {
     if (reporter == null) return null
-    val attribution = remember(source?.assetId, source?.configuration, allSources) { dateAwareAttribution(source, allSources) }
+    val attribution = remember(widget?.assetId, widget?.configuration, boundDataSource?.id, dataSources) {
+        boundDataSource?.let { dataSourceAttribution(it) } ?: widgetAttribution(widget, dataSources)
+    }
     val contentType = when {
-        source != null -> "widget"
-        item.assetType == "source" || item.assetType == "website" -> "widget"
+        widget != null || boundDataSource != null -> "widget"
+        item.assetType == "widget" || item.assetType == "website" -> "widget"
         else -> "media"
     }
     val tracker = remember(item.id, item.assetId, layoutPlacementId, reporter) {
@@ -128,23 +132,29 @@ internal class ActivityChildTracker(
     fun elapsedMs(): Long = SystemClock.elapsedRealtime() - startedElapsed
 }
 
-private fun dateAwareAttribution(source: ManifestSource?, allSources: List<ManifestSource>): DateAwareAttribution {
-    if (source == null) return DateAwareAttribution()
-    val attributedSource = when (source.provider) {
+private fun widgetAttribution(widget: ManifestWidget?, dataSources: List<ManifestDataSource>): DateAwareAttribution {
+    if (widget == null) return DateAwareAttribution()
+    val boundDataSourceId = when (widget.provider) {
         "menu", "list", "table", "agenda" -> runCatching {
-            Json.decodeFromJsonElement<DisplayAppConfig>(source.configuration).sourceAssetId
-        }.getOrNull()?.let { id -> allSources.firstOrNull { it.assetId == id } }
+            Json.decodeFromJsonElement<DisplayWidgetConfig>(widget.configuration).dataSourceId
+        }.getOrNull()
         "ticker" -> runCatching {
-            Json.decodeFromJsonElement<TickerAppConfig>(source.configuration).sourceAssetId
-        }.getOrNull()?.let { id -> allSources.firstOrNull { it.assetId == id } }
-        else -> source
-    } ?: return DateAwareAttribution(sourceId = source.assetId)
-    if (attributedSource.provider !in setOf("rss", "atom", "json", "csv")) {
-        return DateAwareAttribution(sourceId = attributedSource.assetId)
+            Json.decodeFromJsonElement<TickerWidgetConfig>(widget.configuration).dataSourceId
+        }.getOrNull()
+        else -> null
+    }
+    val dataSource = boundDataSourceId?.let { id -> dataSources.firstOrNull { it.id == id } }
+        ?: return DateAwareAttribution(sourceId = widget.assetId)
+    return dataSourceAttribution(dataSource)
+}
+
+private fun dataSourceAttribution(dataSource: ManifestDataSource): DateAwareAttribution {
+    if (dataSource.provider !in setOf("rss", "atom", "json", "csv")) {
+        return DateAwareAttribution(sourceId = dataSource.id)
     }
     val configuration = runCatching {
-        Json.decodeFromJsonElement<StructuredSourceConfig>(attributedSource.configuration)
-    }.getOrNull() ?: return DateAwareAttribution(sourceId = attributedSource.assetId)
+        Json.decodeFromJsonElement<StructuredSourceConfig>(dataSource.configuration)
+    }.getOrNull() ?: return DateAwareAttribution(sourceId = dataSource.id)
     val today = LocalDate.now().toString()
     val selected = if (configuration.dateSelection.enabled) {
         configuration.data.records.firstOrNull { it.date.startsWith(today) }
@@ -153,7 +163,7 @@ private fun dateAwareAttribution(source: ManifestSource?, allSources: List<Manif
         configuration.data.records.firstOrNull()
     }
     val seed = listOf(
-        attributedSource.assetId,
+        dataSource.id,
         selected?.id.orEmpty(),
         today,
         configuration.data.cachedAt.orEmpty(),
@@ -162,7 +172,7 @@ private fun dateAwareAttribution(source: ManifestSource?, allSources: List<Manif
         .digest(seed.toByteArray())
         .joinToString("") { "%02x".format(it) }
     return DateAwareAttribution(
-        sourceId = attributedSource.assetId,
+        sourceId = dataSource.id,
         selectedRecordId = selected?.id.orEmpty(),
         sourceCachedAt = configuration.data.cachedAt,
         sourceRevision = configuration.data.cachedAt.orEmpty(),

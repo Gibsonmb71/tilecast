@@ -1,11 +1,4 @@
-import {
-  CalendarDays,
-  Check,
-  FileImage,
-  FileVideo,
-  Globe2,
-  Youtube,
-} from "lucide-react";
+import { Check, FileImage, FileVideo, Globe2, Youtube } from "lucide-react";
 import type { Asset, YouTubeConfig } from "../../api/types";
 
 function statusLabel(status: Asset["processingStatus"]) {
@@ -45,10 +38,9 @@ export function ContentLibraryGrid({
         const selected = selectedIds.has(asset.id);
         const disabled =
           disabledIds.has(asset.id) || asset.processingStatus !== "ready";
-        const youtube = asset.source?.provider === "youtube";
-        const calendar = asset.source?.provider === "calendar";
+        const youtube = asset.widget?.provider === "youtube";
         const videoId = youtube
-          ? (asset.source?.configuration as YouTubeConfig).videoId
+          ? (asset.widget?.configuration as YouTubeConfig).videoId
           : undefined;
         return (
           <button
@@ -74,8 +66,6 @@ export function ContentLibraryGrid({
                 <FileVideo size={30} />
               ) : youtube ? (
                 <Youtube size={30} />
-              ) : calendar ? (
-                <CalendarDays size={30} />
               ) : (
                 <Globe2 size={30} />
               )}
@@ -88,12 +78,10 @@ export function ContentLibraryGrid({
             <span className="picker-content-card__details">
               <strong>{asset.name}</strong>
               <small>
-                {asset.type === "source"
-                  ? asset.source?.provider === "youtube"
-                    ? "YouTube Source"
-                    : asset.source?.provider === "calendar"
-                      ? "Calendar Source"
-                      : "Website Source"
+                {asset.type === "widget"
+                  ? asset.widget?.provider === "youtube"
+                    ? "YouTube Widget"
+                    : "Website Widget"
                   : asset.type === "image"
                     ? "Image"
                     : "Video"}

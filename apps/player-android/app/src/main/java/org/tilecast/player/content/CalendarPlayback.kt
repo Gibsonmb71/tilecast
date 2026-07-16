@@ -25,8 +25,8 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import org.tilecast.player.network.CalendarEvent
 import org.tilecast.player.network.CalendarSourceConfig
+import org.tilecast.player.network.ManifestDataSource
 import org.tilecast.player.network.ManifestItem
-import org.tilecast.player.network.ManifestSource
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.ZoneId
@@ -63,18 +63,18 @@ internal fun visibleCalendarEvents(
 @Composable
 fun CalendarSourceItem(
     item: ManifestItem,
-    source: ManifestSource,
+    dataSource: ManifestDataSource,
     config: CalendarSourceConfig,
     onDone: () -> Unit,
-    onStatus: (SourcePlaybackStatus) -> Unit,
+    onStatus: (WidgetPlaybackStatus) -> Unit,
     startOffsetMs: Long = 0,
 ) {
     val now = Instant.now()
     val events = visibleCalendarEvents(config, now)
     val state = if (config.data.unavailable) "unavailable" else if (config.data.usingCachedData) "cached" else if (events.isEmpty()) "empty" else "ready"
-    DisposableEffect(source.assetId, state) {
-        onStatus(SourcePlaybackStatus(source.assetId, "calendar", state))
-        onDispose { onStatus(SourcePlaybackStatus()) }
+    DisposableEffect(dataSource.id, state) {
+        onStatus(WidgetPlaybackStatus(dataSource.id, "calendar", state))
+        onDispose { onStatus(WidgetPlaybackStatus()) }
     }
     LaunchedEffect(item.id, startOffsetMs) {
         delay(((item.durationMs ?: 30_000) - startOffsetMs).coerceAtLeast(1))
@@ -83,7 +83,7 @@ fun CalendarSourceItem(
     Column(
         modifier = Modifier.fillMaxSize().background(Color(0xFF0E141B)).padding(horizontal = 56.dp, vertical = 40.dp),
     ) {
-        Text(source.name, color = Color(0xFFF5F7FA), fontSize = 34.sp, fontWeight = FontWeight.SemiBold)
+        Text(dataSource.name, color = Color(0xFFF5F7FA), fontSize = 34.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(24.dp))
         if (config.data.unavailable || events.isEmpty()) {
             Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {

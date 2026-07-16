@@ -100,7 +100,7 @@ Owner, Administrator, and Editor may create, edit, duplicate, reorder, or delete
 
 Direct assignment routes remain `/api/v1/screens/{id}/playlist-assignment` for compatibility; only Owner and Administrator may mutate them. A `PUT` body contains exactly one of `playlistId` or `layoutId`, and a Layout must have a published revision. For a sync-group member the route updates the group-owned presentation and revises every member manifest. Sync groups use the same exclusive body on `/api/v1/screen-groups/{id}/playlist-assignment`. Existing playlist assignments remain intact after migration.
 
-`GET /api/v1/player/manifest` requires an active device credential, supports stable ETags and 304, and returns manifest v10 with a root playlist or Layout presentation. Layout projection contains the immutable published document plus only its required Apps, playlist zones, structured datasets, and verified media variants. Reads never advance the manifest version.
+`GET /api/v1/player/manifest` requires an active device credential, supports stable ETags and 304, and returns manifest v11 with a root playlist or Layout presentation. Layout projection contains the immutable published document plus only its required Widgets, playlist zones, Data Sources (bounded cached datasets), and verified media variants. Reads never advance the manifest version.
 
 ## Sync groups and schedules
 
@@ -118,19 +118,17 @@ Website playlist items require `durationMs` and always use `deliveryPolicy: "str
 
 Website data clearing is the typed `clear_website_data` persistent player command. It is Owner/Administrator-only and CSRF protected.
 
-## Apps and data Sources
+## Widgets and Data Sources
 
-`POST /api/v1/apps` creates a reusable Website, YouTube, Calendar, RSS, Atom, JSON, CSV, Clock, Date, QR Code, or Ticker App/Source instance. `PATCH /api/v1/apps/{id}` edits it and `POST /api/v1/apps/{id}/duplicate` creates a reusable copy. The former `/api/v1/sources` routes remain compatible aliases. A request contains a closed `provider`, name, optional description, and provider configuration object. Strict JSON decoding applies to both the request and provider configuration; unknown providers and fields are rejected.
+Tilecast separates renderable **Widgets** from non-visual **Data Sources**. See [widgets-and-layouts.md](widgets-and-layouts.md) for the full model.
 
-`POST /api/v1/sources/calendar/preview` performs a bounded fetch and returns real sanitized event data before save. `GET /api/v1/sources/{id}/diagnostics` returns last attempt/success, HTTP category, parse state, event count, cache usage, and cache lifetime without returning raw ICS. `GET /api/v1/assets` returns Sources with normal Content results. Use `type=source` for all Sources or `provider=website|youtube|calendar` for one provider.
+`POST /api/v1/widgets` creates a reusable Widget from the closed widget provider registry (Website, YouTube, Clock, Date, QR Code, Ticker, Menu, List, Table, Agenda). `PATCH /api/v1/widgets/{id}` edits it and `POST /api/v1/widgets/{id}/duplicate` copies it. A request contains a closed `provider`, name, optional description, and provider configuration. A data-driven Widget (Ticker, Menu, List, Table, Agenda) references exactly one compatible Data Source by `dataSourceId`; the server validates provider compatibility and that every selected field exists. Widgets are Content: `GET /api/v1/assets` returns them with `type=widget`, or filter one provider with `provider=`. Strict JSON decoding rejects unknown providers and fields.
 
-Manifest v7 projects only Sources referenced by relevant playlists. Calendar projection contains presentation settings and bounded prepared events, never feed URLs or raw calendar bytes. Existing v1-v6 manifests remain readable by the updated Player. Stable calendar failures use `validation_failed`; inaccessible resources remain `not_found`.
+`GET /api/v1/data-sources` lists Data Sources (Calendar, RSS, Atom, JSON, CSV). `POST /api/v1/data-sources` creates one, `PATCH /api/v1/data-sources/{id}` edits it, `POST /api/v1/data-sources/{id}/duplicate` copies it, and `DELETE /api/v1/data-sources/{id}` removes it — returning `409 resource_in_use` with the dependent Widgets and Layout bindings named when it is still used. `GET /api/v1/data-sources/{id}` returns the detail view: provider, status, last attempt/success, cached record count, typed fields, date-selection policy, diagnostics, and Widget and Layout-binding usage. Data Sources are not assets and cannot be placed in playlists or Layouts.
 
-`POST /api/v1/apps/{provider}/preview` previews `rss`, `atom`, `json`, or `csv` using the real bounded parser. JSON mappings use only RFC 6901 JSON Pointer; CSV uses exact header names. An optional `previewDate` evaluates the configured date selection for Studio without changing saved data. The result contains prepared records and current diagnostics. `GET /api/v1/apps/{id}/diagnostics` reports `availableItemCount` for structured providers. Equivalent `/sources` paths remain available.
+`POST /api/v1/data-sources/{provider}/preview` performs a bounded real fetch and returns sanitized prepared data plus diagnostics before save, for `calendar`, `rss`, `atom`, `json`, or `csv`. JSON mappings use only RFC 6901 JSON Pointer; CSV uses exact header names. An optional `previewDate` evaluates the configured date selection without changing saved data. Feed URLs, uploaded CSV bytes, mappings, and filters are server-only and never projected. `GET /api/v1/data-sources/{id}/diagnostics` returns last attempt/success, HTTP category, parse state, event and item counts, cache usage, and cache lifetime without raw payloads.
 
-Manifest v8 adds the four structured providers. Their projections contain only native presentation fields and bounded sanitized records. Fetch URLs, uploaded CSV bytes, mappings, and filters are server-only. Player versions that understand v1-v8 continue to load older cached manifests. See [structured-sources.md](structured-sources.md).
-
-Manifest v9 adds Clock, Date, QR Code, and Ticker Apps and projects date-selection policy with structured data. A Ticker references its data Source by stable asset ID; the manifest includes that Source once as a dependency rather than duplicating its records. Date-only records remain calendar dates, and timestamp records remain RFC 3339 values for timezone-aware local evaluation.
+Manifest v11 projects `widgets` and `dataSources` as separate arrays. A data-driven Widget references its Data Source by `dataSourceId`; the manifest includes that Data Source once and shares its bounded cached dataset and date-selection policy across every Widget or Layout binding that consumes it, never duplicating records into a Widget. Date-only records remain calendar dates and timestamp records remain RFC 3339 for timezone-aware local evaluation. See [structured-sources.md](structured-sources.md).
 
 ## Layouts
 
