@@ -46,4 +46,17 @@ describe("playlist editor", () => {
       ]),
     ).toBeNull();
   });
+  it("includes Layout item durations", () => {
+    expect(
+      playlistDuration([
+        item({
+          assetId: "",
+          layoutId: "layout",
+          assetType: "layout",
+          durationMs: 30_000,
+        }),
+        item({ id: "image", durationMs: 10_000 }),
+      ]),
+    ).toBe(40_000);
+  });
 });

@@ -1301,9 +1301,19 @@ components:
     PlaylistItemInput:
       type: object
       additionalProperties: false
-      required: [assetId]
+      oneOf:
+        - required: [assetId]
+          not: { required: [layoutId] }
+        - required: [layoutId, durationMs]
+          not: { required: [assetId] }
       properties:
         assetId: { type: string, format: uuid }
+        layoutId:
+          {
+            type: string,
+            format: uuid,
+            description: Published Layout to play fullscreen for durationMs,
+          }
         durationMs: { type: integer, minimum: 1 }
         fitMode:
           { type: string, enum: [contain, cover, stretch], default: contain }

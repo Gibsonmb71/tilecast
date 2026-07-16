@@ -98,27 +98,38 @@ func (s *Service) validatePresentationForScreens(ctx context.Context, q presenta
 // reachable Widget's configuration.
 func (s *Service) presentationRequirements(ctx context.Context, q presentationQuery, playlistID, layoutID *uuid.UUID) ([]presentationWidgetRequirement, string, error) {
 	rows, err := q.Query(ctx, `
-		WITH selected_playlists AS (
-			SELECT $1::uuid AS id WHERE $1::uuid IS NOT NULL
+		WITH RECURSIVE refs(kind,id) AS (
+			SELECT 'playlist', $1::uuid WHERE $1::uuid IS NOT NULL
 			UNION
-			SELECT dependency.dependency_id
-			FROM layouts layout
-			JOIN layout_revision_dependencies dependency
-			  ON dependency.revision_id=layout.published_revision_id
-			 AND dependency.dependency_type='playlist'
-			WHERE layout.id=$2::uuid
+			SELECT 'layout', $2::uuid WHERE $2::uuid IS NOT NULL
+			UNION
+			SELECT next.kind,next.id
+			FROM refs ref
+			CROSS JOIN LATERAL (
+				SELECT 'layout'::text AS kind,item.layout_id AS id
+				FROM playlist_items item
+				WHERE ref.kind='playlist' AND item.playlist_id=ref.id AND item.layout_id IS NOT NULL
+				UNION
+				SELECT 'playlist'::text,dependency.dependency_id
+				FROM layouts layout
+				JOIN layout_revision_dependencies dependency
+				  ON dependency.revision_id=layout.published_revision_id
+				 AND dependency.dependency_type='playlist'
+				WHERE ref.kind='layout' AND layout.id=ref.id
+			) next
 		),
 		selected_widgets AS (
 			SELECT item.asset_id
 			FROM playlist_items item
-			WHERE item.playlist_id IN (SELECT id FROM selected_playlists)
+			WHERE item.playlist_id IN (SELECT id FROM refs WHERE kind='playlist')
+			  AND item.asset_id IS NOT NULL
 			UNION
 			SELECT dependency.dependency_id
 			FROM layouts layout
 			JOIN layout_revision_dependencies dependency
 			  ON dependency.revision_id=layout.published_revision_id
 			 AND dependency.dependency_type='widget'
-			WHERE layout.id=$2::uuid
+			WHERE layout.id IN (SELECT id FROM refs WHERE kind='layout')
 		)
 		SELECT asset.name,widget.provider,widget.preset_id,widget.configuration
 		FROM selected_widgets selected
@@ -156,14 +167,34 @@ func (s *Service) presentationRequirements(ctx context.Context, q presentationQu
 	}
 	// Data Sources bound directly through Layout text or visibility bindings are
 	// reachable without any Widget; include them alongside Widget-referenced Sources.
-	if layoutID != nil {
+	if layoutID != nil || playlistID != nil {
 		bindingRows, bindingErr := q.Query(ctx, `
+			WITH RECURSIVE refs(kind,id) AS (
+				SELECT 'playlist', $1::uuid WHERE $1::uuid IS NOT NULL
+				UNION
+				SELECT 'layout', $2::uuid WHERE $2::uuid IS NOT NULL
+				UNION
+				SELECT next.kind,next.id
+				FROM refs ref
+				CROSS JOIN LATERAL (
+					SELECT 'layout'::text AS kind,item.layout_id AS id
+					FROM playlist_items item
+					WHERE ref.kind='playlist' AND item.playlist_id=ref.id AND item.layout_id IS NOT NULL
+					UNION
+					SELECT 'playlist'::text,dependency.dependency_id
+					FROM layouts layout
+					JOIN layout_revision_dependencies dependency
+					  ON dependency.revision_id=layout.published_revision_id
+					 AND dependency.dependency_type='playlist'
+					WHERE ref.kind='layout' AND layout.id=ref.id
+				) next
+			)
 			SELECT dependency.dependency_id
 			FROM layouts layout
 			JOIN layout_revision_dependencies dependency
 			  ON dependency.revision_id=layout.published_revision_id
 			 AND dependency.dependency_type='data_source'
-			WHERE layout.id=$1::uuid`, layoutID)
+			WHERE layout.id IN (SELECT id FROM refs WHERE kind='layout')`, playlistID, layoutID)
 		if bindingErr != nil {
 			return nil, "", bindingErr
 		}

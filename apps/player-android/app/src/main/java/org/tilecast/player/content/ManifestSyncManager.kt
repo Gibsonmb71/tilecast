@@ -185,6 +185,7 @@ class ManifestSyncManager(
 		require(manifest.layout?.id?.let(layoutIds::contains) != false && manifest.directFallbackLayout?.id?.let(layoutIds::contains) != false) { "Root Layout is unavailable" }
 		playlists.flatMap { it.items }.forEach { item ->
 			when (item.assetType) {
+				"layout" -> require(item.layoutId?.let(layoutIds::contains) == true && (item.durationMs ?: 0) > 0 && item.deliveryPolicy == "stream") { "Layout item is invalid" }
 				"website" -> require(websites[item.assetId] != null && (item.durationMs ?: 0) > 0 && item.deliveryPolicy == "stream") { "Website item is invalid" }
 				"widget" -> require((if(manifest.schemaVersion==13) widgets[item.assetId]?.presentation!=null else widgets[item.assetId]?.provider in setOf("website", "youtube", "clock", "date", "qrcode", "countdown", "ticker", "menu", "list", "table", "agenda", "metric", "cards", "weather")) && item.deliveryPolicy == "stream") { "Widget item is invalid" }
 				else -> require(item.variantId != null && assets[item.variantId]?.assetId == item.assetId) { "Manifest item references an unavailable variant" }

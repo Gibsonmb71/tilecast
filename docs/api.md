@@ -4,6 +4,8 @@ Milestone 1 exposes JSON endpoints under `/api/v1`. Successful responses use `{"
 
 Milestone 9 adds Player release check/cache endpoints, Owner-only GitHub device-authorization start/poll/disconnect endpoints, deployment list/detail/create/cancel/retry endpoints, and device-authenticated update metadata, byte-range APK, and status endpoints. Only targeted screens can retrieve APK data. GitHub access tokens are never included in API responses. See [player-updates.md](player-updates.md) and `openapi.yaml`.
 
+Playlist items may reference either a ready Asset (`assetId`) or a published Layout (`layoutId`), never both. Layout items require a positive `durationMs`, play fullscreen for that interval, and use stream delivery because their referenced media and widgets are projected separately into the Player manifest. A Layout that transitively contains the destination playlist is rejected to prevent recursive playback.
+
 Milestone 10 adds `GET /screens/{id}/reliability` for capability-versus-requested-state diagnostics and `PUT /screens/{id}/power-assist` for explicit administrator confirmation of physical sleep, wake, TV, input-selection, and startup test results. Persistent commands add `retry_player_recovery`, `exit_safe_mode`, `power_assist_sleep`, and `power_assist_wake`; all use empty typed payloads and remain Owner/Administrator-only.
 
 ## System

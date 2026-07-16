@@ -4,6 +4,7 @@ import {
   Copy,
   GripVertical,
   ListVideo,
+  PanelsTopLeft,
   Plus,
   Trash2,
   Globe2,
@@ -33,7 +34,9 @@ export function canManagePlaylists(role?: string) {
 export function playlistDuration(items: PlaylistItem[]) {
   return items.reduce<number | null>((total, item) => {
     const duration =
-      item.assetType === "image" || item.assetType === "widget"
+      item.assetType === "image" ||
+      item.assetType === "widget" ||
+      item.assetType === "layout"
         ? item.durationMs
         : item.videoEndOffsetMs != null
           ? item.videoEndOffsetMs - (item.videoStartOffsetMs ?? 0)
@@ -174,7 +177,12 @@ export function PlaylistEditorPage() {
   const [description, setDescription] = useState("");
   const [dirty, setDirty] = useState(false);
   const [picker, setPicker] = useState(false);
+  const [layoutPicker, setLayoutPicker] = useState(false);
   const [dragged, setDragged] = useState<string>();
+  const layouts = useQuery({
+    queryKey: ["layouts", "playlist-items"],
+    queryFn: () => api.layouts(""),
+  });
   useEffect(() => {
     if (query.data) {
       setName(query.data.name);
@@ -244,6 +252,23 @@ export function PlaylistEditorPage() {
     }
     if (failures.length === 0) setPicker(false);
     return { failures };
+  };
+  const addLayout = async (layoutId: string) => {
+    const next = await api.addPlaylistItem(
+      id,
+      {
+        layoutId,
+        durationMs: 30000,
+        fitMode: "contain",
+        transition: "none",
+        audioEnabled: false,
+        volume: 0,
+        deliveryPolicy: "stream",
+      },
+      csrf,
+    );
+    update(next);
+    setLayoutPicker(false);
   };
   const reorder = async (target: string) => {
     if (!query.data || !dragged || dragged === target) return;
@@ -355,13 +380,22 @@ export function PlaylistEditorPage() {
           <p>Items play from top to bottom, then loop.</p>
         </div>
         {canManage && (
-          <button
-            className="button button--primary"
-            onClick={() => setPicker(true)}
-          >
-            <Plus size={15} />
-            Add content
-          </button>
+          <div className="editor-actions">
+            <button
+              className="button button--quiet"
+              onClick={() => setLayoutPicker(true)}
+            >
+              <PanelsTopLeft size={15} />
+              Add Layout
+            </button>
+            <button
+              className="button button--primary"
+              onClick={() => setPicker(true)}
+            >
+              <Plus size={15} />
+              Add content
+            </button>
+          </div>
         )}
       </div>
       {playlist.items.length === 0 ? (
@@ -404,6 +438,42 @@ export function PlaylistEditorPage() {
           onClose={() => setPicker(false)}
         />
       )}
+      {layoutPicker && (
+        <div className="modal-backdrop">
+          <section className="confirm-dialog" role="dialog" aria-modal="true">
+            <h3>Add published Layout</h3>
+            <p>A Layout plays fullscreen for 30 seconds by default.</p>
+            <div className="playlist-list">
+              {layouts.data?.items
+                .filter((layout) => layout.publishedRevision)
+                .map((layout) => (
+                  <button
+                    className="button button--quiet"
+                    key={layout.id}
+                    onClick={() => void addLayout(layout.id)}
+                  >
+                    <PanelsTopLeft size={16} />
+                    {layout.name}
+                  </button>
+                ))}
+            </div>
+            {layouts.data?.items.filter((layout) => layout.publishedRevision)
+              .length === 0 && (
+              <p className="status-copy">
+                Publish a Layout before adding it to a playlist.
+              </p>
+            )}
+            <div className="form-actions">
+              <button
+                className="button button--quiet"
+                onClick={() => setLayoutPicker(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </section>
   );
 }
@@ -411,6 +481,7 @@ export function PlaylistEditorPage() {
 function itemInput(item: PlaylistItem): PlaylistItemInput {
   return {
     assetId: item.assetId,
+    layoutId: item.layoutId,
     durationMs: item.durationMs,
     fitMode: item.fitMode,
     transition: item.transition,
@@ -454,7 +525,11 @@ function TimelineItem({
         <GripVertical size={18} />
         <b>{index + 1}</b>
       </span>
-      {item.assetType === "widget" ? (
+      {item.assetType === "layout" ? (
+        <span className="timeline-website-icon">
+          <PanelsTopLeft size={24} />
+        </span>
+      ) : item.assetType === "widget" ? (
         <span className="timeline-website-icon">
           <Globe2 size={24} />
         </span>
@@ -464,7 +539,9 @@ function TimelineItem({
       <span className="timeline-name">
         <strong>{item.assetName}</strong>
         <small>
-          {item.assetType === "image" || item.assetType === "widget"
+          {item.assetType === "image" ||
+          item.assetType === "widget" ||
+          item.assetType === "layout"
             ? item.durationMs
               ? `${item.durationMs / 1000} seconds`
               : "Until source ends"
@@ -511,7 +588,7 @@ function TimelineItem({
               )
             }
           >
-            {item.assetType === "widget" ? (
+            {item.assetType === "widget" || item.assetType === "layout" ? (
               <option value="stream">Stream</option>
             ) : (
               <>
@@ -522,7 +599,18 @@ function TimelineItem({
             )}
           </Select>
         </label>
-        {item.assetType === "widget" && item.widgetProvider === "youtube" ? (
+        {item.assetType === "layout" ? (
+          <label>
+            Seconds
+            <input
+              disabled={!canManage}
+              type="number"
+              min="1"
+              value={(item.durationMs ?? 30000) / 1000}
+              onChange={(e) => set("durationMs", Number(e.target.value) * 1000)}
+            />
+          </label>
+        ) : item.assetType === "widget" && item.widgetProvider === "youtube" ? (
           <>
             <label className="timeline-item__playback-behavior">
               Playback behavior

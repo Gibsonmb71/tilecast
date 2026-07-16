@@ -27,4 +27,21 @@ class PlaybackCursorTest {
         assertEquals(SynchronizedPlaybackStart(PlaybackCursor(1, 0), 15_000), synchronizedPlaybackStart(playlist, emptyList(), anchor, anchor.plusSeconds(25)))
         assertEquals(SynchronizedPlaybackStart(PlaybackCursor(0, 0), 5_000), synchronizedPlaybackStart(playlist, emptyList(), anchor, anchor.plusSeconds(35)))
     }
+
+    @Test
+    fun layoutItemUsesItsConfiguredDuration() {
+        val item = ManifestItem(
+            id = "item",
+            assetId = "layout",
+            assetType = "layout",
+            durationMs = 45_000,
+            fitMode = "contain",
+            transition = "fade",
+            audioEnabled = false,
+            volume = 0f,
+            deliveryPolicy = "stream",
+            layoutId = "layout",
+        )
+        assertEquals(45_000, effectiveDurationMs(item, emptyList()))
+    }
 }

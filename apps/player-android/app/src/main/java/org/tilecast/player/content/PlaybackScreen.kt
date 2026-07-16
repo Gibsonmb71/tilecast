@@ -87,13 +87,14 @@ internal fun effectiveDurationMs(item:ManifestItem,assets:List<ManifestAsset>):L
     val item = playlist.items[cursor.index.coerceIn(0, playlist.items.lastIndex)]
     val website=session.content.manifest.websites.firstOrNull{it.assetId==item.assetId}
     val widget=session.content.manifest.widgets.firstOrNull{it.assetId==item.assetId}
+    val layout=item.layoutId?.let{id->session.content.manifest.layouts.firstOrNull{it.id==id}}
     val asset = item.variantId?.let{variant->session.content.manifest.assets.firstOrNull { it.variantId == variant }}
     LaunchedEffect(item.id){onBoundary(item.id,item.assetId)}
     fun advance(failed: Boolean = false) {
         consecutiveFailures = if (failed) consecutiveFailures + 1 else 0
         cursor = nextPlaybackCursor(cursor, playlist.items.size)
     }
-    if (asset == null&&website==null&&widget==null) { LaunchedEffect(item.id) { onError("Manifest item has no asset"); delay(1_000); advance(true) }; return }
+    if (asset == null&&website==null&&widget==null&&layout==null) { LaunchedEffect(item.id) { onError("Manifest item has no content"); delay(1_000); advance(true) }; return }
     if (consecutiveFailures >= playlist.items.size) { EmptyPlayback("No playable content"); LaunchedEffect(consecutiveFailures) { delay(5_000); consecutiveFailures = 0 } ; return }
     if(item.transition=="fade") Crossfade(cursor, label = "playlist-item") { targetCursor ->
         val renderedItem = playlist.items[targetCursor.index];val renderedAsset = renderedItem.variantId?.let{variant->session.content.manifest.assets.firstOrNull { it.variantId == variant }};val renderedWebsite=session.content.manifest.websites.firstOrNull{it.assetId==renderedItem.assetId};val renderedWidget=session.content.manifest.widgets.firstOrNull{it.assetId==renderedItem.assetId}
@@ -105,7 +106,11 @@ internal fun effectiveDurationMs(item:ManifestItem,assets:List<ManifestAsset>):L
     val tracker=rememberActivityChild(activityReporter,item,widget,layoutPlacementId,session.content.manifest.dataSources)
     val done={tracker?.complete();onDone()}
     val failed: (String) -> Unit = { message -> tracker?.fail(message); onFailure(message) }
-    if(session.content.manifest.schemaVersion>=13&&widget?.presentation?.kind=="native"){
+    val layout=item.layoutId?.let { id -> session.content.manifest.layouts.firstOrNull { it.id==id } }
+    if(item.assetType=="layout"&&layout!=null){
+        FullscreenLayoutPlayback(session,layout,failed,onWebsiteStatus,onWidgetStatus,onProgress,activityReporter)
+        LaunchedEffect(item.id){delay(((item.durationMs?:30_000)-startOffsetMs).coerceAtLeast(1));done()}
+    } else if(session.content.manifest.schemaVersion>=13&&widget?.presentation?.kind=="native"){
         DeclarativeWidgetItem(item,widget,session,done,failed,onWidgetStatus,startOffsetMs)
     } else if(session.content.manifest.schemaVersion>=13&&widget?.presentation?.kind=="web"){
         val descriptor=widget.presentation.web

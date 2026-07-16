@@ -255,11 +255,44 @@ func (s *Service) Publish(ctx context.Context, id, userID uuid.UUID, expected in
 	if err = insertAuditTx(ctx, tx, userID, "layout.published", id); err != nil {
 		return Revision{}, err
 	}
-	rows, err := tx.Query(ctx, `WITH affected AS (
-		SELECT screen_id FROM screen_playlist_assignments WHERE layout_id=$1
-		UNION SELECT m.screen_id FROM screen_group_playlist_assignments a JOIN screen_group_memberships m ON m.screen_group_id=a.screen_group_id WHERE a.layout_id=$1
-		UNION SELECT t.screen_id FROM schedules s JOIN schedule_targets t ON t.schedule_id=s.id WHERE s.layout_id=$1 AND s.deleted_at IS NULL AND t.screen_id IS NOT NULL
-		UNION SELECT m.screen_id FROM schedules s JOIN schedule_targets t ON t.schedule_id=s.id JOIN screen_group_memberships m ON m.screen_group_id=t.screen_group_id WHERE s.layout_id=$1 AND s.deleted_at IS NULL
+	rows, err := tx.Query(ctx, `WITH RECURSIVE dependents(kind,id) AS (
+		SELECT 'layout', $1::uuid
+		UNION
+		SELECT next.kind,next.id
+		FROM dependents dependent
+		CROSS JOIN LATERAL (
+			SELECT 'playlist'::text AS kind,item.playlist_id AS id
+			FROM playlist_items item
+			WHERE dependent.kind='layout' AND item.layout_id=dependent.id
+			UNION
+			SELECT 'layout'::text,layout.id
+			FROM layouts layout
+			JOIN layout_revision_dependencies dependency
+			  ON dependency.revision_id=layout.published_revision_id
+			 AND dependency.dependency_type='playlist'
+			WHERE dependent.kind='playlist' AND dependency.dependency_id=dependent.id
+		) next
+	), affected AS (
+		SELECT assignment.screen_id FROM screen_playlist_assignments assignment
+		WHERE (assignment.layout_id IN (SELECT id FROM dependents WHERE kind='layout')
+			OR assignment.playlist_id IN (SELECT id FROM dependents WHERE kind='playlist'))
+		UNION SELECT membership.screen_id
+		FROM screen_group_playlist_assignments assignment
+		JOIN screen_group_memberships membership ON membership.screen_group_id=assignment.screen_group_id
+		WHERE (assignment.layout_id IN (SELECT id FROM dependents WHERE kind='layout')
+			OR assignment.playlist_id IN (SELECT id FROM dependents WHERE kind='playlist'))
+		UNION SELECT target.screen_id
+		FROM schedules schedule JOIN schedule_targets target ON target.schedule_id=schedule.id
+		WHERE schedule.deleted_at IS NULL AND target.screen_id IS NOT NULL
+		  AND (schedule.layout_id IN (SELECT id FROM dependents WHERE kind='layout')
+			OR schedule.playlist_id IN (SELECT id FROM dependents WHERE kind='playlist'))
+		UNION SELECT membership.screen_id
+		FROM schedules schedule
+		JOIN schedule_targets target ON target.schedule_id=schedule.id
+		JOIN screen_group_memberships membership ON membership.screen_group_id=target.screen_group_id
+		WHERE schedule.deleted_at IS NULL
+		  AND (schedule.layout_id IN (SELECT id FROM dependents WHERE kind='layout')
+			OR schedule.playlist_id IN (SELECT id FROM dependents WHERE kind='playlist'))
 	) UPDATE screen_manifest_state state SET manifest_version=manifest_version+1,changed_at=now(),change_reason='layout.published' FROM affected WHERE state.screen_id=affected.screen_id RETURNING state.screen_id,state.manifest_version`, id)
 	if err != nil {
 		return Revision{}, err
@@ -370,7 +403,7 @@ func (s *Service) Duplicate(ctx context.Context, id, userID uuid.UUID) (Layout, 
 
 func (s *Service) Delete(ctx context.Context, id, userID uuid.UUID) error {
 	var inUse bool
-	if err := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM screen_playlist_assignments WHERE layout_id=$1) OR EXISTS(SELECT 1 FROM screen_group_playlist_assignments WHERE layout_id=$1) OR EXISTS(SELECT 1 FROM schedules WHERE layout_id=$1 AND deleted_at IS NULL)`, id).Scan(&inUse); err != nil {
+	if err := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM screen_playlist_assignments WHERE layout_id=$1) OR EXISTS(SELECT 1 FROM screen_group_playlist_assignments WHERE layout_id=$1) OR EXISTS(SELECT 1 FROM schedules WHERE layout_id=$1 AND deleted_at IS NULL) OR EXISTS(SELECT 1 FROM playlist_items WHERE layout_id=$1)`, id).Scan(&inUse); err != nil {
 		return err
 	}
 	if inUse {
@@ -449,9 +482,9 @@ func (s *Service) validatePlaybackLimitsTx(ctx context.Context, tx pgx.Tx, docum
 			audio = video && !muted
 		case "playlistZone":
 			if err := tx.QueryRow(ctx, `SELECT EXISTS(
-				SELECT 1 FROM playlist_items i JOIN assets a ON a.id=i.asset_id
+				SELECT 1 FROM playlist_items i LEFT JOIN assets a ON a.id=i.asset_id
 				LEFT JOIN widgets src ON src.asset_id=a.id
-				WHERE i.playlist_id=$1 AND (a.type='video' OR src.provider IN ('website','youtube'))
+				WHERE i.playlist_id=$1 AND (i.layout_id IS NOT NULL OR a.type='video' OR src.provider IN ('website','youtube'))
 			)`, placement.PlaylistID).Scan(&video); err != nil {
 				return err
 			}
