@@ -30,23 +30,54 @@ import {
   type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
 import { useNavigate, useParams } from "react-router";
+import QRCode from "qrcode";
 import { api, ApiError } from "../api/client";
 import type {
   Asset,
+  CalendarEvent,
+  CalendarPreview,
+  ClockWidgetConfig,
+  DataSourceProvider,
   DataSource,
+  DateWidgetConfig,
+  DisplayWidgetConfig,
   LayoutDocument,
   LayoutPlacement,
   LayoutPrimitive,
   Playlist,
+  QRCodeWidgetConfig,
+  StructuredPreview,
+  StructuredRecord,
+  TickerWidgetConfig,
 } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 
 type SaveState = "saved" | "unsaved" | "saving" | "conflict" | "error";
+
+// Resolved live data for one Data Source, keyed by its id, shared by every
+// widget/binding that references it so the preview mirrors the Player.
+type LivePreviewSource = {
+  provider: DataSourceProvider;
+  records?: StructuredRecord[];
+  events?: CalendarEvent[];
+  emptyState: string;
+};
+type LivePreviewData = Record<string, LivePreviewSource>;
+
+const widgetDataSourceId = (asset?: Asset): string | undefined => {
+  const widget = asset?.widget;
+  if (!widget) return undefined;
+  if (["ticker", "menu", "list", "table", "agenda"].includes(widget.provider))
+    return (widget.configuration as { dataSourceId?: string }).dataSourceId;
+  return undefined;
+};
+
 const clone = <T,>(value: T): T => structuredClone(value);
 const selectedPlacements = (document: LayoutDocument, selection: Set<string>) =>
   document.placements.filter((item) => selection.has(item.id));
@@ -156,6 +187,9 @@ export function LayoutEditorPage() {
   const [previewValues, setPreviewValues] = useState<
     Record<string, Record<string, string>>
   >({});
+  const [liveData, setLiveData] = useState<LivePreviewData>({});
+  const [previewScale, setPreviewScale] = useState(0);
+  const previewFrameRef = useRef<HTMLDivElement>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [guides, setGuides] = useState<{ x?: number; y?: number }>({});
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -250,6 +284,18 @@ export function LayoutEditorPage() {
     const timer = window.setTimeout(() => void save(), 900);
     return () => window.clearTimeout(timer);
   }, [document, save, saveState]);
+  // Track the rendered size of the preview frame so widgets can convert canvas
+  // pixels into screen pixels the same way the Player scales the whole canvas.
+  useLayoutEffect(() => {
+    const frame = previewFrameRef.current;
+    if (!preview || !frame || !document) return;
+    const measure = () =>
+      setPreviewScale(frame.clientWidth / document.canvas.width);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, [preview, document]);
   const publish = useMutation({
     mutationFn: () => api.publishLayout(id, serverRevision, csrf),
     onSuccess: () => {
@@ -362,51 +408,75 @@ export function LayoutEditorPage() {
     update((draft) => draft.placements.push(item));
     setSelection(new Set([item.id]));
   };
-  // Resolve the same date-selected records the Player receives so Studio previews
-  // show real values without copying data into the Layout document.
+  // Resolve the same date-selected records/events the Player receives so previews
+  // show real values without copying data into the Layout document. Collects Data
+  // Sources referenced by both text bindings and native widgets.
   const loadStructuredPreview = async () => {
     const current = documentRef.current;
     if (!current) return;
-    const dataSourceIds = Array.from(
-      new Set(
-        current.placements
-          .map((placement) => placement.primitive?.binding?.dataSourceId)
-          .filter((value): value is string => Boolean(value)),
-      ),
+    const assetsById = new Map(
+      (contentQuery.data?.items ?? []).map((asset) => [asset.id, asset]),
     );
+    const dataSourceIds = new Set<string>();
+    current.placements.forEach((placement) => {
+      const bindingId = placement.primitive?.binding?.dataSourceId;
+      if (bindingId) dataSourceIds.add(bindingId);
+      const widgetSourceId = placement.widgetId
+        ? widgetDataSourceId(assetsById.get(placement.widgetId))
+        : undefined;
+      if (widgetSourceId) dataSourceIds.add(widgetSourceId);
+    });
     try {
       const resolved = await Promise.all(
-        dataSourceIds.map(async (dataSourceId) => {
+        Array.from(dataSourceIds).map(async (dataSourceId) => {
           const source = await api.getDataSource(dataSourceId);
-          if (source.provider !== "csv" && source.provider !== "json")
-            return [dataSourceId, {}] as const;
           const preview = await api.previewDataSource(
             source.provider,
             source.configuration,
             csrf,
             previewDate,
           );
-          if (!("records" in preview.configuration.data))
-            return [dataSourceId, {}] as const;
-          const record = preview.configuration.data.records[0];
-          const fields: Record<string, string> = { ...(record?.values ?? {}) };
-          if (record) {
-            const standardFields = {
-              title: record.title,
-              subtitle: record.subtitle,
-              date: record.date,
-              author: record.author,
-              description: record.description,
-            };
-            Object.entries(standardFields).forEach(([key, value]) => {
-              if (value) fields[key] = value;
-            });
+          if (source.provider === "calendar") {
+            const calendar = preview as CalendarPreview;
+            return [
+              dataSourceId,
+              {
+                provider: source.provider,
+                events: calendar.configuration.data.events,
+                emptyState: calendar.configuration.emptyState,
+              },
+            ] as const;
           }
-          return [dataSourceId, fields] as const;
+          const structured = preview as StructuredPreview;
+          return [
+            dataSourceId,
+            {
+              provider: source.provider,
+              records: structured.configuration.data.records,
+              emptyState: structured.configuration.emptyState,
+            },
+          ] as const;
         }),
       );
-      setPreviewValues(Object.fromEntries(resolved));
+      const live = Object.fromEntries(resolved) as LivePreviewData;
+      setLiveData(live);
+      // Derive first-record field values for text bindings (unchanged behaviour).
+      const values: Record<string, Record<string, string>> = {};
+      Object.entries(live).forEach(([dataSourceId, source]) => {
+        const record = source.records?.[0];
+        if (!record) return;
+        const fields: Record<string, string> = { ...(record.values ?? {}) };
+        (
+          ["title", "subtitle", "date", "author", "description"] as const
+        ).forEach((key) => {
+          const value = record[key];
+          if (value) fields[key] = value;
+        });
+        values[dataSourceId] = fields;
+      });
+      setPreviewValues(values);
     } catch {
+      setLiveData({});
       setPreviewValues({});
     }
   };
@@ -1037,34 +1107,38 @@ export function LayoutEditorPage() {
             </button>
           </div>
           <div
+            ref={previewFrameRef}
             className="layout-preview-frame"
             style={{
               aspectRatio: `${document.canvas.width}/${document.canvas.height}`,
               backgroundColor: document.canvas.backgroundColor,
             }}
           >
-            {[...document.placements]
-              .sort((a, b) => a.layer - b.layer)
-              .map((item) => (
-                <PlacementView
-                  key={item.id}
-                  item={item}
-                  canvas={document.canvas}
-                  content={
-                    item.widgetId
-                      ? contentByID.get(item.widgetId)
-                      : item.assetId
-                        ? contentByID.get(item.assetId)
+            {previewScale > 0 &&
+              [...document.placements]
+                .sort((a, b) => a.layer - b.layer)
+                .map((item) => (
+                  <PlacementView
+                    key={item.id}
+                    item={item}
+                    canvas={document.canvas}
+                    content={
+                      item.widgetId
+                        ? contentByID.get(item.widgetId)
+                        : item.assetId
+                          ? contentByID.get(item.assetId)
+                          : undefined
+                    }
+                    playlist={
+                      item.playlistId
+                        ? playlistByID.get(item.playlistId)
                         : undefined
-                  }
-                  playlist={
-                    item.playlistId
-                      ? playlistByID.get(item.playlistId)
-                      : undefined
-                  }
-                  previewValues={previewValues}
-                />
-              ))}
+                    }
+                    previewValues={previewValues}
+                    live={liveData}
+                    previewScale={previewScale}
+                  />
+                ))}
           </div>
         </div>
       )}
@@ -1127,6 +1201,8 @@ function PlacementView({
   content,
   playlist,
   previewValues,
+  live,
+  previewScale = 0,
   selected = false,
   onPointerDown,
   onResize,
@@ -1136,6 +1212,8 @@ function PlacementView({
   content?: Asset;
   playlist?: Playlist;
   previewValues?: Record<string, Record<string, string>>;
+  live?: LivePreviewData;
+  previewScale?: number;
   selected?: boolean;
   onPointerDown?: (event: ReactPointerEvent) => void;
   onResize?: (event: ReactPointerEvent) => void;
@@ -1185,7 +1263,16 @@ function PlacementView({
           </div>
         )
       ) : item.type === "widget" ? (
-        <AppPlacementPreview asset={content} item={item} />
+        live && content?.widget ? (
+          <WidgetLivePreview
+            asset={content}
+            item={item}
+            live={live}
+            scale={previewScale}
+          />
+        ) : (
+          <AppPlacementPreview asset={content} item={item} />
+        )
       ) : primitive?.kind === "text" ? (
         <div
           className="layout-text-primitive"
@@ -1328,6 +1415,468 @@ function AppPlacementPreview({
       <strong>{value}</strong>
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Faithful native-widget preview. Mirrors the Android Player's Compose renderers
+// (apps/player-android/.../content/NativeWidgetPlayback.kt + CalendarPlayback.kt)
+// so the Layout preview shows real live data laid out like the Player. Canvas
+// pixel sizes are multiplied by `scale` (renderedFrameWidth / canvasWidth) to
+// match how the Player scales the whole canvas onto the screen.
+// ---------------------------------------------------------------------------
+
+// The Player parses colors with android.graphics.Color.parseColor, which uses
+// #AARRGGBB order and falls back to black on any failure.
+function colorToCss(value: string | undefined, fallback: string): string {
+  if (!value) return fallback;
+  const v = value.trim();
+  const argb = /^#([0-9a-fA-F]{2})([0-9a-fA-F]{6})$/.exec(v);
+  if (argb) {
+    const alpha = argb[1] ?? "ff";
+    const rgb = argb[2] ?? "000000";
+    const a = parseInt(alpha, 16) / 255;
+    const r = parseInt(rgb.slice(0, 2), 16);
+    const g = parseInt(rgb.slice(2, 4), 16);
+    const b = parseInt(rgb.slice(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${a.toFixed(3)})`;
+  }
+  if (/^#[0-9a-fA-F]{6}$/.test(v) || /^#[0-9a-fA-F]{3}$/.test(v)) return v;
+  return fallback;
+}
+
+// The QR encoder needs solid #RRGGBB colors; drop any leading ARGB alpha.
+function hex6(value: string | undefined, fallback: string): string {
+  if (!value) return fallback;
+  const v = value.trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(v) || /^#[0-9a-fA-F]{3}$/.test(v)) return v;
+  if (/^#[0-9a-fA-F]{8}$/.test(v)) return `#${v.slice(3)}`;
+  return fallback;
+}
+
+function structuredFieldValue(record: StructuredRecord, field: string): string {
+  if (field === "title") return record.title ?? "";
+  if (field === "subtitle") return record.subtitle ?? "";
+  if (field === "date") return record.date ?? "";
+  if (field === "author") return record.author ?? "";
+  if (field === "description") return record.description ?? "";
+  return record.values?.[field] ?? "";
+}
+
+function menuFieldLabel(field: string): string {
+  const key = field.toLowerCase();
+  if (
+    ["option_2", "alternative", "secondary", "secondary_option"].includes(key)
+  )
+    return "Alternative";
+  if (
+    ["option_1", "primary", "primary_option", "entree", "entrée"].includes(key)
+  )
+    return "Entrée";
+  return field.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function clockText(cfg: ClockWidgetConfig): string {
+  const is24 = cfg.format === "24";
+  return new Intl.DateTimeFormat(undefined, {
+    timeZone: cfg.timezone || "UTC",
+    hour12: !is24,
+    hour: is24 ? "2-digit" : "numeric",
+    minute: "2-digit",
+    ...(cfg.showSeconds ? { second: "2-digit" as const } : {}),
+  }).format(new Date());
+}
+
+function dateText(cfg: DateWidgetConfig): string {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: cfg.format || "full",
+    timeZone: cfg.timezone || "UTC",
+  }).format(new Date());
+}
+
+function tickerText(
+  cfg: TickerWidgetConfig,
+  source?: LivePreviewSource,
+): string {
+  const parts = (source?.records ?? [])
+    .map((record) => structuredFieldValue(record, cfg.field || "title"))
+    .filter((value) => value.trim().length > 0);
+  return parts.length
+    ? parts.join(cfg.separator || " • ")
+    : source?.emptyState || "No items available";
+}
+
+// Shrinks text to fit its box, matching the Player's FittedWidgetText.
+function FittedText({
+  text,
+  color,
+  fontPx,
+  weight,
+  maxLines = 1,
+}: {
+  text: string;
+  color: string;
+  fontPx: number;
+  weight: number;
+  maxLines?: number;
+}) {
+  const boxRef = useRef<HTMLDivElement>(null);
+  const spanRef = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const box = boxRef.current;
+    const span = spanRef.current;
+    if (!box || !span) return;
+    let size = fontPx;
+    span.style.fontSize = `${size}px`;
+    let guard = 0;
+    while (
+      guard++ < 80 &&
+      size > 4 &&
+      (span.scrollWidth > box.clientWidth + 1 ||
+        span.scrollHeight > box.clientHeight + 1)
+    ) {
+      size = Math.max(4, size * 0.9);
+      span.style.fontSize = `${size}px`;
+    }
+  }, [text, fontPx, maxLines]);
+  return (
+    <div ref={boxRef} className="wpv-fit-box">
+      <span
+        ref={spanRef}
+        className={`wpv-fit ${maxLines > 1 ? "wpv-fit--multi" : ""}`}
+        style={{ color, fontWeight: weight }}
+      >
+        {text}
+      </span>
+    </div>
+  );
+}
+
+// Full-bleed background with content centered inside an inset, like CenteredWidget.
+function CenteredWidget({
+  background,
+  item,
+  scale,
+  children,
+}: {
+  background: string;
+  item: LayoutPlacement;
+  scale: number;
+  children: React.ReactNode;
+}) {
+  const inset = Math.min(40, 0.08 * Math.min(item.width, item.height)) * scale;
+  return (
+    <div
+      className="wpv-root wpv-centered"
+      style={{ background, padding: inset }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function QrWidget({
+  cfg,
+  item,
+  scale,
+}: {
+  cfg: QRCodeWidgetConfig;
+  item: LayoutPlacement;
+  scale: number;
+}) {
+  const [dataUrl, setDataUrl] = useState("");
+  useEffect(() => {
+    if (!cfg.value) {
+      setDataUrl("");
+      return;
+    }
+    void QRCode.toDataURL(cfg.value, {
+      margin: 2,
+      errorCorrectionLevel: { low: "L", medium: "M", quartile: "Q", high: "H" }[
+        cfg.errorCorrection
+      ] as "L" | "M" | "Q" | "H",
+      color: {
+        dark: hex6(cfg.foregroundColor, "#000000"),
+        light: hex6(cfg.backgroundColor, "#ffffff"),
+      },
+      width: 480,
+    })
+      .then(setDataUrl)
+      .catch(() => setDataUrl(""));
+  }, [
+    cfg.value,
+    cfg.errorCorrection,
+    cfg.foregroundColor,
+    cfg.backgroundColor,
+  ]);
+  const inset = Math.min(40, 0.08 * Math.min(item.width, item.height)) * scale;
+  const label = cfg.label?.trim();
+  return (
+    <div
+      className="wpv-root wpv-qr"
+      style={{
+        background: colorToCss(cfg.backgroundColor, "#FFFFFF"),
+        padding: inset,
+        gap: 18 * scale,
+      }}
+    >
+      {dataUrl && <img className="wpv-qr__image" src={dataUrl} alt="" />}
+      {label && (
+        <div
+          style={{
+            color: colorToCss(cfg.foregroundColor, "#000000"),
+            fontSize: 24 * scale,
+          }}
+        >
+          {label}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MenuWidget({
+  name,
+  cfg,
+  source,
+  fg,
+  bg,
+  scale,
+}: {
+  name: string;
+  cfg: DisplayWidgetConfig;
+  source?: LivePreviewSource;
+  fg: string;
+  bg: string;
+  scale: number;
+}) {
+  const record = source?.records?.[0];
+  const values = record
+    ? (cfg.fields ?? [])
+        .map((field) => ({ field, value: structuredFieldValue(record, field) }))
+        .filter((entry) => entry.value.trim().length > 0)
+        .slice(0, Math.min(cfg.maximumItems ?? 8, 8))
+    : [];
+  const pad = 48 * scale;
+  if (!values.length)
+    return (
+      <div
+        className="wpv-root wpv-centered"
+        style={{ background: bg, padding: pad }}
+      >
+        <FittedText
+          text={source?.emptyState || "No items available"}
+          color={fg}
+          fontPx={42 * scale}
+          weight={500}
+          maxLines={3}
+        />
+      </div>
+    );
+  return (
+    <div className="wpv-root wpv-menu" style={{ background: bg, padding: pad }}>
+      <div
+        className="wpv-menu__header"
+        style={{ color: fg, fontSize: 24 * scale }}
+      >
+        {name.toUpperCase()}
+      </div>
+      {record?.date && (
+        <div
+          className="wpv-menu__date"
+          style={{ color: fg, fontSize: 18 * scale }}
+        >
+          {record.date}
+        </div>
+      )}
+      {values.map((entry, index) => (
+        <div key={entry.field} className="wpv-menu__item">
+          <div
+            className="wpv-menu__label"
+            style={{
+              color: fg,
+              fontSize: (index === 0 ? 20 : 16) * scale,
+              paddingTop: (index === 0 ? 28 : 22) * scale,
+            }}
+          >
+            {index === 0
+              ? "TODAY'S LUNCH"
+              : menuFieldLabel(entry.field).toUpperCase()}
+          </div>
+          <div
+            className="wpv-menu__value"
+            style={{
+              color: fg,
+              fontSize: (index === 0 ? 52 : 34) * scale,
+              fontWeight: index === 0 ? 700 : 500,
+            }}
+          >
+            {entry.value}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DisplayWidget({
+  cfg,
+  source,
+  fg,
+  bg,
+  scale,
+}: {
+  cfg: DisplayWidgetConfig;
+  source?: LivePreviewSource;
+  fg: string;
+  bg: string;
+  scale: number;
+}) {
+  const max = cfg.maximumItems ?? 20;
+  let rows: string[] = [];
+  if (source?.provider === "calendar") {
+    rows = (source.events ?? [])
+      .slice(0, max)
+      .map((event) =>
+        [event.start, event.title, event.location]
+          .filter((value) => value && String(value).trim().length > 0)
+          .join("  "),
+      );
+  } else {
+    const fields = cfg.fields ?? [];
+    rows = (source?.records ?? [])
+      .slice(0, max)
+      .map((record) =>
+        fields
+          .map((field) => structuredFieldValue(record, field))
+          .filter((value) => value.trim().length > 0)
+          .join("  "),
+      )
+      .filter((row) => row.trim().length > 0);
+  }
+  const pad = 36 * scale;
+  if (!rows.length)
+    return (
+      <div
+        className="wpv-root wpv-centered"
+        style={{ background: bg, padding: pad }}
+      >
+        <FittedText
+          text={source?.emptyState || "No items available"}
+          color={fg}
+          fontPx={26 * scale}
+          weight={400}
+          maxLines={3}
+        />
+      </div>
+    );
+  return (
+    <div
+      className="wpv-root wpv-display"
+      style={{ background: bg, padding: pad, gap: 14 * scale }}
+    >
+      {rows.map((row, index) => (
+        <div
+          key={index}
+          className="wpv-display__row"
+          style={{ color: fg, fontSize: 26 * scale }}
+        >
+          {row}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function WidgetLivePreview({
+  asset,
+  item,
+  live,
+  scale,
+}: {
+  asset: Asset;
+  item: LayoutPlacement;
+  live: LivePreviewData;
+  scale: number;
+}) {
+  const widget = asset.widget!;
+  const provider = widget.provider;
+  const cfg = widget.configuration as Record<string, unknown>;
+  const fg = colorToCss(cfg.foregroundColor as string, "#F5F7FA");
+  const bg = colorToCss(
+    cfg.backgroundColor as string,
+    provider === "qrcode" ? "#FFFFFF" : "#0E141B",
+  );
+  const sourceId = cfg.dataSourceId as string | undefined;
+  const source = sourceId ? live[sourceId] : undefined;
+  switch (provider) {
+    case "clock":
+      return (
+        <CenteredWidget background={bg} item={item} scale={scale}>
+          <FittedText
+            text={clockText(cfg as unknown as ClockWidgetConfig)}
+            color={fg}
+            fontPx={86 * scale}
+            weight={600}
+          />
+        </CenteredWidget>
+      );
+    case "date":
+      return (
+        <CenteredWidget background={bg} item={item} scale={scale}>
+          <FittedText
+            text={dateText(cfg as unknown as DateWidgetConfig)}
+            color={fg}
+            fontPx={58 * scale}
+            weight={500}
+          />
+        </CenteredWidget>
+      );
+    case "qrcode":
+      return (
+        <QrWidget
+          cfg={cfg as unknown as QRCodeWidgetConfig}
+          item={item}
+          scale={scale}
+        />
+      );
+    case "ticker":
+      return (
+        <CenteredWidget background={bg} item={item} scale={scale}>
+          <FittedText
+            text={tickerText(cfg as unknown as TickerWidgetConfig, source)}
+            color={fg}
+            fontPx={34 * scale}
+            weight={400}
+            maxLines={2}
+          />
+        </CenteredWidget>
+      );
+    case "menu":
+      return (
+        <MenuWidget
+          name={asset.name}
+          cfg={cfg as unknown as DisplayWidgetConfig}
+          source={source}
+          fg={fg}
+          bg={bg}
+          scale={scale}
+        />
+      );
+    case "list":
+    case "table":
+    case "agenda":
+      return (
+        <DisplayWidget
+          cfg={cfg as unknown as DisplayWidgetConfig}
+          source={source}
+          fg={fg}
+          bg={bg}
+          scale={scale}
+        />
+      );
+    default:
+      return <AppPlacementPreview asset={asset} item={item} />;
+  }
 }
 
 function NumberField({
