@@ -28,6 +28,7 @@ import {
   ZoomOut,
 } from "lucide-react";
 import {
+  type DragEvent as ReactDragEvent,
   type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
@@ -62,6 +63,43 @@ import { useAuth } from "../auth/AuthProvider";
 import { layoutFontStack } from "../layoutFonts";
 
 type SaveState = "saved" | "unsaved" | "saving" | "conflict" | "error";
+type LayoutLibrarySection = "widgets" | "media" | "playlists";
+type LayoutLibraryItem =
+  | { kind: "asset"; createdAt: string; asset: Asset }
+  | { kind: "playlist"; createdAt: string; playlist: Playlist };
+
+export function recentLayoutLibraryItems(
+  section: LayoutLibrarySection,
+  assets: Asset[],
+  playlists: Playlist[],
+): LayoutLibraryItem[] {
+  const matchingAssets = assets
+    .filter((asset) =>
+      section === "widgets"
+        ? asset.type === "widget"
+        : section === "media"
+          ? asset.type === "image" || asset.type === "video"
+          : false,
+    )
+    .map((asset) => ({
+      kind: "asset" as const,
+      createdAt: asset.createdAt,
+      asset,
+    }));
+  const matchingPlaylists =
+    section === "playlists"
+      ? playlists.map((playlist) => ({
+          kind: "playlist" as const,
+          createdAt: playlist.createdAt,
+          playlist,
+        }))
+      : [];
+  return [...matchingAssets, ...matchingPlaylists]
+    .sort(
+      (left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt),
+    )
+    .slice(0, 20);
+}
 
 // Resolved live data for one Data Source, keyed by its id, shared by every
 // widget/binding that references it so the preview mirrors the Player.
@@ -82,6 +120,27 @@ const widgetDataSourceId = (asset?: Asset): string | undefined => {
 };
 
 const clone = <T,>(value: T): T => structuredClone(value);
+
+export async function flushLatestLayoutDraft(
+  read: () => {
+    changeVersion: number;
+    savedChangeVersion: number;
+    revision: number;
+    document: LayoutDocument;
+  },
+  persist: (
+    revision: number,
+    document: LayoutDocument,
+  ) => Promise<{ draftRevision: number }>,
+  applied: (changeVersion: number, draftRevision: number) => void,
+) {
+  while (true) {
+    const snapshot = read();
+    if (snapshot.savedChangeVersion === snapshot.changeVersion) return;
+    const saved = await persist(snapshot.revision, clone(snapshot.document));
+    applied(snapshot.changeVersion, saved.draftRevision);
+  }
+}
 const selectedPlacements = (document: LayoutDocument, selection: Set<string>) =>
   document.placements.filter((item) => selection.has(item.id));
 
@@ -183,6 +242,8 @@ export function LayoutEditorPage() {
   const [zoom, setZoom] = useState(1);
   const [snap, setSnap] = useState(true);
   const [safeArea, setSafeArea] = useState(true);
+  const [librarySection, setLibrarySection] =
+    useState<LayoutLibrarySection>("widgets");
   const [preview, setPreview] = useState(false);
   const [previewDate, setPreviewDate] = useState(
     new Date().toISOString().slice(0, 10),
@@ -205,6 +266,8 @@ export function LayoutEditorPage() {
   const documentRef = useRef<LayoutDocument | undefined>(undefined);
   const revisionRef = useRef(0);
   const savingRef = useRef(false);
+  const changeVersionRef = useRef(0);
+  const savedChangeVersionRef = useRef(0);
   useEffect(() => {
     if (!layoutQuery.data || initialized.current) return;
     initialized.current = true;
@@ -221,6 +284,8 @@ export function LayoutEditorPage() {
     revisionRef.current = serverRevision;
   }, [serverRevision]);
   const commit = useCallback((next: LayoutDocument) => {
+    documentRef.current = next;
+    changeVersionRef.current += 1;
     setDocument((current) => {
       if (current) setPast((items) => [...items.slice(-79), clone(current)]);
       return next;
@@ -243,7 +308,10 @@ export function LayoutEditorPage() {
       if (!prior) return items;
       setDocument((current) => {
         if (current) setFuture((next) => [clone(current), ...next]);
-        return clone(prior);
+        const restored = clone(prior);
+        documentRef.current = restored;
+        changeVersionRef.current += 1;
+        return restored;
       });
       setSaveState("unsaved");
       return items.slice(0, -1);
@@ -255,27 +323,42 @@ export function LayoutEditorPage() {
       if (!next) return items;
       setDocument((current) => {
         if (current) setPast((previous) => [...previous, clone(current)]);
-        return clone(next);
+        const restored = clone(next);
+        documentRef.current = restored;
+        changeVersionRef.current += 1;
+        return restored;
       });
       setSaveState("unsaved");
       return items.slice(1);
     });
   }, []);
   const save = useCallback(async () => {
-    const current = documentRef.current;
-    if (!current || savingRef.current || saveState === "saved") return;
+    if (
+      !documentRef.current ||
+      savingRef.current ||
+      savedChangeVersionRef.current === changeVersionRef.current
+    )
+      return;
     savingRef.current = true;
-    setSaveState("saving");
     try {
-      const saved = await api.saveLayoutDraft(
-        id,
-        revisionRef.current,
-        current,
-        csrf,
+      setSaveState("saving");
+      await flushLatestLayoutDraft(
+        () => ({
+          changeVersion: changeVersionRef.current,
+          savedChangeVersion: savedChangeVersionRef.current,
+          revision: revisionRef.current,
+          document: documentRef.current!,
+        }),
+        (revision, snapshot) =>
+          api.saveLayoutDraft(id, revision, snapshot, csrf),
+        (savedVersion, draftRevision) => {
+          revisionRef.current = draftRevision;
+          setServerRevision(draftRevision);
+          savedChangeVersionRef.current = savedVersion;
+          void queryClient.invalidateQueries({ queryKey: ["layouts"] });
+        },
       );
-      setServerRevision(saved.draftRevision);
       setSaveState("saved");
-      void queryClient.invalidateQueries({ queryKey: ["layouts"] });
     } catch (error) {
       setSaveState(
         error instanceof ApiError && error.code === "layout_revision_conflict"
@@ -285,7 +368,7 @@ export function LayoutEditorPage() {
     } finally {
       savingRef.current = false;
     }
-  }, [csrf, id, queryClient, saveState]);
+  }, [csrf, id, queryClient]);
   useEffect(() => {
     if (saveState !== "unsaved") return;
     const timer = window.setTimeout(() => void save(), 900);
@@ -318,6 +401,9 @@ export function LayoutEditorPage() {
       setDocument(next);
       documentRef.current = next;
       setServerRevision(saved.draftRevision);
+      revisionRef.current = saved.draftRevision;
+      changeVersionRef.current = 0;
+      savedChangeVersionRef.current = 0;
       setPast([]);
       setFuture([]);
       setSaveState("saved");
@@ -327,6 +413,15 @@ export function LayoutEditorPage() {
   const selected = useMemo(
     () => (document ? selectedPlacements(document, selection) : []),
     [document, selection],
+  );
+  const recentLibraryItems = useMemo(
+    () =>
+      recentLayoutLibraryItems(
+        librarySection,
+        contentQuery.data?.items ?? [],
+        playlistsQuery.data?.items ?? [],
+      ),
+    [contentQuery.data?.items, librarySection, playlistsQuery.data?.items],
   );
   const primary = selected.at(-1);
   const mutateSelected = useCallback(
@@ -347,17 +442,29 @@ export function LayoutEditorPage() {
     });
     setSelection(new Set([item.id]));
   };
-  const addContent = (asset: Asset) => {
+  const addContent = (asset: Asset, position?: { x: number; y: number }) => {
     if (!document) return;
     const isApp = asset.type === "widget";
+    const width = document.canvas.width * 0.4;
+    const height = document.canvas.height * 0.4;
     const item: LayoutPlacement = {
       id: crypto.randomUUID(),
       type: isApp ? "widget" : "asset",
       name: asset.name,
-      x: document.canvas.width * 0.2,
-      y: document.canvas.height * 0.2,
-      width: document.canvas.width * 0.4,
-      height: document.canvas.height * 0.4,
+      x: position
+        ? Math.max(
+            0,
+            Math.min(document.canvas.width - width, position.x - width / 2),
+          )
+        : document.canvas.width * 0.2,
+      y: position
+        ? Math.max(
+            0,
+            Math.min(document.canvas.height - height, position.y - height / 2),
+          )
+        : document.canvas.height * 0.2,
+      width,
+      height,
       layer:
         Math.max(
           0,
@@ -389,16 +496,31 @@ export function LayoutEditorPage() {
     update((draft) => draft.placements.push(item));
     setSelection(new Set([item.id]));
   };
-  const addPlaylistZone = (playlist: Playlist) => {
+  const addPlaylistZone = (
+    playlist: Playlist,
+    position?: { x: number; y: number },
+  ) => {
     if (!document) return;
+    const width = document.canvas.width * 0.4;
+    const height = document.canvas.height * 0.4;
     const item: LayoutPlacement = {
       id: crypto.randomUUID(),
       type: "playlistZone",
       name: playlist.name,
-      x: document.canvas.width * 0.2,
-      y: document.canvas.height * 0.2,
-      width: document.canvas.width * 0.4,
-      height: document.canvas.height * 0.4,
+      x: position
+        ? Math.max(
+            0,
+            Math.min(document.canvas.width - width, position.x - width / 2),
+          )
+        : document.canvas.width * 0.2,
+      y: position
+        ? Math.max(
+            0,
+            Math.min(document.canvas.height - height, position.y - height / 2),
+          )
+        : document.canvas.height * 0.2,
+      width,
+      height,
       layer: Math.max(0, ...document.placements.map((p) => p.layer)) + 1,
       opacity: 1,
       visible: true,
@@ -843,6 +965,40 @@ export function LayoutEditorPage() {
     ),
   );
   const dataSources = dataSourcesQuery.data?.items ?? [];
+  const addLibraryItem = (
+    item: LayoutLibraryItem,
+    position?: { x: number; y: number },
+  ) => {
+    if (item.kind === "asset") addContent(item.asset, position);
+    else addPlaylistZone(item.playlist, position);
+  };
+
+  const dropLibraryItem = (event: ReactDragEvent<HTMLDivElement>) => {
+    const serialized = event.dataTransfer.getData(
+      "application/x-tilecast-layout-library",
+    );
+    if (!serialized || !document || !canvasRef.current) return;
+    event.preventDefault();
+    let reference: { kind: LayoutLibraryItem["kind"]; id: string };
+    try {
+      reference = JSON.parse(serialized) as typeof reference;
+    } catch {
+      return;
+    }
+    const item = recentLibraryItems.find((candidate) =>
+      candidate.kind === "asset"
+        ? reference.kind === "asset" && candidate.asset.id === reference.id
+        : reference.kind === "playlist" &&
+          candidate.playlist.id === reference.id,
+    );
+    if (!item) return;
+    const bounds = canvasRef.current.getBoundingClientRect();
+    addLibraryItem(item, {
+      x: ((event.clientX - bounds.left) / bounds.width) * document.canvas.width,
+      y:
+        ((event.clientY - bounds.top) / bounds.height) * document.canvas.height,
+    });
+  };
   return (
     <div className="layout-editor">
       <div className="layout-editor-toolbar">
@@ -926,53 +1082,88 @@ export function LayoutEditorPage() {
             Line
           </button>
         </div>
-        <div className="layout-panel-heading">
-          <strong>Content</strong>
-          <span>{contentQuery.data?.items.length ?? 0}</span>
-        </div>
-        <div className="layout-content-shelf">
-          {contentQuery.data?.items.map((asset) => (
+        <div
+          className="layout-library-tabs"
+          role="group"
+          aria-label="Content type"
+        >
+          {(["widgets", "media", "playlists"] as const).map((section) => (
             <button
-              key={asset.id}
-              onClick={() => addContent(asset)}
-              title={`Add ${asset.name}`}
+              key={section}
+              className={librarySection === section ? "is-selected" : ""}
+              onClick={() => setLibrarySection(section)}
             >
-              <span className="layout-content-shelf__preview">
-                {asset.thumbnailUrl ? (
-                  <img src={asset.thumbnailUrl} alt="" />
-                ) : asset.type === "widget" ? (
-                  <AppWindow size={18} />
-                ) : (
-                  <ImageIcon size={18} />
-                )}
-              </span>
-              <span>
-                <strong>{asset.name}</strong>
-                <small>{asset.widget?.provider ?? asset.type}</small>
-              </span>
+              {section === "widgets" ? (
+                <AppWindow size={17} />
+              ) : section === "media" ? (
+                <ImageIcon size={17} />
+              ) : (
+                <ListVideo size={17} />
+              )}
+              {
+                {
+                  widgets: "Widgets",
+                  media: "Media",
+                  playlists: "Playlists",
+                }[section]
+              }
             </button>
           ))}
         </div>
         <div className="layout-panel-heading">
-          <strong>Playlist zones</strong>
-          <span>{playlistsQuery.data?.items.length ?? 0}</span>
+          <strong>Recently created</strong>
+          <span>Drag to canvas</span>
         </div>
         <div className="layout-content-shelf">
-          {playlistsQuery.data?.items.map((playlist) => (
-            <button
-              key={playlist.id}
-              onClick={() => addPlaylistZone(playlist)}
-              title={`Add ${playlist.name} zone`}
-            >
-              <span className="layout-content-shelf__preview">
-                <ListVideo size={18} />
-              </span>
-              <span>
-                <strong>{playlist.name}</strong>
-                <small>{playlist.itemCount} items</small>
-              </span>
-            </button>
-          ))}
+          {recentLibraryItems.map((item) => {
+            const asset = item.kind === "asset" ? item.asset : undefined;
+            const playlist =
+              item.kind === "playlist" ? item.playlist : undefined;
+            const name = asset?.name ?? playlist?.name ?? "";
+            return (
+              <button
+                key={`${item.kind}-${asset?.id ?? playlist?.id}`}
+                draggable
+                onDragStart={(event) => {
+                  event.dataTransfer.effectAllowed = "copy";
+                  event.dataTransfer.setData(
+                    "application/x-tilecast-layout-library",
+                    JSON.stringify({
+                      kind: item.kind,
+                      id: asset?.id ?? playlist?.id,
+                    }),
+                  );
+                }}
+                onClick={() => addLibraryItem(item)}
+                title={`Add ${name}`}
+              >
+                <span className="layout-content-shelf__preview">
+                  {asset?.thumbnailUrl ? (
+                    <img src={asset.thumbnailUrl} alt="" />
+                  ) : asset?.type === "widget" ? (
+                    <AppWindow size={18} />
+                  ) : playlist ? (
+                    <ListVideo size={18} />
+                  ) : (
+                    <ImageIcon size={18} />
+                  )}
+                </span>
+                <span>
+                  <strong>{name}</strong>
+                  <small>
+                    {playlist
+                      ? `${playlist.itemCount} items`
+                      : (asset?.widget?.provider ?? asset?.type)}
+                  </small>
+                </span>
+              </button>
+            );
+          })}
+          {!recentLibraryItems.length && (
+            <p className="layout-content-shelf__empty">
+              No recently created {librarySection}.
+            </p>
+          )}
         </div>
         <div className="layout-panel-heading">
           <strong>Layers</strong>
@@ -1082,6 +1273,17 @@ export function LayoutEditorPage() {
           <div
             ref={canvasRef}
             className="layout-canvas"
+            onDragOver={(event) => {
+              if (
+                event.dataTransfer.types.includes(
+                  "application/x-tilecast-layout-library",
+                )
+              ) {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "copy";
+              }
+            }}
+            onDrop={dropLibraryItem}
             style={{
               aspectRatio: `${document.canvas.width}/${document.canvas.height}`,
               width: `${zoom * 100}%`,
