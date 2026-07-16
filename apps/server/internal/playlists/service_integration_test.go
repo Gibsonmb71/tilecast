@@ -236,7 +236,7 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 	agendaID := uuid.New()
 	_, err = pool.Exec(ctx, `INSERT INTO assets(id,organization_id,name,type,original_filename,detected_mime_type,sha256,original_size,processing_status,created_by)VALUES($1,$2,'Today agenda','widget','','application/vnd.tilecast.widget+json',''::bytea,0,'ready',$3)`, agendaID, org, owner.User.ID)
 	if err == nil {
-		_, err = pool.Exec(ctx, `INSERT INTO widgets(asset_id,provider,configuration)VALUES($1,'agenda',jsonb_build_object('dataSourceId',$2::text,'fields',jsonb_build_array('title','date'),'maximumItems',10,'foregroundColor','#F5F7FA','backgroundColor','#0E141B'))`, agendaID, calendarID.String())
+		_, err = pool.Exec(ctx, `INSERT INTO widgets(asset_id,provider,config_version,configuration)VALUES($1,'agenda',2,jsonb_build_object('dataSourceId',$2::text,'fields',jsonb_build_array('title','date'),'maximumItems',10,'foregroundColor','#F5F7FA','backgroundColor','#0E141B'))`, agendaID, calendarID.String())
 	}
 	if err != nil {
 		t.Fatal(err)
@@ -251,12 +251,21 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	service.SetSourceProjector(media.NewService(pool, nil, media.Config{}))
+	if _, err = service.Assign(ctx, screenID, calendarPlaylist.ID, owner.User.ID); !errors.Is(err, ErrConflict) || !strings.Contains(err.Error(), "Player update required") {
+		t.Fatalf("expected old Player assignment to be blocked, got %v", err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO screen_player_status(screen_id,player_version_code)VALUES($1,22) ON CONFLICT(screen_id)DO UPDATE SET player_version_code=EXCLUDED.player_version_code`, screenID); err != nil {
+		t.Fatal(err)
+	}
 	if _, err = service.Assign(ctx, screenID, calendarPlaylist.ID, owner.User.ID); err != nil {
 		t.Fatal(err)
 	}
 	calendarManifest, _, err := service.BuildManifest(ctx, screenID)
 	if err != nil || len(calendarManifest.DataSources) != 1 || calendarManifest.DataSources[0].Provider != "calendar" || strings.Contains(string(calendarManifest.DataSources[0].Configuration), "private.example") || !strings.Contains(string(calendarManifest.DataSources[0].Configuration), "Board meeting") {
 		t.Fatalf("calendar manifest data sources=%#v err=%v", calendarManifest.DataSources, err)
+	}
+	if calendarManifest.SchemaVersion != 12 || !strings.Contains(string(calendarManifest.DataSources[0].Configuration), `"fields"`) || strings.Contains(string(calendarManifest.DataSources[0].Configuration), `"displayMode"`) {
+		t.Fatalf("calendar manifest did not use the typed v12 projection: %#v", calendarManifest)
 	}
 	if len(calendarManifest.Widgets) != 1 || calendarManifest.Widgets[0].Provider != "agenda" {
 		t.Fatalf("calendar manifest widgets=%#v", calendarManifest.Widgets)

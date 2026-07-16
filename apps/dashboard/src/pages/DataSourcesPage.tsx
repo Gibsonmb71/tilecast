@@ -5,6 +5,8 @@ import {
   Braces,
   CalendarDays,
   FileSpreadsheet,
+  CloudSun,
+  TableProperties,
   Check,
   Grid2X2,
   Lightbulb,
@@ -31,13 +33,20 @@ const providers: DataSourceProvider[] = [
   "atom",
   "json",
   "csv",
+  "manual",
+  "weather",
 ];
 
 function providerLabel(provider: DataSourceProvider) {
   return (
-    ({ rss: "RSS", csv: "CSV", json: "JSON" } as Record<string, string>)[
-      provider
-    ] ?? provider.charAt(0).toUpperCase() + provider.slice(1)
+    (
+      {
+        rss: "RSS",
+        csv: "CSV",
+        json: "JSON",
+        manual: "Manual Table",
+      } as Record<string, string>
+    )[provider] ?? provider.charAt(0).toUpperCase() + provider.slice(1)
   );
 }
 
@@ -100,12 +109,36 @@ const createCopy: Record<
       "Preview the mapped rows, then save.",
     ],
   },
+  manual: {
+    eyebrow: "Editor-managed data",
+    description:
+      "Create a small typed table for announcements, prices, metrics, directories, and other reusable signage data.",
+    tip: "Choose stable field keys because Widgets refer to them when selecting content.",
+    steps: [
+      "Define the typed columns your Widgets need.",
+      "Enter up to 200 rows directly in Studio.",
+      "Save and reuse the table across multiple Widgets.",
+    ],
+  },
+  weather: {
+    eyebrow: "Global forecast",
+    description:
+      "Cache current conditions and a seven-day forecast for one coordinate using MET Norway.",
+    tip: "Use coordinates rounded to four decimals and the IANA timezone for the location.",
+    steps: [
+      "Enter the location label, coordinates, and timezone.",
+      "Choose units and provide the required contact identity.",
+      "Preview the normalized forecast, then save.",
+    ],
+  },
 };
 
 function providerIcon(provider: DataSourceProvider, size = 28) {
   if (provider === "calendar") return <CalendarDays size={size} />;
   if (provider === "csv") return <FileSpreadsheet size={size} />;
   if (provider === "json") return <Braces size={size} />;
+  if (provider === "manual") return <TableProperties size={size} />;
+  if (provider === "weather") return <CloudSun size={size} />;
   return <Rss size={size} />;
 }
 
@@ -243,6 +276,16 @@ function DataSourceProviderGallery({
               Upload a spreadsheet export or connect a hosted CSV URL.
             </span>
           </button>
+          <button type="button" onClick={() => onChoose("manual")}>
+            <TableProperties size={30} />
+            <strong>Manual Table</strong>
+            <span>Maintain a small typed dataset directly in Studio.</span>
+          </button>
+          <button type="button" onClick={() => onChoose("weather")}>
+            <CloudSun size={30} />
+            <strong>Weather</strong>
+            <span>Cached current conditions and daily forecasts.</span>
+          </button>
         </div>
       </section>
     </div>
@@ -350,15 +393,7 @@ export function DataSourcesPage() {
                 aria-label={`Edit ${source.name}`}
               >
                 <span className="asset-preview">
-                  {source.provider === "calendar" ? (
-                    <CalendarDays size={28} />
-                  ) : source.provider === "csv" ? (
-                    <FileSpreadsheet size={28} />
-                  ) : source.provider === "json" ? (
-                    <Braces size={28} />
-                  ) : (
-                    <Rss size={28} />
-                  )}
+                  {providerIcon(source.provider)}
                 </span>
                 <span className="asset-card__body">
                   <strong>{source.name}</strong>

@@ -99,6 +99,51 @@ func (qrCodeWidgetProvider) Normalize(_ context.Context, raw json.RawMessage) (a
 	return c, nil
 }
 
+type countdownWidgetProvider struct{}
+
+func (countdownWidgetProvider) Normalize(_ context.Context, raw json.RawMessage) (any, error) {
+	var c CountdownWidgetConfig
+	if err := decodeConfig(raw, &c); err != nil {
+		return nil, err
+	}
+	c.Label = sanitizeCalendarText(c.Label, 120)
+	c.CompletionText = sanitizeCalendarText(c.CompletionText, 240)
+	if c.Timezone == "" {
+		c.Timezone = "UTC"
+	}
+	location, err := time.LoadLocation(c.Timezone)
+	if err != nil {
+		return nil, errors.New("countdown timezone is invalid")
+	}
+	if _, err = time.ParseInLocation("2006-01-02T15:04", c.Target, location); err != nil {
+		if _, err = time.Parse(time.RFC3339, c.Target); err != nil {
+			return nil, errors.New("countdown target is invalid")
+		}
+	}
+	if c.Mode == "" {
+		c.Mode = "countdown"
+	}
+	if c.Mode != "countdown" && c.Mode != "count_up" {
+		return nil, errors.New("countdown mode is invalid")
+	}
+	if c.CompletionAction == "" {
+		c.CompletionAction = "completed_text"
+	}
+	if c.CompletionAction != "completed_text" && c.CompletionAction != "hide" && c.CompletionAction != "count_up" {
+		return nil, errors.New("countdown completion action is invalid")
+	}
+	if !c.ShowDays && !c.ShowHours && !c.ShowMinutes && !c.ShowSeconds {
+		c.ShowDays, c.ShowHours, c.ShowMinutes = true, true, true
+	}
+	if err := normalizeWidgetColors(&c.ForegroundColor, &c.BackgroundColor); err != nil {
+		return nil, err
+	}
+	if err := validateWidgetSizing(c.TextScale, c.ContentPadding); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
 type tickerWidgetProvider struct{ service *Service }
 
 func (p tickerWidgetProvider) Normalize(ctx context.Context, raw json.RawMessage) (any, error) {
@@ -111,18 +156,31 @@ func (p tickerWidgetProvider) Normalize(ctx context.Context, raw json.RawMessage
 		return nil, errors.New("ticker data Source was not found")
 	}
 	if !dataSourceProviderAccepted("ticker", provider) {
-		return nil, errors.New("ticker requires an RSS, Atom, Calendar, JSON, or CSV data Source")
+		return nil, errors.New("ticker requires a record-based data Source")
 	}
-	c.Field = sanitizeCalendarText(c.Field, 80)
-	if c.Field == "" {
-		c.Field = "title"
+	if len(c.Fields) == 0 && c.Field != "" {
+		c.Fields = []string{c.Field}
 	}
-	if len(fields) > 0 && !fields[c.Field] {
-		return nil, errors.New("ticker field is not provided by the selected data Source")
+	if len(c.Fields) == 0 {
+		c.Fields = []string{"title"}
 	}
+	if len(c.Fields) > 3 {
+		return nil, errors.New("ticker supports up to three fields")
+	}
+	for index := range c.Fields {
+		c.Fields[index] = sanitizeCalendarText(c.Fields[index], 80)
+		if c.Fields[index] == "" || (len(fields) > 0 && !fields[c.Fields[index]]) {
+			return nil, errors.New("ticker field is not provided by the selected data Source")
+		}
+	}
+	c.Field = c.Fields[0]
 	c.Separator = sanitizeCalendarText(c.Separator, 10)
 	if c.Separator == "" {
 		c.Separator = " • "
+	}
+	c.FieldSeparator = sanitizeCalendarText(c.FieldSeparator, 10)
+	if c.FieldSeparator == "" {
+		c.FieldSeparator = " — "
 	}
 	if c.Speed == "" {
 		c.Speed = "normal"
@@ -135,6 +193,10 @@ func (p tickerWidgetProvider) Normalize(ctx context.Context, raw json.RawMessage
 	}
 	if c.Direction != "left" && c.Direction != "right" {
 		return nil, errors.New("ticker direction is invalid")
+	}
+	c.EmptyState = sanitizeCalendarText(c.EmptyState, 240)
+	if c.EmptyState == "" {
+		c.EmptyState = "No items available"
 	}
 	if err := normalizeWidgetColors(&c.ForegroundColor, &c.BackgroundColor); err != nil {
 		return nil, err
@@ -173,6 +235,45 @@ func (p displayWidgetProvider) Normalize(ctx context.Context, raw json.RawMessag
 		return nil, err
 	}
 	c.Fields = normalizedFields
+	c.EmptyState = sanitizeCalendarText(c.EmptyState, 240)
+	if c.EmptyState == "" {
+		c.EmptyState = "No items available"
+	}
+	if c.RowSpacing == "" {
+		c.RowSpacing = "comfortable"
+	}
+	if c.RowSpacing != "compact" && c.RowSpacing != "comfortable" {
+		return nil, errors.New("row spacing is invalid")
+	}
+	if c.Mode == "" {
+		if p.presentation == "menu" {
+			c.Mode = "single_record"
+		} else {
+			c.Mode = "records"
+		}
+	}
+	if c.Mode != "single_record" && c.Mode != "records" {
+		return nil, errors.New("display mode is invalid")
+	}
+	for _, field := range []string{c.PrimaryField, c.SecondaryField, c.LeadingField, c.TrailingField, c.LabelField, c.ValueField, c.DateField, c.TimeField, c.TitleField, c.LocationField, c.DescriptionField} {
+		if field != "" && !fields[field] {
+			return nil, fmt.Errorf("field %q is not provided by the selected data Source", field)
+		}
+	}
+	if len(c.Columns) > 8 {
+		return nil, errors.New("table columns are limited to eight")
+	}
+	for index := range c.Columns {
+		column := &c.Columns[index]
+		column.Field = sanitizeCalendarText(column.Field, 80)
+		column.Label = sanitizeCalendarText(column.Label, 80)
+		if !fields[column.Field] {
+			return nil, fmt.Errorf("field %q is not provided by the selected data Source", column.Field)
+		}
+		if err := normalizeFieldFormat(column); err != nil {
+			return nil, err
+		}
+	}
 	if err := normalizeWidgetColors(&c.ForegroundColor, &c.BackgroundColor); err != nil {
 		return nil, err
 	}
@@ -180,6 +281,150 @@ func (p displayWidgetProvider) Normalize(ctx context.Context, raw json.RawMessag
 		return nil, err
 	}
 	return c, nil
+}
+
+type metricWidgetProvider struct{ service *Service }
+
+func (p metricWidgetProvider) Normalize(ctx context.Context, raw json.RawMessage) (any, error) {
+	var c MetricWidgetConfig
+	if err := decodeConfig(raw, &c); err != nil {
+		return nil, err
+	}
+	provider, fields, err := p.service.dataSourceProviderAndTypedFields(ctx, c.DataSourceID)
+	if err != nil || !dataSourceProviderAccepted("metric", provider) {
+		return nil, errors.New("metric requires a numeric record-based data Source")
+	}
+	numeric := map[string]bool{"number": true, "integer": true, "percent": true, "currency": true}
+	if c.ValueField == "" || !numeric[fields[c.ValueField]] {
+		return nil, errors.New("metric value field must be numeric")
+	}
+	for _, field := range []string{c.LabelField, c.SecondaryField} {
+		if field != "" {
+			if _, ok := fields[field]; !ok {
+				return nil, errors.New("metric field is not provided by the selected data Source")
+			}
+		}
+	}
+	c.Label = sanitizeCalendarText(c.Label, 120)
+	c.Prefix = sanitizeCalendarText(c.Prefix, 20)
+	c.Suffix = sanitizeCalendarText(c.Suffix, 20)
+	c.EmptyState = sanitizeCalendarText(c.EmptyState, 240)
+	if c.EmptyState == "" {
+		c.EmptyState = "No value available"
+	}
+	if c.Format == "" {
+		c.Format = "number"
+	}
+	if !map[string]bool{"number": true, "integer": true, "percent": true, "currency": true}[c.Format] || c.Precision < 0 || c.Precision > 6 {
+		return nil, errors.New("metric format is invalid")
+	}
+	if c.Alignment == "" {
+		c.Alignment = "center"
+	}
+	if c.Alignment != "left" && c.Alignment != "center" && c.Alignment != "right" {
+		return nil, errors.New("metric alignment is invalid")
+	}
+	if err := normalizeWidgetColors(&c.ForegroundColor, &c.BackgroundColor); err != nil {
+		return nil, err
+	}
+	if err := validateWidgetSizing(c.TextScale, c.ContentPadding); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+type cardsWidgetProvider struct{ service *Service }
+
+func (p cardsWidgetProvider) Normalize(ctx context.Context, raw json.RawMessage) (any, error) {
+	var c CardsWidgetConfig
+	if err := decodeConfig(raw, &c); err != nil {
+		return nil, err
+	}
+	provider, fields, err := p.service.dataSourceProviderAndFields(ctx, c.DataSourceID)
+	if err != nil || !dataSourceProviderAccepted("cards", provider) {
+		return nil, errors.New("cards require a record-based data Source")
+	}
+	if c.TitleField == "" || !fields[c.TitleField] {
+		return nil, errors.New("cards title field is invalid")
+	}
+	for _, field := range []string{c.SubtitleField, c.BodyField, c.BadgeField} {
+		if field != "" && !fields[field] {
+			return nil, errors.New("cards field is not provided by the selected data Source")
+		}
+	}
+	if c.Columns == 0 {
+		c.Columns = 2
+	}
+	if c.Columns < 1 || c.Columns > 4 || c.MaximumItems < 1 || c.MaximumItems > 12 {
+		return nil, errors.New("cards columns or item count is invalid")
+	}
+	if c.Density == "" {
+		c.Density = "comfortable"
+	}
+	if c.Density != "compact" && c.Density != "comfortable" {
+		return nil, errors.New("cards density is invalid")
+	}
+	c.EmptyState = sanitizeCalendarText(c.EmptyState, 240)
+	if c.EmptyState == "" {
+		c.EmptyState = "No items available"
+	}
+	if err := normalizeWidgetColors(&c.ForegroundColor, &c.BackgroundColor); err != nil {
+		return nil, err
+	}
+	if err := validateWidgetSizing(c.TextScale, c.ContentPadding); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+type weatherWidgetProvider struct{ service *Service }
+
+func (p weatherWidgetProvider) Normalize(ctx context.Context, raw json.RawMessage) (any, error) {
+	var c WeatherWidgetConfig
+	if err := decodeConfig(raw, &c); err != nil {
+		return nil, err
+	}
+	provider, _, err := p.service.dataSourceProviderAndFields(ctx, c.DataSourceID)
+	if err != nil || !dataSourceProviderAccepted("weather", provider) {
+		return nil, errors.New("weather Widget requires a Weather Data Source")
+	}
+	if !c.ShowLocation && !c.ShowCurrent && !c.ShowHumidity && !c.ShowWind && !c.ShowPrecipitation {
+		c.ShowLocation, c.ShowCurrent = true, true
+	}
+	if c.ForecastDays < 0 || c.ForecastDays > 7 {
+		return nil, errors.New("weather forecast days must be between zero and seven")
+	}
+	if err := normalizeWidgetColors(&c.ForegroundColor, &c.BackgroundColor); err != nil {
+		return nil, err
+	}
+	if err := validateWidgetSizing(c.TextScale, c.ContentPadding); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+func normalizeFieldFormat(format *FieldFormat) error {
+	if format.Format == "" {
+		format.Format = "text"
+	}
+	if !map[string]bool{"text": true, "number": true, "integer": true, "percent": true, "currency": true, "date-short": true, "date-long": true}[format.Format] {
+		return errors.New("field format is invalid")
+	}
+	if format.Precision < 0 || format.Precision > 6 {
+		return errors.New("field precision is invalid")
+	}
+	if format.Alignment == "" {
+		format.Alignment = "left"
+	}
+	if format.Alignment != "left" && format.Alignment != "center" && format.Alignment != "right" {
+		return errors.New("field alignment is invalid")
+	}
+	if format.Width < 0 || format.Width > 100 {
+		return errors.New("field width is invalid")
+	}
+	format.Prefix = sanitizeCalendarText(format.Prefix, 20)
+	format.Suffix = sanitizeCalendarText(format.Suffix, 20)
+	return nil
 }
 
 func validateWidgetSizing(scale, padding *int) error {

@@ -47,6 +47,9 @@ import type {
   BulkOrganizeInput,
   StructuredSourceConfig,
   StructuredPreview,
+  ManualSourceConfig,
+  WeatherSourceConfig,
+  TypedRecordData,
   Layout,
   LayoutDocument,
   LayoutList,
@@ -640,11 +643,15 @@ export const api = {
     request<SourceRefreshDiagnostics>(`/data-sources/${id}/diagnostics`),
   previewDataSource: (
     provider: DataSourceProvider,
-    configuration: CalendarConfig | StructuredSourceConfig,
+    configuration:
+      | CalendarConfig
+      | StructuredSourceConfig
+      | ManualSourceConfig
+      | WeatherSourceConfig,
     csrfToken: string,
     previewDate?: string,
   ) =>
-    request<StructuredPreview | CalendarPreview>(
+    request<StructuredPreview | CalendarPreview | TypedRecordData>(
       `/data-sources/${provider}/preview`,
       {
         method: "POST",
@@ -658,7 +665,7 @@ export const api = {
     const query = previewDate
       ? `?previewDate=${encodeURIComponent(previewDate)}`
       : "";
-    return request<StructuredPreview | CalendarPreview>(
+    return request<StructuredPreview | CalendarPreview | TypedRecordData>(
       `/data-sources/${id}/preview${query}`,
     );
   },

@@ -2,13 +2,17 @@ import { Select } from "../components/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CalendarDays,
+  CloudSun,
   Clock3,
+  Gauge,
+  LayoutGrid,
   QrCode,
   TextQuote,
   Globe2,
   ListTree,
   Table2,
   Utensils,
+  Timer,
   X,
   Youtube,
 } from "lucide-react";
@@ -17,12 +21,19 @@ import QRCode from "qrcode";
 import { api } from "../api/client";
 import type {
   Asset,
+  DataSource,
+  DataSourceField,
   WidgetProvider,
   ClockWidgetConfig,
   DateWidgetConfig,
   QRCodeWidgetConfig,
+  CountdownWidgetConfig,
   TickerWidgetConfig,
   DisplayWidgetConfig,
+  FieldFormat,
+  MetricWidgetConfig,
+  CardsWidgetConfig,
+  WeatherWidgetConfig,
   YouTubeConfig,
 } from "../api/types";
 
@@ -98,6 +109,13 @@ export function WidgetProviderGallery({
                 <strong>QR Code</strong>
                 <span>Display text or a URL as a scannable code.</span>
               </button>
+              <button type="button" onClick={() => onChoose("countdown")}>
+                <Timer size={26} />
+                <strong>Countdown</strong>
+                <span>
+                  Count down to or up from a configured date and time.
+                </span>
+              </button>
             </div>
           </section>
           <section className="source-provider-group">
@@ -128,6 +146,21 @@ export function WidgetProviderGallery({
                 <strong>Agenda</strong>
                 <span>Display dated records in agenda form.</span>
               </button>
+              <button type="button" onClick={() => onChoose("metric")}>
+                <Gauge size={26} />
+                <strong>Metric</strong>
+                <span>Highlight a numeric value from a Data Source.</span>
+              </button>
+              <button type="button" onClick={() => onChoose("cards")}>
+                <LayoutGrid size={26} />
+                <strong>Cards</strong>
+                <span>Arrange reusable records in a responsive card grid.</span>
+              </button>
+              <button type="button" onClick={() => onChoose("weather")}>
+                <CloudSun size={26} />
+                <strong>Weather</strong>
+                <span>Show current conditions and a daily forecast.</span>
+              </button>
             </div>
           </section>
         </div>
@@ -137,13 +170,28 @@ export function WidgetProviderGallery({
 }
 
 type NativeProvider =
-  "clock" | "date" | "qrcode" | "ticker" | "menu" | "list" | "table" | "agenda";
+  | "clock"
+  | "date"
+  | "qrcode"
+  | "countdown"
+  | "ticker"
+  | "menu"
+  | "list"
+  | "table"
+  | "agenda"
+  | "metric"
+  | "cards"
+  | "weather";
 type NativeConfig =
   | ClockWidgetConfig
   | DateWidgetConfig
   | QRCodeWidgetConfig
+  | CountdownWidgetConfig
   | TickerWidgetConfig
-  | DisplayWidgetConfig;
+  | DisplayWidgetConfig
+  | MetricWidgetConfig
+  | CardsWidgetConfig
+  | WeatherWidgetConfig;
 const nativeDefault = (provider: NativeProvider): NativeConfig => {
   const colors = { foregroundColor: "#F5F7FA", backgroundColor: "#0E141B" };
   if (provider === "clock")
@@ -167,11 +215,60 @@ const nativeDefault = (provider: NativeProvider): NativeConfig => {
       foregroundColor: "#000000",
       backgroundColor: "#FFFFFF",
     };
+  if (provider === "countdown")
+    return {
+      target: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 16),
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+      mode: "countdown",
+      label: "",
+      completionText: "Event started",
+      completionAction: "completed_text",
+      showDays: true,
+      showHours: true,
+      showMinutes: true,
+      showSeconds: false,
+      ...colors,
+    };
+  if (provider === "metric")
+    return {
+      dataSourceId: "",
+      valueField: "",
+      label: "",
+      format: "number",
+      precision: 0,
+      alignment: "center",
+      emptyState: "No value available",
+      ...colors,
+    };
+  if (provider === "cards")
+    return {
+      dataSourceId: "",
+      titleField: "",
+      columns: 2,
+      maximumItems: 6,
+      density: "comfortable",
+      emptyState: "No items available",
+      ...colors,
+    };
+  if (provider === "weather")
+    return {
+      dataSourceId: "",
+      showLocation: true,
+      showCurrent: true,
+      showHumidity: true,
+      showWind: true,
+      showPrecipitation: true,
+      forecastDays: 5,
+      ...colors,
+    };
   if (["menu", "list", "table", "agenda"].includes(provider))
     return {
       dataSourceId: "",
       fields: ["title", "subtitle"],
       maximumItems: provider === "menu" ? 2 : 20,
+      emptyState: "No items available",
+      rowSpacing: "comfortable",
+      mode: provider === "menu" ? "single_record" : "records",
       ...colors,
     };
   return {
@@ -180,6 +277,7 @@ const nativeDefault = (provider: NativeProvider): NativeConfig => {
     separator: " • ",
     speed: "normal",
     direction: "left",
+    emptyState: "No items available",
     ...colors,
   };
 };
@@ -214,14 +312,26 @@ export function NativeAppEditor({
       api.listDataSources(
         new URLSearchParams({ page: "1", pageSize: "100", sort: "name" }),
       ),
-    enabled: ["ticker", "menu", "list", "table", "agenda"].includes(provider),
+    enabled: [
+      "ticker",
+      "menu",
+      "list",
+      "table",
+      "agenda",
+      "metric",
+      "cards",
+      "weather",
+    ].includes(provider),
   });
   const acceptedProviders: Record<string, string[]> = {
-    ticker: ["rss", "atom", "calendar", "json", "csv"],
-    menu: ["csv", "json"],
-    list: ["calendar", "rss", "atom", "json", "csv"],
-    table: ["json", "csv"],
-    agenda: ["calendar", "json", "csv"],
+    ticker: ["rss", "atom", "calendar", "json", "csv", "manual", "weather"],
+    menu: ["calendar", "rss", "atom", "json", "csv", "manual", "weather"],
+    list: ["calendar", "rss", "atom", "json", "csv", "manual", "weather"],
+    table: ["calendar", "rss", "atom", "json", "csv", "manual", "weather"],
+    agenda: ["calendar", "json", "csv", "manual", "weather"],
+    metric: ["json", "csv", "manual", "weather"],
+    cards: ["calendar", "rss", "atom", "json", "csv", "manual", "weather"],
+    weather: ["weather"],
   };
   const compatibleDataSources = (dataSources.data?.items ?? []).filter(
     (source) => (acceptedProviders[provider] ?? []).includes(source.provider),
@@ -232,12 +342,27 @@ export function NativeAppEditor({
     "list",
     "table",
     "agenda",
+    "metric",
+    "cards",
+    "weather",
   ].includes(provider)
-    ? (configuration as TickerWidgetConfig | DisplayWidgetConfig).dataSourceId
+    ? (
+        configuration as
+          | TickerWidgetConfig
+          | DisplayWidgetConfig
+          | MetricWidgetConfig
+          | CardsWidgetConfig
+          | WeatherWidgetConfig
+      ).dataSourceId
     : "";
   const selectedDataSource = useQuery({
     queryKey: ["widget-data-source", selectedDataSourceId],
     queryFn: () => api.getDataSource(selectedDataSourceId),
+    enabled: Boolean(selectedDataSourceId),
+  });
+  const sourcePreview = useQuery({
+    queryKey: ["widget-data-source-preview", selectedDataSourceId],
+    queryFn: () => api.previewSavedDataSource(selectedDataSourceId),
     enabled: Boolean(selectedDataSourceId),
   });
   const availableFields = selectedDataSource.data?.fields ?? [];
@@ -357,7 +482,7 @@ export function NativeAppEditor({
                 disabled={readOnly}
                 onChange={(e) =>
                   setConfiguration((current) => ({
-                    ...current,
+                    ...(current as DateWidgetConfig),
                     format: e.target.value as DateWidgetConfig["format"],
                   }))
                 }
@@ -368,6 +493,135 @@ export function NativeAppEditor({
                 <option value="short">Short</option>
               </Select>
             </label>
+          )}
+          {provider === "countdown" && (
+            <>
+              <div className="form-grid form-grid--2">
+                <label className="field">
+                  <span className="field__label">Target date and time</span>
+                  <input
+                    type="datetime-local"
+                    value={(configuration as CountdownWidgetConfig).target}
+                    disabled={readOnly}
+                    onChange={(event) =>
+                      setConfiguration((current) => ({
+                        ...current,
+                        target: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span className="field__label">Timezone</span>
+                  <input
+                    value={(configuration as CountdownWidgetConfig).timezone}
+                    disabled={readOnly}
+                    onChange={(event) =>
+                      setConfiguration((current) => ({
+                        ...current,
+                        timezone: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span className="field__label">Mode</span>
+                  <Select
+                    value={(configuration as CountdownWidgetConfig).mode}
+                    disabled={readOnly}
+                    onChange={(event) =>
+                      setConfiguration((current) => ({
+                        ...(current as CountdownWidgetConfig),
+                        mode: event.target
+                          .value as CountdownWidgetConfig["mode"],
+                      }))
+                    }
+                  >
+                    <option value="countdown">Count down</option>
+                    <option value="count_up">Count up</option>
+                  </Select>
+                </label>
+                <label className="field">
+                  <span className="field__label">Completion behavior</span>
+                  <Select
+                    value={
+                      (configuration as CountdownWidgetConfig).completionAction
+                    }
+                    disabled={readOnly}
+                    onChange={(event) =>
+                      setConfiguration((current) => ({
+                        ...current,
+                        completionAction: event.target
+                          .value as CountdownWidgetConfig["completionAction"],
+                      }))
+                    }
+                  >
+                    <option value="completed_text">Show completion text</option>
+                    <option value="hide">Hide</option>
+                    <option value="count_up">Continue counting up</option>
+                  </Select>
+                </label>
+              </div>
+              <div className="form-grid form-grid--2">
+                <label className="field">
+                  <span className="field__label">Label</span>
+                  <input
+                    value={(configuration as CountdownWidgetConfig).label ?? ""}
+                    disabled={readOnly}
+                    onChange={(event) =>
+                      setConfiguration((current) => ({
+                        ...current,
+                        label: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span className="field__label">Completion text</span>
+                  <input
+                    value={
+                      (configuration as CountdownWidgetConfig).completionText ??
+                      ""
+                    }
+                    disabled={readOnly}
+                    onChange={(event) =>
+                      setConfiguration((current) => ({
+                        ...current,
+                        completionText: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+              </div>
+              <fieldset>
+                <legend>Visible units</legend>
+                <div className="checkbox-grid">
+                  {(["Days", "Hours", "Minutes", "Seconds"] as const).map(
+                    (unit) => {
+                      const key = `show${unit}` as keyof CountdownWidgetConfig;
+                      return (
+                        <label key={unit}>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(
+                              (configuration as CountdownWidgetConfig)[key],
+                            )}
+                            disabled={readOnly}
+                            onChange={(event) =>
+                              setConfiguration((current) => ({
+                                ...current,
+                                [key]: event.target.checked,
+                              }))
+                            }
+                          />
+                          <span>{unit}</span>
+                        </label>
+                      );
+                    },
+                  )}
+                </div>
+              </fieldset>
+            </>
           )}
           {provider === "qrcode" && (
             <>
@@ -421,6 +675,43 @@ export function NativeAppEditor({
                   </Select>
                 </label>
               </div>
+              <div className="form-grid form-grid--2">
+                <label className="field">
+                  <span className="field__label">Speed</span>
+                  <Select
+                    value={(configuration as TickerWidgetConfig).speed}
+                    disabled={readOnly}
+                    onChange={(event) =>
+                      setConfiguration((current) => ({
+                        ...current,
+                        speed: event.target
+                          .value as TickerWidgetConfig["speed"],
+                      }))
+                    }
+                  >
+                    <option value="slow">Slow</option>
+                    <option value="normal">Normal</option>
+                    <option value="fast">Fast</option>
+                  </Select>
+                </label>
+                <label className="field">
+                  <span className="field__label">Direction</span>
+                  <Select
+                    value={(configuration as TickerWidgetConfig).direction}
+                    disabled={readOnly}
+                    onChange={(event) =>
+                      setConfiguration((current) => ({
+                        ...current,
+                        direction: event.target
+                          .value as TickerWidgetConfig["direction"],
+                      }))
+                    }
+                  >
+                    <option value="left">Left</option>
+                    <option value="right">Right</option>
+                  </Select>
+                </label>
+              </div>
               {(configuration as QRCodeWidgetConfig).value.length > 500 && (
                 <div className="notice notice--warning">
                   Dense QR Code. Test scanning at the intended display distance.
@@ -451,28 +742,49 @@ export function NativeAppEditor({
                 </Select>
               </label>
               <div className="form-grid form-grid--2">
-                <label className="field">
-                  <span className="field__label">Field</span>
-                  <Select
-                    value={(configuration as TickerWidgetConfig).field}
-                    disabled={readOnly || !availableFields.length}
-                    onChange={(e) =>
-                      setConfiguration((current) => ({
-                        ...current,
-                        field: e.target.value,
-                      }))
-                    }
-                  >
-                    {!availableFields.length && (
-                      <option value="">Select a Data Source first</option>
-                    )}
-                    {availableFields.map((field) => (
-                      <option key={field.key} value={field.key}>
-                        {field.label}
-                      </option>
-                    ))}
-                  </Select>
-                </label>
+                <fieldset>
+                  <legend>Fields (up to three)</legend>
+                  <div className="checkbox-grid">
+                    {availableFields.map((field) => {
+                      const config = configuration as TickerWidgetConfig;
+                      const selected = (
+                        config.fields ?? [config.field]
+                      ).includes(field.key);
+                      return (
+                        <label key={field.key}>
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            disabled={
+                              readOnly ||
+                              (!selected &&
+                                (config.fields ?? [config.field]).filter(
+                                  Boolean,
+                                ).length >= 3)
+                            }
+                            onChange={(event) =>
+                              setConfiguration((current) => {
+                                const ticker = current as TickerWidgetConfig;
+                                const fields = (
+                                  ticker.fields ?? [ticker.field]
+                                ).filter(Boolean);
+                                const next = event.target.checked
+                                  ? [...fields, field.key]
+                                  : fields.filter((item) => item !== field.key);
+                                return {
+                                  ...ticker,
+                                  fields: next,
+                                  field: next[0] ?? "",
+                                };
+                              })
+                            }
+                          />
+                          <span>{field.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </fieldset>
                 <label className="field">
                   <span className="field__label">Separator</span>
                   <input
@@ -482,6 +794,22 @@ export function NativeAppEditor({
                       setConfiguration((current) => ({
                         ...current,
                         separator: e.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span className="field__label">Field separator</span>
+                  <input
+                    value={
+                      (configuration as TickerWidgetConfig).fieldSeparator ??
+                      " — "
+                    }
+                    disabled={readOnly}
+                    onChange={(event) =>
+                      setConfiguration((current) => ({
+                        ...current,
+                        fieldSeparator: event.target.value,
                       }))
                     }
                   />
@@ -551,6 +879,282 @@ export function NativeAppEditor({
                   </div>
                 )}
               </fieldset>
+              {provider === "list" && (
+                <div className="form-grid form-grid--2">
+                  {(
+                    [
+                      ["primaryField", "Primary field"],
+                      ["secondaryField", "Secondary field"],
+                      ["leadingField", "Leading field"],
+                      ["trailingField", "Trailing field"],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <FieldSelect
+                      key={key}
+                      label={label}
+                      value={(configuration as DisplayWidgetConfig)[key] ?? ""}
+                      fields={availableFields}
+                      allowEmpty={key !== "primaryField"}
+                      disabled={readOnly}
+                      onChange={(value) =>
+                        setConfiguration((current) => ({
+                          ...current,
+                          [key]: value,
+                        }))
+                      }
+                    />
+                  ))}
+                  <label className="switch-row">
+                    <input
+                      type="checkbox"
+                      checked={
+                        (configuration as DisplayWidgetConfig).showDividers ??
+                        false
+                      }
+                      disabled={readOnly}
+                      onChange={(event) =>
+                        setConfiguration((current) => ({
+                          ...current,
+                          showDividers: event.target.checked,
+                        }))
+                      }
+                    />
+                    <span>Show row dividers</span>
+                  </label>
+                </div>
+              )}
+              {provider === "menu" && (
+                <div className="form-grid form-grid--2">
+                  <label className="field">
+                    <span className="field__label">Presentation</span>
+                    <Select
+                      value={
+                        (configuration as DisplayWidgetConfig).mode ??
+                        "single_record"
+                      }
+                      disabled={readOnly}
+                      onChange={(event) =>
+                        setConfiguration((current) => ({
+                          ...(current as DisplayWidgetConfig),
+                          mode: event.target
+                            .value as DisplayWidgetConfig["mode"],
+                        }))
+                      }
+                    >
+                      <option value="single_record">
+                        Fields from one record
+                      </option>
+                      <option value="records">Label and value rows</option>
+                    </Select>
+                  </label>
+                  {(configuration as DisplayWidgetConfig).mode ===
+                    "records" && (
+                    <>
+                      <FieldSelect
+                        label="Label field"
+                        value={
+                          (configuration as DisplayWidgetConfig).labelField ??
+                          ""
+                        }
+                        fields={availableFields}
+                        disabled={readOnly}
+                        onChange={(labelField) =>
+                          setConfiguration((current) => ({
+                            ...current,
+                            labelField,
+                          }))
+                        }
+                      />
+                      <FieldSelect
+                        label="Value field"
+                        value={
+                          (configuration as DisplayWidgetConfig).valueField ??
+                          ""
+                        }
+                        fields={availableFields}
+                        disabled={readOnly}
+                        onChange={(valueField) =>
+                          setConfiguration((current) => ({
+                            ...current,
+                            valueField,
+                          }))
+                        }
+                      />
+                    </>
+                  )}
+                </div>
+              )}
+              {provider === "table" && (
+                <>
+                  <div className="checkbox-grid">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={
+                          (configuration as DisplayWidgetConfig).showHeader ??
+                          false
+                        }
+                        disabled={readOnly}
+                        onChange={(event) =>
+                          setConfiguration((current) => ({
+                            ...current,
+                            showHeader: event.target.checked,
+                          }))
+                        }
+                      />
+                      <span>Show column headers</span>
+                    </label>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={
+                          (configuration as DisplayWidgetConfig)
+                            .alternatingRows ?? false
+                        }
+                        disabled={readOnly}
+                        onChange={(event) =>
+                          setConfiguration((current) => ({
+                            ...current,
+                            alternatingRows: event.target.checked,
+                          }))
+                        }
+                      />
+                      <span>Alternate row backgrounds</span>
+                    </label>
+                  </div>
+                  <fieldset>
+                    <legend>Column presentation</legend>
+                    {(configuration as DisplayWidgetConfig).fields.map(
+                      (fieldKey) => {
+                        const config = configuration as DisplayWidgetConfig;
+                        const existing = config.columns?.find(
+                          (column) => column.field === fieldKey,
+                        ) ?? {
+                          field: fieldKey,
+                          label:
+                            availableFields.find(
+                              (field) => field.key === fieldKey,
+                            )?.label ?? fieldKey,
+                          format: "text" as const,
+                          alignment: "left" as const,
+                          width: 0,
+                        };
+                        const updateColumn = (patch: Partial<FieldFormat>) =>
+                          setConfiguration((current) => {
+                            const table = current as DisplayWidgetConfig;
+                            const columns = table.fields.map((key) => {
+                              const column = table.columns?.find(
+                                (item) => item.field === key,
+                              ) ?? { field: key };
+                              return key === fieldKey
+                                ? { ...column, ...existing, ...patch }
+                                : column;
+                            });
+                            return { ...table, columns };
+                          });
+                        return (
+                          <div
+                            className="form-grid form-grid--4"
+                            key={fieldKey}
+                          >
+                            <label className="field">
+                              <span className="field__label">Label</span>
+                              <input
+                                value={existing.label ?? ""}
+                                disabled={readOnly}
+                                onChange={(event) =>
+                                  updateColumn({ label: event.target.value })
+                                }
+                              />
+                            </label>
+                            <label className="field">
+                              <span className="field__label">Format</span>
+                              <Select
+                                value={existing.format ?? "text"}
+                                disabled={readOnly}
+                                onChange={(event) =>
+                                  updateColumn({
+                                    format: event.target
+                                      .value as FieldFormat["format"],
+                                  })
+                                }
+                              >
+                                <option value="text">Text</option>
+                                <option value="number">Number</option>
+                                <option value="integer">Integer</option>
+                                <option value="percent">Percent</option>
+                                <option value="currency">Currency</option>
+                                <option value="date-short">Short date</option>
+                                <option value="date-long">Long date</option>
+                              </Select>
+                            </label>
+                            <label className="field">
+                              <span className="field__label">Alignment</span>
+                              <Select
+                                value={existing.alignment ?? "left"}
+                                disabled={readOnly}
+                                onChange={(event) =>
+                                  updateColumn({
+                                    alignment: event.target
+                                      .value as FieldFormat["alignment"],
+                                  })
+                                }
+                              >
+                                <option value="left">Left</option>
+                                <option value="center">Center</option>
+                                <option value="right">Right</option>
+                              </Select>
+                            </label>
+                            <label className="field">
+                              <span className="field__label">Width %</span>
+                              <input
+                                type="number"
+                                min={0}
+                                max={100}
+                                value={existing.width ?? 0}
+                                disabled={readOnly}
+                                onChange={(event) =>
+                                  updateColumn({
+                                    width: Number(event.target.value),
+                                  })
+                                }
+                              />
+                            </label>
+                          </div>
+                        );
+                      },
+                    )}
+                  </fieldset>
+                </>
+              )}
+              {provider === "agenda" && (
+                <div className="form-grid form-grid--2">
+                  {(
+                    [
+                      ["dateField", "Date field"],
+                      ["timeField", "Time field"],
+                      ["titleField", "Title field"],
+                      ["locationField", "Location field"],
+                      ["descriptionField", "Description field"],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <FieldSelect
+                      key={key}
+                      label={label}
+                      value={(configuration as DisplayWidgetConfig)[key] ?? ""}
+                      fields={availableFields}
+                      allowEmpty={key !== "titleField"}
+                      disabled={readOnly}
+                      onChange={(value) =>
+                        setConfiguration((current) => ({
+                          ...current,
+                          [key]: value,
+                        }))
+                      }
+                    />
+                  ))}
+                </div>
+              )}
               <label className="field">
                 <span className="field__label">Maximum items</span>
                 <input
@@ -563,6 +1167,342 @@ export function NativeAppEditor({
                     setConfiguration((current) => ({
                       ...current,
                       maximumItems: Number(event.target.value),
+                    }))
+                  }
+                />
+              </label>
+              <label className="field">
+                <span className="field__label">Empty state</span>
+                <input
+                  value={
+                    (configuration as DisplayWidgetConfig).emptyState ?? ""
+                  }
+                  disabled={readOnly}
+                  onChange={(event) =>
+                    setConfiguration((current) => ({
+                      ...current,
+                      emptyState: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+            </>
+          )}
+          {provider === "metric" && (
+            <>
+              <DataSourceSelect
+                value={(configuration as MetricWidgetConfig).dataSourceId}
+                sources={compatibleDataSources}
+                disabled={readOnly}
+                onChange={(dataSourceId) =>
+                  setConfiguration((current) => ({
+                    ...current,
+                    dataSourceId,
+                  }))
+                }
+              />
+              <div className="form-grid form-grid--2">
+                <FieldSelect
+                  label="Value field"
+                  value={(configuration as MetricWidgetConfig).valueField}
+                  fields={availableFields.filter((field) =>
+                    ["number", "integer", "percent", "currency"].includes(
+                      field.type,
+                    ),
+                  )}
+                  disabled={readOnly}
+                  onChange={(valueField) =>
+                    setConfiguration((current) => ({
+                      ...current,
+                      valueField,
+                    }))
+                  }
+                />
+                <label className="field">
+                  <span className="field__label">Static label</span>
+                  <input
+                    value={(configuration as MetricWidgetConfig).label ?? ""}
+                    disabled={readOnly}
+                    onChange={(event) =>
+                      setConfiguration((current) => ({
+                        ...current,
+                        label: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <FieldSelect
+                  label="Label field"
+                  value={(configuration as MetricWidgetConfig).labelField ?? ""}
+                  fields={availableFields}
+                  allowEmpty
+                  disabled={readOnly}
+                  onChange={(labelField) =>
+                    setConfiguration((current) => ({
+                      ...current,
+                      labelField,
+                    }))
+                  }
+                />
+                <FieldSelect
+                  label="Secondary field"
+                  value={
+                    (configuration as MetricWidgetConfig).secondaryField ?? ""
+                  }
+                  fields={availableFields}
+                  allowEmpty
+                  disabled={readOnly}
+                  onChange={(secondaryField) =>
+                    setConfiguration((current) => ({
+                      ...current,
+                      secondaryField,
+                    }))
+                  }
+                />
+                <label className="field">
+                  <span className="field__label">Format</span>
+                  <Select
+                    value={(configuration as MetricWidgetConfig).format}
+                    disabled={readOnly}
+                    onChange={(event) =>
+                      setConfiguration((current) => ({
+                        ...(current as MetricWidgetConfig),
+                        format: event.target
+                          .value as MetricWidgetConfig["format"],
+                      }))
+                    }
+                  >
+                    <option value="number">Number</option>
+                    <option value="integer">Integer</option>
+                    <option value="percent">Percent</option>
+                    <option value="currency">Currency</option>
+                  </Select>
+                </label>
+                <label className="field">
+                  <span className="field__label">Decimal places</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={6}
+                    value={(configuration as MetricWidgetConfig).precision}
+                    disabled={readOnly}
+                    onChange={(event) =>
+                      setConfiguration((current) => ({
+                        ...current,
+                        precision: Number(event.target.value),
+                      }))
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span className="field__label">Prefix</span>
+                  <input
+                    value={(configuration as MetricWidgetConfig).prefix ?? ""}
+                    disabled={readOnly}
+                    onChange={(event) =>
+                      setConfiguration((current) => ({
+                        ...current,
+                        prefix: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span className="field__label">Suffix</span>
+                  <input
+                    value={(configuration as MetricWidgetConfig).suffix ?? ""}
+                    disabled={readOnly}
+                    onChange={(event) =>
+                      setConfiguration((current) => ({
+                        ...current,
+                        suffix: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span className="field__label">Alignment</span>
+                  <Select
+                    value={(configuration as MetricWidgetConfig).alignment}
+                    disabled={readOnly}
+                    onChange={(event) =>
+                      setConfiguration((current) => ({
+                        ...current,
+                        alignment: event.target
+                          .value as MetricWidgetConfig["alignment"],
+                      }))
+                    }
+                  >
+                    <option value="left">Left</option>
+                    <option value="center">Center</option>
+                    <option value="right">Right</option>
+                  </Select>
+                </label>
+              </div>
+              <label className="field">
+                <span className="field__label">Empty state</span>
+                <input
+                  value={(configuration as TickerWidgetConfig).emptyState ?? ""}
+                  disabled={readOnly}
+                  onChange={(event) =>
+                    setConfiguration((current) => ({
+                      ...current,
+                      emptyState: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+            </>
+          )}
+          {provider === "cards" && (
+            <>
+              <DataSourceSelect
+                value={(configuration as CardsWidgetConfig).dataSourceId}
+                sources={compatibleDataSources}
+                disabled={readOnly}
+                onChange={(dataSourceId) =>
+                  setConfiguration((current) => ({
+                    ...current,
+                    dataSourceId,
+                  }))
+                }
+              />
+              <div className="form-grid form-grid--2">
+                <FieldSelect
+                  label="Title field"
+                  value={(configuration as CardsWidgetConfig).titleField}
+                  fields={availableFields}
+                  disabled={readOnly}
+                  onChange={(titleField) =>
+                    setConfiguration((current) => ({
+                      ...current,
+                      titleField,
+                    }))
+                  }
+                />
+                {(["subtitleField", "bodyField", "badgeField"] as const).map(
+                  (key) => (
+                    <FieldSelect
+                      key={key}
+                      label={key.replace("Field", "")}
+                      value={(configuration as CardsWidgetConfig)[key] ?? ""}
+                      fields={availableFields}
+                      allowEmpty
+                      disabled={readOnly}
+                      onChange={(value) =>
+                        setConfiguration((current) => ({
+                          ...current,
+                          [key]: value,
+                        }))
+                      }
+                    />
+                  ),
+                )}
+                <label className="field">
+                  <span className="field__label">Columns</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={4}
+                    value={(configuration as CardsWidgetConfig).columns}
+                    disabled={readOnly}
+                    onChange={(event) =>
+                      setConfiguration((current) => ({
+                        ...(current as CardsWidgetConfig),
+                        columns: Number(event.target.value),
+                      }))
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span className="field__label">Maximum items</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={12}
+                    value={(configuration as CardsWidgetConfig).maximumItems}
+                    disabled={readOnly}
+                    onChange={(event) =>
+                      setConfiguration((current) => ({
+                        ...current,
+                        maximumItems: Number(event.target.value),
+                      }))
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span className="field__label">Density</span>
+                  <Select
+                    value={(configuration as CardsWidgetConfig).density}
+                    disabled={readOnly}
+                    onChange={(event) =>
+                      setConfiguration((current) => ({
+                        ...current,
+                        density: event.target
+                          .value as CardsWidgetConfig["density"],
+                      }))
+                    }
+                  >
+                    <option value="comfortable">Comfortable</option>
+                    <option value="compact">Compact</option>
+                  </Select>
+                </label>
+              </div>
+            </>
+          )}
+          {provider === "weather" && (
+            <>
+              <DataSourceSelect
+                value={(configuration as WeatherWidgetConfig).dataSourceId}
+                sources={compatibleDataSources}
+                disabled={readOnly}
+                onChange={(dataSourceId) =>
+                  setConfiguration((current) => ({
+                    ...current,
+                    dataSourceId,
+                  }))
+                }
+              />
+              <div className="checkbox-grid">
+                {[
+                  ["showLocation", "Location"],
+                  ["showCurrent", "Current conditions"],
+                  ["showHumidity", "Humidity"],
+                  ["showWind", "Wind"],
+                  ["showPrecipitation", "Precipitation"],
+                ].map(([key, label]) => (
+                  <label key={key}>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(
+                        (configuration as unknown as Record<string, unknown>)[
+                          key!
+                        ],
+                      )}
+                      disabled={readOnly}
+                      onChange={(event) =>
+                        setConfiguration((current) => ({
+                          ...current,
+                          [key!]: event.target.checked,
+                        }))
+                      }
+                    />
+                    <span>{label}</span>
+                  </label>
+                ))}
+              </div>
+              <label className="field">
+                <span className="field__label">Forecast days</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={7}
+                  value={(configuration as WeatherWidgetConfig).forecastDays}
+                  disabled={readOnly}
+                  onChange={(event) =>
+                    setConfiguration((current) => ({
+                      ...current,
+                      forecastDays: Number(event.target.value),
                     }))
                   }
                 />
@@ -683,8 +1623,19 @@ export function NativeAppEditor({
               <QRCodePreview
                 configuration={configuration as QRCodeWidgetConfig}
               />
+            ) : provider === "countdown" ? (
+              (configuration as CountdownWidgetConfig).label ||
+              "Countdown preview"
+            ) : sourcePreview.isLoading ? (
+              "Loading Data Source preview…"
+            ) : sourcePreview.data ? (
+              <ul className="native-app-preview__records">
+                {previewLines(sourcePreview.data).map((line, index) => (
+                  <li key={`${line}-${index}`}>{line}</li>
+                ))}
+              </ul>
             ) : (
-              "Preview uses the selected Data Source."
+              "Select a Data Source to preview real records."
             )}
           </div>
           {save.error && <p className="form-error">{save.error.message}</p>}
@@ -702,6 +1653,114 @@ export function NativeAppEditor({
         </footer>
       </section>
     </div>
+  );
+}
+
+function previewLines(value: unknown): string[] {
+  if (!value || typeof value !== "object") return [];
+  const root = value as Record<string, unknown>;
+  const typedRecords = Array.isArray(root.records) ? root.records : undefined;
+  if (typedRecords) {
+    return typedRecords.slice(0, 5).map((record) => {
+      if (!record || typeof record !== "object") return "";
+      const values = (record as Record<string, unknown>).values;
+      if (!values || typeof values !== "object") return "";
+      return Object.values(values as Record<string, unknown>)
+        .filter((item): item is string => typeof item === "string" && !!item)
+        .slice(0, 4)
+        .join(" · ");
+    });
+  }
+  const configuration = root.configuration;
+  if (!configuration || typeof configuration !== "object") return [];
+  const data = (configuration as Record<string, unknown>).data;
+  if (!data || typeof data !== "object") return [];
+  const records = (data as Record<string, unknown>).records;
+  if (Array.isArray(records)) {
+    return records.slice(0, 5).map((record) => {
+      if (!record || typeof record !== "object") return "";
+      const item = record as Record<string, unknown>;
+      return [item.title, item.subtitle, item.date]
+        .filter((part): part is string => typeof part === "string" && !!part)
+        .join(" · ");
+    });
+  }
+  const events = (data as Record<string, unknown>).events;
+  if (Array.isArray(events)) {
+    return events.slice(0, 5).map((event) => {
+      if (!event || typeof event !== "object") return "";
+      const item = event as Record<string, unknown>;
+      return [item.start, item.title, item.location]
+        .filter((part): part is string => typeof part === "string" && !!part)
+        .join(" · ");
+    });
+  }
+  return [];
+}
+
+function DataSourceSelect({
+  value,
+  sources,
+  disabled,
+  onChange,
+}: {
+  value: string;
+  sources: DataSource[];
+  disabled?: boolean;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="field">
+      <span className="field__label">Data Source</span>
+      <Select
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        <option value="">Select data</option>
+        {sources.map((source) => (
+          <option key={source.id} value={source.id}>
+            {source.name}
+          </option>
+        ))}
+      </Select>
+    </label>
+  );
+}
+
+function FieldSelect({
+  label,
+  value,
+  fields,
+  disabled,
+  allowEmpty = false,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  fields: DataSourceField[];
+  disabled?: boolean;
+  allowEmpty?: boolean;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="field">
+      <span className="field__label">{label}</span>
+      <Select
+        value={value}
+        disabled={disabled || fields.length === 0}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        <option value="">
+          {allowEmpty ? "None" : "Select a Data Source first"}
+        </option>
+        {fields.map((field) => (
+          <option key={field.key} value={field.key}>
+            {field.label}
+          </option>
+        ))}
+      </Select>
+    </label>
   );
 }
 

@@ -1,6 +1,6 @@
 # Structured Sources
 
-Tilecast provides native RSS, Atom, JSON, and CSV **Data Sources**. Each is a reusable, non-visual data connection — it cannot be placed in a playlist or Layout directly and is instead displayed by a compatible Widget (Ticker, Menu, List, Table, or Agenda) or referenced by a custom Layout text binding. The server keeps one bounded last-known-good payload and projects only the prepared records required by a screen into the manifest `dataSources` array, shared across every Widget that consumes it.
+Tilecast provides native RSS, Atom, JSON, CSV, and Manual Table **Data Sources**. Each is reusable and non-visual. The server keeps one bounded last-known-good payload and manifest v12 projects a common typed field-and-record contract shared by every Widget that consumes it.
 
 ## Providers
 
@@ -9,6 +9,8 @@ Tilecast provides native RSS, Atom, JSON, and CSV **Data Sources**. Each is a re
 - CSV accepts a public URL or an uploaded UTF-8 file. The parser detects comma, semicolon, tab, or pipe delimiters unless one is selected, requires a header row, validates every row width, and maps columns by exact header name.
 
 All providers support bounded item counts, keyword filtering, source/title/date sorting, list/agenda/card/ticker presentation, refresh and staleness limits, an empty state, preview, typed diagnostics, and last-known-good playback. CSV and mapped data also support up to eight equality or contains filters and twelve optional value fields.
+
+Manual Table supports up to twelve typed columns and two hundred rows. Supported types are text, number, integer, percent, currency, boolean, date, datetime, and URL. Manual data is immediately ready after saving and does not run through the background refresh worker.
 
 ## Security
 

@@ -448,6 +448,24 @@ export function LayoutEditorPage() {
           // Preview the saved Source by id so uploaded CSV content (stripped from
           // the detail response) is resolved server-side, exactly as the Player sees it.
           const preview = await api.previewSavedDataSource(dataSourceId, date);
+          if ("records" in preview) {
+            const typed = preview;
+            return [
+              dataSourceId,
+              {
+                provider: "manual" as const,
+                records: typed.records.map((record) => ({
+                  id: record.id,
+                  title:
+                    record.values.title ??
+                    Object.values(record.values).find(Boolean) ??
+                    "",
+                  values: record.values,
+                })),
+                emptyState: "No items available",
+              },
+            ] as const;
+          }
           if ("events" in preview.configuration.data) {
             const calendar = preview as CalendarPreview;
             return [

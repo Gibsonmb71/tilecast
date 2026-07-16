@@ -27,11 +27,15 @@ const providers: WidgetProvider[] = [
   "clock",
   "date",
   "qrcode",
+  "countdown",
   "ticker",
   "menu",
   "list",
   "table",
   "agenda",
+  "metric",
+  "cards",
+  "weather",
 ];
 
 export function WidgetsPage() {

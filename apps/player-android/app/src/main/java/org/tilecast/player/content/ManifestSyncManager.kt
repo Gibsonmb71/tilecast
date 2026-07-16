@@ -21,6 +21,11 @@ import org.tilecast.player.network.DateWidgetConfig
 import org.tilecast.player.network.QRCodeWidgetConfig
 import org.tilecast.player.network.TickerWidgetConfig
 import org.tilecast.player.network.DisplayWidgetConfig
+import org.tilecast.player.network.CountdownWidgetConfig
+import org.tilecast.player.network.MetricWidgetConfig
+import org.tilecast.player.network.CardsWidgetConfig
+import org.tilecast.player.network.WeatherWidgetConfig
+import org.tilecast.player.network.TypedRecordData
 import org.tilecast.player.network.PlayerManifest
 import org.tilecast.player.network.TilecastApi
 import java.io.File
@@ -45,7 +50,7 @@ class ManifestSyncManager(
     suspend fun loadActive(): PreparedContent? {
         val stored = database.manifests().active() ?: return null
         val manifest = runCatching { api.decodeManifest(stored.rawJson) }.getOrNull() ?: return null
-        if (manifest.schemaVersion != 11) return null
+        if (manifest.schemaVersion !in setOf(11,12)) return null
         val records = database.cachedAssets().all().associateBy { it.variantId }
         val local = records.filterValues { it.downloadStatus == "ready" && File(it.localPath).let { file -> file.exists() && file.length() == it.expectedFileSize } }.mapValues { it.value.localPath }
         val required = records.values.filter { it.requiredByActiveManifest }
@@ -154,7 +159,7 @@ class ManifestSyncManager(
     private fun finalFile(asset: ManifestAsset) = File(mediaDirectory(), "${asset.variantId}.${extension(asset.mimeType)}")
     private fun extension(mime: String) = when (mime) { "video/mp4" -> "mp4"; "image/png" -> "png"; "image/webp" -> "webp"; "image/gif" -> "gif"; else -> "jpg" }
 	private fun validateManifest(manifest: PlayerManifest, screenId: String) {
-		require(manifest.schemaVersion == 11 && manifest.mode in setOf("single-zone", "presentation") && manifest.screenId == screenId) { "Manifest validation failed" }
+		require(manifest.schemaVersion in setOf(11,12) && manifest.mode in setOf("single-zone", "presentation") && manifest.screenId == screenId) { "Manifest validation failed" }
 		val assets = manifest.assets.associateBy { it.variantId }
 		val websites = manifest.websites.associateBy { it.assetId }
 		val widgets = manifest.widgets.associateBy { it.assetId }
@@ -172,7 +177,7 @@ class ManifestSyncManager(
 		playlists.flatMap { it.items }.forEach { item ->
 			when (item.assetType) {
 				"website" -> require(websites[item.assetId] != null && (item.durationMs ?: 0) > 0 && item.deliveryPolicy == "stream") { "Website item is invalid" }
-				"widget" -> require(widgets[item.assetId]?.provider in setOf("website", "youtube", "clock", "date", "qrcode", "ticker", "menu", "list", "table", "agenda") && item.deliveryPolicy == "stream") { "Widget item is invalid" }
+				"widget" -> require(widgets[item.assetId]?.provider in setOf("website", "youtube", "clock", "date", "qrcode", "countdown", "ticker", "menu", "list", "table", "agenda", "metric", "cards", "weather") && item.deliveryPolicy == "stream") { "Widget item is invalid" }
 				else -> require(item.variantId != null && assets[item.variantId]?.assetId == item.assetId) { "Manifest item references an unavailable variant" }
 			}
 			require(item.fitMode in listOf("contain", "cover", "stretch") && item.transition in listOf("none", "fade") && item.deliveryPolicy in listOf("download", "stream", "automatic") && item.volume in 0f..1f) { "Manifest item settings are invalid" }
@@ -183,7 +188,7 @@ class ManifestSyncManager(
 			require(site.allowedHosts.isNotEmpty() && site.allowedHosts.size <= 25 && site.url.length <= 2048 && site.loadTimeoutSeconds in 1..120 && site.zoomPercent in 50..200) { "Website configuration is invalid" }
 			site.fallbackVariantId?.let { require(assets[it]?.assetId == site.fallbackImageAssetId) { "Website fallback is invalid" } }
 		}
-		manifest.dataSources.filter { it.provider == "calendar" }.forEach { source ->
+		if(manifest.schemaVersion==11) manifest.dataSources.filter { it.provider == "calendar" }.forEach { source ->
 			val config = Json.decodeFromJsonElement<CalendarSourceConfig>(source.configuration)
 			require(config.displayMode in listOf("today", "upcoming", "this_week", "agenda") && config.maxEvents in 1..100 && config.emptyState.length <= 240 && config.data.events.size <= 2000) { "Calendar Data Source configuration is invalid" }
 			java.time.ZoneId.of(config.timezone)
@@ -194,7 +199,7 @@ class ManifestSyncManager(
 				require(!end.isBefore(start)) { "Calendar event range is invalid" }
 			}
 		}
-		manifest.dataSources.filter { it.provider in setOf("rss", "atom", "json", "csv") }.forEach { source ->
+		if(manifest.schemaVersion==11) manifest.dataSources.filter { it.provider in setOf("rss", "atom", "json", "csv") }.forEach { source ->
 			val config = Json.decodeFromJsonElement<StructuredSourceConfig>(source.configuration)
 			require(config.emptyState.length <= 240 && config.data.records.size <= 200) { "Structured Data Source configuration is invalid" }
 			if(config.dateSelection.enabled){require(config.dateSelection.mode in setOf("today","tomorrow","next_available","current_week","custom_range")&&config.dateSelection.noMatchBehavior in setOf("fallback_text","next_available","empty","hide","last_known_good"));java.time.ZoneId.of(config.dateSelection.timezone)}
@@ -202,14 +207,23 @@ class ManifestSyncManager(
 				require(record.id.length <= 64 && record.title.length <= 240 && record.subtitle.length <= 240 && record.description.length <= 500 && record.values.size <= 12) { "Structured Data Source record is invalid" }
 			}
 		}
+		if(manifest.schemaVersion==12) manifest.dataSources.forEach { source ->
+			val data=Json.decodeFromJsonElement<TypedRecordData>(source.configuration)
+			require(data.fields.size<=20&&data.records.size<=2000&&data.fields.map{it.key}.toSet().size==data.fields.size)
+			require(data.fields.all{it.type in setOf("text","number","integer","percent","currency","boolean","date","datetime","url")})
+			require(data.records.all{it.id.length<=80&&it.values.size<=20&&it.values.values.all{value->value.length<=500}})
+			data.dateSelection?.let{selection->require(selection.mode in setOf("today","tomorrow","next_available","current_week","custom_range"));java.time.ZoneId.of(selection.timezone)}
+		}
 		manifest.widgets.forEach { widget -> when(widget.provider){
 			"clock"->{val config=Json.decodeFromJsonElement<ClockWidgetConfig>(widget.configuration);java.time.ZoneId.of(config.timezone);require(config.format in setOf("12","24"))}
 			"date"->{val config=Json.decodeFromJsonElement<DateWidgetConfig>(widget.configuration);java.time.ZoneId.of(config.timezone);require(config.format in setOf("full","long","medium","short"))}
 			"qrcode"->{val config=Json.decodeFromJsonElement<QRCodeWidgetConfig>(widget.configuration);require(config.value.isNotBlank()&&config.value.length<=2048)}
-			"ticker"->{val config=Json.decodeFromJsonElement<TickerWidgetConfig>(widget.configuration);require(dataSources[config.dataSourceId]?.provider in setOf("rss","atom","calendar","json","csv")&&config.field.length<=80)}
-			"menu", "table"->{val config=Json.decodeFromJsonElement<DisplayWidgetConfig>(widget.configuration);require(dataSources[config.dataSourceId]?.provider in setOf("csv","json")&&config.fields.isNotEmpty()&&config.fields.size<=12&&config.maximumItems in 1..100)}
-			"list"->{val config=Json.decodeFromJsonElement<DisplayWidgetConfig>(widget.configuration);require(dataSources[config.dataSourceId]?.provider in setOf("calendar","rss","atom","json","csv")&&config.fields.isNotEmpty()&&config.fields.size<=12&&config.maximumItems in 1..100)}
-			"agenda"->{val config=Json.decodeFromJsonElement<DisplayWidgetConfig>(widget.configuration);require(dataSources[config.dataSourceId]?.provider in setOf("calendar","json","csv")&&config.fields.isNotEmpty()&&config.fields.size<=12&&config.maximumItems in 1..100)}
+			"countdown"->{val config=Json.decodeFromJsonElement<CountdownWidgetConfig>(widget.configuration);java.time.ZoneId.of(config.timezone);require(config.mode in setOf("countdown","count_up"))}
+			"ticker"->{val config=Json.decodeFromJsonElement<TickerWidgetConfig>(widget.configuration);require(dataSources[config.dataSourceId]!=null&&(config.fields.ifEmpty{listOf(config.field)}).size in 1..3)}
+			"menu", "table", "list", "agenda"->{val config=Json.decodeFromJsonElement<DisplayWidgetConfig>(widget.configuration);require(dataSources[config.dataSourceId]!=null&&config.fields.isNotEmpty()&&config.fields.size<=12&&config.maximumItems in 1..100)}
+			"metric"->{val config=Json.decodeFromJsonElement<MetricWidgetConfig>(widget.configuration);require(dataSources[config.dataSourceId]!=null&&config.valueField.isNotBlank())}
+			"cards"->{val config=Json.decodeFromJsonElement<CardsWidgetConfig>(widget.configuration);require(dataSources[config.dataSourceId]!=null&&config.titleField.isNotBlank()&&config.columns in 1..4&&config.maximumItems in 1..12)}
+			"weather"->{val config=Json.decodeFromJsonElement<WeatherWidgetConfig>(widget.configuration);require(dataSources[config.dataSourceId]?.provider=="weather"&&config.forecastDays in 0..7)}
 		}}
 	}
 }

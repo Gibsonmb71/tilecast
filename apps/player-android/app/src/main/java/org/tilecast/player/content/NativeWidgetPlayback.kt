@@ -41,13 +41,18 @@ import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromJsonElement
 import org.tilecast.player.network.ClockWidgetConfig
+import org.tilecast.player.network.CountdownWidgetConfig
+import org.tilecast.player.network.CardsWidgetConfig
 import org.tilecast.player.network.DateWidgetConfig
 import org.tilecast.player.network.DisplayWidgetConfig
 import org.tilecast.player.network.ManifestItem
 import org.tilecast.player.network.ManifestWidget
+import org.tilecast.player.network.MetricWidgetConfig
 import org.tilecast.player.network.QRCodeWidgetConfig
 import org.tilecast.player.network.StructuredSourceConfig
 import org.tilecast.player.network.TickerWidgetConfig
+import org.tilecast.player.network.TypedRecordData
+import org.tilecast.player.network.WeatherWidgetConfig
 
 @Composable
 fun WidgetItem(item: ManifestItem, widget: ManifestWidget, session: PlaybackSession, onDone: () -> Unit, onFailure: (String) -> Unit, onStatus: (WidgetPlaybackStatus) -> Unit, startOffsetMs: Long = 0) {
@@ -57,13 +62,24 @@ fun WidgetItem(item: ManifestItem, widget: ManifestWidget, session: PlaybackSess
         "clock" -> runCatching { Json.decodeFromJsonElement<ClockWidgetConfig>(widget.configuration) }.onSuccess { ClockWidget(it) }.onFailure { onFailure("Clock Widget configuration is invalid") }
         "date" -> runCatching { Json.decodeFromJsonElement<DateWidgetConfig>(widget.configuration) }.onSuccess { DateWidget(it) }.onFailure { onFailure("Date Widget configuration is invalid") }
         "qrcode" -> runCatching { Json.decodeFromJsonElement<QRCodeWidgetConfig>(widget.configuration) }.onSuccess { QRCodeWidget(it) }.onFailure { onFailure("QR Code Widget configuration is invalid") }
+        "countdown" -> runCatching { Json.decodeFromJsonElement<CountdownWidgetConfig>(widget.configuration) }.onSuccess { ExpandedCountdownWidget(it) }.onFailure { onFailure("Countdown Widget configuration is invalid") }
         "ticker" -> runCatching { Json.decodeFromJsonElement<TickerWidgetConfig>(widget.configuration) }.onSuccess { config ->
             val data = session.content.manifest.dataSources.firstOrNull { it.id == config.dataSourceId } ?: return@onSuccess onFailure("Ticker data is unavailable")
+            if(session.content.manifest.schemaVersion>=12){
+                val typed=runCatching{Json.decodeFromJsonElement<TypedRecordData>(data.configuration)}.getOrElse{return@onSuccess onFailure("Ticker data is invalid")}
+                ExpandedTickerWidget(config,typed)
+                return@onSuccess
+            }
             val structured = runCatching { Json.decodeFromJsonElement<StructuredSourceConfig>(data.configuration) }.getOrElse { return@onSuccess onFailure("Ticker data is invalid") }
             TickerWidget(config, structured)
         }.onFailure { onFailure("Ticker Widget configuration is invalid") }
         "menu" -> runCatching { Json.decodeFromJsonElement<DisplayWidgetConfig>(widget.configuration) }.onSuccess { config ->
             val data = session.content.manifest.dataSources.firstOrNull { it.id == config.dataSourceId } ?: return@onSuccess onFailure("Menu data is unavailable")
+            if(session.content.manifest.schemaVersion>=12){
+                val typed=runCatching{Json.decodeFromJsonElement<TypedRecordData>(data.configuration)}.getOrElse{return@onSuccess onFailure("Menu data is invalid")}
+                ExpandedDisplayWidget("menu",widget.name,config,typed)
+                return@onSuccess
+            }
             if (data.provider != "csv" && data.provider != "json") return@onSuccess onFailure("Menu data is incompatible")
             runCatching { Json.decodeFromJsonElement<StructuredSourceConfig>(data.configuration) }
                 .onSuccess { MenuWidget(widget.name, config, it) }
@@ -71,11 +87,31 @@ fun WidgetItem(item: ManifestItem, widget: ManifestWidget, session: PlaybackSess
         }.onFailure { onFailure("Menu Widget configuration is invalid") }
         "list", "table", "agenda" -> runCatching { Json.decodeFromJsonElement<DisplayWidgetConfig>(widget.configuration) }.onSuccess { config ->
             val data = session.content.manifest.dataSources.firstOrNull { it.id == config.dataSourceId } ?: return@onSuccess onFailure("Widget data is unavailable")
+            if(session.content.manifest.schemaVersion>=12){
+                val typed=runCatching{Json.decodeFromJsonElement<TypedRecordData>(data.configuration)}.getOrElse{return@onSuccess onFailure("Widget data is invalid")}
+                ExpandedDisplayWidget(widget.provider,widget.name,config,typed)
+                return@onSuccess
+            }
             when (data.provider) {
                 "calendar" -> runCatching { Json.decodeFromJsonElement<org.tilecast.player.network.CalendarSourceConfig>(data.configuration) }.onSuccess { DisplayCalendarWidget(config, it) }.onFailure { onFailure("Agenda data is invalid") }
                 else -> runCatching { Json.decodeFromJsonElement<StructuredSourceConfig>(data.configuration) }.onSuccess { DisplayStructuredWidget(config, it) }.onFailure { onFailure("Widget data is invalid") }
             }
         }.onFailure { onFailure("Widget configuration is invalid") }
+        "metric" -> runCatching { Json.decodeFromJsonElement<MetricWidgetConfig>(widget.configuration) }.onSuccess { config ->
+            val data=session.content.manifest.dataSources.firstOrNull{it.id==config.dataSourceId}?:return@onSuccess onFailure("Metric data is unavailable")
+            val typed=runCatching{Json.decodeFromJsonElement<TypedRecordData>(data.configuration)}.getOrElse{return@onSuccess onFailure("Metric data is invalid")}
+            ExpandedMetricWidget(config,typed)
+        }.onFailure { onFailure("Metric Widget configuration is invalid") }
+        "cards" -> runCatching { Json.decodeFromJsonElement<CardsWidgetConfig>(widget.configuration) }.onSuccess { config ->
+            val data=session.content.manifest.dataSources.firstOrNull{it.id==config.dataSourceId}?:return@onSuccess onFailure("Cards data is unavailable")
+            val typed=runCatching{Json.decodeFromJsonElement<TypedRecordData>(data.configuration)}.getOrElse{return@onSuccess onFailure("Cards data is invalid")}
+            ExpandedCardsWidget(config,typed)
+        }.onFailure { onFailure("Cards Widget configuration is invalid") }
+        "weather" -> runCatching { Json.decodeFromJsonElement<WeatherWidgetConfig>(widget.configuration) }.onSuccess { config ->
+            val data=session.content.manifest.dataSources.firstOrNull{it.id==config.dataSourceId}?:return@onSuccess onFailure("Weather data is unavailable")
+            val typed=runCatching{Json.decodeFromJsonElement<TypedRecordData>(data.configuration)}.getOrElse{return@onSuccess onFailure("Weather data is invalid")}
+            ExpandedWeatherWidget(config,typed)
+        }.onFailure { onFailure("Weather Widget configuration is invalid") }
     }
 }
 

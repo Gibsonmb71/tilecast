@@ -25,6 +25,7 @@ type Service struct {
 
 type SourceProjector interface {
 	PlayerDataSourceConfiguration(context.Context, uuid.UUID, string, json.RawMessage) (json.RawMessage, error)
+	PlayerTypedDataSourceConfiguration(context.Context, uuid.UUID, string, json.RawMessage) (json.RawMessage, error)
 }
 
 func NewService(db *pgxpool.Pool, notifier Notifier) *Service {
@@ -585,6 +586,28 @@ func (s *Service) AssignPresentation(ctx context.Context, screenID uuid.UUID, pl
 	if err = tx.QueryRow(ctx, `SELECT m.screen_group_id FROM screens sc LEFT JOIN screen_group_memberships m ON m.screen_id=sc.id WHERE sc.id=$1`, screenID).Scan(&groupID); err != nil {
 		return Assignment{}, err
 	}
+	requiresV12, err := presentationRequiresManifestV12(ctx, tx, playlistID, layoutID)
+	if err != nil {
+		return Assignment{}, err
+	}
+	if requiresV12 {
+		var incompatible bool
+		if groupID != nil {
+			err = tx.QueryRow(ctx, `SELECT EXISTS(
+				SELECT 1 FROM screen_group_memberships m
+				LEFT JOIN screen_player_status ps ON ps.screen_id=m.screen_id
+				WHERE m.screen_group_id=$1 AND COALESCE(ps.player_version_code,0)<22
+			)`, *groupID).Scan(&incompatible)
+		} else {
+			err = tx.QueryRow(ctx, `SELECT COALESCE((SELECT player_version_code FROM screen_player_status WHERE screen_id=$1),0)<22`, screenID).Scan(&incompatible)
+		}
+		if err != nil {
+			return Assignment{}, err
+		}
+		if incompatible {
+			return Assignment{}, fmt.Errorf("%w: Player update required before assigning content that uses manifest v12", ErrConflict)
+		}
+	}
 	if groupID != nil {
 		_, err = tx.Exec(ctx, `INSERT INTO screen_group_playlist_assignments(screen_group_id,playlist_id,layout_id,assigned_by)VALUES($1,$2,$3,$4) ON CONFLICT(screen_group_id)DO UPDATE SET playlist_id=EXCLUDED.playlist_id,layout_id=EXCLUDED.layout_id,assigned_by=EXCLUDED.assigned_by,updated_at=now()`, *groupID, playlistID, layoutID, userID)
 		if err == nil {
@@ -676,6 +699,23 @@ func (s *Service) AssignGroupPresentation(ctx context.Context, groupID uuid.UUID
 	if !valid {
 		return ErrNotFound
 	}
+	requiresV12, err := presentationRequiresManifestV12(ctx, tx, playlistID, layoutID)
+	if err != nil {
+		return err
+	}
+	if requiresV12 {
+		var incompatible bool
+		if err = tx.QueryRow(ctx, `SELECT EXISTS(
+			SELECT 1 FROM screen_group_memberships m
+			LEFT JOIN screen_player_status ps ON ps.screen_id=m.screen_id
+			WHERE m.screen_group_id=$1 AND COALESCE(ps.player_version_code,0)<22
+		)`, groupID).Scan(&incompatible); err != nil {
+			return err
+		}
+		if incompatible {
+			return fmt.Errorf("%w: Player update required before assigning content that uses manifest v12", ErrConflict)
+		}
+	}
 	if _, err = tx.Exec(ctx, `INSERT INTO screen_group_playlist_assignments(screen_group_id,playlist_id,layout_id,assigned_by)VALUES($1,$2,$3,$4) ON CONFLICT(screen_group_id)DO UPDATE SET playlist_id=EXCLUDED.playlist_id,layout_id=EXCLUDED.layout_id,assigned_by=EXCLUDED.assigned_by,updated_at=now()`, groupID, playlistID, layoutID, userID); err != nil {
 		return err
 	}
@@ -698,6 +738,32 @@ func (s *Service) AssignGroupPresentation(ctx context.Context, groupID uuid.UUID
 	}
 	s.notify(notes)
 	return nil
+}
+
+func presentationRequiresManifestV12(ctx context.Context, tx pgx.Tx, playlistID, layoutID *uuid.UUID) (bool, error) {
+	if playlistID != nil {
+		var required bool
+		err := tx.QueryRow(ctx, `SELECT EXISTS(
+			SELECT 1 FROM playlist_items i
+			JOIN widgets w ON w.asset_id=i.asset_id
+			WHERE i.playlist_id=$1 AND (
+				w.config_version>=2 OR w.provider IN('countdown','metric','cards','weather')
+			)
+		)`, *playlistID).Scan(&required)
+		return required, err
+	}
+	var required bool
+	err := tx.QueryRow(ctx, `SELECT EXISTS(
+		SELECT 1 FROM layouts l
+		JOIN layout_revision_dependencies d ON d.layout_revision_id=l.published_revision_id
+		LEFT JOIN widgets w ON d.dependency_type='widget' AND w.asset_id=d.dependency_id
+		LEFT JOIN data_sources ds ON d.dependency_type='data_source' AND ds.id=d.dependency_id
+		WHERE l.id=$1 AND (
+			w.config_version>=2 OR w.provider IN('countdown','metric','cards','weather')
+			OR ds.provider IN('manual','weather')
+		)
+	)`, *layoutID).Scan(&required)
+	return required, err
 }
 
 func (s *Service) UnassignGroup(ctx context.Context, groupID, userID uuid.UUID) error {
@@ -1064,6 +1130,34 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 			}
 		}
 	}
+	requiresV12 := false
+	for _, widget := range manifest.Widgets {
+		if widget.ConfigVersion >= 2 || widget.Provider == "countdown" || widget.Provider == "metric" || widget.Provider == "cards" || widget.Provider == "weather" {
+			requiresV12 = true
+			break
+		}
+	}
+	if !requiresV12 {
+		for _, source := range manifest.DataSources {
+			if source.Provider == "manual" || source.Provider == "weather" {
+				requiresV12 = true
+				break
+			}
+		}
+	}
+	if requiresV12 {
+		ids := make([]uuid.UUID, 0, len(manifest.DataSources))
+		for _, source := range manifest.DataSources {
+			ids = append(ids, source.ID)
+		}
+		manifest.SchemaVersion = 12
+		manifest.DataSources = []ManifestDataSource{}
+		for _, id := range ids {
+			if err = s.projectDataSource(ctx, &manifest, id); err != nil {
+				return Manifest{}, "", err
+			}
+		}
+	}
 	encoded, encodeErr := json.Marshal(manifest)
 	if encodeErr != nil {
 		return Manifest{}, "", encodeErr
@@ -1077,7 +1171,7 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 // widgetDataSourceID returns the Data Source a data-driven widget consumes, or Nil.
 func widgetDataSourceID(provider string, configuration json.RawMessage) uuid.UUID {
 	switch provider {
-	case "ticker", "menu", "list", "table", "agenda":
+	case "ticker", "menu", "list", "table", "agenda", "metric", "cards", "weather":
 		var c struct {
 			DataSourceID uuid.UUID `json:"dataSourceId"`
 		}
@@ -1108,7 +1202,13 @@ func (s *Service) projectDataSource(ctx context.Context, manifest *Manifest, dat
 	}
 	dataSource.Configuration = raw
 	if s.sources != nil {
-		projected, err := s.sources.PlayerDataSourceConfiguration(ctx, dataSourceID, dataSource.Provider, raw)
+		var projected json.RawMessage
+		var err error
+		if manifest.SchemaVersion >= 12 {
+			projected, err = s.sources.PlayerTypedDataSourceConfiguration(ctx, dataSourceID, dataSource.Provider, raw)
+		} else {
+			projected, err = s.sources.PlayerDataSourceConfiguration(ctx, dataSourceID, dataSource.Provider, raw)
+		}
 		if err != nil {
 			return err
 		}
