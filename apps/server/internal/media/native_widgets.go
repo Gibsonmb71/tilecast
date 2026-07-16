@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -164,7 +165,7 @@ func (p displayWidgetProvider) Normalize(ctx context.Context, raw json.RawMessag
 			return nil, errors.New("widget fields must be unique and non-empty")
 		}
 		if len(fields) > 0 && !fields[field] {
-			return nil, errors.New("field '" + field + "' is not provided by the selected data Source")
+			return nil, fmt.Errorf("field %q is not provided by the selected data Source", field)
 		}
 		seen[field] = true
 		c.Fields[index] = field
