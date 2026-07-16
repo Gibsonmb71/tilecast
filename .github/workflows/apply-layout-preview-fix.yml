@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   apply-and-verify:
-    if: github.event.pull_request.head.ref == 'fix/lunch-menu-workflow' && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
