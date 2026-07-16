@@ -283,16 +283,22 @@ export function LayoutEditorPage() {
   useEffect(() => {
     revisionRef.current = serverRevision;
   }, [serverRevision]);
-  const commit = useCallback((next: LayoutDocument) => {
-    documentRef.current = next;
+  const markUnsaved = useCallback(() => {
     changeVersionRef.current += 1;
-    setDocument((current) => {
-      if (current) setPast((items) => [...items.slice(-79), clone(current)]);
-      return next;
-    });
-    setFuture([]);
     setSaveState("unsaved");
   }, []);
+  const commit = useCallback(
+    (next: LayoutDocument) => {
+      documentRef.current = next;
+      setDocument((current) => {
+        if (current) setPast((items) => [...items.slice(-79), clone(current)]);
+        return next;
+      });
+      setFuture([]);
+      markUnsaved();
+    },
+    [markUnsaved],
+  );
   const update = useCallback(
     (change: (draft: LayoutDocument) => void) => {
       if (!documentRef.current) return;
@@ -310,13 +316,12 @@ export function LayoutEditorPage() {
         if (current) setFuture((next) => [clone(current), ...next]);
         const restored = clone(prior);
         documentRef.current = restored;
-        changeVersionRef.current += 1;
         return restored;
       });
-      setSaveState("unsaved");
+      markUnsaved();
       return items.slice(0, -1);
     });
-  }, []);
+  }, [markUnsaved]);
   const redo = useCallback(() => {
     setFuture((items) => {
       const next = items[0];
@@ -325,13 +330,12 @@ export function LayoutEditorPage() {
         if (current) setPast((previous) => [...previous, clone(current)]);
         const restored = clone(next);
         documentRef.current = restored;
-        changeVersionRef.current += 1;
         return restored;
       });
-      setSaveState("unsaved");
+      markUnsaved();
       return items.slice(1);
     });
-  }, []);
+  }, [markUnsaved]);
   const save = useCallback(async () => {
     if (
       !documentRef.current ||
@@ -840,7 +844,7 @@ export function LayoutEditorPage() {
       setGuides({});
       setPast((items) => [...items.slice(-79), beforeDocument]);
       setFuture([]);
-      setSaveState("unsaved");
+      markUnsaved();
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
