@@ -6,6 +6,7 @@ on:
       - "apps/server/**"
       - "apps/player-android/**"
       - "apps/dashboard/**"
+      - "docs/activity*"
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/activity-verification.yml"
@@ -45,7 +46,7 @@ jobs:
           set +e
           go vet ./... > "$RUNNER_TEMP/server-vet.log" 2>&1
           echo "$?" > "$RUNNER_TEMP/server-vet.status"
-          go test ./... -count=1 -v > "$RUNNER_TEMP/server-test.log" 2>&1
+          go test -p 1 ./... -count=1 -v > "$RUNNER_TEMP/server-test.log" 2>&1
           echo "$?" > "$RUNNER_TEMP/server-test.status"
           go build ./cmd/tilecast > "$RUNNER_TEMP/server-build.log" 2>&1
           echo "$?" > "$RUNNER_TEMP/server-build.status"
@@ -94,8 +95,8 @@ jobs:
           set +e
           npm run format > "$RUNNER_TEMP/dashboard-format.log" 2>&1
           echo "$?" > "$RUNNER_TEMP/dashboard-format.status"
-          git diff -- apps/dashboard/src > "$RUNNER_TEMP/dashboard-format.patch"
-          tar -czf "$RUNNER_TEMP/dashboard-formatted-src.tgz" apps/dashboard/src
+          git diff > "$RUNNER_TEMP/dashboard-format.patch"
+          tar -czf "$RUNNER_TEMP/dashboard-formatted-src.tgz" apps/dashboard/src docs/activity.md docs/activity-api.yaml
           npm run lint > "$RUNNER_TEMP/dashboard-lint.log" 2>&1
           echo "$?" > "$RUNNER_TEMP/dashboard-lint.status"
           npm test > "$RUNNER_TEMP/dashboard-test.log" 2>&1
