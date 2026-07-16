@@ -466,12 +466,12 @@ export function LayoutEditorPage() {
         const record = source.records?.[0];
         if (!record) return;
         const fields: Record<string, string> = { ...(record.values ?? {}) };
-        (["title", "subtitle", "date", "author", "description"] as const).forEach(
-          (key) => {
-            const value = record[key];
-            if (value) fields[key] = value;
-          },
-        );
+        (
+          ["title", "subtitle", "date", "author", "description"] as const
+        ).forEach((key) => {
+          const value = record[key];
+          if (value) fields[key] = value;
+        });
         values[dataSourceId] = fields;
       });
       setPreviewValues(values);
@@ -1464,9 +1464,13 @@ function structuredFieldValue(record: StructuredRecord, field: string): string {
 
 function menuFieldLabel(field: string): string {
   const key = field.toLowerCase();
-  if (["option_2", "alternative", "secondary", "secondary_option"].includes(key))
+  if (
+    ["option_2", "alternative", "secondary", "secondary_option"].includes(key)
+  )
     return "Alternative";
-  if (["option_1", "primary", "primary_option", "entree", "entrée"].includes(key))
+  if (
+    ["option_1", "primary", "primary_option", "entree", "entrée"].includes(key)
+  )
     return "Entrée";
   return field.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
@@ -1489,7 +1493,10 @@ function dateText(cfg: DateWidgetConfig): string {
   }).format(new Date());
 }
 
-function tickerText(cfg: TickerWidgetConfig, source?: LivePreviewSource): string {
+function tickerText(
+  cfg: TickerWidgetConfig,
+  source?: LivePreviewSource,
+): string {
   const parts = (source?.records ?? [])
     .map((record) => structuredFieldValue(record, cfg.field || "title"))
     .filter((value) => value.trim().length > 0);
@@ -1558,7 +1565,10 @@ function CenteredWidget({
 }) {
   const inset = Math.min(40, 0.08 * Math.min(item.width, item.height)) * scale;
   return (
-    <div className="wpv-root wpv-centered" style={{ background, padding: inset }}>
+    <div
+      className="wpv-root wpv-centered"
+      style={{ background, padding: inset }}
+    >
       {children}
     </div>
   );
@@ -1592,7 +1602,12 @@ function QrWidget({
     })
       .then(setDataUrl)
       .catch(() => setDataUrl(""));
-  }, [cfg.value, cfg.errorCorrection, cfg.foregroundColor, cfg.backgroundColor]);
+  }, [
+    cfg.value,
+    cfg.errorCorrection,
+    cfg.foregroundColor,
+    cfg.backgroundColor,
+  ]);
   const inset = Math.min(40, 0.08 * Math.min(item.width, item.height)) * scale;
   const label = cfg.label?.trim();
   return (
@@ -1644,7 +1659,10 @@ function MenuWidget({
   const pad = 48 * scale;
   if (!values.length)
     return (
-      <div className="wpv-root wpv-centered" style={{ background: bg, padding: pad }}>
+      <div
+        className="wpv-root wpv-centered"
+        style={{ background: bg, padding: pad }}
+      >
         <FittedText
           text={source?.emptyState || "No items available"}
           color={fg}
@@ -1656,11 +1674,17 @@ function MenuWidget({
     );
   return (
     <div className="wpv-root wpv-menu" style={{ background: bg, padding: pad }}>
-      <div className="wpv-menu__header" style={{ color: fg, fontSize: 24 * scale }}>
+      <div
+        className="wpv-menu__header"
+        style={{ color: fg, fontSize: 24 * scale }}
+      >
         {name.toUpperCase()}
       </div>
       {record?.date && (
-        <div className="wpv-menu__date" style={{ color: fg, fontSize: 18 * scale }}>
+        <div
+          className="wpv-menu__date"
+          style={{ color: fg, fontSize: 18 * scale }}
+        >
           {record.date}
         </div>
       )}
@@ -1732,7 +1756,10 @@ function DisplayWidget({
   const pad = 36 * scale;
   if (!rows.length)
     return (
-      <div className="wpv-root wpv-centered" style={{ background: bg, padding: pad }}>
+      <div
+        className="wpv-root wpv-centered"
+        style={{ background: bg, padding: pad }}
+      >
         <FittedText
           text={source?.emptyState || "No items available"}
           color={fg}
