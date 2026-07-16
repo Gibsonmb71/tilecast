@@ -16,9 +16,12 @@ import (
 )
 
 var (
-	ErrGitHubAuthUnavailable = errors.New("GitHub sign-in is not configured")
-	ErrGitHubAuthFlow        = errors.New("GitHub sign-in request was not found or has expired")
-	ErrGitHubAuthManaged     = errors.New("GitHub authentication is managed by TILECAST_GITHUB_TOKEN")
+	ErrGitHubAuthUnavailable   = errors.New("GitHub sign-in is not configured")
+	ErrGitHubAuthFlow          = errors.New("GitHub sign-in request was not found or has expired")
+	ErrGitHubAuthManaged       = errors.New("GitHub authentication is managed by TILECAST_GITHUB_TOKEN")
+	ErrGitHubClientIDInvalid   = errors.New("GitHub OAuth client ID is invalid")
+	ErrGitHubClientIDManaged   = errors.New("GitHub OAuth client ID is managed by TILECAST_GITHUB_CLIENT_ID")
+	ErrGitHubClientIDConnected = errors.New("disconnect GitHub before changing its OAuth client ID")
 )
 
 type githubDeviceProvider interface {
@@ -51,10 +54,12 @@ type GitHubDevicePoll struct {
 }
 
 type githubAuthorization struct {
-	provider    githubDeviceProvider
-	clientID    string
-	credential  string
-	environment bool
+	provider        githubDeviceProvider
+	clientID        string
+	clientIDPath    string
+	clientIDManaged bool
+	credential      string
+	environment     bool
 
 	mu        sync.Mutex
 	connected bool
@@ -76,6 +81,10 @@ type githubCredential struct {
 	Login       string `json:"login"`
 }
 
+type githubClientConfiguration struct {
+	ClientID string `json:"clientId"`
+}
+
 func newGitHubAuthorization(provider Provider, root, clientID string, environment bool) (*githubAuthorization, error) {
 	deviceProvider, ok := provider.(githubDeviceProvider)
 	clientID = strings.TrimSpace(clientID)
@@ -83,12 +92,24 @@ func newGitHubAuthorization(provider Provider, root, clientID string, environmen
 		return nil, errors.New("TILECAST_GITHUB_CLIENT_ID is invalid")
 	}
 	auth := &githubAuthorization{
-		provider:    deviceProvider,
-		clientID:    clientID,
-		credential:  filepath.Join(root, "github-oauth.json"),
-		environment: environment,
-		connected:   environment,
-		flows:       map[string]*githubDeviceFlow{},
+		provider:        deviceProvider,
+		clientID:        clientID,
+		clientIDPath:    filepath.Join(root, "github-oauth-client.json"),
+		clientIDManaged: clientID != "",
+		credential:      filepath.Join(root, "github-oauth.json"),
+		environment:     environment,
+		connected:       environment,
+		flows:           map[string]*githubDeviceFlow{},
+	}
+	if !auth.clientIDManaged {
+		configuration, err := readGitHubClientConfiguration(auth.clientIDPath)
+		switch {
+		case errors.Is(err, os.ErrNotExist):
+		case err != nil:
+			return nil, fmt.Errorf("read persisted GitHub OAuth configuration: %w", err)
+		default:
+			auth.clientID = configuration.ClientID
+		}
 	}
 	if environment || !ok {
 		return auth, nil
@@ -120,6 +141,34 @@ func validGitHubClientID(value string) bool {
 	return true
 }
 
+func (s *Service) ConfigureGitHubClientID(clientID string) error {
+	auth := s.github
+	if auth == nil || auth.provider == nil || auth.environment {
+		return ErrGitHubAuthUnavailable
+	}
+	clientID = strings.TrimSpace(clientID)
+	if !validGitHubClientID(clientID) {
+		return ErrGitHubClientIDInvalid
+	}
+	auth.mu.Lock()
+	defer auth.mu.Unlock()
+	if auth.clientIDManaged {
+		return ErrGitHubClientIDManaged
+	}
+	if auth.connected {
+		return ErrGitHubClientIDConnected
+	}
+	if auth.clientID == clientID {
+		return nil
+	}
+	if err := writeGitHubClientConfiguration(auth.clientIDPath, githubClientConfiguration{ClientID: clientID}); err != nil {
+		return fmt.Errorf("persist GitHub OAuth configuration: %w", err)
+	}
+	auth.clientID = clientID
+	auth.flows = map[string]*githubDeviceFlow{}
+	return nil
+}
+
 func (s *Service) GitHubAuthStatus() GitHubAuthStatus {
 	if s.github == nil {
 		return GitHubAuthStatus{Source: "anonymous"}
@@ -143,10 +192,16 @@ func (s *Service) GitHubAuthStatus() GitHubAuthStatus {
 
 func (s *Service) BeginGitHubDeviceAuthorization(ctx context.Context) (GitHubDeviceStart, error) {
 	auth := s.github
-	if auth == nil || auth.provider == nil || auth.clientID == "" || auth.environment {
+	if auth == nil || auth.provider == nil || auth.environment {
 		return GitHubDeviceStart{}, ErrGitHubAuthUnavailable
 	}
-	device, err := auth.provider.BeginDeviceAuthorization(ctx, auth.clientID)
+	auth.mu.Lock()
+	clientID := auth.clientID
+	auth.mu.Unlock()
+	if clientID == "" {
+		return GitHubDeviceStart{}, ErrGitHubAuthUnavailable
+	}
+	device, err := auth.provider.BeginDeviceAuthorization(ctx, clientID)
 	if err != nil {
 		return GitHubDeviceStart{}, err
 	}
@@ -169,10 +224,15 @@ func (s *Service) BeginGitHubDeviceAuthorization(ctx context.Context) (GitHubDev
 
 func (s *Service) PollGitHubDeviceAuthorization(ctx context.Context, flowID string) (GitHubDevicePoll, error) {
 	auth := s.github
-	if auth == nil || auth.provider == nil || auth.clientID == "" || auth.environment {
+	if auth == nil || auth.provider == nil || auth.environment {
 		return GitHubDevicePoll{}, ErrGitHubAuthUnavailable
 	}
 	auth.mu.Lock()
+	clientID := auth.clientID
+	if clientID == "" {
+		auth.mu.Unlock()
+		return GitHubDevicePoll{}, ErrGitHubAuthUnavailable
+	}
 	flow, ok := auth.flows[flowID]
 	now := time.Now().UTC()
 	if !ok || (flow.accessToken == "" && now.After(flow.expiresAt)) {
@@ -196,7 +256,7 @@ func (s *Service) PollGitHubDeviceAuthorization(ctx context.Context, flowID stri
 	auth.mu.Unlock()
 
 	if accessToken == "" {
-		result, err := auth.provider.PollDeviceAuthorization(ctx, auth.clientID, deviceCode)
+		result, err := auth.provider.PollDeviceAuthorization(ctx, clientID, deviceCode)
 		if err != nil {
 			auth.finishPoll(flowID, "", false)
 			return GitHubDevicePoll{}, err
@@ -282,6 +342,34 @@ func retrySeconds(now, next time.Time) int {
 	return int((remaining + time.Second - 1) / time.Second)
 }
 
+func readGitHubClientConfiguration(path string) (githubClientConfiguration, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return githubClientConfiguration{}, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 {
+		return githubClientConfiguration{}, errors.New("GitHub OAuth configuration file must be a regular owner-only file")
+	}
+	var configuration githubClientConfiguration
+	decoder := json.NewDecoder(io.LimitReader(file, 4<<10))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&configuration); err != nil || decoder.Decode(&struct{}{}) != io.EOF || !validGitHubClientID(strings.TrimSpace(configuration.ClientID)) {
+		return githubClientConfiguration{}, errors.New("GitHub OAuth configuration file is invalid")
+	}
+	configuration.ClientID = strings.TrimSpace(configuration.ClientID)
+	return configuration, nil
+}
+
+func writeGitHubClientConfiguration(path string, configuration githubClientConfiguration) error {
+	configuration.ClientID = strings.TrimSpace(configuration.ClientID)
+	if !validGitHubClientID(configuration.ClientID) {
+		return ErrGitHubClientIDInvalid
+	}
+	return writeOwnerOnlyJSON(path, configuration)
+}
+
 func readGitHubCredential(path string) (githubCredential, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -302,7 +390,11 @@ func readGitHubCredential(path string) (githubCredential, error) {
 }
 
 func writeGitHubCredential(path string, credential githubCredential) error {
-	payload, err := json.Marshal(credential)
+	return writeOwnerOnlyJSON(path, credential)
+}
+
+func writeOwnerOnlyJSON(path string, value any) error {
+	payload, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
@@ -316,7 +408,7 @@ func writeGitHubCredential(path string, credential githubCredential) error {
 	closeErr := file.Close()
 	if writeErr != nil || syncErr != nil || closeErr != nil {
 		_ = os.Remove(temporary)
-		return errors.New("credential file could not be written")
+		return errors.New("configuration file could not be written")
 	}
 	if err := os.Rename(temporary, path); err != nil {
 		_ = os.Remove(temporary)
