@@ -735,7 +735,8 @@ export type WidgetProvider =
   | "chart"
   | "progress"
   | "timeline"
-  | "world_clock";
+  | "world_clock"
+  | "school-status-banner";
 export type DataSourceProvider =
   | "calendar"
   | "rss"
@@ -746,7 +747,83 @@ export type DataSourceProvider =
   | "weather"
   | "transit"
   | "cap_alerts"
-  | "air_quality";
+  | "air_quality"
+  | "school-status";
+export type ContentDefinitionField = {
+  key: string;
+  label: string;
+  description?: string;
+  control:
+    | "text"
+    | "multiline_text"
+    | "number"
+    | "integer"
+    | "boolean"
+    | "select"
+    | "color"
+    | "date"
+    | "datetime"
+    | "timezone"
+    | "url"
+    | "data_source"
+    | "data_source_field"
+    | "media_asset"
+    | "repeating_group";
+  required?: boolean;
+  default?: unknown;
+  minimum?: number;
+  maximum?: number;
+  minLength?: number;
+  maxLength?: number;
+  options?: { value: string; label: string }[];
+  acceptedDataSourceKinds?: string[];
+  requiredFields?: Record<string, string>;
+  dataSourceFieldTypes?: string[];
+  mediaTypes?: string[];
+  maximumItems?: number;
+  itemFields?: ContentDefinitionField[];
+};
+export type WidgetDefinition = {
+  id: WidgetProvider;
+  version: number;
+  name: string;
+  description: string;
+  category: string;
+  icon: string;
+  runtime: "native" | "web";
+  configurationSchema: { fields: ContentDefinitionField[] };
+  defaultConfiguration: Record<string, unknown>;
+  presentationSchemaVersion: number;
+  requiredCapabilities: Record<string, number>;
+  emptyStateBehavior: string;
+  legacyEditor?: boolean;
+  requiresManifestV13?: boolean;
+};
+export type DataSourceDefinition = {
+  id: DataSourceProvider;
+  version: number;
+  name: string;
+  description: string;
+  category: string;
+  icon: string;
+  configurationSchema: { fields: ContentDefinitionField[] };
+  defaultConfiguration: Record<string, unknown>;
+  outputSchema: {
+    kind: "scalar" | "records" | "time_series" | "list" | "object";
+    fields: { key: string; label: string; type: string; required?: boolean }[];
+  };
+  adapterId: string;
+  refreshBehavior: string;
+  attribution?: string;
+  legacyEditor?: boolean;
+};
+export type ContentDefinitionCatalog = {
+  revision: string;
+  compilerVersion: string;
+  fingerprint: string;
+  widgets: WidgetDefinition[];
+  dataSources: DataSourceDefinition[];
+};
 export type ProviderCatalogEntry = {
   id: WidgetProvider | DataSourceProvider;
   role: "widget" | "data_source";
@@ -817,7 +894,8 @@ export type Widget = {
     | ChartWidgetConfig
     | ProgressWidgetConfig
     | TimelineWidgetConfig
-    | WorldClockWidgetConfig;
+    | WorldClockWidgetConfig
+    | Record<string, unknown>;
 };
 export type WidgetPreset =
   | "leaderboard"
@@ -848,7 +926,8 @@ export type WidgetInput = {
     | ChartWidgetConfig
     | ProgressWidgetConfig
     | TimelineWidgetConfig
-    | WorldClockWidgetConfig;
+    | WorldClockWidgetConfig
+    | Record<string, unknown>;
 };
 export type DataSourceField = {
   key: string;
@@ -868,7 +947,8 @@ export type DataSource = {
     | WeatherSourceConfig
     | TransitSourceConfig
     | CAPAlertsSourceConfig
-    | AirQualitySourceConfig;
+    | AirQualitySourceConfig
+    | Record<string, unknown>;
   status: string;
   cachedRecordCount: number;
   createdAt: string;
@@ -888,7 +968,8 @@ export type DataSourceDetail = {
     | WeatherSourceConfig
     | TransitSourceConfig
     | CAPAlertsSourceConfig
-    | AirQualitySourceConfig;
+    | AirQualitySourceConfig
+    | Record<string, unknown>;
   creator?: { id: string; name: string };
   createdAt: string;
   updatedAt: string;
@@ -911,7 +992,8 @@ export type DataSourceInput = {
     | WeatherSourceConfig
     | TransitSourceConfig
     | CAPAlertsSourceConfig
-    | AirQualitySourceConfig;
+    | AirQualitySourceConfig
+    | Record<string, unknown>;
 };
 export type DataSourceListResult = {
   items: DataSource[];
