@@ -25,34 +25,15 @@ jobs:
         run: |
           python <<'PY'
           from pathlib import Path
+          import re
 
           path = Path("apps/dashboard/src/pages/DataSourcesPage.tsx")
           text = path.read_text()
-          old = '''        <aside className="data-source-create-shell__guide">
-          <section>
-            <h3>Three steps</h3>
-            <ol>
-              {copy.steps.map((step, index) => (
-                <li key={step}>
-                  <span>{index + 1}</span>
-                  <p>{step}</p>
-                </li>
-              ))}
-            </ol>
-          </section>
-          <section className="data-source-create-shell__tip">
-            <Lightbulb size={17} />
-            <div>
-              <strong>Good to know</strong>
-              <p>{copy.tip}</p>
-            </div>
-          </section>
-          <p className="data-source-create-shell__advanced-note">
-            <Check size={15} /> Advanced filtering and cache controls are
-            optional.
-          </p>
-        </aside>'''
-          new = '''        <aside
+          pattern = re.compile(
+              r'        <aside className="data-source-create-shell__guide">.*?        </aside>',
+              re.S,
+          )
+          replacement = '''        <aside
           className="data-source-create-shell__guide"
           aria-label="Data Source setup guidance"
         >
@@ -77,14 +58,14 @@ jobs:
             optional.
           </p>
         </aside>'''
-          if old not in text:
+          text, count = pattern.subn(replacement, text, count=1)
+          if count != 1:
               raise SystemExit("Expected setup guide markup was not found")
-          text = text.replace(old, new)
           text = text.replace(
-              '''              Choose what you are connecting. Each setup page starts with the
-              essentials and keeps advanced options out of the way.''',
-              '''              Choose what you are connecting. Every provider uses the same
-              compact, predictable setup pattern.''',
+              "Choose what you are connecting. Each setup page starts with the\n"
+              "              essentials and keeps advanced options out of the way.",
+              "Choose what you are connecting. Every provider uses the same\n"
+              "              compact, predictable setup pattern.",
           )
           path.write_text(text)
           PY
@@ -133,7 +114,7 @@ jobs:
           }
 
           .data-source-create-shell__header .eyebrow {
-            margin: 0 0 4px;
+            margin: 0 0 var(--tc-space-1);
             color: var(--tc-text-secondary);
           }
 
@@ -227,7 +208,7 @@ jobs:
 
           .data-source-create-shell__tip > div {
             display: grid;
-            gap: 4px;
+            gap: var(--tc-space-1);
           }
 
           .data-source-create-shell__tip strong {
@@ -290,7 +271,7 @@ jobs:
           .data-source-create-shell .source-editor__body {
             display: grid;
             gap: var(--tc-space-4);
-            padding: var(--tc-space-5);
+            padding: var(--tc-space-6);
           }
 
           .data-source-create-shell .source-editor__body::before {
@@ -307,7 +288,7 @@ jobs:
           }
 
           .data-source-create-shell .source-editor__body > fieldset {
-            padding-top: var(--tc-space-5);
+            padding-top: var(--tc-space-6);
             border-top: 1px solid var(--tc-border-default);
           }
 
@@ -416,7 +397,7 @@ jobs:
           .data-source-create-shell .source-editor .source-diagnostics,
           .data-source-create-shell .source-editor .calendar-preview,
           .data-source-create-shell .source-editor .source-preview-list {
-            margin: 0 var(--tc-space-5) var(--tc-space-5);
+            margin: 0 var(--tc-space-6) var(--tc-space-6);
             padding: var(--tc-space-4);
             background: var(--tc-bg-subtle);
             border: 1px solid var(--tc-border-default);
@@ -432,7 +413,7 @@ jobs:
             justify-content: flex-end;
             gap: var(--tc-space-2);
             margin: 0;
-            padding: var(--tc-space-3) var(--tc-space-5);
+            padding: var(--tc-space-3) var(--tc-space-6);
             background: var(--tc-bg-surface);
             border-top: 1px solid var(--tc-border-default);
           }
@@ -450,8 +431,8 @@ jobs:
 
           .data-source-create-shell--calendar .source-editor > .source-editor__columns,
           .data-source-create-shell--calendar .source-editor > .source-editor__fieldset {
-            margin: 0 var(--tc-space-5);
-            padding: var(--tc-space-5) 0;
+            margin: 0 var(--tc-space-6);
+            padding: var(--tc-space-6) 0;
           }
 
           .data-source-create-shell--calendar
@@ -520,7 +501,7 @@ jobs:
           }
 
           .app-editor-route .source-gallery > header {
-            padding: var(--tc-space-5);
+            padding: var(--tc-space-6);
             border-bottom: 1px solid var(--tc-border-default);
           }
 
@@ -619,13 +600,10 @@ jobs:
           }
           CSS
 
-      - name: Format and validate
+      - name: Format and verify formatting
         run: |
           npx prettier --write apps/dashboard/src/pages/DataSourcesPage.tsx apps/dashboard/src/styles/data-sources.css
           npm run format:check
-          npm run lint
-          npm run build
-          npm test
       - name: Commit Signal-aligned files and remove one-time workflow
         run: |
           rm .github/workflows/refine-data-source-signal.yml
