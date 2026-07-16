@@ -328,10 +328,10 @@ func updateScreenStateInterval(r *http.Request, tx pgx.Tx, screenID uuid.UUID, e
 
 func closeExpiredPlaybackSessions(r *http.Request, tx pgx.Tx, screenID uuid.UUID, now time.Time) error {
 	_, err := tx.Exec(r.Context(), `
-		UPDATE playback_sessions SET ended_at=LEAST($2,started_at+interval '6 hours'),result='unknown',
-			actual_duration_ms=GREATEST(0,EXTRACT(EPOCH FROM (LEAST($2,started_at+interval '6 hours')-started_at))*1000)::bigint,
+		UPDATE playback_sessions SET ended_at=LEAST($2::timestamptz,started_at+interval '6 hours'),result='unknown',
+			actual_duration_ms=GREATEST(0,EXTRACT(EPOCH FROM (LEAST($2::timestamptz,started_at+interval '6 hours')-started_at))*1000)::bigint,
 			metadata=metadata||'{"closedReason":"bounded_timeout"}'::jsonb,updated_at=now()
-		WHERE screen_id=$1 AND ended_at IS NULL AND started_at < $2-interval '6 hours'`, screenID, now)
+		WHERE screen_id=$1 AND ended_at IS NULL AND started_at < $2::timestamptz-interval '6 hours'`, screenID, now)
 	return err
 }
 
