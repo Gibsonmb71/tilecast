@@ -24,7 +24,7 @@ AAPT="$BUILD_TOOLS/aapt"
 # Capture complete command output before parsing it. Early-closing consumers such
 # as `head` can send SIGPIPE upstream and fail an otherwise successful release
 # script when `set -o pipefail` is enabled.
-VERIFY_OUTPUT="$("$APKSIGNER" verify --verbose --print-certs "$APK")"
+VERIFY_OUTPUT="$("$APKSIGNER" verify --verbose --print-certs "$APK" 2>&1)"
 printf '%s\n' "$VERIFY_OUTPUT"
 BADGING_OUTPUT="$("$AAPT" dump badging "$APK")"
 
@@ -45,7 +45,7 @@ if command -v sha256sum >/dev/null 2>&1; then
 else
 	APK_SHA="$(shasum -a 256 "$APK" | awk '{print $1}')"
 fi
-CERT_SHA="$(printf '%s\n' "$VERIFY_OUTPUT" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+CERT_SHA="$(printf '%s\n' "$VERIFY_OUTPUT" | bash "$ROOT/scripts/extract-apksigner-sha256.sh")"
 
 require_equal() {
 	local label="$1"
