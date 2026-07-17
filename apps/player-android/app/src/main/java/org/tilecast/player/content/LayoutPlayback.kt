@@ -1,5 +1,6 @@
 package org.tilecast.player.content
 
+import android.os.SystemClock
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -10,7 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -21,6 +22,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import org.tilecast.player.activity.PlaybackActivityReporter
+import org.tilecast.player.network.ManifestAsset
 import org.tilecast.player.network.ManifestItem
 import org.tilecast.player.network.ManifestLayout
 import org.tilecast.player.network.ManifestPlaylist
@@ -96,7 +98,7 @@ fun FullscreenLayoutPlayback(
                 Box(modifier) {
                     when (placement.type) {
                         "playlistZone" -> session.content.manifest.playlists.firstOrNull { it.id == placement.playlistId }?.let { playlist ->
-                            IndependentPlaylistZone(session, playlist, placement.id, placement.playback?.muted ?: true, onError, onWebsiteStatus, onWidgetStatus, onProgress, activityReporter)
+                            PlaylistZone(session, playlist, placement.id, placement.playback?.muted ?: true, onError, onWebsiteStatus, onWidgetStatus, onProgress, activityReporter)
                         }
                         "widget" -> widgets[placement.widgetId]?.let { widget ->
                             val item = ManifestItem("layout-${placement.id}", widget.assetId, assetType = "widget", durationMs = Long.MAX_VALUE, fitMode = placement.playback?.fit ?: "contain", transition = "none", audioEnabled = !(placement.playback?.muted ?: true), volume = 1f, deliveryPolicy = "stream")
@@ -104,7 +106,7 @@ fun FullscreenLayoutPlayback(
                         }
                         "asset" -> session.content.manifest.assets.firstOrNull { it.assetId == placement.assetId }?.let { asset ->
                             val item = ManifestItem("layout-${placement.id}", asset.assetId, asset.variantId, if (asset.mimeType.startsWith("video/")) "video" else "image", if (asset.mimeType.startsWith("image/")) Long.MAX_VALUE else null, placement.playback?.fit ?: "contain", "none", !(placement.playback?.muted ?: true), 1f, deliveryPolicy = "download")
-                            RenderedItem(item, asset, null, null, session, 0, {}, onError, onWebsiteStatus, onWidgetStatus, onProgress, activityReporter, placement.id)
+                            LayoutAssetItem(session, item, asset, placement.id, onError, onWebsiteStatus, onWidgetStatus, onProgress, activityReporter)
                         }
                     }
                 }
@@ -114,15 +116,143 @@ fun FullscreenLayoutPlayback(
 }
 
 @Composable
-private fun IndependentPlaylistZone(session: PlaybackSession, playlist: ManifestPlaylist, placementId: String, muted: Boolean, onError: (String) -> Unit, onWebsiteStatus: (WebsitePlaybackStatus) -> Unit, onWidgetStatus: (WidgetPlaybackStatus) -> Unit, onProgress: () -> Unit, activityReporter: PlaybackActivityReporter?) {
+private fun PlaylistZone(
+    session: PlaybackSession,
+    playlist: ManifestPlaylist,
+    placementId: String,
+    muted: Boolean,
+    onError: (String) -> Unit,
+    onWebsiteStatus: (WebsitePlaybackStatus) -> Unit,
+    onWidgetStatus: (WidgetPlaybackStatus) -> Unit,
+    onProgress: () -> Unit,
+    activityReporter: PlaybackActivityReporter?,
+) {
     if (playlist.items.isEmpty()) return
-    var index by remember(playlist.id, playlist.revision) { mutableIntStateOf(0) }
-    val sourceItem = playlist.items[index.coerceIn(0, playlist.items.lastIndex)]
+    val syncGroup = session.content.manifest.syncGroup
+    val synchronizedTimeline = remember(
+        playlist.id,
+        playlist.revision,
+        syncGroup?.playbackEpoch,
+        session.startedAtElapsedRealtimeMs,
+    ) {
+        syncGroup?.playbackEpoch?.let { value -> runCatching { Instant.parse(value) }.getOrNull() }?.let { anchor ->
+            SynchronizedPlaybackTimeline.fromAnchor(
+                playlist = playlist,
+                assets = session.content.manifest.assets,
+                anchor = anchor,
+                serverClockOffsetSeconds = session.content.serverClockOffsetSeconds,
+                startedAtElapsedRealtimeMs = session.startedAtElapsedRealtimeMs,
+                startedAtWallClock = session.startedAtWallClock,
+            )
+        }
+    }
+    var cursor by remember(playlist.id, playlist.revision) { mutableStateOf(PlaybackCursor(0, 0)) }
+    var synchronizedOffsetMs by remember(playlist.id, playlist.revision) { mutableStateOf(0L) }
+    LaunchedEffect(synchronizedTimeline) {
+        val timeline = synchronizedTimeline ?: return@LaunchedEffect
+        while (true) {
+            val expected = timeline.positionAt(SystemClock.elapsedRealtime())
+            if (cursor != expected.cursor) cursor = expected.cursor
+            if (synchronizedOffsetMs != expected.offsetMs) synchronizedOffsetMs = expected.offsetMs
+            kotlinx.coroutines.delay(100)
+        }
+    }
+    val sourceItem = playlist.items[cursor.index.coerceIn(0, playlist.items.lastIndex)]
     val item = if (muted) sourceItem.copy(audioEnabled = false, volume = 0f) else sourceItem
     val asset = item.variantId?.let { id -> session.content.manifest.assets.firstOrNull { it.variantId == id } }
     val website = session.content.manifest.websites.firstOrNull { it.assetId == item.assetId }
     val widget = session.content.manifest.widgets.firstOrNull { it.assetId == item.assetId }
-    RenderedItem(item, asset, website, widget, session, 0, { index = (index + 1) % playlist.items.size }, { onError(it); index = (index + 1) % playlist.items.size }, onWebsiteStatus, onWidgetStatus, onProgress, activityReporter, placementId)
+    fun advance() {
+        if (synchronizedTimeline == null) cursor = nextPlaybackCursor(cursor, playlist.items.size)
+    }
+    key(item.id, cursor.cycle) {
+        RenderedItem(
+            item,
+            asset,
+            website,
+            widget,
+            session,
+            if (synchronizedTimeline != null) synchronizedOffsetMs else 0,
+            { advance() },
+            { onError(it); advance() },
+            onWebsiteStatus,
+            onWidgetStatus,
+            onProgress,
+            activityReporter,
+            placementId,
+            synchronizedPositionMs = synchronizedOffsetMs.takeIf { synchronizedTimeline != null },
+        )
+    }
+}
+
+@Composable
+private fun LayoutAssetItem(
+    session: PlaybackSession,
+    item: ManifestItem,
+    asset: ManifestAsset,
+    placementId: String,
+    onError: (String) -> Unit,
+    onWebsiteStatus: (WebsitePlaybackStatus) -> Unit,
+    onWidgetStatus: (WidgetPlaybackStatus) -> Unit,
+    onProgress: () -> Unit,
+    activityReporter: PlaybackActivityReporter?,
+) {
+    val syncGroup = session.content.manifest.syncGroup
+    if (!asset.mimeType.startsWith("video/") || syncGroup == null) {
+        RenderedItem(item, asset, null, null, session, 0, {}, onError, onWebsiteStatus, onWidgetStatus, onProgress, activityReporter, placementId)
+        return
+    }
+    val playlist = remember(item.id, asset.variantId) {
+        ManifestPlaylist("layout-asset-$placementId", 1, "Layout asset", listOf(item))
+    }
+    val synchronizedTimeline = remember(
+        playlist.id,
+        syncGroup.playbackEpoch,
+        session.startedAtElapsedRealtimeMs,
+    ) {
+        runCatching { Instant.parse(syncGroup.playbackEpoch) }.getOrNull()?.let { anchor ->
+            SynchronizedPlaybackTimeline.fromAnchor(
+                playlist = playlist,
+                assets = session.content.manifest.assets,
+                anchor = anchor,
+                serverClockOffsetSeconds = session.content.serverClockOffsetSeconds,
+                startedAtElapsedRealtimeMs = session.startedAtElapsedRealtimeMs,
+                startedAtWallClock = session.startedAtWallClock,
+            )
+        }
+    }
+    if (synchronizedTimeline == null) {
+        RenderedItem(item, asset, null, null, session, 0, {}, onError, onWebsiteStatus, onWidgetStatus, onProgress, activityReporter, placementId)
+        return
+    }
+    var cursor by remember(playlist.id) { mutableStateOf(PlaybackCursor(0, 0)) }
+    var synchronizedOffsetMs by remember(playlist.id) { mutableStateOf(0L) }
+    LaunchedEffect(synchronizedTimeline) {
+        while (true) {
+            val expected = synchronizedTimeline.positionAt(SystemClock.elapsedRealtime())
+            if (cursor != expected.cursor) cursor = expected.cursor
+            if (synchronizedOffsetMs != expected.offsetMs) synchronizedOffsetMs = expected.offsetMs
+            kotlinx.coroutines.delay(100)
+        }
+    }
+    key(item.id, cursor.cycle) {
+        RenderedItem(
+            item,
+            asset,
+            null,
+            null,
+            session,
+            synchronizedOffsetMs,
+            {},
+            onError,
+            onWebsiteStatus,
+            onWidgetStatus,
+            onProgress,
+            activityReporter,
+            placementId,
+            synchronizedPositionMs = synchronizedOffsetMs,
+        )
+    }
 }
 
 @Composable
