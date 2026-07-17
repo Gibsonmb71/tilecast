@@ -171,32 +171,30 @@ jobs:
 
       - name: Verify permanent Android signing certificate
         env:
+          ANDROID_BUILD_TOOLS_VERSION: 35.0.0
           EXPECTED_CERT_SHA256: e718f5807d11c45c54477ab57c067516ddb1ed8a74194b4f46f882db16905733
         run: |
           set -euo pipefail
 
           apk="$RUNNER_TEMP/tilecast-player-release/tilecast-player.apk"
-          apksigner="$(
-            find "$ANDROID_HOME/build-tools" -type f -name apksigner \
-              | sort -V \
-              | tail -1
-          )"
+          apksigner="$ANDROID_HOME/build-tools/$ANDROID_BUILD_TOOLS_VERSION/apksigner"
 
-          if [ -z "$apksigner" ]; then
-            echo "Could not find apksigner." >&2
+          if [ ! -x "$apksigner" ]; then
+            echo "Could not find pinned apksigner at $apksigner." >&2
             exit 1
           fi
 
-          actual="$(
-            "$apksigner" verify --print-certs "$apk" \
-              | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' \
-              | head -1 \
-              | tr '[:upper:]' '[:lower:]'
-          )"
+          verify_output="$("$apksigner" verify --verbose --print-certs "$apk" 2>&1)"
+          printf '%s\n' "$verify_output"
+          actual="$(printf '%s\n' "$verify_output" | bash scripts/extract-apksigner-sha256.sh)"
 
           echo "Expected certificate: $EXPECTED_CERT_SHA256"
-          echo "Actual certificate:   $actual"
+          echo "Actual certificate:   ${actual:-<empty>}"
 
+          if ! [[ "$actual" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "Could not parse a valid Android signing certificate digest." >&2
+            exit 1
+          fi
           if [ "$actual" != "$EXPECTED_CERT_SHA256" ]; then
             echo "Android signing certificate changed unexpectedly." >&2
             exit 1
