@@ -83,7 +83,7 @@ private fun TypedRecord.toStructuredRecord(selectionField: String): StructuredRe
 
 private fun Map<String, String>.toStructuredRecord(recordId: String, selectionField: String): StructuredRecord {
     val standardDate = get("date").orEmpty()
-    val selectionDate = selectionField.takeIf(String::isNotBlank)?.let(::get).orEmpty()
+    val selectionDate = if (selectionField.isNotBlank()) get(selectionField).orEmpty() else ""
     return StructuredRecord(
         id = recordId,
         title = get("title").orEmpty(),
