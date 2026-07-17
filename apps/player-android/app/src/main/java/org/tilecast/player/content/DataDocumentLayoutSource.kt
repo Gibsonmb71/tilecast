@@ -11,11 +11,18 @@ import org.tilecast.player.network.ManifestDataSource
 import org.tilecast.player.network.StructuredPreparedData
 import org.tilecast.player.network.StructuredRecord
 import org.tilecast.player.network.StructuredSourceConfig
+import org.tilecast.player.network.TypedRecord
+import org.tilecast.player.network.TypedRecordData
 
 internal fun ManifestDataSource.toLayoutStructuredSource(): StructuredSourceConfig? {
     val dataset = dataDocument?.primaryRecordDataset()
     if (dataset != null) return dataset.toLayoutStructuredSource()
     if (configuration.isEmpty()) return null
+    if ("records" in configuration) {
+        return runCatching {
+            Json.decodeFromJsonElement<TypedRecordData>(configuration).toLayoutStructuredSource()
+        }.getOrNull()
+    }
     return runCatching {
         Json.decodeFromJsonElement<StructuredSourceConfig>(configuration)
     }.getOrNull()
@@ -51,20 +58,42 @@ private fun DocumentDataset.toLayoutStructuredSource(): StructuredSourceConfig {
     )
 }
 
+private fun TypedRecordData.toLayoutStructuredSource(): StructuredSourceConfig {
+    val selection = dateSelection ?: DateSelection()
+    val selectionField = dateField.takeIf { selection.enabled }.orEmpty()
+    return StructuredSourceConfig(
+        dateSelection = selection,
+        data = StructuredPreparedData(
+            records = records.map { it.toStructuredRecord(selectionField) },
+            cachedAt = cachedAt,
+            staleAt = staleAt,
+            usingCachedData = usingCachedData,
+            unavailable = unavailable,
+        ),
+    )
+}
+
 private fun DocumentRecord.toStructuredRecord(selectionField: String): StructuredRecord {
     val converted = values.mapValues { (_, value) -> value.toDisplayString() }
-    val standardDate = converted["date"].orEmpty()
-    val selectionDate = selectionField.takeIf(String::isNotBlank)?.let(converted::get).orEmpty()
+    return converted.toStructuredRecord(id, selectionField)
+}
+
+private fun TypedRecord.toStructuredRecord(selectionField: String): StructuredRecord =
+    values.toStructuredRecord(id, selectionField)
+
+private fun Map<String, String>.toStructuredRecord(recordId: String, selectionField: String): StructuredRecord {
+    val standardDate = get("date").orEmpty()
+    val selectionDate = selectionField.takeIf(String::isNotBlank)?.let(::get).orEmpty()
     return StructuredRecord(
-        id = id,
-        title = converted["title"].orEmpty(),
-        subtitle = converted["subtitle"].orEmpty(),
+        id = recordId,
+        title = get("title").orEmpty(),
+        subtitle = get("subtitle").orEmpty(),
         date = selectionDate.ifBlank { standardDate },
-        author = converted["author"].orEmpty(),
-        description = converted["description"].orEmpty(),
-        imageUrl = converted["imageUrl"].orEmpty().ifBlank { converted["image"].orEmpty() },
-        link = converted["link"].orEmpty(),
-        values = converted,
+        author = get("author").orEmpty(),
+        description = get("description").orEmpty(),
+        imageUrl = get("imageUrl").orEmpty().ifBlank { get("image").orEmpty() },
+        link = get("link").orEmpty(),
+        values = this,
     )
 }
 
