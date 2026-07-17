@@ -148,7 +148,7 @@ internal fun layoutFontFamily(name: String): FontFamily = when (name) {
 
 internal fun resolveLayoutBinding(binding: org.tilecast.player.network.LayoutBinding, source: StructuredSourceConfig, now: Instant): String {
     val record = selectDateAwareRecords(source, now).firstOrNull()
-    val raw = record?.let { when (binding.field) { "title" -> it.title; "subtitle" -> it.subtitle; "date" -> it.date; "author" -> it.author; "description" -> it.description; else -> it.values[binding.field] } }.orEmpty()
+    val raw = record?.let { when (binding.field) { "title" -> it.title; "subtitle" -> it.subtitle; "date" -> it.values["date"] ?: it.date; "author" -> it.author; "description" -> it.description; else -> it.values[binding.field] } }.orEmpty()
     if (raw.isBlank()) return binding.fallbackText
     val formatted = when (binding.format) {
         "date-short", "date-long" -> runCatching { LocalDate.parse(raw.take(10)).format(DateTimeFormatter.ofLocalizedDate(if (binding.format == "date-long") FormatStyle.LONG else FormatStyle.SHORT)) }.getOrDefault(raw)
