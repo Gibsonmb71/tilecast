@@ -8,6 +8,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Test
 import org.tilecast.player.network.DataDocument
+import org.tilecast.player.network.DateSelection
 import org.tilecast.player.network.DocumentDataset
 import org.tilecast.player.network.DocumentDateSelection
 import org.tilecast.player.network.DocumentRecord
@@ -17,6 +18,8 @@ import org.tilecast.player.network.ManifestDataSource
 import org.tilecast.player.network.StructuredPreparedData
 import org.tilecast.player.network.StructuredRecord
 import org.tilecast.player.network.StructuredSourceConfig
+import org.tilecast.player.network.TypedRecord
+import org.tilecast.player.network.TypedRecordData
 
 class LayoutDataDocumentSourceTest {
     private val now = Instant.parse("2026-08-03T16:00:00Z")
@@ -57,6 +60,71 @@ class LayoutDataDocumentSourceTest {
         val structured = source.toLayoutStructuredSource()!!
 
         assertEquals("Welcome back", resolveLayoutBinding(LayoutBinding(source.id, "title"), structured, now))
+    }
+
+    @Test
+    fun v12TypedCsvConfigurationResolvesStandardAndCustomFields() {
+        val typed = TypedRecordData(
+            records = listOf(
+                TypedRecord(
+                    id = "lunch",
+                    values = mapOf(
+                        "title" to "Lunch menu",
+                        "option_1" to "Chicken tenders",
+                    ),
+                ),
+            ),
+            cachedAt = "2026-08-03T15:00:00Z",
+            staleAt = "2026-08-10T15:00:00Z",
+        )
+        val source = ManifestDataSource(
+            id = "csv-source",
+            name = "CSV source",
+            provider = "csv",
+            configuration = Json.encodeToJsonElement(TypedRecordData.serializer(), typed).jsonObject,
+        )
+
+        val structured = source.toLayoutStructuredSource()!!
+
+        assertEquals("Lunch menu", resolveLayoutBinding(LayoutBinding(source.id, "title"), structured, now))
+        assertEquals("Chicken tenders", resolveLayoutBinding(LayoutBinding(source.id, "option_1"), structured, now))
+    }
+
+    @Test
+    fun v12TypedCsvConfigurationPreservesDateSelection() {
+        val typed = TypedRecordData(
+            records = listOf(
+                TypedRecord(
+                    id = "monday",
+                    values = mapOf(
+                        "title" to "Monday menu",
+                        "date" to "2026-08-01",
+                        "service_date" to "2026-08-03",
+                    ),
+                ),
+                TypedRecord(
+                    id = "tuesday",
+                    values = mapOf(
+                        "title" to "Tuesday menu",
+                        "date" to "2026-08-02",
+                        "service_date" to "2026-08-04",
+                    ),
+                ),
+            ),
+            dateSelection = DateSelection(enabled = true, timezone = "UTC", mode = "today"),
+            dateField = "service_date",
+        )
+        val source = ManifestDataSource(
+            id = "csv-source",
+            name = "CSV source",
+            provider = "csv",
+            configuration = Json.encodeToJsonElement(TypedRecordData.serializer(), typed).jsonObject,
+        )
+
+        val structured = source.toLayoutStructuredSource()!!
+
+        assertEquals("Monday menu", resolveLayoutBinding(LayoutBinding(source.id, "title"), structured, now))
+        assertEquals("2026-08-01", resolveLayoutBinding(LayoutBinding(source.id, "date"), structured, now))
     }
 
     @Test
