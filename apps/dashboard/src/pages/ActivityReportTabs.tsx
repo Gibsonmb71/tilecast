@@ -167,14 +167,14 @@ export function ProofTab({
               <small>Needs review</small>
             </article>
           </div>
-          {(summary.data?.items.length ?? 0) > 0 && (
+          {(summary.data?.items?.length ?? 0) > 0 && (
             <details className="activity-summary-breakdown">
               <summary>
                 View {dimensionLabel(dimension)} breakdown
                 <ChevronRight size={15} aria-hidden="true" />
               </summary>
               <div className="activity-summary-table">
-                {summary.data?.items.slice(0, 12).map((item) => (
+                {summary.data?.items?.slice(0, 12).map((item) => (
                   <div key={item.key}>
                     <span>
                       <strong>{item.label}</strong>
@@ -596,7 +596,7 @@ export function EventsTab({
             </tr>
           </thead>
           <tbody>
-            {query.data?.items.map((item) => (
+            {query.data?.items?.map((item) => (
               <tr key={item.id}>
                 <td>
                   <ResultBadge value={item.severity} />
@@ -651,7 +651,7 @@ export function EventsTab({
           </tbody>
         </table>
       </div>
-      {!query.data?.items.length && (
+      {!query.data?.items?.length && (
         <EmptyState message="No technical screen events matched these filters." />
       )}
       <ActivityPagination
@@ -704,7 +704,7 @@ export function AuditTab({
             </tr>
           </thead>
           <tbody>
-            {query.data?.items.map((item) => (
+            {query.data?.items?.map((item) => (
               <tr key={item.id}>
                 <td>
                   <time>{formatWhen(item.timestamp)}</time>
@@ -745,7 +745,7 @@ export function AuditTab({
           </tbody>
         </table>
       </div>
-      {!query.data?.items.length && (
+      {!query.data?.items?.length && (
         <EmptyState message="No administrative changes matched these filters." />
       )}
       <ActivityPagination

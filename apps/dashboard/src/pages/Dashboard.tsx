@@ -19,6 +19,7 @@ import { useQuery } from "@tanstack/react-query";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { useAuth } from "../auth/AuthProvider";
 import { Brand } from "../components/Brand";
+import { RouteErrorBoundary } from "../components/RouteErrorBoundary";
 import { api } from "../api/client";
 import { OperationsDashboard } from "./OperationsDashboard";
 
@@ -204,7 +205,9 @@ export function DashboardShell() {
           <h1>{title}</h1>
         </header>
         <main className="workspace__content">
-          <Outlet />
+          <RouteErrorBoundary key={location.pathname}>
+            <Outlet />
+          </RouteErrorBoundary>
         </main>
       </div>
     </div>

@@ -43,6 +43,9 @@ export function OverviewTab({
   if (query.error) return <ErrorNotice error={query.error} />;
   const data = query.data;
   if (!data) return null;
+  // Older servers marshal empty Go slices as null.
+  const needsAttention = data.needsAttention ?? [];
+  const timeline = data.timeline ?? [];
   const cards = [
     [
       "Screens reporting normally",
@@ -88,11 +91,11 @@ export function OverviewTab({
               <p>Current unresolved operational issues.</p>
             </div>
           </header>
-          {data.needsAttention.length === 0 ? (
+          {needsAttention.length === 0 ? (
             <EmptyState message="No unresolved Activity issues in this range." />
           ) : (
             <div className="activity-attention-list">
-              {data.needsAttention.map((item) => (
+              {needsAttention.map((item) => (
                 <Link
                   key={`${item.screenId}-${item.kind}`}
                   to={`/screens/${item.screenId}?tab=activity`}
@@ -118,11 +121,11 @@ export function OverviewTab({
               </p>
             </div>
           </header>
-          {data.timeline.length === 0 ? (
+          {timeline.length === 0 ? (
             <EmptyState message="No high-value events occurred in this range." />
           ) : (
             <ol className="activity-timeline">
-              {data.timeline.map((item) => (
+              {timeline.map((item) => (
                 <li key={`${item.domain}-${item.id}`}>
                   <time>{formatWhen(item.timestamp)}</time>
                   <span
