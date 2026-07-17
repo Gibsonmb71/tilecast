@@ -118,21 +118,60 @@ class CommandCoordinatorTest {
         assertFalse(store.isCompleted(command.idempotencyKey))
     }
 
-    private fun command() = PlayerCommand(
-        id = "00000000-0000-0000-0000-000000000001",
+    @Test
+    fun malformedExpiryDoesNotBlockOtherCommands() = runTest {
+        val broken = command(id = "1", idempotencyKey = "key-1", expiresAt = "not-a-timestamp")
+        val healthy = command(id = "2", idempotencyKey = "key-2")
+        val transport = FakeCommandTransport(broken, healthy)
+        val coordinator = CommandCoordinator(transport, FakeCommandStateStore())
+        val handledIds = mutableListOf<String>()
+
+        coordinator.fetchAndRun("https://tilecast", "credential") { command ->
+            handledIds += command.id
+            success(command)
+        }
+
+        // The unparseable expiry is treated as still valid; both commands run.
+        assertEquals(listOf("1", "2"), handledIds)
+        assertEquals(2, transport.results)
+    }
+
+    @Test
+    fun expiredCommandIsSkippedWithoutAcknowledgement() = runTest {
+        val expired = command(id = "1", idempotencyKey = "key-1", expiresAt = Instant.now().minus(1, ChronoUnit.MINUTES).toString())
+        val healthy = command(id = "2", idempotencyKey = "key-2")
+        val transport = FakeCommandTransport(expired, healthy)
+        val coordinator = CommandCoordinator(transport, FakeCommandStateStore())
+        val handledIds = mutableListOf<String>()
+
+        coordinator.fetchAndRun("https://tilecast", "credential") { command ->
+            handledIds += command.id
+            success(command)
+        }
+
+        assertEquals(listOf("2"), handledIds)
+        assertEquals(1, transport.acknowledgements)
+    }
+
+    private fun command(
+        id: String = "00000000-0000-0000-0000-000000000001",
+        idempotencyKey: String = "00000000-0000-0000-0000-000000000002",
+        expiresAt: String = Instant.now().plus(10, ChronoUnit.MINUTES).toString(),
+    ) = PlayerCommand(
+        id = id,
         type = "sync_now",
         payload = buildJsonObject {},
-        idempotencyKey = "00000000-0000-0000-0000-000000000002",
+        idempotencyKey = idempotencyKey,
         state = "delivered",
         createdAt = Instant.now().minus(1, ChronoUnit.MINUTES).toString(),
-        expiresAt = Instant.now().plus(10, ChronoUnit.MINUTES).toString(),
+        expiresAt = expiresAt,
     )
 
     private fun success(command: PlayerCommand) =
         CommandOutcome(true, "${command.type}_completed", "Command completed")
 }
 
-private class FakeCommandTransport(private val command: PlayerCommand) : CommandTransport {
+private class FakeCommandTransport(private vararg val queued: PlayerCommand) : CommandTransport {
     var listFailure: Exception? = null
     var resultFailure: Exception? = null
     var acknowledgements = 0
@@ -140,7 +179,7 @@ private class FakeCommandTransport(private val command: PlayerCommand) : Command
 
     override suspend fun commands(server: String, credential: String): PlayerCommandList {
         listFailure?.let { throw it }
-        return PlayerCommandList(listOf(command))
+        return PlayerCommandList(queued.toList())
     }
 
     override suspend fun acknowledge(server: String, credential: String, commandID: String) {

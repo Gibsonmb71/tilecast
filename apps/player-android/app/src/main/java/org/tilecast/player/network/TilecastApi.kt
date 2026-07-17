@@ -14,7 +14,10 @@ import java.io.FileOutputStream
 import java.security.MessageDigest
 
 class TilecastApi(
-    private val client: OkHttpClient = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS).build(),
+    // pingInterval makes OkHttp probe the socket and surface a silently dead TCP connection
+    // (Wi-Fi drop, NAT timeout) as onFailure, which drives the reconnect path. Without it a
+    // dead socket looks connected indefinitely and the player stops receiving pushes.
+    private val client: OkHttpClient = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS).pingInterval(30, TimeUnit.SECONDS).build(),
     private val json: Json = Json { ignoreUnknownKeys = true; encodeDefaults = true },
 ) {
     private val mediaType = "application/json".toMediaType()

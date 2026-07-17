@@ -89,7 +89,9 @@ internal fun effectiveDurationMs(item:ManifestItem,assets:List<ManifestAsset>):L
     val widget=session.content.manifest.widgets.firstOrNull{it.assetId==item.assetId}
     val layout=item.layoutId?.let{id->session.content.manifest.layouts.firstOrNull{it.id==id}}
     val asset = item.variantId?.let{variant->session.content.manifest.assets.firstOrNull { it.variantId == variant }}
-    LaunchedEffect(item.id){onBoundary(item.id,item.assetId)}
+    // Keyed on the cycle too: a single-item playlist repeats the same item.id, and the
+    // boundary is what activates a pending manifest and feeds the stall watchdog.
+    LaunchedEffect(item.id,cursor.cycle){onBoundary(item.id,item.assetId)}
     fun advance(failed: Boolean = false) {
         consecutiveFailures = if (failed) consecutiveFailures + 1 else 0
         cursor = nextPlaybackCursor(cursor, playlist.items.size)
@@ -138,7 +140,14 @@ internal fun effectiveDurationMs(item:ManifestItem,assets:List<ManifestAsset>):L
 		if (bitmap == null) bitmap = runCatching { withContext(Dispatchers.IO) {
             session.content.localFiles[variantId]?.let { BitmapFactory.decodeFile(it) } ?: OkHttpClient().newCall(Request.Builder().url(session.serverUrl + asset.downloadPath).header("Authorization", "Bearer ${session.credential}").build()).execute().use { response -> if (!response.isSuccessful) error("Image stream unavailable"); BitmapFactory.decodeStream(response.body?.byteStream()) }
         } }.getOrElse { onFailure("Image could not be displayed"); return@LaunchedEffect }
-        onProgress(); delay(((item.durationMs ?: 10_000)-startOffsetMs).coerceAtLeast(1)); onDone()
+        // Report progress periodically for the whole dwell, not just once at load: the stall
+        // watchdog defaults to 30s and a still image legitimately displays much longer than
+        // that (Layout placements dwell indefinitely).
+        onProgress()
+        val total = ((item.durationMs ?: 10_000)-startOffsetMs).coerceAtLeast(1)
+        var elapsed = 0L
+        while (elapsed < total) { val step = minOf(15_000L, total - elapsed); delay(step); elapsed += step; onProgress() }
+        onDone()
     }
     bitmap?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize().background(Color.Black), contentScale = scale(item.fitMode)) }
 }

@@ -45,6 +45,10 @@ fun FullscreenLayoutPlayback(
     val structured = session.content.manifest.dataSources.filter { it.provider == "csv" || it.provider == "json" }.mapNotNull { source ->
         runCatching { source.id to Json.decodeFromJsonElement<StructuredSourceConfig>(source.configuration) }.getOrNull()
     }.toMap()
+    // A Layout renders continuously and may contain no item that reports progress on its own
+    // (primitives, text bindings); heartbeat while composed so the stall watchdog only fires
+    // when rendering has genuinely stopped.
+    LaunchedEffect(layout.id) { while (true) { onProgress(); kotlinx.coroutines.delay(15_000) } }
     var now by remember { mutableStateOf(Instant.now()) }
     LaunchedEffect(structured) {
         while (true) {

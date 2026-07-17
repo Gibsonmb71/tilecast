@@ -55,11 +55,18 @@ private class PreferencesCommandStateStore(context: Context) : CommandStateStore
         }
 
     override fun isCompleted(idempotencyKey: String) =
-        preferences.getBoolean("done-$idempotencyKey", false)
+        preferences.contains("done-$idempotencyKey")
 
     override suspend fun markCompleted(idempotencyKey: String) {
         withContext(Dispatchers.IO) {
-            preferences.edit().putBoolean("done-$idempotencyKey", true).commit()
+            val editor = preferences.edit().putLong("done-$idempotencyKey", System.currentTimeMillis())
+            // The store must not grow without bound on a device that runs unattended for
+            // years; keep the most recent completions (legacy boolean entries sort oldest).
+            val completed = preferences.all.filterKeys { it.startsWith("done-") }
+            if (completed.size >= 512) {
+                completed.entries.sortedBy { it.value as? Long ?: 0L }.take(completed.size - 256).forEach { editor.remove(it.key) }
+            }
+            editor.commit()
         }
     }
 }
@@ -117,7 +124,10 @@ class CommandCoordinator internal constructor(
                 )
                 return@forEach
             }
-            if (!Instant.now().isBefore(Instant.parse(command.expiresAt))) return@forEach
+            // An unparseable expiry must not abort the batch (that would permanently block
+            // every command behind it); treat it as still valid and let the server expire it.
+            val expired = runCatching { !Instant.now().isBefore(Instant.parse(command.expiresAt)) }.getOrDefault(false)
+            if (expired) return@forEach
 
             try {
                 transport.acknowledge(server, credential, command.id)

@@ -102,6 +102,14 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 	val content: StateFlow<PlaybackSession?> = mutableContent.asStateFlow()
 	private var pendingContent: PreparedContent? = null
 	private var syncJob: Job? = null
+	// A manifest.changed push that arrives while a sync is already running must not be
+	// dropped; it is coalesced into one follow-up pass after the running sync finishes.
+	private var syncPending = false
+	private var syncRetryJob: Job? = null
+	private var syncFailureCount = 0
+	private var pendingActivationJob: Job? = null
+	private var commandRetryJob: Job? = null
+	private var commandFailureCount = 0
 	private var manifestPollJob: Job? = null
 	private var syncProgress = SyncProgress()
 	private var lastPlaybackError: String? = null
@@ -291,7 +299,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 				viewModelScope.launch { reconcileManifest(url, credential) }
 				viewModelScope.launch { runCommands(url, credential) }
 				viewModelScope.launch { reconcilePlayerConfig(url,credential) }
-				manifestPollJob?.cancel(); manifestPollJob=viewModelScope.launch { while (true) { delay(5*60*1000L); reconcileManifest(url,credential) } }
+				// The periodic pass also polls commands: a dropped commands.available push must
+				// never strand a command until the next reconnect.
+				manifestPollJob?.cancel(); manifestPollJob=viewModelScope.launch { while (true) { delay(5*60*1000L); reconcileManifest(url,credential); runCommands(url,credential) } }
 				configPollJob?.cancel();configPollJob=viewModelScope.launch{while(true){delay((mutablePlayerConfig.value?.sync?.manifestReconciliationSeconds?:300)*1000L);reconcilePlayerConfig(url,credential)}}
             }
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -312,7 +322,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 if (response?.code == 401) { viewModelScope.launch { verifyAfterAuthFailure(url, screenName, credential) }; return }
                 scheduleReconnect(url, screenName, credential, nextReconnectAttempt(attempt), error.message)
             }
-            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { scheduleReconnect(url, screenName, credential, nextReconnectAttempt(attempt), reason) }
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+				manifestPollJob?.cancel()
+				configPollJob?.cancel()
+                scheduleReconnect(url, screenName, credential, nextReconnectAttempt(attempt), reason)
+            }
         })
     }
 
@@ -323,6 +337,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         return backoff.nextAttempt(attempt, connectedFor)
     }
 
+    // Synchronized because OkHttp invokes onClosing/onFailure/onClosed from its own threads;
+    // an unsynchronized check-then-set on reconnectJob could schedule two reconnect loops and
+    // leave two live sockets fighting each other.
+    @Synchronized
     private fun scheduleReconnect(url: String, name: String, credential: String, attempt: Int, reason: String?) {
         if (reconnectJob?.isActive == true) return
         reconnectJob = viewModelScope.launch {
@@ -413,13 +431,47 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     fun resetServer() { viewModelScope.launch { socket?.cancel(); credentials.clear(); WebsiteDataManager.clear(getApplication()){};configuration.reset(); current = configuration.getOrCreate(); discover() } }
 
 	private suspend fun reconcileManifest(url: String, credential: String) {
-		if (syncJob?.isActive == true) return
+		if (syncJob?.isActive == true) { syncPending = true; return }
+		syncRetryJob?.cancel(); syncRetryJob = null
 		syncJob = viewModelScope.launch {
-			val screenId = current?.screenId ?: return@launch
-				try { val prepared = synchronizer.reconcile(url, credential, screenId) { syncProgress = it };getApplication<Application>().getSharedPreferences("tilecast-reliability",Application.MODE_PRIVATE).edit().putLong("last-successful-sync-at",System.currentTimeMillis()).apply(); if (prepared != null) { val emergencyChanged=prepared.manifest.emergency?.id!=activeEmergencyId;if (mutableContent.value == null||emergencyChanged||prepared.manifest.syncGroup!=null) activatePrepared(prepared, url, credential) else pendingContent = prepared };refreshCommissioning() }
-			catch(error:Exception){syncProgress=SyncProgress(cacheUsedBytes=syncProgress.cacheUsedBytes,error=error.message?:"Manifest synchronization failed")}
+			do {
+				syncPending = false
+				val screenId = current?.screenId ?: return@launch
+				try {
+					// Judge success by errors reported during this pass: a 304 never invokes the
+					// progress callback, so a stale error from an earlier failure must not count.
+					var reportedError: String? = null
+					val prepared = synchronizer.reconcile(url, credential, screenId) { syncProgress = it; reportedError = it.error }
+					if (reportedError == null) { syncFailureCount = 0; if (syncProgress.error != null) syncProgress = syncProgress.copy(error = null); getApplication<Application>().getSharedPreferences("tilecast-reliability",Application.MODE_PRIVATE).edit().putLong("last-successful-sync-at",System.currentTimeMillis()).apply() } else scheduleSyncRetry(url, credential)
+					if (prepared != null) {
+						val emergencyChanged=prepared.manifest.emergency?.id!=activeEmergencyId
+						// A root-Layout session never reports playlist boundaries, so waiting
+						// for one would leave the new manifest pending forever.
+						val boundaryless=mutableContent.value?.content?.manifest?.layout!=null
+						if (mutableContent.value == null||emergencyChanged||prepared.manifest.syncGroup!=null||boundaryless) activatePrepared(prepared, url, credential) else { pendingContent = prepared; schedulePendingActivationFallback(url, credential) }
+					}
+					refreshCommissioning()
+				}
+				catch(error:Exception){syncProgress=SyncProgress(cacheUsedBytes=syncProgress.cacheUsedBytes,error=error.message?:"Manifest synchronization failed");scheduleSyncRetry(url,credential)}
+			} while (syncPending)
 		}
 		syncJob?.join()
+	}
+
+	// A transiently failed sync retries with bounded backoff instead of waiting for the next
+	// periodic poll; any fresh trigger (push, poll, command) cancels and supersedes the retry.
+	private fun scheduleSyncRetry(url: String, credential: String) {
+		syncFailureCount = (syncFailureCount + 1).coerceAtMost(5)
+		syncRetryJob?.cancel()
+		syncRetryJob = viewModelScope.launch { delay((15_000L shl (syncFailureCount - 1)).coerceAtMost(240_000L)); syncRetryJob = null; reconcileManifest(url, credential) }
+	}
+
+	// Boundary reports come from item transitions; if none arrives (an item wedged mid-play,
+	// or a very long video), the prepared manifest is force-activated after a grace period so
+	// a content update can never sit undelivered indefinitely.
+	private fun schedulePendingActivationFallback(url: String, credential: String) {
+		pendingActivationJob?.cancel()
+		pendingActivationJob = viewModelScope.launch { delay(10 * 60_000L); pendingActivationJob = null; val pending = pendingContent ?: return@launch; activatePrepared(pending, url, credential) }
 	}
 
 	private suspend fun activatePrepared(prepared: PreparedContent, url: String, credential: String) {
@@ -427,6 +479,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 		activeManifestVersion=prepared.manifest.manifestVersion
 		clockOffsetSeconds=prepared.serverClockOffsetSeconds
 		pendingContent = null
+		pendingActivationJob?.cancel(); pendingActivationJob = null
 		activateScheduleSelection(prepared,url,credential)
 		syncProgress = SyncProgress(cacheUsedBytes = syncProgress.cacheUsedBytes)
 	}
@@ -453,8 +506,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 	}
 
 	private suspend fun runCommands(url:String,credential:String){
+		commandRetryJob?.cancel(); commandRetryJob = null
+		var pollFailed=false
+		val failed:(String)->Unit={code->pollFailed=true;recordCommandPollFailure(code)}
 		runCommandPollSafely(
-			poll={commandCoordinator.fetchAndRun(url,credential,onOperationFailure={recordCommandPollFailure(it)}){command->
+			poll={commandCoordinator.fetchAndRun(url,credential,onOperationFailure=failed){command->
 		lastCommandId=command.id;lastCommandState="running"
 		val outcome=when(command.type){
 			"sync_now"->{reconcileManifest(url,credential);CommandOutcome(true,"manifest_sync_started","Manifest synchronization started")}
@@ -480,9 +536,16 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 			else->CommandOutcome(false,"command_unsupported","Command is not supported")}
 		lastCommandState=if(outcome.success)"succeeded" else "failed";lastCommandResult=outcome.code;lastCommandCompletedAt=Instant.now().toString();outcome
 		}},
-			onFailure={recordCommandPollFailure(it)},
+			onFailure={failed(it)},
 			onCredentialRejected={revokeLocally(current?.screenName)},
 		)
+		// A command left undelivered by a transient failure retries with bounded backoff so it
+		// cannot sit until the next push or reconnect; any fresh trigger supersedes the retry.
+		if(pollFailed){
+			commandFailureCount=(commandFailureCount+1).coerceAtMost(5)
+			commandRetryJob?.cancel()
+			commandRetryJob=viewModelScope.launch{delay((15_000L shl (commandFailureCount-1)).coerceAtMost(240_000L));commandRetryJob=null;runCommands(url,credential)}
+		} else commandFailureCount=0
 	}
 	private fun recordCommandPollFailure(code:String){lastCommandState="poll_failed";lastCommandResult=code;lastCommandCompletedAt=Instant.now().toString()}
 	private suspend fun reconcilePlayerConfig(url:String,credential:String){try{configManager.reconcile(url,credential)?.let{mutablePlayerConfig.value=it;applyPlayerConfig(it)};configurationError=null}catch(_:Exception){configurationError="Player configuration could not be applied"}}
