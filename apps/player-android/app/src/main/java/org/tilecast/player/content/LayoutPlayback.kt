@@ -20,13 +20,10 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.decodeFromJsonElement
 import org.tilecast.player.activity.PlaybackActivityReporter
 import org.tilecast.player.network.ManifestItem
 import org.tilecast.player.network.ManifestLayout
 import org.tilecast.player.network.ManifestPlaylist
-import org.tilecast.player.network.StructuredSourceConfig
 import java.time.Instant
 
 @Composable
@@ -42,8 +39,8 @@ fun FullscreenLayoutPlayback(
     val document = layout.document
     val widgets = session.content.manifest.widgets.associateBy { it.assetId }
     // One cached Data Source dataset is shared by every text binding in the Layout.
-    val structured = session.content.manifest.dataSources.filter { it.provider == "csv" || it.provider == "json" }.mapNotNull { source ->
-        runCatching { source.id to Json.decodeFromJsonElement<StructuredSourceConfig>(source.configuration) }.getOrNull()
+    val structured = session.content.manifest.dataSources.mapNotNull { source ->
+        source.toLayoutStructuredSource()?.let { source.id to it }
     }.toMap()
     // A Layout renders continuously and may contain no item that reports progress on its own
     // (primitives, text bindings); heartbeat while composed so the stall watchdog only fires
