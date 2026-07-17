@@ -13,13 +13,13 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Settings,
-  Users,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { useAuth } from "../auth/AuthProvider";
 import { Brand } from "../components/Brand";
+import { RouteErrorBoundary } from "../components/RouteErrorBoundary";
 import { api } from "../api/client";
 import { OperationsDashboard } from "./OperationsDashboard";
 
@@ -33,7 +33,6 @@ const nav = [
   ["Layouts", "/layouts", Layers3],
   ["Schedules", "/schedules", CalendarDays],
   ["Activity", "/activity", Activity],
-  ["Users", "/users", Users],
   ["Settings", "/settings", Settings],
 ] as const;
 const sidebarCompactKey = "tilecast.sidebar.compact";
@@ -119,11 +118,6 @@ export function DashboardShell() {
       : (nav.find(
           (item) => item[1] !== "/" && location.pathname.startsWith(item[1]),
         )?.[0] ?? "Overview");
-  const visibleNav = nav.filter(
-    ([, to]) =>
-      to !== "/users" ||
-      ["owner", "administrator"].includes(auth.status?.user?.role ?? ""),
-  );
   return (
     <div
       className={`app-shell${sidebarCompact ? " app-shell--sidebar-compact" : ""}`}
@@ -148,7 +142,7 @@ export function DashboardShell() {
           </button>
         </div>
         <nav aria-label="Primary">
-          {visibleNav.map(([label, to, Icon]) => (
+          {nav.map(([label, to, Icon]) => (
             <NavLink key={to} to={to} end={to === "/"} aria-label={label}>
               <Icon size={18} strokeWidth={1.8} aria-hidden="true" />
               <span>{label}</span>
@@ -211,7 +205,9 @@ export function DashboardShell() {
           <h1>{title}</h1>
         </header>
         <main className="workspace__content">
-          <Outlet />
+          <RouteErrorBoundary key={location.pathname}>
+            <Outlet />
+          </RouteErrorBoundary>
         </main>
       </div>
     </div>

@@ -231,7 +231,7 @@ export function ResourceLink({
             : ["asset", "media", "widget", "source"].includes(type ?? "")
               ? `/assets?search=${encodeURIComponent(id)}`
               : type === "user"
-                ? `/users`
+                ? `/settings/users`
                 : undefined;
   return path ? <Link to={path}>{label}</Link> : <>{label}</>;
 }

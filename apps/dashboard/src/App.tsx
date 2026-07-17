@@ -18,7 +18,6 @@ import { LayoutsPage } from "./pages/LayoutsPage";
 import { LayoutEditorPage } from "./pages/LayoutEditorPage";
 import { WidgetEditorPage, WidgetsPage } from "./pages/WidgetsPage";
 import { DataSourceEditorPage, DataSourcesPage } from "./pages/DataSourcesPage";
-import { UsersPage } from "./pages/UsersPage";
 import { ActivityPage } from "./pages/ActivityPage";
 
 export function App() {
@@ -61,7 +60,10 @@ export function App() {
           <Route path="schedules" element={<SchedulesPage />} />
           <Route path="schedules/new" element={<ScheduleEditorPage />} />
           <Route path="schedules/:id" element={<ScheduleEditorPage />} />
-          <Route path="users" element={<UsersPage />} />
+          <Route
+            path="users"
+            element={<Navigate to="/settings/users" replace />}
+          />
           <Route path="activity" element={<ActivityPage />} />
           <Route path="settings/*" element={<SettingsPage />} />
         </Route>

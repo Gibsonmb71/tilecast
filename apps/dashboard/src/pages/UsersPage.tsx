@@ -98,15 +98,6 @@ export function UsersPage() {
 
   return (
     <section className="user-management">
-      <header className="user-management__header">
-        <h2>Studio users</h2>
-        <p>
-          Give each person an individual sign-in and assign only the permissions
-          they need. Appearance and density preferences remain separate for
-          every account.
-        </p>
-      </header>
-
       <section
         className="user-management__form"
         aria-labelledby="add-user-title"

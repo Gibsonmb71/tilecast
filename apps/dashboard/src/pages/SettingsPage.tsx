@@ -17,8 +17,8 @@ import {
   ImportExportPanel,
   PlayerUpdatesPanel,
   SystemPanel,
-  UsersPanel,
 } from "../settings/SettingsOperations";
+import { UsersPage } from "./UsersPage";
 
 export { PlayerPolicyEditor } from "../settings/PlayerPolicyEditor";
 export {
@@ -217,7 +217,7 @@ function Destination({
   values: Record<string, unknown>;
   onChange: (key: string, value: unknown) => void;
 }) {
-  if (active === "users") return <UsersPanel canManage={manageable} />;
+  if (active === "users") return <UsersPage />;
   if (active === "system") return <SystemPanel canManage={manageable} />;
   if (active === "import-export") return <ImportExportPanel owner={owner} />;
   if (active === "player-updates")

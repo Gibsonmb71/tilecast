@@ -16,40 +16,6 @@ import { api } from "../api/client";
 import type { GitHubDeviceStart } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 
-export function UsersPanel({ canManage }: { canManage: boolean }) {
-  const query = useQuery({
-    queryKey: ["users"],
-    queryFn: api.users,
-    enabled: canManage,
-  });
-  if (!canManage)
-    return (
-      <div className="notice">Owner or Administrator access is required.</div>
-    );
-  return (
-    <section className="settings-subsection">
-      <header>
-        <h3>Studio users</h3>
-        <p>
-          Accounts are ordered by name. Roles determine access to administrative
-          settings.
-        </p>
-      </header>
-      <div className="command-history">
-        {query.data?.items.map((user) => (
-          <div key={user.id}>
-            <strong>{user.name}</strong>
-            <span>{user.username}</span>
-            <small>
-              {humanize(user.role)} · {user.active ? "Active" : "Inactive"}
-            </small>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 const maintenanceActions = [
   {
     id: "expired-upload-cleanup",

@@ -108,7 +108,8 @@ export const sectionDetails: Record<
   },
   users: {
     title: "Users",
-    description: "Local Tilecast accounts and role status.",
+    description:
+      "Give each person an individual sign-in and assign only the permissions they need. Appearance and density preferences remain separate for every account.",
   },
   playback: {
     title: "Playback",

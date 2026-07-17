@@ -197,6 +197,19 @@ func TestPlaybackGapAppearsInOverviewAndClosesProofUnknown(t *testing.T) {
 		if envelope.Data.Cards.ScreensWithPlaybackGaps != 1 {
 			t.Fatalf("playback gaps=%d overview=%s", envelope.Data.Cards.ScreensWithPlaybackGaps, response.Body.String())
 		}
+		// The dashboard indexes into these collections directly; empty lists
+		// must marshal as [] rather than null.
+		var shape struct {
+			Data map[string]json.RawMessage `json:"data"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &shape); err != nil {
+			t.Fatal(err)
+		}
+		for _, field := range []string{"needsAttention", "timeline"} {
+			if string(shape.Data[field]) == "null" {
+				t.Fatalf("overview %s marshaled as null: %s", field, response.Body.String())
+			}
+		}
 	})
 }
 

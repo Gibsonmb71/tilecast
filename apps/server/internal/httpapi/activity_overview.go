@@ -18,6 +18,10 @@ func (s *server) activityOverview(w http.ResponseWriter, r *http.Request) {
 	}
 	var data activityOverviewData
 	data.Range.From, data.Range.To = window.From, window.To
+	// Marshal empty lists as [] rather than null; the dashboard indexes into
+	// these collections directly.
+	data.NeedsAttention = []activityAttentionItem{}
+	data.Timeline = []activityTimelineItem{}
 	_ = s.db.QueryRow(r.Context(), `SELECT count(*) FROM screens WHERE enabled=TRUE AND last_heartbeat_at>now()-interval '5 minutes'`).Scan(&data.Cards.ScreensReportingNormally)
 	_ = s.db.QueryRow(r.Context(), `SELECT count(DISTINCT screen_id) FROM screen_state_intervals WHERE started_at<$2 AND COALESCE(ended_at,$2)>$1 AND state IN('offline','degraded','unknown')`, window.From, window.To).Scan(&data.Cards.ScreensWithPlaybackGaps)
 	_ = s.db.QueryRow(r.Context(), `SELECT COALESCE(sum(actual_duration_ms) FILTER(WHERE result IN('completed','recovered','partial')),0),count(*) FILTER(WHERE result='failed'),count(*) FILTER(WHERE result='partial') FROM playback_sessions WHERE started_at>=$1 AND started_at<$2`, window.From, window.To).Scan(&data.Cards.ConfirmedDurationMS, &data.Cards.PlaybackFailures, &data.Cards.InterruptedPlays)
