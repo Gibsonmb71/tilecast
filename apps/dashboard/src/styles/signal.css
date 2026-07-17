@@ -3159,6 +3159,17 @@ tbody tr:hover {
   padding-inline: var(--tc-space-6);
 }
 
+.screen-detail > .operations > .heading-actions {
+  flex-wrap: wrap;
+  align-items: center;
+  padding-inline: var(--tc-space-6);
+  margin-top: var(--tc-space-3);
+}
+
+.screen-detail > .operations > .command-history {
+  padding: 0 var(--tc-space-6) var(--tc-space-6);
+}
+
 .screen-overview > header {
   padding-block: var(--tc-space-4);
   border-bottom: 1px solid var(--tc-border-default);

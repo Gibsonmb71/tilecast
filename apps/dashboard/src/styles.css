@@ -2615,10 +2615,13 @@ a {
   border-color: var(--tc-status-danger);
 }
 .button--danger-quiet {
-  margin-right: auto !important;
   color: var(--tc-danger);
   background: white;
   border-color: var(--tc-status-danger-border);
+}
+/* Destructive action sits apart from the confirming actions on the right. */
+.form-actions .button--danger-quiet {
+  margin-right: auto;
 }
 .back-link {
   display: inline-block;
