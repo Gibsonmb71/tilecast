@@ -231,8 +231,10 @@ func (s *Service) DeleteGroup(ctx context.Context, id, user uuid.UUID) error {
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
-	if _, err = tx.Exec(ctx, `INSERT INTO screen_playlist_assignments(id,screen_id,playlist_id,assigned_by,assigned_at,updated_at) SELECT gen_random_uuid(),m.screen_id,a.playlist_id,$2,now(),now() FROM screen_group_memberships m JOIN screen_group_playlist_assignments a ON a.screen_group_id=m.screen_group_id WHERE m.screen_group_id=$1 ON CONFLICT(screen_id)DO UPDATE SET playlist_id=EXCLUDED.playlist_id,assigned_by=EXCLUDED.assigned_by,updated_at=now()`, id, user); err != nil {
-		return err
+	for _, n := range notes {
+		if err = restoreScreenSnapshot(ctx, tx, id, n.id, user); err != nil {
+			return err
+		}
 	}
 	if _, err = tx.Exec(ctx, `DELETE FROM screen_group_playlist_assignments WHERE screen_group_id=$1`, id); err != nil {
 		return err
@@ -279,6 +281,20 @@ func (s *Service) AddScreen(ctx context.Context, group, screen, user uuid.UUID) 
 	if _, err = tx.Exec(ctx, `INSERT INTO screen_group_playlist_assignments(screen_group_id,playlist_id,assigned_by,assigned_at) SELECT $1,a.playlist_id,$3,a.assigned_at FROM screen_playlist_assignments a WHERE a.screen_id=$2 ON CONFLICT(screen_group_id)DO NOTHING`, group, screen, user); err != nil {
 		return err
 	}
+	// Snapshot the screen's own assignment and schedule targets so leaving the
+	// group can restore them instead of inheriting the group's content.
+	if _, err = tx.Exec(ctx, `DELETE FROM screen_group_membership_snapshots WHERE screen_id=$1`, screen); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `DELETE FROM screen_group_membership_schedule_snapshots WHERE screen_id=$1`, screen); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO screen_group_membership_snapshots(screen_id,playlist_id,assigned_by,assigned_at) SELECT sc.id,a.playlist_id,a.assigned_by,a.assigned_at FROM screens sc LEFT JOIN screen_playlist_assignments a ON a.screen_id=sc.id WHERE sc.id=$1`, screen); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO screen_group_membership_schedule_snapshots(screen_id,schedule_id) SELECT screen_id,schedule_id FROM schedule_targets WHERE target_type='screen' AND screen_id=$1`, screen); err != nil {
+		return err
+	}
 	if _, err = tx.Exec(ctx, `DELETE FROM screen_playlist_assignments WHERE screen_id=$1`, screen); err != nil {
 		return err
 	}
@@ -322,13 +338,36 @@ func (s *Service) AddScreen(ctx context.Context, group, screen, user uuid.UUID) 
 	_ = s.audit(ctx, user, "screen_group.screen_added", "screen_group", group)
 	return nil
 }
+// restoreScreenSnapshot reinstates the playlist assignment and screen-targeted
+// schedules a screen had before it joined a sync group, then discards the
+// snapshot. Memberships created before snapshots existed have no snapshot row
+// and fall back to inheriting the group's playlist.
+func restoreScreenSnapshot(ctx context.Context, tx pgx.Tx, group, screen, user uuid.UUID) error {
+	if _, err := tx.Exec(ctx, `INSERT INTO screen_playlist_assignments(id,screen_id,playlist_id,assigned_by,assigned_at,updated_at) SELECT gen_random_uuid(),snap.screen_id,snap.playlist_id,COALESCE(snap.assigned_by,$2),COALESCE(snap.assigned_at,now()),now() FROM screen_group_membership_snapshots snap WHERE snap.screen_id=$1 AND snap.playlist_id IS NOT NULL ON CONFLICT(screen_id)DO UPDATE SET playlist_id=EXCLUDED.playlist_id,assigned_by=EXCLUDED.assigned_by,updated_at=now()`, screen, user); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO screen_playlist_assignments(id,screen_id,playlist_id,assigned_by,assigned_at,updated_at) SELECT gen_random_uuid(),$2,a.playlist_id,$3,now(),now() FROM screen_group_playlist_assignments a WHERE a.screen_group_id=$1 AND NOT EXISTS(SELECT 1 FROM screen_group_membership_snapshots WHERE screen_id=$2) ON CONFLICT(screen_id)DO UPDATE SET playlist_id=EXCLUDED.playlist_id,assigned_by=EXCLUDED.assigned_by,updated_at=now()`, group, screen, user); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO schedule_targets(schedule_id,target_type,screen_id) SELECT snap.schedule_id,'screen',snap.screen_id FROM screen_group_membership_schedule_snapshots snap JOIN schedules s ON s.id=snap.schedule_id AND s.deleted_at IS NULL WHERE snap.screen_id=$1 ON CONFLICT(schedule_id,screen_id)DO NOTHING`, screen); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM screen_group_membership_snapshots WHERE screen_id=$1`, screen); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM screen_group_membership_schedule_snapshots WHERE screen_id=$1`, screen); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *Service) RemoveScreen(ctx context.Context, group, screen, user uuid.UUID) error {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
-	if _, err = tx.Exec(ctx, `INSERT INTO screen_playlist_assignments(id,screen_id,playlist_id,assigned_by,assigned_at,updated_at) SELECT gen_random_uuid(),$2,a.playlist_id,$3,now(),now() FROM screen_group_playlist_assignments a WHERE a.screen_group_id=$1 ON CONFLICT(screen_id)DO UPDATE SET playlist_id=EXCLUDED.playlist_id,assigned_by=EXCLUDED.assigned_by,updated_at=now()`, group, screen, user); err != nil {
+	if err = restoreScreenSnapshot(ctx, tx, group, screen, user); err != nil {
 		return err
 	}
 	tag, err := tx.Exec(ctx, `DELETE FROM screen_group_memberships WHERE screen_group_id=$1 AND screen_id=$2`, group, screen)
