@@ -31,7 +31,7 @@
   padding: 2.25rem 2.35rem 1.55rem;
   background: var(--tc-bg-surface, #fff);
   border: 1px solid var(--tc-border-default, #d0d7de);
-  border-radius: 12px;
+  border-radius: var(--tc-radius-overlay);
   box-shadow: 0 20px 48px rgb(0 0 0 / 28%);
 }
 
@@ -152,7 +152,7 @@
     max-height: calc(100svh - 1.7rem);
     padding: 1.75rem 1.35rem 1.2rem;
     overflow-y: auto;
-    border-radius: 12px;
+    border-radius: var(--tc-radius-overlay);
   }
 
   .auth-panel__logo {

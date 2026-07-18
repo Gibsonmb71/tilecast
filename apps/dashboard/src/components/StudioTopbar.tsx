@@ -547,7 +547,7 @@ export function StudioTopbar({ user }: { user?: User }) {
         <span className="topbar__divider" aria-hidden="true" />
         {canPair && (
           <Link
-            className="button button--secondary button--compact topbar__pair"
+            className="button button--secondary topbar__pair"
             to="/screens/pair"
             aria-label="Pair screen"
           >
@@ -559,7 +559,6 @@ export function StudioTopbar({ user }: { user?: User }) {
           <div className="topbar__create" ref={createRef}>
             <Button
               variant="primary"
-              compact
               aria-haspopup="menu"
               aria-expanded={createOpen}
               onClick={() => {

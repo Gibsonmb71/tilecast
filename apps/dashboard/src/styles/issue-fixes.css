@@ -63,8 +63,7 @@
 
 .search-control:focus-within {
   border-color: var(--tc-action-primary);
-  box-shadow: 0 0 0 3px
-    color-mix(in srgb, var(--tc-focus-ring) 24%, transparent);
+  box-shadow: 0 0 0 3px var(--tc-focus-ring-soft);
 }
 
 :is(
@@ -120,7 +119,8 @@
   flex: 1 1 280px;
   width: min(420px, 100%);
   max-width: 420px;
-  min-height: 40px;
+  height: var(--tc-control-height);
+  min-height: var(--tc-control-height);
   align-items: center;
   gap: var(--tc-space-2);
   padding: 0 var(--tc-space-3);
@@ -132,8 +132,7 @@
 
 .dashboard-search:focus-within {
   border-color: var(--tc-action-primary);
-  box-shadow: 0 0 0 3px
-    color-mix(in srgb, var(--tc-focus-ring) 24%, transparent);
+  box-shadow: 0 0 0 3px var(--tc-focus-ring-soft);
 }
 
 .dashboard-search input::-webkit-search-cancel-button {

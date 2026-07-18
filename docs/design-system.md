@@ -104,11 +104,29 @@ have separate foreground, background, and border roles.
 | Elevated surface | `#FFFFFF`   | `#1B2632`  | Menus, dialogs, and overlays                          |
 | Primary text     | `#17212B`   | `#F5F7FA`  | Main copy and labels                                  |
 | Secondary text   | `#667582`   | `#9EADB9`  | Supporting and metadata copy                          |
-| Primary action   | `#315EFB`   | `#7EA2FF`  | Actions, links, selection, and focus-related emphasis |
+| Primary action   | `#3E6FE0`   | `#3E6FE0`  | Actions, links, selection, and focus-related emphasis |
 | Broadcast Amber  | `#E9B44C`   | `#F4C15A`  | Tilecast identity only                                |
 
 Values are references for review. Consume their semantic token, not the literal
 value.
+
+#### Studio control roles
+
+| Token                 | Value                   | Use                                     |
+| --------------------- | ----------------------- | --------------------------------------- |
+| `--accent`            | `#3E6FE0`               | Primary actions, links, selected states |
+| `--accent-hover`      | `#4D7CE6`               | Primary hover                           |
+| `--accent-active`     | `#3563CF`               | Primary pressed state                   |
+| `--control-border`    | `#2A3D5C`               | Secondary control border                |
+| `--control-label`     | `#C6D4EA`               | Secondary control label                 |
+| `--control-hover-bg`  | `#16223A`               | Secondary hover fill                    |
+| `--field-bg`          | `#111D31`               | Input and search background             |
+| `--field-border`      | `#24344E`               | Input and search border                 |
+| `--field-placeholder` | `#66799A`               | Placeholder text                        |
+| `--chip-bg`           | `#1A2942`               | Nested keycap and chip background       |
+| `--chip-border`       | `#2A3D5C`               | Nested keycap and chip border           |
+| `--chip-text`         | `#7F93B3`               | Nested keycap and chip text             |
+| `--accent-focus-ring` | 25% alpha of `--accent` | Three-pixel keyboard-focus outer ring   |
 
 #### Status roles
 
@@ -173,10 +191,19 @@ compact type sizes to TV.
 | `--tc-space-12` | 48 px | Large structural separation    |
 | `--tc-space-16` | 64 px | Rare outer or TV spacing       |
 
-Controls use a 6 px radius, panels 9 px, and overlays 12 px. Only status and
-filter pills use the pill radius. Normal panels use borders; shadows are
-reserved for overlays and drag states. Do not nest bordered panels when
-spacing, a heading, or a divider can express the relationship.
+| Control token         | Value | Use                          |
+| --------------------- | ----- | ---------------------------- |
+| `--control-height`    | 36 px | Standard buttons and fields  |
+| `--control-height-sm` | 30 px | Compact controls             |
+| `--control-height-lg` | 42 px | Explicit large controls      |
+| `--control-radius`    | 8 px  | Buttons, inputs, and selects |
+| `--chip-radius`       | 5 px  | Nested chips and keycaps     |
+
+Controls use one 8 px radius. Chips, keycaps, and badges nested inside controls
+use the 5 px chip radius. Panels remain 9 px and overlays remain 12 px. Buttons
+must not use pill radii. Normal panels use borders; shadows are reserved for
+overlays and drag states. Do not nest bordered panels when spacing, a heading,
+or a divider can express the relationship.
 
 Player reuses the 4–48 dp spacing rhythm, adds 72 dp horizontal and 52 dp
 vertical screen insets, and keeps remote controls at least 52 dp high.
@@ -313,10 +340,16 @@ alternatives; quiet actions reduce visual weight; danger actions communicate a
 destructive consequence. Icon buttons are reserved for familiar actions where
 space is constrained and always require an accessible label.
 
-Default buttons are 40 px high and compact buttons are 32 px high. Loading
+Default buttons are 36 px high and compact buttons are 30 px high. Loading
 preserves the label's width, exposes busy state, and disables repeat activation.
 Disabled controls use a not-allowed cursor, but a disabled state must not be the
 only explanation of why an action is unavailable.
+
+Primary buttons use the solid action accent with pure white text. Secondary
+buttons use the shared control border and label tokens on a transparent fill;
+hover changes only the shared secondary hover fill. Underlines belong to inline
+text links, never button labels. Use at most one primary action per decision
+region.
 
 A destructive action remains visually restrained until the final confirmation.
 The confirmation names the object and consequence. “Cancel” is not destructive
@@ -329,7 +362,9 @@ the control. Required state must be available to assistive technology, not only
 shown as an asterisk. Errors identify the problem and, when known, how to fix
 it.
 
-Controls use shared 40 px sizing, border, disabled treatment, and focus ring.
+Controls use the shared 36 px height, 8 px radius, field background, border,
+placeholder, disabled treatment, and focus tokens. Keyboard focus adds a 1 px
+accent border and a 3 px soft outer ring. Use the control that matches the data:
 Use the control that matches the data:
 
 - checkbox for an independent choice;

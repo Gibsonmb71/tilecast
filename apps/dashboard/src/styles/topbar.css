@@ -74,23 +74,28 @@
 .topbar__search {
   display: grid;
   width: 100%;
-  height: 36px;
+  height: var(--tc-control-height);
   min-width: 0;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--tc-space-2);
   padding: 0 var(--tc-space-3);
-  color: var(--tc-text-secondary);
-  background: var(--tc-bg-subtle);
-  border: 1px solid var(--tc-border-default);
-  border-radius: var(--tc-radius-panel);
+  color: var(--tc-input-placeholder);
+  background: var(--tc-input-bg);
+  border: 1px solid var(--tc-input-border);
+  border-radius: var(--tc-radius-control);
   font: var(--tc-text-body);
   text-align: left;
 }
 
 .topbar__search:hover {
   color: var(--tc-text-primary);
-  border-color: var(--tc-border-strong);
+  border-color: var(--tc-input-border);
+}
+
+.topbar__search > svg {
+  width: 16px;
+  height: 16px;
 }
 
 .topbar__search-placeholder {
@@ -105,10 +110,10 @@
   min-height: 22px;
   align-items: center;
   padding: 1px var(--tc-space-2);
-  color: var(--tc-text-secondary);
-  background: var(--tc-bg-elevated);
-  border: 1px solid var(--tc-border-default);
-  border-radius: var(--tc-radius-control);
+  color: var(--tc-chip-text);
+  background: var(--tc-chip-bg);
+  border: 1px solid var(--tc-chip-border);
+  border-radius: var(--tc-radius-chip);
   font: var(--tc-text-supporting);
   white-space: nowrap;
 }
@@ -124,12 +129,6 @@
   white-space: nowrap;
 }
 
-.topbar__utilities .button > span {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--tc-space-2);
-}
-
 .topbar__notifications,
 .topbar__create {
   position: relative;
@@ -137,12 +136,12 @@
 
 .topbar__notifications .icon-button {
   position: relative;
-  color: var(--tc-text-secondary);
+  color: var(--tc-button-secondary-text);
 }
 
 .topbar__notifications .icon-button:hover {
-  color: var(--tc-text-primary);
-  background: var(--tc-bg-subtle);
+  color: var(--tc-button-secondary-text);
+  background: var(--tc-button-secondary-hover-bg);
 }
 
 .topbar__notification-badge {
@@ -156,7 +155,7 @@
   padding: 0 2px;
   color: var(--tc-neutral-0);
   background: var(--tc-status-danger);
-  border-radius: var(--tc-radius-pill);
+  border-radius: var(--tc-radius-chip);
   box-shadow: 0 0 0 2px var(--tc-bg-surface);
   font-size: 10px;
   font-weight: 700;
@@ -307,7 +306,8 @@
 }
 
 .command-palette__input input[type="search"] {
-  min-height: 40px;
+  height: var(--tc-control-height);
+  min-height: var(--tc-control-height);
   padding: 0;
   background: transparent;
   border: 0;
@@ -400,8 +400,8 @@
   }
 
   .topbar__search {
-    width: 40px;
-    height: 40px;
+    width: var(--tc-control-height);
+    height: var(--tc-control-height);
     grid-template-columns: 1fr;
     place-items: center;
     padding: 0;
@@ -421,7 +421,7 @@
   }
 
   .topbar__pair {
-    width: 32px;
+    width: var(--tc-control-height);
     justify-content: center;
     padding: 0;
   }

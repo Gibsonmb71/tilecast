@@ -277,7 +277,7 @@ a {
   transform: rotate(1deg);
 }
 .brand__mark span {
-  background: var(--tc-blue-600);
+  background: var(--tc-action-primary);
   border-radius: 1px;
 }
 .brand__mark span:first-child {
@@ -515,7 +515,7 @@ a {
 .sidebar nav a.active {
   color: white;
   background: var(--tc-sidebar-active);
-  box-shadow: inset 2px 0 var(--tc-blue-500);
+  box-shadow: inset 2px 0 var(--tc-action-primary);
 }
 .sidebar__account {
   display: grid;
@@ -547,8 +547,8 @@ a {
   height: 31px;
   place-items: center;
   color: var(--tc-neutral-0);
-  background: var(--tc-blue-700);
-  border: 1px solid var(--tc-blue-500);
+  background: var(--tc-action-primary-active);
+  border: 1px solid var(--tc-action-primary);
   border-radius: 50%;
   font-size: 12px;
   font-weight: 700;
@@ -1597,7 +1597,7 @@ a {
   width: 34px;
   height: 20px;
   padding: 2px;
-  border-radius: 12px;
+  border-radius: var(--tc-radius-overlay);
   background: var(--tc-surface-muted);
 }
 .setting-switch > span::before {
@@ -1619,7 +1619,7 @@ a {
 .weekday-picker button:focus-visible,
 .policy-section-toggle:focus-visible,
 .settings-nav a:focus-visible {
-  outline: 3px solid var(--tc-brand);
+  outline: 3px solid var(--tc-focus-ring-soft);
   outline-offset: 2px;
 }
 .unit-input {
@@ -1922,7 +1922,7 @@ a {
   gap: 12px 20px;
   padding: 14px 16px;
   border: 1px solid var(--tc-border);
-  border-radius: 6px;
+  border-radius: var(--tc-radius-panel);
   background: var(--tc-surface);
 }
 .github-auth__summary {

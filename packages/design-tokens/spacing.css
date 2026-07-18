@@ -7,7 +7,16 @@
   --tc-space-8: 32px;
   --tc-space-12: 48px;
   --tc-space-16: 64px;
-  --tc-radius-control: 6px;
+  --control-radius: 8px;
+  --chip-radius: 5px;
+  --control-height: 36px;
+  --control-height-sm: 30px;
+  --control-height-lg: 42px;
+  --tc-radius-control: var(--control-radius);
+  --tc-radius-chip: var(--chip-radius);
+  --tc-control-height: var(--control-height);
+  --tc-control-height-sm: var(--control-height-sm);
+  --tc-control-height-lg: var(--control-height-lg);
   --tc-radius-panel: 9px;
   --tc-radius-overlay: 12px;
   --tc-radius-pill: 999px;

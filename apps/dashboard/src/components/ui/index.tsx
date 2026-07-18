@@ -55,10 +55,16 @@ export function Button({
 export function IconButton({
   label,
   children,
+  className = "",
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & { label: string }) {
   return (
-    <button className="icon-button" aria-label={label} title={label} {...props}>
+    <button
+      className={`icon-button ${className}`.trim()}
+      aria-label={label}
+      title={label}
+      {...props}
+    >
       {children}
     </button>
   );

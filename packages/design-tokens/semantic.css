@@ -1,6 +1,20 @@
 :root,
 html[data-theme="light"] {
   color-scheme: light;
+  --accent: #3e6fe0;
+  --accent-hover: #4d7ce6;
+  --accent-active: #3563cf;
+  --accent-focus-ring: rgb(62 111 224 / 25%);
+  --control-primary-text: #ffffff;
+  --control-border: #2a3d5c;
+  --control-label: #c6d4ea;
+  --control-hover-bg: #16223a;
+  --field-bg: #111d31;
+  --field-border: #24344e;
+  --field-placeholder: #66799a;
+  --chip-bg: #1a2942;
+  --chip-border: #2a3d5c;
+  --chip-text: #7f93b3;
   --tc-bg-canvas: var(--tc-neutral-25);
   --tc-bg-surface: var(--tc-neutral-0);
   --tc-bg-subtle: var(--tc-neutral-50);
@@ -11,12 +25,13 @@ html[data-theme="light"] {
   --tc-text-inverse: var(--tc-neutral-0);
   --tc-border-default: var(--tc-neutral-200);
   --tc-border-strong: var(--tc-neutral-300);
-  --tc-action-primary: var(--tc-blue-600);
-  --tc-action-primary-hover: var(--tc-blue-700);
-  --tc-action-primary-active: var(--tc-blue-800);
-  --tc-action-primary-soft: var(--tc-blue-50);
+  --tc-action-primary: var(--accent);
+  --tc-action-primary-hover: var(--accent-hover);
+  --tc-action-primary-active: var(--accent-active);
+  --tc-action-primary-soft: color-mix(in srgb, var(--accent) 18%, transparent);
   --tc-identity-amber: var(--tc-amber-500);
-  --tc-focus-ring: var(--tc-blue-500);
+  --tc-focus-ring: var(--accent);
+  --tc-focus-ring-soft: var(--accent-focus-ring);
   --tc-status-success: var(--tc-green-700);
   --tc-status-success-bg: var(--tc-green-50);
   --tc-status-success-border: var(--tc-green-300);
@@ -48,12 +63,13 @@ html[data-theme="dark"] {
   --tc-text-inverse: var(--tc-neutral-950);
   --tc-border-default: #2c3947;
   --tc-border-strong: var(--tc-neutral-700);
-  --tc-action-primary: #7ea2ff;
-  --tc-action-primary-hover: #9ab6ff;
-  --tc-action-primary-active: #b6c9ff;
-  --tc-action-primary-soft: #1b2b52;
+  --tc-action-primary: var(--accent);
+  --tc-action-primary-hover: var(--accent-hover);
+  --tc-action-primary-active: var(--accent-active);
+  --tc-action-primary-soft: color-mix(in srgb, var(--accent) 18%, transparent);
   --tc-identity-amber: var(--tc-amber-400);
-  --tc-focus-ring: var(--tc-blue-400);
+  --tc-focus-ring: var(--accent);
+  --tc-focus-ring-soft: var(--accent-focus-ring);
   --tc-status-success-bg: #16372f;
   --tc-status-warning-bg: #3a2916;
   --tc-status-danger-bg: #3b2025;
@@ -76,12 +92,17 @@ html[data-theme="dark"] {
     --tc-text-inverse: var(--tc-neutral-950);
     --tc-border-default: #2c3947;
     --tc-border-strong: var(--tc-neutral-700);
-    --tc-action-primary: #7ea2ff;
-    --tc-action-primary-hover: #9ab6ff;
-    --tc-action-primary-active: #b6c9ff;
-    --tc-action-primary-soft: #1b2b52;
+    --tc-action-primary: var(--accent);
+    --tc-action-primary-hover: var(--accent-hover);
+    --tc-action-primary-active: var(--accent-active);
+    --tc-action-primary-soft: color-mix(
+      in srgb,
+      var(--accent) 18%,
+      transparent
+    );
     --tc-identity-amber: var(--tc-amber-400);
-    --tc-focus-ring: var(--tc-blue-400);
+    --tc-focus-ring: var(--accent);
+    --tc-focus-ring-soft: var(--accent-focus-ring);
     --tc-status-success-bg: #16372f;
     --tc-status-warning-bg: #3a2916;
     --tc-status-danger-bg: #3b2025;
