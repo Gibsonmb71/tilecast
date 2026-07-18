@@ -95,12 +95,15 @@ func (s *Service) Organization(ctx context.Context) (Document, error) {
 	if err != nil {
 		return d, err
 	}
-	_ = json.Unmarshal(values, &d.Values)
+	if err := json.Unmarshal(values, &d.Values); err != nil {
+		return d, err
+	}
 	d.Values = mergeDefaults(d.Values, ScopeOrganization)
 	var name string
-	if s.db.QueryRow(ctx, `SELECT organization_name FROM organization_settings`).Scan(&name) == nil {
-		d.Values["organization.name"] = name
+	if err := s.db.QueryRow(ctx, `SELECT organization_name FROM organization_settings`).Scan(&name); err != nil {
+		return d, err
 	}
+	d.Values["organization.name"] = name
 	return d, nil
 }
 func (s *Service) UpdateOrganization(ctx context.Context, user uuid.UUID, revision int64, values map[string]any) (Document, error) {
@@ -114,7 +117,10 @@ func (s *Service) UpdateOrganization(ctx context.Context, user uuid.UUID, revisi
 	if err = s.validateBranding(ctx, validated); err != nil {
 		return Document{}, err
 	}
-	encoded, _ := json.Marshal(validated)
+	encoded, err := json.Marshal(validated)
+	if err != nil {
+		return Document{}, err
+	}
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return Document{}, err
@@ -176,7 +182,10 @@ func (s *Service) UpdatePreferences(ctx context.Context, user uuid.UUID, revisio
 	if err != nil {
 		return Document{}, err
 	}
-	raw, _ := json.Marshal(validated)
+	raw, err := json.Marshal(validated)
+	if err != nil {
+		return Document{}, err
+	}
 	tag, err := s.db.Exec(ctx, `UPDATE user_preferences SET preferences=$1::jsonb,revision=revision+1,updated_at=now() WHERE user_id=$2 AND revision=$3`, string(raw), user, revision)
 	if err != nil {
 		return Document{}, err
@@ -194,7 +203,9 @@ func (s *Service) GroupPolicy(ctx context.Context, id uuid.UUID) (PolicyDocument
 		d = PolicyDocument{SchemaVersion: SchemaVersion, Revision: 0, Values: map[string]any{}}
 		return d, nil
 	}
-	_ = json.Unmarshal(raw, &d.Values)
+	if err := json.Unmarshal(raw, &d.Values); err != nil {
+		return d, err
+	}
 	return d, err
 }
 func (s *Service) PutGroupPolicy(ctx context.Context, user, id uuid.UUID, revision int64, priority int, values map[string]any) (PolicyDocument, error) {
@@ -205,7 +216,10 @@ func (s *Service) PutGroupPolicy(ctx context.Context, user, id uuid.UUID, revisi
 	if err != nil {
 		return PolicyDocument{}, err
 	}
-	raw, _ := json.Marshal(validated)
+	raw, err := json.Marshal(validated)
+	if err != nil {
+		return PolicyDocument{}, err
+	}
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return PolicyDocument{}, err
@@ -261,7 +275,9 @@ func (s *Service) ScreenPolicy(ctx context.Context, id uuid.UUID) (PolicyDocumen
 	if errors.Is(err, pgx.ErrNoRows) {
 		return PolicyDocument{SchemaVersion: 1, Values: map[string]any{}}, nil
 	}
-	_ = json.Unmarshal(raw, &d.Values)
+	if err := json.Unmarshal(raw, &d.Values); err != nil {
+		return d, err
+	}
 	return d, err
 }
 func (s *Service) PutScreenPolicy(ctx context.Context, user, id uuid.UUID, revision int64, values map[string]any) (PolicyDocument, error) {
@@ -269,7 +285,10 @@ func (s *Service) PutScreenPolicy(ctx context.Context, user, id uuid.UUID, revis
 	if err != nil {
 		return PolicyDocument{}, err
 	}
-	raw, _ := json.Marshal(validated)
+	raw, err := json.Marshal(validated)
+	if err != nil {
+		return PolicyDocument{}, err
+	}
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return PolicyDocument{}, err
@@ -349,7 +368,10 @@ func (s *Service) Effective(ctx context.Context, screen uuid.UUID) (EffectivePol
 		}
 		result.GroupRevisions[id.String()] = revision
 		var values map[string]any
-		_ = json.Unmarshal(raw, &values)
+		if err := json.Unmarshal(raw, &values); err != nil {
+			rows.Close()
+			return result, err
+		}
 		for key, value := range values {
 			if !claimed[key] {
 				copyID := id
@@ -372,9 +394,16 @@ func (s *Service) Effective(ctx context.Context, screen uuid.UUID) (EffectivePol
 		copyID := screen
 		result.Values[key] = EffectiveValue{Value: value, Source: "This screen", SourceID: &copyID}
 	}
-	_, _ = s.db.Exec(ctx, `INSERT INTO screen_config_state(screen_id)VALUES($1)ON CONFLICT DO NOTHING`, screen)
-	_ = s.db.QueryRow(ctx, `SELECT config_revision FROM screen_config_state WHERE screen_id=$1`, screen).Scan(&result.ConfigRevision)
-	encoded, _ := json.Marshal(result.Values)
+	if _, err := s.db.Exec(ctx, `INSERT INTO screen_config_state(screen_id)VALUES($1)ON CONFLICT DO NOTHING`, screen); err != nil {
+		return result, err
+	}
+	if err := s.db.QueryRow(ctx, `SELECT config_revision FROM screen_config_state WHERE screen_id=$1`, screen).Scan(&result.ConfigRevision); err != nil {
+		return result, err
+	}
+	encoded, err := json.Marshal(result.Values)
+	if err != nil {
+		return result, err
+	}
 	maxCache, _ := result.Values["player.cache.max_bytes"].Value.(float64)
 	minimumFree, _ := result.Values["player.cache.minimum_free_bytes"].Value.(float64)
 	if minimumFree > maxCache {
@@ -394,9 +423,13 @@ func (s *Service) PlayerConfiguration(ctx context.Context, screen uuid.UUID) (Pl
 		return PlayerConfig{}, "", err
 	}
 	var name string
-	_ = s.db.QueryRow(ctx, `SELECT organization_name FROM organization_settings`).Scan(&name)
+	if err := s.db.QueryRow(ctx, `SELECT organization_name FROM organization_settings`).Scan(&name); err != nil {
+		return PlayerConfig{}, "", err
+	}
 	var screenLocation string
-	_ = s.db.QueryRow(ctx, `SELECT location FROM screens WHERE id=$1`, screen).Scan(&screenLocation)
+	if err := s.db.QueryRow(ctx, `SELECT location FROM screens WHERE id=$1`, screen).Scan(&screenLocation); err != nil {
+		return PlayerConfig{}, "", err
+	}
 	v := func(key string) any { return effective.Values[key].Value }
 	o := func(key string) any { return org.Values[key] }
 	config := PlayerConfig{SchemaVersion: 1, ConfigRevision: effective.ConfigRevision, GeneratedAt: time.Now().UTC(), Branding: map[string]any{"organizationName": name, "logoAssetId": o("branding.logo_asset_id"), "backgroundColor": o("branding.player_background_color"), "textColor": o("branding.player_text_color"), "noContentTitle": o("branding.no_content_title"), "noContentMessage": o("branding.no_content_message"), "disabledTitle": o("branding.disabled_title"), "disabledMessage": o("branding.disabled_message"), "footerText": o("branding.footer_text")}, Playback: map[string]any{"defaultVolume": v("player.playback.default_volume"), "defaultFitMode": v("player.playback.default_fit_mode"), "identifyShowsLocation": v("player.identify.show_location"), "screenLocation": screenLocation}, Cache: map[string]any{"maximumBytes": v("player.cache.max_bytes"), "minimumFreeBytes": v("player.cache.minimum_free_bytes"), "concurrentDownloads": v("player.download.concurrent_limit"), "automaticThresholdBytes": v("player.download.automatic_threshold_bytes")}, Sync: map[string]any{"manifestReconciliationSeconds": v("player.sync.manifest_seconds"), "statusReportSeconds": v("player.sync.status_seconds")}, Website: map[string]any{"timeoutSeconds": v("player.website.timeout_seconds"), "cookiePolicy": v("player.website.cookie_policy"), "clearOnRestart": v("player.website.clear_on_restart")},

@@ -322,8 +322,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 				viewModelScope.launch { reconcilePlayerConfig(url,credential) }
 				// The periodic pass also polls commands: a dropped commands.available push must
 				// never strand a command until the next reconnect.
-				manifestPollJob?.cancel(); manifestPollJob=viewModelScope.launch { while (true) { delay(5*60*1000L); reconcileManifest(url,credential); runCommands(url,credential) } }
-				configPollJob?.cancel();configPollJob=viewModelScope.launch{while(true){delay((mutablePlayerConfig.value?.sync?.manifestReconciliationSeconds?:300)*1000L);reconcilePlayerConfig(url,credential)}}
+				manifestPollJob?.cancel(); manifestPollJob=viewModelScope.launch { while (true) { delay(manifestPollDelayMillis(mutablePlayerConfig.value?.sync?.manifestReconciliationSeconds)); reconcileManifest(url,credential); runCommands(url,credential) } }
+				configPollJob?.cancel();configPollJob=viewModelScope.launch{while(true){delay(manifestPollDelayMillis(mutablePlayerConfig.value?.sync?.manifestReconciliationSeconds));reconcilePlayerConfig(url,credential)}}
             }
             override fun onMessage(webSocket: WebSocket, text: String) {
 				if (socket !== webSocket) return
@@ -375,10 +375,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             delay(backoff.delayMillis(attempt))
             try {
                 val actual = api.identity(url)
-                val expected = current?.serverInstallationId
-                if (expected != null && actual.installationId != expected) {
-                    emit(PlayerEvent.IdentityChanged(expected, actual.installationId))
-                    return@launch
+				val expected = current?.serverInstallationId
+				if (expected != null && actual.installationId != expected) {
+					clearPlaybackState()
+					clearPlayerConfigState()
+					emit(PlayerEvent.IdentityChanged(expected, actual.installationId))
+					return@launch
                 }
                 openSocket(url, name, credential, attempt)
             } catch (error: CancellationException) {
@@ -449,7 +451,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     private suspend fun verifyAfterAuthFailure(url: String, name: String, credential: String) {
         try { api.heartbeat(url, credential, heartbeat()); scheduleReconnect(url, name, credential, 1, "Connection interrupted") }
+        catch (error: CancellationException) { throw error }
         catch (error: ApiException) { if (error.code == "device_credential_revoked" || error.code == "device_credential_invalid") revokeLocally(name) else emit(PlayerEvent.Disconnected(name, error.message)) }
+        catch (_: Exception) { scheduleReconnect(url, name, credential, 1, "Connection interrupted") }
     }
 
     private fun stopConnectionWork() {
@@ -632,7 +636,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 		private fun recordPlaybackProgress(){val now=Instant.now();lastPlaybackProgressAt=now;val prefs=getApplication<Application>().getSharedPreferences("tilecast-reliability",Application.MODE_PRIVATE);prefs.edit().putLong("last-playback-progress-at",now.toEpochMilli()).apply();if(reliabilitySupervisor.recordHealthy(now)){recoveryCount=0;recoveryLevel=0;lastPlaybackError=null};prefs.edit().putLong("last-healthy-playback-at",now.toEpochMilli()).apply()}
 		fun playbackProgress() = recordPlaybackProgress()
 		private fun retryCurrentItem(){val active=mutableContent.value?:return;playbackRetryJob?.cancel();playbackRetryJob=viewModelScope.launch{mutableContent.value=null;delay(100);if(mutableContent.value==null&&mutableActiveHours.value&&!mutablePlaybackDisabled.value&&!mutableSafeMode.value)mutableContent.value=active};recordPlaybackProgress()}
-		private fun skipCurrentItem(){val active=mutableContent.value?:return;val playlist=active.content.manifest.playlist?:return;val index=playlist.items.indexOfFirst{it.id==currentItemId}.takeIf{it>=0}?:0;val next=(index+1)%playlist.items.size;val items=playlist.items.drop(next)+playlist.items.take(next);mutableContent.value=active.copy(content=active.content.copy(manifest=active.content.manifest.copy(playlist=playlist.copy(items=items))));recordPlaybackProgress()}
+		private fun skipCurrentItem(){val active=mutableContent.value?:return;val playlist=active.content.manifest.playlist?:return;if(playlist.items.isEmpty())return;val index=playlist.items.indexOfFirst{it.id==currentItemId}.takeIf{it>=0}?:0;val next=(index+1)%playlist.items.size;val items=playlist.items.drop(next)+playlist.items.take(next);mutableContent.value=active.copy(content=active.content.copy(manifest=active.content.manifest.copy(playlist=playlist.copy(items=items))));recordPlaybackProgress()}
 		private fun recreateRenderer()=retryCurrentItem()
 		private fun recreatePlaybackSession(){val prepared=scheduleContent?:return;val url=current?.serverUrl?:return;val credential=credentials.read()?:return;activateScheduleSelection(prepared,url,credential);recordPlaybackProgress()}
 		private fun executeRecovery(decision:RecoveryDecision){recoveryLevel=decision.level.ordinal+1;recoveryCount=decision.recoveryCount;lastWatchdogRecoveryAt=Instant.now();when(decision.level){RecoveryLevel.RETRY->retryCurrentItem();RecoveryLevel.SKIP_ITEM->skipCurrentItem();RecoveryLevel.RECREATE_RENDERER->recreateRenderer();RecoveryLevel.RECREATE_CONTROLLER->recreatePlaybackSession();RecoveryLevel.RESTART_ACTIVITY->reliabilityController.restartActivity();RecoveryLevel.RESTART_PROCESS->viewModelScope.launch{delay(500);reliabilityController.restartProcess()};RecoveryLevel.SAFE_MODE->{mutableSafeMode.value=true;reliabilityController.setSafeMode(true);mutableContent.value=null}}}

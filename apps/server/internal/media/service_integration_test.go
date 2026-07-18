@@ -226,8 +226,18 @@ func TestMediaUploadProcessingAndDeletionLifecycle(t *testing.T) {
 	if err := worker.cleanExpired(ctx); err != nil {
 		t.Fatal(err)
 	}
+	var expiredStatus, expiredFailure string
+	if err := pool.QueryRow(ctx, `SELECT status,failure_code FROM upload_sessions WHERE id=$1`, expired.ID).Scan(&expiredStatus, &expiredFailure); err != nil {
+		t.Fatal(err)
+	}
+	if expiredStatus != string(UploadExpired) || expiredFailure != "upload_expired" {
+		t.Fatalf("expired upload cleanup state=%q/%q", expiredStatus, expiredFailure)
+	}
 	if _, err := storage.Stat(UploadKey(expired.ID)); !os.IsNotExist(err) {
 		t.Fatalf("expired temporary file remains: %v", err)
+	}
+	if err := worker.cleanExpired(ctx); err != nil {
+		t.Fatalf("repeat expired cleanup: %v", err)
 	}
 	if err := service.DeleteAsset(ctx, asset.ID, owner.User.ID); err != nil {
 		t.Fatal(err)
