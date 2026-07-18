@@ -27,14 +27,14 @@ permissions:
   actions: write
 
 jobs:
-  release-player-0-14-5:
+  verify-player-0-14-5:
     if: github.event_name == 'pull_request' && github.head_ref == 'gibby/run-player-0.14.5-release'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Tag main and dispatch signed Player release
+      - name: Verify signed Player release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: player-v0.14.5
@@ -42,25 +42,29 @@ jobs:
           set -euo pipefail
           git fetch origin main --tags
           target="$(git rev-parse origin/main)"
-          git show "$target:apps/player-android/app/build.gradle.kts" | grep -F 'versionCode = 29'
-          git show "$target:apps/player-android/app/build.gradle.kts" | grep -F 'versionName = "0.14.5"'
+          tagged="$(git rev-list -n 1 "$RELEASE_TAG")"
+          test "$tagged" = "$target"
+          git show "$tagged:apps/player-android/app/build.gradle.kts" | grep -F 'versionCode = 29'
+          git show "$tagged:apps/player-android/app/build.gradle.kts" | grep -F 'versionName = "0.14.5"'
 
-          if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
-            echo "$RELEASE_TAG already exists; refusing to move it." >&2
-            exit 1
-          fi
+          for attempt in $(seq 1 90); do
+            if release_json="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json tagName,isDraft,isPrerelease,assets 2>/dev/null)"; then
+              names="$(printf '%s' "$release_json" | jq -r '.assets[].name')"
+              if grep -qx 'tilecast-player.apk' <<<"$names" && \
+                 grep -qx 'tilecast-player-update.json' <<<"$names" && \
+                 grep -qx 'tilecast-player-update.json.sig' <<<"$names"; then
+                test "$(printf '%s' "$release_json" | jq -r .tagName)" = "$RELEASE_TAG"
+                test "$(printf '%s' "$release_json" | jq -r .isDraft)" = "false"
+                test "$(printf '%s' "$release_json" | jq -r .isPrerelease)" = "false"
+                echo "Tilecast Player 0.14.5 release assets verified."
+                exit 0
+              fi
+            fi
+            sleep 10
+          done
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$RELEASE_TAG" "$target" -m "Tilecast Player 0.14.5"
-          git push origin "$RELEASE_TAG"
-
-          gh workflow run player-release.yml \
-            --repo "$GITHUB_REPOSITORY" \
-            --ref main \
-            -f tag="$RELEASE_TAG" \
-            -f channel=stable \
-            -f release_notes=$'## What’s new\n\n- Adds outside-active-hours choices for a bouncing Tilecast logo, custom text, or a completely black screen.\n- Keeps Fire TV devices awake outside active hours and blocks sleep requests that could leave them unreachable.\n- Includes recent player reliability and settings compatibility fixes.'
+          echo "Timed out waiting for all Player 0.14.5 release assets." >&2
+          exit 1
 
   dashboard:
     runs-on: ubuntu-latest
