@@ -1678,13 +1678,13 @@ export function ScreenDetailPage() {
           </p>
           <div className="heading-actions">
             <button
-              className="button button--quiet"
+              className="button button--secondary"
               onClick={() => command.mutate({ type: "sync_now", payload: {} })}
             >
               Sync now
             </button>
             <button
-              className="button button--quiet"
+              className="button button--secondary"
               onClick={() =>
                 command.mutate({ type: "reload_playback", payload: {} })
               }
@@ -1692,7 +1692,7 @@ export function ScreenDetailPage() {
               Reload playback
             </button>
             <button
-              className="button button--quiet"
+              className="button button--secondary"
               onClick={() =>
                 command.mutate({
                   type: "identify_screen",
