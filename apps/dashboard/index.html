@@ -5,22 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#18201d" />
     <meta name="description" content="Tilecast signage management" />
-    <script>
-      (() => {
-        try {
-          const value = localStorage.getItem("tilecast.appearance");
-          document.documentElement.dataset.theme = [
-            "light",
-            "dark",
-            "system",
-          ].includes(value)
-            ? value
-            : "system";
-        } catch {
-          document.documentElement.dataset.theme = "system";
-        }
-      })();
-    </script>
+    <script src="/appearance-bootstrap.js"></script>
     <style>
       html {
         background: #f6f8fa;
