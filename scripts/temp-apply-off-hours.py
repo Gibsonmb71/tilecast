@@ -1,0 +1,299 @@
+from pathlib import Path
+
+
+def replace(path: str, old: str, new: str) -> None:
+    file = Path(path)
+    source = file.read_text()
+    if old not in source:
+        raise SystemExit(f"replacement not found in {path}: {old[:120]!r}")
+    file.write_text(source.replace(old, new, 1))
+
+
+replace(
+    "apps/server/internal/settings/registry.go",
+    '\t{Key: "power.sleep_outside_active_hours", Category: "power", Type: "bool", Default: false, Scope: ScopePolicy, Title: "Request sleep outside active hours"},\n\t{Key: "power.black_screen_fallback", Category: "power", Type: "bool", Default: true, Scope: ScopePolicy, Title: "Black-screen fallback"},',
+    '\t{Key: "power.sleep_outside_active_hours", Category: "power", Type: "bool", Default: false, Scope: ScopePolicy, Title: "Request sleep outside active hours"},\n\t{Key: "power.outside_active_hours_display", Category: "power", Type: "enum", Default: "black", Allowed: []string{"bouncing_logo", "custom_text", "black"}, Scope: ScopePolicy, Title: "Outside active hours", Description: "Choose what remains visible when the player is outside active hours and the display does not sleep."},\n\t{Key: "power.outside_active_hours_text", Category: "power", Type: "string", Default: "", Scope: ScopePolicy, Title: "Custom text", Description: "Centered text shown outside active hours. When empty, Tilecast uses the branding footer text."},\n\t{Key: "power.black_screen_fallback", Category: "power", Type: "bool", Default: true, Scope: ScopePolicy, Title: "Legacy black-screen fallback"},',
+)
+
+replace(
+    "apps/server/internal/settings/service.go",
+    '"sleepOutsideActiveHours": v("power.sleep_outside_active_hours"), "blackScreenFallback": v("power.black_screen_fallback")',
+    '"sleepOutsideActiveHours": v("power.sleep_outside_active_hours"), "outsideActiveHoursDisplay": v("power.outside_active_hours_display"), "outsideActiveHoursText": v("power.outside_active_hours_text"), "blackScreenFallback": v("power.outside_active_hours_display") == "black"',
+)
+
+replace(
+    "apps/player-android/app/src/main/java/org/tilecast/player/network/Models.kt",
+    'val sleepOutsideActiveHours:Boolean=false,val blackScreenFallback:Boolean=true)',
+    'val sleepOutsideActiveHours:Boolean=false,val outsideActiveHoursDisplay:String="black",val outsideActiveHoursText:String="",val blackScreenFallback:Boolean=true)',
+)
+
+replace(
+    "apps/player-android/app/src/main/java/org/tilecast/player/MainActivity.kt",
+    'import org.tilecast.player.ui.CommissioningScreen\n',
+    'import org.tilecast.player.ui.CommissioningScreen\nimport org.tilecast.player.ui.OutsideActiveHoursScreen\n',
+)
+replace(
+    "apps/player-android/app/src/main/java/org/tilecast/player/MainActivity.kt",
+    '\tif(!activeHours){val offHoursBackground=if(config?.power?.blackScreenFallback!=false)Color.Black else brandedBackground;Box(Modifier.fillMaxSize().background(offHoursBackground),contentAlignment=Alignment.Center){Text(config?.branding?.footerText.orEmpty(),color=if(offHoursBackground==Color.Black)Color.DarkGray else brandedText)};return}',
+    '\tif(!activeHours){OutsideActiveHoursScreen(config?.power,config?.branding,brandedText);return}',
+)
+
+Path("apps/player-android/app/src/main/java/org/tilecast/player/ui/OutsideActiveHoursScreen.kt").write_text('''package org.tilecast.player.ui
+
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import org.tilecast.player.R
+import org.tilecast.player.network.PlayerBranding
+import org.tilecast.player.network.PlayerPowerPolicy
+
+internal enum class OutsideActiveHoursDisplay { BouncingLogo, CustomText, Black }
+
+internal data class OutsideActiveHoursPresentation(
+    val display: OutsideActiveHoursDisplay,
+    val text: String = "",
+)
+
+internal fun outsideActiveHoursPresentation(
+    power: PlayerPowerPolicy?,
+    branding: PlayerBranding?,
+): OutsideActiveHoursPresentation {
+    val display = when (power?.outsideActiveHoursDisplay) {
+        "bouncing_logo" -> OutsideActiveHoursDisplay.BouncingLogo
+        "custom_text" -> OutsideActiveHoursDisplay.CustomText
+        else -> OutsideActiveHoursDisplay.Black
+    }
+    val text = power?.outsideActiveHoursText.orEmpty().trim()
+        .ifBlank { branding?.footerText.orEmpty().trim() }
+        .ifBlank { "Powered by Tilecast" }
+    return OutsideActiveHoursPresentation(display, text)
+}
+
+@Composable
+internal fun OutsideActiveHoursScreen(
+    power: PlayerPowerPolicy?,
+    branding: PlayerBranding?,
+    textColor: Color,
+) {
+    val presentation = outsideActiveHoursPresentation(power, branding)
+    when (presentation.display) {
+        OutsideActiveHoursDisplay.BouncingLogo -> BouncingTilecastLogo()
+        OutsideActiveHoursDisplay.CustomText -> Box(
+            Modifier.fillMaxSize().background(Color.Black).padding(80.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                presentation.text,
+                color = textColor,
+                fontSize = 42.sp,
+                fontWeight = FontWeight.Medium,
+                textAlign = TextAlign.Center,
+            )
+        }
+        OutsideActiveHoursDisplay.Black -> Box(Modifier.fillMaxSize().background(Color.Black))
+    }
+}
+
+@Composable
+private fun BouncingTilecastLogo() {
+    val logoWidth = 250.dp
+    val logoHeight = 76.dp
+    BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
+        val maxX = (maxWidth - logoWidth).coerceAtLeast(0.dp).value
+        val maxY = (maxHeight - logoHeight).coerceAtLeast(0.dp).value
+        val movement = rememberInfiniteTransition(label = "outside-hours-logo")
+        val x by movement.animateFloat(
+            initialValue = 0f,
+            targetValue = maxX,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 12_000, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "outside-hours-logo-x",
+        )
+        val y by movement.animateFloat(
+            initialValue = 0f,
+            targetValue = maxY,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 8_500, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "outside-hours-logo-y",
+        )
+        Image(
+            painter = painterResource(R.drawable.tilecast_wordmark),
+            contentDescription = "Tilecast logo",
+            modifier = Modifier.offset(x.dp, y.dp).width(logoWidth).height(logoHeight),
+            contentScale = ContentScale.Fit,
+        )
+    }
+}
+''')
+
+test_path = Path("apps/player-android/app/src/test/java/org/tilecast/player/ui/OutsideActiveHoursScreenTest.kt")
+test_path.parent.mkdir(parents=True, exist_ok=True)
+test_path.write_text('''package org.tilecast.player.ui
+
+import org.junit.Assert.assertEquals
+import org.junit.Test
+import org.tilecast.player.network.PlayerBranding
+import org.tilecast.player.network.PlayerPowerPolicy
+
+class OutsideActiveHoursScreenTest {
+    @Test
+    fun resolvesAllDisplayModesAndFallsBackSafely() {
+        assertEquals(
+            OutsideActiveHoursDisplay.BouncingLogo,
+            outsideActiveHoursPresentation(
+                PlayerPowerPolicy(outsideActiveHoursDisplay = "bouncing_logo"),
+                PlayerBranding(),
+            ).display,
+        )
+        assertEquals(
+            OutsideActiveHoursDisplay.CustomText,
+            outsideActiveHoursPresentation(
+                PlayerPowerPolicy(outsideActiveHoursDisplay = "custom_text"),
+                PlayerBranding(),
+            ).display,
+        )
+        assertEquals(
+            OutsideActiveHoursDisplay.Black,
+            outsideActiveHoursPresentation(
+                PlayerPowerPolicy(outsideActiveHoursDisplay = "unexpected"),
+                PlayerBranding(),
+            ).display,
+        )
+    }
+
+    @Test
+    fun customTextUsesPolicyThenExistingBrandingFooter() {
+        assertEquals(
+            "School is closed",
+            outsideActiveHoursPresentation(
+                PlayerPowerPolicy(
+                    outsideActiveHoursDisplay = "custom_text",
+                    outsideActiveHoursText = "  School is closed  ",
+                ),
+                PlayerBranding(footerText = "Powered by Weekly Wildcat"),
+            ).text,
+        )
+        assertEquals(
+            "Powered by Weekly Wildcat",
+            outsideActiveHoursPresentation(
+                PlayerPowerPolicy(
+                    outsideActiveHoursDisplay = "custom_text",
+                    outsideActiveHoursText = "",
+                ),
+                PlayerBranding(footerText = "Powered by Weekly Wildcat"),
+            ).text,
+        )
+    }
+}
+''')
+
+replace(
+    "apps/dashboard/src/settings/settingDisplay.ts",
+    '  interval: "Reload on an interval",\n};',
+    '  interval: "Reload on an interval",\n  bouncing_logo: "Bouncing Tilecast logo",\n  custom_text: "Custom text",\n  black: "Black screen",\n};',
+)
+replace(
+    "apps/dashboard/src/settings/settingDisplay.ts",
+    '  "power.black_screen_fallback":\n    "Shows black and stops decoding when device sleep is unavailable. This may not turn off the television.",',
+    '  "power.outside_active_hours_display":\n    "What remains visible when the player is outside active hours and the television does not sleep.",\n  "power.outside_active_hours_text":\n    "Centered text shown outside active hours. Leave it empty to use the branding footer text.",',
+)
+replace(
+    "apps/dashboard/src/settings/settingDisplay.ts",
+    '    {\n      title: "Power Assist",\n      description:\n        "Tilecast requests Android sleep and wake behavior. This is not direct HDMI-CEC control and results depend on device and TV firmware.",\n      keys: ["power.cec_assist_enabled", "power.black_screen_fallback"],\n    },',
+    '    {\n      title: "Outside active hours",\n      description:\n        "Choose the fallback shown when the player is outside active hours and Android or the television remains awake.",\n      keys: [\n        "power.outside_active_hours_display",\n        "power.outside_active_hours_text",\n      ],\n    },\n    {\n      title: "Power Assist",\n      description:\n        "Tilecast requests Android sleep and wake behavior. This is not direct HDMI-CEC control and results depend on device and TV firmware.",\n      keys: ["power.cec_assist_enabled"],\n    },',
+)
+replace(
+    "apps/dashboard/src/settings/settingDisplay.ts",
+    'export function groupsFor(\n  section: SettingsSectionId,\n  definitions: SettingDefinition[],\n) {\n  const used = new Set<string>();\n  const groups = subsectionOrder[section]',
+    'const hiddenSettingKeys = new Set(["power.black_screen_fallback"]);\n\nexport function groupsFor(\n  section: SettingsSectionId,\n  definitions: SettingDefinition[],\n) {\n  const visibleDefinitions = definitions.filter(\n    (definition) => !hiddenSettingKeys.has(definition.key),\n  );\n  const used = new Set<string>();\n  const groups = subsectionOrder[section]',
+)
+replace(
+    "apps/dashboard/src/settings/settingDisplay.ts",
+    'definitions: definitions.filter((definition) => {',
+    'definitions: visibleDefinitions.filter((definition) => {',
+)
+replace(
+    "apps/dashboard/src/settings/settingDisplay.ts",
+    '  const remaining = definitions.filter(',
+    '  const remaining = visibleDefinitions.filter(',
+)
+
+replace(
+    "apps/dashboard/src/settings/settingDependencies.ts",
+    'export type Dependency = { key: string; equals?: unknown; message: string };\nexport const settingDependencies: Record<string, Dependency> = {',
+    'export type Dependency = { key: string; equals?: unknown; message: string };\nexport const settingDependencies: Record<string, Dependency | Dependency[]> = {',
+)
+replace(
+    "apps/dashboard/src/settings/settingDependencies.ts",
+    '  "power.sleep_outside_active_hours": activeHours(),\n  "power.black_screen_fallback": {\n    key: "power.cec_assist_enabled",\n    equals: true,\n    message: "Enable Power Assist to configure its fallback.",\n  },',
+    '  "power.sleep_outside_active_hours": activeHours(),\n  "power.outside_active_hours_display": activeHours(),\n  "power.outside_active_hours_text": [\n    activeHours(),\n    {\n      key: "power.outside_active_hours_display",\n      equals: "custom_text",\n      message: "Choose Custom text to edit this setting.",\n    },\n  ],',
+)
+replace(
+    "apps/dashboard/src/settings/settingDependencies.ts",
+    '  const dependency = settingDependencies[key];\n  if (!dependency) return { disabled: false };\n  const expected = dependency.equals ?? true;\n  return {\n    disabled: values[dependency.key] !== expected,\n    message: dependency.message,\n  };',
+    '  const configured = settingDependencies[key];\n  if (!configured) return { disabled: false };\n  const dependencies = Array.isArray(configured) ? configured : [configured];\n  const unmet = dependencies.find((dependency) => {\n    const expected = dependency.equals ?? true;\n    return values[dependency.key] !== expected;\n  });\n  return unmet\n    ? { disabled: true, message: unmet.message }\n    : { disabled: false };',
+)
+
+replace(
+    "apps/dashboard/src/settings/settingsExperience.test.tsx",
+    '  it("centralizes dependencies and meaningful subsections", () => {\n    expect(\n      dependencyState("power.active_hours_days", {\n        "power.active_hours_enabled": false,\n      }),\n    ).toMatchObject({ disabled: true });',
+    '  it("centralizes dependencies and meaningful subsections", () => {\n    expect(enumLabel("bouncing_logo")).toBe("Bouncing Tilecast logo");\n    expect(enumLabel("black")).toBe("Black screen");\n    expect(\n      dependencyState("power.active_hours_days", {\n        "power.active_hours_enabled": false,\n      }),\n    ).toMatchObject({ disabled: true });\n    expect(\n      dependencyState("power.outside_active_hours_text", {\n        "power.active_hours_enabled": true,\n        "power.outside_active_hours_display": "black",\n      }),\n    ).toMatchObject({ disabled: true });\n    expect(\n      dependencyState("power.outside_active_hours_text", {\n        "power.active_hours_enabled": true,\n        "power.outside_active_hours_display": "custom_text",\n      }),\n    ).toEqual({ disabled: false });',
+)
+
+replace(
+    "apps/server/internal/settings/registry_test.go",
+    '\tvalid := map[string]any{\n\t\t"reliability.mode":               "managed_kiosk",',
+    '\tvalid := map[string]any{\n\t\t"reliability.mode":                   "managed_kiosk",\n\t\t"power.outside_active_hours_display": "bouncing_logo",\n\t\t"power.outside_active_hours_text":    "Powered by Weekly Wildcat",',
+)
+replace(
+    "apps/server/internal/settings/registry_test.go",
+    '\t\t"restart loop":      {"reliability.maximum_process_restarts": 99.0},',
+    '\t\t"restart loop":       {"reliability.maximum_process_restarts": 99.0},\n\t\t"bad off-hours mode": {"power.outside_active_hours_display": "dvd"},',
+)
+
+replace(
+    "apps/server/internal/settings/service_integration_test.go",
+    'map[string]any{"player.playback.default_volume": 0.25, "power.keep_screen_on": false}',
+    'map[string]any{"player.playback.default_volume": 0.25, "power.keep_screen_on": false, "power.outside_active_hours_display": "custom_text", "power.outside_active_hours_text": "School is closed"}',
+)
+replace(
+    "apps/server/internal/settings/service_integration_test.go",
+    'config.Power["keepScreenOn"] != false || etag == ""',
+    'config.Power["keepScreenOn"] != false || config.Power["outsideActiveHoursDisplay"] != "custom_text" || config.Power["outsideActiveHoursText"] != "School is closed" || config.Power["blackScreenFallback"] != false || etag == ""',
+)
+
+schema = Path("packages/settings-schema/player-config-v1.json")
+source = schema.read_text()
+old = '        "keepScreenOn": { "type": "boolean" },\n        "cecAssistEnabled": { "type": "boolean" }'
+new = '        "keepScreenOn": { "type": "boolean" },\n        "cecAssistEnabled": { "type": "boolean" },\n        "outsideActiveHoursDisplay": {\n          "enum": ["bouncing_logo", "custom_text", "black"]\n        },\n        "outsideActiveHoursText": { "type": "string", "maxLength": 2000 }'
+if old not in source:
+    raise SystemExit("player config schema insertion point not found")
+schema.write_text(source.replace(old, new, 1))
