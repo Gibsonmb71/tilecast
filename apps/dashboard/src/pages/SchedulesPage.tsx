@@ -144,7 +144,6 @@ export function GroupDetailPage() {
   return (
     <section>
       <PageHeader
-        eyebrow={<Link to="/groups">← Sync groups</Link>}
         title={groupData.name}
         description={groupData.description || "No description"}
         actions={

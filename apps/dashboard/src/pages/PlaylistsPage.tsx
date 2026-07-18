@@ -287,11 +287,6 @@ export function PlaylistEditorPage() {
   return (
     <section className="playlist-editor">
       <PageHeader
-        eyebrow={
-          <Link className="back-link" to="/playlists">
-            ← Playlists
-          </Link>
-        }
         title={playlist.name}
         description={
           <>

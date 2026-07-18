@@ -14,7 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { useNavigate, useParams } from "react-router";
 import { api } from "../api/client";
 import type {
   Playlist,
@@ -226,7 +226,6 @@ export function ScheduleEditorPage() {
     <section className="schedule-builder-page">
       <PageHeader
         className="schedule-builder-heading"
-        eyebrow={<Link to="/schedules">← Schedules</Link>}
         title={id ? "Edit schedule" : "Create schedule"}
         description="Build the playback rule, then review its effect before saving."
       />
