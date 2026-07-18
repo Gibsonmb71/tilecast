@@ -1,9 +1,29 @@
 package httpapi
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestSecurityHeadersContentSecurityPolicy(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	handler := (&server{}).securityHeaders(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	handler.ServeHTTP(recorder, request)
+	policy := recorder.Header().Get("Content-Security-Policy")
+	if policy != dashboardContentSecurityPolicy {
+		t.Fatalf("unexpected content security policy: %q", policy)
+	}
+	if strings.Contains(policy, "script-src 'self' 'unsafe-inline'") {
+		t.Fatal("script-src must not allow unsafe inline scripts")
+	}
+}
 
 func TestRateLimiter(t *testing.T) {
 	limiter := newRateLimiter(2, time.Minute)

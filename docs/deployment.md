@@ -16,6 +16,8 @@ Cloudflare is optional. Follow [`deploy/cloudflare/README.md`](../deploy/cloudfl
 
 Players using a Tunnel normally enter its public HTTPS hostname manually. LAN discovery advertises local services only and is not a Tunnel discovery mechanism.
 
+The dashboard CSP permits Cloudflare Web Analytics' beacon when a proxied deployment injects it; automatic injection reports to the same origin. Keep `script-src` free of `unsafe-inline` when applying a custom CSP.
+
 ## Data and upgrades
 
 The `postgres_data` volume stores relational state. The `tilecast_data` volume stores originals, playback variants, thumbnails, posters, and temporary resumable uploads beneath `/data/media`; it must remain mounted across server/container recreation. The media tree is never served directly by the container.
