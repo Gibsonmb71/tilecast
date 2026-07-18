@@ -947,8 +947,6 @@ export function LayoutEditorPage() {
     ungroupSelection,
     update,
   ]);
-  if (layoutQuery.isLoading || !document)
-    return <p className="status-copy">Loading Layout editor…</p>;
   if (layoutQuery.isError)
     return (
       <div className="empty-state">
@@ -958,6 +956,8 @@ export function LayoutEditorPage() {
         </button>
       </div>
     );
+  if (layoutQuery.isLoading || !document)
+    return <p className="status-copy">Loading Layout editor…</p>;
   const contentByID = new Map(
     contentQuery.data?.items.map((asset) => [asset.id, asset]),
   );
