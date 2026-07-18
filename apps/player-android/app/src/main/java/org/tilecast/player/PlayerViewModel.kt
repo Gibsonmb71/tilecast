@@ -5,6 +5,7 @@ import android.os.Build
 import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -96,8 +97,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private var current: PlayerConfiguration? = null
     private var selectedIdentity: ServerIdentity? = null
     private var selectedUrl: NormalizedServerUrl? = null
-    private var socket: WebSocket? = null
-    private var reconnectJob: Job? = null
+	private var socket: WebSocket? = null
+	private var reconnectJob: Job? = null
+	private var pairingJob: Job? = null
+	private var pairingRequestJob: Job? = null
 	private val mutableContent = MutableStateFlow<PlaybackSession?>(null)
 	val content: StateFlow<PlaybackSession?> = mutableContent.asStateFlow()
 	private var pendingContent: PreparedContent? = null
@@ -108,6 +111,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 	private var syncRetryJob: Job? = null
 	private var syncFailureCount = 0
 	private var pendingActivationJob: Job? = null
+	private var playbackRetryJob: Job? = null
 	private var commandRetryJob: Job? = null
 	private var commandFailureCount = 0
 	private var manifestPollJob: Job? = null
@@ -186,6 +190,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         try {
             val identity = api.identity(saved.serverUrl)
             if (saved.serverInstallationId != null && saved.serverInstallationId != identity.installationId) {
+                clearPlaybackState()
                 emit(PlayerEvent.IdentityChanged(saved.serverInstallationId, identity.installationId)); return
             }
             selectedIdentity = identity
@@ -194,7 +199,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             if (credential != null && saved.screenName != null) connectPaired(saved, credential)
             else if (saved.pairingSessionId != null && saved.pairingPollSecret != null && saved.pairingCode != null && saved.pairingExpiresAt != null && Instant.parse(saved.pairingExpiresAt).isAfter(Instant.now())) {
                 val session=PairingSession(saved.pairingSessionId,saved.pairingCode,saved.pairingPollSecret,saved.pairingExpiresAt,Instant.now().toString(),saved.pairingPollingIntervalSeconds?:3,"",saved.organizationName?:identity.organizationName)
-                emit(PlayerEvent.IdentityConfirmed(selectedUrl!!,identity));emit(PlayerEvent.PairingCreated(saved.serverUrl,identity.organizationName,session));pollPairing(session.id,session.pollSecret,session.pollingIntervalSeconds)
+                emit(PlayerEvent.IdentityConfirmed(selectedUrl!!,identity));emit(PlayerEvent.PairingCreated(saved.serverUrl,identity.organizationName,session));startPairingPoll(selectedUrl!!.value,session.id,session.pollSecret,session.pollingIntervalSeconds)
             } else {
                 if(saved.pairingSessionId!=null)current=configuration.clearPairingSession(saved)
                 emit(PlayerEvent.IdentityConfirmed(selectedUrl!!, identity))
@@ -224,7 +229,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun chooseServer(server: DiscoveredServer) = validateServer(server.baseUrl)
 
-    fun requestPairing() { viewModelScope.launch {
+    fun requestPairing() {
+		pairingRequestJob?.cancel()
+		pairingRequestJob = viewModelScope.launch {
         val url = selectedUrl ?: return@launch; val identity = selectedIdentity ?: return@launch; val saved = current ?: configuration.getOrCreate()
         emit(PlayerEvent.RequestPairing)
         try {
@@ -232,17 +239,22 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             val persisted=current!!
             if(persisted.pairingSessionId!=null&&persisted.pairingPollSecret!=null&&persisted.pairingCode!=null&&persisted.pairingExpiresAt!=null&&Instant.parse(persisted.pairingExpiresAt).isAfter(Instant.now())){
                 val existing=PairingSession(persisted.pairingSessionId,persisted.pairingCode,persisted.pairingPollSecret,persisted.pairingExpiresAt,Instant.now().toString(),persisted.pairingPollingIntervalSeconds?:3,"",identity.organizationName)
-                emit(PlayerEvent.PairingCreated(url.value,identity.organizationName,existing));pollPairing(existing.id,existing.pollSecret,existing.pollingIntervalSeconds);return@launch
+                emit(PlayerEvent.PairingCreated(url.value,identity.organizationName,existing));startPairingPoll(url.value,existing.id,existing.pollSecret,existing.pollingIntervalSeconds);return@launch
             }
             val session = api.createPairing(url.value, identity.installationId, deviceMetadata(saved.playerInstallationId))
             current=configuration.savePairingSession(current!!,session)
             emit(PlayerEvent.PairingCreated(url.value, identity.organizationName, session))
-            pollPairing(session.id, session.pollSecret, session.pollingIntervalSeconds)
+            startPairingPoll(url.value, session.id, session.pollSecret, session.pollingIntervalSeconds)
+        } catch (error: CancellationException) { throw error
         } catch (error: Exception) { emit(PlayerEvent.Failed(error.message ?: "Pairing request failed")) }
     } }
 
-    private suspend fun pollPairing(sessionId: String, pollSecret: String, interval: Int) {
-        val url = selectedUrl?.value ?: return
+    private fun startPairingPoll(url: String, sessionId: String, pollSecret: String, interval: Int) {
+        pairingJob?.cancel()
+        pairingJob = viewModelScope.launch { pollPairing(url, sessionId, pollSecret, interval) }
+    }
+
+    private suspend fun pollPairing(url: String, sessionId: String, pollSecret: String, interval: Int) {
         while (true) {
             delay(interval.coerceAtLeast(2) * 1_000L)
             try {
@@ -263,6 +275,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                         return
                     }
                 }
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: ApiException) {
                 if (error.status in 400..499) { emit(PlayerEvent.Failed(error.message)); return }
             } catch (_: Exception) { /* transient loss: keep the visible code and retry */ }
@@ -284,9 +298,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun openSocket(url: String, screenName: String, credential: String, attempt: Int) {
-        socket?.cancel()
+        val previous = socket
+        socket = null
+        previous?.cancel()
         socket = api.socket(url, credential, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                if (socket !== webSocket) return
                 reconnectJob?.cancel(); reconnectJob = null
                 if (attempt > 0) recordReliabilityEvent("connection.restored", "info", result = "recovered", failureMessage = "Reconnected after $attempt attempt(s)")
                 socketOpenedAtElapsed = SystemClock.elapsedRealtime()
@@ -305,24 +322,28 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 				configPollJob?.cancel();configPollJob=viewModelScope.launch{while(true){delay((mutablePlayerConfig.value?.sync?.manifestReconciliationSeconds?:300)*1000L);reconcilePlayerConfig(url,credential)}}
             }
             override fun onMessage(webSocket: WebSocket, text: String) {
+				if (socket !== webSocket) return
 				if (text.contains("server.ping")) { webSocket.send("{\"type\":\"player.pong\"}");val interval=(mutablePlayerConfig.value?.sync?.statusReportSeconds?:60)*1000L;if(System.currentTimeMillis()-lastStatusSentAt>=interval){webSocket.send(Json.encodeToString(kotlinx.serialization.json.JsonObject.serializer(), statusMessage()));lastStatusSentAt=System.currentTimeMillis()} }
 				if (text.contains("manifest.changed")) viewModelScope.launch { reconcileManifest(url, credential) }
 				if(text.contains("commands.available"))viewModelScope.launch{runCommands(url,credential)}
 				if(text.contains("config.changed"))viewModelScope.launch{reconcilePlayerConfig(url,credential)}
-			}
+            }
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+				if (socket !== webSocket) return
 				manifestPollJob?.cancel()
 				configPollJob?.cancel()
                 webSocket.close(code, reason)
                 scheduleReconnect(url, screenName, credential, nextReconnectAttempt(attempt), reason)
             }
             override fun onFailure(webSocket: WebSocket, error: Throwable, response: Response?) {
+				if (socket !== webSocket) return
 				manifestPollJob?.cancel()
 				configPollJob?.cancel()
                 if (response?.code == 401) { viewModelScope.launch { verifyAfterAuthFailure(url, screenName, credential) }; return }
                 scheduleReconnect(url, screenName, credential, nextReconnectAttempt(attempt), error.message)
             }
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+				if (socket !== webSocket) return
 				manifestPollJob?.cancel()
 				configPollJob?.cancel()
                 scheduleReconnect(url, screenName, credential, nextReconnectAttempt(attempt), reason)
@@ -356,6 +377,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     return@launch
                 }
                 openSocket(url, name, credential, attempt)
+            } catch (error: CancellationException) {
+                throw error
             } catch (_: Exception) {
                 reconnectJob = null
                 scheduleReconnect(url, name, credential, attempt + 1, "Server unavailable")
@@ -425,10 +448,38 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         catch (error: ApiException) { if (error.code == "device_credential_revoked" || error.code == "device_credential_invalid") revokeLocally(name) else emit(PlayerEvent.Disconnected(name, error.message)) }
     }
 
-    private suspend fun revokeLocally(screenName: String?) { socket?.cancel(); credentials.clear(); configuration.clearPairing(); emit(PlayerEvent.Revoked(screenName)) }
-    fun reconnectAfterRevocation() { viewModelScope.launch { credentials.clear(); configuration.clearPairing(); selectedIdentity?.let { emit(PlayerEvent.IdentityConfirmed(selectedUrl ?: return@launch, it)) } ?: discover() } }
-    fun cancelPairing() { discover() }
-    fun resetServer() { viewModelScope.launch { socket?.cancel(); credentials.clear(); WebsiteDataManager.clear(getApplication()){};configuration.reset(); current = configuration.getOrCreate(); discover() } }
+    private fun stopConnectionWork() {
+        val activeSocket = socket
+        socket = null
+        activeSocket?.cancel()
+        reconnectJob?.cancel(); reconnectJob = null
+        pairingJob?.cancel(); pairingJob = null
+		pairingRequestJob?.cancel(); pairingRequestJob = null
+        manifestPollJob?.cancel(); manifestPollJob = null
+        configPollJob?.cancel(); configPollJob = null
+        syncRetryJob?.cancel(); syncRetryJob = null
+        syncJob?.cancel(); syncJob = null
+        commandRetryJob?.cancel(); commandRetryJob = null
+        pendingActivationJob?.cancel(); pendingActivationJob = null
+    }
+
+    private fun clearPlaybackState() {
+        mutableContent.value = null
+        pendingContent = null
+        scheduleContent = null
+        scheduleJob?.cancel(); scheduleJob = null
+        emergencyJob?.cancel(); emergencyJob = null
+        playbackRetryJob?.cancel(); playbackRetryJob = null
+        activeManifestVersion = null
+        currentScheduleId = null
+        currentPlaylistId = null
+        currentItemId = null
+        currentAssetId = null
+    }
+	private suspend fun revokeLocally(screenName: String?) { stopConnectionWork(); clearPlaybackState(); credentials.clear(); configuration.clearPairing(); emit(PlayerEvent.Revoked(screenName)) }
+    fun reconnectAfterRevocation() { viewModelScope.launch { stopConnectionWork(); clearPlaybackState(); credentials.clear(); configuration.clearPairing(); selectedIdentity?.let { emit(PlayerEvent.IdentityConfirmed(selectedUrl ?: return@launch, it)) } ?: discover() } }
+    fun cancelPairing() { pairingJob?.cancel(); pairingJob = null; pairingRequestJob?.cancel(); pairingRequestJob = null; viewModelScope.launch { current?.let { current = configuration.clearPairingSession(it) }; discover() } }
+    fun resetServer() { viewModelScope.launch { stopConnectionWork(); clearPlaybackState(); credentials.clear(); WebsiteDataManager.clear(getApplication()){};configuration.reset(); current = configuration.getOrCreate(); discover() } }
 
 	private suspend fun reconcileManifest(url: String, credential: String) {
 		if (syncJob?.isActive == true) { syncPending = true; return }
@@ -452,7 +503,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 					}
 					refreshCommissioning()
 				}
-				catch(error:Exception){syncProgress=SyncProgress(cacheUsedBytes=syncProgress.cacheUsedBytes,error=error.message?:"Manifest synchronization failed");scheduleSyncRetry(url,credential)}
+					catch(error:CancellationException){throw error}
+					catch(error:Exception){syncProgress=SyncProgress(cacheUsedBytes=syncProgress.cacheUsedBytes,error=error.message?:"Manifest synchronization failed");scheduleSyncRetry(url,credential)}
 			} while (syncPending)
 		}
 		syncJob?.join()
@@ -537,7 +589,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 		lastCommandState=if(outcome.success)"succeeded" else "failed";lastCommandResult=outcome.code;lastCommandCompletedAt=Instant.now().toString();outcome
 		}},
 			onFailure={failed(it)},
-			onCredentialRejected={revokeLocally(current?.screenName)},
+			onCredentialRejected={pollFailed=false;revokeLocally(current?.screenName)},
 		)
 		// A command left undelivered by a transient failure retries with bounded backoff so it
 		// cannot sit until the next push or reconnect; any fresh trigger supersedes the retry.
@@ -548,7 +600,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 		} else commandFailureCount=0
 	}
 	private fun recordCommandPollFailure(code:String){lastCommandState="poll_failed";lastCommandResult=code;lastCommandCompletedAt=Instant.now().toString()}
-	private suspend fun reconcilePlayerConfig(url:String,credential:String){try{configManager.reconcile(url,credential)?.let{mutablePlayerConfig.value=it;applyPlayerConfig(it)};configurationError=null}catch(_:Exception){configurationError="Player configuration could not be applied"}}
+		private suspend fun reconcilePlayerConfig(url:String,credential:String){try{configManager.reconcile(url,credential)?.let{mutablePlayerConfig.value=it;applyPlayerConfig(it)};configurationError=null}catch(error:CancellationException){throw error}catch(_:Exception){configurationError="Player configuration could not be applied"}}
 		private fun applyPlayerConfig(config:PlayerConfig){activeConfigRevision=config.configRevision;synchronizer.applyPolicy(config.cache.maximumBytes,config.cache.minimumFreeBytes,config.cache.automaticThresholdBytes,config.cache.concurrentDownloads);if(config.website.clearOnRestart)WebsiteDataManager.clear(getApplication()){};reliabilitySupervisor=ReliabilitySupervisor(config.reliability.maximumProcessRestarts,Duration.ofMinutes(config.reliability.restartWindowMinutes.toLong()),config.reliability.safeModeEnabled,PreferencesRecoveryStateStore(getApplication()));getApplication<Application>().getSharedPreferences("tilecast-reliability",Application.MODE_PRIVATE).edit().putBoolean("launch-after-boot",config.reliability.launchAfterBoot).putBoolean("accessibility-enabled-by-policy",config.accessibility.controlAssistEnabled).putBoolean("report-foreground-package",config.accessibility.reportForegroundPackage).putBoolean("pause-accessibility-during-updates",config.accessibility.pauseDuringUpdates).putBoolean("pause-accessibility-during-admin",config.accessibility.pauseDuringAdminSession).putInt("return-delay",config.accessibility.returnDelaySeconds).putInt("maximum-returns",config.accessibility.maximumReturns).putInt("return-window",config.accessibility.returnWindowMinutes).putStringSet("allowed-packages",config.accessibility.allowedPackages.toSet()).apply();mutableSafeMode.value=reliabilitySupervisor.safeMode;evaluateActiveHours();refreshCommissioning() }
 	private fun evaluateActiveHours(){val config=mutablePlayerConfig.value?:return;val rule=ActiveHoursRule(config.power.activeHoursEnabled,config.power.activeHoursTimezone,config.power.activeHoursDays.map{DayOfWeek.of(it)}.toSet(),LocalTime.parse(config.power.activeHoursStart),LocalTime.parse(config.power.activeHoursEnd));val result=runCatching{ActiveHoursEngine.evaluate(Instant.now(),rule,activeEmergencyId!=null)}.getOrNull()?:return;activeHoursNextTransition=result.nextTransition;val changed=mutableActiveHours.value!=result.active;mutableActiveHours.value=result.active;if(changed&&result.active)reliabilityController.requestWake();if(changed&&!result.active&&config.power.sleepOutsideActiveHours&&activeEmergencyId==null)reliabilityController.requestSleep();if(!result.active&&activeEmergencyId==null)mutableContent.value=null else if(changed){val url=current?.serverUrl;val credential=credentials.read();if(url!=null&&credential!=null)scheduleContent?.let{activateScheduleSelection(it,url,credential)}};powerJob?.cancel();result.nextTransition?.let{next->if(!result.active)reliabilityController.scheduleWake(next.minusSeconds(config.power.startupGraceSeconds.toLong()));powerJob=viewModelScope.launch{delay(Duration.between(Instant.now(),next).toMillis().coerceAtLeast(0)+100);evaluateActiveHours()}}}
 
@@ -571,7 +623,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 		fun runSelfTest():String {val screen=current?.screenId?:return "not_paired";val result=commissioningController.runSelfTest(screen);refreshCommissioning();return result}
 		private fun recordPlaybackProgress(){val now=Instant.now();lastPlaybackProgressAt=now;val prefs=getApplication<Application>().getSharedPreferences("tilecast-reliability",Application.MODE_PRIVATE);prefs.edit().putLong("last-playback-progress-at",now.toEpochMilli()).apply();if(reliabilitySupervisor.recordHealthy(now)){recoveryCount=0;recoveryLevel=0;lastPlaybackError=null};prefs.edit().putLong("last-healthy-playback-at",now.toEpochMilli()).apply()}
 		fun playbackProgress() = recordPlaybackProgress()
-		private fun retryCurrentItem(){val active=mutableContent.value?:return;mutableContent.value=null;mutableContent.value=active;recordPlaybackProgress()}
+		private fun retryCurrentItem(){val active=mutableContent.value?:return;playbackRetryJob?.cancel();playbackRetryJob=viewModelScope.launch{mutableContent.value=null;delay(100);if(mutableContent.value==null&&mutableActiveHours.value&&!mutablePlaybackDisabled.value&&!mutableSafeMode.value)mutableContent.value=active};recordPlaybackProgress()}
 		private fun skipCurrentItem(){val active=mutableContent.value?:return;val playlist=active.content.manifest.playlist?:return;val index=playlist.items.indexOfFirst{it.id==currentItemId}.takeIf{it>=0}?:0;val next=(index+1)%playlist.items.size;val items=playlist.items.drop(next)+playlist.items.take(next);mutableContent.value=active.copy(content=active.content.copy(manifest=active.content.manifest.copy(playlist=playlist.copy(items=items))));recordPlaybackProgress()}
 		private fun recreateRenderer()=retryCurrentItem()
 		private fun recreatePlaybackSession(){val prepared=scheduleContent?:return;val url=current?.serverUrl?:return;val credential=credentials.read()?:return;activateScheduleSelection(prepared,url,credential);recordPlaybackProgress()}

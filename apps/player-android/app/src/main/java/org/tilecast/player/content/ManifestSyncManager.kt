@@ -39,6 +39,55 @@ import java.util.concurrent.ConcurrentHashMap
 data class PreparedContent(val manifest: PlayerManifest, val localFiles: Map<String, String>,val serverClockOffsetSeconds:Long?=null)
 data class SyncProgress(val pendingVersion: Long? = null, val queueCount: Int = 0, val downloadedBytes: Long = 0, val requiredBytes: Long = 0, val cacheUsedBytes: Long = 0, val error: String? = null)
 
+internal fun selectManifestDownloads(
+    manifest: PlayerManifest,
+    cacheUsedBytes: Long,
+    usableSpaceBytes: Long,
+    cacheLimitBytes: Long,
+    minimumFreeBytes: Long,
+    automaticVideoThresholdBytes: Long,
+): List<ManifestAsset> {
+    val items = (manifest.playlists.flatMap { it.items } + manifest.directFallbackPlaylist?.items.orEmpty() + manifest.playlist?.items.orEmpty()).distinctBy { it.id }
+    val byVariant = manifest.assets.associateBy { it.variantId }
+    val byAsset = manifest.assets.associateBy { it.assetId }
+    val explicit = items.mapNotNull { item ->
+        val asset = item.variantId?.let { byVariant[it] } ?: return@mapNotNull null
+        when (item.deliveryPolicy) {
+            "download" -> asset
+            "automatic" -> if (asset.mimeType.startsWith("image/")) asset else null
+            else -> null
+        }
+    }.distinctBy { it.variantId }.toMutableList()
+    fun add(asset: ManifestAsset) {
+        if (explicit.none { it.variantId == asset.variantId }) explicit += asset
+    }
+    manifest.websites.mapNotNull { it.fallbackVariantId?.let(byVariant::get) }.forEach(::add)
+    fun presentationAssets(node: org.tilecast.player.network.PresentationNode): List<String> {
+        val own = if (node.type == "asset_image") listOfNotNull(node.props["variantId"]?.jsonPrimitive?.contentOrNull) else emptyList()
+        return own + node.children.flatMap(::presentationAssets)
+    }
+    manifest.widgets.flatMap { widget -> widget.presentation?.native?.root?.let(::presentationAssets).orEmpty() }
+        .mapNotNull(byVariant::get)
+        .forEach(::add)
+    val layouts = (manifest.layouts + listOfNotNull(manifest.layout, manifest.directFallbackLayout)).distinctBy { it.id }
+    layouts.flatMap { layout ->
+        listOfNotNull(layout.document.canvas.backgroundAssetId) + layout.document.placements
+            .filter { it.type == "asset" }
+            .mapNotNull { it.assetId }
+    }.mapNotNull(byAsset::get).forEach(::add)
+
+    var remaining = minOf(
+        (cacheLimitBytes - cacheUsedBytes).coerceAtLeast(0),
+        (usableSpaceBytes - minimumFreeBytes).coerceAtLeast(0),
+    ) - explicit.sumOf { it.fileSize }
+    items.filter { it.deliveryPolicy == "automatic" }
+        .mapNotNull { it.variantId?.let(byVariant::get) }
+        .filter { it.mimeType.startsWith("video/") && it.fileSize <= automaticVideoThresholdBytes }
+        .distinctBy { it.variantId }
+        .forEach { asset -> if (asset.fileSize <= remaining) { explicit += asset; remaining -= asset.fileSize } }
+    return explicit
+}
+
 class ManifestSyncManager(
     private val context: Context,
     private val database: PlayerDatabase,
@@ -104,27 +153,8 @@ class ManifestSyncManager(
     }
 
 	private fun selectDownloads(manifest: PlayerManifest): List<ManifestAsset> {
-		val items = (manifest.playlists.flatMap { it.items } + manifest.directFallbackPlaylist?.items.orEmpty() + manifest.playlist?.items.orEmpty()).distinctBy { it.id }
-        val byVariant = manifest.assets.associateBy { it.variantId }
-		val explicit = items.mapNotNull { item ->
-			val asset = item.variantId?.let{byVariant[it]} ?: return@mapNotNull null
-            when (item.deliveryPolicy) {
-                "download" -> asset
-				"automatic" -> if (asset.mimeType.startsWith("image/")) asset else null
-                else -> null
-            }
-		}.distinctBy { it.variantId }.toMutableList()
-		manifest.websites.mapNotNull{it.fallbackVariantId?.let(byVariant::get)}.forEach{if(explicit.none{x->x.variantId==it.variantId})explicit+=it}
-		fun presentationAssets(node: org.tilecast.player.network.PresentationNode): List<String> {
-			val own = if (node.type == "asset_image") listOfNotNull(node.props["variantId"]?.jsonPrimitive?.contentOrNull) else emptyList()
-			return own + node.children.flatMap(::presentationAssets)
-		}
-		manifest.widgets.flatMap { widget -> widget.presentation?.native?.root?.let(::presentationAssets).orEmpty() }
-			.mapNotNull(byVariant::get)
-			.forEach { asset -> if (explicit.none { it.variantId == asset.variantId }) explicit += asset }
-		val media=mediaDirectory();val used=media.walkTopDown().filter{it.isFile}.sumOf{it.length()};var remaining=minOf((cacheLimitBytes-used).coerceAtLeast(0),(media.usableSpace-minimumFreeBytes).coerceAtLeast(0))-explicit.sumOf{it.fileSize}
-		items.filter{it.deliveryPolicy=="automatic"}.mapNotNull{it.variantId?.let(byVariant::get)}.filter{it.mimeType.startsWith("video/")&&it.fileSize<=automaticVideoThresholdBytes}.distinctBy{it.variantId}.forEach{if(it.fileSize<=remaining){explicit+=it;remaining-=it.fileSize}}
-		return explicit
+		val media=mediaDirectory()
+		return selectManifestDownloads(manifest,media.walkTopDown().filter{it.isFile}.sumOf{it.length()},media.usableSpace,cacheLimitBytes,minimumFreeBytes,automaticVideoThresholdBytes)
     }
 
     private suspend fun downloadIfNeeded(serverUrl: String, credential: String, asset: ManifestAsset, progress: (Long) -> Unit) {

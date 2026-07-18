@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/netip"
+	"strconv"
 	"sync"
 	"time"
 
@@ -43,10 +44,11 @@ type rateEntry struct {
 }
 
 type rateLimiter struct {
-	mu       sync.Mutex
-	entries  map[string]rateEntry
-	limit    int
-	duration time.Duration
+	mu          sync.Mutex
+	entries     map[string]rateEntry
+	limit       int
+	duration    time.Duration
+	lastCleanup time.Time
 }
 
 func newRateLimiter(limit int, duration time.Duration) *rateLimiter {
@@ -56,8 +58,16 @@ func newRateLimiter(limit int, duration time.Duration) *rateLimiter {
 func (r *rateLimiter) allow(key string, now time.Time) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.lastCleanup.IsZero() || !now.Before(r.lastCleanup.Add(r.duration)) {
+		for entryKey, entry := range r.entries {
+			if !now.Before(entry.resetAt) {
+				delete(r.entries, entryKey)
+			}
+		}
+		r.lastCleanup = now
+	}
 	entry, ok := r.entries[key]
-	if !ok || now.After(entry.resetAt) {
+	if !ok || !now.Before(entry.resetAt) {
 		r.entries[key] = rateEntry{count: 1, resetAt: now.Add(r.duration)}
 		return true
 	}
@@ -97,7 +107,11 @@ func (s *server) rateLimit(limiter *rateLimiter, includeUser bool, next http.Han
 			}
 		}
 		if !limiter.allow(key, time.Now()) {
-			w.Header().Set("Retry-After", "600")
+			retryAfter := int(limiter.duration / time.Second)
+			if limiter.duration%time.Second != 0 {
+				retryAfter++
+			}
+			w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
 			writeError(w, http.StatusTooManyRequests, "rate_limited", "Too many authentication attempts. Try again later.")
 			return
 		}

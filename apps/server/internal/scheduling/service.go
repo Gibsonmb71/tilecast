@@ -338,6 +338,7 @@ func (s *Service) AddScreen(ctx context.Context, group, screen, user uuid.UUID) 
 	_ = s.audit(ctx, user, "screen_group.screen_added", "screen_group", group)
 	return nil
 }
+
 // restoreScreenSnapshot reinstates the playlist assignment and screen-targeted
 // schedules a screen had before it joined a sync group, then discards the
 // snapshot. Memberships created before snapshots existed have no snapshot row
