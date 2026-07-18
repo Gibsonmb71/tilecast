@@ -46,7 +46,8 @@ const initialSchedule = (): ScheduleInput => ({
   playlistId: "",
   layoutId: undefined,
   type: "weekly",
-  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+  // Filled from the organization default returned by the schedules API.
+  timezone: "",
   priority: 0,
   enabled: true,
   dailyStart: "09:00",

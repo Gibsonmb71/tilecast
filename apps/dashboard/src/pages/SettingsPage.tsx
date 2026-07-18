@@ -9,6 +9,7 @@ import { SettingsShell } from "../settings/SettingsShell";
 import { SettingsSection } from "../settings/SettingsSection";
 import { SettingsActionBar } from "../settings/SettingsActionBar";
 import { BrandingAssets } from "../settings/BrandingAssets";
+import { normalizeSettingValues } from "../settings/settingValues";
 import {
   sectionFromPath,
   type SettingsSectionId,
@@ -51,8 +52,12 @@ export function SettingsPage() {
   const [saved, setSaved] = useState<string>();
   useEffect(() => {
     if (settings.data && !baseline) {
-      setBaseline(settings.data.values);
-      setDraft(settings.data.values);
+      const normalized = normalizeSettingValues(
+        settings.data.values,
+        settings.data.definitions ?? [],
+      );
+      setBaseline(normalized);
+      setDraft(normalized);
       setRevision(settings.data.revision);
     }
   }, [settings.data, baseline]);
@@ -117,9 +122,13 @@ export function SettingsPage() {
     );
     const payload = { ...(baseline ?? {}) };
     for (const key of keys) payload[key] = draft[key];
+    const normalizedPayload = normalizeSettingValues(
+      payload,
+      organizationDefinitions,
+    );
     const oldBaseline = baseline ?? {};
     const oldDraft = draft;
-    saveOrganization.mutate(payload, {
+    saveOrganization.mutate(normalizedPayload, {
       onSuccess: (data) => {
         const next = { ...data.values };
         for (const definition of organizationDefinitions) {

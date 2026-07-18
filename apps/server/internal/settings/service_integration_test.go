@@ -64,10 +64,20 @@ func TestSettingsPolicyInheritanceAndRevision(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	values := map[string]any{"organization.name": "Settings Test", "player.playback.default_volume": 0.5, "reliability.mode": "standard", "power.active_hours_timezone": "America/New_York"}
+	values := map[string]any{"organization.name": "Settings Test", "organization.timezone": "America/New_York", "player.playback.default_volume": 0.5, "reliability.mode": "standard", "power.active_hours_timezone": "America/New_York", "power.active_hours_end": "16:00:00"}
 	document, err = service.UpdateOrganization(ctx, owner.User.ID, document.Revision, values)
 	if err != nil {
 		t.Fatal(err)
+	}
+	var defaultTimezone string
+	if err = pool.QueryRow(ctx, `SELECT default_timezone FROM organization_settings WHERE singleton`).Scan(&defaultTimezone); err != nil {
+		t.Fatal(err)
+	}
+	if defaultTimezone != "America/New_York" {
+		t.Fatalf("schedule default timezone=%q", defaultTimezone)
+	}
+	if document.Values["power.active_hours_end"] != "16:00" {
+		t.Fatalf("active hours end=%#v", document.Values["power.active_hours_end"])
 	}
 	groupPolicy, err := service.PutGroupPolicy(ctx, owner.User.ID, group, 0, 100, map[string]any{"player.playback.default_volume": 0.4, "reliability.mode": "managed_kiosk"})
 	if err != nil || groupPolicy.Revision != 1 {
