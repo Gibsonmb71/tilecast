@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-Do not open a public issue for a suspected vulnerability. Send a private report to the security contact listed in the repository metadata. Include affected versions, impact, reproduction steps, and any suggested mitigation. The maintainers will acknowledge the report, investigate it, and coordinate disclosure.
+Do not open a public issue for a suspected vulnerability. Send a private report to the security contact listed in the repository metadata. Include affected versions, impact, reproduction steps, and any suggested mitigation. The maintainers will acknowledge the report, investigate it, and coordinate disclosure. You can also use the Report button in the Overview tab.
 
 ## Supported versions
 
