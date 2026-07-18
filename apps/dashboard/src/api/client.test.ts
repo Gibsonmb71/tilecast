@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { api } from "./client";
-import type { AuthStatus } from "./types";
+import { api, normalizeLayout, normalizePlaylist } from "./client";
+import type { AuthStatus, Layout } from "./types";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -63,6 +63,14 @@ describe("screen group compatibility", () => {
 });
 
 describe("mixed-version collection compatibility", () => {
+  it("normalizes missing collections even when a detail payload is nullish", () => {
+    expect(normalizePlaylist(undefined)).toMatchObject({
+      items: [],
+      warnings: [],
+      layoutUsage: [],
+    });
+  });
+
   it("normalizes missing playlist collections before pages consume them", async () => {
     vi.stubGlobal(
       "fetch",
@@ -106,6 +114,24 @@ describe("mixed-version collection compatibility", () => {
       },
       dependencies: [],
       usage: { screens: [], schedules: [] },
+    });
+  });
+
+  it("merges layout canvas defaults into a partial draft", () => {
+    const layout = {
+      id: "layout-1",
+      orientation: "landscape",
+      canvasWidth: 1920,
+      canvasHeight: 1080,
+      draft: { canvas: { backgroundColor: "#123456" } },
+    } as unknown as Layout;
+
+    expect(normalizeLayout(layout).draft.canvas).toMatchObject({
+      width: 1920,
+      height: 1080,
+      orientation: "landscape",
+      backgroundColor: "#123456",
+      safeAreaPercent: 5,
     });
   });
 });

@@ -38,8 +38,9 @@ import {
 export function canManagePlaylists(role?: string) {
   return role !== "viewer";
 }
-export function playlistDuration(items: PlaylistItem[]) {
-  return items.reduce<number | null>((total, item) => {
+export function playlistDuration(items: PlaylistItem[] | null | undefined) {
+  const safeItems = Array.isArray(items) ? items : [];
+  return safeItems.reduce<number | null>((total, item) => {
     const duration =
       item.assetType === "image" ||
       item.assetType === "widget" ||
