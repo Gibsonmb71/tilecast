@@ -23,8 +23,7 @@ describe("screen group compatibility", () => {
       vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
-        json: () =>
-          Promise.resolve({ data: { id: "group-1", name: "Lobby" } }),
+        json: () => Promise.resolve({ data: { id: "group-1", name: "Lobby" } }),
       }),
     );
 
@@ -40,8 +39,7 @@ describe("screen group compatibility", () => {
       vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
-        json: () =>
-          Promise.resolve({ data: { items: [{ id: "group-1" }] } }),
+        json: () => Promise.resolve({ data: { items: [{ id: "group-1" }] } }),
       }),
     );
 
