@@ -192,6 +192,13 @@ describe("settings presentation", () => {
       "America/New_York",
     );
 
+    fireEvent.click(timezone);
+    const timezoneListbox = screen.getByRole("listbox");
+    fireEvent.scroll(timezoneListbox);
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
+    fireEvent.scroll(window);
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+
     expect(
       normalizeSettingValues(
         {

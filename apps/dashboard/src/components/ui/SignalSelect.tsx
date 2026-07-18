@@ -148,13 +148,19 @@ export const Select = forwardRef<
     if (!open) return;
     positionMenu();
     const close = () => setOpen(false);
+    const closeOnExternalScroll = (event: Event) => {
+      const target = event.target;
+      const listbox = document.getElementById(listboxId);
+      if (target instanceof Node && listbox?.contains(target)) return;
+      setOpen(false);
+    };
     window.addEventListener("resize", close);
-    window.addEventListener("scroll", close, true);
+    window.addEventListener("scroll", closeOnExternalScroll, true);
     return () => {
       window.removeEventListener("resize", close);
-      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("scroll", closeOnExternalScroll, true);
     };
-  }, [open]);
+  }, [listboxId, open]);
 
   useEffect(() => {
     if (!open) return;
