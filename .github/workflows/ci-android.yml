@@ -18,6 +18,7 @@ concurrency:
 
 permissions:
   contents: read
+  checks: write
 
 jobs:
   android-player:
@@ -30,5 +31,14 @@ jobs:
           java-version: 17
           cache: gradle
       - uses: android-actions/setup-android@v3
-      - working-directory: apps/player-android
+      - name: Test, lint, and assemble
+        working-directory: apps/player-android
         run: ./gradlew testDebugUnitTest lintDebug assembleDebug
+      - name: Test Reporter
+        if: ${{ !cancelled() }}
+        uses: dorny/test-reporter@v3.0.0
+        with:
+          name: Android tests
+          path: apps/player-android/app/build/test-results/testDebugUnitTest/*.xml
+          reporter: java-junit
+          fail-on-empty: false
