@@ -1,4 +1,11 @@
-import { Select } from "../components/ui";
+import {
+  Button,
+  EmptyState,
+  Notice,
+  PageHeader,
+  Select,
+  ViewToggle,
+} from "../components/ui";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -11,9 +18,7 @@ import {
   School,
   TableProperties,
   Check,
-  Grid2X2,
   Lightbulb,
-  List,
   Plus,
   Rss,
   X,
@@ -471,20 +476,20 @@ export function DataSourcesPage() {
 
   return (
     <section className="content-page apps-page">
-      <header className="page-heading">
-        <div>
-          <h2>Data Sources</h2>
-          <p>Reusable connections that fetch, parse, and cache data.</p>
-        </div>
-        {canManage && (
-          <button
-            className="button button--primary"
-            onClick={() => void navigate("/data-sources/new")}
-          >
-            <Plus size={16} /> Create Data Source
-          </button>
-        )}
-      </header>
+      <PageHeader
+        title="Data Sources"
+        description="Reusable connections that fetch, parse, and cache data."
+        actions={
+          canManage ? (
+            <Button
+              variant="primary"
+              onClick={() => void navigate("/data-sources/new")}
+            >
+              <Plus size={16} aria-hidden="true" /> Create Data Source
+            </Button>
+          ) : undefined
+        }
+      />
       <DashboardListToolbar>
         <DashboardSearch
           value={search}
@@ -505,46 +510,34 @@ export function DataSourcesPage() {
             </option>
           ))}
         </Select>
-        <span className="view-switch" aria-label="View">
-          <button
-            aria-label="Grid view"
-            aria-pressed={view === "grid"}
-            onClick={() => setView("grid")}
-          >
-            <Grid2X2 size={16} />
-          </button>
-          <button
-            aria-label="List view"
-            aria-pressed={view === "list"}
-            onClick={() => setView("list")}
-          >
-            <List size={16} />
-          </button>
-        </span>
+        <ViewToggle value={view} onValueChange={setView} />
       </DashboardListToolbar>
       {dataSources.isError && (
-        <div className="notice notice--error">
+        <Notice variant="danger">
           {dataSources.error instanceof ApiError
             ? dataSources.error.message
             : "Data Sources could not be loaded."}
-        </div>
+        </Notice>
       )}
       {dataSources.isLoading ? (
         <div className="table-loading">Loading Data Sources...</div>
       ) : dataSources.data?.items.length === 0 ? (
-        <div className="content-empty">
-          <Plus size={30} />
-          <h3>No Data Sources yet</h3>
-          <p>Create a reusable connection to feed your Widgets.</p>
-          {canManage && (
-            <button
-              className="button button--primary"
-              onClick={() => void navigate("/data-sources/new")}
-            >
-              Create Data Source
-            </button>
-          )}
-        </div>
+        <EmptyState
+          className="content-empty"
+          icon={<Plus size={24} aria-hidden="true" />}
+          title="No Data Sources yet"
+          message="Create a reusable connection to feed your Widgets."
+          action={
+            canManage ? (
+              <Button
+                variant="primary"
+                onClick={() => void navigate("/data-sources/new")}
+              >
+                Create Data Source
+              </Button>
+            ) : undefined
+          }
+        />
       ) : (
         <div className={`asset-collection asset-collection--${view}`}>
           {dataSources.data?.items.map((source) => (

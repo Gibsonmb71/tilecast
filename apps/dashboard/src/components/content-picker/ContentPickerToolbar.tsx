@@ -1,5 +1,4 @@
-import { Select } from "../ui";
-import { Grid2X2, List } from "lucide-react";
+import { Select, ToggleGroup, ViewToggle } from "../ui";
 import { DashboardSearch } from "../DashboardListToolbar";
 
 export type ContentPickerFilter =
@@ -42,18 +41,13 @@ export function ContentPickerToolbar({
         label="Search content"
         placeholder="Search content"
       />
-      <div className="content-picker-filters" aria-label="Content type">
-        {filters.map(([value, label]) => (
-          <button
-            key={value}
-            type="button"
-            aria-pressed={filter === value}
-            onClick={() => onFilter(value)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <ToggleGroup
+        className="content-picker-filters"
+        label="Content type"
+        value={filter}
+        onValueChange={onFilter}
+        items={filters.map(([value, label]) => ({ value, label }))}
+      />
       <Select
         aria-label="Sort content"
         value={sort}
@@ -64,24 +58,7 @@ export function ContentPickerToolbar({
         <option value="oldest">Oldest</option>
         <option value="name">Name</option>
       </Select>
-      <span className="view-switch" aria-label="Content view">
-        <button
-          type="button"
-          aria-label="Grid view"
-          aria-pressed={view === "grid"}
-          onClick={() => onView("grid")}
-        >
-          <Grid2X2 size={16} />
-        </button>
-        <button
-          type="button"
-          aria-label="List view"
-          aria-pressed={view === "list"}
-          onClick={() => onView("list")}
-        >
-          <List size={16} />
-        </button>
-      </span>
+      <ViewToggle value={view} onValueChange={onView} label="Content view" />
     </div>
   );
 }

@@ -1,9 +1,14 @@
-import { Select } from "../components/ui";
+import {
+  Button,
+  Drawer,
+  PageHeader,
+  Select,
+  ToggleGroup,
+  ViewToggle,
+} from "../components/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   FileImage,
-  Grid2X2,
-  List,
   Upload,
   Copy,
   Trash2,
@@ -298,30 +303,30 @@ export function ContentPage() {
       onDragOver={(event) => event.preventDefault()}
       onDrop={dropFiles}
     >
-      <header className="page-heading">
-        <div>
-          <h2>Assets</h2>
-          <p>Uploaded images and videos available to playlists and Layouts.</p>
-        </div>
-        {canManage && (
-          <button
-            className="button button--primary"
-            type="button"
-            onClick={() => fileInput.current?.click()}
-          >
-            <Upload size={16} /> Upload assets
-          </button>
-        )}
-        <input
-          ref={fileInput}
-          className="visually-hidden"
-          type="file"
-          multiple
-          accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm,video/x-matroska"
-          onChange={pickFiles}
-          aria-label="Choose media files"
-        />
-      </header>
+      <PageHeader
+        title="Assets"
+        description="Uploaded images and videos available to playlists and Layouts."
+        actions={
+          canManage ? (
+            <Button
+              variant="primary"
+              type="button"
+              onClick={() => fileInput.current?.click()}
+            >
+              <Upload size={16} aria-hidden="true" /> Upload assets
+            </Button>
+          ) : undefined
+        }
+      />
+      <input
+        ref={fileInput}
+        className="visually-hidden"
+        type="file"
+        multiple
+        accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm,video/x-matroska"
+        onChange={pickFiles}
+        aria-label="Choose media files"
+      />
 
       {queue.length > 0 && (
         <section className="upload-queue" aria-label="Upload queue">
@@ -377,24 +382,17 @@ export function ContentPage() {
           label="Search media"
           placeholder="Search media"
         />
-        <div className="content-type-filters" aria-label="Content type filters">
-          {(
-            [
-              ["media", "Media"],
-              ["image", "Images"],
-              ["video", "Videos"],
-            ] as const
-          ).map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              aria-pressed={contentFilter === value}
-              onClick={() => setContentFilter(value)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <ToggleGroup
+          className="content-type-filters"
+          label="Content type filters"
+          value={contentFilter}
+          onValueChange={setContentFilter}
+          items={[
+            { value: "media", label: "Media" },
+            { value: "image", label: "Images" },
+            { value: "video", label: "Videos" },
+          ]}
+        />
         <Select
           className="dashboard-list-toolbar__filter"
           aria-label="Filter by status"
@@ -458,22 +456,7 @@ export function ContentPage() {
           <option value="oldest">Oldest</option>
           <option value="name">Name</option>
         </Select>
-        <span className="view-switch" aria-label="View">
-          <button
-            aria-label="Grid view"
-            aria-pressed={view === "grid"}
-            onClick={() => setView("grid")}
-          >
-            <Grid2X2 size={16} />
-          </button>
-          <button
-            aria-label="List view"
-            aria-pressed={view === "list"}
-            onClick={() => setView("list")}
-          >
-            <List size={16} />
-          </button>
-        </span>
+        <ViewToggle value={view} onValueChange={setView} />
       </DashboardListToolbar>
 
       {canManage && (
@@ -937,29 +920,46 @@ function MediaAssetDetails({
     onSuccess: onChanged,
   });
   return (
-    <div
-      className="details-backdrop"
-      role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
+    <Drawer
+      className="asset-details-drawer"
+      eyebrow="Media asset"
+      title={asset.name}
+      closeLabel="Close asset details"
+      onClose={onClose}
+      footer={
+        canManage ? (
+          <>
+            <Button
+              variant="primary"
+              loading={mutation.isPending}
+              onClick={() => mutation.mutate()}
+            >
+              Save changes
+            </Button>
+            {asset.processingStatus === "failed" && (
+              <Button
+                variant="quiet"
+                onClick={() =>
+                  void api.retryAsset(asset.id, csrf).then(onChanged)
+                }
+              >
+                Retry processing
+              </Button>
+            )}
+            <Button
+              variant="danger"
+              onClick={() => {
+                if (window.confirm(`Delete ${asset.name}?`))
+                  void api.deleteAsset(asset.id, csrf).then(onClose);
+              }}
+            >
+              Delete asset
+            </Button>
+          </>
+        ) : undefined
+      }
     >
-      <section
-        className="asset-details"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="asset-details-title"
-      >
-        <header>
-          <h2 id="asset-details-title">Asset details</h2>
-          <button
-            className="icon-button"
-            aria-label="Close details"
-            onClick={onClose}
-          >
-            <X size={18} />
-          </button>
-        </header>
+      <div className="asset-details">
         {asset.thumbnailUrl && (
           <img className="details-preview" src={asset.thumbnailUrl} alt="" />
         )}
@@ -1011,38 +1011,8 @@ function MediaAssetDetails({
         {asset.errorMessage && (
           <div className="notice notice--error">{asset.errorMessage}</div>
         )}
-        {canManage && (
-          <footer>
-            <button
-              className="button button--primary"
-              disabled={mutation.isPending}
-              onClick={() => mutation.mutate()}
-            >
-              Save changes
-            </button>
-            {asset.processingStatus === "failed" && (
-              <button
-                className="button button--quiet"
-                onClick={() =>
-                  void api.retryAsset(asset.id, csrf).then(onChanged)
-                }
-              >
-                Retry processing
-              </button>
-            )}
-            <button
-              className="button button--danger"
-              onClick={() => {
-                if (window.confirm(`Delete ${asset.name}?`))
-                  void api.deleteAsset(asset.id, csrf).then(onClose);
-              }}
-            >
-              Delete asset
-            </button>
-          </footer>
-        )}
-      </section>
-    </div>
+      </div>
+    </Drawer>
   );
 }
 

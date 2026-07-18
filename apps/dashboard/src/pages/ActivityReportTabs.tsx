@@ -1,4 +1,4 @@
-import { Select } from "../components/ui";
+import { Drawer, Select } from "../components/ui";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
@@ -8,7 +8,6 @@ import {
   Clock3,
   MonitorCheck,
   PlayCircle,
-  X,
 } from "lucide-react";
 import {
   ActivityPagination,
@@ -390,129 +389,101 @@ function ProofDetailsDrawer({
   });
 
   return (
-    <div className="activity-drawer-layer">
-      <button
-        type="button"
-        className="activity-drawer-backdrop"
-        aria-label="Close playback details"
-        onClick={onClose}
-      />
-      <aside
-        className="activity-detail-drawer"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="activity-detail-title"
-      >
-        <header>
+    <Drawer
+      className="activity-detail-drawer"
+      eyebrow="Playback record"
+      title={record.contentName || record.presentationName || record.screenName}
+      closeLabel="Close playback details"
+      onClose={onClose}
+    >
+      <div className="activity-drawer-body">
+        <div className="activity-drawer-result">
+          <ResultBadge value={record.result} />
           <span>
-            <small>Playback record</small>
-            <h2 id="activity-detail-title">
-              {record.contentName ||
-                record.presentationName ||
-                record.screenName}
-            </h2>
+            {record.actualDurationMs == null
+              ? "Playback is still in progress"
+              : `${formatDuration(record.actualDurationMs)} confirmed`}
           </span>
-          <button
-            type="button"
-            className="icon-button"
-            aria-label="Close playback details"
-            onClick={onClose}
-          >
-            <X size={18} />
-          </button>
-        </header>
-        <div className="activity-drawer-body">
-          <div className="activity-drawer-result">
-            <ResultBadge value={record.result} />
-            <span>
-              {record.actualDurationMs == null
-                ? "Playback is still in progress"
-                : `${formatDuration(record.actualDurationMs)} confirmed`}
-            </span>
-          </div>
-
-          <section>
-            <h3>Playback</h3>
-            <dl className="activity-detail-list">
-              <DetailRow
-                label="Started"
-                value={formatFullWhen(record.startedAt)}
-              />
-              <DetailRow
-                label="Ended"
-                value={record.endedAt ? formatFullWhen(record.endedAt) : "—"}
-              />
-              <DetailRow
-                label="Screen"
-                value={
-                  <Link to={`/screens/${record.screenId}?tab=activity`}>
-                    {record.screenName}
-                  </Link>
-                }
-              />
-              <DetailRow label="Group" value={record.groupName || "—"} />
-              <DetailRow label="Trigger" value={record.trigger || "—"} />
-            </dl>
-          </section>
-
-          <section>
-            <h3>Content</h3>
-            <dl className="activity-detail-list">
-              <DetailRow
-                label="Presentation"
-                value={
-                  <ResourceLink
-                    type={record.presentationType}
-                    id={record.presentationId}
-                    label={
-                      record.presentationName || record.presentationId || "—"
-                    }
-                  />
-                }
-              />
-              <DetailRow
-                label="Revision"
-                value={record.presentationRevision || "—"}
-              />
-              <DetailRow
-                label="Content"
-                value={
-                  <ResourceLink
-                    type={record.contentType}
-                    id={record.contentId}
-                    label={
-                      record.contentName ||
-                      record.contentId ||
-                      "Root presentation"
-                    }
-                  />
-                }
-              />
-              <DetailRow label="Schedule ID" value={record.scheduleId || "—"} />
-              <DetailRow
-                label="Emergency ID"
-                value={record.emergencyId || "—"}
-              />
-            </dl>
-          </section>
-
-          {entries.length > 0 && (
-            <section>
-              <h3>Technical metadata</h3>
-              <dl className="activity-detail-list activity-detail-list--technical">
-                {entries.map(([key, value]) => (
-                  <DetailRow
-                    key={key}
-                    label={humanize(key)}
-                    value={formatTechnicalValue(value)}
-                  />
-                ))}
-              </dl>
-            </section>
-          )}
         </div>
-      </aside>
-    </div>
+
+        <section>
+          <h3>Playback</h3>
+          <dl className="activity-detail-list">
+            <DetailRow
+              label="Started"
+              value={formatFullWhen(record.startedAt)}
+            />
+            <DetailRow
+              label="Ended"
+              value={record.endedAt ? formatFullWhen(record.endedAt) : "—"}
+            />
+            <DetailRow
+              label="Screen"
+              value={
+                <Link to={`/screens/${record.screenId}?tab=activity`}>
+                  {record.screenName}
+                </Link>
+              }
+            />
+            <DetailRow label="Group" value={record.groupName || "—"} />
+            <DetailRow label="Trigger" value={record.trigger || "—"} />
+          </dl>
+        </section>
+
+        <section>
+          <h3>Content</h3>
+          <dl className="activity-detail-list">
+            <DetailRow
+              label="Presentation"
+              value={
+                <ResourceLink
+                  type={record.presentationType}
+                  id={record.presentationId}
+                  label={
+                    record.presentationName || record.presentationId || "—"
+                  }
+                />
+              }
+            />
+            <DetailRow
+              label="Revision"
+              value={record.presentationRevision || "—"}
+            />
+            <DetailRow
+              label="Content"
+              value={
+                <ResourceLink
+                  type={record.contentType}
+                  id={record.contentId}
+                  label={
+                    record.contentName ||
+                    record.contentId ||
+                    "Root presentation"
+                  }
+                />
+              }
+            />
+            <DetailRow label="Schedule ID" value={record.scheduleId || "—"} />
+            <DetailRow label="Emergency ID" value={record.emergencyId || "—"} />
+          </dl>
+        </section>
+
+        {entries.length > 0 && (
+          <section>
+            <h3>Technical metadata</h3>
+            <dl className="activity-detail-list activity-detail-list--technical">
+              {entries.map(([key, value]) => (
+                <DetailRow
+                  key={key}
+                  label={humanize(key)}
+                  value={formatTechnicalValue(value)}
+                />
+              ))}
+            </dl>
+          </section>
+        )}
+      </div>
+    </Drawer>
   );
 }
 

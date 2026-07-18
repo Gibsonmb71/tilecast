@@ -1,4 +1,4 @@
-import { Select } from "../components/ui";
+import { Button, PageHeader, Select } from "../components/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
@@ -22,26 +22,23 @@ export function GroupsPage() {
   });
   return (
     <section>
-      <header className="page-heading">
-        <div>
-          <h2>Sync groups</h2>
-          <p>
-            Keep a set of screens on the same content, schedule, and playback
-            position.
-          </p>
-        </div>
-        {canManage(auth.status?.user?.role) && (
-          <button
-            className="button button--primary"
-            onClick={() => {
-              const n = prompt("Group name");
-              if (n) create.mutate(n);
-            }}
-          >
-            Create sync group
-          </button>
-        )}
-      </header>
+      <PageHeader
+        title="Sync groups"
+        description="Keep a set of screens on the same content, schedule, and playback position."
+        actions={
+          canManage(auth.status?.user?.role) ? (
+            <Button
+              variant="primary"
+              onClick={() => {
+                const name = prompt("Group name");
+                if (name) create.mutate(name);
+              }}
+            >
+              Create sync group
+            </Button>
+          ) : undefined
+        }
+      />
       <div className="schedule-list">
         {q.data?.items.map((g) => (
           <Link className="schedule-card" to={`/groups/${g.id}`} key={g.id}>
@@ -146,45 +143,45 @@ export function GroupDetailPage() {
       ) ?? [];
   return (
     <section>
-      <header className="page-heading">
-        <div>
-          <Link to="/groups">← Sync groups</Link>
-          <h2>{groupData.name}</h2>
-          <p>{groupData.description || "No description"}</p>
-        </div>
-        {canManage(auth.status?.user?.role) && (
-          <span className="heading-actions">
-            <button
-              className="button button--quiet"
-              onClick={() => {
-                const name = prompt("Group name", groupData.name);
-                if (name)
-                  update.mutate({
-                    name,
-                    description:
-                      prompt("Description", groupData.description) ??
-                      groupData.description,
-                  });
-              }}
-            >
-              Edit sync group
-            </button>
-            <button
-              className="button button--danger-quiet"
-              onClick={() => {
-                if (
-                  confirm(
-                    `Delete ${groupData.name}? Screens will not be deleted.`,
+      <PageHeader
+        eyebrow={<Link to="/groups">← Sync groups</Link>}
+        title={groupData.name}
+        description={groupData.description || "No description"}
+        actions={
+          canManage(auth.status?.user?.role) ? (
+            <>
+              <Button
+                variant="quiet"
+                onClick={() => {
+                  const name = prompt("Group name", groupData.name);
+                  if (name)
+                    update.mutate({
+                      name,
+                      description:
+                        prompt("Description", groupData.description) ??
+                        groupData.description,
+                    });
+                }}
+              >
+                Edit sync group
+              </Button>
+              <Button
+                variant="danger"
+                onClick={() => {
+                  if (
+                    confirm(
+                      `Delete ${groupData.name}? Screens will not be deleted.`,
+                    )
                   )
-                )
-                  deleteGroup.mutate();
-              }}
-            >
-              Delete sync group
-            </button>
-          </span>
-        )}
-      </header>
+                    deleteGroup.mutate();
+                }}
+              >
+                Delete sync group
+              </Button>
+            </>
+          ) : undefined
+        }
+      />
       <section className="detail-card assignment-card">
         <h3>Synchronized content</h3>
         <p>
@@ -287,20 +284,17 @@ export function SchedulesPage() {
   });
   return (
     <section>
-      <header className="page-heading">
-        <div>
-          <h2>Schedules</h2>
-          <p>
-            Higher priority wins. Screens in a sync group always share the same
-            schedule and fallback content.
-          </p>
-        </div>
-        {canManage(auth.status?.user?.role) && (
-          <Link className="button button--primary" to="/schedules/new">
-            Create schedule
-          </Link>
-        )}
-      </header>
+      <PageHeader
+        title="Schedules"
+        description="Higher priority wins. Screens in a sync group always share the same schedule and fallback content."
+        actions={
+          canManage(auth.status?.user?.role) ? (
+            <Link className="button button--primary" to="/schedules/new">
+              Create schedule
+            </Link>
+          ) : undefined
+        }
+      />
       <div className="schedule-today">
         <h3>Schedule timeline</h3>
         <p>

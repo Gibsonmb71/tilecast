@@ -11,6 +11,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { api } from "../api/client";
 import type { Schedule, ScreenStatus } from "../api/types";
+import { PageHeader } from "../components/ui";
 import "./OperationsDashboard.css";
 
 const statusLabels: Record<ScreenStatus, string> = {
@@ -54,32 +55,31 @@ export function OperationsDashboard() {
 
   return (
     <div className="ops-console">
-      <header className="ops-header">
-        <div>
-          <h2>System overview</h2>
-          <p>
-            Live player state, items requiring attention, and what changes next.
-          </p>
-        </div>
-        <div className="ops-actions" aria-label="Quick actions">
-          <Link className="button button--primary" to="/screens/pair">
-            <MonitorCheck size={16} aria-hidden="true" /> Pair screen
-          </Link>
-          <details className="ops-create-menu">
-            <summary className="button button--secondary">
-              <Plus size={16} aria-hidden="true" /> Create
-            </summary>
-            <div>
-              <Link to="/assets">
-                <Upload size={16} aria-hidden="true" /> Upload content
-              </Link>
-              <Link to="/schedules/new">
-                <CalendarClock size={16} aria-hidden="true" /> Create schedule
-              </Link>
-            </div>
-          </details>
-        </div>
-      </header>
+      <PageHeader
+        className="ops-header"
+        title="System overview"
+        description="Live player state, items requiring attention, and what changes next."
+        actions={
+          <div className="ops-actions" aria-label="Quick actions">
+            <Link className="button button--primary" to="/screens/pair">
+              <MonitorCheck size={16} aria-hidden="true" /> Pair screen
+            </Link>
+            <details className="ops-create-menu">
+              <summary className="button button--secondary">
+                <Plus size={16} aria-hidden="true" /> Create
+              </summary>
+              <div>
+                <Link to="/assets">
+                  <Upload size={16} aria-hidden="true" /> Upload content
+                </Link>
+                <Link to="/schedules/new">
+                  <CalendarClock size={16} aria-hidden="true" /> Create schedule
+                </Link>
+              </div>
+            </details>
+          </div>
+        }
+      />
 
       <section className="ops-summary" aria-label="Current status">
         <Summary

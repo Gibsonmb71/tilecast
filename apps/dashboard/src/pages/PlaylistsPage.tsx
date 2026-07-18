@@ -1,4 +1,11 @@
-import { Select } from "../components/ui";
+import {
+  Button,
+  Dialog,
+  EmptyState,
+  Field,
+  PageHeader,
+  Select,
+} from "../components/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Copy,
@@ -71,21 +78,18 @@ export function PlaylistsPage() {
   });
   return (
     <section className="playlists-page">
-      <header className="page-heading">
-        <div>
-          <h2>Playlists</h2>
-          <p>Ordered fullscreen playback for assigned screens.</p>
-        </div>
-        {canManage && (
-          <button
-            className="button button--primary"
-            onClick={() => setCreating(true)}
-          >
-            <Plus size={16} />
-            Create playlist
-          </button>
-        )}
-      </header>
+      <PageHeader
+        title="Playlists"
+        description="Ordered fullscreen playback for assigned screens."
+        actions={
+          canManage ? (
+            <Button variant="primary" onClick={() => setCreating(true)}>
+              <Plus size={16} aria-hidden="true" />
+              Create playlist
+            </Button>
+          ) : undefined
+        }
+      />
       <DashboardListToolbar>
         <DashboardSearch
           value={search}
@@ -97,15 +101,16 @@ export function PlaylistsPage() {
       {query.isLoading ? (
         <div className="table-loading">Loading playlists…</div>
       ) : query.data?.items.length === 0 ? (
-        <div className="content-empty">
-          <ListVideo size={30} />
-          <h3>No playlists yet</h3>
-          <p>
-            {canManage
+        <EmptyState
+          className="content-empty"
+          icon={<ListVideo size={24} aria-hidden="true" />}
+          title="No playlists yet"
+          message={
+            canManage
               ? "Create a playlist, then add ready images and videos."
-              : "An Owner, Administrator, or Editor can create playlists."}
-          </p>
-        </div>
+              : "An Owner, Administrator, or Editor can create playlists."
+          }
+        />
       ) : (
         <div className="playlist-list">
           {query.data?.items.map((p) => (
@@ -120,44 +125,35 @@ export function PlaylistsPage() {
           ))}
         </div>
       )}
-      {creating && (
-        <div className="modal-backdrop">
-          <section
-            className="confirm-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="create-playlist-title"
+      <Dialog
+        open={creating}
+        title="Create playlist"
+        onClose={() => setCreating(false)}
+      >
+        <Field label="Name">
+          <input
+            autoFocus
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </Field>
+        {create.error && (
+          <div className="notice notice--error">{create.error.message}</div>
+        )}
+        <div className="form-actions">
+          <Button variant="quiet" onClick={() => setCreating(false)}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            disabled={!name.trim()}
+            loading={create.isPending}
+            onClick={() => create.mutate()}
           >
-            <h3 id="create-playlist-title">Create playlist</h3>
-            <label className="field">
-              <span className="field__label">Name</span>
-              <input
-                autoFocus
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </label>
-            {create.error && (
-              <div className="notice notice--error">{create.error.message}</div>
-            )}
-            <div className="form-actions">
-              <button
-                className="button button--quiet"
-                onClick={() => setCreating(false)}
-              >
-                Cancel
-              </button>
-              <button
-                className="button button--primary"
-                disabled={!name.trim() || create.isPending}
-                onClick={() => create.mutate()}
-              >
-                Create playlist
-              </button>
-            </div>
-          </section>
+            Create playlist
+          </Button>
         </div>
-      )}
+      </Dialog>
     </section>
   );
 }
@@ -290,38 +286,42 @@ export function PlaylistEditorPage() {
   const playlist = query.data;
   return (
     <section className="playlist-editor">
-      <header className="page-heading">
-        <div>
+      <PageHeader
+        eyebrow={
           <Link className="back-link" to="/playlists">
             ← Playlists
           </Link>
-          <h2>{playlist.name}</h2>
-          <p>
+        }
+        title={playlist.name}
+        description={
+          <>
             Revision {playlist.revision} ·{" "}
             {formatDuration(playlistDuration(playlist.items))}
-          </p>
-        </div>
-        {canManage && (
-          <div className="editor-actions">
-            <button
-              className="button button--quiet"
-              onClick={() => duplicate.mutate()}
-            >
-              <Copy size={15} />
-              Duplicate
-            </button>
-            <button
-              className="button button--danger"
-              onClick={() => {
-                if (confirm(`Delete ${playlist.name}?`)) remove.mutate();
-              }}
-            >
-              <Trash2 size={15} />
-              Delete
-            </button>
-          </div>
-        )}
-      </header>
+          </>
+        }
+        actions={
+          canManage ? (
+            <>
+              <button
+                className="button button--quiet"
+                onClick={() => duplicate.mutate()}
+              >
+                <Copy size={15} />
+                Duplicate
+              </button>
+              <button
+                className="button button--danger"
+                onClick={() => {
+                  if (confirm(`Delete ${playlist.name}?`)) remove.mutate();
+                }}
+              >
+                <Trash2 size={15} />
+                Delete
+              </button>
+            </>
+          ) : undefined
+        }
+      />
       {playlist.warnings.map((w) => (
         <div key={w} className="notice notice--error">
           {w}
@@ -438,42 +438,38 @@ export function PlaylistEditorPage() {
           onClose={() => setPicker(false)}
         />
       )}
-      {layoutPicker && (
-        <div className="modal-backdrop">
-          <section className="confirm-dialog" role="dialog" aria-modal="true">
-            <h3>Add published Layout</h3>
-            <p>A Layout plays fullscreen for 30 seconds by default.</p>
-            <div className="playlist-list">
-              {layouts.data?.items
-                .filter((layout) => layout.publishedRevision)
-                .map((layout) => (
-                  <button
-                    className="button button--quiet"
-                    key={layout.id}
-                    onClick={() => void addLayout(layout.id)}
-                  >
-                    <PanelsTopLeft size={16} />
-                    {layout.name}
-                  </button>
-                ))}
-            </div>
-            {layouts.data?.items.filter((layout) => layout.publishedRevision)
-              .length === 0 && (
-              <p className="status-copy">
-                Publish a Layout before adding it to a playlist.
-              </p>
-            )}
-            <div className="form-actions">
-              <button
-                className="button button--quiet"
-                onClick={() => setLayoutPicker(false)}
+      <Dialog
+        open={layoutPicker}
+        title="Add published Layout"
+        onClose={() => setLayoutPicker(false)}
+      >
+        <p>A Layout plays fullscreen for 30 seconds by default.</p>
+        <div className="playlist-list">
+          {layouts.data?.items
+            .filter((layout) => layout.publishedRevision)
+            .map((layout) => (
+              <Button
+                variant="quiet"
+                key={layout.id}
+                onClick={() => void addLayout(layout.id)}
               >
-                Cancel
-              </button>
-            </div>
-          </section>
+                <PanelsTopLeft size={16} aria-hidden="true" />
+                {layout.name}
+              </Button>
+            ))}
         </div>
-      )}
+        {layouts.data?.items.filter((layout) => layout.publishedRevision)
+          .length === 0 && (
+          <p className="status-copy">
+            Publish a Layout before adding it to a playlist.
+          </p>
+        )}
+        <div className="form-actions">
+          <Button variant="quiet" onClick={() => setLayoutPicker(false)}>
+            Cancel
+          </Button>
+        </div>
+      </Dialog>
     </section>
   );
 }
