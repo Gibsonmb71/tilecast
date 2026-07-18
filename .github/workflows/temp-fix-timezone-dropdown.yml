@@ -32,7 +32,7 @@ jobs:
               return () => {
                 window.removeEventListener("resize", close);
                 window.removeEventListener("scroll", close, true);
-              };'''
+              };'''.replace("              ", "    ")
           new_scroll = '''    const close = () => setOpen(false);
               const closeOnExternalScroll = (event: Event) => {
                 const target = event.target;
@@ -45,35 +45,27 @@ jobs:
               return () => {
                 window.removeEventListener("resize", close);
                 window.removeEventListener("scroll", closeOnExternalScroll, true);
-              };'''
+              };'''.replace("              ", "    ")
           if old_scroll not in select_source:
               raise SystemExit("SignalSelect scroll handler block not found")
           select_path.write_text(select_source.replace(old_scroll, new_scroll, 1))
 
           test_path = Path("apps/dashboard/src/settings/settingsExperience.test.tsx")
           test_source = test_path.read_text()
-          old_assertion = '''    expect(document.querySelector(".signal-select__native")).toHaveValue(
+          anchor = '''    expect(document.querySelector(".signal-select__native")).toHaveValue(
               "America/New_York",
-            );
-
-            expect(
-              normalizeSettingValues('''
-          new_assertion = '''    expect(document.querySelector(".signal-select__native")).toHaveValue(
-              "America/New_York",
-            );
+            );'''.replace("              ", "      ").replace("            );", "    );")
+          insertion = anchor + '''
 
             fireEvent.click(timezone);
             const timezoneListbox = screen.getByRole("listbox");
             fireEvent.scroll(timezoneListbox);
             expect(screen.getByRole("listbox")).toBeInTheDocument();
             fireEvent.scroll(window);
-            expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
-
-            expect(
-              normalizeSettingValues('''
-          if old_assertion not in test_source:
+            expect(screen.queryByRole("listbox")).not.toBeInTheDocument();'''.replace("            ", "    ")
+          if anchor not in test_source:
               raise SystemExit("Timezone settings test insertion point not found")
-          test_path.write_text(test_source.replace(old_assertion, new_assertion, 1))
+          test_path.write_text(test_source.replace(anchor, insertion, 1))
           PY
       - run: npm ci
       - run: npx prettier --write apps/dashboard/src/components/ui/SignalSelect.tsx apps/dashboard/src/settings/settingsExperience.test.tsx
