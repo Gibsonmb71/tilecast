@@ -1,15 +1,16 @@
 name: Temporary timezone dropdown fix
 
 on:
-  push:
-    branches: [gibby/fix-timezone-dropdown]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: write
 
 jobs:
   patch-and-test:
-    if: github.event.head_commit.message != 'Fix select menu scroll handling'
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
