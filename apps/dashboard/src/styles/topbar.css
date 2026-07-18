@@ -230,7 +230,8 @@
 }
 
 .topbar__alert-list a:hover,
-.topbar__create-menu a:hover {
+.topbar__create-menu a:hover,
+.topbar__create-menu button:hover {
   background: var(--tc-bg-subtle);
 }
 
@@ -269,7 +270,8 @@
   padding: var(--tc-space-2);
 }
 
-.topbar__create-menu a {
+.topbar__create-menu a,
+.topbar__create-menu button {
   display: flex;
   align-items: center;
   gap: var(--tc-space-2);
@@ -279,6 +281,13 @@
   border-radius: var(--tc-radius-control);
   font: var(--tc-text-label);
   text-decoration: none;
+}
+
+.topbar__create-menu button {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
 }
 
 .command-palette-dialog {

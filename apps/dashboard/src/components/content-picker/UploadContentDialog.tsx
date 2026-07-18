@@ -18,10 +18,12 @@ const chunkSize = 4 * 1024 * 1024;
 
 export function UploadContentDialog({
   csrf,
+  closeLabel = "Return to content",
   onCreated,
   onClose,
 }: {
   csrf: string;
+  closeLabel?: string;
   onCreated: (asset: Asset) => void;
   onClose: () => void;
 }) {
@@ -173,7 +175,7 @@ export function UploadContentDialog({
         </div>
         <footer>
           <button className="button button--secondary" onClick={close}>
-            Return to content
+            {closeLabel}
           </button>
         </footer>
       </section>

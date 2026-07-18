@@ -1,8 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Bell,
+  Blocks,
   CalendarClock,
   ChevronRight,
+  Database,
   FileSliders,
   Image,
   Layers3,
@@ -35,6 +37,7 @@ import {
   useStudioRoutes,
   type BreadcrumbResource,
 } from "../navigation/studioRoutes";
+import { UploadContentDialog } from "./content-picker/UploadContentDialog";
 import { Button, Dialog, IconButton } from "./ui";
 
 type CommandResult = {
@@ -395,12 +398,20 @@ function CommandPalette({
   );
 }
 
-export function StudioTopbar({ user }: { user?: User }) {
+export function StudioTopbar({
+  user,
+  csrfToken = "",
+}: {
+  user?: User;
+  csrfToken?: string;
+}) {
   const routes = useStudioRoutes();
   const location = useLocation();
+  const queryClient = useQueryClient();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
   const notificationsRef = useRef<HTMLDivElement>(null);
   const createRef = useRef<HTMLDivElement>(null);
   const breadcrumbs = useBreadcrumbs(routes, location.pathname);
@@ -570,10 +581,49 @@ export function StudioTopbar({ user }: { user?: User }) {
             </Button>
             {createOpen && (
               <div className="topbar__popover topbar__create-menu" role="menu">
-                <Link role="menuitem" to="/assets">
-                  <Upload size={16} aria-hidden="true" /> Upload content
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setCreateOpen(false);
+                    setUploadOpen(true);
+                  }}
+                >
+                  <Upload size={16} aria-hidden="true" /> Upload media
+                </button>
+                <Link
+                  role="menuitem"
+                  to="/widgets/new"
+                  onClick={() => setCreateOpen(false)}
+                >
+                  <Blocks size={16} aria-hidden="true" /> Create widget
                 </Link>
-                <Link role="menuitem" to="/schedules/new">
+                <Link
+                  role="menuitem"
+                  to="/data-sources/new"
+                  onClick={() => setCreateOpen(false)}
+                >
+                  <Database size={16} aria-hidden="true" /> Create data source
+                </Link>
+                <Link
+                  role="menuitem"
+                  to="/playlists?create=1"
+                  onClick={() => setCreateOpen(false)}
+                >
+                  <ListVideo size={16} aria-hidden="true" /> Create playlist
+                </Link>
+                <Link
+                  role="menuitem"
+                  to="/layouts?create=1"
+                  onClick={() => setCreateOpen(false)}
+                >
+                  <Layers3 size={16} aria-hidden="true" /> Create layout
+                </Link>
+                <Link
+                  role="menuitem"
+                  to="/schedules/new"
+                  onClick={() => setCreateOpen(false)}
+                >
                   <CalendarClock size={16} aria-hidden="true" /> Create schedule
                 </Link>
               </div>
@@ -587,6 +637,16 @@ export function StudioTopbar({ user }: { user?: User }) {
         routes={routes}
         screens={screens.data?.items ?? []}
       />
+      {uploadOpen && (
+        <UploadContentDialog
+          csrf={csrfToken}
+          closeLabel="Done"
+          onCreated={() => {
+            void queryClient.invalidateQueries({ queryKey: ["assets"] });
+          }}
+          onClose={() => setUploadOpen(false)}
+        />
+      )}
     </header>
   );
 }
