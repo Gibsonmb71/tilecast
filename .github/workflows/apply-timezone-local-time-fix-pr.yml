@@ -86,11 +86,21 @@ jobs:
       - name: Format server files
         run: gofmt -w apps/server/internal/settings/registry.go apps/server/internal/settings/registry_test.go apps/server/internal/settings/service_integration_test.go
       - name: Dashboard validation
+        shell: bash
         run: |
-          npm run format:check
-          npm run lint
-          npm test
-          npm run build
+          set -o pipefail
+          {
+            npm run format:check
+            npm run lint
+            npm test
+            npm run build
+          } 2>&1 | tee /tmp/dashboard-validation.log
+      - name: Upload dashboard failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-validation-failure
+          path: /tmp/dashboard-validation.log
       - name: Server validation
         working-directory: apps/server
         env:
