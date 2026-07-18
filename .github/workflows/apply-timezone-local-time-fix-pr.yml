@@ -40,17 +40,22 @@ jobs:
       - name: Extract and apply source patch
         shell: bash
         run: |
-          python <<'PY'
-          from pathlib import Path
-
-          workflow = Path('.github/workflows/apply-timezone-local-time-fix.yml')
-          lines = workflow.read_text().splitlines()
-          start = next(i for i, line in enumerate(lines) if line.strip() == "python <<'PY'") + 1
-          end = next(i for i in range(start, len(lines)) if lines[i].strip() == 'PY')
-          script = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines[start:end])
-          Path('/tmp/apply-timezone-fix.py').write_text(script + '\n')
-          PY
-          python /tmp/apply-timezone-fix.py
+          sed -n '44,463p' .github/workflows/apply-timezone-local-time-fix.yml \
+            | sed 's/^          //' > /tmp/apply-timezone-fix.py
+          set +e
+          { python -m py_compile /tmp/apply-timezone-fix.py && python /tmp/apply-timezone-fix.py; } > /tmp/apply-timezone-fix.log 2>&1
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            cat /tmp/apply-timezone-fix.log
+            cp /tmp/apply-timezone-fix.log apply-timezone-error.log
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add apply-timezone-error.log
+            git commit -m "Record timezone patch failure"
+            git push origin HEAD:${{ github.event.pull_request.head.ref }}
+            exit "$status"
+          fi
           git restore .github/workflows/apply-timezone-local-time-fix.yml
       - run: npm ci
       - name: Format dashboard files
