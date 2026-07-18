@@ -43,14 +43,14 @@ function LocationValue() {
   return <output aria-label="Current route">{useLocation().pathname}</output>;
 }
 
-function renderTopbar(path = "/") {
+function renderTopbar(path = "/", client?: QueryClient) {
   vi.spyOn(api, "screens").mockResolvedValue({
     items: [lobbyScreen],
     total: 1,
   });
   vi.spyOn(api, "screen").mockResolvedValue(lobbyScreen);
   vi.spyOn(api, "updateDeployments").mockResolvedValue({ items: [] });
-  const client = new QueryClient({
+  client ??= new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return render(
@@ -81,6 +81,22 @@ describe("StudioTopbar", () => {
     expect(
       screen.getByRole("link", { name: "Screens" }).getAttribute("href"),
     ).toBe("/screens");
+    expect(
+      await screen.findByText("Amazon AFTKRT", {
+        selector: '[aria-current="page"]',
+      }),
+    ).toBeTruthy();
+  });
+
+  it("renders the breadcrumb name when a detail page cached the full entity under the shared key", async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    // Detail pages cache the whole entity under ["screens", id]; the breadcrumb
+    // shares this key and must derive a string label from it, never render it.
+    client.setQueryData(["screens", "screen-1"], lobbyScreen);
+    renderTopbar("/screens/screen-1", client);
+
     expect(
       await screen.findByText("Amazon AFTKRT", {
         selector: '[aria-current="page"]',

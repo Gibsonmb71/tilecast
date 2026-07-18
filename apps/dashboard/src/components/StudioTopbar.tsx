@@ -186,26 +186,32 @@ function breadcrumbQueryKey(resource?: BreadcrumbResource, id?: string) {
   }
 }
 
-async function breadcrumbResourceName(
-  resource: BreadcrumbResource,
-  id: string,
-) {
+// These query keys are shared with each resource's detail page, so the cached value
+// must be the full entity (never a derived string) or the page and the breadcrumb
+// would overwrite each other's cache entry with incompatible shapes.
+function breadcrumbResource(resource: BreadcrumbResource, id: string) {
   switch (resource) {
     case "screen":
-      return (await api.screen(id)).name;
+      return api.screen(id);
     case "screen-group":
-      return (await api.screenGroup(id)).name;
+      return api.screenGroup(id);
     case "widget":
-      return (await api.asset(id)).name;
+      return api.asset(id);
     case "data-source":
-      return (await api.getDataSource(id)).name;
+      return api.getDataSource(id);
     case "playlist":
-      return (await api.playlist(id)).name;
+      return api.playlist(id);
     case "layout":
-      return (await api.layout(id)).name;
+      return api.layout(id);
     case "schedule":
-      return (await api.schedule(id)).name;
+      return api.schedule(id);
   }
+}
+
+function breadcrumbResourceName(entity: { name?: unknown } | null | undefined) {
+  return typeof entity?.name === "string" && entity.name
+    ? entity.name
+    : undefined;
 }
 
 function useBreadcrumbs(routes: readonly RouteObject[], pathname: string) {
@@ -222,16 +228,17 @@ function useBreadcrumbs(routes: readonly RouteObject[], pathname: string) {
   const resourceId = resourceMatch?.params.id;
   const resourceName = useQuery({
     queryKey: breadcrumbQueryKey(resource, resourceId),
-    queryFn: () => breadcrumbResourceName(resource!, resourceId!),
+    queryFn: () => breadcrumbResource(resource!, resourceId!),
     enabled: Boolean(resource && resourceId),
     staleTime: 30_000,
+    select: breadcrumbResourceName,
   });
 
   return breadcrumbMatches.map((match) => {
     const handle = studioRouteHandle(match.route);
     return {
       label:
-        match === resourceMatch && resourceName.data
+        match === resourceMatch && typeof resourceName.data === "string"
           ? resourceName.data
           : (handle.breadcrumb ?? ""),
       to: match.pathname,
