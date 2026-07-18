@@ -1,9 +1,9 @@
 :root {
-  --tc-sidebar-bg: #111b27;
-  --tc-sidebar-border: #233143;
-  --tc-sidebar-text: #aab8c5;
-  --tc-sidebar-text-active: #ffffff;
-  --tc-sidebar-hover: #1a2837;
+  --tc-sidebar-bg: var(--sidebar-bg);
+  --tc-sidebar-border: var(--sidebar-border);
+  --tc-sidebar-text: var(--sidebar-text);
+  --tc-sidebar-text-active: var(--sidebar-text-active);
+  --tc-sidebar-hover: var(--sidebar-hover);
   --tc-sidebar-active: color-mix(
     in srgb,
     var(--accent) 22%,
@@ -19,11 +19,14 @@
   --tc-button-secondary-hover-bg: var(--control-hover-bg);
   --tc-input-bg: var(--field-bg);
   --tc-input-border: var(--field-border);
+  --tc-input-text: var(--field-text);
   --tc-input-placeholder: var(--field-placeholder);
   --tc-input-disabled-bg: var(--tc-bg-subtle);
   --tc-chip-bg: var(--chip-bg);
   --tc-chip-border: var(--chip-border);
   --tc-chip-text: var(--chip-text);
+  --tc-divider: var(--divider);
+  --tc-topbar-bg: var(--topbar-bg);
   --tc-table-header-bg: var(--tc-bg-subtle);
   --tc-table-row-hover: color-mix(
     in srgb,

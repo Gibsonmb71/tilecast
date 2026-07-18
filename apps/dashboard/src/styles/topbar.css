@@ -12,8 +12,8 @@
   align-items: center;
   gap: var(--tc-space-4);
   padding: 0 var(--tc-space-4);
-  background: var(--tc-bg-surface);
-  border-bottom: 1px solid var(--tc-border-default);
+  background: var(--tc-topbar-bg);
+  border-bottom: 1px solid var(--tc-divider);
 }
 
 .topbar__left,
@@ -166,7 +166,7 @@
   width: 1px;
   height: 24px;
   margin: 0 var(--tc-space-1);
-  background: var(--tc-border-default);
+  background: var(--tc-divider);
 }
 
 .topbar__popover {

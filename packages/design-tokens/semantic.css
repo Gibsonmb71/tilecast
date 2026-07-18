@@ -1,6 +1,70 @@
-:root,
-html[data-theme="light"] {
+:root {
+  --tc-status-success: var(--tc-green-700);
+  --tc-status-success-border: var(--tc-green-300);
+  --tc-status-warning: var(--tc-orange-700);
+  --tc-status-warning-border: var(--tc-orange-300);
+  --tc-status-danger: var(--tc-red-700);
+  --tc-status-danger-border: var(--tc-red-300);
+  --tc-status-info: var(--tc-info-700);
+  --tc-status-info-border: var(--tc-info-300);
+  --tc-status-neutral: var(--tc-neutral-500);
+  --tc-status-neutral-border: #cdd6dc;
+}
+
+:root:not([data-theme]),
+html[data-theme="light"],
+html[data-theme="system"] {
   color-scheme: light;
+  --accent: #3e6fe0;
+  --accent-hover: #4d7ce6;
+  --accent-active: #3563cf;
+  --accent-focus-ring: rgb(62 111 224 / 25%);
+  --control-primary-text: #ffffff;
+  --control-border: #d4dce8;
+  --control-label: #3d4c66;
+  --control-hover-bg: #eef2f8;
+  --field-bg: #ffffff;
+  --field-border: #d4dce8;
+  --field-text: #1a2333;
+  --field-placeholder: #8494ab;
+  --chip-bg: #eef2f8;
+  --chip-border: #d4dce8;
+  --chip-text: #61718c;
+  --divider: #e5eaf2;
+  --topbar-bg: #ffffff;
+  --sidebar-bg: #111b27;
+  --sidebar-border: #233143;
+  --sidebar-text: #aab8c5;
+  --sidebar-text-active: #ffffff;
+  --sidebar-hover: #1a2837;
+  --tc-bg-canvas: var(--tc-neutral-25);
+  --tc-bg-surface: var(--tc-neutral-0);
+  --tc-bg-subtle: var(--tc-neutral-50);
+  --tc-bg-elevated: var(--tc-neutral-0);
+  --tc-text-primary: #17212b;
+  --tc-text-secondary: var(--tc-neutral-500);
+  --tc-text-disabled: var(--tc-neutral-400);
+  --tc-text-inverse: var(--tc-neutral-0);
+  --tc-border-default: var(--divider);
+  --tc-border-strong: var(--tc-neutral-300);
+  --tc-action-primary: var(--accent);
+  --tc-action-primary-hover: var(--accent-hover);
+  --tc-action-primary-active: var(--accent-active);
+  --tc-action-primary-soft: color-mix(in srgb, var(--accent) 18%, transparent);
+  --tc-identity-amber: var(--tc-amber-500);
+  --tc-focus-ring: var(--accent);
+  --tc-focus-ring-soft: var(--accent-focus-ring);
+  --tc-status-success-bg: var(--tc-green-50);
+  --tc-status-warning-bg: var(--tc-orange-50);
+  --tc-status-danger-bg: var(--tc-red-50);
+  --tc-status-info-bg: var(--tc-info-50);
+  --tc-status-neutral-bg: var(--tc-neutral-50);
+  --tc-overlay-scrim: rgb(14 20 27 / 58%);
+  --tc-shadow-overlay: 0 18px 50px rgb(14 20 27 / 20%);
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
   --accent: #3e6fe0;
   --accent-hover: #4d7ce6;
   --accent-active: #3563cf;
@@ -11,48 +75,18 @@ html[data-theme="light"] {
   --control-hover-bg: #16223a;
   --field-bg: #111d31;
   --field-border: #24344e;
+  --field-text: #f5f7fa;
   --field-placeholder: #66799a;
   --chip-bg: #1a2942;
   --chip-border: #2a3d5c;
   --chip-text: #7f93b3;
-  --tc-bg-canvas: var(--tc-neutral-25);
-  --tc-bg-surface: var(--tc-neutral-0);
-  --tc-bg-subtle: var(--tc-neutral-50);
-  --tc-bg-elevated: var(--tc-neutral-0);
-  --tc-text-primary: #17212b;
-  --tc-text-secondary: var(--tc-neutral-500);
-  --tc-text-disabled: var(--tc-neutral-400);
-  --tc-text-inverse: var(--tc-neutral-0);
-  --tc-border-default: var(--tc-neutral-200);
-  --tc-border-strong: var(--tc-neutral-300);
-  --tc-action-primary: var(--accent);
-  --tc-action-primary-hover: var(--accent-hover);
-  --tc-action-primary-active: var(--accent-active);
-  --tc-action-primary-soft: color-mix(in srgb, var(--accent) 18%, transparent);
-  --tc-identity-amber: var(--tc-amber-500);
-  --tc-focus-ring: var(--accent);
-  --tc-focus-ring-soft: var(--accent-focus-ring);
-  --tc-status-success: var(--tc-green-700);
-  --tc-status-success-bg: var(--tc-green-50);
-  --tc-status-success-border: var(--tc-green-300);
-  --tc-status-warning: var(--tc-orange-700);
-  --tc-status-warning-bg: var(--tc-orange-50);
-  --tc-status-warning-border: var(--tc-orange-300);
-  --tc-status-danger: var(--tc-red-700);
-  --tc-status-danger-bg: var(--tc-red-50);
-  --tc-status-danger-border: var(--tc-red-300);
-  --tc-status-info: var(--tc-info-700);
-  --tc-status-info-bg: var(--tc-info-50);
-  --tc-status-info-border: var(--tc-info-300);
-  --tc-status-neutral: var(--tc-neutral-500);
-  --tc-status-neutral-bg: var(--tc-neutral-50);
-  --tc-status-neutral-border: #cdd6dc;
-  --tc-overlay-scrim: rgb(14 20 27 / 58%);
-  --tc-shadow-overlay: 0 18px 50px rgb(14 20 27 / 20%);
-}
-
-html[data-theme="dark"] {
-  color-scheme: dark;
+  --divider: #2c3947;
+  --topbar-bg: var(--tc-neutral-900);
+  --sidebar-bg: #111b27;
+  --sidebar-border: #233143;
+  --sidebar-text: #aab8c5;
+  --sidebar-text-active: #ffffff;
+  --sidebar-hover: #1a2837;
   --tc-bg-canvas: var(--tc-neutral-950);
   --tc-bg-surface: var(--tc-neutral-900);
   --tc-bg-subtle: var(--tc-neutral-800);
@@ -61,7 +95,7 @@ html[data-theme="dark"] {
   --tc-text-secondary: #9eadb9;
   --tc-text-disabled: #697987;
   --tc-text-inverse: var(--tc-neutral-950);
-  --tc-border-default: #2c3947;
+  --tc-border-default: var(--divider);
   --tc-border-strong: var(--tc-neutral-700);
   --tc-action-primary: var(--accent);
   --tc-action-primary-hover: var(--accent-hover);
@@ -82,6 +116,28 @@ html[data-theme="dark"] {
 @media (prefers-color-scheme: dark) {
   html[data-theme="system"] {
     color-scheme: dark;
+    --accent: #3e6fe0;
+    --accent-hover: #4d7ce6;
+    --accent-active: #3563cf;
+    --accent-focus-ring: rgb(62 111 224 / 25%);
+    --control-primary-text: #ffffff;
+    --control-border: #2a3d5c;
+    --control-label: #c6d4ea;
+    --control-hover-bg: #16223a;
+    --field-bg: #111d31;
+    --field-border: #24344e;
+    --field-text: #f5f7fa;
+    --field-placeholder: #66799a;
+    --chip-bg: #1a2942;
+    --chip-border: #2a3d5c;
+    --chip-text: #7f93b3;
+    --divider: #2c3947;
+    --topbar-bg: var(--tc-neutral-900);
+    --sidebar-bg: #111b27;
+    --sidebar-border: #233143;
+    --sidebar-text: #aab8c5;
+    --sidebar-text-active: #ffffff;
+    --sidebar-hover: #1a2837;
     --tc-bg-canvas: var(--tc-neutral-950);
     --tc-bg-surface: var(--tc-neutral-900);
     --tc-bg-subtle: var(--tc-neutral-800);
@@ -90,7 +146,7 @@ html[data-theme="dark"] {
     --tc-text-secondary: #9eadb9;
     --tc-text-disabled: #697987;
     --tc-text-inverse: var(--tc-neutral-950);
-    --tc-border-default: #2c3947;
+    --tc-border-default: var(--divider);
     --tc-border-strong: var(--tc-neutral-700);
     --tc-action-primary: var(--accent);
     --tc-action-primary-hover: var(--accent-hover);

@@ -112,21 +112,30 @@ value.
 
 #### Studio control roles
 
-| Token                 | Value                   | Use                                     |
-| --------------------- | ----------------------- | --------------------------------------- |
-| `--accent`            | `#3E6FE0`               | Primary actions, links, selected states |
-| `--accent-hover`      | `#4D7CE6`               | Primary hover                           |
-| `--accent-active`     | `#3563CF`               | Primary pressed state                   |
-| `--control-border`    | `#2A3D5C`               | Secondary control border                |
-| `--control-label`     | `#C6D4EA`               | Secondary control label                 |
-| `--control-hover-bg`  | `#16223A`               | Secondary hover fill                    |
-| `--field-bg`          | `#111D31`               | Input and search background             |
-| `--field-border`      | `#24344E`               | Input and search border                 |
-| `--field-placeholder` | `#66799A`               | Placeholder text                        |
-| `--chip-bg`           | `#1A2942`               | Nested keycap and chip background       |
-| `--chip-border`       | `#2A3D5C`               | Nested keycap and chip border           |
-| `--chip-text`         | `#7F93B3`               | Nested keycap and chip text             |
-| `--accent-focus-ring` | 25% alpha of `--accent` | Three-pixel keyboard-focus outer ring   |
+Control colors are theme-scoped. Components consume the aliases in
+`components.css`; they must not assume the dark palette is the default.
+
+| Token                 | Light value             | Dark value              | Use                                     |
+| --------------------- | ----------------------- | ----------------------- | --------------------------------------- |
+| `--accent`            | `#3E6FE0`               | `#3E6FE0`               | Primary actions, links, selected states |
+| `--accent-hover`      | `#4D7CE6`               | `#4D7CE6`               | Primary hover                           |
+| `--accent-active`     | `#3563CF`               | `#3563CF`               | Primary pressed state                   |
+| `--control-border`    | `#D4DCE8`               | `#2A3D5C`               | Secondary control border                |
+| `--control-label`     | `#3D4C66`               | `#C6D4EA`               | Secondary control label                 |
+| `--control-hover-bg`  | `#EEF2F8`               | `#16223A`               | Secondary hover fill                    |
+| `--field-bg`          | `#FFFFFF`               | `#111D31`               | Input and search background             |
+| `--field-border`      | `#D4DCE8`               | `#24344E`               | Input and search border                 |
+| `--field-text`        | `#1A2333`               | `#F5F7FA`               | Input and select values                 |
+| `--field-placeholder` | `#8494AB`               | `#66799A`               | Placeholder text                        |
+| `--chip-bg`           | `#EEF2F8`               | `#1A2942`               | Nested keycap and chip background       |
+| `--chip-border`       | `#D4DCE8`               | `#2A3D5C`               | Nested keycap and chip border           |
+| `--chip-text`         | `#61718C`               | `#7F93B3`               | Nested keycap and chip text             |
+| `--divider`           | `#E5EAF2`               | `#2C3947`               | Hairlines and utility-header dividers   |
+| `--accent-focus-ring` | 25% alpha of `--accent` | 25% alpha of `--accent` | Three-pixel keyboard-focus outer ring   |
+
+The Studio sidebar deliberately uses the same dark navigation tokens in light
+and dark appearances. This is an explicit contrast treatment, not inheritance
+from the dark control palette, and may be revisited independently.
 
 #### Status roles
 
