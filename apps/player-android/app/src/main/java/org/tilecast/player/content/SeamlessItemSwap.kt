@@ -40,7 +40,10 @@ internal fun SeamlessItemSwap(
     var currentReady by remember { mutableStateOf(false) }
     SideEffect {
         if (current != cursor) {
-            previous = current
+            // Only demote the outgoing item if it rendered at least one frame.
+            // If it advances before that (e.g. a failing video), keep holding
+            // the prior entry — the last frame that was actually visible.
+            if (currentReady) previous = current
             current = cursor
             currentReady = false
         }
