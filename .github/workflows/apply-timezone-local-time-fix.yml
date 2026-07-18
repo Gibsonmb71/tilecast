@@ -1,0 +1,490 @@
+name: Apply timezone and local time fix
+
+on:
+  push:
+    branches: [gibby/fix-timezone-local-time]
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-test:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: tilecast_test
+          POSTGRES_USER: tilecast
+          POSTGRES_PASSWORD: tilecast_test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tilecast -d tilecast_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: gibby/fix-timezone-local-time
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/server/go.mod
+          cache-dependency-path: apps/server/go.sum
+      - name: Apply source changes
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          def replace(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected one match in {path}, found {count}: {old[:80]!r}")
+              file.write_text(text.replace(old, new, 1))
+
+          Path("apps/dashboard/src/settings/settingValues.ts").write_text('''import type { SettingDefinition } from "../api/types";
+
+const legacyTimezoneAliases: Record<string, string> = {
+  EST: "America/New_York",
+  EDT: "America/New_York",
+  CST: "America/Chicago",
+  CDT: "America/Chicago",
+  MST: "America/Denver",
+  MDT: "America/Denver",
+  PST: "America/Los_Angeles",
+  PDT: "America/Los_Angeles",
+};
+
+const localTimePattern = /^(?:[01]\\d|2[0-3]):[0-5]\\d(?::00)?$/;
+
+export function normalizeLocalTime(value: unknown) {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  return localTimePattern.test(trimmed) ? trimmed.slice(0, 5) : trimmed;
+}
+
+export function normalizeTimezone(value: unknown) {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  return legacyTimezoneAliases[trimmed] ?? trimmed;
+}
+
+export function normalizeSettingValues(
+  values: Record<string, unknown>,
+  definitions: SettingDefinition[],
+) {
+  const normalized = { ...values };
+  for (const definition of definitions) {
+    if (!Object.hasOwn(normalized, definition.key)) continue;
+    if (definition.type === "local_time")
+      normalized[definition.key] = normalizeLocalTime(normalized[definition.key]);
+    if (definition.type === "timezone")
+      normalized[definition.key] = normalizeTimezone(normalized[definition.key]);
+  }
+  return normalized;
+}
+
+export function timezoneOptions(current: unknown) {
+  const supported = (
+    Intl as typeof Intl & { supportedValuesOf?: (key: "timeZone") => string[] }
+  ).supportedValuesOf?.("timeZone");
+  const zones = new Set([
+    "UTC",
+    "America/New_York",
+    "America/Chicago",
+    "America/Denver",
+    "America/Los_Angeles",
+    "Europe/London",
+    ...(supported ?? []),
+  ]);
+  const normalizedCurrent = normalizeTimezone(current);
+  if (
+    normalizedCurrent === "UTC" ||
+    (normalizedCurrent.includes("/") && normalizedCurrent.length < 200)
+  )
+    zones.add(normalizedCurrent);
+  return [...zones].sort((left, right) =>
+    timezoneLabel(left).localeCompare(timezoneLabel(right)),
+  );
+}
+
+export function timezoneLabel(zone: string) {
+  const common: Record<string, string> = {
+    "America/New_York": "Eastern Time",
+    "America/Chicago": "Central Time",
+    "America/Denver": "Mountain Time",
+    "America/Los_Angeles": "Pacific Time",
+  };
+  if (zone === "UTC") return "UTC";
+  const friendly = common[zone];
+  if (friendly) return `${friendly} (${zone})`;
+  return zone.replaceAll("_", " ").replace("/", " — ");
+}
+''')
+
+          replace(
+              "apps/dashboard/src/settings/SettingControl.tsx",
+              'import { enumLabel } from "./settingDisplay";\n',
+              'import { enumLabel } from "./settingDisplay";\nimport {\n  normalizeLocalTime,\n  normalizeTimezone,\n  timezoneLabel,\n  timezoneOptions,\n} from "./settingValues";\n',
+          )
+          replace(
+              "apps/dashboard/src/settings/SettingControl.tsx",
+              '''  if (definition.type === "enum")
+    return (
+''',
+              '''  if (definition.type === "timezone") {
+    const timezone = normalizeTimezone(value);
+    return (
+      <Select
+        id={id}
+        aria-label={definition.title}
+        value={timezone}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        {timezoneOptions(timezone).map((option) => (
+          <option key={option} value={option}>
+            {timezoneLabel(option)}
+          </option>
+        ))}
+      </Select>
+    );
+  }
+  if (definition.type === "enum")
+    return (
+''',
+          )
+          replace(
+              "apps/dashboard/src/settings/SettingControl.tsx",
+              '''  const numeric = ["int", "int64", "float"].includes(definition.type);
+  return (
+''',
+              '''  if (definition.type === "local_time")
+    return (
+      <input
+        id={id}
+        aria-label={definition.title}
+        type="time"
+        value={normalizeLocalTime(value)}
+        step={60}
+        disabled={disabled}
+        onChange={(event) => onChange(normalizeLocalTime(event.target.value))}
+      />
+    );
+  const numeric = ["int", "int64", "float"].includes(definition.type);
+  return (
+''',
+          )
+
+          replace(
+              "apps/dashboard/src/pages/SettingsPage.tsx",
+              'import { BrandingAssets } from "../settings/BrandingAssets";\n',
+              'import { BrandingAssets } from "../settings/BrandingAssets";\nimport { normalizeSettingValues } from "../settings/settingValues";\n',
+          )
+          replace(
+              "apps/dashboard/src/pages/SettingsPage.tsx",
+              '''    if (settings.data && !baseline) {
+      setBaseline(settings.data.values);
+      setDraft(settings.data.values);
+      setRevision(settings.data.revision);
+    }
+''',
+              '''    if (settings.data && !baseline) {
+      const normalized = normalizeSettingValues(
+        settings.data.values,
+        settings.data.definitions ?? [],
+      );
+      setBaseline(normalized);
+      setDraft(normalized);
+      setRevision(settings.data.revision);
+    }
+''',
+          )
+          replace(
+              "apps/dashboard/src/pages/SettingsPage.tsx",
+              '''    const payload = { ...(baseline ?? {}) };
+    for (const key of keys) payload[key] = draft[key];
+    const oldBaseline = baseline ?? {};
+    const oldDraft = draft;
+    saveOrganization.mutate(payload, {
+''',
+              '''    const payload = { ...(baseline ?? {}) };
+    for (const key of keys) payload[key] = draft[key];
+    const normalizedPayload = normalizeSettingValues(
+      payload,
+      organizationDefinitions,
+    );
+    const oldBaseline = baseline ?? {};
+    const oldDraft = draft;
+    saveOrganization.mutate(normalizedPayload, {
+''',
+          )
+
+          replace(
+              "apps/dashboard/src/settings/PlayerPolicyEditor.tsx",
+              'import { descriptionFor, enumLabel } from "./settingDisplay";\n',
+              'import { descriptionFor, enumLabel } from "./settingDisplay";\nimport { normalizeSettingValues } from "./settingValues";\n',
+          )
+          replace(
+              "apps/dashboard/src/settings/PlayerPolicyEditor.tsx",
+              '''  const save = useMutation({
+    mutationFn: () =>
+      target === "group"
+        ? api.putGroupPolicy(
+            id,
+            policy.data?.revision ?? 0,
+            priority,
+            values,
+            auth.status?.csrfToken ?? "",
+          )
+        : api.putScreenPolicy(
+            id,
+            policy.data?.revision ?? 0,
+            values,
+            auth.status?.csrfToken ?? "",
+          ),
+''',
+              '''  const save = useMutation({
+    mutationFn: () => {
+      const normalizedValues = normalizeSettingValues(values, definitions);
+      return target === "group"
+        ? api.putGroupPolicy(
+            id,
+            policy.data?.revision ?? 0,
+            priority,
+            normalizedValues,
+            auth.status?.csrfToken ?? "",
+          )
+        : api.putScreenPolicy(
+            id,
+            policy.data?.revision ?? 0,
+            normalizedValues,
+            auth.status?.csrfToken ?? "",
+          );
+    },
+''',
+          )
+
+          replace(
+              "apps/dashboard/src/schedules/ScheduleBuilder.tsx",
+              '  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",\n',
+              '  // Filled from the organization default returned by the schedules API.\n  timezone: "",\n',
+          )
+
+          replace(
+              "apps/server/internal/settings/registry.go",
+              'var localTimePattern = regexp.MustCompile(`^(?:[01][0-9]|2[0-3]):[0-5][0-9]$`)\n',
+              'var localTimePattern = regexp.MustCompile(`^(?:[01][0-9]|2[0-3]):[0-5][0-9]$`)\nvar legacyLocalTimePattern = regexp.MustCompile(`^(?:[01][0-9]|2[0-3]):[0-5][0-9]:00$`)\n',
+          )
+          replace(
+              "apps/server/internal/settings/registry.go",
+              '''		if d.Type == "timezone" {
+			if _, err := time.LoadLocation(s); err != nil {
+				return nil, errors.New("must be an IANA timezone")
+			}
+		}
+''',
+              '''		if d.Type == "timezone" {
+			if s != "UTC" && !strings.Contains(s, "/") {
+				return nil, errors.New("must be a canonical IANA timezone")
+			}
+			if _, err := time.LoadLocation(s); err != nil {
+				return nil, errors.New("must be a canonical IANA timezone")
+			}
+		}
+''',
+          )
+          replace(
+              "apps/server/internal/settings/registry.go",
+              '''		if d.Type == "local_time" && !localTimePattern.MatchString(s) {
+			return nil, errors.New("must use HH:mm local time")
+		}
+''',
+              '''		if d.Type == "local_time" {
+			switch {
+			case localTimePattern.MatchString(s):
+			case legacyLocalTimePattern.MatchString(s):
+				s = strings.TrimSuffix(s, ":00")
+			default:
+				return nil, errors.New("must use HH:mm local time")
+			}
+		}
+''',
+          )
+
+          replace(
+              "apps/server/internal/settings/registry_test.go",
+              '''func TestDefinitionJSONUsesPublicContractFieldNames(t *testing.T) {
+''',
+              '''func TestLegacyLocalTimesNormalizeAndFixedTimezoneNamesFail(t *testing.T) {
+	normalized, err := Validate(map[string]any{
+		"power.active_hours_start": "06:30:00",
+		"power.active_hours_end":   "16:00:00",
+	}, ScopePolicy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if normalized["power.active_hours_start"] != "06:30" || normalized["power.active_hours_end"] != "16:00" {
+		t.Fatalf("local times were not normalized: %#v", normalized)
+	}
+	for name, value := range map[string]string{
+		"non-zero seconds": "16:00:30",
+		"invalid hour":     "25:00:00",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := Validate(map[string]any{"power.active_hours_end": value}, ScopePolicy); err == nil {
+				t.Fatalf("invalid local time %q accepted", value)
+			}
+		})
+	}
+	if _, err := Validate(map[string]any{"organization.timezone": "EST"}, ScopeOrganization); err == nil {
+		t.Fatal("fixed timezone abbreviation accepted")
+	}
+	if _, err := Validate(map[string]any{"organization.timezone": "America/New_York"}, ScopeOrganization); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDefinitionJSONUsesPublicContractFieldNames(t *testing.T) {
+''',
+          )
+
+          replace(
+              "apps/server/internal/settings/service_integration_test.go",
+              '''	values := map[string]any{"organization.name": "Settings Test", "player.playback.default_volume": 0.5, "reliability.mode": "standard", "power.active_hours_timezone": "America/New_York"}
+''',
+              '''	values := map[string]any{"organization.name": "Settings Test", "organization.timezone": "America/New_York", "player.playback.default_volume": 0.5, "reliability.mode": "standard", "power.active_hours_timezone": "America/New_York", "power.active_hours_end": "16:00:00"}
+''',
+          )
+          replace(
+              "apps/server/internal/settings/service_integration_test.go",
+              '''	document, err = service.UpdateOrganization(ctx, owner.User.ID, document.Revision, values)
+	if err != nil {
+		t.Fatal(err)
+	}
+''',
+              '''	document, err = service.UpdateOrganization(ctx, owner.User.ID, document.Revision, values)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var defaultTimezone string
+	if err = pool.QueryRow(ctx, `SELECT default_timezone FROM organization_settings WHERE singleton`).Scan(&defaultTimezone); err != nil {
+		t.Fatal(err)
+	}
+	if defaultTimezone != "America/New_York" {
+		t.Fatalf("schedule default timezone=%q", defaultTimezone)
+	}
+	if document.Values["power.active_hours_end"] != "16:00" {
+		t.Fatalf("active hours end=%#v", document.Values["power.active_hours_end"])
+	}
+''',
+          )
+
+          replace(
+              "apps/dashboard/src/settings/settingsExperience.test.tsx",
+              'import { sectionFromPath, settingsNavigation } from "./settingsNavigation";\n',
+              'import { sectionFromPath, settingsNavigation } from "./settingsNavigation";\nimport { normalizeSettingValues } from "./settingValues";\n',
+          )
+          replace(
+              "apps/dashboard/src/settings/settingsExperience.test.tsx",
+              '''  it("centralizes dependencies and meaningful subsections", () => {
+''',
+              '''  it("normalizes minute-precision local times and uses canonical timezone options", () => {
+    const timeChange = vi.fn();
+    render(
+      <SettingControl
+        definition={definition({
+          key: "power.active_hours_end",
+          type: "local_time",
+          title: "End time",
+        })}
+        value="16:00:00"
+        onChange={timeChange}
+      />,
+    );
+    const time = screen.getByLabelText("End time");
+    expect(time).toHaveValue("16:00");
+    expect(time).toHaveAttribute("step", "60");
+    fireEvent.change(time, { target: { value: "17:30" } });
+    expect(timeChange).toHaveBeenCalledWith("17:30");
+    cleanup();
+
+    const timezoneChange = vi.fn();
+    render(
+      <SettingControl
+        definition={definition({
+          key: "organization.timezone",
+          type: "timezone",
+          title: "Default timezone",
+        })}
+        value="EST"
+        onChange={timezoneChange}
+      />,
+    );
+    const timezone = screen.getByRole("combobox", {
+      name: "Default timezone",
+    });
+    expect(timezone).toHaveValue("America/New_York");
+    expect(timezone).toHaveTextContent("Eastern Time (America/New_York)");
+
+    expect(
+      normalizeSettingValues(
+        {
+          "organization.timezone": "EST",
+          "power.active_hours_start": "06:30:00",
+          "power.active_hours_end": "16:00:00",
+        },
+        [
+          definition({ key: "organization.timezone", type: "timezone" }),
+          definition({ key: "power.active_hours_start", type: "local_time" }),
+          definition({ key: "power.active_hours_end", type: "local_time" }),
+        ],
+      ),
+    ).toMatchObject({
+      "organization.timezone": "America/New_York",
+      "power.active_hours_start": "06:30",
+      "power.active_hours_end": "16:00",
+    });
+  });
+
+  it("centralizes dependencies and meaningful subsections", () => {
+''',
+          )
+
+          Path(".github/workflows/apply-timezone-local-time-fix.yml").unlink()
+          PY
+      - run: npm ci
+      - name: Format dashboard files
+        run: npx prettier --write apps/dashboard/src/settings/settingValues.ts apps/dashboard/src/settings/SettingControl.tsx apps/dashboard/src/settings/PlayerPolicyEditor.tsx apps/dashboard/src/settings/settingsExperience.test.tsx apps/dashboard/src/pages/SettingsPage.tsx apps/dashboard/src/schedules/ScheduleBuilder.tsx
+      - name: Format server files
+        run: gofmt -w apps/server/internal/settings/registry.go apps/server/internal/settings/registry_test.go apps/server/internal/settings/service_integration_test.go
+      - name: Dashboard validation
+        run: |
+          npm run format:check
+          npm run lint
+          npm test
+          npm run build
+      - name: Server validation
+        working-directory: apps/server
+        env:
+          TEST_DATABASE_URL: postgres://tilecast:tilecast_test_password@localhost:5432/tilecast_test?sslmode=disable
+        run: |
+          go vet ./...
+          go test -p 1 ./...
+          go build ./cmd/tilecast
+      - name: Commit verified changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Fix timezone and local-time settings handling"
+          git push origin HEAD:gibby/fix-timezone-local-time
