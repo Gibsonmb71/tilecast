@@ -102,14 +102,15 @@ function normalizeScreenGroup(group: ScreenGroup): ScreenGroup {
   };
 }
 
-function normalizePlaylist(playlist: Playlist): Playlist {
+export function normalizePlaylist(
+  playlist: Playlist | null | undefined,
+): Playlist {
+  const source = playlist ?? ({} as Playlist);
   return {
-    ...playlist,
-    items: Array.isArray(playlist.items) ? playlist.items : [],
-    warnings: Array.isArray(playlist.warnings) ? playlist.warnings : [],
-    layoutUsage: Array.isArray(playlist.layoutUsage)
-      ? playlist.layoutUsage
-      : [],
+    ...source,
+    items: Array.isArray(source.items) ? source.items : [],
+    warnings: Array.isArray(source.warnings) ? source.warnings : [],
+    layoutUsage: Array.isArray(source.layoutUsage) ? source.layoutUsage : [],
   };
 }
 
@@ -131,22 +132,46 @@ function normalizeLayoutDocument(
   if (!document) return fallback;
   return {
     ...document,
-    canvas: document.canvas ?? fallback.canvas,
+    schemaVersion: document.schemaVersion ?? fallback.schemaVersion,
+    canvas: { ...fallback.canvas, ...(document.canvas ?? {}) },
     placements: Array.isArray(document.placements) ? document.placements : [],
   };
 }
 
-function normalizeLayout(layout: Layout): Layout {
+export function normalizeLayout(layout: Layout | null | undefined): Layout {
+  const source = layout ?? ({} as Layout);
   return {
-    ...layout,
-    draft: normalizeLayoutDocument(layout.draft, layout),
-    dependencies: Array.isArray(layout.dependencies) ? layout.dependencies : [],
+    ...source,
+    draft: normalizeLayoutDocument(source.draft, source),
+    dependencies: Array.isArray(source.dependencies) ? source.dependencies : [],
     usage: {
-      screens: Array.isArray(layout.usage?.screens) ? layout.usage.screens : [],
-      schedules: Array.isArray(layout.usage?.schedules)
-        ? layout.usage.schedules
+      screens: Array.isArray(source.usage?.screens) ? source.usage.screens : [],
+      schedules: Array.isArray(source.usage?.schedules)
+        ? source.usage.schedules
         : [],
     },
+  };
+}
+
+function normalizePlaylistList(
+  result: PlaylistList | null | undefined,
+): PlaylistList {
+  const source = result ?? ({} as PlaylistList);
+  return {
+    ...source,
+    items: (Array.isArray(source.items) ? source.items : []).map(
+      normalizePlaylist,
+    ),
+  };
+}
+
+function normalizeLayoutList(
+  result: LayoutList | null | undefined,
+): LayoutList {
+  const source = result ?? ({} as LayoutList);
+  return {
+    ...source,
+    items: Array.isArray(source.items) ? source.items : [],
   };
 }
 
@@ -184,13 +209,10 @@ export const api = {
       body: JSON.stringify({ provider, configuration }),
     }),
   layouts: async (search = "") => {
-    const result = await request<LayoutList>(
+    const result = await request<LayoutList | null>(
       `/layouts?${new URLSearchParams({ search, page: "1", pageSize: "100" })}`,
     );
-    return {
-      ...result,
-      items: Array.isArray(result.items) ? result.items : [],
-    };
+    return normalizeLayoutList(result);
   },
   layout: (id: string) => requestLayout(`/layouts/${id}`),
   createLayout: (
@@ -826,15 +848,10 @@ export const api = {
       headers: { "X-CSRF-Token": csrfToken },
     }),
   playlists: async (search = "") => {
-    const result = await request<PlaylistList>(
+    const result = await request<PlaylistList | null>(
       `/playlists?page=1&pageSize=100&search=${encodeURIComponent(search)}`,
     );
-    return {
-      ...result,
-      items: (Array.isArray(result.items) ? result.items : []).map(
-        normalizePlaylist,
-      ),
-    };
+    return normalizePlaylistList(result);
   },
   playlist: (id: string) => requestPlaylist(`/playlists/${id}`),
   createPlaylist: (

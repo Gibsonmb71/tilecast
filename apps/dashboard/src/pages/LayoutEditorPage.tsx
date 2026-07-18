@@ -959,10 +959,13 @@ export function LayoutEditorPage() {
   if (layoutQuery.isLoading || !document)
     return <p className="status-copy">Loading Layout editor…</p>;
   const contentByID = new Map(
-    contentQuery.data?.items.map((asset) => [asset.id, asset]),
+    (contentQuery.data?.items ?? []).map((asset) => [asset.id, asset]),
   );
   const playlistByID = new Map(
-    playlistsQuery.data?.items.map((playlist) => [playlist.id, playlist]),
+    (playlistsQuery.data?.items ?? []).map((playlist) => [
+      playlist.id,
+      playlist,
+    ]),
   );
   const previewContentByID = new Map(
     [...(contentQuery.data?.items ?? []), ...previewAssets].map((asset) => [

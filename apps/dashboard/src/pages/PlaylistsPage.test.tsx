@@ -46,6 +46,11 @@ describe("playlist editor", () => {
       ]),
     ).toBeNull();
   });
+
+  it("treats an omitted item collection as an empty playlist", () => {
+    expect(playlistDuration(undefined)).toBe(0);
+  });
+
   it("includes Layout item durations", () => {
     expect(
       playlistDuration([
