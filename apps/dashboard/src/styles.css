@@ -291,8 +291,6 @@ a {
   font-size: 19px;
 }
 .auth-page {
-  display: grid;
-  grid-template-columns: minmax(310px, 39%) 1fr;
   min-height: 100vh;
 }
 .auth-context {
