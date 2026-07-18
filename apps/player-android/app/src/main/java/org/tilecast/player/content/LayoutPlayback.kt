@@ -157,31 +157,39 @@ private fun PlaylistZone(
             kotlinx.coroutines.delay(100)
         }
     }
-    val sourceItem = playlist.items[cursor.index.coerceIn(0, playlist.items.lastIndex)]
-    val item = if (muted) sourceItem.copy(audioEnabled = false, volume = 0f) else sourceItem
-    val asset = item.variantId?.let { id -> session.content.manifest.assets.firstOrNull { it.variantId == id } }
-    val website = session.content.manifest.websites.firstOrNull { it.assetId == item.assetId }
-    val widget = session.content.manifest.widgets.firstOrNull { it.assetId == item.assetId }
     fun advance() {
         if (synchronizedTimeline == null) cursor = nextPlaybackCursor(cursor, playlist.items.size)
     }
-    key(item.id, cursor.cycle) {
-        RenderedItem(
-            item,
-            asset,
-            website,
-            widget,
-            session,
-            if (synchronizedTimeline != null) synchronizedOffsetMs else 0,
-            { advance() },
-            { onError(it); advance() },
-            onWebsiteStatus,
-            onWidgetStatus,
-            onProgress,
-            activityReporter,
-            placementId,
-            synchronizedPositionMs = synchronizedOffsetMs.takeIf { synchronizedTimeline != null },
-        )
+    key(playlist.id, playlist.revision) {
+        SeamlessItemSwap(
+            cursor = cursor,
+            fadeFor = { playlist.items[it.index.coerceIn(0, playlist.items.lastIndex)].transition == "fade" },
+        ) { entryCursor, isActive, onFirstFrame ->
+            val sourceItem = playlist.items[entryCursor.index.coerceIn(0, playlist.items.lastIndex)]
+            val item = if (muted) sourceItem.copy(audioEnabled = false, volume = 0f) else sourceItem
+            val asset = item.variantId?.let { id -> session.content.manifest.assets.firstOrNull { it.variantId == id } }
+            val website = session.content.manifest.websites.firstOrNull { it.assetId == item.assetId }
+            val widget = session.content.manifest.widgets.firstOrNull { it.assetId == item.assetId }
+            val startOffset = remember { if (synchronizedTimeline != null) synchronizedOffsetMs else 0L }
+            RenderedItem(
+                item,
+                asset,
+                website,
+                widget,
+                session,
+                startOffset,
+                { if (isActive.value) advance() },
+                { if (isActive.value) { onError(it); advance() } },
+                onWebsiteStatus,
+                onWidgetStatus,
+                onProgress,
+                activityReporter,
+                placementId,
+                synchronizedPositionMs = synchronizedOffsetMs.takeIf { synchronizedTimeline != null && isActive.value },
+                isActive = isActive.value,
+                onFirstFrame = onFirstFrame,
+            )
+        }
     }
 }
 
@@ -235,22 +243,24 @@ private fun LayoutAssetItem(
             kotlinx.coroutines.delay(100)
         }
     }
-    key(item.id, cursor.cycle) {
+    SeamlessItemSwap(cursor, fadeFor = { false }) { _, isActive, onFirstFrame ->
         RenderedItem(
             item,
             asset,
             null,
             null,
             session,
-            synchronizedOffsetMs,
+            remember { synchronizedOffsetMs },
             {},
-            onError,
+            { if (isActive.value) onError(it) },
             onWebsiteStatus,
             onWidgetStatus,
             onProgress,
             activityReporter,
             placementId,
-            synchronizedPositionMs = synchronizedOffsetMs,
+            synchronizedPositionMs = synchronizedOffsetMs.takeIf { isActive.value },
+            isActive = isActive.value,
+            onFirstFrame = onFirstFrame,
         )
     }
 }

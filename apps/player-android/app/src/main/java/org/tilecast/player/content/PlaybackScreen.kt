@@ -4,7 +4,6 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.SystemClock
 import androidx.annotation.OptIn
-import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -149,17 +148,23 @@ fun FullscreenPlayback(
         return
     }
 
-    if (item.transition == "fade") {
-        Crossfade(cursor, label = "playlist-item") { targetCursor ->
-            val renderedItem = playlist.items[targetCursor.index]
+    key(session.content.manifest.manifestVersion, playlist.id, playlist.revision) {
+        SeamlessItemSwap(
+            cursor = cursor,
+            fadeFor = { playlist.items[it.index.coerceIn(0, playlist.items.lastIndex)].transition == "fade" },
+        ) { entryCursor, isActive, onFirstFrame ->
+            val renderedItem = playlist.items[entryCursor.index.coerceIn(0, playlist.items.lastIndex)]
             val renderedAsset = renderedItem.variantId?.let { variant -> session.content.manifest.assets.firstOrNull { it.variantId == variant } }
             val renderedWebsite = session.content.manifest.websites.firstOrNull { it.assetId == renderedItem.assetId }
             val renderedWidget = session.content.manifest.widgets.firstOrNull { it.assetId == renderedItem.assetId }
-            val targetIsCurrent = targetCursor == cursor
-            val startOffset = when {
-                synchronizedTimeline != null && targetIsCurrent -> synchronizedOffsetMs
-                synchronizedTimeline == null && targetCursor == session.initialCursor -> session.initialOffsetMs
-                else -> 0
+            // An entry always mounts as the current item, so its start offset is
+            // whatever the timeline says at mount time.
+            val startOffset = remember {
+                when {
+                    synchronizedTimeline != null -> synchronizedOffsetMs
+                    entryCursor == session.initialCursor -> session.initialOffsetMs
+                    else -> 0
+                }
             }
             RenderedItem(
                 renderedItem,
@@ -168,38 +173,15 @@ fun FullscreenPlayback(
                 renderedWidget,
                 session,
                 startOffset,
-                { advance() },
-                { onError(it); advance(true) },
+                { if (isActive.value) advance() },
+                { if (isActive.value) { onError(it); advance(true) } },
                 onWebsiteStatus,
                 onWidgetStatus,
                 onProgress,
                 activityReporter,
-                synchronizedPositionMs = synchronizedOffsetMs.takeIf { synchronizedTimeline != null && targetIsCurrent },
-            )
-        }
-    } else {
-        key(item.id, cursor.cycle) {
-            val startOffset = if (synchronizedTimeline != null) {
-                synchronizedOffsetMs
-            } else if (cursor == session.initialCursor) {
-                session.initialOffsetMs
-            } else {
-                0
-            }
-            RenderedItem(
-                item,
-                asset,
-                website,
-                widget,
-                session,
-                startOffset,
-                { advance() },
-                { onError(it); advance(true) },
-                onWebsiteStatus,
-                onWidgetStatus,
-                onProgress,
-                activityReporter,
-                synchronizedPositionMs = synchronizedOffsetMs.takeIf { synchronizedTimeline != null },
+                synchronizedPositionMs = synchronizedOffsetMs.takeIf { synchronizedTimeline != null && isActive.value },
+                isActive = isActive.value,
+                onFirstFrame = onFirstFrame,
             )
         }
     }
@@ -221,11 +203,18 @@ internal fun RenderedItem(
     activityReporter: PlaybackActivityReporter? = null,
     layoutPlacementId: String = "",
     synchronizedPositionMs: Long? = null,
+    isActive: Boolean = true,
+    onFirstFrame: () -> Unit = {},
 ) {
     val tracker = rememberActivityChild(activityReporter, item, widget, layoutPlacementId, session.content.manifest.dataSources)
     val done = { tracker?.complete(); onDone() }
     val failed: (String) -> Unit = { message -> tracker?.fail(message); onFailure(message) }
     val layout = item.layoutId?.let { id -> session.content.manifest.layouts.firstOrNull { it.id == id } }
+    // Images and videos report their first rendered frame themselves; everything
+    // else (websites, widgets, layouts) draws its own background immediately, so
+    // it counts as ready as soon as it is composed.
+    val rendersGatedMedia = widget == null && website == null && asset != null && !(item.assetType == "layout" && layout != null)
+    if (!rendersGatedMedia) LaunchedEffect(item.id) { onFirstFrame() }
     if (item.assetType == "layout" && layout != null) {
         FullscreenLayoutPlayback(session, layout, failed, onWebsiteStatus, onWidgetStatus, onProgress, activityReporter)
         LaunchedEffect(item.id) { delay(((item.durationMs ?: 30_000) - startOffsetMs).coerceAtLeast(1)); done() }
@@ -261,9 +250,9 @@ internal fun RenderedItem(
     } else if (website != null) {
         WebsiteItem(item, website, session, done, startOffsetMs, onWebsiteStatus)
     } else if (asset?.mimeType?.startsWith("image/") == true) {
-        ImageItem(item, asset, session, startOffsetMs, done, failed, onProgress)
+        ImageItem(item, asset, session, startOffsetMs, done, failed, onProgress, onFirstFrame)
     } else if (asset != null) {
-        VideoItem(item, asset, session, startOffsetMs, done, failed, onProgress, synchronizedPositionMs)
+        VideoItem(item, asset, session, startOffsetMs, done, failed, onProgress, synchronizedPositionMs, isActive, onFirstFrame)
     }
 }
 
@@ -283,9 +272,12 @@ private fun ImageItem(
     onDone: () -> Unit,
     onFailure: (String) -> Unit,
     onProgress: () -> Unit,
+    onFirstFrame: () -> Unit,
 ) {
     val variantId = item.variantId ?: return
     var bitmap by remember(item.id) { mutableStateOf(session.content.localFiles[variantId]?.let { BitmapFactory.decodeFile(it) }) }
+    val hasBitmap = bitmap != null
+    LaunchedEffect(hasBitmap) { if (hasBitmap) onFirstFrame() }
     LaunchedEffect(item.id) {
         if (bitmap == null) bitmap = runCatching {
             withContext(Dispatchers.IO) {
@@ -329,6 +321,8 @@ private fun VideoItem(
     onFailure: (String) -> Unit,
     onProgress: () -> Unit,
     synchronizedPositionMs: Long?,
+    isActive: Boolean,
+    onFirstFrame: () -> Unit,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val latestSynchronizedPosition = rememberUpdatedState(synchronizedPositionMs)
@@ -350,11 +344,21 @@ private fun VideoItem(
             }
 
             override fun onPlayerError(error: PlaybackException) { onFailure("Video playback failed") }
+
+            override fun onRenderedFirstFrame() { onFirstFrame() }
         }
         player.addListener(listener)
         onDispose {
             player.removeListener(listener)
             player.release()
+        }
+    }
+    // A demoted item only stays mounted to hold its last frame while the next
+    // item gets ready — it must not keep playing audibly underneath.
+    LaunchedEffect(isActive) {
+        if (!isActive) {
+            player.volume = 0f
+            player.pause()
         }
     }
     LaunchedEffect(player) {
