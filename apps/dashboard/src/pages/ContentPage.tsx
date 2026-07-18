@@ -148,7 +148,7 @@ export function ContentPage() {
     queryKey: ["assets", params.toString()],
     queryFn: () => api.assets(params),
     refetchInterval: (query) =>
-      query.state.data?.items.some((item) =>
+      query.state.data?.items?.some((item) =>
         ["queued", "inspecting", "processing"].includes(item.processingStatus),
       )
         ? 3000
@@ -489,7 +489,7 @@ export function ContentPage() {
       )}
       {assets.isLoading ? (
         <div className="table-loading">Loading media…</div>
-      ) : assets.data?.items.length === 0 ? (
+      ) : assets.data?.items?.length === 0 ? (
         <ContentEmpty
           canManage={canManage}
           onChoose={() => fileInput.current?.click()}
@@ -1247,7 +1247,7 @@ export function WebsiteEditor({
             }
           >
             <option value="">None</option>
-            {images.data?.items.map((image) => (
+            {images.data?.items?.map((image) => (
               <option key={image.id} value={image.id}>
                 {image.name}
               </option>

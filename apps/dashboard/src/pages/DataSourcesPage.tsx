@@ -348,7 +348,7 @@ function DataSourceProviderGallery({
     staleTime: 5 * 60_000,
   });
   const sourceCount =
-    catalog.data?.providers.filter((entry) => entry.role === "data_source")
+    catalog.data?.providers?.filter((entry) => entry.role === "data_source")
       .length ?? 0;
   const definitions = useQuery({
     queryKey: ["content-definitions"],
@@ -356,7 +356,7 @@ function DataSourceProviderGallery({
     staleTime: 5 * 60_000,
   });
   const releaseDefined =
-    definitions.data?.dataSources.filter(
+    definitions.data?.dataSources?.filter(
       (definition) => !definition.legacyEditor,
     ) ?? [];
   return (
@@ -521,7 +521,7 @@ export function DataSourcesPage() {
       )}
       {dataSources.isLoading ? (
         <div className="table-loading">Loading Data Sources...</div>
-      ) : dataSources.data?.items.length === 0 ? (
+      ) : dataSources.data?.items?.length === 0 ? (
         <EmptyState
           className="content-empty"
           icon={<Plus size={24} aria-hidden="true" />}
@@ -540,7 +540,7 @@ export function DataSourcesPage() {
         />
       ) : (
         <div className={`asset-collection asset-collection--${view}`}>
-          {dataSources.data?.items.map((source) => (
+          {dataSources.data?.items?.map((source) => (
             <article className="asset-card" key={source.id}>
               <button
                 className="asset-card__open"
@@ -595,7 +595,7 @@ export function DataSourceEditorPage() {
   const saved = (value: { id: string }) => {
     void navigate(`/data-sources/${value.id}`, { replace: true });
   };
-  const definition = definitions.data?.dataSources.find(
+  const definition = definitions.data?.dataSources?.find(
     (candidate) => candidate.id === provider,
   );
 

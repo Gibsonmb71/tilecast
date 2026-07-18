@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { api, normalizeLayout, normalizePlaylist } from "./client";
-import type { AuthStatus, Layout } from "./types";
+import {
+  api,
+  normalizeContentDefinitionCatalog,
+  normalizeLayout,
+  normalizePlaylist,
+  normalizePlaylistAssignment,
+  normalizeProviderCatalog,
+  normalizeScreen,
+} from "./client";
+import type { AuthStatus, Layout, Screen } from "./types";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -63,6 +71,29 @@ describe("screen group compatibility", () => {
 });
 
 describe("mixed-version collection compatibility", () => {
+  it("normalizes missing screen metadata used by detail panels", () => {
+    expect(
+      normalizeScreen({ platform: "android-tv" } as unknown as Screen)
+        .deviceManufacturer,
+    ).toBe("");
+  });
+
+  it("normalizes missing assignment collections and status", () => {
+    expect(normalizePlaylistAssignment(undefined)).toMatchObject({
+      synchronizationStatus: "not_reported",
+      groups: [],
+      relevantSchedules: [],
+    });
+  });
+
+  it("normalizes missing provider and definition collections", () => {
+    expect(normalizeProviderCatalog(undefined).providers).toEqual([]);
+    expect(normalizeContentDefinitionCatalog(undefined)).toMatchObject({
+      widgets: [],
+      dataSources: [],
+    });
+  });
+
   it("normalizes missing collections even when a detail payload is nullish", () => {
     expect(normalizePlaylist(undefined)).toMatchObject({
       items: [],

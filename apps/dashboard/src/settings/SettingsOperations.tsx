@@ -412,7 +412,7 @@ export function PlayerUpdatesPanel({
       api.createUpdateDeployment(
         {
           releaseId,
-          name: `Tilecast Player ${releases.data?.items.find((item) => item.id === releaseId)?.versionName ?? "update"}`,
+          name: `Tilecast Player ${releases.data?.items?.find((item) => item.id === releaseId)?.versionName ?? "update"}`,
           mode,
           screenIds,
           groupIds,
@@ -598,7 +598,7 @@ export function PlayerUpdatesPanel({
           !releases.error &&
           releases.data?.manifestKeyConfigured &&
           !releases.data?.providerError &&
-          (releases.data?.items.length ?? 0) === 0 && (
+          (releases.data?.items?.length ?? 0) === 0 && (
             <div className="notice">
               <strong>No Player releases have been imported.</strong>
               <p>
@@ -768,7 +768,7 @@ export function PlayerUpdatesPanel({
             >
               <div className="target-picker__column">
                 <h4>
-                  Screens <span>{screens.data?.items.length ?? 0}</span>
+                  Screens <span>{screens.data?.items?.length ?? 0}</span>
                 </h4>
                 {(screens.data?.items ?? [])
                   .filter((item) => item.name.toLowerCase().includes(query))
@@ -790,7 +790,7 @@ export function PlayerUpdatesPanel({
               </div>
               <div className="target-picker__column">
                 <h4>
-                  Sync groups <span>{groups.data?.items.length ?? 0}</span>
+                  Sync groups <span>{groups.data?.items?.length ?? 0}</span>
                 </h4>
                 {(groups.data?.items ?? [])
                   .filter((item) => item.name.toLowerCase().includes(query))
@@ -925,7 +925,7 @@ export function PlayerUpdatesPanel({
               ))}
               {!deployments.isLoading &&
                 !deployments.error &&
-                (deployments.data?.items.length ?? 0) === 0 && (
+                (deployments.data?.items?.length ?? 0) === 0 && (
                   <tr>
                     <td colSpan={9} className="table-empty-state">
                       <CheckCircle2 size={18} aria-hidden="true" />
