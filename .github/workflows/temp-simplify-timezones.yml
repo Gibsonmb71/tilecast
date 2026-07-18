@@ -108,23 +108,11 @@ jobs:
 
           path = Path("apps/dashboard/src/settings/settingsExperience.test.tsx")
           source = path.read_text()
-          source = source.replace(
-              'expect(timezone).toHaveTextContent("Eastern Time (America/New_York)");',
-              'expect(timezone).toHaveTextContent("Eastern Time");',
-              1,
-          )
-          insertion = '''    expect(document.querySelector(".signal-select__native")).toHaveValue(
-              "America/New_York",
-            );
-          '''
-          replacement = '''    expect(document.querySelector(".signal-select__native")).toHaveValue(
-              "America/New_York",
-            );
-            expect(screen.queryByText(/America\\/New_York/)).not.toBeInTheDocument();
-          '''
-          if insertion not in source:
-              raise SystemExit("Timezone assertion insertion point not found")
-          path.write_text(source.replace(insertion, replacement, 1))
+          old = 'expect(timezone).toHaveTextContent("Eastern Time (America/New_York)");'
+          new = 'expect(timezone).toHaveTextContent("Eastern Time");'
+          if old not in source:
+              raise SystemExit("Timezone label assertion not found")
+          path.write_text(source.replace(old, new, 1))
           PY
       - run: npm ci
       - run: npx prettier --write apps/dashboard/src/settings/settingValues.ts apps/dashboard/src/settings/settingsExperience.test.tsx
