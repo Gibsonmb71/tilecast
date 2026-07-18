@@ -15,8 +15,8 @@ android {
         minSdk = 23
         targetSdk = 35
         // Keep versionCode monotonic for signed GitHub releases.
-        versionCode = 29
-        versionName = "0.14.5"
+        versionCode = 30
+        versionName = "0.14.6"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         buildConfigField("long", "MEDIA_CACHE_BYTES", "${providers.gradleProperty("TILECAST_PLAYER_CACHE_BYTES").orElse("8589934592").get()}L")
