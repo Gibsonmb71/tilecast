@@ -48,3 +48,51 @@ describe("screen group compatibility", () => {
     });
   });
 });
+
+describe("mixed-version collection compatibility", () => {
+  it("normalizes missing playlist collections before pages consume them", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ data: { id: "playlist-1" } }),
+      }),
+    );
+
+    await expect(api.playlist("playlist-1")).resolves.toMatchObject({
+      items: [],
+      warnings: [],
+      layoutUsage: [],
+    });
+  });
+
+  it("normalizes missing layout editor collections", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve({
+            data: {
+              id: "layout-1",
+              orientation: "landscape",
+              canvasWidth: 1920,
+              canvasHeight: 1080,
+              draft: { schemaVersion: 2, canvas: null },
+            },
+          }),
+      }),
+    );
+
+    await expect(api.layout("layout-1")).resolves.toMatchObject({
+      draft: {
+        canvas: { width: 1920, height: 1080 },
+        placements: [],
+      },
+      dependencies: [],
+      usage: { screens: [], schedules: [] },
+    });
+  });
+});

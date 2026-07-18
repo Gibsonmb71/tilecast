@@ -102,6 +102,62 @@ function normalizeScreenGroup(group: ScreenGroup): ScreenGroup {
   };
 }
 
+function normalizePlaylist(playlist: Playlist): Playlist {
+  return {
+    ...playlist,
+    items: Array.isArray(playlist.items) ? playlist.items : [],
+    warnings: Array.isArray(playlist.warnings) ? playlist.warnings : [],
+    layoutUsage: Array.isArray(playlist.layoutUsage)
+      ? playlist.layoutUsage
+      : [],
+  };
+}
+
+function normalizeLayoutDocument(
+  document: LayoutDocument | null | undefined,
+  layout: Pick<Layout, "orientation" | "canvasWidth" | "canvasHeight">,
+): LayoutDocument {
+  const fallback: LayoutDocument = {
+    schemaVersion: 2,
+    canvas: {
+      width: layout.canvasWidth,
+      height: layout.canvasHeight,
+      orientation: layout.orientation,
+      backgroundColor: "#0E141B",
+      safeAreaPercent: 5,
+    },
+    placements: [],
+  };
+  if (!document) return fallback;
+  return {
+    ...document,
+    canvas: document.canvas ?? fallback.canvas,
+    placements: Array.isArray(document.placements) ? document.placements : [],
+  };
+}
+
+function normalizeLayout(layout: Layout): Layout {
+  return {
+    ...layout,
+    draft: normalizeLayoutDocument(layout.draft, layout),
+    dependencies: Array.isArray(layout.dependencies) ? layout.dependencies : [],
+    usage: {
+      screens: Array.isArray(layout.usage?.screens) ? layout.usage.screens : [],
+      schedules: Array.isArray(layout.usage?.schedules)
+        ? layout.usage.schedules
+        : [],
+    },
+  };
+}
+
+async function requestPlaylist(path: string, init?: RequestInit) {
+  return normalizePlaylist(await request<Playlist>(path, init));
+}
+
+async function requestLayout(path: string, init?: RequestInit) {
+  return normalizeLayout(await request<Layout>(path, init));
+}
+
 async function apiFailure(response: Response): Promise<never> {
   const body = (await response.json().catch(() => ({}))) as ErrorResponse;
   throw new ApiError(
@@ -127,11 +183,16 @@ export const api = {
       headers: { "X-CSRF-Token": csrfToken },
       body: JSON.stringify({ provider, configuration }),
     }),
-  layouts: (search = "") =>
-    request<LayoutList>(
+  layouts: async (search = "") => {
+    const result = await request<LayoutList>(
       `/layouts?${new URLSearchParams({ search, page: "1", pageSize: "100" })}`,
-    ),
-  layout: (id: string) => request<Layout>(`/layouts/${id}`),
+    );
+    return {
+      ...result,
+      items: Array.isArray(result.items) ? result.items : [],
+    };
+  },
+  layout: (id: string) => requestLayout(`/layouts/${id}`),
   createLayout: (
     input: {
       name: string;
@@ -142,7 +203,7 @@ export const api = {
     },
     csrfToken: string,
   ) =>
-    request<Layout>("/layouts", {
+    requestLayout("/layouts", {
       method: "POST",
       headers: { "X-CSRF-Token": csrfToken },
       body: JSON.stringify(input),
@@ -152,7 +213,7 @@ export const api = {
     input: { name: string; description: string },
     csrfToken: string,
   ) =>
-    request<Layout>(`/layouts/${id}`, {
+    requestLayout(`/layouts/${id}`, {
       method: "PATCH",
       headers: { "X-CSRF-Token": csrfToken },
       body: JSON.stringify(input),
@@ -163,7 +224,7 @@ export const api = {
     document: LayoutDocument,
     csrfToken: string,
   ) =>
-    request<Layout>(`/layouts/${id}/draft`, {
+    requestLayout(`/layouts/${id}/draft`, {
       method: "PUT",
       headers: { "X-CSRF-Token": csrfToken },
       body: JSON.stringify({ expectedDraftRevision, document }),
@@ -179,7 +240,7 @@ export const api = {
       body: JSON.stringify({ expectedDraftRevision }),
     }),
   duplicateLayout: (id: string, csrfToken: string) =>
-    request<Layout>(`/layouts/${id}/duplicate`, {
+    requestLayout(`/layouts/${id}/duplicate`, {
       method: "POST",
       headers: { "X-CSRF-Token": csrfToken },
     }),
@@ -196,7 +257,7 @@ export const api = {
     expectedDraftRevision: number,
     csrfToken: string,
   ) =>
-    request<Layout>(`/layouts/${id}/revisions/${revisionId}/restore`, {
+    requestLayout(`/layouts/${id}/revisions/${revisionId}/restore`, {
       method: "POST",
       headers: { "X-CSRF-Token": csrfToken },
       body: JSON.stringify({ expectedDraftRevision }),
@@ -764,16 +825,23 @@ export const api = {
       method: "DELETE",
       headers: { "X-CSRF-Token": csrfToken },
     }),
-  playlists: (search = "") =>
-    request<PlaylistList>(
+  playlists: async (search = "") => {
+    const result = await request<PlaylistList>(
       `/playlists?page=1&pageSize=100&search=${encodeURIComponent(search)}`,
-    ),
-  playlist: (id: string) => request<Playlist>(`/playlists/${id}`),
+    );
+    return {
+      ...result,
+      items: (Array.isArray(result.items) ? result.items : []).map(
+        normalizePlaylist,
+      ),
+    };
+  },
+  playlist: (id: string) => requestPlaylist(`/playlists/${id}`),
   createPlaylist: (
     input: { name: string; description: string },
     csrfToken: string,
   ) =>
-    request<Playlist>("/playlists", {
+    requestPlaylist("/playlists", {
       method: "POST",
       headers: { "X-CSRF-Token": csrfToken },
       body: JSON.stringify(input),
@@ -783,13 +851,13 @@ export const api = {
     input: { name: string; description: string },
     csrfToken: string,
   ) =>
-    request<Playlist>(`/playlists/${id}`, {
+    requestPlaylist(`/playlists/${id}`, {
       method: "PATCH",
       headers: { "X-CSRF-Token": csrfToken },
       body: JSON.stringify(input),
     }),
   duplicatePlaylist: (id: string, csrfToken: string) =>
-    request<Playlist>(`/playlists/${id}/duplicate`, {
+    requestPlaylist(`/playlists/${id}/duplicate`, {
       method: "POST",
       headers: { "X-CSRF-Token": csrfToken },
     }),
@@ -799,7 +867,7 @@ export const api = {
       headers: { "X-CSRF-Token": csrfToken },
     }),
   addPlaylistItem: (id: string, input: PlaylistItemInput, csrfToken: string) =>
-    request<Playlist>(`/playlists/${id}/items`, {
+    requestPlaylist(`/playlists/${id}/items`, {
       method: "POST",
       headers: { "X-CSRF-Token": csrfToken },
       body: JSON.stringify(input),
@@ -810,18 +878,18 @@ export const api = {
     input: PlaylistItemInput,
     csrfToken: string,
   ) =>
-    request<Playlist>(`/playlists/${id}/items/${itemId}`, {
+    requestPlaylist(`/playlists/${id}/items/${itemId}`, {
       method: "PATCH",
       headers: { "X-CSRF-Token": csrfToken },
       body: JSON.stringify(input),
     }),
   deletePlaylistItem: (id: string, itemId: string, csrfToken: string) =>
-    request<Playlist>(`/playlists/${id}/items/${itemId}`, {
+    requestPlaylist(`/playlists/${id}/items/${itemId}`, {
       method: "DELETE",
       headers: { "X-CSRF-Token": csrfToken },
     }),
   reorderPlaylist: (id: string, itemIds: string[], csrfToken: string) =>
-    request<Playlist>(`/playlists/${id}/items/order`, {
+    requestPlaylist(`/playlists/${id}/items/order`, {
       method: "PUT",
       headers: { "X-CSRF-Token": csrfToken },
       body: JSON.stringify({ itemIds }),
