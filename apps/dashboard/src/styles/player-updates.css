@@ -148,6 +148,20 @@
   max-width: 100%;
 }
 
+.player-updates__release-list-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--tc-space-3);
+  margin-top: var(--tc-space-3);
+  color: var(--tc-text-secondary);
+  font: var(--tc-text-supporting);
+}
+
+.player-updates__release-list-controls .button {
+  flex: 0 0 auto;
+}
+
 .player-updates .player-updates-table {
   min-width: 760px;
 }
@@ -356,6 +370,11 @@
     gap: var(--tc-space-2);
   }
 
+  .player-updates__release-list-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
   .player-updates .deployment-submit {
     align-items: stretch;
     flex-direction: column;
@@ -391,6 +410,10 @@
   }
 
   .player-updates .settings-inline-actions .button {
+    width: 100%;
+  }
+
+  .player-updates__release-list-controls .button {
     width: 100%;
   }
 }
