@@ -16,8 +16,6 @@ on:
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/ci-dashboard.yml"
-      - ".github/workflows/temp-off-hours-display.yml"
-      - "scripts/temp-apply-off-hours.py"
   workflow_dispatch:
 
 concurrency:
@@ -25,41 +23,9 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  implement-off-hours-display:
-    if: github.event_name == 'pull_request' && github.head_ref == 'gibby/off-hours-display-options'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: gibby/off-hours-display-options
-          fetch-depth: 0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: apps/server/go.mod
-          cache-dependency-path: apps/server/go.sum
-      - name: Apply implementation
-        run: python3 scripts/temp-apply-off-hours.py
-      - run: npm ci
-      - run: npx prettier --write apps/dashboard/src/settings/settingDisplay.ts apps/dashboard/src/settings/settingDependencies.ts apps/dashboard/src/settings/settingsExperience.test.tsx packages/settings-schema/player-config-v1.json
-      - working-directory: apps/server
-        run: gofmt -w internal/settings/registry.go internal/settings/registry_test.go internal/settings/service.go internal/settings/service_integration_test.go
-      - name: Commit implementation
-        run: |
-          git checkout origin/main -- .github/workflows/ci-dashboard.yml
-          git rm -f .github/workflows/temp-off-hours-display.yml scripts/temp-apply-off-hours.py
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "Add outside-active-hours display options"
-          git push origin HEAD:gibby/off-hours-display-options
-
   dashboard:
     runs-on: ubuntu-latest
     steps:

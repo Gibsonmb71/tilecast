@@ -41,6 +41,9 @@ export const enumLabels: Record<string, string> = {
   placeholder: "Tilecast placeholder",
   skip: "Skip item",
   interval: "Reload on an interval",
+  bouncing_logo: "Bouncing Tilecast logo",
+  custom_text: "Custom text",
+  black: "Black screen",
 };
 export const descriptions: Record<string, string> = {
   "player.cache.max_bytes":
@@ -52,8 +55,10 @@ export const descriptions: Record<string, string> = {
   "power.active_hours_days": "Days when this player should operate normally.",
   "power.cec_assist_enabled":
     "Requests Android sleep and wake; compatible firmware may relay HDMI-CEC.",
-  "power.black_screen_fallback":
-    "Shows black and stops decoding when device sleep is unavailable. This may not turn off the television.",
+  "power.outside_active_hours_display":
+    "What remains visible when the player is outside active hours and the television does not sleep.",
+  "power.outside_active_hours_text":
+    "Centered text shown outside active hours. Leave it empty to use the branding footer text.",
   "accessibility.allowed_packages":
     "Applications that may remain in front during authorized maintenance.",
   "reliability.mode":
@@ -131,10 +136,19 @@ export const subsectionOrder: Record<
       ],
     },
     {
+      title: "Outside active hours",
+      description:
+        "Choose the fallback shown when the player is outside active hours and Android or the television remains awake.",
+      keys: [
+        "power.outside_active_hours_display",
+        "power.outside_active_hours_text",
+      ],
+    },
+    {
       title: "Power Assist",
       description:
         "Tilecast requests Android sleep and wake behavior. This is not direct HDMI-CEC control and results depend on device and TV firmware.",
-      keys: ["power.cec_assist_enabled", "power.black_screen_fallback"],
+      keys: ["power.cec_assist_enabled"],
     },
   ],
   accessibility: [
@@ -285,15 +299,20 @@ export const subsectionOrder: Record<
   "import-export": [],
 };
 
+const hiddenSettingKeys = new Set(["power.black_screen_fallback"]);
+
 export function groupsFor(
   section: SettingsSectionId,
   definitions: SettingDefinition[],
 ) {
+  const visibleDefinitions = definitions.filter(
+    (definition) => !hiddenSettingKeys.has(definition.key),
+  );
   const used = new Set<string>();
   const groups = subsectionOrder[section]
     .map((group) => ({
       ...group,
-      definitions: definitions.filter((definition) => {
+      definitions: visibleDefinitions.filter((definition) => {
         const match =
           group.keys?.includes(definition.key) ||
           group.prefix?.some((prefix) => definition.key.startsWith(prefix));
@@ -302,7 +321,7 @@ export function groupsFor(
       }),
     }))
     .filter((group) => group.definitions.length > 0);
-  const remaining = definitions.filter(
+  const remaining = visibleDefinitions.filter(
     (definition) => !used.has(definition.key),
   );
   if (remaining.length)
