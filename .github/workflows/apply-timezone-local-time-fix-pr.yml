@@ -73,7 +73,7 @@ jobs:
           path.write_text(text.replace(old, new, 1))
           PATCH
           { python -m py_compile /tmp/apply-timezone-fix.py && python /tmp/apply-timezone-fix.py; } > /tmp/apply-timezone-fix.log 2>&1
-          git restore .github/workflows/apply-timezone-local-time-fix.yml
+          rm -f .github/workflows/apply-timezone-local-time-fix-pr.yml
       - name: Upload patch failure
         if: failure()
         uses: actions/upload-artifact@v4
