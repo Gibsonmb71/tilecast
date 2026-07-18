@@ -3511,11 +3511,17 @@ tbody tr:hover {
   flex-wrap: wrap;
   align-items: center;
   padding-inline: var(--tc-space-6);
-  margin-top: var(--tc-space-3);
+  padding-bottom: var(--tc-space-4);
+  margin-top: var(--tc-space-4);
 }
 
 .screen-detail > .operations > .command-history {
   padding: 0 var(--tc-space-6) var(--tc-space-6);
+}
+
+.screen-detail > .operations > .command-history:not(:empty) {
+  padding-top: var(--tc-space-4);
+  border-top: 1px solid var(--tc-border-default);
 }
 
 .screen-overview > header {
