@@ -204,7 +204,7 @@ export function DashboardShell() {
         <SidebarNavigation />
         <div className="sidebar__account">
           <span className="avatar" aria-hidden="true">
-            {auth.status.user?.name.slice(0, 1).toUpperCase()}
+            {auth.status.user?.name?.slice(0, 1).toUpperCase()}
           </span>
           <span className="sidebar__account-copy">
             <strong>{auth.status.user?.name}</strong>
@@ -227,7 +227,7 @@ export function DashboardShell() {
                 aria-hidden="true"
               />
               <span className="account-menu__mobile-avatar" aria-hidden="true">
-                {auth.status.user?.name.slice(0, 1).toUpperCase()}
+                {auth.status.user?.name?.slice(0, 1).toUpperCase()}
               </span>
             </button>
             {accountMenuOpen && (

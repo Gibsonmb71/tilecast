@@ -39,6 +39,15 @@ const formatBytes = (value: number) => {
   }
   return `${amount.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
 };
+export const formatReportedStatus = (
+  value: unknown,
+  fallback = "Not reported",
+) =>
+  typeof value === "string" && value.trim()
+    ? value.replaceAll("_", " ")
+    : fallback;
+const formatReportedCount = (value: unknown, fallback = 0) =>
+  typeof value === "number" && Number.isFinite(value) ? value : fallback;
 export const reliabilityCapabilityWarning = (status?: ReliabilityStatus) => {
   if (
     status?.configuredMode === "managed_kiosk" &&
@@ -1355,7 +1364,8 @@ export function ScreenDetailPage() {
             ) && (
               <div className="notice notice--error">
                 Website:{" "}
-                {assignment.data.websiteFailureCategory.replaceAll("_", " ")}
+                {assignment.data.websiteFailureCategory?.replaceAll("_", " ") ??
+                  "Unknown website failure"}
               </div>
             )}
         </section>
@@ -1386,18 +1396,22 @@ export function ScreenDetailPage() {
               <div>
                 <dt>Commissioning</dt>
                 <dd>
-                  {reliability.data?.commissioningState?.replaceAll("_", " ") ??
-                    "Not started"}
-                  {reliability.data?.commissioningStep
-                    ? ` · ${reliability.data.commissioningStep.replaceAll("_", " ")}`
+                  {formatReportedStatus(
+                    reliability.data?.commissioningState,
+                    "Not started",
+                  )}
+                  {typeof reliability.data?.commissioningStep === "string" &&
+                  reliability.data.commissioningStep.trim()
+                    ? ` · ${formatReportedStatus(reliability.data.commissioningStep, "")}`
                     : ""}
                 </dd>
               </div>
               <div>
                 <dt>Accessibility return</dt>
                 <dd>
-                  {reliability.data?.accessibilityServiceState ??
-                    "Not reported"}
+                  {formatReportedStatus(
+                    reliability.data?.accessibilityServiceState,
+                  )}
                 </dd>
               </div>
               <div>
@@ -1405,7 +1419,7 @@ export function ScreenDetailPage() {
                 <dd>
                   {reliability.data?.bootLaunchVerified
                     ? "Verified"
-                    : `${reliability.data?.bootAttemptCount ?? 0} attempts · not verified`}
+                    : `${formatReportedCount(reliability.data?.bootAttemptCount)} attempts · not verified`}
                 </dd>
               </div>
               <div>
@@ -1418,7 +1432,7 @@ export function ScreenDetailPage() {
               </div>
               <div>
                 <dt>Install permission</dt>
-                <dd>{screen.installPermissionStatus ?? "Not reported"}</dd>
+                <dd>{formatReportedStatus(screen.installPermissionStatus)}</dd>
               </div>
               <div>
                 <dt>Free storage</dt>
@@ -1440,7 +1454,9 @@ export function ScreenDetailPage() {
               </div>
               <div>
                 <dt>Update readiness</dt>
-                <dd>{reliability.data?.updateReadiness ?? "Not reported"}</dd>
+                <dd>
+                  {formatReportedStatus(reliability.data?.updateReadiness)}
+                </dd>
               </div>
             </dl>
           </div>
@@ -1448,17 +1464,21 @@ export function ScreenDetailPage() {
             <div>
               <dt>Reliability mode</dt>
               <dd>
-                {reliability.data?.configuredMode ?? "Not reported"} configured
-                · {reliability.data?.effectiveMode ?? "Not reported"} effective
+                {formatReportedStatus(reliability.data?.configuredMode)}{" "}
+                configured ·{" "}
+                {formatReportedStatus(reliability.data?.effectiveMode)}{" "}
+                effective
               </dd>
             </div>
             <div>
               <dt>Foreground</dt>
-              <dd>{reliability.data?.foregroundState ?? "Not reported"}</dd>
+              <dd>{formatReportedStatus(reliability.data?.foregroundState)}</dd>
             </div>
             <div>
               <dt>Boot recovery</dt>
-              <dd>{reliability.data?.bootRecoveryResult ?? "Not reported"}</dd>
+              <dd>
+                {formatReportedStatus(reliability.data?.bootRecoveryResult)}
+              </dd>
             </div>
             <div>
               <dt>Immersive / keep awake</dt>
@@ -1475,30 +1495,38 @@ export function ScreenDetailPage() {
             <div>
               <dt>Managed Kiosk</dt>
               <dd>
-                {reliability.data?.managedKioskCapability ?? "Not reported"} ·
-                lock task {reliability.data?.lockTaskState ?? "unknown"}
+                {formatReportedStatus(reliability.data?.managedKioskCapability)}{" "}
+                · lock task{" "}
+                {formatReportedStatus(
+                  reliability.data?.lockTaskState,
+                  "unknown",
+                )}
               </dd>
             </div>
             <div>
               <dt>Accessibility Control</dt>
               <dd>
-                {reliability.data?.accessibilityServiceState ?? "Not reported"}
+                {formatReportedStatus(
+                  reliability.data?.accessibilityServiceState,
+                )}
               </dd>
             </div>
             <div>
               <dt>Active hours</dt>
-              <dd>{reliability.data?.activeHoursState ?? "Not reported"}</dd>
+              <dd>
+                {formatReportedStatus(reliability.data?.activeHoursState)}
+              </dd>
             </div>
             <div>
               <dt>Sleep support</dt>
-              <dd>{reliability.data?.sleepCapability ?? "Not reported"}</dd>
+              <dd>{formatReportedStatus(reliability.data?.sleepCapability)}</dd>
             </div>
             <div>
               <dt>Recovery</dt>
               <dd>
-                Level {reliability.data?.recoveryLevel ?? 0} ·{" "}
-                {reliability.data?.recoveryCount ?? 0} recent · safe mode{" "}
-                {reliability.data?.safeMode ? "active" : "inactive"}
+                Level {formatReportedCount(reliability.data?.recoveryLevel)} ·{" "}
+                {formatReportedCount(reliability.data?.recoveryCount)} recent ·
+                safe mode {reliability.data?.safeMode ? "active" : "inactive"}
               </dd>
             </div>
             <div>

@@ -326,7 +326,7 @@ export function PlaylistEditorPage() {
           ) : undefined
         }
       />
-      {playlist.warnings.map((w) => (
+      {(playlist.warnings ?? []).map((w) => (
         <div key={w} className="notice notice--error">
           {w}
         </div>
@@ -335,7 +335,7 @@ export function PlaylistEditorPage() {
         <div className="notice notice--neutral">
           <strong>Used in Layouts</strong>
           <span>
-            {playlist.layoutUsage.map((layout, index) => (
+            {(playlist.layoutUsage ?? []).map((layout, index) => (
               <span key={layout.id}>
                 {index > 0 ? ", " : ""}
                 <Link to={`/layouts/${layout.id}`}>{layout.name}</Link>
@@ -402,13 +402,13 @@ export function PlaylistEditorPage() {
           </div>
         )}
       </div>
-      {playlist.items.length === 0 ? (
+      {(playlist.items?.length ?? 0) === 0 ? (
         <div className="timeline-empty">
           Add ready media to begin this playlist.
         </div>
       ) : (
         <div className="playlist-timeline">
-          {playlist.items.map((item, index) => (
+          {(playlist.items ?? []).map((item, index) => (
             <TimelineItem
               key={item.id}
               item={item}
