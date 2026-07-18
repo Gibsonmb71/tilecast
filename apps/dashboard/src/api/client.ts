@@ -95,6 +95,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return ((await response.json()) as DataResponse<T>).data;
 }
 
+function normalizeScreenGroup(group: ScreenGroup): ScreenGroup {
+  return {
+    ...group,
+    screens: Array.isArray(group.screens) ? group.screens : [],
+  };
+}
+
 async function apiFailure(response: Response): Promise<never> {
   const body = (await response.json().catch(() => ({}))) as ErrorResponse;
   throw new ApiError(
@@ -838,11 +845,17 @@ export const api = {
       method: "DELETE",
       headers: { "X-CSRF-Token": csrfToken },
     }),
-  screenGroups: (search = "") =>
-    request<ScreenGroupList>(
+  screenGroups: async (search = "") => {
+    const result = await request<ScreenGroupList>(
       `/screen-groups?page=1&pageSize=100&search=${encodeURIComponent(search)}`,
-    ),
-  screenGroup: (id: string) => request<ScreenGroup>(`/screen-groups/${id}`),
+    );
+    return {
+      ...result,
+      items: result.items.map(normalizeScreenGroup),
+    };
+  },
+  screenGroup: async (id: string) =>
+    normalizeScreenGroup(await request<ScreenGroup>(`/screen-groups/${id}`)),
   createScreenGroup: (
     input: { name: string; description: string },
     csrfToken: string,
