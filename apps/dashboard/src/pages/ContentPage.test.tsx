@@ -113,6 +113,15 @@ describe("content library", () => {
     );
   });
 
+  it("renders asset thumbnails as non-draggable", () => {
+    const image: Asset = { ...asset, thumbnailUrl: "/thumb.png" };
+    render(<AssetCollection items={[image]} view="grid" onSelect={vi.fn()} />);
+    expect(document.querySelector(".asset-preview img")).toHaveAttribute(
+      "draggable",
+      "false",
+    );
+  });
+
   it("falls back to a widget tile when a remote thumbnail fails", () => {
     const widget: Asset = {
       ...asset,

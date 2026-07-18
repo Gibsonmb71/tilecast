@@ -99,6 +99,7 @@ export function AssetPreview({ asset }: { asset: Asset }) {
       <img
         src={imageUrl}
         alt=""
+        draggable={false}
         referrerPolicy={videoId ? "origin" : undefined}
         onError={() => setFailedImageUrl(imageUrl)}
       />
