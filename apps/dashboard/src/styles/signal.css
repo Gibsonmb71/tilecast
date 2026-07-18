@@ -1313,7 +1313,7 @@ select,
 textarea {
   min-height: var(--tc-control-height);
   padding: 0 12px;
-  color: var(--tc-text-primary);
+  color: var(--tc-input-text);
   background: var(--tc-input-bg);
   border: 1px solid var(--tc-input-border);
   border-radius: var(--tc-radius-control);
@@ -1354,7 +1354,7 @@ textarea:disabled {
   display: inline-grid;
   min-width: min(144px, 100%);
   max-width: 100%;
-  color: var(--tc-text-primary);
+  color: var(--tc-input-text);
   vertical-align: middle;
 }
 
@@ -1391,7 +1391,7 @@ label > .signal-select,
   align-items: center;
   gap: var(--tc-space-2);
   padding: 0 12px;
-  color: var(--tc-text-primary);
+  color: var(--tc-input-text);
   text-align: left;
   background: var(--tc-input-bg);
   border: 1px solid var(--tc-input-border);

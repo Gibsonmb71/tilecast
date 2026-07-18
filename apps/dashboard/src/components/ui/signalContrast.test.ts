@@ -20,8 +20,11 @@ function contrast(foreground: string, background: string) {
 
 describe("Tilecast Signal contrast", () => {
   it.each([
-    ["FFFFFF", "315EFB", "light primary button"],
+    ["FFFFFF", "3E6FE0", "primary button"],
     ["17212B", "F6F8FA", "light canvas text"],
+    ["1A2333", "FFFFFF", "light field value"],
+    ["3D4C66", "FFFFFF", "light secondary button"],
+    ["C23B46", "FFFFFF", "light notification badge"],
     ["F5F7FA", "151D26", "dark surface text"],
     ["0E141B", "F4C15A", "amber identity mark"],
   ])("meets AA for %s on %s (%s)", (foreground, background) => {
