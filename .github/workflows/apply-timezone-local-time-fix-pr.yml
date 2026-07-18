@@ -42,6 +42,36 @@ jobs:
         run: |
           sed -n '44,463p' .github/workflows/apply-timezone-local-time-fix.yml \
             | sed 's/^          //' > /tmp/apply-timezone-fix.py
+          python <<'PATCH'
+          from pathlib import Path
+
+          path = Path('/tmp/apply-timezone-fix.py')
+          text = path.read_text()
+          old = '''def replace(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected one match in {path}, found {count}: {old[:80]!r}")
+              file.write_text(text.replace(old, new, 1))
+          '''
+          new = '''def replace(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text()
+              count = text.count(old)
+              if count != 1:
+                  if path.endswith("PlayerPolicyEditor.tsx") and "const save = useMutation" in old:
+                      start = text.index("  const save = useMutation({")
+                      end = text.index("    onSuccess: async () => {", start)
+                      file.write_text(text[:start] + new + text[end:])
+                      return
+                  raise SystemExit(f"expected one match in {path}, found {count}: {old[:80]!r}")
+              file.write_text(text.replace(old, new, 1))
+          '''
+          if text.count(old) != 1:
+              raise SystemExit('could not patch extracted replace helper')
+          path.write_text(text.replace(old, new, 1))
+          PATCH
           { python -m py_compile /tmp/apply-timezone-fix.py && python /tmp/apply-timezone-fix.py; } > /tmp/apply-timezone-fix.log 2>&1
           git restore .github/workflows/apply-timezone-local-time-fix.yml
       - name: Upload patch failure
