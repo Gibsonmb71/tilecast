@@ -34,7 +34,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Verify signed Player release
+      - name: Watch signed Player release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: player-v0.14.5
@@ -47,24 +47,31 @@ jobs:
           git show "$tagged:apps/player-android/app/build.gradle.kts" | grep -F 'versionCode = 29'
           git show "$tagged:apps/player-android/app/build.gradle.kts" | grep -F 'versionName = "0.14.5"'
 
-          for attempt in $(seq 1 90); do
-            if release_json="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json tagName,isDraft,isPrerelease,assets 2>/dev/null)"; then
-              names="$(printf '%s' "$release_json" | jq -r '.assets[].name')"
-              if grep -qx 'tilecast-player.apk' <<<"$names" && \
-                 grep -qx 'tilecast-player-update.json' <<<"$names" && \
-                 grep -qx 'tilecast-player-update.json.sig' <<<"$names"; then
-                test "$(printf '%s' "$release_json" | jq -r .tagName)" = "$RELEASE_TAG"
-                test "$(printf '%s' "$release_json" | jq -r .isDraft)" = "false"
-                test "$(printf '%s' "$release_json" | jq -r .isPrerelease)" = "false"
-                echo "Tilecast Player 0.14.5 release assets verified."
-                exit 0
-              fi
-            fi
-            sleep 10
+          run_id=""
+          for attempt in $(seq 1 30); do
+            run_id="$(gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow player-release.yml \
+              --event workflow_dispatch \
+              --limit 10 \
+              --json databaseId,createdAt \
+              --jq 'sort_by(.createdAt) | reverse | .[0].databaseId // empty')"
+            if [ -n "$run_id" ]; then break; fi
+            sleep 5
           done
+          test -n "$run_id"
+          echo "Watching Player Release run $run_id"
+          gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status
 
-          echo "Timed out waiting for all Player 0.14.5 release assets." >&2
-          exit 1
+          release_json="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json tagName,isDraft,isPrerelease,assets)"
+          names="$(printf '%s' "$release_json" | jq -r '.assets[].name')"
+          grep -qx 'tilecast-player.apk' <<<"$names"
+          grep -qx 'tilecast-player-update.json' <<<"$names"
+          grep -qx 'tilecast-player-update.json.sig' <<<"$names"
+          test "$(printf '%s' "$release_json" | jq -r .tagName)" = "$RELEASE_TAG"
+          test "$(printf '%s' "$release_json" | jq -r .isDraft)" = "false"
+          test "$(printf '%s' "$release_json" | jq -r .isPrerelease)" = "false"
+          echo "Tilecast Player 0.14.5 release assets verified."
 
   dashboard:
     runs-on: ubuntu-latest
