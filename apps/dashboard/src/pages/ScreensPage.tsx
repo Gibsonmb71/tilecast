@@ -1905,9 +1905,13 @@ export function ScreenDetailPage() {
 }
 
 export function StatusLabel({ status }: { status: ScreenStatus }) {
-  const { label, Icon } = statusContent[status];
+  const { label, Icon } = statusContent[status] ?? {
+    label: "Unknown",
+    Icon: CircleAlert,
+  };
+  const statusClass = statusContent[status] ? status : "unknown";
   return (
-    <span className={`screen-status screen-status--${status}`}>
+    <span className={`screen-status screen-status--${statusClass}`}>
       <Icon size={14} />
       {label}
     </span>

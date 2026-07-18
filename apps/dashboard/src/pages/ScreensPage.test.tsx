@@ -67,6 +67,11 @@ describe("screen management", () => {
     expect(screen.getByText("Pairing revoked")).toBeInTheDocument();
   });
 
+  it("renders an unknown status instead of crashing on incomplete data", () => {
+    render(<StatusLabel status={null as unknown as Screen["status"]} />);
+    expect(screen.getByText("Unknown")).toBeInTheDocument();
+  });
+
   it("renders live device status and accessible screen links", () => {
     const item: Screen = {
       id: "screen-1",
