@@ -53,7 +53,16 @@ jobs:
           ])
           if old_scroll not in select_source:
               raise SystemExit("SignalSelect scroll handler block not found")
-          select_path.write_text(select_source.replace(old_scroll, new_scroll, 1))
+          select_source = select_source.replace(old_scroll, new_scroll, 1)
+          old_dependency = "  }, [open]);"
+          if old_dependency not in select_source:
+              raise SystemExit("SignalSelect effect dependency not found")
+          select_source = select_source.replace(
+              old_dependency,
+              "  }, [listboxId, open]);",
+              1,
+          )
+          select_path.write_text(select_source)
 
           test_path = Path("apps/dashboard/src/settings/settingsExperience.test.tsx")
           test_source = test_path.read_text()
