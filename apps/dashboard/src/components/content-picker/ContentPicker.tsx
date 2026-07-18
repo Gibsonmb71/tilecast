@@ -1,4 +1,8 @@
-import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { Globe2, Upload, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api/client";
@@ -43,6 +47,9 @@ export function ContentPicker({
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<ContentPickerFilter>("all");
+  const [folderFilter, setFolderFilter] = useState("");
+  const [collectionFilter, setCollectionFilter] = useState("");
+  const [tagFilter, setTagFilter] = useState("");
   const [sort, setSort] = useState("updated");
   const [view, setView] = useState<"grid" | "list">("grid");
   const [selected, setSelected] = useState<Map<string, Asset>>(new Map());
@@ -53,7 +60,22 @@ export function ContentPicker({
   const [confirming, setConfirming] = useState(false);
   const [failures, setFailures] = useState<ContentPickerResult["failures"]>([]);
   const dialog = useRef<HTMLElement>(null);
-  const paramsKey = `${search}|${filter}|${sort}`;
+  const folders = useQuery({
+    queryKey: ["content-folders"],
+    queryFn: api.contentFolders,
+    enabled: open,
+  });
+  const collections = useQuery({
+    queryKey: ["content-collections"],
+    queryFn: api.contentCollections,
+    enabled: open,
+  });
+  const tags = useQuery({
+    queryKey: ["content-tags"],
+    queryFn: api.contentTags,
+    enabled: open,
+  });
+  const paramsKey = `${search}|${filter}|${folderFilter}|${collectionFilter}|${tagFilter}|${sort}`;
   const library = useInfiniteQuery({
     queryKey: ["assets", "content-picker", paramsKey],
     initialPageParam: 1,
@@ -70,6 +92,9 @@ export function ContentPicker({
         params.set("type", "widget");
         params.set("provider", filter);
       }
+      if (folderFilter) params.set("folderId", folderFilter);
+      if (collectionFilter) params.set("collectionId", collectionFilter);
+      if (tagFilter) params.set("tagId", tagFilter);
       return api.assets(params);
     },
     getNextPageParam: (last) =>
@@ -253,8 +278,17 @@ export function ContentPicker({
           filter={filter}
           sort={sort}
           view={view}
+          folders={folders.data ?? []}
+          collections={collections.data ?? []}
+          tags={tags.data ?? []}
+          folderFilter={folderFilter}
+          collectionFilter={collectionFilter}
+          tagFilter={tagFilter}
           onSearch={setSearch}
           onFilter={setFilter}
+          onFolderFilter={setFolderFilter}
+          onCollectionFilter={setCollectionFilter}
+          onTagFilter={setTagFilter}
           onSort={setSort}
           onView={setView}
         />

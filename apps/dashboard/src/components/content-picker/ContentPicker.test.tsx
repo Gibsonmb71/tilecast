@@ -8,6 +8,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api } from "../../api/client";
 import type { Asset } from "../../api/types";
@@ -40,6 +41,9 @@ const items = [
 ];
 
 function picker(mode: "single" | "multiple", onConfirm = vi.fn()) {
+  vi.spyOn(api, "contentFolders").mockResolvedValue([]);
+  vi.spyOn(api, "contentCollections").mockResolvedValue([]);
+  vi.spyOn(api, "contentTags").mockResolvedValue([]);
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -98,5 +102,63 @@ describe("ContentPicker", () => {
     expect(
       document.querySelector(".selected-content-tray"),
     ).not.toHaveTextContent("Welcome");
+  });
+
+  it("filters the library by folder and tag", async () => {
+    const assets = vi.spyOn(api, "assets").mockResolvedValue({
+      items,
+      total: 2,
+      page: 1,
+      pageSize: 48,
+    });
+    vi.spyOn(api, "contentFolders").mockResolvedValue([
+      {
+        id: "folder-1",
+        name: "Campus A",
+        description: "",
+        assetCount: 1,
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      },
+    ]);
+    vi.spyOn(api, "contentCollections").mockResolvedValue([]);
+    vi.spyOn(api, "contentTags").mockResolvedValue([
+      { id: "tag-1", name: "Lobby", color: "#dc2626", assetCount: 1 },
+    ]);
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <ContentPicker
+          open
+          mode="multiple"
+          csrf="csrf"
+          onConfirm={vi.fn()}
+          onClose={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+    const user = userEvent.setup();
+
+    expect(
+      screen.queryByRole("combobox", { name: "Filter by collection" }),
+    ).not.toBeInTheDocument();
+    await user.click(
+      await screen.findByRole("combobox", { name: "Filter by tag" }),
+    );
+    await user.click(await screen.findByRole("option", { name: "Lobby" }));
+    await waitFor(() =>
+      expect(assets.mock.lastCall?.[0].get("tagId")).toBe("tag-1"),
+    );
+
+    await user.click(
+      screen.getByRole("combobox", { name: "Filter by folder" }),
+    );
+    await user.click(await screen.findByRole("option", { name: "Campus A" }));
+    await waitFor(() =>
+      expect(assets.mock.lastCall?.[0].get("folderId")).toBe("folder-1"),
+    );
+    expect(assets.mock.lastCall?.[0].get("tagId")).toBe("tag-1");
   });
 });
