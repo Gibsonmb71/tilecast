@@ -700,6 +700,16 @@ export const api = {
       headers: { "X-CSRF-Token": csrfToken },
       body: JSON.stringify(input),
     }),
+  updateContentFolder: (
+    id: string,
+    input: { name: string; description: string; parentId?: string },
+    csrfToken: string,
+  ) =>
+    request<ContentFolder>(`/content-folders/${id}`, {
+      method: "PATCH",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
   deleteContentFolder: (id: string, csrfToken: string) =>
     request<void>(`/content-folders/${id}`, {
       method: "DELETE",
@@ -716,6 +726,16 @@ export const api = {
       headers: { "X-CSRF-Token": csrfToken },
       body: JSON.stringify(input),
     }),
+  updateContentCollection: (
+    id: string,
+    input: { name: string; description: string },
+    csrfToken: string,
+  ) =>
+    request<ContentCollection>(`/content-collections/${id}`, {
+      method: "PATCH",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
   deleteContentCollection: (id: string, csrfToken: string) =>
     request<void>(`/content-collections/${id}`, {
       method: "DELETE",
@@ -728,6 +748,16 @@ export const api = {
   ) =>
     request<ContentTag>("/content-tags", {
       method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  updateContentTag: (
+    id: string,
+    input: { name: string; color: string },
+    csrfToken: string,
+  ) =>
+    request<ContentTag>(`/content-tags/${id}`, {
+      method: "PATCH",
       headers: { "X-CSRF-Token": csrfToken },
       body: JSON.stringify(input),
     }),
