@@ -4,12 +4,26 @@
   --tc-sidebar-text: #aab8c5;
   --tc-sidebar-text-active: #ffffff;
   --tc-sidebar-hover: #1a2837;
-  --tc-sidebar-active: #20345e;
+  --tc-sidebar-active: color-mix(
+    in srgb,
+    var(--accent) 22%,
+    var(--tc-sidebar-bg)
+  );
   --tc-button-primary-bg: var(--tc-action-primary);
-  --tc-button-primary-text: var(--tc-text-inverse);
-  --tc-input-bg: var(--tc-bg-surface);
-  --tc-input-border: var(--tc-border-strong);
+  --tc-button-primary-hover-bg: var(--tc-action-primary-hover);
+  --tc-button-primary-active-bg: var(--tc-action-primary-active);
+  --tc-button-primary-text: var(--control-primary-text);
+  --tc-button-secondary-bg: transparent;
+  --tc-button-secondary-border: var(--control-border);
+  --tc-button-secondary-text: var(--control-label);
+  --tc-button-secondary-hover-bg: var(--control-hover-bg);
+  --tc-input-bg: var(--field-bg);
+  --tc-input-border: var(--field-border);
+  --tc-input-placeholder: var(--field-placeholder);
   --tc-input-disabled-bg: var(--tc-bg-subtle);
+  --tc-chip-bg: var(--chip-bg);
+  --tc-chip-border: var(--chip-border);
+  --tc-chip-text: var(--chip-text);
   --tc-table-header-bg: var(--tc-bg-subtle);
   --tc-table-row-hover: color-mix(
     in srgb,

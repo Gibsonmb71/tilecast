@@ -66,35 +66,6 @@
   min-width: 138px;
 }
 
-.activity-search {
-  display: flex;
-  min-width: min(320px, 100%);
-  min-height: 38px;
-  flex: 1 1 300px;
-  align-items: center;
-  gap: 8px;
-  padding: 0 11px;
-  border: 1px solid var(--tc-border-default);
-  border-radius: var(--tc-radius-control);
-  background: var(--tc-bg-surface);
-  color: var(--tc-text-secondary);
-}
-
-.activity-search:focus-within {
-  border-color: var(--tc-action-primary);
-  box-shadow: 0 0 0 2px var(--tc-action-primary-soft);
-}
-
-.activity-search input {
-  min-width: 0;
-  flex: 1;
-  padding: 0;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: var(--tc-text-primary);
-}
-
 .activity-more-filters {
   position: relative;
 }
@@ -196,7 +167,7 @@
   gap: 5px;
   padding: 0 8px;
   border: 1px solid var(--tc-border-subtle);
-  border-radius: var(--tc-radius-pill);
+  border-radius: var(--tc-radius-chip);
   background: var(--tc-bg-subtle);
   color: var(--tc-text-secondary);
   cursor: pointer;
@@ -521,8 +492,12 @@
 
 .activity-clickable-row:hover,
 .activity-clickable-row:focus-visible {
-  outline: none;
   background: var(--tc-bg-subtle);
+}
+
+.activity-clickable-row:focus-visible {
+  outline: 3px solid var(--tc-focus-ring-soft);
+  outline-offset: -3px;
 }
 
 .activity-row-disclosure {

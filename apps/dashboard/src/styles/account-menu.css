@@ -1,6 +1,6 @@
 .sidebar__account {
   position: relative;
-  grid-template-columns: 31px minmax(0, 1fr) 32px;
+  grid-template-columns: 31px minmax(0, 1fr) var(--tc-control-height);
 }
 
 .sidebar__account-copy {
@@ -14,8 +14,8 @@
 
 .account-menu__trigger {
   display: grid;
-  width: 32px;
-  height: 32px;
+  width: var(--tc-control-height);
+  height: var(--tc-control-height);
   place-items: center;
   padding: 0;
   color: var(--tc-sidebar-text);
@@ -120,10 +120,10 @@
   }
 
   .account-menu__trigger {
-    width: 36px;
-    height: 36px;
+    width: var(--tc-control-height);
+    height: var(--tc-control-height);
     border: 0;
-    border-radius: 50%;
+    border-radius: var(--tc-radius-control);
   }
 
   .account-menu__ellipsis {
@@ -136,8 +136,8 @@
     height: 32px;
     place-items: center;
     color: var(--tc-neutral-0);
-    background: var(--tc-blue-700);
-    border: 1px solid var(--tc-blue-500);
+    background: var(--tc-action-primary-active);
+    border: 1px solid var(--tc-action-primary);
     border-radius: 50%;
     font-size: 12px;
     font-weight: 700;
@@ -149,7 +149,7 @@
   }
 
   .account-menu__trigger[aria-expanded="true"] .account-menu__mobile-avatar {
-    box-shadow: 0 0 0 2px var(--tc-blue-400);
+    box-shadow: 0 0 0 2px var(--tc-focus-ring-soft);
   }
 
   .account-menu__popover {

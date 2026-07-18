@@ -8,6 +8,8 @@
   --tc-text-panel-title: 650 15px/1.35 var(--tc-font-sans);
   --tc-text-body: 400 14px/1.5 var(--tc-font-sans);
   --tc-text-label: 600 13px/1.35 var(--tc-font-sans);
+  --tc-text-control-primary: 600 13.5px/1.3 var(--tc-font-sans);
+  --tc-text-control-secondary: 500 13.5px/1.3 var(--tc-font-sans);
   --tc-text-supporting: 400 12px/1.45 var(--tc-font-sans);
   --tc-text-technical: 500 13px/1.45 var(--tc-font-mono);
 }
