@@ -280,6 +280,8 @@ async function exportSettings() {
   URL.revokeObjectURL(link.href);
 }
 
+const defaultVisibleReleaseCount = 5;
+
 export function PlayerUpdatesPanel({
   owner,
   manageable,
@@ -312,6 +314,7 @@ export function PlayerUpdatesPanel({
   const [windowStart, setWindowStart] = useState("");
   const [targetSearch, setTargetSearch] = useState("");
   const [showUpload, setShowUpload] = useState(false);
+  const [showAllReleases, setShowAllReleases] = useState(false);
   const [deploySuccess, setDeploySuccess] = useState("");
   const [githubFlow, setGitHubFlow] = useState<
     (GitHubDeviceStart & { retryAfterSeconds: number }) | null
@@ -438,6 +441,14 @@ export function PlayerUpdatesPanel({
   const selectedScreens = (screens.data?.items ?? []).filter((screen) =>
     targetSet.has(screen.id),
   );
+  const releaseItems = [...(releases.data?.items ?? [])].sort(
+    (left, right) =>
+      Date.parse(right.publishedAt) - Date.parse(left.publishedAt) ||
+      right.versionCode - left.versionCode,
+  );
+  const visibleReleaseItems = showAllReleases
+    ? releaseItems
+    : releaseItems.slice(0, defaultVisibleReleaseCount);
   const query = targetSearch.toLowerCase();
   return (
     <div className="settings-sections player-updates">
@@ -613,8 +624,8 @@ export function PlayerUpdatesPanel({
                 <th scope="col" aria-label="Actions" />
               </tr>
             </thead>
-            <tbody>
-              {(releases.data?.items ?? []).map((release) => (
+            <tbody id="player-releases-table-body">
+              {visibleReleaseItems.map((release) => (
                 <tr key={release.id}>
                   <td>
                     <strong>{release.versionName}</strong>
@@ -650,6 +661,25 @@ export function PlayerUpdatesPanel({
             </tbody>
           </table>
         </TableContainer>
+        {releaseItems.length > defaultVisibleReleaseCount && (
+          <div className="player-updates__release-list-controls">
+            <span>
+              Showing {visibleReleaseItems.length} of {releaseItems.length}{" "}
+              releases, newest first.
+            </span>
+            <button
+              type="button"
+              className="button button--quiet"
+              aria-controls="player-releases-table-body"
+              aria-expanded={showAllReleases}
+              onClick={() => setShowAllReleases((visible) => !visible)}
+            >
+              {showAllReleases
+                ? "Show fewer releases"
+                : "Show all " + releaseItems.length + " releases"}
+            </button>
+          </div>
+        )}
       </section>
       {manageable && (
         <section className="settings-subsection player-updates__deployment">
