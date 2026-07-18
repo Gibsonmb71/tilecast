@@ -10,6 +10,7 @@ import {
   reliabilityCapabilityWarning,
   pairingApprovalLabel,
   pairingApprovalPayload,
+  resolveScreenDetail,
   ScreenListContent,
   StatusLabel,
   zeroTouchReadiness,
@@ -70,6 +71,25 @@ describe("screen management", () => {
   it("renders an unknown status instead of crashing on incomplete data", () => {
     render(<StatusLabel status={null as unknown as Screen["status"]} />);
     expect(screen.getByText("Unknown")).toBeInTheDocument();
+  });
+
+  it("uses the dashboard record when detail data is incomplete", () => {
+    const listed = {
+      id: "screen-1",
+      name: "Lobby",
+      status: "online",
+    } as Screen;
+    const detail = {
+      ...listed,
+      name: "Lobby display",
+      status: null as unknown as Screen["status"],
+    };
+
+    expect(resolveScreenDetail(detail, listed)).toMatchObject({
+      name: "Lobby display",
+      status: "online",
+    });
+    expect(resolveScreenDetail(undefined, listed)).toBe(listed);
   });
 
   it("renders live device status and accessible screen links", () => {

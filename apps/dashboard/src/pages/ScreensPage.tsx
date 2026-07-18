@@ -91,6 +91,15 @@ export const pairingApprovalLabel = (request: PairingRequest) =>
     ? "Repair and replace credential"
     : "Approve and pair";
 
+export function resolveScreenDetail(
+  detail: Screen | null | undefined,
+  listed: Screen | undefined,
+): Screen | undefined {
+  if (!detail) return listed;
+  if (!listed) return detail;
+  return { ...detail, status: listed.status };
+}
+
 const statusContent: Record<
   ScreenStatus,
   { label: string; Icon: typeof Wifi }
@@ -800,6 +809,11 @@ export function ScreenDetailPage() {
     queryFn: () => api.screen(id),
     refetchInterval: 10_000,
   });
+  const screens = useQuery({
+    queryKey: ["screens"],
+    queryFn: api.screens,
+    refetchInterval: 10_000,
+  });
   const detailsForm = useForm<ApprovalForm>({
     resolver: zodResolver(approvalSchema),
     defaultValues: { name: "", location: "", description: "" },
@@ -914,13 +928,14 @@ export function ScreenDetailPage() {
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ["screens", id, "commands"] }),
   });
-  if (query.isLoading)
+  const listedScreen = screens.data?.items.find((screen) => screen.id === id);
+  const screen = resolveScreenDetail(query.data, listedScreen);
+  if (query.isLoading && !screen)
     return <div className="table-loading">Loading screen…</div>;
-  if (!query.data)
+  if (!screen)
     return (
       <div className="notice notice--error">Screen could not be loaded.</div>
     );
-  const screen = query.data;
   const requestedTab = searchParams.get("tab") ?? "overview";
   const tab = [
     "overview",
