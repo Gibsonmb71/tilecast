@@ -36,9 +36,15 @@ func (s *server) listUsers(w http.ResponseWriter, r *http.Request) {
 	items := []auth.User{}
 	for rows.Next() {
 		var user auth.User
-		if rows.Scan(&user.ID, &user.Name, &user.Username, &user.Role, &user.Active, &user.CreatedAt, &user.LastLoginAt) == nil {
-			items = append(items, user)
+		if err := rows.Scan(&user.ID, &user.Name, &user.Username, &user.Role, &user.Active, &user.CreatedAt, &user.LastLoginAt); err != nil {
+			s.internalError(w, r, err)
+			return
 		}
+		items = append(items, user)
+	}
+	if err := rows.Err(); err != nil {
+		s.internalError(w, r, err)
+		return
 	}
 	writeJSON(w, 200, map[string]any{"data": map[string]any{"items": items, "total": len(items)}})
 }
@@ -236,16 +242,40 @@ func (s *server) playerConfig(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) systemStatus(w http.ResponseWriter, r *http.Request) {
 	var migration string
-	_ = s.db.QueryRow(r.Context(), `SELECT version_id::text FROM goose_db_version WHERE is_applied ORDER BY id DESC LIMIT 1`).Scan(&migration)
+	if err := s.db.QueryRow(r.Context(), `SELECT version_id::text FROM goose_db_version WHERE is_applied ORDER BY id DESC LIMIT 1`).Scan(&migration); err != nil {
+		s.internalError(w, r, err)
+		return
+	}
 	var postgres string
-	_ = s.db.QueryRow(r.Context(), `SHOW server_version`).Scan(&postgres)
+	if err := s.db.QueryRow(r.Context(), `SHOW server_version`).Scan(&postgres); err != nil {
+		s.internalError(w, r, err)
+		return
+	}
 	var pending, connected, jobs int
-	_ = s.db.QueryRow(r.Context(), `SELECT count(*) FROM player_commands WHERE state IN('pending','delivered','acknowledged','running')`).Scan(&pending)
-	_ = s.db.QueryRow(r.Context(), `SELECT count(*) FROM screens WHERE last_heartbeat_at>now()-interval '2 minutes'`).Scan(&connected)
-	_ = s.db.QueryRow(r.Context(), `SELECT count(*) FROM media_jobs WHERE status IN('queued','running')`).Scan(&jobs)
-	mediaStatus := map[string]any{}
+	if err := s.db.QueryRow(r.Context(), `SELECT count(*) FROM player_commands WHERE state IN('pending','delivered','acknowledged','running')`).Scan(&pending); err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	if err := s.db.QueryRow(r.Context(), `SELECT count(*) FROM screens WHERE last_heartbeat_at>now()-interval '2 minutes'`).Scan(&connected); err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	if err := s.db.QueryRow(r.Context(), `SELECT count(*) FROM media_jobs WHERE status IN('queued','running')`).Scan(&jobs); err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	mediaStatus := map[string]any{"status": "not_configured"}
 	if s.media != nil {
-		mediaStatus, _ = s.media.Diagnostics()
+		diagnostics, err := s.media.Diagnostics()
+		if err != nil {
+			mediaStatus = map[string]any{
+				"status":  "degraded",
+				"message": "Media storage is unavailable.",
+			}
+		} else {
+			diagnostics["status"] = "healthy"
+			mediaStatus = diagnostics
+		}
 	}
 	updateTrust := "missing"
 	if s.updates != nil && s.updates.ManifestKeyConfigured() {
@@ -260,30 +290,46 @@ func (s *server) systemMaintenance(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 422, "maintenance_action_invalid", "Maintenance action is not supported.")
 		return
 	}
+	var operationErr error
 	switch action {
 	case "completed-command-cleanup":
-		_, _ = s.db.Exec(r.Context(), `DELETE FROM player_commands WHERE completed_at<now()-interval '30 days'`)
+		_, operationErr = s.db.Exec(r.Context(), `DELETE FROM player_commands WHERE completed_at<now()-interval '30 days'`)
 	case "expired-upload-cleanup":
-		_, _ = s.db.Exec(r.Context(), `INSERT INTO media_jobs(id,kind,status,run_after)VALUES(gen_random_uuid(),'clean_expired_uploads','queued',now())`)
+		_, operationErr = s.db.Exec(r.Context(), `INSERT INTO media_jobs(id,kind,status,run_after)VALUES(gen_random_uuid(),'clean_expired_uploads','queued',now())`)
 	case "retention-cleanup":
-		_, _ = s.db.Exec(r.Context(), `DELETE FROM device_pairing_sessions WHERE expires_at<now()-interval '30 days'`)
+		_, operationErr = s.db.Exec(r.Context(), `DELETE FROM device_pairing_sessions WHERE expires_at<now()-interval '30 days'`)
 	case "reconcile-config":
-		rows, _ := s.db.Query(r.Context(), `SELECT screen_id,config_revision FROM screen_config_state`)
+		rows, err := s.db.Query(r.Context(), `SELECT screen_id,config_revision FROM screen_config_state`)
+		operationErr = err
 		if rows != nil {
 			for rows.Next() {
 				var id uuid.UUID
 				var revision int64
-				if rows.Scan(&id, &revision) == nil {
-					s.devices.ConfigChanged(id, revision)
+				if err := rows.Scan(&id, &revision); err != nil {
+					operationErr = err
+					break
 				}
+				s.devices.ConfigChanged(id, revision)
+			}
+			if operationErr == nil {
+				operationErr = rows.Err()
 			}
 			rows.Close()
 		}
 	case "validate-media":
-		if _, err := s.media.Diagnostics(); err != nil {
+		if s.media == nil {
+			operationErr = errors.New("media service is unavailable")
+		} else {
+			_, operationErr = s.media.Diagnostics()
+		}
+	}
+	if operationErr != nil {
+		if action == "validate-media" {
 			writeError(w, 503, "media_validation_failed", "Media infrastructure is unavailable.")
 			return
 		}
+		s.internalError(w, r, operationErr)
+		return
 	}
 	user := r.Context().Value(sessionContextKey).(auth.Session).User
 	_, _ = s.db.Exec(r.Context(), `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)VALUES($1,$2,'system.maintenance_requested','system',$3)`, uuid.New(), user.ID, action)
@@ -307,34 +353,57 @@ func (s *server) exportSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	org.Definitions = nil
 	export := settingsExport{1, time.Now().UTC(), "0.8.0", org, []map[string]any{}, []map[string]any{}}
-	rows, _ := s.db.Query(r.Context(), `SELECT screen_group_id,priority,revision,policy FROM screen_group_player_policies ORDER BY screen_group_id`)
-	if rows != nil {
-		for rows.Next() {
-			var id uuid.UUID
-			var priority int
-			var revision int64
-			var raw []byte
-			if rows.Scan(&id, &priority, &revision, &raw) == nil {
-				var values any
-				_ = json.Unmarshal(raw, &values)
-				export.GroupPolicies = append(export.GroupPolicies, map[string]any{"screenGroupId": id, "priority": priority, "revision": revision, "values": values})
-			}
-		}
-		rows.Close()
+	rows, err := s.db.Query(r.Context(), `SELECT screen_group_id,priority,revision,policy FROM screen_group_player_policies ORDER BY screen_group_id`)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
 	}
-	screenRows, _ := s.db.Query(r.Context(), `SELECT screen_id,revision,policy FROM screen_player_policies ORDER BY screen_id`)
-	if screenRows != nil {
-		for screenRows.Next() {
-			var id uuid.UUID
-			var revision int64
-			var raw []byte
-			if screenRows.Scan(&id, &revision, &raw) == nil {
-				var values any
-				_ = json.Unmarshal(raw, &values)
-				export.ScreenPolicies = append(export.ScreenPolicies, map[string]any{"screenId": id, "revision": revision, "values": values})
-			}
+	defer rows.Close()
+	for rows.Next() {
+		var id uuid.UUID
+		var priority int
+		var revision int64
+		var raw []byte
+		if err := rows.Scan(&id, &priority, &revision, &raw); err != nil {
+			s.internalError(w, r, err)
+			return
 		}
-		screenRows.Close()
+		var values any
+		if err := json.Unmarshal(raw, &values); err != nil {
+			s.internalError(w, r, err)
+			return
+		}
+		export.GroupPolicies = append(export.GroupPolicies, map[string]any{"screenGroupId": id, "priority": priority, "revision": revision, "values": values})
+	}
+	if err := rows.Err(); err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	rows.Close()
+	screenRows, err := s.db.Query(r.Context(), `SELECT screen_id,revision,policy FROM screen_player_policies ORDER BY screen_id`)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	defer screenRows.Close()
+	for screenRows.Next() {
+		var id uuid.UUID
+		var revision int64
+		var raw []byte
+		if err := screenRows.Scan(&id, &revision, &raw); err != nil {
+			s.internalError(w, r, err)
+			return
+		}
+		var values any
+		if err := json.Unmarshal(raw, &values); err != nil {
+			s.internalError(w, r, err)
+			return
+		}
+		export.ScreenPolicies = append(export.ScreenPolicies, map[string]any{"screenId": id, "revision": revision, "values": values})
+	}
+	if err := screenRows.Err(); err != nil {
+		s.internalError(w, r, err)
+		return
 	}
 	writeJSON(w, 200, map[string]any{"data": export})
 }

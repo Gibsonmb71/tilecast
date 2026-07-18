@@ -47,6 +47,19 @@ describe("screen group compatibility", () => {
       items: [{ id: "group-1", screens: [] }],
     });
   });
+
+  it("handles a list response without items", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ data: {} }),
+      }),
+    );
+
+    await expect(api.screenGroups()).resolves.toMatchObject({ items: [] });
+  });
 });
 
 describe("mixed-version collection compatibility", () => {

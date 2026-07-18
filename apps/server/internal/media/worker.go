@@ -248,6 +248,12 @@ func (p *WorkerPool) preview(ctx context.Context, assetID uuid.UUID, poster bool
 	tmpPath := tmp.Name()
 	_ = tmp.Close()
 	defer os.Remove(tmpPath)
+	committed := false
+	defer func() {
+		if !committed {
+			_ = p.service.storage.Delete(key)
+		}
+	}()
 	filter := "scale=480:270:force_original_aspect_ratio=decrease:force_divisible_by=2"
 	args := []string{"-nostdin", "-v", "error", "-protocol_whitelist", "file,pipe", "-i", sourcePath}
 	if poster {
@@ -277,6 +283,7 @@ func (p *WorkerPool) preview(ctx context.Context, assetID uuid.UUID, poster bool
 	if err != nil {
 		return err
 	}
+	committed = true
 	if oldKey != "" && oldKey != key {
 		_ = p.service.storage.Delete(oldKey)
 	}
@@ -313,6 +320,12 @@ func (p *WorkerPool) optimize(ctx context.Context, assetID uuid.UUID) error {
 	tmpPath := tmp.Name()
 	_ = tmp.Close()
 	defer os.Remove(tmpPath)
+	committed := false
+	defer func() {
+		if !committed {
+			_ = p.service.storage.Delete(key)
+		}
+	}()
 	args := []string{"-nostdin", "-v", "error", "-progress", "pipe:1", "-protocol_whitelist", "file,pipe", "-i", source, "-map", "0:v:0", "-map", "0:a?"}
 	if decision.Action == Remux {
 		args = append(args, "-c", "copy")
@@ -348,6 +361,7 @@ func (p *WorkerPool) optimize(ctx context.Context, assetID uuid.UUID) error {
 	if err != nil {
 		return err
 	}
+	committed = true
 	if oldKey != "" && oldKey != key {
 		_ = p.service.storage.Delete(oldKey)
 	}
@@ -406,21 +420,33 @@ func (p *WorkerPool) deleteFiles(ctx context.Context, assetID uuid.UUID) error {
 	return tx.Commit(ctx)
 }
 func (p *WorkerPool) cleanExpired(ctx context.Context) error {
-	rows, err := p.service.db.Query(ctx, `UPDATE upload_sessions SET status='expired',failure_code='upload_expired' WHERE expires_at<now() AND status IN('pending','uploading') RETURNING temporary_storage_key`)
+	rows, err := p.service.db.Query(ctx, `UPDATE upload_sessions SET status='expired',failure_code='upload_expired_cleanup_pending' WHERE expires_at<now() AND (status IN('pending','uploading') OR (status='expired' AND failure_code='upload_expired_cleanup_pending')) RETURNING id,temporary_storage_key`)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
+	cleaned := []uuid.UUID{}
 	for rows.Next() {
+		var id uuid.UUID
 		var key string
-		if err := rows.Scan(&key); err != nil {
+		if err := rows.Scan(&id, &key); err != nil {
 			return err
 		}
 		if err := p.service.storage.Delete(key); err != nil {
 			return err
 		}
+		cleaned = append(cleaned, id)
 	}
-	return rows.Err()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	rows.Close()
+	for _, id := range cleaned {
+		if _, err := p.service.db.Exec(ctx, `UPDATE upload_sessions SET failure_code='upload_expired' WHERE id=$1 AND status='expired' AND failure_code='upload_expired_cleanup_pending'`, id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 func fileHash(path string) (int64, []byte, error) {
 	f, err := os.Open(path)

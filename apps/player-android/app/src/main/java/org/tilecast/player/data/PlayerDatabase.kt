@@ -33,6 +33,13 @@ data class PlayerConfiguration(
 interface PlayerConfigurationDao {
     @Query("SELECT * FROM player_configuration WHERE id=1") suspend fun get(): PlayerConfiguration?
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun save(configuration: PlayerConfiguration)
+    @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insertIfAbsent(configuration: PlayerConfiguration): Long
+    @Transaction
+    suspend fun getOrCreate(candidate: PlayerConfiguration): PlayerConfiguration {
+        get()?.let { return it }
+        insertIfAbsent(candidate)
+        return get() ?: candidate
+    }
     @Query("UPDATE player_configuration SET screenId=NULL,screenName=NULL WHERE id=1") suspend fun clearPairing()
     @Query("DELETE FROM player_configuration") suspend fun reset()
 }
@@ -72,6 +79,7 @@ data class StoredPlayerConfig(@androidx.room.PrimaryKey val configRevision:Long,
     @Query("SELECT * FROM player_configs WHERE state='active' ORDER BY configRevision DESC LIMIT 1") suspend fun active():StoredPlayerConfig?
     @Query("SELECT * FROM player_configs WHERE state='previous' ORDER BY configRevision DESC LIMIT 1") suspend fun previous():StoredPlayerConfig?
     @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun save(config:StoredPlayerConfig)
+    @Query("DELETE FROM player_configs") suspend fun clear()
     @Query("UPDATE player_configs SET state='previous' WHERE state='active'") suspend fun demoteActive()
     @Query("UPDATE player_configs SET state='active',activatedAt=:now WHERE configRevision=:revision") suspend fun activateRevision(revision:Long,now:Long)
     @Query("DELETE FROM player_configs WHERE state='previous' AND configRevision NOT IN(SELECT configRevision FROM player_configs WHERE state='previous' ORDER BY activatedAt DESC LIMIT 1)") suspend fun prune()
@@ -87,6 +95,7 @@ data class StoredPlayerConfig(@androidx.room.PrimaryKey val configRevision:Long,
     @Query("UPDATE stored_manifests SET state='active',activatedAt=:now WHERE manifestVersion=:version") suspend fun setActive(version: Long, now: Long)
 	@Query("DELETE FROM stored_manifests WHERE state='superseded' AND manifestVersion NOT IN (SELECT manifestVersion FROM stored_manifests WHERE state='superseded' ORDER BY activatedAt DESC LIMIT 1)") suspend fun pruneSuperseded()
     @Query("UPDATE stored_manifests SET state=:state,readyAt=:readyAt,failureReason=:failure WHERE manifestVersion=:version") suspend fun setState(version: Long, state: String, readyAt: Long?, failure: String?)
+    @Query("DELETE FROM stored_manifests") suspend fun clear()
     @Transaction suspend fun activate(version: Long, now: Long) { supersedeActive(); setActive(version, now); pruneSuperseded() }
 }
 
@@ -94,6 +103,7 @@ data class StoredPlayerConfig(@androidx.room.PrimaryKey val configRevision:Long,
     @Query("SELECT * FROM cached_assets WHERE variantId=:variantId") suspend fun get(variantId: String): CachedAsset?
     @Query("SELECT * FROM cached_assets") suspend fun all(): List<CachedAsset>
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun save(asset: CachedAsset)
+	@Query("DELETE FROM cached_assets") suspend fun clear()
 	@Query("UPDATE cached_assets SET requiredByPendingManifest=0") suspend fun clearPendingRequirements()
     @Query("UPDATE cached_assets SET requiredByPendingManifest=1 WHERE variantId IN (:ids)") suspend fun requirePending(ids: List<String>)
     @Query("UPDATE cached_assets SET requiredByActiveManifest=requiredByPendingManifest,requiredByPendingManifest=0") suspend fun promoteRequirements()

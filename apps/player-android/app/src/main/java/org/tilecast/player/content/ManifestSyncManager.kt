@@ -4,10 +4,13 @@ import android.content.Context
 import androidx.room.withTransaction
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.contentOrNull
@@ -39,6 +42,76 @@ import java.util.concurrent.ConcurrentHashMap
 data class PreparedContent(val manifest: PlayerManifest, val localFiles: Map<String, String>,val serverClockOffsetSeconds:Long?=null)
 data class SyncProgress(val pendingVersion: Long? = null, val queueCount: Int = 0, val downloadedBytes: Long = 0, val requiredBytes: Long = 0, val cacheUsedBytes: Long = 0, val error: String? = null)
 
+internal fun manifestEtagForRequest(activeCacheVerified: Boolean, etag: String?): String? =
+    etag.takeIf { activeCacheVerified }
+
+internal data class ActiveCacheValidation(
+    val localFiles: Map<String, String>,
+    val complete: Boolean,
+)
+
+internal fun validateActiveCache(
+    records: Collection<CachedAsset>,
+    verify: (CachedAsset) -> Boolean = { record ->
+        ContentPolicy.verify(File(record.localPath), record.expectedFileSize, record.sha256)
+    },
+): ActiveCacheValidation {
+    val required = records.filter { it.requiredByActiveManifest }
+    val local = required
+        .filter { it.downloadStatus == "ready" && verify(it) }
+        .associate { it.variantId to it.localPath }
+    return ActiveCacheValidation(local, local.size == required.size)
+}
+
+internal fun selectManifestDownloads(
+    manifest: PlayerManifest,
+    cacheUsedBytes: Long,
+    usableSpaceBytes: Long,
+    cacheLimitBytes: Long,
+    minimumFreeBytes: Long,
+    automaticVideoThresholdBytes: Long,
+): List<ManifestAsset> {
+    val items = (manifest.playlists.flatMap { it.items } + manifest.directFallbackPlaylist?.items.orEmpty() + manifest.playlist?.items.orEmpty()).distinctBy { it.id }
+    val byVariant = manifest.assets.associateBy { it.variantId }
+    val byAsset = manifest.assets.associateBy { it.assetId }
+    val explicit = items.mapNotNull { item ->
+        val asset = item.variantId?.let { byVariant[it] } ?: return@mapNotNull null
+        when (item.deliveryPolicy) {
+            "download" -> asset
+            "automatic" -> if (asset.mimeType.startsWith("image/")) asset else null
+            else -> null
+        }
+    }.distinctBy { it.variantId }.toMutableList()
+    fun add(asset: ManifestAsset) {
+        if (explicit.none { it.variantId == asset.variantId }) explicit += asset
+    }
+    manifest.websites.mapNotNull { it.fallbackVariantId?.let(byVariant::get) }.forEach(::add)
+    fun presentationAssets(node: org.tilecast.player.network.PresentationNode): List<String> {
+        val own = if (node.type == "asset_image") listOfNotNull(node.props["variantId"]?.jsonPrimitive?.contentOrNull) else emptyList()
+        return own + node.children.flatMap(::presentationAssets)
+    }
+    manifest.widgets.flatMap { widget -> widget.presentation?.native?.root?.let(::presentationAssets).orEmpty() }
+        .mapNotNull(byVariant::get)
+        .forEach(::add)
+    val layouts = (manifest.layouts + listOfNotNull(manifest.layout, manifest.directFallbackLayout)).distinctBy { it.id }
+    layouts.flatMap { layout ->
+        listOfNotNull(layout.document.canvas.backgroundAssetId) + layout.document.placements
+            .filter { it.type == "asset" }
+            .mapNotNull { it.assetId }
+    }.mapNotNull(byAsset::get).forEach(::add)
+
+    var remaining = minOf(
+        (cacheLimitBytes - cacheUsedBytes).coerceAtLeast(0),
+        (usableSpaceBytes - minimumFreeBytes).coerceAtLeast(0),
+    ) - explicit.sumOf { it.fileSize }
+    items.filter { it.deliveryPolicy == "automatic" }
+        .mapNotNull { it.variantId?.let(byVariant::get) }
+        .filter { it.mimeType.startsWith("video/") && it.fileSize <= automaticVideoThresholdBytes }
+        .distinctBy { it.variantId }
+        .forEach { asset -> if (asset.fileSize <= remaining) { explicit += asset; remaining -= asset.fileSize } }
+    return explicit
+}
+
 class ManifestSyncManager(
     private val context: Context,
     private val database: PlayerDatabase,
@@ -48,21 +121,32 @@ class ManifestSyncManager(
     private var automaticVideoThresholdBytes: Long = 256L * 1024 * 1024,
     private var concurrentDownloads: Int = 2,
 ) {
-    fun applyPolicy(maximumBytes:Long,minimumFree:Long,automaticThreshold:Long,downloads:Int){cacheLimitBytes=maximumBytes;minimumFreeBytes=minimumFree;automaticVideoThresholdBytes=automaticThreshold;concurrentDownloads=downloads}
+	private var activeCacheVerified = false
+	fun applyPolicy(maximumBytes:Long,minimumFree:Long,automaticThreshold:Long,downloads:Int){cacheLimitBytes=maximumBytes;minimumFreeBytes=minimumFree;automaticVideoThresholdBytes=automaticThreshold;concurrentDownloads=downloads}
+	fun invalidateActiveCacheVerification() { activeCacheVerified = false }
+	suspend fun clear() {
+		database.withTransaction {
+			database.manifests().clear()
+			database.cachedAssets().clear()
+		}
+		mediaDirectory().listFiles()?.forEach { it.delete() }
+		activeCacheVerified = false
+	}
     suspend fun loadActive(): PreparedContent? {
-        val stored = database.manifests().active() ?: return null
-        val manifest = runCatching { api.decodeManifest(stored.rawJson) }.getOrNull() ?: return null
-        if (manifest.schemaVersion !in setOf(11,12,13)) return null
-        val records = database.cachedAssets().all().associateBy { it.variantId }
-        val local = records.filterValues { it.downloadStatus == "ready" && File(it.localPath).let { file -> file.exists() && file.length() == it.expectedFileSize } }.mapValues { it.value.localPath }
-        val required = records.values.filter { it.requiredByActiveManifest }
-        if (required.any { local[it.variantId] == null }) return null
-        return PreparedContent(manifest, local)
+        val stored = database.manifests().active() ?: run { activeCacheVerified = false; return null }
+        val manifest = runCatching { api.decodeManifest(stored.rawJson) }.getOrNull() ?: run { activeCacheVerified = false; return null }
+        if (manifest.schemaVersion !in setOf(11,12,13)) { activeCacheVerified = false; return null }
+        val validation = withContext(Dispatchers.IO) {
+            validateActiveCache(database.cachedAssets().all())
+        }
+        if (!validation.complete) { activeCacheVerified = false; return null }
+        activeCacheVerified = true
+        return PreparedContent(manifest, validation.localFiles)
     }
 
     suspend fun reconcile(serverUrl: String, credential: String, screenId: String, progress: (SyncProgress) -> Unit): PreparedContent? {
         val current = database.manifests().active()
-        val response = api.manifest(serverUrl, credential, current?.etag)
+        val response = api.manifest(serverUrl, credential, manifestEtagForRequest(activeCacheVerified,current?.etag))
         if (response.notModified) return null
         val manifest = response.manifest ?: return null
 		val clockOffset=manifest.serverTime?.let{Duration.between(Instant.now(),Instant.parse(it)).seconds}
@@ -74,7 +158,7 @@ class ManifestSyncManager(
 			cleanupUnneeded()
             val required = selectDownloads(manifest)
             val requiredBytes = required.sumOf { it.fileSize }
-			val missingBytes=required.sumOf{asset->val record=database.cachedAssets().get(asset.variantId);if(record?.downloadStatus=="ready"&&File(record.localPath).exists()&&record.sha256==asset.sha256)0L else asset.fileSize}
+            val missingBytes=required.sumOf{asset->val record=database.cachedAssets().get(asset.variantId);if(record?.downloadStatus=="ready"&&isValidCachedFile(File(record.localPath),asset.fileSize,asset.sha256))0L else asset.fileSize}
 			ensureSpace(missingBytes)
             required.forEach { asset ->
                 val path = finalFile(asset).absolutePath
@@ -88,6 +172,8 @@ class ManifestSyncManager(
             database.manifests().setState(manifest.manifestVersion, "ready", System.currentTimeMillis(), null)
             val local = database.cachedAssets().all().filter { it.downloadStatus == "ready" }.associate { it.variantId to it.localPath }
             PreparedContent(manifest, local,clockOffset)
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Exception) {
             val safe = error.message ?: "Content could not be prepared"
             database.manifests().setState(manifest.manifestVersion, "failed", null, safe)
@@ -101,36 +187,18 @@ class ManifestSyncManager(
             database.manifests().activate(content.manifest.manifestVersion, System.currentTimeMillis())
             database.cachedAssets().promoteRequirements()
         }
+		activeCacheVerified = true
     }
 
 	private fun selectDownloads(manifest: PlayerManifest): List<ManifestAsset> {
-		val items = (manifest.playlists.flatMap { it.items } + manifest.directFallbackPlaylist?.items.orEmpty() + manifest.playlist?.items.orEmpty()).distinctBy { it.id }
-        val byVariant = manifest.assets.associateBy { it.variantId }
-		val explicit = items.mapNotNull { item ->
-			val asset = item.variantId?.let{byVariant[it]} ?: return@mapNotNull null
-            when (item.deliveryPolicy) {
-                "download" -> asset
-				"automatic" -> if (asset.mimeType.startsWith("image/")) asset else null
-                else -> null
-            }
-		}.distinctBy { it.variantId }.toMutableList()
-		manifest.websites.mapNotNull{it.fallbackVariantId?.let(byVariant::get)}.forEach{if(explicit.none{x->x.variantId==it.variantId})explicit+=it}
-		fun presentationAssets(node: org.tilecast.player.network.PresentationNode): List<String> {
-			val own = if (node.type == "asset_image") listOfNotNull(node.props["variantId"]?.jsonPrimitive?.contentOrNull) else emptyList()
-			return own + node.children.flatMap(::presentationAssets)
-		}
-		manifest.widgets.flatMap { widget -> widget.presentation?.native?.root?.let(::presentationAssets).orEmpty() }
-			.mapNotNull(byVariant::get)
-			.forEach { asset -> if (explicit.none { it.variantId == asset.variantId }) explicit += asset }
-		val media=mediaDirectory();val used=media.walkTopDown().filter{it.isFile}.sumOf{it.length()};var remaining=minOf((cacheLimitBytes-used).coerceAtLeast(0),(media.usableSpace-minimumFreeBytes).coerceAtLeast(0))-explicit.sumOf{it.fileSize}
-		items.filter{it.deliveryPolicy=="automatic"}.mapNotNull{it.variantId?.let(byVariant::get)}.filter{it.mimeType.startsWith("video/")&&it.fileSize<=automaticVideoThresholdBytes}.distinctBy{it.variantId}.forEach{if(it.fileSize<=remaining){explicit+=it;remaining-=it.fileSize}}
-		return explicit
+		val media=mediaDirectory()
+		return selectManifestDownloads(manifest,media.walkTopDown().filter{it.isFile}.sumOf{it.length()},media.usableSpace,cacheLimitBytes,minimumFreeBytes,automaticVideoThresholdBytes)
     }
 
     private suspend fun downloadIfNeeded(serverUrl: String, credential: String, asset: ManifestAsset, progress: (Long) -> Unit) {
         val final = finalFile(asset)
         val existing = database.cachedAssets().get(asset.variantId)
-        if (existing?.downloadStatus == "ready" && final.exists() && final.length() == asset.fileSize && existing.sha256 == asset.sha256) return
+        if (existing?.downloadStatus == "ready" && isValidCachedFile(final,asset.fileSize,asset.sha256)) return
         val part = File(final.absolutePath + ".part")
 		val wasActive=existing?.requiredByActiveManifest?:false
         var lastError: Exception? = null
@@ -142,6 +210,8 @@ class ManifestSyncManager(
                 check(part.renameTo(final)) { "Verified media could not be activated" }
 				database.cachedAssets().save(CachedAsset(asset.variantId,asset.assetId,asset.sha256,asset.fileSize,final.absolutePath,"ready",asset.fileSize,System.currentTimeMillis(),requiredByActiveManifest=wasActive,requiredByPendingManifest=true))
                 return
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Exception) {
                 lastError = error
                 if (attempt < 3) delay((1L shl attempt) * 1_000 + Random.nextLong(500))
@@ -156,7 +226,7 @@ class ManifestSyncManager(
             File(record.localPath).delete(); File(record.localPath + ".part").delete(); database.cachedAssets().delete(record.variantId)
 		}
 	    }
-	    suspend fun clearUnprotectedCache():Boolean=runCatching{cleanupUnneeded();true}.getOrDefault(false)
+	    suspend fun clearUnprotectedCache():Boolean=try{cleanupUnneeded();true}catch(error:CancellationException){throw error}catch(_:Exception){false}
     private fun ensureSpace(requiredBytes: Long) {
         val media = mediaDirectory(); val used = media.walkTopDown().filter { it.isFile }.sumOf { it.length() }
         val cacheAvailable = (cacheLimitBytes - used).coerceAtLeast(0)
@@ -164,6 +234,7 @@ class ManifestSyncManager(
         require(requiredBytes <= minOf(cacheAvailable, diskAvailable)) { "Insufficient storage to prepare this manifest" }
     }
     private fun mediaDirectory() = File(context.filesDir, "media-cache").apply { mkdirs() }
+	private fun isValidCachedFile(file:File,size:Long,sha256:String)=runCatching{ContentPolicy.verify(file,size,sha256)}.getOrDefault(false)
 	private fun cacheUsed()=mediaDirectory().walkTopDown().filter{it.isFile}.sumOf{it.length()}
     private fun finalFile(asset: ManifestAsset) = File(mediaDirectory(), "${asset.variantId}.${extension(asset.mimeType)}")
     private fun extension(mime: String) = when (mime) { "video/mp4" -> "mp4"; "image/png" -> "png"; "image/webp" -> "webp"; "image/gif" -> "gif"; else -> "jpg" }

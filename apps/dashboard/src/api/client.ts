@@ -919,7 +919,9 @@ export const api = {
     );
     return {
       ...result,
-      items: result.items.map(normalizeScreenGroup),
+      items: (Array.isArray(result.items) ? result.items : []).map(
+        normalizeScreenGroup,
+      ),
     };
   },
   screenGroup: async (id: string) =>
