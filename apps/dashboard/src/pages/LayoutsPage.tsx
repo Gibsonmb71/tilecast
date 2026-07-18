@@ -7,8 +7,8 @@ import {
 } from "../components/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Copy, LayoutTemplate, Plus, Trash2 } from "lucide-react";
-import { useState } from "react";
-import { useNavigate } from "react-router";
+import { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router";
 import { api } from "../api/client";
 import type { LayoutOrientation } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
@@ -49,6 +49,7 @@ export function LayoutsPage() {
   const auth = useAuth();
   const csrf = auth.status?.csrfToken ?? "";
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [creating, setCreating] = useState(false);
@@ -156,6 +157,17 @@ export function LayoutsPage() {
           : "The Layout could not be deleted because it is still in use.",
       ),
   });
+  useEffect(() => {
+    if (searchParams.get("create") === "1") setCreating(true);
+  }, [searchParams]);
+  const closeCreate = () => {
+    setCreating(false);
+    if (searchParams.has("create")) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("create");
+      setSearchParams(next, { replace: true });
+    }
+  };
   return (
     <section className="layouts-page">
       <PageHeader
@@ -307,7 +319,7 @@ export function LayoutsPage() {
             <footer>
               <button
                 className="button button--secondary"
-                onClick={() => setCreating(false)}
+                onClick={closeCreate}
               >
                 Cancel
               </button>

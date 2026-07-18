@@ -254,7 +254,10 @@ export function DashboardShell() {
         </div>
       </aside>
       <div className="workspace">
-        <StudioTopbar user={auth.status.user} />
+        <StudioTopbar
+          user={auth.status.user}
+          csrfToken={auth.status.csrfToken}
+        />
         <main className="workspace__content">
           <RouteErrorBoundary key={location.pathname}>
             <Outlet />

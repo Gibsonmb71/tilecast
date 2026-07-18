@@ -121,6 +121,48 @@ describe("StudioTopbar", () => {
       ).getAttribute("href"),
     ).toBe("/screens/screen-1");
   });
+
+  it("offers creation actions for the full content workflow", () => {
+    renderTopbar();
+
+    fireEvent.click(screen.getByRole("button", { name: /Create/ }));
+
+    expect(screen.getByRole("menuitem", { name: "Upload media" })).toBeTruthy();
+    expect(
+      screen
+        .getByRole("menuitem", { name: "Create widget" })
+        .getAttribute("href"),
+    ).toBe("/widgets/new");
+    expect(
+      screen
+        .getByRole("menuitem", { name: "Create data source" })
+        .getAttribute("href"),
+    ).toBe("/data-sources/new");
+    expect(
+      screen
+        .getByRole("menuitem", { name: "Create playlist" })
+        .getAttribute("href"),
+    ).toBe("/playlists?create=1");
+    expect(
+      screen
+        .getByRole("menuitem", { name: "Create layout" })
+        .getAttribute("href"),
+    ).toBe("/layouts?create=1");
+    expect(
+      screen
+        .getByRole("menuitem", { name: "Create schedule" })
+        .getAttribute("href"),
+    ).toBe("/schedules/new");
+  });
+
+  it("opens the existing upload workflow from Create", () => {
+    renderTopbar();
+
+    fireEvent.click(screen.getByRole("button", { name: /Create/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Upload media" }));
+
+    expect(screen.getByRole("dialog", { name: "Upload media" })).toBeTruthy();
+  });
 });
 
 describe("command search", () => {

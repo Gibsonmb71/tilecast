@@ -17,7 +17,7 @@ import {
   Globe2,
 } from "lucide-react";
 import { useEffect, useState, type DragEvent } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { api } from "../api/client";
 import type {
   Asset,
@@ -65,6 +65,7 @@ export function PlaylistsPage() {
   const csrf = auth.status?.csrfToken ?? "";
   const canManage = canManagePlaylists(auth.status?.user?.role);
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [search, setSearch] = useState("");
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
@@ -76,6 +77,17 @@ export function PlaylistsPage() {
     mutationFn: () => api.createPlaylist({ name, description: "" }, csrf),
     onSuccess: (playlist) => void navigate(`/playlists/${playlist.id}`),
   });
+  useEffect(() => {
+    if (searchParams.get("create") === "1") setCreating(true);
+  }, [searchParams]);
+  const closeCreate = () => {
+    setCreating(false);
+    if (searchParams.has("create")) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("create");
+      setSearchParams(next, { replace: true });
+    }
+  };
   return (
     <section className="playlists-page">
       <PageHeader
@@ -125,11 +137,7 @@ export function PlaylistsPage() {
           ))}
         </div>
       )}
-      <Dialog
-        open={creating}
-        title="Create playlist"
-        onClose={() => setCreating(false)}
-      >
+      <Dialog open={creating} title="Create playlist" onClose={closeCreate}>
         <Field label="Name">
           <input
             autoFocus
@@ -141,7 +149,7 @@ export function PlaylistsPage() {
           <div className="notice notice--error">{create.error.message}</div>
         )}
         <div className="form-actions">
-          <Button variant="quiet" onClick={() => setCreating(false)}>
+          <Button variant="quiet" onClick={closeCreate}>
             Cancel
           </Button>
           <Button
