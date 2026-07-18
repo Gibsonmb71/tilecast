@@ -163,55 +163,6 @@ export function normalizePlaylist(
   };
 }
 
-export function normalizeScreen(screen: Screen | null | undefined): Screen {
-  const source = screen ?? ({} as Screen);
-  return {
-    ...source,
-    deviceManufacturer:
-      typeof source.deviceManufacturer === "string"
-        ? source.deviceManufacturer
-        : "",
-  };
-}
-
-export function normalizePlaylistAssignment(
-  assignment: PlaylistAssignment | null | undefined,
-): PlaylistAssignment {
-  const source = assignment ?? ({} as PlaylistAssignment);
-  return {
-    ...source,
-    synchronizationStatus:
-      typeof source.synchronizationStatus === "string"
-        ? source.synchronizationStatus
-        : "not_reported",
-    groups: Array.isArray(source.groups) ? source.groups : [],
-    relevantSchedules: Array.isArray(source.relevantSchedules)
-      ? source.relevantSchedules
-      : [],
-  };
-}
-
-export function normalizeProviderCatalog(
-  catalog: ProviderCatalog | null | undefined,
-): ProviderCatalog {
-  const source = catalog ?? ({} as ProviderCatalog);
-  return {
-    ...source,
-    providers: Array.isArray(source.providers) ? source.providers : [],
-  };
-}
-
-export function normalizeContentDefinitionCatalog(
-  catalog: ContentDefinitionCatalog | null | undefined,
-): ContentDefinitionCatalog {
-  const source = catalog ?? ({} as ContentDefinitionCatalog);
-  return {
-    ...source,
-    widgets: Array.isArray(source.widgets) ? source.widgets : [],
-    dataSources: Array.isArray(source.dataSources) ? source.dataSources : [],
-  };
-}
-
 function normalizeLayoutDocument(
   document: LayoutDocument | null | undefined,
   layout: Pick<Layout, "orientation" | "canvasWidth" | "canvasHeight">,
