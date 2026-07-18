@@ -5,10 +5,7 @@ import java.util.UUID
 
 class ConfigurationRepository(private val dao: PlayerConfigurationDao) {
     suspend fun getOrCreate(): PlayerConfiguration {
-        dao.get()?.let { return it }
-        val created = PlayerConfiguration(playerInstallationId = UUID.randomUUID().toString())
-        dao.save(created)
-        return created
+        return dao.getOrCreate(PlayerConfiguration(playerInstallationId = UUID.randomUUID().toString()))
     }
 
     suspend fun saveServer(current: PlayerConfiguration, url: String, installationId: String, organizationName: String): PlayerConfiguration =

@@ -2,12 +2,14 @@ package settings
 
 import (
 	"context"
+	"os"
+	"sync"
+	"testing"
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/tilecast/tilecast/apps/server/internal/auth"
 	"github.com/tilecast/tilecast/apps/server/internal/database"
-	"os"
-	"testing"
-	"time"
 )
 
 type testNotifier struct{ notes int }
@@ -60,6 +62,28 @@ func TestSettingsPolicyInheritanceAndRevision(t *testing.T) {
 	}
 	notifier := &testNotifier{}
 	service := NewService(pool, notifier, HardLimits{MaxUploadBytes: 20 << 30, MaxEmergencyMinutes: 1440, MaxWebsiteTimeout: 120, MaxPrefetchDays: 365})
+	var initialization sync.WaitGroup
+	initializationErrors := make(chan error, 16)
+	for i := 0; i < 8; i++ {
+		initialization.Add(2)
+		go func() {
+			defer initialization.Done()
+			_, err := service.Organization(ctx)
+			initializationErrors <- err
+		}()
+		go func() {
+			defer initialization.Done()
+			_, err := service.Preferences(ctx, owner.User.ID)
+			initializationErrors <- err
+		}()
+	}
+	initialization.Wait()
+	close(initializationErrors)
+	for initializationError := range initializationErrors {
+		if initializationError != nil {
+			t.Fatalf("concurrent settings initialization: %v", initializationError)
+		}
+	}
 	document, err := service.Organization(ctx)
 	if err != nil {
 		t.Fatal(err)

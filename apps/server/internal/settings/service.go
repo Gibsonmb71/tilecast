@@ -86,7 +86,7 @@ func (s *Service) Organization(ctx context.Context) (Document, error) {
 		if err = s.db.QueryRow(ctx, `SELECT id FROM organization_settings`).Scan(&org); err != nil {
 			return d, err
 		}
-		_, err = s.db.Exec(ctx, `INSERT INTO organization_runtime_settings(organization_id)VALUES($1)`, org)
+		_, err = s.db.Exec(ctx, `INSERT INTO organization_runtime_settings(organization_id)VALUES($1) ON CONFLICT (organization_id) DO NOTHING`, org)
 		if err != nil {
 			return d, err
 		}
@@ -157,7 +157,7 @@ func (s *Service) Preferences(ctx context.Context, user uuid.UUID) (Document, er
 	var raw []byte
 	err := s.db.QueryRow(ctx, `SELECT schema_version,revision,preferences,updated_at FROM user_preferences WHERE user_id=$1`, user).Scan(&d.SchemaVersion, &d.Revision, &raw, &d.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
-		_, err = s.db.Exec(ctx, `INSERT INTO user_preferences(user_id)VALUES($1)`, user)
+		_, err = s.db.Exec(ctx, `INSERT INTO user_preferences(user_id)VALUES($1) ON CONFLICT (user_id) DO NOTHING`, user)
 		if err != nil {
 			return d, err
 		}
@@ -343,8 +343,9 @@ func (s *Service) Effective(ctx context.Context, screen uuid.UUID) (EffectivePol
 		var name string
 		var revision int64
 		var raw []byte
-		if rows.Scan(&id, &name, &revision, &raw) != nil {
-			continue
+		if err := rows.Scan(&id, &name, &revision, &raw); err != nil {
+			rows.Close()
+			return result, err
 		}
 		result.GroupRevisions[id.String()] = revision
 		var values map[string]any
@@ -356,6 +357,10 @@ func (s *Service) Effective(ctx context.Context, screen uuid.UUID) (EffectivePol
 				claimed[key] = true
 			}
 		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return result, err
 	}
 	rows.Close()
 	screenPolicy, err := s.ScreenPolicy(ctx, screen)

@@ -191,6 +191,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             val identity = api.identity(saved.serverUrl)
             if (saved.serverInstallationId != null && saved.serverInstallationId != identity.installationId) {
                 clearPlaybackState()
+                clearPlayerConfigState()
                 emit(PlayerEvent.IdentityChanged(saved.serverInstallationId, identity.installationId)); return
             }
             selectedIdentity = identity
@@ -204,6 +205,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 if(saved.pairingSessionId!=null)current=configuration.clearPairingSession(saved)
                 emit(PlayerEvent.IdentityConfirmed(selectedUrl!!, identity))
             }
+        } catch (error: CancellationException) { throw error
         } catch (error: Exception) { emit(PlayerEvent.Failed(error.message ?: "Could not reach the Tilecast server")) }
     }
 
@@ -224,6 +226,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             require(identity.product == "tilecast" && identity.apiVersion == "v1") { "This address is not a compatible Tilecast server" }
             selectedUrl = normalized; selectedIdentity = identity
             emit(PlayerEvent.IdentityConfirmed(normalized, identity))
+        } catch (error: CancellationException) { throw error
         } catch (error: Exception) { emit(PlayerEvent.Failed(error.message ?: "Could not connect to Tilecast")) }
     } }
 
@@ -293,6 +296,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             if (error.code == "device_credential_revoked" || error.code == "device_credential_invalid") { revokeLocally(screenName); return }
             if (error.code == "screen_disabled") { emit(PlayerEvent.Disconnected(screenName, "This screen is disabled in Tilecast Studio")); return }
             if (error.status in 400..499) { emit(PlayerEvent.Failed(error.message)); return }
+        } catch (error: CancellationException) { throw error
         } catch (_: Exception) { }
         openSocket(url, screenName, credential, 0)
     }
@@ -475,11 +479,15 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         currentPlaylistId = null
         currentItemId = null
         currentAssetId = null
+		// A later pairing must not answer its first manifest request with the old
+		// installation's ETag after the playback session has been discarded.
+		synchronizer.invalidateActiveCacheVerification()
     }
-	private suspend fun revokeLocally(screenName: String?) { stopConnectionWork(); clearPlaybackState(); credentials.clear(); configuration.clearPairing(); emit(PlayerEvent.Revoked(screenName)) }
-    fun reconnectAfterRevocation() { viewModelScope.launch { stopConnectionWork(); clearPlaybackState(); credentials.clear(); configuration.clearPairing(); selectedIdentity?.let { emit(PlayerEvent.IdentityConfirmed(selectedUrl ?: return@launch, it)) } ?: discover() } }
+	private suspend fun clearPlayerConfigState() { configManager.clear(); mutablePlayerConfig.value = null; activeConfigRevision = null; configurationError = null }
+	private suspend fun revokeLocally(screenName: String?) { stopConnectionWork(); clearPlaybackState(); clearPlayerConfigState(); credentials.clear(); configuration.clearPairing(); emit(PlayerEvent.Revoked(screenName)) }
+    fun reconnectAfterRevocation() { viewModelScope.launch { stopConnectionWork(); clearPlaybackState(); clearPlayerConfigState(); credentials.clear(); configuration.clearPairing(); selectedIdentity?.let { emit(PlayerEvent.IdentityConfirmed(selectedUrl ?: return@launch, it)) } ?: discover() } }
     fun cancelPairing() { pairingJob?.cancel(); pairingJob = null; pairingRequestJob?.cancel(); pairingRequestJob = null; viewModelScope.launch { current?.let { current = configuration.clearPairingSession(it) }; discover() } }
-    fun resetServer() { viewModelScope.launch { stopConnectionWork(); clearPlaybackState(); credentials.clear(); WebsiteDataManager.clear(getApplication()){};configuration.reset(); current = configuration.getOrCreate(); discover() } }
+    fun resetServer() { viewModelScope.launch { stopConnectionWork(); clearPlaybackState(); credentials.clear(); WebsiteDataManager.clear(getApplication()){}; synchronizer.clear(); clearPlayerConfigState(); configuration.reset(); current = configuration.getOrCreate(); discover() } }
 
 	private suspend fun reconcileManifest(url: String, credential: String) {
 		if (syncJob?.isActive == true) { syncPending = true; return }

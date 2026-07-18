@@ -12,6 +12,12 @@ import org.tilecast.player.network.PlayerManifest
 
 class ManifestSyncManagerTest {
     @Test
+    fun onlySendsConditionalManifestRequestAfterCacheVerification() {
+        assertEquals("etag-1", manifestEtagForRequest(true, "etag-1"))
+        assertEquals(null, manifestEtagForRequest(false, "etag-1"))
+    }
+
+    @Test
     fun downloadsLayoutBackgroundAndAssetPlacements() {
         val background = ManifestAsset("asset-background", "variant-background", "image/png", "background-hash", 10, downloadPath = "/background")
         val placementAsset = ManifestAsset("asset-placement", "variant-placement", "image/png", "placement-hash", 20, downloadPath = "/placement")

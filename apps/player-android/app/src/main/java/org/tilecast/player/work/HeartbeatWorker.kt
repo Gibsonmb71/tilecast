@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.SystemClock
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import kotlinx.coroutines.CancellationException
 import org.tilecast.player.BuildConfig
 import org.tilecast.player.data.PlayerDatabase
 import org.tilecast.player.network.ApiException
@@ -34,6 +35,7 @@ class HeartbeatWorker(context: Context, parameters: WorkerParameters) : Coroutin
         } catch (error: ApiException) {
             if (error.code == "device_credential_revoked") KeystoreCredentialStore(applicationContext).clear()
             if (error.status in 400..499) Result.failure() else Result.retry()
+        } catch (error: CancellationException) { throw error
         } catch (_: Exception) { Result.retry() }
     }
 }
