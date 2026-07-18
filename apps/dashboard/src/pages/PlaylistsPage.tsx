@@ -113,7 +113,7 @@ export function PlaylistsPage() {
       </DashboardListToolbar>
       {query.isLoading ? (
         <div className="table-loading">Loading playlists…</div>
-      ) : query.data?.items.length === 0 ? (
+      ) : query.data?.items?.length === 0 ? (
         <EmptyState
           className="content-empty"
           icon={<ListVideo size={24} aria-hidden="true" />}
@@ -126,7 +126,7 @@ export function PlaylistsPage() {
         />
       ) : (
         <div className="playlist-list">
-          {query.data?.items.map((p) => (
+          {query.data?.items?.map((p) => (
             <Link key={p.id} to={`/playlists/${p.id}`}>
               <span>
                 <strong>{p.name}</strong>
@@ -326,7 +326,7 @@ export function PlaylistEditorPage() {
           ) : undefined
         }
       />
-      {playlist.warnings.map((w) => (
+      {(playlist.warnings ?? []).map((w) => (
         <div key={w} className="notice notice--error">
           {w}
         </div>
@@ -335,7 +335,7 @@ export function PlaylistEditorPage() {
         <div className="notice notice--neutral">
           <strong>Used in Layouts</strong>
           <span>
-            {playlist.layoutUsage.map((layout, index) => (
+            {(playlist.layoutUsage ?? []).map((layout, index) => (
               <span key={layout.id}>
                 {index > 0 ? ", " : ""}
                 <Link to={`/layouts/${layout.id}`}>{layout.name}</Link>
@@ -402,13 +402,13 @@ export function PlaylistEditorPage() {
           </div>
         )}
       </div>
-      {playlist.items.length === 0 ? (
+      {(playlist.items?.length ?? 0) === 0 ? (
         <div className="timeline-empty">
           Add ready media to begin this playlist.
         </div>
       ) : (
         <div className="playlist-timeline">
-          {playlist.items.map((item, index) => (
+          {(playlist.items ?? []).map((item, index) => (
             <TimelineItem
               key={item.id}
               item={item}
@@ -449,7 +449,7 @@ export function PlaylistEditorPage() {
       >
         <p>A Layout plays fullscreen for 30 seconds by default.</p>
         <div className="playlist-list">
-          {layouts.data?.items
+          {(layouts.data?.items ?? [])
             .filter((layout) => layout.publishedRevision)
             .map((layout) => (
               <Button
@@ -462,8 +462,9 @@ export function PlaylistEditorPage() {
               </Button>
             ))}
         </div>
-        {layouts.data?.items.filter((layout) => layout.publishedRevision)
-          .length === 0 && (
+        {(layouts.data?.items ?? []).filter(
+          (layout) => layout.publishedRevision,
+        ).length === 0 && (
           <p className="status-copy">
             Publish a Layout before adding it to a playlist.
           </p>

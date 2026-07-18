@@ -191,7 +191,7 @@ export function LayoutsPage() {
       {actionError && <Notice variant="danger">{actionError}</Notice>}
       {layouts.isLoading ? (
         <p className="status-copy">Loading Layouts…</p>
-      ) : layouts.data?.items.length ? (
+      ) : layouts.data?.items?.length ? (
         <div className="layout-library">
           {layouts.data.items.map((layout) => (
             <article className="layout-library-item" key={layout.id}>

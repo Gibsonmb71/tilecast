@@ -39,6 +39,15 @@ const formatBytes = (value: number) => {
   }
   return `${amount.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
 };
+export const formatReportedStatus = (
+  value: unknown,
+  fallback = "Not reported",
+) =>
+  typeof value === "string" && value.trim()
+    ? value.replaceAll("_", " ")
+    : fallback;
+const formatReportedCount = (value: unknown, fallback = 0) =>
+  typeof value === "number" && Number.isFinite(value) ? value : fallback;
 export const reliabilityCapabilityWarning = (status?: ReliabilityStatus) => {
   if (
     status?.configuredMode === "managed_kiosk" &&
@@ -263,7 +272,7 @@ function EmergencyPanel({
               onChange={(e) => setPlaylistId(e.target.value)}
             >
               <option value="">Select playlist</option>
-              {playlists.data?.items.map((p) => (
+              {playlists.data?.items?.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
                 </option>
@@ -303,7 +312,7 @@ function EmergencyPanel({
           </fieldset>
           <fieldset>
             <legend>Target sync groups</legend>
-            {groups.data?.items.map((g) => (
+            {groups.data?.items?.map((g) => (
               <label key={g.id}>
                 <input
                   type="checkbox"
@@ -928,7 +937,7 @@ export function ScreenDetailPage() {
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ["screens", id, "commands"] }),
   });
-  const listedScreen = screens.data?.items.find((screen) => screen.id === id);
+  const listedScreen = screens.data?.items?.find((screen) => screen.id === id);
   const screen = resolveScreenDetail(query.data, listedScreen);
   if (query.isLoading && !screen)
     return <div className="table-loading">Loading screen…</div>;
@@ -1092,7 +1101,7 @@ export function ScreenDetailPage() {
             <div>
               <dt>Synchronization</dt>
               <dd>
-                {assignment.data?.synchronizationStatus.replaceAll("_", " ") ??
+                {assignment.data?.synchronizationStatus?.replaceAll("_", " ") ??
                   "Not reported"}
               </dd>
             </div>
@@ -1141,7 +1150,7 @@ export function ScreenDetailPage() {
       {tab === "content" && (
         <section className="detail-card assignment-card">
           <h3>Playback and scheduling</h3>
-          {assignment.data?.groups[0] && (
+          {assignment.data?.groups?.[0] && (
             <div className="notice notice--info">
               This player belongs to the{" "}
               <Link to={`/groups/${assignment.data.groups[0].id}`}>
@@ -1161,7 +1170,7 @@ export function ScreenDetailPage() {
               >
                 <option value="">No presentation assigned</option>
                 <optgroup label="Playlists">
-                  {playlists.data?.items.map((playlist) => (
+                  {playlists.data?.items?.map((playlist) => (
                     <option key={playlist.id} value={`playlist:${playlist.id}`}>
                       {playlist.name}
                     </option>
@@ -1190,7 +1199,7 @@ export function ScreenDetailPage() {
                 }
                 onClick={() => assign.mutate()}
               >
-                {assignment.data?.groups[0]
+                {assignment.data?.groups?.[0]
                   ? "Apply to sync group"
                   : "Apply assignment"}
               </button>
@@ -1213,7 +1222,7 @@ export function ScreenDetailPage() {
                 {assignment.data?.selectionSource === "emergency"
                   ? "Emergency takeover"
                   : assignment.data?.selectionSource === "schedule"
-                    ? `Scheduled${assignment.data.currentScheduleId ? ` · ${assignment.data.relevantSchedules.find((s) => s.id === assignment.data?.currentScheduleId)?.name ?? "schedule"}` : ""}`
+                    ? `Scheduled${assignment.data.currentScheduleId ? ` · ${(assignment.data.relevantSchedules ?? []).find((s) => s.id === assignment.data?.currentScheduleId)?.name ?? "schedule"}` : ""}`
                     : assignment.data?.selectionSource === "direct_fallback"
                       ? "Direct fallback"
                       : "No content"}
@@ -1250,21 +1259,22 @@ export function ScreenDetailPage() {
             <div>
               <dt>Synchronization</dt>
               <dd>
-                {assignment.data?.synchronizationStatus.replaceAll("_", " ") ??
+                {assignment.data?.synchronizationStatus?.replaceAll("_", " ") ??
                   "Not reported"}
               </dd>
             </div>
             <div>
               <dt>Sync group</dt>
               <dd>
-                {assignment.data?.groups.map((g) => g.name).join(", ") ||
-                  "Not grouped"}
+                {(assignment.data?.groups ?? [])
+                  .map((g) => g.name)
+                  .join(", ") || "Not grouped"}
               </dd>
             </div>
             <div>
               <dt>Relevant schedules</dt>
               <dd>
-                {assignment.data?.relevantSchedules
+                {(assignment.data?.relevantSchedules ?? [])
                   .map((s) => `${s.name} (${s.priority})`)
                   .join(", ") || "No schedules"}
               </dd>
@@ -1289,7 +1299,7 @@ export function ScreenDetailPage() {
               <dt>Website playback</dt>
               <dd>
                 {assignment.data?.websiteState
-                  ? `${assignment.data.websiteState.replaceAll("_", " ")}${assignment.data.websiteCurrentHost ? ` · ${assignment.data.websiteCurrentHost}` : ""}`
+                  ? `${assignment.data.websiteState?.replaceAll("_", " ") ?? "Not reported"}${assignment.data.websiteCurrentHost ? ` · ${assignment.data.websiteCurrentHost}` : ""}`
                   : "Not active"}
               </dd>
             </div>
@@ -1354,7 +1364,8 @@ export function ScreenDetailPage() {
             ) && (
               <div className="notice notice--error">
                 Website:{" "}
-                {assignment.data.websiteFailureCategory.replaceAll("_", " ")}
+                {assignment.data.websiteFailureCategory?.replaceAll("_", " ") ??
+                  "Unknown website failure"}
               </div>
             )}
         </section>
@@ -1385,18 +1396,22 @@ export function ScreenDetailPage() {
               <div>
                 <dt>Commissioning</dt>
                 <dd>
-                  {reliability.data?.commissioningState?.replaceAll("_", " ") ??
-                    "Not started"}
-                  {reliability.data?.commissioningStep
-                    ? ` · ${reliability.data.commissioningStep.replaceAll("_", " ")}`
+                  {formatReportedStatus(
+                    reliability.data?.commissioningState,
+                    "Not started",
+                  )}
+                  {typeof reliability.data?.commissioningStep === "string" &&
+                  reliability.data.commissioningStep.trim()
+                    ? ` · ${formatReportedStatus(reliability.data.commissioningStep, "")}`
                     : ""}
                 </dd>
               </div>
               <div>
                 <dt>Accessibility return</dt>
                 <dd>
-                  {reliability.data?.accessibilityServiceState ??
-                    "Not reported"}
+                  {formatReportedStatus(
+                    reliability.data?.accessibilityServiceState,
+                  )}
                 </dd>
               </div>
               <div>
@@ -1404,7 +1419,7 @@ export function ScreenDetailPage() {
                 <dd>
                   {reliability.data?.bootLaunchVerified
                     ? "Verified"
-                    : `${reliability.data?.bootAttemptCount ?? 0} attempts · not verified`}
+                    : `${formatReportedCount(reliability.data?.bootAttemptCount)} attempts · not verified`}
                 </dd>
               </div>
               <div>
@@ -1417,7 +1432,7 @@ export function ScreenDetailPage() {
               </div>
               <div>
                 <dt>Install permission</dt>
-                <dd>{screen.installPermissionStatus ?? "Not reported"}</dd>
+                <dd>{formatReportedStatus(screen.installPermissionStatus)}</dd>
               </div>
               <div>
                 <dt>Free storage</dt>
@@ -1439,7 +1454,9 @@ export function ScreenDetailPage() {
               </div>
               <div>
                 <dt>Update readiness</dt>
-                <dd>{reliability.data?.updateReadiness ?? "Not reported"}</dd>
+                <dd>
+                  {formatReportedStatus(reliability.data?.updateReadiness)}
+                </dd>
               </div>
             </dl>
           </div>
@@ -1447,17 +1464,21 @@ export function ScreenDetailPage() {
             <div>
               <dt>Reliability mode</dt>
               <dd>
-                {reliability.data?.configuredMode ?? "Not reported"} configured
-                · {reliability.data?.effectiveMode ?? "Not reported"} effective
+                {formatReportedStatus(reliability.data?.configuredMode)}{" "}
+                configured ·{" "}
+                {formatReportedStatus(reliability.data?.effectiveMode)}{" "}
+                effective
               </dd>
             </div>
             <div>
               <dt>Foreground</dt>
-              <dd>{reliability.data?.foregroundState ?? "Not reported"}</dd>
+              <dd>{formatReportedStatus(reliability.data?.foregroundState)}</dd>
             </div>
             <div>
               <dt>Boot recovery</dt>
-              <dd>{reliability.data?.bootRecoveryResult ?? "Not reported"}</dd>
+              <dd>
+                {formatReportedStatus(reliability.data?.bootRecoveryResult)}
+              </dd>
             </div>
             <div>
               <dt>Immersive / keep awake</dt>
@@ -1474,30 +1495,38 @@ export function ScreenDetailPage() {
             <div>
               <dt>Managed Kiosk</dt>
               <dd>
-                {reliability.data?.managedKioskCapability ?? "Not reported"} ·
-                lock task {reliability.data?.lockTaskState ?? "unknown"}
+                {formatReportedStatus(reliability.data?.managedKioskCapability)}{" "}
+                · lock task{" "}
+                {formatReportedStatus(
+                  reliability.data?.lockTaskState,
+                  "unknown",
+                )}
               </dd>
             </div>
             <div>
               <dt>Accessibility Control</dt>
               <dd>
-                {reliability.data?.accessibilityServiceState ?? "Not reported"}
+                {formatReportedStatus(
+                  reliability.data?.accessibilityServiceState,
+                )}
               </dd>
             </div>
             <div>
               <dt>Active hours</dt>
-              <dd>{reliability.data?.activeHoursState ?? "Not reported"}</dd>
+              <dd>
+                {formatReportedStatus(reliability.data?.activeHoursState)}
+              </dd>
             </div>
             <div>
               <dt>Sleep support</dt>
-              <dd>{reliability.data?.sleepCapability ?? "Not reported"}</dd>
+              <dd>{formatReportedStatus(reliability.data?.sleepCapability)}</dd>
             </div>
             <div>
               <dt>Recovery</dt>
               <dd>
-                Level {reliability.data?.recoveryLevel ?? 0} ·{" "}
-                {reliability.data?.recoveryCount ?? 0} recent · safe mode{" "}
-                {reliability.data?.safeMode ? "active" : "inactive"}
+                Level {formatReportedCount(reliability.data?.recoveryLevel)} ·{" "}
+                {formatReportedCount(reliability.data?.recoveryCount)} recent ·
+                safe mode {reliability.data?.safeMode ? "active" : "inactive"}
               </dd>
             </div>
             <div>
@@ -1724,9 +1753,11 @@ export function ScreenDetailPage() {
             <p>Command queued; this does not mean it has completed.</p>
           )}
           <div className="command-history">
-            {commands.data?.items.map((c) => (
+            {commands.data?.items?.map((c) => (
               <div key={c.id}>
-                <strong>{c.type.replaceAll("_", " ")}</strong>
+                <strong>
+                  {c.type?.replaceAll("_", " ") ?? "Unknown command"}
+                </strong>
                 <span>
                   {c.state} · {new Date(c.createdAt).toLocaleString()}
                 </span>
@@ -1740,13 +1771,15 @@ export function ScreenDetailPage() {
       )}
       {tab === "commands" &&
         !canManageScreens(auth.status?.user) &&
-        (commands.data?.items.length ?? 0) > 0 && (
+        (commands.data?.items?.length ?? 0) > 0 && (
           <section className="operations">
             <h3>Recent operations</h3>
             <div className="command-history">
-              {commands.data?.items.map((c) => (
+              {commands.data?.items?.map((c) => (
                 <div key={c.id}>
-                  <strong>{c.type.replaceAll("_", " ")}</strong>
+                  <strong>
+                    {c.type?.replaceAll("_", " ") ?? "Unknown command"}
+                  </strong>
                   <span>
                     {c.state} · {new Date(c.createdAt).toLocaleString()}
                   </span>

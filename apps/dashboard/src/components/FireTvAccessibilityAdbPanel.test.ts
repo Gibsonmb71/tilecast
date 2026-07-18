@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { fireTvAccessibilityCommands } from "./FireTvAccessibilityAdbPanel";
+import {
+  fireTvAccessibilityCommands,
+  isFireTvScreen,
+} from "./FireTvAccessibilityAdbPanel";
 
 describe("Fire TV accessibility ADB commands", () => {
   it("uses the screen address and preserves existing services", () => {
@@ -15,5 +18,17 @@ describe("Fire TV accessibility ADB commands", () => {
     expect(fireTvAccessibilityCommands().connect).toBe(
       "adb connect FIRE_TV_IP:5555",
     );
+  });
+
+  it("does not throw when older screen data omits the manufacturer", () => {
+    expect(
+      isFireTvScreen({ platform: "android-tv", deviceManufacturer: undefined }),
+    ).toBe(false);
+  });
+
+  it("recognizes Fire TV by manufacturer regardless of casing", () => {
+    expect(
+      isFireTvScreen({ platform: "android-tv", deviceManufacturer: "Amazon" }),
+    ).toBe(true);
   });
 });

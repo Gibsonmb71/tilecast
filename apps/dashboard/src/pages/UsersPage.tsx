@@ -179,7 +179,7 @@ export function UsersPage() {
         </div>
       ) : (
         <div className="user-management__list">
-          {users.data?.items.map((user) => {
+          {users.data?.items?.map((user) => {
             const canEdit =
               currentUser?.role === "owner" ||
               (currentUser?.role === "administrator" &&

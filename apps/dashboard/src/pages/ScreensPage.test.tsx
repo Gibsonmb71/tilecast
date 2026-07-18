@@ -7,6 +7,7 @@ import type { Screen, User } from "../api/types";
 import type { PairingRequest } from "../api/types";
 import {
   canManageScreens,
+  formatReportedStatus,
   reliabilityCapabilityWarning,
   pairingApprovalLabel,
   pairingApprovalPayload,
@@ -15,6 +16,17 @@ import {
   StatusLabel,
   zeroTouchReadiness,
 } from "./ScreensPage";
+
+describe("reliability status display", () => {
+  it("formats reported status values without rendering response objects", () => {
+    expect(formatReportedStatus("needs_attention")).toBe("needs attention");
+    expect(formatReportedStatus(" ")).toBe("Not reported");
+    expect(formatReportedStatus(undefined)).toBe("Not reported");
+    expect(formatReportedStatus({ id: "player-1", name: "Lobby" })).toBe(
+      "Not reported",
+    );
+  });
+});
 
 const user = (role: User["role"]): User => ({
   id: "user",
