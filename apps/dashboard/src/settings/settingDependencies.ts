@@ -1,5 +1,5 @@
 export type Dependency = { key: string; equals?: unknown; message: string };
-export const settingDependencies: Record<string, Dependency> = {
+export const settingDependencies: Record<string, Dependency | Dependency[]> = {
   "power.active_hours_timezone": activeHours(),
   "power.active_hours_days": activeHours(),
   "power.active_hours_start": activeHours(),
@@ -8,11 +8,15 @@ export const settingDependencies: Record<string, Dependency> = {
   "power.shutdown_prepare_seconds": activeHours(),
   "power.keep_screen_on": activeHours(),
   "power.sleep_outside_active_hours": activeHours(),
-  "power.black_screen_fallback": {
-    key: "power.cec_assist_enabled",
-    equals: true,
-    message: "Enable Power Assist to configure its fallback.",
-  },
+  "power.outside_active_hours_display": activeHours(),
+  "power.outside_active_hours_text": [
+    activeHours(),
+    {
+      key: "power.outside_active_hours_display",
+      equals: "custom_text",
+      message: "Choose Custom text to edit this setting.",
+    },
+  ],
   "managed_kiosk.lock_task_enabled": kiosk(),
   "managed_kiosk.block_overlays": kiosk(),
   "managed_kiosk.allow_settings_during_admin": kiosk(),
@@ -52,11 +56,14 @@ function accessibility(): Dependency {
   };
 }
 export function dependencyState(key: string, values: Record<string, unknown>) {
-  const dependency = settingDependencies[key];
-  if (!dependency) return { disabled: false };
-  const expected = dependency.equals ?? true;
-  return {
-    disabled: values[dependency.key] !== expected,
-    message: dependency.message,
-  };
+  const configured = settingDependencies[key];
+  if (!configured) return { disabled: false };
+  const dependencies = Array.isArray(configured) ? configured : [configured];
+  const unmet = dependencies.find((dependency) => {
+    const expected = dependency.equals ?? true;
+    return values[dependency.key] !== expected;
+  });
+  return unmet
+    ? { disabled: true, message: unmet.message }
+    : { disabled: false };
 }

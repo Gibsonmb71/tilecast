@@ -220,11 +220,25 @@ describe("settings presentation", () => {
   });
 
   it("centralizes dependencies and meaningful subsections", () => {
+    expect(enumLabel("bouncing_logo")).toBe("Bouncing Tilecast logo");
+    expect(enumLabel("black")).toBe("Black screen");
     expect(
       dependencyState("power.active_hours_days", {
         "power.active_hours_enabled": false,
       }),
     ).toMatchObject({ disabled: true });
+    expect(
+      dependencyState("power.outside_active_hours_text", {
+        "power.active_hours_enabled": true,
+        "power.outside_active_hours_display": "black",
+      }),
+    ).toMatchObject({ disabled: true });
+    expect(
+      dependencyState("power.outside_active_hours_text", {
+        "power.active_hours_enabled": true,
+        "power.outside_active_hours_display": "custom_text",
+      }),
+    ).toEqual({ disabled: false });
     const groups = groupsFor("playback", [
       definition({
         key: "player.cache.max_bytes",

@@ -83,7 +83,7 @@ func TestSettingsPolicyInheritanceAndRevision(t *testing.T) {
 	if err != nil || groupPolicy.Revision != 1 {
 		t.Fatalf("group policy: %#v %v", groupPolicy, err)
 	}
-	_, err = service.PutScreenPolicy(ctx, owner.User.ID, screen, 0, map[string]any{"player.playback.default_volume": 0.25, "power.keep_screen_on": false})
+	_, err = service.PutScreenPolicy(ctx, owner.User.ID, screen, 0, map[string]any{"player.playback.default_volume": 0.25, "power.keep_screen_on": false, "power.outside_active_hours_display": "custom_text", "power.outside_active_hours_text": "School is closed"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +99,7 @@ func TestSettingsPolicyInheritanceAndRevision(t *testing.T) {
 		t.Fatalf("reliability inheritance=%#v", effective.Values)
 	}
 	config, etag, err := service.PlayerConfiguration(ctx, screen)
-	if err != nil || config.Playback["defaultVolume"] != 0.25 || config.Reliability["mode"] != "managed_kiosk" || config.Power["keepScreenOn"] != false || etag == "" {
+	if err != nil || config.Playback["defaultVolume"] != 0.25 || config.Reliability["mode"] != "managed_kiosk" || config.Power["keepScreenOn"] != false || config.Power["outsideActiveHoursDisplay"] != "custom_text" || config.Power["outsideActiveHoursText"] != "School is closed" || config.Power["blackScreenFallback"] != false || etag == "" {
 		t.Fatalf("config=%#v etag=%q err=%v", config, etag, err)
 	}
 	if notifier.notes < 3 {
