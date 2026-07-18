@@ -210,11 +210,14 @@ internal fun RenderedItem(
     val done = { tracker?.complete(); onDone() }
     val failed: (String) -> Unit = { message -> tracker?.fail(message); onFailure(message) }
     val layout = item.layoutId?.let { id -> session.content.manifest.layouts.firstOrNull { it.id == id } }
-    // Images and videos report their first rendered frame themselves; everything
-    // else (websites, widgets, layouts) draws its own background immediately, so
-    // it counts as ready as soon as it is composed.
-    val rendersGatedMedia = widget == null && website == null && asset != null && !(item.assetType == "layout" && layout != null)
-    if (!rendersGatedMedia) LaunchedEffect(item.id) { onFirstFrame() }
+    // Images, videos, and WebView-backed items report their first visible frame
+    // themselves. Native widgets and layouts draw their background immediately.
+    val reportsOwnFirstFrame =
+        (widget == null && website == null && asset != null && !(item.assetType == "layout" && layout != null)) ||
+            website != null ||
+            (session.content.manifest.schemaVersion >= 13 && widget?.presentation?.kind == "web") ||
+            widget?.provider == "website"
+    if (!reportsOwnFirstFrame) LaunchedEffect(item.id) { onFirstFrame() }
     if (item.assetType == "layout" && layout != null) {
         FullscreenLayoutPlayback(session, layout, failed, onWebsiteStatus, onWidgetStatus, onProgress, activityReporter)
         LaunchedEffect(item.id) { delay(((item.durationMs ?: 30_000) - startOffsetMs).coerceAtLeast(1)); done() }
@@ -226,7 +229,7 @@ internal fun RenderedItem(
             failed("Web presentation is unavailable")
             return
         }
-        WebsiteItem(item, ManifestWebsite(widget.assetId, widget.name, descriptor.url, descriptor.allowedHosts, true, false, "none", "on_each_activation", null, descriptor.loadTimeoutSeconds, 100, 0, 0, "", "#0E141B", descriptor.fallbackBehavior, null, null), session, done, startOffsetMs) { status ->
+        WebsiteItem(item, ManifestWebsite(widget.assetId, widget.name, descriptor.url, descriptor.allowedHosts, true, false, "none", "on_each_activation", null, descriptor.loadTimeoutSeconds, 100, 0, 0, "", "#0E141B", descriptor.fallbackBehavior, null, null), session, done, startOffsetMs, onFirstFrame) { status ->
             onWebsiteStatus(status)
             onWidgetStatus(WidgetPlaybackStatus(widget.assetId, "web", status.state, status.failureCategory))
         }
@@ -235,7 +238,7 @@ internal fun RenderedItem(
             failed("Website widget configuration is invalid")
             return
         }
-        WebsiteItem(item, ManifestWebsite(widget.assetId, widget.name, config.url, config.allowedHosts, config.javascriptEnabled, config.domStorageEnabled, config.cookiePolicy, config.reloadPolicy, config.refreshIntervalSeconds, config.loadTimeoutSeconds, config.zoomPercent, config.scrollX, config.scrollY, config.customUserAgent, config.backgroundColor, config.failureBehavior, config.fallbackImageAssetId, config.fallbackVariantId), session, done, startOffsetMs) { status ->
+        WebsiteItem(item, ManifestWebsite(widget.assetId, widget.name, config.url, config.allowedHosts, config.javascriptEnabled, config.domStorageEnabled, config.cookiePolicy, config.reloadPolicy, config.refreshIntervalSeconds, config.loadTimeoutSeconds, config.zoomPercent, config.scrollX, config.scrollY, config.customUserAgent, config.backgroundColor, config.failureBehavior, config.fallbackImageAssetId, config.fallbackVariantId), session, done, startOffsetMs, onFirstFrame) { status ->
             onWebsiteStatus(status)
             onWidgetStatus(WidgetPlaybackStatus(widget.assetId, "website", status.state, status.failureCategory))
         }
@@ -248,7 +251,7 @@ internal fun RenderedItem(
     } else if (widget?.provider in setOf("clock", "date", "qrcode", "countdown", "ticker", "menu", "list", "table", "agenda", "metric", "cards", "weather")) {
         WidgetItem(item, widget ?: return, session, done, failed, onWidgetStatus, startOffsetMs)
     } else if (website != null) {
-        WebsiteItem(item, website, session, done, startOffsetMs, onWebsiteStatus)
+        WebsiteItem(item, website, session, done, startOffsetMs, onFirstFrame, onWebsiteStatus)
     } else if (asset?.mimeType?.startsWith("image/") == true) {
         ImageItem(item, asset, session, startOffsetMs, done, failed, onProgress, onFirstFrame)
     } else if (asset != null) {
