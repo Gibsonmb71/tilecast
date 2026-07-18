@@ -6,6 +6,6 @@ Thank you for helping build open signage infrastructure. By contributing, you ag
 2. Keep changes within the current milestone and preserve package boundaries.
 3. Add tests for behavior changes and migrations for database changes.
 4. Run `make format` and `make check` before opening a pull request.
-5. Document public API or operational changes.
+5. Document public API or operational changes in the respective /docs Markdown file.
 
 Commit messages should state the user-visible or architectural outcome. Pull requests must not present future or mocked features as working. Security reports belong in the private process described in `SECURITY.md`, not a public issue.
