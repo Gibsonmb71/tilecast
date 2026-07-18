@@ -1,4 +1,4 @@
-import { Select } from "../components/ui";
+import { Select, StatusDot, TableContainer } from "../components/ui";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -440,8 +440,8 @@ export function PlayerUpdatesPanel({
   );
   const query = targetSearch.toLowerCase();
   return (
-    <div className="settings-sections">
-      <section className="settings-subsection">
+    <div className="settings-sections player-updates">
+      <section className="settings-subsection player-updates__releases">
         <header className="settings-subsection__action">
           <div>
             <h3>Available releases</h3>
@@ -596,18 +596,21 @@ export function PlayerUpdatesPanel({
               </p>
             </div>
           )}
-        <div className="settings-table-wrap">
+        <TableContainer className="table-container player-updates-table-wrap">
           <table className="player-updates-table">
+            <caption className="visually-hidden">
+              Available Player releases
+            </caption>
             <thead>
               <tr>
-                <th>Version</th>
-                <th>Channel</th>
-                <th>Source</th>
-                <th>Published</th>
-                <th>Size</th>
-                <th>Verification</th>
-                <th>Cache</th>
-                <th />
+                <th scope="col">Version</th>
+                <th scope="col">Channel</th>
+                <th scope="col">Source</th>
+                <th scope="col">Published</th>
+                <th scope="col">Size</th>
+                <th scope="col">Verification</th>
+                <th scope="col">Cache</th>
+                <th scope="col" aria-label="Actions" />
               </tr>
             </thead>
             <tbody>
@@ -646,10 +649,10 @@ export function PlayerUpdatesPanel({
               ))}
             </tbody>
           </table>
-        </div>
+        </TableContainer>
       </section>
       {manageable && (
-        <section className="settings-subsection">
+        <section className="settings-subsection player-updates__deployment">
           <header>
             <h3>New deployment</h3>
             <p>Choose a verified release and target screens or sync groups.</p>
@@ -728,7 +731,11 @@ export function PlayerUpdatesPanel({
                 />
               </span>
             </label>
-            <div className="target-picker">
+            <div
+              className="target-picker"
+              role="group"
+              aria-label="Deployment targets"
+            >
               <div className="target-picker__column">
                 <h4>
                   Screens <span>{screens.data?.items.length ?? 0}</span>
@@ -822,7 +829,7 @@ export function PlayerUpdatesPanel({
           </div>
         </section>
       )}
-      <section className="settings-subsection">
+      <section className="settings-subsection player-updates__history">
         <header>
           <h3>Deployment history</h3>
           <p>
@@ -836,19 +843,22 @@ export function PlayerUpdatesPanel({
             {mutationError(deployments.error)}
           </div>
         )}
-        <div className="settings-table-wrap">
+        <TableContainer className="table-container player-updates-table-wrap">
           <table className="player-updates-table">
+            <caption className="visually-hidden">
+              Player deployment history
+            </caption>
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Mode</th>
-                <th>Status</th>
-                <th>Rollout</th>
-                <th>Targets</th>
-                <th>Succeeded</th>
-                <th>Waiting</th>
-                <th>Failed</th>
-                <th>Attention</th>
+                <th scope="col">Name</th>
+                <th scope="col">Mode</th>
+                <th scope="col">Status</th>
+                <th scope="col">Rollout</th>
+                <th scope="col">Targets</th>
+                <th scope="col">Succeeded</th>
+                <th scope="col">Waiting</th>
+                <th scope="col">Failed</th>
+                <th scope="col">Attention</th>
               </tr>
             </thead>
             <tbody>
@@ -895,7 +905,7 @@ export function PlayerUpdatesPanel({
                 )}
             </tbody>
           </table>
-        </div>
+        </TableContainer>
       </section>
     </div>
   );
@@ -1101,12 +1111,7 @@ function UpdateStatus({ value }: { value: string }) {
         : value === "paused"
           ? "warning"
           : "neutral";
-  return (
-    <span className={`status-dot-label status-dot-label--${tone}`}>
-      <span aria-hidden="true" />
-      {humanize(value)}
-    </span>
-  );
+  return <StatusDot tone={tone} label={humanize(value)} />;
 }
 function mutationError(error: unknown) {
   return error instanceof Error ? error.message : "The request failed.";
