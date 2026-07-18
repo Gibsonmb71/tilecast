@@ -130,6 +130,22 @@ func (s *Service) CreateCollection(ctx context.Context, userID uuid.UUID, name, 
 	return v, err
 }
 
+func (s *Service) UpdateCollection(ctx context.Context, id uuid.UUID, name, description string) (ContentCollection, error) {
+	name, err := cleanOrganizationName(name, 120)
+	if err != nil {
+		return ContentCollection{}, err
+	}
+	if len(strings.TrimSpace(description)) > 500 {
+		return ContentCollection{}, errors.New("description must be 500 characters or fewer")
+	}
+	var v ContentCollection
+	err = s.db.QueryRow(ctx, `UPDATE content_collections SET name=$2,description=$3,updated_at=now() WHERE id=$1 RETURNING id,name,description,(SELECT count(*) FROM content_collection_assets WHERE collection_id=$1),created_at,updated_at`, id, name, strings.TrimSpace(description)).Scan(&v.ID, &v.Name, &v.Description, &v.AssetCount, &v.CreatedAt, &v.UpdatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		err = ErrNotFound
+	}
+	return v, err
+}
+
 func (s *Service) DeleteCollection(ctx context.Context, id uuid.UUID) error {
 	tag, err := s.db.Exec(ctx, `DELETE FROM content_collections WHERE id=$1`, id)
 	if err == nil && tag.RowsAffected() == 0 {
@@ -169,6 +185,25 @@ func (s *Service) CreateTag(ctx context.Context, userID uuid.UUID, name, color s
 	id := uuid.New()
 	var v ContentTag
 	err = s.db.QueryRow(ctx, `INSERT INTO content_tags(id,organization_id,name,color,created_by) SELECT $1,id,$2,$3,$4 FROM organization_settings RETURNING id,name,color,0`, id, name, color, userID).Scan(&v.ID, &v.Name, &v.Color, &v.AssetCount)
+	return v, err
+}
+
+func (s *Service) UpdateTag(ctx context.Context, id uuid.UUID, name, color string) (ContentTag, error) {
+	name, err := cleanOrganizationName(name, 60)
+	if err != nil {
+		return ContentTag{}, err
+	}
+	if color == "" {
+		color = "#64748b"
+	}
+	if !regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`).MatchString(color) {
+		return ContentTag{}, errors.New("color must be a six-digit hexadecimal color")
+	}
+	var v ContentTag
+	err = s.db.QueryRow(ctx, `UPDATE content_tags SET name=$2,color=$3 WHERE id=$1 RETURNING id,name,color,(SELECT count(*) FROM content_asset_tags WHERE tag_id=$1)`, id, name, color).Scan(&v.ID, &v.Name, &v.Color, &v.AssetCount)
+	if errors.Is(err, pgx.ErrNoRows) {
+		err = ErrNotFound
+	}
 	return v, err
 }
 

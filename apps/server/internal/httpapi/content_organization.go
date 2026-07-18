@@ -104,6 +104,23 @@ func (s *server) createContentCollection(w http.ResponseWriter, r *http.Request)
 	}
 	writeJSON(w, 201, map[string]any{"data": v})
 }
+func (s *server) updateContentCollection(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	var b collectionRequest
+	if e := decodeJSON(w, r, &b); e != nil {
+		writeError(w, 400, "invalid_request", e.Error())
+		return
+	}
+	v, e := s.media.UpdateCollection(r.Context(), id, b.Name, b.Description)
+	if e != nil {
+		s.writeMediaError(w, r, e)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"data": v})
+}
 func (s *server) deleteContentCollection(w http.ResponseWriter, r *http.Request) {
 	id, ok := urlUUID(w, r, "id")
 	if !ok {
@@ -136,6 +153,23 @@ func (s *server) createContentTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 201, map[string]any{"data": v})
+}
+func (s *server) updateContentTag(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	var b tagRequest
+	if e := decodeJSON(w, r, &b); e != nil {
+		writeError(w, 400, "invalid_request", e.Error())
+		return
+	}
+	v, e := s.media.UpdateTag(r.Context(), id, b.Name, b.Color)
+	if e != nil {
+		s.writeMediaError(w, r, e)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"data": v})
 }
 func (s *server) deleteContentTag(w http.ResponseWriter, r *http.Request) {
 	id, ok := urlUUID(w, r, "id")

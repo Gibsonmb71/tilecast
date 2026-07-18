@@ -1,6 +1,8 @@
 import {
   Button,
+  Dialog,
   Drawer,
+  Notice,
   PageHeader,
   Select,
   ToggleGroup,
@@ -9,8 +11,10 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   FileImage,
+  Folder,
   Upload,
   Copy,
+  Pencil,
   Trash2,
   X,
   FolderPlus,
@@ -33,6 +37,7 @@ import {
 import type {
   Asset,
   AssetStatus,
+  BulkOrganizeInput,
   User,
   WebsiteInput,
   ContentFolder,
@@ -166,6 +171,12 @@ export function ContentPage() {
     queryKey: ["content-tags"],
     queryFn: api.contentTags,
   });
+  const refreshOrganization = () => {
+    void queryClient.invalidateQueries({ queryKey: ["assets"] });
+    void queryClient.invalidateQueries({ queryKey: ["content-folders"] });
+    void queryClient.invalidateQueries({ queryKey: ["content-collections"] });
+    void queryClient.invalidateQueries({ queryKey: ["content-tags"] });
+  };
 
   useEffect(() => {
     const saved = queue
@@ -466,17 +477,11 @@ export function ContentPage() {
           collections={collections.data ?? []}
           tags={tags.data ?? []}
           assetIds={[...checkedAssetIds]}
-          onChanged={() => {
+          onApplied={() => {
             setCheckedAssetIds(new Set());
-            void queryClient.invalidateQueries({ queryKey: ["assets"] });
-            void queryClient.invalidateQueries({
-              queryKey: ["content-folders"],
-            });
-            void queryClient.invalidateQueries({
-              queryKey: ["content-collections"],
-            });
-            void queryClient.invalidateQueries({ queryKey: ["content-tags"] });
+            refreshOrganization();
           }}
+          onCatalogChanged={refreshOrganization}
         />
       )}
 
@@ -499,6 +504,11 @@ export function ContentPage() {
         <AssetCollection
           items={assets.data?.items ?? []}
           view={view}
+          folderNames={
+            new Map(
+              (folders.data ?? []).map((folder) => [folder.id, folder.name]),
+            )
+          }
           onSelect={(asset) => void api.asset(asset.id).then(setSelected)}
           canManage={canManage}
           onDuplicate={(asset) =>
@@ -583,6 +593,7 @@ export function AssetCollection({
   onDelete,
   selectedIds = new Set(),
   onToggle,
+  folderNames,
 }: {
   items: Asset[];
   view: "grid" | "list";
@@ -592,6 +603,7 @@ export function AssetCollection({
   onDelete?: (asset: Asset) => void;
   selectedIds?: Set<string>;
   onToggle?: (id: string) => void;
+  folderNames?: Map<string, string>;
 }) {
   return (
     <div className={`asset-collection asset-collection--${view}`}>
@@ -631,6 +643,32 @@ export function AssetCollection({
                   : ""}
               </small>
               <small>{formatBytes(asset.originalSize)}</small>
+              {(() => {
+                const folderLabel = asset.folderId
+                  ? folderNames?.get(asset.folderId)
+                  : undefined;
+                if (!folderLabel && !asset.tags?.length) return null;
+                return (
+                  <span className="asset-card__organization">
+                    {folderLabel && (
+                      <span className="organizer-chip organizer-chip--folder">
+                        <Folder size={11} aria-hidden />
+                        {folderLabel}
+                      </span>
+                    )}
+                    {asset.tags?.map((tag) => (
+                      <span key={tag.id} className="organizer-chip">
+                        <span
+                          className="organizer-chip__dot"
+                          style={{ backgroundColor: tag.color }}
+                          aria-hidden
+                        />
+                        {tag.name}
+                      </span>
+                    ))}
+                  </span>
+                );
+              })()}
             </span>
             <span
               className={`media-status media-status--${asset.processingStatus}`}
@@ -674,43 +712,341 @@ export function AssetCollection({
   );
 }
 
+type OrganizerKind = "folder" | "collection" | "tag";
+
+const organizerCopy: Record<
+  OrganizerKind,
+  { title: string; label: string; hint: string }
+> = {
+  folder: {
+    title: "Create folder",
+    label: "Folder name",
+    hint: "Each asset lives in one folder. Use folders for broad areas like buildings or departments.",
+  },
+  collection: {
+    title: "Create collection",
+    label: "Collection name",
+    hint: "Collections group related assets for reuse. An asset can belong to several collections.",
+  },
+  tag: {
+    title: "Create tag",
+    label: "Tag name",
+    hint: "Tags are colored labels for quick filtering. An asset can have several tags.",
+  },
+};
+
+export function CreateOrganizerDialog({
+  kind,
+  csrf,
+  onClose,
+  onCreated,
+}: {
+  kind: OrganizerKind;
+  csrf: string;
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [color, setColor] = useState("#64748b");
+  const create = useMutation({
+    mutationFn: (): Promise<unknown> =>
+      kind === "folder"
+        ? api.createContentFolder({ name, description: "" }, csrf)
+        : kind === "collection"
+          ? api.createContentCollection({ name, description: "" }, csrf)
+          : api.createContentTag({ name, color }, csrf),
+    onSuccess: () => {
+      onCreated();
+      onClose();
+    },
+  });
+  const copy = organizerCopy[kind];
+  return (
+    <Dialog open title={copy.title} onClose={onClose}>
+      <form
+        className="organizer-dialog__form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (name.trim()) create.mutate();
+        }}
+      >
+        <p className="organizer-dialog__hint">{copy.hint}</p>
+        <label className="field">
+          <span className="field__label">{copy.label}</span>
+          <input
+            autoFocus
+            required
+            value={name}
+            maxLength={kind === "tag" ? 60 : 120}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </label>
+        {kind === "tag" && (
+          <label className="field organizer-dialog__color">
+            <span className="field__label">Color</span>
+            <input
+              type="color"
+              value={color}
+              onChange={(event) => setColor(event.target.value)}
+            />
+          </label>
+        )}
+        {create.isError && (
+          <Notice variant="danger">
+            {create.error instanceof ApiError
+              ? create.error.message
+              : `The ${kind} could not be created.`}
+          </Notice>
+        )}
+        <div className="form-actions">
+          <Button variant="quiet" type="button" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" type="submit" loading={create.isPending}>
+            {copy.title}
+          </Button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
+function ManageOrganizerRow({
+  name,
+  count,
+  onRename,
+  onDelete,
+}: {
+  name: string;
+  count: number;
+  onRename: (name: string) => Promise<void>;
+  onDelete: () => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(name);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const run = async (action: () => Promise<void>) => {
+    setBusy(true);
+    setError("");
+    try {
+      await action();
+      setEditing(false);
+    } catch (cause) {
+      setError(
+        cause instanceof ApiError
+          ? cause.message
+          : "The change could not be saved.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <li className="organizer-manage__row">
+      {editing ? (
+        <form
+          className="organizer-manage__edit"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (value.trim()) void run(() => onRename(value));
+          }}
+        >
+          <input
+            autoFocus
+            required
+            aria-label={`New name for ${name}`}
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+          />
+          <button
+            type="submit"
+            className="button button--primary"
+            disabled={busy}
+          >
+            Save
+          </button>
+          <button
+            type="button"
+            className="button button--quiet"
+            onClick={() => {
+              setEditing(false);
+              setValue(name);
+              setError("");
+            }}
+          >
+            Cancel
+          </button>
+        </form>
+      ) : (
+        <>
+          <span className="organizer-manage__name">
+            {name} <small>({count})</small>
+          </span>
+          <span className="organizer-manage__actions">
+            <button
+              type="button"
+              className="button button--quiet"
+              onClick={() => setEditing(true)}
+            >
+              <Pencil size={13} aria-hidden /> Rename
+            </button>
+            <button
+              type="button"
+              className="button button--danger-quiet"
+              disabled={busy}
+              onClick={() => void run(onDelete)}
+            >
+              <Trash2 size={13} aria-hidden /> Delete
+            </button>
+          </span>
+        </>
+      )}
+      {error && <span className="field__error">{error}</span>}
+    </li>
+  );
+}
+
+function ManageOrganizationDialog({
+  folders,
+  collections,
+  tags,
+  csrf,
+  onChanged,
+  onClose,
+}: {
+  folders: ContentFolder[];
+  collections: ContentCollection[];
+  tags: ContentTag[];
+  csrf: string;
+  onChanged: () => void;
+  onClose: () => void;
+}) {
+  const sections: {
+    title: string;
+    empty: string;
+    rows: {
+      id: string;
+      name: string;
+      count: number;
+      rename: (name: string) => Promise<unknown>;
+      remove: () => Promise<unknown>;
+      confirmText: string;
+    }[];
+  }[] = [
+    {
+      title: "Folders",
+      empty: "No folders yet.",
+      rows: folders.map((folder) => ({
+        id: folder.id,
+        name: folder.name,
+        count: folder.assetCount,
+        rename: (name) =>
+          api.updateContentFolder(
+            folder.id,
+            {
+              name,
+              description: folder.description,
+              parentId: folder.parentId,
+            },
+            csrf,
+          ),
+        remove: () => api.deleteContentFolder(folder.id, csrf),
+        confirmText: `Delete the folder "${folder.name}"? Its assets stay in the library and become unfiled.`,
+      })),
+    },
+    {
+      title: "Collections",
+      empty: "No collections yet.",
+      rows: collections.map((collection) => ({
+        id: collection.id,
+        name: collection.name,
+        count: collection.assetCount,
+        rename: (name) =>
+          api.updateContentCollection(
+            collection.id,
+            { name, description: collection.description },
+            csrf,
+          ),
+        remove: () => api.deleteContentCollection(collection.id, csrf),
+        confirmText: `Delete the collection "${collection.name}"? Its assets stay in the library.`,
+      })),
+    },
+    {
+      title: "Tags",
+      empty: "No tags yet.",
+      rows: tags.map((tag) => ({
+        id: tag.id,
+        name: tag.name,
+        count: tag.assetCount ?? 0,
+        rename: (name) =>
+          api.updateContentTag(tag.id, { name, color: tag.color }, csrf),
+        remove: () => api.deleteContentTag(tag.id, csrf),
+        confirmText: `Delete the tag "${tag.name}"? It is removed from all assets.`,
+      })),
+    },
+  ];
+  return (
+    <Dialog
+      open
+      title="Manage organization"
+      onClose={onClose}
+      className="organizer-manage"
+    >
+      {sections.map((section) => (
+        <section key={section.title} className="organizer-manage__section">
+          <h3>{section.title}</h3>
+          {section.rows.length === 0 ? (
+            <p className="organizer-manage__empty">{section.empty}</p>
+          ) : (
+            <ul>
+              {section.rows.map((row) => (
+                <ManageOrganizerRow
+                  key={row.id}
+                  name={row.name}
+                  count={row.count}
+                  onRename={async (name) => {
+                    await row.rename(name);
+                    onChanged();
+                  }}
+                  onDelete={async () => {
+                    if (!confirm(row.confirmText)) return;
+                    await row.remove();
+                    onChanged();
+                  }}
+                />
+              ))}
+            </ul>
+          )}
+        </section>
+      ))}
+    </Dialog>
+  );
+}
+
 function ContentOrganizer({
   csrf,
   folders,
   collections,
   tags,
   assetIds,
-  onChanged,
+  onApplied,
+  onCatalogChanged,
 }: {
   csrf: string;
   folders: ContentFolder[];
   collections: ContentCollection[];
   tags: ContentTag[];
   assetIds: string[];
-  onChanged: () => void;
+  onApplied: () => void;
+  onCatalogChanged: () => void;
 }) {
   const [folderId, setFolderId] = useState("");
   const [tagId, setTagId] = useState("");
   const [collectionId, setCollectionId] = useState("");
   const [error, setError] = useState("");
-  const createFolder = async () => {
-    const name = prompt("Folder name");
-    if (!name) return;
-    await api.createContentFolder({ name, description: "" }, csrf);
-    onChanged();
-  };
-  const createCollection = async () => {
-    const name = prompt("Collection name");
-    if (!name) return;
-    await api.createContentCollection({ name, description: "" }, csrf);
-    onChanged();
-  };
-  const createTag = async () => {
-    const name = prompt("Tag name");
-    if (!name) return;
-    await api.createContentTag({ name, color: "#64748b" }, csrf);
-    onChanged();
-  };
+  const [creating, setCreating] = useState<OrganizerKind>();
+  const [managing, setManaging] = useState(false);
   const apply = async () => {
     if (!assetIds.length) return;
     setError("");
@@ -742,7 +1078,7 @@ function ContentOrganizer({
       setFolderId("");
       setTagId("");
       setCollectionId("");
-      onChanged();
+      onApplied();
     } catch (cause) {
       setError(
         cause instanceof ApiError
@@ -757,24 +1093,33 @@ function ContentOrganizer({
         <button
           type="button"
           className="button button--quiet"
-          onClick={() => void createFolder()}
+          onClick={() => setCreating("folder")}
         >
           <FolderPlus size={15} /> Create folder
         </button>
         <button
           type="button"
           className="button button--quiet"
-          onClick={() => void createCollection()}
+          onClick={() => setCreating("collection")}
         >
           <Library size={15} /> Create collection
         </button>
         <button
           type="button"
           className="button button--quiet"
-          onClick={() => void createTag()}
+          onClick={() => setCreating("tag")}
         >
           <Tags size={15} /> Create tag
         </button>
+        {(folders.length > 0 || collections.length > 0 || tags.length > 0) && (
+          <button
+            type="button"
+            className="button button--quiet"
+            onClick={() => setManaging(true)}
+          >
+            <Pencil size={15} /> Manage
+          </button>
+        )}
       </div>
       {assetIds.length > 0 && (
         <div className="content-organizer__bulk">
@@ -836,7 +1181,32 @@ function ContentOrganizer({
           </button>
         </div>
       )}
+      {assetIds.length === 0 &&
+        (folders.length > 0 || collections.length > 0 || tags.length > 0) && (
+          <span className="content-organizer__hint">
+            Select items to move them into a folder or apply tags and
+            collections.
+          </span>
+        )}
       {error && <span className="notice notice--error">{error}</span>}
+      {creating && (
+        <CreateOrganizerDialog
+          kind={creating}
+          csrf={csrf}
+          onClose={() => setCreating(undefined)}
+          onCreated={onCatalogChanged}
+        />
+      )}
+      {managing && (
+        <ManageOrganizationDialog
+          folders={folders}
+          collections={collections}
+          tags={tags}
+          csrf={csrf}
+          onChanged={onCatalogChanged}
+          onClose={() => setManaging(false)}
+        />
+      )}
     </div>
   );
 }
@@ -900,6 +1270,158 @@ function AssetDetails(props: {
     <MediaAssetDetails {...props} />
   );
 }
+export function AssetOrganization({
+  asset,
+  canManage,
+  csrf,
+  onChanged,
+}: {
+  asset: Asset;
+  canManage: boolean;
+  csrf: string;
+  onChanged: (asset: Asset) => void;
+}) {
+  const queryClient = useQueryClient();
+  const folders = useQuery({
+    queryKey: ["content-folders"],
+    queryFn: api.contentFolders,
+  });
+  const collections = useQuery({
+    queryKey: ["content-collections"],
+    queryFn: api.contentCollections,
+  });
+  const tags = useQuery({
+    queryKey: ["content-tags"],
+    queryFn: api.contentTags,
+  });
+  const organize = useMutation({
+    mutationFn: async (input: Omit<BulkOrganizeInput, "assetIds">) => {
+      await api.bulkOrganize({ assetIds: [asset.id], ...input }, csrf);
+      return api.asset(asset.id);
+    },
+    onSuccess: (latest) => {
+      onChanged(latest);
+      void queryClient.invalidateQueries({ queryKey: ["content-folders"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["content-collections"],
+      });
+      void queryClient.invalidateQueries({ queryKey: ["content-tags"] });
+    },
+  });
+  const assetTagIds = new Set((asset.tags ?? []).map((tag) => tag.id));
+  const assetCollectionIds = new Set(asset.collectionIds ?? []);
+  if (
+    !canManage &&
+    !asset.folderId &&
+    assetTagIds.size === 0 &&
+    assetCollectionIds.size === 0
+  )
+    return null;
+  return (
+    <section className="asset-organization" aria-label="Organization">
+      <h3>Organization</h3>
+      <label className="field">
+        <span className="field__label">Folder</span>
+        <Select
+          aria-label="Folder"
+          value={asset.folderId ?? ""}
+          disabled={!canManage || organize.isPending}
+          onChange={(event) =>
+            organize.mutate({
+              setFolder: true,
+              ...(event.target.value ? { folderId: event.target.value } : {}),
+            })
+          }
+        >
+          <option value="">Unfiled</option>
+          {folders.data?.map((folder) => (
+            <option key={folder.id} value={folder.id}>
+              {folder.name}
+            </option>
+          ))}
+        </Select>
+      </label>
+      <div className="asset-organization__group">
+        <span className="field__label">Tags</span>
+        {(tags.data?.length ?? 0) === 0 ? (
+          <p className="asset-organization__empty">
+            No tags yet. Create tags from the media library toolbar.
+          </p>
+        ) : (
+          <div className="asset-organization__chips">
+            {tags.data?.map((tag) => {
+              const active = assetTagIds.has(tag.id);
+              return (
+                <button
+                  key={tag.id}
+                  type="button"
+                  className={`organizer-chip${active ? " organizer-chip--active" : ""}`}
+                  aria-pressed={active}
+                  disabled={!canManage || organize.isPending}
+                  onClick={() =>
+                    organize.mutate(
+                      active
+                        ? { removeTagIds: [tag.id] }
+                        : { addTagIds: [tag.id] },
+                    )
+                  }
+                >
+                  <span
+                    className="organizer-chip__dot"
+                    style={{ backgroundColor: tag.color }}
+                    aria-hidden
+                  />
+                  {tag.name}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+      <div className="asset-organization__group">
+        <span className="field__label">Collections</span>
+        {(collections.data?.length ?? 0) === 0 ? (
+          <p className="asset-organization__empty">
+            No collections yet. Create collections from the media library
+            toolbar.
+          </p>
+        ) : (
+          <div className="asset-organization__chips">
+            {collections.data?.map((collection) => {
+              const active = assetCollectionIds.has(collection.id);
+              return (
+                <button
+                  key={collection.id}
+                  type="button"
+                  className={`organizer-chip${active ? " organizer-chip--active" : ""}`}
+                  aria-pressed={active}
+                  disabled={!canManage || organize.isPending}
+                  onClick={() =>
+                    organize.mutate(
+                      active
+                        ? { removeCollectionIds: [collection.id] }
+                        : { addCollectionIds: [collection.id] },
+                    )
+                  }
+                >
+                  {collection.name}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+      {organize.isError && (
+        <Notice variant="danger">
+          {organize.error instanceof ApiError
+            ? organize.error.message
+            : "Organization could not be updated."}
+        </Notice>
+      )}
+    </section>
+  );
+}
+
 function MediaAssetDetails({
   asset,
   canManage,
@@ -979,6 +1501,12 @@ function MediaAssetDetails({
             onChange={(event) => setDescription(event.target.value)}
           />
         </label>
+        <AssetOrganization
+          asset={asset}
+          canManage={canManage}
+          csrf={csrf}
+          onChanged={onChanged}
+        />
         <dl>
           <div>
             <dt>Status</dt>
