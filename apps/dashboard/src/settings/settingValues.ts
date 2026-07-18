@@ -11,6 +11,19 @@ const legacyTimezoneAliases: Record<string, string> = {
   PDT: "America/Los_Angeles",
 };
 
+const commonTimezoneLabels: Record<string, string> = {
+  UTC: "UTC",
+  "America/Halifax": "Atlantic Time",
+  "America/New_York": "Eastern Time",
+  "America/Chicago": "Central Time",
+  "America/Denver": "Mountain Time",
+  "America/Phoenix": "Arizona Time",
+  "America/Los_Angeles": "Pacific Time",
+  "America/Anchorage": "Alaska Time",
+  "Pacific/Honolulu": "Hawaii Time",
+};
+
+const commonTimezones = Object.keys(commonTimezoneLabels);
 const localTimePattern = /^(?:[01]\d|2[0-3]):[0-5]\d(?::00)?$/;
 
 export function normalizeLocalTime(value: unknown) {
@@ -45,38 +58,19 @@ export function normalizeSettingValues(
 }
 
 export function timezoneOptions(current: unknown) {
-  const supported = (
-    Intl as typeof Intl & { supportedValuesOf?: (key: "timeZone") => string[] }
-  ).supportedValuesOf?.("timeZone");
-  const zones = new Set([
-    "UTC",
-    "America/New_York",
-    "America/Chicago",
-    "America/Denver",
-    "America/Los_Angeles",
-    "Europe/London",
-    ...(supported ?? []),
-  ]);
+  const zones = [...commonTimezones];
   const normalizedCurrent = normalizeTimezone(current);
   if (
-    normalizedCurrent === "UTC" ||
-    (normalizedCurrent.includes("/") && normalizedCurrent.length < 200)
+    !zones.includes(normalizedCurrent) &&
+    (normalizedCurrent === "UTC" ||
+      (normalizedCurrent.includes("/") && normalizedCurrent.length < 200))
   )
-    zones.add(normalizedCurrent);
-  return [...zones].sort((left, right) =>
-    timezoneLabel(left).localeCompare(timezoneLabel(right)),
-  );
+    zones.push(normalizedCurrent);
+  return zones;
 }
 
 export function timezoneLabel(zone: string) {
-  const common: Record<string, string> = {
-    "America/New_York": "Eastern Time",
-    "America/Chicago": "Central Time",
-    "America/Denver": "Mountain Time",
-    "America/Los_Angeles": "Pacific Time",
-  };
-  if (zone === "UTC") return "UTC";
-  const friendly = common[zone];
-  if (friendly) return `${friendly} (${zone})`;
-  return zone.replaceAll("_", " ").replace("/", " — ");
+  return (
+    commonTimezoneLabels[zone] ?? zone.replaceAll("_", " ").replace("/", " — ")
+  );
 }
