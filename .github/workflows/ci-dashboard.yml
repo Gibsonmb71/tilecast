@@ -24,6 +24,7 @@ concurrency:
 
 permissions:
   contents: read
+  checks: write
 
 jobs:
   dashboard:
@@ -37,5 +38,17 @@ jobs:
       - run: npm ci
       - run: npm run format:check
       - run: npm run lint
-      - run: npm test
+      - name: Test
+        working-directory: apps/dashboard
+        run: |
+          mkdir -p test-results
+          npm test -- --reporter=default --reporter=junit --outputFile=test-results/vitest.xml
+      - name: Test Reporter
+        if: ${{ !cancelled() }}
+        uses: dorny/test-reporter@v3.0.0
+        with:
+          name: Dashboard tests
+          path: apps/dashboard/test-results/vitest.xml
+          reporter: java-junit
+          fail-on-empty: false
       - run: npm run build
