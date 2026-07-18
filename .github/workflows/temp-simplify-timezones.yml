@@ -3,6 +3,8 @@ name: Temporary simplify timezone selector
 on:
   push:
     branches: [gibby/simplify-timezone-options]
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: write
