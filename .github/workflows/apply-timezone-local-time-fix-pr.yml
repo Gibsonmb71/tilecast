@@ -1,0 +1,80 @@
+name: Apply timezone fix on pull request
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-test:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: tilecast_test
+          POSTGRES_USER: tilecast
+          POSTGRES_PASSWORD: tilecast_test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tilecast -d tilecast_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/server/go.mod
+          cache-dependency-path: apps/server/go.sum
+      - name: Extract and apply source patch
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/apply-timezone-local-time-fix.yml')
+          lines = workflow.read_text().splitlines()
+          start = next(i for i, line in enumerate(lines) if line.strip() == "python <<'PY'") + 1
+          end = next(i for i in range(start, len(lines)) if lines[i].strip() == 'PY')
+          script = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines[start:end])
+          Path('/tmp/apply-timezone-fix.py').write_text(script + '\n')
+          PY
+          python /tmp/apply-timezone-fix.py
+          git restore .github/workflows/apply-timezone-local-time-fix.yml
+      - run: npm ci
+      - name: Format dashboard files
+        run: npx prettier --write apps/dashboard/src/settings/settingValues.ts apps/dashboard/src/settings/SettingControl.tsx apps/dashboard/src/settings/PlayerPolicyEditor.tsx apps/dashboard/src/settings/settingsExperience.test.tsx apps/dashboard/src/pages/SettingsPage.tsx apps/dashboard/src/schedules/ScheduleBuilder.tsx
+      - name: Format server files
+        run: gofmt -w apps/server/internal/settings/registry.go apps/server/internal/settings/registry_test.go apps/server/internal/settings/service_integration_test.go
+      - name: Dashboard validation
+        run: |
+          npm run format:check
+          npm run lint
+          npm test
+          npm run build
+      - name: Server validation
+        working-directory: apps/server
+        env:
+          TEST_DATABASE_URL: postgres://tilecast:tilecast_test_password@localhost:5432/tilecast_test?sslmode=disable
+        run: |
+          go vet ./...
+          go test -p 1 ./...
+          go build ./cmd/tilecast
+      - name: Commit verified source changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/dashboard apps/server
+          git commit -m "Fix timezone and local-time settings handling"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
