@@ -27,43 +27,49 @@ jobs:
 
           select_path = Path("apps/dashboard/src/components/ui/SignalSelect.tsx")
           select_source = select_path.read_text()
-          old_scroll = '''    const close = () => setOpen(false);
-              window.addEventListener("resize", close);
-              window.addEventListener("scroll", close, true);
-              return () => {
-                window.removeEventListener("resize", close);
-                window.removeEventListener("scroll", close, true);
-              };'''.replace("              ", "    ")
-          new_scroll = '''    const close = () => setOpen(false);
-              const closeOnExternalScroll = (event: Event) => {
-                const target = event.target;
-                const listbox = document.getElementById(listboxId);
-                if (target instanceof Node && listbox?.contains(target)) return;
-                setOpen(false);
-              };
-              window.addEventListener("resize", close);
-              window.addEventListener("scroll", closeOnExternalScroll, true);
-              return () => {
-                window.removeEventListener("resize", close);
-                window.removeEventListener("scroll", closeOnExternalScroll, true);
-              };'''.replace("              ", "    ")
+          old_scroll = "\n".join([
+              "    const close = () => setOpen(false);",
+              '    window.addEventListener("resize", close);',
+              '    window.addEventListener("scroll", close, true);',
+              "    return () => {",
+              '      window.removeEventListener("resize", close);',
+              '      window.removeEventListener("scroll", close, true);',
+              "    };",
+          ])
+          new_scroll = "\n".join([
+              "    const close = () => setOpen(false);",
+              "    const closeOnExternalScroll = (event: Event) => {",
+              "      const target = event.target;",
+              "      const listbox = document.getElementById(listboxId);",
+              "      if (target instanceof Node && listbox?.contains(target)) return;",
+              "      setOpen(false);",
+              "    };",
+              '    window.addEventListener("resize", close);',
+              '    window.addEventListener("scroll", closeOnExternalScroll, true);',
+              "    return () => {",
+              '      window.removeEventListener("resize", close);',
+              '      window.removeEventListener("scroll", closeOnExternalScroll, true);',
+              "    };",
+          ])
           if old_scroll not in select_source:
               raise SystemExit("SignalSelect scroll handler block not found")
           select_path.write_text(select_source.replace(old_scroll, new_scroll, 1))
 
           test_path = Path("apps/dashboard/src/settings/settingsExperience.test.tsx")
           test_source = test_path.read_text()
-          anchor = '''    expect(document.querySelector(".signal-select__native")).toHaveValue(
-              "America/New_York",
-            );'''.replace("              ", "      ").replace("            );", "    );")
-          insertion = anchor + '''
-
-            fireEvent.click(timezone);
-            const timezoneListbox = screen.getByRole("listbox");
-            fireEvent.scroll(timezoneListbox);
-            expect(screen.getByRole("listbox")).toBeInTheDocument();
-            fireEvent.scroll(window);
-            expect(screen.queryByRole("listbox")).not.toBeInTheDocument();'''.replace("            ", "    ")
+          anchor = "\n".join([
+              '    expect(document.querySelector(".signal-select__native")).toHaveValue(',
+              '      "America/New_York",',
+              "    );",
+          ])
+          insertion = anchor + "\n\n" + "\n".join([
+              "    fireEvent.click(timezone);",
+              '    const timezoneListbox = screen.getByRole("listbox");',
+              "    fireEvent.scroll(timezoneListbox);",
+              '    expect(screen.getByRole("listbox")).toBeInTheDocument();',
+              "    fireEvent.scroll(window);",
+              '    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();',
+          ])
           if anchor not in test_source:
               raise SystemExit("Timezone settings test insertion point not found")
           test_path.write_text(test_source.replace(anchor, insertion, 1))
