@@ -72,7 +72,7 @@ export function AssetFilterPortal() {
           ".content-page:not(.apps-page) .content-organizer__create",
         ) ??
           document.querySelector<HTMLElement>(
-            ".content-page:not(.apps-page) > .page-heading",
+            ".content-page:not(.apps-page) > .page-header",
           ),
       );
     findTarget();

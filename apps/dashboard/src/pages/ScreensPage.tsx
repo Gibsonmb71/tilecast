@@ -1,4 +1,4 @@
-import { Select } from "../components/ui";
+import { Button, Dialog, PageHeader, Select, ViewTabs } from "../components/ui";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -120,22 +120,22 @@ export function ScreensPage() {
   });
   return (
     <div className="screens-page">
-      <header className="page-heading">
-        <div>
-          <h2>Screens</h2>
-          <p>Pair and monitor Android TV, Google TV, and Fire TV players.</p>
-        </div>
-        {manageable && (
-          <span className="heading-actions">
-            <Link className="button button--quiet" to="/groups">
-              Sync groups
-            </Link>
-            <Link className="button button--primary" to="/screens/pair">
-              <Plus size={16} /> Pair screen
-            </Link>
-          </span>
-        )}
-      </header>
+      <PageHeader
+        title="Screens"
+        description="Pair and monitor Android TV, Google TV, and Fire TV players."
+        actions={
+          manageable ? (
+            <>
+              <Link className="button button--quiet" to="/groups">
+                Sync groups
+              </Link>
+              <Link className="button button--primary" to="/screens/pair">
+                <Plus size={16} aria-hidden="true" /> Pair screen
+              </Link>
+            </>
+          ) : undefined
+        }
+      />
       <EmergencyPanel
         screens={screens.data?.items ?? []}
         canManage={manageable}
@@ -950,28 +950,30 @@ export function ScreenDetailPage() {
   };
   return (
     <div className="screen-detail">
-      <header className="page-heading">
-        <div>
+      <PageHeader
+        eyebrow={
           <Link className="back-link" to="/screens">
             ← Screens
           </Link>
-          <h2>{screen.name}</h2>
-          <p>{screen.location || "No location set"}</p>
-        </div>
-        <div className="screen-detail__heading-actions">
-          <StatusLabel status={screen.status} />
-          {canManageScreens(auth.status?.user) && (
-            <button
-              type="button"
-              className="button button--secondary"
-              onClick={() => setEditingDetails((editing) => !editing)}
-            >
-              <Pencil size={15} aria-hidden="true" />
-              {editingDetails ? "Close editor" : "Edit details"}
-            </button>
-          )}
-        </div>
-      </header>
+        }
+        title={screen.name}
+        description={screen.location || "No location set"}
+        actions={
+          <>
+            <StatusLabel status={screen.status} />
+            {canManageScreens(auth.status?.user) && (
+              <button
+                type="button"
+                className="button button--secondary"
+                onClick={() => setEditingDetails((editing) => !editing)}
+              >
+                <Pencil size={15} aria-hidden="true" />
+                {editingDetails ? "Close editor" : "Edit details"}
+              </button>
+            )}
+          </>
+        }
+      />
       {editingDetails && (
         <section
           className="screen-details-editor"
@@ -1041,29 +1043,23 @@ export function ScreenDetailPage() {
           </form>
         </section>
       )}
-      <nav className="screen-detail-tabs" aria-label="Screen details">
-        {(
-          [
-            ["overview", "Overview"],
-            ["content", "Content"],
-            ["player-settings", "Player settings"],
-            ["reliability", "Reliability"],
-            ["commands", "Commands"],
-          ] as const
-        ).map(([value, label]) => (
-          <button
-            key={value}
-            type="button"
-            aria-current={tab === value ? "page" : undefined}
-            onClick={() => selectTab(value)}
-          >
-            {label}
-            {value === "player-settings" && policyDirty && (
-              <span className="screen-detail-tabs__dirty">Unsaved</span>
-            )}
-          </button>
-        ))}
-      </nav>
+      <ViewTabs
+        className="screen-detail-tabs"
+        label="Screen details"
+        value={tab}
+        onValueChange={selectTab}
+        items={[
+          { value: "overview", label: "Overview" },
+          { value: "content", label: "Content" },
+          {
+            value: "player-settings",
+            label: "Player settings",
+            marker: policyDirty ? "Unsaved" : undefined,
+          },
+          { value: "reliability", label: "Reliability" },
+          { value: "commands", label: "Commands" },
+        ]}
+      />
 
       {tab === "overview" && (
         <section
@@ -1893,36 +1889,28 @@ export function ScreenDetailPage() {
           )}
         </>
       )}
-      {confirmRevoke && (
-        <div className="modal-backdrop" role="presentation">
-          <section
-            className="confirm-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="revoke-title"
+      <Dialog
+        open={confirmRevoke}
+        title={`Revoke pairing for ${screen.name}?`}
+        onClose={() => setConfirmRevoke(false)}
+      >
+        <p>
+          The player will disconnect immediately and cannot reconnect without a
+          new pairing approval.
+        </p>
+        <div className="form-actions">
+          <Button variant="quiet" onClick={() => setConfirmRevoke(false)}>
+            Cancel
+          </Button>
+          <Button
+            variant="danger"
+            loading={revoke.isPending}
+            onClick={() => revoke.mutate()}
           >
-            <h3 id="revoke-title">Revoke pairing for {screen.name}?</h3>
-            <p>
-              The player will disconnect immediately and cannot reconnect
-              without a new pairing approval.
-            </p>
-            <div className="form-actions">
-              <button
-                className="button button--quiet"
-                onClick={() => setConfirmRevoke(false)}
-              >
-                Cancel
-              </button>
-              <button
-                className="button button--danger"
-                onClick={() => revoke.mutate()}
-              >
-                Revoke pairing
-              </button>
-            </div>
-          </section>
+            Revoke pairing
+          </Button>
         </div>
-      )}
+      </Dialog>
     </div>
   );
 }

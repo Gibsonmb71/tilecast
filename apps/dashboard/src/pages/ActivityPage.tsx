@@ -1,4 +1,4 @@
-import { Select } from "../components/ui";
+import { PageHeader, Select, ViewTabs } from "../components/ui";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router";
@@ -100,6 +100,18 @@ export function ActivityPage() {
       : canExport && tab === "audit"
         ? `/api/v1/activity/audit/export.csv?${activityParams(range, auditFilters)}`
         : undefined;
+  const activityTabs = [
+    { value: "overview" as const, label: "Overview" },
+    { value: "proof" as const, label: "Proof of Play" },
+    ...(["owner", "administrator"].includes(auth.status?.user?.role ?? "")
+      ? [
+          { value: "events" as const, label: "Screen Events" },
+          { value: "audit" as const, label: "Audit Log" },
+        ]
+      : auth.status?.user?.role === "editor"
+        ? [{ value: "audit" as const, label: "Audit Log" }]
+        : []),
+  ];
 
   function selectTab(value: ActivityTab) {
     const next = new URLSearchParams(searchParams);
@@ -127,88 +139,66 @@ export function ActivityPage() {
 
   return (
     <section className="activity-page">
-      <header className="page-heading activity-heading">
-        <div>
-          <h2>Activity</h2>
-          <p>
-            Operational reporting, Player-confirmed proof of play, technical
-            screen events, and administrator history.
-          </p>
-        </div>
-        <div className="activity-heading-actions">
-          <div className="activity-range">
-            <label>
-              <span>Date range</span>
-              <Select
-                value={preset}
-                onChange={(e) => setPreset(e.target.value)}
+      <PageHeader
+        className="activity-heading"
+        title="Activity"
+        description="Operational reporting, Player-confirmed proof of play, technical screen events, and administrator history."
+        actions={
+          <div className="activity-heading-actions">
+            <div className="activity-range">
+              <label>
+                <span>Date range</span>
+                <Select
+                  value={preset}
+                  onChange={(e) => setPreset(e.target.value)}
+                >
+                  <option value="24h">Last 24 hours</option>
+                  <option value="7d">Last 7 days</option>
+                  <option value="30d">Last 30 days</option>
+                  <option value="custom">Custom range</option>
+                </Select>
+              </label>
+              {preset === "custom" && (
+                <>
+                  <label>
+                    <span>From</span>
+                    <input
+                      type="datetime-local"
+                      value={customFrom}
+                      onChange={(e) => setCustomFrom(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    <span>To</span>
+                    <input
+                      type="datetime-local"
+                      value={customTo}
+                      onChange={(e) => setCustomTo(e.target.value)}
+                    />
+                  </label>
+                </>
+              )}
+            </div>
+            {exportHref && (
+              <a
+                className="button button--secondary activity-export"
+                href={exportHref}
+                title="Export the current date range and filters"
               >
-                <option value="24h">Last 24 hours</option>
-                <option value="7d">Last 7 days</option>
-                <option value="30d">Last 30 days</option>
-                <option value="custom">Custom range</option>
-              </Select>
-            </label>
-            {preset === "custom" && (
-              <>
-                <label>
-                  <span>From</span>
-                  <input
-                    type="datetime-local"
-                    value={customFrom}
-                    onChange={(e) => setCustomFrom(e.target.value)}
-                  />
-                </label>
-                <label>
-                  <span>To</span>
-                  <input
-                    type="datetime-local"
-                    value={customTo}
-                    onChange={(e) => setCustomTo(e.target.value)}
-                  />
-                </label>
-              </>
+                <Download size={15} /> Export CSV
+              </a>
             )}
           </div>
-          {exportHref && (
-            <a
-              className="button button--secondary activity-export"
-              href={exportHref}
-              title="Export the current date range and filters"
-            >
-              <Download size={15} /> Export CSV
-            </a>
-          )}
-        </div>
-      </header>
+        }
+      />
 
-      <nav className="activity-tabs" aria-label="Activity reports">
-        {(
-          [
-            ["overview", "Overview"],
-            ["proof", "Proof of Play"],
-            ...(["owner", "administrator"].includes(
-              auth.status?.user?.role ?? "",
-            )
-              ? ([
-                  ["events", "Screen Events"],
-                  ["audit", "Audit Log"],
-                ] as const)
-              : auth.status?.user?.role === "editor"
-                ? ([["audit", "Audit Log"]] as const)
-                : []),
-          ] as const
-        ).map(([value, label]) => (
-          <button
-            key={value}
-            type="button"
-            aria-current={tab === value ? "page" : undefined}
-            onClick={() => selectTab(value)}
-          >
-            {label}
-          </button>
-        ))}
-      </nav>
+      <ViewTabs
+        className="activity-tabs"
+        label="Activity reports"
+        value={tab}
+        items={activityTabs}
+        onValueChange={selectTab}
+      />
 
       {tab !== "overview" && (
         <div className="activity-filter-area">

@@ -1,6 +1,13 @@
-import { Select } from "../components/ui";
+import {
+  Button,
+  EmptyState,
+  Notice,
+  PageHeader,
+  Select,
+  ViewToggle,
+} from "../components/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Grid2X2, List, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
 import { api, ApiError } from "../api/client";
@@ -63,20 +70,20 @@ export function WidgetsPage() {
 
   return (
     <section className="content-page apps-page">
-      <header className="page-heading">
-        <div>
-          <h2>Widgets</h2>
-          <p>Reusable visual content for playlists and Layouts.</p>
-        </div>
-        {canManage && (
-          <button
-            className="button button--primary"
-            onClick={() => void navigate("/widgets/new")}
-          >
-            <Plus size={16} /> Create Widget
-          </button>
-        )}
-      </header>
+      <PageHeader
+        title="Widgets"
+        description="Reusable visual content for playlists and Layouts."
+        actions={
+          canManage ? (
+            <Button
+              variant="primary"
+              onClick={() => void navigate("/widgets/new")}
+            >
+              <Plus size={16} aria-hidden="true" /> Create Widget
+            </Button>
+          ) : undefined
+        }
+      />
       <DashboardListToolbar>
         <DashboardSearch
           value={search}
@@ -97,46 +104,34 @@ export function WidgetsPage() {
             </option>
           ))}
         </Select>
-        <span className="view-switch" aria-label="View">
-          <button
-            aria-label="Grid view"
-            aria-pressed={view === "grid"}
-            onClick={() => setView("grid")}
-          >
-            <Grid2X2 size={16} />
-          </button>
-          <button
-            aria-label="List view"
-            aria-pressed={view === "list"}
-            onClick={() => setView("list")}
-          >
-            <List size={16} />
-          </button>
-        </span>
+        <ViewToggle value={view} onValueChange={setView} />
       </DashboardListToolbar>
       {widgets.isError && (
-        <div className="notice notice--error">
+        <Notice variant="danger">
           {widgets.error instanceof ApiError
             ? widgets.error.message
             : "Widgets could not be loaded."}
-        </div>
+        </Notice>
       )}
       {widgets.isLoading ? (
         <div className="table-loading">Loading Widgets...</div>
       ) : widgets.data?.items.length === 0 ? (
-        <div className="content-empty">
-          <Plus size={30} />
-          <h3>No Widgets yet</h3>
-          <p>Create a reusable Widget for signage content.</p>
-          {canManage && (
-            <button
-              className="button button--primary"
-              onClick={() => void navigate("/widgets/new")}
-            >
-              Create Widget
-            </button>
-          )}
-        </div>
+        <EmptyState
+          className="content-empty"
+          icon={<Plus size={24} aria-hidden="true" />}
+          title="No Widgets yet"
+          message="Create a reusable Widget for signage content."
+          action={
+            canManage ? (
+              <Button
+                variant="primary"
+                onClick={() => void navigate("/widgets/new")}
+              >
+                Create Widget
+              </Button>
+            ) : undefined
+          }
+        />
       ) : (
         <AssetCollection
           items={widgets.data?.items ?? []}

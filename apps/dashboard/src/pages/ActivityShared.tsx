@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { CheckCircle2 } from "lucide-react";
+import { Pagination } from "../components/ui";
 
 export type ActivityResult =
   | "playing"
@@ -188,24 +189,14 @@ export function ActivityPagination({
 }) {
   if (!pagination.canGoBack && !nextCursor) return null;
   return (
-    <nav className="activity-pagination" aria-label="Activity pages">
-      <button
-        type="button"
-        className="button button--secondary"
-        disabled={!pagination.canGoBack}
-        onClick={pagination.previous}
-      >
-        Previous
-      </button>
-      <button
-        type="button"
-        className="button button--secondary"
-        disabled={!nextCursor}
-        onClick={() => nextCursor && pagination.next(nextCursor)}
-      >
-        Next
-      </button>
-    </nav>
+    <Pagination
+      className="activity-pagination"
+      label="Activity pages"
+      previous={pagination.previous}
+      previousDisabled={!pagination.canGoBack}
+      next={() => nextCursor && pagination.next(nextCursor)}
+      nextDisabled={!nextCursor}
+    />
   );
 }
 

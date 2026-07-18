@@ -43,6 +43,15 @@
   border-color: var(--tc-input-border);
 }
 
+.asset-details-drawer .asset-details {
+  width: auto;
+  height: auto;
+  padding: 0;
+  overflow: visible;
+  background: transparent;
+  box-shadow: none;
+}
+
 /* Remove generic input chrome from inputs whose wrapper owns the search field. */
 .search-control {
   min-width: 0;

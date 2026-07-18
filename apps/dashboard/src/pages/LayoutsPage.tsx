@@ -1,4 +1,10 @@
-import { Select } from "../components/ui";
+import {
+  Button,
+  EmptyState,
+  Notice,
+  PageHeader,
+  Select,
+} from "../components/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Copy, LayoutTemplate, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
@@ -152,22 +158,16 @@ export function LayoutsPage() {
   });
   return (
     <section className="layouts-page">
-      <header className="content-header layouts-header">
-        <div>
-          <h2>Layouts</h2>
-          <p>
-            Compose complete screen presentations from native primitives and
-            reusable Content.
-          </p>
-        </div>
-        <button
-          className="button button--primary"
-          onClick={() => setCreating(true)}
-        >
-          <Plus size={17} />
-          New Layout
-        </button>
-      </header>
+      <PageHeader
+        title="Layouts"
+        description="Compose complete screen presentations from native primitives and reusable Content."
+        actions={
+          <Button variant="primary" onClick={() => setCreating(true)}>
+            <Plus size={17} aria-hidden="true" />
+            New Layout
+          </Button>
+        }
+      />
       <DashboardListToolbar>
         <DashboardSearch
           value={search}
@@ -176,11 +176,7 @@ export function LayoutsPage() {
           placeholder="Search Layouts"
         />
       </DashboardListToolbar>
-      {actionError && (
-        <div className="notice notice--error" role="alert">
-          {actionError}
-        </div>
-      )}
+      {actionError && <Notice variant="danger">{actionError}</Notice>}
       {layouts.isLoading ? (
         <p className="status-copy">Loading Layouts…</p>
       ) : layouts.data?.items.length ? (
@@ -234,20 +230,16 @@ export function LayoutsPage() {
           ))}
         </div>
       ) : (
-        <div className="empty-state">
-          <LayoutTemplate size={34} />
-          <h2>No Layouts yet</h2>
-          <p>
-            Create a landscape or portrait canvas and build the presentation
-            directly.
-          </p>
-          <button
-            className="button button--primary"
-            onClick={() => setCreating(true)}
-          >
-            Create Layout
-          </button>
-        </div>
+        <EmptyState
+          icon={<LayoutTemplate size={24} aria-hidden="true" />}
+          title="No Layouts yet"
+          message="Create a landscape or portrait canvas and build the presentation directly."
+          action={
+            <Button variant="primary" onClick={() => setCreating(true)}>
+              Create Layout
+            </Button>
+          }
+        />
       )}
       {creating && (
         <div className="details-backdrop" role="presentation">

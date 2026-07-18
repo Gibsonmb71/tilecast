@@ -24,7 +24,14 @@ import type {
   ScheduleTarget,
 } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
-import { Button, Dialog, Field, Notice, Switch } from "../components/ui";
+import {
+  Button,
+  Dialog,
+  Field,
+  Notice,
+  PageHeader,
+  Switch,
+} from "../components/ui";
 import {
   conflictWinnerReason,
   countTargetScreens,
@@ -217,13 +224,12 @@ export function ScheduleEditorPage() {
     return <div className="table-loading">Loading schedule…</div>;
   return (
     <section className="schedule-builder-page">
-      <header className="page-heading schedule-builder-heading">
-        <div>
-          <Link to="/schedules">← Schedules</Link>
-          <h2>{id ? "Edit schedule" : "Create schedule"}</h2>
-          <p>Build the playback rule, then review its effect before saving.</p>
-        </div>
-      </header>
+      <PageHeader
+        className="schedule-builder-heading"
+        eyebrow={<Link to="/schedules">← Schedules</Link>}
+        title={id ? "Edit schedule" : "Create schedule"}
+        description="Build the playback rule, then review its effect before saving."
+      />
       <form
         className="schedule-builder"
         onSubmit={(event) => {
