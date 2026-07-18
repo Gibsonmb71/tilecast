@@ -13,6 +13,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Settings,
+  type LucideIcon,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -23,19 +24,90 @@ import { RouteErrorBoundary } from "../components/RouteErrorBoundary";
 import { api } from "../api/client";
 import { OperationsDashboard } from "./OperationsDashboard";
 
-const nav = [
+type NavItem = readonly [label: string, to: string, icon: LucideIcon];
+
+const pinnedNav = [
   ["Overview", "/", Home],
   ["Screens", "/screens", Monitor],
+] as const satisfies readonly NavItem[];
+const contentNav = [
   ["Media", "/assets", Image],
   ["Widgets", "/widgets", Blocks],
   ["Data Sources", "/data-sources", Database],
+] as const satisfies readonly NavItem[];
+const composeNav = [
   ["Playlists", "/playlists", ListVideo],
   ["Layouts", "/layouts", Layers3],
   ["Schedules", "/schedules", CalendarDays],
-  ["Activity", "/activity", Activity],
-  ["Settings", "/settings", Settings],
+] as const satisfies readonly NavItem[];
+const activityNav = [
+  "Activity",
+  "/activity",
+  Activity,
+] as const satisfies NavItem;
+const settingsNav = [
+  "Settings",
+  "/settings",
+  Settings,
+] as const satisfies NavItem;
+const nav = [
+  ...pinnedNav,
+  ...contentNav,
+  ...composeNav,
+  activityNav,
+  settingsNav,
 ] as const;
 const sidebarCompactKey = "tilecast.sidebar.compact";
+
+function SidebarLink({ item }: { item: NavItem }) {
+  const [label, to, Icon] = item;
+  return (
+    <NavLink to={to} end={to === "/"} aria-label={label}>
+      <Icon size={18} strokeWidth={1.8} aria-hidden="true" />
+      <span>{label}</span>
+    </NavLink>
+  );
+}
+
+function SidebarGroup({
+  label,
+  items,
+}: {
+  label: string;
+  items: readonly NavItem[];
+}) {
+  const id = `sidebar-${label.toLowerCase()}-label`;
+  return (
+    <section className="sidebar__nav-group" aria-labelledby={id}>
+      <h2 className="sidebar__nav-label" id={id}>
+        {label}
+      </h2>
+      {items.map((item) => (
+        <SidebarLink key={item[1]} item={item} />
+      ))}
+    </section>
+  );
+}
+
+export function SidebarNavigation() {
+  return (
+    <nav aria-label="Primary">
+      <div className="sidebar__nav-main">
+        {pinnedNav.map((item) => (
+          <SidebarLink key={item[1]} item={item} />
+        ))}
+        <SidebarGroup label="Content" items={contentNav} />
+        <SidebarGroup label="Compose" items={composeNav} />
+        <div className="sidebar__nav-standalone">
+          <SidebarLink item={activityNav} />
+        </div>
+      </div>
+      <div className="sidebar__nav-footer">
+        <SidebarLink item={settingsNav} />
+      </div>
+    </nav>
+  );
+}
 
 export function DashboardShell() {
   const auth = useAuth();
@@ -141,14 +213,7 @@ export function DashboardShell() {
             )}
           </button>
         </div>
-        <nav aria-label="Primary">
-          {nav.map(([label, to, Icon]) => (
-            <NavLink key={to} to={to} end={to === "/"} aria-label={label}>
-              <Icon size={18} strokeWidth={1.8} aria-hidden="true" />
-              <span>{label}</span>
-            </NavLink>
-          ))}
-        </nav>
+        <SidebarNavigation />
         <div className="sidebar__account">
           <span className="avatar" aria-hidden="true">
             {auth.status.user?.name.slice(0, 1).toUpperCase()}
