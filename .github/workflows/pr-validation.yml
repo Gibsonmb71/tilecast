@@ -1,0 +1,343 @@
+name: Pull request validation
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: Detect changed areas
+    runs-on: ubuntu-latest
+    outputs:
+      android: ${{ steps.paths.outputs.android }}
+      server: ${{ steps.paths.outputs.server }}
+      dashboard: ${{ steps.paths.outputs.dashboard }}
+      container: ${{ steps.paths.outputs.container }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Classify changed paths
+        id: paths
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          android=false
+          server=false
+          dashboard=false
+          container=false
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            android=true
+            server=true
+            dashboard=true
+            container=true
+          else
+            while IFS= read -r path; do
+              case "$path" in
+                apps/player-android/*|scripts/build-player-release.sh|scripts/extract-apksigner-sha256.sh)
+                  android=true
+                  ;;
+                apps/server/*)
+                  server=true
+                  container=true
+                  ;;
+                apps/dashboard/*|packages/*|package.json|package-lock.json)
+                  dashboard=true
+                  container=true
+                  ;;
+                deploy/docker/*)
+                  container=true
+                  ;;
+                .github/workflows/*)
+                  android=true
+                  server=true
+                  dashboard=true
+                  container=true
+                  ;;
+              esac
+            done < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          fi
+
+          {
+            echo "android=$android"
+            echo "server=$server"
+            echo "dashboard=$dashboard"
+            echo "container=$container"
+          } >> "$GITHUB_OUTPUT"
+
+  android_ci:
+    name: Android CI
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+      - uses: android-actions/setup-android@v3
+      - name: Test, lint, and assemble
+        working-directory: apps/player-android
+        run: ./gradlew testDebugUnitTest lintDebug assembleDebug
+      - name: Test Reporter
+        if: ${{ !cancelled() }}
+        uses: dorny/test-reporter@v3.0.0
+        with:
+          name: Android tests
+          path: apps/player-android/app/build/test-results/testDebugUnitTest/*.xml
+          reporter: java-junit
+          fail-on-empty: false
+
+  server_ci:
+    name: Server CI
+    needs: changes
+    if: needs.changes.outputs.server == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: tilecast_test
+          POSTGRES_USER: tilecast
+          POSTGRES_PASSWORD: tilecast_test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tilecast -d tilecast_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/server/go.mod
+          cache-dependency-path: apps/server/go.sum
+      - working-directory: apps/server
+        run: go vet ./...
+      - name: Test
+        working-directory: apps/server
+        run: go test -json -p 1 ./... > test-results.json
+        env:
+          TEST_DATABASE_URL: postgres://tilecast:tilecast_test_password@localhost:5432/tilecast_test?sslmode=disable
+      - name: Test Reporter
+        if: ${{ !cancelled() }}
+        uses: dorny/test-reporter@v3.0.0
+        with:
+          name: Server tests
+          path: apps/server/test-results.json
+          reporter: golang-json
+          fail-on-empty: false
+      - working-directory: apps/server
+        run: go build ./cmd/tilecast
+
+  dashboard_ci:
+    name: Dashboard CI
+    needs: changes
+    if: needs.changes.outputs.dashboard == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run lint
+      - name: Test
+        working-directory: apps/dashboard
+        run: |
+          mkdir -p test-results
+          npm test -- --reporter=default --reporter=junit --outputFile=test-results/vitest.xml
+      - name: Test Reporter
+        if: ${{ !cancelled() }}
+        uses: dorny/test-reporter@v3.0.0
+        with:
+          name: Dashboard tests
+          path: apps/dashboard/test-results/vitest.xml
+          reporter: java-junit
+          fail-on-empty: false
+      - run: npm run build
+
+  container_ci:
+    name: Server container
+    needs: changes
+    if: needs.changes.outputs.container == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Compose configuration
+        run: docker compose --env-file deploy/docker/.env.example -f deploy/docker/compose.yml config --quiet
+      - uses: docker/setup-buildx-action@v3
+      - name: Build container
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  android_codeql:
+    name: Android CodeQL
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      packages: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+      - uses: android-actions/setup-android@v3
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: java-kotlin
+          build-mode: manual
+      - name: Build Android player
+        working-directory: apps/player-android
+        run: ./gradlew clean assembleDebug
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:java-kotlin"
+
+  server_codeql:
+    name: Server CodeQL
+    needs: changes
+    if: needs.changes.outputs.server == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      packages: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/server/go.mod
+          cache-dependency-path: apps/server/go.sum
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: go
+          build-mode: manual
+      - name: Build Go server
+        working-directory: apps/server
+        run: go build ./...
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:go"
+
+  dashboard_codeql:
+    name: Dashboard CodeQL
+    needs: changes
+    if: needs.changes.outputs.dashboard == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      packages: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          build-mode: none
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:javascript-typescript"
+
+  unchanged_codeql:
+    name: Unchanged code scan
+    needs: changes
+    if: >-
+      needs.changes.outputs.android != 'true' &&
+      needs.changes.outputs.server != 'true' &&
+      needs.changes.outputs.dashboard != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - name: Record an unaffected commit
+        run: |
+          cat > unaffected.sarif <<'SARIF'
+          {
+            "version": "2.1.0",
+            "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+            "runs": [
+              {
+                "tool": {
+                  "driver": {
+                    "name": "CodeQL",
+                    "version": "0.0.0",
+                    "informationUri": "https://github.com/github/codeql-action",
+                    "rules": []
+                  }
+                },
+                "results": []
+              }
+            ]
+          }
+          SARIF
+      - uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: unaffected.sarif
+          category: "/language:unchanged"
+
+  required:
+    name: Required PR validation
+    if: always()
+    needs:
+      - changes
+      - android_ci
+      - server_ci
+      - dashboard_ci
+      - container_ci
+      - android_codeql
+      - server_codeql
+      - dashboard_codeql
+      - unchanged_codeql
+    runs-on: ubuntu-latest
+    env:
+      RESULTS: ${{ join(needs.*.result, ',') }}
+    steps:
+      - name: Require every selected job to pass
+        run: |
+          if [[ ",$RESULTS," == *,failure,* || ",$RESULTS," == *,cancelled,* ]]; then
+            echo "One or more required validation jobs did not pass: $RESULTS" >&2
+            exit 1
+          fi
+          echo "All selected validation jobs passed: $RESULTS"

@@ -9,8 +9,6 @@ on:
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/codeql-dashboard.yml"
-  pull_request:
-    branches: [main]
   schedule:
     - cron: "23 3 * * 1"
   workflow_dispatch:

@@ -9,13 +9,6 @@ on:
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/ci-dashboard.yml"
-  pull_request:
-    paths:
-      - "apps/dashboard/**"
-      - "packages/**"
-      - "package.json"
-      - "package-lock.json"
-      - ".github/workflows/ci-dashboard.yml"
   workflow_dispatch:
 
 concurrency:
