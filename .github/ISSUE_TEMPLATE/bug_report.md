@@ -1,40 +1,105 @@
 ---
 name: Bug report
-about: Create a report to help us improve
-title: ""
+about: Report broken or unexpected Tilecast behavior
+title: "[Bug] "
 labels: ""
 assignees: ""
 ---
 
-**Describe the bug**
-A clear and concise description of what the bug is.
+<!--
+Do not report security vulnerabilities here.
+Follow the private reporting process in SECURITY.md.
 
-**To Reproduce**
-Steps to reproduce the behavior:
+Do not include passwords, API keys, pairing secrets, session cookies,
+device tokens, database credentials, or other sensitive information.
+-->
 
-1. Go to '...'
-2. Click on '....'
-3. Scroll down to '....'
-4. See error
+## Problem
 
-**Expected behavior**
-A clear and concise description of what you expected to happen.
+Describe what is broken and how it affects normal use.
 
-**Screenshots**
-If applicable, add screenshots to help explain your problem.
+## Affected component
 
-**Desktop (please complete the following information):**
+Select all that apply:
 
-- OS: [e.g. iOS]
-- Browser [e.g. chrome, safari]
-- Version [e.g. 22]
+- [ ] Tilecast Studio
+- [ ] Server or API
+- [ ] Android Player
+- [ ] Web Player
+- [ ] Screen pairing
+- [ ] Playback or rendering
+- [ ] Layouts or widgets
+- [ ] Playlists or schedules
+- [ ] Media library
+- [ ] Data Sources
+- [ ] Users or authentication
+- [ ] Settings
+- [ ] Installation or deployment
+- [ ] Documentation
+- [ ] Other
 
-**Smartphone (please complete the following information):**
+## Steps to reproduce
 
-- Device: [e.g. iPhone6]
-- OS: [e.g. iOS8.1]
-- Browser [e.g. stock browser, safari]
-- Version [e.g. 22]
+1.
+2.
+3.
 
-**Additional context**
-Add any other context about the problem here.
+## Actual behavior
+
+Describe what currently happens.
+
+## Expected behavior
+
+Describe what should happen instead.
+
+## Environment
+
+- Tilecast version, release, or commit:
+- Installation method:
+- Server operating system:
+- Browser and version:
+- Player version, if applicable:
+- Player device and Android version, if applicable:
+- Reverse proxy or tunnel, if applicable:
+- Database:
+- Network connection:
+
+## Reproduction frequency
+
+- [ ] Every time
+- [ ] Intermittently
+- [ ] Happened once
+- [ ] Unknown
+
+## Regression
+
+Did this work previously?
+
+- [ ] Yes
+- [ ] No
+- [ ] Unknown
+
+Last known working version or approximate date:
+
+## Logs and diagnostics
+
+Paste relevant logs below. Remove secrets and unrelated personal information.
+
+```text
+Paste logs here
+```
+
+## Screenshots or recordings
+
+Attach screenshots or recordings when they help demonstrate the problem.
+
+## Additional context
+
+Include any configuration, recent changes, workarounds, or related issues that may be relevant.
+
+## Acceptance criteria
+
+- [ ] The reported behavior can be reproduced or otherwise explained.
+- [ ] The underlying cause is corrected.
+- [ ] Relevant regression tests are added or updated.
+- [ ] Related documentation is updated when necessary.
