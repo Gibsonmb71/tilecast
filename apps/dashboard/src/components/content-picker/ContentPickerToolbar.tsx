@@ -1,3 +1,8 @@
+import type {
+  ContentCollection,
+  ContentFolder,
+  ContentTag,
+} from "../../api/types";
 import { Select, ToggleGroup, ViewToggle } from "../ui";
 import { DashboardSearch } from "../DashboardListToolbar";
 
@@ -9,8 +14,17 @@ export function ContentPickerToolbar({
   filter,
   sort,
   view,
+  folders = [],
+  collections = [],
+  tags = [],
+  folderFilter = "",
+  collectionFilter = "",
+  tagFilter = "",
   onSearch,
   onFilter,
+  onFolderFilter,
+  onCollectionFilter,
+  onTagFilter,
   onSort,
   onView,
 }: {
@@ -18,8 +32,17 @@ export function ContentPickerToolbar({
   filter: ContentPickerFilter;
   sort: string;
   view: "grid" | "list";
+  folders?: ContentFolder[];
+  collections?: ContentCollection[];
+  tags?: ContentTag[];
+  folderFilter?: string;
+  collectionFilter?: string;
+  tagFilter?: string;
   onSearch: (value: string) => void;
   onFilter: (value: ContentPickerFilter) => void;
+  onFolderFilter?: (value: string) => void;
+  onCollectionFilter?: (value: string) => void;
+  onTagFilter?: (value: string) => void;
   onSort: (value: string) => void;
   onView: (value: "grid" | "list") => void;
 }) {
@@ -48,6 +71,48 @@ export function ContentPickerToolbar({
         onValueChange={onFilter}
         items={filters.map(([value, label]) => ({ value, label }))}
       />
+      {folders.length > 0 && onFolderFilter && (
+        <Select
+          aria-label="Filter by folder"
+          value={folderFilter}
+          onChange={(event) => onFolderFilter(event.target.value)}
+        >
+          <option value="">All folders</option>
+          {folders.map((folder) => (
+            <option key={folder.id} value={folder.id}>
+              {folder.name}
+            </option>
+          ))}
+        </Select>
+      )}
+      {collections.length > 0 && onCollectionFilter && (
+        <Select
+          aria-label="Filter by collection"
+          value={collectionFilter}
+          onChange={(event) => onCollectionFilter(event.target.value)}
+        >
+          <option value="">All collections</option>
+          {collections.map((collection) => (
+            <option key={collection.id} value={collection.id}>
+              {collection.name}
+            </option>
+          ))}
+        </Select>
+      )}
+      {tags.length > 0 && onTagFilter && (
+        <Select
+          aria-label="Filter by tag"
+          value={tagFilter}
+          onChange={(event) => onTagFilter(event.target.value)}
+        >
+          <option value="">All tags</option>
+          {tags.map((tag) => (
+            <option key={tag.id} value={tag.id}>
+              {tag.name}
+            </option>
+          ))}
+        </Select>
+      )}
       <Select
         aria-label="Sort content"
         value={sort}
