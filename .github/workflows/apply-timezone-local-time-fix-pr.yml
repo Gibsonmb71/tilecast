@@ -73,6 +73,23 @@ jobs:
           path.write_text(text.replace(old, new, 1))
           PATCH
           { python -m py_compile /tmp/apply-timezone-fix.py && python /tmp/apply-timezone-fix.py; } > /tmp/apply-timezone-fix.log 2>&1
+          python <<'TESTPATCH'
+          from pathlib import Path
+
+          path = Path('apps/dashboard/src/settings/settingsExperience.test.tsx')
+          text = path.read_text()
+          old = '''    expect(timezone).toHaveValue("America/New_York");
+              expect(timezone).toHaveTextContent("Eastern Time (America/New_York)");
+          '''
+          new = '''    expect(timezone).toHaveTextContent("Eastern Time (America/New_York)");
+              expect(document.querySelector(".signal-select__native")).toHaveValue(
+                "America/New_York",
+              );
+          '''
+          if text.count(old) != 1:
+              raise SystemExit('could not update timezone select assertion')
+          path.write_text(text.replace(old, new, 1))
+          TESTPATCH
           rm -f .github/workflows/apply-timezone-local-time-fix-pr.yml
       - name: Upload patch failure
         if: failure()
