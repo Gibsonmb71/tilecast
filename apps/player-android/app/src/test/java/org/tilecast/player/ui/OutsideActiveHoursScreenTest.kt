@@ -53,5 +53,12 @@ class OutsideActiveHoursScreenTest {
                 PlayerBranding(footerText = "Powered by Weekly Wildcat"),
             ).text,
         )
+        assertEquals(
+            "Powered by Tilecast",
+            outsideActiveHoursPresentation(
+                PlayerPowerPolicy(outsideActiveHoursDisplay = "custom_text"),
+                PlayerBranding(),
+            ).text,
+        )
     }
 }
