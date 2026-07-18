@@ -33,10 +33,11 @@ data class PlayerConfiguration(
 interface PlayerConfigurationDao {
     @Query("SELECT * FROM player_configuration WHERE id=1") suspend fun get(): PlayerConfiguration?
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun save(configuration: PlayerConfiguration)
+    @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insertIfAbsent(configuration: PlayerConfiguration): Long
     @Transaction
     suspend fun getOrCreate(candidate: PlayerConfiguration): PlayerConfiguration {
         get()?.let { return it }
-        save(candidate)
+        insertIfAbsent(candidate)
         return get() ?: candidate
     }
     @Query("UPDATE player_configuration SET screenId=NULL,screenName=NULL WHERE id=1") suspend fun clearPairing()

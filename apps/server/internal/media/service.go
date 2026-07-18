@@ -238,10 +238,12 @@ func (s *Service) FinalizeUpload(ctx context.Context, id, userID uuid.UUID) (Ass
 	if err := s.storage.Commit(key, finalKey); err != nil {
 		return Asset{}, s.failUpload(ctx, id, "media_inspection_failed", err)
 	}
-	failFinalization := func(cause error) (Asset, error) {
+	failFinalization := func(activeTx pgx.Tx, cause error) (Asset, error) {
 		// Release the failed transaction before updating the upload session through
 		// the pool; otherwise a saturated pool can deadlock the failure path.
-		_ = tx.Rollback(ctx)
+		if activeTx != nil {
+			_ = activeTx.Rollback(ctx)
+		}
 		if cleanupErr := s.storage.Delete(finalKey); cleanupErr != nil {
 			cause = fmt.Errorf("%w (final media cleanup failed: %v)", cause, cleanupErr)
 		}
@@ -255,32 +257,32 @@ func (s *Service) FinalizeUpload(ctx context.Context, id, userID uuid.UUID) (Ass
 	if len(name) > 180 {
 		name = name[:180]
 	}
-	tx, err = s.db.Begin(ctx)
+	finalizationTx, err := s.db.Begin(ctx)
 	if err != nil {
-		return failFinalization(err)
+		return failFinalization(nil, err)
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck
-	_, err = tx.Exec(ctx, `INSERT INTO assets (id,organization_id,name,type,original_filename,declared_mime_type,detected_mime_type,sha256,original_size,processing_status,created_by,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'queued',$10,$11,$11)`, assetID, organizationID, name, detected.AssetType, filename, declared, detected.MIMEType, sum, expected, userID, now)
+	defer finalizationTx.Rollback(ctx) //nolint:errcheck
+	_, err = finalizationTx.Exec(ctx, `INSERT INTO assets (id,organization_id,name,type,original_filename,declared_mime_type,detected_mime_type,sha256,original_size,processing_status,created_by,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'queued',$10,$11,$11)`, assetID, organizationID, name, detected.AssetType, filename, declared, detected.MIMEType, sum, expected, userID, now)
 	if err != nil {
-		return failFinalization(err)
+		return failFinalization(finalizationTx, err)
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO asset_variants (id,asset_id,kind,storage_provider,storage_key,mime_type,file_size,sha256) VALUES ($1,$2,'original','local',$3,$4,$5,$6)`, variantID, assetID, finalKey, detected.MIMEType, expected, sum)
+	_, err = finalizationTx.Exec(ctx, `INSERT INTO asset_variants (id,asset_id,kind,storage_provider,storage_key,mime_type,file_size,sha256) VALUES ($1,$2,'original','local',$3,$4,$5,$6)`, variantID, assetID, finalKey, detected.MIMEType, expected, sum)
 	if err != nil {
-		return failFinalization(err)
+		return failFinalization(finalizationTx, err)
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO media_jobs (id,asset_id,kind,status) VALUES ($1,$2,'inspect_asset','queued')`, uuid.New(), assetID)
+	_, err = finalizationTx.Exec(ctx, `INSERT INTO media_jobs (id,asset_id,kind,status) VALUES ($1,$2,'inspect_asset','queued')`, uuid.New(), assetID)
 	if err != nil {
-		return failFinalization(err)
+		return failFinalization(finalizationTx, err)
 	}
-	_, err = tx.Exec(ctx, `UPDATE upload_sessions SET status='finalized',completed_at=$2,resulting_asset_id=$3 WHERE id=$1`, id, now, assetID)
+	_, err = finalizationTx.Exec(ctx, `UPDATE upload_sessions SET status='finalized',completed_at=$2,resulting_asset_id=$3 WHERE id=$1`, id, now, assetID)
 	if err != nil {
-		return failFinalization(err)
+		return failFinalization(finalizationTx, err)
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO audit_logs (id,user_id,action,resource_type,resource_id,metadata) VALUES ($1,$2,'media.upload_finalized','asset',$3,jsonb_build_object('filename',$4::text,'sizeBytes',$5::bigint))`, uuid.New(), userID, assetID.String(), filename, expected)
+	_, err = finalizationTx.Exec(ctx, `INSERT INTO audit_logs (id,user_id,action,resource_type,resource_id,metadata) VALUES ($1,$2,'media.upload_finalized','asset',$3,jsonb_build_object('filename',$4::text,'sizeBytes',$5::bigint))`, uuid.New(), userID, assetID.String(), filename, expected)
 	if err != nil {
-		return failFinalization(err)
+		return failFinalization(finalizationTx, err)
 	}
-	if err := tx.Commit(ctx); err != nil {
+	if err := finalizationTx.Commit(ctx); err != nil {
 		return Asset{}, err
 	}
 	return s.GetAsset(ctx, assetID)

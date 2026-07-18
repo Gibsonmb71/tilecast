@@ -14,6 +14,14 @@ class ConfigurationRepositoryTest {
         assertEquals(first.playerInstallationId, second.playerInstallationId)
         assertNotNull(UUID.fromString(first.playerInstallationId))
     }
+    @Test fun firstInstallationIdWinsWhenCreationRaces() = runTest {
+        val winner = PlayerConfiguration(playerInstallationId = UUID.randomUUID().toString())
+        val dao = FakeDao(insertWinner = winner)
+
+        val result = dao.getOrCreate(PlayerConfiguration(playerInstallationId = UUID.randomUUID().toString()))
+
+        assertEquals(winner.playerInstallationId, result.playerInstallationId)
+    }
     @Test fun pairingSessionSurvivesRepositoryRecreationAndClearsAfterEnrollment() = runTest {
         val dao=FakeDao();val first=ConfigurationRepository(dao);val config=first.getOrCreate();val id=config.playerInstallationId
         first.savePairingSession(config,PairingSession("session","ABC234","poll-secret","2030-01-01T00:00:00Z","2029-01-01T00:00:00Z",3,"/pair","Tilecast"))
@@ -22,10 +30,15 @@ class ConfigurationRepositoryTest {
         val enrolled=ConfigurationRepository(dao).saveEnrollment(restored,"screen","Cafeteria Display")
         assertEquals(null,enrolled.pairingSessionId);assertEquals(id,enrolled.playerInstallationId)
     }
-    private class FakeDao : PlayerConfigurationDao {
+    private class FakeDao(private val insertWinner: PlayerConfiguration? = null) : PlayerConfigurationDao {
         var value: PlayerConfiguration? = null
         override suspend fun get() = value
         override suspend fun save(configuration: PlayerConfiguration) { value = configuration }
+        override suspend fun insertIfAbsent(configuration: PlayerConfiguration): Long {
+            if (value != null) return -1
+            value = insertWinner ?: configuration
+            return if (insertWinner == null) 1 else -1
+        }
         override suspend fun clearPairing() { value = value?.copy(screenId = null, screenName = null) }
         override suspend fun reset() { value = null }
     }
