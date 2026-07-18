@@ -152,10 +152,10 @@ export function ScheduleEditorPage() {
     return () => removeEventListener("beforeunload", warn);
   }, [dirty]);
 
-  const selectedPlaylist = playlists.data?.items.find(
+  const selectedPlaylist = playlists.data?.items?.find(
     (playlist) => playlist.id === input.playlistId,
   );
-  const selectedLayout = layouts.data?.items.find(
+  const selectedLayout = layouts.data?.items?.find(
     (layout) => layout.id === input.layoutId,
   );
   const playlistDetails = useQuery({

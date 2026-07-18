@@ -263,7 +263,7 @@ function EmergencyPanel({
               onChange={(e) => setPlaylistId(e.target.value)}
             >
               <option value="">Select playlist</option>
-              {playlists.data?.items.map((p) => (
+              {playlists.data?.items?.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
                 </option>
@@ -303,7 +303,7 @@ function EmergencyPanel({
           </fieldset>
           <fieldset>
             <legend>Target sync groups</legend>
-            {groups.data?.items.map((g) => (
+            {groups.data?.items?.map((g) => (
               <label key={g.id}>
                 <input
                   type="checkbox"
@@ -928,7 +928,7 @@ export function ScreenDetailPage() {
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ["screens", id, "commands"] }),
   });
-  const listedScreen = screens.data?.items.find((screen) => screen.id === id);
+  const listedScreen = screens.data?.items?.find((screen) => screen.id === id);
   const screen = resolveScreenDetail(query.data, listedScreen);
   if (query.isLoading && !screen)
     return <div className="table-loading">Loading screen…</div>;
@@ -1092,7 +1092,7 @@ export function ScreenDetailPage() {
             <div>
               <dt>Synchronization</dt>
               <dd>
-                {assignment.data?.synchronizationStatus.replaceAll("_", " ") ??
+                {assignment.data?.synchronizationStatus?.replaceAll("_", " ") ??
                   "Not reported"}
               </dd>
             </div>
@@ -1141,7 +1141,7 @@ export function ScreenDetailPage() {
       {tab === "content" && (
         <section className="detail-card assignment-card">
           <h3>Playback and scheduling</h3>
-          {assignment.data?.groups[0] && (
+          {assignment.data?.groups?.[0] && (
             <div className="notice notice--info">
               This player belongs to the{" "}
               <Link to={`/groups/${assignment.data.groups[0].id}`}>
@@ -1161,7 +1161,7 @@ export function ScreenDetailPage() {
               >
                 <option value="">No presentation assigned</option>
                 <optgroup label="Playlists">
-                  {playlists.data?.items.map((playlist) => (
+                  {playlists.data?.items?.map((playlist) => (
                     <option key={playlist.id} value={`playlist:${playlist.id}`}>
                       {playlist.name}
                     </option>
@@ -1190,7 +1190,7 @@ export function ScreenDetailPage() {
                 }
                 onClick={() => assign.mutate()}
               >
-                {assignment.data?.groups[0]
+                {assignment.data?.groups?.[0]
                   ? "Apply to sync group"
                   : "Apply assignment"}
               </button>
@@ -1213,7 +1213,7 @@ export function ScreenDetailPage() {
                 {assignment.data?.selectionSource === "emergency"
                   ? "Emergency takeover"
                   : assignment.data?.selectionSource === "schedule"
-                    ? `Scheduled${assignment.data.currentScheduleId ? ` · ${assignment.data.relevantSchedules.find((s) => s.id === assignment.data?.currentScheduleId)?.name ?? "schedule"}` : ""}`
+                    ? `Scheduled${assignment.data.currentScheduleId ? ` · ${(assignment.data.relevantSchedules ?? []).find((s) => s.id === assignment.data?.currentScheduleId)?.name ?? "schedule"}` : ""}`
                     : assignment.data?.selectionSource === "direct_fallback"
                       ? "Direct fallback"
                       : "No content"}
@@ -1250,21 +1250,22 @@ export function ScreenDetailPage() {
             <div>
               <dt>Synchronization</dt>
               <dd>
-                {assignment.data?.synchronizationStatus.replaceAll("_", " ") ??
+                {assignment.data?.synchronizationStatus?.replaceAll("_", " ") ??
                   "Not reported"}
               </dd>
             </div>
             <div>
               <dt>Sync group</dt>
               <dd>
-                {assignment.data?.groups.map((g) => g.name).join(", ") ||
-                  "Not grouped"}
+                {(assignment.data?.groups ?? [])
+                  .map((g) => g.name)
+                  .join(", ") || "Not grouped"}
               </dd>
             </div>
             <div>
               <dt>Relevant schedules</dt>
               <dd>
-                {assignment.data?.relevantSchedules
+                {(assignment.data?.relevantSchedules ?? [])
                   .map((s) => `${s.name} (${s.priority})`)
                   .join(", ") || "No schedules"}
               </dd>
@@ -1289,7 +1290,7 @@ export function ScreenDetailPage() {
               <dt>Website playback</dt>
               <dd>
                 {assignment.data?.websiteState
-                  ? `${assignment.data.websiteState.replaceAll("_", " ")}${assignment.data.websiteCurrentHost ? ` · ${assignment.data.websiteCurrentHost}` : ""}`
+                  ? `${assignment.data.websiteState?.replaceAll("_", " ") ?? "Not reported"}${assignment.data.websiteCurrentHost ? ` · ${assignment.data.websiteCurrentHost}` : ""}`
                   : "Not active"}
               </dd>
             </div>
@@ -1724,9 +1725,11 @@ export function ScreenDetailPage() {
             <p>Command queued; this does not mean it has completed.</p>
           )}
           <div className="command-history">
-            {commands.data?.items.map((c) => (
+            {commands.data?.items?.map((c) => (
               <div key={c.id}>
-                <strong>{c.type.replaceAll("_", " ")}</strong>
+                <strong>
+                  {c.type?.replaceAll("_", " ") ?? "Unknown command"}
+                </strong>
                 <span>
                   {c.state} · {new Date(c.createdAt).toLocaleString()}
                 </span>
@@ -1740,13 +1743,15 @@ export function ScreenDetailPage() {
       )}
       {tab === "commands" &&
         !canManageScreens(auth.status?.user) &&
-        (commands.data?.items.length ?? 0) > 0 && (
+        (commands.data?.items?.length ?? 0) > 0 && (
           <section className="operations">
             <h3>Recent operations</h3>
             <div className="command-history">
-              {commands.data?.items.map((c) => (
+              {commands.data?.items?.map((c) => (
                 <div key={c.id}>
-                  <strong>{c.type.replaceAll("_", " ")}</strong>
+                  <strong>
+                    {c.type?.replaceAll("_", " ") ?? "Unknown command"}
+                  </strong>
                   <span>
                     {c.state} · {new Date(c.createdAt).toLocaleString()}
                   </span>

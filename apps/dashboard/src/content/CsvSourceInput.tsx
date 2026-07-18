@@ -274,7 +274,7 @@ export function CsvSourceInput({
           <span className="csv-file-summary__detail">
             {fileSize === undefined
               ? "Stored CSV data will remain attached unless you replace it"
-              : `${formatBytes(fileSize)} · ${inspection?.rowCount ?? 0} data rows · ${inspection?.columns.length ?? 0} columns`}
+              : `${formatBytes(fileSize)} · ${inspection?.rowCount ?? 0} data rows · ${inspection?.columns?.length ?? 0} columns`}
           </span>
         </Notice>
       )}

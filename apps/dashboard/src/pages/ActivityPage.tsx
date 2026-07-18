@@ -223,7 +223,7 @@ export function ActivityPage() {
                   onChange={(e) => setScreen(e.target.value)}
                 >
                   <option value="">All screens</option>
-                  {screens.data?.items.map((item) => (
+                  {screens.data?.items?.map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.name}
                     </option>
@@ -235,7 +235,7 @@ export function ActivityPage() {
                   onChange={(e) => setGroup(e.target.value)}
                 >
                   <option value="">All groups</option>
-                  {groups.data?.items.map((item) => (
+                  {groups.data?.items?.map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.name}
                     </option>

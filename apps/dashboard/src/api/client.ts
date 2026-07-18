@@ -114,6 +114,55 @@ export function normalizePlaylist(
   };
 }
 
+export function normalizeScreen(screen: Screen | null | undefined): Screen {
+  const source = screen ?? ({} as Screen);
+  return {
+    ...source,
+    deviceManufacturer:
+      typeof source.deviceManufacturer === "string"
+        ? source.deviceManufacturer
+        : "",
+  };
+}
+
+export function normalizePlaylistAssignment(
+  assignment: PlaylistAssignment | null | undefined,
+): PlaylistAssignment {
+  const source = assignment ?? ({} as PlaylistAssignment);
+  return {
+    ...source,
+    synchronizationStatus:
+      typeof source.synchronizationStatus === "string"
+        ? source.synchronizationStatus
+        : "not_reported",
+    groups: Array.isArray(source.groups) ? source.groups : [],
+    relevantSchedules: Array.isArray(source.relevantSchedules)
+      ? source.relevantSchedules
+      : [],
+  };
+}
+
+export function normalizeProviderCatalog(
+  catalog: ProviderCatalog | null | undefined,
+): ProviderCatalog {
+  const source = catalog ?? ({} as ProviderCatalog);
+  return {
+    ...source,
+    providers: Array.isArray(source.providers) ? source.providers : [],
+  };
+}
+
+export function normalizeContentDefinitionCatalog(
+  catalog: ContentDefinitionCatalog | null | undefined,
+): ContentDefinitionCatalog {
+  const source = catalog ?? ({} as ContentDefinitionCatalog);
+  return {
+    ...source,
+    widgets: Array.isArray(source.widgets) ? source.widgets : [],
+    dataSources: Array.isArray(source.dataSources) ? source.dataSources : [],
+  };
+}
+
 function normalizeLayoutDocument(
   document: LayoutDocument | null | undefined,
   layout: Pick<Layout, "orientation" | "canvasWidth" | "canvasHeight">,
@@ -195,9 +244,14 @@ async function apiFailure(response: Response): Promise<never> {
 type SessionResult = { user: User; csrfToken: string };
 
 export const api = {
-  providerCatalog: () => request<ProviderCatalog>("/provider-catalog"),
-  contentDefinitions: () =>
-    request<ContentDefinitionCatalog>("/content-definitions"),
+  providerCatalog: async () =>
+    normalizeProviderCatalog(
+      await request<ProviderCatalog | null>("/provider-catalog"),
+    ),
+  contentDefinitions: async () =>
+    normalizeContentDefinitionCatalog(
+      await request<ContentDefinitionCatalog | null>("/content-definitions"),
+    ),
   compileWidgetPreview: (
     provider: WidgetInput["provider"],
     configuration: WidgetInput["configuration"],
@@ -496,12 +550,25 @@ export const api = {
       method: "POST",
       headers: { "X-CSRF-Token": csrfToken },
     }),
-  screens: () => request<{ items: Screen[]; total: number }>("/screens"),
+  screens: async () => {
+    const result = await request<{
+      items?: Screen[];
+      total?: number;
+    } | null>("/screens");
+    return {
+      ...(result ?? {}),
+      items: (Array.isArray(result?.items) ? result.items : []).map(
+        normalizeScreen,
+      ),
+      total: result?.total ?? 0,
+    };
+  },
   pendingPairings: () =>
     request<{ items: PairingRequest[]; total: number }>(
       "/screens/pairing/pending",
     ),
-  screen: (id: string) => request<Screen>(`/screens/${id}`),
+  screen: async (id: string) =>
+    normalizeScreen(await request<Screen | null>(`/screens/${id}`)),
   screenReliability: (id: string) =>
     request<ReliabilityStatus>(`/screens/${id}/reliability`),
   confirmPowerAssist: (
@@ -911,25 +978,48 @@ export const api = {
       headers: { "X-CSRF-Token": csrfToken },
       body: JSON.stringify({ itemIds }),
     }),
-  playlistAssignment: (screenId: string) =>
-    request<PlaylistAssignment>(`/screens/${screenId}/playlist-assignment`),
-  assignPlaylist: (screenId: string, playlistId: string, csrfToken: string) =>
-    request<PlaylistAssignment>(`/screens/${screenId}/playlist-assignment`, {
-      method: "PUT",
-      headers: { "X-CSRF-Token": csrfToken },
-      body: JSON.stringify({ playlistId }),
-    }),
-  assignLayout: (screenId: string, layoutId: string, csrfToken: string) =>
-    request<PlaylistAssignment>(`/screens/${screenId}/playlist-assignment`, {
-      method: "PUT",
-      headers: { "X-CSRF-Token": csrfToken },
-      body: JSON.stringify({ layoutId }),
-    }),
-  unassignPlaylist: (screenId: string, csrfToken: string) =>
-    request<PlaylistAssignment>(`/screens/${screenId}/playlist-assignment`, {
-      method: "DELETE",
-      headers: { "X-CSRF-Token": csrfToken },
-    }),
+  playlistAssignment: async (screenId: string) =>
+    normalizePlaylistAssignment(
+      await request<PlaylistAssignment | null>(
+        `/screens/${screenId}/playlist-assignment`,
+      ),
+    ),
+  assignPlaylist: async (
+    screenId: string,
+    playlistId: string,
+    csrfToken: string,
+  ) =>
+    normalizePlaylistAssignment(
+      await request<PlaylistAssignment | null>(
+        `/screens/${screenId}/playlist-assignment`,
+        {
+          method: "PUT",
+          headers: { "X-CSRF-Token": csrfToken },
+          body: JSON.stringify({ playlistId }),
+        },
+      ),
+    ),
+  assignLayout: async (screenId: string, layoutId: string, csrfToken: string) =>
+    normalizePlaylistAssignment(
+      await request<PlaylistAssignment | null>(
+        `/screens/${screenId}/playlist-assignment`,
+        {
+          method: "PUT",
+          headers: { "X-CSRF-Token": csrfToken },
+          body: JSON.stringify({ layoutId }),
+        },
+      ),
+    ),
+  unassignPlaylist: async (screenId: string, csrfToken: string) =>
+    normalizePlaylistAssignment(
+      await request<PlaylistAssignment | null>(
+        `/screens/${screenId}/playlist-assignment`,
+        {
+          method: "DELETE",
+          headers: { "X-CSRF-Token": csrfToken },
+        },
+      ),
+    ),
   screenGroups: async (search = "") => {
     const result = await request<ScreenGroupList>(
       `/screen-groups?page=1&pageSize=100&search=${encodeURIComponent(search)}`,

@@ -75,7 +75,7 @@ export function ContentPicker({
     getNextPageParam: (last) =>
       last.page * last.pageSize < last.total ? last.page + 1 : undefined,
     refetchInterval: (query) =>
-      query.state.data?.pages.some((page) =>
+      query.state.data?.pages?.some((page) =>
         page.items.some((asset) =>
           ["queued", "inspecting", "processing"].includes(
             asset.processingStatus,
@@ -190,7 +190,7 @@ export function ContentPicker({
     setFailures([]);
     try {
       const result = await onConfirm(chosen);
-      if (result?.failures.length) {
+      if (result?.failures?.length) {
         setFailures(result.failures);
         const failed = new Set(result.failures.map((failure) => failure.id));
         setSelected(

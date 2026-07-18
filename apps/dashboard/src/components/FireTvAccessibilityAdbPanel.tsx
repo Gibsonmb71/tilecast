@@ -20,6 +20,18 @@ ${enable}`,
   };
 };
 
+export function isFireTvScreen(
+  screen:
+    | { platform?: string; deviceManufacturer?: string | null }
+    | null
+    | undefined,
+) {
+  return (
+    screen?.platform === "fire-tv" ||
+    screen?.deviceManufacturer?.toLowerCase() === "amazon"
+  );
+}
+
 export function FireTvAccessibilityAdbPanel({
   screenId,
 }: {
@@ -34,9 +46,7 @@ export function FireTvAccessibilityAdbPanel({
     queryFn: () => api.screen(screenId),
   });
 
-  const isFireTv =
-    screen.data?.platform === "fire-tv" ||
-    screen.data?.deviceManufacturer.toLowerCase() === "amazon";
+  const isFireTv = isFireTvScreen(screen.data);
   const commands = useMemo(
     () => fireTvAccessibilityCommands(screen.data?.lastKnownIp),
     [screen.data?.lastKnownIp],

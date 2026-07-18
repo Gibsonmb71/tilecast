@@ -1438,7 +1438,7 @@ export function DataSourceEditor({
     queryKey: ["content-definitions"],
     queryFn: api.contentDefinitions,
   });
-  const definition = definitions.data?.dataSources.find(
+  const definition = definitions.data?.dataSources?.find(
     (candidate) => candidate.id === provider,
   );
   // Release-defined providers are anything the legacy editors below do not handle. Wait for

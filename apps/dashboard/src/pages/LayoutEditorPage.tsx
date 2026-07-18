@@ -1527,7 +1527,7 @@ export function LayoutEditorPage() {
             <div className="source-editor__body">
               {revisions.isLoading ? (
                 <p>Loading history…</p>
-              ) : revisions.data?.items.length ? (
+              ) : revisions.data?.items?.length ? (
                 revisions.data.items.map((revision) => (
                   <div className="layout-history-row" key={revision.id}>
                     <div>
@@ -1608,7 +1608,7 @@ function PlacementView({
       onPointerDown={onPointerDown}
     >
       {item.type === "playlistZone" ? (
-        playbackPreview && playlist?.items.length ? (
+        playbackPreview && playlist?.items?.length ? (
           <PlaylistZonePreview
             placement={item}
             playlist={playlist}

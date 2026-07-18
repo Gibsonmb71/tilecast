@@ -60,14 +60,14 @@ export function WidgetProviderGallery({
     staleTime: 5 * 60_000,
   });
   const widgetProviders =
-    catalog.data?.providers.filter((entry) => entry.role === "widget") ?? [];
+    catalog.data?.providers?.filter((entry) => entry.role === "widget") ?? [];
   const definitions = useQuery({
     queryKey: ["content-definitions"],
     queryFn: api.contentDefinitions,
     staleTime: 5 * 60_000,
   });
   const releaseDefined =
-    definitions.data?.widgets.filter(
+    definitions.data?.widgets?.filter(
       (definition) => !definition.legacyEditor,
     ) ?? [];
   useEffect(() => {
@@ -521,7 +521,7 @@ export function NativeAppEditor({
     queryFn: api.providerCatalog,
     staleTime: 5 * 60_000,
   });
-  const providerRuntime = catalog.data?.providers.find(
+  const providerRuntime = catalog.data?.providers?.find(
     (entry) => entry.role === "widget" && entry.id === provider,
   );
   const [name, setName] = useState(asset?.name ?? "");
@@ -3046,7 +3046,7 @@ export function YouTubeSourceEditor({
             }
           >
             <option value="">None</option>
-            {images.data?.items.map((image) => (
+            {images.data?.items?.map((image) => (
               <option key={image.id} value={image.id}>
                 {image.name}
               </option>

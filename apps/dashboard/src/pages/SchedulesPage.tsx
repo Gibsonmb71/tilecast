@@ -40,7 +40,7 @@ export function GroupsPage() {
         }
       />
       <div className="schedule-list">
-        {q.data?.items.map((g) => (
+        {q.data?.items?.map((g) => (
           <Link className="schedule-card" to={`/groups/${g.id}`} key={g.id}>
             <strong>{g.name}</strong>
             <span>
@@ -49,7 +49,7 @@ export function GroupsPage() {
             <small>{g.description || "No description"}</small>
           </Link>
         ))}
-        {q.data?.items.length === 0 && (
+        {q.data?.items?.length === 0 && (
           <div className="screen-empty">
             <h3>No sync groups yet</h3>
             <p>Group screens that should always play in sync.</p>
@@ -130,11 +130,13 @@ export function GroupDetailPage() {
   const assignedElsewhere = new Set(
     (groups.data?.items ?? [])
       .filter((candidate) => candidate.id !== id)
-      .flatMap((candidate) => candidate.screens.map((screen) => screen.id)),
+      .flatMap((candidate) =>
+        (candidate.screens ?? []).map((screen) => screen.id),
+      ),
   );
   const available =
-    screens.data?.items
-      .filter((s) => !groupData.screens.some((m) => m.id === s.id))
+    (screens.data?.items ?? [])
+      .filter((s) => !(groupData.screens ?? []).some((m) => m.id === s.id))
       .filter((s) => !assignedElsewhere.has(s.id))
       .filter((s) =>
         `${s.name} ${s.location}`
@@ -196,7 +198,7 @@ export function GroupDetailPage() {
             >
               <option value="">No fallback presentation</option>
               <optgroup label="Playlists">
-                {playlists.data?.items.map((playlist) => (
+                {playlists.data?.items?.map((playlist) => (
                   <option key={playlist.id} value={`playlist:${playlist.id}`}>
                     {playlist.name}
                   </option>
@@ -256,7 +258,7 @@ export function GroupDetailPage() {
         </label>
       )}
       <div className="schedule-list">
-        {groupData.screens.map((s) => (
+        {(groupData.screens ?? []).map((s) => (
           <div className="schedule-card" key={s.id}>
             <strong>{s.name}</strong>
             <span>{s.location || "No location"}</span>
@@ -297,13 +299,13 @@ export function SchedulesPage() {
       <div className="schedule-today">
         <h3>Schedule timeline</h3>
         <p>
-          {q.data?.items.filter((s) => s.enabled).length ?? 0} enabled · times
-          evaluate in each schedule’s IANA timezone · overnight windows continue
-          into the next day
+          {(q.data?.items ?? []).filter((s) => s.enabled).length} enabled ·
+          times evaluate in each schedule’s IANA timezone · overnight windows
+          continue into the next day
         </p>
       </div>
       <div className="schedule-list">
-        {q.data?.items.map((s) => (
+        {q.data?.items?.map((s) => (
           <Link
             className={`schedule-card ${s.enabled ? "" : "schedule-card--disabled"}`}
             to={`/schedules/${s.id}`}
@@ -323,7 +325,7 @@ export function SchedulesPage() {
             <b>Priority {s.priority}</b>
           </Link>
         ))}
-        {q.data?.items.length === 0 && (
+        {q.data?.items?.length === 0 && (
           <div className="screen-empty">
             <h3>No schedules yet</h3>
             <p>

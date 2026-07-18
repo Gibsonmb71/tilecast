@@ -115,7 +115,7 @@ export function WidgetsPage() {
       )}
       {widgets.isLoading ? (
         <div className="table-loading">Loading Widgets...</div>
-      ) : widgets.data?.items.length === 0 ? (
+      ) : widgets.data?.items?.length === 0 ? (
         <EmptyState
           className="content-empty"
           icon={<Plus size={24} aria-hidden="true" />}
@@ -171,7 +171,7 @@ export function WidgetEditorPage() {
   const saved = (value: Asset) => {
     void navigate(`/widgets/${value.id}`, { replace: true });
   };
-  const definition = definitions.data?.widgets.find(
+  const definition = definitions.data?.widgets?.find(
     (candidate) => candidate.id === provider,
   );
 
