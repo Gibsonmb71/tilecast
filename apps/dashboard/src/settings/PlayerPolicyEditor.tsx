@@ -6,6 +6,7 @@ import type { SettingDefinition } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { SettingControl } from "./SettingControl";
 import { descriptionFor, enumLabel } from "./settingDisplay";
+import { normalizeSettingValues } from "./settingValues";
 
 const policyGroups = [
   {
@@ -117,21 +118,23 @@ export function PlayerPolicyEditor({
   }, [dirty]);
 
   const save = useMutation({
-    mutationFn: () =>
-      target === "group"
+    mutationFn: () => {
+      const normalizedValues = normalizeSettingValues(values, definitions);
+      return target === "group"
         ? api.putGroupPolicy(
             id,
             policy.data?.revision ?? 0,
             priority,
-            values,
+            normalizedValues,
             auth.status?.csrfToken ?? "",
           )
         : api.putScreenPolicy(
             id,
             policy.data?.revision ?? 0,
-            values,
+            normalizedValues,
             auth.status?.csrfToken ?? "",
-          ),
+          );
+    },
     onSuccess: async () => {
       initializedRevision.current = null;
       await policy.refetch();

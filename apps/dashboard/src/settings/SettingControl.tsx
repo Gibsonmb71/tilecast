@@ -3,6 +3,12 @@ import { useId, useMemo, useState } from "react";
 import { signalColors } from "@tilecast/design-tokens/values";
 import type { SettingDefinition } from "../api/types";
 import { enumLabel } from "./settingDisplay";
+import {
+  normalizeLocalTime,
+  normalizeTimezone,
+  timezoneLabel,
+  timezoneOptions,
+} from "./settingValues";
 
 const weekdays = [
   [1, "Mon"],
@@ -38,6 +44,24 @@ export function SettingControl({
         onChange={onChange}
       />
     );
+  if (definition.type === "timezone") {
+    const timezone = normalizeTimezone(value);
+    return (
+      <Select
+        id={id}
+        aria-label={definition.title}
+        value={timezone}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        {timezoneOptions(timezone).map((option) => (
+          <option key={option} value={option}>
+            {timezoneLabel(option)}
+          </option>
+        ))}
+      </Select>
+    );
+  }
   if (definition.type === "enum")
     return (
       <Select
@@ -110,6 +134,18 @@ export function SettingControl({
         multiplier={duration.multiplier}
         disabled={disabled}
         onChange={onChange}
+      />
+    );
+  if (definition.type === "local_time")
+    return (
+      <input
+        id={id}
+        aria-label={definition.title}
+        type="time"
+        value={normalizeLocalTime(value)}
+        step={60}
+        disabled={disabled}
+        onChange={(event) => onChange(normalizeLocalTime(event.target.value))}
       />
     );
   const numeric = ["int", "int64", "float"].includes(definition.type);

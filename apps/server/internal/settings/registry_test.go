@@ -18,6 +18,35 @@ func TestRegistryRejectsUnknownAndUnsafeValues(t *testing.T) {
 	}
 }
 
+func TestLegacyLocalTimesNormalizeAndFixedTimezoneNamesFail(t *testing.T) {
+	normalized, err := Validate(map[string]any{
+		"power.active_hours_start": "06:30:00",
+		"power.active_hours_end":   "16:00:00",
+	}, ScopePolicy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if normalized["power.active_hours_start"] != "06:30" || normalized["power.active_hours_end"] != "16:00" {
+		t.Fatalf("local times were not normalized: %#v", normalized)
+	}
+	for name, value := range map[string]string{
+		"non-zero seconds": "16:00:30",
+		"invalid hour":     "25:00:00",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := Validate(map[string]any{"power.active_hours_end": value}, ScopePolicy); err == nil {
+				t.Fatalf("invalid local time %q accepted", value)
+			}
+		})
+	}
+	if _, err := Validate(map[string]any{"organization.timezone": "EST"}, ScopeOrganization); err == nil {
+		t.Fatal("fixed timezone abbreviation accepted")
+	}
+	if _, err := Validate(map[string]any{"organization.timezone": "America/New_York"}, ScopeOrganization); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestDefinitionJSONUsesPublicContractFieldNames(t *testing.T) {
 	encoded, err := json.Marshal(Definitions()[0])
 	if err != nil {

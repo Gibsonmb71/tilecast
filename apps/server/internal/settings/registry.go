@@ -173,6 +173,7 @@ var byKey = func() map[string]Definition {
 }()
 var colorPattern = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
 var localTimePattern = regexp.MustCompile(`^(?:[01][0-9]|2[0-3]):[0-5][0-9]$`)
+var legacyLocalTimePattern = regexp.MustCompile(`^(?:[01][0-9]|2[0-3]):[0-5][0-9]:00$`)
 var packagePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+$`)
 
 func Definitions() []Definition { return append([]Definition(nil), definitions...) }
@@ -224,15 +225,24 @@ func validateValue(d Definition, value any) (any, error) {
 			return nil, errors.New("must be a six-digit hex color")
 		}
 		if d.Type == "timezone" {
+			if s != "UTC" && !strings.Contains(s, "/") {
+				return nil, errors.New("must be a canonical IANA timezone")
+			}
 			if _, err := time.LoadLocation(s); err != nil {
-				return nil, errors.New("must be an IANA timezone")
+				return nil, errors.New("must be a canonical IANA timezone")
 			}
 		}
 		if d.Type == "enum" && !contains(d.Allowed, s) {
 			return nil, errors.New("is not allowed")
 		}
-		if d.Type == "local_time" && !localTimePattern.MatchString(s) {
-			return nil, errors.New("must use HH:mm local time")
+		if d.Type == "local_time" {
+			switch {
+			case localTimePattern.MatchString(s):
+			case legacyLocalTimePattern.MatchString(s):
+				s = strings.TrimSuffix(s, ":00")
+			default:
+				return nil, errors.New("must use HH:mm local time")
+			}
 		}
 		return s, nil
 	case "weekday_list", "package_list":

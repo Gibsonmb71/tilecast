@@ -7,6 +7,7 @@ import { SettingControl } from "./SettingControl";
 import { dependencyState } from "./settingDependencies";
 import { enumLabel, groupsFor } from "./settingDisplay";
 import { sectionFromPath, settingsNavigation } from "./settingsNavigation";
+import { normalizeSettingValues } from "./settingValues";
 
 afterEach(cleanup);
 const definition = (
@@ -149,6 +150,66 @@ describe("settings presentation", () => {
       { target: { value: "10" } },
     );
     expect(change).toHaveBeenCalledWith(600);
+  });
+
+  it("normalizes minute-precision local times and uses canonical timezone options", () => {
+    const timeChange = vi.fn();
+    render(
+      <SettingControl
+        definition={definition({
+          key: "power.active_hours_end",
+          type: "local_time",
+          title: "End time",
+        })}
+        value="16:00:00"
+        onChange={timeChange}
+      />,
+    );
+    const time = screen.getByLabelText("End time");
+    expect(time).toHaveValue("16:00");
+    expect(time).toHaveAttribute("step", "60");
+    fireEvent.change(time, { target: { value: "17:30" } });
+    expect(timeChange).toHaveBeenCalledWith("17:30");
+    cleanup();
+
+    const timezoneChange = vi.fn();
+    render(
+      <SettingControl
+        definition={definition({
+          key: "organization.timezone",
+          type: "timezone",
+          title: "Default timezone",
+        })}
+        value="EST"
+        onChange={timezoneChange}
+      />,
+    );
+    const timezone = screen.getByRole("combobox", {
+      name: "Default timezone",
+    });
+    expect(timezone).toHaveTextContent("Eastern Time (America/New_York)");
+    expect(document.querySelector(".signal-select__native")).toHaveValue(
+      "America/New_York",
+    );
+
+    expect(
+      normalizeSettingValues(
+        {
+          "organization.timezone": "EST",
+          "power.active_hours_start": "06:30:00",
+          "power.active_hours_end": "16:00:00",
+        },
+        [
+          definition({ key: "organization.timezone", type: "timezone" }),
+          definition({ key: "power.active_hours_start", type: "local_time" }),
+          definition({ key: "power.active_hours_end", type: "local_time" }),
+        ],
+      ),
+    ).toMatchObject({
+      "organization.timezone": "America/New_York",
+      "power.active_hours_start": "06:30",
+      "power.active_hours_end": "16:00",
+    });
   });
 
   it("centralizes dependencies and meaningful subsections", () => {
