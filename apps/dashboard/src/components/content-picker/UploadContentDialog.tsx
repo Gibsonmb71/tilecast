@@ -2,6 +2,7 @@ import { Upload, X } from "lucide-react";
 import { useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import { api } from "../../api/client";
 import type { Asset } from "../../api/types";
+import { droppedFiles } from "../content/dragDrop";
 
 type UploadItem = {
   id: string;
@@ -84,7 +85,7 @@ export function UploadContentDialog({
   };
   const drop = (event: DragEvent) => {
     event.preventDefault();
-    for (const file of Array.from(event.dataTransfer.files)) void upload(file);
+    for (const file of droppedFiles(event.dataTransfer)) void upload(file);
   };
   return (
     <div

@@ -47,6 +47,7 @@ import type {
 import { useAuth } from "../auth/AuthProvider";
 import { NativeAppEditor, YouTubeSourceEditor } from "../content/SourceEditors";
 import { AssetPreview } from "../components/content/AssetPreview";
+import { droppedFiles } from "../components/content/dragDrop";
 
 type QueueItem = {
   localId: string;
@@ -285,7 +286,7 @@ export function ContentPage() {
   const dropFiles = (event: DragEvent) => {
     event.preventDefault();
     if (canManage)
-      for (const file of Array.from(event.dataTransfer.files))
+      for (const file of droppedFiles(event.dataTransfer))
         void uploadFile(file);
   };
   const cancel = async (item: QueueItem) => {
@@ -1483,7 +1484,12 @@ function MediaAssetDetails({
     >
       <div className="asset-details">
         {asset.thumbnailUrl && (
-          <img className="details-preview" src={asset.thumbnailUrl} alt="" />
+          <img
+            className="details-preview"
+            src={asset.thumbnailUrl}
+            alt=""
+            draggable={false}
+          />
         )}
         <label className="field">
           <span className="field__label">Name</span>
