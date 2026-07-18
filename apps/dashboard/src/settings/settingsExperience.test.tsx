@@ -187,7 +187,7 @@ describe("settings presentation", () => {
     const timezone = screen.getByRole("combobox", {
       name: "Default timezone",
     });
-    expect(timezone).toHaveTextContent("Eastern Time (America/New_York)");
+    expect(timezone).toHaveTextContent("Eastern Time");
     expect(document.querySelector(".signal-select__native")).toHaveValue(
       "America/New_York",
     );
