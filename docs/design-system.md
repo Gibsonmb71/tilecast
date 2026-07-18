@@ -265,6 +265,23 @@ Their proposed shared forms are Planned, not Implemented. `ViewTabs` is
 navigation between page-owned views; it does not claim ARIA `tab` or `tabpanel`
 semantics.
 
+### Primary navigation
+
+Desktop navigation keeps the most frequently checked destinations stable and
+uses static section labels rather than collapsible accordions:
+
+- Overview and Screens remain first and ungrouped.
+- Content contains Media, Widgets, and Data Sources.
+- Compose contains Playlists, Layouts, and Schedules.
+- Activity remains a standalone destination until multiple monitoring routes
+  justify a real group.
+- Settings stays in a separate footer region above the account controls.
+
+Section labels describe information architecture; they are not interactive.
+Compact desktop and mobile navigation hide the labels while preserving every
+destination and the same route order. Do not add collapse state or hide a
+primary route behind disclosure while the navigation remains this size.
+
 ### Buttons and actions
 
 Use one primary action per local decision area. Secondary actions are bordered

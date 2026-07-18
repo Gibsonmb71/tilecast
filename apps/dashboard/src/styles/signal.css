@@ -192,7 +192,8 @@ code,
 }
 
 .app-shell--sidebar-compact .sidebar nav a span,
-.app-shell--sidebar-compact .sidebar__account-copy {
+.app-shell--sidebar-compact .sidebar__account-copy,
+.app-shell--sidebar-compact .sidebar__nav-label {
   display: none;
 }
 
@@ -210,8 +211,50 @@ code,
 }
 
 .sidebar nav {
-  gap: var(--tc-space-1);
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
   padding: var(--tc-space-3) var(--tc-space-2);
+}
+
+.sidebar__nav-main {
+  display: grid;
+  gap: var(--tc-space-1);
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.sidebar__nav-group {
+  display: grid;
+  gap: var(--tc-space-1);
+  margin-top: var(--tc-space-3);
+}
+
+.sidebar__nav-label {
+  margin: 0;
+  padding: var(--tc-space-1) var(--tc-space-3) 2px;
+  color: var(--tc-sidebar-text);
+  font: var(--tc-text-supporting);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+.sidebar__nav-standalone {
+  display: grid;
+  margin-top: var(--tc-space-3);
+}
+
+.sidebar__nav-footer {
+  display: grid;
+  gap: var(--tc-space-1);
+  margin-top: auto;
+  padding-top: var(--tc-space-3);
+  border-top: 1px solid var(--tc-sidebar-border);
 }
 
 .sidebar nav a {
@@ -2108,7 +2151,8 @@ tbody tr:hover {
   }
 
   .sidebar nav a span,
-  .sidebar__account-copy {
+  .sidebar__account-copy,
+  .sidebar__nav-label {
     display: none;
   }
 
@@ -2171,7 +2215,15 @@ tbody tr:hover {
 
   .sidebar nav {
     display: flex;
+    flex-direction: row;
     overflow-x: auto;
+  }
+
+  .sidebar__nav-main,
+  .sidebar__nav-group,
+  .sidebar__nav-standalone,
+  .sidebar__nav-footer {
+    display: contents;
   }
 
   .sidebar nav a {
