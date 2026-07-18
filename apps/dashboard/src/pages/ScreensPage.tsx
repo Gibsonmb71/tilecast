@@ -6,7 +6,6 @@ import {
   Link2,
   Monitor,
   Pencil,
-  Plus,
   RefreshCw,
   ShieldOff,
   Wifi,
@@ -125,14 +124,9 @@ export function ScreensPage() {
         description="Pair and monitor Android TV, Google TV, and Fire TV players."
         actions={
           manageable ? (
-            <>
-              <Link className="button button--quiet" to="/groups">
-                Sync groups
-              </Link>
-              <Link className="button button--primary" to="/screens/pair">
-                <Plus size={16} aria-hidden="true" /> Pair screen
-              </Link>
-            </>
+            <Link className="button button--quiet" to="/groups">
+              Sync groups
+            </Link>
           ) : undefined
         }
       />
@@ -951,11 +945,6 @@ export function ScreenDetailPage() {
   return (
     <div className="screen-detail">
       <PageHeader
-        eyebrow={
-          <Link className="back-link" to="/screens">
-            ← Screens
-          </Link>
-        }
         title={screen.name}
         description={screen.location || "No location set"}
         actions={

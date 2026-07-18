@@ -21,6 +21,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { useAuth } from "../auth/AuthProvider";
 import { Brand } from "../components/Brand";
 import { RouteErrorBoundary } from "../components/RouteErrorBoundary";
+import { StudioTopbar } from "../components/StudioTopbar";
 import { api } from "../api/client";
 import { OperationsDashboard } from "./OperationsDashboard";
 
@@ -50,13 +51,6 @@ const settingsNav = [
   "/settings",
   Settings,
 ] as const satisfies NavItem;
-const nav = [
-  ...pinnedNav,
-  ...contentNav,
-  ...composeNav,
-  activityNav,
-  settingsNav,
-] as const;
 const sidebarCompactKey = "tilecast.sidebar.compact";
 
 function SidebarLink({ item }: { item: NavItem }) {
@@ -184,12 +178,6 @@ export function DashboardShell() {
     };
   }, [accountMenuOpen]);
   if (auth.isLoading || !auth.status?.authenticated) return null;
-  const title =
-    location.pathname === "/"
-      ? "Overview"
-      : (nav.find(
-          (item) => item[1] !== "/" && location.pathname.startsWith(item[1]),
-        )?.[0] ?? "Overview");
   return (
     <div
       className={`app-shell${sidebarCompact ? " app-shell--sidebar-compact" : ""}`}
@@ -266,9 +254,7 @@ export function DashboardShell() {
         </div>
       </aside>
       <div className="workspace">
-        <header className="topbar">
-          <h1>{title}</h1>
-        </header>
+        <StudioTopbar user={auth.status.user} />
         <main className="workspace__content">
           <RouteErrorBoundary key={location.pathname}>
             <Outlet />

@@ -9,6 +9,7 @@ import { AuthProvider } from "./auth/AuthProvider";
 import "./styles.css";
 import "./styles/layout-fonts.css";
 import "./styles/signal.css";
+import "./styles/topbar.css";
 // Page-specific refinements intentionally load after shared Signal styles.
 import "./styles/reliability.css";
 import "./styles/screens.css";

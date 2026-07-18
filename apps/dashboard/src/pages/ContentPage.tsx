@@ -304,7 +304,7 @@ export function ContentPage() {
       onDrop={dropFiles}
     >
       <PageHeader
-        title="Assets"
+        title="Media"
         description="Uploaded images and videos available to playlists and Layouts."
         actions={
           canManage ? (

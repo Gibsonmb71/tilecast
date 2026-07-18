@@ -192,18 +192,6 @@
   }
 }
 
-/* Keep overview actions on the same baseline. */
-.ops-actions {
-  align-items: stretch;
-}
-
-.ops-actions .button,
-.ops-actions summary.button {
-  min-height: 40px;
-  margin: 0;
-  align-items: center;
-}
-
 /* Make asset/App cards own their clickable preview and reliably show thumbnails. */
 .asset-card__open {
   display: grid;

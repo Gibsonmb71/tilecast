@@ -282,6 +282,30 @@ Compact desktop and mobile navigation hide the labels while preserving every
 destination and the same route order. Do not add collapse state or hide a
 primary route behind disclosure while the navigation remains this size.
 
+### Persistent Studio header
+
+Authenticated Studio routes use one persistent 56px utility header above page
+content. It contains three stable regions:
+
+- The left region renders breadcrumbs from the route hierarchy. A top-level
+  route shows one semibold current-page label. Detail routes link muted
+  ancestors and render the entity name as the unlinked current page. Page
+  headings remain `h1` elements; breadcrumbs are navigation, not headings.
+- The center region opens global search with `Command+K` on Apple platforms or
+  `Control+K` elsewhere. The implemented search providers cover Studio route
+  destinations, settings sections, and screen names. Additional entity
+  providers may extend this registry without changing the palette interaction.
+- The right region contains active-alert notifications, the role-gated Pair
+  screen action, and the role-gated Create menu. Screen alerts link to screen
+  details; failed Player update deployments link to Player update settings.
+
+The header uses existing surface, border, text, status, focus, radius, spacing,
+and button tokens. Below 900px, global search becomes an icon button and Pair
+screen becomes icon-only; Create retains its label. Every icon-only control
+requires an accessible name. The palette supports arrow-key selection, Enter
+to navigate, and Escape to close. The global shortcut must not override text
+entry inside a dialog.
+
 ### Buttons and actions
 
 Use one primary action per local decision area. Secondary actions are bordered

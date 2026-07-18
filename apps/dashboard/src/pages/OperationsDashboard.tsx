@@ -3,9 +3,7 @@ import {
   ChevronRight,
   CircleAlert,
   MonitorCheck,
-  Plus,
   RefreshCw,
-  Upload,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
@@ -59,26 +57,6 @@ export function OperationsDashboard() {
         className="ops-header"
         title="System overview"
         description="Live player state, items requiring attention, and what changes next."
-        actions={
-          <div className="ops-actions" aria-label="Quick actions">
-            <Link className="button button--primary" to="/screens/pair">
-              <MonitorCheck size={16} aria-hidden="true" /> Pair screen
-            </Link>
-            <details className="ops-create-menu">
-              <summary className="button button--secondary">
-                <Plus size={16} aria-hidden="true" /> Create
-              </summary>
-              <div>
-                <Link to="/assets">
-                  <Upload size={16} aria-hidden="true" /> Upload content
-                </Link>
-                <Link to="/schedules/new">
-                  <CalendarClock size={16} aria-hidden="true" /> Create schedule
-                </Link>
-              </div>
-            </details>
-          </div>
-        }
       />
 
       <section className="ops-summary" aria-label="Current status">

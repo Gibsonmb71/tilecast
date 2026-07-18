@@ -199,7 +199,7 @@ export function PageHeader({
     <header className={`page-header ${className}`.trim()}>
       <div className="page-header__copy">
         {eyebrow && <div className="page-header__eyebrow">{eyebrow}</div>}
-        <h2>{title}</h2>
+        <h1>{title}</h1>
         {description && <p>{description}</p>}
       </div>
       {actions && <div className="page-header__actions">{actions}</div>}
@@ -469,11 +469,13 @@ export function Dialog({
   title,
   children,
   onClose,
+  className = "",
 }: {
   open: boolean;
   title: string;
   children: ReactNode;
   onClose: () => void;
+  className?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -486,7 +488,7 @@ export function Dialog({
   return (
     <dialog
       ref={ref}
-      className="dialog"
+      className={`dialog ${className}`.trim()}
       aria-labelledby={titleId}
       onCancel={(event) => {
         event.preventDefault();

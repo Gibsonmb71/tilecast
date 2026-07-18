@@ -1,6 +1,8 @@
-import { Navigate, Route, Routes } from "react-router";
+import { Navigate, useRoutes, type RouteObject } from "react-router";
 import { AssetFilterPortal } from "./components/AssetFilterPortal";
 import { GitHubOAuthSetupPortal } from "./components/GitHubOAuthSetupPortal";
+import { StudioRoutesProvider } from "./navigation/studioRoutes";
+import { settingsItems } from "./settings/settingsNavigation";
 import { AuthPage } from "./pages/AuthPage";
 import { DashboardShell, FoundationPage } from "./pages/Dashboard";
 import { PairScreenPage, ScreensPage } from "./pages/ScreensPage";
@@ -20,55 +22,280 @@ import { WidgetEditorPage, WidgetsPage } from "./pages/WidgetsPage";
 import { DataSourceEditorPage, DataSourcesPage } from "./pages/DataSourcesPage";
 import { ActivityPage } from "./pages/ActivityPage";
 
+const search = (
+  label: string,
+  description: string,
+  to: string,
+  keywords?: string[],
+) => ({ label, description, to, keywords });
+
+export const studioRoutes: RouteObject[] = [
+  { path: "/setup", element: <AuthPage mode="setup" /> },
+  { path: "/login", element: <AuthPage mode="login" /> },
+  {
+    path: "/",
+    element: <DashboardShell />,
+    children: [
+      {
+        index: true,
+        element: <FoundationPage />,
+        handle: {
+          breadcrumb: "Overview",
+          search: search(
+            "Overview",
+            "Installation health and current player status",
+            "/",
+            ["dashboard", "home"],
+          ),
+        },
+      },
+      {
+        path: "screens",
+        handle: {
+          breadcrumb: "Screens",
+          search: search(
+            "Screens",
+            "Pair and monitor signage players",
+            "/screens",
+            ["players", "devices", "fleet"],
+          ),
+        },
+        children: [
+          { index: true, element: <ScreensPage /> },
+          {
+            path: "pair",
+            element: <PairScreenPage />,
+            handle: { breadcrumb: "Pair screen" },
+          },
+          {
+            path: "pair/:code",
+            element: <PairScreenPage />,
+            handle: { breadcrumb: "Pair screen" },
+          },
+          {
+            path: "pair/request/:requestId",
+            element: <PairScreenPage />,
+            handle: { breadcrumb: "Pair screen" },
+          },
+          {
+            path: ":id",
+            element: <ScreenDetailWithPreviewPage />,
+            handle: { breadcrumb: "Screen", resource: "screen" },
+          },
+        ],
+      },
+      {
+        path: "groups",
+        handle: { breadcrumb: "Sync groups" },
+        children: [
+          { index: true, element: <GroupsPage /> },
+          {
+            path: ":id",
+            element: <GroupDetailPage />,
+            handle: { breadcrumb: "Sync group", resource: "screen-group" },
+          },
+        ],
+      },
+      {
+        path: "assets",
+        element: <ContentPage />,
+        handle: {
+          breadcrumb: "Media",
+          search: search(
+            "Media",
+            "Browse uploaded images, videos, and website content",
+            "/assets",
+            ["content", "uploads", "library"],
+          ),
+        },
+      },
+      { path: "content", element: <Navigate to="/assets" replace /> },
+      {
+        path: "widgets",
+        handle: {
+          breadcrumb: "Widgets",
+          search: search(
+            "Widgets",
+            "Manage reusable dynamic signage content",
+            "/widgets",
+          ),
+        },
+        children: [
+          { index: true, element: <WidgetsPage /> },
+          {
+            path: "new",
+            element: <WidgetEditorPage />,
+            handle: { breadcrumb: "Create widget" },
+          },
+          {
+            path: "new/:provider",
+            element: <WidgetEditorPage />,
+            handle: { breadcrumb: "Create widget" },
+          },
+          {
+            path: ":id",
+            element: <WidgetEditorPage />,
+            handle: { breadcrumb: "Widget", resource: "widget" },
+          },
+        ],
+      },
+      {
+        path: "data-sources",
+        handle: {
+          breadcrumb: "Data Sources",
+          search: search(
+            "Data Sources",
+            "Manage reusable data connections",
+            "/data-sources",
+            ["feeds", "integrations"],
+          ),
+        },
+        children: [
+          { index: true, element: <DataSourcesPage /> },
+          {
+            path: "new",
+            element: <DataSourceEditorPage />,
+            handle: { breadcrumb: "Create data source" },
+          },
+          {
+            path: "new/:provider",
+            element: <DataSourceEditorPage />,
+            handle: { breadcrumb: "Create data source" },
+          },
+          {
+            path: ":id",
+            element: <DataSourceEditorPage />,
+            handle: { breadcrumb: "Data source", resource: "data-source" },
+          },
+        ],
+      },
+      {
+        path: "playlists",
+        handle: {
+          breadcrumb: "Playlists",
+          search: search(
+            "Playlists",
+            "Build ordered fullscreen playback",
+            "/playlists",
+          ),
+        },
+        children: [
+          { index: true, element: <PlaylistsPage /> },
+          {
+            path: ":id",
+            element: <PlaylistEditorPage />,
+            handle: { breadcrumb: "Playlist", resource: "playlist" },
+          },
+        ],
+      },
+      {
+        path: "layouts",
+        handle: {
+          breadcrumb: "Layouts",
+          search: search(
+            "Layouts",
+            "Arrange content on a presentation canvas",
+            "/layouts",
+          ),
+        },
+        children: [
+          { index: true, element: <LayoutsPage /> },
+          {
+            path: ":id",
+            element: <LayoutEditorPage />,
+            handle: { breadcrumb: "Layout", resource: "layout" },
+          },
+        ],
+      },
+      {
+        path: "schedules",
+        handle: {
+          breadcrumb: "Schedules",
+          search: search(
+            "Schedules",
+            "Deploy content to screens at the right time",
+            "/schedules",
+          ),
+        },
+        children: [
+          { index: true, element: <SchedulesPage /> },
+          {
+            path: "new",
+            element: <ScheduleEditorPage />,
+            handle: { breadcrumb: "Create schedule" },
+          },
+          {
+            path: ":id",
+            element: <ScheduleEditorPage />,
+            handle: { breadcrumb: "Schedule", resource: "schedule" },
+          },
+        ],
+      },
+      { path: "users", element: <Navigate to="/settings/users" replace /> },
+      {
+        path: "activity",
+        element: <ActivityPage />,
+        handle: {
+          breadcrumb: "Activity",
+          search: search(
+            "Activity",
+            "Review recent system and playback events",
+            "/activity",
+            ["monitor", "events"],
+          ),
+        },
+      },
+      {
+        path: "settings",
+        handle: {
+          breadcrumb: "Settings",
+          search: search(
+            "Settings",
+            "Configure this Tilecast installation",
+            "/settings/general",
+          ),
+        },
+        children: [
+          {
+            index: true,
+            element: <Navigate to="/settings/general" replace />,
+          },
+          ...settingsItems.map((item) => ({
+            path: item.path,
+            element: <SettingsPage />,
+            handle: {
+              breadcrumb: item.label,
+              search: search(
+                item.label,
+                `${item.label} settings`,
+                `/settings/${item.path}`,
+                ["settings"],
+              ),
+            },
+          })),
+          {
+            path: "*",
+            element: <Navigate to="/settings/general" replace />,
+          },
+        ],
+      },
+    ],
+  },
+  { path: "*", element: <Navigate to="/" replace /> },
+];
+
+function RoutedApp() {
+  return useRoutes(studioRoutes);
+}
+
 export function App() {
   return (
     <>
       <AssetFilterPortal />
       <GitHubOAuthSetupPortal />
-      <Routes>
-        <Route path="/setup" element={<AuthPage mode="setup" />} />
-        <Route path="/login" element={<AuthPage mode="login" />} />
-        <Route element={<DashboardShell />}>
-          <Route index element={<FoundationPage />} />
-          <Route path="screens" element={<ScreensPage />} />
-          <Route path="screens/pair" element={<PairScreenPage />} />
-          <Route path="screens/pair/:code" element={<PairScreenPage />} />
-          <Route
-            path="screens/pair/request/:requestId"
-            element={<PairScreenPage />}
-          />
-          <Route path="screens/:id" element={<ScreenDetailWithPreviewPage />} />
-          <Route path="groups" element={<GroupsPage />} />
-          <Route path="groups/:id" element={<GroupDetailPage />} />
-          <Route path="assets" element={<ContentPage />} />
-          <Route path="content" element={<Navigate to="/assets" replace />} />
-          <Route path="widgets" element={<WidgetsPage />} />
-          <Route path="widgets/new" element={<WidgetEditorPage />} />
-          <Route path="widgets/new/:provider" element={<WidgetEditorPage />} />
-          <Route path="widgets/:id" element={<WidgetEditorPage />} />
-          <Route path="data-sources" element={<DataSourcesPage />} />
-          <Route path="data-sources/new" element={<DataSourceEditorPage />} />
-          <Route
-            path="data-sources/new/:provider"
-            element={<DataSourceEditorPage />}
-          />
-          <Route path="data-sources/:id" element={<DataSourceEditorPage />} />
-          <Route path="playlists" element={<PlaylistsPage />} />
-          <Route path="playlists/:id" element={<PlaylistEditorPage />} />
-          <Route path="layouts" element={<LayoutsPage />} />
-          <Route path="layouts/:id" element={<LayoutEditorPage />} />
-          <Route path="schedules" element={<SchedulesPage />} />
-          <Route path="schedules/new" element={<ScheduleEditorPage />} />
-          <Route path="schedules/:id" element={<ScheduleEditorPage />} />
-          <Route
-            path="users"
-            element={<Navigate to="/settings/users" replace />}
-          />
-          <Route path="activity" element={<ActivityPage />} />
-          <Route path="settings/*" element={<SettingsPage />} />
-        </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      <StudioRoutesProvider routes={studioRoutes}>
+        <RoutedApp />
+      </StudioRoutesProvider>
     </>
   );
 }
