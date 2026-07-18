@@ -9,6 +9,7 @@ import org.tilecast.player.network.LayoutPlacement
 import org.tilecast.player.network.ManifestAsset
 import org.tilecast.player.network.ManifestLayout
 import org.tilecast.player.network.PlayerManifest
+import org.tilecast.player.data.CachedAsset
 
 class ManifestSyncManagerTest {
     @Test
@@ -57,4 +58,38 @@ class ManifestSyncManagerTest {
         assertEquals(listOf("variant-background", "variant-placement"), selected.map { it.variantId })
         assertTrue(selected.all { it.fileSize > 0 })
     }
+
+    @Test
+    fun onlyVerifiesFilesRequiredByTheActiveManifest() {
+        val active = cachedAsset("active", required = true)
+        val unprotected = cachedAsset("unprotected", required = false)
+        val verified = mutableListOf<String>()
+
+        val result = validateActiveCache(listOf(active, unprotected)) { record ->
+            verified += record.variantId
+            true
+        }
+
+        assertEquals(listOf("active"), verified)
+        assertEquals(mapOf("active" to active.localPath), result.localFiles)
+        assertTrue(result.complete)
+    }
+
+    @Test
+    fun rejectsAnInvalidFileRequiredByTheActiveManifest() {
+        val result = validateActiveCache(listOf(cachedAsset("active", required = true))) { false }
+
+        assertTrue(result.localFiles.isEmpty())
+        assertTrue(!result.complete)
+    }
+
+    private fun cachedAsset(variantId: String, required: Boolean) = CachedAsset(
+        variantId = variantId,
+        assetId = "asset-$variantId",
+        sha256 = "hash-$variantId",
+        expectedFileSize = 10,
+        localPath = "/cache/$variantId",
+        downloadStatus = "ready",
+        requiredByActiveManifest = required,
+    )
 }

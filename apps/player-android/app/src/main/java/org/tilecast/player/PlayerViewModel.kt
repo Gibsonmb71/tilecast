@@ -99,6 +99,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private var selectedUrl: NormalizedServerUrl? = null
 	private var socket: WebSocket? = null
 	private var reconnectJob: Job? = null
+	private val connectionEpoch = ConnectionEpoch()
 	private var pairingJob: Job? = null
 	private var pairingRequestJob: Job? = null
 	private val mutableContent = MutableStateFlow<PlaybackSession?>(null)
@@ -287,6 +288,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private suspend fun connectPaired(saved: PlayerConfiguration, credential: String) {
+        val epoch = connectionEpoch.capture()
         val url = saved.serverUrl ?: return; val screenName = saved.screenName ?: return
         mutableContent.value = mutableContent.value?.copy(serverUrl = url, credential = credential)
         emit(PlayerEvent.Enrolled(screenName))
@@ -298,16 +300,17 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             if (error.status in 400..499) { emit(PlayerEvent.Failed(error.message)); return }
         } catch (error: CancellationException) { throw error
         } catch (_: Exception) { }
-        openSocket(url, screenName, credential, 0)
+        openSocket(url, screenName, credential, 0, epoch)
     }
 
-    private fun openSocket(url: String, screenName: String, credential: String, attempt: Int) {
+    private fun openSocket(url: String, screenName: String, credential: String, attempt: Int, epoch: Long) {
+        if (!connectionEpoch.isCurrent(epoch)) return
         val previous = socket
         socket = null
         previous?.cancel()
         socket = api.socket(url, credential, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                if (socket !== webSocket) return
+                if (!connectionEpoch.isCurrent(epoch) || socket !== webSocket) return
                 reconnectJob?.cancel(); reconnectJob = null
                 if (attempt > 0) recordReliabilityEvent("connection.restored", "info", result = "recovered", failureMessage = "Reconnected after $attempt attempt(s)")
                 socketOpenedAtElapsed = SystemClock.elapsedRealtime()
@@ -315,42 +318,42 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 getApplication<Application>().getSharedPreferences("tilecast-reliability", Application.MODE_PRIVATE).edit().putString("offline-last-action", "NONE").apply()
                 webSocket.send("{\"type\":\"player.hello\",\"protocolVersion\":1,\"playerVersion\":\"${BuildConfig.VERSION_NAME}\"}")
                 webSocket.send(Json.encodeToString(kotlinx.serialization.json.JsonObject.serializer(), statusMessage()))
-                viewModelScope.launch { emit(PlayerEvent.Connected(screenName)) }
+				viewModelScope.launch { if (connectionEpoch.isCurrent(epoch)) emit(PlayerEvent.Connected(screenName)) }
 					getApplication<Application>().getSharedPreferences("tilecast-reliability",Application.MODE_PRIVATE).edit().putLong("last-server-connection-at",System.currentTimeMillis()).apply()
-				viewModelScope.launch { reconcileManifest(url, credential) }
-				viewModelScope.launch { runCommands(url, credential) }
-				viewModelScope.launch { reconcilePlayerConfig(url,credential) }
+				viewModelScope.launch { if (connectionEpoch.isCurrent(epoch)) reconcileManifest(url, credential) }
+				viewModelScope.launch { if (connectionEpoch.isCurrent(epoch)) runCommands(url, credential) }
+				viewModelScope.launch { if (connectionEpoch.isCurrent(epoch)) reconcilePlayerConfig(url,credential) }
 				// The periodic pass also polls commands: a dropped commands.available push must
 				// never strand a command until the next reconnect.
-				manifestPollJob?.cancel(); manifestPollJob=viewModelScope.launch { while (true) { delay(manifestPollDelayMillis(mutablePlayerConfig.value?.sync?.manifestReconciliationSeconds)); reconcileManifest(url,credential); runCommands(url,credential) } }
-				configPollJob?.cancel();configPollJob=viewModelScope.launch{while(true){delay(manifestPollDelayMillis(mutablePlayerConfig.value?.sync?.manifestReconciliationSeconds));reconcilePlayerConfig(url,credential)}}
+				manifestPollJob?.cancel(); manifestPollJob=viewModelScope.launch { while (connectionEpoch.isCurrent(epoch)) { delay(manifestPollDelayMillis(mutablePlayerConfig.value?.sync?.manifestReconciliationSeconds)); if (connectionEpoch.isCurrent(epoch)) { reconcileManifest(url,credential); runCommands(url,credential) } } }
+				configPollJob?.cancel();configPollJob=viewModelScope.launch{while(connectionEpoch.isCurrent(epoch)){delay(manifestPollDelayMillis(mutablePlayerConfig.value?.sync?.manifestReconciliationSeconds));if(connectionEpoch.isCurrent(epoch))reconcilePlayerConfig(url,credential)}}
             }
             override fun onMessage(webSocket: WebSocket, text: String) {
-				if (socket !== webSocket) return
+				if (!connectionEpoch.isCurrent(epoch) || socket !== webSocket) return
 				if (text.contains("server.ping")) { webSocket.send("{\"type\":\"player.pong\"}");val interval=(mutablePlayerConfig.value?.sync?.statusReportSeconds?:60)*1000L;if(System.currentTimeMillis()-lastStatusSentAt>=interval){webSocket.send(Json.encodeToString(kotlinx.serialization.json.JsonObject.serializer(), statusMessage()));lastStatusSentAt=System.currentTimeMillis()} }
-				if (text.contains("manifest.changed")) viewModelScope.launch { reconcileManifest(url, credential) }
-				if(text.contains("commands.available"))viewModelScope.launch{runCommands(url,credential)}
-				if(text.contains("config.changed"))viewModelScope.launch{reconcilePlayerConfig(url,credential)}
+				if (text.contains("manifest.changed")) viewModelScope.launch { if (connectionEpoch.isCurrent(epoch)) reconcileManifest(url, credential) }
+				if(text.contains("commands.available"))viewModelScope.launch{if(connectionEpoch.isCurrent(epoch))runCommands(url,credential)}
+				if(text.contains("config.changed"))viewModelScope.launch{if(connectionEpoch.isCurrent(epoch))reconcilePlayerConfig(url,credential)}
             }
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
-				if (socket !== webSocket) return
+				if (!connectionEpoch.isCurrent(epoch) || socket !== webSocket) return
 				manifestPollJob?.cancel()
 				configPollJob?.cancel()
                 webSocket.close(code, reason)
-                scheduleReconnect(url, screenName, credential, nextReconnectAttempt(attempt), reason)
+                scheduleReconnect(url, screenName, credential, nextReconnectAttempt(attempt), reason, epoch)
             }
             override fun onFailure(webSocket: WebSocket, error: Throwable, response: Response?) {
-				if (socket !== webSocket) return
+				if (!connectionEpoch.isCurrent(epoch) || socket !== webSocket) return
 				manifestPollJob?.cancel()
 				configPollJob?.cancel()
-                if (response?.code == 401) { viewModelScope.launch { verifyAfterAuthFailure(url, screenName, credential) }; return }
-                scheduleReconnect(url, screenName, credential, nextReconnectAttempt(attempt), error.message)
+                if (response?.code == 401) { viewModelScope.launch { verifyAfterAuthFailure(url, screenName, credential, epoch) }; return }
+                scheduleReconnect(url, screenName, credential, nextReconnectAttempt(attempt), error.message, epoch)
             }
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-				if (socket !== webSocket) return
+				if (!connectionEpoch.isCurrent(epoch) || socket !== webSocket) return
 				manifestPollJob?.cancel()
 				configPollJob?.cancel()
-                scheduleReconnect(url, screenName, credential, nextReconnectAttempt(attempt), reason)
+                scheduleReconnect(url, screenName, credential, nextReconnectAttempt(attempt), reason, epoch)
             }
         })
     }
@@ -366,15 +369,18 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     // an unsynchronized check-then-set on reconnectJob could schedule two reconnect loops and
     // leave two live sockets fighting each other.
     @Synchronized
-    private fun scheduleReconnect(url: String, name: String, credential: String, attempt: Int, reason: String?) {
+    private fun scheduleReconnect(url: String, name: String, credential: String, attempt: Int, reason: String?, epoch: Long) {
+        if (!connectionEpoch.isCurrent(epoch)) return
         if (reconnectJob?.isActive == true) return
         reconnectJob = viewModelScope.launch {
             emit(PlayerEvent.Disconnected(name, reason))
             if (attempt <= 1) recordReliabilityEvent("connection.lost", "warning", result = "failed", failureMessage = reason ?: "Connection lost")
             maybeSelfHeal()
             delay(backoff.delayMillis(attempt))
+            if (!connectionEpoch.isCurrent(epoch)) return@launch
             try {
                 val actual = api.identity(url)
+				if (!connectionEpoch.isCurrent(epoch)) return@launch
 				val expected = current?.serverInstallationId
 				if (expected != null && actual.installationId != expected) {
 					clearPlaybackState()
@@ -382,12 +388,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 					emit(PlayerEvent.IdentityChanged(expected, actual.installationId))
 					return@launch
                 }
-                openSocket(url, name, credential, attempt)
+                openSocket(url, name, credential, attempt, epoch)
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Exception) {
                 reconnectJob = null
-                scheduleReconnect(url, name, credential, attempt + 1, "Server unavailable")
+                scheduleReconnect(url, name, credential, attempt + 1, "Server unavailable", epoch)
             }
         }
     }
@@ -449,14 +455,16 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    private suspend fun verifyAfterAuthFailure(url: String, name: String, credential: String) {
-        try { api.heartbeat(url, credential, heartbeat()); scheduleReconnect(url, name, credential, 1, "Connection interrupted") }
+    private suspend fun verifyAfterAuthFailure(url: String, name: String, credential: String, epoch: Long) {
+        if (!connectionEpoch.isCurrent(epoch)) return
+        try { api.heartbeat(url, credential, heartbeat()); if (connectionEpoch.isCurrent(epoch)) scheduleReconnect(url, name, credential, 1, "Connection interrupted", epoch) }
         catch (error: CancellationException) { throw error }
-        catch (error: ApiException) { if (error.code == "device_credential_revoked" || error.code == "device_credential_invalid") revokeLocally(name) else emit(PlayerEvent.Disconnected(name, error.message)) }
-        catch (_: Exception) { scheduleReconnect(url, name, credential, 1, "Connection interrupted") }
+        catch (error: ApiException) { if (!connectionEpoch.isCurrent(epoch)) return; if (error.code == "device_credential_revoked" || error.code == "device_credential_invalid") revokeLocally(name) else emit(PlayerEvent.Disconnected(name, error.message)) }
+        catch (_: Exception) { if (connectionEpoch.isCurrent(epoch)) scheduleReconnect(url, name, credential, 1, "Connection interrupted", epoch) }
     }
 
     private fun stopConnectionWork() {
+        connectionEpoch.invalidate()
         val activeSocket = socket
         socket = null
         activeSocket?.cancel()

@@ -71,8 +71,6 @@ export function SystemPanel({ canManage }: { canManage: boolean }) {
     return (
       <div className="notice">Owner or Administrator access is required.</div>
     );
-  if (!query.data)
-    return <div className="table-loading">Loading diagnostics…</div>;
   const s = query.data;
   return (
     <div className="settings-sections">
@@ -84,25 +82,42 @@ export function SystemPanel({ canManage }: { canManage: boolean }) {
             never shown.
           </p>
         </header>
-        <dl className="system-settings-grid">
-          <Item
-            label="Tilecast"
-            value={`${s.tilecastVersion} · ${s.buildCommit}`}
-          />
-          <Item label="Uptime" value={formatDuration(s.uptimeSeconds)} />
-          <Item
-            label="Database"
-            value={`${s.database.status} · migration ${s.database.migrationVersion}`}
-          />
-          <Item label="PostgreSQL" value={s.database.postgresVersion} />
-          <Item label="Connected screens" value={String(s.connectedScreens)} />
-          <Item label="Pending commands" value={String(s.pendingCommands)} />
-          <Item
-            label="Processing jobs"
-            value={String(s.activeProcessingJobs)}
-          />
-          <Item label="Server timezone" value={s.serverTimezone} />
-        </dl>
+        {query.error ? (
+          <div className="notice notice--error" role="alert">
+            System diagnostics could not be loaded. {query.error.message}
+          </div>
+        ) : !s ? (
+          <div className="table-loading">Loading diagnostics…</div>
+        ) : (
+          <dl className="system-settings-grid">
+            <Item
+              label="Tilecast"
+              value={`${s.tilecastVersion} · ${s.buildCommit}`}
+            />
+            <Item label="Uptime" value={formatDuration(s.uptimeSeconds)} />
+            <Item
+              label="Database"
+              value={`${s.database.status} · migration ${s.database.migrationVersion}`}
+            />
+            <Item label="PostgreSQL" value={s.database.postgresVersion} />
+            <Item
+              label="Media storage"
+              value={
+                typeof s.media.status === "string" ? s.media.status : "unknown"
+              }
+            />
+            <Item
+              label="Connected screens"
+              value={String(s.connectedScreens)}
+            />
+            <Item label="Pending commands" value={String(s.pendingCommands)} />
+            <Item
+              label="Processing jobs"
+              value={String(s.activeProcessingJobs)}
+            />
+            <Item label="Server timezone" value={s.serverTimezone} />
+          </dl>
+        )}
       </section>
       <section className="settings-subsection">
         <header>

@@ -5,10 +5,12 @@ import androidx.room.withTransaction
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.contentOrNull
@@ -42,6 +44,24 @@ data class SyncProgress(val pendingVersion: Long? = null, val queueCount: Int = 
 
 internal fun manifestEtagForRequest(activeCacheVerified: Boolean, etag: String?): String? =
     etag.takeIf { activeCacheVerified }
+
+internal data class ActiveCacheValidation(
+    val localFiles: Map<String, String>,
+    val complete: Boolean,
+)
+
+internal fun validateActiveCache(
+    records: Collection<CachedAsset>,
+    verify: (CachedAsset) -> Boolean = { record ->
+        ContentPolicy.verify(File(record.localPath), record.expectedFileSize, record.sha256)
+    },
+): ActiveCacheValidation {
+    val required = records.filter { it.requiredByActiveManifest }
+    val local = required
+        .filter { it.downloadStatus == "ready" && verify(it) }
+        .associate { it.variantId to it.localPath }
+    return ActiveCacheValidation(local, local.size == required.size)
+}
 
 internal fun selectManifestDownloads(
     manifest: PlayerManifest,
@@ -116,12 +136,12 @@ class ManifestSyncManager(
         val stored = database.manifests().active() ?: run { activeCacheVerified = false; return null }
         val manifest = runCatching { api.decodeManifest(stored.rawJson) }.getOrNull() ?: run { activeCacheVerified = false; return null }
         if (manifest.schemaVersion !in setOf(11,12,13)) { activeCacheVerified = false; return null }
-        val records = database.cachedAssets().all().associateBy { it.variantId }
-        val local = records.filterValues { it.downloadStatus == "ready" && isValidCachedFile(File(it.localPath),it.expectedFileSize,it.sha256) }.mapValues { it.value.localPath }
-        val required = records.values.filter { it.requiredByActiveManifest }
-        if (required.any { local[it.variantId] == null }) { activeCacheVerified = false; return null }
+        val validation = withContext(Dispatchers.IO) {
+            validateActiveCache(database.cachedAssets().all())
+        }
+        if (!validation.complete) { activeCacheVerified = false; return null }
         activeCacheVerified = true
-        return PreparedContent(manifest, local)
+        return PreparedContent(manifest, validation.localFiles)
     }
 
     suspend fun reconcile(serverUrl: String, credential: String, screenId: String, progress: (SyncProgress) -> Unit): PreparedContent? {

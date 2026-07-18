@@ -18,6 +18,9 @@ class PlayerConfigManagerTest {
         assertTrue(shouldAcceptPlayerConfig(null, 1))
         assertTrue(shouldAcceptPlayerConfig(4, 5))
     }
+    @Test fun acceptsSameRevisionToRepairAnUnverifiedCache(){
+        assertTrue(shouldAcceptPlayerConfig(4, 4, activeConfigVerified = false))
+    }
     @Test fun onlySendsConditionalRequestAfterConfigVerification(){
         assertEquals("etag-1", playerConfigEtagForRequest(true, "etag-1"))
         assertEquals(null, playerConfigEtagForRequest(false, "etag-1"))

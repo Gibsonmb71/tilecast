@@ -264,13 +264,17 @@ func (s *server) systemStatus(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
-	mediaStatus := map[string]any{}
+	mediaStatus := map[string]any{"status": "not_configured"}
 	if s.media != nil {
-		var err error
-		mediaStatus, err = s.media.Diagnostics()
+		diagnostics, err := s.media.Diagnostics()
 		if err != nil {
-			s.internalError(w, r, err)
-			return
+			mediaStatus = map[string]any{
+				"status":  "degraded",
+				"message": "Media storage is unavailable.",
+			}
+		} else {
+			diagnostics["status"] = "healthy"
+			mediaStatus = diagnostics
 		}
 	}
 	updateTrust := "missing"
