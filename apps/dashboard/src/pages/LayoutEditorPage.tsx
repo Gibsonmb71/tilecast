@@ -1851,7 +1851,7 @@ function PlaylistZonePreview({
     );
   const fit = placement.playback?.fit ?? current.fitMode;
   const radius = placement.playback?.cornerRadius;
-  const className = `layout-playlist-preview${current.transition === "fade" ? " layout-playlist-preview--fade" : ""}`;
+  const className = `layout-playlist-preview${current.transition === "fade" || current.transition === "crossfade" ? " layout-playlist-preview--fade" : ""}`;
   if (asset.type === "widget")
     return (
       <div className={className} key={`${playlist.id}-${current.id}`}>

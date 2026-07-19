@@ -135,7 +135,7 @@ class ManifestSyncManager(
     suspend fun loadActive(): PreparedContent? {
         val stored = database.manifests().active() ?: run { activeCacheVerified = false; return null }
         val manifest = runCatching { api.decodeManifest(stored.rawJson) }.getOrNull() ?: run { activeCacheVerified = false; return null }
-        if (manifest.schemaVersion !in setOf(11,12,13)) { activeCacheVerified = false; return null }
+        if (manifest.schemaVersion !in setOf(11,12,13,14)) { activeCacheVerified = false; return null }
         val validation = withContext(Dispatchers.IO) {
             validateActiveCache(database.cachedAssets().all())
         }
@@ -239,7 +239,7 @@ class ManifestSyncManager(
     private fun finalFile(asset: ManifestAsset) = File(mediaDirectory(), "${asset.variantId}.${extension(asset.mimeType)}")
     private fun extension(mime: String) = when (mime) { "video/mp4" -> "mp4"; "image/png" -> "png"; "image/webp" -> "webp"; "image/gif" -> "gif"; else -> "jpg" }
 	private fun validateManifest(manifest: PlayerManifest, screenId: String) {
-		require(manifest.schemaVersion in setOf(11,12,13) && manifest.mode in setOf("single-zone", "presentation") && manifest.screenId == screenId) { "Manifest validation failed" }
+		require(manifest.schemaVersion in setOf(11,12,13,14) && manifest.mode in setOf("single-zone", "presentation") && manifest.screenId == screenId) { "Manifest validation failed" }
 		val assets = manifest.assets.associateBy { it.variantId }
 		val websites = manifest.websites.associateBy { it.assetId }
 		val widgets = manifest.widgets.associateBy { it.assetId }
@@ -258,10 +258,10 @@ class ManifestSyncManager(
 			when (item.assetType) {
 				"layout" -> require(item.layoutId?.let(layoutIds::contains) == true && (item.durationMs ?: 0) > 0 && item.deliveryPolicy == "stream") { "Layout item is invalid" }
 				"website" -> require(websites[item.assetId] != null && (item.durationMs ?: 0) > 0 && item.deliveryPolicy == "stream") { "Website item is invalid" }
-				"widget" -> require((if(manifest.schemaVersion==13) widgets[item.assetId]?.presentation!=null else widgets[item.assetId]?.provider in setOf("website", "youtube", "clock", "date", "qrcode", "countdown", "ticker", "menu", "list", "table", "agenda", "metric", "cards", "weather")) && item.deliveryPolicy == "stream") { "Widget item is invalid" }
+				"widget" -> require((if(manifest.schemaVersion>=13) widgets[item.assetId]?.presentation!=null else widgets[item.assetId]?.provider in setOf("website", "youtube", "clock", "date", "qrcode", "countdown", "ticker", "menu", "list", "table", "agenda", "metric", "cards", "weather")) && item.deliveryPolicy == "stream") { "Widget item is invalid" }
 				else -> require(item.variantId != null && assets[item.variantId]?.assetId == item.assetId) { "Manifest item references an unavailable variant" }
 			}
-			require(item.fitMode in listOf("contain", "cover", "stretch") && item.transition in listOf("none", "fade") && item.deliveryPolicy in listOf("download", "stream", "automatic") && item.volume in 0f..1f) { "Manifest item settings are invalid" }
+			require(item.fitMode in listOf("contain", "cover", "stretch") && item.transition in (if (manifest.schemaVersion >= 14) listOf("none", "fade", "crossfade") else listOf("none", "fade")) && item.deliveryPolicy in listOf("download", "stream", "automatic") && item.volume in 0f..1f) { "Manifest item settings are invalid" }
 			if (item.variantId?.let { assets[it]?.mimeType?.startsWith("image/") } == true) require((item.durationMs ?: 0) > 0) { "Image duration is invalid" }
 			if (item.videoEndOffsetMs != null) require(item.videoEndOffsetMs > (item.videoStartOffsetMs ?: 0)) { "Video offsets are invalid" }
 		}
@@ -295,7 +295,7 @@ class ManifestSyncManager(
 			require(data.records.all{it.id.length<=80&&it.values.size<=20&&it.values.values.all{value->value.length<=500}})
 			data.dateSelection?.let{selection->require(selection.mode in setOf("today","tomorrow","next_available","current_week","custom_range"));java.time.ZoneId.of(selection.timezone)}
 		}
-		if(manifest.schemaVersion==13){
+		if(manifest.schemaVersion>=13){
 			manifest.dataSources.forEach{source->validateDataDocument(source.dataDocument?:error("Data document is missing"))}
 			manifest.widgets.forEach{widget->validatePresentation(widget.presentation?:error("Presentation is missing"),dataSources)}
 			return

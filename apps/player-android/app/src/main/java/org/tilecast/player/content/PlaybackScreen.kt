@@ -3,6 +3,8 @@ package org.tilecast.player.content
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.SystemClock
+import android.view.TextureView
+import android.view.ViewGroup
 import androidx.annotation.OptIn
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -13,6 +15,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -27,6 +30,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
@@ -151,7 +155,7 @@ fun FullscreenPlayback(
     key(session.content.manifest.manifestVersion, playlist.id, playlist.revision) {
         SeamlessItemSwap(
             cursor = cursor,
-            fadeFor = { playlist.items[it.index.coerceIn(0, playlist.items.lastIndex)].transition == "fade" },
+            animateFor = { shouldAnimateTransition(playlist.items[it.index.coerceIn(0, playlist.items.lastIndex)].transition) },
         ) { entryCursor, isActive, onFirstFrame ->
             val renderedItem = playlist.items[entryCursor.index.coerceIn(0, playlist.items.lastIndex)]
             val renderedAsset = renderedItem.variantId?.let { variant -> session.content.manifest.assets.firstOrNull { it.variantId == variant } }
@@ -182,6 +186,7 @@ fun FullscreenPlayback(
                 synchronizedPositionMs = synchronizedOffsetMs.takeIf { synchronizedTimeline != null && isActive.value },
                 isActive = isActive.value,
                 onFirstFrame = onFirstFrame,
+                useCompositableVideo = requiresCompositableVideo(playlist, entryCursor.index),
             )
         }
     }
@@ -205,21 +210,24 @@ internal fun RenderedItem(
     synchronizedPositionMs: Long? = null,
     isActive: Boolean = true,
     onFirstFrame: () -> Unit = {},
+    useCompositableVideo: Boolean = false,
 ) {
     val tracker = rememberActivityChild(activityReporter, item, widget, layoutPlacementId, session.content.manifest.dataSources)
     val done = { tracker?.complete(); onDone() }
     val failed: (String) -> Unit = { message -> tracker?.fail(message); onFailure(message) }
     val layout = item.layoutId?.let { id -> session.content.manifest.layouts.firstOrNull { it.id == id } }
     // Images, videos, and WebView-backed items report their first visible frame
-    // themselves. Native widgets and layouts draw their background immediately.
+    // themselves. Native widgets draw immediately; Layouts aggregate their
+    // visible child readiness before reporting a frame.
     val reportsOwnFirstFrame =
         (widget == null && website == null && asset != null && !(item.assetType == "layout" && layout != null)) ||
             website != null ||
             (session.content.manifest.schemaVersion >= 13 && widget?.presentation?.kind == "web") ||
-            widget?.provider == "website"
+            widget?.provider == "website" ||
+            (item.assetType == "layout" && layout != null)
     if (!reportsOwnFirstFrame) LaunchedEffect(item.id) { onFirstFrame() }
     if (item.assetType == "layout" && layout != null) {
-        FullscreenLayoutPlayback(session, layout, failed, onWebsiteStatus, onWidgetStatus, onProgress, activityReporter)
+        FullscreenLayoutPlayback(session, layout, failed, onWebsiteStatus, onWidgetStatus, onProgress, activityReporter, onFirstFrame, useCompositableVideo)
         LaunchedEffect(item.id) { delay(((item.durationMs ?: 30_000) - startOffsetMs).coerceAtLeast(1)); done() }
     } else if (session.content.manifest.schemaVersion >= 13 && widget?.presentation?.kind == "native") {
         DeclarativeWidgetItem(item, widget, session, done, failed, onWidgetStatus, startOffsetMs)
@@ -255,7 +263,7 @@ internal fun RenderedItem(
     } else if (asset?.mimeType?.startsWith("image/") == true) {
         ImageItem(item, asset, session, startOffsetMs, done, failed, onProgress, onFirstFrame)
     } else if (asset != null) {
-        VideoItem(item, asset, session, startOffsetMs, done, failed, onProgress, synchronizedPositionMs, isActive, onFirstFrame)
+        VideoItem(item, asset, session, startOffsetMs, done, failed, onProgress, synchronizedPositionMs, isActive, onFirstFrame, useCompositableVideo)
     }
 }
 
@@ -326,9 +334,11 @@ private fun VideoItem(
     synchronizedPositionMs: Long?,
     isActive: Boolean,
     onFirstFrame: () -> Unit,
+    useCompositableVideo: Boolean,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val latestSynchronizedPosition = rememberUpdatedState(synchronizedPositionMs)
+    var videoAspectRatio by remember(item.id) { mutableFloatStateOf(0f) }
     val player = remember(item.id) {
         val http = OkHttpDataSource.Factory(OkHttpClient()).setDefaultRequestProperties(mapOf("Authorization" to "Bearer ${session.credential}"))
         val source = DefaultMediaSourceFactory(DefaultDataSource.Factory(context, http))
@@ -349,6 +359,10 @@ private fun VideoItem(
             override fun onPlayerError(error: PlaybackException) { onFailure("Video playback failed") }
 
             override fun onRenderedFirstFrame() { onFirstFrame() }
+
+            override fun onVideoSizeChanged(videoSize: VideoSize) {
+                videoAspectRatio = if (videoSize.height == 0) 0f else videoSize.width * videoSize.pixelWidthHeightRatio / videoSize.height
+            }
         }
         player.addListener(listener)
         onDispose {
@@ -406,11 +420,30 @@ private fun VideoItem(
             }
         }
     }
-    AndroidView(
-        factory = { PlayerView(it).apply { useController = false; this.player = player; resizeMode = resize(item.fitMode) } },
-        modifier = Modifier.fillMaxSize(),
-        update = { it.resizeMode = resize(item.fitMode) },
-    )
+    if (useCompositableVideo) {
+        AndroidView(
+            factory = { context ->
+                AspectRatioFrameLayout(context).apply {
+                    resizeMode = resize(item.fitMode)
+                    val texture = TextureView(context)
+                    addView(texture, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+                    player.setVideoTextureView(texture)
+                }
+            },
+            modifier = Modifier.fillMaxSize(),
+            update = {
+                it.resizeMode = resize(item.fitMode)
+                it.setAspectRatio(videoAspectRatio)
+            },
+            onRelease = { player.clearVideoTextureView(it.getChildAt(0) as TextureView) },
+        )
+    } else {
+        AndroidView(
+            factory = { PlayerView(it).apply { useController = false; this.player = player; resizeMode = resize(item.fitMode) } },
+            modifier = Modifier.fillMaxSize(),
+            update = { it.resizeMode = resize(item.fitMode) },
+        )
+    }
 }
 
 private fun scale(mode: String) = when (mode) {

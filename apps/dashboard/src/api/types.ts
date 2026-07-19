@@ -68,7 +68,7 @@ export type PlaylistItem = {
   position: number;
   durationMs?: number;
   fitMode: "contain" | "cover" | "stretch";
-  transition: "none" | "fade";
+  transition: "none" | "fade" | "crossfade";
   audioEnabled: boolean;
   volume: number;
   videoStartOffsetMs?: number;

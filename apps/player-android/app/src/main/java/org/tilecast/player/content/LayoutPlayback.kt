@@ -37,6 +37,8 @@ fun FullscreenLayoutPlayback(
     onWidgetStatus: (WidgetPlaybackStatus) -> Unit = {},
     onProgress: () -> Unit = {},
     activityReporter: PlaybackActivityReporter? = null,
+    onFirstFrame: () -> Unit = {},
+    useCompositableVideo: Boolean = false,
 ) {
     val document = layout.document
     val widgets = session.content.manifest.widgets.associateBy { it.assetId }
@@ -61,6 +63,34 @@ fun FullscreenLayoutPlayback(
         val binding = group.primitive?.binding ?: return@filter false
         structured[binding.dataSourceId]?.let { resolveLayoutBinding(binding, it, now).isBlank() } ?: true
     }.map { it.id }.toSet()
+    val visiblePlacements = document.placements.filter {
+        it.visible && it.primitive?.kind != "group" && (it.groupId == null || it.groupId !in hiddenGroups)
+    }
+    val readinessIds = visiblePlacements.mapNotNull { placement ->
+        when (placement.type) {
+            "playlistZone" -> placement.id.takeIf { session.content.manifest.playlists.any { it.id == placement.playlistId && it.items.isNotEmpty() } }
+            "widget" -> placement.id.takeIf { widgets.containsKey(placement.widgetId) }
+            "asset" -> placement.id.takeIf { session.content.manifest.assets.any { it.assetId == placement.assetId } }
+            else -> null
+        }
+    }.toSet()
+    var readyIds by remember(layout.id) { mutableStateOf(emptySet<String>()) }
+    var layoutReady by remember(layout.id) { mutableStateOf(false) }
+    fun markReady(id: String) {
+        if (layoutReady) return
+        val updated = readyIds + id
+        readyIds = updated
+        if (updated.containsAll(readinessIds)) {
+            layoutReady = true
+            onFirstFrame()
+        }
+    }
+    LaunchedEffect(layout.id, readinessIds) {
+        if (readinessIds.isEmpty() && !layoutReady) {
+            layoutReady = true
+            onFirstFrame()
+        }
+    }
     BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         val sourceRatio = document.canvas.width.toFloat() / document.canvas.height
         val targetRatio = maxWidth.value / maxHeight.value
@@ -69,11 +99,7 @@ fun FullscreenLayoutPlayback(
         val scaleX = canvasWidth.value / document.canvas.width
         val scaleY = canvasHeight.value / document.canvas.height
         Box(Modifier.size(canvasWidth, canvasHeight).background(layoutColor(document.canvas.backgroundColor))) {
-            document.placements.filter {
-                it.visible &&
-                    it.primitive?.kind != "group" &&
-                    (it.groupId == null || it.groupId !in hiddenGroups)
-            }.sortedBy { it.layer }.forEach { placement ->
+            visiblePlacements.sortedBy { it.layer }.forEach { placement ->
                 if (placement.type == "primitive") {
                     placement.primitive?.binding?.dataSourceId?.let { dataSourceId ->
                         session.content.manifest.dataSources.firstOrNull { it.id == dataSourceId }?.let { dataSource ->
@@ -98,15 +124,15 @@ fun FullscreenLayoutPlayback(
                 Box(modifier) {
                     when (placement.type) {
                         "playlistZone" -> session.content.manifest.playlists.firstOrNull { it.id == placement.playlistId }?.let { playlist ->
-                            PlaylistZone(session, playlist, placement.id, placement.playback?.muted ?: true, onError, onWebsiteStatus, onWidgetStatus, onProgress, activityReporter)
+                            PlaylistZone(session, playlist, placement.id, placement.playback?.muted ?: true, onError, onWebsiteStatus, onWidgetStatus, onProgress, activityReporter, { markReady(placement.id) }, useCompositableVideo)
                         }
                         "widget" -> widgets[placement.widgetId]?.let { widget ->
                             val item = ManifestItem("layout-${placement.id}", widget.assetId, assetType = "widget", durationMs = Long.MAX_VALUE, fitMode = placement.playback?.fit ?: "contain", transition = "none", audioEnabled = !(placement.playback?.muted ?: true), volume = 1f, deliveryPolicy = "stream")
-                            RenderedItem(item, null, session.content.manifest.websites.firstOrNull { it.assetId == widget.assetId }, widget, session, 0, {}, onError, onWebsiteStatus, onWidgetStatus, onProgress, activityReporter, placement.id)
+                            RenderedItem(item, null, session.content.manifest.websites.firstOrNull { it.assetId == widget.assetId }, widget, session, 0, {}, onError, onWebsiteStatus, onWidgetStatus, onProgress, activityReporter, placement.id, onFirstFrame = { markReady(placement.id) }, useCompositableVideo = useCompositableVideo)
                         }
                         "asset" -> session.content.manifest.assets.firstOrNull { it.assetId == placement.assetId }?.let { asset ->
                             val item = ManifestItem("layout-${placement.id}", asset.assetId, asset.variantId, if (asset.mimeType.startsWith("video/")) "video" else "image", if (asset.mimeType.startsWith("image/")) Long.MAX_VALUE else null, placement.playback?.fit ?: "contain", "none", !(placement.playback?.muted ?: true), 1f, deliveryPolicy = "download")
-                            LayoutAssetItem(session, item, asset, placement.id, onError, onWebsiteStatus, onWidgetStatus, onProgress, activityReporter)
+                            LayoutAssetItem(session, item, asset, placement.id, onError, onWebsiteStatus, onWidgetStatus, onProgress, activityReporter, { markReady(placement.id) }, useCompositableVideo)
                         }
                     }
                 }
@@ -126,6 +152,8 @@ private fun PlaylistZone(
     onWidgetStatus: (WidgetPlaybackStatus) -> Unit,
     onProgress: () -> Unit,
     activityReporter: PlaybackActivityReporter?,
+    onFirstFrame: () -> Unit,
+    useCompositableVideo: Boolean,
 ) {
     if (playlist.items.isEmpty()) return
     val syncGroup = session.content.manifest.syncGroup
@@ -163,7 +191,8 @@ private fun PlaylistZone(
     key(playlist.id, playlist.revision) {
         SeamlessItemSwap(
             cursor = cursor,
-            fadeFor = { playlist.items[it.index.coerceIn(0, playlist.items.lastIndex)].transition == "fade" },
+            animateFor = { shouldAnimateTransition(playlist.items[it.index.coerceIn(0, playlist.items.lastIndex)].transition) },
+            onCurrentFirstFrame = onFirstFrame,
         ) { entryCursor, isActive, onFirstFrame ->
             val sourceItem = playlist.items[entryCursor.index.coerceIn(0, playlist.items.lastIndex)]
             val item = if (muted) sourceItem.copy(audioEnabled = false, volume = 0f) else sourceItem
@@ -188,6 +217,7 @@ private fun PlaylistZone(
                 synchronizedPositionMs = synchronizedOffsetMs.takeIf { synchronizedTimeline != null && isActive.value },
                 isActive = isActive.value,
                 onFirstFrame = onFirstFrame,
+                useCompositableVideo = useCompositableVideo || requiresCompositableVideo(playlist, entryCursor.index),
             )
         }
     }
@@ -204,10 +234,12 @@ private fun LayoutAssetItem(
     onWidgetStatus: (WidgetPlaybackStatus) -> Unit,
     onProgress: () -> Unit,
     activityReporter: PlaybackActivityReporter?,
+    onFirstFrame: () -> Unit,
+    useCompositableVideo: Boolean,
 ) {
     val syncGroup = session.content.manifest.syncGroup
     if (!asset.mimeType.startsWith("video/") || syncGroup == null) {
-        RenderedItem(item, asset, null, null, session, 0, {}, onError, onWebsiteStatus, onWidgetStatus, onProgress, activityReporter, placementId)
+        RenderedItem(item, asset, null, null, session, 0, {}, onError, onWebsiteStatus, onWidgetStatus, onProgress, activityReporter, placementId, onFirstFrame = onFirstFrame, useCompositableVideo = useCompositableVideo)
         return
     }
     val playlist = remember(item.id, asset.variantId) {
@@ -230,7 +262,7 @@ private fun LayoutAssetItem(
         }
     }
     if (synchronizedTimeline == null) {
-        RenderedItem(item, asset, null, null, session, 0, {}, onError, onWebsiteStatus, onWidgetStatus, onProgress, activityReporter, placementId)
+        RenderedItem(item, asset, null, null, session, 0, {}, onError, onWebsiteStatus, onWidgetStatus, onProgress, activityReporter, placementId, onFirstFrame = onFirstFrame, useCompositableVideo = useCompositableVideo)
         return
     }
     var cursor by remember(playlist.id) { mutableStateOf(PlaybackCursor(0, 0)) }
@@ -243,7 +275,7 @@ private fun LayoutAssetItem(
             kotlinx.coroutines.delay(100)
         }
     }
-    SeamlessItemSwap(cursor, fadeFor = { false }) { _, isActive, onFirstFrame ->
+    SeamlessItemSwap(cursor, animateFor = { false }, onCurrentFirstFrame = onFirstFrame) { _, isActive, itemFirstFrame ->
         RenderedItem(
             item,
             asset,
@@ -260,7 +292,8 @@ private fun LayoutAssetItem(
             placementId,
             synchronizedPositionMs = synchronizedOffsetMs.takeIf { isActive.value },
             isActive = isActive.value,
-            onFirstFrame = onFirstFrame,
+            onFirstFrame = itemFirstFrame,
+            useCompositableVideo = useCompositableVideo,
         )
     }
 }

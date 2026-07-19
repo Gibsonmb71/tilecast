@@ -288,8 +288,8 @@ func (s *Service) validateItem(ctx context.Context, q interface {
 	if input.FitMode != "contain" && input.FitMode != "cover" && input.FitMode != "stretch" {
 		return input, assetInfo{}, errors.New("fitMode must be contain, cover, or stretch")
 	}
-	if input.Transition != "none" && input.Transition != "fade" {
-		return input, assetInfo{}, errors.New("transition must be none or fade")
+	if input.Transition != "none" && input.Transition != "fade" && input.Transition != "crossfade" {
+		return input, assetInfo{}, errors.New("transition must be none, fade, or crossfade")
 	}
 	if input.DeliveryPolicy != "download" && input.DeliveryPolicy != "stream" && input.DeliveryPolicy != "automatic" {
 		return input, assetInfo{}, errors.New("deliveryPolicy must be download, stream, or automatic")
@@ -1410,6 +1410,13 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 			manifest.Widgets[index].Configuration = nil
 		}
 	}
+	if manifestHasCrossfade(manifest) {
+		if useV13 && playerCapabilities.PlayerVersion >= crossfadePlayerVersionCode {
+			manifest.SchemaVersion = 14
+		} else {
+			downgradeManifestCrossfades(&manifest)
+		}
+	}
 	encoded, encodeErr := json.Marshal(manifest)
 	if encodeErr != nil {
 		return Manifest{}, "", encodeErr
@@ -1418,6 +1425,50 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 		return Manifest{}, "", fmt.Errorf("%w: manifest exceeds the five MiB limit", ErrConflict)
 	}
 	return manifest, manifestETagForSchema(screenID, assignment.ManifestVersion, manifest.SchemaVersion), nil
+}
+
+const crossfadePlayerVersionCode = 33
+
+func manifestHasCrossfade(manifest Manifest) bool {
+	for _, playlist := range []*ManifestPlaylist{manifest.Playlist, manifest.DirectFallbackPlaylist} {
+		if playlist != nil && playlistHasCrossfade(*playlist) {
+			return true
+		}
+	}
+	for _, playlist := range manifest.Playlists {
+		if playlistHasCrossfade(playlist) {
+			return true
+		}
+	}
+	return false
+}
+
+func downgradeManifestCrossfades(manifest *Manifest) {
+	for _, playlist := range []*ManifestPlaylist{manifest.Playlist, manifest.DirectFallbackPlaylist} {
+		if playlist != nil {
+			downgradePlaylistCrossfades(playlist)
+		}
+	}
+	for playlistIndex := range manifest.Playlists {
+		downgradePlaylistCrossfades(&manifest.Playlists[playlistIndex])
+	}
+}
+
+func playlistHasCrossfade(playlist ManifestPlaylist) bool {
+	for _, item := range playlist.Items {
+		if item.Transition == "crossfade" {
+			return true
+		}
+	}
+	return false
+}
+
+func downgradePlaylistCrossfades(playlist *ManifestPlaylist) {
+	for itemIndex := range playlist.Items {
+		if playlist.Items[itemIndex].Transition == "crossfade" {
+			playlist.Items[itemIndex].Transition = "fade"
+		}
+	}
 }
 
 func (s *Service) reconcilePresentationCatalog(ctx context.Context) error {

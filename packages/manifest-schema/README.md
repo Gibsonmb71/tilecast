@@ -8,4 +8,6 @@ Manifest v12 adds a common typed record projection for Calendar, RSS, Atom, JSON
 
 Manifest v13 removes provider enums from Player validation. Data Sources carry version 1 typed data documents and Widgets carry version 1 native presentation trees or constrained web sandbox descriptors. Provider fields are diagnostics metadata only. Capability-reporting Players receive v13; older Players continue receiving v11 or v12 during rollout.
 
+Manifest v14 adds the optional `crossfade` playlist transition. Capable Players composite overlapping images, videos, websites, Widgets, and Layouts during the visual transition. The server projects `crossfade` as `fade` for older Players, and v1-v13 remain unchanged.
+
 Time-series points may carry one `value` or a bounded `values` object for multi-series charts. Capability revision 2 covers native charts, asset images, target progress, repeat indexes, and richer conditions without changing the presentation schema version.

@@ -17,6 +17,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import kotlinx.coroutines.delay
+import org.tilecast.player.network.ManifestPlaylist
 
 /**
  * Double-buffers playlist items so advancing never shows an empty (black) frame.
@@ -32,7 +33,8 @@ import kotlinx.coroutines.delay
 @Composable
 internal fun SeamlessItemSwap(
     cursor: PlaybackCursor,
-    fadeFor: (PlaybackCursor) -> Boolean,
+    animateFor: (PlaybackCursor) -> Boolean,
+    onCurrentFirstFrame: () -> Unit = {},
     content: @Composable (cursor: PlaybackCursor, isActive: State<Boolean>, onFirstFrame: () -> Unit) -> Unit,
 ) {
     var current by remember { mutableStateOf(cursor) }
@@ -55,7 +57,7 @@ internal fun SeamlessItemSwap(
         outgoingAlpha.snapTo(1f)
         if (!currentReady) {
             delay(FIRST_FRAME_GRACE_MS)
-        } else if (fadeFor(current)) {
+        } else if (animateFor(current)) {
             outgoingAlpha.animateTo(0f, tween(FADE_DURATION_MS))
         }
         previous = null
@@ -66,11 +68,25 @@ internal fun SeamlessItemSwap(
             key(entry) {
                 val isActive = rememberUpdatedState(entry == current)
                 Box(Modifier.fillMaxSize().graphicsLayer { alpha = if (isActive.value) 1f else outgoingAlpha.value }) {
-                    content(entry, isActive) { if (entry == current) currentReady = true }
+                    content(entry, isActive) {
+                        if (entry == current && !currentReady) {
+                            currentReady = true
+                            onCurrentFirstFrame()
+                        }
+                    }
                 }
             }
         }
     }
+}
+
+internal fun shouldAnimateTransition(transition: String) = transition == "fade" || transition == "crossfade"
+
+internal fun requiresCompositableVideo(playlist: ManifestPlaylist, index: Int): Boolean {
+    if (playlist.items.isEmpty()) return false
+    val current = index.coerceIn(0, playlist.items.lastIndex)
+    val next = (current + 1) % playlist.items.size
+    return playlist.items[current].transition == "crossfade" || playlist.items[next].transition == "crossfade"
 }
 
 private const val FIRST_FRAME_GRACE_MS = 8_000L
