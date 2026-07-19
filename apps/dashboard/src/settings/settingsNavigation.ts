@@ -12,6 +12,7 @@ export type SettingsSectionId =
   | "player-updates"
   | "emergency"
   | "retention"
+  | "backups"
   | "system"
   | "import-export"
   | "preferences";
@@ -71,6 +72,11 @@ export const settingsNavigation: SettingsNavigationGroup[] = [
         id: "retention",
         label: "Data retention",
         path: "operations/retention",
+      },
+      {
+        id: "backups",
+        label: "Backup and restore",
+        path: "operations/backups",
       },
       { id: "system", label: "System", path: "system" },
       {
@@ -157,6 +163,11 @@ export const sectionDetails: Record<
   retention: {
     title: "Data retention",
     description: "Bounded history and cleanup periods for operational records.",
+  },
+  backups: {
+    title: "Backup and restore",
+    description:
+      "Create, verify, download, schedule, and restore full installation backups.",
   },
   system: {
     title: "System",

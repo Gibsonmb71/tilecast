@@ -1920,6 +1920,87 @@ button.organizer-chip:disabled {
 .target-option small {
   color: var(--tc-ink-muted);
 }
+.backup-summary {
+  color: var(--tc-ink-muted);
+  font-size: 13px;
+  margin: 14px 0 0;
+}
+.backup-progress {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  margin-top: 16px;
+  background: var(--tc-surface-muted);
+  border: 1px solid var(--tc-border);
+}
+.backup-progress > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 13px;
+}
+.backup-progress progress {
+  width: 100%;
+}
+.backup-list,
+.backup-job-list {
+  display: grid;
+}
+.backup-row {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) auto;
+  gap: 20px;
+  align-items: center;
+  padding: 15px 0;
+  border-bottom: 1px solid var(--tc-border);
+}
+.backup-row__details {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.backup-row__details strong {
+  overflow-wrap: anywhere;
+}
+.backup-row__details > span {
+  color: var(--tc-ink-muted);
+  font-size: 12px;
+}
+.backup-row__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+.backup-row__actions .button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.backup-job-list > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--tc-border);
+}
+.backup-job-list span:first-child {
+  display: grid;
+  gap: 2px;
+}
+.backup-job-list small,
+.backup-job-status {
+  color: var(--tc-ink-muted);
+  font-size: 12px;
+}
+@media (max-width: 900px) {
+  .backup-row {
+    grid-template-columns: 1fr;
+  }
+  .backup-row__actions {
+    justify-content: flex-start;
+  }
+}
 .file-input,
 .deployment-fields label,
 .target-search {

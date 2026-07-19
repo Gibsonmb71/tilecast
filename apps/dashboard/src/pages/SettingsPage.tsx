@@ -20,6 +20,7 @@ import {
   SystemPanel,
 } from "../settings/SettingsOperations";
 import { UsersPage } from "./UsersPage";
+import { BackupPanel } from "../settings/BackupPanel";
 
 export { PlayerPolicyEditor } from "../settings/PlayerPolicyEditor";
 export {
@@ -228,6 +229,19 @@ function Destination({
 }) {
   if (active === "users") return <UsersPage />;
   if (active === "system") return <SystemPanel canManage={manageable} />;
+  if (active === "backups")
+    return (
+      <>
+        <BackupPanel owner={owner} />
+        <SettingsSection
+          section={active}
+          definitions={definitions}
+          values={values}
+          editable={owner}
+          onChange={onChange}
+        />
+      </>
+    );
   if (active === "import-export") return <ImportExportPanel owner={owner} />;
   if (active === "player-updates")
     return <PlayerUpdatesPanel owner={owner} manageable={manageable} />;
@@ -349,6 +363,7 @@ function dirtySections(
     "accessibility",
     "emergency",
     "retention",
+    "backups",
   ] as SettingsSectionId[])
     if (sectionDirty(definitionsFor(section, definitions), baseline, draft))
       result.add(section);
