@@ -137,7 +137,7 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = pool.Exec(ctx, `UPDATE screen_player_status SET player_version_code=22,presentation_schema_versions=NULL,native_presentation_capabilities='{}',web_runtime_version=0,web_bundle_limit_bytes=0 WHERE screen_id=$1`, screenID); err != nil {
+	if _, err = pool.Exec(ctx, `UPDATE screen_player_status SET player_version_code=NULL,presentation_schema_versions='{}',native_presentation_capabilities='{}',web_runtime_version=0,web_bundle_limit_bytes=0 WHERE screen_id=$1`, screenID); err != nil {
 		t.Fatal(err)
 	}
 	emergencyID := uuid.New()
