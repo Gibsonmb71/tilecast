@@ -16,6 +16,7 @@ import {
   ScheduleEditorPage,
 } from "./pages/SchedulesPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { PreferencesPage } from "./pages/PreferencesPage";
 import { LayoutsPage } from "./pages/LayoutsPage";
 import { LayoutEditorPage } from "./pages/LayoutEditorPage";
 import { WidgetEditorPage, WidgetsPage } from "./pages/WidgetsPage";
@@ -246,6 +247,19 @@ export const studioRoutes: RouteObject[] = [
         },
       },
       {
+        path: "preferences",
+        element: <PreferencesPage />,
+        handle: {
+          breadcrumb: "My preferences",
+          search: search(
+            "My preferences",
+            "Appearance and workflow preferences for your Studio account",
+            "/preferences",
+            ["settings", "theme", "appearance", "density"],
+          ),
+        },
+      },
+      {
         path: "settings",
         handle: {
           breadcrumb: "Settings",
@@ -273,6 +287,10 @@ export const studioRoutes: RouteObject[] = [
               ),
             },
           })),
+          {
+            path: "preferences",
+            element: <Navigate to="/preferences" replace />,
+          },
           {
             path: "*",
             element: <Navigate to="/settings/general" replace />,

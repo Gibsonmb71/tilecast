@@ -13,11 +13,12 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Settings,
+  SlidersHorizontal,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { NavLink, Outlet, useLocation, useNavigate } from "react-router";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { useAuth } from "../auth/AuthProvider";
 import { Brand } from "../components/Brand";
 import { RouteErrorBoundary } from "../components/RouteErrorBoundary";
@@ -236,6 +237,14 @@ export function DashboardShell() {
                 id="sidebar-account-menu"
                 role="menu"
               >
+                <Link
+                  to="/preferences"
+                  role="menuitem"
+                  onClick={() => setAccountMenuOpen(false)}
+                >
+                  <SlidersHorizontal size={16} aria-hidden="true" />
+                  My preferences
+                </Link>
                 <button
                   type="button"
                   role="menuitem"

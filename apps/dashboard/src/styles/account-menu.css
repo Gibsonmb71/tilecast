@@ -49,6 +49,7 @@
   box-shadow: var(--tc-shadow-sm);
 }
 
+.account-menu__popover a,
 .account-menu__popover button {
   display: flex;
   width: 100%;
@@ -56,12 +57,24 @@
   align-items: center;
   gap: 9px;
   padding: 7px 9px;
-  color: var(--tc-danger);
   text-align: left;
+  text-decoration: none;
   background: transparent;
   border: 0;
   border-radius: var(--tc-radius-sm);
   cursor: pointer;
+}
+
+.account-menu__popover a {
+  color: var(--tc-text-primary);
+}
+
+.account-menu__popover a:hover {
+  background: var(--tc-button-secondary-hover-bg);
+}
+
+.account-menu__popover button {
+  color: var(--tc-danger);
 }
 
 .account-menu__popover button:hover:not(:disabled) {

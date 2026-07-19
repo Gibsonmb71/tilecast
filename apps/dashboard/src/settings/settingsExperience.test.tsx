@@ -33,7 +33,6 @@ describe("settings presentation", () => {
       "Content and playback",
       "Player management",
       "Operations",
-      "Personal",
     ]);
     expect(sectionFromPath("/settings/player/reliability")).toBe("reliability");
     expect(sectionFromPath("/settings")).toBe("general");
