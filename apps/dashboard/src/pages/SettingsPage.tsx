@@ -14,6 +14,7 @@ import {
   sectionFromPath,
   type SettingsSectionId,
 } from "../settings/settingsNavigation";
+import { useNavigationWarning } from "../settings/useNavigationWarning";
 import {
   ImportExportPanel,
   PlayerUpdatesPanel,
@@ -36,19 +37,9 @@ export function SettingsPage() {
   );
   const owner = auth.status?.user?.role === "owner";
   const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings });
-  const preferences = useQuery({
-    queryKey: ["preferences"],
-    queryFn: api.preferences,
-  });
   const [baseline, setBaseline] = useState<Record<string, unknown>>();
   const [draft, setDraft] = useState<Record<string, unknown>>({});
   const [revision, setRevision] = useState(0);
-  const [preferenceBaseline, setPreferenceBaseline] =
-    useState<Record<string, unknown>>();
-  const [preferenceDraft, setPreferenceDraft] = useState<
-    Record<string, unknown>
-  >({});
-  const [preferenceRevision, setPreferenceRevision] = useState(0);
   const [saved, setSaved] = useState<string>();
   useEffect(() => {
     if (settings.data && !baseline) {
@@ -61,62 +52,29 @@ export function SettingsPage() {
       setRevision(settings.data.revision);
     }
   }, [settings.data, baseline]);
-  useEffect(() => {
-    if (preferences.data && !preferenceBaseline) {
-      setPreferenceBaseline(preferences.data.values);
-      setPreferenceDraft(preferences.data.values);
-      setPreferenceRevision(preferences.data.revision);
-    }
-  }, [preferences.data, preferenceBaseline]);
-  useEffect(() => applyPreferences(preferenceDraft), [preferenceDraft]);
   const organizationDefinitions = (settings.data?.definitions ?? []).filter(
     (definition) => definition.scope !== "preference",
   );
-  const preferenceDefinitions = preferences.data?.definitions ?? [];
   const organizationDirty = useMemo(
     () => dirtySections(organizationDefinitions, baseline ?? {}, draft),
     [organizationDefinitions, baseline, draft],
   );
   const dirty = new Set(organizationDirty);
-  if (
-    preferenceBaseline &&
-    sectionDirty(preferenceDefinitions, preferenceBaseline, preferenceDraft)
-  )
-    dirty.add("preferences");
-  const currentDefinitions =
-    active === "preferences"
-      ? preferenceDefinitions
-      : definitionsFor(active, organizationDefinitions);
-  const currentValues = active === "preferences" ? preferenceDraft : draft;
-  const currentBaseline =
-    active === "preferences" ? preferenceBaseline : baseline;
+  const currentDefinitions = definitionsFor(active, organizationDefinitions);
+  const currentValues = draft;
+  const currentBaseline = baseline;
   const currentDirty = dirty.has(active);
-  useNavigationWarning(dirty.size > 0);
+  useNavigationWarning(
+    dirty.size > 0,
+    "/settings",
+    "Leave Settings with unsaved changes?",
+  );
   const saveOrganization = useMutation({
     mutationFn: (values: Record<string, unknown>) =>
       api.updateSettings(revision, values, auth.status?.csrfToken ?? ""),
   });
-  const savePreferences = useMutation({
-    mutationFn: (values: Record<string, unknown>) =>
-      api.updatePreferences(
-        preferenceRevision,
-        values,
-        auth.status?.csrfToken ?? "",
-      ),
-  });
   const save = () => {
     setSaved(undefined);
-    if (active === "preferences") {
-      savePreferences.mutate(preferenceDraft, {
-        onSuccess: (data) => {
-          setPreferenceBaseline(data.values);
-          setPreferenceDraft(data.values);
-          setPreferenceRevision(data.revision);
-          setSaved("Preferences saved.");
-        },
-      });
-      return;
-    }
     const keys = new Set(
       currentDefinitions.map((definition) => definition.key),
     );
@@ -148,21 +106,12 @@ export function SettingsPage() {
   const cancel = () => {
     setSaved(undefined);
     if (!currentBaseline) return;
-    if (active === "preferences") {
-      setPreferenceDraft({
-        ...preferenceDraft,
-        ...pick(currentBaseline, currentDefinitions),
-      });
-      return;
-    }
     setDraft({ ...draft, ...pick(currentBaseline, currentDefinitions) });
   };
   const reload = () => {
     setBaseline(undefined);
-    setPreferenceBaseline(undefined);
     setSaved(undefined);
     void settings.refetch();
-    void preferences.refetch();
   };
   if (settings.isLoading)
     return <div className="table-loading">Loading settings…</div>;
@@ -189,23 +138,17 @@ export function SettingsPage() {
         values={currentValues}
         onChange={(key, value) => {
           setSaved(undefined);
-          if (active === "preferences")
-            setPreferenceDraft({ ...preferenceDraft, [key]: value });
-          else setDraft({ ...draft, [key]: value });
+          setDraft({ ...draft, [key]: value });
         }}
       />
       <SettingsActionBar
         dirty={currentDirty}
-        saving={saveOrganization.isPending || savePreferences.isPending}
+        saving={saveOrganization.isPending}
         success={saved}
-        error={errorMessage(saveOrganization.error ?? savePreferences.error)}
+        error={errorMessage(saveOrganization.error)}
         onCancel={cancel}
         onSave={save}
-        onReload={
-          isConflict(saveOrganization.error ?? savePreferences.error)
-            ? reload
-            : undefined
-        }
+        onReload={isConflict(saveOrganization.error) ? reload : undefined}
       />
     </SettingsShell>
   );
@@ -283,7 +226,7 @@ function Destination({
       section={active}
       definitions={visibleDefinitions}
       values={values}
-      editable={active === "preferences" || manageable}
+      editable={manageable}
       onChange={onChange}
       before={before}
     />
@@ -394,44 +337,4 @@ function errorMessage(error: Error | null | undefined) {
   return isConflict(error)
     ? "These settings changed elsewhere. Reload the latest settings before saving."
     : error.message;
-}
-function applyPreferences(values: Record<string, unknown>) {
-  const root = document.documentElement;
-  root.dataset.theme =
-    typeof values["preference.appearance"] === "string"
-      ? String(values["preference.appearance"])
-      : "system";
-  root.dataset.density =
-    typeof values["preference.density"] === "string"
-      ? String(values["preference.density"])
-      : "comfortable";
-  root.dataset.reducedMotion = String(
-    Boolean(values["preference.reduced_motion"]),
-  );
-}
-function useNavigationWarning(dirty: boolean) {
-  useEffect(() => {
-    const unload = (event: BeforeUnloadEvent) => {
-      if (dirty) {
-        event.preventDefault();
-        event.returnValue = "";
-      }
-    };
-    const click = (event: MouseEvent) => {
-      if (!dirty || event.defaultPrevented) return;
-      const link = (event.target as Element | null)?.closest("a");
-      if (
-        link &&
-        !link.getAttribute("href")?.startsWith("/settings") &&
-        !confirm("Leave Settings with unsaved changes?")
-      )
-        event.preventDefault();
-    };
-    addEventListener("beforeunload", unload);
-    document.addEventListener("click", click, true);
-    return () => {
-      removeEventListener("beforeunload", unload);
-      document.removeEventListener("click", click, true);
-    };
-  }, [dirty]);
 }

@@ -80,12 +80,6 @@ export const settingsNavigation: SettingsNavigationGroup[] = [
       },
     ],
   },
-  {
-    label: "Personal",
-    items: [
-      { id: "preferences", label: "My preferences", path: "preferences" },
-    ],
-  },
 ] as const;
 export const settingsItems = settingsNavigation.flatMap((group) => group.items);
 export function sectionFromPath(pathname: string): SettingsSectionId {
