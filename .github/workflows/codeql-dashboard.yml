@@ -1,6 +1,14 @@
 name: Dashboard CodeQL
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/dashboard/**"
+      - "packages/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/codeql-dashboard.yml"
   push:
     branches: [main]
     paths:
