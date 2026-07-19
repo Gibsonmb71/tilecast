@@ -270,6 +270,18 @@ export const subsectionOrder: Record<
     },
     { title: "Diagnostic limits", prefix: ["retention.max"] },
   ],
+  backups: [
+    {
+      title: "Automatic backup schedule",
+      prefix: ["backups.schedule_"],
+    },
+    {
+      title: "Scheduled backup retention",
+      description:
+        "Retention applies to scheduled backups. Manually created backups remain until an Owner deletes them.",
+      prefix: ["backups.retention_"],
+    },
+  ],
   preferences: [
     {
       title: "Appearance",

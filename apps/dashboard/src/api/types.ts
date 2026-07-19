@@ -442,6 +442,63 @@ export type SystemStatus = {
   serverTimezone: string;
   deployment: Record<string, unknown>;
 };
+export type BackupComponent = {
+  name: string;
+  fileCount: number;
+  totalBytes: number;
+};
+export type BackupArchive = {
+  id: string;
+  fileName: string;
+  kind: string;
+  status: string;
+  sizeBytes: number;
+  archiveSha256: string;
+  tilecastVersion: string;
+  schemaVersion: number;
+  installationId: string;
+  organizationName: string;
+  components: BackupComponent[];
+  verification: string;
+  verifiedAt?: string;
+  createdAt: string;
+};
+export type BackupJob = {
+  id: string;
+  kind: "backup" | "verify" | "restore";
+  trigger: string;
+  archiveId?: string;
+  status: string;
+  phase: string;
+  progressPercent: number;
+  errorCode?: string;
+  errorMessage?: string;
+  createdAt: string;
+  completedAt?: string;
+};
+export type BackupScheduleState = {
+  lastRunAt?: string;
+  nextRunAt?: string;
+};
+export type BackupList = {
+  backups: BackupArchive[];
+  currentJob?: BackupJob | null;
+  recentJobs: BackupJob[];
+  lastSuccessful?: BackupArchive | null;
+  schedule: BackupScheduleState;
+};
+export type BackupRestorePlan = {
+  archive: BackupArchive;
+  organizationName: string;
+  installationId: string;
+  tilecastVersion: string;
+  schemaVersion: number;
+  createdAt: string;
+  sizeBytes: number;
+  components: BackupComponent[];
+  identityMismatch: boolean;
+  currentInstallationId: string;
+};
 export type ScreenGroup = {
   id: string;
   name: string;

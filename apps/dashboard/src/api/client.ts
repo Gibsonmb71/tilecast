@@ -62,6 +62,9 @@ import type {
   ProviderCatalog,
   ContentDefinitionCatalog,
   WidgetPresentation,
+  BackupList,
+  BackupJob,
+  BackupRestorePlan,
 } from "./types";
 
 type DataResponse<T> = { data: T };
@@ -509,6 +512,34 @@ export const api = {
   effectivePolicy: (id: string) =>
     request<EffectivePolicy>(`/screens/${id}/effective-policy`),
   systemStatus: () => request<SystemStatus>("/system/status"),
+  backups: () => request<BackupList>("/system/backups"),
+  createBackup: (csrfToken: string) =>
+    request<BackupJob>("/system/backups", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
+  verifyBackup: (id: string, csrfToken: string) =>
+    request<BackupJob>(`/system/backups/${id}/verify`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
+  backupRestorePlan: (id: string) =>
+    request<BackupRestorePlan>(`/system/backups/${id}/plan`),
+  restoreBackup: (
+    id: string,
+    confirmIdentityMismatch: boolean,
+    csrfToken: string,
+  ) =>
+    request<BackupJob>(`/system/backups/${id}/restore`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ confirmIdentityMismatch }),
+    }),
+  deleteBackup: (id: string, force: boolean, csrfToken: string) =>
+    request<{ deleted: boolean }>(
+      `/system/backups/${id}${force ? "?force=true" : ""}`,
+      { method: "DELETE", headers: { "X-CSRF-Token": csrfToken } },
+    ),
   runMaintenance: (action: string, csrfToken: string) =>
     request<{ action: string; status: string }>(
       `/system/maintenance/${action}`,
