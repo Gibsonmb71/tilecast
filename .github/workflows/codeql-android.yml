@@ -3,9 +3,6 @@ name: Android CodeQL
 on:
   pull_request:
     branches: [main]
-    paths:
-      - "apps/player-android/**"
-      - ".github/workflows/codeql-android.yml"
   push:
     branches: [main]
     paths:
@@ -31,23 +28,65 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Detect Android changes
+        id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          elif git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- \
+            apps/player-android \
+            .github/workflows/codeql-android.yml; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Set up Java
+        if: steps.changes.outputs.changed == 'true'
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
           cache: gradle
       - name: Set up Android SDK
+        if: steps.changes.outputs.changed == 'true'
         uses: android-actions/setup-android@v3
       - name: Initialize CodeQL
+        if: steps.changes.outputs.changed == 'true'
         uses: github/codeql-action/init@v3
         with:
           languages: java-kotlin
           build-mode: manual
       - name: Build Android player
+        if: steps.changes.outputs.changed == 'true'
         working-directory: apps/player-android
         run: ./gradlew clean assembleDebug
       - name: Analyze
+        if: steps.changes.outputs.changed == 'true'
         uses: github/codeql-action/analyze@v3
         with:
+          category: "/language:java-kotlin"
+      - name: Create unaffected result
+        if: steps.changes.outputs.changed == 'false'
+        run: |
+          cat > unaffected.sarif <<'EOF'
+          {
+            "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+            "version": "2.1.0",
+            "runs": [{
+              "tool": {"driver": {"name": "CodeQL", "version": "0.0.0", "rules": []}},
+              "results": []
+            }]
+          }
+          EOF
+      - name: Upload unaffected result
+        if: steps.changes.outputs.changed == 'false'
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: unaffected.sarif
           category: "/language:java-kotlin"
