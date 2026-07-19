@@ -238,4 +238,51 @@ describe("Form Data Source Studio", () => {
     await user.type(screen.getByLabelText("Form title"), "!");
     expect(screen.getByRole("button", { name: "Publish" })).toBeEnabled();
   });
+
+  it("disables Publish when a differing draft is edited back to match published", async () => {
+    mockAuth("owner");
+    const published = {
+      title: "Announcement",
+      description: "",
+      fields: [
+        { key: "title", label: "Title", control: "short_text", required: true },
+      ],
+    };
+    const detail = formDetail(["manage"]);
+    detail.publishedRevision = {
+      ...detail.publishedRevision!,
+      schema: published as never,
+    };
+    // The saved draft differs from published only by its title.
+    detail.draftSchema = { ...published, title: "Announcement CHANGED" } as never;
+    vi.spyOn(api, "getDataSource").mockResolvedValue(formDataSourceDetail);
+    vi.spyOn(api, "getForm").mockResolvedValue(detail);
+    const user = userEvent.setup();
+    renderAt("/data-sources/f1?tab=form");
+
+    const title = await screen.findByLabelText("Form title");
+    // A differing draft is publishable even before any local edit (not gated on dirty).
+    expect(screen.getByRole("button", { name: "Publish" })).toBeEnabled();
+
+    // Editing the draft back to exactly match the published schema disables Publish.
+    await user.clear(title);
+    await user.type(title, "Announcement");
+    expect(screen.getByRole("button", { name: "Publish" })).toBeDisabled();
+  });
+
+  it("blocks navigation when only the query string changes with unsaved edits", async () => {
+    mockAuth("owner");
+    vi.spyOn(api, "getDataSource").mockResolvedValue(formDataSourceDetail);
+    vi.spyOn(api, "getForm").mockResolvedValue(formDetail(["manage"]));
+    const user = userEvent.setup();
+    const { router } = renderAt("/data-sources/f1?tab=form");
+
+    await user.type(await screen.findByLabelText("Form title"), "X");
+
+    // Same pathname, different query string -> still blocked.
+    await act(async () => {
+      await router.navigate("/data-sources/f1?tab=preview");
+    });
+    expect(await screen.findByText("Leave without saving?")).toBeInTheDocument();
+  });
 });

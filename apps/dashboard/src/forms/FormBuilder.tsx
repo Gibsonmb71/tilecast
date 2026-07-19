@@ -52,16 +52,21 @@ export function FormBuilder({
 
   const publishedKeys = useMemo(() => publishedOutputKeys(form), [form]);
 
-  // Publishing is only meaningful when the saved draft differs from the current published
-  // revision. Unsaved changes are publishable (they save first); an unchanged draft is not.
+  // Publishing is only meaningful when the current draft differs from the published revision.
+  // A draft that matches the published schema is never publishable, even if it differs from the
+  // last saved draft (e.g. the user edited and then reverted back to the published content).
   const publishedSchema = form.publishedRevision?.schema;
   const hasPublishableChanges =
-    dirty || !publishedSchema || !schemasEquivalent(draft, publishedSchema);
+    !publishedSchema || !schemasEquivalent(draft, publishedSchema);
 
-  // Block in-app navigation while there are unsaved schema changes so edits are not lost.
+  // Block in-app navigation while there are unsaved schema changes so edits are not lost. Any
+  // change to the path, query string, or hash counts as leaving the current view.
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
-      dirty && currentLocation.pathname !== nextLocation.pathname,
+      dirty &&
+      (currentLocation.pathname !== nextLocation.pathname ||
+        currentLocation.search !== nextLocation.search ||
+        currentLocation.hash !== nextLocation.hash),
   );
 
   // Warn on browser refresh/close while there are unsaved schema changes.
