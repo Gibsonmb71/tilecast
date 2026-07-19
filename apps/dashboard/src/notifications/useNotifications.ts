@@ -157,8 +157,7 @@ export function useNotifications(user?: User): NotificationFeed {
 
     for (const takeover of emergencies.data?.items ?? []) {
       const active =
-        !takeover.cancelledAt &&
-        new Date(takeover.expiresAt).getTime() > now;
+        !takeover.cancelledAt && new Date(takeover.expiresAt).getTime() > now;
       if (!active) continue;
       if (takeover.failedCount > 0) {
         collected.push({
@@ -205,7 +204,8 @@ export function useNotifications(user?: User): NotificationFeed {
     // Array.prototype.sort is stable, so items keep their insertion order within
     // a priority band while the bands themselves sort critical -> warning -> info.
     return collected.sort(
-      (left, right) => priorityRank[left.priority] - priorityRank[right.priority],
+      (left, right) =>
+        priorityRank[left.priority] - priorityRank[right.priority],
     );
   }, [
     screens.data,

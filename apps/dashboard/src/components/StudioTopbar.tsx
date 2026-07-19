@@ -69,11 +69,12 @@ const statusLabels: Record<ScreenStatus, string> = {
   revoked: "Pairing revoked",
 };
 
-const notificationGroups: { priority: NotificationPriority; label: string }[] = [
-  { priority: "critical", label: "Critical" },
-  { priority: "warning", label: "Needs attention" },
-  { priority: "info", label: "Info" },
-];
+const notificationGroups: { priority: NotificationPriority; label: string }[] =
+  [
+    { priority: "critical", label: "Critical" },
+    { priority: "warning", label: "Needs attention" },
+    { priority: "info", label: "Info" },
+  ];
 
 function platformShortcut() {
   if (typeof navigator === "undefined") return "⌘K";

@@ -163,34 +163,30 @@ describe("StudioTopbar", () => {
   });
 
   it("groups notifications by priority and surfaces new alert sources", async () => {
-    renderTopbar(
-      "/",
-      undefined,
-      {
-        deployments: {
-          items: [
-            {
-              id: "dep-1",
-              name: "Winter rollout",
-              failedCount: 2,
-              waitingForUserCount: 0,
-            },
-            {
-              id: "dep-2",
-              name: "Lobby canary",
-              failedCount: 0,
-              waitingForUserCount: 3,
-            },
-          ] as Awaited<ReturnType<typeof api.updateDeployments>>["items"],
-        },
-        pairings: {
-          items: [{ id: "pair-1" }] as Awaited<
-            ReturnType<typeof api.pendingPairings>
-          >["items"],
-          total: 1,
-        },
+    renderTopbar("/", undefined, {
+      deployments: {
+        items: [
+          {
+            id: "dep-1",
+            name: "Winter rollout",
+            failedCount: 2,
+            waitingForUserCount: 0,
+          },
+          {
+            id: "dep-2",
+            name: "Lobby canary",
+            failedCount: 0,
+            waitingForUserCount: 3,
+          },
+        ] as Awaited<ReturnType<typeof api.updateDeployments>>["items"],
       },
-    );
+      pairings: {
+        items: [{ id: "pair-1" }] as Awaited<
+          ReturnType<typeof api.pendingPairings>
+        >["items"],
+        total: 1,
+      },
+    });
 
     // A failed deployment is critical, so the badge escalates to the critical style.
     const badge = await screen.findByText("4", {
