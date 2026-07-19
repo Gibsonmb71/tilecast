@@ -40,6 +40,13 @@ type Definition struct {
 func number(v float64) *float64 { return &v }
 
 var definitions = []Definition{
+	{Key: "backups.schedule_enabled", Category: "backups", Type: "bool", Default: false, Scope: ScopeOrganization, Title: "Scheduled backups", Description: "Create full backups automatically on a schedule"},
+	{Key: "backups.schedule_frequency", Category: "backups", Type: "enum", Default: "daily", Allowed: []string{"daily", "weekly"}, Scope: ScopeOrganization, Title: "Backup frequency"},
+	{Key: "backups.schedule_day", Category: "backups", Type: "enum", Default: "sunday", Allowed: []string{"sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"}, Scope: ScopeOrganization, Title: "Backup day", Description: "Day of the week for weekly backups"},
+	{Key: "backups.schedule_time", Category: "backups", Type: "local_time", Default: "02:30", Scope: ScopeOrganization, Title: "Backup time"},
+	{Key: "backups.schedule_timezone", Category: "backups", Type: "timezone", Default: "UTC", Scope: ScopeOrganization, Title: "Backup timezone"},
+	{Key: "backups.retention_max_count", Category: "backups", Type: "int", Default: 7.0, Min: number(1), Max: number(365), Scope: ScopeOrganization, Title: "Scheduled backups to keep"},
+	{Key: "backups.retention_max_age_days", Category: "backups", Type: "int", Default: 90.0, Min: number(1), Max: number(3650), Scope: ScopeOrganization, Title: "Maximum scheduled backup age (days)"},
 	{Key: "organization.name", Category: "general", Type: "string", Default: "Tilecast", Scope: ScopeOrganization, Title: "Organization name", Description: "Name shown throughout Tilecast Studio"},
 	{Key: "organization.short_name", Category: "general", Type: "string", Default: "", Scope: ScopeOrganization, Title: "Short name", Description: "Compact organization name", Documentation: "docs/settings.md"},
 	{Key: "organization.timezone", Category: "general", Type: "timezone", Default: "UTC", Scope: ScopeOrganization, Title: "Default timezone"},

@@ -18,6 +18,7 @@ type DataSourceRefreshWorker struct {
 	cancel  context.CancelFunc
 	wg      sync.WaitGroup
 	id      string
+	gate    func() bool
 }
 
 func NewDataSourceRefreshWorker(service *Service, logger *slog.Logger) *DataSourceRefreshWorker {
@@ -26,6 +27,10 @@ func NewDataSourceRefreshWorker(service *Service, logger *slog.Logger) *DataSour
 	}
 	return &DataSourceRefreshWorker{service: service, logger: logger, id: uuid.NewString()}
 }
+
+// SetGate installs a check consulted before claiming work; backup and
+// restore operations pause refreshes through it.
+func (worker *DataSourceRefreshWorker) SetGate(gate func() bool) { worker.gate = gate }
 
 func (worker *DataSourceRefreshWorker) Start(parent context.Context) {
 	ctx, cancel := context.WithCancel(parent)
@@ -36,6 +41,14 @@ func (worker *DataSourceRefreshWorker) Start(parent context.Context) {
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
 		for {
+			if worker.gate != nil && !worker.gate() {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+				}
+				continue
+			}
 			worked, err := worker.runOne(ctx)
 			if err != nil && ctx.Err() == nil {
 				worker.logger.Error("data source refresh failed", "error", err)

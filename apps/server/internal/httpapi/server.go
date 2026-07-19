@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/tilecast/tilecast/apps/server/internal/auth"
+	"github.com/tilecast/tilecast/apps/server/internal/backup"
 	"github.com/tilecast/tilecast/apps/server/internal/devices"
 	"github.com/tilecast/tilecast/apps/server/internal/layouts"
 	"github.com/tilecast/tilecast/apps/server/internal/media"
@@ -39,6 +40,9 @@ type Dependencies struct {
 	SecureCookies       bool
 	ReleasePublishToken string
 	Operations          OperationsConfig
+	Backups             *backup.Service
+	BackupWorker        *backup.Worker
+	BackupLimits        backup.Limits
 }
 
 type OperationsConfig struct {
@@ -71,6 +75,9 @@ type server struct {
 	releasePublishTokenHash       [32]byte
 	releasePublishTokenConfigured bool
 	startedAt                     time.Time
+	backups                       *backup.Service
+	backupWorker                  *backup.Worker
+	backupLimits                  backup.Limits
 }
 
 type contextKey string
@@ -97,6 +104,9 @@ func New(deps Dependencies) http.Handler {
 		settings:          deps.Settings,
 		updates:           deps.Updates,
 		startedAt:         time.Now(),
+		backups:           deps.Backups,
+		backupWorker:      deps.BackupWorker,
+		backupLimits:      deps.BackupLimits,
 	}
 	if deps.ReleasePublishToken != "" {
 		s.releasePublishTokenHash = sha256.Sum256([]byte(deps.ReleasePublishToken))
@@ -130,6 +140,10 @@ func (s *server) health(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *server) ready(w http.ResponseWriter, r *http.Request) {
+	if s.backups != nil && s.backups.Guard().RestoreActive() {
+		writeError(w, http.StatusServiceUnavailable, "restore_in_progress", "A restore is in progress. Tilecast will be back shortly.")
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
 	if err := s.db.Ping(ctx); err != nil {

@@ -57,3 +57,40 @@ func Migrate(ctx context.Context, databaseURL string) error {
 	}
 	return nil
 }
+
+// MigrateTo applies embedded migrations up to and including the given version.
+// Restore uses it to rebuild the schema exactly as it was when a backup was
+// created before loading the archived data.
+func MigrateTo(ctx context.Context, databaseURL string, version int64) error {
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		return fmt.Errorf("open migration connection: %w", err)
+	}
+	defer db.Close()
+
+	goose.SetBaseFS(migrations)
+	if err := goose.SetDialect("postgres"); err != nil {
+		return fmt.Errorf("set migration dialect: %w", err)
+	}
+	if err := goose.UpToContext(ctx, db, "migrations", version); err != nil {
+		return fmt.Errorf("apply migrations to version %d: %w", version, err)
+	}
+	return nil
+}
+
+// LatestMigrationVersion reports the newest migration version embedded in
+// this binary.
+func LatestMigrationVersion() (int64, error) {
+	goose.SetBaseFS(migrations)
+	if err := goose.SetDialect("postgres"); err != nil {
+		return 0, fmt.Errorf("set migration dialect: %w", err)
+	}
+	files, err := goose.CollectMigrations("migrations", 0, goose.MaxVersion)
+	if err != nil {
+		return 0, fmt.Errorf("collect migrations: %w", err)
+	}
+	if len(files) == 0 {
+		return 0, fmt.Errorf("no embedded migrations found")
+	}
+	return files[len(files)-1].Version, nil
+}
