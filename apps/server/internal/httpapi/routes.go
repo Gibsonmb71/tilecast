@@ -191,7 +191,7 @@ func (s *server) routes() http.Handler {
 				dashboard.With(s.requireCSRF).Delete("/data-sources/{id}/records/{recordId}", s.deleteFormRecord)
 				dashboard.With(s.requireCSRF).Post("/data-sources/{id}/records/{recordId}/transitions", s.transitionFormRecord)
 				dashboard.With(s.requireCSRF).Post("/data-sources/{id}/records/{recordId}/comments", s.addFormRecordComment)
-				dashboard.With(s.requireCSRF).Post("/data-sources/{id}/records/{recordId}/attachments", s.attachFormRecordAsset)
+				dashboard.With(s.requireCSRF).Post("/data-sources/{id}/records/{recordId}/attachments", s.uploadFormRecordAttachment)
 				dashboard.Get("/data-sources/{id}/views", s.listFormViews)
 				dashboard.With(s.requireCSRF).Put("/data-sources/{id}/views", s.upsertFormView)
 				dashboard.With(s.requireCSRF).Delete("/data-sources/{id}/views/{viewId}", s.deleteFormView)

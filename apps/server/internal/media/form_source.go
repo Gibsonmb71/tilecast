@@ -3,12 +3,100 @@ package media
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/google/uuid"
 )
+
+// defaultFormAttachmentMaxBytes bounds a form attachment when no media upload limit is configured.
+const defaultFormAttachmentMaxBytes = 25 << 20
+
+// IngestFormAttachment creates a dedicated form-attachment asset from uploaded bytes. Unlike the
+// generic upload path it stamps origin='form_attachment' at creation, so the asset can never be
+// selected as public Media and never enters a manifest until an approving projection references it.
+// The bytes must be an image; other types are rejected. Submitters can call this without general
+// Media-management permission (the forms layer authorizes them against the target record).
+func (s *Service) IngestFormAttachment(ctx context.Context, userID uuid.UUID, filename, declaredMIME string, data []byte) (Asset, error) {
+	if s.storage == nil {
+		return Asset{}, errors.New("media storage is not configured")
+	}
+	if len(data) == 0 {
+		return Asset{}, errors.New("attachment is empty")
+	}
+	maxBytes := s.cfg.MaxUploadBytes
+	if maxBytes <= 0 {
+		maxBytes = defaultFormAttachmentMaxBytes
+	}
+	if int64(len(data)) > maxBytes {
+		return Asset{}, ErrUploadTooLarge
+	}
+	header := data
+	if len(header) > 512 {
+		header = data[:512]
+	}
+	detected, err := DetectType(header)
+	if err != nil {
+		return Asset{}, err
+	}
+	if detected.AssetType != "image" {
+		return Asset{}, errors.New("form attachments must be images")
+	}
+	var organizationID uuid.UUID
+	if err := s.db.QueryRow(ctx, `SELECT id FROM organization_settings WHERE singleton=TRUE`).Scan(&organizationID); err != nil {
+		return Asset{}, err
+	}
+	assetID, variantID := uuid.New(), uuid.New()
+	finalKey := OriginalKey(assetID, detected.Extension)
+	if err := s.storage.WriteAtomic(finalKey, func(w io.Writer) error { _, writeErr := w.Write(data); return writeErr }); err != nil {
+		return Asset{}, err
+	}
+	sum := sha256.Sum256(data)
+	name := strings.TrimSuffix(filename, filepath.Ext(filename))
+	if strings.TrimSpace(name) == "" {
+		name = "Attachment"
+	}
+	if len(name) > 180 {
+		name = name[:180]
+	}
+	now := time.Now().UTC()
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		_ = s.storage.Delete(finalKey)
+		return Asset{}, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	cleanup := func(cause error) (Asset, error) {
+		_ = s.storage.Delete(finalKey)
+		return Asset{}, cause
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO assets (id,organization_id,name,type,original_filename,declared_mime_type,detected_mime_type,sha256,original_size,processing_status,origin,created_by,created_at,updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'queued','form_attachment',$10,$11,$11)`,
+		assetID, organizationID, name, detected.AssetType, filename, declaredMIME, detected.MIMEType, sum[:], int64(len(data)), userID, now); err != nil {
+		return cleanup(err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO asset_variants (id,asset_id,kind,storage_provider,storage_key,mime_type,file_size,sha256)
+		VALUES ($1,$2,'original','local',$3,$4,$5,$6)`, variantID, assetID, finalKey, detected.MIMEType, int64(len(data)), sum[:]); err != nil {
+		return cleanup(err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO media_jobs (id,asset_id,kind,status) VALUES ($1,$2,'inspect_asset','queued')`, uuid.New(), assetID); err != nil {
+		return cleanup(err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO audit_logs (id,user_id,action,resource_type,resource_id,metadata)
+		VALUES ($1,$2,'form.attachment_uploaded','asset',$3,jsonb_build_object('filename',$4::text))`, uuid.New(), userID, assetID.String(), filename); err != nil {
+		return cleanup(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return cleanup(err)
+	}
+	return s.GetAsset(ctx, assetID)
+}
 
 // Form Data Sources are owned by the forms package, which writes the data_sources row and the
 // cached typed-dataset payload directly. This file carries only the pieces the media package

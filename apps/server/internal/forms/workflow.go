@@ -174,8 +174,13 @@ type WorkflowInput struct {
 	Workflow Workflow
 }
 
-// ConfigureWorkflow validates and persists a new workflow for a form, then re-derives record
-// output-eligibility and rebuilds the projection so signage reflects the change.
+// ConfigureWorkflow reconciles a form's workflow in place rather than dropping and recreating it,
+// so states referenced by existing records are never orphaned. State keys are immutable once a
+// record references them: a used state may have its label, order, terminal flag, and output
+// eligibility changed, but it cannot be removed or renamed, and the initial state cannot move
+// while records still sit in the current initial state. Transitions (which no record references)
+// are replaced wholesale. Eligibility changes are re-derived immediately and the projection is
+// rebuilt.
 func (s *Service) ConfigureWorkflow(ctx context.Context, id, actor uuid.UUID, in WorkflowInput) error {
 	if _, err := s.ensureForm(ctx, s.db, id); err != nil {
 		return err
@@ -183,20 +188,104 @@ func (s *Service) ConfigureWorkflow(ctx context.Context, id, actor uuid.UUID, in
 	if err := validateWorkflow(in.Workflow); err != nil {
 		return err
 	}
-	eligible := map[string]bool{}
-	for _, state := range in.Workflow.States {
-		eligible[state.Key] = state.EligibleForOutput
-	}
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
-	if err := writeWorkflow(ctx, tx, id, in.Workflow); err != nil {
+
+	current, err := loadWorkflow(ctx, tx, id)
+	if err != nil {
 		return err
 	}
-	// Re-derive eligibility for existing records: clear all, then set the records whose current
-	// state is now output-eligible. A record whose state no longer exists stays ineligible.
+	currentByKey := map[string]WorkflowState{}
+	var currentInitial string
+	for _, state := range current.States {
+		currentByKey[state.Key] = state
+		if state.Initial {
+			currentInitial = state.Key
+		}
+	}
+	newByKey := map[string]WorkflowState{}
+	var newInitial string
+	for _, state := range in.Workflow.States {
+		newByKey[state.Key] = state
+		if state.Initial {
+			newInitial = state.Key
+		}
+	}
+
+	// State keys referenced by any non-deleted record are immutable: they must still exist.
+	usedRows, err := tx.Query(ctx, `SELECT DISTINCT state_key FROM form_records WHERE data_source_id=$1 AND deleted_at IS NULL`, id)
+	if err != nil {
+		return err
+	}
+	usedStates := map[string]bool{}
+	for usedRows.Next() {
+		var key string
+		if err := usedRows.Scan(&key); err != nil {
+			usedRows.Close()
+			return err
+		}
+		usedStates[key] = true
+	}
+	usedRows.Close()
+	if err := usedRows.Err(); err != nil {
+		return err
+	}
+	for key := range usedStates {
+		if _, ok := newByKey[key]; !ok {
+			return fmt.Errorf("%w: state %q is referenced by existing records and cannot be removed or renamed", ErrValidation, key)
+		}
+	}
+	// Changing which state is initial while records still occupy the current initial state would
+	// strand those records under a new intake path; require they be cleared first.
+	if currentInitial != "" && newInitial != currentInitial && usedStates[currentInitial] {
+		return fmt.Errorf("%w: cannot change the initial state while records remain in %q", ErrValidation, currentInitial)
+	}
+
+	// Reconcile states: update existing, insert new, delete only unused removed states.
+	for _, state := range in.Workflow.States {
+		if _, ok := currentByKey[state.Key]; ok {
+			if _, err := tx.Exec(ctx, `UPDATE form_workflow_states
+				SET label=$3,position=$4,eligible_for_output=$5,is_initial=$6,is_terminal=$7,updated_at=now()
+				WHERE data_source_id=$1 AND state_key=$2`,
+				id, state.Key, state.Label, state.Position, state.EligibleForOutput, state.Initial, state.Terminal); err != nil {
+				return err
+			}
+			continue
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO form_workflow_states
+			(id,data_source_id,state_key,label,position,eligible_for_output,is_initial,is_terminal)
+			VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
+			uuid.New(), id, state.Key, state.Label, state.Position, state.EligibleForOutput, state.Initial, state.Terminal); err != nil {
+			return err
+		}
+	}
+	for _, state := range current.States {
+		if _, ok := newByKey[state.Key]; !ok {
+			// Guaranteed unused by the check above.
+			if _, err := tx.Exec(ctx, `DELETE FROM form_workflow_states WHERE data_source_id=$1 AND state_key=$2`, id, state.Key); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Transitions carry no record references, so replacing them wholesale is safe.
+	if _, err := tx.Exec(ctx, `DELETE FROM form_workflow_transitions WHERE data_source_id=$1`, id); err != nil {
+		return err
+	}
+	for _, transition := range in.Workflow.Transitions {
+		if _, err := tx.Exec(ctx, `INSERT INTO form_workflow_transitions
+			(id,data_source_id,from_state,to_state,label,required_capability,position)
+			VALUES($1,$2,$3,$4,$5,$6,$7)`,
+			uuid.New(), id, transition.From, transition.To, transition.Label, string(transition.RequiredCapability), transition.Position); err != nil {
+			return err
+		}
+	}
+
+	// Re-derive eligibility for existing records: clear all, then set records whose current state
+	// is now output-eligible.
 	if _, err := tx.Exec(ctx, `UPDATE form_records SET eligible=FALSE,updated_at=now()
 		WHERE data_source_id=$1 AND deleted_at IS NULL AND eligible`, id); err != nil {
 		return err
@@ -205,6 +294,10 @@ func (s *Service) ConfigureWorkflow(ctx context.Context, id, actor uuid.UUID, in
 		FROM form_workflow_states st
 		WHERE r.data_source_id=$1 AND r.deleted_at IS NULL
 		AND st.data_source_id=$1 AND st.state_key=r.state_key AND st.eligible_for_output`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)
+		VALUES($1,$2,'form.workflow_configured','data_source',$3)`, uuid.New(), actor, id.String()); err != nil {
 		return err
 	}
 	if err := tx.Commit(ctx); err != nil {

@@ -69,7 +69,11 @@ func setupForms(t *testing.T) formTestEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mediaService := media.NewService(pool, nil, media.Config{})
+	storage, err := media.NewLocalStorage(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	mediaService := media.NewService(pool, storage, media.Config{})
 	service := NewService(pool, mediaService)
 	invalidator := &fakeInvalidator{}
 	service.SetAssetInvalidator(invalidator)
@@ -126,11 +130,11 @@ func (e formTestEnv) submitAndApprove(t *testing.T, formID uuid.UUID, values map
 	if err != nil {
 		t.Fatalf("create record: %v", err)
 	}
-	record, err = e.service.Transition(e.ctx, record.ID, e.owner, "submitted", "", record.Version)
+	record, err = e.service.Transition(e.ctx, formID, record.ID, e.owner, "submitted", "", record.Version)
 	if err != nil {
 		t.Fatalf("submit: %v", err)
 	}
-	record, err = e.service.Transition(e.ctx, record.ID, e.owner, "approved", "", record.Version)
+	record, err = e.service.Transition(e.ctx, formID, record.ID, e.owner, "approved", "", record.Version)
 	if err != nil {
 		t.Fatalf("approve: %v", err)
 	}
@@ -225,7 +229,7 @@ func TestPublishRevisionKeepsOldSubmissions(t *testing.T) {
 	}
 
 	// The old record still references the first revision and its values are intact.
-	reloaded, err := e.service.GetRecord(e.ctx, old.ID)
+	reloaded, err := e.service.GetRecord(e.ctx, form.ID, old.ID, e.owner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,35 +265,35 @@ func TestWorkflowTransitionsAndValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	record, err = e.service.Transition(e.ctx, record.ID, e.owner, "submitted", "", record.Version)
+	record, err = e.service.Transition(e.ctx, form.ID, record.ID, e.owner, "submitted", "", record.Version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	record, err = e.service.Transition(e.ctx, record.ID, e.owner, "changes_requested", "Add detail", record.Version)
+	record, err = e.service.Transition(e.ctx, form.ID, record.ID, e.owner, "changes_requested", "Add detail", record.Version)
 	if err != nil {
 		t.Fatalf("request changes: %v", err)
 	}
-	record, err = e.service.Transition(e.ctx, record.ID, e.owner, "submitted", "", record.Version)
+	record, err = e.service.Transition(e.ctx, form.ID, record.ID, e.owner, "submitted", "", record.Version)
 	if err != nil {
 		t.Fatalf("resubmit: %v", err)
 	}
-	if _, err := e.service.Transition(e.ctx, record.ID, e.owner, "approved", "", record.Version); err != nil {
+	if _, err := e.service.Transition(e.ctx, form.ID, record.ID, e.owner, "approved", "", record.Version); err != nil {
 		t.Fatalf("approve after resubmit: %v", err)
 	}
 
 	// An invalid transition is rejected.
 	rejectMe, _ := e.service.CreateRecord(e.ctx, form.ID, e.owner, RecordInput{Values: map[string]any{"title": "x"}})
-	if _, err := e.service.Transition(e.ctx, rejectMe.ID, e.owner, "approved", "", rejectMe.Version); !errors.Is(err, ErrValidation) {
+	if _, err := e.service.Transition(e.ctx, form.ID, rejectMe.ID, e.owner, "approved", "", rejectMe.Version); !errors.Is(err, ErrValidation) {
 		t.Fatalf("expected validation error for illegal transition, got %v", err)
 	}
 
 	// Approving a record missing a required field fails when entering the eligible state.
 	incomplete, _ := e.service.CreateRecord(e.ctx, form.ID, e.owner, RecordInput{Values: map[string]any{}})
-	incomplete, err = e.service.Transition(e.ctx, incomplete.ID, e.owner, "submitted", "", incomplete.Version)
+	incomplete, err = e.service.Transition(e.ctx, form.ID, incomplete.ID, e.owner, "submitted", "", incomplete.Version)
 	if err != nil {
 		t.Fatalf("submit incomplete: %v", err)
 	}
-	if _, err := e.service.Transition(e.ctx, incomplete.ID, e.owner, "approved", "", incomplete.Version); !errors.Is(err, ErrValidation) {
+	if _, err := e.service.Transition(e.ctx, form.ID, incomplete.ID, e.owner, "approved", "", incomplete.Version); !errors.Is(err, ErrValidation) {
 		t.Fatalf("expected required-field validation on approve, got %v", err)
 	}
 }
@@ -301,15 +305,15 @@ func TestConcurrentEditConflict(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.service.UpdateRecord(e.ctx, record.ID, e.owner, RecordInput{Values: map[string]any{"title": "Edit A"}}, record.Version); err != nil {
+	if _, err := e.service.UpdateRecord(e.ctx, form.ID, record.ID, e.owner, RecordInput{Values: map[string]any{"title": "Edit A"}}, record.Version); err != nil {
 		t.Fatalf("first edit: %v", err)
 	}
 	// A second edit with the stale version must conflict.
-	if _, err := e.service.UpdateRecord(e.ctx, record.ID, e.owner, RecordInput{Values: map[string]any{"title": "Edit B"}}, record.Version); !errors.Is(err, ErrConflict) {
+	if _, err := e.service.UpdateRecord(e.ctx, form.ID, record.ID, e.owner, RecordInput{Values: map[string]any{"title": "Edit B"}}, record.Version); !errors.Is(err, ErrConflict) {
 		t.Fatalf("expected conflict on stale version, got %v", err)
 	}
 	// A stale transition likewise conflicts.
-	if _, err := e.service.Transition(e.ctx, record.ID, e.owner, "submitted", "", record.Version); !errors.Is(err, ErrConflict) {
+	if _, err := e.service.Transition(e.ctx, form.ID, record.ID, e.owner, "submitted", "", record.Version); !errors.Is(err, ErrConflict) {
 		t.Fatalf("expected conflict on stale transition, got %v", err)
 	}
 }
@@ -353,7 +357,7 @@ func TestApprovalsInboxPermissions(t *testing.T) {
 	}
 	// Submit a record so it is awaiting review.
 	record, _ := e.service.CreateRecord(e.ctx, form.ID, e.owner, RecordInput{Values: map[string]any{"title": "Please review"}})
-	if _, err := e.service.Transition(e.ctx, record.ID, e.owner, "submitted", "", record.Version); err != nil {
+	if _, err := e.service.Transition(e.ctx, form.ID, record.ID, e.owner, "submitted", "", record.Version); err != nil {
 		t.Fatal(err)
 	}
 
@@ -445,10 +449,10 @@ func TestManifestInvalidationOnApproval(t *testing.T) {
 	e := setupForms(t)
 	form, _ := e.service.CreateForm(e.ctx, e.owner, FormInput{Name: "Invalidate", DraftSchema: announcementSchema()})
 	record, _ := e.service.CreateRecord(e.ctx, form.ID, e.owner, RecordInput{Values: map[string]any{"title": "Ship it"}})
-	record, _ = e.service.Transition(e.ctx, record.ID, e.owner, "submitted", "", record.Version)
+	record, _ = e.service.Transition(e.ctx, form.ID, record.ID, e.owner, "submitted", "", record.Version)
 	// Reset recorded calls, then approve.
 	e.invalidator.dataSourceCalls = nil
-	if _, err := e.service.Transition(e.ctx, record.ID, e.owner, "approved", "", record.Version); err != nil {
+	if _, err := e.service.Transition(e.ctx, form.ID, record.ID, e.owner, "approved", "", record.Version); err != nil {
 		t.Fatal(err)
 	}
 	found := false

@@ -60,6 +60,15 @@ func (s *Service) RebuildProjection(ctx context.Context, formID uuid.UUID) error
 		payload.Datasets = append(payload.Datasets, dataset)
 	}
 
+	// Schedule a wake at the next expiry among eligible records so the worker can auto-expire them
+	// even when no view carries a relative time filter.
+	var nextExpiry *time.Time
+	if err := s.db.QueryRow(ctx, `SELECT min(expires_at) FROM form_records
+		WHERE data_source_id=$1 AND deleted_at IS NULL AND eligible AND expires_at IS NOT NULL AND expires_at>now()`, formID).Scan(&nextExpiry); err != nil {
+		return err
+	}
+	noteBoundary(nextExpiry)
+
 	encoded, err := json.Marshal(payload)
 	if err != nil {
 		return err

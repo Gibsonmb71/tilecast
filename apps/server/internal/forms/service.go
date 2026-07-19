@@ -107,6 +107,28 @@ func (s *Service) Authorize(ctx context.Context, id, userID uuid.UUID, need Capa
 	return false, rows.Err()
 }
 
+// CanAccessForm reports whether a user may see a form at all: the creator, a global Owner, or the
+// holder of any grant on it. Used to gate the form-detail read for submitters who lack view_own.
+func (s *Service) CanAccessForm(ctx context.Context, id, userID uuid.UUID) (bool, error) {
+	createdBy, err := s.ensureForm(ctx, s.db, id)
+	if err != nil {
+		return false, err
+	}
+	if createdBy != nil && *createdBy == userID {
+		return true, nil
+	}
+	if role, err := s.userGlobalRole(ctx, s.db, userID); err == nil && role == "owner" {
+		return true, nil
+	} else if err != nil {
+		return false, err
+	}
+	var exists bool
+	if err := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM form_grants WHERE data_source_id=$1 AND user_id=$2)`, id, userID).Scan(&exists); err != nil {
+		return false, err
+	}
+	return exists, nil
+}
+
 // grantedCapabilities returns every capability userID effectively holds on form id, expanding
 // creator/owner into the full set. Used to decorate the Form detail for the UI.
 func (s *Service) grantedCapabilities(ctx context.Context, q rowQuerier, id uuid.UUID, createdBy *uuid.UUID, userID uuid.UUID) ([]Capability, error) {

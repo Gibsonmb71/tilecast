@@ -10,15 +10,18 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/tilecast/tilecast/apps/server/internal/media"
 )
 
-// RecordInput carries submitted or edited record values and display metadata.
+// RecordInput carries submitted or edited record values and display metadata. The display fields
+// are tri-state (see Optional): omitted preserves the stored value, explicit null clears it, and
+// a value replaces it.
 type RecordInput struct {
 	Values       map[string]any
-	DisplayTitle *string
-	Priority     *int
-	DisplayAt    *time.Time
-	ExpiresAt    *time.Time
+	DisplayTitle Optional[string]
+	Priority     Optional[int]
+	DisplayAt    Optional[time.Time]
+	ExpiresAt    Optional[time.Time]
 }
 
 // RecordFilter selects and paginates records.
@@ -39,12 +42,116 @@ type RecordPage struct {
 	PageSize int      `json:"pageSize"`
 }
 
-// CreateRecord creates a draft submission bound to the form's current published revision.
-func (s *Service) CreateRecord(ctx context.Context, id, actor uuid.UUID, in RecordInput) (Record, error) {
-	if _, err := s.ensureForm(ctx, s.db, id); err != nil {
+// recordMeta is the minimal record identity used for authorization decisions.
+type recordMeta struct {
+	id           uuid.UUID
+	dataSourceID uuid.UUID
+	revisionID   uuid.UUID
+	state        string
+	owner        *uuid.UUID
+	version      int
+	eligible     bool
+}
+
+// loadRecordScoped returns a record's identity scoped to a form. A record that does not exist, is
+// deleted, or belongs to a different Form Data Source returns ErrNotFound so callers never leak
+// the existence of records outside the addressed form.
+func (s *Service) loadRecordScoped(ctx context.Context, q rowQuerier, formID, recordID uuid.UUID) (recordMeta, error) {
+	var meta recordMeta
+	err := q.QueryRow(ctx, `SELECT id,data_source_id,revision_id,state_key,submitted_by,version,eligible
+		FROM form_records WHERE id=$1 AND deleted_at IS NULL`, recordID).
+		Scan(&meta.id, &meta.dataSourceID, &meta.revisionID, &meta.state, &meta.owner, &meta.version, &meta.eligible)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return recordMeta{}, ErrNotFound
+	}
+	if err != nil {
+		return recordMeta{}, err
+	}
+	if meta.dataSourceID != formID {
+		return recordMeta{}, ErrNotFound
+	}
+	return meta, nil
+}
+
+// allow is a small helper that treats an authorization error as "not allowed" only when the form
+// is missing; real errors propagate.
+func (s *Service) allow(ctx context.Context, formID, userID uuid.UUID, need Capability) (bool, error) {
+	return s.Authorize(ctx, formID, userID, need)
+}
+
+// visibilityError chooses 404 vs 403 so a submitter cannot probe for records they may not see: a
+// user who owns the record or can view all records gets Forbidden; anyone else gets NotFound.
+func visibilityError(isOwner, canViewAll bool) error {
+	if isOwner || canViewAll {
+		return ErrForbidden
+	}
+	return ErrNotFound
+}
+
+// stateSubmitterEditable reports whether a state allows submitter edits, defined as any state
+// with an outgoing transition that requires the submit capability (draft and changes_requested by
+// default). This keeps "editable states" derived from the configured workflow rather than hardcoded.
+func (s *Service) stateSubmitterEditable(ctx context.Context, q rowQuerier, formID uuid.UUID, state string) (bool, error) {
+	var editable bool
+	err := q.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM form_workflow_transitions
+		WHERE data_source_id=$1 AND from_state=$2 AND required_capability='submit')`, formID, state).Scan(&editable)
+	return editable, err
+}
+
+// authorizeEdit enforces who may edit a record's fields or attachments: a manager may edit any
+// record; otherwise the caller must own the record, hold submit, and the record must be in a
+// submitter-editable state. Existence is hidden from callers who may not see the record.
+func (s *Service) authorizeEdit(ctx context.Context, formID, recordID, userID uuid.UUID) (recordMeta, error) {
+	meta, err := s.loadRecordScoped(ctx, s.db, formID, recordID)
+	if err != nil {
+		return recordMeta{}, err
+	}
+	manage, err := s.allow(ctx, formID, userID, CapManage)
+	if err != nil {
+		return recordMeta{}, err
+	}
+	if manage {
+		return meta, nil
+	}
+	isOwner := meta.owner != nil && *meta.owner == userID
+	canViewAll, err := s.allow(ctx, formID, userID, CapViewAll)
+	if err != nil {
+		return recordMeta{}, err
+	}
+	if !isOwner {
+		return recordMeta{}, visibilityError(false, canViewAll)
+	}
+	hasSubmit, err := s.allow(ctx, formID, userID, CapSubmit)
+	if err != nil {
+		return recordMeta{}, err
+	}
+	if !hasSubmit {
+		return recordMeta{}, ErrForbidden
+	}
+	editable, err := s.stateSubmitterEditable(ctx, s.db, formID, meta.state)
+	if err != nil {
+		return recordMeta{}, err
+	}
+	if !editable {
+		return recordMeta{}, fmt.Errorf("%w: the record cannot be edited in its current state", ErrValidation)
+	}
+	return meta, nil
+}
+
+// CreateRecord creates a draft submission bound to the form's current published revision. The
+// caller must hold the submit capability on the form.
+func (s *Service) CreateRecord(ctx context.Context, formID, actor uuid.UUID, in RecordInput) (Record, error) {
+	if _, err := s.ensureForm(ctx, s.db, formID); err != nil {
 		return Record{}, err
 	}
-	revision, err := s.loadPublishedRevision(ctx, s.db, id)
+	allowed, err := s.allow(ctx, formID, actor, CapSubmit)
+	if err != nil {
+		return Record{}, err
+	}
+	if !allowed {
+		return Record{}, ErrForbidden
+	}
+	revision, err := s.loadPublishedRevision(ctx, s.db, formID)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			return Record{}, fmt.Errorf("%w: the form has no published revision", ErrValidation)
@@ -55,19 +162,26 @@ func (s *Service) CreateRecord(ctx context.Context, id, actor uuid.UUID, in Reco
 	if err != nil {
 		return Record{}, err
 	}
-	initialState, err := initialStateKey(ctx, s.db, id)
+	initialState, err := initialStateKey(ctx, s.db, formID)
 	if err != nil {
 		return Record{}, err
 	}
 	encoded, _ := json.Marshal(values)
 	recordID := uuid.New()
 	displayTitle := ""
-	if in.DisplayTitle != nil {
-		displayTitle = strings.TrimSpace(*in.DisplayTitle)
+	if in.DisplayTitle.Set && in.DisplayTitle.Value != nil {
+		displayTitle = strings.TrimSpace(*in.DisplayTitle.Value)
 	}
 	priority := 0
-	if in.Priority != nil {
-		priority = *in.Priority
+	if in.Priority.Set && in.Priority.Value != nil {
+		priority = *in.Priority.Value
+	}
+	var displayAt, expiresAt *time.Time
+	if in.DisplayAt.Set {
+		displayAt = in.DisplayAt.Value
+	}
+	if in.ExpiresAt.Set {
+		expiresAt = in.ExpiresAt.Value
 	}
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
@@ -77,10 +191,10 @@ func (s *Service) CreateRecord(ctx context.Context, id, actor uuid.UUID, in Reco
 	submitterName := s.userName(ctx, tx, actor)
 	if _, err := tx.Exec(ctx, `INSERT INTO form_records(id,data_source_id,revision_id,state_key,values,submitted_by,submitter_name,display_title,priority,display_at,expires_at,eligible,version)
 		VALUES($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10,$11,FALSE,1)`,
-		recordID, id, revision.ID, initialState, string(encoded), actor, submitterName, displayTitle, priority, in.DisplayAt, in.ExpiresAt); err != nil {
+		recordID, formID, revision.ID, initialState, string(encoded), actor, submitterName, displayTitle, priority, displayAt, expiresAt); err != nil {
 		return Record{}, err
 	}
-	if err := insertEvent(ctx, tx, recordID, id, "created", "", initialState, actor, submitterName, ""); err != nil {
+	if err := insertEvent(ctx, tx, recordID, formID, "created", "", initialState, actor, submitterName, ""); err != nil {
 		return Record{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -89,20 +203,21 @@ func (s *Service) CreateRecord(ctx context.Context, id, actor uuid.UUID, in Reco
 	return s.getRecordRow(ctx, s.db, recordID)
 }
 
-// UpdateRecord edits a record's values and display metadata under optimistic concurrency. If the
-// record is currently output-eligible, the projection is rebuilt so signage stays in agreement.
-func (s *Service) UpdateRecord(ctx context.Context, recordID, actor uuid.UUID, in RecordInput, expectedVersion int) (Record, error) {
+// UpdateRecord edits a record's values and display metadata under optimistic concurrency. Display
+// fields are tri-state: omitted preserves, explicit null clears, a value replaces.
+func (s *Service) UpdateRecord(ctx context.Context, formID, recordID, actor uuid.UUID, in RecordInput, expectedVersion int) (Record, error) {
+	if _, err := s.authorizeEdit(ctx, formID, recordID, actor); err != nil {
+		return Record{}, err
+	}
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return Record{}, err
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
-	var formID, revisionID uuid.UUID
+	var revisionID uuid.UUID
 	var version int
-	var stateKey string
 	var eligible bool
-	err = tx.QueryRow(ctx, `SELECT data_source_id,revision_id,version,state_key,eligible FROM form_records
-		WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, recordID).Scan(&formID, &revisionID, &version, &stateKey, &eligible)
+	err = tx.QueryRow(ctx, `SELECT revision_id,version,eligible FROM form_records WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, recordID).Scan(&revisionID, &version, &eligible)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Record{}, ErrNotFound
 	}
@@ -121,15 +236,41 @@ func (s *Service) UpdateRecord(ctx context.Context, recordID, actor uuid.UUID, i
 		return Record{}, err
 	}
 	encoded, _ := json.Marshal(values)
+	sets := []string{"values=$2::jsonb", "version=version+1", "updated_at=now()"}
+	args := []any{recordID, string(encoded)}
+	addSet := func(col string, val any) {
+		args = append(args, val)
+		sets = append(sets, fmt.Sprintf("%s=$%d", col, len(args)))
+	}
+	if in.DisplayTitle.Set {
+		if in.DisplayTitle.Value == nil {
+			sets = append(sets, "display_title=''")
+		} else {
+			addSet("display_title", strings.TrimSpace(*in.DisplayTitle.Value))
+		}
+	}
+	if in.Priority.Set {
+		if in.Priority.Value == nil {
+			sets = append(sets, "priority=0")
+		} else {
+			addSet("priority", *in.Priority.Value)
+		}
+	}
+	if in.DisplayAt.clears() {
+		sets = append(sets, "display_at=NULL")
+	} else if in.DisplayAt.Set {
+		addSet("display_at", *in.DisplayAt.Value)
+	}
+	if in.ExpiresAt.clears() {
+		sets = append(sets, "expires_at=NULL")
+	} else if in.ExpiresAt.Set {
+		addSet("expires_at", *in.ExpiresAt.Value)
+	}
 	actorName := s.userName(ctx, tx, actor)
-	if _, err := tx.Exec(ctx, `UPDATE form_records SET values=$2::jsonb,
-		display_title=COALESCE($3,display_title),priority=COALESCE($4,priority),
-		display_at=$5,expires_at=$6,version=version+1,updated_at=now()
-		WHERE id=$1`,
-		recordID, string(encoded), trimmedPtr(in.DisplayTitle), in.Priority, in.DisplayAt, in.ExpiresAt); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE form_records SET `+strings.Join(sets, ",")+` WHERE id=$1`, args...); err != nil {
 		return Record{}, err
 	}
-	if err := insertEvent(ctx, tx, recordID, formID, "edited", stateKey, stateKey, actor, actorName, ""); err != nil {
+	if err := insertEvent(ctx, tx, recordID, formID, "edited", "", "", actor, actorName, ""); err != nil {
 		return Record{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -143,38 +284,52 @@ func (s *Service) UpdateRecord(ctx context.Context, recordID, actor uuid.UUID, i
 	return s.getRecordRow(ctx, s.db, recordID)
 }
 
-// Transition moves a record to a new state, enforcing the configured workflow, per-form
-// authorization for the transition's capability, optimistic concurrency, and required-field
-// completeness when entering an output-eligible state. It records history and rebuilds the
-// projection so approvals reach signage and manifests are invalidated.
-func (s *Service) Transition(ctx context.Context, recordID, actor uuid.UUID, toState, note string, expectedVersion int) (Record, error) {
-	// Resolve the record's form and current state first so we can authorize the specific
-	// transition's capability before opening the write transaction.
-	var formID uuid.UUID
-	var currentState string
-	err := s.db.QueryRow(ctx, `SELECT data_source_id,state_key FROM form_records WHERE id=$1 AND deleted_at IS NULL`, recordID).Scan(&formID, &currentState)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return Record{}, ErrNotFound
-	}
+// Transition moves a record to a new state, enforcing the configured workflow, per-form record
+// ownership and capability rules, optimistic concurrency, and required-field completeness when
+// entering an output-eligible state. It records history and rebuilds the projection so approvals
+// reach signage and manifests are invalidated.
+func (s *Service) Transition(ctx context.Context, formID, recordID, actor uuid.UUID, toState, note string, expectedVersion int) (Record, error) {
+	meta, err := s.loadRecordScoped(ctx, s.db, formID, recordID)
 	if err != nil {
 		return Record{}, err
 	}
 	var requiredCapability string
-	var transitionLabel string
-	err = s.db.QueryRow(ctx, `SELECT required_capability,label FROM form_workflow_transitions
-		WHERE data_source_id=$1 AND from_state=$2 AND to_state=$3`, formID, currentState, toState).Scan(&requiredCapability, &transitionLabel)
+	err = s.db.QueryRow(ctx, `SELECT required_capability FROM form_workflow_transitions
+		WHERE data_source_id=$1 AND from_state=$2 AND to_state=$3`, formID, meta.state, toState).Scan(&requiredCapability)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return Record{}, fmt.Errorf("%w: no transition from %q to %q", ErrValidation, currentState, toState)
+		return Record{}, fmt.Errorf("%w: no transition from %q to %q", ErrValidation, meta.state, toState)
 	}
 	if err != nil {
 		return Record{}, err
 	}
-	allowed, err := s.Authorize(ctx, formID, actor, Capability(requiredCapability))
+	isOwner := meta.owner != nil && *meta.owner == actor
+	manage, err := s.allow(ctx, formID, actor, CapManage)
 	if err != nil {
 		return Record{}, err
+	}
+	canViewAll, err := s.allow(ctx, formID, actor, CapViewAll)
+	if err != nil {
+		return Record{}, err
+	}
+	allowed := manage
+	if !allowed {
+		if Capability(requiredCapability) == CapSubmit {
+			// Submitters may submit or resubmit only their own records.
+			hasSubmit, err := s.allow(ctx, formID, actor, CapSubmit)
+			if err != nil {
+				return Record{}, err
+			}
+			allowed = isOwner && hasSubmit
+		} else {
+			// Review/approve transitions require that reviewer capability.
+			allowed, err = s.allow(ctx, formID, actor, Capability(requiredCapability))
+			if err != nil {
+				return Record{}, err
+			}
+		}
 	}
 	if !allowed {
-		return Record{}, ErrForbidden
+		return Record{}, visibilityError(isOwner, canViewAll)
 	}
 	var targetEligible bool
 	if err := s.db.QueryRow(ctx, `SELECT eligible_for_output FROM form_workflow_states WHERE data_source_id=$1 AND state_key=$2`, formID, toState).Scan(&targetEligible); err != nil {
@@ -204,11 +359,9 @@ func (s *Service) Transition(ctx context.Context, recordID, actor uuid.UUID, toS
 	if version != expectedVersion {
 		return Record{}, ErrConflict
 	}
-	if lockedState != currentState {
-		// The state changed between our read and the lock; the transition is no longer valid.
+	if lockedState != meta.state {
 		return Record{}, ErrConflict
 	}
-	// Entering an output-eligible state requires a complete, valid submission.
 	if targetEligible {
 		schema, err := s.revisionSchema(ctx, tx, revisionID)
 		if err != nil {
@@ -226,7 +379,7 @@ func (s *Service) Transition(ctx context.Context, recordID, actor uuid.UUID, toS
 	if _, err := tx.Exec(ctx, `UPDATE form_records SET state_key=$2,eligible=$3,version=version+1,updated_at=now() WHERE id=$1`, recordID, toState, targetEligible); err != nil {
 		return Record{}, err
 	}
-	if err := insertEvent(ctx, tx, recordID, formID, "transition", currentState, toState, actor, actorName, note); err != nil {
+	if err := insertEvent(ctx, tx, recordID, formID, "transition", meta.state, toState, actor, actorName, note); err != nil {
 		return Record{}, err
 	}
 	if strings.TrimSpace(note) != "" {
@@ -237,33 +390,47 @@ func (s *Service) Transition(ctx context.Context, recordID, actor uuid.UUID, toS
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,metadata)
 		VALUES($1,$2,'form.record_transition','data_source',$3,jsonb_build_object('record',$4::text,'from',$5::text,'to',$6::text))`,
-		uuid.New(), actor, formID.String(), recordID.String(), currentState, toState); err != nil {
+		uuid.New(), actor, formID.String(), recordID.String(), meta.state, toState); err != nil {
 		return Record{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return Record{}, err
 	}
-	// State/eligibility changed, so rebuild the projection (which invalidates affected manifests).
 	if err := s.RebuildProjection(ctx, formID); err != nil {
 		return Record{}, err
 	}
 	return s.getRecordRow(ctx, s.db, recordID)
 }
 
-// DeleteRecord soft-deletes a record and rebuilds the projection when the record was eligible.
-func (s *Service) DeleteRecord(ctx context.Context, recordID, actor uuid.UUID) error {
+// DeleteRecord soft-deletes a record; only a manager may delete, and existence is hidden from
+// callers who may not see the record.
+func (s *Service) DeleteRecord(ctx context.Context, formID, recordID, actor uuid.UUID) error {
+	meta, err := s.loadRecordScoped(ctx, s.db, formID, recordID)
+	if err != nil {
+		return err
+	}
+	manage, err := s.allow(ctx, formID, actor, CapManage)
+	if err != nil {
+		return err
+	}
+	if !manage {
+		isOwner := meta.owner != nil && *meta.owner == actor
+		canViewAll, err := s.allow(ctx, formID, actor, CapViewAll)
+		if err != nil {
+			return err
+		}
+		return visibilityError(isOwner, canViewAll)
+	}
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
-	var formID uuid.UUID
 	var eligible bool
-	err = tx.QueryRow(ctx, `SELECT data_source_id,eligible FROM form_records WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, recordID).Scan(&formID, &eligible)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return ErrNotFound
-	}
-	if err != nil {
+	if err := tx.QueryRow(ctx, `SELECT eligible FROM form_records WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, recordID).Scan(&eligible); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
 		return err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE form_records SET deleted_at=now(),eligible=FALSE,updated_at=now() WHERE id=$1`, recordID); err != nil {
@@ -282,34 +449,191 @@ func (s *Service) DeleteRecord(ctx context.Context, recordID, actor uuid.UUID) e
 	return nil
 }
 
-// AddComment records a reviewer/submitter comment on a record.
-func (s *Service) AddComment(ctx context.Context, recordID, actor uuid.UUID, body string) (RecordComment, error) {
+// AddComment records a reviewer or submitter comment on a record. The comment and its history
+// event commit together or not at all.
+func (s *Service) AddComment(ctx context.Context, formID, recordID, actor uuid.UUID, body string) (RecordComment, error) {
 	body = strings.TrimSpace(body)
 	if body == "" || len(body) > 4000 {
 		return RecordComment{}, fmt.Errorf("%w: comment must be between 1 and 4000 characters", ErrValidation)
 	}
-	var formID uuid.UUID
-	if err := s.db.QueryRow(ctx, `SELECT data_source_id FROM form_records WHERE id=$1 AND deleted_at IS NULL`, recordID).Scan(&formID); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return RecordComment{}, ErrNotFound
-		}
+	meta, err := s.loadRecordScoped(ctx, s.db, formID, recordID)
+	if err != nil {
 		return RecordComment{}, err
 	}
-	actorName := s.userName(ctx, s.db, actor)
+	isOwner := meta.owner != nil && *meta.owner == actor
+	canReview, err := s.allow(ctx, formID, actor, CapReview)
+	if err != nil {
+		return RecordComment{}, err
+	}
+	canViewAll, err := s.allow(ctx, formID, actor, CapViewAll)
+	if err != nil {
+		return RecordComment{}, err
+	}
+	if !canReview && !isOwner {
+		return RecordComment{}, visibilityError(false, canViewAll)
+	}
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return RecordComment{}, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	actorName := s.userName(ctx, tx, actor)
 	commentID := uuid.New()
-	if _, err := s.db.Exec(ctx, `INSERT INTO form_record_comments(id,record_id,author_id,author_name,body) VALUES($1,$2,$3,$4,$5)`,
+	if _, err := tx.Exec(ctx, `INSERT INTO form_record_comments(id,record_id,author_id,author_name,body) VALUES($1,$2,$3,$4,$5)`,
 		commentID, recordID, actor, actorName, body); err != nil {
 		return RecordComment{}, err
 	}
-	_, _ = s.db.Exec(ctx, `INSERT INTO form_record_events(id,record_id,data_source_id,event_type,from_state,to_state,actor_id,actor_name,note)
-		VALUES($1,$2,$3,'comment','','',$4,$5,$6)`, uuid.New(), recordID, formID, actor, actorName, body)
+	if err := insertEvent(ctx, tx, recordID, formID, "comment", "", "", actor, actorName, body); err != nil {
+		return RecordComment{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return RecordComment{}, err
+	}
 	return RecordComment{ID: commentID, AuthorName: actorName, Body: body, CreatedAt: time.Now().UTC()}, nil
 }
 
-// ListRecords returns a filtered, paginated slice of a form's records.
-func (s *Service) ListRecords(ctx context.Context, id uuid.UUID, filter RecordFilter) (RecordPage, error) {
-	if _, err := s.ensureForm(ctx, s.db, id); err != nil {
+// AttachmentUpload carries the bytes and metadata for a new form attachment.
+type AttachmentUpload struct {
+	FieldKey    string
+	FileName    string
+	ContentType string
+	Data        []byte
+}
+
+// CreateAttachment ingests an uploaded image as a dedicated form attachment (origin
+// 'form_attachment' from the start), binds it to the record and a validated image field, and
+// records the value on the record. It never reclassifies an existing library asset. Authorization
+// matches record editing.
+func (s *Service) CreateAttachment(ctx context.Context, formID, recordID, actor uuid.UUID, upload AttachmentUpload) (Attachment, error) {
+	meta, err := s.authorizeEdit(ctx, formID, recordID, actor)
+	if err != nil {
+		return Attachment{}, err
+	}
+	schema, err := s.revisionSchema(ctx, s.db, meta.revisionID)
+	if err != nil {
+		return Attachment{}, err
+	}
+	if !isImageField(schema, upload.FieldKey) {
+		return Attachment{}, fmt.Errorf("%w: %q is not an image field in this form", ErrValidation, upload.FieldKey)
+	}
+	asset, err := s.media.IngestFormAttachment(ctx, actor, upload.FileName, upload.ContentType, upload.Data)
+	if err != nil {
+		if errors.Is(err, media.ErrUploadTooLarge) || errors.Is(err, media.ErrUnsupportedType) || isAttachmentInputError(err) {
+			return Attachment{}, fmt.Errorf("%w: %v", ErrValidation, err)
+		}
+		return Attachment{}, err
+	}
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return Attachment{}, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	attachmentID, err := s.bindAttachment(ctx, tx, recordID, asset.ID, upload.FieldKey)
+	if err != nil {
+		return Attachment{}, err
+	}
+	// Record the attachment id as the field's value so the projection and detail views resolve it.
+	var valuesRaw []byte
+	var version int
+	if err := tx.QueryRow(ctx, `SELECT values,version FROM form_records WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, recordID).Scan(&valuesRaw, &version); err != nil {
+		return Attachment{}, err
+	}
+	values := map[string]any{}
+	if len(valuesRaw) > 0 {
+		_ = json.Unmarshal(valuesRaw, &values)
+	}
+	values[upload.FieldKey] = asset.ID.String()
+	encoded, _ := json.Marshal(values)
+	actorName := s.userName(ctx, tx, actor)
+	if _, err := tx.Exec(ctx, `UPDATE form_records SET values=$2::jsonb,version=version+1,updated_at=now() WHERE id=$1`, recordID, string(encoded)); err != nil {
+		return Attachment{}, err
+	}
+	if err := insertEvent(ctx, tx, recordID, formID, "attachment_added", "", "", actor, actorName, upload.FieldKey); err != nil {
+		return Attachment{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Attachment{}, err
+	}
+	return Attachment{ID: attachmentID, AssetID: asset.ID, FieldKey: upload.FieldKey}, nil
+}
+
+// bindAttachment links a form-attachment asset to a record and field, refusing library assets and
+// assets already used by playlists, layouts, Widgets, or other records.
+func (s *Service) bindAttachment(ctx context.Context, tx pgx.Tx, recordID, assetID uuid.UUID, fieldKey string) (uuid.UUID, error) {
+	var origin string
+	err := tx.QueryRow(ctx, `SELECT origin FROM assets WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, assetID).Scan(&origin)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, fmt.Errorf("%w: attachment asset does not exist", ErrValidation)
+	}
+	if err != nil {
+		return uuid.Nil, err
+	}
+	if origin != "form_attachment" {
+		return uuid.Nil, fmt.Errorf("%w: only dedicated form attachments may be attached", ErrValidation)
+	}
+	var used bool
+	if err := tx.QueryRow(ctx, `SELECT
+		EXISTS(SELECT 1 FROM playlist_items WHERE asset_id=$1)
+		OR EXISTS(SELECT 1 FROM widgets WHERE asset_id=$1)
+		OR EXISTS(SELECT 1 FROM layout_draft_dependencies WHERE dependency_id=$1 AND dependency_type IN('widget','asset'))
+		OR EXISTS(SELECT 1 FROM layout_revision_dependencies WHERE dependency_id=$1 AND dependency_type IN('widget','asset'))
+		OR EXISTS(SELECT 1 FROM form_record_attachments WHERE asset_id=$1 AND record_id<>$2)`, assetID, recordID).Scan(&used); err != nil {
+		return uuid.Nil, err
+	}
+	if used {
+		return uuid.Nil, fmt.Errorf("%w: the asset is already in use", ErrValidation)
+	}
+	attachmentID := uuid.New()
+	err = tx.QueryRow(ctx, `INSERT INTO form_record_attachments(id,record_id,asset_id,field_key)
+		VALUES($1,$2,$3,$4)
+		ON CONFLICT(record_id,asset_id) DO UPDATE SET field_key=EXCLUDED.field_key
+		RETURNING id`, attachmentID, recordID, assetID, fieldKey).Scan(&attachmentID)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	return attachmentID, nil
+}
+
+func isImageField(schema FormSchema, key string) bool {
+	for _, field := range schema.Fields {
+		if field.Key == key {
+			return field.Control == ControlImage
+		}
+	}
+	return false
+}
+
+func isAttachmentInputError(err error) bool {
+	message := err.Error()
+	return strings.Contains(message, "must be images") || strings.Contains(message, "attachment is empty")
+}
+
+// ListRecords returns a filtered, paginated slice of a form's records. Callers without view_all
+// see only their own submissions; callers who cannot view any records are refused.
+func (s *Service) ListRecords(ctx context.Context, formID, viewer uuid.UUID, filter RecordFilter) (RecordPage, error) {
+	if _, err := s.ensureForm(ctx, s.db, formID); err != nil {
 		return RecordPage{}, err
+	}
+	canViewAll, err := s.allow(ctx, formID, viewer, CapViewAll)
+	if err != nil {
+		return RecordPage{}, err
+	}
+	if !canViewAll {
+		canViewOwn, err := s.allow(ctx, formID, viewer, CapViewOwn)
+		if err != nil {
+			return RecordPage{}, err
+		}
+		if !canViewOwn {
+			hasSubmit, err := s.allow(ctx, formID, viewer, CapSubmit)
+			if err != nil {
+				return RecordPage{}, err
+			}
+			canViewOwn = hasSubmit
+		}
+		if !canViewOwn {
+			return RecordPage{}, ErrForbidden
+		}
+		filter.SubmittedBy = &viewer
 	}
 	if filter.Page < 1 {
 		filter.Page = 1
@@ -321,7 +645,7 @@ func (s *Service) ListRecords(ctx context.Context, id uuid.UUID, filter RecordFi
 		filter.PageSize = 100
 	}
 	where := []string{"data_source_id=$1", "deleted_at IS NULL"}
-	args := []any{id}
+	args := []any{formID}
 	add := func(clause string, value any) {
 		args = append(args, value)
 		where = append(where, fmt.Sprintf(clause, len(args)))
@@ -372,8 +696,26 @@ func (s *Service) ListRecords(ctx context.Context, id uuid.UUID, filter RecordFi
 	return RecordPage{Items: items, Total: total, Page: filter.Page, PageSize: filter.PageSize}, nil
 }
 
-// GetRecord returns a record with its history, comments, and attachments.
-func (s *Service) GetRecord(ctx context.Context, recordID uuid.UUID) (RecordDetail, error) {
+// GetRecord returns a record with its history, comments, and attachments, scoped to a form and
+// visible only to a manager/reviewer or the record's own submitter. Records outside the form or
+// invisible to the caller return ErrNotFound so existence is not revealed.
+func (s *Service) GetRecord(ctx context.Context, formID, recordID, viewer uuid.UUID) (RecordDetail, error) {
+	meta, err := s.loadRecordScoped(ctx, s.db, formID, recordID)
+	if err != nil {
+		return RecordDetail{}, err
+	}
+	canViewAll, err := s.allow(ctx, formID, viewer, CapViewAll)
+	if err != nil {
+		return RecordDetail{}, err
+	}
+	isOwner := meta.owner != nil && *meta.owner == viewer
+	if !canViewAll && !isOwner {
+		return RecordDetail{}, ErrNotFound
+	}
+	return s.recordDetail(ctx, recordID)
+}
+
+func (s *Service) recordDetail(ctx context.Context, recordID uuid.UUID) (RecordDetail, error) {
 	record, err := s.getRecordRow(ctx, s.db, recordID)
 	if err != nil {
 		return RecordDetail{}, err
@@ -462,12 +804,4 @@ func insertEvent(ctx context.Context, tx pgx.Tx, recordID, formID uuid.UUID, eve
 	_, err := tx.Exec(ctx, `INSERT INTO form_record_events(id,record_id,data_source_id,event_type,from_state,to_state,actor_id,actor_name,note)
 		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, uuid.New(), recordID, formID, eventType, from, to, actor, actorName, note)
 	return err
-}
-
-func trimmedPtr(value *string) *string {
-	if value == nil {
-		return nil
-	}
-	trimmed := strings.TrimSpace(*value)
-	return &trimmed
 }

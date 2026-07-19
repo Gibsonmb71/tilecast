@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"strconv"
@@ -76,11 +77,21 @@ func (s *server) createForm(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) getForm(w http.ResponseWriter, r *http.Request) {
-	id, userID, ok := s.authorizeForm(w, r, forms.CapViewOwn)
+	id, ok := urlUUID(w, r, "id")
 	if !ok {
 		return
 	}
-	form, err := s.forms.GetForm(r.Context(), id, userID)
+	user := sessionUser(r)
+	access, err := s.forms.CanAccessForm(r.Context(), id, user.ID)
+	if err != nil {
+		s.writeFormError(w, r, err)
+		return
+	}
+	if !access {
+		writeError(w, http.StatusForbidden, "insufficient_access", "You do not have access to this form.")
+		return
+	}
+	form, err := s.forms.GetForm(r.Context(), id, user.ID)
 	if err != nil {
 		s.writeFormError(w, r, err)
 		return
@@ -148,10 +159,11 @@ func (s *server) configureFormWorkflow(w http.ResponseWriter, r *http.Request) {
 // --- Records ---
 
 func (s *server) listFormRecords(w http.ResponseWriter, r *http.Request) {
-	id, userID, ok := s.authorizeForm(w, r, forms.CapViewOwn)
+	id, ok := urlUUID(w, r, "id")
 	if !ok {
 		return
 	}
+	user := sessionUser(r)
 	query := r.URL.Query()
 	page, _ := strconv.Atoi(query.Get("page"))
 	pageSize, _ := strconv.Atoi(query.Get("pageSize"))
@@ -159,16 +171,8 @@ func (s *server) listFormRecords(w http.ResponseWriter, r *http.Request) {
 	if states := strings.TrimSpace(query.Get("states")); states != "" {
 		filter.States = strings.Split(states, ",")
 	}
-	// Scope to the caller's own submissions unless they can view all records.
-	canViewAll, err := s.forms.Authorize(r.Context(), id, userID, forms.CapViewAll)
-	if err != nil {
-		s.writeFormError(w, r, err)
-		return
-	}
-	if !canViewAll {
-		filter.SubmittedBy = &userID
-	}
-	result, err := s.forms.ListRecords(r.Context(), id, filter)
+	// Ownership scoping (own vs. all) is enforced inside the forms service.
+	result, err := s.forms.ListRecords(r.Context(), id, user.ID, filter)
 	if err != nil {
 		s.writeFormError(w, r, err)
 		return
@@ -177,25 +181,26 @@ func (s *server) listFormRecords(w http.ResponseWriter, r *http.Request) {
 }
 
 type recordRequest struct {
-	Values       map[string]any `json:"values"`
-	DisplayTitle *string        `json:"displayTitle"`
-	Priority     *int           `json:"priority"`
-	DisplayAt    *time.Time     `json:"displayAt"`
-	ExpiresAt    *time.Time     `json:"expiresAt"`
-	Version      *int           `json:"version"`
+	Values       map[string]any            `json:"values"`
+	DisplayTitle forms.Optional[string]    `json:"displayTitle"`
+	Priority     forms.Optional[int]       `json:"priority"`
+	DisplayAt    forms.Optional[time.Time] `json:"displayAt"`
+	ExpiresAt    forms.Optional[time.Time] `json:"expiresAt"`
+	Version      *int                      `json:"version"`
 }
 
 func (s *server) createFormRecord(w http.ResponseWriter, r *http.Request) {
-	id, userID, ok := s.authorizeForm(w, r, forms.CapSubmit)
+	id, ok := urlUUID(w, r, "id")
 	if !ok {
 		return
 	}
+	user := sessionUser(r)
 	var body recordRequest
 	if err := decodeJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	record, err := s.forms.CreateRecord(r.Context(), id, userID, recordInput(body))
+	record, err := s.forms.CreateRecord(r.Context(), id, user.ID, recordInput(body))
 	if err != nil {
 		s.writeFormError(w, r, err)
 		return
@@ -204,7 +209,7 @@ func (s *server) createFormRecord(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) getFormRecord(w http.ResponseWriter, r *http.Request) {
-	id, userID, ok := s.authorizeForm(w, r, forms.CapViewOwn)
+	id, ok := urlUUID(w, r, "id")
 	if !ok {
 		return
 	}
@@ -212,33 +217,17 @@ func (s *server) getFormRecord(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	detail, err := s.forms.GetRecord(r.Context(), recordID)
+	user := sessionUser(r)
+	detail, err := s.forms.GetRecord(r.Context(), id, recordID, user.ID)
 	if err != nil {
 		s.writeFormError(w, r, err)
-		return
-	}
-	if detail.DataSourceID != id || !s.recordVisible(r, id, userID, detail.SubmittedBy) {
-		writeError(w, http.StatusNotFound, "not_found", "The requested form resource was not found.")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": detail})
 }
 
-// recordVisible enforces view_own scoping: a caller without view_all may only see their own
-// submissions.
-func (s *server) recordVisible(r *http.Request, formID, userID uuid.UUID, submittedBy *uuid.UUID) bool {
-	canViewAll, err := s.forms.Authorize(r.Context(), formID, userID, forms.CapViewAll)
-	if err != nil {
-		return false
-	}
-	if canViewAll {
-		return true
-	}
-	return submittedBy != nil && *submittedBy == userID
-}
-
 func (s *server) updateFormRecord(w http.ResponseWriter, r *http.Request) {
-	id, userID, ok := s.authorizeForm(w, r, forms.CapSubmit)
+	id, ok := urlUUID(w, r, "id")
 	if !ok {
 		return
 	}
@@ -246,6 +235,7 @@ func (s *server) updateFormRecord(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	user := sessionUser(r)
 	var body recordRequest
 	if err := decodeJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
@@ -255,16 +245,7 @@ func (s *server) updateFormRecord(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "A record version is required for edits.")
 		return
 	}
-	existing, err := s.forms.GetRecord(r.Context(), recordID)
-	if err != nil {
-		s.writeFormError(w, r, err)
-		return
-	}
-	if existing.DataSourceID != id {
-		writeError(w, http.StatusNotFound, "not_found", "The requested form resource was not found.")
-		return
-	}
-	record, err := s.forms.UpdateRecord(r.Context(), recordID, userID, recordInput(body), *body.Version)
+	record, err := s.forms.UpdateRecord(r.Context(), id, recordID, user.ID, recordInput(body), *body.Version)
 	if err != nil {
 		s.writeFormError(w, r, err)
 		return
@@ -273,7 +254,7 @@ func (s *server) updateFormRecord(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) deleteFormRecord(w http.ResponseWriter, r *http.Request) {
-	id, userID, ok := s.authorizeForm(w, r, forms.CapManage)
+	id, ok := urlUUID(w, r, "id")
 	if !ok {
 		return
 	}
@@ -281,16 +262,8 @@ func (s *server) deleteFormRecord(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	existing, err := s.forms.GetRecord(r.Context(), recordID)
-	if err != nil {
-		s.writeFormError(w, r, err)
-		return
-	}
-	if existing.DataSourceID != id {
-		writeError(w, http.StatusNotFound, "not_found", "The requested form resource was not found.")
-		return
-	}
-	if err := s.forms.DeleteRecord(r.Context(), recordID, userID); err != nil {
+	user := sessionUser(r)
+	if err := s.forms.DeleteRecord(r.Context(), id, recordID, user.ID); err != nil {
 		s.writeFormError(w, r, err)
 		return
 	}
@@ -304,9 +277,7 @@ type transitionRequest struct {
 }
 
 func (s *server) transitionFormRecord(w http.ResponseWriter, r *http.Request) {
-	// The specific transition's required capability is enforced inside forms.Transition; the
-	// caller only needs to be able to see the form to attempt one.
-	id, userID, ok := s.authorizeForm(w, r, forms.CapViewOwn)
+	id, ok := urlUUID(w, r, "id")
 	if !ok {
 		return
 	}
@@ -314,21 +285,13 @@ func (s *server) transitionFormRecord(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	user := sessionUser(r)
 	var body transitionRequest
 	if err := decodeJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	existing, err := s.forms.GetRecord(r.Context(), recordID)
-	if err != nil {
-		s.writeFormError(w, r, err)
-		return
-	}
-	if existing.DataSourceID != id {
-		writeError(w, http.StatusNotFound, "not_found", "The requested form resource was not found.")
-		return
-	}
-	record, err := s.forms.Transition(r.Context(), recordID, userID, body.ToState, body.Note, body.Version)
+	record, err := s.forms.Transition(r.Context(), id, recordID, user.ID, body.ToState, body.Note, body.Version)
 	if err != nil {
 		s.writeFormError(w, r, err)
 		return
@@ -341,7 +304,7 @@ type commentRequest struct {
 }
 
 func (s *server) addFormRecordComment(w http.ResponseWriter, r *http.Request) {
-	id, userID, ok := s.authorizeForm(w, r, forms.CapReview)
+	id, ok := urlUUID(w, r, "id")
 	if !ok {
 		return
 	}
@@ -349,21 +312,13 @@ func (s *server) addFormRecordComment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	user := sessionUser(r)
 	var body commentRequest
 	if err := decodeJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	existing, err := s.forms.GetRecord(r.Context(), recordID)
-	if err != nil {
-		s.writeFormError(w, r, err)
-		return
-	}
-	if existing.DataSourceID != id {
-		writeError(w, http.StatusNotFound, "not_found", "The requested form resource was not found.")
-		return
-	}
-	comment, err := s.forms.AddComment(r.Context(), recordID, userID, body.Body)
+	comment, err := s.forms.AddComment(r.Context(), id, recordID, user.ID, body.Body)
 	if err != nil {
 		s.writeFormError(w, r, err)
 		return
@@ -372,12 +327,17 @@ func (s *server) addFormRecordComment(w http.ResponseWriter, r *http.Request) {
 }
 
 type attachmentRequest struct {
-	AssetID  uuid.UUID `json:"assetId"`
-	FieldKey string    `json:"fieldKey"`
+	FieldKey    string `json:"fieldKey"`
+	FileName    string `json:"fileName"`
+	ContentType string `json:"contentType"`
+	Data        string `json:"data"` // base64-encoded image bytes
 }
 
-func (s *server) attachFormRecordAsset(w http.ResponseWriter, r *http.Request) {
-	id, userID, ok := s.authorizeForm(w, r, forms.CapSubmit)
+// maxAttachmentRequestBytes bounds the JSON body for an attachment upload (base64 inflates ~33%).
+const maxAttachmentRequestBytes = 40 << 20
+
+func (s *server) uploadFormRecordAttachment(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
 	if !ok {
 		return
 	}
@@ -385,21 +345,20 @@ func (s *server) attachFormRecordAsset(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	user := sessionUser(r)
 	var body attachmentRequest
-	if err := decodeJSON(w, r, &body); err != nil {
+	if err := decodeJSONLimit(w, r, &body, maxAttachmentRequestBytes); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	existing, err := s.forms.GetRecord(r.Context(), recordID)
+	data, err := base64.StdEncoding.DecodeString(strings.TrimSpace(body.Data))
 	if err != nil {
-		s.writeFormError(w, r, err)
+		writeError(w, http.StatusUnprocessableEntity, "validation_failed", "Attachment data must be base64-encoded.")
 		return
 	}
-	if existing.DataSourceID != id {
-		writeError(w, http.StatusNotFound, "not_found", "The requested form resource was not found.")
-		return
-	}
-	attachment, err := s.forms.AttachAsset(r.Context(), recordID, body.AssetID, userID, body.FieldKey)
+	attachment, err := s.forms.CreateAttachment(r.Context(), id, recordID, user.ID, forms.AttachmentUpload{
+		FieldKey: body.FieldKey, FileName: body.FileName, ContentType: body.ContentType, Data: data,
+	})
 	if err != nil {
 		s.writeFormError(w, r, err)
 		return
@@ -539,5 +498,11 @@ func (s *server) listApprovals(w http.ResponseWriter, r *http.Request) {
 }
 
 func recordInput(body recordRequest) forms.RecordInput {
-	return forms.RecordInput{Values: body.Values, DisplayTitle: body.DisplayTitle, Priority: body.Priority, DisplayAt: body.DisplayAt, ExpiresAt: body.ExpiresAt}
+	return forms.RecordInput{
+		Values:       body.Values,
+		DisplayTitle: body.DisplayTitle,
+		Priority:     body.Priority,
+		DisplayAt:    body.DisplayAt,
+		ExpiresAt:    body.ExpiresAt,
+	}
 }
