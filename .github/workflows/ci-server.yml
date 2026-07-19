@@ -6,10 +6,6 @@ on:
     paths:
       - "apps/server/**"
       - ".github/workflows/ci-server.yml"
-  pull_request:
-    paths:
-      - "apps/server/**"
-      - ".github/workflows/ci-server.yml"
   workflow_dispatch:
 
 concurrency:
