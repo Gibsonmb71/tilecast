@@ -48,4 +48,6 @@ Manifest v12 adds the common typed Data Source contract and native Countdown, Me
 
 Manifest v13 adds the provider-neutral data document, declarative native interpreter, and constrained web descriptor host. The Player reports presentation schema 1, versioned native capabilities, web runtime version 1, and its bundle limit in heartbeat metadata. Validation enforces dataset, nesting, node, repeat, animation, URL, and capability bounds before activation; v11/v12 remain readable for cached startup and staged rollout.
 
+Player 0.14.9 (version code 33) accepts manifest v14 and adds opt-in visual crossfades. Only playlist entries adjacent to a `crossfade` transition use a compositable video texture; `none` and `fade` retain the existing video surface path. Layout items aggregate first-frame readiness from their visible playlist, Widget, website, and media placements before releasing the outgoing item. Crossfade is visual only, so outgoing audio is muted at the item boundary.
+
 Capability revision 2 adds actual line/bar/donut drawing, downloaded asset images, built-in status icons, target progress, repeat indexes, numeric/date conditions, and multi-series time data. Chart and image content must remain within manifest verification and offline cache policy.

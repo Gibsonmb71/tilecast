@@ -575,6 +575,7 @@ function TimelineItem({
           >
             <option value="none">None</option>
             <option value="fade">Fade</option>
+            <option value="crossfade">Crossfade (visual)</option>
           </Select>
         </label>
         <label>

@@ -63,7 +63,7 @@ var definitions = []Definition{
 	{Key: "player.playback.default_fit_mode", Category: "playback", Type: "enum", Default: "contain", Allowed: []string{"contain", "cover", "stretch"}, Scope: ScopePolicy, Title: "Default fit mode"},
 	{Key: "player.playback.default_volume", Category: "playback", Type: "float", Default: 0.5, Min: number(0), Max: number(1), Scope: ScopePolicy, Title: "Default volume", Immediate: true},
 	{Key: "player.playback.default_image_duration_seconds", Category: "playback", Type: "int", Default: 10.0, Min: number(1), Max: number(86400), Scope: ScopeOrganization, Title: "Default image duration"},
-	{Key: "player.playback.default_transition", Category: "playback", Type: "enum", Default: "none", Allowed: []string{"none", "fade"}, Scope: ScopeOrganization, Title: "Default transition"},
+	{Key: "player.playback.default_transition", Category: "playback", Type: "enum", Default: "none", Allowed: []string{"none", "fade", "crossfade"}, Scope: ScopeOrganization, Title: "Default transition"},
 	{Key: "player.playback.default_audio_enabled", Category: "playback", Type: "bool", Default: true, Scope: ScopeOrganization, Title: "Default audio enabled"},
 	{Key: "player.playback.resume_after_restart", Category: "playback", Type: "bool", Default: true, Scope: ScopeOrganization, Title: "Resume after restart"},
 	{Key: "player.cache.max_bytes", Category: "playback", Type: "int64", Default: 8589934592.0, Min: number(268435456), Max: number(1099511627776), Scope: ScopePolicy, Title: "Maximum cache bytes"},

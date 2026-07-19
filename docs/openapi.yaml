@@ -1317,7 +1317,8 @@ components:
         durationMs: { type: integer, minimum: 1 }
         fitMode:
           { type: string, enum: [contain, cover, stretch], default: contain }
-        transition: { type: string, enum: [none, fade], default: none }
+        transition:
+          { type: string, enum: [none, fade, crossfade], default: none }
         audioEnabled: { type: boolean, default: true }
         volume: { type: number, minimum: 0, maximum: 1, default: 1 }
         videoStartOffsetMs: { type: integer, minimum: 0 }

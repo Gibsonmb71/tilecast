@@ -117,6 +117,29 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 	if manifest.SchemaVersion != 11 || manifest.DirectFallbackPlaylist == nil || len(manifest.DirectFallbackPlaylist.Items) != 2 || len(manifest.Assets) != 2 {
 		t.Fatalf("manifest=%#v", manifest)
 	}
+	playlist, err = service.UpdateItem(ctx, playlist.ID, playlist.Items[0].ID, owner.User.ID, ItemInput{AssetID: videoID, Transition: "crossfade"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyCrossfade, _, err := service.BuildManifest(ctx, screenID)
+	if err != nil || legacyCrossfade.SchemaVersion != 11 || legacyCrossfade.DirectFallbackPlaylist.Items[0].Transition != "fade" {
+		t.Fatalf("legacy crossfade projection=%#v err=%v", legacyCrossfade, err)
+	}
+	crossfadeCapabilities, _ := json.Marshal(NativePresentationCapabilities)
+	if _, err = pool.Exec(ctx, `INSERT INTO screen_player_status(screen_id,player_version_code,presentation_schema_versions,native_presentation_capabilities,web_runtime_version,web_bundle_limit_bytes)VALUES($1,$2,'{1}',$3,1,20971520) ON CONFLICT(screen_id)DO UPDATE SET player_version_code=EXCLUDED.player_version_code,presentation_schema_versions=EXCLUDED.presentation_schema_versions,native_presentation_capabilities=EXCLUDED.native_presentation_capabilities,web_runtime_version=EXCLUDED.web_runtime_version,web_bundle_limit_bytes=EXCLUDED.web_bundle_limit_bytes`, screenID, crossfadePlayerVersionCode, crossfadeCapabilities); err != nil {
+		t.Fatal(err)
+	}
+	crossfadeManifest, _, err := service.BuildManifest(ctx, screenID)
+	if err != nil || crossfadeManifest.SchemaVersion != 14 || crossfadeManifest.DirectFallbackPlaylist.Items[0].Transition != "crossfade" {
+		t.Fatalf("v14 crossfade projection=%#v err=%v", crossfadeManifest, err)
+	}
+	playlist, err = service.UpdateItem(ctx, playlist.ID, playlist.Items[0].ID, owner.User.ID, ItemInput{AssetID: videoID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `UPDATE screen_player_status SET player_version_code=22,presentation_schema_versions=NULL,native_presentation_capabilities='{}',web_runtime_version=0,web_bundle_limit_bytes=0 WHERE screen_id=$1`, screenID); err != nil {
+		t.Fatal(err)
+	}
 	emergencyID := uuid.New()
 	_, err = pool.Exec(ctx, `INSERT INTO emergency_takeovers(id,organization_id,name,playlist_id,status,activated_by,activated_at,expires_at)VALUES($1,$2,'Test emergency',$3,'active',$4,now(),now()+interval '1 hour')`, emergencyID, org, playlist.ID, owner.User.ID)
 	if err != nil {
