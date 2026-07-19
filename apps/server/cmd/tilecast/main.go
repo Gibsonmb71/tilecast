@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -12,7 +13,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/tilecast/tilecast/apps/server/internal/auth"
+	"github.com/tilecast/tilecast/apps/server/internal/backup"
 	"github.com/tilecast/tilecast/apps/server/internal/config"
 	"github.com/tilecast/tilecast/apps/server/internal/contentdefs"
 	"github.com/tilecast/tilecast/apps/server/internal/database"
@@ -25,9 +28,30 @@ import (
 	"github.com/tilecast/tilecast/apps/server/internal/scheduling"
 	"github.com/tilecast/tilecast/apps/server/internal/settings"
 	"github.com/tilecast/tilecast/apps/server/internal/updates"
+	"github.com/tilecast/tilecast/apps/server/internal/version"
 )
 
 func main() {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "backup", "restore":
+			runCLI(os.Args[1], os.Args[2:])
+			return
+		case "serve":
+			// Fall through to the server below.
+		case "help", "-h", "--help":
+			printUsage()
+			return
+		default:
+			fmt.Fprintf(os.Stderr, "unknown command %q\n\n", os.Args[1])
+			printUsage()
+			os.Exit(2)
+		}
+	}
+	serve()
+}
+
+func serve() {
 	cfg, err := config.Load()
 	if err != nil {
 		fail("configuration is invalid", err)
@@ -89,11 +113,42 @@ func main() {
 	if updateErr != nil {
 		fail("initialize player update service", updateErr)
 	}
+	backupGuard := backup.NewGuard()
+	backupService, err := backup.NewService(db, cfg.Backup.Root, backupGuard)
+	if err != nil {
+		fail("initialize backup service", err)
+	}
+	backupWorker := backup.NewWorker(backupService, backup.WorkerConfig{
+		DatabaseURL:       cfg.DatabaseURL,
+		MediaRoot:         cfg.Media.Root,
+		UpdatesRoot:       cfg.Updates.Root,
+		ReservedFreeBytes: cfg.Backup.ReservedFreeBytes,
+		Limits:            backup.Limits{MaxFiles: cfg.Backup.MaxArchiveFiles, MaxExpandedBytes: cfg.Backup.MaxArchiveBytes},
+		TilecastVersion:   version.Version,
+	}, logger)
+	backupWorker.Start(ctx)
+	defer backupWorker.Stop()
+	// A session-level advisory lock marks a live server so the CLI can
+	// refuse to restore while the server is running.
+	serverLockConn, lockErr := pgx.Connect(ctx, cfg.DatabaseURL)
+	if lockErr != nil {
+		fail("acquire server lock connection", lockErr)
+	}
+	defer serverLockConn.Close(context.Background())
+	var lockAcquired bool
+	if err := serverLockConn.QueryRow(ctx, `SELECT pg_try_advisory_lock($1)`, backup.ServerAdvisoryLockID).Scan(&lockAcquired); err != nil {
+		fail("acquire server advisory lock", err)
+	}
+	if !lockAcquired {
+		logger.Warn("another Tilecast server appears to hold the database lock; backup CLI safety checks may misbehave")
+	}
 	_, _ = db.Exec(ctx, `INSERT INTO media_jobs(id,kind,status,run_after) VALUES(gen_random_uuid(),'clean_expired_uploads','queued',now())`)
 	mediaWorkers := media.NewWorkerPool(mediaService, logger)
+	mediaWorkers.SetGate(backupGuard.BackgroundJobsAllowed)
 	mediaWorkers.Start(ctx)
 	defer mediaWorkers.Stop()
 	sourceWorker := media.NewDataSourceRefreshWorker(mediaService, logger)
+	sourceWorker.SetGate(backupGuard.BackgroundJobsAllowed)
 	sourceWorker.Start(ctx)
 	defer sourceWorker.Stop()
 	if cfg.MDNSEnabled {
@@ -127,6 +182,9 @@ func main() {
 		CookieName:          cfg.CookieName,
 		SecureCookies:       cfg.CookieSecure,
 		ReleasePublishToken: cfg.Updates.PublishToken,
+		Backups:             backupService,
+		BackupWorker:        backupWorker,
+		BackupLimits:        backup.Limits{MaxFiles: cfg.Backup.MaxArchiveFiles, MaxExpandedBytes: cfg.Backup.MaxArchiveBytes},
 		Operations: httpapi.OperationsConfig{
 			MaxEmergencyDurationHours:   cfg.Operations.MaxEmergencyDurationHours,
 			MaxEmergencyTargets:         cfg.Operations.MaxEmergencyTargets,

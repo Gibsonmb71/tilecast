@@ -24,7 +24,13 @@ type WorkerPool struct {
 	id      string
 	wg      sync.WaitGroup
 	cancel  context.CancelFunc
+	gate    func() bool
 }
+
+// SetGate installs a check consulted before claiming work. Backup snapshots
+// pause media processing so files cannot mutate while they are archived.
+func (p *WorkerPool) SetGate(gate func() bool) { p.gate = gate }
+
 type job struct {
 	ID                    uuid.UUID
 	AssetID               *uuid.UUID
@@ -59,6 +65,9 @@ func (p *WorkerPool) run(ctx context.Context) {
 			return
 		case <-ticker.C:
 			for {
+				if p.gate != nil && !p.gate() {
+					break
+				}
 				j, err := p.claim(ctx)
 				if err != nil {
 					p.logger.Error("claim media job", "error", err)

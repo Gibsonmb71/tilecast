@@ -24,6 +24,14 @@ type Config struct {
 	Sources      SourcesConfig
 	Operations   OperationsConfig
 	Updates      UpdatesConfig
+	Backup       BackupConfig
+}
+
+type BackupConfig struct {
+	Root              string
+	ReservedFreeBytes int64
+	MaxArchiveBytes   int64
+	MaxArchiveFiles   int
 }
 
 type UpdatesConfig struct {
@@ -227,6 +235,17 @@ func Load() (Config, error) {
 	}
 	if cfg.Media.KeepOriginals, err = strconv.ParseBool(get("TILECAST_KEEP_ORIGINALS", "true")); err != nil {
 		return Config{}, fmt.Errorf("parse TILECAST_KEEP_ORIGINALS: %w", err)
+	}
+
+	cfg.Backup.Root = get("TILECAST_BACKUP_ROOT", "/data/backups")
+	if cfg.Backup.ReservedFreeBytes, err = parsePositiveInt64("TILECAST_BACKUP_RESERVED_FREE_BYTES", "1073741824"); err != nil {
+		return Config{}, err
+	}
+	if cfg.Backup.MaxArchiveBytes, err = parsePositiveInt64("TILECAST_BACKUP_MAX_ARCHIVE_BYTES", "4398046511104"); err != nil {
+		return Config{}, err
+	}
+	if cfg.Backup.MaxArchiveFiles, err = parsePositiveInt("TILECAST_BACKUP_MAX_ARCHIVE_FILES", "2000000", 100000000); err != nil {
+		return Config{}, err
 	}
 
 	ttl, err := time.ParseDuration(get("TILECAST_SESSION_TTL", "24h"))
