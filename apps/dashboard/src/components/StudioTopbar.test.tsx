@@ -43,13 +43,37 @@ function LocationValue() {
   return <output aria-label="Current route">{useLocation().pathname}</output>;
 }
 
-function renderTopbar(path = "/", client?: QueryClient) {
+function renderTopbar(
+  path = "/",
+  client?: QueryClient,
+  overrides: {
+    deployments?: Awaited<ReturnType<typeof api.updateDeployments>>;
+    pairings?: Awaited<ReturnType<typeof api.pendingPairings>>;
+  } = {},
+) {
   vi.spyOn(api, "screens").mockResolvedValue({
     items: [lobbyScreen],
     total: 1,
   });
   vi.spyOn(api, "screen").mockResolvedValue(lobbyScreen);
-  vi.spyOn(api, "updateDeployments").mockResolvedValue({ items: [] });
+  vi.spyOn(api, "updateDeployments").mockResolvedValue(
+    overrides.deployments ?? { items: [] },
+  );
+  vi.spyOn(api, "pendingPairings").mockResolvedValue(
+    overrides.pairings ?? { items: [], total: 0 },
+  );
+  vi.spyOn(api, "emergencies").mockResolvedValue({ items: [], total: 0 });
+  vi.spyOn(api, "assets").mockResolvedValue({
+    items: [],
+    total: 0,
+    page: 1,
+    pageSize: 50,
+  });
+  vi.spyOn(api, "backups").mockResolvedValue({
+    backups: [],
+    recentJobs: [],
+    schedule: {},
+  });
   client ??= new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -136,6 +160,55 @@ describe("StudioTopbar", () => {
         await screen.findByRole("menuitem", { name: /Amazon AFTKRT/ })
       ).getAttribute("href"),
     ).toBe("/screens/screen-1");
+  });
+
+  it("groups notifications by priority and surfaces new alert sources", async () => {
+    renderTopbar("/", undefined, {
+      deployments: {
+        items: [
+          {
+            id: "dep-1",
+            name: "Winter rollout",
+            failedCount: 2,
+            waitingForUserCount: 0,
+          },
+          {
+            id: "dep-2",
+            name: "Lobby canary",
+            failedCount: 0,
+            waitingForUserCount: 3,
+          },
+        ] as Awaited<ReturnType<typeof api.updateDeployments>>["items"],
+      },
+      pairings: {
+        items: [{ id: "pair-1" }] as Awaited<
+          ReturnType<typeof api.pendingPairings>
+        >["items"],
+        total: 1,
+      },
+    });
+
+    // A failed deployment is critical, so the badge escalates to the critical style.
+    const badge = await screen.findByText("4", {
+      selector: ".topbar__notification-badge",
+    });
+    expect(badge.className).toContain("topbar__notification-badge--critical");
+
+    fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
+
+    expect(
+      (
+        await screen.findByRole("menuitem", { name: /Winter rollout/ })
+      ).getAttribute("href"),
+    ).toBe("/settings/player/updates");
+    expect(screen.getByText("Critical")).toBeTruthy();
+    expect(screen.getByText("Needs attention")).toBeTruthy();
+    expect(screen.getByText("Info")).toBeTruthy();
+    expect(
+      screen
+        .getByRole("menuitem", { name: /Screens awaiting approval/ })
+        .getAttribute("href"),
+    ).toBe("/screens/pair");
   });
 
   it("offers creation actions for the full content workflow", () => {

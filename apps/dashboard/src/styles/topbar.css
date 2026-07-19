@@ -162,6 +162,14 @@
   line-height: 1;
 }
 
+.topbar__notification-badge--warning {
+  background: var(--tc-status-warning);
+}
+
+.topbar__notification-badge--info {
+  background: var(--tc-status-info);
+}
+
 .topbar__divider {
   width: 1px;
   height: 24px;
@@ -208,10 +216,34 @@
   text-align: center;
 }
 
+.topbar__alert-groups {
+  max-height: 380px;
+  overflow-y: auto;
+}
+
+.topbar__alert-group-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--tc-space-2);
+  margin: 0;
+  padding: var(--tc-space-2) var(--tc-space-4);
+  color: var(--tc-text-secondary);
+  background: var(--tc-bg-subtle);
+  border-bottom: 1px solid var(--tc-border-default);
+  font: var(--tc-text-supporting);
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.topbar__alert-group-label span {
+  color: var(--tc-text-disabled);
+  font-weight: 600;
+}
+
 .topbar__alert-list {
   display: grid;
-  max-height: 360px;
-  overflow-y: auto;
 }
 
 .topbar__alert-list a {
@@ -260,8 +292,20 @@
 .topbar__alert-marker {
   width: 8px;
   height: 8px;
-  background: var(--tc-status-danger);
+  background: var(--tc-status-neutral);
   border-radius: var(--tc-radius-pill);
+}
+
+.topbar__alert-marker--critical {
+  background: var(--tc-status-danger);
+}
+
+.topbar__alert-marker--warning {
+  background: var(--tc-status-warning);
+}
+
+.topbar__alert-marker--info {
+  background: var(--tc-status-info);
 }
 
 .topbar__create-menu {

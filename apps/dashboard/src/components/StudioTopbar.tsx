@@ -33,6 +33,10 @@ import {
 import { api } from "../api/client";
 import type { Screen, ScreenStatus, User } from "../api/types";
 import {
+  useNotifications,
+  type NotificationPriority,
+} from "../notifications/useNotifications";
+import {
   studioRouteHandle,
   useStudioRoutes,
   type BreadcrumbResource,
@@ -64,6 +68,13 @@ const statusLabels: Record<ScreenStatus, string> = {
   disabled: "Disabled",
   revoked: "Pairing revoked",
 };
+
+const notificationGroups: { priority: NotificationPriority; label: string }[] =
+  [
+    { priority: "critical", label: "Critical" },
+    { priority: "warning", label: "Needs attention" },
+    { priority: "info", label: "Info" },
+  ];
 
 function platformShortcut() {
   if (typeof navigator === "undefined") return "⌘K";
@@ -427,18 +438,7 @@ export function StudioTopbar({
     queryFn: api.screens,
     refetchInterval: 10_000,
   });
-  const deployments = useQuery({
-    queryKey: ["update-deployments"],
-    queryFn: api.updateDeployments,
-    refetchInterval: 15_000,
-  });
-  const screenAlerts = (screens.data?.items ?? []).filter(
-    (screen) => screen.status !== "online",
-  );
-  const deploymentAlerts = (deployments.data?.items ?? []).filter(
-    (deployment) => deployment.failedCount > 0,
-  );
-  const alertCount = screenAlerts.length + deploymentAlerts.length;
+  const notifications = useNotifications(user);
   const canPair = user?.role === "owner" || user?.role === "administrator";
   const canCreate = user?.role !== "viewer";
 
@@ -510,9 +510,12 @@ export function StudioTopbar({
             }}
           >
             <Bell size={18} aria-hidden="true" />
-            {alertCount > 0 && (
-              <span className="topbar__notification-badge" aria-hidden="true">
-                {alertCount > 99 ? "99+" : alertCount}
+            {notifications.count > 0 && (
+              <span
+                className={`topbar__notification-badge topbar__notification-badge--${notifications.topPriority}`}
+                aria-hidden="true"
+              >
+                {notifications.count > 99 ? "99+" : notifications.count}
               </span>
             )}
           </IconButton>
@@ -520,43 +523,41 @@ export function StudioTopbar({
             <div className="topbar__popover topbar__alerts" role="menu">
               <header>
                 <strong>Notifications</strong>
-                <span>{alertCount || "No"} active</span>
+                <span>{notifications.count || "No"} active</span>
               </header>
-              {alertCount === 0 ? (
-                <p>No screens or deployments need attention.</p>
+              {notifications.count === 0 ? (
+                <p>You&rsquo;re all caught up.</p>
               ) : (
-                <div className="topbar__alert-list">
-                  {screenAlerts.slice(0, 5).map((screen) => (
-                    <Link
-                      key={screen.id}
-                      role="menuitem"
-                      to={`/screens/${screen.id}`}
-                    >
-                      <span className="topbar__alert-marker" aria-hidden />
-                      <span>
-                        <strong>{screen.name}</strong>
-                        <small>{statusLabels[screen.status]}</small>
-                      </span>
-                      <ChevronRight size={15} aria-hidden="true" />
-                    </Link>
-                  ))}
-                  {deploymentAlerts.slice(0, 3).map((deployment) => (
-                    <Link
-                      key={deployment.id}
-                      role="menuitem"
-                      to="/settings/player/updates"
-                    >
-                      <span className="topbar__alert-marker" aria-hidden />
-                      <span>
-                        <strong>{deployment.name}</strong>
-                        <small>
-                          {deployment.failedCount} failed player update
-                          {deployment.failedCount === 1 ? "" : "s"}
-                        </small>
-                      </span>
-                      <ChevronRight size={15} aria-hidden="true" />
-                    </Link>
-                  ))}
+                <div className="topbar__alert-groups">
+                  {notificationGroups.map((group) => {
+                    const groupItems = notifications.items.filter(
+                      (item) => item.priority === group.priority,
+                    );
+                    if (groupItems.length === 0) return null;
+                    return (
+                      <div className="topbar__alert-group" key={group.priority}>
+                        <p className="topbar__alert-group-label">
+                          {group.label}
+                          <span>{groupItems.length}</span>
+                        </p>
+                        <div className="topbar__alert-list">
+                          {groupItems.map((item) => (
+                            <Link key={item.id} role="menuitem" to={item.to}>
+                              <span
+                                className={`topbar__alert-marker topbar__alert-marker--${item.priority}`}
+                                aria-hidden
+                              />
+                              <span>
+                                <strong>{item.title}</strong>
+                                <small>{item.detail}</small>
+                              </span>
+                              <ChevronRight size={15} aria-hidden="true" />
+                            </Link>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
