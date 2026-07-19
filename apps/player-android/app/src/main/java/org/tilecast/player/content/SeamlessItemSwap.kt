@@ -51,10 +51,12 @@ internal fun SeamlessItemSwap(
         }
     }
 
-    val outgoingAlpha = remember { Animatable(1f) }
+    // Each playlist occurrence needs a fresh alpha. Reusing the completed zero
+    // value from the prior fade exposes the incoming item for one frame before
+    // the effect can reset it, which looks like a flash before the real fade.
+    val outgoingAlpha = remember(current) { Animatable(1f) }
     LaunchedEffect(current, currentReady) {
         if (previous == null) return@LaunchedEffect
-        outgoingAlpha.snapTo(1f)
         if (!currentReady) {
             delay(FIRST_FRAME_GRACE_MS)
         } else if (animateFor(current)) {
