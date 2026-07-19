@@ -21,6 +21,7 @@ import (
 	"github.com/tilecast/tilecast/apps/server/internal/database"
 	"github.com/tilecast/tilecast/apps/server/internal/devices"
 	"github.com/tilecast/tilecast/apps/server/internal/discovery"
+	"github.com/tilecast/tilecast/apps/server/internal/forms"
 	"github.com/tilecast/tilecast/apps/server/internal/httpapi"
 	"github.com/tilecast/tilecast/apps/server/internal/layouts"
 	"github.com/tilecast/tilecast/apps/server/internal/media"
@@ -106,6 +107,9 @@ func serve() {
 	layoutService.SetNotifier(deviceService)
 	mediaService.SetAssetInvalidator(playlistService)
 	playlistService.SetSourceProjector(mediaService)
+	formService := forms.NewService(db, mediaService)
+	formService.SetContentDefinitions(contentDefinitions)
+	formService.SetAssetInvalidator(playlistService)
 	schedulingService := scheduling.NewService(db, deviceService, scheduling.Limits{MaxSchedules: cfg.Scheduling.MaxSchedules, MaxTargetsPerSchedule: cfg.Scheduling.MaxTargetsPerSchedule, MaxGroupsPerScreen: cfg.Scheduling.MaxGroupsPerScreen, PrefetchDays: cfg.Scheduling.PrefetchDays, ActivationGraceSeconds: cfg.Scheduling.ActivationGraceSeconds, ClockSkewWarningSeconds: cfg.Scheduling.ClockSkewWarningSeconds})
 	playlistService.SetScheduling(schedulingService)
 	settingsService := settings.NewService(db, deviceService, settings.HardLimits{MaxUploadBytes: cfg.Media.MaxUploadBytes, MaxEmergencyMinutes: cfg.Operations.MaxEmergencyDurationHours * 60, MaxWebsiteTimeout: cfg.Website.MaxTimeoutSeconds, MaxPrefetchDays: cfg.Scheduling.PrefetchDays, PrivateHTTPAllowed: cfg.Website.AllowPrivateHTTP})
@@ -151,6 +155,10 @@ func serve() {
 	sourceWorker.SetGate(backupGuard.BackgroundJobsAllowed)
 	sourceWorker.Start(ctx)
 	defer sourceWorker.Stop()
+	formWorker := forms.NewProjectionWorker(formService, logger)
+	formWorker.SetGate(backupGuard.BackgroundJobsAllowed)
+	formWorker.Start(ctx)
+	defer formWorker.Stop()
 	if cfg.MDNSEnabled {
 		identity, identityErr := deviceService.Identity(ctx)
 		if identityErr != nil {
@@ -172,6 +180,7 @@ func serve() {
 		Auth:                authService,
 		Devices:             deviceService,
 		Media:               mediaService,
+		Forms:               formService,
 		Playlists:           playlistService,
 		Layouts:             layoutService,
 		Scheduling:          schedulingService,

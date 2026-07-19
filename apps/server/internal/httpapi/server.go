@@ -17,6 +17,7 @@ import (
 	"github.com/tilecast/tilecast/apps/server/internal/auth"
 	"github.com/tilecast/tilecast/apps/server/internal/backup"
 	"github.com/tilecast/tilecast/apps/server/internal/devices"
+	"github.com/tilecast/tilecast/apps/server/internal/forms"
 	"github.com/tilecast/tilecast/apps/server/internal/layouts"
 	"github.com/tilecast/tilecast/apps/server/internal/media"
 	"github.com/tilecast/tilecast/apps/server/internal/playlists"
@@ -29,6 +30,7 @@ type Dependencies struct {
 	Auth                *auth.Service
 	Devices             *devices.Service
 	Media               *media.Service
+	Forms               *forms.Service
 	Playlists           *playlists.Service
 	Layouts             *layouts.Service
 	Scheduling          *scheduling.Service
@@ -58,6 +60,7 @@ type server struct {
 	auth                          *auth.Service
 	devices                       *devices.Service
 	media                         *media.Service
+	forms                         *forms.Service
 	playlists                     *playlists.Service
 	layouts                       *layouts.Service
 	scheduling                    *scheduling.Service
@@ -89,6 +92,7 @@ func New(deps Dependencies) http.Handler {
 		auth:              deps.Auth,
 		devices:           deps.Devices,
 		media:             deps.Media,
+		forms:             deps.Forms,
 		playlists:         deps.Playlists,
 		layouts:           deps.Layouts,
 		scheduling:        deps.Scheduling,

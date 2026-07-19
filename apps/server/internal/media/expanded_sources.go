@@ -515,6 +515,19 @@ func (s *Service) PlayerTypedDataSourceConfiguration(ctx context.Context, id uui
 		}
 		return payload, nil
 	}
+	if provider == "form" {
+		// Form Data Sources are projected internally by the forms package into a typed-dataset
+		// payload (one dataset per saved view). Only approved, output-eligible records reach this
+		// payload, so unapproved records and their attachments never enter a manifest.
+		var payload json.RawMessage
+		if err := s.db.QueryRow(ctx, `SELECT cached_payload FROM data_source_refresh_states WHERE data_source_id=$1`, id).Scan(&payload); err != nil {
+			return nil, err
+		}
+		if len(payload) == 0 {
+			return json.RawMessage(`{"datasets":[]}`), nil
+		}
+		return payload, nil
+	}
 	var payload json.RawMessage
 	var expires *time.Time
 	var usingCache bool
