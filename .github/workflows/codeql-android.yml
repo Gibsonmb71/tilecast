@@ -1,6 +1,11 @@
 name: Android CodeQL
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/player-android/**"
+      - ".github/workflows/codeql-android.yml"
   push:
     branches: [main]
     paths:

@@ -1,6 +1,11 @@
 name: Server CodeQL
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/server/**"
+      - ".github/workflows/codeql-server.yml"
   push:
     branches: [main]
     paths:
