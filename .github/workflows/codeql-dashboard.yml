@@ -3,12 +3,6 @@ name: Dashboard CodeQL
 on:
   pull_request:
     branches: [main]
-    paths:
-      - "apps/dashboard/**"
-      - "packages/**"
-      - "package.json"
-      - "package-lock.json"
-      - ".github/workflows/codeql-dashboard.yml"
   push:
     branches: [main]
     paths:
@@ -37,12 +31,54 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Detect Dashboard changes
+        id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          elif git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- \
+            apps/dashboard \
+            packages \
+            package.json \
+            package-lock.json \
+            .github/workflows/codeql-dashboard.yml; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Initialize CodeQL
+        if: steps.changes.outputs.changed == 'true'
         uses: github/codeql-action/init@v3
         with:
           languages: javascript-typescript
           build-mode: none
       - name: Analyze
+        if: steps.changes.outputs.changed == 'true'
         uses: github/codeql-action/analyze@v3
         with:
+          category: "/language:javascript-typescript"
+      - name: Create unaffected result
+        if: steps.changes.outputs.changed == 'false'
+        run: |
+          cat > unaffected.sarif <<'EOF'
+          {
+            "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+            "version": "2.1.0",
+            "runs": [{
+              "tool": {"driver": {"name": "CodeQL", "version": "0.0.0", "rules": []}},
+              "results": []
+            }]
+          }
+          EOF
+      - name: Upload unaffected result
+        if: steps.changes.outputs.changed == 'false'
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: unaffected.sarif
           category: "/language:javascript-typescript"
