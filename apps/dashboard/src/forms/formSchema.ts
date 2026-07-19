@@ -219,6 +219,36 @@ export function controlsWithOutputType(outputType: string): FormFieldControl[] {
   );
 }
 
+// schemasEquivalent reports whether two schemas are semantically identical, normalizing optional
+// fields so a draft object and a server-published schema (which omits empty properties) compare
+// equal when they carry the same content. Used to disable a no-op publish.
+export function schemasEquivalent(a: FormSchema, b: FormSchema): boolean {
+  return canonicalSchema(a) === canonicalSchema(b);
+}
+
+function canonicalSchema(schema: FormSchema): string {
+  return JSON.stringify({
+    title: schema.title ?? "",
+    description: schema.description ?? "",
+    fields: (schema.fields ?? []).map((field) => ({
+      key: field.key,
+      label: field.label ?? "",
+      description: field.description ?? "",
+      control: field.control,
+      required: Boolean(field.required),
+      default: field.default ?? "",
+      options: (field.options ?? []).map((option) => ({
+        value: option.value,
+        label: option.label,
+      })),
+      minimum: field.minimum ?? null,
+      maximum: field.maximum ?? null,
+      minLength: field.minLength ?? null,
+      maxLength: field.maxLength ?? null,
+    })),
+  });
+}
+
 export const INITIAL_FORM_SCHEMA = (): FormSchema => ({
   title: "",
   description: "",

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useBlocker } from "react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type {
   FormDataSource,
@@ -11,7 +12,11 @@ import { Button, Field, Input, Notice, Textarea } from "../components/ui";
 import { FormFieldEditor, type FieldLock } from "./FormFieldEditor";
 import { FormFieldPalette } from "./FormFieldPalette";
 import { FormRenderer } from "./FormRenderer";
-import { newField, publishedOutputKeys } from "./formSchema";
+import {
+  newField,
+  publishedOutputKeys,
+  schemasEquivalent,
+} from "./formSchema";
 import { RESERVED_FIELD_KEYS } from "./formKeys";
 
 type SaveState = "saved" | "dirty" | "saving" | "error";
@@ -46,6 +51,18 @@ export function FormBuilder({
   dirtyRef.current = dirty;
 
   const publishedKeys = useMemo(() => publishedOutputKeys(form), [form]);
+
+  // Publishing is only meaningful when the saved draft differs from the current published
+  // revision. Unsaved changes are publishable (they save first); an unchanged draft is not.
+  const publishedSchema = form.publishedRevision?.schema;
+  const hasPublishableChanges =
+    dirty || !publishedSchema || !schemasEquivalent(draft, publishedSchema);
+
+  // Block in-app navigation while there are unsaved schema changes so edits are not lost.
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      dirty && currentLocation.pathname !== nextLocation.pathname,
+  );
 
   // Warn on browser refresh/close while there are unsaved schema changes.
   useEffect(() => {
@@ -178,13 +195,32 @@ export function FormBuilder({
             </Button>
             <Button
               variant="primary"
-              disabled={publish.isPending}
+              disabled={publish.isPending || !hasPublishableChanges}
               onClick={() => setShowPublish(true)}
             >
               Publish
             </Button>
           </div>
         </div>
+      )}
+
+      {blocker.state === "blocked" && (
+        <Notice
+          variant="warning"
+          title="Leave without saving?"
+          action={
+            <div className="form-builder__confirm-actions">
+              <Button variant="quiet" onClick={() => blocker.reset?.()}>
+                Stay on page
+              </Button>
+              <Button variant="primary" onClick={() => blocker.proceed?.()}>
+                Leave without saving
+              </Button>
+            </div>
+          }
+        >
+          You have unsaved changes to this form. Leaving now will discard them.
+        </Notice>
       )}
 
       {saveError && (

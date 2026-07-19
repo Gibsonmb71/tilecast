@@ -128,6 +128,12 @@ func TestPublishCompatibility(t *testing.T) {
 	if err := publishDraft(id, withoutSection); err != nil {
 		t.Fatalf("removing a presentation-only field must be allowed, got %v", err)
 	}
+
+	// Publishing a draft identical to the current published revision is a no-op and rejected.
+	id = newForm("noop")
+	if err := publishDraft(id, base()); !errors.Is(err, ErrValidation) {
+		t.Fatalf("publishing an identical revision must be rejected, got %v", err)
+	}
 }
 
 // --- 16. Non-manager response shaping ---

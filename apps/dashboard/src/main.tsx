@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter } from "react-router";
+import { RouterProvider, createBrowserRouter } from "react-router";
 import "@tilecast/design-tokens/tokens.css";
 import "./theme";
 import { App } from "./App";
@@ -25,13 +25,16 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false } },
 });
 
+// A data router is used (instead of the <BrowserRouter> component) so descendant routes can use
+// navigation blocking (useBlocker) for unsaved-change protection. The whole app remains a single
+// splat route rendering <App/>, which continues to resolve studioRoutes via useRoutes.
+const router = createBrowserRouter([{ path: "*", element: <App /> }]);
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <BrowserRouter>
-          <App />
-        </BrowserRouter>
+        <RouterProvider router={router} />
       </AuthProvider>
     </QueryClientProvider>
   </StrictMode>,

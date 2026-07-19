@@ -115,15 +115,27 @@ func (s *Service) UpdateMetadata(ctx context.Context, id, user uuid.UUID, in Met
 	if len(description) > 2000 {
 		return Form{}, fmt.Errorf("%w: description must be at most 2000 characters", ErrValidation)
 	}
-	tag, err := s.db.Exec(ctx, `UPDATE data_sources SET name=$2,description=$3,updated_at=now() WHERE id=$1 AND deleted_at IS NULL`, id, name, description)
+	// The metadata update and its audit event commit together: if auditing fails, the name and
+	// description change is rolled back rather than silently unaudited.
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return Form{}, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	tag, err := tx.Exec(ctx, `UPDATE data_sources SET name=$2,description=$3,updated_at=now() WHERE id=$1 AND deleted_at IS NULL`, id, name, description)
 	if err != nil {
 		return Form{}, err
 	}
 	if tag.RowsAffected() == 0 {
 		return Form{}, ErrNotFound
 	}
-	_, _ = s.db.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,metadata)
-		VALUES($1,$2,'form.metadata_updated','data_source',$3,jsonb_build_object('name',$4::text))`, uuid.New(), user, id.String(), name)
+	if _, err := tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,metadata)
+		VALUES($1,$2,'form.metadata_updated','data_source',$3,jsonb_build_object('name',$4::text))`, uuid.New(), user, id.String(), name); err != nil {
+		return Form{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Form{}, err
+	}
 	return s.GetForm(ctx, id, user)
 }
 
@@ -171,10 +183,14 @@ func (s *Service) PublishRevision(ctx context.Context, id, user uuid.UUID) (Revi
 		return Revision{}, err
 	}
 	// Guard against destructive schema changes: an already-published output field cannot be
-	// removed, and its key cannot be reused for a different output type.
+	// removed, and its key cannot be reused for a different output type. Also reject a no-op
+	// publish when the draft is identical to the current published revision.
 	if published, pubErr := s.loadPublishedRevision(ctx, s.db, id); pubErr == nil {
 		if err := checkPublishCompatibility(published.Schema, draft); err != nil {
 			return Revision{}, err
+		}
+		if schemasEquivalent(published.Schema, draft) {
+			return Revision{}, fmt.Errorf("%w: the draft matches the published revision; there is nothing to publish", ErrValidation)
 		}
 	} else if !errors.Is(pubErr, ErrNotFound) {
 		return Revision{}, pubErr
@@ -228,6 +244,26 @@ func checkPublishCompatibility(published, draft FormSchema) error {
 		}
 	}
 	return nil
+}
+
+// schemasEquivalent reports whether two form schemas are identical after normalizing nil slices,
+// so a publish that would create a byte-for-byte duplicate revision can be rejected.
+func schemasEquivalent(a, b FormSchema) bool {
+	return canonicalSchemaJSON(a) == canonicalSchemaJSON(b)
+}
+
+func canonicalSchemaJSON(schema FormSchema) string {
+	normalized := schema
+	fields := make([]FormField, len(schema.Fields))
+	for i, field := range schema.Fields {
+		if field.Options == nil {
+			field.Options = []SelectOption{}
+		}
+		fields[i] = field
+	}
+	normalized.Fields = fields
+	encoded, _ := json.Marshal(normalized)
+	return string(encoded)
 }
 
 // publishRevisionTx inserts the next revision inside an open transaction.

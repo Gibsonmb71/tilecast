@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { RouterProvider, createMemoryRouter, type RouteObject } from "react-router";
 import { DataSourceEditorPage } from "./DataSourcesPage";
 import { api } from "../api/client";
 import * as authModule from "../auth/AuthProvider";
@@ -13,6 +13,18 @@ import type {
   FormCapability,
   FormDataSource,
 } from "../api/types";
+
+// The React Router data router creates a Request with an AbortSignal on navigation. Under jsdom the
+// global AbortSignal is jsdom's, which Node's undici Request rejects. Since these tests never issue
+// real network requests (the api client is spied), drop the signal so in-memory navigation works.
+class RequestWithoutSignal extends globalThis.Request {
+  constructor(input: RequestInfo | URL, init: RequestInit = {}) {
+    const rest = { ...init };
+    delete (rest as { signal?: unknown }).signal;
+    super(input, rest);
+  }
+}
+globalThis.Request = RequestWithoutSignal;
 
 afterEach(() => {
   cleanup();
@@ -30,19 +42,24 @@ function mockAuth(role: "owner" | "administrator" | "editor" | "viewer") {
   } as unknown as ReturnType<typeof authModule.useAuth>);
 }
 
-function renderAt(path: string) {
+function renderAt(path: string, extraRoutes: RouteObject[] = []) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  // A data router is required so FormBuilder's useBlocker (unsaved-change navigation guard) works.
+  const router = createMemoryRouter(
+    [
+      { path: "/data-sources/new", element: <DataSourceEditorPage /> },
+      { path: "/data-sources/new/:provider", element: <DataSourceEditorPage /> },
+      { path: "/data-sources/:id", element: <DataSourceEditorPage /> },
+      ...extraRoutes,
+    ],
+    { initialEntries: [path] },
+  );
+  const view = render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={[path]}>
-        <Routes>
-          <Route path="/data-sources/new" element={<DataSourceEditorPage />} />
-          <Route path="/data-sources/new/:provider" element={<DataSourceEditorPage />} />
-          <Route path="/data-sources/:id" element={<DataSourceEditorPage />} />
-        </Routes>
-      </MemoryRouter>
+      <RouterProvider router={router} />
     </QueryClientProvider>,
   );
+  return { ...view, router };
 }
 
 const formDetail = (capabilities: FormCapability[]): FormDataSource => ({
@@ -160,5 +177,65 @@ describe("Form Data Source Studio", () => {
     expect(
       screen.queryByRole("button", { name: "Save draft" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("blocks internal navigation with unsaved changes; cancel stays and confirm leaves", async () => {
+    mockAuth("owner");
+    vi.spyOn(api, "getDataSource").mockResolvedValue(formDataSourceDetail);
+    vi.spyOn(api, "getForm").mockResolvedValue(formDetail(["manage"]));
+    const user = userEvent.setup();
+    const { router } = renderAt("/data-sources/f1?tab=form", [
+      { path: "/screens", element: <div>Screens page</div> },
+    ]);
+
+    // Make an unsaved schema change.
+    await user.type(await screen.findByLabelText("Form title"), "X");
+
+    // Attempt to navigate away -> blocked with a confirmation prompt.
+    await act(async () => {
+      await router.navigate("/screens");
+    });
+    expect(await screen.findByText("Leave without saving?")).toBeInTheDocument();
+
+    // Cancel keeps us on the builder.
+    await user.click(screen.getByRole("button", { name: "Stay on page" }));
+    expect(screen.queryByText("Screens page")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save draft" })).toBeInTheDocument();
+
+    // Retry and confirm -> navigation proceeds.
+    await act(async () => {
+      await router.navigate("/screens");
+    });
+    await user.click(
+      await screen.findByRole("button", { name: "Leave without saving" }),
+    );
+    expect(await screen.findByText("Screens page")).toBeInTheDocument();
+  });
+
+  it("disables Publish when the draft matches the published revision", async () => {
+    mockAuth("owner");
+    const identicalSchema = {
+      title: "Announcement",
+      description: "",
+      fields: [
+        { key: "title", label: "Title", control: "short_text", required: true },
+      ],
+    };
+    const detail = formDetail(["manage"]);
+    detail.draftSchema = identicalSchema as never;
+    detail.publishedRevision = {
+      ...detail.publishedRevision!,
+      schema: identicalSchema as never,
+    };
+    vi.spyOn(api, "getDataSource").mockResolvedValue(formDataSourceDetail);
+    vi.spyOn(api, "getForm").mockResolvedValue(detail);
+    const user = userEvent.setup();
+    renderAt("/data-sources/f1?tab=form");
+
+    expect(await screen.findByRole("button", { name: "Publish" })).toBeDisabled();
+
+    // Editing the schema makes it publishable again.
+    await user.type(screen.getByLabelText("Form title"), "!");
+    expect(screen.getByRole("button", { name: "Publish" })).toBeEnabled();
   });
 });

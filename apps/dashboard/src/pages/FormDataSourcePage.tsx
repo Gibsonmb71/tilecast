@@ -80,7 +80,10 @@ function MetadataEditor({ form, csrf }: { form: FormDataSource; csrf: string }) 
     mutationFn: () =>
       api.updateFormMetadata(form.id, { name: name.trim(), description: description.trim() }, csrf),
     onMutate: () => setError(""),
-    onSuccess: () => {
+    onSuccess: (updated) => {
+      // Sync local editor state to the saved values so reopening Edit details shows the latest.
+      setName(updated.name);
+      setDescription(updated.description);
       void queryClient.invalidateQueries({ queryKey: ["form-data-source", form.id] });
       void queryClient.invalidateQueries({ queryKey: ["data-source", form.id] });
       void queryClient.invalidateQueries({ queryKey: ["data-sources"] });
