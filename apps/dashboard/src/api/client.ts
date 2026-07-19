@@ -1,4 +1,9 @@
 import type {
+  CreateFormInput,
+  FormDataSource,
+  FormMetadataInput,
+  FormRevision,
+  FormSchema,
   AuthStatus,
   LoginInput,
   PairingRequest,
@@ -875,6 +880,36 @@ export const api = {
   deleteDataSource: (id: string, csrfToken: string) =>
     request<void>(`/data-sources/${id}`, {
       method: "DELETE",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
+  // Form Data Sources. Creation is a dedicated endpoint; the detail, metadata, draft, and
+  // publish operations are namespaced under the parent Data Source id.
+  createForm: (input: CreateFormInput, csrfToken: string) =>
+    request<FormDataSource>("/forms", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  getForm: (id: string) => request<FormDataSource>(`/data-sources/${id}/form`),
+  updateFormMetadata: (
+    id: string,
+    input: FormMetadataInput,
+    csrfToken: string,
+  ) =>
+    request<FormDataSource>(`/data-sources/${id}/form`, {
+      method: "PATCH",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  updateFormDraft: (id: string, schema: FormSchema, csrfToken: string) =>
+    request<FormDataSource>(`/data-sources/${id}/form/draft`, {
+      method: "PATCH",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ schema }),
+    }),
+  publishForm: (id: string, csrfToken: string) =>
+    request<FormRevision>(`/data-sources/${id}/form/publish`, {
+      method: "POST",
       headers: { "X-CSRF-Token": csrfToken },
     }),
   dataSourceDiagnostics: (id: string) =>

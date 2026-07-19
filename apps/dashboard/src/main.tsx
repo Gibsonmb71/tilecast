@@ -18,6 +18,7 @@ import "./styles/issue-fixes.css";
 import "./styles/issues-37-45.css";
 import "./styles/issues-48-49.css";
 import "./styles/data-sources.css";
+import "./styles/forms.css";
 import "./styles/player-updates.css";
 
 const queryClient = new QueryClient({

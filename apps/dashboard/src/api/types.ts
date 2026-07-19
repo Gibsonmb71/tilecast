@@ -814,6 +814,127 @@ export type LegacyDataSourceProvider =
   | "cap_alerts"
   | "air_quality";
 export type DataSourceProvider = LegacyDataSourceProvider | (string & {});
+
+// --- Form Data Sources ---
+// These mirror the server JSON contracts in apps/server/internal/forms/types.go.
+
+export type FormCapability =
+  | "manage"
+  | "submit"
+  | "view_own"
+  | "view_all"
+  | "review"
+  | "approve";
+
+export type FormFieldControl =
+  | "short_text"
+  | "long_text"
+  | "number"
+  | "integer"
+  | "boolean"
+  | "select"
+  | "multi_select"
+  | "date"
+  | "datetime"
+  | "url"
+  | "image"
+  | "section"
+  | "help_text";
+
+export type FormSelectOption = { value: string; label: string };
+
+export type FormField = {
+  key: string;
+  label: string;
+  description?: string;
+  control: FormFieldControl;
+  required?: boolean;
+  default?: string;
+  options?: FormSelectOption[];
+  minimum?: number;
+  maximum?: number;
+  minLength?: number;
+  maxLength?: number;
+};
+
+export type FormSchema = {
+  title?: string;
+  description?: string;
+  fields: FormField[];
+};
+
+export type FormRevision = {
+  id: string;
+  dataSourceId: string;
+  revisionNumber: number;
+  title: string;
+  description: string;
+  schema: FormSchema;
+  publishedAt: string;
+};
+
+export type FormWorkflowState = {
+  key: string;
+  label: string;
+  position: number;
+  eligibleForOutput: boolean;
+  initial: boolean;
+  terminal: boolean;
+};
+
+export type FormWorkflowTransition = {
+  from: string;
+  to: string;
+  label: string;
+  requiredCapability: FormCapability;
+  position: number;
+};
+
+export type FormWorkflow = {
+  states: FormWorkflowState[];
+  transitions: FormWorkflowTransition[];
+};
+
+export type FormView = {
+  id: string;
+  key: string;
+  name: string;
+  includedStates: string[];
+  fieldFilters: { field: string; operator: string; value: string }[];
+  timeFilter: {
+    enabled: boolean;
+    startField?: string;
+    endField?: string;
+    startBeforeNow?: boolean;
+    endAfterNow?: boolean;
+  };
+  sort: { field: string; direction: string }[];
+  outputFields: string[];
+  recordLimit: number;
+  position: number;
+};
+
+export type FormDataSource = {
+  id: string;
+  name: string;
+  description: string;
+  createdBy?: string;
+  createdAt: string;
+  updatedAt: string;
+  draftSchema: FormSchema;
+  publishedRevision?: FormRevision;
+  workflow: FormWorkflow;
+  views: FormView[];
+  grantedCapabilities: FormCapability[];
+};
+
+export type CreateFormInput = {
+  name: string;
+  description: string;
+  draftSchema: FormSchema;
+};
+
+export type FormMetadataInput = { name: string; description: string };
 export type ContentDefinitionField = {
   key: string;
   label: string;

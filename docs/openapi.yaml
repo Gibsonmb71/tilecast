@@ -887,6 +887,74 @@ paths:
           { description: Sanitized real-data preview and typed diagnostics }
         "404": { description: Data Source provider not found }
         "422": { description: Validation or safe fetch failed }
+  /api/v1/forms:
+    post:
+      operationId: createForm
+      description: Creates a Form Data Source (a Data Source provider). The server publishes the supplied draft schema as the form's first immutable revision and the creator becomes its manager. Requires the editor+ global role.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, draftSchema]
+              properties:
+                name: { type: string }
+                description: { type: string }
+                draftSchema: { type: object }
+      responses:
+        "201": { description: Form Data Source created with its first published revision }
+        "422": { description: Name, description, or schema rejected }
+  /api/v1/data-sources/{id}/form:
+    get:
+      operationId: getForm
+      description: Returns the Form detail with draft schema, published revision, workflow, saved views, and the caller's granted capabilities. Non-managers receive the published schema as the visible draft schema so unpublished edits are never exposed.
+      responses:
+        "200": { description: Form detail }
+        "403": { description: No access to this form }
+        "404": { description: Form not found }
+    patch:
+      operationId: updateFormMetadata
+      description: Updates only the parent Data Source name and description. Provider and configuration cannot be changed here. Requires the manage capability.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                description: { type: string }
+      responses:
+        "200": { description: Refreshed Form detail }
+        "403": { description: Manage capability required }
+        "422": { description: Name or description rejected }
+  /api/v1/data-sources/{id}/form/draft:
+    patch:
+      operationId: updateFormDraft
+      description: Replaces the editable draft schema without publishing. Existing submissions are untouched. Requires the manage capability.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [schema]
+              properties:
+                schema: { type: object }
+      responses:
+        "200": { description: Refreshed Form detail with the saved draft }
+        "403": { description: Manage capability required }
+        "422": { description: Draft schema rejected }
+  /api/v1/data-sources/{id}/form/publish:
+    post:
+      operationId: publishForm
+      description: Snapshots the current draft into a new immutable revision after conservative compatibility checks (a previously published output field cannot be removed or change its output type). Existing submissions remain tied to their original revisions. Requires the manage capability.
+      responses:
+        "200": { description: The newly published revision }
+        "403": { description: Manage capability required }
+        "422": { description: Draft schema rejected or incompatible with the published revision }
   /api/v1/layouts:
     get:
       operationId: listLayouts

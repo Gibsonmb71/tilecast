@@ -12,6 +12,7 @@ import {
   AlertTriangle,
   Braces,
   CalendarDays,
+  ClipboardList,
   Database,
   FileSpreadsheet,
   CloudSun,
@@ -35,6 +36,8 @@ import {
 } from "../components/DashboardListToolbar";
 import { DataSourceEditor } from "../content/DataSourceEditors";
 import { canManageContent } from "./ContentPage";
+import { CreateFormDataSourcePage } from "./CreateFormDataSourcePage";
+import { FormDataSourcePage } from "./FormDataSourcePage";
 
 function providerLabel(provider: DataSourceProvider) {
   return (
@@ -446,6 +449,13 @@ function DataSourceProviderGallery({
             <strong>Air Quality</strong>
             <span>Current AQI, pollutants, pollen, and hourly forecasts.</span>
           </button>
+          <button type="button" onClick={() => onChoose("form")}>
+            <ClipboardList size={30} />
+            <strong>Form</strong>
+            <span>
+              Collect submissions, approve them, and publish records to Widgets.
+            </span>
+          </button>
         </div>
       </section>
     </div>
@@ -612,6 +622,15 @@ export function DataSourceEditorPage() {
   }
   if (id && detail.isLoading)
     return <div className="table-loading">Loading Data Source...</div>;
+  // Form Data Sources use a dedicated, full-width management page rather than the compact generic
+  // editor shell, and enforce per-form capabilities instead of only global roles.
+  if (provider === "form") {
+    return dataSource ? (
+      <FormDataSourcePage dataSource={dataSource} />
+    ) : (
+      <CreateFormDataSourcePage />
+    );
+  }
   if (definitions.isLoading)
     return (
       <div className="table-loading">Loading Data Source definition...</div>

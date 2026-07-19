@@ -181,6 +181,7 @@ func (s *server) routes() http.Handler {
 			if s.forms != nil {
 				dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/forms", s.createForm)
 				dashboard.Get("/data-sources/{id}/form", s.getForm)
+				dashboard.With(s.requireCSRF).Patch("/data-sources/{id}/form", s.updateFormMetadata)
 				dashboard.With(s.requireCSRF).Patch("/data-sources/{id}/form/draft", s.updateFormDraft)
 				dashboard.With(s.requireCSRF).Post("/data-sources/{id}/form/publish", s.publishForm)
 				dashboard.With(s.requireCSRF).Put("/data-sources/{id}/form/workflow", s.configureFormWorkflow)

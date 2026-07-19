@@ -95,6 +95,38 @@ func (s *Service) CreateForm(ctx context.Context, user uuid.UUID, in FormInput) 
 	return s.GetForm(ctx, id, user)
 }
 
+// MetadataInput updates the parent Data Source name and description of a form.
+type MetadataInput struct {
+	Name        string
+	Description string
+}
+
+// UpdateMetadata edits only the parent data_sources name and description for a form. Provider and
+// configuration are never touched here. The caller must hold the manage capability.
+func (s *Service) UpdateMetadata(ctx context.Context, id, user uuid.UUID, in MetadataInput) (Form, error) {
+	if _, err := s.ensureForm(ctx, s.db, id); err != nil {
+		return Form{}, err
+	}
+	name := strings.TrimSpace(in.Name)
+	description := strings.TrimSpace(in.Description)
+	if name == "" || len(name) > 180 {
+		return Form{}, fmt.Errorf("%w: name must be between 1 and 180 characters", ErrValidation)
+	}
+	if len(description) > 2000 {
+		return Form{}, fmt.Errorf("%w: description must be at most 2000 characters", ErrValidation)
+	}
+	tag, err := s.db.Exec(ctx, `UPDATE data_sources SET name=$2,description=$3,updated_at=now() WHERE id=$1 AND deleted_at IS NULL`, id, name, description)
+	if err != nil {
+		return Form{}, err
+	}
+	if tag.RowsAffected() == 0 {
+		return Form{}, ErrNotFound
+	}
+	_, _ = s.db.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,metadata)
+		VALUES($1,$2,'form.metadata_updated','data_source',$3,jsonb_build_object('name',$4::text))`, uuid.New(), user, id.String(), name)
+	return s.GetForm(ctx, id, user)
+}
+
 // UpdateDraft replaces the editable draft schema without publishing it, so existing submissions
 // are untouched until PublishRevision runs.
 func (s *Service) UpdateDraft(ctx context.Context, id, user uuid.UUID, in DraftInput) (Form, error) {
@@ -138,6 +170,15 @@ func (s *Service) PublishRevision(ctx context.Context, id, user uuid.UUID) (Revi
 	if err := validateSchema(draft); err != nil {
 		return Revision{}, err
 	}
+	// Guard against destructive schema changes: an already-published output field cannot be
+	// removed, and its key cannot be reused for a different output type.
+	if published, pubErr := s.loadPublishedRevision(ctx, s.db, id); pubErr == nil {
+		if err := checkPublishCompatibility(published.Schema, draft); err != nil {
+			return Revision{}, err
+		}
+	} else if !errors.Is(pubErr, ErrNotFound) {
+		return Revision{}, pubErr
+	}
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return Revision{}, err
@@ -161,6 +202,32 @@ func (s *Service) PublishRevision(ctx context.Context, id, user uuid.UUID) (Revi
 		return Revision{}, err
 	}
 	return revision, nil
+}
+
+// checkPublishCompatibility rejects a draft that would break Widgets or saved views bound to an
+// already-published output field. Every output-producing field in the published schema must still
+// exist in the draft with the same output type; a key may not be reused for a different output
+// type. Label, description, required status, default, options, bounds, order, and presentation-only
+// fields (section, help_text) may change freely.
+func checkPublishCompatibility(published, draft FormSchema) error {
+	draftByKey := map[string]FormField{}
+	for _, field := range draft.Fields {
+		draftByKey[field.Key] = field
+	}
+	for _, field := range published.Fields {
+		publishedType := outputTypeFor(field.Control)
+		if publishedType == "" {
+			continue // presentation-only fields may be added, reordered, or removed
+		}
+		draftField, ok := draftByKey[field.Key]
+		if !ok {
+			return fmt.Errorf("%w: published field %q cannot be removed; deprecate it instead", ErrValidation, field.Key)
+		}
+		if outputTypeFor(draftField.Control) != publishedType {
+			return fmt.Errorf("%w: published field %q cannot change its output type", ErrValidation, field.Key)
+		}
+	}
+	return nil
 }
 
 // publishRevisionTx inserts the next revision inside an open transaction.
@@ -272,5 +339,23 @@ func (s *Service) GetForm(ctx context.Context, id, viewer uuid.UUID) (Form, erro
 	if form.Capabilities, err = s.grantedCapabilities(ctx, s.db, id, createdBy, viewer); err != nil {
 		return Form{}, err
 	}
+	// Non-managers must never see unpublished draft edits. Narrow the visible draft to the
+	// published schema so the UI can render one schema safely regardless of role.
+	if !containsCapability(form.Capabilities, CapManage) {
+		if form.Published != nil {
+			form.DraftSchema = form.Published.Schema
+		} else {
+			form.DraftSchema = FormSchema{Fields: []FormField{}}
+		}
+	}
 	return form, nil
+}
+
+func containsCapability(capabilities []Capability, want Capability) bool {
+	for _, capability := range capabilities {
+		if capability == want {
+			return true
+		}
+	}
+	return false
 }

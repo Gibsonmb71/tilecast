@@ -99,6 +99,29 @@ func (s *server) getForm(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": form})
 }
 
+type metadataRequest struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+func (s *server) updateFormMetadata(w http.ResponseWriter, r *http.Request) {
+	id, userID, ok := s.authorizeForm(w, r, forms.CapManage)
+	if !ok {
+		return
+	}
+	var body metadataRequest
+	if err := decodeJSON(w, r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	form, err := s.forms.UpdateMetadata(r.Context(), id, userID, forms.MetadataInput{Name: body.Name, Description: body.Description})
+	if err != nil {
+		s.writeFormError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": form})
+}
+
 type draftRequest struct {
 	Schema forms.FormSchema `json:"schema"`
 }
