@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-FROM node:22-alpine AS dashboard
+FROM node:26-alpine AS dashboard
 WORKDIR /src
 COPY package.json package-lock.json ./
 COPY apps/dashboard/package.json apps/dashboard/package.json
@@ -14,7 +14,7 @@ RUN npm ci
 COPY apps/dashboard apps/dashboard
 RUN npm run build --workspace @tilecast/dashboard
 
-FROM golang:1.25-alpine AS server
+FROM golang:1.26-alpine AS server
 RUN apk add --no-cache ca-certificates git
 WORKDIR /src
 COPY apps/server/go.mod apps/server/go.sum ./
@@ -23,7 +23,7 @@ COPY apps/server .
 COPY --from=dashboard /src/apps/dashboard/dist/ internal/web/static/
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/tilecast-server ./cmd/tilecast
 
-FROM alpine:3.22
+FROM alpine:3.24
 RUN apk add --no-cache ca-certificates tzdata ffmpeg && addgroup -S tilecast && adduser -S -G tilecast tilecast
 WORKDIR /app
 COPY --from=server /out/tilecast-server /usr/local/bin/tilecast-server
