@@ -55,7 +55,9 @@ export function CreateFormDataSourcePage() {
       void navigate(`/data-sources/${form.id}?tab=form`);
     },
     onError: (err) =>
-      setError(err instanceof Error ? err.message : "Could not create the form."),
+      setError(
+        err instanceof Error ? err.message : "Could not create the form.",
+      ),
   });
 
   const submit = (event: React.FormEvent) => {

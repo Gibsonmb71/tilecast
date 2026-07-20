@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { RESERVED_FIELD_KEYS, slugifyKey, uniqueKey, validateKey } from "./formKeys";
+import {
+  RESERVED_FIELD_KEYS,
+  slugifyKey,
+  uniqueKey,
+  validateKey,
+} from "./formKeys";
 
 describe("formKeys", () => {
   it("slugifies labels into valid keys", () => {

@@ -15,7 +15,11 @@ import {
 import { FormBuilder } from "../forms/FormBuilder";
 import { FormRenderer } from "../forms/FormRenderer";
 
-export function FormDataSourcePage({ dataSource }: { dataSource?: DataSourceDetail }) {
+export function FormDataSourcePage({
+  dataSource,
+}: {
+  dataSource?: DataSourceDetail;
+}) {
   const { id } = useParams();
   const auth = useAuth();
   const csrf = auth.status?.csrfToken ?? "";
@@ -69,7 +73,13 @@ function ManageView({ form, csrf }: { form: FormDataSource; csrf: string }) {
   );
 }
 
-function MetadataEditor({ form, csrf }: { form: FormDataSource; csrf: string }) {
+function MetadataEditor({
+  form,
+  csrf,
+}: {
+  form: FormDataSource;
+  csrf: string;
+}) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(form.name);
@@ -78,19 +88,29 @@ function MetadataEditor({ form, csrf }: { form: FormDataSource; csrf: string }) 
 
   const save = useMutation({
     mutationFn: () =>
-      api.updateFormMetadata(form.id, { name: name.trim(), description: description.trim() }, csrf),
+      api.updateFormMetadata(
+        form.id,
+        { name: name.trim(), description: description.trim() },
+        csrf,
+      ),
     onMutate: () => setError(""),
     onSuccess: (updated) => {
       // Sync local editor state to the saved values so reopening Edit details shows the latest.
       setName(updated.name);
       setDescription(updated.description);
-      void queryClient.invalidateQueries({ queryKey: ["form-data-source", form.id] });
-      void queryClient.invalidateQueries({ queryKey: ["data-source", form.id] });
+      void queryClient.invalidateQueries({
+        queryKey: ["form-data-source", form.id],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["data-source", form.id],
+      });
       void queryClient.invalidateQueries({ queryKey: ["data-sources"] });
       setEditing(false);
     },
     onError: (err) =>
-      setError(err instanceof Error ? err.message : "Could not update details."),
+      setError(
+        err instanceof Error ? err.message : "Could not update details.",
+      ),
   });
 
   if (!editing) {

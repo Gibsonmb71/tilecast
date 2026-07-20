@@ -5,7 +5,10 @@ import { isPresentationControl } from "./formSchema";
 // FormValues maps a field key to its current value. Multi-select uses string[]; others use string
 // or boolean. The renderer is deliberately the single place that interprets controls so builder
 // preview, submission, and review pages render identically.
-export type FormValues = Record<string, string | string[] | boolean | undefined>;
+export type FormValues = Record<
+  string,
+  string | string[] | boolean | undefined
+>;
 
 export type FormRendererProps = {
   schema: FormSchema;
@@ -132,9 +135,10 @@ function FieldControl({
   value: string | string[] | boolean | undefined;
   readOnly: boolean;
   onChange?: (key: string, next: string | string[] | boolean) => void;
-  }) {
+}) {
   const disabled = readOnly || !onChange;
-  const emit = (next: string | string[] | boolean) => onChange?.(field.key, next);
+  const emit = (next: string | string[] | boolean) =>
+    onChange?.(field.key, next);
   const stringValue = typeof value === "string" ? value : "";
   const required = Boolean(field.required);
 
@@ -193,7 +197,8 @@ function FieldControl({
           aria-describedby={describedBy}
         >
           {(field.options ?? []).map((option) => {
-            const selected = Array.isArray(value) && value.includes(option.value);
+            const selected =
+              Array.isArray(value) && value.includes(option.value);
             return (
               <label key={option.value} className="checkbox-control">
                 <input

@@ -819,12 +819,7 @@ export type DataSourceProvider = LegacyDataSourceProvider | (string & {});
 // These mirror the server JSON contracts in apps/server/internal/forms/types.go.
 
 export type FormCapability =
-  | "manage"
-  | "submit"
-  | "view_own"
-  | "view_all"
-  | "review"
-  | "approve";
+  "manage" | "submit" | "view_own" | "view_all" | "review" | "approve";
 
 export type FormFieldControl =
   | "short_text"
@@ -911,7 +906,11 @@ export type FormView = {
   key: string;
   name: string;
   includedStates: string[];
-  fieldFilters: { field: string; operator: FormFilterOperator; value: string }[];
+  fieldFilters: {
+    field: string;
+    operator: FormFilterOperator;
+    value: string;
+  }[];
   timeFilter: {
     enabled: boolean;
     startField?: string;

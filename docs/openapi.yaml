@@ -903,7 +903,10 @@ paths:
                 description: { type: string }
                 draftSchema: { type: object }
       responses:
-        "201": { description: Form Data Source created with its first published revision }
+        "201":
+          {
+            description: Form Data Source created with its first published revision,
+          }
         "422": { description: Name, description, or schema rejected }
   /api/v1/data-sources/{id}/form:
     get:
@@ -954,7 +957,10 @@ paths:
       responses:
         "200": { description: The newly published revision }
         "403": { description: Manage capability required }
-        "422": { description: Draft schema rejected or incompatible with the published revision }
+        "422":
+          {
+            description: Draft schema rejected or incompatible with the published revision,
+          }
   /api/v1/layouts:
     get:
       operationId: listLayouts

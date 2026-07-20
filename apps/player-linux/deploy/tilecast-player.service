@@ -1,0 +1,40 @@
+# Tilecast Player systemd unit (user session).
+#
+# This is the outermost rung of the self-heal ladder: if the player process
+# exits for any reason — a crash, an out-of-memory kill, or its own
+# restart_player_process command — systemd starts it again, forever.
+# Install as a user unit on the kiosk account:
+#
+#   mkdir -p ~/.config/systemd/user
+#   cp tilecast-player.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now tilecast-player
+#   sudo loginctl enable-linger <kiosk-user>   # start at boot without login
+#
+# Set the server address once via the on-screen setup, or here:
+#   systemctl --user edit tilecast-player
+#   [Service]
+#   Environment=TILECAST_SERVER_URL=https://signage.example.org
+
+[Unit]
+Description=Tilecast Player
+After=graphical-session.target network.target
+PartOf=graphical-session.target
+# Never give up: with the rate-limit window disabled, a crash loop keeps
+# backing off on RestartSec rather than latching into "failed". This directive
+# belongs in [Unit] on modern systemd (it is ignored under [Service]).
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=%h/tilecast/tilecast-player.AppImage
+Restart=always
+RestartSec=5
+Environment=TILECAST_LOG_LEVEL=info
+# Wayland kiosks (cage/weston): uncomment as needed
+# Environment=WAYLAND_DISPLAY=wayland-0
+# X11 kiosks:
+# Environment=DISPLAY=:0
+
+[Install]
+WantedBy=graphical-session.target
