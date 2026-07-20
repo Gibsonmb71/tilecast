@@ -16,8 +16,9 @@
   </picture>
 </h1>
 
-**Open signage, built to stay on.**
-
+<p align="center">
+  <strong>Open signage, built to stay on.</strong>
+</p>
 Tilecast is an open-source, self-hosted digital signage platform for organizations that want to operate their own signage server. It is designed for reliable playback on Fire TV, Google TV, and Android TV devices without requiring a paid cloud service.
 
 The Content library is organized into **Media** (uploaded images and videos), **Widgets** (reusable visual content), and **Data Sources** (reusable data connections). Standalone Website, YouTube, Clock, Date, QR Code, and Countdown Widgets cover common signage needs. Ticker, Menu / Price Board, List, Table, Agenda, Metric, Cards, and Weather Widgets display a compatible Data Source. Calendar, RSS, Atom, JSON, CSV, Manual Table, and Weather Data Sources handle acquisition, typed fields, caching, and date-aware selection independently from presentation. Widgets and Media can be reused in playlists and Layouts. See [Widgets, Data Sources, and Layouts](docs/widgets-and-layouts.md).
