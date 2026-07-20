@@ -1,0 +1,67 @@
+version: 2
+
+updates:
+  # Dashboard and shared npm workspace packages
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/New_York"
+    groups:
+      npm-dependencies:
+        patterns:
+          - "*"
+
+  # Go server
+  - package-ecosystem: "gomod"
+    directory: "/apps/server"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/New_York"
+    groups:
+      go-dependencies:
+        patterns:
+          - "*"
+
+  # Android player
+  - package-ecosystem: "gradle"
+    directory: "/apps/player-android"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/New_York"
+    groups:
+      android-dependencies:
+        patterns:
+          - "*"
+
+  # Server container base images
+  - package-ecosystem: "docker"
+    directory: "/deploy/docker"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/New_York"
+    groups:
+      docker-images:
+        patterns:
+          - "*"
+
+  # Actions used by GitHub workflows
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/New_York"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
