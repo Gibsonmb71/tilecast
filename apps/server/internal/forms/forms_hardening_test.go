@@ -105,10 +105,14 @@ func TestFormAttachmentUploadAndGuards(t *testing.T) {
 	}
 
 	// A valid upload creates a dedicated form-attachment asset and records the field value.
-	attachment, err := e.service.CreateAttachment(e.ctx, form.ID, rec.ID, e.owner, AttachmentUpload{FieldKey: "photo", FileName: "p.png", ContentType: "image/png", Data: pngBytes()})
+	created, err := e.service.CreateAttachment(e.ctx, form.ID, rec.ID, e.owner, AttachmentUpload{FieldKey: "photo", FileName: "p.png", ContentType: "image/png", Data: pngBytes()})
 	if err != nil {
 		t.Fatalf("create attachment: %v", err)
 	}
+	if len(created.Attachments) != 1 {
+		t.Fatalf("expected one attachment on returned record, got %d", len(created.Attachments))
+	}
+	attachment := created.Attachments[0]
 	var origin string
 	if err := e.pool.QueryRow(e.ctx, `SELECT origin FROM assets WHERE id=$1`, attachment.AssetID).Scan(&origin); err != nil {
 		t.Fatal(err)

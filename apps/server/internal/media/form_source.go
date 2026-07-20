@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 // defaultFormAttachmentMaxBytes bounds a form attachment when no media upload limit is configured.
@@ -96,6 +97,62 @@ func (s *Service) IngestFormAttachment(ctx context.Context, userID uuid.UUID, fi
 		return cleanup(err)
 	}
 	return s.GetAsset(ctx, assetID)
+}
+
+// FormAttachmentDelivery returns a servable file for a form-attachment asset, choosing the best
+// available variant (a generated thumbnail/poster/playback rendition when present, otherwise the
+// original upload). Unlike Preview/PlaybackPreview it does not require the asset to have finished
+// asynchronous processing, so an image is servable immediately after IngestFormAttachment. It only
+// ever serves assets with origin='form_attachment'; callers (the forms package) authorize the
+// requesting user against the owning record before calling this.
+func (s *Service) FormAttachmentDelivery(ctx context.Context, assetID uuid.UUID) (Delivery, error) {
+	if s.storage == nil {
+		return Delivery{}, errors.New("media storage is not configured")
+	}
+	d := Delivery{AssetID: assetID}
+	var key string
+	err := s.db.QueryRow(ctx, `SELECT v.id,v.storage_key,v.mime_type,v.file_size,encode(v.sha256,'hex')
+		FROM asset_variants v JOIN assets a ON a.id=v.asset_id
+		WHERE a.id=$1 AND a.deleted_at IS NULL AND a.origin='form_attachment' AND v.deleted_at IS NULL
+		ORDER BY CASE v.kind WHEN 'thumbnail' THEN 0 WHEN 'poster' THEN 1 WHEN 'playback' THEN 2 WHEN 'original' THEN 3 ELSE 4 END
+		LIMIT 1`, assetID).Scan(&d.VariantID, &key, &d.MIMEType, &d.Size, &d.HashHex)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Delivery{}, ErrVariantUnavailable
+	}
+	if err != nil {
+		return Delivery{}, err
+	}
+	d.Path, err = s.storage.Path(key)
+	return d, err
+}
+
+// SoftDeleteFormAttachment soft-deletes a form-attachment asset and queues its storage cleanup. It
+// refuses to touch anything other than an origin='form_attachment' asset, so it can never remove a
+// Media library item. Removing a nonexistent or already-deleted attachment is a no-op.
+func (s *Service) SoftDeleteFormAttachment(ctx context.Context, assetID uuid.UUID) error {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	var origin string
+	err = tx.QueryRow(ctx, `SELECT origin FROM assets WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, assetID).Scan(&origin)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if origin != "form_attachment" {
+		return errors.New("asset is not a form attachment")
+	}
+	if _, err := tx.Exec(ctx, `UPDATE assets SET processing_status='deleting',deleted_at=now(),updated_at=now() WHERE id=$1`, assetID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO media_jobs(id,asset_id,kind,status) VALUES($1,$2,'delete_asset_files','queued') ON CONFLICT DO NOTHING`, uuid.New(), assetID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // Form Data Sources are owned by the forms package, which writes the data_sources row and the

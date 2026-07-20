@@ -888,6 +888,11 @@ paths:
         "404": { description: Data Source provider not found }
         "422": { description: Validation or safe fetch failed }
   /api/v1/forms:
+    get:
+      operationId: listForms
+      description: Returns every Form Data Source the current user can access, each with name, description, published revision number, the caller's effective capabilities, and the caller's own submission counts (drafts, submitted, changes requested). A global Owner sees all forms; everyone else sees forms they created or hold a grant on. Backs the Forms portal and operator navigation.
+      responses:
+        "200": { description: Accessible Form summaries under data.items }
     post:
       operationId: createForm
       description: Creates a Form Data Source (a Data Source provider). The server publishes the supplied draft schema as the form's first immutable revision and the creator becomes its manager. Requires the editor+ global role.
@@ -961,6 +966,100 @@ paths:
           {
             description: Draft schema rejected or incompatible with the published revision,
           }
+  /api/v1/data-sources/{id}/form/workflow:
+    put:
+      operationId: configureFormWorkflow
+      description: Reconciles the form's bounded, script-free approval workflow in place. State keys referenced by existing records are immutable; transitions are replaced wholesale. Requires the manage capability.
+      responses:
+        "200": { description: Refreshed Form detail with the saved workflow }
+        "403": { description: Manage capability required }
+        "422": { description: Workflow rejected }
+  /api/v1/data-sources/{id}/records:
+    get:
+      operationId: listFormRecords
+      description: Returns a filtered, paginated page of a form's records. Callers with view_all, review, approve, or manage see every record; a submitter without those sees only their own submissions. Supports states, search, sort, page, and pageSize query parameters.
+      parameters:
+        - { name: states, in: query, schema: { type: string }, description: Comma-separated workflow state keys }
+        - { name: search, in: query, schema: { type: string } }
+        - { name: sort, in: query, schema: { type: string, enum: [newest, oldest, priority, updated] } }
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: pageSize, in: query, schema: { type: integer } }
+      responses:
+        "200": { description: Paginated record page (items, total, page, pageSize) }
+        "403": { description: No visibility into this form's records }
+    post:
+      operationId: createFormRecord
+      description: Creates a draft submission bound to the form's current published revision. Requires the submit capability. Display metadata dates are tri-state (omitted preserves, null clears, a value sets).
+      responses:
+        "201": { description: Draft record created }
+        "403": { description: Submit capability required }
+        "422": { description: Values rejected or no published revision }
+  /api/v1/data-sources/{id}/records/{recordId}:
+    get:
+      operationId: getFormRecord
+      description: Returns a record with its immutable revision schema, history, comments, attachments, and the server-calculated actions the caller may take (canEdit, canComment, canDelete, and availableTransitions with destination, label, required capability, and whether a note is required). Authorization is resolved server-side so clients never re-implement it. Visible only to a manager, reviewer/approver, view_all holder, or the record's own submitter.
+      responses:
+        "200": { description: Decorated record detail }
+        "404": { description: Record not found or not visible to the caller }
+    patch:
+      operationId: updateFormRecord
+      description: Edits a record's values and display metadata under optimistic concurrency (a version is required). Display dates are tri-state. A manager may edit any record; a submitter may edit their own record only while it is in a submitter-editable state.
+      responses:
+        "200": { description: Updated record }
+        "409": { description: Version conflict }
+        "422": { description: Values rejected }
+    delete:
+      operationId: deleteFormRecord
+      description: Soft-deletes a record. Requires the manage capability.
+      responses:
+        "204": { description: Record deleted }
+        "404": { description: Record not found or not visible to the caller }
+  /api/v1/data-sources/{id}/records/{recordId}/transitions:
+    post:
+      operationId: transitionFormRecord
+      description: Moves a record to a new workflow state, enforcing the configured transition, per-form capability and record ownership, optimistic concurrency (version), and required-field completeness before any submit transition or any transition into an output-eligible state. An optional note is recorded as a comment; the default changes_requested transition requires one. A 409 means the record changed; reload, preserving any unsent note.
+      responses:
+        "200": { description: Record after the transition }
+        "409": { description: Version conflict }
+        "422": { description: Illegal transition or incomplete required fields }
+  /api/v1/data-sources/{id}/records/{recordId}/comments:
+    post:
+      operationId: addFormRecordComment
+      description: Adds a reviewer or submitter comment. Available to a reviewer/approver or the record's own submitter.
+      responses:
+        "201": { description: Comment created }
+        "404": { description: Record not found or not visible to the caller }
+  /api/v1/data-sources/{id}/records/{recordId}/attachments:
+    post:
+      operationId: uploadFormRecordAttachment
+      description: Uploads a base64-encoded image as a dedicated form attachment bound to an image field, returning the updated record detail with its new version. Because image fields are single-valued, uploading to a field that already has an attachment replaces it. Authorization matches record editing. Form attachments are never exposed through the general Media library.
+      responses:
+        "201": { description: Updated record detail after the attachment change }
+        "403": { description: Not permitted to edit this record }
+        "422": { description: Not an image, unsupported type, or too large }
+  /api/v1/data-sources/{id}/records/{recordId}/attachments/{attachmentId}:
+    delete:
+      operationId: removeFormRecordAttachment
+      description: Unbinds an attachment, clears the field value it backed, and soft-deletes the underlying asset. Authorization matches record editing. Returns the updated record detail.
+      responses:
+        "200": { description: Updated record detail after removal }
+        "404": { description: Attachment or record not found or not visible to the caller }
+  /api/v1/data-sources/{id}/records/{recordId}/attachments/{attachmentId}/content:
+    get:
+      operationId: serveFormRecordAttachment
+      description: Streams a record's image attachment through this form-record-authorized endpoint (the only way to view a form attachment; they are never served from the Media library). Applies the same visibility rules as reading the record.
+      responses:
+        "200": { description: The attachment image bytes }
+        "404": { description: Attachment or record not found, not visible, or not yet servable }
+  /api/v1/approvals:
+    get:
+      operationId: listApprovals
+      description: Returns a paginated page of records awaiting a review decision across every Form the user may review, approve, or manage. A record is pending when its current state has an outgoing transition requiring the review or approve capability. Paginated (page, pageSize) with a total rather than silently capped.
+      parameters:
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: pageSize, in: query, schema: { type: integer } }
+      responses:
+        "200": { description: Paginated approval page (items, total, page, pageSize) }
   /api/v1/layouts:
     get:
       operationId: listLayouts

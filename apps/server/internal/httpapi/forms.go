@@ -76,6 +76,18 @@ func (s *server) createForm(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"data": form})
 }
 
+// listForms returns every Form Data Source the current user may access. Scoping (owner sees all,
+// others see created/granted forms) is enforced inside the forms service.
+func (s *server) listForms(w http.ResponseWriter, r *http.Request) {
+	user := sessionUser(r)
+	items, err := s.forms.ListAccessibleForms(r.Context(), user.ID)
+	if err != nil {
+		s.writeFormError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"items": items}})
+}
+
 func (s *server) getForm(w http.ResponseWriter, r *http.Request) {
 	id, ok := urlUUID(w, r, "id")
 	if !ok {
@@ -380,14 +392,68 @@ func (s *server) uploadFormRecordAttachment(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusUnprocessableEntity, "validation_failed", "Attachment data must be base64-encoded.")
 		return
 	}
-	attachment, err := s.forms.CreateAttachment(r.Context(), id, recordID, user.ID, forms.AttachmentUpload{
+	record, err := s.forms.CreateAttachment(r.Context(), id, recordID, user.ID, forms.AttachmentUpload{
 		FieldKey: body.FieldKey, FileName: body.FileName, ContentType: body.ContentType, Data: data,
 	})
 	if err != nil {
 		s.writeFormError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"data": attachment})
+	writeJSON(w, http.StatusCreated, map[string]any{"data": record})
+}
+
+// removeFormRecordAttachment unbinds an attachment from a record and soft-deletes its asset,
+// returning the updated record detail.
+func (s *server) removeFormRecordAttachment(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	recordID, ok := urlUUID(w, r, "recordId")
+	if !ok {
+		return
+	}
+	attachmentID, ok := urlUUID(w, r, "attachmentId")
+	if !ok {
+		return
+	}
+	user := sessionUser(r)
+	record, err := s.forms.RemoveAttachment(r.Context(), id, recordID, attachmentID, user.ID)
+	if err != nil {
+		s.writeFormError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": record})
+}
+
+// serveFormRecordAttachment streams a record's image attachment through a form-record-authorized
+// endpoint. Form attachments are never exposed through the general Media library, so this is the
+// only way to view them, and it applies the same visibility rules as reading the record.
+func (s *server) serveFormRecordAttachment(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	recordID, ok := urlUUID(w, r, "recordId")
+	if !ok {
+		return
+	}
+	attachmentID, ok := urlUUID(w, r, "attachmentId")
+	if !ok {
+		return
+	}
+	user := sessionUser(r)
+	assetID, err := s.forms.AttachmentAsset(r.Context(), id, recordID, attachmentID, user.ID)
+	if err != nil {
+		s.writeFormError(w, r, err)
+		return
+	}
+	delivery, err := s.media.FormAttachmentDelivery(r.Context(), assetID)
+	if err != nil {
+		s.writeMediaError(w, r, err)
+		return
+	}
+	serveDelivery(w, r, delivery)
 }
 
 // --- Views ---
@@ -512,13 +578,15 @@ func (s *server) revokeFormGrant(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) listApprovals(w http.ResponseWriter, r *http.Request) {
 	user := sessionUser(r)
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	items, err := s.forms.PendingApprovals(r.Context(), user.ID, forms.ApprovalFilter{Limit: limit})
+	query := r.URL.Query()
+	page, _ := strconv.Atoi(query.Get("page"))
+	pageSize, _ := strconv.Atoi(query.Get("pageSize"))
+	result, err := s.forms.PendingApprovals(r.Context(), user.ID, forms.ApprovalFilter{Page: page, PageSize: pageSize})
 	if err != nil {
 		s.writeFormError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"items": items}})
+	writeJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
 func recordInput(body recordRequest) forms.RecordInput {

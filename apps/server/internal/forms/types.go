@@ -42,7 +42,8 @@ var validCapabilities = map[Capability]bool{
 }
 
 // capabilitySatisfies reports whether a held capability satisfies a needed one. The lattice is:
-// manage implies everything; approve implies review; view_all implies view_own.
+// manage implies everything; approve implies review; review implies view_all (you cannot review a
+// record you cannot see); view_all implies view_own.
 func capabilitySatisfies(held, need Capability) bool {
 	if held == need {
 		return true
@@ -51,7 +52,9 @@ func capabilitySatisfies(held, need Capability) bool {
 	case CapManage:
 		return true
 	case CapApprove:
-		return need == CapReview
+		return need == CapReview || need == CapViewAll || need == CapViewOwn
+	case CapReview:
+		return need == CapViewAll || need == CapViewOwn
 	case CapViewAll:
 		return need == CapViewOwn
 	default:
@@ -199,12 +202,32 @@ type Record struct {
 	UpdatedAt     time.Time      `json:"updatedAt"`
 }
 
-// RecordDetail adds history, comments, and attachments to a record.
+// RecordDetail adds history, comments, attachments, the immutable revision the record was created
+// against, and server-calculated actions to a record. The action fields are decorated for a
+// specific viewer so the UI never re-implements authorization: it renders exactly the transitions
+// and controls the server permits.
 type RecordDetail struct {
 	Record
-	Events      []RecordEvent   `json:"events"`
-	Comments    []RecordComment `json:"comments"`
-	Attachments []Attachment    `json:"attachments"`
+	Revision             *Revision             `json:"revision,omitempty"`
+	Events               []RecordEvent         `json:"events"`
+	Comments             []RecordComment       `json:"comments"`
+	Attachments          []Attachment          `json:"attachments"`
+	CanEdit              bool                  `json:"canEdit"`
+	CanComment           bool                  `json:"canComment"`
+	CanDelete            bool                  `json:"canDelete"`
+	AvailableTransitions []AvailableTransition `json:"availableTransitions"`
+}
+
+// AvailableTransition is one workflow transition the viewer is permitted to perform on a record,
+// resolved server-side from the configured workflow and the viewer's effective capabilities.
+type AvailableTransition struct {
+	To                 string     `json:"to"`
+	ToLabel            string     `json:"toLabel"`
+	Label              string     `json:"label"`
+	RequiredCapability Capability `json:"requiredCapability"`
+	// RequiresNote marks a transition that must carry a reviewer note (the default
+	// changes_requested path) so the UI can require one before enabling the action.
+	RequiresNote bool `json:"requiresNote"`
 }
 
 type RecordEvent struct {
@@ -280,7 +303,38 @@ type ApprovalItem struct {
 	Title         string     `json:"title"`
 	SubmitterName string     `json:"submitterName"`
 	State         string     `json:"state"`
+	StateLabel    string     `json:"stateLabel"`
 	DisplayAt     *time.Time `json:"displayAt,omitempty"`
 	ExpiresAt     *time.Time `json:"expiresAt,omitempty"`
 	SubmittedAt   time.Time  `json:"submittedAt"`
+}
+
+// ApprovalPage is a paginated slice of the central approvals inbox.
+type ApprovalPage struct {
+	Items    []ApprovalItem `json:"items"`
+	Total    int            `json:"total"`
+	Page     int            `json:"page"`
+	PageSize int            `json:"pageSize"`
+}
+
+// SubmissionCounts summarizes a user's own submissions on a form, bucketed by the workflow-derived
+// meaning of each state rather than hardcoded state keys: drafts are records in the initial state,
+// changesRequested are records in a non-initial editable state (kicked back for edits), and
+// submitted covers everything else (in review or decided).
+type SubmissionCounts struct {
+	Draft            int `json:"draft"`
+	Submitted        int `json:"submitted"`
+	ChangesRequested int `json:"changesRequested"`
+	Total            int `json:"total"`
+}
+
+// FormSummary is a lightweight Form entry for the accessible-forms list. It carries just enough to
+// render the Forms portal and the operator navigation without loading full form detail.
+type FormSummary struct {
+	ID                      uuid.UUID        `json:"id"`
+	Name                    string           `json:"name"`
+	Description             string           `json:"description"`
+	PublishedRevisionNumber *int             `json:"publishedRevisionNumber,omitempty"`
+	Capabilities            []Capability     `json:"grantedCapabilities"`
+	Counts                  SubmissionCounts `json:"submissionCounts"`
 }

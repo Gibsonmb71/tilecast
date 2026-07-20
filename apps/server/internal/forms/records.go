@@ -362,7 +362,10 @@ func (s *Service) Transition(ctx context.Context, formID, recordID, actor uuid.U
 	if lockedState != meta.state {
 		return Record{}, ErrConflict
 	}
-	if targetEligible {
+	// Enforce required-field completeness before a submit/resubmit (any transition requiring the
+	// submit capability) as well as before entering an output-eligible state. This blocks an
+	// incomplete draft from being submitted, not only from reaching signage.
+	if targetEligible || Capability(requiredCapability) == CapSubmit {
 		schema, err := s.revisionSchema(ctx, tx, revisionID)
 		if err != nil {
 			return Record{}, err
@@ -503,40 +506,46 @@ type AttachmentUpload struct {
 // CreateAttachment ingests an uploaded image as a dedicated form attachment (origin
 // 'form_attachment' from the start), binds it to the record and a validated image field, and
 // records the value on the record. It never reclassifies an existing library asset. Authorization
-// matches record editing.
-func (s *Service) CreateAttachment(ctx context.Context, formID, recordID, actor uuid.UUID, upload AttachmentUpload) (Attachment, error) {
+// matches record editing. Because image fields are single-valued, uploading to a field that already
+// has an attachment replaces it: the prior attachment for that field is unbound and its asset is
+// soft-deleted. The updated record detail (with its new version) is returned.
+func (s *Service) CreateAttachment(ctx context.Context, formID, recordID, actor uuid.UUID, upload AttachmentUpload) (RecordDetail, error) {
 	meta, err := s.authorizeEdit(ctx, formID, recordID, actor)
 	if err != nil {
-		return Attachment{}, err
+		return RecordDetail{}, err
 	}
 	schema, err := s.revisionSchema(ctx, s.db, meta.revisionID)
 	if err != nil {
-		return Attachment{}, err
+		return RecordDetail{}, err
 	}
 	if !isImageField(schema, upload.FieldKey) {
-		return Attachment{}, fmt.Errorf("%w: %q is not an image field in this form", ErrValidation, upload.FieldKey)
+		return RecordDetail{}, fmt.Errorf("%w: %q is not an image field in this form", ErrValidation, upload.FieldKey)
 	}
 	asset, err := s.media.IngestFormAttachment(ctx, actor, upload.FileName, upload.ContentType, upload.Data)
 	if err != nil {
 		if errors.Is(err, media.ErrUploadTooLarge) || errors.Is(err, media.ErrUnsupportedType) || isAttachmentInputError(err) {
-			return Attachment{}, fmt.Errorf("%w: %v", ErrValidation, err)
+			return RecordDetail{}, fmt.Errorf("%w: %v", ErrValidation, err)
 		}
-		return Attachment{}, err
+		return RecordDetail{}, err
 	}
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
-		return Attachment{}, err
+		return RecordDetail{}, err
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
-	attachmentID, err := s.bindAttachment(ctx, tx, recordID, asset.ID, upload.FieldKey)
+	if _, err := s.bindAttachment(ctx, tx, recordID, asset.ID, upload.FieldKey); err != nil {
+		return RecordDetail{}, err
+	}
+	// Unbind any prior attachment on the same single-valued image field so it can be cleaned up.
+	staleAssets, err := s.unbindFieldAttachments(ctx, tx, recordID, upload.FieldKey, asset.ID)
 	if err != nil {
-		return Attachment{}, err
+		return RecordDetail{}, err
 	}
 	// Record the attachment id as the field's value so the projection and detail views resolve it.
 	var valuesRaw []byte
 	var version int
 	if err := tx.QueryRow(ctx, `SELECT values,version FROM form_records WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, recordID).Scan(&valuesRaw, &version); err != nil {
-		return Attachment{}, err
+		return RecordDetail{}, err
 	}
 	values := map[string]any{}
 	if len(valuesRaw) > 0 {
@@ -546,15 +555,129 @@ func (s *Service) CreateAttachment(ctx context.Context, formID, recordID, actor 
 	encoded, _ := json.Marshal(values)
 	actorName := s.userName(ctx, tx, actor)
 	if _, err := tx.Exec(ctx, `UPDATE form_records SET values=$2::jsonb,version=version+1,updated_at=now() WHERE id=$1`, recordID, string(encoded)); err != nil {
-		return Attachment{}, err
+		return RecordDetail{}, err
 	}
 	if err := insertEvent(ctx, tx, recordID, formID, "attachment_added", "", "", actor, actorName, upload.FieldKey); err != nil {
-		return Attachment{}, err
+		return RecordDetail{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return Attachment{}, err
+		return RecordDetail{}, err
 	}
-	return Attachment{ID: attachmentID, AssetID: asset.ID, FieldKey: upload.FieldKey}, nil
+	// Soft-delete replaced attachment assets after the record change commits (best effort).
+	for _, staleAsset := range staleAssets {
+		_ = s.media.SoftDeleteFormAttachment(ctx, staleAsset)
+	}
+	return s.GetRecord(ctx, formID, recordID, actor)
+}
+
+// RemoveAttachment unbinds an attachment from a record, clears the field value it backed, and
+// soft-deletes the underlying asset. Authorization matches record editing. The updated record
+// detail (with its new version) is returned.
+func (s *Service) RemoveAttachment(ctx context.Context, formID, recordID, attachmentID, actor uuid.UUID) (RecordDetail, error) {
+	if _, err := s.authorizeEdit(ctx, formID, recordID, actor); err != nil {
+		return RecordDetail{}, err
+	}
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return RecordDetail{}, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	var assetID uuid.UUID
+	var fieldKey string
+	err = tx.QueryRow(ctx, `SELECT asset_id,field_key FROM form_record_attachments WHERE id=$1 AND record_id=$2`, attachmentID, recordID).Scan(&assetID, &fieldKey)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return RecordDetail{}, ErrNotFound
+	}
+	if err != nil {
+		return RecordDetail{}, err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM form_record_attachments WHERE id=$1 AND record_id=$2`, attachmentID, recordID); err != nil {
+		return RecordDetail{}, err
+	}
+	var valuesRaw []byte
+	if err := tx.QueryRow(ctx, `SELECT values FROM form_records WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, recordID).Scan(&valuesRaw); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return RecordDetail{}, ErrNotFound
+		}
+		return RecordDetail{}, err
+	}
+	values := map[string]any{}
+	if len(valuesRaw) > 0 {
+		_ = json.Unmarshal(valuesRaw, &values)
+	}
+	// Only clear the field if it still points at the removed asset (guards against a concurrent replace).
+	if current, ok := values[fieldKey].(string); ok && current == assetID.String() {
+		delete(values, fieldKey)
+	}
+	encoded, _ := json.Marshal(values)
+	actorName := s.userName(ctx, tx, actor)
+	if _, err := tx.Exec(ctx, `UPDATE form_records SET values=$2::jsonb,version=version+1,updated_at=now() WHERE id=$1`, recordID, string(encoded)); err != nil {
+		return RecordDetail{}, err
+	}
+	if err := insertEvent(ctx, tx, recordID, formID, "attachment_removed", "", "", actor, actorName, fieldKey); err != nil {
+		return RecordDetail{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return RecordDetail{}, err
+	}
+	_ = s.media.SoftDeleteFormAttachment(ctx, assetID)
+	return s.GetRecord(ctx, formID, recordID, actor)
+}
+
+// unbindFieldAttachments deletes attachment rows for a record's field that reference an asset other
+// than keepAsset, returning the unbound asset ids so the caller can soft-delete them after commit.
+func (s *Service) unbindFieldAttachments(ctx context.Context, tx pgx.Tx, recordID uuid.UUID, fieldKey string, keepAsset uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := tx.Query(ctx, `SELECT asset_id FROM form_record_attachments WHERE record_id=$1 AND field_key=$2 AND asset_id<>$3`, recordID, fieldKey, keepAsset)
+	if err != nil {
+		return nil, err
+	}
+	stale := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		stale = append(stale, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(stale) > 0 {
+		if _, err := tx.Exec(ctx, `DELETE FROM form_record_attachments WHERE record_id=$1 AND field_key=$2 AND asset_id<>$3`, recordID, fieldKey, keepAsset); err != nil {
+			return nil, err
+		}
+	}
+	return stale, nil
+}
+
+// AttachmentAsset authorizes a viewer to see one of a record's attachments and returns the backing
+// asset id for delivery. Visibility matches record reads: a manager/reviewer/view_all holder or the
+// record's own submitter. Anything else — including an attachment that does not belong to the
+// addressed record — returns ErrNotFound so existence is never revealed.
+func (s *Service) AttachmentAsset(ctx context.Context, formID, recordID, attachmentID, viewer uuid.UUID) (uuid.UUID, error) {
+	meta, err := s.loadRecordScoped(ctx, s.db, formID, recordID)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	canViewAll, err := s.allow(ctx, formID, viewer, CapViewAll)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	isOwner := meta.owner != nil && *meta.owner == viewer
+	if !canViewAll && !isOwner {
+		return uuid.Nil, ErrNotFound
+	}
+	var assetID uuid.UUID
+	err = s.db.QueryRow(ctx, `SELECT asset_id FROM form_record_attachments WHERE id=$1 AND record_id=$2`, attachmentID, recordID).Scan(&assetID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, ErrNotFound
+	}
+	if err != nil {
+		return uuid.Nil, err
+	}
+	return assetID, nil
 }
 
 // bindAttachment links a form-attachment asset to a record and field, refusing library assets and
@@ -698,21 +821,121 @@ func (s *Service) ListRecords(ctx context.Context, formID, viewer uuid.UUID, fil
 
 // GetRecord returns a record with its history, comments, and attachments, scoped to a form and
 // visible only to a manager/reviewer or the record's own submitter. Records outside the form or
-// invisible to the caller return ErrNotFound so existence is not revealed.
+// invisible to the caller return ErrNotFound so existence is not revealed. The detail is decorated
+// for the viewer with the immutable revision, canEdit/canComment/canDelete, and the workflow
+// transitions the viewer may perform, so the UI never re-implements authorization.
 func (s *Service) GetRecord(ctx context.Context, formID, recordID, viewer uuid.UUID) (RecordDetail, error) {
+	createdBy, err := s.ensureForm(ctx, s.db, formID)
+	if err != nil {
+		return RecordDetail{}, err
+	}
 	meta, err := s.loadRecordScoped(ctx, s.db, formID, recordID)
 	if err != nil {
 		return RecordDetail{}, err
 	}
-	canViewAll, err := s.allow(ctx, formID, viewer, CapViewAll)
+	held, err := s.grantedCapabilities(ctx, s.db, formID, createdBy, viewer)
 	if err != nil {
 		return RecordDetail{}, err
 	}
 	isOwner := meta.owner != nil && *meta.owner == viewer
-	if !canViewAll && !isOwner {
+	if !effectiveHas(held, CapViewAll) && !isOwner {
 		return RecordDetail{}, ErrNotFound
 	}
-	return s.recordDetail(ctx, recordID)
+	detail, err := s.recordDetail(ctx, recordID)
+	if err != nil {
+		return RecordDetail{}, err
+	}
+	if err := s.decorateDetail(ctx, formID, meta, held, isOwner, &detail); err != nil {
+		return RecordDetail{}, err
+	}
+	return detail, nil
+}
+
+// effectiveHas reports whether any held capability satisfies the needed one via the lattice.
+func effectiveHas(held []Capability, need Capability) bool {
+	for _, h := range held {
+		if capabilitySatisfies(h, need) {
+			return true
+		}
+	}
+	return false
+}
+
+// decorateDetail attaches the record's immutable revision and the server-calculated actions the
+// viewer is permitted to take. Every authorization decision the UI needs is resolved here so React
+// renders only what the server allows.
+func (s *Service) decorateDetail(ctx context.Context, formID uuid.UUID, meta recordMeta, held []Capability, isOwner bool, detail *RecordDetail) error {
+	if revision, err := s.loadRevisionByID(ctx, s.db, meta.revisionID); err == nil {
+		detail.Revision = &revision
+	} else if !errors.Is(err, ErrNotFound) {
+		return err
+	}
+
+	manage := effectiveHas(held, CapManage)
+	detail.CanDelete = manage
+	detail.CanComment = manage || effectiveHas(held, CapReview) || isOwner
+
+	// canEdit mirrors authorizeEdit: a manager may always edit; otherwise the caller must own the
+	// record, hold submit, and the record must be in a submitter-editable state.
+	if manage {
+		detail.CanEdit = true
+	} else if isOwner && effectiveHas(held, CapSubmit) {
+		editable, err := s.stateSubmitterEditable(ctx, s.db, formID, meta.state)
+		if err != nil {
+			return err
+		}
+		detail.CanEdit = editable
+	}
+
+	workflow, err := loadWorkflow(ctx, s.db, formID)
+	if err != nil {
+		return err
+	}
+	stateLabels := map[string]string{}
+	initialKey := ""
+	for _, state := range workflow.States {
+		stateLabels[state.Key] = state.Label
+		if state.Initial {
+			initialKey = state.Key
+		}
+	}
+	// A state is submitter-editable if it has an outgoing submit transition (draft, changes_requested).
+	editableStates := map[string]bool{}
+	for _, t := range workflow.Transitions {
+		if t.RequiredCapability == CapSubmit {
+			editableStates[t.From] = true
+		}
+	}
+
+	detail.AvailableTransitions = []AvailableTransition{}
+	for _, t := range workflow.Transitions {
+		if t.From != meta.state {
+			continue
+		}
+		allowed := manage
+		if !allowed {
+			if t.RequiredCapability == CapSubmit {
+				allowed = isOwner && effectiveHas(held, CapSubmit)
+			} else {
+				allowed = effectiveHas(held, t.RequiredCapability)
+			}
+		}
+		if !allowed {
+			continue
+		}
+		// A reviewer-driven transition into a still-editable, non-initial state is a "request
+		// changes" style action and must carry a note. Derived from the workflow, not hardcoded keys.
+		requiresNote := (t.RequiredCapability == CapReview || t.RequiredCapability == CapApprove) &&
+			editableStates[t.To] && t.To != initialKey
+		detail.AvailableTransitions = append(detail.AvailableTransitions, AvailableTransition{
+			To:                 t.To,
+			ToLabel:            stateLabels[t.To],
+			Label:              t.Label,
+			RequiredCapability: t.RequiredCapability,
+			RequiresNote:       requiresNote,
+		})
+	}
+	return nil
 }
 
 func (s *Service) recordDetail(ctx context.Context, recordID uuid.UUID) (RecordDetail, error) {
