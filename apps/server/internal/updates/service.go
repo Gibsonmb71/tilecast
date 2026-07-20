@@ -29,23 +29,111 @@ const (
 	ApplicationID      = "org.tilecast.player"
 	SupportedMinSDK    = 23
 	CurrentVersionCode = 5
+
+	PlatformAndroid = "android"
+	PlatformLinux   = "linux"
+
+	AndroidArtifactName = "tilecast-player.apk"
+	LinuxArtifactName   = "tilecast-player.AppImage"
+
+	// Linux releases are versioned independently of Android and there is no shipped
+	// baseline yet, so any positive Linux version code is acceptable.
+	LinuxBaselineVersionCode = 0
 )
 
 var digestPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
+// Manifest describes a signed player release. Android (APK) and Linux (AppImage)
+// releases share the common fields; the platform-specific fields are mutually
+// exclusive and selected by Platform. Android manifests predate the platform
+// field and omit it, so an empty Platform normalizes to android.
 type Manifest struct {
-	SchemaVersion            int    `json:"schemaVersion"`
-	Product                  string `json:"product"`
-	ApplicationID            string `json:"applicationId"`
-	VersionCode              int64  `json:"versionCode"`
-	VersionName              string `json:"versionName"`
-	Channel                  string `json:"channel"`
-	MinimumSDK               int    `json:"minimumSdk"`
-	APKAssetName             string `json:"apkAssetName"`
-	APKSizeBytes             int64  `json:"apkSizeBytes"`
-	APKSHA256                string `json:"apkSha256"`
-	SigningCertificateSHA256 string `json:"signingCertificateSha256"`
-	ReleaseNotes             string `json:"releaseNotes"`
+	SchemaVersion int    `json:"schemaVersion"`
+	Product       string `json:"product"`
+	Platform      string `json:"platform,omitempty"`
+	VersionCode   int64  `json:"versionCode"`
+	VersionName   string `json:"versionName"`
+	Channel       string `json:"channel"`
+	ReleaseNotes  string `json:"releaseNotes"`
+
+	// Android (APK) fields.
+	ApplicationID            string `json:"applicationId,omitempty"`
+	MinimumSDK               int    `json:"minimumSdk,omitempty"`
+	APKAssetName             string `json:"apkAssetName,omitempty"`
+	APKSizeBytes             int64  `json:"apkSizeBytes,omitempty"`
+	APKSHA256                string `json:"apkSha256,omitempty"`
+	SigningCertificateSHA256 string `json:"signingCertificateSha256,omitempty"`
+
+	// Linux (AppImage) fields.
+	ArtifactAssetName string `json:"artifactAssetName,omitempty"`
+	ArtifactSizeBytes int64  `json:"artifactSizeBytes,omitempty"`
+	ArtifactSHA256    string `json:"artifactSha256,omitempty"`
+}
+
+// NormalizedPlatform returns the platform, defaulting an empty value (legacy
+// Android manifests) to android.
+func (m Manifest) NormalizedPlatform() string {
+	if m.Platform == "" {
+		return PlatformAndroid
+	}
+	return m.Platform
+}
+
+// AssetName returns the release artifact filename for the manifest's platform.
+func (m Manifest) AssetName() string {
+	if m.NormalizedPlatform() == PlatformLinux {
+		return m.ArtifactAssetName
+	}
+	return m.APKAssetName
+}
+
+// ArtifactSize returns the artifact byte size for the manifest's platform.
+func (m Manifest) ArtifactSize() int64 {
+	if m.NormalizedPlatform() == PlatformLinux {
+		return m.ArtifactSizeBytes
+	}
+	return m.APKSizeBytes
+}
+
+// ArtifactHash returns the lowercased artifact SHA-256 for the manifest's platform.
+func (m Manifest) ArtifactHash() string {
+	if m.NormalizedPlatform() == PlatformLinux {
+		return strings.ToLower(m.ArtifactSHA256)
+	}
+	return strings.ToLower(m.APKSHA256)
+}
+
+// artifactSuffix maps a platform to the cache-file extension used on disk.
+func artifactSuffix(platform string) string {
+	if platform == PlatformLinux {
+		return ".appimage"
+	}
+	return ".apk"
+}
+
+// baselineVersionCode is the highest version code considered "already shipped"
+// for a platform; a valid release must be strictly newer than it.
+func baselineVersionCode(platform string) int64 {
+	if platform == PlatformLinux {
+		return LinuxBaselineVersionCode
+	}
+	return CurrentVersionCode
+}
+
+// manifestApplicationID / manifestMinimumSDK return the value to persist,
+// yielding SQL NULL for Linux releases which have no APK metadata.
+func manifestApplicationID(m Manifest) any {
+	if m.NormalizedPlatform() == PlatformLinux {
+		return nil
+	}
+	return m.ApplicationID
+}
+
+func manifestMinimumSDK(m Manifest) any {
+	if m.NormalizedPlatform() == PlatformLinux {
+		return nil
+	}
+	return m.MinimumSDK
 }
 
 type Config struct {
@@ -114,40 +202,63 @@ func ParseAndVerifyManifest(raw, signature []byte, key ed25519.PublicKey) (Manif
 	if decoder.Decode(&struct{}{}) != io.EOF {
 		return Manifest{}, errors.New("update manifest must contain one JSON object")
 	}
-	if manifest.SchemaVersion != 1 || manifest.Product != "tilecast-player" || manifest.ApplicationID != ApplicationID || manifest.VersionCode <= CurrentVersionCode || manifest.VersionName == "" || manifest.APKAssetName != "tilecast-player.apk" || manifest.APKSizeBytes <= 0 || !digestPattern.MatchString(strings.ToLower(manifest.APKSHA256)) || !digestPattern.MatchString(strings.ToLower(manifest.SigningCertificateSHA256)) {
-		return Manifest{}, errors.New("update manifest metadata is invalid or not newer than this Tilecast Player baseline")
+	if manifest.SchemaVersion != 1 || manifest.Product != "tilecast-player" || manifest.VersionName == "" {
+		return Manifest{}, errors.New("update manifest metadata is invalid")
 	}
 	if manifest.Channel != "stable" && manifest.Channel != "beta" {
 		return Manifest{}, errors.New("update channel is invalid")
 	}
-	if manifest.MinimumSDK < SupportedMinSDK || manifest.MinimumSDK > 35 {
-		return Manifest{}, errors.New("update minimum SDK is unsupported")
+	switch manifest.NormalizedPlatform() {
+	case PlatformLinux:
+		// Linux manifests carry no APK-specific fields.
+		if manifest.ApplicationID != "" || manifest.MinimumSDK != 0 || manifest.APKAssetName != "" || manifest.APKSizeBytes != 0 || manifest.APKSHA256 != "" || manifest.SigningCertificateSHA256 != "" {
+			return Manifest{}, errors.New("linux update manifest must not carry android fields")
+		}
+		if manifest.ArtifactAssetName != LinuxArtifactName || manifest.ArtifactSizeBytes <= 0 || !digestPattern.MatchString(strings.ToLower(manifest.ArtifactSHA256)) || manifest.VersionCode <= LinuxBaselineVersionCode {
+			return Manifest{}, errors.New("update manifest metadata is invalid or not newer than this Tilecast Player baseline")
+		}
+	default:
+		// Android manifests carry no Linux artifact fields.
+		if manifest.ArtifactAssetName != "" || manifest.ArtifactSizeBytes != 0 || manifest.ArtifactSHA256 != "" {
+			return Manifest{}, errors.New("android update manifest must not carry linux fields")
+		}
+		if manifest.ApplicationID != ApplicationID || manifest.VersionCode <= CurrentVersionCode || manifest.APKAssetName != AndroidArtifactName || manifest.APKSizeBytes <= 0 || !digestPattern.MatchString(strings.ToLower(manifest.APKSHA256)) || !digestPattern.MatchString(strings.ToLower(manifest.SigningCertificateSHA256)) {
+			return Manifest{}, errors.New("update manifest metadata is invalid or not newer than this Tilecast Player baseline")
+		}
+		if manifest.MinimumSDK < SupportedMinSDK || manifest.MinimumSDK > 35 {
+			return Manifest{}, errors.New("update minimum SDK is unsupported")
+		}
 	}
 	return manifest, nil
 }
 
-// ImportUpload verifies a locally uploaded release with the same manifest, APK,
-// package, and signing-certificate checks used for GitHub releases. The caller
-// owns apkPath and may remove it after this method returns.
-func (s *Service) ImportUpload(ctx context.Context, apkPath string, raw, signature []byte, importedBy *uuid.UUID) (ImportedRelease, error) {
+// ImportUpload verifies a locally uploaded release with the same manifest and
+// artifact checks used for GitHub releases (plus APK package/signing-certificate
+// checks for Android). The caller owns artifactPath and may remove it after this
+// method returns.
+func (s *Service) ImportUpload(ctx context.Context, artifactPath string, raw, signature []byte, importedBy *uuid.UUID) (ImportedRelease, error) {
 	manifest, err := ParseAndVerifyManifest(raw, signature, s.key)
 	if err != nil {
 		return ImportedRelease{}, err
 	}
-	if manifest.APKSizeBytes > s.maxAPK {
-		return ImportedRelease{}, errors.New("APK exceeds the configured player update size limit")
+	platform := manifest.NormalizedPlatform()
+	artifactSize := manifest.ArtifactSize()
+	artifactHash := manifest.ArtifactHash()
+	if artifactSize > s.maxAPK {
+		return ImportedRelease{}, errors.New("release artifact exceeds the configured player update size limit")
 	}
-	info, err := os.Stat(apkPath)
-	if err != nil || !info.Mode().IsRegular() || info.Size() != manifest.APKSizeBytes {
-		return ImportedRelease{}, errors.New("APK size does not match the signed manifest")
+	info, err := os.Stat(artifactPath)
+	if err != nil || !info.Mode().IsRegular() || info.Size() != artifactSize {
+		return ImportedRelease{}, errors.New("release artifact size does not match the signed manifest")
 	}
 
 	id := uuid.New()
-	part := filepath.Join(s.root, id.String()+".apk.part")
-	final := filepath.Join(s.root, id.String()+".apk")
-	input, err := os.Open(apkPath)
+	suffix := artifactSuffix(platform)
+	part := filepath.Join(s.root, id.String()+suffix+".part")
+	final := filepath.Join(s.root, id.String()+suffix)
+	input, err := os.Open(artifactPath)
 	if err != nil {
-		return ImportedRelease{}, errors.New("uploaded APK could not be read")
+		return ImportedRelease{}, errors.New("uploaded release artifact could not be read")
 	}
 	output, err := os.OpenFile(part, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o640)
 	if err != nil {
@@ -159,21 +270,23 @@ func (s *Service) ImportUpload(ctx context.Context, apkPath string, raw, signatu
 	inputErr := input.Close()
 	syncErr := output.Sync()
 	closeErr := output.Close()
-	if copyErr != nil || inputErr != nil || syncErr != nil || closeErr != nil || written != manifest.APKSizeBytes || hex.EncodeToString(hash.Sum(nil)) != strings.ToLower(manifest.APKSHA256) {
+	if copyErr != nil || inputErr != nil || syncErr != nil || closeErr != nil || written != artifactSize || hex.EncodeToString(hash.Sum(nil)) != artifactHash {
 		_ = os.Remove(part)
-		return ImportedRelease{}, errors.New("APK size or SHA-256 verification failed")
+		return ImportedRelease{}, errors.New("release artifact size or SHA-256 verification failed")
 	}
-	if err := verifyAPK(part, manifest); err != nil {
-		_ = os.Remove(part)
-		return ImportedRelease{}, err
+	if platform == PlatformAndroid {
+		if err := verifyAPK(part, manifest); err != nil {
+			_ = os.Remove(part)
+			return ImportedRelease{}, err
+		}
 	}
 
 	var existingID uuid.UUID
 	var existingHash, existingCert, existingVerification, existingCache, existingSource string
-	err = s.db.QueryRow(ctx, `SELECT id,apk_sha256,signing_certificate_sha256,verification_status,cache_status,source FROM player_releases WHERE version_code=$1`, manifest.VersionCode).Scan(&existingID, &existingHash, &existingCert, &existingVerification, &existingCache, &existingSource)
+	err = s.db.QueryRow(ctx, `SELECT id,apk_sha256,signing_certificate_sha256,verification_status,cache_status,source FROM player_releases WHERE platform=$1 AND version_code=$2`, platform, manifest.VersionCode).Scan(&existingID, &existingHash, &existingCert, &existingVerification, &existingCache, &existingSource)
 	if err == nil {
 		_ = os.Remove(part)
-		if existingHash == strings.ToLower(manifest.APKSHA256) && existingCert == strings.ToLower(manifest.SigningCertificateSHA256) && existingVerification == "verified" && existingCache == "cached" {
+		if existingHash == artifactHash && existingCert == strings.ToLower(manifest.SigningCertificateSHA256) && existingVerification == "verified" && existingCache == "cached" {
 			return ImportedRelease{ID: existingID, Manifest: manifest, Source: existingSource, CacheStatus: existingCache, VerificationStatus: existingVerification, Duplicate: true}, nil
 		}
 		return ImportedRelease{}, errors.New("this version code already exists with different or invalid release data")
@@ -183,7 +296,7 @@ func (s *Service) ImportUpload(ctx context.Context, apkPath string, raw, signatu
 		return ImportedRelease{}, err
 	}
 	var latestVersion int64
-	if err := s.db.QueryRow(ctx, `SELECT COALESCE(max(version_code),$1) FROM player_releases`, CurrentVersionCode).Scan(&latestVersion); err != nil {
+	if err := s.db.QueryRow(ctx, `SELECT COALESCE(max(version_code),$1) FROM player_releases WHERE platform=$2`, baselineVersionCode(platform), platform).Scan(&latestVersion); err != nil {
 		_ = os.Remove(part)
 		return ImportedRelease{}, err
 	}
@@ -195,7 +308,7 @@ func (s *Service) ImportUpload(ctx context.Context, apkPath string, raw, signatu
 		_ = os.Remove(part)
 		return ImportedRelease{}, err
 	}
-	_, err = s.db.Exec(ctx, `INSERT INTO player_releases(id,channel,version_code,version_name,application_id,minimum_sdk,release_notes,published_at,apk_name,apk_size,apk_sha256,signing_certificate_sha256,manifest,manifest_signature,cache_status,verification_status,source,imported_by) VALUES($1,$2,$3,$4,$5,$6,$7,now(),$8,$9,$10,$11,$12::jsonb,$13,'cached','verified','upload',$14)`, id, manifest.Channel, manifest.VersionCode, manifest.VersionName, manifest.ApplicationID, manifest.MinimumSDK, manifest.ReleaseNotes, manifest.APKAssetName, manifest.APKSizeBytes, strings.ToLower(manifest.APKSHA256), strings.ToLower(manifest.SigningCertificateSHA256), string(raw), strings.TrimSpace(string(signature)), importedBy)
+	_, err = s.db.Exec(ctx, `INSERT INTO player_releases(id,platform,channel,version_code,version_name,application_id,minimum_sdk,release_notes,published_at,apk_name,apk_size,apk_sha256,signing_certificate_sha256,manifest,manifest_signature,cache_status,verification_status,source,imported_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,now(),$9,$10,$11,$12,$13::jsonb,$14,'cached','verified','upload',$15)`, id, platform, manifest.Channel, manifest.VersionCode, manifest.VersionName, manifestApplicationID(manifest), manifestMinimumSDK(manifest), manifest.ReleaseNotes, manifest.AssetName(), artifactSize, artifactHash, strings.ToLower(manifest.SigningCertificateSHA256), string(raw), strings.TrimSpace(string(signature)), importedBy)
 	if err != nil {
 		_ = os.Remove(final)
 		return ImportedRelease{}, err
@@ -245,10 +358,18 @@ func (s *Service) importRelease(ctx context.Context, release ProviderRelease) er
 	for _, asset := range release.Assets {
 		assets[asset.Name] = asset
 	}
-	manifestAsset, manifestOK := assets["tilecast-player-update.json"]
-	signatureAsset, signatureOK := assets["tilecast-player-update.json.sig"]
-	apkAsset, apkOK := assets["tilecast-player.apk"]
-	if !manifestOK || !signatureOK || !apkOK {
+	// A Linux release is identified by its distinct manifest asset name; anything
+	// else is treated as the original Android APK release layout.
+	platform := PlatformAndroid
+	manifestName, signatureName, artifactName := "tilecast-player-update.json", "tilecast-player-update.json.sig", AndroidArtifactName
+	if _, ok := assets["tilecast-player-update-linux.json"]; ok {
+		platform = PlatformLinux
+		manifestName, signatureName, artifactName = "tilecast-player-update-linux.json", "tilecast-player-update-linux.json.sig", LinuxArtifactName
+	}
+	manifestAsset, manifestOK := assets[manifestName]
+	signatureAsset, signatureOK := assets[signatureName]
+	artifactAsset, artifactOK := assets[artifactName]
+	if !manifestOK || !signatureOK || !artifactOK {
 		return errors.New("release is missing required Tilecast Player assets")
 	}
 	raw, err := s.provider.Download(ctx, manifestAsset.URL, 128<<10)
@@ -263,22 +384,25 @@ func (s *Service) importRelease(ctx context.Context, release ProviderRelease) er
 	if err != nil {
 		return err
 	}
+	if manifest.NormalizedPlatform() != platform {
+		return errors.New("release asset set does not match the signed manifest platform")
+	}
 	expectedChannel := "stable"
 	if release.Prerelease {
 		expectedChannel = "beta"
 	}
-	if manifest.Channel != expectedChannel || manifest.APKSizeBytes != apkAsset.Size || manifest.APKSizeBytes > s.maxAPK {
+	if manifest.Channel != expectedChannel || manifest.ArtifactSize() != artifactAsset.Size || manifest.ArtifactSize() > s.maxAPK {
 		return errors.New("GitHub asset metadata does not match the signed update manifest")
 	}
 	id := uuid.NewSHA1(uuid.NameSpaceURL, []byte(fmt.Sprintf("github:%d", release.ID)))
-	_, err = s.db.Exec(ctx, `INSERT INTO player_releases(id,github_release_id,github_tag,channel,version_code,version_name,application_id,minimum_sdk,release_notes,published_at,apk_name,apk_size,apk_sha256,signing_certificate_sha256,manifest,manifest_signature,apk_download_url,verification_status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16,$17,'verified_manifest') ON CONFLICT(github_release_id) DO UPDATE SET manifest=EXCLUDED.manifest,manifest_signature=EXCLUDED.manifest_signature,updated_at=now()`, id, release.ID, release.Tag, manifest.Channel, manifest.VersionCode, manifest.VersionName, manifest.ApplicationID, manifest.MinimumSDK, manifest.ReleaseNotes, release.PublishedAt, manifest.APKAssetName, manifest.APKSizeBytes, strings.ToLower(manifest.APKSHA256), strings.ToLower(manifest.SigningCertificateSHA256), string(raw), strings.TrimSpace(string(signature)), apkAsset.URL)
+	_, err = s.db.Exec(ctx, `INSERT INTO player_releases(id,github_release_id,github_tag,platform,channel,version_code,version_name,application_id,minimum_sdk,release_notes,published_at,apk_name,apk_size,apk_sha256,signing_certificate_sha256,manifest,manifest_signature,apk_download_url,verification_status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,'verified_manifest') ON CONFLICT(github_release_id) DO UPDATE SET manifest=EXCLUDED.manifest,manifest_signature=EXCLUDED.manifest_signature,updated_at=now()`, id, release.ID, release.Tag, platform, manifest.Channel, manifest.VersionCode, manifest.VersionName, manifestApplicationID(manifest), manifestMinimumSDK(manifest), manifest.ReleaseNotes, release.PublishedAt, manifest.AssetName(), manifest.ArtifactSize(), manifest.ArtifactHash(), strings.ToLower(manifest.SigningCertificateSHA256), string(raw), strings.TrimSpace(string(signature)), artifactAsset.URL)
 	return err
 }
 
 func (s *Service) Cache(ctx context.Context, releaseID uuid.UUID) error {
-	var assetURL, expectedHash, expectedCert string
+	var platform, assetURL, expectedHash, expectedCert string
 	var expectedSize int64
-	if err := s.db.QueryRow(ctx, `SELECT apk_download_url,apk_size,apk_sha256,signing_certificate_sha256 FROM player_releases WHERE id=$1 AND verification_status<>'failed'`, releaseID).Scan(&assetURL, &expectedSize, &expectedHash, &expectedCert); err != nil {
+	if err := s.db.QueryRow(ctx, `SELECT platform,apk_download_url,apk_size,apk_sha256,signing_certificate_sha256 FROM player_releases WHERE id=$1 AND verification_status<>'failed'`, releaseID).Scan(&platform, &assetURL, &expectedSize, &expectedHash, &expectedCert); err != nil {
 		return errors.New("verified player release was not found")
 	}
 	response, err := s.provider.Open(ctx, assetURL)
@@ -287,10 +411,11 @@ func (s *Service) Cache(ctx context.Context, releaseID uuid.UUID) error {
 	}
 	defer response.Body.Close()
 	if response.StatusCode != 200 || response.ContentLength > s.maxAPK {
-		return errors.New("GitHub APK download was rejected")
+		return errors.New("release artifact download was rejected")
 	}
-	part := filepath.Join(s.root, releaseID.String()+".apk.part")
-	final := filepath.Join(s.root, releaseID.String()+".apk")
+	suffix := artifactSuffix(platform)
+	part := filepath.Join(s.root, releaseID.String()+suffix+".part")
+	final := filepath.Join(s.root, releaseID.String()+suffix)
 	file, err := os.OpenFile(part, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o640)
 	if err != nil {
 		return err
@@ -301,15 +426,17 @@ func (s *Service) Cache(ctx context.Context, releaseID uuid.UUID) error {
 	closeErr := file.Close()
 	if copyErr != nil || syncErr != nil || closeErr != nil || written != expectedSize || hex.EncodeToString(hash.Sum(nil)) != expectedHash {
 		_ = os.Remove(part)
-		return errors.New("APK size or SHA-256 verification failed")
+		return errors.New("release artifact size or SHA-256 verification failed")
 	}
-	var expectedApplication string
-	var expectedVersion int64
-	var expectedMinSDK int
-	_ = s.db.QueryRow(ctx, `SELECT application_id,version_code,minimum_sdk FROM player_releases WHERE id=$1`, releaseID).Scan(&expectedApplication, &expectedVersion, &expectedMinSDK)
-	if err := verifyAPK(part, Manifest{ApplicationID: expectedApplication, VersionCode: expectedVersion, MinimumSDK: expectedMinSDK, SigningCertificateSHA256: expectedCert}); err != nil {
-		_ = os.Remove(part)
-		return err
+	if platform == PlatformAndroid {
+		var expectedApplication string
+		var expectedVersion int64
+		var expectedMinSDK int
+		_ = s.db.QueryRow(ctx, `SELECT application_id,version_code,minimum_sdk FROM player_releases WHERE id=$1`, releaseID).Scan(&expectedApplication, &expectedVersion, &expectedMinSDK)
+		if err := verifyAPK(part, Manifest{ApplicationID: expectedApplication, VersionCode: expectedVersion, MinimumSDK: expectedMinSDK, SigningCertificateSHA256: expectedCert}); err != nil {
+			_ = os.Remove(part)
+			return err
+		}
 	}
 	if err := os.Rename(part, final); err != nil {
 		return err
@@ -374,13 +501,15 @@ func apkMetadata(path string) (string, int64, int, error) {
 	return application, version, minimumSDK, nil
 }
 
-func (s *Service) APKPath(ctx context.Context, releaseID uuid.UUID) (string, int64, string, error) {
+// ArtifactPath resolves the cached, verified release artifact on disk, returning
+// its path, byte size, SHA-256, and platform.
+func (s *Service) ArtifactPath(ctx context.Context, releaseID uuid.UUID) (string, int64, string, string, error) {
 	var size int64
-	var hash, status string
-	if err := s.db.QueryRow(ctx, `SELECT apk_size,apk_sha256,verification_status FROM player_releases WHERE id=$1`, releaseID).Scan(&size, &hash, &status); err != nil || status != "verified" {
-		return "", 0, "", errors.New("verified cached release was not found")
+	var hash, status, platform string
+	if err := s.db.QueryRow(ctx, `SELECT platform,apk_size,apk_sha256,verification_status FROM player_releases WHERE id=$1`, releaseID).Scan(&platform, &size, &hash, &status); err != nil || status != "verified" {
+		return "", 0, "", "", errors.New("verified cached release was not found")
 	}
-	return filepath.Join(s.root, releaseID.String()+".apk"), size, hash, nil
+	return filepath.Join(s.root, releaseID.String()+artifactSuffix(platform)), size, hash, platform, nil
 }
 
 func (s *Service) Cleanup(ctx context.Context, retentionDays int) {
@@ -394,6 +523,8 @@ func (s *Service) Cleanup(ctx context.Context, retentionDays int) {
 		if rows.Scan(&id) == nil {
 			_ = os.Remove(filepath.Join(s.root, id.String()+".apk"))
 			_ = os.Remove(filepath.Join(s.root, id.String()+".apk.part"))
+			_ = os.Remove(filepath.Join(s.root, id.String()+".appimage"))
+			_ = os.Remove(filepath.Join(s.root, id.String()+".appimage.part"))
 		}
 	}
 }

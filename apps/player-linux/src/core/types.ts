@@ -202,6 +202,25 @@ export interface CommandResultReport {
 }
 
 // ---------------------------------------------------------------------------
+// Player self-update (server-driven AppImage updates)
+
+export interface UpdateMetadata {
+  releaseId: string;
+  platform: string; // "linux" for this player
+  versionCode: number;
+  versionName: string;
+  artifactSizeBytes?: number;
+  artifactSha256?: string;
+  artifactPath?: string;
+}
+
+export interface UpdateStatusReport {
+  state: string; // downloading | downloaded | verifying | ready | installing | reconnecting | failed
+  downloadedBytes?: number;
+  error?: string;
+}
+
+// ---------------------------------------------------------------------------
 // Heartbeat (subset of the server's flat Heartbeat struct that this player
 // reports; screenWidth, screenHeight, and playerVersion are required)
 
@@ -209,6 +228,15 @@ export interface Heartbeat {
   screenWidth: number;
   screenHeight: number;
   playerVersion: string;
+  /** Numeric version code derived from playerVersion; drives update completion. */
+  playerVersionCode?: number;
+  /** ISO timestamp of the last healthy playback tick; required for update success. */
+  lastHealthyPlaybackAt?: string;
+  currentUpdateDeploymentId?: string;
+  updateState?: string;
+  updateDownloadedBytes?: number;
+  updateExpectedBytes?: number;
+  updateError?: string;
   uptimeSeconds?: number;
   availableStorageBytes?: number;
   activeManifestVersion?: number;

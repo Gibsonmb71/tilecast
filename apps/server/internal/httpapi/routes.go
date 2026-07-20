@@ -38,8 +38,10 @@ func (s *server) routes() http.Handler {
 		api.With(s.requireDevice).Post("/player/commands/{id}/acknowledge", s.acknowledgePlayerCommand)
 		api.With(s.requireDevice).Post("/player/commands/{id}/result", s.resultPlayerCommand)
 		api.With(s.requireDevice).Get("/player/updates/{releaseId}", s.playerUpdateMetadata)
-		api.With(s.requireDevice).Get("/player/updates/{releaseId}/apk", s.playerUpdateAPK)
-		api.With(s.requireDevice).Head("/player/updates/{releaseId}/apk", s.playerUpdateAPK)
+		api.With(s.requireDevice).Get("/player/updates/{releaseId}/apk", s.playerUpdateArtifact)
+		api.With(s.requireDevice).Head("/player/updates/{releaseId}/apk", s.playerUpdateArtifact)
+		api.With(s.requireDevice).Get("/player/updates/{releaseId}/artifact", s.playerUpdateArtifact)
+		api.With(s.requireDevice).Head("/player/updates/{releaseId}/artifact", s.playerUpdateArtifact)
 		api.With(s.requireDevice).Post("/player/update-deployments/{deploymentId}/status", s.playerUpdateStatus)
 		api.With(s.operationsRateLimit, s.requireReleasePublisher, s.blockDuringBackup).Post("/player-releases/upload", s.uploadPlayerRelease)
 

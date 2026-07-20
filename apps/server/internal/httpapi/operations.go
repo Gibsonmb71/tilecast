@@ -566,7 +566,7 @@ func (s *server) validateCommand(typ string, raw json.RawMessage) ([]byte, error
 			return nil, fmt.Errorf("identify duration must be 10 to %d seconds", maxIdentify)
 		}
 	case "install_player_update":
-		allowed := map[string]bool{"deploymentId": true, "releaseId": true, "expectedVersionCode": true, "expectedApkSha256": true, "installationMode": true, "maintenanceWindowStart": true}
+		allowed := map[string]bool{"deploymentId": true, "releaseId": true, "expectedVersionCode": true, "expectedApkSha256": true, "expectedArtifactSha256": true, "installationMode": true, "maintenanceWindowStart": true}
 		for key := range object {
 			if !allowed[key] {
 				return nil, errors.New("player update payload contains an unsupported field")
@@ -579,7 +579,12 @@ func (s *server) validateCommand(typ string, raw json.RawMessage) ([]byte, error
 			return nil, errors.New("player update release ID is invalid")
 		}
 		version, versionOK := object["expectedVersionCode"].(float64)
+		// Accept either the Android (expectedApkSha256) or the platform-neutral
+		// (expectedArtifactSha256) hash key; the deployment orchestrator writes both.
 		hash, hashOK := object["expectedApkSha256"].(string)
+		if !hashOK {
+			hash, hashOK = object["expectedArtifactSha256"].(string)
+		}
 		mode, modeOK := object["installationMode"].(string)
 		if !versionOK || version <= 0 || version != float64(int64(version)) || !hashOK || len(hash) != 64 || !modeOK || (mode != "download_only" && mode != "install_now" && mode != "maintenance_window") {
 			return nil, errors.New("player update payload is invalid")
