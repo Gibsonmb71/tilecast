@@ -1,0 +1,67 @@
+name: Backfill server image descriptions
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Add descriptions to existing tagged versions
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE: ghcr.io/gibsonmb71/tilecast-server
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          gh api --paginate \
+            /users/Gibsonmb71/packages/container/tilecast-server/versions \
+            --jq '.[].metadata.container.tags[]' \
+            | sort -u > tags.txt
+
+          if [[ ! -s tags.txt ]]; then
+            echo "No tagged versions found."
+            exit 1
+          fi
+
+          while IFS= read -r tag; do
+            [[ -n "$tag" ]] || continue
+
+            ref="${IMAGE}:${tag}"
+
+            digest="$(
+              docker buildx imagetools inspect "$ref" \
+                --format '{{json .Manifest}}' \
+                | jq -r '.digest'
+            )"
+
+            if [[ -z "$digest" || "$digest" == "null" ]]; then
+              echo "Could not resolve digest for $ref"
+              exit 1
+            fi
+
+            echo "Adding metadata to $ref ($digest)"
+
+            docker buildx imagetools create \
+              --annotation "index:org.opencontainers.image.title=Tilecast Server" \
+              --annotation "index:org.opencontainers.image.description=Self-hosted Tilecast server and Studio dashboard" \
+              --annotation "index:org.opencontainers.image.source=https://github.com/Gibsonmb71/tilecast" \
+              --tag "$ref" \
+              "${IMAGE}@${digest}"
+          done < tags.txt
