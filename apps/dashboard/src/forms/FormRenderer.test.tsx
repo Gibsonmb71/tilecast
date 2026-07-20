@@ -14,7 +14,12 @@ const schema: FormSchema = {
     { key: "title", label: "Title", control: "short_text", required: true },
     { key: "body", label: "Body", control: "long_text" },
     { key: "intro", label: "Section heading", control: "section" },
-    { key: "tip", label: "Tip", control: "help_text", description: "Be concise." },
+    {
+      key: "tip",
+      label: "Tip",
+      control: "help_text",
+      description: "Be concise.",
+    },
     { key: "photo", label: "Photo", control: "image" },
   ],
 };

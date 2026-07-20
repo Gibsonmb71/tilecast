@@ -1,5 +1,13 @@
 import type { FormField, FormFieldControl } from "../api/types";
-import { Button, Checkbox, Field, Input, Notice, Select, Textarea } from "../components/ui";
+import {
+  Button,
+  Checkbox,
+  Field,
+  Input,
+  Notice,
+  Select,
+  Textarea,
+} from "../components/ui";
 import { validateKey } from "./formKeys";
 import {
   CONTROLS,
@@ -31,7 +39,8 @@ export function FormFieldEditor({
   const disabled = readOnly;
   const keyError = validateKey(field.key, allKeys, field.key);
 
-  const update = (patch: Partial<FormField>) => onChange({ ...field, ...patch });
+  const update = (patch: Partial<FormField>) =>
+    onChange({ ...field, ...patch });
 
   // A published output field may only switch to controls with the same output type; a new field
   // may switch to any control.
@@ -67,8 +76,8 @@ export function FormFieldEditor({
         <Notice variant="info" title="Published field">
           This field is part of the published form, so its key
           {lock.controlLocked ? " and output type" : ""} are locked to keep
-          Widgets and saved views working. You can still edit its label,
-          help text, validation, and order.
+          Widgets and saved views working. You can still edit its label, help
+          text, validation, and order.
         </Notice>
       )}
 
@@ -97,8 +106,12 @@ export function FormFieldEditor({
       <Field label="Field type">
         <Select
           value={field.control}
-          disabled={disabled || (lock.controlLocked && controlOptions.length <= 1)}
-          onChange={(event) => changeControl(event.target.value as FormFieldControl)}
+          disabled={
+            disabled || (lock.controlLocked && controlOptions.length <= 1)
+          }
+          onChange={(event) =>
+            changeControl(event.target.value as FormFieldControl)
+          }
         >
           {controlOptions.map((control) => (
             <option key={control} value={control}>

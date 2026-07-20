@@ -4,7 +4,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { RouterProvider, createMemoryRouter, type RouteObject } from "react-router";
+import {
+  RouterProvider,
+  createMemoryRouter,
+  type RouteObject,
+} from "react-router";
 import { DataSourceEditorPage } from "./DataSourcesPage";
 import { api } from "../api/client";
 import * as authModule from "../auth/AuthProvider";
@@ -43,12 +47,17 @@ function mockAuth(role: "owner" | "administrator" | "editor" | "viewer") {
 }
 
 function renderAt(path: string, extraRoutes: RouteObject[] = []) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   // A data router is required so FormBuilder's useBlocker (unsaved-change navigation guard) works.
   const router = createMemoryRouter(
     [
       { path: "/data-sources/new", element: <DataSourceEditorPage /> },
-      { path: "/data-sources/new/:provider", element: <DataSourceEditorPage /> },
+      {
+        path: "/data-sources/new/:provider",
+        element: <DataSourceEditorPage />,
+      },
       { path: "/data-sources/:id", element: <DataSourceEditorPage /> },
       ...extraRoutes,
     ],
@@ -71,7 +80,9 @@ const formDetail = (capabilities: FormCapability[]): FormDataSource => ({
   draftSchema: {
     title: "Announcement",
     description: "",
-    fields: [{ key: "title", label: "Title", control: "short_text", required: true }],
+    fields: [
+      { key: "title", label: "Title", control: "short_text", required: true },
+    ],
   },
   publishedRevision: {
     id: "r1",
@@ -80,7 +91,9 @@ const formDetail = (capabilities: FormCapability[]): FormDataSource => ({
     title: "Announcement",
     description: "",
     schema: {
-      fields: [{ key: "title", label: "Title", control: "short_text", required: true }],
+      fields: [
+        { key: "title", label: "Title", control: "short_text", required: true },
+      ],
     },
     publishedAt: "2026-01-01T00:00:00Z",
   },
@@ -109,7 +122,9 @@ const formDataSourceDetail = {
 describe("Form Data Source Studio", () => {
   it("shows Form in the provider gallery and opens the dedicated create page", async () => {
     mockAuth("owner");
-    vi.spyOn(api, "providerCatalog").mockResolvedValue({ providers: [] } as never);
+    vi.spyOn(api, "providerCatalog").mockResolvedValue({
+      providers: [],
+    } as never);
     vi.spyOn(api, "contentDefinitions").mockResolvedValue({
       widgets: [],
       dataSources: [],
@@ -195,12 +210,16 @@ describe("Form Data Source Studio", () => {
     await act(async () => {
       await router.navigate("/screens");
     });
-    expect(await screen.findByText("Leave without saving?")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Leave without saving?"),
+    ).toBeInTheDocument();
 
     // Cancel keeps us on the builder.
     await user.click(screen.getByRole("button", { name: "Stay on page" }));
     expect(screen.queryByText("Screens page")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Save draft" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Save draft" }),
+    ).toBeInTheDocument();
 
     // Retry and confirm -> navigation proceeds.
     await act(async () => {
@@ -232,7 +251,9 @@ describe("Form Data Source Studio", () => {
     const user = userEvent.setup();
     renderAt("/data-sources/f1?tab=form");
 
-    expect(await screen.findByRole("button", { name: "Publish" })).toBeDisabled();
+    expect(
+      await screen.findByRole("button", { name: "Publish" }),
+    ).toBeDisabled();
 
     // Editing the schema makes it publishable again.
     await user.type(screen.getByLabelText("Form title"), "!");
@@ -254,7 +275,10 @@ describe("Form Data Source Studio", () => {
       schema: published as never,
     };
     // The saved draft differs from published only by its title.
-    detail.draftSchema = { ...published, title: "Announcement CHANGED" } as never;
+    detail.draftSchema = {
+      ...published,
+      title: "Announcement CHANGED",
+    } as never;
     vi.spyOn(api, "getDataSource").mockResolvedValue(formDataSourceDetail);
     vi.spyOn(api, "getForm").mockResolvedValue(detail);
     const user = userEvent.setup();
@@ -283,6 +307,8 @@ describe("Form Data Source Studio", () => {
     await act(async () => {
       await router.navigate("/data-sources/f1?tab=preview");
     });
-    expect(await screen.findByText("Leave without saving?")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Leave without saving?"),
+    ).toBeInTheDocument();
   });
 });

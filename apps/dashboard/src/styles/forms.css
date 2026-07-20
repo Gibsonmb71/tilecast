@@ -95,7 +95,10 @@
 
 .form-builder__layout {
   display: grid;
-  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr) minmax(260px, 320px);
+  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr) minmax(
+      260px,
+      320px
+    );
   gap: var(--tc-space-4);
   align-items: start;
 }

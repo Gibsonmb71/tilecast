@@ -12,11 +12,7 @@ import { Button, Field, Input, Notice, Textarea } from "../components/ui";
 import { FormFieldEditor, type FieldLock } from "./FormFieldEditor";
 import { FormFieldPalette } from "./FormFieldPalette";
 import { FormRenderer } from "./FormRenderer";
-import {
-  newField,
-  publishedOutputKeys,
-  schemasEquivalent,
-} from "./formSchema";
+import { newField, publishedOutputKeys, schemasEquivalent } from "./formSchema";
 import { RESERVED_FIELD_KEYS } from "./formKeys";
 
 type SaveState = "saved" | "dirty" | "saving" | "error";
@@ -87,11 +83,17 @@ export function FormBuilder({
     onSuccess: (updated) => {
       setBaseline(JSON.stringify(updated.draftSchema));
       setDraft(cloneSchema(updated.draftSchema));
-      void queryClient.invalidateQueries({ queryKey: ["form-data-source", form.id] });
-      void queryClient.invalidateQueries({ queryKey: ["data-source", form.id] });
+      void queryClient.invalidateQueries({
+        queryKey: ["form-data-source", form.id],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["data-source", form.id],
+      });
     },
     onError: (error) =>
-      setSaveError(error instanceof Error ? error.message : "Could not save the draft."),
+      setSaveError(
+        error instanceof Error ? error.message : "Could not save the draft.",
+      ),
   });
 
   const publish = useMutation({
@@ -112,14 +114,20 @@ export function FormBuilder({
     onSuccess: ({ snapshot }) => {
       setBaseline(snapshot);
       setShowPublish(false);
-      void queryClient.invalidateQueries({ queryKey: ["form-data-source", form.id] });
-      void queryClient.invalidateQueries({ queryKey: ["data-source", form.id] });
+      void queryClient.invalidateQueries({
+        queryKey: ["form-data-source", form.id],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["data-source", form.id],
+      });
     },
     onError: (error) => {
       if (error instanceof ApiError && error.status === 409) {
         setPublishError("The form changed elsewhere. Reload and try again.");
       } else {
-        setPublishError(error instanceof Error ? error.message : "Could not publish.");
+        setPublishError(
+          error instanceof Error ? error.message : "Could not publish.",
+        );
       }
     },
   });
@@ -179,14 +187,20 @@ export function FormBuilder({
 
   const lockFor = (field: FormField): FieldLock => {
     const published = publishedKeys.has(field.key);
-    return { keyLocked: published, controlLocked: published, deleteLocked: published };
+    return {
+      keyLocked: published,
+      controlLocked: published,
+      deleteLocked: published,
+    };
   };
 
   return (
     <div className="form-builder">
       {!readOnly && (
         <div className="form-builder__statusbar">
-          <span className={`form-builder__status form-builder__status--${saveState}`}>
+          <span
+            className={`form-builder__status form-builder__status--${saveState}`}
+          >
             {saveState === "saving"
               ? "Saving…"
               : saveState === "error"
@@ -207,7 +221,9 @@ export function FormBuilder({
             <Button
               variant="primary"
               disabled={
-                publish.isPending || saveDraft.isPending || !hasPublishableChanges
+                publish.isPending ||
+                saveDraft.isPending ||
+                !hasPublishableChanges
               }
               onClick={() => setShowPublish(true)}
             >
@@ -332,7 +348,10 @@ export function FormBuilder({
                 <Input
                   value={draft.title ?? ""}
                   onChange={(event) =>
-                    setDraft((current) => ({ ...current, title: event.target.value }))
+                    setDraft((current) => ({
+                      ...current,
+                      title: event.target.value,
+                    }))
                   }
                 />
               </Field>
@@ -354,7 +373,10 @@ export function FormBuilder({
         </section>
 
         {!readOnly && (
-          <aside className="form-builder__inspector" aria-label="Field settings">
+          <aside
+            className="form-builder__inspector"
+            aria-label="Field settings"
+          >
             <h3 className="form-builder__inspector-title">Field settings</h3>
             {selectedField ? (
               <FormFieldEditor
