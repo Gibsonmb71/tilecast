@@ -1,0 +1,393 @@
+/**
+ * Tilecast Player for Linux — Electron main process.
+ *
+ * The main process is a thin host: it owns the kiosk window, the tcmedia://
+ * protocol, renderer crash recovery, and process relaunch. All protocol and
+ * reliability logic lives in the core runtime. Under systemd (see
+ * deploy/tilecast-player.service) a crashed or deliberately restarted
+ * process comes straight back, completing the zero-touch loop.
+ */
+
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  net,
+  powerSaveBlocker,
+  protocol,
+  screen,
+  session,
+} from "electron";
+import { promises as fs } from "fs";
+import * as path from "path";
+import { pathToFileURL } from "url";
+import { logger, setLogLevel } from "../core/log";
+import { PlayerRuntime, type Presentation } from "../core/player";
+import { StateStore, defaultDataDir } from "../core/storage";
+import { normalizeServerUrl } from "../core/server-url";
+import { applyLowEndTuning } from "./hardware";
+import { LanDiscovery, type DiscoveredServer } from "./discovery";
+
+const log = logger("main");
+
+const PLAYER_VERSION = app.getVersion() || "0.1.0";
+const SERVER_URL_FILE = "server.json";
+
+if (process.env.TILECAST_LOG_LEVEL === "debug") {
+  setLogLevel("debug");
+}
+
+// Must run before app is ready: sizes GPU/V8 memory and enables Intel VA-API
+// video decode for the low-end reference hardware.
+applyLowEndTuning(app);
+
+// A second instance must never fight the first over the display or state.
+if (!app.requestSingleInstanceLock()) {
+  app.exit(0);
+}
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: "tcmedia",
+    privileges: { standard: true, stream: true, supportFetchAPI: true },
+  },
+]);
+
+let window: BrowserWindow | null = null;
+let runtime: PlayerRuntime | null = null;
+let store: StateStore;
+let discovery: LanDiscovery | null = null;
+let lastPresentation: Presentation = { state: "setup" };
+let quitting = false;
+
+function argValue(flag: string): string | null {
+  const index = process.argv.indexOf(flag);
+  return index >= 0 ? (process.argv[index + 1] ?? null) : null;
+}
+
+async function resolveServerUrl(): Promise<string | null> {
+  const fromArg = argValue("--server-url");
+  const fromEnv = process.env.TILECAST_SERVER_URL;
+  const configured = fromArg ?? fromEnv ?? null;
+  if (configured) {
+    const result = normalizeServerUrl(configured);
+    if (!result.ok || !result.url) {
+      log.error("configured server url rejected by policy", {
+        error: result.error,
+      });
+      return null;
+    }
+    await store.writeJson(SERVER_URL_FILE, { serverUrl: result.url });
+    return result.url;
+  }
+  const persisted = await store.readJson<{ serverUrl: string }>(
+    SERVER_URL_FILE,
+  );
+  return persisted?.serverUrl ?? null;
+}
+
+function createWindow(): BrowserWindow {
+  const win = new BrowserWindow({
+    fullscreen: true,
+    kiosk: process.env.TILECAST_WINDOWED !== "1",
+    frame: false,
+    autoHideMenuBar: true,
+    backgroundColor: "#000000",
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, "..", "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      webviewTag: true,
+      backgroundThrottling: false,
+    },
+  });
+  win.setMenuBarVisibility(false);
+  win.once("ready-to-show", () => win.show());
+  win.loadFile(path.join(__dirname, "..", "..", "static", "index.html"));
+
+  win.webContents.on("render-process-gone", (_event, details) => {
+    log.error("renderer process gone; recreating window", {
+      reason: details.reason,
+    });
+    recreateWindow();
+  });
+  win.webContents.on("did-finish-load", () => {
+    // (Re)send state after any load or reload so a recreated renderer
+    // resumes exactly where the player left off.
+    win.webContents.send("present", lastPresentation);
+  });
+  win.on("unresponsive", () => {
+    log.error("window unresponsive; recreating");
+    recreateWindow();
+  });
+  win.on("closed", () => {
+    if (!quitting && window === win) {
+      log.warn("window closed unexpectedly; recreating");
+      window = null;
+      recreateWindow();
+    }
+  });
+  return win;
+}
+
+function recreateWindow(): void {
+  if (quitting) {
+    return;
+  }
+  const old = window;
+  window = createWindow();
+  if (old && !old.isDestroyed()) {
+    old.removeAllListeners("closed");
+    old.destroy();
+  }
+}
+
+function present(presentation: Presentation): void {
+  lastPresentation = presentation;
+  if (window && !window.isDestroyed()) {
+    window.webContents.send("present", presentation);
+  }
+}
+
+async function availableStorageBytes(): Promise<number | null> {
+  try {
+    const stats = await fs.statfs(store.dataDir);
+    return Number(stats.bavail) * Number(stats.bsize);
+  } catch {
+    return null;
+  }
+}
+
+function setupMediaProtocol(): void {
+  protocol.handle("tcmedia", async (request) => {
+    // tcmedia://variant/<assetId>/<variantId>
+    const url = new URL(request.url);
+    const parts = url.pathname.split("/").filter(Boolean);
+    const assetId = url.hostname === "variant" ? parts[0] : parts[1];
+    const variantId = url.hostname === "variant" ? parts[1] : parts[2];
+    if (!assetId || !variantId || !runtime) {
+      return new Response("not found", { status: 404 });
+    }
+    const resolved = await runtime.resolveMedia(assetId, variantId);
+    if (!resolved) {
+      return new Response("not found", { status: 404 });
+    }
+    if (resolved.kind === "file") {
+      // net.fetch on a file URL supports Range for video seeking.
+      const headers = new Headers();
+      const range = request.headers.get("Range");
+      if (range) {
+        headers.set("Range", range);
+      }
+      const response = await net.fetch(
+        pathToFileURL(resolved.path).toString(),
+        {
+          headers,
+        },
+      );
+      const out = new Headers(response.headers);
+      out.set("Content-Type", resolved.mimeType);
+      return new Response(response.body, {
+        status: response.status,
+        headers: out,
+      });
+    }
+    // Stream-policy media proxies to the server with device auth attached.
+    const headers = new Headers(resolved.headers);
+    const range = request.headers.get("Range");
+    if (range) {
+      headers.set("Range", range);
+    }
+    return net.fetch(resolved.url, { headers });
+  });
+}
+
+function guardWebContents(): void {
+  app.on("web-contents-created", (_event, contents) => {
+    // Website items render in <webview>; nothing may open new windows or
+    // navigate the shell away from the player.
+    contents.setWindowOpenHandler(() => ({ action: "deny" }));
+    if (contents.getType() === "webview") {
+      contents.on("will-navigate", (event, targetUrl) => {
+        if (!/^https?:/.test(targetUrl)) {
+          event.preventDefault();
+        }
+      });
+    }
+  });
+}
+
+async function startRuntime(serverUrl: string): Promise<void> {
+  runtime = new PlayerRuntime(
+    store,
+    {
+      present,
+      identify: (name, durationSeconds) => {
+        window?.webContents.send("identify", { name, durationSeconds });
+      },
+      recreateRenderer: () => {
+        if (window && !window.isDestroyed()) {
+          window.webContents.reloadIgnoringCache();
+        } else {
+          recreateWindow();
+        }
+      },
+      recreateWindow,
+      restartProcess: () => {
+        log.info("relaunching player process");
+        quitting = true;
+        app.relaunch();
+        app.exit(0);
+      },
+      clearWebsiteData: async () => {
+        await session
+          .fromPartition("persist:websites")
+          .clearStorageData()
+          .catch(() => {});
+      },
+      retryCurrentItem: () => window?.webContents.send("retry-item"),
+      skipCurrentItem: () => window?.webContents.send("skip-item"),
+      screenSize: () => {
+        const bounds = screen.getPrimaryDisplay().bounds;
+        return { width: bounds.width, height: bounds.height };
+      },
+      availableStorageBytes,
+      capturePreview: async (max) => {
+        if (!window || window.isDestroyed()) {
+          return null;
+        }
+        try {
+          const image = await window.webContents.capturePage();
+          const size = image.getSize();
+          if (size.width === 0 || size.height === 0) {
+            return null;
+          }
+          // Preserve aspect, never upscale, fit within max dimensions.
+          const ratio = Math.min(
+            max.width / size.width,
+            max.height / size.height,
+            1,
+          );
+          const resized =
+            ratio < 1
+              ? image.resize({
+                  width: Math.round(size.width * ratio),
+                  height: Math.round(size.height * ratio),
+                  quality: "good",
+                })
+              : image;
+          const finalSize = resized.getSize();
+          // Step quality down until under the byte budget.
+          let quality = 75;
+          let jpeg = resized.toJPEG(quality);
+          while (jpeg.byteLength > max.bytes && quality > 25) {
+            quality -= 15;
+            jpeg = resized.toJPEG(quality);
+          }
+          if (jpeg.byteLength > max.bytes) {
+            return null; // could not get under the limit; report unavailable
+          }
+          return { jpeg, width: finalSize.width, height: finalSize.height };
+        } catch {
+          return null;
+        }
+      },
+    },
+    { serverUrl, playerVersion: PLAYER_VERSION },
+  );
+  await runtime.start();
+}
+
+app.whenReady().then(async () => {
+  store = new StateStore(process.env.TILECAST_DATA_DIR ?? defaultDataDir());
+  await store.init();
+
+  // The display must never blank while content plays.
+  powerSaveBlocker.start("prevent-display-sleep");
+
+  setupMediaProtocol();
+  guardWebContents();
+
+  ipcMain.on(
+    "progress",
+    (_event, data: { itemId: string | null; kind: string }) => {
+      runtime?.onPlaybackProgress(data.itemId, data.kind);
+    },
+  );
+  ipcMain.on(
+    "playback-error",
+    (_event, data: { itemId: string | null; message: string }) => {
+      runtime?.onPlaybackError(data.itemId, data.message);
+    },
+  );
+  ipcMain.on("website-recovered", () => runtime?.onWebsiteRecovered());
+  ipcMain.handle("setup-server-url", async (_event, url: string) => {
+    const result = normalizeServerUrl(String(url));
+    if (!result.ok || !result.url) {
+      return { ok: false, error: result.error ?? "Invalid address" };
+    }
+    await store.writeJson(SERVER_URL_FILE, { serverUrl: result.url });
+    discovery?.stop();
+    // Restart cleanly into the configured state.
+    quitting = true;
+    app.relaunch();
+    app.exit(0);
+    return { ok: true };
+  });
+
+  window = createWindow();
+
+  const serverUrl = await resolveServerUrl();
+  if (!serverUrl) {
+    present({ state: "setup" });
+    // Offer LAN-discovered servers as one-tap choices on the setup screen.
+    discovery = new LanDiscovery((server: DiscoveredServer) => {
+      window?.webContents.send("discovered-server", server);
+    });
+    discovery.start();
+    ipcMain.handle("list-discovered-servers", () => discovery?.list() ?? []);
+    return;
+  }
+
+  try {
+    await startRuntime(serverUrl);
+  } catch (err) {
+    log.error("runtime failed to start; relaunching in 15s", {
+      error: String(err),
+    });
+    setTimeout(() => {
+      quitting = true;
+      app.relaunch();
+      app.exit(1);
+    }, 15_000);
+  }
+});
+
+app.on("window-all-closed", () => {
+  // A signage player has no user-driven quit; recreate instead. The
+  // per-window closed handler usually restores it first — only act when it
+  // has not.
+  if (!quitting && (!window || window.isDestroyed())) {
+    recreateWindow();
+  }
+});
+
+app.on("before-quit", () => {
+  quitting = true;
+  runtime?.stop();
+});
+
+process.on("uncaughtException", (err) => {
+  log.error("uncaught exception; relaunching", { error: String(err.stack) });
+  quitting = true;
+  try {
+    app.relaunch();
+  } finally {
+    app.exit(1);
+  }
+});
+process.on("unhandledRejection", (reason) => {
+  // Never let an unawaited promise take the player down silently.
+  log.error("unhandled rejection", { error: String(reason) });
+});

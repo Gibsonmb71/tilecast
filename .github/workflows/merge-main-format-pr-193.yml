@@ -1,0 +1,52 @@
+name: Merge main and format PR 193
+
+on:
+  push:
+    branches:
+      - gibby/linux-player-build-6982b0
+
+permissions:
+  contents: write
+
+jobs:
+  merge-and-format:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: gibby/linux-player-build-6982b0
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Merge current main
+        run: |
+          git fetch origin main
+          git merge --no-edit origin/main
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Prettier
+        run: npm run format
+
+      - name: Commit and push
+        shell: bash
+        run: |
+          rm .github/workflows/merge-main-format-pr-193.yml
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: format merged main changes"
+          fi
+          git push origin HEAD:gibby/linux-player-build-6982b0
