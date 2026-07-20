@@ -452,7 +452,9 @@ func (s *Service) ListAssets(ctx context.Context, o ListOptions) (ListResult, er
 	case "updated":
 		sortSQL = "a.updated_at DESC,a.id DESC"
 	}
-	where := []string{"a.deleted_at IS NULL"}
+	// Form submission attachments (origin='form_attachment') are managed through their Form Data
+	// Source and must never appear in the public Media library or its pickers.
+	where := []string{"a.deleted_at IS NULL", "a.origin='library'"}
 	args := []any{}
 	add := func(query string, value any) {
 		args = append(args, value)

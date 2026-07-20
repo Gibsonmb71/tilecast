@@ -175,6 +175,31 @@ func (s *server) routes() http.Handler {
 			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/data-sources/{id}/duplicate", s.duplicateDataSource)
 			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Delete("/data-sources/{id}", s.deleteDataSource)
 			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.operationsRateLimit, s.requireCSRF).Post("/data-sources/{provider}/preview", s.previewDataSource)
+			// Form Data Sources. Reads are session-guarded and further authorized per-form inside
+			// each handler (grants depend on the {id} path param); mutations add CSRF. Creating a
+			// form requires the editor+ global role; the creator becomes its manager.
+			if s.forms != nil {
+				dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/forms", s.createForm)
+				dashboard.Get("/data-sources/{id}/form", s.getForm)
+				dashboard.With(s.requireCSRF).Patch("/data-sources/{id}/form/draft", s.updateFormDraft)
+				dashboard.With(s.requireCSRF).Post("/data-sources/{id}/form/publish", s.publishForm)
+				dashboard.With(s.requireCSRF).Put("/data-sources/{id}/form/workflow", s.configureFormWorkflow)
+				dashboard.Get("/data-sources/{id}/records", s.listFormRecords)
+				dashboard.With(s.requireCSRF).Post("/data-sources/{id}/records", s.createFormRecord)
+				dashboard.Get("/data-sources/{id}/records/{recordId}", s.getFormRecord)
+				dashboard.With(s.requireCSRF).Patch("/data-sources/{id}/records/{recordId}", s.updateFormRecord)
+				dashboard.With(s.requireCSRF).Delete("/data-sources/{id}/records/{recordId}", s.deleteFormRecord)
+				dashboard.With(s.requireCSRF).Post("/data-sources/{id}/records/{recordId}/transitions", s.transitionFormRecord)
+				dashboard.With(s.requireCSRF).Post("/data-sources/{id}/records/{recordId}/comments", s.addFormRecordComment)
+				dashboard.With(s.requireCSRF).Post("/data-sources/{id}/records/{recordId}/attachments", s.uploadFormRecordAttachment)
+				dashboard.Get("/data-sources/{id}/views", s.listFormViews)
+				dashboard.With(s.requireCSRF).Put("/data-sources/{id}/views", s.upsertFormView)
+				dashboard.With(s.requireCSRF).Delete("/data-sources/{id}/views/{viewId}", s.deleteFormView)
+				dashboard.Get("/data-sources/{id}/grants", s.listFormGrants)
+				dashboard.With(s.requireCSRF).Put("/data-sources/{id}/grants", s.setFormGrant)
+				dashboard.With(s.requireCSRF).Delete("/data-sources/{id}/grants/{grantId}", s.revokeFormGrant)
+				dashboard.Get("/approvals", s.listApprovals)
+			}
 			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF, s.blockDuringBackup).Delete("/assets/{id}", s.deleteAsset)
 			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF, s.blockDuringBackup).Post("/assets/{id}/retry", s.retryAsset)
 			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF, s.blockDuringBackup).Post("/uploads", s.createUpload)

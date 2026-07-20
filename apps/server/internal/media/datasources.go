@@ -41,6 +41,9 @@ var dataSourceAdapterRegistry = map[string]dataSourceAdapterFactory{
 		definition, _ := service.definitions.DataSource(provider)
 		return definitionConfigNormalizer{service: service, schema: definition.ConfigurationSchema}
 	},
+	"form_records": func(service *Service, _ string) configNormalizer {
+		return formSourceProvider{service}
+	},
 }
 
 func ValidateContentAdapters(catalog *contentdefs.Catalog) error {
@@ -117,6 +120,9 @@ func (s *Service) CreateDataSource(ctx context.Context, user uuid.UUID, input Da
 	if input.Name == "" || len(input.Name) > 180 || len(input.Description) > 2000 {
 		return DataSource{}, errors.New("data source name or description is invalid")
 	}
+	if input.Provider == "form" {
+		return DataSource{}, errors.New("form Data Sources are created through the forms API")
+	}
 	provider, err := s.dataSourceProvider(input.Provider)
 	if err != nil {
 		return DataSource{}, err
@@ -174,6 +180,9 @@ func (s *Service) UpdateDataSource(ctx context.Context, id, user uuid.UUID, inpu
 	}
 	if input.Provider != existing.Provider {
 		return DataSource{}, errors.New("data source provider cannot be changed")
+	}
+	if existing.Provider == "form" {
+		return DataSource{}, errors.New("form Data Sources are edited through the forms API")
 	}
 	// Preserve previously uploaded CSV content when the client omits it on update.
 	if input.Provider == "csv" {
@@ -240,6 +249,9 @@ func (s *Service) DuplicateDataSource(ctx context.Context, id, user uuid.UUID) (
 	existing, err := s.rawDataSource(ctx, id)
 	if err != nil {
 		return DataSource{}, err
+	}
+	if existing.Provider == "form" {
+		return DataSource{}, errors.New("form Data Sources cannot be duplicated")
 	}
 	return s.CreateDataSource(ctx, user, DataSourceInput{Provider: existing.Provider, Name: existing.Name + " copy", Description: existing.Description, Configuration: existing.Configuration})
 }
@@ -488,6 +500,14 @@ func (s *Service) availableDataSourceFields(provider string, raw json.RawMessage
 		return fields
 	}
 	fields := []DataSourceField{}
+	if provider == "form" {
+		var config FormSourceConfig
+		_ = json.Unmarshal(raw, &config)
+		for _, field := range config.Fields {
+			fields = append(fields, DataSourceField{Key: field.Key, Label: field.Label, Type: field.Type})
+		}
+		return fields
+	}
 	if provider == "calendar" {
 		var config CalendarConfig
 		_ = json.Unmarshal(raw, &config)

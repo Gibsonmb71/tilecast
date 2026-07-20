@@ -50,6 +50,7 @@ var dataSourceProviderRegistry = map[string]ProviderDescriptor{
 	"transit":     {ID: "transit", Role: RoleDataSource, ProducesFields: true, RecordBased: true, Temporal: true},
 	"cap_alerts":  {ID: "cap_alerts", Role: RoleDataSource, ProducesFields: true, RecordBased: true, Temporal: true},
 	"air_quality": {ID: "air_quality", Role: RoleDataSource, ProducesFields: true, RecordBased: true, Temporal: true, Numeric: true},
+	"form":        {ID: "form", Role: RoleDataSource, ProducesFields: true, SupportsDateSelection: true, RecordBased: true, Temporal: true, Numeric: true},
 }
 
 var widgetProviderRegistry = map[string]ProviderDescriptor{
@@ -146,7 +147,7 @@ func ProviderCatalog() []ProviderCatalogEntry {
 			RequiredCapabilities: required, UIHints: map[string]string{"editor": id, "preview": "compiled"},
 		})
 	}
-	for _, id := range []string{"calendar", "rss", "atom", "json", "csv", "manual", "weather", "transit", "cap_alerts", "air_quality"} {
+	for _, id := range []string{"calendar", "rss", "atom", "json", "csv", "manual", "weather", "transit", "cap_alerts", "air_quality", "form"} {
 		descriptor := dataSourceProviderRegistry[id]
 		label, group, description := providerCopy(id, RoleDataSource)
 		result = append(result, ProviderCatalogEntry{
@@ -195,6 +196,7 @@ func providerCopy(id string, role ProviderRole) (string, string, string) {
 		"transit":     {"Transit", "Live Information", "Join public GTFS schedules with realtime departures and alerts."},
 		"cap_alerts":  {"CAP Alerts", "Live Information", "Display active public Common Alerting Protocol warnings."},
 		"air_quality": {"Air Quality", "Live Information", "Display current and forecast air-quality measurements."},
+		"form":        {"Form", "Interactive", "Collect submissions, approve them, and publish records to Widgets."},
 	}
 	if id == "weather" && role == RoleDataSource {
 		return "Weather", "External", "Fetch and normalize public MET Norway forecasts."

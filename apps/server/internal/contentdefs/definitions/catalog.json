@@ -900,6 +900,22 @@
         ]
       },
       "deprecation": {}
+    },
+    {
+      "id": "form",
+      "version": 1,
+      "name": "Form",
+      "description": "Collect submissions, approve them, and publish records to Widgets.",
+      "category": "Interactive",
+      "icon": "form_input",
+      "configurationSchema": { "fields": [] },
+      "defaultConfiguration": {},
+      "outputSchema": { "kind": "records", "fields": [] },
+      "adapterId": "form_records",
+      "refreshBehavior": "manual",
+      "legacyEditor": true,
+      "requiresManifestV13": true,
+      "deprecation": {}
     }
   ]
 }
