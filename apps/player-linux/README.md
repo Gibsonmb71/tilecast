@@ -100,15 +100,15 @@ further local interaction.
 
 Environment:
 
-| Variable | Purpose |
-| --- | --- |
-| `TILECAST_SERVER_URL` | Server address; persisted after first use |
-| `TILECAST_DATA_DIR` | State/cache directory (default `~/.local/share/tilecast-player`) |
-| `TILECAST_LOG_LEVEL` | `debug` for verbose JSON logs on stderr |
-| `TILECAST_WINDOWED` | `1` disables kiosk fullscreen (development) |
-| `TILECAST_HW_DECODE` | `0` disables Intel VA-API hardware video decode |
-| `TILECAST_DISABLE_GPU` | `1` forces full software rendering |
-| `TILECAST_MAX_FPS` | Frame-rate cap (default 30) |
+| Variable               | Purpose                                                          |
+| ---------------------- | ---------------------------------------------------------------- |
+| `TILECAST_SERVER_URL`  | Server address; persisted after first use                        |
+| `TILECAST_DATA_DIR`    | State/cache directory (default `~/.local/share/tilecast-player`) |
+| `TILECAST_LOG_LEVEL`   | `debug` for verbose JSON logs on stderr                          |
+| `TILECAST_WINDOWED`    | `1` disables kiosk fullscreen (development)                      |
+| `TILECAST_HW_DECODE`   | `0` disables Intel VA-API hardware video decode                  |
+| `TILECAST_DISABLE_GPU` | `1` forces full software rendering                               |
+| `TILECAST_MAX_FPS`     | Frame-rate cap (default 30)                                      |
 
 On first launch the player also browses the LAN for `_tilecast._tcp` servers
 and offers them as one-tap choices on the setup screen, so a screen on the

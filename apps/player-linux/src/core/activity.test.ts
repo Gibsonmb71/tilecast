@@ -32,9 +32,18 @@ describe("ActivityReporter", () => {
       }),
     } as unknown as ApiClient;
 
-    const reporter = new ActivityReporter(fakeStore(), client, clock, uuid, "UTC");
+    const reporter = new ActivityReporter(
+      fakeStore(),
+      client,
+      clock,
+      uuid,
+      "UTC",
+    );
     await reporter.start();
-    await reporter.record({ eventType: "content.completed", result: "completed" });
+    await reporter.record({
+      eventType: "content.completed",
+      result: "completed",
+    });
     await reporter.record({ eventType: "content.failed", result: "failed" });
     await reporter.flush();
 
@@ -54,7 +63,13 @@ describe("ActivityReporter", () => {
       }),
     } as unknown as ApiClient;
 
-    const reporter = new ActivityReporter(fakeStore(), client, clock, uuid, "UTC");
+    const reporter = new ActivityReporter(
+      fakeStore(),
+      client,
+      clock,
+      uuid,
+      "UTC",
+    );
     await reporter.start();
     await reporter.record({ eventType: "connection.lost" });
     await reporter.flush(); // fails, buffer retained

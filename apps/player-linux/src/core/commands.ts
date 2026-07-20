@@ -160,7 +160,11 @@ export class CommandCoordinator {
       return;
     }
 
-    log.info("executing command", { type: command.type, id: command.id, trigger });
+    log.info("executing command", {
+      type: command.type,
+      id: command.id,
+      trigger,
+    });
 
     if (this.disruptiveTypes.has(command.type)) {
       // Persist completion and report success BEFORE the disruption so the

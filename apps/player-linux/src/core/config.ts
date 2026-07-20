@@ -58,8 +58,7 @@ export class ConfigSync {
         this.events.onCredentialRejected();
         return;
       }
-      this.lastConfigError =
-        err instanceof NetworkError ? null : String(err);
+      this.lastConfigError = err instanceof NetworkError ? null : String(err);
       return;
     }
     if (result.notModified || !result.value) {

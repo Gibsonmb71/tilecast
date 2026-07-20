@@ -54,10 +54,7 @@ export class StateStore {
       // A corrupt state file (torn write predating this player, disk fault)
       // must not brick startup. Quarantine it and start from empty state.
       try {
-        await fs.rename(
-          this.filePath(name),
-          this.filePath(name + ".corrupt"),
-        );
+        await fs.rename(this.filePath(name), this.filePath(name + ".corrupt"));
       } catch {
         // Nothing else to do; treat as missing.
       }

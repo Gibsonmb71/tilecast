@@ -3,18 +3,24 @@ import { formatDuration, formatValue, safeColor } from "./format";
 
 describe("formatValue", () => {
   it("formats numbers with thousands separators and precision", () => {
-    expect(formatValue("1234.5", { format: "number", precision: 1 })).toBe("1,234.5");
+    expect(formatValue("1234.5", { format: "number", precision: 1 })).toBe(
+      "1,234.5",
+    );
     expect(formatValue(1234.9, { format: "integer" })).toBe("1,235");
   });
 
   it("formats percent and currency", () => {
     expect(formatValue("42", { format: "percent" })).toBe("42%");
     expect(formatValue("1000", { format: "currency" })).toBe("$1,000");
-    expect(formatValue("9.5", { format: "currency", precision: 2 })).toBe("$9.50");
+    expect(formatValue("9.5", { format: "currency", precision: 2 })).toBe(
+      "$9.50",
+    );
   });
 
   it("applies prefix and suffix only to non-empty output", () => {
-    expect(formatValue("5", { format: "number", prefix: "~", suffix: " ea" })).toBe("~5 ea");
+    expect(
+      formatValue("5", { format: "number", prefix: "~", suffix: " ea" }),
+    ).toBe("~5 ea");
     expect(formatValue("", { format: "number", prefix: "~" })).toBe("");
   });
 
@@ -24,9 +30,15 @@ describe("formatValue", () => {
   });
 
   it("formats dates in an explicit timezone", () => {
-    const short = formatValue("2026-07-04", { format: "date-short", timezone: "UTC" });
+    const short = formatValue("2026-07-04", {
+      format: "date-short",
+      timezone: "UTC",
+    });
     expect(short).toMatch(/Jul\s*4/);
-    const long = formatValue("2026-07-04", { format: "date-long", timezone: "UTC" });
+    const long = formatValue("2026-07-04", {
+      format: "date-long",
+      timezone: "UTC",
+    });
     expect(long).toMatch(/July 4, 2026/);
   });
 

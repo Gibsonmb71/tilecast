@@ -129,17 +129,29 @@ describe("CommandCoordinator", () => {
     const store = await makeStore();
     const client = new FakeClient();
     client.queue = [
-      command({ id: "r1", type: "restart_player_process", idempotencyKey: "rk" }),
+      command({
+        id: "r1",
+        type: "restart_player_process",
+        idempotencyKey: "rk",
+      }),
     ];
     const executions: string[] = [];
-    const { coordinator, disruptions } = makeCoordinator(store, client, executions);
+    const { coordinator, disruptions } = makeCoordinator(
+      store,
+      client,
+      executions,
+    );
     await coordinator.start();
     coordinator.stop();
     expect(disruptions).toEqual(["restart_player_process"]);
     expect(client.results[0]!.result.code).toBe("initiated");
     // Idempotency key persisted: a relaunch that re-fetches must not restart again.
     client.queue = [
-      command({ id: "r1", type: "restart_player_process", idempotencyKey: "rk" }),
+      command({
+        id: "r1",
+        type: "restart_player_process",
+        idempotencyKey: "rk",
+      }),
     ];
     client.results = [];
     const again = makeCoordinator(store, client, executions);

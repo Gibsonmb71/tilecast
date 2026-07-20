@@ -64,7 +64,11 @@ function localNow(timezone: string, at: Date): LocalNow | null {
   const isoWeekday = isoByName[get("weekday")];
   const hour = Number(get("hour"));
   const minute = Number(get("minute"));
-  if (isoWeekday === undefined || !Number.isFinite(hour) || !Number.isFinite(minute)) {
+  if (
+    isoWeekday === undefined ||
+    !Number.isFinite(hour) ||
+    !Number.isFinite(minute)
+  ) {
     return null;
   }
   return { isoWeekday, minutes: hour * 60 + minute };
@@ -108,7 +112,8 @@ export function evaluateActiveHours(
 
   let active: boolean;
   if (!overnight) {
-    active = days.has(now.isoWeekday) && now.minutes >= start && now.minutes < end;
+    active =
+      days.has(now.isoWeekday) && now.minutes >= start && now.minutes < end;
   } else {
     // From start..24:00 on a selected day, and 00:00..end on the next day.
     const afterStartToday = days.has(now.isoWeekday) && now.minutes >= start;
@@ -150,10 +155,18 @@ export function activeHoursFromConfig(
   }
   const enabled = power["activeHoursEnabled"] === true;
   if (!enabled) {
-    return { enabled: false, timezone: "UTC", days: [], start: "00:00", end: "00:00" };
+    return {
+      enabled: false,
+      timezone: "UTC",
+      days: [],
+      start: "00:00",
+      end: "00:00",
+    };
   }
   const days = Array.isArray(power["activeHoursDays"])
-    ? (power["activeHoursDays"] as unknown[]).map(Number).filter((n) => n >= 1 && n <= 7)
+    ? (power["activeHoursDays"] as unknown[])
+        .map(Number)
+        .filter((n) => n >= 1 && n <= 7)
     : [];
   return {
     enabled: true,

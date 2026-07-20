@@ -45,7 +45,12 @@ export async function sha256File(filePath: string): Promise<string> {
     const buffer = Buffer.alloc(1024 * 1024);
     let position = 0;
     for (;;) {
-      const { bytesRead } = await handle.read(buffer, 0, buffer.length, position);
+      const { bytesRead } = await handle.read(
+        buffer,
+        0,
+        buffer.length,
+        position,
+      );
       if (bytesRead === 0) {
         break;
       }
@@ -135,7 +140,10 @@ export async function downloadVerified(
         await handle.write(value, 0, value.length, position);
         position += value.length;
         if (position > request.expectedSizeBytes) {
-          throw new DownloadError("server sent more bytes than expected", false);
+          throw new DownloadError(
+            "server sent more bytes than expected",
+            false,
+          );
         }
       }
     }

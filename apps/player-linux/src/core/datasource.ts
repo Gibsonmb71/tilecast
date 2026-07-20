@@ -43,7 +43,10 @@ export interface NormalizedSource {
   hidden: boolean;
 }
 
-function docValueToString(value: DocumentValue | undefined, fieldType?: string): string {
+function docValueToString(
+  value: DocumentValue | undefined,
+  fieldType?: string,
+): string {
   if (!value) {
     return "";
   }
@@ -52,11 +55,16 @@ function docValueToString(value: DocumentValue | undefined, fieldType?: string):
     case "text":
       return value.text ?? "";
     case "number":
-      return formatValue(value.number ?? null, { format: "number", precision: 2 });
+      return formatValue(value.number ?? null, {
+        format: "number",
+        precision: 2,
+      });
     case "integer":
       return formatValue(value.integer ?? null, { format: "integer" });
     case "percent":
-      return formatValue(value.number ?? value.integer ?? null, { format: "percent" });
+      return formatValue(value.number ?? value.integer ?? null, {
+        format: "percent",
+      });
     case "currency":
       return formatValue(value.number ?? value.integer ?? null, {
         format: "currency",
@@ -86,9 +94,10 @@ function extractDate(raw: string): string {
   return m ? m[1]! : "";
 }
 
-function normalizeDocumentRecords(
-  dataset: DocumentDataset,
-): { records: NormalizedRecord[]; fieldTypes: Record<string, string> } {
+function normalizeDocumentRecords(dataset: DocumentDataset): {
+  records: NormalizedRecord[];
+  fieldTypes: Record<string, string>;
+} {
   const fieldTypes: Record<string, string> = {};
   for (const f of dataset.fields ?? []) {
     fieldTypes[f.key] = f.type;
@@ -136,7 +145,12 @@ export function normalizeSource(
       base.records = records;
       base.fieldTypes = fieldTypes;
       base.attribution = dataset.attribution ?? "";
-      applySelection(base, dataset.dateSelection, dataset.timezone ?? "UTC", at);
+      applySelection(
+        base,
+        dataset.dateSelection,
+        dataset.timezone ?? "UTC",
+        at,
+      );
       return base;
     }
   }
@@ -145,7 +159,9 @@ export function normalizeSource(
 
   // Calendar prepared data (v11).
   if (source.provider === "calendar" && isObject(config["data"])) {
-    const events = asArray((config["data"] as Record<string, unknown>)["events"]);
+    const events = asArray(
+      (config["data"] as Record<string, unknown>)["events"],
+    );
     base.records = events.map((e) => {
       const ev = e as Record<string, unknown>;
       return {
@@ -165,7 +181,9 @@ export function normalizeSource(
 
   // Structured prepared data (v11).
   if (isObject(config["data"])) {
-    const recs = asArray((config["data"] as Record<string, unknown>)["records"]);
+    const recs = asArray(
+      (config["data"] as Record<string, unknown>)["records"],
+    );
     base.records = recs.map((r) => {
       const rec = r as Record<string, unknown>;
       const fields: Record<string, string> = {
@@ -181,7 +199,11 @@ export function normalizeSource(
       )) {
         fields[k] = String(v);
       }
-      return { id: String(rec["id"] ?? ""), date: extractDate(fields["date"]!), fields };
+      return {
+        id: String(rec["id"] ?? ""),
+        date: extractDate(fields["date"]!),
+        fields,
+      };
     });
     const sel = config["dateSelection"] as Record<string, unknown> | undefined;
     if (sel?.["enabled"]) {
@@ -223,7 +245,14 @@ export function normalizeSource(
 function applySelection(
   base: NormalizedSource,
   selection:
-    | { mode: string; field: string; customStartDate?: string; customEndDate?: string; excludePast?: boolean; noMatchBehavior?: string }
+    | {
+        mode: string;
+        field: string;
+        customStartDate?: string;
+        customEndDate?: string;
+        excludePast?: boolean;
+        noMatchBehavior?: string;
+      }
     | null
     | undefined,
   timezone: string,

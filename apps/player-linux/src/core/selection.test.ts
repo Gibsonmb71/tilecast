@@ -48,14 +48,22 @@ describe("selectByDate", () => {
   ];
 
   it("selects today's records", () => {
-    const result = selectByDate(records, { mode: "today", timezone: tz, at: now });
+    const result = selectByDate(records, {
+      mode: "today",
+      timezone: tz,
+      at: now,
+    });
     expect(result.records).toHaveLength(2);
     expect(result.records.every((r) => r.date === "2026-07-15")).toBe(true);
   });
 
   it("next_available finds the earliest upcoming date", () => {
     const future = [rec("2026-07-18"), rec("2026-08-01"), rec("2026-07-18")];
-    const result = selectByDate(future, { mode: "next_available", timezone: tz, at: now });
+    const result = selectByDate(future, {
+      mode: "next_available",
+      timezone: tz,
+      at: now,
+    });
     expect(result.records).toHaveLength(2);
     expect(result.records[0]!.date).toBe("2026-07-18");
   });

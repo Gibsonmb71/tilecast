@@ -37,11 +37,7 @@ export interface PairingCreated {
 }
 
 export type PairingStatus =
-  | "pending"
-  | "approved"
-  | "claimed"
-  | "rejected"
-  | "expired";
+  "pending" | "approved" | "claimed" | "rejected" | "expired";
 
 export interface PairingPollResult {
   status: PairingStatus;

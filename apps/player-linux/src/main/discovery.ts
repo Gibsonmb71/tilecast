@@ -70,7 +70,9 @@ export class LanDiscovery {
     const txt = (service.txt ?? {}) as Record<string, string>;
     const raw =
       txt["base-url"] ??
-      (service.host && service.port ? `http://${service.host}:${service.port}` : "");
+      (service.host && service.port
+        ? `http://${service.host}:${service.port}`
+        : "");
     if (!raw) {
       return;
     }

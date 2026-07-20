@@ -71,18 +71,28 @@ describe("scheduleApplies", () => {
       daysOfWeek: [5], // Friday nights
     });
     // Friday 23:00 NY = Sat 03:00 UTC.
-    expect(scheduleApplies(overnight, new Date("2026-07-18T03:00:00Z"))).toBe(true);
+    expect(scheduleApplies(overnight, new Date("2026-07-18T03:00:00Z"))).toBe(
+      true,
+    );
     // Saturday 02:00 NY (early morning after Friday) = Sat 06:00 UTC.
-    expect(scheduleApplies(overnight, new Date("2026-07-18T06:00:00Z"))).toBe(true);
+    expect(scheduleApplies(overnight, new Date("2026-07-18T06:00:00Z"))).toBe(
+      true,
+    );
     // Saturday 07:00 NY — past the end.
-    expect(scheduleApplies(overnight, new Date("2026-07-18T11:00:00Z"))).toBe(false);
+    expect(scheduleApplies(overnight, new Date("2026-07-18T11:00:00Z"))).toBe(
+      false,
+    );
     // Thursday 23:00 NY — wrong start day.
-    expect(scheduleApplies(overnight, new Date("2026-07-17T03:00:00Z"))).toBe(false);
+    expect(scheduleApplies(overnight, new Date("2026-07-17T03:00:00Z"))).toBe(
+      false,
+    );
   });
 
   it("respects start and end dates in the schedule timezone", () => {
     const bounded = weekly({ startDate: "2026-07-20", endDate: "2026-07-25" });
-    expect(scheduleApplies(bounded, new Date("2026-07-17T15:00:00Z"))).toBe(false);
+    expect(scheduleApplies(bounded, new Date("2026-07-17T15:00:00Z"))).toBe(
+      false,
+    );
   });
 
   it("one-time schedules use half-open UTC instants", () => {
@@ -96,8 +106,12 @@ describe("scheduleApplies", () => {
       oneTimeStart: "2026-07-17T10:00:00Z",
       oneTimeEnd: "2026-07-17T12:00:00Z",
     };
-    expect(scheduleApplies(oneTime, new Date("2026-07-17T10:00:00Z"))).toBe(true);
-    expect(scheduleApplies(oneTime, new Date("2026-07-17T12:00:00Z"))).toBe(false);
+    expect(scheduleApplies(oneTime, new Date("2026-07-17T10:00:00Z"))).toBe(
+      true,
+    );
+    expect(scheduleApplies(oneTime, new Date("2026-07-17T12:00:00Z"))).toBe(
+      false,
+    );
   });
 
   it("an unknown timezone never applies rather than throwing", () => {
@@ -166,6 +180,9 @@ describe("resolveSelection", () => {
       manifest,
       new Date("2026-07-17T06:00:00Z"),
     );
-    expect(nightSelection).toMatchObject({ playlistId: "direct", source: "direct" });
+    expect(nightSelection).toMatchObject({
+      playlistId: "direct",
+      source: "direct",
+    });
   });
 });

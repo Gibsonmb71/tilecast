@@ -53,7 +53,11 @@ describe("renderWidget", () => {
       name: "Clock",
       provider: "clock",
       configVersion: 11,
-      configuration: { timezone: "America/New_York", format: "24", showSeconds: true },
+      configuration: {
+        timezone: "America/New_York",
+        format: "24",
+        showSeconds: true,
+      },
     };
     const payload = renderWidget(widget, ctx([]))!;
     // Root box wraps the clock node.
@@ -68,7 +72,12 @@ describe("renderWidget", () => {
       name: "Price",
       provider: "metric",
       configVersion: 12,
-      configuration: { dataSourceId: "s1", valueField: "price", format: "currency", precision: 2 },
+      configuration: {
+        dataSourceId: "s1",
+        valueField: "price",
+        format: "currency",
+        precision: 2,
+      },
     };
     const payload = renderWidget(widget, ctx([typedSource("s1")]))!;
     expect(JSON.stringify(payload.root)).toContain("$3.50");
@@ -112,7 +121,12 @@ describe("renderPresentation (v13 declarative)", () => {
             { type: "text", binding: { source: "repeat", path: "title" } },
             {
               type: "text",
-              binding: { source: "repeat", path: "price", format: "currency", precision: 2 },
+              binding: {
+                source: "repeat",
+                path: "price",
+                format: "currency",
+                precision: 2,
+              },
             },
           ],
         },
@@ -178,7 +192,12 @@ describe("renderLayout", () => {
   it("projects placements into positioned zones and rejects bad schema", () => {
     const document: LayoutDocument = {
       schemaVersion: 2,
-      canvas: { width: 1920, height: 1080, orientation: "landscape", backgroundColor: "#101418" },
+      canvas: {
+        width: 1920,
+        height: 1080,
+        orientation: "landscape",
+        backgroundColor: "#101418",
+      },
       placements: [
         {
           id: "11111111-1111-1111-1111-111111111111",
@@ -206,7 +225,12 @@ describe("renderLayout", () => {
           opacity: 1,
           visible: true,
           locked: false,
-          primitive: { kind: "text", text: "Welcome", fontFamily: "Inter", fontSize: 72 },
+          primitive: {
+            kind: "text",
+            text: "Welcome",
+            fontFamily: "Inter",
+            fontSize: 72,
+          },
         },
       ],
     };
@@ -222,12 +246,15 @@ describe("renderLayout", () => {
 
     // Wrong schema version → null (keeps previous presentation active).
     expect(
-      renderLayout({ ...document, schemaVersion: 1 }, {
-        manifest,
-        widgets: new Map(),
-        dataSources: new Map(),
-        at,
-      }),
+      renderLayout(
+        { ...document, schemaVersion: 1 },
+        {
+          manifest,
+          widgets: new Map(),
+          dataSources: new Map(),
+          at,
+        },
+      ),
     ).toBeNull();
   });
 });

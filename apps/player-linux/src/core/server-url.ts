@@ -21,7 +21,12 @@ function isPrivateOrLocalHost(host: string): boolean {
     return true;
   }
   // IPv6 loopback / unique-local / link-local.
-  if (h === "::1" || h.startsWith("fc") || h.startsWith("fd") || h.startsWith("fe80")) {
+  if (
+    h === "::1" ||
+    h.startsWith("fc") ||
+    h.startsWith("fd") ||
+    h.startsWith("fe80")
+  ) {
     return true;
   }
   // IPv4 ranges: 10/8, 127/8, 169.254/16, 172.16–31/12, 192.168/16.
@@ -57,7 +62,9 @@ export function normalizeServerUrl(input: string): UrlPolicyResult {
 
   // Default to https:// when no scheme is given so a bare host is treated
   // securely rather than downgraded.
-  const withScheme = /^[a-z]+:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  const withScheme = /^[a-z]+:\/\//i.test(trimmed)
+    ? trimmed
+    : `https://${trimmed}`;
 
   let parsed: URL;
   try {
@@ -70,17 +77,28 @@ export function normalizeServerUrl(input: string): UrlPolicyResult {
     return { ok: false, error: "Address must be http or https" };
   }
   if (parsed.username || parsed.password) {
-    return { ok: false, error: "Address must not contain a username or password" };
+    return {
+      ok: false,
+      error: "Address must not contain a username or password",
+    };
   }
-  if ((parsed.pathname && parsed.pathname !== "/") || parsed.search || parsed.hash) {
-    return { ok: false, error: "Enter only the server address, without a path" };
+  if (
+    (parsed.pathname && parsed.pathname !== "/") ||
+    parsed.search ||
+    parsed.hash
+  ) {
+    return {
+      ok: false,
+      error: "Enter only the server address, without a path",
+    };
   }
 
   const host = parsed.hostname;
   if (parsed.protocol === "http:" && !isPrivateOrLocalHost(host)) {
     return {
       ok: false,
-      error: "Public servers must use https:// to protect the device credential",
+      error:
+        "Public servers must use https:// to protect the device credential",
     };
   }
 

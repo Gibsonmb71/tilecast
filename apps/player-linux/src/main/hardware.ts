@@ -41,7 +41,10 @@ export function applyLowEndTuning(app: App): void {
       "enable-features",
       "VaapiVideoDecoder,VaapiIgnoreDriverChecks,CanvasOopRasterization",
     );
-    app.commandLine.appendSwitch("disable-features", "UseChromeOSDirectVideoDecoder");
+    app.commandLine.appendSwitch(
+      "disable-features",
+      "UseChromeOSDirectVideoDecoder",
+    );
     app.commandLine.appendSwitch("ignore-gpu-blocklist");
   } else {
     app.commandLine.appendSwitch("disable-features", "VaapiVideoDecoder");

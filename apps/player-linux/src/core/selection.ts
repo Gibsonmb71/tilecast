@@ -9,18 +9,10 @@
  */
 
 export type SelectionMode =
-  | "today"
-  | "tomorrow"
-  | "next_available"
-  | "current_week"
-  | "custom_range";
+  "today" | "tomorrow" | "next_available" | "current_week" | "custom_range";
 
 export type NoMatchBehavior =
-  | "fallback_text"
-  | "next_available"
-  | "empty"
-  | "hide"
-  | "last_known_good";
+  "fallback_text" | "next_available" | "empty" | "hide" | "last_known_good";
 
 /** Local calendar date (YYYY-MM-DD) for an instant in a timezone. */
 export function localDate(timezone: string, at: Date): string {
@@ -106,7 +98,9 @@ export function selectByDate<T extends DatedRecord>(
     noMatchBehavior?: NoMatchBehavior;
   },
 ): { records: T[]; usedFallback: boolean; hidden: boolean } {
-  const dated = records.filter((r) => r.date && /^\d{4}-\d{2}-\d{2}/.test(r.date));
+  const dated = records.filter(
+    (r) => r.date && /^\d{4}-\d{2}-\d{2}/.test(r.date),
+  );
   const today = localDate(opts.timezone, opts.at);
 
   if (opts.mode === "next_available") {
@@ -114,7 +108,9 @@ export function selectByDate<T extends DatedRecord>(
       .filter((r) => r.date.slice(0, 10) >= today)
       .sort((a, b) => a.date.localeCompare(b.date));
     const firstDate = upcoming[0]?.date.slice(0, 10);
-    const matched = firstDate ? upcoming.filter((r) => r.date.slice(0, 10) === firstDate) : [];
+    const matched = firstDate
+      ? upcoming.filter((r) => r.date.slice(0, 10) === firstDate)
+      : [];
     return resolveNoMatch(matched, records, opts);
   }
 
@@ -151,7 +147,9 @@ function resolveNoMatch<T extends DatedRecord>(
         .filter((r) => r.date && r.date.slice(0, 10) >= today)
         .sort((a, b) => a.date.localeCompare(b.date));
       const firstDate = upcoming[0]?.date.slice(0, 10);
-      const next = firstDate ? upcoming.filter((r) => r.date.slice(0, 10) === firstDate) : [];
+      const next = firstDate
+        ? upcoming.filter((r) => r.date.slice(0, 10) === firstDate)
+        : [];
       return { records: next, usedFallback: false, hidden: false };
     }
     case "last_known_good":
@@ -197,7 +195,9 @@ export function selectCalendarEvents<T extends CalendarLike>(
   let filtered: T[];
   switch (mode) {
     case "today":
-      filtered = upcoming.filter((e) => localDate(timezone, new Date(e.start)) === today);
+      filtered = upcoming.filter(
+        (e) => localDate(timezone, new Date(e.start)) === today,
+      );
       break;
     case "this_week": {
       const back = isoWeekday(today) - 1;

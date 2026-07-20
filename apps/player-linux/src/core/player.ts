@@ -53,10 +53,7 @@ import type {
   ManifestLayout,
   ManifestWidget,
 } from "./content-types";
-import type {
-  LayoutRenderPayload,
-  WidgetRenderPayload,
-} from "./render-tree";
+import type { LayoutRenderPayload, WidgetRenderPayload } from "./render-tree";
 import type { StateStore } from "./storage";
 import {
   DEFAULT_SUPERVISOR_CONFIG,
@@ -222,8 +219,7 @@ export class PlayerRuntime {
     this.manifestSync = new ManifestSync(this.store, this.client, {
       onManifestPrepared: (manifest) => this.onManifestPrepared(manifest),
       onCredentialRejected: () => void this.onCredentialRejected(),
-      onSyncError: (error) =>
-        log.warn("manifest sync error", { error }),
+      onSyncError: (error) => log.warn("manifest sync error", { error }),
     });
     this.configSync = new ConfigSync(this.store, this.client, {
       onConfigApplied: (config) => {
@@ -241,10 +237,11 @@ export class PlayerRuntime {
     this.supervisorState =
       (await this.store.readJson<SupervisorState>(SUPERVISOR_FILE)) ??
       initialSupervisorState(Date.now());
-    this.flags =
-      (await this.store.readJson<PlaybackFlags>(PLAYBACK_FLAGS_FILE)) ?? {
-        playbackDisabled: false,
-      };
+    this.flags = (await this.store.readJson<PlaybackFlags>(
+      PLAYBACK_FLAGS_FILE,
+    )) ?? {
+      playbackDisabled: false,
+    };
 
     this.credential = await loadCredential(this.store);
     if (
@@ -356,14 +353,20 @@ export class PlayerRuntime {
     await this.manifestSync.loadCached();
 
     this.timers.push(
-      setInterval(() => this.evaluatePresentation(), SELECTION_EVAL_INTERVAL_MS),
+      setInterval(
+        () => this.evaluatePresentation(),
+        SELECTION_EVAL_INTERVAL_MS,
+      ),
       setInterval(() => void this.supervisorTick(), SUPERVISOR_TICK_MS),
       setInterval(
         () => void this.reportStatus(),
         this.statusIntervalSeconds() * 1_000,
       ),
       // Config piggybacks on the manifest reconcile cadence.
-      setInterval(() => void this.configSync.syncNow("reconcile-timer"), 5 * 60_000),
+      setInterval(
+        () => void this.configSync.syncNow("reconcile-timer"),
+        5 * 60_000,
+      ),
     );
 
     this.commands = new CommandCoordinator(
@@ -719,7 +722,10 @@ export class PlayerRuntime {
   } | null = null;
 
   private lookups(manifest: Manifest): NonNullable<PlayerRuntime["lookup"]> {
-    if (this.lookup && this.lookup.manifestVersion === manifest.manifestVersion) {
+    if (
+      this.lookup &&
+      this.lookup.manifestVersion === manifest.manifestVersion
+    ) {
       return this.lookup;
     }
     const widgets = new Map<string, ManifestWidget>();
@@ -738,7 +744,12 @@ export class PlayerRuntime {
       const rootLayout = manifest.layout as unknown as ManifestLayout;
       layouts.set(rootLayout.id, rootLayout);
     }
-    this.lookup = { manifestVersion: manifest.manifestVersion, widgets, dataSources, layouts };
+    this.lookup = {
+      manifestVersion: manifest.manifestVersion,
+      widgets,
+      dataSources,
+      layouts,
+    };
     return this.lookup;
   }
 
@@ -926,7 +937,11 @@ export class PlayerRuntime {
         backgroundColor: "#000000",
         failureBehavior: "placeholder",
         fallbackSrc: null,
-        allowedHosts: ["www.youtube-nocookie.com", "www.youtube.com", "i.ytimg.com"],
+        allowedHosts: [
+          "www.youtube-nocookie.com",
+          "www.youtube.com",
+          "i.ytimg.com",
+        ],
       },
     };
   }
@@ -991,7 +1006,8 @@ export class PlayerRuntime {
             ? "reliability.safe_mode"
             : "reliability.self_heal",
         category: "reliability",
-        severity: decision.action === "enter_safe_mode" ? "critical" : "warning",
+        severity:
+          decision.action === "enter_safe_mode" ? "critical" : "warning",
         failureCode: decision.action,
         metadata: { escalationStep: this.supervisorState.escalationStep },
       });

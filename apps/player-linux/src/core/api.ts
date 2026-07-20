@@ -46,7 +46,10 @@ export class ApiError extends Error {
 
 /** Network-level failure (DNS, refused, timeout) — always retryable. */
 export class NetworkError extends Error {
-  constructor(message: string, readonly cause?: unknown) {
+  constructor(
+    message: string,
+    readonly cause?: unknown,
+  ) {
     super(message);
     this.name = "NetworkError";
   }
@@ -110,8 +113,7 @@ export class ApiClient {
       response = await this.fetchImpl(this.url(path), {
         method,
         headers,
-        body:
-          options.body !== undefined ? JSON.stringify(options.body) : null,
+        body: options.body !== undefined ? JSON.stringify(options.body) : null,
         signal: controller.signal,
       });
     } catch (err) {
@@ -283,15 +285,19 @@ export class ApiClient {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 30_000);
     try {
-      const response = await this.fetchImpl(this.url("/api/v1/player/preview"), {
-        method: "POST",
-        headers: { Authorization: `Bearer ${this.credential}` },
-        body: form,
-        signal: controller.signal,
-      });
+      const response = await this.fetchImpl(
+        this.url("/api/v1/player/preview"),
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${this.credential}` },
+          body: form,
+          signal: controller.signal,
+        },
+      );
       if (response.status === 401 || response.status === 403) {
         const text = await response.text().catch(() => "");
-        const code = /"code"\s*:\s*"([^"]+)"/.exec(text)?.[1] ?? `http_${response.status}`;
+        const code =
+          /"code"\s*:\s*"([^"]+)"/.exec(text)?.[1] ?? `http_${response.status}`;
         throw new ApiError(response.status, code, "preview upload rejected");
       }
     } catch (err) {

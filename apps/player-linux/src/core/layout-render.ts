@@ -19,11 +19,7 @@ import type {
   ManifestDataSource,
   ManifestWidget,
 } from "./content-types";
-import type {
-  Manifest,
-  ManifestAsset,
-  ManifestPlaylist,
-} from "./types";
+import type { Manifest, ManifestAsset, ManifestPlaylist } from "./types";
 import type {
   LayoutPlaylistItem,
   LayoutRenderPayload,
@@ -31,7 +27,12 @@ import type {
   RenderNode,
 } from "./render-tree";
 
-const FONT_WHITELIST = new Set(["Inter", "Roboto", "Source Sans 3", "Noto Sans"]);
+const FONT_WHITELIST = new Set([
+  "Inter",
+  "Roboto",
+  "Source Sans 3",
+  "Noto Sans",
+]);
 
 export interface LayoutRenderContext {
   manifest: Manifest;
@@ -40,7 +41,10 @@ export interface LayoutRenderContext {
   at: Date;
 }
 
-function assetVariant(manifest: Manifest, assetId: string): ManifestAsset | undefined {
+function assetVariant(
+  manifest: Manifest,
+  assetId: string,
+): ManifestAsset | undefined {
   return manifest.assets.find((a) => a.assetId === assetId);
 }
 
@@ -67,7 +71,10 @@ export function renderLayout(
       continue;
     }
     // Group primitives are containers only; their children draw themselves.
-    if (placement.type === "primitive" && placement.primitive?.kind === "group") {
+    if (
+      placement.type === "primitive" &&
+      placement.primitive?.kind === "group"
+    ) {
       continue;
     }
     const zone = renderPlacement(placement, ctx);
@@ -109,7 +116,9 @@ function renderPlacement(
 
   switch (placement.type) {
     case "widget": {
-      const widget = placement.widgetId ? ctx.widgets.get(placement.widgetId) : undefined;
+      const widget = placement.widgetId
+        ? ctx.widgets.get(placement.widgetId)
+        : undefined;
       if (!widget) {
         return null;
       }
@@ -124,7 +133,9 @@ function renderPlacement(
       return { ...base, render: payload.root };
     }
     case "asset": {
-      const asset = placement.assetId ? assetVariant(ctx.manifest, placement.assetId) : undefined;
+      const asset = placement.assetId
+        ? assetVariant(ctx.manifest, placement.assetId)
+        : undefined;
       if (!asset) {
         return null;
       }
@@ -166,7 +177,11 @@ function renderPlacement(
       if (!node) {
         return null;
       }
-      return { ...base, render: node, radius: placement.primitive.cornerRadius };
+      return {
+        ...base,
+        render: node,
+        radius: placement.primitive.cornerRadius,
+      };
     }
     default:
       return null;
@@ -210,12 +225,16 @@ function buildZoneItems(
   return items;
 }
 
-function findPlaylist(manifest: Manifest, id: string | null): ManifestPlaylist | null {
+function findPlaylist(
+  manifest: Manifest,
+  id: string | null,
+): ManifestPlaylist | null {
   if (!id) {
     return null;
   }
   if (manifest.playlist?.id === id) return manifest.playlist;
-  if (manifest.directFallbackPlaylist?.id === id) return manifest.directFallbackPlaylist;
+  if (manifest.directFallbackPlaylist?.id === id)
+    return manifest.directFallbackPlaylist;
   return (manifest.playlists ?? []).find((p) => p.id === id) ?? null;
 }
 
@@ -243,7 +262,9 @@ function renderPrimitive(
           fontWeight: primitive.fontWeight ?? 400,
           fontFamily: family,
           align: (primitive.textAlign as "left" | "center" | "right") ?? "left",
-          verticalAlign: (primitive.verticalAlign as "top" | "center" | "bottom") ?? "center",
+          verticalAlign:
+            (primitive.verticalAlign as "top" | "center" | "bottom") ??
+            "center",
           lineHeight: primitive.lineHeight ?? 1.2,
           letterSpacing: primitive.letterSpacing ?? 0,
           maxLines: primitive.maximumLines ?? 4,
@@ -297,7 +318,7 @@ function resolvePrimitiveText(
       // record's well-known fields, matching the Android LayoutPrimitiveRenderer.
       firstRecordFields(source, ctx.at)
     : null;
-  const value = record ? record[binding.field] ?? "" : "";
+  const value = record ? (record[binding.field] ?? "") : "";
   if (!value) {
     if (binding.hideWhenEmpty) {
       return null;

@@ -25,7 +25,8 @@ function toNumber(value: string | number | null | undefined): number | null {
   if (value === null || value === undefined || value === "") {
     return null;
   }
-  const n = typeof value === "number" ? value : Number(String(value).replace(/,/g, ""));
+  const n =
+    typeof value === "number" ? value : Number(String(value).replace(/,/g, ""));
   return Number.isFinite(n) ? n : null;
 }
 
@@ -71,7 +72,10 @@ function formatInstant(
             minute: "2-digit",
           };
   try {
-    return new Intl.DateTimeFormat("en-US", { ...opts, timeZone: timezone }).format(date);
+    return new Intl.DateTimeFormat("en-US", {
+      ...opts,
+      timeZone: timezone,
+    }).format(date);
   } catch {
     return new Intl.DateTimeFormat("en-US", opts).format(date);
   }
@@ -98,7 +102,10 @@ export function formatValue(
     case "number":
     case "integer": {
       const n = toNumber(raw as string);
-      body = n === null ? "" : formatNumber(n, options.format === "integer" ? 0 : precision);
+      body =
+        n === null
+          ? ""
+          : formatNumber(n, options.format === "integer" ? 0 : precision);
       break;
     }
     case "percent": {

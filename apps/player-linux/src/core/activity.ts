@@ -25,7 +25,8 @@ const MAX_BUFFER = 500;
 const MAX_BATCH = 200;
 export const ACTIVITY_FLUSH_INTERVAL_MS = 30_000;
 
-export type ActivitySeverity = "debug" | "info" | "warning" | "error" | "critical";
+export type ActivitySeverity =
+  "debug" | "info" | "warning" | "error" | "critical";
 
 export type ActivityResult =
   | "playing"
@@ -89,7 +90,10 @@ export class ActivityReporter {
       this.loaded = true;
     }
     if (this.timer === null) {
-      this.timer = setInterval(() => void this.flush(), ACTIVITY_FLUSH_INTERVAL_MS);
+      this.timer = setInterval(
+        () => void this.flush(),
+        ACTIVITY_FLUSH_INTERVAL_MS,
+      );
       this.timer.unref?.();
     }
   }
@@ -119,7 +123,8 @@ export class ActivityReporter {
         value !== undefined &&
         !["eventType", "category", "severity"].includes(key)
       ) {
-        event[key] = key === "failureMessage" ? String(value).slice(0, 240) : value;
+        event[key] =
+          key === "failureMessage" ? String(value).slice(0, 240) : value;
       }
     }
     this.buffer.push(event);

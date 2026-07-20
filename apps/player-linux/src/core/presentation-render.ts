@@ -28,14 +28,20 @@ export interface PresentationContext {
 
 function styleFromProps(props: Record<string, unknown>): BoxStyle {
   const style: BoxStyle = {};
-  if (typeof props["background"] === "string") style.background = safeColor(props["background"], "#0E141B");
-  if (typeof props["color"] === "string") style.color = safeColor(props["color"], "#F5F7FA");
-  if (Number.isFinite(Number(props["padding"]))) style.padding = Number(props["padding"]);
+  if (typeof props["background"] === "string")
+    style.background = safeColor(props["background"], "#0E141B");
+  if (typeof props["color"] === "string")
+    style.color = safeColor(props["color"], "#F5F7FA");
+  if (Number.isFinite(Number(props["padding"])))
+    style.padding = Number(props["padding"]);
   if (Number.isFinite(Number(props["gap"]))) style.gap = Number(props["gap"]);
-  if (Number.isFinite(Number(props["radius"]))) style.radius = Number(props["radius"]);
-  if (Number.isFinite(Number(props["opacity"]))) style.opacity = Number(props["opacity"]);
+  if (Number.isFinite(Number(props["radius"])))
+    style.radius = Number(props["radius"]);
+  if (Number.isFinite(Number(props["opacity"])))
+    style.opacity = Number(props["opacity"]);
   const justify = props["justify"];
-  if (typeof justify === "string") style.justify = justify as BoxStyle["justify"];
+  if (typeof justify === "string")
+    style.justify = justify as BoxStyle["justify"];
   const align = props["align"];
   if (typeof align === "string") style.align = align as BoxStyle["align"];
   return style;
@@ -43,12 +49,17 @@ function styleFromProps(props: Record<string, unknown>): BoxStyle {
 
 function textStyleFromProps(props: Record<string, unknown>): TextStyle {
   const style: TextStyle = {};
-  if (typeof props["color"] === "string") style.color = safeColor(props["color"], "#F5F7FA");
-  if (Number.isFinite(Number(props["fontSize"]))) style.fontSize = Number(props["fontSize"]);
-  if (Number.isFinite(Number(props["fontWeight"]))) style.fontWeight = Number(props["fontWeight"]);
+  if (typeof props["color"] === "string")
+    style.color = safeColor(props["color"], "#F5F7FA");
+  if (Number.isFinite(Number(props["fontSize"])))
+    style.fontSize = Number(props["fontSize"]);
+  if (Number.isFinite(Number(props["fontWeight"])))
+    style.fontWeight = Number(props["fontWeight"]);
   const align = props["align"] ?? props["textAlign"];
-  if (align === "left" || align === "center" || align === "right") style.align = align;
-  if (Number.isFinite(Number(props["maxLines"]))) style.maxLines = Number(props["maxLines"]);
+  if (align === "left" || align === "center" || align === "right")
+    style.align = align;
+  if (Number.isFinite(Number(props["maxLines"])))
+    style.maxLines = Number(props["maxLines"]);
   return style;
 }
 
@@ -89,7 +100,7 @@ export function resolveBinding(
     suffix: binding.suffix,
     timezone: "UTC",
   });
-  return formatted === "" ? binding.fallback ?? "" : formatted;
+  return formatted === "" ? (binding.fallback ?? "") : formatted;
 }
 
 function datasetId(ref: string): string {
@@ -138,7 +149,10 @@ function resolveEnvironment(path: string, at: Date): string {
   }
 }
 
-function evaluateCondition(condition: PresentationCondition, ctx: PresentationContext): boolean {
+function evaluateCondition(
+  condition: PresentationCondition,
+  ctx: PresentationContext,
+): boolean {
   const left = resolveBinding(condition.binding, ctx);
   const right = condition.value ?? "";
   const ln = Number(left);
@@ -178,7 +192,10 @@ export function renderPresentation(
   ctx: PresentationContext,
 ): RenderNode | null {
   let budget = MAX_NODES;
-  const project = (node: PresentationNode, local: PresentationContext): RenderNode[] => {
+  const project = (
+    node: PresentationNode,
+    local: PresentationContext,
+  ): RenderNode[] => {
     if (budget-- <= 0) {
       return [];
     }
@@ -189,10 +206,17 @@ export function renderPresentation(
     // Repeat expansion: emit one subtree per record.
     if (node.repeat) {
       const source = local.datasets.get(datasetId(node.repeat.dataset));
-      const records = (source?.records ?? []).slice(0, Math.max(1, node.repeat.limit));
+      const records = (source?.records ?? []).slice(
+        0,
+        Math.max(1, node.repeat.limit),
+      );
       const out: RenderNode[] = [];
       records.forEach((record, i) => {
-        const child = projectSelf(node, { ...local, record: record.fields, repeatIndex: i });
+        const child = projectSelf(node, {
+          ...local,
+          record: record.fields,
+          repeatIndex: i,
+        });
         if (child) {
           out.push(child);
         }
@@ -203,7 +227,10 @@ export function renderPresentation(
     return self ? [self] : [];
   };
 
-  const projectSelf = (node: PresentationNode, local: PresentationContext): RenderNode | null => {
+  const projectSelf = (
+    node: PresentationNode,
+    local: PresentationContext,
+  ): RenderNode | null => {
     const props = node.props ?? {};
     const children = (node.children ?? []).flatMap((c) => project(c, local));
 
@@ -213,31 +240,59 @@ export function renderPresentation(
       case "stack":
         return { t: "box", style: styleFromProps(props), children };
       case "row":
-        return { t: "box", style: { ...styleFromProps(props), direction: "row" }, children };
+        return {
+          t: "box",
+          style: { ...styleFromProps(props), direction: "row" },
+          children,
+        };
       case "column":
       case "grouped_sections":
-        return { t: "box", style: { ...styleFromProps(props), direction: "column" }, children };
+        return {
+          t: "box",
+          style: { ...styleFromProps(props), direction: "column" },
+          children,
+        };
       case "grid": {
         const cols = Number(props["columns"]) || 2;
-        return { t: "box", style: { ...styleFromProps(props), columns: `repeat(${cols}, 1fr)` }, children };
+        return {
+          t: "box",
+          style: { ...styleFromProps(props), columns: `repeat(${cols}, 1fr)` },
+          children,
+        };
       }
       case "repeat":
       case "conditional":
         // Wrapper node whose effect is its expanded children.
-        return { t: "box", style: { ...styleFromProps(props), direction: "column" }, children };
+        return {
+          t: "box",
+          style: { ...styleFromProps(props), direction: "column" },
+          children,
+        };
       case "spacer":
         return { t: "spacer", grow: Number(props["grow"]) || 1 };
       case "divider":
-        return { t: "divider", color: safeColor(String(props["color"] ?? ""), "#2A3644"), vertical: props["vertical"] === true };
+        return {
+          t: "divider",
+          color: safeColor(String(props["color"] ?? ""), "#2A3644"),
+          vertical: props["vertical"] === true,
+        };
       case "text":
       case "badge": {
-        const value = node.binding ? resolveBinding(node.binding, local) : String(props["text"] ?? "");
+        const value = node.binding
+          ? resolveBinding(node.binding, local)
+          : String(props["text"] ?? "");
         return { t: "text", value, style: textStyleFromProps(props) };
       }
       case "icon":
-        return { t: "text", value: String(props["glyph"] ?? "•"), style: textStyleFromProps(props) };
+        return {
+          t: "text",
+          value: String(props["glyph"] ?? "•"),
+          style: textStyleFromProps(props),
+        };
       case "asset_image": {
-        const assetId = node.binding ? resolveBinding(node.binding, local) : String(props["assetId"] ?? "");
+        const assetId = node.binding
+          ? resolveBinding(node.binding, local)
+          : String(props["assetId"] ?? "");
         const variantId = String(props["variantId"] ?? "");
         if (!assetId) {
           return null;
@@ -249,7 +304,9 @@ export function renderPresentation(
         };
       }
       case "qr_code": {
-        const value = node.binding ? resolveBinding(node.binding, local) : String(props["value"] ?? "");
+        const value = node.binding
+          ? resolveBinding(node.binding, local)
+          : String(props["value"] ?? "");
         return {
           t: "qr",
           src: qrDataUri(
@@ -261,10 +318,17 @@ export function renderPresentation(
       }
       case "progress": {
         const ratio = Math.min(Math.max(Number(props["value"]) || 0, 0), 1);
-        return { t: "progress", ratio, color: safeColor(String(props["color"] ?? ""), "#4C8BF5"), track: safeColor(String(props["track"] ?? ""), "#2A3644") };
+        return {
+          t: "progress",
+          ratio,
+          color: safeColor(String(props["color"] ?? ""), "#4C8BF5"),
+          track: safeColor(String(props["track"] ?? ""), "#2A3644"),
+        };
       }
       case "marquee": {
-        const value = node.binding ? resolveBinding(node.binding, local) : String(props["text"] ?? "");
+        const value = node.binding
+          ? resolveBinding(node.binding, local)
+          : String(props["text"] ?? "");
         return {
           t: "marquee",
           text: value,
@@ -292,9 +356,17 @@ function renderChart(
   props: Record<string, unknown>,
 ): RenderNode {
   const chart =
-    node.type === "bar_chart" ? "bar" : node.type === "donut_chart" ? "donut" : "line";
+    node.type === "bar_chart"
+      ? "bar"
+      : node.type === "donut_chart"
+        ? "donut"
+        : "line";
   const datasetRef = String(props["dataset"] ?? "");
-  const source = ctx.datasets.get(datasetRef.includes(":") ? datasetRef.slice(0, datasetRef.indexOf(":")) : datasetRef);
+  const source = ctx.datasets.get(
+    datasetRef.includes(":")
+      ? datasetRef.slice(0, datasetRef.indexOf(":"))
+      : datasetRef,
+  );
   const valueField = String(props["valueField"] ?? "value");
   const labelField = String(props["labelField"] ?? "label");
   const records = source?.records ?? [];
@@ -303,5 +375,12 @@ function renderChart(
   const palette = Array.isArray(props["colors"])
     ? (props["colors"] as string[]).map((c) => safeColor(c, "#4C8BF5"))
     : ["#4C8BF5", "#34C759", "#FF9F0A", "#FF375F", "#BF5AF2"];
-  return { t: "chart", chart, series, labels, colors: palette, style: styleFromProps(props) };
+  return {
+    t: "chart",
+    chart,
+    series,
+    labels,
+    colors: palette,
+    style: styleFromProps(props),
+  };
 }

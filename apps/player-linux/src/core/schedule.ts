@@ -62,7 +62,11 @@ function localTimeIn(timezone: string, at: Date): LocalTime | null {
   const weekday = weekdays[get("weekday")];
   const hour = Number(get("hour"));
   const minute = Number(get("minute"));
-  if (weekday === undefined || !Number.isFinite(hour) || !Number.isFinite(minute)) {
+  if (
+    weekday === undefined ||
+    !Number.isFinite(hour) ||
+    !Number.isFinite(minute)
+  ) {
     return null;
   }
   return {
@@ -86,7 +90,9 @@ function parseHHMM(value: string | null | undefined): number | null {
 /** Is the schedule active at `at` (half-open interval semantics)? */
 export function scheduleApplies(schedule: ManifestSchedule, at: Date): boolean {
   if (schedule.type === "one_time") {
-    const start = schedule.oneTimeStart ? Date.parse(schedule.oneTimeStart) : NaN;
+    const start = schedule.oneTimeStart
+      ? Date.parse(schedule.oneTimeStart)
+      : NaN;
     const end = schedule.oneTimeEnd ? Date.parse(schedule.oneTimeEnd) : NaN;
     if (!Number.isFinite(start) || !Number.isFinite(end)) {
       return false;
@@ -114,7 +120,9 @@ export function scheduleApplies(schedule: ManifestSchedule, at: Date): boolean {
   const days = new Set(schedule.daysOfWeek ?? []);
   if (end > start) {
     // Same-day window [start, end).
-    return days.has(local.weekday) && local.minutes >= start && local.minutes < end;
+    return (
+      days.has(local.weekday) && local.minutes >= start && local.minutes < end
+    );
   }
   // Overnight window belongs to the start day: active from start..midnight on
   // a selected day, and from midnight..end on the following day.
@@ -133,7 +141,9 @@ export function emergencyActive(manifest: Manifest, at: Date): boolean {
   const start = Date.parse(emergency.activatedAt);
   const end = Date.parse(emergency.expiresAt);
   const t = at.getTime();
-  return Number.isFinite(start) && Number.isFinite(end) && t >= start && t < end;
+  return (
+    Number.isFinite(start) && Number.isFinite(end) && t >= start && t < end
+  );
 }
 
 /** Resolve what should be playing right now. */
@@ -151,9 +161,7 @@ export function resolveSelection(manifest: Manifest, at: Date): Selection {
   const applicable = (manifest.schedules ?? [])
     .filter((s) => s.playlistId || s.layoutId)
     .filter((s) => scheduleApplies(s, at))
-    .sort(
-      (a, b) => b.priority - a.priority || b.specificity - a.specificity,
-    );
+    .sort((a, b) => b.priority - a.priority || b.specificity - a.specificity);
   const winner = applicable[0];
   if (winner) {
     return {
@@ -178,9 +186,7 @@ export function resolveSelection(manifest: Manifest, at: Date): Selection {
 
   // A Layout may be assigned directly with no playlist.
   const directLayout = (manifest.layout ?? manifest.directFallbackLayout) as
-    | { id: string }
-    | null
-    | undefined;
+    { id: string } | null | undefined;
   if (directLayout) {
     return {
       playlistId: null,

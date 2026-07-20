@@ -15,10 +15,7 @@ import { formatValue, safeColor, type ValueFormat } from "./format";
 import { normalizeSource, type NormalizedSource } from "./datasource";
 import { qrDataUri } from "./qr";
 import { renderPresentation } from "./presentation-render";
-import type {
-  ManifestDataSource,
-  ManifestWidget,
-} from "./content-types";
+import type { ManifestDataSource, ManifestWidget } from "./content-types";
 import type { RenderNode, WidgetRenderPayload } from "./render-tree";
 
 const DEFAULT_FG = "#F5F7FA";
@@ -31,17 +28,29 @@ export interface WidgetRenderContext {
   zoneHeight?: number;
 }
 
-function num(config: Record<string, unknown>, key: string, fallback: number): number {
+function num(
+  config: Record<string, unknown>,
+  key: string,
+  fallback: number,
+): number {
   const v = Number(config[key]);
   return Number.isFinite(v) ? v : fallback;
 }
 
-function str(config: Record<string, unknown>, key: string, fallback = ""): string {
+function str(
+  config: Record<string, unknown>,
+  key: string,
+  fallback = "",
+): string {
   const v = config[key];
   return v === undefined || v === null ? fallback : String(v);
 }
 
-function bool(config: Record<string, unknown>, key: string, fallback: boolean): boolean {
+function bool(
+  config: Record<string, unknown>,
+  key: string,
+  fallback: boolean,
+): boolean {
   const v = config[key];
   return typeof v === "boolean" ? v : fallback;
 }
@@ -99,7 +108,12 @@ export function renderWidget(
         timezone: str(config, "timezone", "UTC"),
         hour12: str(config, "format", "12") === "12",
         showSeconds: bool(config, "showSeconds", false),
-        style: { color: fg, fontSize: scale(96, config), fontWeight: 700, align: "center" },
+        style: {
+          color: fg,
+          fontSize: scale(96, config),
+          fontWeight: 700,
+          align: "center",
+        },
       });
 
     case "date":
@@ -109,7 +123,12 @@ export function renderWidget(
           format: dateFormatFor(str(config, "format", "full")),
           timezone: str(config, "timezone", "UTC"),
         }),
-        style: { color: fg, fontSize: scale(64, config), fontWeight: 600, align: "center" },
+        style: {
+          color: fg,
+          fontSize: scale(64, config),
+          fontWeight: 600,
+          align: "center",
+        },
       });
 
     case "qrcode":
@@ -127,7 +146,9 @@ export function renderWidget(
     case "countdown": {
       const targetMs = Date.parse(str(config, "target"));
       if (!Number.isFinite(targetMs)) {
-        return centered(textNode(str(config, "label") || "Countdown", fg, scale(48, config)));
+        return centered(
+          textNode(str(config, "label") || "Countdown", fg, scale(48, config)),
+        );
       }
       const completion = str(config, "completionAction", "completed_text");
       return {
@@ -162,7 +183,12 @@ export function renderWidget(
                 completion === "hide" || completion === "count_up"
                   ? completion
                   : "completed_text",
-              style: { color: fg, fontSize: scale(88, config), fontWeight: 700, align: "center" },
+              style: {
+                color: fg,
+                fontSize: scale(88, config),
+                fontWeight: 700,
+                align: "center",
+              },
             },
           ],
         },
@@ -201,7 +227,11 @@ function textNode(value: string, color: string, fontSize: number): RenderNode {
 }
 
 function emptyNode(message: string): RenderNode {
-  return { t: "text", value: message, style: { color: "#8A94A6", fontSize: 32, align: "center" } };
+  return {
+    t: "text",
+    value: message,
+    style: { color: "#8A94A6", fontSize: 32, align: "center" },
+  };
 }
 
 function resolveSource(
@@ -221,28 +251,41 @@ function renderTicker(
   bg: string,
 ): WidgetRenderPayload {
   const source = resolveSource(config, ctx);
-  const fields =
-    (Array.isArray(config["fields"]) ? (config["fields"] as string[]) : null) ??
-    [str(config, "field", "title")];
+  const fields = (Array.isArray(config["fields"])
+    ? (config["fields"] as string[])
+    : null) ?? [str(config, "field", "title")];
   const fieldSep = str(config, "fieldSeparator", " — ");
   const sep = str(config, "separator", " • ");
   const items = (source?.records ?? []).map((r) =>
-    fields.map((f) => r.fields[f] ?? "").filter(Boolean).join(fieldSep),
+    fields
+      .map((f) => r.fields[f] ?? "")
+      .filter(Boolean)
+      .join(fieldSep),
   );
-  const text = items.filter(Boolean).join(sep) || str(config, "emptyState", "No items available");
+  const text =
+    items.filter(Boolean).join(sep) ||
+    str(config, "emptyState", "No items available");
   const speed = str(config, "speed", "normal");
-  const durationMs = speed === "slow" ? 30_000 : speed === "fast" ? 10_000 : 18_000;
+  const durationMs =
+    speed === "slow" ? 30_000 : speed === "fast" ? 10_000 : 18_000;
   return {
     background: bg,
     root: {
       t: "box",
-      style: { width: 100, height: 100, background: bg, align: "center", justify: "center" },
+      style: {
+        width: 100,
+        height: 100,
+        background: bg,
+        align: "center",
+        justify: "center",
+      },
       children: [
         {
           t: "marquee",
           text,
           durationMs,
-          direction: str(config, "direction", "left") === "right" ? "right" : "left",
+          direction:
+            str(config, "direction", "left") === "right" ? "right" : "left",
           style: { color: fg, fontSize: scale(48, config), fontWeight: 600 },
         },
       ],
@@ -272,7 +315,9 @@ function renderMetric(
         });
   const label =
     str(config, "label") ||
-    (record && str(config, "labelField") ? record.fields[str(config, "labelField")] ?? "" : "");
+    (record && str(config, "labelField")
+      ? (record.fields[str(config, "labelField")] ?? "")
+      : "");
   return {
     background: bg,
     root: {
@@ -288,7 +333,16 @@ function renderMetric(
         padding: num(config, "contentPadding", 24),
       },
       children: [
-        { t: "text", value, style: { color: fg, fontSize: scale(120, config), fontWeight: 800, align: "center" } },
+        {
+          t: "text",
+          value,
+          style: {
+            color: fg,
+            fontSize: scale(120, config),
+            fontWeight: 800,
+            align: "center",
+          },
+        },
         ...(label ? [textNode(label, fg, scale(40, config))] : []),
       ],
     },
@@ -320,10 +374,22 @@ function renderCards(
     children: [
       textLeft(r.fields[titleField] ?? "", fg, scale(36, config), 700),
       ...(str(config, "subtitleField") && r.fields[str(config, "subtitleField")]
-        ? [textLeft(r.fields[str(config, "subtitleField")]!, "#B7C0CC", scale(28, config))]
+        ? [
+            textLeft(
+              r.fields[str(config, "subtitleField")]!,
+              "#B7C0CC",
+              scale(28, config),
+            ),
+          ]
         : []),
       ...(str(config, "bodyField") && r.fields[str(config, "bodyField")]
-        ? [textLeft(r.fields[str(config, "bodyField")]!, "#8A94A6", scale(24, config))]
+        ? [
+            textLeft(
+              r.fields[str(config, "bodyField")]!,
+              "#8A94A6",
+              scale(24, config),
+            ),
+          ]
         : []),
     ],
   }));
@@ -339,7 +405,10 @@ function renderCards(
         gap: 16,
         columns: `repeat(${columns}, 1fr)`,
       },
-      children: cards.length > 0 ? cards : [emptyNode(str(config, "emptyState", "No items available"))],
+      children:
+        cards.length > 0
+          ? cards
+          : [emptyNode(str(config, "emptyState", "No items available"))],
     },
   };
 }
@@ -356,7 +425,13 @@ function renderWeather(
   const records = (source?.records ?? []).slice(0, days || 1);
   const columns: RenderNode[] = records.map((r) => ({
     t: "box",
-    style: { direction: "column", align: "center", gap: 6, grow: 1, padding: 12 },
+    style: {
+      direction: "column",
+      align: "center",
+      gap: 6,
+      grow: 1,
+      padding: 12,
+    },
     children: [
       textNode(r.fields["date"] ?? "", "#B7C0CC", scale(26, config)),
       textNode(r.fields["condition"] ?? "", fg, scale(30, config)),
@@ -371,8 +446,17 @@ function renderWeather(
     background: bg,
     root: {
       t: "box",
-      style: { width: 100, height: 100, background: bg, padding: 24, gap: 12, justify: "space-around", align: "center" },
-      children: columns.length > 0 ? columns : [emptyNode("Weather unavailable")],
+      style: {
+        width: 100,
+        height: 100,
+        background: bg,
+        padding: 24,
+        gap: 12,
+        justify: "space-around",
+        align: "center",
+      },
+      children:
+        columns.length > 0 ? columns : [emptyNode("Weather unavailable")],
     },
   };
 }
@@ -387,13 +471,20 @@ function renderDisplay(
   const source = resolveSource(config, ctx);
   const max = num(config, "maximumItems", 20);
   const records = (source?.records ?? []).slice(0, max);
-  const spacing = str(config, "rowSpacing", "comfortable") === "compact" ? 6 : 14;
+  const spacing =
+    str(config, "rowSpacing", "comfortable") === "compact" ? 6 : 14;
 
   if (source?.hidden) {
-    return { background: bg, root: { t: "box", style: { background: bg }, children: [] } };
+    return {
+      background: bg,
+      root: { t: "box", style: { background: bg }, children: [] },
+    };
   }
   if (records.length === 0) {
-    return { background: bg, root: centeredEmpty(str(config, "emptyState", "No items available"), bg) };
+    return {
+      background: bg,
+      root: centeredEmpty(str(config, "emptyState", "No items available"), bg),
+    };
   }
 
   // Table has explicit columns; menu/list/agenda use primary/secondary fields.
@@ -401,8 +492,10 @@ function renderDisplay(
     return renderTable(config, records, fg, bg, spacing);
   }
 
-  const primaryField = str(config, "primaryField") || str(config, "titleField") || "title";
-  const secondaryField = str(config, "secondaryField") || str(config, "subtitleField");
+  const primaryField =
+    str(config, "primaryField") || str(config, "titleField") || "title";
+  const secondaryField =
+    str(config, "secondaryField") || str(config, "subtitleField");
   const rows: RenderNode[] = records.map((r) => ({
     t: "box",
     style: { direction: "column", gap: 2, padding: spacing },
@@ -417,7 +510,14 @@ function renderDisplay(
     background: bg,
     root: {
       t: "box",
-      style: { width: 100, height: 100, direction: "column", background: bg, padding: 32, gap: bool(config, "showDividers", false) ? 0 : 4 },
+      style: {
+        width: 100,
+        height: 100,
+        direction: "column",
+        background: bg,
+        padding: 32,
+        gap: bool(config, "showDividers", false) ? 0 : 4,
+      },
       children: rows,
     },
   };
@@ -436,8 +536,16 @@ function renderTable(
   const header: RenderNode | null = bool(config, "showHeader", false)
     ? {
         t: "box",
-        style: { direction: "row", gap: 16, padding: spacing, borderColor: "#2A3644", borderWidth: 0 },
-        children: columns.map((c) => textLeftGrow(str(c, "label") || str(c, "field"), "#8A94A6", 26)),
+        style: {
+          direction: "row",
+          gap: 16,
+          padding: spacing,
+          borderColor: "#2A3644",
+          borderWidth: 0,
+        },
+        children: columns.map((c) =>
+          textLeftGrow(str(c, "label") || str(c, "field"), "#8A94A6", 26),
+        ),
       }
     : null;
   const rows: RenderNode[] = records.map((r) => ({
@@ -454,7 +562,12 @@ function renderTable(
       return {
         t: "text",
         value,
-        style: { color: fg, fontSize: 30, grow: 1, align: align === "right" || align === "center" ? align : "left" },
+        style: {
+          color: fg,
+          fontSize: 30,
+          grow: 1,
+          align: align === "right" || align === "center" ? align : "left",
+        },
       } as RenderNode;
     }),
   }));
@@ -462,24 +575,53 @@ function renderTable(
     background: bg,
     root: {
       t: "box",
-      style: { width: 100, height: 100, direction: "column", background: bg, padding: 32 },
+      style: {
+        width: 100,
+        height: 100,
+        direction: "column",
+        background: bg,
+        padding: 32,
+      },
       children: header ? [header, ...rows] : rows,
     },
   };
 }
 
-function textLeft(value: string, color: string, fontSize: number, fontWeight = 400): RenderNode {
-  return { t: "text", value, style: { color, fontSize, fontWeight, align: "left" } };
+function textLeft(
+  value: string,
+  color: string,
+  fontSize: number,
+  fontWeight = 400,
+): RenderNode {
+  return {
+    t: "text",
+    value,
+    style: { color, fontSize, fontWeight, align: "left" },
+  };
 }
 
-function textLeftGrow(value: string, color: string, fontSize: number): RenderNode {
-  return { t: "text", value, style: { color, fontSize, align: "left", ...({ } as object) } };
+function textLeftGrow(
+  value: string,
+  color: string,
+  fontSize: number,
+): RenderNode {
+  return {
+    t: "text",
+    value,
+    style: { color, fontSize, align: "left", ...({} as object) },
+  };
 }
 
 function centeredEmpty(message: string, bg: string): RenderNode {
   return {
     t: "box",
-    style: { width: 100, height: 100, justify: "center", align: "center", background: bg },
+    style: {
+      width: 100,
+      height: 100,
+      justify: "center",
+      align: "center",
+      background: bg,
+    },
     children: [emptyNode(message)],
   };
 }

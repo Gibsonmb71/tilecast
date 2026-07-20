@@ -211,7 +211,8 @@ function applyBoxStyle(el: HTMLElement, style: Record<string, unknown>): void {
   if (typeof style["padding"] === "number") s.padding = px(style["padding"]);
   if (typeof style["gap"] === "number") s.gap = px(style["gap"]);
   if (typeof style["radius"] === "number") s.borderRadius = px(style["radius"]);
-  if (typeof style["opacity"] === "number") s.opacity = String(style["opacity"]);
+  if (typeof style["opacity"] === "number")
+    s.opacity = String(style["opacity"]);
   if (typeof style["borderWidth"] === "number" && style["borderWidth"]) {
     s.border = `${px(style["borderWidth"])} solid ${String(style["borderColor"] ?? "#000")}`;
   }
@@ -235,11 +236,16 @@ function applyBoxStyle(el: HTMLElement, style: Record<string, unknown>): void {
     end: "flex-end",
     stretch: "stretch",
   };
-  if (style["justify"]) s.justifyContent = justifyMap[String(style["justify"])] ?? "flex-start";
-  if (style["align"]) s.alignItems = alignMap[String(style["align"])] ?? "stretch";
+  if (style["justify"])
+    s.justifyContent = justifyMap[String(style["justify"])] ?? "flex-start";
+  if (style["align"])
+    s.alignItems = alignMap[String(style["align"])] ?? "stretch";
   if (typeof style["grow"] === "number") s.flexGrow = String(style["grow"]);
-  if (typeof style["width"] === "number") s.width = style["width"] <= 100 ? `${style["width"]}%` : px(style["width"]);
-  if (typeof style["height"] === "number") s.height = style["height"] <= 100 ? `${style["height"]}%` : px(style["height"]);
+  if (typeof style["width"] === "number")
+    s.width = style["width"] <= 100 ? `${style["width"]}%` : px(style["width"]);
+  if (typeof style["height"] === "number")
+    s.height =
+      style["height"] <= 100 ? `${style["height"]}%` : px(style["height"]);
   if (style["wrap"]) s.flexWrap = "wrap";
 }
 
@@ -248,17 +254,23 @@ function applyTextStyle(el: HTMLElement, style: Record<string, unknown>): void {
   if (style["color"]) s.color = String(style["color"]);
   if (style["background"]) s.background = String(style["background"]);
   if (typeof style["fontSize"] === "number") s.fontSize = px(style["fontSize"]);
-  if (typeof style["fontWeight"] === "number") s.fontWeight = String(style["fontWeight"]);
-  if (style["fontFamily"]) s.fontFamily = `${String(style["fontFamily"])}, system-ui, sans-serif`;
+  if (typeof style["fontWeight"] === "number")
+    s.fontWeight = String(style["fontWeight"]);
+  if (style["fontFamily"])
+    s.fontFamily = `${String(style["fontFamily"])}, system-ui, sans-serif`;
   if (style["align"]) s.textAlign = String(style["align"]);
-  if (typeof style["lineHeight"] === "number") s.lineHeight = String(style["lineHeight"]);
-  if (typeof style["letterSpacing"] === "number") s.letterSpacing = px(style["letterSpacing"]);
+  if (typeof style["lineHeight"] === "number")
+    s.lineHeight = String(style["lineHeight"]);
+  if (typeof style["letterSpacing"] === "number")
+    s.letterSpacing = px(style["letterSpacing"]);
   if (typeof style["padding"] === "number") s.padding = px(style["padding"]);
   if (typeof style["grow"] === "number") s.flexGrow = String(style["grow"]);
   if (typeof style["maxLines"] === "number" && style["maxLines"]) {
     s.display = "-webkit-box";
     s.webkitBoxOrient = "vertical";
-    (s as unknown as Record<string, string>)["WebkitLineClamp"] = String(style["maxLines"]);
+    (s as unknown as Record<string, string>)["WebkitLineClamp"] = String(
+      style["maxLines"],
+    );
     s.overflow = "hidden";
   }
   const va = style["verticalAlign"];
@@ -300,9 +312,12 @@ function formatCountdown(node: AnyNode): string {
   const seconds = Math.floor((abs % 60_000) / 1_000);
   const parts: string[] = [];
   if (node["showDays"] !== false && days > 0) parts.push(`${days}d`);
-  if (node["showHours"] !== false) parts.push(`${String(hours).padStart(2, "0")}h`);
-  if (node["showMinutes"] !== false) parts.push(`${String(minutes).padStart(2, "0")}m`);
-  if (node["showSeconds"] === true) parts.push(`${String(seconds).padStart(2, "0")}s`);
+  if (node["showHours"] !== false)
+    parts.push(`${String(hours).padStart(2, "0")}h`);
+  if (node["showMinutes"] !== false)
+    parts.push(`${String(minutes).padStart(2, "0")}m`);
+  if (node["showSeconds"] === true)
+    parts.push(`${String(seconds).padStart(2, "0")}s`);
   return parts.join(" ");
 }
 
@@ -327,7 +342,8 @@ function buildRenderNode(node: AnyNode): HTMLElement {
       el.style.objectFit = FIT_MODES[String(node["fit"])] ?? "contain";
       el.style.width = "100%";
       el.style.height = "100%";
-      if (typeof node["radius"] === "number") el.style.borderRadius = px(node["radius"]);
+      if (typeof node["radius"] === "number")
+        el.style.borderRadius = px(node["radius"]);
       el.src = String(node["src"] ?? "");
       return el;
     }
@@ -356,7 +372,8 @@ function buildRenderNode(node: AnyNode): HTMLElement {
       el.style.width = "100%";
       el.style.height = "100%";
       if (node["shape"] === "circle") el.style.borderRadius = "50%";
-      else if (typeof style["radius"] === "number") el.style.borderRadius = px(style["radius"]);
+      else if (typeof style["radius"] === "number")
+        el.style.borderRadius = px(style["radius"]);
       if (style["fill"]) el.style.background = String(style["fill"]);
       if (style["strokeWidth"] && Number(style["strokeWidth"]) > 0) {
         el.style.border = `${px(style["strokeWidth"])} solid ${String(style["stroke"] ?? "#fff")}`;
@@ -408,7 +425,9 @@ function buildRenderNode(node: AnyNode): HTMLElement {
       applyTextStyle(el, (node["style"] as Record<string, unknown>) ?? {});
       const tick = () => (el.textContent = formatClock(node));
       tick();
-      nodeTimers.push(window.setInterval(tick, node["showSeconds"] ? 1_000 : 15_000));
+      nodeTimers.push(
+        window.setInterval(tick, node["showSeconds"] ? 1_000 : 15_000),
+      );
       return el;
     }
     case "countdown": {
@@ -416,7 +435,9 @@ function buildRenderNode(node: AnyNode): HTMLElement {
       applyTextStyle(el, (node["style"] as Record<string, unknown>) ?? {});
       const tick = () => (el.textContent = formatCountdown(node));
       tick();
-      nodeTimers.push(window.setInterval(tick, node["showSeconds"] ? 1_000 : 30_000));
+      nodeTimers.push(
+        window.setInterval(tick, node["showSeconds"] ? 1_000 : 30_000),
+      );
       return el;
     }
     default: {
@@ -441,7 +462,8 @@ function buildMarquee(node: AnyNode): HTMLElement {
   track.style.paddingLeft = "100%";
   track.style.willChange = "transform";
   const dur = Math.max(Number(node["durationMs"] ?? 18_000), 4_000);
-  const dir = node["direction"] === "right" ? "tc-marquee-right" : "tc-marquee-left";
+  const dir =
+    node["direction"] === "right" ? "tc-marquee-right" : "tc-marquee-left";
   track.style.animation = `${dir} ${dur}ms linear infinite`;
   wrap.appendChild(track);
   return wrap;
@@ -470,7 +492,10 @@ function buildChart(node: AnyNode): HTMLElement {
       const x2 = cx + r * Math.cos(angle + slice);
       const y2 = cy + r * Math.sin(angle + slice);
       const large = slice > Math.PI ? 1 : 0;
-      path.setAttribute("d", `M${cx} ${cy} L${x1} ${y1} A${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`);
+      path.setAttribute(
+        "d",
+        `M${cx} ${cy} L${x1} ${y1} A${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`,
+      );
       path.setAttribute("fill", colors[i % colors.length]!);
       svg.appendChild(path);
       angle += slice;
@@ -489,7 +514,9 @@ function buildChart(node: AnyNode): HTMLElement {
     });
   } else {
     const step = 100 / Math.max(series.length - 1, 1);
-    const points = series.map((v, i) => `${i * step},${60 - (Math.abs(v) / max) * 58}`).join(" ");
+    const points = series
+      .map((v, i) => `${i * step},${60 - (Math.abs(v) / max) * 58}`)
+      .join(" ");
     const poly = document.createElementNS(svgNS, "polyline");
     poly.setAttribute("points", points);
     poly.setAttribute("fill", "none");
@@ -539,7 +566,10 @@ function failItem(item: RendererItem, message: string): void {
   const myGeneration = generation;
   // Isolate the failure and keep rotating; pause grows when everything is
   // failing so a fully broken playlist does not spin at 100% CPU.
-  const delay = Math.min(2_000 * Math.max(consecutiveFailures - items.length, 0) + 1_000, 30_000);
+  const delay = Math.min(
+    2_000 * Math.max(consecutiveFailures - items.length, 0) + 1_000,
+    30_000,
+  );
   window.setTimeout(() => {
     if (generation !== myGeneration) {
       return;
@@ -549,7 +579,10 @@ function failItem(item: RendererItem, message: string): void {
   }, delay);
 }
 
-async function renderItem(item: RendererItem, myGeneration: number): Promise<void> {
+async function renderItem(
+  item: RendererItem,
+  myGeneration: number,
+): Promise<void> {
   if (myGeneration !== generation) {
     return;
   }
@@ -644,7 +677,11 @@ function renderLayoutItem(item: RendererItem, myGeneration: number): void {
       img.style.objectFit = FIT_MODES[zone.image.fit] ?? "contain";
       el.appendChild(img);
     } else if (zone.playlistItems && zone.playlistItems.length > 0) {
-      startZonePlaylist(el, zone.playlistItems, () => generation === myGeneration);
+      startZonePlaylist(
+        el,
+        zone.playlistItems,
+        () => generation === myGeneration,
+      );
     }
     canvas.appendChild(el);
   }
@@ -706,7 +743,11 @@ function startZonePlaylist(
   showNext();
 }
 
-function renderImage(item: RendererItem, fit: string, myGeneration: number): void {
+function renderImage(
+  item: RendererItem,
+  fit: string,
+  myGeneration: number,
+): void {
   const img = document.createElement("img");
   img.style.objectFit = fit;
   img.onload = () => {
@@ -731,7 +772,11 @@ function renderImage(item: RendererItem, fit: string, myGeneration: number): voi
   img.src = item.src;
 }
 
-function renderVideo(item: RendererItem, fit: string, myGeneration: number): void {
+function renderVideo(
+  item: RendererItem,
+  fit: string,
+  myGeneration: number,
+): void {
   const video = document.createElement("video");
   video.style.objectFit = fit;
   video.autoplay = false;
@@ -740,7 +785,8 @@ function renderVideo(item: RendererItem, fit: string, myGeneration: number): voi
   video.playsInline = true;
 
   const startS = (item.videoStartOffsetMs ?? 0) / 1_000;
-  const endS = item.videoEndOffsetMs !== null ? item.videoEndOffsetMs / 1_000 : null;
+  const endS =
+    item.videoEndOffsetMs !== null ? item.videoEndOffsetMs / 1_000 : null;
   let lastReportedAt = 0;
   let finished = false;
 
@@ -859,9 +905,9 @@ function renderWebsite(item: RendererItem, myGeneration: number): void {
       loaded = true;
       if (config.zoomPercent && config.zoomPercent !== 100) {
         try {
-          (webview as unknown as { setZoomFactor(f: number): void }).setZoomFactor(
-            config.zoomPercent / 100,
-          );
+          (
+            webview as unknown as { setZoomFactor(f: number): void }
+          ).setZoomFactor(config.zoomPercent / 100);
         } catch {
           /* zoom is cosmetic */
         }
@@ -953,7 +999,9 @@ function showSetup(): void {
   });
 
   tilecast.onDiscoveredServer(addServer);
-  void tilecast.listDiscoveredServers().then((servers) => servers.forEach(addServer));
+  void tilecast
+    .listDiscoveredServers()
+    .then((servers) => servers.forEach(addServer));
 }
 
 function present(presentation: RendererPresentation): void {

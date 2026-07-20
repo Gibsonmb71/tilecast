@@ -40,15 +40,18 @@ describe("evaluateActiveHours", () => {
     };
     // Friday 22:00 active.
     expect(
-      evaluateActiveHours(overnight, new Date("2026-07-17T22:00:00-04:00")).active,
+      evaluateActiveHours(overnight, new Date("2026-07-17T22:00:00-04:00"))
+        .active,
     ).toBe(true);
     // Saturday 01:00 still active (belongs to Friday's window).
     expect(
-      evaluateActiveHours(overnight, new Date("2026-07-18T01:00:00-04:00")).active,
+      evaluateActiveHours(overnight, new Date("2026-07-18T01:00:00-04:00"))
+        .active,
     ).toBe(true);
     // Saturday 03:00 inactive.
     expect(
-      evaluateActiveHours(overnight, new Date("2026-07-18T03:00:00-04:00")).active,
+      evaluateActiveHours(overnight, new Date("2026-07-18T03:00:00-04:00"))
+        .active,
     ).toBe(false);
   });
 
@@ -87,7 +90,9 @@ describe("activeHoursFromConfig", () => {
   });
 
   it("returns a disabled config when the flag is off", () => {
-    expect(activeHoursFromConfig({ activeHoursEnabled: false })?.enabled).toBe(false);
+    expect(activeHoursFromConfig({ activeHoursEnabled: false })?.enabled).toBe(
+      false,
+    );
     expect(activeHoursFromConfig(undefined)).toBeNull();
   });
 });

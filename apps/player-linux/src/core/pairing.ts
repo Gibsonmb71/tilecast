@@ -236,7 +236,10 @@ async function pollSession(
         session.pollSecret,
       );
     } catch (err) {
-      if (err instanceof ApiError && (err.status === 404 || err.status === 410)) {
+      if (
+        err instanceof ApiError &&
+        (err.status === 404 || err.status === 410)
+      ) {
         await store.delete(PAIRING_FILE);
         callbacks.onSessionEnded(err.code);
         return null;

@@ -21,7 +21,9 @@ function fakeFetch(options: { failIfRange?: boolean } = {}): typeof fetch {
     const range = headers.get("Range");
     if (range && !options.failIfRange) {
       const offset = Number(/bytes=(\d+)-/.exec(range)?.[1] ?? 0);
-      return new Response(new Uint8Array(BODY.subarray(offset)), { status: 206 });
+      return new Response(new Uint8Array(BODY.subarray(offset)), {
+        status: 206,
+      });
     }
     return new Response(new Uint8Array(BODY), { status: 200 });
   }) as typeof fetch;

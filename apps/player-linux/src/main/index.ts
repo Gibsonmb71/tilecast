@@ -180,9 +180,12 @@ function setupMediaProtocol(): void {
       if (range) {
         headers.set("Range", range);
       }
-      const response = await net.fetch(pathToFileURL(resolved.path).toString(), {
-        headers,
-      });
+      const response = await net.fetch(
+        pathToFileURL(resolved.path).toString(),
+        {
+          headers,
+        },
+      );
       const out = new Headers(response.headers);
       out.set("Content-Type", resolved.mimeType);
       return new Response(response.body, {
@@ -306,9 +309,12 @@ app.whenReady().then(async () => {
   setupMediaProtocol();
   guardWebContents();
 
-  ipcMain.on("progress", (_event, data: { itemId: string | null; kind: string }) => {
-    runtime?.onPlaybackProgress(data.itemId, data.kind);
-  });
+  ipcMain.on(
+    "progress",
+    (_event, data: { itemId: string | null; kind: string }) => {
+      runtime?.onPlaybackProgress(data.itemId, data.kind);
+    },
+  );
   ipcMain.on(
     "playback-error",
     (_event, data: { itemId: string | null; message: string }) => {

@@ -116,7 +116,12 @@ export function requiredDownloads(manifest: Manifest): ManifestAsset[] {
   const layouts = [
     ...(manifest.layouts ?? []),
     ...(manifest.layout ? [manifest.layout] : []),
-  ] as Array<{ document?: { canvas?: { backgroundAssetId?: string | null }; placements?: Array<{ type: string; assetId?: string | null }> } }>;
+  ] as Array<{
+    document?: {
+      canvas?: { backgroundAssetId?: string | null };
+      placements?: Array<{ type: string; assetId?: string | null }>;
+    };
+  }>;
   for (const layout of layouts) {
     const document = layout?.document;
     if (!document) {
@@ -129,7 +134,8 @@ export function requiredDownloads(manifest: Manifest): ManifestAsset[] {
       if (placement.type === "asset" && placement.assetId) {
         // Only images are required upfront; a zone video may stream.
         const variant = manifest.assets.find(
-          (a) => a.assetId === placement.assetId && a.mimeType.startsWith("image/"),
+          (a) =>
+            a.assetId === placement.assetId && a.mimeType.startsWith("image/"),
         );
         if (variant) {
           addAsset(placement.assetId, variant.variantId);
