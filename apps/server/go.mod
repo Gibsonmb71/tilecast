@@ -1,22 +1,22 @@
 module github.com/tilecast/tilecast/apps/server
 
-go 1.25.0
+go 1.25.7
 
 require (
 	github.com/MobilityData/gtfs-realtime-bindings/golang/gtfs v1.0.0
 	github.com/avast/apkparser v0.0.0-20251022140151-7294e274bf65
 	github.com/avast/apkverifier v0.0.0-20260710162049-d0e1a791cd5a
-	github.com/coder/websocket v1.8.14
+	github.com/coder/websocket v1.8.15
 	github.com/emersion/go-ical v0.0.0-20250609112844-439c63cef608
 	github.com/go-chi/chi/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/grandcat/zeroconf v1.0.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/oklog/ulid/v2 v2.1.1
-	github.com/pressly/goose/v3 v3.24.3
+	github.com/pressly/goose/v3 v3.27.2
 	golang.org/x/crypto v0.54.0
 	golang.org/x/image v0.44.0
-	google.golang.org/protobuf v1.36.6
+	google.golang.org/protobuf v1.36.11
 )
 
 require (
@@ -24,7 +24,7 @@ require (
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
-	github.com/klauspost/compress v1.18.0 // indirect
+	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/mfridman/interpolate v0.0.2 // indirect
 	github.com/miekg/dns v1.1.27 // indirect
 	github.com/sethvargo/go-retry v0.3.0 // indirect
