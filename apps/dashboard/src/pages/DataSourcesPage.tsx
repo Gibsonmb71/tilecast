@@ -246,6 +246,7 @@ function providerIcon(provider: DataSourceProvider, size = 28) {
   if (provider === "air_quality") return <CloudSun size={size} />;
   if (provider === "transit") return <CalendarDays size={size} />;
   if (provider === "cap_alerts") return <Rss size={size} />;
+  if (provider === "form") return <ClipboardList size={size} />;
   return <Rss size={size} />;
 }
 

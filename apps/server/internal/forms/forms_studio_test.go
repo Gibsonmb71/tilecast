@@ -7,6 +7,8 @@ import (
 	"github.com/google/uuid"
 )
 
+func strptr(value string) *string { return &value }
+
 // --- 5. Metadata update endpoint (service level) ---
 
 func TestUpdateMetadata(t *testing.T) {
@@ -14,12 +16,30 @@ func TestUpdateMetadata(t *testing.T) {
 	form, _ := e.service.CreateForm(e.ctx, e.owner, FormInput{Name: "Original", Description: "d", DraftSchema: announcementSchema()})
 
 	// Success: name and description are updated on the parent Data Source row.
-	updated, err := e.service.UpdateMetadata(e.ctx, form.ID, e.owner, MetadataInput{Name: "Staff Announcements", Description: "By staff."})
+	updated, err := e.service.UpdateMetadata(e.ctx, form.ID, e.owner, MetadataInput{Name: "Staff Announcements", Description: strptr("By staff.")})
 	if err != nil {
 		t.Fatalf("update metadata: %v", err)
 	}
 	if updated.Name != "Staff Announcements" || updated.Description != "By staff." {
 		t.Fatalf("metadata not updated: %+v", updated)
+	}
+
+	// An omitted description (nil) preserves the stored value; the name still updates.
+	preserved, err := e.service.UpdateMetadata(e.ctx, form.ID, e.owner, MetadataInput{Name: "Renamed"})
+	if err != nil {
+		t.Fatalf("update name only: %v", err)
+	}
+	if preserved.Name != "Renamed" || preserved.Description != "By staff." {
+		t.Fatalf("omitted description must be preserved: %+v", preserved)
+	}
+
+	// An explicit empty description clears it.
+	cleared, err := e.service.UpdateMetadata(e.ctx, form.ID, e.owner, MetadataInput{Name: "Renamed", Description: strptr("")})
+	if err != nil {
+		t.Fatalf("clear description: %v", err)
+	}
+	if cleared.Description != "" {
+		t.Fatalf("explicit empty description must clear: %+v", cleared)
 	}
 
 	// Validation: empty name is rejected.
@@ -45,7 +65,7 @@ func TestUpdateMetadata(t *testing.T) {
 	if _, err := e.service.SetGrant(e.ctx, form.ID, e.owner, GrantInput{UserID: manager, Capability: CapManage}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.service.UpdateMetadata(e.ctx, form.ID, manager, MetadataInput{Name: "Managed", Description: ""}); err != nil {
+	if _, err := e.service.UpdateMetadata(e.ctx, form.ID, manager, MetadataInput{Name: "Managed", Description: strptr("")}); err != nil {
 		t.Fatalf("granted manager should update metadata: %v", err)
 	}
 }

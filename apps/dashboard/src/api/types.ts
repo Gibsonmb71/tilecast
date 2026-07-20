@@ -895,12 +895,23 @@ export type FormWorkflow = {
   transitions: FormWorkflowTransition[];
 };
 
+export type FormFilterOperator =
+  | "equals"
+  | "not_equals"
+  | "contains"
+  | "empty"
+  | "not_empty"
+  | "greater_than"
+  | "less_than";
+
+export type FormSortDirection = "asc" | "desc";
+
 export type FormView = {
   id: string;
   key: string;
   name: string;
   includedStates: string[];
-  fieldFilters: { field: string; operator: string; value: string }[];
+  fieldFilters: { field: string; operator: FormFilterOperator; value: string }[];
   timeFilter: {
     enabled: boolean;
     startField?: string;
@@ -908,7 +919,7 @@ export type FormView = {
     startBeforeNow?: boolean;
     endAfterNow?: boolean;
   };
-  sort: { field: string; direction: string }[];
+  sort: { field: string; direction: FormSortDirection }[];
   outputFields: string[];
   recordLimit: number;
   position: number;

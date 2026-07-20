@@ -140,8 +140,12 @@ function MetadataEditor({ form, csrf }: { form: FormDataSource; csrf: string }) 
         <Button
           variant="primary"
           loading={save.isPending}
-          disabled={name.trim() === ""}
-          onClick={() => save.mutate()}
+          disabled={name.trim() === "" || save.isPending}
+          onClick={() => {
+            if (!save.isPending) {
+              save.mutate();
+            }
+          }}
         >
           Save details
         </Button>

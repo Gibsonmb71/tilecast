@@ -96,14 +96,21 @@ export function FormBuilder({
 
   const publish = useMutation({
     mutationFn: async () => {
+      // Snapshot the schema being sent so baseline tracking reflects what was actually persisted,
+      // not any edits the user makes while the request is in flight.
+      const schema = draft;
+      const snapshot = JSON.stringify(schema);
       if (dirtyRef.current) {
-        await api.updateFormDraft(form.id, draft, csrf);
+        await api.updateFormDraft(form.id, schema, csrf);
+        // The draft is now saved server-side; mark it saved even if publishing then fails.
+        setBaseline(snapshot);
       }
-      return api.publishForm(form.id, csrf);
+      await api.publishForm(form.id, csrf);
+      return { snapshot };
     },
     onMutate: () => setPublishError(""),
-    onSuccess: () => {
-      setBaseline(JSON.stringify(draft));
+    onSuccess: ({ snapshot }) => {
+      setBaseline(snapshot);
       setShowPublish(false);
       void queryClient.invalidateQueries({ queryKey: ["form-data-source", form.id] });
       void queryClient.invalidateQueries({ queryKey: ["data-source", form.id] });
@@ -136,39 +143,38 @@ export function FormBuilder({
     });
   };
 
+  // Selection is updated outside the setDraft updater so the updater stays pure (React StrictMode
+  // may invoke it more than once).
   const addField = (control: FormFieldControl) => {
-    setDraft((current) => {
-      const field = newField(control, [
-        ...current.fields.map((f) => f.key),
-        ...RESERVED_FIELD_KEYS,
-      ]);
-      const fields = [...current.fields, field];
-      setSelected(fields.length - 1);
-      return { ...current, fields };
-    });
+    const field = newField(control, [
+      ...draft.fields.map((f) => f.key),
+      ...RESERVED_FIELD_KEYS,
+    ]);
+    setDraft((current) => ({ ...current, fields: [...current.fields, field] }));
+    setSelected(draft.fields.length);
   };
 
   const move = (index: number, delta: number) => {
+    const target = index + delta;
+    if (target < 0 || target >= draft.fields.length) return;
     setDraft((current) => {
-      const target = index + delta;
-      if (target < 0 || target >= current.fields.length) return current;
       const fields = [...current.fields];
       const moving = fields[index];
       const displaced = fields[target];
       if (!moving || !displaced) return current;
       fields[index] = displaced;
       fields[target] = moving;
-      setSelected(target);
       return { ...current, fields };
     });
+    setSelected(target);
   };
 
   const removeField = (index: number) => {
-    setDraft((current) => {
-      const fields = current.fields.filter((_, i) => i !== index);
-      setSelected((prev) => Math.max(0, Math.min(prev, fields.length - 1)));
-      return { ...current, fields };
-    });
+    setDraft((current) => ({
+      ...current,
+      fields: current.fields.filter((_, i) => i !== index),
+    }));
+    setSelected((prev) => Math.max(0, Math.min(prev, draft.fields.length - 2)));
   };
 
   const lockFor = (field: FormField): FieldLock => {
@@ -200,7 +206,9 @@ export function FormBuilder({
             </Button>
             <Button
               variant="primary"
-              disabled={publish.isPending || !hasPublishableChanges}
+              disabled={
+                publish.isPending || saveDraft.isPending || !hasPublishableChanges
+              }
               onClick={() => setShowPublish(true)}
             >
               Publish

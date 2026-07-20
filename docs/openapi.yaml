@@ -915,7 +915,7 @@ paths:
         "404": { description: Form not found }
     patch:
       operationId: updateFormMetadata
-      description: Updates only the parent Data Source name and description. Provider and configuration cannot be changed here. Requires the manage capability.
+      description: Updates only the parent Data Source name and description. An omitted description preserves the stored value; provider and configuration cannot be changed here. Requires the manage capability.
       requestBody:
         required: true
         content:

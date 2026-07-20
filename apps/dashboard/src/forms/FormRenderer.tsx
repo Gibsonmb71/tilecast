@@ -185,7 +185,13 @@ function FieldControl({
       );
     case "multi_select":
       return (
-        <div className="form-renderer__multi" role="group" aria-describedby={describedBy}>
+        <div
+          id={id}
+          className="form-renderer__multi"
+          role="group"
+          aria-label={field.label}
+          aria-describedby={describedBy}
+        >
           {(field.options ?? []).map((option) => {
             const selected = Array.isArray(value) && value.includes(option.value);
             return (

@@ -38,7 +38,10 @@ export function uniqueKey(label: string, existing: Iterable<string>): string {
   let candidate = base;
   let counter = 2;
   while (RESERVED_FIELD_KEYS.has(candidate) || taken.has(candidate)) {
-    candidate = `${base}_${counter}`.slice(0, 64);
+    // Reserve room for the suffix so it always survives the 64-char cap; truncating the whole
+    // concatenation could keep producing the same (taken) base and loop forever.
+    const suffix = `_${counter}`;
+    candidate = `${base.slice(0, 64 - suffix.length)}${suffix}`;
     counter += 1;
   }
   return candidate;

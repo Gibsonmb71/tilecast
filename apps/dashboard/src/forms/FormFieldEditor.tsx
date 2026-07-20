@@ -263,15 +263,19 @@ function OptionsEditor({
         variant="secondary"
         compact
         disabled={disabled}
-        onClick={() =>
+        onClick={() => {
+          // Derive a value that is unique against current options; options.length is not stable
+          // across removals and could collide after a remove+add cycle.
+          const existing = new Set(options.map((option) => option.value));
+          let index = options.length + 1;
+          while (existing.has(`option_${index}`)) {
+            index += 1;
+          }
           setOptions([
             ...options,
-            {
-              value: `option_${options.length + 1}`,
-              label: `Option ${options.length + 1}`,
-            },
-          ])
-        }
+            { value: `option_${index}`, label: `Option ${index}` },
+          ]);
+        }}
       >
         Add option
       </Button>

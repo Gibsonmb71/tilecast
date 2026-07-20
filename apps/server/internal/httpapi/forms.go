@@ -100,8 +100,9 @@ func (s *server) getForm(w http.ResponseWriter, r *http.Request) {
 }
 
 type metadataRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	Name string `json:"name"`
+	// Description is a pointer so an omitted field preserves the stored value (partial update).
+	Description *string `json:"description"`
 }
 
 func (s *server) updateFormMetadata(w http.ResponseWriter, r *http.Request) {

@@ -60,6 +60,9 @@ export function CreateFormDataSourcePage() {
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
+    if (create.isPending) {
+      return;
+    }
     if (name.trim() === "") {
       setError("A name is required.");
       return;
@@ -141,7 +144,7 @@ export function CreateFormDataSourcePage() {
             type="submit"
             variant="primary"
             loading={create.isPending}
-            disabled={name.trim() === ""}
+            disabled={name.trim() === "" || create.isPending}
           >
             Create form
           </Button>

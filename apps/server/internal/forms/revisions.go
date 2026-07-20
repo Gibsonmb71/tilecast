@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -95,34 +96,41 @@ func (s *Service) CreateForm(ctx context.Context, user uuid.UUID, in FormInput) 
 	return s.GetForm(ctx, id, user)
 }
 
-// MetadataInput updates the parent Data Source name and description of a form.
+// MetadataInput updates the parent Data Source name and description of a form. Description is a
+// pointer so an omitted field (nil) preserves the stored value, honoring the PATCH contract where
+// only name is required.
 type MetadataInput struct {
 	Name        string
-	Description string
+	Description *string
 }
 
-// UpdateMetadata edits only the parent data_sources name and description for a form. Provider and
-// configuration are never touched here. The caller must hold the manage capability.
+// UpdateMetadata edits only the parent data_sources name and (optionally) description for a form.
+// Provider and configuration are never touched here. The caller must hold the manage capability.
 func (s *Service) UpdateMetadata(ctx context.Context, id, user uuid.UUID, in MetadataInput) (Form, error) {
 	if _, err := s.ensureForm(ctx, s.db, id); err != nil {
 		return Form{}, err
 	}
 	name := strings.TrimSpace(in.Name)
-	description := strings.TrimSpace(in.Description)
-	if name == "" || len(name) > 180 {
+	if name == "" || utf8.RuneCountInString(name) > 180 {
 		return Form{}, fmt.Errorf("%w: name must be between 1 and 180 characters", ErrValidation)
 	}
-	if len(description) > 2000 {
-		return Form{}, fmt.Errorf("%w: description must be at most 2000 characters", ErrValidation)
+	var description *string
+	if in.Description != nil {
+		trimmed := strings.TrimSpace(*in.Description)
+		if utf8.RuneCountInString(trimmed) > 2000 {
+			return Form{}, fmt.Errorf("%w: description must be at most 2000 characters", ErrValidation)
+		}
+		description = &trimmed
 	}
 	// The metadata update and its audit event commit together: if auditing fails, the name and
-	// description change is rolled back rather than silently unaudited.
+	// description change is rolled back rather than silently unaudited. An omitted description
+	// (nil) preserves the existing value via COALESCE.
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return Form{}, err
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
-	tag, err := tx.Exec(ctx, `UPDATE data_sources SET name=$2,description=$3,updated_at=now() WHERE id=$1 AND deleted_at IS NULL`, id, name, description)
+	tag, err := tx.Exec(ctx, `UPDATE data_sources SET name=$2,description=COALESCE($3,description),updated_at=now() WHERE id=$1 AND deleted_at IS NULL`, id, name, description)
 	if err != nil {
 		return Form{}, err
 	}

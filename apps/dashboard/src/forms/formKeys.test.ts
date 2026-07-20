@@ -15,6 +15,17 @@ describe("formKeys", () => {
     expect(uniqueKey("Notes", ["notes", "notes_2"])).toBe("notes_3");
   });
 
+  it("terminates and stays unique for a near-64-char base that collides", () => {
+    const longLabel = "a".repeat(80); // slugifies to a 64-char base
+    const base = slugifyKey(longLabel);
+    expect(base.length).toBe(64);
+    const key = uniqueKey(longLabel, [base]);
+    expect(key).not.toBe(base);
+    expect(key.length).toBeLessThanOrEqual(64);
+    // A second collision still yields a distinct key.
+    expect(uniqueKey(longLabel, [base, key])).not.toBe(key);
+  });
+
   it("rejects reserved keys", () => {
     for (const reserved of RESERVED_FIELD_KEYS) {
       expect(validateKey(reserved, [])).toMatch(/reserved/);
