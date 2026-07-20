@@ -57,6 +57,13 @@ jobs:
             org.opencontainers.image.description=Self-hosted Tilecast server and Studio dashboard
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
+          annotations: |
+            org.opencontainers.image.title=Tilecast Server
+            org.opencontainers.image.description=Self-hosted Tilecast server and Studio dashboard
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+        env:
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
 
       - name: Build and publish image
         uses: docker/build-push-action@v7
@@ -66,6 +73,7 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: mode=max
