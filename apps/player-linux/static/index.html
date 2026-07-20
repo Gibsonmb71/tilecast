@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src tcmedia: data:; media-src tcmedia:; frame-src https: http:;"
+      content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' tcmedia: data:; media-src tcmedia:; frame-src https: http:;"
     />
     <title>Tilecast Player</title>
     <style>
@@ -135,5 +135,6 @@
     <div id="message"></div>
     <div id="identify"></div>
     <script src="../dist/renderer/renderer.js"></script>
+    <script src="../dist/renderer/outside-hours.js"></script>
   </body>
 </html>
