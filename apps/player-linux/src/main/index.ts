@@ -22,6 +22,10 @@ import { promises as fs } from "fs";
 import * as path from "path";
 import { pathToFileURL } from "url";
 import { logger, setLogLevel } from "../core/log";
+import {
+  loadOutsideActiveHoursPresentation,
+  type OutsideActiveHoursPresentation,
+} from "../core/outside-hours";
 import { PlayerRuntime, type Presentation } from "../core/player";
 import { StateStore, defaultDataDir } from "../core/storage";
 import { normalizeServerUrl } from "../core/server-url";
@@ -32,6 +36,9 @@ const log = logger("main");
 
 const PLAYER_VERSION = app.getVersion() || "0.1.0";
 const SERVER_URL_FILE = "server.json";
+const OUTSIDE_HOURS_REFRESH_MS = 5_000;
+
+type HostPresentation = Presentation | OutsideActiveHoursPresentation;
 
 if (process.env.TILECAST_LOG_LEVEL === "debug") {
   setLogLevel("debug");
@@ -57,7 +64,7 @@ let window: BrowserWindow | null = null;
 let runtime: PlayerRuntime | null = null;
 let store: StateStore;
 let discovery: LanDiscovery | null = null;
-let lastPresentation: Presentation = { state: "setup" };
+let lastPresentation: HostPresentation = { state: "setup" };
 let quitting = false;
 
 function argValue(flag: string): string | null {
@@ -143,10 +150,40 @@ function recreateWindow(): void {
   }
 }
 
-function present(presentation: Presentation): void {
-  lastPresentation = presentation;
+function sendPresentation(presentation: HostPresentation): void {
   if (window && !window.isDestroyed()) {
     window.webContents.send("present", presentation);
+  }
+}
+
+async function refreshOutsideActiveHoursPresentation(): Promise<void> {
+  if (lastPresentation.state !== "sleep") {
+    return;
+  }
+
+  try {
+    const presentation = await loadOutsideActiveHoursPresentation(store);
+    // Playback may have resumed while the configuration was being read.
+    if (lastPresentation.state !== "sleep") {
+      return;
+    }
+    if (JSON.stringify(presentation) === JSON.stringify(lastPresentation)) {
+      return;
+    }
+    lastPresentation = presentation;
+    sendPresentation(presentation);
+  } catch (error) {
+    log.warn("failed to refresh outside-hours presentation", {
+      error: String(error),
+    });
+  }
+}
+
+function present(presentation: Presentation): void {
+  lastPresentation = presentation;
+  sendPresentation(presentation);
+  if (presentation.state === "sleep") {
+    void refreshOutsideActiveHoursPresentation();
   }
 }
 
@@ -302,6 +339,13 @@ async function startRuntime(serverUrl: string): Promise<void> {
 app.whenReady().then(async () => {
   store = new StateStore(process.env.TILECAST_DATA_DIR ?? defaultDataDir());
   await store.init();
+
+  // Keep the off-hours overlay in sync even when a policy changes while the
+  // runtime remains in the same deduplicated sleep state.
+  setInterval(
+    () => void refreshOutsideActiveHoursPresentation(),
+    OUTSIDE_HOURS_REFRESH_MS,
+  );
 
   // The display must never blank while content plays.
   powerSaveBlocker.start("prevent-display-sleep");
