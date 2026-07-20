@@ -18,6 +18,11 @@ func TestReleaseUploadPartValidation(t *testing.T) {
 		{"tilecast-player.apk", "application/octet-stream", true, 512 << 20},
 		{"tilecast-player-update.json", "application/json; charset=utf-8", true, 128 << 10},
 		{"tilecast-player-update.json.sig", "text/plain", true, 4 << 10},
+		{"tilecast-player.AppImage", "application/octet-stream", true, 512 << 20},
+		{"tilecast-player.AppImage", "application/x-executable", true, 512 << 20},
+		{"tilecast-player-update-linux.json", "application/json", true, 128 << 10},
+		{"tilecast-player-update-linux.json.sig", "application/octet-stream", true, 4 << 10},
+		{"tilecast-player.AppImage", "text/html", false, 512 << 20},
 		{"player.apk", "application/vnd.android.package-archive", false, 0},
 		{"tilecast-player.apk", "text/html", false, 512 << 20},
 	}

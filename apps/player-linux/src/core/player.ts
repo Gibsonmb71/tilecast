@@ -22,11 +22,14 @@
  */
 
 import { randomUUID } from "crypto";
+import { promises as fs } from "fs";
 import { ApiClient, ApiError, NetworkError } from "./api";
 import { ActivityReporter } from "./activity";
 import { ReconnectBackoff } from "./backoff";
 import { CommandCoordinator } from "./commands";
 import { ConfigSync } from "./config";
+import { downloadVerified } from "./download";
+import { SelfUpdater, parseVersionCode } from "./self-update";
 import { LivePreview, type PreviewHost } from "./preview";
 import { logger } from "./log";
 import { ManifestSync } from "./manifest";
@@ -169,6 +172,7 @@ export class PlayerRuntime {
   private manifestSync: ManifestSync;
   private configSync: ConfigSync;
   private commands: CommandCoordinator | null = null;
+  private selfUpdater: SelfUpdater | null = null;
   private activity: ActivityReporter | null = null;
   private preview: LivePreview | null = null;
   private socket: PlayerSocket | null = null;
@@ -188,6 +192,7 @@ export class PlayerRuntime {
   private generation = 0;
   private currentItemId: string | null = null;
   private playbackState = "starting";
+  private lastHealthyPlaybackAt: string | null = null;
   private lastPlaybackError: string | null = null;
   private websiteRecoveryCount = 0;
 
@@ -369,12 +374,34 @@ export class PlayerRuntime {
       ),
     );
 
+    this.selfUpdater = new SelfUpdater({
+      appImagePath: process.env["APPIMAGE"] ?? null,
+      stagePath: this.store.filePath("player-update.AppImage"),
+      fetchMetadata: (releaseId) => this.client.fetchUpdateMetadata(releaseId),
+      reportStatus: (deploymentId, body) =>
+        this.client.reportUpdateStatus(deploymentId, body),
+      download: (request) =>
+        downloadVerified(request, this.options.fetchImpl ?? fetch),
+      buildUrl: (path) => this.client.url(path),
+      authHeaders: () => this.client.authHeaders(),
+      promote: (from, to) => fs.rename(from, to),
+      restart: () => this.host.restartProcess(),
+      now: () => Date.now(),
+    });
+
     this.commands = new CommandCoordinator(
       this.store,
       this.client,
       this.buildCommandHandlers(),
-      new Set(["restart_player_process", "restart_activity"]),
-      () => this.host.restartProcess(),
+      // install_player_update is disruptive: the coordinator persists the
+      // idempotency key and settles the command before the updater runs, so a
+      // relaunch neither re-runs nor dangles it.
+      new Set([
+        "restart_player_process",
+        "restart_activity",
+        "install_player_update",
+      ]),
+      (command) => this.runDisruptiveCommand(command),
       {
         onCredentialRejected: () => void this.onCredentialRejected(),
         onPollError: (error) => log.debug("command poll error", { error }),
@@ -1053,10 +1080,17 @@ export class PlayerRuntime {
   private async buildHeartbeat(): Promise<Heartbeat> {
     const size = this.host.screenSize();
     const manifest = this.activeManifest;
+    // Playback is "healthy" when content is actually on screen and no safe-mode
+    // recovery is active; the server uses the latest healthy timestamp (paired
+    // with a higher version code) to settle a completed self-update.
+    if (this.playbackState === "playing" && !this.supervisorState.safeMode) {
+      this.lastHealthyPlaybackAt = new Date().toISOString();
+    }
     const heartbeat: Heartbeat = {
       screenWidth: size.width,
       screenHeight: size.height,
       playerVersion: this.options.playerVersion,
+      playerVersionCode: parseVersionCode(this.options.playerVersion),
       uptimeSeconds: Math.floor((Date.now() - this.startedAt) / 1_000),
       playbackState: this.playbackState,
       playbackDisabled: this.flags.playbackDisabled,
@@ -1065,6 +1099,9 @@ export class PlayerRuntime {
       recoveryCount: this.supervisorState.ladderRunsAtMs.length,
       websiteRendererRecoveryCount: this.websiteRecoveryCount,
     };
+    if (this.lastHealthyPlaybackAt) {
+      heartbeat.lastHealthyPlaybackAt = this.lastHealthyPlaybackAt;
+    }
     if (manifest) {
       heartbeat.activeManifestVersion = manifest.manifestVersion;
     }
@@ -1130,6 +1167,21 @@ export class PlayerRuntime {
   }
 
   // --------------------------------------------------------------- commands
+
+  /**
+   * Executor for commands that may end the process. The coordinator has already
+   * persisted the idempotency key and reported the result before this runs.
+   * install_player_update hands off to the self-updater (which restarts only
+   * after the AppImage is replaced); every other disruptive command is a plain
+   * process relaunch.
+   */
+  private runDisruptiveCommand(command: PlayerCommand): void {
+    if (command.type === "install_player_update") {
+      void this.selfUpdater?.run(command);
+      return;
+    }
+    this.host.restartProcess();
+  }
 
   private buildCommandHandlers(): Map<
     string,

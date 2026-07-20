@@ -1,0 +1,204 @@
+name: Tilecast Linux Player Release
+
+on:
+  push:
+    tags:
+      - "player-linux-v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag, for example player-linux-v0.2.0
+        required: true
+      channel:
+        description: Release channel for a manual run
+        required: true
+        default: stable
+        type: choice
+        options: [stable, beta]
+      release_notes:
+        description: Optional public release summary; generated when omitted
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: linux-player-release-${{ github.ref }}-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Resolve and validate release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MANUAL_TAG: ${{ inputs.tag }}
+          MANUAL_CHANNEL: ${{ inputs.channel }}
+          MANUAL_NOTES: ${{ inputs.release_notes }}
+        run: |
+          set -euo pipefail
+
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            tag="$GITHUB_REF_NAME"
+            case "$tag" in
+              *beta*) channel=beta ;;
+              *) channel=stable ;;
+            esac
+            notes=""
+          else
+            tag="$MANUAL_TAG"
+            channel="$MANUAL_CHANNEL"
+            notes="$MANUAL_NOTES"
+          fi
+
+          if ! [[ "$tag" =~ ^player-linux-v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Release tag must use player-linux-v<versionName>." >&2
+            exit 1
+          fi
+
+          version="${tag#player-linux-v}"
+          package_version="$(node -p "require('./apps/player-linux/package.json').version")"
+          if [ "$version" != "$package_version" ]; then
+            echo "Tag version $version does not match package.json version $package_version." >&2
+            exit 1
+          fi
+
+          if [ -z "$notes" ]; then
+            notes="$(gh api --method POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+              -f tag_name="$tag" \
+              -f target_commitish="$GITHUB_SHA" \
+              --jq .body)"
+          fi
+          if [ -z "$notes" ]; then
+            notes="Tilecast Player $version"
+          fi
+
+          printf '%s\n' "$notes" > "$RUNNER_TEMP/tilecast-release-notes.md"
+          {
+            echo "tag=$tag"
+            echo "version=$version"
+            echo "channel=$channel"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Require signing secrets
+        env:
+          UPDATE_PRIVATE_KEY: ${{ secrets.TILECAST_UPDATE_MANIFEST_PRIVATE_KEY_PEM }}
+          UPDATE_PUBLIC_KEY: ${{ secrets.TILECAST_UPDATE_MANIFEST_PUBLIC_KEY_PEM }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in UPDATE_PRIVATE_KEY UPDATE_PUBLIC_KEY; do
+            if [ -z "${!name}" ]; then
+              echo "Required signing secret for $name is missing." >&2
+              missing=1
+            fi
+          done
+          test "$missing" -eq 0
+
+      - name: Materialize ephemeral signing files
+        env:
+          UPDATE_PRIVATE_KEY: ${{ secrets.TILECAST_UPDATE_MANIFEST_PRIVATE_KEY_PEM }}
+          UPDATE_PUBLIC_KEY: ${{ secrets.TILECAST_UPDATE_MANIFEST_PUBLIC_KEY_PEM }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$RUNNER_TEMP/tilecast-signing"
+          printf '%s' "$UPDATE_PRIVATE_KEY" > "$RUNNER_TEMP/tilecast-signing/update-private.pem"
+          printf '%s' "$UPDATE_PUBLIC_KEY" > "$RUNNER_TEMP/tilecast-signing/update-public.pem"
+          chmod 600 "$RUNNER_TEMP/tilecast-signing/"*
+
+      - name: Reject a non-increasing version code
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          IFS='.' read -r major minor patch _ <<<"${RELEASE_VERSION%%[-+]*}"
+          current=$((10#$major * 1000000 + 10#$minor * 1000 + 10#$patch))
+          previous=0
+          release_index=0
+
+          while IFS= read -r release_tag; do
+            release_index=$((release_index + 1))
+            release_dir="$RUNNER_TEMP/previous-release-$release_index"
+            mkdir -p "$release_dir"
+            if gh release download "$release_tag" --repo "$GITHUB_REPOSITORY" \
+              --pattern tilecast-player-update-linux.json --dir "$release_dir" >/dev/null 2>&1; then
+              candidate="$(jq -er 'select(.product == "tilecast-player" and .platform == "linux") | .versionCode' \
+                "$release_dir/tilecast-player-update-linux.json" 2>/dev/null || true)"
+              if [[ "$candidate" =~ ^[0-9]+$ ]] && [ "$candidate" -gt "$previous" ]; then
+                previous="$candidate"
+              fi
+            fi
+          done < <(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName --jq '.[].tagName | select(startswith("player-linux-v"))')
+
+          if [ "$current" -le "$previous" ]; then
+            echo "Linux versionCode $current must be greater than published versionCode $previous." >&2
+            exit 1
+          fi
+
+      - name: Build, sign, verify, and create release assets
+        env:
+          TILECAST_UPDATE_MANIFEST_PRIVATE_KEY: ${{ runner.temp }}/tilecast-signing/update-private.pem
+          TILECAST_UPDATE_MANIFEST_PUBLIC_KEY_FILE: ${{ runner.temp }}/tilecast-signing/update-public.pem
+          TILECAST_RELEASE_CHANNEL: ${{ steps.release.outputs.channel }}
+          TILECAST_RELEASE_OUTPUT: ${{ runner.temp }}/tilecast-linux-player-release
+        run: |
+          set -euo pipefail
+          export TILECAST_RELEASE_NOTES="$(cat "$RUNNER_TEMP/tilecast-release-notes.md")"
+          scripts/build-linux-player-release.sh
+
+      - name: Verify release contract
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          RELEASE_CHANNEL: ${{ steps.release.outputs.channel }}
+        run: |
+          set -euo pipefail
+          output="$RUNNER_TEMP/tilecast-linux-player-release"
+          test "$(find "$output" -maxdepth 1 -type f | wc -l)" -eq 3
+          test -f "$output/tilecast-player.AppImage"
+          test -f "$output/tilecast-player-update-linux.json"
+          test -f "$output/tilecast-player-update-linux.json.sig"
+          test "$(jq -r .platform "$output/tilecast-player-update-linux.json")" = "linux"
+          test "$(jq -r .versionName "$output/tilecast-player-update-linux.json")" = "$RELEASE_VERSION"
+          test "$(jq -r .channel "$output/tilecast-player-update-linux.json")" = "$RELEASE_CHANNEL"
+          test "$(jq -r .artifactSizeBytes "$output/tilecast-player-update-linux.json")" = \
+            "$(wc -c < "$output/tilecast-player.AppImage" | tr -d ' ')"
+          test "$(jq -r .artifactSha256 "$output/tilecast-player-update-linux.json")" = \
+            "$(sha256sum "$output/tilecast-player.AppImage" | awk '{print $1}')"
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          RELEASE_CHANNEL: ${{ steps.release.outputs.channel }}
+        run: |
+          set -euo pipefail
+          prerelease=()
+          if [ "$RELEASE_CHANNEL" = beta ]; then
+            prerelease=(--prerelease)
+          fi
+          gh release create "$RELEASE_TAG" \
+            "$RUNNER_TEMP/tilecast-linux-player-release/tilecast-player.AppImage" \
+            "$RUNNER_TEMP/tilecast-linux-player-release/tilecast-player-update-linux.json" \
+            "$RUNNER_TEMP/tilecast-linux-player-release/tilecast-player-update-linux.json.sig" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "Tilecast Player for Linux $RELEASE_VERSION" \
+            --notes-file "$RUNNER_TEMP/tilecast-release-notes.md" \
+            "${prerelease[@]}"

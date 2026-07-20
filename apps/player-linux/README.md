@@ -116,11 +116,15 @@ same network needs no typing.
 
 ## Platform differences from the Android player
 
-- **Self-update** uses the OS package / AppImage channel driven by the
-  systemd unit, not the Android APK deployment endpoints. `install_player_update`,
-  `power_assist_sleep/wake`, and `restart_activity` report `unsupported_command`
-  (the process-restart, renderer-recreate, and window-recreate rungs cover the
-  equivalent recovery).
+- **Self-update** replaces the running AppImage rather than installing an APK.
+  On an `install_player_update` deployment the player downloads and verifies the
+  signed AppImage (SHA-256 + size), atomically swaps it over
+  `$APPIMAGE`, and relaunches so the systemd unit restarts into the new version;
+  progress is reported to the update-deployment status endpoint. When the player
+  is not running as a managed AppImage (e.g. a dev run), the deployment is
+  reported as failed instead. `power_assist_sleep/wake` still report
+  `unsupported_command`. `restart_activity` maps onto a process relaunch (the
+  same rung as `restart_player_process`).
 - **Kiosk lockdown** is provided by the desktop/Wayland kiosk compositor and the
   systemd unit rather than Android device-owner/lock-task.
 - **Secure web sandboxing** for `web`-kind declarative presentations (remote

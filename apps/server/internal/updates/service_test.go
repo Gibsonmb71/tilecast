@@ -42,6 +42,45 @@ func TestManifestRejectsWrongApplicationAndDowngrade(t *testing.T) {
 	}
 }
 
+func TestParseAndVerifyManifestLinux(t *testing.T) {
+	public, private, _ := ed25519.GenerateKey(rand.Reader)
+	sign := func(m Manifest) []byte {
+		raw, _ := json.Marshal(m)
+		return raw
+	}
+	sig := func(raw []byte) []byte {
+		return []byte(base64.StdEncoding.EncodeToString(ed25519.Sign(private, raw)))
+	}
+
+	good := Manifest{SchemaVersion: 1, Product: "tilecast-player", Platform: PlatformLinux, VersionCode: 1000, VersionName: "0.1.0", Channel: "stable", ArtifactAssetName: LinuxArtifactName, ArtifactSizeBytes: 4096, ArtifactSHA256: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}
+	raw := sign(good)
+	manifest, err := ParseAndVerifyManifest(raw, sig(raw), public)
+	if err != nil {
+		t.Fatalf("valid linux manifest rejected: %v", err)
+	}
+	if manifest.NormalizedPlatform() != PlatformLinux || manifest.AssetName() != LinuxArtifactName || manifest.ArtifactSize() != 4096 {
+		t.Fatalf("linux manifest accessors wrong: %+v", manifest)
+	}
+
+	for name, bad := range map[string]Manifest{
+		"android fields present": {SchemaVersion: 1, Product: "tilecast-player", Platform: PlatformLinux, VersionCode: 1000, VersionName: "0.1.0", Channel: "stable", ArtifactAssetName: LinuxArtifactName, ArtifactSizeBytes: 1, ArtifactSHA256: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", ApplicationID: ApplicationID},
+		"wrong artifact name":    {SchemaVersion: 1, Product: "tilecast-player", Platform: PlatformLinux, VersionCode: 1000, VersionName: "0.1.0", Channel: "stable", ArtifactAssetName: "tilecast-player.deb", ArtifactSizeBytes: 1, ArtifactSHA256: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},
+		"zero size":              {SchemaVersion: 1, Product: "tilecast-player", Platform: PlatformLinux, VersionCode: 1000, VersionName: "0.1.0", Channel: "stable", ArtifactAssetName: LinuxArtifactName, ArtifactSizeBytes: 0, ArtifactSHA256: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},
+	} {
+		raw := sign(bad)
+		if _, err := ParseAndVerifyManifest(raw, sig(raw), public); err == nil {
+			t.Fatalf("invalid linux manifest accepted: %s", name)
+		}
+	}
+
+	// An Android manifest must not carry Linux artifact fields.
+	mixed := Manifest{SchemaVersion: 1, Product: "tilecast-player", ApplicationID: ApplicationID, VersionCode: 9, VersionName: "0.9.0", Channel: "stable", MinimumSDK: 23, APKAssetName: AndroidArtifactName, APKSizeBytes: 42, APKSHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", SigningCertificateSHA256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", ArtifactAssetName: LinuxArtifactName}
+	rawMixed := sign(mixed)
+	if _, err := ParseAndVerifyManifest(rawMixed, sig(rawMixed), public); err == nil {
+		t.Fatal("android manifest carrying linux fields accepted")
+	}
+}
+
 func TestManifestRejectsTrailingJSON(t *testing.T) {
 	public, private, _ := ed25519.GenerateKey(rand.Reader)
 	raw, _ := json.Marshal(Manifest{SchemaVersion: 1, Product: "tilecast-player", ApplicationID: ApplicationID, VersionCode: 9, VersionName: "0.9.0", Channel: "stable", MinimumSDK: 23, APKAssetName: "tilecast-player.apk", APKSizeBytes: 42, APKSHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", SigningCertificateSHA256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"})

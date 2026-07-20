@@ -13,7 +13,7 @@ import {
   Upload,
 } from "lucide-react";
 import { api } from "../api/client";
-import type { GitHubDeviceStart } from "../api/types";
+import type { GitHubDeviceStart, PlayerPlatform } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 
 const maintenanceActions = [
@@ -306,6 +306,7 @@ export function PlayerUpdatesPanel({
     queryKey: ["screen-groups"],
     queryFn: () => api.screenGroups(),
   });
+  const [platform, setPlatform] = useState<PlayerPlatform>("android");
   const [releaseId, setReleaseId] = useState("");
   const [screenIds, setScreenIds] = useState<string[]>([]);
   const [groupIds, setGroupIds] = useState<string[]>([]);
@@ -438,24 +439,61 @@ export function PlayerUpdatesPanel({
   for (const group of groups.data?.items ?? [])
     if (groupIds.includes(group.id))
       for (const screen of group.screens) targetSet.add(screen.id);
-  const selectedScreens = (screens.data?.items ?? []).filter((screen) =>
-    targetSet.has(screen.id),
+  // Screens report a specific platform string ("fire-tv", "android-tv",
+  // "linux", …); anything that is not Linux belongs to the Android family, the
+  // same mapping the server applies when resolving deployment targets.
+  const screenFamily = (value: string): PlayerPlatform =>
+    value === "linux" ? "linux" : "android";
+  const selectedScreens = (screens.data?.items ?? []).filter(
+    (screen) =>
+      targetSet.has(screen.id) && screenFamily(screen.platform) === platform,
   );
-  const releaseItems = [...(releases.data?.items ?? [])].sort(
-    (left, right) =>
-      Date.parse(right.publishedAt) - Date.parse(left.publishedAt) ||
-      right.versionCode - left.versionCode,
-  );
+  const releaseItems = [...(releases.data?.items ?? [])]
+    .filter((item) => item.platform === platform)
+    .sort(
+      (left, right) =>
+        Date.parse(right.publishedAt) - Date.parse(left.publishedAt) ||
+        right.versionCode - left.versionCode,
+    );
   const visibleReleaseItems = showAllReleases
     ? releaseItems
     : releaseItems.slice(0, defaultVisibleReleaseCount);
   const query = targetSearch.toLowerCase();
   return (
     <div className="settings-sections player-updates">
+      <div
+        className="player-updates__platform-tabs"
+        role="tablist"
+        aria-label="Player platform"
+      >
+        {(["android", "linux"] as const).map((value) => (
+          <button
+            key={value}
+            type="button"
+            role="tab"
+            aria-selected={platform === value}
+            className={`button ${platform === value ? "button--primary" : "button--quiet"}`}
+            onClick={() => {
+              if (value === platform) return;
+              setPlatform(value);
+              // Selections do not carry across platforms.
+              setReleaseId("");
+              setScreenIds([]);
+              setGroupIds([]);
+              setShowUpload(false);
+              setShowAllReleases(false);
+            }}
+          >
+            {value === "android" ? "Android" : "Linux"}
+          </button>
+        ))}
+      </div>
       <section className="settings-subsection player-updates__releases">
         <header className="settings-subsection__action">
           <div>
-            <h3>Available releases</h3>
+            <h3>
+              Available {platform === "android" ? "Android" : "Linux"} releases
+            </h3>
             <p>
               Upload a signed release directly or optionally synchronize from{" "}
               <code>Gibsonmb71/tilecast</code>.
@@ -572,6 +610,7 @@ export function PlayerUpdatesPanel({
         )}
         {showUpload && (
           <PlayerReleaseUpload
+            platform={platform}
             csrfToken={auth.status?.csrfToken ?? ""}
             onImported={() => {
               void client.invalidateQueries({ queryKey: ["player-releases"] });
@@ -695,7 +734,7 @@ export function PlayerUpdatesPanel({
                 onChange={(event) => setReleaseId(event.target.value)}
               >
                 <option value="">Select a release</option>
-                {(releases.data?.items ?? [])
+                {releaseItems
                   .filter(
                     (item) =>
                       item.verificationStatus === "verified" &&
@@ -768,10 +807,21 @@ export function PlayerUpdatesPanel({
             >
               <div className="target-picker__column">
                 <h4>
-                  Screens <span>{screens.data?.items?.length ?? 0}</span>
+                  Screens{" "}
+                  <span>
+                    {
+                      (screens.data?.items ?? []).filter(
+                        (item) => screenFamily(item.platform) === platform,
+                      ).length
+                    }
+                  </span>
                 </h4>
                 {(screens.data?.items ?? [])
-                  .filter((item) => item.name.toLowerCase().includes(query))
+                  .filter(
+                    (item) =>
+                      screenFamily(item.platform) === platform &&
+                      item.name.toLowerCase().includes(query),
+                  )
                   .map((screen) => (
                     <Target
                       key={screen.id}
@@ -847,7 +897,7 @@ export function PlayerUpdatesPanel({
               onClick={() => {
                 if (
                   confirm(
-                    `Deploy this Player update to ${selectedScreens.length} ${selectedScreens.length === 1 ? "screen" : "screens"}? Android may require approval on each TV.`,
+                    `Deploy this Player update to ${selectedScreens.length} ${selectedScreens.length === 1 ? "screen" : "screens"}? ${platform === "android" ? "Android may require approval on each TV." : "Each Linux player will restart into the new version."}`,
                   )
                 )
                   deploy.mutate();
@@ -892,44 +942,49 @@ export function PlayerUpdatesPanel({
               </tr>
             </thead>
             <tbody>
-              {(deployments.data?.items ?? []).map((item) => (
-                <tr key={item.id}>
-                  <td>
-                    {item.name}
-                    <small className="technical">
-                      {item.versionName} ({item.versionCode})
-                    </small>
-                  </td>
-                  <td>{humanize(item.mode)}</td>
-                  <td>
-                    <UpdateStatus value={item.status} />
-                  </td>
-                  <td>
-                    {item.rolloutMode === "canary"
-                      ? `${item.canarySize ?? 0} canaries · ${humanize(item.rolloutPhase ?? "canary")}`
-                      : "All screens"}
-                    {item.pauseReason && <small>{item.pauseReason}</small>}
-                  </td>
-                  <td>{item.targetCount}</td>
-                  <td>{item.succeededCount}</td>
-                  <td>{item.waitingForUserCount}</td>
-                  <td>{item.failedCount}</td>
-                  <td
-                    className={
-                      item.lastFailure ? "deployment-attention" : undefined
-                    }
-                  >
-                    {item.lastFailure ? humanize(item.lastFailure) : "None"}
-                  </td>
-                </tr>
-              ))}
+              {(deployments.data?.items ?? [])
+                .filter((item) => item.platform === platform)
+                .map((item) => (
+                  <tr key={item.id}>
+                    <td>
+                      {item.name}
+                      <small className="technical">
+                        {item.versionName} ({item.versionCode})
+                      </small>
+                    </td>
+                    <td>{humanize(item.mode)}</td>
+                    <td>
+                      <UpdateStatus value={item.status} />
+                    </td>
+                    <td>
+                      {item.rolloutMode === "canary"
+                        ? `${item.canarySize ?? 0} canaries · ${humanize(item.rolloutPhase ?? "canary")}`
+                        : "All screens"}
+                      {item.pauseReason && <small>{item.pauseReason}</small>}
+                    </td>
+                    <td>{item.targetCount}</td>
+                    <td>{item.succeededCount}</td>
+                    <td>{item.waitingForUserCount}</td>
+                    <td>{item.failedCount}</td>
+                    <td
+                      className={
+                        item.lastFailure ? "deployment-attention" : undefined
+                      }
+                    >
+                      {item.lastFailure ? humanize(item.lastFailure) : "None"}
+                    </td>
+                  </tr>
+                ))}
               {!deployments.isLoading &&
                 !deployments.error &&
-                (deployments.data?.items?.length ?? 0) === 0 && (
+                (deployments.data?.items ?? []).filter(
+                  (item) => item.platform === platform,
+                ).length === 0 && (
                   <tr>
                     <td colSpan={9} className="table-empty-state">
                       <CheckCircle2 size={18} aria-hidden="true" />
-                      No Player deployments have been created.
+                      No {platform === "android" ? "Android" : "Linux"} Player
+                      deployments have been created.
                     </td>
                   </tr>
                 )}
@@ -941,19 +996,31 @@ export function PlayerUpdatesPanel({
   );
 }
 
-const releaseFileNames = [
-  "tilecast-player.apk",
-  "tilecast-player-update.json",
-  "tilecast-player-update.json.sig",
-] as const;
+const RELEASE_FILE_NAMES: Record<PlayerPlatform, readonly string[]> = {
+  android: [
+    "tilecast-player.apk",
+    "tilecast-player-update.json",
+    "tilecast-player-update.json.sig",
+  ],
+  linux: [
+    "tilecast-player.AppImage",
+    "tilecast-player-update-linux.json",
+    "tilecast-player-update-linux.json.sig",
+  ],
+};
 
 function PlayerReleaseUpload({
+  platform,
   csrfToken,
   onImported,
 }: {
+  platform: PlayerPlatform;
   csrfToken: string;
   onImported: () => void;
 }) {
+  const releaseFileNames = RELEASE_FILE_NAMES[platform];
+  const manifestName = releaseFileNames[1];
+  const artifactLabel = platform === "android" ? "APK" : "AppImage";
   const [files, setFiles] = useState<Record<string, File>>({});
   const [progress, setProgress] = useState(0);
   const [phase, setPhase] = useState<
@@ -986,15 +1053,11 @@ function PlayerReleaseUpload({
     const next = { ...files };
     let error = "";
     for (const file of Array.from(selected)) {
-      if (
-        !releaseFileNames.includes(
-          file.name as (typeof releaseFileNames)[number],
-        )
-      ) {
+      if (!releaseFileNames.includes(file.name)) {
         error = `Unexpected file: ${file.name}. Choose only the three signed release files.`;
         continue;
       }
-      if (file.name === "tilecast-player-update.json" && file.size > 128 * 1024)
+      if (file.name === manifestName && file.size > 128 * 1024)
         error = "The update manifest must not exceed 128 KB.";
       else if (file.name.endsWith(".sig") && file.size > 4 * 1024)
         error = "The manifest signature must not exceed 4 KB.";
@@ -1009,10 +1072,12 @@ function PlayerReleaseUpload({
   return (
     <div className="player-release-upload">
       <div>
-        <h4>Upload signed Player release</h4>
+        <h4>
+          Upload signed {platform === "android" ? "Android" : "Linux"} release
+        </h4>
         <p>
-          All three files are verified before the APK enters Tilecast&apos;s
-          private update cache.
+          All three files are verified before the {artifactLabel} enters
+          Tilecast&apos;s private update cache.
         </p>
       </div>
       <label
@@ -1060,7 +1125,9 @@ function PlayerReleaseUpload({
               {phase === "uploading"
                 ? `Uploading… ${progress}%`
                 : phase === "verifying"
-                  ? "Verifying signature, APK, and package metadata…"
+                  ? platform === "android"
+                    ? "Verifying signature, APK, and package metadata…"
+                    : "Verifying signature and AppImage hash…"
                   : "Release verified and cached"}
             </strong>
             {upload.data && (

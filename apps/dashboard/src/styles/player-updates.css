@@ -3,6 +3,11 @@
   gap: var(--tc-space-6);
 }
 
+.player-updates__platform-tabs {
+  display: flex;
+  gap: var(--tc-space-2);
+}
+
 .player-updates .settings-subsection {
   min-width: 0;
   padding: var(--tc-space-4) 0 var(--tc-space-6);

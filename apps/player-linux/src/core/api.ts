@@ -19,6 +19,8 @@ import type {
   PlayerCommand,
   PlayerConfig,
   DeviceMetadata,
+  UpdateMetadata,
+  UpdateStatusReport,
 } from "./types";
 
 export class ApiError extends Error {
@@ -262,6 +264,33 @@ export class ApiClient {
         message: result.message.slice(0, 240),
       },
     });
+  }
+
+  /** Fetch signed release metadata for a targeted player update. */
+  async fetchUpdateMetadata(releaseId: string): Promise<UpdateMetadata> {
+    const res = await this.request(
+      "GET",
+      `/api/v1/player/updates/${releaseId}`,
+    );
+    return ApiClient.data<UpdateMetadata>(res.json);
+  }
+
+  /** Report progress of an in-flight update deployment for this screen. */
+  async reportUpdateStatus(
+    deploymentId: string,
+    body: UpdateStatusReport,
+  ): Promise<void> {
+    await this.request(
+      "POST",
+      `/api/v1/player/update-deployments/${deploymentId}/status`,
+      {
+        body: {
+          state: body.state,
+          downloadedBytes: body.downloadedBytes ?? 0,
+          error: (body.error ?? "").slice(0, 240),
+        },
+      },
+    );
   }
 
   /** Upload a bounded batch of append-only activity events (max 200). */

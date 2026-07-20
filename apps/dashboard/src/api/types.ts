@@ -578,14 +578,16 @@ export type SchedulePreview = {
   conflicts: string[];
 };
 
+export type PlayerPlatform = "android" | "linux";
 export type PlayerRelease = {
   id: string;
   tag: string;
+  platform: PlayerPlatform;
   source: "github" | "upload";
   channel: "stable" | "beta";
   versionCode: number;
   versionName: string;
-  minimumSdk: number;
+  minimumSdk: number | null;
   releaseNotes: string;
   publishedAt: string;
   apkSizeBytes: number;
@@ -599,6 +601,7 @@ export type PlayerRelease = {
 export type PlayerReleaseImport = Pick<
   PlayerRelease,
   | "id"
+  | "platform"
   | "source"
   | "versionCode"
   | "versionName"
@@ -641,6 +644,7 @@ export type UpdateDeployment = {
   mode: string;
   status: string;
   createdAt: string;
+  platform: PlayerPlatform;
   versionCode: number;
   versionName: string;
   targetCount: number;
