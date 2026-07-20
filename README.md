@@ -1,4 +1,20 @@
-# Tilecast
+<h1 align="center">
+  <picture>
+    <source
+      media="(prefers-color-scheme: dark)"
+      srcset=".github/logos/tilecast-logo-white.svg"
+    >
+    <source
+      media="(prefers-color-scheme: light)"
+      srcset=".github/logos/tilecast-logo-black.svg"
+    >
+    <img
+      alt="Tilecast"
+      src=".github/logos/tilecast-logo-black.svg"
+      width="300"
+    >
+  </picture>
+</h1>
 
 **Open signage, built to stay on.**
 
