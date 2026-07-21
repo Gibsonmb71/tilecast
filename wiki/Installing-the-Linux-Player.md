@@ -111,16 +111,16 @@ The player creates sensitive state files with owner-only permissions. Protect th
 
 ## Environment variables
 
-| Variable | Purpose |
-| --- | --- |
-| `TILECAST_SERVER_URL` | Server address; saved after first use |
-| `TILECAST_DATA_DIR` | State and media-cache directory |
-| `TILECAST_LOG_LEVEL=debug` | Verbose structured logs |
-| `TILECAST_WINDOWED=1` | Disable kiosk fullscreen for testing |
-| `TILECAST_HW_DECODE=0` | Disable Intel VA-API video decode |
-| `TILECAST_DISABLE_GPU=1` | Force software rendering |
-| `TILECAST_MAX_FPS=30` | Set the frame-rate cap |
-| `TILECAST_PREVIEW_SCREEN_CAPTURE=0` | Disable framebuffer capture for live previews |
+| Variable                            | Purpose                                                     |
+| ----------------------------------- | ----------------------------------------------------------- |
+| `TILECAST_SERVER_URL`               | Server address; saved after first use                       |
+| `TILECAST_DATA_DIR`                 | State and media-cache directory                             |
+| `TILECAST_LOG_LEVEL=debug`          | Verbose structured logs                                     |
+| `TILECAST_WINDOWED=1`               | Disable kiosk fullscreen for testing                        |
+| `TILECAST_HW_DECODE=0`              | Disable Intel VA-API video decode                           |
+| `TILECAST_DISABLE_GPU=1`            | Force software rendering                                    |
+| `TILECAST_MAX_FPS=30`               | Set the frame-rate cap                                      |
+| `TILECAST_PREVIEW_SCREEN_CAPTURE=0` | Disable framebuffer capture for live previews               |
 | `TILECAST_PREVIEW_SCREEN_CAPTURE=1` | Force framebuffer capture; Wayland may show a portal prompt |
 
 ## Build from source
