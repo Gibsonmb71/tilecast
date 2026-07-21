@@ -959,7 +959,7 @@ function renderWebsite(item: RendererItem, myGeneration: number): void {
 
 function showSetup(): void {
   showMessage(`
-    <h1>Tilecast Player</h1>
+    <img class="brand-logo" src="tilecast-logo-white.svg" alt="Tilecast" />
     <p>Choose your Tilecast server, or enter its address.</p>
     <div id="discovered" style="display:flex;flex-direction:column;gap:10px;width:60%;"></div>
     <input id="setup-input" type="url" placeholder="https://signage.example.org" autofocus />
@@ -1011,6 +1011,7 @@ function present(presentation: RendererPresentation): void {
       break;
     case "pairing":
       showMessage(`
+        <img class="brand-logo" src="tilecast-logo-white.svg" alt="Tilecast" />
         <h1>${escapeHtml(presentation.organizationName ?? "Tilecast")}</h1>
         <p>Approve this screen in Tilecast Studio with the code below.</p>
         <div class="code">${escapeHtml(presentation.code ?? "")}</div>

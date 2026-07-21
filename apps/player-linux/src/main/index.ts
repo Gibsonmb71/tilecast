@@ -11,6 +11,7 @@
 import {
   app,
   BrowserWindow,
+  desktopCapturer,
   ipcMain,
   net,
   powerSaveBlocker,
@@ -18,6 +19,7 @@ import {
   screen,
   session,
 } from "electron";
+import type { NativeImage } from "electron";
 import { promises as fs } from "fs";
 import * as path from "path";
 import { pathToFileURL } from "url";
@@ -187,6 +189,61 @@ function present(presentation: Presentation): void {
   }
 }
 
+/**
+ * Encode a captured frame to a downscaled JPEG within the given limits.
+ * Preserves aspect ratio, never upscales, and steps quality down until the
+ * result fits the byte budget. Returns null for an empty frame or one that
+ * cannot be squeezed under the limit.
+ */
+function encodePreview(
+  image: NativeImage,
+  max: { width: number; height: number; bytes: number },
+): { jpeg: Buffer; width: number; height: number } | null {
+  const size = image.getSize();
+  if (size.width === 0 || size.height === 0) {
+    return null;
+  }
+  const ratio = Math.min(max.width / size.width, max.height / size.height, 1);
+  const resized =
+    ratio < 1
+      ? image.resize({
+          width: Math.round(size.width * ratio),
+          height: Math.round(size.height * ratio),
+          quality: "good",
+        })
+      : image;
+  const finalSize = resized.getSize();
+  let quality = 75;
+  let jpeg = resized.toJPEG(quality);
+  while (jpeg.byteLength > max.bytes && quality > 25) {
+    quality -= 15;
+    jpeg = resized.toJPEG(quality);
+  }
+  if (jpeg.byteLength > max.bytes) {
+    return null;
+  }
+  return { jpeg, width: finalSize.width, height: finalSize.height };
+}
+
+/**
+ * Whether to capture the live preview from the real display framebuffer
+ * (desktopCapturer) rather than the window's own paint (capturePage).
+ *
+ * capturePage cannot read hardware-overlay video (enable-hardware-overlays),
+ * VA-API-decoded frames, or <webview> content, so it returns an empty/black
+ * frame for most signage content on Linux. desktopCapturer reads the actual
+ * screen. On X11 this needs no permission and shows no prompt; on Wayland it
+ * requires the screen-share portal, which can block on an input-less kiosk, so
+ * default to off there. TILECAST_PREVIEW_SCREEN_CAPTURE=0/1 overrides.
+ */
+function screenCaptureAllowed(): boolean {
+  const override = process.env.TILECAST_PREVIEW_SCREEN_CAPTURE;
+  if (override !== undefined) {
+    return override === "1" || override.toLowerCase() === "true";
+  }
+  return !process.env.WAYLAND_DISPLAY;
+}
+
 async function availableStorageBytes(): Promise<number | null> {
   try {
     const stats = await fs.statfs(store.dataDir);
@@ -294,39 +351,47 @@ async function startRuntime(serverUrl: string): Promise<void> {
         if (!window || window.isDestroyed()) {
           return null;
         }
+        // Primary path: capture the real display framebuffer. This is the only
+        // method that includes hardware-overlay video, VA-API-decoded frames,
+        // and <webview> content — everything webContents.capturePage() misses
+        // on this GPU pipeline, which is why previews came back "unavailable".
+        if (screenCaptureAllowed()) {
+          try {
+            const display = screen.getDisplayMatching(window.getBounds());
+            // Ask for the thumbnail already scaled to the upload cap so the old
+            // GPU/CPU never encodes a full-resolution frame. desktopCapturer
+            // preserves aspect ratio within these bounds.
+            const sources = await desktopCapturer.getSources({
+              types: ["screen"],
+              thumbnailSize: { width: max.width, height: max.height },
+            });
+            const source =
+              sources.find(
+                (s) => String(s.display_id) === String(display.id),
+              ) ?? sources[0];
+            if (source && !source.thumbnail.isEmpty()) {
+              const encoded = encodePreview(source.thumbnail, max);
+              if (encoded) {
+                return encoded;
+              }
+            }
+            log.debug("preview: screen capture yielded no usable frame", {
+              sources: sources.length,
+            });
+          } catch (err) {
+            log.warn("preview: screen capture failed; trying capturePage", {
+              error: String(err),
+            });
+          }
+        }
+        // Fallback: the window's own paint. Works for pure-DOM (image) content
+        // and when screen capture is unavailable (e.g. Wayland without the
+        // screen-share portal). Overlay video / webview frames stay black here.
         try {
           const image = await window.webContents.capturePage();
-          const size = image.getSize();
-          if (size.width === 0 || size.height === 0) {
-            return null;
-          }
-          // Preserve aspect, never upscale, fit within max dimensions.
-          const ratio = Math.min(
-            max.width / size.width,
-            max.height / size.height,
-            1,
-          );
-          const resized =
-            ratio < 1
-              ? image.resize({
-                  width: Math.round(size.width * ratio),
-                  height: Math.round(size.height * ratio),
-                  quality: "good",
-                })
-              : image;
-          const finalSize = resized.getSize();
-          // Step quality down until under the byte budget.
-          let quality = 75;
-          let jpeg = resized.toJPEG(quality);
-          while (jpeg.byteLength > max.bytes && quality > 25) {
-            quality -= 15;
-            jpeg = resized.toJPEG(quality);
-          }
-          if (jpeg.byteLength > max.bytes) {
-            return null; // could not get under the limit; report unavailable
-          }
-          return { jpeg, width: finalSize.width, height: finalSize.height };
-        } catch {
+          return encodePreview(image, max);
+        } catch (err) {
+          log.warn("preview: capturePage failed", { error: String(err) });
           return null;
         }
       },
