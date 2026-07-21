@@ -1,6 +1,8 @@
 import {
   Activity,
   CalendarDays,
+  ClipboardCheck,
+  ClipboardList,
   Database,
   Ellipsis,
   Home,
@@ -24,6 +26,7 @@ import { Brand } from "../components/Brand";
 import { RouteErrorBoundary } from "../components/RouteErrorBoundary";
 import { StudioTopbar } from "../components/StudioTopbar";
 import { api } from "../api/client";
+import { canReviewForm } from "../forms/capabilities";
 import { OperationsDashboard } from "./OperationsDashboard";
 
 type NavItem = readonly [label: string, to: string, icon: LucideIcon];
@@ -84,7 +87,19 @@ function SidebarGroup({
   );
 }
 
+const approvalsNav = [
+  "Approvals",
+  "/approvals",
+  ClipboardCheck,
+] as const satisfies NavItem;
+
 export function SidebarNavigation() {
+  // Approvals appears only when the user can review, approve, or manage at least one Form. The
+  // accessible-forms query is shared (and cached) with the Forms portal.
+  const forms = useQuery({ queryKey: ["forms"], queryFn: api.listForms, retry: false });
+  const canReview = (forms.data ?? []).some((form) =>
+    canReviewForm(form.grantedCapabilities),
+  );
   return (
     <nav aria-label="Primary">
       <div className="sidebar__nav-main">
@@ -95,6 +110,7 @@ export function SidebarNavigation() {
         <SidebarGroup label="Compose" items={composeNav} />
         <div className="sidebar__nav-standalone">
           <SidebarLink item={activityNav} />
+          {canReview && <SidebarLink item={approvalsNav} />}
         </div>
       </div>
       <div className="sidebar__nav-footer">
@@ -237,6 +253,14 @@ export function DashboardShell() {
                 id="sidebar-account-menu"
                 role="menu"
               >
+                <Link
+                  to="/forms"
+                  role="menuitem"
+                  onClick={() => setAccountMenuOpen(false)}
+                >
+                  <ClipboardList size={16} aria-hidden="true" />
+                  My Forms
+                </Link>
                 <Link
                   to="/preferences"
                   role="menuitem"

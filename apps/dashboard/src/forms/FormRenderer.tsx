@@ -10,12 +10,34 @@ export type FormValues = Record<
   string | string[] | boolean | undefined
 >;
 
+// ImageFieldState describes the current image for one image field: a committed server attachment
+// (contentUrl + attachmentId), a locally-selected file not yet uploaded (pendingUrl + pendingName),
+// an in-flight upload, or an error. Absent means the field has no image.
+export type ImageFieldState = {
+  attachmentId?: string;
+  contentUrl?: string;
+  pendingName?: string;
+  pendingUrl?: string;
+  uploading?: boolean;
+  error?: string;
+};
+
+// ImageHandlers wires the renderer's image fields to the owning editor, which performs the actual
+// uploads/removals against a record. When provided, image fields become interactive; without it the
+// renderer shows a passive placeholder (builder preview) or the committed image (read-only review).
+export type ImageHandlers = {
+  state: (fieldKey: string) => ImageFieldState | undefined;
+  onSelect: (fieldKey: string, file: File) => void;
+  onRemove: (fieldKey: string) => void;
+};
+
 export type FormRendererProps = {
   schema: FormSchema;
   values?: FormValues;
   readOnly?: boolean;
   onChange?: (key: string, value: string | string[] | boolean) => void;
   errors?: Record<string, string>;
+  imageHandlers?: ImageHandlers;
 };
 
 export function FormRenderer({
@@ -24,6 +46,7 @@ export function FormRenderer({
   readOnly = false,
   onChange,
   errors = {},
+  imageHandlers,
 }: FormRendererProps) {
   const scope = useId();
   return (
@@ -48,6 +71,7 @@ export function FormRenderer({
             readOnly={readOnly}
             onChange={onChange}
             error={errors[field.key]}
+            imageHandlers={imageHandlers}
           />
         ))}
         {schema.fields.length === 0 && (
@@ -65,6 +89,7 @@ function FieldRow({
   readOnly,
   onChange,
   error,
+  imageHandlers,
 }: {
   field: FormField;
   scope: string;
@@ -72,6 +97,7 @@ function FieldRow({
   readOnly: boolean;
   onChange?: (key: string, value: string | string[] | boolean) => void;
   error?: string;
+  imageHandlers?: ImageHandlers;
 }) {
   const controlId = `${scope}-${field.key}`;
   const describedBy = field.description ? `${controlId}-hint` : undefined;
@@ -111,6 +137,7 @@ function FieldRow({
         value={value}
         readOnly={readOnly}
         onChange={onChange}
+        imageHandlers={imageHandlers}
       />
       {error && (
         <span className="form-renderer__error" role="alert">
@@ -128,6 +155,7 @@ function FieldControl({
   value,
   readOnly,
   onChange,
+  imageHandlers,
 }: {
   field: FormField;
   id: string;
@@ -135,6 +163,7 @@ function FieldControl({
   value: string | string[] | boolean | undefined;
   readOnly: boolean;
   onChange?: (key: string, next: string | string[] | boolean) => void;
+  imageHandlers?: ImageHandlers;
 }) {
   const disabled = readOnly || !onChange;
   const emit = (next: string | string[] | boolean) =>
@@ -223,6 +252,20 @@ function FieldControl({
         </div>
       );
     case "image":
+      if (imageHandlers) {
+        return (
+          <ImageField
+            id={id}
+            describedBy={describedBy}
+            fieldKey={field.key}
+            label={field.label}
+            disabled={disabled}
+            state={imageHandlers.state(field.key)}
+            onSelect={imageHandlers.onSelect}
+            onRemove={imageHandlers.onRemove}
+          />
+        );
+      }
       return (
         <div className="form-renderer__image">
           <input
@@ -308,6 +351,85 @@ function FieldControl({
         />
       );
   }
+}
+
+// ImageField renders an interactive image control for submission and review: a preview of the
+// committed or pending image with Remove/Replace, or a file picker when empty. Uploads themselves
+// are performed by the owning editor through the supplied handlers.
+function ImageField({
+  id,
+  describedBy,
+  fieldKey,
+  label,
+  disabled,
+  state,
+  onSelect,
+  onRemove,
+}: {
+  id: string;
+  describedBy?: string;
+  fieldKey: string;
+  label: string;
+  disabled: boolean;
+  state?: ImageFieldState;
+  onSelect: (fieldKey: string, file: File) => void;
+  onRemove: (fieldKey: string) => void;
+}) {
+  const previewUrl = state?.pendingUrl ?? state?.contentUrl;
+  const hasImage = Boolean(previewUrl);
+  return (
+    <div className="form-renderer__image">
+      {hasImage && (
+        <img
+          className="form-renderer__image-preview"
+          src={previewUrl}
+          alt={`${label} attachment`}
+        />
+      )}
+      {state?.uploading && (
+        <span className="form-renderer__image-note">Uploading…</span>
+      )}
+      {state?.error && (
+        <span className="form-renderer__error" role="alert">
+          {state.error}
+        </span>
+      )}
+      {!disabled && (
+        <div className="form-renderer__image-actions">
+          <label className="button button--secondary button--compact">
+            {hasImage ? "Replace image" : "Choose image"}
+            <input
+              id={id}
+              type="file"
+              accept="image/*"
+              aria-describedby={describedBy}
+              aria-label={hasImage ? `Replace ${label}` : `Choose ${label}`}
+              className="visually-hidden"
+              disabled={state?.uploading}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) onSelect(fieldKey, file);
+                event.target.value = "";
+              }}
+            />
+          </label>
+          {hasImage && (
+            <button
+              type="button"
+              className="button button--quiet button--compact"
+              disabled={state?.uploading}
+              onClick={() => onRemove(fieldKey)}
+            >
+              Remove
+            </button>
+          )}
+        </div>
+      )}
+      {!hasImage && disabled && (
+        <span className="form-renderer__image-note">No image provided.</span>
+      )}
+    </div>
+  );
 }
 
 export { isPresentationControl };
