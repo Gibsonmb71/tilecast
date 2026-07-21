@@ -26,10 +26,15 @@ import {
 import { FormBuilder } from "../forms/FormBuilder";
 import { FormRenderer } from "../forms/FormRenderer";
 import { RecordReview } from "../forms/RecordReview";
-import { canViewResponses } from "../forms/capabilities";
+import { WorkflowEditor } from "../forms/WorkflowEditor";
+import { ViewsEditor } from "../forms/ViewsEditor";
+import { OutputsPanel } from "../forms/OutputsPanel";
+import { AccessPanel } from "../forms/AccessPanel";
+import { canManageForm, canViewResponses } from "../forms/capabilities";
 import { stateLabel, stateTone } from "../forms/formStatus";
 
-type TabValue = "responses" | "form";
+type TabValue =
+  "responses" | "form" | "workflow" | "views" | "outputs" | "access";
 
 export function FormDataSourcePage({
   dataSource,
@@ -59,16 +64,33 @@ export function FormDataSourcePage({
   }
 
   const detail = form.data;
-  const canManage = detail.grantedCapabilities.includes("manage");
-  const showResponses = canViewResponses(detail.grantedCapabilities);
+  const canManage = canManageForm(detail.grantedCapabilities);
+  const canViewAll = canViewResponses(detail.grantedCapabilities);
 
-  // Tabs are query-string driven. Opening a specific record (?record=) forces the Responses tab.
-  // Absent a tab param the page defaults to the Form tab so /data-sources/:id and ?tab=form stay
-  // compatible with the earlier builder-only behavior.
+  // Permitted tabs by capability (grantedCapabilities, never global role). Form is always available
+  // (read-only for non-managers); Workflow/Views/Access require manage; Outputs needs view_all or
+  // manage; Responses needs view_all. Order defines display and the normalization fallback.
+  const tabDefs: { value: TabValue; label: string; permitted: boolean }[] = [
+    { value: "responses", label: "Responses", permitted: canViewAll },
+    { value: "form", label: "Form", permitted: true },
+    { value: "workflow", label: "Workflow", permitted: canManage },
+    { value: "views", label: "Views", permitted: canManage },
+    { value: "outputs", label: "Outputs", permitted: canViewAll || canManage },
+    { value: "access", label: "Access", permitted: canManage },
+  ];
+  const permittedTabs = tabDefs.filter((tab) => tab.permitted);
+
+  // Tabs are query-string driven. Opening a specific record (?record=) forces the Responses tab. An
+  // unauthorized or unknown tab normalizes to the nearest permitted tab (Form is always permitted).
   const recordParam = searchParams.get("record");
-  const requestedTab = searchParams.get("tab");
-  const activeTab: TabValue =
-    recordParam || requestedTab === "responses" ? "responses" : "form";
+  const requestedTab = recordParam
+    ? "responses"
+    : (searchParams.get("tab") ?? "form");
+  const activeTab: TabValue = permittedTabs.some(
+    (tab) => tab.value === requestedTab,
+  )
+    ? (requestedTab as TabValue)
+    : (permittedTabs[0]?.value ?? "form");
 
   const setTab = (tab: TabValue) => {
     const next = new URLSearchParams(searchParams);
@@ -76,13 +98,6 @@ export function FormDataSourcePage({
     if (tab !== "responses") next.delete("record");
     setSearchParams(next, { replace: true });
   };
-
-  const tabs = [
-    ...(showResponses
-      ? [{ value: "responses" as const, label: "Responses" }]
-      : []),
-    { value: "form" as const, label: "Form" },
-  ];
 
   return (
     <section className="app-editor-route form-page">
@@ -92,16 +107,17 @@ export function FormDataSourcePage({
         description={dataSource?.description ?? detail.description}
       />
 
-      {showResponses && (
-        <ViewTabs<TabValue>
-          label="Form sections"
-          value={activeTab}
-          items={tabs}
-          onValueChange={setTab}
-        />
-      )}
+      <ViewTabs<TabValue>
+        label="Form sections"
+        value={activeTab}
+        items={permittedTabs.map((tab) => ({
+          value: tab.value,
+          label: tab.label,
+        }))}
+        onValueChange={setTab}
+      />
 
-      {activeTab === "responses" && showResponses ? (
+      {activeTab === "responses" ? (
         <ResponsesTab
           form={detail}
           csrf={csrf}
@@ -114,6 +130,14 @@ export function FormDataSourcePage({
             setSearchParams(next, { replace: true });
           }}
         />
+      ) : activeTab === "workflow" ? (
+        <WorkflowEditor form={detail} csrf={csrf} />
+      ) : activeTab === "views" ? (
+        <ViewsEditor form={detail} csrf={csrf} />
+      ) : activeTab === "outputs" ? (
+        <OutputsPanel form={detail} csrf={csrf} canManage={canManage} />
+      ) : activeTab === "access" ? (
+        <AccessPanel form={detail} csrf={csrf} />
       ) : canManage ? (
         <ManageView form={detail} csrf={csrf} />
       ) : (

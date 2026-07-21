@@ -64,3 +64,8 @@ export function canSubmitToForm(
 ): boolean {
   return expandCapabilities(granted).has("submit");
 }
+
+// canManageForm reports whether the caller may edit workflow, views, and access (manage).
+export function canManageForm(granted: FormCapability[] | undefined): boolean {
+  return expandCapabilities(granted).has("manage");
+}
