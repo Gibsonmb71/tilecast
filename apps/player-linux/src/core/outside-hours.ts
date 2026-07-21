@@ -4,9 +4,7 @@ import type { PlayerConfig } from "./types";
 const CONFIG_FILE = "player-config.json";
 
 export type OutsideActiveHoursDisplay =
-  | "bouncing_logo"
-  | "custom_text"
-  | "black";
+  "bouncing_logo" | "custom_text" | "black";
 
 export interface OutsideActiveHoursPresentation {
   state: "sleep";
@@ -35,8 +33,7 @@ export function buildOutsideActiveHoursPresentation(
   const branding = config?.branding ?? {};
   const configuredDisplay = trimmed(power["outsideActiveHoursDisplay"]);
   const display: OutsideActiveHoursDisplay =
-    configuredDisplay === "bouncing_logo" ||
-    configuredDisplay === "custom_text"
+    configuredDisplay === "bouncing_logo" || configuredDisplay === "custom_text"
       ? configuredDisplay
       : "black";
 

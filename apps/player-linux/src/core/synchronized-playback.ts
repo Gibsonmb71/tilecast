@@ -38,7 +38,9 @@ export function effectiveDurationMs(
   manifestItem: ManifestItem | undefined,
   asset: ManifestAsset | undefined,
 ): number {
-  const explicit = positiveDuration(manifestItem?.durationMs ?? rendered.durationMs);
+  const explicit = positiveDuration(
+    manifestItem?.durationMs ?? rendered.durationMs,
+  );
   if (explicit !== null) {
     return explicit;
   }
@@ -53,7 +55,8 @@ export function effectiveDurationMs(
   }
 
   if (rendered.kind === "video") {
-    const start = manifestItem?.videoStartOffsetMs ?? rendered.videoStartOffsetMs ?? 0;
+    const start =
+      manifestItem?.videoStartOffsetMs ?? rendered.videoStartOffsetMs ?? 0;
     const end =
       manifestItem?.videoEndOffsetMs ??
       rendered.videoEndOffsetMs ??
@@ -112,9 +115,11 @@ export function projectSynchronizedPresentation(
   }
 
   const index = Math.min(Math.max(position.index, 0), items.length - 1);
-  const rotated = [...items.slice(index), ...items.slice(0, index)].map((item) => ({
-    ...item,
-  }));
+  const rotated = [...items.slice(index), ...items.slice(0, index)].map(
+    (item) => ({
+      ...item,
+    }),
+  );
   const first = rotated[0]!;
   first.durationMs = position.remainingMs;
   if (first.kind === "video") {
@@ -282,7 +287,11 @@ export function enrichSynchronizedPresentation(
   const manifest = stored.manifest;
   const selection = resolveSelection(manifest, new Date(nowMs));
   const playlist = findPlaylist(manifest, selection.playlistId);
-  if (!playlist || playlist.items.length === 0 || presentation.items.length === 0) {
+  if (
+    !playlist ||
+    playlist.items.length === 0 ||
+    presentation.items.length === 0
+  ) {
     return presentation;
   }
 
@@ -292,7 +301,10 @@ export function enrichSynchronizedPresentation(
   }
 
   let anchorMs = epoch;
-  if (selection.source === "emergency" && emergencyActive(manifest, new Date(nowMs))) {
+  if (
+    selection.source === "emergency" &&
+    emergencyActive(manifest, new Date(nowMs))
+  ) {
     const emergencyAnchor = Date.parse(manifest.emergency?.activatedAt ?? "");
     if (Number.isFinite(emergencyAnchor)) {
       anchorMs = emergencyAnchor;
@@ -310,7 +322,9 @@ export function enrichSynchronizedPresentation(
   }
 
   const manifestItems = playlistItemMaps(manifest);
-  const assets = new Map(manifest.assets.map((asset) => [asset.variantId, asset]));
+  const assets = new Map(
+    manifest.assets.map((asset) => [asset.variantId, asset]),
+  );
   const durationsMs = presentation.items.map((rendered) => {
     const source = manifestItems.get(rendered.id);
     return effectiveDurationMs(

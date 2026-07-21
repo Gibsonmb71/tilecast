@@ -23,7 +23,7 @@ Tilecast is an open-source, self-hosted digital signage platform for organizatio
 
 The Content library is organized into **Media** (uploaded images and videos), **Widgets** (reusable visual content), and **Data Sources** (reusable data connections). Standalone Website, YouTube, Clock, Date, QR Code, and Countdown Widgets cover common signage needs. Ticker, Menu / Price Board, List, Table, Agenda, Metric, Cards, and Weather Widgets display a compatible Data Source. Calendar, RSS, Atom, JSON, CSV, Manual Table, and Weather Data Sources handle acquisition, typed fields, caching, and date-aware selection independently from presentation. Widgets and Media can be reused in playlists and Layouts. See [Widgets, Data Sources, and Layouts](docs/widgets-and-layouts.md).
 
-Tilecast Player includes hardened first-run commissioning, cached boot recovery, persistent watchdog escalation, safe mode, remote management, and offline playback. Android players add capability-confirmed Managed Kiosk, locally approved Accessibility Control Assist, and best-effort platform sleep/wake behavior. Linux players use a kiosk session and systemd for unattended startup and recovery. Tilecast does not send direct HDMI-CEC commands. See [Android reliability and power](docs/reliability-and-power.md) and the [Linux Player wiki](https://github.com/Gibsonmb71/tilecast/wiki/Linux-Player).
+Tilecast Player includes hardened first-run commissioning, cached boot recovery, persistent watchdog escalation, safe mode, remote management, and offline playback. Android players add capability-confirmed Managed Kiosk, locally approved Accessibility Control Assist, and best-effort platform sleep/wake behavior. Linux players use a kiosk session and systemd for unattended startup and recovery. Tilecast does not send direct HDMI-CEC commands. See [Android reliability and power](docs/reliability-and-power.md) and the wiki's [Reliability and Kiosk](https://github.com/Gibsonmb71/tilecast/wiki/Reliability-and-Kiosk) guide, which covers both Android and Linux.
 
 Player `0.10.1` includes a pairing-recovery hotfix for upgraded devices that retain their stable player installation ID but lose access to the Android Keystore credential. Studio can explicitly repair the existing screen without deleting assignments; the previous credential is revoked only after successful replacement enrollment.
 
@@ -129,7 +129,7 @@ Create local AppImage and Debian packages with:
 npm run player:linux:dist
 ```
 
-For deployment, pairing, systemd autostart, kiosk setup, platform differences, and troubleshooting, see the [Linux Player wiki](https://github.com/Gibsonmb71/tilecast/wiki/Linux-Player).
+For deployment, pairing, systemd autostart, kiosk setup, platform differences, and troubleshooting, see [Install Tilecast Player](https://github.com/Gibsonmb71/tilecast/wiki/Install-Tilecast-Player), [Reliability and Kiosk](https://github.com/Gibsonmb71/tilecast/wiki/Reliability-and-Kiosk), and [Troubleshooting](https://github.com/Gibsonmb71/tilecast/wiki/Troubleshooting) in the wiki.
 
 ## Repository map
 

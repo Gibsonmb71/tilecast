@@ -22,7 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Clone and update the wiki
+      - name: Mirror the wiki/ directory to the GitHub Wiki
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -33,55 +33,21 @@ jobs:
             "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git" \
             "$wiki_checkout"
 
-          cp wiki/Linux-Player.md "$wiki_checkout/Linux-Player.md"
-          cp wiki/Installing-the-Linux-Player.md "$wiki_checkout/Installing-the-Linux-Player.md"
-          cp wiki/Linux-Kiosk-and-Autostart.md "$wiki_checkout/Linux-Kiosk-and-Autostart.md"
-          cp wiki/Linux-Player-Troubleshooting.md "$wiki_checkout/Linux-Player-Troubleshooting.md"
-
-          WIKI_CHECKOUT="$wiki_checkout" python3 <<'PY'
-          import os
-          from pathlib import Path
-
-          root = Path(os.environ["WIKI_CHECKOUT"])
-          sidebar = root / "_Sidebar.md"
-          start = "<!-- BEGIN TILECAST LINUX DOCS -->"
-          end = "<!-- END TILECAST LINUX DOCS -->"
-          block = """<!-- BEGIN TILECAST LINUX DOCS -->
-          ### Linux player
-
-          - [Overview](Linux-Player)
-          - [Installation](Installing-the-Linux-Player)
-          - [Kiosk and autostart](Linux-Kiosk-and-Autostart)
-          - [Troubleshooting](Linux-Player-Troubleshooting)
-          <!-- END TILECAST LINUX DOCS -->"""
-
-          text = sidebar.read_text(encoding="utf-8") if sidebar.exists() else ""
-          if start in text and end in text:
-              before, remainder = text.split(start, 1)
-              _, after = remainder.split(end, 1)
-              text = before.rstrip() + "\n\n" + block + after
-          else:
-              text = text.rstrip()
-              if text:
-                  text += "\n\n"
-              text += block + "\n"
-          sidebar.write_text(text, encoding="utf-8")
-          PY
+          # The repository's wiki/ directory is the single source of truth.
+          # Remove every tracked page in the wiki checkout, then copy the
+          # current set from the repo, so renames and deletions propagate.
+          find "$wiki_checkout" -maxdepth 1 -name '*.md' -delete
+          cp wiki/*.md "$wiki_checkout/"
 
           cd "$wiki_checkout"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add \
-            Linux-Player.md \
-            Installing-the-Linux-Player.md \
-            Linux-Kiosk-and-Autostart.md \
-            Linux-Player-Troubleshooting.md \
-            _Sidebar.md
+          git add -A
 
           if git diff --cached --quiet; then
             echo "Wiki is already current."
             exit 0
           fi
 
-          git commit -m "docs: add Linux player documentation"
+          git commit -m "docs: sync wiki from repository wiki/ directory"
           git push

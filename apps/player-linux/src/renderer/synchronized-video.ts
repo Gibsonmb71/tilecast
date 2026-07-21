@@ -23,7 +23,9 @@
     }
 
     const visibleLayer = document.querySelector(".layer.visible");
-    const video = visibleLayer?.querySelector("video") as HTMLVideoElement | null;
+    const video = visibleLayer?.querySelector(
+      "video",
+    ) as HTMLVideoElement | null;
     if (!video || video.readyState < HTMLMediaElement.HAVE_METADATA) {
       return;
     }

@@ -21,9 +21,7 @@ interface SyncPositionEvent {
 type PresentCallback = (presentation: unknown) => void;
 type SyncPositionCallback = (position: SyncPositionEvent | null) => void;
 
-const store = new StateStore(
-  process.env.TILECAST_DATA_DIR ?? defaultDataDir(),
-);
+const store = new StateStore(process.env.TILECAST_DATA_DIR ?? defaultDataDir());
 const presentCallbacks = new Set<PresentCallback>();
 const syncPositionCallbacks = new Set<SyncPositionCallback>();
 
@@ -170,9 +168,7 @@ ipcRenderer.on("present", (_event, presentation: Presentation) => {
     if (request !== presentationRequest) {
       return;
     }
-    activatePresentation(
-      enrichSynchronizedPresentation(presentation, stored),
-    );
+    activatePresentation(enrichSynchronizedPresentation(presentation, stored));
   })();
 });
 
