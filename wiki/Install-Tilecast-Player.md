@@ -190,13 +190,13 @@ npm ci
 npm run player:linux
 ```
 
-Create local Linux packages with:
+Create a local AppImage with:
 
 ```sh
 npm run player:linux:dist
 ```
 
-Electron Builder writes the AppImage and Debian package under `apps/player-linux/dist/`.
+Electron Builder writes `tilecast-player.AppImage` under `apps/player-linux/dist/`. The AppImage is the published and self-updated format.
 
 A development run is not a managed AppImage, so Studio-driven AppImage replacement reports an unsupported installation mode. Use a packaged AppImage for update testing.
 
