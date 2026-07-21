@@ -1,6 +1,6 @@
 {
   "name": "@gibsonmb71/tilecast-player-linux",
-  "version": "0.1.0",
+  "version": "0.2.0-beta.1",
   "license": "AGPL-3.0-only",
   "description": "Tilecast Player for Linux kiosk devices",
   "author": "Gibsonmb71",
@@ -19,7 +19,7 @@
   "devDependencies": {
     "@types/node": "^24.0.14",
     "@types/ws": "^8.18.1",
-    "electron": "37.10.3",
+    "electron": "43.2.0",
     "electron-builder": "^26.0.12",
     "typescript": "~5.8.3",
     "vitest": "^3.2.4"
@@ -40,7 +40,7 @@
     }
   },
   "allowScripts": {
-    "electron@37.10.3": true
+    "electron@43.2.0": true
   },
   "files": [
     "dist/**",
