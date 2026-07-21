@@ -1026,11 +1026,14 @@ export const api = {
       },
     ),
   // Attachments. Upload/replace and remove return the updated record detail.
+  // Attachment upload/removal use optimistic concurrency: the caller passes the record's current
+  // version, and the returned detail carries the incremented version to use for the next action.
   uploadFormRecordAttachment: async (
     id: string,
     recordId: string,
     file: File,
     fieldKey: string,
+    version: number,
     csrfToken: string,
   ) => {
     const data = await readFileAsBase64(file);
@@ -1044,6 +1047,7 @@ export const api = {
           fileName: file.name,
           contentType: file.type,
           data,
+          version,
         }),
       },
     );
@@ -1052,10 +1056,11 @@ export const api = {
     id: string,
     recordId: string,
     attachmentId: string,
+    version: number,
     csrfToken: string,
   ) =>
     request<FormRecordDetail>(
-      `/data-sources/${id}/records/${recordId}/attachments/${attachmentId}`,
+      `/data-sources/${id}/records/${recordId}/attachments/${attachmentId}?version=${version}`,
       { method: "DELETE", headers: { "X-CSRF-Token": csrfToken } },
     ),
   // The stable URL for a record's attachment image (served with session credentials).

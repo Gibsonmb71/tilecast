@@ -80,6 +80,24 @@ func setupForms(t *testing.T) formTestEnv {
 	return formTestEnv{ctx: ctx, pool: pool, service: service, invalidator: invalidator, owner: owner.User.ID}
 }
 
+// versionOf returns a record's current stored version (0 if it does not exist), for tests that
+// drive the version-checked attachment endpoints without threading the version by hand.
+func (e formTestEnv) versionOf(recordID uuid.UUID) int {
+	var version int
+	_ = e.pool.QueryRow(e.ctx, `SELECT version FROM form_records WHERE id=$1`, recordID).Scan(&version)
+	return version
+}
+
+// attach uploads an attachment using the record's current version (optimistic concurrency).
+func (e formTestEnv) attach(formID, recordID, actor uuid.UUID, upload AttachmentUpload) (RecordDetail, error) {
+	return e.service.CreateAttachment(e.ctx, formID, recordID, actor, upload, e.versionOf(recordID))
+}
+
+// removeAttachment removes an attachment using the record's current version.
+func (e formTestEnv) removeAttachment(formID, recordID, attachmentID, actor uuid.UUID) (RecordDetail, error) {
+	return e.service.RemoveAttachment(e.ctx, formID, recordID, attachmentID, actor, e.versionOf(recordID))
+}
+
 // insertUser creates an additional user with a role for grant/authorization tests.
 func (e formTestEnv) insertUser(t *testing.T, name, username, role string) uuid.UUID {
 	t.Helper()

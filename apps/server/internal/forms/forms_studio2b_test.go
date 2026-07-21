@@ -202,7 +202,7 @@ func TestAttachmentPreviewReplacementAndRemoval(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	detail, err := e.service.CreateAttachment(e.ctx, form.ID, rec.ID, alice, AttachmentUpload{FieldKey: "photo", FileName: "a.png", ContentType: "image/png", Data: pngBytes()})
+	detail, err := e.attach(form.ID, rec.ID, alice, AttachmentUpload{FieldKey: "photo", FileName: "a.png", ContentType: "image/png", Data: pngBytes()})
 	if err != nil {
 		t.Fatalf("upload: %v", err)
 	}
@@ -229,7 +229,7 @@ func TestAttachmentPreviewReplacementAndRemoval(t *testing.T) {
 	}
 
 	// Uploading again to the single-valued image field replaces the attachment.
-	replaced, err := e.service.CreateAttachment(e.ctx, form.ID, rec.ID, alice, AttachmentUpload{FieldKey: "photo", FileName: "b.png", ContentType: "image/png", Data: pngBytes()})
+	replaced, err := e.attach(form.ID, rec.ID, alice, AttachmentUpload{FieldKey: "photo", FileName: "b.png", ContentType: "image/png", Data: pngBytes()})
 	if err != nil {
 		t.Fatalf("replace: %v", err)
 	}
@@ -249,7 +249,7 @@ func TestAttachmentPreviewReplacementAndRemoval(t *testing.T) {
 	}
 
 	// Removal unbinds the attachment and clears the field.
-	afterRemove, err := e.service.RemoveAttachment(e.ctx, form.ID, rec.ID, newAttachment.ID, alice)
+	afterRemove, err := e.removeAttachment(form.ID, rec.ID, newAttachment.ID, alice)
 	if err != nil {
 		t.Fatalf("remove: %v", err)
 	}

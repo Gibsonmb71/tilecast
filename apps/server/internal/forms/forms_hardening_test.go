@@ -65,7 +65,7 @@ func TestSubmitterCannotModifyOthersRecord(t *testing.T) {
 	if _, err := e.service.Transition(e.ctx, formA.ID, rec.ID, bob, "submitted", "", rec.Version); err != ErrNotFound {
 		t.Fatalf("expected NotFound for bob submit, got %v", err)
 	}
-	if _, err := e.service.CreateAttachment(e.ctx, formA.ID, rec.ID, bob, AttachmentUpload{FieldKey: "photo", Data: pngBytes()}); err != ErrNotFound {
+	if _, err := e.attach(formA.ID, rec.ID, bob, AttachmentUpload{FieldKey: "photo", Data: pngBytes()}); err != ErrNotFound {
 		t.Fatalf("expected NotFound for bob attach, got %v", err)
 	}
 
@@ -105,7 +105,7 @@ func TestFormAttachmentUploadAndGuards(t *testing.T) {
 	}
 
 	// A valid upload creates a dedicated form-attachment asset and records the field value.
-	created, err := e.service.CreateAttachment(e.ctx, form.ID, rec.ID, e.owner, AttachmentUpload{FieldKey: "photo", FileName: "p.png", ContentType: "image/png", Data: pngBytes()})
+	created, err := e.attach(form.ID, rec.ID, e.owner, AttachmentUpload{FieldKey: "photo", FileName: "p.png", ContentType: "image/png", Data: pngBytes()})
 	if err != nil {
 		t.Fatalf("create attachment: %v", err)
 	}
@@ -138,14 +138,14 @@ func TestFormAttachmentUploadAndGuards(t *testing.T) {
 	}
 
 	// Invalid field keys are rejected.
-	if _, err := e.service.CreateAttachment(e.ctx, form.ID, rec.ID, e.owner, AttachmentUpload{FieldKey: "title", Data: pngBytes()}); !errors.Is(err, ErrValidation) {
+	if _, err := e.attach(form.ID, rec.ID, e.owner, AttachmentUpload{FieldKey: "title", Data: pngBytes()}); !errors.Is(err, ErrValidation) {
 		t.Fatalf("expected validation error for non-image field, got %v", err)
 	}
-	if _, err := e.service.CreateAttachment(e.ctx, form.ID, rec.ID, e.owner, AttachmentUpload{FieldKey: "missing", Data: pngBytes()}); !errors.Is(err, ErrValidation) {
+	if _, err := e.attach(form.ID, rec.ID, e.owner, AttachmentUpload{FieldKey: "missing", Data: pngBytes()}); !errors.Is(err, ErrValidation) {
 		t.Fatalf("expected validation error for unknown field, got %v", err)
 	}
 	// Non-image bytes are rejected.
-	if _, err := e.service.CreateAttachment(e.ctx, form.ID, rec.ID, e.owner, AttachmentUpload{FieldKey: "photo", Data: []byte("not an image at all")}); !errors.Is(err, ErrValidation) {
+	if _, err := e.attach(form.ID, rec.ID, e.owner, AttachmentUpload{FieldKey: "photo", Data: []byte("not an image at all")}); !errors.Is(err, ErrValidation) {
 		t.Fatalf("expected validation error for non-image bytes, got %v", err)
 	}
 
@@ -176,7 +176,7 @@ func TestFormAttachmentUploadAndGuards(t *testing.T) {
 	if _, err := e.service.SetGrant(e.ctx, form.ID, e.owner, GrantInput{UserID: bob, Capability: CapSubmit}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.service.CreateAttachment(e.ctx, form.ID, rec.ID, bob, AttachmentUpload{FieldKey: "photo", Data: pngBytes()}); err != ErrNotFound {
+	if _, err := e.attach(form.ID, rec.ID, bob, AttachmentUpload{FieldKey: "photo", Data: pngBytes()}); err != ErrNotFound {
 		t.Fatalf("expected NotFound for bob attach, got %v", err)
 	}
 

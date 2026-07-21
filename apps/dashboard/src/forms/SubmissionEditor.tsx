@@ -225,6 +225,7 @@ export function SubmissionEditor({
         recordId,
         file,
         fieldKey,
+        version,
         csrf,
       );
       setPending(fieldKey, null);
@@ -238,7 +239,7 @@ export function SubmissionEditor({
           pendingUrl: objectUrl,
           pendingName: file.name,
           uploading: false,
-          error: messageOf(error),
+          error: conflictAwareMessage(error),
         },
       }));
     }
@@ -252,6 +253,7 @@ export function SubmissionEditor({
           form.id,
           recordId,
           committed,
+          version,
           csrf,
         );
         absorbImageDetail(detail);
@@ -259,7 +261,10 @@ export function SubmissionEditor({
       } catch (error) {
         setImages((current) => ({
           ...current,
-          [fieldKey]: { ...current[fieldKey], error: messageOf(error) },
+          [fieldKey]: {
+            ...current[fieldKey],
+            error: conflictAwareMessage(error),
+          },
         }));
       }
       return;
@@ -299,13 +304,15 @@ export function SubmissionEditor({
       currentVersion = updated.version;
     }
     setVersion(currentVersion);
-    // Upload every pending image (initial uploads for a new draft, and retries for either).
+    // Upload every pending image (initial uploads for a new draft, and retries for either), threading
+    // the record version so each upload's optimistic-concurrency check sees the latest value.
     for (const [fieldKey, file] of Object.entries(pendingFiles.current)) {
       const detail = await api.uploadFormRecordAttachment(
         form.id,
         currentRecordId,
         file,
         fieldKey,
+        currentVersion,
         csrf,
       );
       setPending(fieldKey, null);

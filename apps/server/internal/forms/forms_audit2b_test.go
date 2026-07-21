@@ -21,7 +21,7 @@ func TestGenericMediaRejectsFormAttachments(t *testing.T) {
 	e := setupForms(t)
 	form, _ := e.service.CreateForm(e.ctx, e.owner, FormInput{Name: "Photos", DraftSchema: imageSchema()})
 	rec, _ := e.service.CreateRecord(e.ctx, form.ID, e.owner, RecordInput{Values: map[string]any{"title": "Has photo"}})
-	detail, err := e.service.CreateAttachment(e.ctx, form.ID, rec.ID, e.owner, AttachmentUpload{FieldKey: "photo", FileName: "p.png", ContentType: "image/png", Data: pngBytes()})
+	detail, err := e.attach(form.ID, rec.ID, e.owner, AttachmentUpload{FieldKey: "photo", FileName: "p.png", ContentType: "image/png", Data: pngBytes()})
 	if err != nil {
 		t.Fatalf("upload: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestImageValueForgeryRejected(t *testing.T) {
 	}
 
 	rec, _ := e.service.CreateRecord(e.ctx, form.ID, e.owner, RecordInput{Values: map[string]any{"title": "T"}})
-	detail, err := e.service.CreateAttachment(e.ctx, form.ID, rec.ID, e.owner, AttachmentUpload{FieldKey: "photo", FileName: "p.png", ContentType: "image/png", Data: pngBytes()})
+	detail, err := e.attach(form.ID, rec.ID, e.owner, AttachmentUpload{FieldKey: "photo", FileName: "p.png", ContentType: "image/png", Data: pngBytes()})
 	if err != nil {
 		t.Fatalf("upload: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestRequiredImageRequiresBoundAttachment(t *testing.T) {
 		t.Fatalf("submit without image should fail, got %v", err)
 	}
 	// After a real upload, the submit succeeds.
-	detail, err := e.service.CreateAttachment(e.ctx, form.ID, rec.ID, e.owner, AttachmentUpload{FieldKey: "photo", FileName: "p.png", ContentType: "image/png", Data: pngBytes()})
+	detail, err := e.attach(form.ID, rec.ID, e.owner, AttachmentUpload{FieldKey: "photo", FileName: "p.png", ContentType: "image/png", Data: pngBytes()})
 	if err != nil {
 		t.Fatalf("upload: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestApprovedAttachmentReplacementRebuildsProjection(t *testing.T) {
 	e := setupForms(t)
 	form, _ := e.service.CreateForm(e.ctx, e.owner, FormInput{Name: "Photos", DraftSchema: requiredImageSchema()})
 	rec, _ := e.service.CreateRecord(e.ctx, form.ID, e.owner, RecordInput{Values: map[string]any{"title": "T"}})
-	first, err := e.service.CreateAttachment(e.ctx, form.ID, rec.ID, e.owner, AttachmentUpload{FieldKey: "photo", FileName: "a.png", ContentType: "image/png", Data: pngBytes()})
+	first, err := e.attach(form.ID, rec.ID, e.owner, AttachmentUpload{FieldKey: "photo", FileName: "a.png", ContentType: "image/png", Data: pngBytes()})
 	if err != nil {
 		t.Fatalf("upload: %v", err)
 	}
@@ -133,7 +133,7 @@ func TestApprovedAttachmentReplacementRebuildsProjection(t *testing.T) {
 	}
 
 	// Replacing the image rebuilds the projection to the new asset and drops the old one.
-	replaced, err := e.service.CreateAttachment(e.ctx, form.ID, rec.ID, e.owner, AttachmentUpload{FieldKey: "photo", FileName: "b.png", ContentType: "image/png", Data: pngBytes()})
+	replaced, err := e.attach(form.ID, rec.ID, e.owner, AttachmentUpload{FieldKey: "photo", FileName: "b.png", ContentType: "image/png", Data: pngBytes()})
 	if err != nil {
 		t.Fatalf("replace: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestApprovedAttachmentReplacementRebuildsProjection(t *testing.T) {
 	}
 
 	// Removing the required image from the approved (eligible) record is rejected.
-	if _, err := e.service.RemoveAttachment(e.ctx, form.ID, rec.ID, replaced.Attachments[0].ID, e.owner); !errors.Is(err, ErrValidation) {
+	if _, err := e.removeAttachment(form.ID, rec.ID, replaced.Attachments[0].ID, e.owner); !errors.Is(err, ErrValidation) {
 		t.Fatalf("removing a required image from an approved record should be rejected, got %v", err)
 	}
 }
@@ -162,10 +162,10 @@ func TestReplacementLeavesOneAttachmentPerField(t *testing.T) {
 	e := setupForms(t)
 	form, _ := e.service.CreateForm(e.ctx, e.owner, FormInput{Name: "Photos", DraftSchema: imageSchema()})
 	rec, _ := e.service.CreateRecord(e.ctx, form.ID, e.owner, RecordInput{Values: map[string]any{"title": "T"}})
-	if _, err := e.service.CreateAttachment(e.ctx, form.ID, rec.ID, e.owner, AttachmentUpload{FieldKey: "photo", FileName: "a.png", ContentType: "image/png", Data: pngBytes()}); err != nil {
+	if _, err := e.attach(form.ID, rec.ID, e.owner, AttachmentUpload{FieldKey: "photo", FileName: "a.png", ContentType: "image/png", Data: pngBytes()}); err != nil {
 		t.Fatal(err)
 	}
-	detail, err := e.service.CreateAttachment(e.ctx, form.ID, rec.ID, e.owner, AttachmentUpload{FieldKey: "photo", FileName: "b.png", ContentType: "image/png", Data: pngBytes()})
+	detail, err := e.attach(form.ID, rec.ID, e.owner, AttachmentUpload{FieldKey: "photo", FileName: "b.png", ContentType: "image/png", Data: pngBytes()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,6 +179,40 @@ func TestReplacementLeavesOneAttachmentPerField(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("expected one attachment row for the field, got %d", count)
+	}
+}
+
+// TestAttachmentOptimisticConcurrency verifies attachment upload and removal reject a stale record
+// version with a conflict and succeed at the current version.
+func TestAttachmentOptimisticConcurrency(t *testing.T) {
+	e := setupForms(t)
+	form, _ := e.service.CreateForm(e.ctx, e.owner, FormInput{Name: "Photos", DraftSchema: imageSchema()})
+	rec, _ := e.service.CreateRecord(e.ctx, form.ID, e.owner, RecordInput{Values: map[string]any{"title": "T"}})
+	upload := AttachmentUpload{FieldKey: "photo", FileName: "p.png", ContentType: "image/png", Data: pngBytes()}
+
+	// A stale upload version is rejected.
+	if _, err := e.service.CreateAttachment(e.ctx, form.ID, rec.ID, e.owner, upload, rec.Version+5); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale upload should conflict, got %v", err)
+	}
+	// The current version succeeds and increments the record version.
+	detail, err := e.service.CreateAttachment(e.ctx, form.ID, rec.ID, e.owner, upload, rec.Version)
+	if err != nil {
+		t.Fatalf("upload at current version: %v", err)
+	}
+	if detail.Version <= rec.Version {
+		t.Fatalf("upload should increment the version: before=%d after=%d", rec.Version, detail.Version)
+	}
+	// A stale removal version (the pre-upload version) is rejected.
+	if _, err := e.service.RemoveAttachment(e.ctx, form.ID, rec.ID, detail.Attachments[0].ID, e.owner, rec.Version); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale removal should conflict, got %v", err)
+	}
+	// The current version succeeds.
+	after, err := e.service.RemoveAttachment(e.ctx, form.ID, rec.ID, detail.Attachments[0].ID, e.owner, detail.Version)
+	if err != nil {
+		t.Fatalf("removal at current version: %v", err)
+	}
+	if len(after.Attachments) != 0 {
+		t.Fatalf("removal should leave no attachments, got %d", len(after.Attachments))
 	}
 }
 
@@ -197,7 +231,7 @@ func TestFailedBindingCleansUpIngestedAsset(t *testing.T) {
 	if err := e.pool.QueryRow(e.ctx, `SELECT count(*) FROM assets WHERE origin='form_attachment' AND deleted_at IS NULL`).Scan(&liveBefore); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.service.CreateAttachment(e.ctx, form.ID, rec.ID, e.owner, AttachmentUpload{FieldKey: "photo", FileName: "p.png", ContentType: "image/png", Data: pngBytes()}); !errors.Is(err, ErrValidation) {
+	if _, err := e.attach(form.ID, rec.ID, e.owner, AttachmentUpload{FieldKey: "photo", FileName: "p.png", ContentType: "image/png", Data: pngBytes()}); !errors.Is(err, ErrValidation) {
 		t.Fatalf("attachment on an incomplete eligible record should fail validation, got %v", err)
 	}
 	var liveAfter int

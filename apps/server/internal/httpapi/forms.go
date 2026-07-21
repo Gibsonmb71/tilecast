@@ -366,7 +366,8 @@ type attachmentRequest struct {
 	FieldKey    string `json:"fieldKey"`
 	FileName    string `json:"fileName"`
 	ContentType string `json:"contentType"`
-	Data        string `json:"data"` // base64-encoded image bytes
+	Data        string `json:"data"`    // base64-encoded image bytes
+	Version     *int   `json:"version"` // record version for optimistic concurrency
 }
 
 // maxAttachmentRequestBytes bounds the JSON body for an attachment upload (base64 inflates ~33%).
@@ -387,6 +388,10 @@ func (s *server) uploadFormRecordAttachment(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
+	if body.Version == nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "A record version is required for attachment uploads.")
+		return
+	}
 	data, err := base64.StdEncoding.DecodeString(strings.TrimSpace(body.Data))
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "validation_failed", "Attachment data must be base64-encoded.")
@@ -394,7 +399,7 @@ func (s *server) uploadFormRecordAttachment(w http.ResponseWriter, r *http.Reque
 	}
 	record, err := s.forms.CreateAttachment(r.Context(), id, recordID, user.ID, forms.AttachmentUpload{
 		FieldKey: body.FieldKey, FileName: body.FileName, ContentType: body.ContentType, Data: data,
-	})
+	}, *body.Version)
 	if err != nil {
 		s.writeFormError(w, r, err)
 		return
@@ -417,8 +422,13 @@ func (s *server) removeFormRecordAttachment(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
+	version, err := strconv.Atoi(r.URL.Query().Get("version"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "A record version is required for attachment removal.")
+		return
+	}
 	user := sessionUser(r)
-	record, err := s.forms.RemoveAttachment(r.Context(), id, recordID, attachmentID, user.ID)
+	record, err := s.forms.RemoveAttachment(r.Context(), id, recordID, attachmentID, user.ID, version)
 	if err != nil {
 		s.writeFormError(w, r, err)
 		return

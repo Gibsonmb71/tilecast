@@ -272,6 +272,7 @@ function RecordReviewBody({
         detail.id,
         file,
         fieldKey,
+        version,
         csrf,
       );
       setImages(imagesFromDetail(form.id, updated));
@@ -282,9 +283,10 @@ function RecordReviewBody({
       setVersion(updated.version);
       onChanged();
     } catch (err) {
+      if (err instanceof ApiError && err.status === 409) await recover();
       setImages((current) => ({
         ...current,
-        [fieldKey]: { error: messageOf(err) },
+        [fieldKey]: { error: conflictMessage(err) },
       }));
     }
   }
@@ -297,6 +299,7 @@ function RecordReviewBody({
         form.id,
         detail.id,
         attachmentId,
+        version,
         csrf,
       );
       setImages(imagesFromDetail(form.id, updated));
@@ -304,9 +307,10 @@ function RecordReviewBody({
       setVersion(updated.version);
       onChanged();
     } catch (err) {
+      if (err instanceof ApiError && err.status === 409) await recover();
       setImages((current) => ({
         ...current,
-        [fieldKey]: { ...current[fieldKey], error: messageOf(err) },
+        [fieldKey]: { ...current[fieldKey], error: conflictMessage(err) },
       }));
     }
   }

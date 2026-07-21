@@ -10,7 +10,7 @@ import {
   FormPortalDetailPage,
   FormPortalSubmissionPage,
 } from "./FormsPortalPage";
-import { api } from "../api/client";
+import { api, ApiError } from "../api/client";
 import * as authModule from "../auth/AuthProvider";
 import type {
   FormDataSource,
@@ -583,6 +583,82 @@ describe("Forms portal", () => {
     // The banner reflects the transition note, not the trailing comment.
     const banner = await screen.findByText("Add a start date");
     expect(banner).toBeInTheDocument();
+  });
+
+  it("sends the record version on upload and surfaces a stale-version conflict", async () => {
+    mockAuth();
+    const imageForm = form(["submit"]);
+    const withImage = {
+      ...schema,
+      fields: [
+        ...schema.fields,
+        { key: "photo", label: "Photo", control: "image" as const },
+      ],
+    };
+    imageForm.publishedRevision = {
+      ...imageForm.publishedRevision!,
+      schema: withImage,
+    };
+    vi.spyOn(api, "getForm").mockResolvedValue(imageForm);
+    vi.spyOn(api, "getFormRecord").mockResolvedValue(
+      detail({
+        version: 4,
+        revision: { ...detail().revision!, schema: withImage },
+      }),
+    );
+    const upload = vi
+      .spyOn(api, "uploadFormRecordAttachment")
+      .mockRejectedValue(new ApiError("conflict", 409, "conflict"));
+    const user = userEvent.setup();
+    renderPortal("/forms/f1/submissions/rec1");
+
+    const file = new File([new Uint8Array([1, 2, 3])], "p.png", {
+      type: "image/png",
+    });
+    await user.upload(await screen.findByLabelText("Choose Photo"), file);
+
+    await waitFor(() => expect(upload).toHaveBeenCalled());
+    // The current record version is sent for the optimistic-concurrency check.
+    expect(upload.mock.calls[0]![4]).toBe(4);
+    // The conflict is surfaced with refresh/retry messaging.
+    expect(await screen.findByText(/changed elsewhere/i)).toBeInTheDocument();
+  });
+
+  it("sends the record version on removal and surfaces a stale-version conflict", async () => {
+    mockAuth();
+    const imageForm = form(["submit"]);
+    const withImage = {
+      ...schema,
+      fields: [
+        ...schema.fields,
+        { key: "photo", label: "Photo", control: "image" as const },
+      ],
+    };
+    imageForm.publishedRevision = {
+      ...imageForm.publishedRevision!,
+      schema: withImage,
+    };
+    vi.spyOn(api, "getForm").mockResolvedValue(imageForm);
+    vi.spyOn(api, "getFormRecord").mockResolvedValue(
+      detail({
+        version: 7,
+        revision: { ...detail().revision!, schema: withImage },
+        values: { title: "Hello", photo: "a1" },
+        attachments: [{ id: "att1", assetId: "a1", fieldKey: "photo" }],
+      }),
+    );
+    const remove = vi
+      .spyOn(api, "removeFormRecordAttachment")
+      .mockRejectedValue(new ApiError("conflict", 409, "conflict"));
+    const user = userEvent.setup();
+    renderPortal("/forms/f1/submissions/rec1");
+
+    await user.click(await screen.findByRole("button", { name: "Remove" }));
+
+    await waitFor(() => expect(remove).toHaveBeenCalled());
+    // The attachment id and current version are sent.
+    expect(remove.mock.calls[0]![2]).toBe("att1");
+    expect(remove.mock.calls[0]![3]).toBe(7);
   });
 
   it("loads your submissions scoped server-side (mine) and paginated", async () => {

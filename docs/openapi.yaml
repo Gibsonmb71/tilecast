@@ -1048,18 +1048,42 @@ paths:
   /api/v1/data-sources/{id}/records/{recordId}/attachments:
     post:
       operationId: uploadFormRecordAttachment
-      description: Uploads a base64-encoded image as a dedicated form attachment bound to an image field, returning the updated record detail with its new version. Because image fields are single-valued, uploading to a field that already has an attachment replaces it. Authorization matches record editing. Form attachments are never exposed through the general Media library.
+      description: Uploads a base64-encoded image as a dedicated form attachment bound to an image field, returning the updated record detail with its incremented version. Uses optimistic concurrency — the request body must carry the record's current `version`, and a mismatch returns 409. Because image fields are single-valued, uploading to a field that already has an attachment replaces it. Authorization matches record editing. Form attachments are never exposed through the general Media library.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fieldKey, data, version]
+              properties:
+                fieldKey: { type: string }
+                fileName: { type: string }
+                contentType: { type: string }
+                data: { type: string, description: base64-encoded image bytes }
+                version:
+                  { type: integer, description: The record's current version }
       responses:
         "201":
           { description: Updated record detail after the attachment change }
         "403": { description: Not permitted to edit this record }
+        "409": { description: Record version conflict }
         "422": { description: Not an image, unsupported type, or too large }
   /api/v1/data-sources/{id}/records/{recordId}/attachments/{attachmentId}:
     delete:
       operationId: removeFormRecordAttachment
-      description: Unbinds an attachment, clears the field value it backed, and soft-deletes the underlying asset. Authorization matches record editing. Returns the updated record detail.
+      description: Unbinds an attachment, clears the field value it backed, and soft-deletes the underlying asset. Uses optimistic concurrency — the record's current `version` is required as a query parameter and a mismatch returns 409. Authorization matches record editing. Returns the updated record detail.
+      parameters:
+        - {
+            name: version,
+            in: query,
+            required: true,
+            schema: { type: integer },
+            description: The record's current version,
+          }
       responses:
         "200": { description: Updated record detail after removal }
+        "409": { description: Record version conflict }
         "404":
           {
             description: Attachment or record not found or not visible to the caller,

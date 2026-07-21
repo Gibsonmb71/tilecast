@@ -540,10 +540,12 @@ type AttachmentUpload struct {
 // CreateAttachment ingests an uploaded image as a dedicated form attachment (origin
 // 'form_attachment' from the start), binds it to the record and a validated image field, and
 // records the value on the record. It never reclassifies an existing library asset. Authorization
-// matches record editing. Because image fields are single-valued, uploading to a field that already
-// has an attachment replaces it: the prior attachment for that field is unbound and its asset is
-// soft-deleted. The updated record detail (with its new version) is returned.
-func (s *Service) CreateAttachment(ctx context.Context, formID, recordID, actor uuid.UUID, upload AttachmentUpload) (RecordDetail, error) {
+// matches record editing. It uses optimistic concurrency: the record is locked and its stored
+// version compared to expectedVersion, returning ErrConflict on a mismatch. Because image fields are
+// single-valued, uploading to a field that already has an attachment replaces it: the prior
+// attachment for that field is unbound and its asset is soft-deleted. The updated record detail
+// (with its incremented version) is returned.
+func (s *Service) CreateAttachment(ctx context.Context, formID, recordID, actor uuid.UUID, upload AttachmentUpload, expectedVersion int) (RecordDetail, error) {
 	meta, err := s.authorizeEdit(ctx, formID, recordID, actor)
 	if err != nil {
 		return RecordDetail{}, err
@@ -576,14 +578,19 @@ func (s *Service) CreateAttachment(ctx context.Context, formID, recordID, actor 
 		return RecordDetail{}, err
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
-	// Lock the record so concurrent replacements serialize and the version bump is consistent.
+	// Lock the record so concurrent replacements serialize, then enforce optimistic concurrency
+	// against the stored version.
 	var valuesRaw []byte
 	var eligible bool
-	if err := tx.QueryRow(ctx, `SELECT values,eligible FROM form_records WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, recordID).Scan(&valuesRaw, &eligible); err != nil {
+	var version int
+	if err := tx.QueryRow(ctx, `SELECT values,eligible,version FROM form_records WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, recordID).Scan(&valuesRaw, &eligible, &version); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return RecordDetail{}, ErrNotFound
 		}
 		return RecordDetail{}, err
+	}
+	if version != expectedVersion {
+		return RecordDetail{}, ErrConflict
 	}
 	// Image fields are single-valued: remove any existing attachment on this field before binding
 	// the new one so the UNIQUE(record_id, field_key) invariant holds. The displaced asset is cleaned
@@ -630,11 +637,12 @@ func (s *Service) CreateAttachment(ctx context.Context, formID, recordID, actor 
 }
 
 // RemoveAttachment unbinds an attachment from a record, clears the field value it backed, and
-// soft-deletes the underlying asset. Authorization matches record editing. On an output-eligible
-// record, required fields are re-validated (so a required image cannot be dropped from approved
-// output) and the projection is rebuilt before the asset is deleted. The updated record detail (with
-// its new version) is returned.
-func (s *Service) RemoveAttachment(ctx context.Context, formID, recordID, attachmentID, actor uuid.UUID) (RecordDetail, error) {
+// soft-deletes the underlying asset. Authorization matches record editing. It uses optimistic
+// concurrency: the record is locked and its stored version compared to expectedVersion, returning
+// ErrConflict on a mismatch. On an output-eligible record, required fields are re-validated (so a
+// required image cannot be dropped from approved output) and the projection is rebuilt before the
+// asset is deleted. The updated record detail (with its incremented version) is returned.
+func (s *Service) RemoveAttachment(ctx context.Context, formID, recordID, attachmentID, actor uuid.UUID, expectedVersion int) (RecordDetail, error) {
 	meta, err := s.authorizeEdit(ctx, formID, recordID, actor)
 	if err != nil {
 		return RecordDetail{}, err
@@ -644,14 +652,18 @@ func (s *Service) RemoveAttachment(ctx context.Context, formID, recordID, attach
 		return RecordDetail{}, err
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
-	// Lock the record before mutating its attachments.
+	// Lock the record, then enforce optimistic concurrency against the stored version.
 	var valuesRaw []byte
 	var eligible bool
-	if err := tx.QueryRow(ctx, `SELECT values,eligible FROM form_records WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, recordID).Scan(&valuesRaw, &eligible); err != nil {
+	var version int
+	if err := tx.QueryRow(ctx, `SELECT values,eligible,version FROM form_records WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, recordID).Scan(&valuesRaw, &eligible, &version); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return RecordDetail{}, ErrNotFound
 		}
 		return RecordDetail{}, err
+	}
+	if version != expectedVersion {
+		return RecordDetail{}, ErrConflict
 	}
 	var assetID uuid.UUID
 	var fieldKey string
