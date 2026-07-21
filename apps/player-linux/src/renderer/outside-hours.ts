@@ -10,9 +10,8 @@
     onPresent(callback: (presentation: OutsideHoursPresentation) => void): void;
   }
 
-  const bridge = (
-    window as unknown as { tilecast: OutsideHoursBridge }
-  ).tilecast;
+  const bridge = (window as unknown as { tilecast: OutsideHoursBridge })
+    .tilecast;
 
   const style = document.createElement("style");
   style.textContent = `

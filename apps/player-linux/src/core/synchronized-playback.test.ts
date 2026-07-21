@@ -121,7 +121,11 @@ describe("synchronizedPlaybackPosition", () => {
       { groupId: "group-1", anchorMs: 0, durationsMs: [10_000] },
       25_000,
     );
-    expect(position).toMatchObject({ index: 0, offsetMs: 5_000, occurrence: 2 });
+    expect(position).toMatchObject({
+      index: 0,
+      offsetMs: 5_000,
+      occurrence: 2,
+    });
   });
 });
 
@@ -192,10 +196,11 @@ describe("enrichSynchronizedPresentation", () => {
       generation: 1,
     };
     expect(
-      enrichSynchronizedPresentation(
-        presentation,
-        { manifest: ungrouped, etag: null, storedAt: epoch },
-      ),
+      enrichSynchronizedPresentation(presentation, {
+        manifest: ungrouped,
+        etag: null,
+        storedAt: epoch,
+      }),
     ).toBe(presentation);
   });
 });
@@ -215,10 +220,7 @@ describe("schedulePlaybackAnchorMs", () => {
       daysOfWeek: [1],
     };
     expect(
-      schedulePlaybackAnchorMs(
-        schedule,
-        Date.parse("2026-07-20T16:00:00Z"),
-      ),
+      schedulePlaybackAnchorMs(schedule, Date.parse("2026-07-20T16:00:00Z")),
     ).toBe(Date.parse("2026-07-20T11:00:00Z"));
   });
 });
