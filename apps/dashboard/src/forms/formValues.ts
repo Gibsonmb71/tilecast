@@ -24,7 +24,9 @@ export function recordValuesToForm(
     if (field.control === "boolean") {
       result[field.key] = raw === true || raw === "true";
     } else if (field.control === "multi_select") {
-      result[field.key] = Array.isArray(raw) ? raw.map((item) => String(item)) : [];
+      result[field.key] = Array.isArray(raw)
+        ? raw.map((item) => String(item))
+        : [];
     } else {
       result[field.key] = coerceScalar(raw);
     }
@@ -40,7 +42,9 @@ export function applyDefaults(schema: FormSchema): FormValues {
     if (field.control === "boolean") {
       result[field.key] = field.default === "true";
     } else if (field.control === "multi_select") {
-      result[field.key] = field.default ? field.default.split(",").map((v) => v.trim()) : [];
+      result[field.key] = field.default
+        ? field.default.split(",").map((v) => v.trim())
+        : [];
     } else {
       result[field.key] = field.default ?? "";
     }
@@ -103,11 +107,15 @@ export function validateSubmission(
 
 function isEmpty(field: FormField, value: FormValues[string]): boolean {
   if (field.control === "boolean") return value !== true;
-  if (field.control === "multi_select") return !Array.isArray(value) || value.length === 0;
+  if (field.control === "multi_select")
+    return !Array.isArray(value) || value.length === 0;
   return typeof value !== "string" || value.trim() === "";
 }
 
-function validateField(field: FormField, value: FormValues[string]): string | undefined {
+function validateField(
+  field: FormField,
+  value: FormValues[string],
+): string | undefined {
   const text = typeof value === "string" ? value : "";
   switch (field.control) {
     case "short_text":
@@ -139,7 +147,8 @@ function validateField(field: FormField, value: FormValues[string]): string | un
       }
       return undefined;
     case "date":
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return `${field.label} must be a date.`;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(text))
+        return `${field.label} must be a date.`;
       return undefined;
     default:
       return undefined;

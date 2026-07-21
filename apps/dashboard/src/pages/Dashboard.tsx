@@ -96,7 +96,11 @@ const approvalsNav = [
 export function SidebarNavigation() {
   // Approvals appears only when the user can review, approve, or manage at least one Form. The
   // accessible-forms query is shared (and cached) with the Forms portal.
-  const forms = useQuery({ queryKey: ["forms"], queryFn: api.listForms, retry: false });
+  const forms = useQuery({
+    queryKey: ["forms"],
+    queryFn: api.listForms,
+    retry: false,
+  });
   const canReview = (forms.data ?? []).some((form) =>
     canReviewForm(form.grantedCapabilities),
   );

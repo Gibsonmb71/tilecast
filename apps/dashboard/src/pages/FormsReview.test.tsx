@@ -47,19 +47,66 @@ function mockAuth() {
 
 const workflow: FormWorkflow = {
   states: [
-    { key: "draft", label: "Draft", position: 0, eligibleForOutput: false, initial: true, terminal: false },
-    { key: "submitted", label: "Submitted", position: 1, eligibleForOutput: false, initial: false, terminal: false },
-    { key: "changes_requested", label: "Changes requested", position: 2, eligibleForOutput: false, initial: false, terminal: false },
-    { key: "approved", label: "Approved", position: 3, eligibleForOutput: true, initial: false, terminal: false },
+    {
+      key: "draft",
+      label: "Draft",
+      position: 0,
+      eligibleForOutput: false,
+      initial: true,
+      terminal: false,
+    },
+    {
+      key: "submitted",
+      label: "Submitted",
+      position: 1,
+      eligibleForOutput: false,
+      initial: false,
+      terminal: false,
+    },
+    {
+      key: "changes_requested",
+      label: "Changes requested",
+      position: 2,
+      eligibleForOutput: false,
+      initial: false,
+      terminal: false,
+    },
+    {
+      key: "approved",
+      label: "Approved",
+      position: 3,
+      eligibleForOutput: true,
+      initial: false,
+      terminal: false,
+    },
   ],
   transitions: [
-    { from: "submitted", to: "approved", label: "Approve", requiredCapability: "approve", position: 0 },
-    { from: "submitted", to: "changes_requested", label: "Request changes", requiredCapability: "review", position: 1 },
+    {
+      from: "submitted",
+      to: "approved",
+      label: "Approve",
+      requiredCapability: "approve",
+      position: 0,
+    },
+    {
+      from: "submitted",
+      to: "changes_requested",
+      label: "Request changes",
+      requiredCapability: "review",
+      position: 1,
+    },
   ],
 };
 
 const schema = {
-  fields: [{ key: "title", label: "Title", control: "short_text" as const, required: true }],
+  fields: [
+    {
+      key: "title",
+      label: "Title",
+      control: "short_text" as const,
+      required: true,
+    },
+  ],
 };
 
 function form(capabilities: FormCapability[]): FormDataSource {
@@ -140,15 +187,29 @@ function detail(overrides: Partial<FormRecordDetail> = {}): FormRecordDetail {
     canComment: true,
     canDelete: false,
     availableTransitions: [
-      { to: "approved", toLabel: "Approved", label: "Approve", requiredCapability: "approve", requiresNote: false },
-      { to: "changes_requested", toLabel: "Changes requested", label: "Request changes", requiredCapability: "review", requiresNote: true },
+      {
+        to: "approved",
+        toLabel: "Approved",
+        label: "Approve",
+        requiredCapability: "approve",
+        requiresNote: false,
+      },
+      {
+        to: "changes_requested",
+        toLabel: "Changes requested",
+        label: "Request changes",
+        requiredCapability: "review",
+        requiresNote: true,
+      },
     ],
     ...overrides,
   };
 }
 
 function renderReview(path: string) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   const router = createMemoryRouter(
     [{ path: "/data-sources/:id", element: <DataSourceEditorPage /> }],
     { initialEntries: [path] },
@@ -172,7 +233,9 @@ describe("Responses tab and record review", () => {
       page: 1,
       pageSize: 25,
     });
-    const getRecord = vi.spyOn(api, "getFormRecord").mockResolvedValue(detail());
+    const getRecord = vi
+      .spyOn(api, "getFormRecord")
+      .mockResolvedValue(detail());
     const user = userEvent.setup();
     renderReview("/data-sources/f1?tab=responses");
 
@@ -182,8 +245,12 @@ describe("Responses tab and record review", () => {
 
     await waitFor(() => expect(getRecord).toHaveBeenCalledWith("f1", "rec1"));
     // Server-provided transitions render as buttons.
-    expect(await screen.findByRole("button", { name: "Approve" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Request changes" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: "Approve" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Request changes" }),
+    ).toBeInTheDocument();
   });
 
   it("runs an approve transition with the current version", async () => {
@@ -199,7 +266,10 @@ describe("Responses tab and record review", () => {
 
     await user.click(await screen.findByRole("button", { name: "Approve" }));
     await waitFor(() => expect(transition).toHaveBeenCalled());
-    expect(transition.mock.calls[0]![2]).toMatchObject({ toState: "approved", version: 3 });
+    expect(transition.mock.calls[0]![2]).toMatchObject({
+      toState: "approved",
+      version: 3,
+    });
   });
 
   it("requires a note before requesting changes", async () => {
@@ -211,7 +281,9 @@ describe("Responses tab and record review", () => {
     const user = userEvent.setup();
     renderReview("/data-sources/f1?tab=responses&record=rec1");
 
-    await user.click(await screen.findByRole("button", { name: "Request changes" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Request changes" }),
+    );
     expect(await screen.findByText(/note is required/i)).toBeInTheDocument();
     expect(transition).not.toHaveBeenCalled();
   });
@@ -220,7 +292,9 @@ describe("Responses tab and record review", () => {
     mockAuth();
     vi.spyOn(api, "getDataSource").mockResolvedValue(dataSourceDetail);
     vi.spyOn(api, "getForm").mockResolvedValue(form(["approve"]));
-    const getRecord = vi.spyOn(api, "getFormRecord").mockResolvedValue(detail());
+    const getRecord = vi
+      .spyOn(api, "getFormRecord")
+      .mockResolvedValue(detail());
     vi.spyOn(api, "transitionFormRecord").mockRejectedValue(
       new ApiError("conflict", 409, "conflict"),
     );
@@ -228,7 +302,9 @@ describe("Responses tab and record review", () => {
     renderReview("/data-sources/f1?tab=responses&record=rec1");
 
     await user.click(await screen.findByRole("button", { name: "Approve" }));
-    expect(await screen.findByText(/changed since you opened it/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/changed since you opened it/i),
+    ).toBeInTheDocument();
     // The detail is refetched so the reviewer sees the latest state.
     await waitFor(() => expect(getRecord.mock.calls.length).toBeGreaterThan(1));
   });
@@ -255,7 +331,9 @@ describe("Central approvals inbox", () => {
       pageSize: 25,
     });
     const user = userEvent.setup();
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
     const router = createMemoryRouter(
       [
         { path: "/approvals", element: <ApprovalsPage /> },

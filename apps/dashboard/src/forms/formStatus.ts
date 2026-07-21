@@ -3,7 +3,10 @@ import type { FormWorkflow, FormWorkflowState } from "../api/types";
 type StatusTone = "success" | "info" | "warning" | "danger" | "neutral";
 
 // stateLabel resolves a workflow state key to its configured human label, falling back to the key.
-export function stateLabel(workflow: FormWorkflow | undefined, key: string): string {
+export function stateLabel(
+  workflow: FormWorkflow | undefined,
+  key: string,
+): string {
   const state = workflow?.states.find((candidate) => candidate.key === key);
   return state?.label ?? key;
 }
@@ -33,7 +36,8 @@ export function isEditableState(
 ): boolean {
   return Boolean(
     workflow?.transitions.some(
-      (transition) => transition.from === key && transition.requiredCapability === "submit",
+      (transition) =>
+        transition.from === key && transition.requiredCapability === "submit",
     ),
   );
 }

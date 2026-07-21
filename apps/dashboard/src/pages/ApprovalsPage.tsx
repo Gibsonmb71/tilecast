@@ -44,7 +44,9 @@ export function ApprovalsPage() {
 
       {approvals.isError && (
         <Notice variant="danger" title="Could not load approvals">
-          {approvals.error instanceof Error ? approvals.error.message : "Please try again."}
+          {approvals.error instanceof Error
+            ? approvals.error.message
+            : "Please try again."}
         </Notice>
       )}
 

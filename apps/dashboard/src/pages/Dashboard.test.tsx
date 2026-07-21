@@ -26,7 +26,9 @@ function renderNav() {
   );
 }
 
-const summary = (capabilities: FormSummary["grantedCapabilities"]): FormSummary => ({
+const summary = (
+  capabilities: FormSummary["grantedCapabilities"],
+): FormSummary => ({
   id: "form-1",
   name: "Announcements",
   description: "",

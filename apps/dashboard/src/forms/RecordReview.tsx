@@ -15,7 +15,11 @@ import {
   StatusBadge,
   Textarea,
 } from "../components/ui";
-import { FormRenderer, type FormValues, type ImageFieldState } from "./FormRenderer";
+import {
+  FormRenderer,
+  type FormValues,
+  type ImageFieldState,
+} from "./FormRenderer";
 import {
   coerceScalar,
   formValuesToPayload,
@@ -62,9 +66,15 @@ export function RecordReview({
       detail={detailQuery.data}
       csrf={csrf}
       onChanged={() => {
-        void queryClient.invalidateQueries({ queryKey: ["form-record", form.id, recordId] });
-        void queryClient.invalidateQueries({ queryKey: ["form-records", form.id] });
-        void queryClient.invalidateQueries({ queryKey: ["data-source", form.id] });
+        void queryClient.invalidateQueries({
+          queryKey: ["form-record", form.id, recordId],
+        });
+        void queryClient.invalidateQueries({
+          queryKey: ["form-records", form.id],
+        });
+        void queryClient.invalidateQueries({
+          queryKey: ["data-source", form.id],
+        });
         void queryClient.invalidateQueries({ queryKey: ["approvals"] });
         void queryClient.invalidateQueries({ queryKey: ["forms"] });
         onAfterTransition?.();
@@ -84,7 +94,8 @@ function RecordReviewBody({
   csrf: string;
   onChanged: () => void;
 }) {
-  const schema = detail.revision?.schema ?? form.publishedRevision?.schema ?? { fields: [] };
+  const schema = detail.revision?.schema ??
+    form.publishedRevision?.schema ?? { fields: [] };
   const [version, setVersion] = useState(detail.version);
   const [values, setValues] = useState<FormValues>(() =>
     recordValuesToForm(schema, detail.values),
@@ -100,7 +111,9 @@ function RecordReviewBody({
   const [comment, setComment] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const baseline = useRef(JSON.stringify({ values, displayTitle, priority, displayAt, expiresAt }));
+  const baseline = useRef(
+    JSON.stringify({ values, displayTitle, priority, displayAt, expiresAt }),
+  );
 
   // When the detail refreshes (e.g. after a transition), resync local state unless the viewer has
   // unsaved edits in flight.
@@ -112,7 +125,8 @@ function RecordReviewBody({
   const canEdit = detail.canEdit;
   const canComment = detail.canComment;
   const dirty =
-    JSON.stringify({ values, displayTitle, priority, displayAt, expiresAt }) !== baseline.current;
+    JSON.stringify({ values, displayTitle, priority, displayAt, expiresAt }) !==
+    baseline.current;
 
   async function saveEdits(): Promise<number> {
     const payload = formValuesToPayload(schema, values);
@@ -130,7 +144,13 @@ function RecordReviewBody({
       csrf,
     );
     setVersion(updated.version);
-    baseline.current = JSON.stringify({ values, displayTitle, priority, displayAt, expiresAt });
+    baseline.current = JSON.stringify({
+      values,
+      displayTitle,
+      priority,
+      displayAt,
+      expiresAt,
+    });
     onChanged();
     return updated.version;
   }
@@ -161,7 +181,11 @@ function RecordReviewBody({
       const record = await api.transitionFormRecord(
         form.id,
         detail.id,
-        { toState: transition.to, note: note.trim() || undefined, version: currentVersion },
+        {
+          toState: transition.to,
+          note: note.trim() || undefined,
+          version: currentVersion,
+        },
         csrf,
       );
       setVersion(record.version);
@@ -175,7 +199,9 @@ function RecordReviewBody({
           "This submission changed since you opened it. It has been refreshed — review the latest version and try again.",
         );
       } else {
-        setError(err instanceof Error ? err.message : "Could not apply the change.");
+        setError(
+          err instanceof Error ? err.message : "Could not apply the change.",
+        );
       }
     } finally {
       setBusy(false);
@@ -191,7 +217,9 @@ function RecordReviewBody({
       setComment("");
       onChanged();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not add the comment.");
+      setError(
+        err instanceof Error ? err.message : "Could not add the comment.",
+      );
     } finally {
       setBusy(false);
     }
@@ -200,7 +228,13 @@ function RecordReviewBody({
   async function handleImageSelect(fieldKey: string, file: File) {
     setImages((current) => ({ ...current, [fieldKey]: { uploading: true } }));
     try {
-      const updated = await api.uploadFormRecordAttachment(form.id, detail.id, file, fieldKey, csrf);
+      const updated = await api.uploadFormRecordAttachment(
+        form.id,
+        detail.id,
+        file,
+        fieldKey,
+        csrf,
+      );
       setImages(imagesFromDetail(form.id, updated));
       setValues((current) => ({
         ...current,
@@ -209,7 +243,10 @@ function RecordReviewBody({
       setVersion(updated.version);
       onChanged();
     } catch (err) {
-      setImages((current) => ({ ...current, [fieldKey]: { error: messageOf(err) } }));
+      setImages((current) => ({
+        ...current,
+        [fieldKey]: { error: messageOf(err) },
+      }));
     }
   }
 
@@ -217,17 +254,27 @@ function RecordReviewBody({
     const attachmentId = images[fieldKey]?.attachmentId;
     if (!attachmentId) return;
     try {
-      const updated = await api.removeFormRecordAttachment(form.id, detail.id, attachmentId, csrf);
+      const updated = await api.removeFormRecordAttachment(
+        form.id,
+        detail.id,
+        attachmentId,
+        csrf,
+      );
       setImages(imagesFromDetail(form.id, updated));
       setValues((current) => ({ ...current, [fieldKey]: "" }));
       setVersion(updated.version);
       onChanged();
     } catch (err) {
-      setImages((current) => ({ ...current, [fieldKey]: { ...current[fieldKey], error: messageOf(err) } }));
+      setImages((current) => ({
+        ...current,
+        [fieldKey]: { ...current[fieldKey], error: messageOf(err) },
+      }));
     }
   }
 
-  const requiresNoteTransition = detail.availableTransitions.some((t) => t.requiresNote);
+  const requiresNoteTransition = detail.availableTransitions.some(
+    (t) => t.requiresNote,
+  );
 
   return (
     <div className="record-review">
@@ -237,7 +284,9 @@ function RecordReviewBody({
           <p className="record-review__meta">
             Submitted by {detail.submitterName || "Unknown"} ·{" "}
             {new Date(detail.createdAt).toLocaleString()}
-            {detail.revision && <> · Revision {detail.revision.revisionNumber}</>}
+            {detail.revision && (
+              <> · Revision {detail.revision.revisionNumber}</>
+            )}
           </p>
         </div>
         <StatusBadge
@@ -258,7 +307,8 @@ function RecordReviewBody({
         readOnly={!canEdit}
         onChange={
           canEdit
-            ? (key, value) => setValues((current) => ({ ...current, [key]: value }))
+            ? (key, value) =>
+                setValues((current) => ({ ...current, [key]: value }))
             : undefined
         }
         imageHandlers={{
@@ -268,7 +318,10 @@ function RecordReviewBody({
         }}
       />
 
-      <section className="record-review__metadata" aria-label="Display metadata">
+      <section
+        className="record-review__metadata"
+        aria-label="Display metadata"
+      >
         <h3>Display settings</h3>
         <div className="record-review__metadata-grid">
           <Field label="Display title">
@@ -304,7 +357,12 @@ function RecordReviewBody({
           </Field>
         </div>
         {canEdit && (
-          <Button variant="secondary" loading={busy} disabled={busy || !dirty} onClick={() => void handleSave()}>
+          <Button
+            variant="secondary"
+            loading={busy}
+            disabled={busy || !dirty}
+            onClick={() => void handleSave()}
+          >
             Save changes
           </Button>
         )}
@@ -363,7 +421,11 @@ function RecordReviewBody({
               aria-label="Add a comment"
               onChange={(event) => setComment(event.target.value)}
             />
-            <Button variant="secondary" disabled={busy || comment.trim() === ""} onClick={() => void addComment()}>
+            <Button
+              variant="secondary"
+              disabled={busy || comment.trim() === ""}
+              onClick={() => void addComment()}
+            >
               Comment
             </Button>
           </div>
@@ -375,7 +437,9 @@ function RecordReviewBody({
         <ul>
           {detail.events.map((event) => (
             <li key={event.id}>
-              <span className="record-review__event-type">{describeEvent(event)}</span>
+              <span className="record-review__event-type">
+                {describeEvent(event)}
+              </span>
               <span className="record-review__event-time">
                 {new Date(event.createdAt).toLocaleString()}
               </span>
@@ -415,7 +479,11 @@ function imagesFromDetail(
   for (const attachment of detail.attachments) {
     result[attachment.fieldKey] = {
       attachmentId: attachment.id,
-      contentUrl: api.formAttachmentContentUrl(formId, detail.id, attachment.id),
+      contentUrl: api.formAttachmentContentUrl(
+        formId,
+        detail.id,
+        attachment.id,
+      ),
     };
   }
   return result;

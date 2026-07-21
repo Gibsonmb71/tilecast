@@ -8,7 +8,11 @@ import type {
 } from "../api/types";
 import { api, ApiError } from "../api/client";
 import { Button, Notice } from "../components/ui";
-import { FormRenderer, type FormValues, type ImageFieldState } from "./FormRenderer";
+import {
+  FormRenderer,
+  type FormValues,
+  type ImageFieldState,
+} from "./FormRenderer";
 import {
   applyDefaults,
   coerceScalar,
@@ -42,7 +46,9 @@ export function SubmissionEditor({
     return form.publishedRevision?.schema ?? { fields: [] };
   }, [initialDetail, form.publishedRevision]);
 
-  const [recordId, setRecordId] = useState<string | null>(initialDetail?.id ?? null);
+  const [recordId, setRecordId] = useState<string | null>(
+    initialDetail?.id ?? null,
+  );
   const [version, setVersion] = useState<number>(initialDetail?.version ?? 0);
   const [state, setState] = useState<string>(
     initialDetail?.state ?? initialState(form.workflow)?.key ?? "draft",
@@ -89,13 +95,17 @@ export function SubmissionEditor({
     () =>
       form.workflow.transitions.find(
         (transition) =>
-          transition.from === state && transition.requiredCapability === "submit",
+          transition.from === state &&
+          transition.requiredCapability === "submit",
       ),
     [form.workflow, state],
   );
 
   const editable = recordId === null || isEditableState(form.workflow, state);
-  const latestReviewerNote = useMemo(() => findLatestReviewerNote(comments), [comments]);
+  const latestReviewerNote = useMemo(
+    () => findLatestReviewerNote(comments),
+    [comments],
+  );
 
   // --- image handling ---
   function absorbDetail(detail: FormRecordDetail) {
@@ -121,18 +131,32 @@ export function SubmissionEditor({
     pendingFiles.current[fieldKey] = file;
     setImages((current) => ({
       ...current,
-      [fieldKey]: { pendingUrl: objectUrl, pendingName: file.name, uploading: recordId !== null },
+      [fieldKey]: {
+        pendingUrl: objectUrl,
+        pendingName: file.name,
+        uploading: recordId !== null,
+      },
     }));
     if (recordId === null) return; // deferred until the draft is created
     try {
-      const detail = await api.uploadFormRecordAttachment(form.id, recordId, file, fieldKey, csrf);
+      const detail = await api.uploadFormRecordAttachment(
+        form.id,
+        recordId,
+        file,
+        fieldKey,
+        csrf,
+      );
       delete pendingFiles.current[fieldKey];
       absorbDetail(detail);
       invalidate();
     } catch (error) {
       setImages((current) => ({
         ...current,
-        [fieldKey]: { ...current[fieldKey], uploading: false, error: messageOf(error) },
+        [fieldKey]: {
+          ...current[fieldKey],
+          uploading: false,
+          error: messageOf(error),
+        },
       }));
     }
   }
@@ -141,7 +165,12 @@ export function SubmissionEditor({
     const committed = images[fieldKey]?.attachmentId;
     if (committed && recordId) {
       try {
-        const detail = await api.removeFormRecordAttachment(form.id, recordId, committed, csrf);
+        const detail = await api.removeFormRecordAttachment(
+          form.id,
+          recordId,
+          committed,
+          csrf,
+        );
         absorbDetail(detail);
         invalidate();
       } catch (error) {
@@ -163,7 +192,9 @@ export function SubmissionEditor({
 
   function invalidate() {
     if (recordId) {
-      void queryClient.invalidateQueries({ queryKey: ["form-record", form.id, recordId] });
+      void queryClient.invalidateQueries({
+        queryKey: ["form-record", form.id, recordId],
+      });
     }
     void queryClient.invalidateQueries({ queryKey: ["form-records", form.id] });
     void queryClient.invalidateQueries({ queryKey: ["forms"] });
@@ -176,7 +207,11 @@ export function SubmissionEditor({
     let currentRecordId = recordId;
     let currentVersion = version;
     if (currentRecordId === null) {
-      const created = await api.createFormRecord(form.id, { values: payload }, csrf);
+      const created = await api.createFormRecord(
+        form.id,
+        { values: payload },
+        csrf,
+      );
       currentRecordId = created.id;
       currentVersion = created.version;
       setRecordId(created.id);
@@ -184,7 +219,13 @@ export function SubmissionEditor({
       setState(created.state);
       // Upload any images selected before the draft existed.
       for (const [fieldKey, file] of Object.entries(pendingFiles.current)) {
-        const detail = await api.uploadFormRecordAttachment(form.id, currentRecordId, file, fieldKey, csrf);
+        const detail = await api.uploadFormRecordAttachment(
+          form.id,
+          currentRecordId,
+          file,
+          fieldKey,
+          csrf,
+        );
         delete pendingFiles.current[fieldKey];
         currentVersion = detail.version;
         absorbDetail(detail);
@@ -270,13 +311,15 @@ export function SubmissionEditor({
             </div>
           }
         >
-          You have unsaved changes to this submission. Leaving now will discard them.
+          You have unsaved changes to this submission. Leaving now will discard
+          them.
         </Notice>
       )}
 
       {latestReviewerNote && editable && state === "changes_requested" && (
         <Notice variant="warning" title="Changes requested">
-          <strong>{latestReviewerNote.authorName}:</strong> {latestReviewerNote.body}
+          <strong>{latestReviewerNote.authorName}:</strong>{" "}
+          {latestReviewerNote.body}
         </Notice>
       )}
 
@@ -292,7 +335,8 @@ export function SubmissionEditor({
         readOnly={!editable}
         onChange={
           editable
-            ? (key, value) => setValues((current) => ({ ...current, [key]: value }))
+            ? (key, value) =>
+                setValues((current) => ({ ...current, [key]: value }))
             : undefined
         }
         errors={errors}
@@ -337,8 +381,12 @@ export function SubmissionEditor({
           </Button>
         </div>
       ) : (
-        <Notice variant="info" title={`This submission is ${stateLabel(form.workflow, state)}`}>
-          It can no longer be edited. A reviewer will follow up if changes are needed.
+        <Notice
+          variant="info"
+          title={`This submission is ${stateLabel(form.workflow, state)}`}
+        >
+          It can no longer be edited. A reviewer will follow up if changes are
+          needed.
         </Notice>
       )}
     </div>
@@ -354,7 +402,11 @@ function imagesFromDetail(
   for (const attachment of detail.attachments) {
     result[attachment.fieldKey] = {
       attachmentId: attachment.id,
-      contentUrl: api.formAttachmentContentUrl(formId, detail.id, attachment.id),
+      contentUrl: api.formAttachmentContentUrl(
+        formId,
+        detail.id,
+        attachment.id,
+      ),
     };
   }
   return result;

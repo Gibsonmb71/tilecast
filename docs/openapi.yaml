@@ -979,13 +979,23 @@ paths:
       operationId: listFormRecords
       description: Returns a filtered, paginated page of a form's records. Callers with view_all, review, approve, or manage see every record; a submitter without those sees only their own submissions. Supports states, search, sort, page, and pageSize query parameters.
       parameters:
-        - { name: states, in: query, schema: { type: string }, description: Comma-separated workflow state keys }
+        - {
+            name: states,
+            in: query,
+            schema: { type: string },
+            description: Comma-separated workflow state keys,
+          }
         - { name: search, in: query, schema: { type: string } }
-        - { name: sort, in: query, schema: { type: string, enum: [newest, oldest, priority, updated] } }
+        - {
+            name: sort,
+            in: query,
+            schema: { type: string, enum: [newest, oldest, priority, updated] },
+          }
         - { name: page, in: query, schema: { type: integer } }
         - { name: pageSize, in: query, schema: { type: integer } }
       responses:
-        "200": { description: Paginated record page (items, total, page, pageSize) }
+        "200":
+          { description: Paginated record page (items, total, page, pageSize) }
         "403": { description: No visibility into this form's records }
     post:
       operationId: createFormRecord
@@ -1034,7 +1044,8 @@ paths:
       operationId: uploadFormRecordAttachment
       description: Uploads a base64-encoded image as a dedicated form attachment bound to an image field, returning the updated record detail with its new version. Because image fields are single-valued, uploading to a field that already has an attachment replaces it. Authorization matches record editing. Form attachments are never exposed through the general Media library.
       responses:
-        "201": { description: Updated record detail after the attachment change }
+        "201":
+          { description: Updated record detail after the attachment change }
         "403": { description: Not permitted to edit this record }
         "422": { description: Not an image, unsupported type, or too large }
   /api/v1/data-sources/{id}/records/{recordId}/attachments/{attachmentId}:
@@ -1043,14 +1054,22 @@ paths:
       description: Unbinds an attachment, clears the field value it backed, and soft-deletes the underlying asset. Authorization matches record editing. Returns the updated record detail.
       responses:
         "200": { description: Updated record detail after removal }
-        "404": { description: Attachment or record not found or not visible to the caller }
+        "404":
+          {
+            description: Attachment or record not found or not visible to the caller,
+          }
   /api/v1/data-sources/{id}/records/{recordId}/attachments/{attachmentId}/content:
     get:
       operationId: serveFormRecordAttachment
       description: Streams a record's image attachment through this form-record-authorized endpoint (the only way to view a form attachment; they are never served from the Media library). Applies the same visibility rules as reading the record.
       responses:
         "200": { description: The attachment image bytes }
-        "404": { description: Attachment or record not found, not visible, or not yet servable }
+        "404":
+          {
+            description: Attachment or record not found,
+            not visible,
+            or not yet servable,
+          }
   /api/v1/approvals:
     get:
       operationId: listApprovals
@@ -1059,7 +1078,13 @@ paths:
         - { name: page, in: query, schema: { type: integer } }
         - { name: pageSize, in: query, schema: { type: integer } }
       responses:
-        "200": { description: Paginated approval page (items, total, page, pageSize) }
+        "200":
+          {
+            description: Paginated approval page (items,
+            total,
+            page,
+            pageSize),
+          }
   /api/v1/layouts:
     get:
       operationId: listLayouts

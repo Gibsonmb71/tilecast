@@ -53,10 +53,14 @@ export function canReviewForm(granted: FormCapability[] | undefined): boolean {
 
 // canViewResponses reports whether the caller may see all of a form's responses (view_all, review,
 // approve, or manage).
-export function canViewResponses(granted: FormCapability[] | undefined): boolean {
+export function canViewResponses(
+  granted: FormCapability[] | undefined,
+): boolean {
   return expandCapabilities(granted).has("view_all");
 }
 
-export function canSubmitToForm(granted: FormCapability[] | undefined): boolean {
+export function canSubmitToForm(
+  granted: FormCapability[] | undefined,
+): boolean {
   return expandCapabilities(granted).has("submit");
 }

@@ -283,7 +283,13 @@ function readFileAsBase64(file: File): Promise<string> {
       resolve(comma >= 0 ? result.slice(comma + 1) : result);
     };
     reader.onerror = () =>
-      reject(new ApiError("Could not read the selected file.", 0, "file_read_failed"));
+      reject(
+        new ApiError(
+          "Could not read the selected file.",
+          0,
+          "file_read_failed",
+        ),
+      );
     reader.readAsDataURL(file);
   });
 }
@@ -291,7 +297,8 @@ function readFileAsBase64(file: File): Promise<string> {
 // formRecordQuery builds the query string for the paginated records list.
 function formRecordQuery(params: FormRecordListParams = {}): string {
   const query = new URLSearchParams();
-  if (params.states && params.states.length > 0) query.set("states", params.states.join(","));
+  if (params.states && params.states.length > 0)
+    query.set("states", params.states.join(","));
   if (params.search) query.set("search", params.search);
   if (params.sort) query.set("sort", params.sort);
   if (params.page) query.set("page", String(params.page));
@@ -966,7 +973,9 @@ export const api = {
     request<{ items: FormSummary[] }>("/forms").then((result) => result.items),
   // Records / submissions.
   listFormRecords: (id: string, params?: FormRecordListParams) =>
-    request<FormRecordPage>(`/data-sources/${id}/records${formRecordQuery(params)}`),
+    request<FormRecordPage>(
+      `/data-sources/${id}/records${formRecordQuery(params)}`,
+    ),
   getFormRecord: (id: string, recordId: string) =>
     request<FormRecordDetail>(`/data-sources/${id}/records/${recordId}`),
   createFormRecord: (id: string, input: FormRecordInput, csrfToken: string) =>
@@ -1008,11 +1017,14 @@ export const api = {
     body: string,
     csrfToken: string,
   ) =>
-    request<FormRecordComment>(`/data-sources/${id}/records/${recordId}/comments`, {
-      method: "POST",
-      headers: { "X-CSRF-Token": csrfToken },
-      body: JSON.stringify({ body }),
-    }),
+    request<FormRecordComment>(
+      `/data-sources/${id}/records/${recordId}/comments`,
+      {
+        method: "POST",
+        headers: { "X-CSRF-Token": csrfToken },
+        body: JSON.stringify({ body }),
+      },
+    ),
   // Attachments. Upload/replace and remove return the updated record detail.
   uploadFormRecordAttachment: async (
     id: string,
@@ -1047,7 +1059,11 @@ export const api = {
       { method: "DELETE", headers: { "X-CSRF-Token": csrfToken } },
     ),
   // The stable URL for a record's attachment image (served with session credentials).
-  formAttachmentContentUrl: (id: string, recordId: string, attachmentId: string) =>
+  formAttachmentContentUrl: (
+    id: string,
+    recordId: string,
+    attachmentId: string,
+  ) =>
     `/api/v1/data-sources/${id}/records/${recordId}/attachments/${attachmentId}/content`,
   // Central approvals inbox.
   listApprovals: (params?: { page?: number; pageSize?: number }) => {
@@ -1055,7 +1071,9 @@ export const api = {
     if (params?.page) query.set("page", String(params.page));
     if (params?.pageSize) query.set("pageSize", String(params.pageSize));
     const encoded = query.toString();
-    return request<FormApprovalPage>(`/approvals${encoded ? `?${encoded}` : ""}`);
+    return request<FormApprovalPage>(
+      `/approvals${encoded ? `?${encoded}` : ""}`,
+    );
   },
   dataSourceDiagnostics: (id: string) =>
     request<SourceRefreshDiagnostics>(`/data-sources/${id}/diagnostics`),

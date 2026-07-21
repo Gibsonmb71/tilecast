@@ -328,7 +328,10 @@ export const studioRoutes: RouteObject[] = [
       { index: true, element: <FormsListPage /> },
       { path: ":id", element: <FormPortalDetailPage /> },
       { path: ":id/new", element: <FormPortalSubmissionPage /> },
-      { path: ":id/submissions/:recordId", element: <FormPortalSubmissionPage /> },
+      {
+        path: ":id/submissions/:recordId",
+        element: <FormPortalSubmissionPage />,
+      },
     ],
   },
   { path: "*", element: <Navigate to="/" replace /> },

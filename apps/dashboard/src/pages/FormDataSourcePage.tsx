@@ -78,7 +78,9 @@ export function FormDataSourcePage({
   };
 
   const tabs = [
-    ...(showResponses ? [{ value: "responses" as const, label: "Responses" }] : []),
+    ...(showResponses
+      ? [{ value: "responses" as const, label: "Responses" }]
+      : []),
     { value: "form" as const, label: "Form" },
   ];
 
@@ -138,7 +140,8 @@ function ResponsesTab({
 }) {
   const [stateFilter, setStateFilter] = useState<string>("needs_review");
   const [search, setSearch] = useState("");
-  const [sort, setSort] = useState<NonNullable<FormRecordListParams["sort"]>>("updated");
+  const [sort, setSort] =
+    useState<NonNullable<FormRecordListParams["sort"]>>("updated");
   const [page, setPage] = useState(1);
 
   // States that carry an outstanding review/approve decision, derived from the workflow.
@@ -147,7 +150,11 @@ function ResponsesTab({
       Array.from(
         new Set(
           form.workflow.transitions
-            .filter((t) => t.requiredCapability === "review" || t.requiredCapability === "approve")
+            .filter(
+              (t) =>
+                t.requiredCapability === "review" ||
+                t.requiredCapability === "approve",
+            )
             .map((t) => t.from),
         ),
       ),
@@ -238,7 +245,9 @@ function ResponsesTab({
 
       {records.isError && (
         <Notice variant="danger" title="Could not load responses">
-          {records.error instanceof Error ? records.error.message : "Please try again."}
+          {records.error instanceof Error
+            ? records.error.message
+            : "Please try again."}
         </Notice>
       )}
 

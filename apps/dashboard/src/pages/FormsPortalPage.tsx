@@ -78,7 +78,9 @@ export function FormsListPage() {
   if (forms.isError) {
     return (
       <Notice variant="danger" title="Could not load forms">
-        {forms.error instanceof Error ? forms.error.message : "Please try again."}
+        {forms.error instanceof Error
+          ? forms.error.message
+          : "Please try again."}
       </Notice>
     );
   }
@@ -193,7 +195,10 @@ export function FormPortalDetailPage() {
         </Notice>
       )}
 
-      <section aria-label="Your submissions" className="forms-portal__submissions">
+      <section
+        aria-label="Your submissions"
+        className="forms-portal__submissions"
+      >
         <h2>Your submissions</h2>
         {records.isLoading ? (
           <Spinner label="Loading submissions…" />
@@ -209,7 +214,12 @@ export function FormPortalDetailPage() {
         ) : (
           <ul className="forms-portal__submission-list">
             {mine.map((record) => (
-              <SubmissionRow key={record.id} formId={detail.id} record={record} workflow={detail.workflow} />
+              <SubmissionRow
+                key={record.id}
+                formId={detail.id}
+                record={record}
+                workflow={detail.workflow}
+              />
             ))}
           </ul>
         )}
@@ -236,7 +246,10 @@ function SubmissionRow({
         <span className="forms-portal__submission-title">
           {record.displayTitle || "Untitled submission"}
         </span>
-        <StatusBadge label={stateLabel(workflow, record.state)} tone={stateTone(workflow, record.state)} />
+        <StatusBadge
+          label={stateLabel(workflow, record.state)}
+          tone={stateTone(workflow, record.state)}
+        />
         <span className="forms-portal__submission-time">
           Updated {new Date(record.updatedAt).toLocaleString()}
         </span>
