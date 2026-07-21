@@ -1,0 +1,38 @@
+name: Backfill Android release titles
+
+on:
+  push:
+    paths:
+      - ".github/workflows/backfill-android-release-titles.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  rename:
+    name: Rename existing Android releases
+    runs-on: ubuntu-latest
+    steps:
+      - name: Rename player releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq '.[] | select(.tag_name | test("^player-v")) | [.id, .tag_name, (.name // "")] | @tsv' |
+          while IFS=$'\t' read -r release_id tag current_name; do
+            version="${tag#player-v}"
+            desired_name="Tilecast Player for Android $version"
+
+            if [ "$current_name" = "$desired_name" ]; then
+              echo "$tag already uses the Android release title"
+              continue
+            fi
+
+            echo "Renaming $tag: $current_name -> $desired_name"
+            gh api --method PATCH \
+              "repos/$GITHUB_REPOSITORY/releases/$release_id" \
+              -f name="$desired_name" >/dev/null
+          done
