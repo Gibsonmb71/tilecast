@@ -353,8 +353,32 @@ async function startRuntime(serverUrl: string): Promise<void> {
       retryCurrentItem: () => window?.webContents.send("retry-item"),
       skipCurrentItem: () => window?.webContents.send("skip-item"),
       screenSize: () => {
-        const bounds = screen.getPrimaryDisplay().bounds;
-        return { width: bounds.width, height: bounds.height };
+        // The server rejects any heartbeat whose screen size is < 1, which
+        // silently freezes the screen's presence ("online" but never updating
+        // "last contacted"). Some Linux setups report 0x0 from the primary
+        // display (e.g. before the compositor publishes geometry), so fall
+        // back through the display size and the window's own content size, and
+        // never return a non-positive dimension.
+        const candidates: Array<{ width: number; height: number }> = [];
+        try {
+          const display = screen.getPrimaryDisplay();
+          candidates.push(display.bounds, display.size, display.workAreaSize);
+        } catch {
+          /* no display available yet */
+        }
+        if (window && !window.isDestroyed()) {
+          const size = window.getContentSize();
+          candidates.push({ width: size[0] ?? 0, height: size[1] ?? 0 });
+        }
+        for (const candidate of candidates) {
+          if (candidate && candidate.width >= 1 && candidate.height >= 1) {
+            return {
+              width: Math.round(candidate.width),
+              height: Math.round(candidate.height),
+            };
+          }
+        }
+        return { width: 1920, height: 1080 };
       },
       availableStorageBytes,
       capturePreview: async (max) => {
