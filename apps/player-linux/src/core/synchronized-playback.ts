@@ -285,6 +285,13 @@ export function enrichSynchronizedPresentation(
   }
 
   const manifest = stored.manifest;
+  // The top-of-function guard already proved a sync group exists, but that
+  // narrowing does not survive rebinding stored.manifest to `manifest`.
+  // Capture it in a locally-narrowed const so the accesses below type-check.
+  const syncGroup = manifest.syncGroup;
+  if (!syncGroup) {
+    return presentation;
+  }
   const selection = resolveSelection(manifest, new Date(nowMs));
   const playlist = findPlaylist(manifest, selection.playlistId);
   if (
@@ -295,7 +302,7 @@ export function enrichSynchronizedPresentation(
     return presentation;
   }
 
-  const epoch = Date.parse(manifest.syncGroup.playbackEpoch ?? "");
+  const epoch = Date.parse(syncGroup.playbackEpoch ?? "");
   if (!Number.isFinite(epoch)) {
     return presentation;
   }
@@ -337,7 +344,7 @@ export function enrichSynchronizedPresentation(
   return {
     ...presentation,
     synchronizedPlayback: {
-      groupId: manifest.syncGroup.id,
+      groupId: syncGroup.id,
       anchorMs,
       durationsMs,
     },
