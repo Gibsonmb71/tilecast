@@ -13,6 +13,14 @@ updates:
       npm-dependencies:
         patterns:
           - "*"
+    ignore:
+      # The Linux player targets ~2012 hardware (Ivy Bridge / Intel HD 4000 /
+      # 4 GB). A major Electron bump is a large Chromium jump that must be
+      # validated on a device (GPU/VA-API/overlay behavior, memory) before we
+      # take it, so hold Electron on its current major and only allow
+      # minor/patch updates. Bump the major deliberately in its own PR.
+      - dependency-name: "electron"
+        update-types: ["version-update:semver-major"]
 
   # Go server
   - package-ecosystem: "gomod"
