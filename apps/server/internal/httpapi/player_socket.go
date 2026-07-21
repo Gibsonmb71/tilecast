@@ -108,7 +108,13 @@ func (s *server) playerSocket(w http.ResponseWriter, r *http.Request) {
 		case "player.status":
 			var heartbeat devices.Heartbeat
 			if err := json.Unmarshal(message.Payload, &heartbeat); err == nil {
-				_ = s.devices.Heartbeat(ctx, principal, heartbeat, r.RemoteAddr)
+				// A rejected heartbeat leaves last_heartbeat_at stale while the
+				// socket keeps the screen "online"; log the reason instead of
+				// silently discarding it so the mismatch is diagnosable.
+				if err := s.devices.Heartbeat(ctx, principal, heartbeat, r.RemoteAddr); err != nil {
+					s.logger.Warn("player heartbeat rejected over socket",
+						"error", err, "screen_id", principal.ScreenID)
+				}
 				s.advanceCanaryDeploymentsForScreen(ctx, principal.ScreenID)
 			}
 			if s.playlists != nil {

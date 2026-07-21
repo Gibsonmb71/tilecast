@@ -466,7 +466,10 @@ export function ScreenListContent({
             <strong>
               {screen.deviceManufacturer} {screen.deviceModel}
             </strong>
-            <small>{screen.playerVersion}</small>
+            <small>
+              {screen.platform === "linux" ? "Linux" : "Android"}
+              {screen.playerVersion ? ` ${screen.playerVersion}` : ""}
+            </small>
           </span>
           <span>
             <strong>{formatContact(screen.lastContactAt)}</strong>
@@ -1813,7 +1816,9 @@ export function ScreenDetailPage() {
                 <div>
                   <dt>Platform</dt>
                   <dd>
-                    {screen.platform} · Android {screen.androidVersion}
+                    {screen.platform === "linux"
+                      ? "Linux"
+                      : `${screen.platform} · Android ${screen.androidVersion}`}
                   </dd>
                 </div>
                 <div>

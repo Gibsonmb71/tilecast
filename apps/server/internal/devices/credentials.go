@@ -94,7 +94,7 @@ func (s *Service) AuthenticateDevice(ctx context.Context, credential string) (De
 }
 
 func (s *Service) Heartbeat(ctx context.Context, principal DevicePrincipal, heartbeat Heartbeat, address string) error {
-	if heartbeat.ScreenWidth < 1 || heartbeat.ScreenWidth > 16384 || heartbeat.ScreenHeight < 1 || heartbeat.ScreenHeight > 16384 || len(heartbeat.PlayerVersion) > 120 {
+	if len(heartbeat.PlayerVersion) > 120 {
 		return errors.New("heartbeat metadata is invalid")
 	}
 	if len(heartbeat.CommissioningState) > 40 || len(heartbeat.CommissioningStep) > 80 || len(heartbeat.UpdateReadiness) > 40 || len(heartbeat.SelfTestResult) > 120 || heartbeat.BootAttemptCount != nil && (*heartbeat.BootAttemptCount < 0 || *heartbeat.BootAttemptCount > 1000) {
@@ -109,7 +109,11 @@ func (s *Service) Heartbeat(ctx context.Context, principal DevicePrincipal, hear
 		}
 	}
 	ip := remoteAddress(address)
-	_, err := s.db.Exec(ctx, `UPDATE screens SET screen_width=$2,screen_height=$3,available_storage_bytes=$4,uptime_seconds=$5,player_version=COALESCE(NULLIF($6,''),player_version),last_heartbeat_at=now(),last_known_ip=$7,updated_at=now() WHERE id=$1`, principal.ScreenID, heartbeat.ScreenWidth, heartbeat.ScreenHeight, heartbeat.AvailableStorageBytes, heartbeat.UptimeSeconds, heartbeat.PlayerVersion, addressString(ip))
+	// Liveness (last_heartbeat_at) must not depend on screen-dimension validity:
+	// a player that reports 0x0 (some Linux display setups do) would otherwise be
+	// frozen "online" with a stale last-contact. Keep the last-known dimensions
+	// when the reported ones are out of range, but always record the heartbeat.
+	_, err := s.db.Exec(ctx, `UPDATE screens SET screen_width=CASE WHEN $2 BETWEEN 1 AND 16384 THEN $2 ELSE screen_width END,screen_height=CASE WHEN $3 BETWEEN 1 AND 16384 THEN $3 ELSE screen_height END,available_storage_bytes=$4,uptime_seconds=$5,player_version=COALESCE(NULLIF($6,''),player_version),last_heartbeat_at=now(),last_known_ip=$7,updated_at=now() WHERE id=$1`, principal.ScreenID, heartbeat.ScreenWidth, heartbeat.ScreenHeight, heartbeat.AvailableStorageBytes, heartbeat.UptimeSeconds, heartbeat.PlayerVersion, addressString(ip))
 	if err != nil {
 		return fmt.Errorf("record heartbeat: %w", err)
 	}
