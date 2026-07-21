@@ -96,7 +96,8 @@ func (s *Service) IngestFormAttachment(ctx context.Context, userID uuid.UUID, fi
 	if err := tx.Commit(ctx); err != nil {
 		return cleanup(err)
 	}
-	return s.GetAsset(ctx, assetID)
+	// Internal read: this is the one place that legitimately returns a form-attachment asset.
+	return s.getAsset(ctx, assetID, true)
 }
 
 // FormAttachmentDelivery returns a servable file for a form-attachment asset, choosing the best

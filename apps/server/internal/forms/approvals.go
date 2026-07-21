@@ -52,10 +52,15 @@ func (s *Service) PendingApprovals(ctx context.Context, userID uuid.UUID, filter
 		return ApprovalPage{}, err
 	}
 
+	// submittedAt reflects the transition INTO the current pending-review state (e.g. when the record
+	// was submitted for review), not when the record was first created. Fall back to creation time if
+	// no such transition event exists.
+	const submittedAt = `COALESCE((SELECT max(e.created_at) FROM form_record_events e
+			WHERE e.record_id=r.id AND e.event_type='transition' AND e.to_state=r.state_key), r.created_at)`
 	rows, err := s.db.Query(ctx, `SELECT r.id,r.data_source_id,ds.name,r.display_title,r.submitter_name,r.state_key,
-			COALESCE(st.label,r.state_key),r.display_at,r.expires_at,r.created_at
+			COALESCE(st.label,r.state_key),r.display_at,r.expires_at,`+submittedAt+`
 		`+from+`
-		ORDER BY r.created_at ASC
+		ORDER BY `+submittedAt+` ASC
 		LIMIT $3 OFFSET $4`, userID, isOwner, filter.PageSize, (filter.Page-1)*filter.PageSize)
 	if err != nil {
 		return ApprovalPage{}, err

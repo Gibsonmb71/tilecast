@@ -203,7 +203,7 @@ func (s *server) listFormRecords(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	page, _ := strconv.Atoi(query.Get("page"))
 	pageSize, _ := strconv.Atoi(query.Get("pageSize"))
-	filter := forms.RecordFilter{Search: query.Get("search"), Sort: query.Get("sort"), Page: page, PageSize: pageSize}
+	filter := forms.RecordFilter{Search: query.Get("search"), Sort: query.Get("sort"), Page: page, PageSize: pageSize, Mine: query.Get("mine") == "true"}
 	if states := strings.TrimSpace(query.Get("states")); states != "" {
 		filter.States = strings.Split(states, ",")
 	}

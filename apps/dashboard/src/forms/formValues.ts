@@ -10,8 +10,29 @@ export function coerceScalar(raw: unknown): string {
   return "";
 }
 
+// rfc3339ToLocalDateTime converts a stored RFC 3339 timestamp into the value a native
+// datetime-local input expects (YYYY-MM-DDTHH:mm in the viewer's local time). Empty/invalid input
+// returns "".
+export function rfc3339ToLocalDateTime(value: string): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const offsetMs = date.getTimezoneOffset() * 60000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+}
+
+// localDateTimeToRfc3339 converts a datetime-local input value (interpreted in the viewer's local
+// time) into the RFC 3339 timestamp the server requires. Empty/invalid input returns "".
+export function localDateTimeToRfc3339(value: string): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString();
+}
+
 // recordValuesToForm converts a stored record value map (unknown JSON values) into the typed
-// FormValues the renderer edits. Image fields keep their attachment asset id string.
+// FormValues the renderer edits. Datetime fields are converted from RFC 3339 to the local input
+// format; image fields keep their attachment asset id string.
 export function recordValuesToForm(
   schema: FormSchema,
   values: Record<string, unknown> | undefined,
@@ -27,6 +48,8 @@ export function recordValuesToForm(
       result[field.key] = Array.isArray(raw)
         ? raw.map((item) => String(item))
         : [];
+    } else if (field.control === "datetime") {
+      result[field.key] = rfc3339ToLocalDateTime(coerceScalar(raw));
     } else {
       result[field.key] = coerceScalar(raw);
     }
@@ -45,6 +68,8 @@ export function applyDefaults(schema: FormSchema): FormValues {
       result[field.key] = field.default
         ? field.default.split(",").map((v) => v.trim())
         : [];
+    } else if (field.control === "datetime") {
+      result[field.key] = rfc3339ToLocalDateTime(field.default ?? "");
     } else {
       result[field.key] = field.default ?? "";
     }
@@ -53,10 +78,9 @@ export function applyDefaults(schema: FormSchema): FormValues {
 }
 
 // formValuesToPayload serializes FormValues into the request body the server accepts. Booleans are
-// sent as booleans and multi-selects as string arrays; every other control is sent as a string
-// (the server parses numbers/dates). Empty non-image fields are omitted. Image fields carry the
-// current attachment asset id so a values update never clobbers an attachment set by the upload
-// endpoint.
+// sent as booleans, multi-selects as string arrays, and datetime fields as RFC 3339. Image fields
+// are never sent — their value is owned by the attachment upload/remove endpoints and the server
+// rejects a client-supplied image value. Empty fields are omitted.
 export function formValuesToPayload(
   schema: FormSchema,
   values: FormValues,
@@ -64,6 +88,7 @@ export function formValuesToPayload(
   const payload: Record<string, unknown> = {};
   for (const field of schema.fields) {
     if (isPresentationControl(field.control)) continue;
+    if (field.control === "image") continue;
     const value = values[field.key];
     if (field.control === "boolean") {
       if (value === true) payload[field.key] = true;
@@ -74,7 +99,12 @@ export function formValuesToPayload(
       continue;
     }
     if (typeof value === "string" && value.trim() !== "") {
-      payload[field.key] = value;
+      if (field.control === "datetime") {
+        const rfc = localDateTimeToRfc3339(value);
+        if (rfc) payload[field.key] = rfc;
+      } else {
+        payload[field.key] = value;
+      }
     }
   }
   return payload;
@@ -82,15 +112,28 @@ export function formValuesToPayload(
 
 // validateSubmission runs the same shape checks as the server (required, type, bounds, options) so
 // the submitter sees inline errors before a round trip. requireComplete gates required-field errors
-// to submit/resubmit; a draft save skips them.
+// to submit/resubmit; a draft save skips them. satisfiedImages is the set of image field keys that
+// have either a committed attachment or a pending (not-yet-uploaded) local file — a required image
+// is complete as soon as a local image is chosen, before it is uploaded.
 export function validateSubmission(
   schema: FormSchema,
   values: FormValues,
   requireComplete: boolean,
+  satisfiedImages: Set<string>,
 ): Record<string, string> {
   const errors: Record<string, string> = {};
   for (const field of schema.fields) {
     if (isPresentationControl(field.control)) continue;
+    if (field.control === "image") {
+      if (
+        field.required &&
+        requireComplete &&
+        !satisfiedImages.has(field.key)
+      ) {
+        errors[field.key] = `${field.label} requires an image.`;
+      }
+      continue;
+    }
     const value = values[field.key];
     const empty = isEmpty(field, value);
     if (empty) {

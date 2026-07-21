@@ -977,13 +977,19 @@ paths:
   /api/v1/data-sources/{id}/records:
     get:
       operationId: listFormRecords
-      description: Returns a filtered, paginated page of a form's records. Callers with view_all, review, approve, or manage see every record; a submitter without those sees only their own submissions. Supports states, search, sort, page, and pageSize query parameters.
+      description: Returns a filtered, paginated page of a form's records. Callers with view_all, review, approve, or manage see every record; a submitter without those sees only their own submissions. `mine=true` scopes the page to the caller's own submissions even for privileged callers (the Forms portal's "your submissions"). Supports states, search, sort, mine, page, and pageSize query parameters.
       parameters:
         - {
             name: states,
             in: query,
             schema: { type: string },
             description: Comma-separated workflow state keys,
+          }
+        - {
+            name: mine,
+            in: query,
+            schema: { type: boolean },
+            description: Scope to the caller's own submissions,
           }
         - { name: search, in: query, schema: { type: string } }
         - {
@@ -999,7 +1005,7 @@ paths:
         "403": { description: No visibility into this form's records }
     post:
       operationId: createFormRecord
-      description: Creates a draft submission bound to the form's current published revision. Requires the submit capability. Display metadata dates are tri-state (omitted preserves, null clears, a value sets).
+      description: Creates a draft submission bound to the form's current published revision. Requires the submit capability. Image field values are never accepted here — they are set only by the attachment upload/remove endpoints — and a client-supplied image value is rejected. Display metadata dates are tri-state (omitted preserves, null clears, a value sets).
       responses:
         "201": { description: Draft record created }
         "403": { description: Submit capability required }
@@ -1013,7 +1019,7 @@ paths:
         "404": { description: Record not found or not visible to the caller }
     patch:
       operationId: updateFormRecord
-      description: Edits a record's values and display metadata under optimistic concurrency (a version is required). Display dates are tri-state. A manager may edit any record; a submitter may edit their own record only while it is in a submitter-editable state.
+      description: Edits a record's values and display metadata under optimistic concurrency (a version is required). Image field values are preserved server-side and cannot be changed here (a client-supplied image value is rejected); only the attachment endpoints modify them. Display dates are tri-state. A manager may edit any record; a submitter may edit their own record only while it is in a submitter-editable state.
       responses:
         "200": { description: Updated record }
         "409": { description: Version conflict }
@@ -1027,7 +1033,7 @@ paths:
   /api/v1/data-sources/{id}/records/{recordId}/transitions:
     post:
       operationId: transitionFormRecord
-      description: Moves a record to a new workflow state, enforcing the configured transition, per-form capability and record ownership, optimistic concurrency (version), and required-field completeness before any submit transition or any transition into an output-eligible state. An optional note is recorded as a comment; the default changes_requested transition requires one. A 409 means the record changed; reload, preserving any unsent note.
+      description: Moves a record to a new workflow state, enforcing the configured transition, per-form capability and record ownership, optimistic concurrency (version), and required-field completeness (including required images, satisfied only by a bound attachment) before any submit transition or any transition into an output-eligible state. A note is recorded as a comment; a transition that requires a note (the default changes_requested path, derived from the workflow) is rejected with 422 when the note is empty. A 409 means the record changed; reload, preserving any unsent note.
       responses:
         "200": { description: Record after the transition }
         "409": { description: Version conflict }

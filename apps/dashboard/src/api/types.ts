@@ -1076,6 +1076,8 @@ export type FormRecordListParams = {
   states?: string[];
   search?: string;
   sort?: "newest" | "oldest" | "priority" | "updated";
+  // mine scopes the list to the caller's own submissions server-side (used by the Forms portal).
+  mine?: boolean;
   page?: number;
   pageSize?: number;
 };

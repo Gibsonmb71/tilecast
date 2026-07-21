@@ -292,6 +292,11 @@ describe("Forms portal", () => {
     const create = vi
       .spyOn(api, "createFormRecord")
       .mockResolvedValue(record({ id: "rec9", version: 1, state: "draft" }));
+    // persist() resyncs from the server after saving; the submit transition is taken from this
+    // server-provided detail, not from the workflow.
+    vi.spyOn(api, "getFormRecord").mockResolvedValue(
+      detail({ id: "rec9", version: 1, state: "draft" }),
+    );
     const transition = vi
       .spyOn(api, "transitionFormRecord")
       .mockResolvedValue(
@@ -394,6 +399,13 @@ describe("Forms portal", () => {
           values: { title: "Hi", photo: "asset-1" },
         }),
       );
+    vi.spyOn(api, "getFormRecord").mockResolvedValue(
+      detail({
+        id: "rec9",
+        version: 2,
+        values: { title: "Hi", photo: "asset-1" },
+      }),
+    );
     const user = userEvent.setup();
     renderPortal("/forms/f1/new");
 
@@ -406,5 +418,185 @@ describe("Forms portal", () => {
 
     await waitFor(() => expect(upload).toHaveBeenCalled());
     expect(upload.mock.calls[0]![3]).toBe("photo");
+  });
+
+  it("submits when a required image is satisfied by a pending local file", async () => {
+    mockAuth();
+    const imageForm = form(["submit"]);
+    const requiredImageSchema = {
+      ...schema,
+      fields: [
+        ...schema.fields,
+        {
+          key: "photo",
+          label: "Photo",
+          control: "image" as const,
+          required: true,
+        },
+      ],
+    };
+    imageForm.publishedRevision = {
+      ...imageForm.publishedRevision!,
+      schema: requiredImageSchema,
+    };
+    vi.spyOn(api, "getForm").mockResolvedValue(imageForm);
+    vi.spyOn(api, "listFormRecords").mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      pageSize: 100,
+    });
+    vi.spyOn(api, "createFormRecord").mockResolvedValue(
+      record({ id: "rec9", version: 1 }),
+    );
+    const upload = vi
+      .spyOn(api, "uploadFormRecordAttachment")
+      .mockResolvedValue(
+        detail({
+          id: "rec9",
+          version: 2,
+          values: { title: "Hi", photo: "a1" },
+        }),
+      );
+    vi.spyOn(api, "getFormRecord").mockResolvedValue(
+      detail({ id: "rec9", version: 2, values: { title: "Hi", photo: "a1" } }),
+    );
+    const transition = vi
+      .spyOn(api, "transitionFormRecord")
+      .mockResolvedValue(
+        record({ id: "rec9", version: 3, state: "submitted" }),
+      );
+    const user = userEvent.setup();
+    renderPortal("/forms/f1/new");
+
+    await user.type(await screen.findByLabelText(/Title/), "Hi");
+    const file = new File([new Uint8Array([1, 2, 3])], "p.png", {
+      type: "image/png",
+    });
+    await user.upload(screen.getByLabelText("Choose Photo"), file);
+    // A pending (not-yet-uploaded) image satisfies the required-image check.
+    await user.click(screen.getByRole("button", { name: "Submit" }));
+
+    expect(screen.queryByText(/requires an image/i)).not.toBeInTheDocument();
+    await waitFor(() => expect(upload).toHaveBeenCalled());
+    await waitFor(() => expect(transition).toHaveBeenCalled());
+  });
+
+  it("keeps a failed image upload retryable on an existing draft", async () => {
+    mockAuth();
+    const imageForm = form(["submit"]);
+    const withImage = {
+      ...schema,
+      fields: [
+        ...schema.fields,
+        { key: "photo", label: "Photo", control: "image" as const },
+      ],
+    };
+    imageForm.publishedRevision = {
+      ...imageForm.publishedRevision!,
+      schema: withImage,
+    };
+    vi.spyOn(api, "getForm").mockResolvedValue(imageForm);
+    vi.spyOn(api, "getFormRecord").mockResolvedValue(
+      detail({ revision: { ...detail().revision!, schema: withImage } }),
+    );
+    const upload = vi
+      .spyOn(api, "uploadFormRecordAttachment")
+      .mockRejectedValueOnce(new Error("network blip"))
+      .mockResolvedValue(
+        detail({
+          values: { title: "Hello", photo: "a2" },
+          attachments: [{ id: "att1", assetId: "a2", fieldKey: "photo" }],
+          revision: { ...detail().revision!, schema: withImage },
+        }),
+      );
+    const user = userEvent.setup();
+    renderPortal("/forms/f1/submissions/rec1");
+
+    const file = new File([new Uint8Array([1, 2, 3])], "p.png", {
+      type: "image/png",
+    });
+    // First upload fails; the field shows an error and remains retryable.
+    await user.upload(await screen.findByLabelText("Choose Photo"), file);
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
+    // Retry succeeds.
+    await user.upload(screen.getByLabelText(/Photo/), file);
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(2));
+  });
+
+  it("drives an existing editor's actions from server availableTransitions", async () => {
+    mockAuth();
+    vi.spyOn(api, "getForm").mockResolvedValue(form(["submit"]));
+    // The server says the record is editable but offers no transitions (e.g. under review): the
+    // editor must not synthesize a submit action from the workflow.
+    vi.spyOn(api, "getFormRecord").mockResolvedValue(
+      detail({ state: "submitted", canEdit: true, availableTransitions: [] }),
+    );
+    renderPortal("/forms/f1/submissions/rec1");
+
+    expect(
+      await screen.findByRole("button", { name: "Save draft" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Submit|Resubmit/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows reviewer feedback from the latest transition event, not the last comment", async () => {
+    mockAuth();
+    vi.spyOn(api, "getForm").mockResolvedValue(form(["submit"]));
+    vi.spyOn(api, "getFormRecord").mockResolvedValue(
+      detail({
+        state: "changes_requested",
+        events: [
+          {
+            id: "e1",
+            eventType: "transition",
+            fromState: "submitted",
+            toState: "changes_requested",
+            actorName: "Reviewer",
+            note: "Add a start date",
+            createdAt: "2026-01-03T00:00:00Z",
+          },
+        ],
+        comments: [
+          {
+            id: "c9",
+            authorName: "Someone",
+            body: "unrelated later chatter",
+            createdAt: "2026-01-04T00:00:00Z",
+          },
+        ],
+        availableTransitions: [
+          {
+            to: "submitted",
+            toLabel: "Submitted",
+            label: "Resubmit",
+            requiredCapability: "submit",
+            requiresNote: false,
+          },
+        ],
+      }),
+    );
+    renderPortal("/forms/f1/submissions/rec1");
+
+    // The banner reflects the transition note, not the trailing comment.
+    const banner = await screen.findByText("Add a start date");
+    expect(banner).toBeInTheDocument();
+  });
+
+  it("loads your submissions scoped server-side (mine) and paginated", async () => {
+    mockAuth();
+    vi.spyOn(api, "getForm").mockResolvedValue(form(["submit"]));
+    const list = vi.spyOn(api, "listFormRecords").mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      pageSize: 20,
+    });
+    renderPortal("/forms/f1");
+
+    await waitFor(() => expect(list).toHaveBeenCalled());
+    expect(list.mock.calls[0]![1]).toMatchObject({ mine: true, page: 1 });
   });
 });

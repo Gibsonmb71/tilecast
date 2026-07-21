@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Link,
@@ -16,6 +16,7 @@ import {
   EmptyState,
   Notice,
   PageHeader,
+  Pagination,
   Spinner,
   StatusBadge,
 } from "../components/ui";
@@ -135,18 +136,27 @@ export function FormsListPage() {
 
 // FormPortalDetailPage shows the published form, a Start submission action, and the user's own
 // submissions with status.
+const MINE_PAGE_SIZE = 20;
+
 export function FormPortalDetailPage() {
   const { id } = useParams();
-  const auth = useAuth();
-  const userId = auth.status?.user?.id;
+  const [page, setPage] = useState(1);
   const form = useQuery({
     queryKey: ["form-data-source", id],
     queryFn: () => api.getForm(id!),
     enabled: Boolean(id),
   });
+  // "Your submissions" is scoped and paginated server-side (mine=true) rather than fetching every
+  // visible record and filtering in React.
   const records = useQuery({
-    queryKey: ["form-records", id, "mine"],
-    queryFn: () => api.listFormRecords(id!, { pageSize: 100, sort: "updated" }),
+    queryKey: ["form-records", id, "mine", page],
+    queryFn: () =>
+      api.listFormRecords(id!, {
+        mine: true,
+        sort: "updated",
+        page,
+        pageSize: MINE_PAGE_SIZE,
+      }),
     enabled: Boolean(id),
   });
 
@@ -164,10 +174,9 @@ export function FormPortalDetailPage() {
   const detail = form.data;
   const published = detail.publishedRevision;
   const canSubmit = canSubmitToForm(detail.grantedCapabilities);
-  // Show only the user's own submissions even when the caller can also see others'.
-  const mine = (records.data?.items ?? []).filter(
-    (record) => !userId || record.submittedBy === userId,
-  );
+  const mine = records.data?.items ?? [];
+  const total = records.data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / MINE_PAGE_SIZE));
 
   return (
     <div className="forms-portal__detail">
@@ -212,16 +221,30 @@ export function FormPortalDetailPage() {
             }
           />
         ) : (
-          <ul className="forms-portal__submission-list">
-            {mine.map((record) => (
-              <SubmissionRow
-                key={record.id}
-                formId={detail.id}
-                record={record}
-                workflow={detail.workflow}
+          <>
+            <ul className="forms-portal__submission-list">
+              {mine.map((record) => (
+                <SubmissionRow
+                  key={record.id}
+                  formId={detail.id}
+                  record={record}
+                  workflow={detail.workflow}
+                />
+              ))}
+            </ul>
+            {totalPages > 1 && (
+              <Pagination
+                label="Your submissions pages"
+                status={`Page ${page} of ${totalPages} · ${total} total`}
+                previous={() => setPage((current) => Math.max(1, current - 1))}
+                next={() =>
+                  setPage((current) => Math.min(totalPages, current + 1))
+                }
+                previousDisabled={page <= 1}
+                nextDisabled={page >= totalPages}
               />
-            ))}
-          </ul>
+            )}
+          </>
         )}
       </section>
     </div>

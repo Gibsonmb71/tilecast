@@ -2,8 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useBlocker } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import type {
+  FormAvailableTransition,
   FormDataSource,
+  FormRecordComment,
   FormRecordDetail,
+  FormRecordEvent,
   FormSchema,
 } from "../api/types";
 import { api, ApiError } from "../api/client";
@@ -20,13 +23,16 @@ import {
   recordValuesToForm,
   validateSubmission,
 } from "./formValues";
-import { isEditableState, initialState, stateLabel } from "./formStatus";
+import { hasCapability } from "./capabilities";
+import { stateLabel } from "./formStatus";
 
 // SubmissionEditor is the submitter-facing editable form for one submission. It handles a brand-new
 // submission (no record yet) and editing an existing draft or changes-requested record, including
 // image upload/preview/replacement/removal, client-side validation, schema defaults, save draft,
 // submit/resubmit via the server-provided transition, optimistic-concurrency versions, and
-// unsaved-navigation protection. When editing, it uses the record's immutable revision schema.
+// unsaved-navigation protection. Editing uses the record's immutable revision schema, and — for an
+// existing record — its server-provided canEdit and availableTransitions rather than any workflow
+// reasoning in React.
 export function SubmissionEditor({
   form,
   initialDetail,
@@ -50,8 +56,20 @@ export function SubmissionEditor({
     initialDetail?.id ?? null,
   );
   const [version, setVersion] = useState<number>(initialDetail?.version ?? 0);
-  const [state, setState] = useState<string>(
-    initialDetail?.state ?? initialState(form.workflow)?.key ?? "draft",
+  const [state, setState] = useState<string>(initialDetail?.state ?? "draft");
+  // For a new submission the submitter is always the editor; for an existing record the server
+  // decides via canEdit. availableTransitions is likewise server-provided for existing records.
+  const [canEdit, setCanEdit] = useState<boolean>(
+    initialDetail?.canEdit ?? true,
+  );
+  const [availableTransitions, setAvailableTransitions] = useState<
+    FormAvailableTransition[]
+  >(initialDetail?.availableTransitions ?? []);
+  const [events, setEvents] = useState<FormRecordEvent[]>(
+    initialDetail?.events ?? [],
+  );
+  const [comments, setComments] = useState<FormRecordComment[]>(
+    initialDetail?.comments ?? [],
   );
   const [values, setValues] = useState<FormValues>(() =>
     initialDetail
@@ -63,13 +81,12 @@ export function SubmissionEditor({
     imagesFromDetail(form.id, initialDetail),
   );
   const pendingFiles = useRef<Record<string, File>>({});
+  const [pendingKeys, setPendingKeys] = useState<string[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState("");
   const [busy, setBusy] = useState<"" | "draft" | "submit">("");
-  const [comments, setComments] = useState(initialDetail?.comments ?? []);
 
-  const hasPending = Object.keys(pendingFiles.current).length > 0;
-  const dirty = JSON.stringify(values) !== baseline || hasPending;
+  const dirty = JSON.stringify(values) !== baseline || pendingKeys.length > 0;
   const dirtyRef = useRef(dirty);
   dirtyRef.current = dirty;
 
@@ -91,30 +108,68 @@ export function SubmissionEditor({
     return () => window.removeEventListener("beforeunload", handler);
   }, []);
 
-  const submitTransition = useMemo(
-    () =>
-      form.workflow.transitions.find(
-        (transition) =>
-          transition.from === state &&
-          transition.requiredCapability === "submit",
-      ),
-    [form.workflow, state],
+  const canSubmitCapability = hasCapability(form.grantedCapabilities, "submit");
+  const submitTransition = availableTransitions.find(
+    (transition) => transition.requiredCapability === "submit",
   );
+  // Submit is offered for a new record when the caller holds submit; for an existing record only
+  // when the server lists a submit transition for the record's current state.
+  const canSubmit =
+    recordId === null ? canSubmitCapability : Boolean(submitTransition);
+  const submitLabel = submitTransition?.label ?? "Submit";
 
-  const editable = recordId === null || isEditableState(form.workflow, state);
-  const latestReviewerNote = useMemo(
-    () => findLatestReviewerNote(comments),
-    [comments],
-  );
+  const editable = canEdit;
 
-  // --- image handling ---
-  function absorbDetail(detail: FormRecordDetail) {
+  // Reviewer feedback is the note attached to the transition that moved the record into its current
+  // state (the "request changes" decision) — not the final comment or a hardcoded state key.
+  const feedback = useMemo(() => {
+    let latest: FormRecordEvent | undefined;
+    for (const event of events) {
+      if (
+        event.eventType === "transition" &&
+        event.toState === state &&
+        event.note &&
+        event.note.trim() !== ""
+      ) {
+        latest = event;
+      }
+    }
+    return latest;
+  }, [events, state]);
+
+  function satisfiedImages(): Set<string> {
+    const set = new Set<string>();
+    for (const field of schema.fields) {
+      if (field.control !== "image") continue;
+      const image = images[field.key];
+      if (
+        image?.attachmentId ||
+        image?.contentUrl ||
+        pendingFiles.current[field.key]
+      ) {
+        set.add(field.key);
+      }
+    }
+    return set;
+  }
+
+  function setPending(fieldKey: string, file: File | null) {
+    if (file) pendingFiles.current[fieldKey] = file;
+    else delete pendingFiles.current[fieldKey];
+    setPendingKeys(Object.keys(pendingFiles.current));
+  }
+
+  // absorbImageDetail refreshes record metadata and image state after an attachment mutation while
+  // preserving the submitter's unsaved text edits (only image-field values are re-read from server).
+  function absorbImageDetail(detail: FormRecordDetail) {
     setRecordId(detail.id);
     setVersion(detail.version);
     setState(detail.state);
-    setImages(imagesFromDetail(form.id, detail));
+    setCanEdit(detail.canEdit);
+    setAvailableTransitions(detail.availableTransitions);
+    setEvents(detail.events);
     setComments(detail.comments);
-    // Keep the user's in-progress text edits; only refresh image asset ids from the server.
+    setImages(imagesFromDetail(form.id, detail));
     setValues((current) => {
       const next = { ...current };
       for (const field of schema.fields) {
@@ -126,9 +181,35 @@ export function SubmissionEditor({
     });
   }
 
+  // absorbSavedDetail fully resyncs from the server after a save/submit and resets the dirty
+  // baseline to the returned record so the editor reflects exactly what was persisted.
+  function absorbSavedDetail(detail: FormRecordDetail) {
+    const nextValues = recordValuesToForm(schema, detail.values);
+    setRecordId(detail.id);
+    setVersion(detail.version);
+    setState(detail.state);
+    setCanEdit(detail.canEdit);
+    setAvailableTransitions(detail.availableTransitions);
+    setEvents(detail.events);
+    setComments(detail.comments);
+    setImages(imagesFromDetail(form.id, detail));
+    setValues(nextValues);
+    setBaseline(JSON.stringify(nextValues));
+  }
+
+  function invalidate(currentRecordId: string | null) {
+    if (currentRecordId) {
+      void queryClient.invalidateQueries({
+        queryKey: ["form-record", form.id, currentRecordId],
+      });
+    }
+    void queryClient.invalidateQueries({ queryKey: ["form-records", form.id] });
+    void queryClient.invalidateQueries({ queryKey: ["forms"] });
+  }
+
   async function handleImageSelect(fieldKey: string, file: File) {
     const objectUrl = URL.createObjectURL(file);
-    pendingFiles.current[fieldKey] = file;
+    setPending(fieldKey, file);
     setImages((current) => ({
       ...current,
       [fieldKey]: {
@@ -146,14 +227,16 @@ export function SubmissionEditor({
         fieldKey,
         csrf,
       );
-      delete pendingFiles.current[fieldKey];
-      absorbDetail(detail);
-      invalidate();
+      setPending(fieldKey, null);
+      absorbImageDetail(detail);
+      invalidate(recordId);
     } catch (error) {
+      // Keep the pending file so the upload can be retried (via Save/Submit or re-selecting).
       setImages((current) => ({
         ...current,
         [fieldKey]: {
-          ...current[fieldKey],
+          pendingUrl: objectUrl,
+          pendingName: file.name,
           uploading: false,
           error: messageOf(error),
         },
@@ -171,8 +254,8 @@ export function SubmissionEditor({
           committed,
           csrf,
         );
-        absorbDetail(detail);
-        invalidate();
+        absorbImageDetail(detail);
+        invalidate(recordId);
       } catch (error) {
         setImages((current) => ({
           ...current,
@@ -181,7 +264,7 @@ export function SubmissionEditor({
       }
       return;
     }
-    delete pendingFiles.current[fieldKey];
+    setPending(fieldKey, null);
     setImages((current) => {
       const next = { ...current };
       delete next[fieldKey];
@@ -190,19 +273,10 @@ export function SubmissionEditor({
     setValues((current) => ({ ...current, [fieldKey]: "" }));
   }
 
-  function invalidate() {
-    if (recordId) {
-      void queryClient.invalidateQueries({
-        queryKey: ["form-record", form.id, recordId],
-      });
-    }
-    void queryClient.invalidateQueries({ queryKey: ["form-records", form.id] });
-    void queryClient.invalidateQueries({ queryKey: ["forms"] });
-  }
-
-  // Persist current values and any pending image files, creating the draft first if needed.
-  // Returns the record id and its latest version, or throws.
-  async function persist(): Promise<{ recordId: string; version: number }> {
+  // persist saves the current values and uploads any pending images (for new and existing drafts),
+  // then resyncs from the returned server record. Throws on failure, leaving the saved draft and any
+  // still-pending images available to retry.
+  async function persist(): Promise<FormRecordDetail> {
     const payload = formValuesToPayload(schema, values);
     let currentRecordId = recordId;
     let currentVersion = version;
@@ -215,21 +289,6 @@ export function SubmissionEditor({
       currentRecordId = created.id;
       currentVersion = created.version;
       setRecordId(created.id);
-      setVersion(created.version);
-      setState(created.state);
-      // Upload any images selected before the draft existed.
-      for (const [fieldKey, file] of Object.entries(pendingFiles.current)) {
-        const detail = await api.uploadFormRecordAttachment(
-          form.id,
-          currentRecordId,
-          file,
-          fieldKey,
-          csrf,
-        );
-        delete pendingFiles.current[fieldKey];
-        currentVersion = detail.version;
-        absorbDetail(detail);
-      }
     } else {
       const updated = await api.updateFormRecord(
         form.id,
@@ -238,17 +297,34 @@ export function SubmissionEditor({
         csrf,
       );
       currentVersion = updated.version;
-      setVersion(updated.version);
-      setState(updated.state);
     }
-    setBaseline(JSON.stringify(values));
-    invalidate();
-    return { recordId: currentRecordId, version: currentVersion };
+    setVersion(currentVersion);
+    // Upload every pending image (initial uploads for a new draft, and retries for either).
+    for (const [fieldKey, file] of Object.entries(pendingFiles.current)) {
+      const detail = await api.uploadFormRecordAttachment(
+        form.id,
+        currentRecordId,
+        file,
+        fieldKey,
+        csrf,
+      );
+      setPending(fieldKey, null);
+      currentVersion = detail.version;
+    }
+    const detail = await api.getFormRecord(form.id, currentRecordId);
+    absorbSavedDetail(detail);
+    invalidate(currentRecordId);
+    return detail;
   }
 
   async function saveDraft() {
     setFormError("");
-    const validation = validateSubmission(schema, values, false);
+    const validation = validateSubmission(
+      schema,
+      values,
+      false,
+      satisfiedImages(),
+    );
     setErrors(validation);
     if (Object.keys(validation).length > 0) return;
     setBusy("draft");
@@ -263,27 +339,32 @@ export function SubmissionEditor({
 
   async function submit() {
     setFormError("");
-    const validation = validateSubmission(schema, values, true);
+    const validation = validateSubmission(
+      schema,
+      values,
+      true,
+      satisfiedImages(),
+    );
     setErrors(validation);
     if (Object.keys(validation).length > 0) return;
-    if (!submitTransition) {
-      setFormError("This form cannot be submitted from its current state.");
-      return;
-    }
     setBusy("submit");
     try {
-      const persisted = await persist();
-      const record = await api.transitionFormRecord(
+      const detail = await persist();
+      const transition = detail.availableTransitions.find(
+        (candidate) => candidate.requiredCapability === "submit",
+      );
+      if (!transition) {
+        setFormError("This form cannot be submitted from its current state.");
+        return;
+      }
+      await api.transitionFormRecord(
         form.id,
-        persisted.recordId,
-        { toState: submitTransition.to, version: persisted.version },
+        detail.id,
+        { toState: transition.to, version: detail.version },
         csrf,
       );
-      setVersion(record.version);
-      setState(record.state);
-      setBaseline(JSON.stringify(values));
-      invalidate();
-      onCompleted(persisted.recordId);
+      invalidate(detail.id);
+      onCompleted(detail.id);
     } catch (error) {
       // The draft (and any uploads) are saved server-side; keep the editor so the user can retry.
       setFormError(conflictAwareMessage(error));
@@ -291,8 +372,6 @@ export function SubmissionEditor({
       setBusy("");
     }
   }
-
-  const submitLabel = submitTransition?.label ?? "Submit";
 
   return (
     <div className="submission-editor">
@@ -316,10 +395,9 @@ export function SubmissionEditor({
         </Notice>
       )}
 
-      {latestReviewerNote && editable && state === "changes_requested" && (
+      {feedback && editable && (
         <Notice variant="warning" title="Changes requested">
-          <strong>{latestReviewerNote.authorName}:</strong>{" "}
-          {latestReviewerNote.body}
+          <strong>{feedback.actorName ?? "Reviewer"}:</strong> {feedback.note}
         </Notice>
       )}
 
@@ -371,14 +449,16 @@ export function SubmissionEditor({
           >
             Save draft
           </Button>
-          <Button
-            variant="primary"
-            loading={busy === "submit"}
-            disabled={busy !== "" || !submitTransition}
-            onClick={() => void submit()}
-          >
-            {submitLabel}
-          </Button>
+          {canSubmit && (
+            <Button
+              variant="primary"
+              loading={busy === "submit"}
+              disabled={busy !== ""}
+              onClick={() => void submit()}
+            >
+              {submitLabel}
+            </Button>
+          )}
         </div>
       ) : (
         <Notice
@@ -410,13 +490,6 @@ function imagesFromDetail(
     };
   }
   return result;
-}
-
-function findLatestReviewerNote(
-  comments: FormRecordDetail["comments"],
-): FormRecordDetail["comments"][number] | undefined {
-  if (comments.length === 0) return undefined;
-  return comments[comments.length - 1];
 }
 
 function messageOf(error: unknown): string {

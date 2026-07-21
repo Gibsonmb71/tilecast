@@ -288,25 +288,38 @@ describe("Responses tab and record review", () => {
     expect(transition).not.toHaveBeenCalled();
   });
 
-  it("explains a 409 conflict and refreshes the record", async () => {
+  it("refreshes stale record state on a 409 while preserving the unsent note", async () => {
     mockAuth();
     vi.spyOn(api, "getDataSource").mockResolvedValue(dataSourceDetail);
     vi.spyOn(api, "getForm").mockResolvedValue(form(["approve"]));
     const getRecord = vi
       .spyOn(api, "getFormRecord")
-      .mockResolvedValue(detail());
+      .mockResolvedValueOnce(detail({ displayTitle: "Original title" }))
+      // The record changed elsewhere: the recover refetch returns the newer server version.
+      .mockResolvedValue(
+        detail({ displayTitle: "Changed remotely", version: 9 }),
+      );
     vi.spyOn(api, "transitionFormRecord").mockRejectedValue(
       new ApiError("conflict", 409, "conflict"),
     );
     const user = userEvent.setup();
     renderReview("/data-sources/f1?tab=responses&record=rec1");
 
-    await user.click(await screen.findByRole("button", { name: "Approve" }));
+    // Type a note that must survive the conflict recovery.
+    const note = await screen.findByLabelText("Note");
+    await user.type(note, "Looks good to me");
+    await user.click(screen.getByRole("button", { name: "Approve" }));
+
     expect(
       await screen.findByText(/changed since you opened it/i),
     ).toBeInTheDocument();
-    // The detail is refetched so the reviewer sees the latest state.
+    // Stale local state is replaced with the fresh server record...
+    await waitFor(() =>
+      expect(screen.getByText("Changed remotely")).toBeInTheDocument(),
+    );
     await waitFor(() => expect(getRecord.mock.calls.length).toBeGreaterThan(1));
+    // ...but the unsent note is preserved for retry.
+    expect(screen.getByLabelText("Note")).toHaveValue("Looks good to me");
   });
 });
 

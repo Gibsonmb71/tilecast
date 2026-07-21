@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   FormAvailableTransition,
@@ -23,7 +23,9 @@ import {
 import {
   coerceScalar,
   formValuesToPayload,
+  localDateTimeToRfc3339,
   recordValuesToForm,
+  rfc3339ToLocalDateTime,
 } from "./formValues";
 import { stateLabel, stateTone } from "./formStatus";
 
@@ -105,8 +107,12 @@ function RecordReviewBody({
   );
   const [displayTitle, setDisplayTitle] = useState(detail.displayTitle);
   const [priority, setPriority] = useState(String(detail.priority));
-  const [displayAt, setDisplayAt] = useState(toLocalInput(detail.displayAt));
-  const [expiresAt, setExpiresAt] = useState(toLocalInput(detail.expiresAt));
+  const [displayAt, setDisplayAt] = useState(
+    rfc3339ToLocalDateTime(detail.displayAt ?? ""),
+  );
+  const [expiresAt, setExpiresAt] = useState(
+    rfc3339ToLocalDateTime(detail.expiresAt ?? ""),
+  );
   const [note, setNote] = useState("");
   const [comment, setComment] = useState("");
   const [error, setError] = useState("");
@@ -115,12 +121,40 @@ function RecordReviewBody({
     JSON.stringify({ values, displayTitle, priority, displayAt, expiresAt }),
   );
 
-  // When the detail refreshes (e.g. after a transition), resync local state unless the viewer has
-  // unsaved edits in flight.
-  useEffect(() => {
-    setVersion(detail.version);
-    setImages(imagesFromDetail(form.id, detail));
-  }, [detail, form.id]);
+  // resyncFrom replaces all local edit state with a freshly fetched server record and resets the
+  // dirty baseline. Used for 409 recovery so stale local values are never paired with a newer
+  // server version; the caller preserves only the unsent transition note.
+  function resyncFrom(fresh: FormRecordDetail) {
+    const nextValues = recordValuesToForm(schema, fresh.values);
+    const nextDisplayTitle = fresh.displayTitle;
+    const nextPriority = String(fresh.priority);
+    const nextDisplayAt = rfc3339ToLocalDateTime(fresh.displayAt ?? "");
+    const nextExpiresAt = rfc3339ToLocalDateTime(fresh.expiresAt ?? "");
+    setValues(nextValues);
+    setDisplayTitle(nextDisplayTitle);
+    setPriority(nextPriority);
+    setDisplayAt(nextDisplayAt);
+    setExpiresAt(nextExpiresAt);
+    setImages(imagesFromDetail(form.id, fresh));
+    setVersion(fresh.version);
+    baseline.current = JSON.stringify({
+      values: nextValues,
+      displayTitle: nextDisplayTitle,
+      priority: nextPriority,
+      displayAt: nextDisplayAt,
+      expiresAt: nextExpiresAt,
+    });
+  }
+
+  async function recover() {
+    try {
+      const fresh = await api.getFormRecord(form.id, detail.id);
+      resyncFrom(fresh);
+    } catch {
+      // If the refetch also fails, the surrounding query invalidation will retry.
+    }
+    onChanged();
+  }
 
   const canEdit = detail.canEdit;
   const canComment = detail.canComment;
@@ -137,8 +171,8 @@ function RecordReviewBody({
         values: payload,
         displayTitle,
         priority: priority === "" ? 0 : Number(priority),
-        displayAt: displayAt ? new Date(displayAt).toISOString() : null,
-        expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
+        displayAt: displayAt ? localDateTimeToRfc3339(displayAt) : null,
+        expiresAt: expiresAt ? localDateTimeToRfc3339(expiresAt) : null,
         version,
       },
       csrf,
@@ -161,6 +195,9 @@ function RecordReviewBody({
     try {
       await saveEdits();
     } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        await recover();
+      }
       setError(conflictMessage(err));
     } finally {
       setBusy(false);
@@ -192,9 +229,11 @@ function RecordReviewBody({
       setNote("");
       onChanged();
     } catch (err) {
-      // On a conflict, refresh so the viewer sees the current state; keep their unsent note.
+      // On a conflict, fully refresh from the server (values, metadata, images, state, version) and
+      // reset the edit baseline, preserving only the unsent note, so stale local state is never
+      // paired with a newer server version.
       if (err instanceof ApiError && err.status === 409) {
-        onChanged();
+        await recover();
         setError(
           "This submission changed since you opened it. It has been refreshed — review the latest version and try again.",
         );
@@ -376,6 +415,7 @@ function RecordReviewBody({
               <Textarea
                 rows={2}
                 value={note}
+                aria-label="Note"
                 onChange={(event) => setNote(event.target.value)}
               />
             </Field>
@@ -487,14 +527,6 @@ function imagesFromDetail(
     };
   }
   return result;
-}
-
-function toLocalInput(value: string | null | undefined): string {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  const offset = date.getTimezoneOffset() * 60000;
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 }
 
 function messageOf(error: unknown): string {
