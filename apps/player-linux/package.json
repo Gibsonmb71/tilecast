@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "license": "AGPL-3.0-only",
   "description": "Tilecast Player for Linux kiosk devices",
+  "author": "Gibsonmb71",
   "main": "dist/main/index.js",
   "scripts": {
     "build": "tsc -b",
@@ -18,7 +19,7 @@
   "devDependencies": {
     "@types/node": "^24.0.14",
     "@types/ws": "^8.18.1",
-    "electron": "^37.2.3",
+    "electron": "37.10.3",
     "electron-builder": "^26.0.12",
     "typescript": "~5.8.3",
     "vitest": "^3.2.4"
@@ -32,8 +33,7 @@
     ],
     "linux": {
       "target": [
-        "AppImage",
-        "deb"
+        "AppImage"
       ],
       "category": "AudioVideo",
       "executableName": "tilecast-player"
