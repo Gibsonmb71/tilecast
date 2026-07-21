@@ -1049,6 +1049,20 @@ function present(presentation: RendererPresentation): void {
   }
 }
 
+// The bridge is injected by the preload via contextBridge. If it is missing,
+// the preload failed to load (e.g. a sandboxed renderer cannot require its
+// core modules). Surface that on screen instead of throwing at the first
+// tilecast.* call, which would leave a headless kiosk silently black with no
+// way to diagnose it in the field.
+if (typeof tilecast === "undefined") {
+  showMessage(`
+    <h1>Display bridge unavailable</h1>
+    <p>The player UI could not connect to the runtime. The device will
+    keep trying; if this persists, check the player logs.</p>
+  `);
+  throw new Error("tilecast bridge missing: preload did not load");
+}
+
 tilecast.onPresent(present);
 
 tilecast.onIdentify(({ name, durationSeconds }) => {
