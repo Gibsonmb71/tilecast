@@ -107,6 +107,16 @@ function createWindow(): BrowserWindow {
       preload: path.join(__dirname, "..", "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      // The OS sandbox defaults to on (Electron >= 20). A sandboxed preload can
+      // only require "electron" and a few polyfilled built-ins, but ours pulls
+      // in local core modules (StateStore -> fs, synchronized-playback) to
+      // enrich presentations before exposing the "tilecast" bridge. Under the
+      // sandbox that require throws, exposeInMainWorld never runs, and the
+      // renderer's top-level tilecast.onPresent() call dies — a permanent black
+      // screen. Disabling only the OS sandbox (contextIsolation stays on,
+      // nodeIntegration stays off) keeps the renderer itself isolated while
+      // letting the trusted preload load its Node-backed modules.
+      sandbox: false,
       webviewTag: true,
       backgroundThrottling: false,
     },
