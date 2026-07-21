@@ -398,6 +398,9 @@ func (s *Service) GetForm(ctx context.Context, id, viewer uuid.UUID) (Form, erro
 	if form.Workflow, err = loadWorkflow(ctx, s.db, id); err != nil {
 		return Form{}, err
 	}
+	if err := s.decorateWorkflowUsage(ctx, s.db, id, &form.Workflow); err != nil {
+		return Form{}, err
+	}
 	if form.Views, err = s.listViews(ctx, s.db, id); err != nil {
 		return Form{}, err
 	}

@@ -141,6 +141,37 @@ func transitionRequiresNote(wf Workflow, transition WorkflowTransition) bool {
 	return true
 }
 
+// decorateWorkflowUsage fills each state's RecordCount and Removable from live record usage. A
+// state that any non-deleted record references cannot be renamed or removed (its key is immutable),
+// matching the ConfigureWorkflow reconciliation rules; the UI uses this to lock those controls.
+func (s *Service) decorateWorkflowUsage(ctx context.Context, q rowQuerier, id uuid.UUID, wf *Workflow) error {
+	rows, err := q.Query(ctx, `SELECT state_key,count(*) FROM form_records
+		WHERE data_source_id=$1 AND deleted_at IS NULL GROUP BY state_key`, id)
+	if err != nil {
+		return err
+	}
+	counts := map[string]int{}
+	for rows.Next() {
+		var key string
+		var count int
+		if err := rows.Scan(&key, &count); err != nil {
+			rows.Close()
+			return err
+		}
+		counts[key] = count
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for i := range wf.States {
+		count := counts[wf.States[i].Key]
+		wf.States[i].RecordCount = count
+		wf.States[i].Removable = count == 0
+	}
+	return nil
+}
+
 // validateWorkflow enforces the bounded, script-free workflow rules.
 func validateWorkflow(wf Workflow) error {
 	if len(wf.States) == 0 || len(wf.States) > maxWorkflowStates {

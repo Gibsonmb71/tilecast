@@ -147,3 +147,75 @@ func TestUpdateFormMetadataEndpoint(t *testing.T) {
 		t.Fatalf("invalid name: got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
+
+// TestFormUserDirectoryAuthorization confirms the manager-scoped user directory is available to a
+// form manager and denied to a non-manager, without touching the Owner/Admin /users endpoint.
+func TestFormUserDirectoryAuthorization(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	lockPool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lockPool.Close()
+	lock, err := lockPool.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Release()
+	if _, err = lock.Exec(ctx, `SELECT pg_advisory_lock(7421999)`); err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Exec(ctx, `SELECT pg_advisory_unlock(7421999)`) //nolint:errcheck
+	if err = database.Migrate(ctx, databaseURL); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	pool, err := database.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if _, err = pool.Exec(ctx, `TRUNCATE form_record_attachments,form_record_comments,form_record_events,form_records,form_views,form_grants,form_workflow_transitions,form_workflow_states,form_revisions,data_source_refresh_states,data_sources,widgets,website_assets,asset_variants,assets,sessions,audit_logs,users,organization_settings CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+	owner, err := auth.NewService(pool, time.Hour).Setup(ctx, auth.SetupInput{OrganizationName: "District", OwnerName: "Owner", Username: "owner", Password: "correct horse battery staple"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	formsSvc := forms.NewService(pool, media.NewService(pool, nil, media.Config{}))
+	form, err := formsSvc.CreateForm(ctx, owner.User.ID, forms.FormInput{Name: "Form", DraftSchema: forms.FormSchema{Fields: []forms.FormField{{Key: "title", Label: "Title", Control: forms.ControlShortText, Required: true}}}})
+	if err != nil {
+		t.Fatalf("create form: %v", err)
+	}
+	submitter := uuid.New()
+	if _, err = pool.Exec(ctx, `INSERT INTO users(id,name,username,password_hash,role) VALUES($1,'Sam','sam','x','viewer')`, submitter); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = formsSvc.SetGrant(ctx, form.ID, owner.User.ID, forms.GrantInput{UserID: submitter, Capability: forms.CapSubmit}); err != nil {
+		t.Fatal(err)
+	}
+
+	s := &server{forms: formsSvc, db: pool, logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	do := func(session auth.Session) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/data-sources/"+form.ID.String()+"/user-directory?search=owner", nil)
+		rctx := chi.NewRouteContext()
+		rctx.URLParams.Add("id", form.ID.String())
+		reqCtx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
+		reqCtx = context.WithValue(reqCtx, sessionContextKey, session)
+		rec := httptest.NewRecorder()
+		s.searchFormUsers(rec, req.WithContext(reqCtx))
+		return rec
+	}
+
+	// Manager (owner) gets the directory.
+	if rec := do(auth.Session{User: auth.User{ID: owner.User.ID, Role: "owner"}}); rec.Code != http.StatusOK {
+		t.Fatalf("manager directory: got %d body=%s", rec.Code, rec.Body.String())
+	}
+	// A submit-only grantee is denied.
+	if rec := do(auth.Session{User: auth.User{ID: submitter, Role: "viewer"}}); rec.Code != http.StatusForbidden {
+		t.Fatalf("submit-only directory: got %d body=%s", rec.Code, rec.Body.String())
+	}
+}

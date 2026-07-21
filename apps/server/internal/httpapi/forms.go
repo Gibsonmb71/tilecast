@@ -22,6 +22,8 @@ func (s *server) writeFormError(w http.ResponseWriter, r *http.Request, err erro
 		writeError(w, http.StatusForbidden, "insufficient_access", "You do not have access to this form.")
 	case errors.Is(err, forms.ErrConflict):
 		writeError(w, http.StatusConflict, "conflict", "The record was modified by someone else. Reload and try again.")
+	case errors.Is(err, forms.ErrInUse):
+		writeError(w, http.StatusConflict, "resource_in_use", strings.TrimPrefix(err.Error(), "form resource is in use: "))
 	case errors.Is(err, forms.ErrValidation):
 		writeError(w, http.StatusUnprocessableEntity, "validation_failed", strings.TrimPrefix(err.Error(), "form request is invalid: "))
 	default:
@@ -528,6 +530,114 @@ func (s *server) deleteFormView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// previewFormView projects an unsaved proposed view and returns the resulting dataset without saving.
+func (s *server) previewFormView(w http.ResponseWriter, r *http.Request) {
+	id, _, ok := s.authorizeForm(w, r, forms.CapManage)
+	if !ok {
+		return
+	}
+	var body viewRequest
+	if err := decodeJSON(w, r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	dataset, err := s.forms.PreviewView(r.Context(), id, forms.ViewInput{
+		Key: body.Key, Name: body.Name, IncludedStates: body.IncludedStates, FieldFilters: body.FieldFilters,
+		TimeFilter: body.TimeFilter, Sort: body.Sort, OutputFields: body.OutputFields, RecordLimit: body.RecordLimit, Position: body.Position,
+	})
+	if err != nil {
+		s.writeFormError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": dataset})
+}
+
+// --- Outputs ---
+
+func (s *server) getFormOutputs(w http.ResponseWriter, r *http.Request) {
+	id, _, ok := s.authorizeForm(w, r, forms.CapViewAll)
+	if !ok {
+		return
+	}
+	outputs, err := s.forms.GetOutputs(r.Context(), id)
+	if err != nil {
+		s.writeFormError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": outputs})
+}
+
+func (s *server) rebuildFormOutputs(w http.ResponseWriter, r *http.Request) {
+	id, userID, ok := s.authorizeForm(w, r, forms.CapManage)
+	if !ok {
+		return
+	}
+	outputs, err := s.forms.RebuildOutputs(r.Context(), id, userID)
+	if err != nil {
+		s.writeFormError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": outputs})
+}
+
+// --- Access (directory + per-user grant replacement) ---
+
+func (s *server) listFormAccess(w http.ResponseWriter, r *http.Request) {
+	id, _, ok := s.authorizeForm(w, r, forms.CapManage)
+	if !ok {
+		return
+	}
+	entries, err := s.forms.ListAccess(r.Context(), id)
+	if err != nil {
+		s.writeFormError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"entries": entries}})
+}
+
+func (s *server) searchFormUsers(w http.ResponseWriter, r *http.Request) {
+	if _, _, ok := s.authorizeForm(w, r, forms.CapManage); !ok {
+		return
+	}
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	users, err := s.forms.SearchUsers(r.Context(), r.URL.Query().Get("search"), limit)
+	if err != nil {
+		s.writeFormError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"items": users}})
+}
+
+type accessRequest struct {
+	Capabilities []string `json:"capabilities"`
+}
+
+func (s *server) replaceFormGrants(w http.ResponseWriter, r *http.Request) {
+	id, actor, ok := s.authorizeForm(w, r, forms.CapManage)
+	if !ok {
+		return
+	}
+	targetUser, ok := urlUUID(w, r, "userId")
+	if !ok {
+		return
+	}
+	var body accessRequest
+	if err := decodeJSON(w, r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	caps := make([]forms.Capability, 0, len(body.Capabilities))
+	for _, capability := range body.Capabilities {
+		caps = append(caps, forms.Capability(capability))
+	}
+	entries, err := s.forms.ReplaceGrants(r.Context(), id, actor, targetUser, caps)
+	if err != nil {
+		s.writeFormError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"entries": entries}})
 }
 
 // --- Grants ---

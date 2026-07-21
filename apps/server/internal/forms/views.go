@@ -7,8 +7,11 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/tilecast/tilecast/apps/server/internal/media"
 )
 
 var viewKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,79}$`)
@@ -145,6 +148,48 @@ func (s *Service) validateView(ctx context.Context, q rowQuerier, id uuid.UUID, 
 	return nil
 }
 
+// viewFromInput builds a transient View from a ViewInput for previewing (no id/persistence).
+func viewFromInput(in ViewInput) View {
+	return View{
+		Key: in.Key, Name: strings.TrimSpace(in.Name), IncludedStates: in.IncludedStates,
+		FieldFilters: in.FieldFilters, TimeFilter: in.TimeFilter, Sort: in.Sort,
+		OutputFields: in.OutputFields, RecordLimit: in.RecordLimit, Position: in.Position,
+	}
+}
+
+// PreviewView projects an unsaved, proposed view and returns the resulting typed dataset without
+// persisting anything or touching the cached projection. Only output-eligible records in the view's
+// included states reach the result (the same safety invariant as the real projection), so a preview
+// never exposes unapproved records. Manager-authorized.
+func (s *Service) PreviewView(ctx context.Context, id uuid.UUID, in ViewInput) (media.TypedDataset, error) {
+	if _, err := s.ensureForm(ctx, s.db, id); err != nil {
+		return media.TypedDataset{}, err
+	}
+	if in.IncludedStates == nil {
+		in.IncludedStates = []string{}
+	}
+	if in.OutputFields == nil {
+		in.OutputFields = []string{}
+	}
+	if in.FieldFilters == nil {
+		in.FieldFilters = []FieldFilter{}
+	}
+	if in.Sort == nil {
+		in.Sort = []SortRule{}
+	}
+	if in.RecordLimit == 0 {
+		in.RecordLimit = 100
+	}
+	if err := s.validateView(ctx, s.db, id, in); err != nil {
+		return media.TypedDataset{}, err
+	}
+	fieldTypes, fieldLabels, err := s.outputFieldMaps(ctx, id)
+	if err != nil {
+		return media.TypedDataset{}, err
+	}
+	return s.projectView(ctx, id, viewFromInput(in), fieldTypes, fieldLabels, time.Now().UTC(), func(*time.Time) {})
+}
+
 // UpsertView creates or replaces a saved view (identified by its key) and rebuilds the
 // projection so the named dataset reflects the change.
 func (s *Service) UpsertView(ctx context.Context, id, actor uuid.UUID, in ViewInput) (View, error) {
@@ -215,10 +260,27 @@ func (s *Service) UpsertView(ctx context.Context, id, actor uuid.UUID, in ViewIn
 	return view, nil
 }
 
-// DeleteView soft-deletes a saved view and rebuilds the projection.
+// DeleteView soft-deletes a saved view and rebuilds the projection. Deletion is blocked when the
+// view's dataset is still referenced by a Widget, so removing it cannot silently break signage.
 func (s *Service) DeleteView(ctx context.Context, id, viewID, actor uuid.UUID) error {
 	if _, err := s.ensureForm(ctx, s.db, id); err != nil {
 		return err
+	}
+	// Resolve the view key and refuse deletion while its dataset is in use downstream.
+	var viewKey string
+	err := s.db.QueryRow(ctx, `SELECT key FROM form_views WHERE id=$1 AND data_source_id=$2 AND deleted_at IS NULL`, viewID, id).Scan(&viewKey)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	usage, err := s.datasetUsage(ctx, id, viewKey)
+	if err != nil {
+		return err
+	}
+	if usage.Widgets > 0 {
+		return fmt.Errorf("%w: this view's dataset is used by %s", ErrInUse, strings.Join(usage.Names, ", "))
 	}
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
