@@ -151,7 +151,9 @@ func (s *Service) RebuildOutputs(ctx context.Context, id, actor uuid.UUID) (Form
 	if err := s.RebuildProjection(ctx, id); err != nil {
 		return FormOutputs{}, err
 	}
-	_, _ = s.db.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)
-		VALUES($1,$2,'form.output_rebuilt','data_source',$3)`, uuid.New(), actor, id.String())
+	if _, err := s.db.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)
+		VALUES($1,$2,'form.output_rebuilt','data_source',$3)`, uuid.New(), actor, id.String()); err != nil {
+		return FormOutputs{}, err
+	}
 	return s.GetOutputs(ctx, id)
 }

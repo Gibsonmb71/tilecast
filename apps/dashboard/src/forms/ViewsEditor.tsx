@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useBlocker } from "react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type {
@@ -240,10 +240,26 @@ function ViewForm({
   const [error, setError] = useState("");
 
   const dirty = JSON.stringify(draft) !== baseline;
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
-      dirty && currentLocation.pathname !== nextLocation.pathname,
+      dirty &&
+      (currentLocation.pathname !== nextLocation.pathname ||
+        currentLocation.search !== nextLocation.search ||
+        currentLocation.hash !== nextLocation.hash),
   );
+
+  useEffect(() => {
+    const handler = (event: BeforeUnloadEvent) => {
+      if (dirtyRef.current) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, []);
 
   const update = (patch: Partial<FormViewInput>) =>
     setDraft({ ...draft, ...patch });

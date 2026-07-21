@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useSearchParams } from "react-router";
 import type {
@@ -52,24 +52,11 @@ export function FormDataSourcePage({
     enabled: Boolean(id),
   });
 
-  if (form.isLoading) {
-    return <div className="table-loading">Loading form…</div>;
-  }
-  if (!form.data || !id) {
-    return (
-      <Notice variant="danger" title="Form unavailable">
-        This Form Data Source could not be loaded.
-      </Notice>
-    );
-  }
-
   const detail = form.data;
-  const canManage = canManageForm(detail.grantedCapabilities);
-  const canViewAll = canViewResponses(detail.grantedCapabilities);
+  const canManage = canManageForm(detail?.grantedCapabilities ?? []);
+  const canViewAll = canViewResponses(detail?.grantedCapabilities ?? []);
 
-  // Permitted tabs by capability (grantedCapabilities, never global role). Form is always available
-  // (read-only for non-managers); Workflow/Views/Access require manage; Outputs needs view_all or
-  // manage; Responses needs view_all. Order defines display and the normalization fallback.
+  // Order is also used to choose the closest permitted fallback for an unauthorized tab.
   const tabDefs: { value: TabValue; label: string; permitted: boolean }[] = [
     { value: "responses", label: "Responses", permitted: canViewAll },
     { value: "form", label: "Form", permitted: true },
@@ -79,19 +66,67 @@ export function FormDataSourcePage({
     { value: "access", label: "Access", permitted: canManage },
   ];
   const permittedTabs = tabDefs.filter((tab) => tab.permitted);
-
-  // Tabs are query-string driven. Opening a specific record (?record=) forces the Responses tab. An
-  // unauthorized or unknown tab normalizes to the nearest permitted tab (Form is always permitted).
   const recordParam = searchParams.get("record");
-  const requestedTab = recordParam
-    ? "responses"
-    : (searchParams.get("tab") ?? "form");
-  const activeTab: TabValue = permittedTabs.some(
-    (tab) => tab.value === requestedTab,
-  )
-    ? (requestedTab as TabValue)
-    : (permittedTabs[0]?.value ?? "form");
+  const tabParam = searchParams.get("tab");
+  const requestedTab = recordParam && canViewAll ? "responses" : tabParam;
+  const matchedIndex = tabDefs.findIndex((tab) => tab.value === requestedTab);
+  const requestedIndex =
+    matchedIndex >= 0
+      ? matchedIndex
+      : tabDefs.findIndex((tab) => tab.value === "form");
+  const activeTab = permittedTabs.reduce<{
+    value: TabValue;
+    distance: number;
+  }>(
+    (closest, tab) => {
+      const distance = Math.abs(
+        tabDefs.findIndex((candidate) => candidate.value === tab.value) -
+          requestedIndex,
+      );
+      return distance < closest.distance
+        ? { value: tab.value, distance }
+        : closest;
+    },
+    { value: "form", distance: Number.POSITIVE_INFINITY },
+  ).value;
 
+  // Render and URL must agree: replace invalid/unauthorized tabs and drop record deep links when
+  // Responses is unavailable. This also prevents stale parameters from surviving copied URLs.
+  useEffect(() => {
+    if (!detail) return;
+    const staleRecord = Boolean(recordParam) && !canViewAll;
+    const staleTab = tabParam !== null && tabParam !== activeTab;
+    const recordForcesResponses =
+      Boolean(recordParam) && canViewAll && tabParam !== "responses";
+    if (!staleRecord && !staleTab && !recordForcesResponses) return;
+    const next = new URLSearchParams(searchParams);
+    next.set("tab", activeTab);
+    if (staleRecord) next.delete("record");
+    setSearchParams(next, { replace: true });
+  }, [
+    activeTab,
+    canViewAll,
+    detail,
+    recordParam,
+    searchParams,
+    setSearchParams,
+    tabParam,
+  ]);
+
+  if (form.isLoading) {
+    return <div className="table-loading">Loading form…</div>;
+  }
+  if (!detail || !id) {
+    return (
+      <Notice variant="danger" title="Form unavailable">
+        This Form Data Source could not be loaded.
+      </Notice>
+    );
+  }
+
+  // Permitted tabs by capability (grantedCapabilities, never global role). Form is always available
+  // (read-only for non-managers); Workflow/Views/Access require manage; Outputs needs view_all or
+  // manage; Responses needs view_all. Order defines display and the normalization fallback.
   const setTab = (tab: TabValue) => {
     const next = new URLSearchParams(searchParams);
     next.set("tab", tab);

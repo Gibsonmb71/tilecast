@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider, createMemoryRouter } from "react-router";
@@ -72,7 +72,7 @@ const workflow: FormWorkflow = {
       initial: false,
       terminal: false,
       recordCount: 0,
-      removable: true,
+      removable: false,
     },
   ],
   transitions: [
@@ -214,7 +214,7 @@ describe("Form tabs — capability visibility and normalization", () => {
     vi.spyOn(api, "getDataSource").mockResolvedValue(dataSourceDetail);
     vi.spyOn(api, "getForm").mockResolvedValue(form(["view_all"]));
     // Deep-link to a manager-only tab; it must normalize away.
-    renderPage("/data-sources/f1?tab=workflow");
+    const router = renderPage("/data-sources/f1?tab=workflow");
 
     expect(
       await screen.findByRole("button", { name: "Responses" }),
@@ -233,6 +233,21 @@ describe("Form tabs — capability visibility and normalization", () => {
     expect(
       screen.queryByRole("button", { name: "Add state" }),
     ).not.toBeInTheDocument();
+    await waitFor(() => expect(router.state.location.search).toBe("?tab=form"));
+  });
+
+  it("replaces an invalid tab and removes a stale record when Responses is unavailable", async () => {
+    mockAuth();
+    vi.spyOn(api, "getDataSource").mockResolvedValue(dataSourceDetail);
+    vi.spyOn(api, "getForm").mockResolvedValue(form(["submit"]));
+    const router = renderPage(
+      "/data-sources/f1?tab=not-a-tab&record=stale&keep=yes",
+    );
+
+    expect(await screen.findByText("Read-only")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(router.state.location.search).toBe("?tab=form&keep=yes");
+    });
   });
 });
 
@@ -252,6 +267,34 @@ describe("Workflow tab", () => {
       screen.getByRole("button", { name: "Delete Submitted" }),
     ).toBeEnabled();
   });
+
+  it.each([
+    ["pathname", "/somewhere-else"],
+    ["query string", "/data-sources/f1?tab=views"],
+    ["hash", "/data-sources/f1?tab=workflow#transitions"],
+  ])(
+    "blocks %s navigation and keeps beforeunload while dirty",
+    async (_kind, target) => {
+      mockAuth();
+      vi.spyOn(api, "getDataSource").mockResolvedValue(dataSourceDetail);
+      vi.spyOn(api, "getForm").mockResolvedValue(form(["manage"]));
+      const user = userEvent.setup();
+      const router = renderPage("/data-sources/f1?tab=workflow");
+
+      const labels = await screen.findAllByLabelText("Label");
+      await user.type(labels[0]!, " changed");
+      const unload = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(unload);
+      expect(unload.defaultPrevented).toBe(true);
+
+      await act(async () => {
+        await router.navigate(target);
+      });
+      expect(
+        await screen.findByText("Leave without saving?"),
+      ).toBeInTheDocument();
+    },
+  );
 });
 
 describe("Views tab", () => {
@@ -300,6 +343,34 @@ describe("Views tab", () => {
     // Previewing never saves.
     expect(save).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ["pathname", "/somewhere-else"],
+    ["query string", "/data-sources/f1?tab=workflow"],
+    ["hash", "/data-sources/f1?tab=views#preview"],
+  ])(
+    "blocks %s navigation and keeps beforeunload while dirty",
+    async (_kind, target) => {
+      mockAuth();
+      vi.spyOn(api, "getDataSource").mockResolvedValue(dataSourceDetail);
+      vi.spyOn(api, "getForm").mockResolvedValue(form(["manage"]));
+      const user = userEvent.setup();
+      const router = renderPage("/data-sources/f1?tab=views");
+
+      await user.click(await screen.findByRole("button", { name: "New view" }));
+      await user.type(await screen.findByLabelText("View name"), "Draft view");
+      const unload = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(unload);
+      expect(unload.defaultPrevented).toBe(true);
+
+      await act(async () => {
+        await router.navigate(target);
+      });
+      expect(
+        await screen.findByText("Leave without saving?"),
+      ).toBeInTheDocument();
+    },
+  );
 });
 
 describe("Outputs tab", () => {
@@ -352,6 +423,16 @@ describe("Access tab", () => {
         role: "editor",
         capabilities: ["manage"],
         isCreator: true,
+        isGlobalOwner: false,
+      },
+      {
+        userId: "owner2",
+        name: "Olivia",
+        username: "olivia",
+        role: "owner",
+        capabilities: ["manage"],
+        isCreator: false,
+        isGlobalOwner: true,
       },
       {
         userId: "u2",
@@ -360,6 +441,7 @@ describe("Access tab", () => {
         role: "viewer",
         capabilities: ["view_own"],
         isCreator: false,
+        isGlobalOwner: false,
       },
     ]);
     const replace = vi.spyOn(api, "replaceFormGrants").mockResolvedValue([]);
@@ -368,6 +450,7 @@ describe("Access tab", () => {
 
     // The creator is an unremovable manager (no Edit control).
     expect(await screen.findByText("Manager (creator)")).toBeInTheDocument();
+    expect(screen.getByText("Manager (Owner)")).toBeInTheDocument();
     // Edit Alice's access and save.
     await user.click(screen.getByRole("button", { name: "Edit access" }));
     await user.click(await screen.findByLabelText("Review"));

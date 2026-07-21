@@ -916,7 +916,7 @@ paths:
   /api/v1/data-sources/{id}/form:
     get:
       operationId: getForm
-      description: Returns the Form detail with draft schema, published revision, workflow, saved views, and the caller's granted capabilities. Each workflow state carries recordCount and a removable flag (false once any record references it) so the Workflow editor can lock keys/deletion. Non-managers receive the published schema as the visible draft schema so unpublished edits are never exposed.
+      description: Returns the Form detail with draft schema, published revision, workflow, saved views, and the caller's granted capabilities. Each workflow state carries recordCount and a removable flag (false once any record or saved view references it) so the Workflow editor can lock keys/deletion. Non-managers receive the published schema as the visible draft schema so unpublished edits are never exposed.
       responses:
         "200": { description: Form detail }
         "403": { description: No access to this form }
@@ -1141,14 +1141,14 @@ paths:
   /api/v1/data-sources/{id}/access:
     get:
       operationId: listFormAccess
-      description: Returns one entry per user with effective access to the form — the creator as an implicit, unremovable manager, followed by each granted user with their collapsed (non-redundant) capability set. Requires the manage capability.
+      description: Returns one entry per user with effective access to the form — the creator and all active global Owners as implicit, uneditable managers, followed by each granted user with their collapsed (non-redundant) capability set. Requires the manage capability.
       responses:
         "200": { description: Access entries under data.entries }
         "403": { description: Manage capability required }
   /api/v1/data-sources/{id}/access/{userId}:
     put:
       operationId: replaceFormGrants
-      description: Atomically replaces one user's grants on the form with the supplied capabilities (submit, view_own, view_all, review, approve, manage), collapsing implied capabilities to a minimal set, in a single transaction with an audit entry. The form creator's access cannot be edited here, and a manager cannot remove their own only management path. Requires the manage capability and CSRF.
+      description: Atomically replaces one user's grants on the form with the supplied capabilities (submit, view_own, view_all, review, approve, manage), collapsing implied capabilities to a minimal set, in a single transaction with an audit entry. The form creator and global Owners cannot be edited here, and a manager cannot remove their own only management path. Requires the manage capability and CSRF.
       requestBody:
         required: true
         content:

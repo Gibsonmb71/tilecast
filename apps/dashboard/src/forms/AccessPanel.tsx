@@ -52,7 +52,8 @@ const CAPABILITIES: {
 
 // AccessPanel manages per-user access: one row per user with effective access, plus a searchable
 // directory for granting access. Grants are replaced atomically; implied capabilities are shown as
-// included rather than as separate required grants. The creator is always Manager and unremovable.
+// included rather than as separate required grants. The creator and global Owners are always
+// Managers and cannot be edited.
 export function AccessPanel({
   form,
   csrf,
@@ -166,6 +167,7 @@ function AccessRow({
   onCancel: () => void;
   onSave: (caps: FormCapability[]) => void;
 }) {
+  const implicitManager = entry.isCreator || entry.isGlobalOwner;
   return (
     <>
       <tr>
@@ -175,8 +177,11 @@ function AccessRow({
         </td>
         <td>{entry.role}</td>
         <td>
-          {entry.isCreator ? (
-            <StatusBadge label="Manager (creator)" tone="info" />
+          {implicitManager ? (
+            <StatusBadge
+              label={entry.isCreator ? "Manager (creator)" : "Manager (Owner)"}
+              tone="info"
+            />
           ) : (
             <span className="form-access__caps">
               {entry.capabilities.map((cap) => (
@@ -190,7 +195,7 @@ function AccessRow({
           )}
         </td>
         <td className="form-access__actions">
-          {entry.isCreator ? (
+          {implicitManager ? (
             <span className="form-access__locked">Always a manager</span>
           ) : editing ? null : (
             <Button variant="quiet" compact onClick={onEdit}>
@@ -199,7 +204,7 @@ function AccessRow({
           )}
         </td>
       </tr>
-      {editing && !entry.isCreator && (
+      {editing && !implicitManager && (
         <tr>
           <td colSpan={4}>
             <CapabilityEditor

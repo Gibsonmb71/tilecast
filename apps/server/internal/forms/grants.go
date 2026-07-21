@@ -147,6 +147,15 @@ func (s *Service) ReplaceGrants(ctx context.Context, id, actor, targetUser uuid.
 	if createdBy != nil && *createdBy == targetUser {
 		return nil, fmt.Errorf("%w: the form creator is always a manager and cannot be changed here", ErrValidation)
 	}
+	var targetRole string
+	if err := s.db.QueryRow(ctx, `SELECT role FROM users WHERE id=$1`, targetUser).Scan(&targetRole); errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("%w: user does not exist", ErrValidation)
+	} else if err != nil {
+		return nil, err
+	}
+	if targetRole == "owner" {
+		return nil, fmt.Errorf("%w: global Owners are always managers and cannot be changed here", ErrValidation)
+	}
 	for _, capability := range caps {
 		if !validCapabilities[capability] {
 			return nil, fmt.Errorf("%w: unknown capability %q", ErrValidation, capability)
@@ -164,14 +173,6 @@ func (s *Service) ReplaceGrants(ctx context.Context, id, actor, targetUser uuid.
 		if !isCreator && role != "owner" {
 			return nil, fmt.Errorf("%w: you cannot remove your own management access to this form", ErrValidation)
 		}
-	}
-
-	var exists bool
-	if err := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE id=$1)`, targetUser).Scan(&exists); err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, fmt.Errorf("%w: user does not exist", ErrValidation)
 	}
 
 	tx, err := s.db.Begin(ctx)
@@ -207,8 +208,8 @@ func capabilityStrings(caps []Capability) []string {
 	return out
 }
 
-// ListAccess returns one row per user with effective access to the form: the creator as an implicit
-// manager, followed by every granted user with their collapsed capability set.
+// ListAccess returns one row per user with effective access to the form: the creator and every
+// active global Owner as implicit managers, followed by granted users with collapsed capabilities.
 func (s *Service) ListAccess(ctx context.Context, id uuid.UUID) ([]AccessEntry, error) {
 	createdBy, err := s.ensureForm(ctx, s.db, id)
 	if err != nil {
@@ -225,8 +226,32 @@ func (s *Service) ListAccess(ctx context.Context, id uuid.UUID) ([]AccessEntry, 
 		}
 		entry.Capabilities = []Capability{CapManage}
 		entry.IsCreator = true
+		entry.IsGlobalOwner = entry.Role == "owner"
 		entries = append(entries, entry)
 		seen[*createdBy] = true
+	}
+	ownerRows, err := s.db.Query(ctx, `SELECT id,COALESCE(name,''),COALESCE(username,''),COALESCE(role,'')
+		FROM users WHERE role='owner' AND active ORDER BY lower(name),id`)
+	if err != nil {
+		return nil, err
+	}
+	for ownerRows.Next() {
+		var entry AccessEntry
+		if err := ownerRows.Scan(&entry.UserID, &entry.Name, &entry.Username, &entry.Role); err != nil {
+			ownerRows.Close()
+			return nil, err
+		}
+		if seen[entry.UserID] {
+			continue
+		}
+		entry.Capabilities = []Capability{CapManage}
+		entry.IsGlobalOwner = true
+		entries = append(entries, entry)
+		seen[entry.UserID] = true
+	}
+	ownerRows.Close()
+	if err := ownerRows.Err(); err != nil {
+		return nil, err
 	}
 	rows, err := s.db.Query(ctx, `SELECT g.user_id,COALESCE(u.name,''),COALESCE(u.username,''),COALESCE(u.role,''),g.capability
 		FROM form_grants g LEFT JOIN users u ON u.id=g.user_id
@@ -244,7 +269,7 @@ func (s *Service) ListAccess(ctx context.Context, id uuid.UUID) ([]AccessEntry, 
 			return nil, err
 		}
 		if seen[userID] {
-			continue // the creator's implicit manager row already covers them
+			continue // an implicit creator/Owner manager row already covers them
 		}
 		entry, ok := byUser[userID]
 		if !ok {

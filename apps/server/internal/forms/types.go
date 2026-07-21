@@ -148,7 +148,7 @@ type Revision struct {
 // WorkflowState is one configurable workflow state. RecordCount and Removable are read-only
 // decorations (populated on GetForm, ignored on write): RecordCount is the number of non-deleted
 // records currently in the state, and Removable reports whether the state key may be renamed or
-// removed (false once any record references it).
+// removed (false once any record or saved view references it).
 type WorkflowState struct {
 	Key               string `json:"key"`
 	Label             string `json:"label"`
@@ -303,15 +303,16 @@ type Grant struct {
 }
 
 // AccessEntry is one user's effective access to a form, for the Access tab. Capabilities is the
-// collapsed (non-redundant) generating set actually granted; the creator appears as an implicit
-// manager that cannot be removed.
+// collapsed (non-redundant) generating set actually granted; the creator and global Owners appear
+// as implicit managers that cannot be removed.
 type AccessEntry struct {
-	UserID       uuid.UUID    `json:"userId"`
-	Name         string       `json:"name"`
-	Username     string       `json:"username"`
-	Role         string       `json:"role"`
-	Capabilities []Capability `json:"capabilities"`
-	IsCreator    bool         `json:"isCreator"`
+	UserID        uuid.UUID    `json:"userId"`
+	Name          string       `json:"name"`
+	Username      string       `json:"username"`
+	Role          string       `json:"role"`
+	Capabilities  []Capability `json:"capabilities"`
+	IsCreator     bool         `json:"isCreator"`
+	IsGlobalOwner bool         `json:"isGlobalOwner"`
 }
 
 // DirectoryUser is the minimal user record the manager-scoped directory returns for granting access.

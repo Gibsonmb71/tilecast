@@ -28,8 +28,8 @@ func (e formTestEnv) insertChartWidget(t *testing.T, name string, formID uuid.UU
 	return assetID
 }
 
-// TestWorkflowStateUsageMetadata verifies GetForm decorates states with record counts and a
-// removable flag, and that ConfigureWorkflow refuses to remove/rename a used state.
+// TestWorkflowStateUsageMetadata verifies GetForm decorates states with record and saved-view
+// references, and ConfigureWorkflow refuses to remove/rename either kind of referenced state.
 func TestWorkflowStateUsageMetadata(t *testing.T) {
 	e := setupForms(t)
 	form, _ := e.service.CreateForm(e.ctx, e.owner, FormInput{Name: "WF", DraftSchema: announcementSchema()})
@@ -52,8 +52,8 @@ func TestWorkflowStateUsageMetadata(t *testing.T) {
 	if draft == nil || draft.RecordCount != 1 || draft.Removable {
 		t.Fatalf("draft state should have 1 record and be non-removable, got %#v", draft)
 	}
-	if approved == nil || approved.RecordCount != 0 || !approved.Removable {
-		t.Fatalf("approved state should be removable with 0 records, got %#v", approved)
+	if approved == nil || approved.RecordCount != 0 || approved.Removable {
+		t.Fatalf("approved state should have 0 records but be locked by the default saved view, got %#v", approved)
 	}
 
 	// Renaming/removing the used draft state is rejected by reconciliation.
@@ -66,8 +66,35 @@ func TestWorkflowStateUsageMetadata(t *testing.T) {
 		renamed = append(renamed, st)
 	}
 	wf.States = renamed
+	for i := range wf.Transitions {
+		if wf.Transitions[i].From == "draft" {
+			wf.Transitions[i].From = "intake"
+		}
+		if wf.Transitions[i].To == "draft" {
+			wf.Transitions[i].To = "intake"
+		}
+	}
 	if err := e.service.ConfigureWorkflow(e.ctx, form.ID, e.owner, WorkflowInput{Workflow: wf}); !errors.Is(err, ErrValidation) {
 		t.Fatalf("renaming a used state should be rejected, got %v", err)
+	}
+
+	// The approved state has no records, but the default saved view includes it and still locks it.
+	wf = defaultWorkflow()
+	for i := range wf.States {
+		if wf.States[i].Key == "approved" {
+			wf.States[i].Key = "published"
+		}
+	}
+	for i := range wf.Transitions {
+		if wf.Transitions[i].From == "approved" {
+			wf.Transitions[i].From = "published"
+		}
+		if wf.Transitions[i].To == "approved" {
+			wf.Transitions[i].To = "published"
+		}
+	}
+	if err := e.service.ConfigureWorkflow(e.ctx, form.ID, e.owner, WorkflowInput{Workflow: wf}); !errors.Is(err, ErrValidation) {
+		t.Fatalf("renaming a state referenced only by a saved view should be rejected, got %v", err)
 	}
 }
 
@@ -238,6 +265,16 @@ func TestOutputsEligibleOnlyAndRebuild(t *testing.T) {
 	}
 }
 
+// TestRebuildOutputsReturnsAuditFailure verifies a rebuild does not report success when its audit
+// event cannot be persisted. A nonexistent actor triggers the audit_logs user foreign key.
+func TestRebuildOutputsReturnsAuditFailure(t *testing.T) {
+	e := setupForms(t)
+	form, _ := e.service.CreateForm(e.ctx, e.owner, FormInput{Name: "Out", DraftSchema: announcementSchema()})
+	if _, err := e.service.RebuildOutputs(e.ctx, form.ID, uuid.New()); err == nil {
+		t.Fatal("rebuild should return the audit insert failure")
+	}
+}
+
 // TestGrantReplacementCollapseAndCreatorLock covers atomic replacement, implied-capability collapse,
 // the always-manager creator, and the self-management guard.
 func TestGrantReplacementCollapseAndCreatorLock(t *testing.T) {
@@ -290,6 +327,20 @@ func TestGrantReplacementCollapseAndCreatorLock(t *testing.T) {
 	}
 	if _, err := e.service.ReplaceGrants(e.ctx, form.ID, bob, bob, []Capability{CapSubmit}); !errors.Is(err, ErrValidation) {
 		t.Fatalf("a manager removing their own management access should be rejected, got %v", err)
+	}
+
+	// Every global Owner is an implicit, uneditable manager even when they did not create the form.
+	otherOwner := e.insertUser(t, "Other Owner", "other-owner", "owner")
+	access, err = e.service.ListAccess(e.ctx, form.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownerEntry := findEntry(access, otherOwner)
+	if ownerEntry == nil || !ownerEntry.IsGlobalOwner || ownerEntry.IsCreator || !sameCaps(ownerEntry.Capabilities, []Capability{CapManage}) {
+		t.Fatalf("global Owner must appear as an implicit manager, got %#v", ownerEntry)
+	}
+	if _, err := e.service.ReplaceGrants(e.ctx, form.ID, e.owner, otherOwner, []Capability{CapSubmit}); !errors.Is(err, ErrValidation) {
+		t.Fatalf("editing a global Owner's access should be rejected, got %v", err)
 	}
 }
 

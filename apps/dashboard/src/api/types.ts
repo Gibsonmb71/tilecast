@@ -1013,6 +1013,7 @@ export type FormAccessEntry = {
   role: string;
   capabilities: FormCapability[];
   isCreator: boolean;
+  isGlobalOwner: boolean;
 };
 
 export type FormDirectoryUser = {
