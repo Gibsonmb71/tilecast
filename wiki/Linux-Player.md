@@ -25,7 +25,7 @@ The player keeps cached content available through server outages and restarts. N
 
 ## Current platform target
 
-The automated release process publishes an **x86_64 AppImage**. That is the recommended format for Intel and AMD Linux signage computers.
+The automated release process publishes an **x86_64 AppImage** named `tilecast-player.AppImage`. That is the recommended format for Intel and AMD Linux signage computers.
 
 ARM and Raspberry Pi-class hardware can be evaluated with a source build, but there is not currently a separately published or broadly validated ARM release. Do not assume a Raspberry Pi model is supported until it has been tested with the intended desktop, GPU driver, video formats, and resolution.
 
