@@ -13,6 +13,7 @@ The player captures immediately after it observes a new session and then approxi
 - API 26 and newer use `PixelCopy`. Tilecast also copies visible `SurfaceView` layers owned by its activity so video playback appears in the preview instead of as a black frame. API 23 through 25 use `View.draw(Canvas)`.
 - Nearly empty video frames are retried once and then reported as a capture failure rather than replacing the latest preview with a black JPEG.
 - Tilecast does not use MediaProjection and cannot capture Android system screens or other applications.
+- The Linux player captures the player's own display through Electron `desktopCapturer`. Reading the real framebuffer is required because hardware-overlay video, VA-API-decoded frames, and website `<webview>` layers are not visible to `webContents.capturePage()`. This uses no permission prompt on X11; on Wayland it needs the screen-share portal, so the player falls back to a DOM-only `capturePage()` capture there. Set `TILECAST_PREVIEW_SCREEN_CAPTURE=1` to force framebuffer capture (e.g. on a Wayland box with the portal configured) or `=0` to force the DOM-only path.
 - Pairing, administrator PIN, commissioning, maintenance, update approval, identify, and other protected player states report an unavailable status instead of uploading an image.
 
 ## Image limits
