@@ -33,15 +33,15 @@ The reference low-end target is roughly a 2012-era Intel mini PC with 4 GB of RA
 
 ## Linux and Android differences
 
-| Capability | Linux | Android / Fire TV / Google TV |
-| --- | --- | --- |
-| Core playback, scheduling, layouts, widgets, and offline cache | Supported | Supported |
-| Kiosk lockdown | Linux desktop or kiosk compositor | Android lock task, device owner, or accessibility assistance |
-| Start at boot and crash recovery | systemd plus a graphical session | Android boot receiver and platform services |
-| Self-update | Replaces the running AppImage | Installs a signed APK |
-| HDMI-CEC and TV sleep/wake assistance | Not provided | Best-effort Android platform behavior |
-| Live screen preview | Best on X11; Wayland may require a portal | Supported by the Android player |
-| Secure sandboxing for remote `web` declarative presentations | Not yet implemented | Platform-dependent |
+| Capability                                                     | Linux                                     | Android / Fire TV / Google TV                                |
+| -------------------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------ |
+| Core playback, scheduling, layouts, widgets, and offline cache | Supported                                 | Supported                                                    |
+| Kiosk lockdown                                                 | Linux desktop or kiosk compositor         | Android lock task, device owner, or accessibility assistance |
+| Start at boot and crash recovery                               | systemd plus a graphical session          | Android boot receiver and platform services                  |
+| Self-update                                                    | Replaces the running AppImage             | Installs a signed APK                                        |
+| HDMI-CEC and TV sleep/wake assistance                          | Not provided                              | Best-effort Android platform behavior                        |
+| Live screen preview                                            | Best on X11; Wayland may require a portal | Supported by the Android player                              |
+| Secure sandboxing for remote `web` declarative presentations   | Not yet implemented                       | Platform-dependent                                           |
 
 Tilecast does not create or manage the Linux graphical session itself. The computer must already start X11, Wayland, a desktop environment, or a kiosk compositor before the player launches.
 
