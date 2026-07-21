@@ -4,13 +4,17 @@ on:
   push:
     paths:
       - ".github/workflows/backfill-android-release-titles.yml"
+  issues:
+    types: [opened]
   workflow_dispatch:
 
 permissions:
   contents: write
+  issues: write
 
 jobs:
   rename:
+    if: github.event_name != 'issues' || github.event.issue.title == '[automation] Backfill Android release titles'
     name: Rename existing Android releases
     runs-on: ubuntu-latest
     steps:
@@ -66,3 +70,10 @@ jobs:
             args+=(-f sha="$existing_sha")
           fi
           gh api "${args[@]}" >/dev/null
+
+      - name: Close automation issue
+        if: github.event_name == 'issues'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: gh issue close "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --reason completed
