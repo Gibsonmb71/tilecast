@@ -1,4 +1,4 @@
-name: Tilecast Player Release
+name: Tilecast Android Player Release
 
 on:
   push:
@@ -83,7 +83,7 @@ jobs:
               --jq .body)"
           fi
           if [ -z "$notes" ]; then
-            notes="Tilecast Player $version"
+            notes="Tilecast Player for Android $version"
           fi
 
           printf '%s\n' "$notes" > "$RUNNER_TEMP/tilecast-release-notes.md"
@@ -218,7 +218,7 @@ jobs:
           test "$(jq -r .apkSha256 "$output/tilecast-player-update.json")" = \
             "$(sha256sum "$output/tilecast-player.apk" | awk '{print $1}')"
 
-      - name: Publish GitHub Release
+      - name: Publish Android GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
@@ -236,6 +236,6 @@ jobs:
             "$RUNNER_TEMP/tilecast-player-release/tilecast-player-update.json.sig" \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
-            --title "Tilecast Player $RELEASE_VERSION" \
+            --title "Tilecast Player for Android $RELEASE_VERSION" \
             --notes-file "$RUNNER_TEMP/tilecast-release-notes.md" \
             "${prerelease[@]}"

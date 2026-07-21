@@ -1,0 +1,65 @@
+name: Backfill Android release titles
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  rename:
+    name: Rename existing Android releases
+    runs-on: ubuntu-latest
+    steps:
+      - name: Rename player releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          total=0
+          renamed=0
+          report="$RUNNER_TEMP/android-release-title-backfill.txt"
+          : > "$report"
+
+          while IFS=$'\t' read -r release_id tag current_name; do
+            total=$((total + 1))
+            version="${tag#player-v}"
+            desired_name="Tilecast Player for Android $version"
+
+            if [ "$current_name" = "$desired_name" ]; then
+              echo "$tag already uses the Android release title"
+            else
+              echo "Renaming $tag: $current_name -> $desired_name"
+              gh api --method PATCH \
+                "repos/$GITHUB_REPOSITORY/releases/$release_id" \
+                -f name="$desired_name" >/dev/null
+              renamed=$((renamed + 1))
+            fi
+
+            printf '%s\t%s\n' "$tag" "$desired_name" >> "$report"
+          done < <(
+            gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+              --jq '.[] | select(.tag_name | test("^player-v")) | [.id, .tag_name, (.name // "")] | @tsv'
+          )
+
+          {
+            printf 'Verified %s Android player releases.\n' "$total"
+            printf 'Renamed %s releases during this run.\n\n' "$renamed"
+            cat "$report"
+          } > "$RUNNER_TEMP/android-release-title-backfill-final.txt"
+
+          report_path=".github/android-release-title-backfill.txt"
+          encoded="$(base64 -w 0 "$RUNNER_TEMP/android-release-title-backfill-final.txt")"
+          existing_sha="$(gh api "repos/$GITHUB_REPOSITORY/contents/$report_path" --jq .sha 2>/dev/null || true)"
+
+          args=(
+            --method PUT
+            "repos/$GITHUB_REPOSITORY/contents/$report_path"
+            -f message="Record Android release title backfill"
+            -f content="$encoded"
+          )
+          if [ -n "$existing_sha" ]; then
+            args+=(-f sha="$existing_sha")
+          fi
+          gh api "${args[@]}" >/dev/null
