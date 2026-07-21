@@ -19,11 +19,11 @@
 <p align="center">
   <strong>Open signage, built to stay on.</strong>
 </p>
-Tilecast is an open-source, self-hosted digital signage platform for organizations that want to operate their own signage server. It is designed for reliable playback on Fire TV, Google TV, and Android TV devices without requiring a paid cloud service.
+Tilecast is an open-source, self-hosted digital signage platform for organizations that want to operate their own signage server. It is designed for reliable playback on Fire TV, Google TV, Android TV, and Linux signage computers without requiring a paid cloud service.
 
 The Content library is organized into **Media** (uploaded images and videos), **Widgets** (reusable visual content), and **Data Sources** (reusable data connections). Standalone Website, YouTube, Clock, Date, QR Code, and Countdown Widgets cover common signage needs. Ticker, Menu / Price Board, List, Table, Agenda, Metric, Cards, and Weather Widgets display a compatible Data Source. Calendar, RSS, Atom, JSON, CSV, Manual Table, and Weather Data Sources handle acquisition, typed fields, caching, and date-aware selection independently from presentation. Widgets and Media can be reused in playlists and Layouts. See [Widgets, Data Sources, and Layouts](docs/widgets-and-layouts.md).
 
-Tilecast Player includes hardened first-run commissioning, cached boot recovery, persistent watchdog escalation and safe mode, capability-confirmed Managed Kiosk, locally approved Accessibility Control Assist, and best-effort Android sleep/wake behavior. New players verify every protected Android capability before unattended playback; Studio reports readiness without claiming recovery from hardware, power, network-credential, or system-approval failures. Tilecast does not send direct HDMI-CEC commands, and Standard Reliability cannot guarantee that users cannot leave the app. See [Android reliability and power](docs/reliability-and-power.md).
+Tilecast Player includes hardened first-run commissioning, cached boot recovery, persistent watchdog escalation, safe mode, remote management, and offline playback. Android players add capability-confirmed Managed Kiosk, locally approved Accessibility Control Assist, and best-effort platform sleep/wake behavior. Linux players use a kiosk session and systemd for unattended startup and recovery. Tilecast does not send direct HDMI-CEC commands. See [Android reliability and power](docs/reliability-and-power.md) and the [Linux Player wiki](https://github.com/Gibsonmb71/tilecast/wiki/Linux-Player).
 
 Player `0.10.1` includes a pairing-recovery hotfix for upgraded devices that retain their stable player installation ID but lose access to the Android Keystore credential. Studio can explicitly repair the existing screen without deleting assignments; the previous credential is revoked only after successful replacement enrollment.
 
@@ -112,15 +112,36 @@ cd apps/player-android
 
 The APK is written to `apps/player-android/app/build/outputs/apk/debug/app-debug.apk`. Release builds are unsigned unless a signing configuration is supplied outside the repository. See [Android development](docs/android-development.md), [Fire TV sideloading](docs/fire-tv.md), and [Google TV testing](docs/google-tv.md).
 
+## Linux player
+
+The Linux player packages as an AppImage for x86_64 signage computers. It supports the same core pairing, playback, scheduling, layouts, widgets, offline cache, remote commands, live previews, and emergency takeover model as the Android player.
+
+Build and run it from source with:
+
+```sh
+npm ci
+npm run player:linux
+```
+
+Create local AppImage and Debian packages with:
+
+```sh
+npm run player:linux:dist
+```
+
+For deployment, pairing, systemd autostart, kiosk setup, platform differences, and troubleshooting, see the [Linux Player wiki](https://github.com/Gibsonmb71/tilecast/wiki/Linux-Player).
+
 ## Repository map
 
 ```text
 apps/server/          Go server and embedded dashboard
 apps/dashboard/       React and TypeScript management UI
 apps/player-android/  Native Fire TV, Google TV, and Android TV player
+apps/player-linux/    Electron Linux kiosk player
 packages/             Versioned public schemas and design tokens
 deploy/               Docker, optional Tunnel, and deployment examples
 docs/                 Architecture, API, protocol, and operations documentation
+wiki/                 Source-controlled pages synced to the GitHub Wiki
 ```
 
 ## License
