@@ -813,18 +813,19 @@ export function LayoutEditorPage() {
           p.width = before.width * scaleX;
           p.height = before.height * scaleY;
         } else {
-          p.x = Math.max(
-            0,
-            Math.min(next.canvas.width - p.width, before.x + dx),
-          );
-          p.y = Math.max(
-            0,
-            Math.min(next.canvas.height - p.height, before.y + dy),
-          );
+          // Snap first, then clamp: clamping last guarantees the item stays
+          // inside the canvas. Snapping after the clamp could round an
+          // edge-placed item back out of bounds (fractional widths/heights
+          // make canvas.width - width a non-multiple of 10), which the server
+          // rejects with "bounds must fit inside the canvas" and the save fails.
+          let x = before.x + dx;
+          let y = before.y + dy;
           if (snap) {
-            p.x = Math.round(p.x / 10) * 10;
-            p.y = Math.round(p.y / 10) * 10;
+            x = Math.round(x / 10) * 10;
+            y = Math.round(y / 10) * 10;
           }
+          p.x = Math.max(0, Math.min(next.canvas.width - p.width, x));
+          p.y = Math.max(0, Math.min(next.canvas.height - p.height, y));
         }
       });
       const main = next.placements.find((p) => p.id === item.id);
