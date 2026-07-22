@@ -1,11 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-} from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -90,7 +85,9 @@ function renderLayoutEditor() {
   vi.spyOn(api, "saveLayoutDraft").mockResolvedValue({
     draftRevision: 2,
   } as never);
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={["/layouts/layout-1"]}>
@@ -163,12 +160,12 @@ describe("Layout editor drag: snap-then-clamp", () => {
 
     // Explicitly assert the invariant the fix restores: the item's right and
     // bottom edges never exceed the canvas.
-    expect(parseFloat(style.left) + parseFloat(style.width)).toBeLessThanOrEqual(
-      100.000001,
-    );
-    expect(parseFloat(style.top) + parseFloat(style.height)).toBeLessThanOrEqual(
-      100.000001,
-    );
+    expect(
+      parseFloat(style.left) + parseFloat(style.width),
+    ).toBeLessThanOrEqual(100.000001);
+    expect(
+      parseFloat(style.top) + parseFloat(style.height),
+    ).toBeLessThanOrEqual(100.000001);
   });
 
   it("still snaps to the nearest 10px grid away from the canvas edges", async () => {
