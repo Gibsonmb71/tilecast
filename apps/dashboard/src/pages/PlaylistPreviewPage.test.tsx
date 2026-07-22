@@ -11,6 +11,7 @@ import {
 import { RouterProvider, createMemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 import { api } from "../api/client";
+import type { Asset } from "../api/types";
 import * as authModule from "../auth/AuthProvider";
 import { PlaylistPreviewPage } from "./PlaylistPreviewPage";
 import { PLAYLIST_PREVIEW_FADE_MS } from "./PlaylistPreviewPage";
@@ -188,4 +189,97 @@ it("keeps the outgoing item visible until the incoming crossfade item is ready",
   ).toBeInTheDocument();
   await act(() => vi.advanceTimersByTime(PLAYLIST_PREVIEW_FADE_MS));
   expect(screen.getAllByRole("presentation")).toHaveLength(1);
+});
+
+it("loads the saved configuration and renders a native Clock Widget", async () => {
+  vi.spyOn(authModule, "useAuth").mockReturnValue({
+    status: {
+      authenticated: true,
+      setupRequired: false,
+      user: { id: "u1", name: "Owner", username: "owner", role: "owner" },
+      csrfToken: "token",
+    },
+    isLoading: false,
+  } as ReturnType<typeof authModule.useAuth>);
+  vi.spyOn(api, "playlist").mockResolvedValue({
+    id: "p1",
+    name: "Widget loop",
+    description: "",
+    revision: 1,
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+    itemCount: 1,
+    warnings: [],
+    layoutUsage: [],
+    items: [
+      {
+        id: "clock-item",
+        assetId: "clock-asset",
+        position: 0,
+        durationMs: 30_000,
+        fitMode: "contain",
+        transition: "none",
+        audioEnabled: false,
+        volume: 0,
+        deliveryPolicy: "stream",
+        assetName: "Lobby clock",
+        assetType: "widget",
+        widgetProvider: "clock",
+        assetStatus: "ready",
+        thumbnailUrl: "",
+      },
+    ],
+  });
+  vi.spyOn(api, "asset").mockResolvedValue({
+    id: "clock-asset",
+    name: "Lobby clock",
+    description: "",
+    type: "widget",
+    originalFilename: "",
+    declaredMimeType: "application/json",
+    detectedMimeType: "application/json",
+    sha256: "",
+    originalSize: 0,
+    metadata: {},
+    processingStatus: "ready",
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+    variants: [],
+    widget: {
+      provider: "clock",
+      configVersion: 1,
+      configuration: {
+        timezone: "UTC",
+        format: "24",
+        showSeconds: true,
+        foregroundColor: "#ffffff",
+        backgroundColor: "#111111",
+      },
+    },
+  } satisfies Asset);
+  const router = createMemoryRouter(
+    [{ path: "/playlists/:id/preview", element: <PlaylistPreviewPage /> }],
+    { initialEntries: ["/playlists/p1/preview"] },
+  );
+
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  );
+
+  expect(await screen.findByText("clock")).toBeInTheDocument();
+  expect(api.asset).toHaveBeenCalledWith("clock-asset");
+  expect(
+    document
+      .querySelector<HTMLElement>(".asset-widget-preview")
+      ?.style.getPropertyValue("--asset-widget-background"),
+  ).toBe("#111111");
+  expect(
+    screen.queryByText("This item could not be previewed in Studio."),
+  ).not.toBeInTheDocument();
 });

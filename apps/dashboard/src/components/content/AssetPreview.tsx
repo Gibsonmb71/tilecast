@@ -50,7 +50,7 @@ function WidgetIcon({ provider }: { provider?: string }) {
   return <Globe2 size={22} />;
 }
 
-function WidgetPreview({ asset }: { asset: Asset }) {
+export function WidgetPreview({ asset }: { asset: Asset }) {
   const provider = asset.widget?.provider;
   const config = (asset.widget?.configuration ?? {}) as Record<string, unknown>;
   const style = {

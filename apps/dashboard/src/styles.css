@@ -1315,6 +1315,25 @@ button.organizer-chip:disabled {
 .playlist-preview-page__media--outgoing-active {
   animation: playlist-preview-fade-out 300ms linear forwards;
 }
+.playlist-preview-page__widget {
+  display: grid;
+  place-items: stretch;
+}
+.playlist-preview-page__widget > span:not(.asset-widget-preview) {
+  place-self: center;
+  color: #aab8c5;
+}
+.playlist-preview-page__widget .asset-widget-preview {
+  padding: clamp(24px, 5vw, 72px);
+}
+.playlist-preview-page__widget .asset-widget-preview__topline {
+  font-size: clamp(14px, 2vw, 26px);
+}
+.playlist-preview-page__widget .asset-widget-preview strong {
+  font-size: clamp(42px, 12vw, 180px);
+  line-height: 1;
+  text-align: center;
+}
 @keyframes playlist-preview-fade-in {
   from {
     opacity: 0;

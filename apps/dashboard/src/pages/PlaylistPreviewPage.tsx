@@ -13,6 +13,7 @@ import { Navigate, useLocation, useParams } from "react-router";
 import { api } from "../api/client";
 import type { PlaylistItem } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
+import { WidgetPreview } from "../components/content/AssetPreview";
 
 export function nextPlaylistPreviewItem(
   index: number,
@@ -56,6 +57,16 @@ function PreviewMedia({
   onError: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const nativeWidget =
+    item.assetType === "widget" &&
+    item.widgetProvider !== "website" &&
+    item.widgetProvider !== "youtube";
+  const widgetQuery = useQuery({
+    queryKey: ["assets", item.assetId, "playlist-preview"],
+    queryFn: () => api.asset(item.assetId),
+    enabled: nativeWidget,
+    retry: false,
+  });
 
   useEffect(() => {
     const video = videoRef.current;
@@ -63,6 +74,27 @@ function PreviewMedia({
     if (paused) video.pause();
     else void video.play().catch(() => undefined);
   }, [paused]);
+  useEffect(() => {
+    if (!nativeWidget) return;
+    if (widgetQuery.data) onReady();
+    else if (widgetQuery.isError && active) onError();
+  }, [
+    active,
+    nativeWidget,
+    onError,
+    onReady,
+    widgetQuery.data,
+    widgetQuery.isError,
+  ]);
+  const [, setWidgetTick] = useState(0);
+  useEffect(() => {
+    if (!active || !nativeWidget || item.widgetProvider !== "clock") return;
+    const timer = window.setInterval(
+      () => setWidgetTick((value) => value + 1),
+      1_000,
+    );
+    return () => window.clearInterval(timer);
+  }, [active, item.widgetProvider, nativeWidget]);
 
   if (item.assetType === "video") {
     return (
@@ -92,6 +124,18 @@ function PreviewMedia({
         onEnded={() => active && onDone()}
         onError={() => active && onError()}
       />
+    );
+  }
+
+  if (nativeWidget) {
+    return (
+      <div className={`${className} playlist-preview-page__widget`}>
+        {widgetQuery.data ? (
+          <WidgetPreview asset={widgetQuery.data} />
+        ) : (
+          <span>Loading Widget…</span>
+        )}
+      </div>
     );
   }
 
@@ -291,7 +335,9 @@ export function PlaylistPreviewPage() {
               onReady={() =>
                 setCrossfade((value) =>
                   value?.incomingId === current.id
-                    ? { ...value, ready: true }
+                    ? value.ready
+                      ? value
+                      : { ...value, ready: true }
                     : value,
                 )
               }
