@@ -4207,16 +4207,97 @@ tbody tr:hover {
 }
 .native-app-preview {
   display: grid;
-  min-height: 210px;
-  place-content: center;
-  justify-items: center;
-  gap: var(--tc-space-3);
-  padding: var(--tc-space-5);
+  width: 100%;
+  min-height: 0;
+  aspect-ratio: 16 / 9;
+  place-items: stretch;
+  overflow: hidden;
   border: 1px solid var(--tc-border-default);
   border-radius: var(--tc-radius-sm);
-  font-size: 42px;
+  background: #000;
+}
+
+.declarative-widget-preview {
+  container-type: inline-size;
+  display: grid;
+  place-items: stretch;
+  overflow: hidden;
+  font-size: clamp(18px, 3.4cqw, 44px);
   font-weight: 650;
   text-align: center;
+}
+.declarative-widget-preview > span {
+  place-self: center;
+  color: #aab8c5;
+}
+.declarative-widget-preview .presentation-preview__surface {
+  width: 100%;
+  height: 100%;
+  justify-content: center;
+  overflow: hidden;
+}
+.declarative-widget-preview .presentation-preview__grid,
+.declarative-widget-preview .presentation-preview__column,
+.declarative-widget-preview .presentation-preview__row {
+  min-width: 0;
+  min-height: 0;
+}
+.declarative-widget-preview .presentation-preview__text--metric,
+.declarative-widget-preview .presentation-preview__surface > span {
+  font-size: clamp(36px, 12cqw, 150px);
+  line-height: 1.05;
+}
+.declarative-widget-preview .presentation-preview__progress {
+  position: relative;
+  width: min(80cqw, 760px);
+  height: clamp(18px, 4cqw, 36px);
+  place-self: center;
+  overflow: hidden;
+  background: #ffffff30;
+  border-radius: 999px;
+}
+.declarative-widget-preview .presentation-preview__progress > span {
+  display: block;
+  height: 100%;
+  background: currentColor;
+}
+.declarative-widget-preview .presentation-preview__progress > strong {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: clamp(12px, 1.8cqw, 18px);
+  color: #05070a;
+}
+.declarative-widget-preview .presentation-preview__chart {
+  display: flex;
+  width: min(86cqw, 900px);
+  height: min(44cqw, 460px);
+  place-self: center;
+  align-items: end;
+  gap: clamp(2px, 0.6cqw, 6px);
+}
+.declarative-widget-preview .presentation-preview__chart i {
+  flex: 1;
+  min-width: 3px;
+  background: currentColor;
+  border-radius: 3px 3px 0 0;
+}
+.declarative-widget-preview .presentation-preview__qr-code {
+  width: min(58cqw, 640px);
+  height: min(58cqw, 640px);
+  max-height: 82%;
+  place-self: center;
+  object-fit: contain;
+}
+.declarative-widget-preview .presentation-preview__asset-image,
+.declarative-widget-preview .presentation-preview__web {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  object-fit: cover;
+  background: #fff;
+  border: 0;
 }
 
 .source-editor__fieldset,

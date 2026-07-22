@@ -670,6 +670,11 @@ export function NativeAppEditor({
     key: "foregroundColor" | "backgroundColor",
     value: string,
   ) => setConfiguration((current) => ({ ...current, [key]: value }));
+  const previewImageAssetId =
+    "imageAssetId" in configuration &&
+    typeof configuration.imageAssetId === "string"
+      ? configuration.imageAssetId
+      : "";
   return (
     <div className="details-backdrop" role={page ? undefined : "presentation"}>
       <section
@@ -2507,19 +2512,16 @@ export function NativeAppEditor({
               />
             </label>
           </div>
-          <div
-            className="native-app-preview"
-            style={{
-              color: configuration.foregroundColor,
-              backgroundColor: configuration.backgroundColor,
-              fontSize: `${configuration.textScale ?? 100}%`,
-              padding: `${configuration.contentPadding ?? 10}%`,
-            }}
-          >
+          <div className="native-app-preview declarative-widget-preview">
             {compiledPreview.data ? (
               <DeclarativePresentationPreview
                 presentation={compiledPreview.data}
                 source={sourcePreview.data}
+                assetImageUrl={
+                  previewImageAssetId
+                    ? api.assetPreviewUrl(previewImageAssetId)
+                    : undefined
+                }
               />
             ) : compiledPreview.isLoading || sourcePreview.isLoading ? (
               "Compiling presentation preview…"
@@ -2548,7 +2550,7 @@ export function NativeAppEditor({
 export function DeclarativePresentationPreview({
   presentation,
   source,
-  now = new Date(),
+  now,
   assetImageUrl,
   onWebReady,
 }: {
@@ -2558,6 +2560,12 @@ export function DeclarativePresentationPreview({
   assetImageUrl?: string;
   onWebReady?: () => void;
 }) {
+  const [liveNow, setLiveNow] = useState(() => now ?? new Date());
+  useEffect(() => {
+    if (now || presentation.kind !== "native") return;
+    const timer = window.setInterval(() => setLiveNow(new Date()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [now, presentation.kind]);
   if (presentation.kind === "web") {
     const url = presentation.web?.url;
     if (!url) return "Web presentation URL is unavailable.";
@@ -2581,7 +2589,7 @@ export function DeclarativePresentationPreview({
     <PreviewNode
       node={root}
       records={records}
-      now={now}
+      now={now ?? liveNow}
       assetImageUrl={assetImageUrl}
     />
   ) : (
@@ -2716,6 +2724,9 @@ function PreviewNode({
     return (
       <span
         className={`presentation-preview__${node.type}${typeof props.role === "string" ? ` presentation-preview__${node.type}--${props.role}` : ""}`}
+        style={{
+          color: typeof props.color === "string" ? props.color : undefined,
+        }}
       >
         {resolve()}
       </span>

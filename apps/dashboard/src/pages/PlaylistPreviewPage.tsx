@@ -128,16 +128,6 @@ function PreviewMedia({
     widgetQuery.data,
     widgetQuery.isError,
   ]);
-  const [, setWidgetTick] = useState(0);
-  useEffect(() => {
-    if (!active || !widgetItem) return;
-    const timer = window.setInterval(
-      () => setWidgetTick((value) => value + 1),
-      1_000,
-    );
-    return () => window.clearInterval(timer);
-  }, [active, widgetItem]);
-
   if (item.assetType === "video") {
     return (
       <video
@@ -171,12 +161,13 @@ function PreviewMedia({
 
   if (widgetItem) {
     return (
-      <div className={`${className} playlist-preview-page__widget`}>
+      <div
+        className={`${className} playlist-preview-page__widget declarative-widget-preview`}
+      >
         {presentationQuery.data ? (
           <DeclarativePresentationPreview
             presentation={presentationQuery.data}
             source={sourceQuery.data}
-            now={new Date()}
             assetImageUrl={
               imageAssetId ? api.assetPreviewUrl(imageAssetId) : undefined
             }
