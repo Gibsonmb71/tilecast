@@ -1,11 +1,40 @@
 package media
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"image"
+	"image/color"
+	"image/jpeg"
 	"strings"
 	"testing"
 )
+
+func TestValidateWidgetPreviewRequiresBounded960By540JPEG(t *testing.T) {
+	valid := image.NewRGBA(image.Rect(0, 0, 960, 540))
+	valid.Set(0, 0, color.White)
+	var encoded bytes.Buffer
+	if err := jpeg.Encode(&encoded, valid, &jpeg.Options{Quality: 70}); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateWidgetPreview(encoded.Bytes()); err != nil {
+		t.Fatalf("valid preview rejected: %v", err)
+	}
+	for _, invalid := range [][]byte{nil, []byte("not jpeg")} {
+		if err := validateWidgetPreview(invalid); err == nil {
+			t.Fatal("invalid preview accepted")
+		}
+	}
+	wrongSize := image.NewRGBA(image.Rect(0, 0, 320, 180))
+	encoded.Reset()
+	if err := jpeg.Encode(&encoded, wrongSize, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateWidgetPreview(encoded.Bytes()); err == nil {
+		t.Fatal("wrong-size preview accepted")
+	}
+}
 
 func TestYouTubeSourceNormalizesVideoAndPlaylistURLs(t *testing.T) {
 	provider := youtubeWidgetProvider{service: &Service{}}

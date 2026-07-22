@@ -1,5 +1,5 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState, type ReactNode } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRef, useState, type ReactNode } from "react";
 import { api, ApiError } from "../api/client";
 import type {
   Asset,
@@ -8,6 +8,8 @@ import type {
   WidgetDefinition,
 } from "../api/types";
 import { DefinitionForm } from "./DefinitionForm";
+import { DeclarativePresentationPreview } from "./SourceEditors";
+import { captureWidgetPreview } from "./widgetPreviewCapture";
 
 export function GenericWidgetEditor({
   definition,
@@ -25,6 +27,7 @@ export function GenericWidgetEditor({
   onSaved: (asset: Asset) => void;
 }) {
   const queryClient = useQueryClient();
+  const previewRef = useRef<HTMLDivElement>(null);
   const [name, setName] = useState(asset?.name ?? definition.name);
   const [description, setDescription] = useState(
     asset?.description ?? definition.description,
@@ -32,17 +35,45 @@ export function GenericWidgetEditor({
   const [configuration, setConfiguration] = useState<Record<string, unknown>>(
     asset?.widget?.configuration ?? definition.defaultConfiguration,
   );
+  const compiledPreview = useQuery({
+    queryKey: ["compiled-widget-preview", definition.id, configuration],
+    queryFn: () => api.compileWidgetPreview(definition.id, configuration, csrf),
+    retry: false,
+  });
+  const dataSourceId =
+    typeof configuration.dataSourceId === "string"
+      ? configuration.dataSourceId
+      : "";
+  const sourcePreview = useQuery({
+    queryKey: ["widget-data-source-preview", dataSourceId],
+    queryFn: () => api.previewSavedDataSource(dataSourceId),
+    enabled: Boolean(dataSourceId),
+    retry: false,
+  });
   const save = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
+      if (
+        !previewRef.current ||
+        !compiledPreview.data ||
+        (dataSourceId && sourcePreview.isLoading)
+      )
+        throw new Error("Wait for the Widget preview before saving.");
+      const previewImage = await captureWidgetPreview(previewRef.current);
       const input = {
         provider: definition.id,
         name,
         description,
         configuration,
       };
-      return asset
+      const saved = asset
         ? api.updateWidget(asset.id, input, csrf)
         : api.createWidget(input, csrf);
+      const result = await saved;
+      await api.uploadWidgetPreview(result.id, previewImage, csrf);
+      return {
+        ...result,
+        thumbnailUrl: `/api/v1/assets/${encodeURIComponent(result.id)}/thumbnail`,
+      };
     },
     onSuccess: (saved) => {
       void queryClient.invalidateQueries({ queryKey: ["assets"] });
@@ -59,6 +90,10 @@ export function GenericWidgetEditor({
       setDetail={setDescription}
       readOnly={readOnly}
       pending={save.isPending}
+      saveDisabled={
+        !compiledPreview.data ||
+        Boolean(dataSourceId && sourcePreview.isLoading)
+      }
       error={save.error}
       onClose={onClose}
       onSave={() => save.mutate()}
@@ -70,6 +105,25 @@ export function GenericWidgetEditor({
         onChange={setConfiguration}
         readOnly={readOnly}
       />
+      <div
+        ref={previewRef}
+        className="native-app-preview declarative-widget-preview"
+      >
+        {compiledPreview.data ? (
+          <DeclarativePresentationPreview
+            presentation={compiledPreview.data}
+            source={sourcePreview.data}
+            assetImageUrl={
+              typeof configuration.imageAssetId === "string" &&
+              configuration.imageAssetId
+                ? api.assetPreviewUrl(configuration.imageAssetId)
+                : undefined
+            }
+          />
+        ) : (
+          <span>Compiling presentation preview…</span>
+        )}
+      </div>
     </GenericEditorShell>
   );
 }
@@ -124,6 +178,7 @@ export function GenericDataSourceEditor({
       setDetail={setDescription}
       readOnly={readOnly}
       pending={save.isPending}
+      saveDisabled={false}
       error={save.error}
       onClose={onClose}
       onSave={() => save.mutate()}
@@ -148,6 +203,7 @@ function GenericEditorShell({
   setDetail,
   readOnly,
   pending,
+  saveDisabled,
   error,
   onClose,
   onSave,
@@ -162,6 +218,7 @@ function GenericEditorShell({
   setDetail: (value: string) => void;
   readOnly: boolean;
   pending: boolean;
+  saveDisabled: boolean;
   error: Error | null;
   onClose: () => void;
   onSave: () => void;
@@ -213,7 +270,7 @@ function GenericEditorShell({
           {!readOnly && (
             <button
               className="button button--primary"
-              disabled={pending || !name.trim()}
+              disabled={pending || saveDisabled || !name.trim()}
               onClick={onSave}
             >
               {pending ? "Saving…" : saveLabel}

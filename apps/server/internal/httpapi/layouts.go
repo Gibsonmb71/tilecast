@@ -1,7 +1,11 @@
 package httpapi
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -77,6 +81,48 @@ func (s *server) updateLayout(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("ETag", layoutETag(result.DraftRevision))
 	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+}
+
+func (s *server) updateLayoutPreviewImage(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	expectedRevision, err := strconv.ParseInt(r.URL.Query().Get("draftRevision"), 10, 64)
+	if err != nil || expectedRevision < 1 {
+		writeError(w, http.StatusBadRequest, "invalid_request", "A valid Layout draft revision is required.")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, layouts.MaxPreviewImageBytes+1)
+	data, err := io.ReadAll(r.Body)
+	if err != nil || len(data) > layouts.MaxPreviewImageBytes {
+		writeError(w, http.StatusRequestEntityTooLarge, "preview_too_large", "The Layout preview image exceeded 500 KB.")
+		return
+	}
+	user := r.Context().Value(sessionContextKey).(auth.Session).User
+	if err = s.layouts.StorePreviewImage(r.Context(), id, user.ID, expectedRevision, data); err != nil {
+		s.writeLayoutError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *server) getLayoutPreviewImage(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	image, err := s.layouts.PreviewImage(r.Context(), id)
+	if err != nil {
+		s.writeLayoutError(w, r, err)
+		return
+	}
+	hash := sha256.Sum256(image.Data)
+	w.Header().Set("Content-Type", image.ContentType)
+	w.Header().Set("Content-Disposition", "inline")
+	w.Header().Set("Cache-Control", "private, max-age=0, must-revalidate")
+	w.Header().Set("ETag", fmt.Sprintf(`"sha256-%x"`, hash))
+	http.ServeContent(w, r, "", image.UpdatedAt, bytes.NewReader(image.Data))
 }
 func (s *server) saveLayoutDraft(w http.ResponseWriter, r *http.Request) {
 	id, ok := urlUUID(w, r, "id")

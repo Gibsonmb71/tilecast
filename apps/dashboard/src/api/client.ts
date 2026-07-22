@@ -333,6 +333,28 @@ export const api = {
       headers: { "X-CSRF-Token": csrfToken },
       body: JSON.stringify({ provider, configuration }),
     }),
+  uploadWidgetPreview: async (id: string, image: Blob, csrfToken: string) => {
+    const response = await fetch(
+      `/api/v1/widgets/${encodeURIComponent(id)}/preview-image`,
+      {
+        method: "PUT",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "image/jpeg",
+          "X-CSRF-Token": csrfToken,
+        },
+        body: image,
+      },
+    );
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({}))) as ErrorResponse;
+      throw new ApiError(
+        body.error?.message ?? "The Widget preview image could not be saved.",
+        response.status,
+        body.error?.code ?? "unknown_error",
+      );
+    }
+  },
   layouts: async (search = "") => {
     const result = await request<LayoutList | null>(
       `/layouts?${new URLSearchParams({ search, page: "1", pageSize: "100" })}`,
@@ -340,6 +362,33 @@ export const api = {
     return normalizeLayoutList(result);
   },
   layout: (id: string) => requestLayout(`/layouts/${id}`),
+  uploadLayoutPreview: async (
+    id: string,
+    draftRevision: number,
+    image: Blob,
+    csrfToken: string,
+  ) => {
+    const response = await fetch(
+      `/api/v1/layouts/${encodeURIComponent(id)}/preview-image?${new URLSearchParams({ draftRevision: String(draftRevision) })}`,
+      {
+        method: "PUT",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "image/jpeg",
+          "X-CSRF-Token": csrfToken,
+        },
+        body: image,
+      },
+    );
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({}))) as ErrorResponse;
+      throw new ApiError(
+        body.error?.message ?? "The Layout preview image could not be saved.",
+        response.status,
+        body.error?.code ?? "unknown_error",
+      );
+    }
+  },
   createLayout: (
     input: {
       name: string;

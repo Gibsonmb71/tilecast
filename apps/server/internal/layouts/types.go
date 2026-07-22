@@ -28,6 +28,7 @@ type Layout struct {
 	PublishedAt         *time.Time   `json:"publishedAt,omitempty"`
 	CreatedAt           time.Time    `json:"createdAt"`
 	UpdatedAt           time.Time    `json:"updatedAt"`
+	PreviewImageURL     string       `json:"previewImageUrl,omitempty"`
 	Dependencies        []Dependency `json:"dependencies"`
 	Usage               Usage        `json:"usage"`
 }
@@ -53,6 +54,15 @@ type Summary struct {
 	PublishedAt       *time.Time `json:"publishedAt,omitempty"`
 	CreatedAt         time.Time  `json:"createdAt"`
 	UpdatedAt         time.Time  `json:"updatedAt"`
+	PreviewImageURL   string     `json:"previewImageUrl,omitempty"`
+}
+
+type PreviewImage struct {
+	Data        []byte
+	ContentType string
+	Width       int
+	Height      int
+	UpdatedAt   time.Time
 }
 
 type ListResult struct {

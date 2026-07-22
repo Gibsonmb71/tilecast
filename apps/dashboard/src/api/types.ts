@@ -198,6 +198,7 @@ export type Layout = {
   publishedAt?: string;
   createdAt: string;
   updatedAt: string;
+  previewImageUrl?: string;
   dependencies: LayoutDependency[];
   usage: {
     screens: { id: string; name: string }[];
@@ -1590,6 +1591,8 @@ export type CountdownWidgetConfig = {
   target: string;
   timezone: string;
   mode: "countdown" | "count_up";
+  recurrence: "none" | "daily" | "weekly" | "monthly" | "yearly";
+  layout: "stacked" | "horizontal" | "countdown_only";
   label?: string;
   completionText?: string;
   completionAction: "completed_text" | "hide" | "count_up";

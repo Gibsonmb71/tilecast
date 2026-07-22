@@ -17,6 +17,7 @@ import {
   LockOpen,
   ListVideo,
   Minus,
+  Pencil,
   Redo2,
   RectangleHorizontal,
   Save,
@@ -62,6 +63,7 @@ import type {
 } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { layoutFontStack } from "../layoutFonts";
+import { captureLayoutPreview } from "../content/widgetPreviewCapture";
 
 type SaveState = "saved" | "unsaved" | "saving" | "conflict" | "error";
 type LayoutLibrarySection = "widgets" | "media" | "playlists";
@@ -271,6 +273,7 @@ export function LayoutEditorPage() {
   const savingRef = useRef(false);
   const changeVersionRef = useRef(0);
   const savedChangeVersionRef = useRef(0);
+  const initialPreviewAttemptedRef = useRef(false);
   useEffect(() => {
     if (!layoutQuery.data || initialized.current) return;
     initialized.current = true;
@@ -286,6 +289,46 @@ export function LayoutEditorPage() {
   useEffect(() => {
     revisionRef.current = serverRevision;
   }, [serverRevision]);
+  useEffect(() => {
+    if (
+      initialPreviewAttemptedRef.current ||
+      layoutQuery.data?.previewImageUrl ||
+      !document ||
+      contentQuery.isLoading
+    )
+      return;
+    initialPreviewAttemptedRef.current = true;
+    const timer = window.setTimeout(() => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      void captureLayoutPreview(
+        canvas,
+        document.canvas.width,
+        document.canvas.height,
+      )
+        .then((image) =>
+          api.uploadLayoutPreview(
+            id,
+            layoutQuery.data!.draftRevision,
+            image,
+            csrf,
+          ),
+        )
+        .then(() => {
+          void queryClient.invalidateQueries({ queryKey: ["layout", id] });
+          void queryClient.invalidateQueries({ queryKey: ["layouts"] });
+        })
+        .catch(() => undefined);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [
+    contentQuery.isLoading,
+    csrf,
+    document,
+    id,
+    layoutQuery.data,
+    queryClient,
+  ]);
   const markUnsaved = useCallback(() => {
     changeVersionRef.current += 1;
     setSaveState("unsaved");
@@ -365,6 +408,25 @@ export function LayoutEditorPage() {
           void queryClient.invalidateQueries({ queryKey: ["layouts"] });
         },
       );
+      const previewVersion = changeVersionRef.current;
+      if (!canvasRef.current || !documentRef.current)
+        throw new Error("The Layout preview is not ready yet.");
+      const previewImage = await captureLayoutPreview(
+        canvasRef.current,
+        documentRef.current.canvas.width,
+        documentRef.current.canvas.height,
+      );
+      if (previewVersion !== changeVersionRef.current) {
+        setSaveState("unsaved");
+        return;
+      }
+      await api.uploadLayoutPreview(
+        id,
+        revisionRef.current,
+        previewImage,
+        csrf,
+      );
+      void queryClient.invalidateQueries({ queryKey: ["layouts"] });
       setSaveState("saved");
     } catch (error) {
       setSaveState(
@@ -395,6 +457,18 @@ export function LayoutEditorPage() {
   }, [preview, document]);
   const publish = useMutation({
     mutationFn: () => api.publishLayout(id, serverRevision, csrf),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["layout", id] });
+      void queryClient.invalidateQueries({ queryKey: ["layouts"] });
+    },
+  });
+  const rename = useMutation({
+    mutationFn: (name: string) =>
+      api.updateLayout(
+        id,
+        { name, description: layoutQuery.data?.description ?? "" },
+        csrf,
+      ),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["layout", id] });
       void queryClient.invalidateQueries({ queryKey: ["layouts"] });
@@ -1017,6 +1091,24 @@ export function LayoutEditorPage() {
   return (
     <div className="layout-editor">
       <div className="layout-editor-toolbar">
+        <strong>{layoutQuery.data?.name}</strong>
+        <button
+          className="icon-button"
+          title="Rename Layout"
+          aria-label={`Rename ${layoutQuery.data?.name ?? "Layout"}`}
+          onClick={() => {
+            const next = window.prompt(
+              "Layout name",
+              layoutQuery.data?.name ?? "",
+            );
+            if (next?.trim() && next.trim() !== layoutQuery.data?.name)
+              rename.mutate(next.trim());
+          }}
+          disabled={rename.isPending}
+        >
+          <Pencil size={16} />
+        </button>
+        <span className="toolbar-divider" />
         <button
           className="icon-button"
           title="Undo"
@@ -1388,6 +1480,15 @@ export function LayoutEditorPage() {
               backgroundColor: document.canvas.backgroundColor,
             }}
           >
+            {document.canvas.backgroundAssetId &&
+              contentByID.get(document.canvas.backgroundAssetId)?.type ===
+                "image" && (
+                <img
+                  className="layout-preview-background"
+                  src={api.assetPreviewUrl(document.canvas.backgroundAssetId)}
+                  alt=""
+                />
+              )}
             {safeArea && (
               <div
                 className="layout-safe-area"
@@ -1424,6 +1525,7 @@ export function LayoutEditorPage() {
                       ? playlistByID.get(item.playlistId)
                       : undefined
                   }
+                  assetsById={contentByID}
                   canvas={document.canvas}
                   selected={selection.has(item.id)}
                   onPointerDown={(event) => beginMove(event, item)}
@@ -1616,6 +1718,16 @@ function PlacementView({
             assetsById={assetsById ?? new Map()}
             live={live ?? {}}
             scale={previewScale}
+          />
+        ) : playlist?.items?.[0]?.thumbnailUrl ? (
+          <img
+            className="layout-asset-placement"
+            src={playlist.items[0].thumbnailUrl}
+            alt=""
+            style={assetPreviewStyle(
+              item.playback?.fit,
+              item.playback?.cornerRadius,
+            )}
           />
         ) : (
           <div className="layout-playlist-zone">
@@ -1914,6 +2026,18 @@ function AppPlacementPreview({
   asset?: Asset;
   item: LayoutPlacement;
 }) {
+  if (asset?.thumbnailUrl)
+    return (
+      <img
+        className="layout-asset-placement"
+        src={asset.thumbnailUrl}
+        alt=""
+        style={assetPreviewStyle(
+          item.playback?.fit,
+          item.playback?.cornerRadius,
+        )}
+      />
+    );
   const provider = asset?.widget?.provider;
   const config = (asset?.widget?.configuration ?? {}) as Record<
     string,

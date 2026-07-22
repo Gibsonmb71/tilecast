@@ -63,11 +63,27 @@ func TestLayoutDraftPublishAndRestoreLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err = service.StorePreviewImage(ctx, layout.ID, owner.User.ID, layout.DraftRevision, jpegPreview(t, 960, 540)); err != nil {
+		t.Fatal(err)
+	}
+	listed, err := service.List(ctx, "Lobby", 1, 10)
+	if err != nil || len(listed.Items) != 1 || listed.Items[0].PreviewImageURL == "" {
+		t.Fatalf("listed Layout preview: %#v err=%v", listed, err)
+	}
+	if preview, previewErr := service.PreviewImage(ctx, layout.ID); previewErr != nil || preview.Width != 960 || preview.Height != 540 {
+		t.Fatalf("stored Layout preview: %#v err=%v", preview, previewErr)
+	}
 	document := validTestDocument()
 	document.Placements = append(document.Placements, Placement{ID: uuid.New(), Type: "asset", Name: "Logo", X: 1200, Y: 40, Width: 400, Height: 200, Layer: 2, Opacity: 1, Visible: true, AssetID: &assetID})
 	layout, err = service.SaveDraft(ctx, layout.ID, owner.User.ID, layout.DraftRevision, document)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if err = service.StorePreviewImage(ctx, layout.ID, owner.User.ID, layout.DraftRevision-1, jpegPreview(t, 960, 540)); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale Layout preview revision was accepted: %v", err)
+	}
+	if _, err = service.PreviewImage(ctx, layout.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("draft change did not clear the stale Layout preview: %v", err)
 	}
 	if _, err = service.SaveDraft(ctx, layout.ID, owner.User.ID, 1, document); !errors.Is(err, ErrConflict) {
 		t.Fatalf("expected conflict, got %v", err)

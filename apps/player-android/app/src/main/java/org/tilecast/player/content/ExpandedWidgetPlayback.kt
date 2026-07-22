@@ -35,7 +35,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.text.NumberFormat
-import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -62,29 +61,19 @@ internal fun ExpandedCountdownWidget(config: CountdownWidgetConfig) {
             delay(if (config.showSeconds) 1_000 else 15_000)
         }
     }
-    val zone = runCatching { ZoneId.of(config.timezone) }.getOrDefault(ZoneId.of("UTC"))
-    val target = runCatching {
-        if (config.target.endsWith("Z") || config.target.contains("+")) Instant.parse(config.target)
-        else LocalDateTime.parse(config.target).atZone(zone).toInstant()
-    }.getOrDefault(now)
-    val complete = config.mode == "countdown" && !now.isBefore(target)
-    if (complete && config.completionAction == "hide") return
-    val duration = if (config.mode == "count_up" || (complete && config.completionAction == "count_up")) Duration.between(target, now).abs() else Duration.between(now, target).abs()
-    val parts = buildList {
-        var seconds = duration.seconds
-        val days = seconds / 86400; seconds %= 86400
-        val hours = seconds / 3600; seconds %= 3600
-        val minutes = seconds / 60; seconds %= 60
-        if (config.showDays) add("${days}d")
-        if (config.showHours) add("${hours}h")
-        if (config.showMinutes) add("${minutes}m")
-        if (config.showSeconds) add("${seconds}s")
-    }
-    val text = if (complete && config.completionAction == "completed_text") config.completionText.ifBlank { "Complete" } else parts.joinToString(" ")
+    val units = listOf(config.showDays, config.showHours, config.showMinutes, config.showSeconds).joinToString("") { if (it) "1" else "0" }
+    val text = formatCountdown(config.target, config.timezone, config.mode, config.recurrence, config.completionAction, config.completionText, units, now) ?: return
     Box(Modifier.fillMaxSize().background(parseExpandedColor(config.backgroundColor)).padding((config.contentPadding ?: 10).dp), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        val label: @Composable () -> Unit = {
             if (config.label.isNotBlank()) Text(config.label, color = parseExpandedColor(config.foregroundColor).copy(alpha=.75f), fontSize = (22f*widgetAuthorScale(config.textScale)).sp)
+        }
+        val metric: @Composable () -> Unit = {
             Text(text, color = parseExpandedColor(config.foregroundColor), fontSize = (56f*widgetAuthorScale(config.textScale)).sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+        }
+        when (config.layout) {
+            "countdown_only" -> metric()
+            "horizontal" -> Row(horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) { label(); metric() }
+            else -> Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) { label(); metric() }
         }
     }
 }

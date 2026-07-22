@@ -6,13 +6,12 @@ import {
   Select,
 } from "../components/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, LayoutTemplate, Plus, Trash2 } from "lucide-react";
+import { Copy, LayoutTemplate, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { api } from "../api/client";
-import type { LayoutOrientation } from "../api/types";
+import type { LayoutOrientation, LayoutSummary } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
-import { LayoutThumbnail } from "../components/LayoutThumbnail";
 import {
   DashboardListToolbar,
   DashboardSearch,
@@ -145,6 +144,23 @@ export function LayoutsPage() {
           : "The Layout could not be duplicated.",
       ),
   });
+  const rename = useMutation({
+    mutationFn: ({ layout, name }: { layout: LayoutSummary; name: string }) =>
+      api.updateLayout(
+        layout.id,
+        { name, description: layout.description },
+        csrf,
+      ),
+    onMutate: () => setActionError(""),
+    onSuccess: () =>
+      void queryClient.invalidateQueries({ queryKey: ["layouts"] }),
+    onError: (error) =>
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "The Layout could not be renamed.",
+      ),
+  });
   const remove = useMutation({
     mutationFn: (id: string) => api.deleteLayout(id, csrf),
     onMutate: () => setActionError(""),
@@ -203,7 +219,7 @@ export function LayoutsPage() {
                 }}
                 aria-label={`Edit ${layout.name}`}
               >
-                <LayoutThumbnail layoutId={layout.id} name={layout.name} />
+                <FrozenLayoutPreview layout={layout} />
                 <span className="layout-library-item__dimensions">
                   {layout.canvasWidth} × {layout.canvasHeight}
                 </span>
@@ -218,6 +234,19 @@ export function LayoutsPage() {
                 </span>
               </div>
               <div className="layout-library-item__actions">
+                <button
+                  className="icon-button"
+                  title="Rename"
+                  aria-label={`Rename ${layout.name}`}
+                  onClick={() => {
+                    const next = window.prompt("Layout name", layout.name);
+                    if (next?.trim() && next.trim() !== layout.name)
+                      rename.mutate({ layout, name: next.trim() });
+                  }}
+                  disabled={rename.isPending}
+                >
+                  <Pencil size={16} />
+                </button>
                 <button
                   className="icon-button"
                   title="Duplicate"
@@ -335,6 +364,28 @@ export function LayoutsPage() {
         </div>
       )}
     </section>
+  );
+}
+
+function FrozenLayoutPreview({ layout }: { layout: LayoutSummary }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [layout.previewImageUrl]);
+  if (!layout.previewImageUrl || failed)
+    return (
+      <span
+        className="layout-thumbnail layout-thumbnail--loading"
+        aria-hidden="true"
+      >
+        <span>Preview unavailable</span>
+      </span>
+    );
+  return (
+    <img
+      className="layout-thumbnail"
+      src={layout.previewImageUrl}
+      alt={`Preview of ${layout.name}`}
+      onError={() => setFailed(true)}
+    />
   );
 }
 

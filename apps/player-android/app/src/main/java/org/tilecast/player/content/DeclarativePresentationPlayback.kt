@@ -60,6 +60,8 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
+import java.net.URLDecoder
+import java.nio.charset.StandardCharsets
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import kotlinx.coroutines.delay
@@ -121,12 +123,13 @@ private fun PresentationNodeView(node: PresentationNode, context: PresentationCo
         ) { node.children.forEach { PresentationNodeView(it, context) } }
         "row" -> Row(
             Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(node.int("gap", 12).dp),
+            horizontalArrangement = if (node.string("justify", "") == "center") Arrangement.spacedBy(node.int("gap", 12).dp, Alignment.CenterHorizontally) else Arrangement.spacedBy(node.int("gap", 12).dp),
             verticalAlignment = Alignment.CenterVertically,
         ) { node.children.forEach { PresentationNodeView(it, context) } }
         "column", "grouped_sections" -> Column(
-            Modifier.fillMaxSize(),
+            if (node.bool("fill", true)) Modifier.fillMaxSize() else Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(node.int("gap", 10).dp),
+            horizontalAlignment = if (node.string("align", "") == "center") Alignment.CenterHorizontally else Alignment.Start,
         ) { node.children.forEach { PresentationNodeView(it, context) } }
         "grid" -> {
             val repeated = node.children.firstOrNull { it.type == "repeat" }
@@ -251,6 +254,19 @@ private fun formatEnvironment(binding: PresentationBinding, now: Instant): Strin
             now.atZone(zone).format(DateTimeFormatter.ofLocalizedDate(style))
         }
         "countdown" -> {
+            if (parts.getOrNull(1) == "v2") {
+                fun decode(index: Int) = URLDecoder.decode(parts.getOrNull(index).orEmpty(), StandardCharsets.UTF_8.name())
+                return formatCountdown(
+                    target = decode(2),
+                    timezone = decode(3).ifBlank { "UTC" },
+                    mode = parts.getOrNull(4) ?: "countdown",
+                    recurrence = parts.getOrNull(5) ?: "none",
+                    completionAction = parts.getOrNull(6) ?: "completed_text",
+                    visibleUnits = parts.getOrNull(7) ?: "1111",
+                    completionText = decode(8).ifBlank { "Complete" },
+                    now = now,
+                ).orEmpty()
+            }
             val zone = runCatching { ZoneId.of(parts.getOrNull(2) ?: "UTC") }.getOrDefault(ZoneId.of("UTC"))
             val target = runCatching {
                 val value = parts.getOrNull(1).orEmpty()
