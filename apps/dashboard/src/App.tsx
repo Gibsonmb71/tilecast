@@ -22,6 +22,13 @@ import { LayoutEditorPage } from "./pages/LayoutEditorPage";
 import { WidgetEditorPage, WidgetsPage } from "./pages/WidgetsPage";
 import { DataSourceEditorPage, DataSourcesPage } from "./pages/DataSourcesPage";
 import { ActivityPage } from "./pages/ActivityPage";
+import { ApprovalsPage } from "./pages/ApprovalsPage";
+import {
+  FormsListPage,
+  FormsPortalShell,
+  FormPortalDetailPage,
+  FormPortalSubmissionPage,
+} from "./pages/FormsPortalPage";
 
 const search = (
   label: string,
@@ -234,6 +241,19 @@ export const studioRoutes: RouteObject[] = [
       },
       { path: "users", element: <Navigate to="/settings/users" replace /> },
       {
+        path: "approvals",
+        element: <ApprovalsPage />,
+        handle: {
+          breadcrumb: "Approvals",
+          search: search(
+            "Approvals",
+            "Review submissions awaiting a decision across your forms",
+            "/approvals",
+            ["forms", "review", "submissions", "inbox"],
+          ),
+        },
+      },
+      {
         path: "activity",
         element: <ActivityPage />,
         handle: {
@@ -296,6 +316,21 @@ export const studioRoutes: RouteObject[] = [
             element: <Navigate to="/settings/general" replace />,
           },
         ],
+      },
+    ],
+  },
+  {
+    // The Forms portal is an authenticated area outside the full operator sidebar, reachable from
+    // the account menu. It does not introduce a new role or account mode.
+    path: "/forms",
+    element: <FormsPortalShell />,
+    children: [
+      { index: true, element: <FormsListPage /> },
+      { path: ":id", element: <FormPortalDetailPage /> },
+      { path: ":id/new", element: <FormPortalSubmissionPage /> },
+      {
+        path: ":id/submissions/:recordId",
+        element: <FormPortalSubmissionPage />,
       },
     ],
   },

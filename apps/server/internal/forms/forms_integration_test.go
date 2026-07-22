@@ -80,6 +80,24 @@ func setupForms(t *testing.T) formTestEnv {
 	return formTestEnv{ctx: ctx, pool: pool, service: service, invalidator: invalidator, owner: owner.User.ID}
 }
 
+// versionOf returns a record's current stored version (0 if it does not exist), for tests that
+// drive the version-checked attachment endpoints without threading the version by hand.
+func (e formTestEnv) versionOf(recordID uuid.UUID) int {
+	var version int
+	_ = e.pool.QueryRow(e.ctx, `SELECT version FROM form_records WHERE id=$1`, recordID).Scan(&version)
+	return version
+}
+
+// attach uploads an attachment using the record's current version (optimistic concurrency).
+func (e formTestEnv) attach(formID, recordID, actor uuid.UUID, upload AttachmentUpload) (RecordDetail, error) {
+	return e.service.CreateAttachment(e.ctx, formID, recordID, actor, upload, e.versionOf(recordID))
+}
+
+// removeAttachment removes an attachment using the record's current version.
+func (e formTestEnv) removeAttachment(formID, recordID, attachmentID, actor uuid.UUID) (RecordDetail, error) {
+	return e.service.RemoveAttachment(e.ctx, formID, recordID, attachmentID, actor, e.versionOf(recordID))
+}
+
 // insertUser creates an additional user with a role for grant/authorization tests.
 func (e formTestEnv) insertUser(t *testing.T, name, username, role string) uuid.UUID {
 	t.Helper()
@@ -287,14 +305,19 @@ func TestWorkflowTransitionsAndValidation(t *testing.T) {
 		t.Fatalf("expected validation error for illegal transition, got %v", err)
 	}
 
-	// Approving a record missing a required field fails when entering the eligible state.
+	// A record missing a required field cannot be submitted at all: required fields are enforced
+	// before any transition requiring the submit capability, not only when entering the eligible
+	// state. The incomplete draft is preserved (still editable) rather than advanced.
 	incomplete, _ := e.service.CreateRecord(e.ctx, form.ID, e.owner, RecordInput{Values: map[string]any{}})
-	incomplete, err = e.service.Transition(e.ctx, form.ID, incomplete.ID, e.owner, "submitted", "", incomplete.Version)
-	if err != nil {
-		t.Fatalf("submit incomplete: %v", err)
+	if _, err := e.service.Transition(e.ctx, form.ID, incomplete.ID, e.owner, "submitted", "", incomplete.Version); !errors.Is(err, ErrValidation) {
+		t.Fatalf("expected required-field validation on submit, got %v", err)
 	}
-	if _, err := e.service.Transition(e.ctx, form.ID, incomplete.ID, e.owner, "approved", "", incomplete.Version); !errors.Is(err, ErrValidation) {
-		t.Fatalf("expected required-field validation on approve, got %v", err)
+	stillDraft, err := e.service.GetRecord(e.ctx, form.ID, incomplete.ID, e.owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stillDraft.State != "draft" {
+		t.Fatalf("incomplete record should remain a draft, got %q", stillDraft.State)
 	}
 }
 
@@ -365,16 +388,16 @@ func TestApprovalsInboxPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(reviewerItems) != 1 {
-		t.Fatalf("reviewer should see 1 pending item, got %d", len(reviewerItems))
+	if len(reviewerItems.Items) != 1 || reviewerItems.Total != 1 {
+		t.Fatalf("reviewer should see 1 pending item, got %d (total %d)", len(reviewerItems.Items), reviewerItems.Total)
 	}
 	outsiderItems, _ := e.service.PendingApprovals(e.ctx, outsider, ApprovalFilter{})
-	if len(outsiderItems) != 0 {
-		t.Fatalf("outsider should see nothing, got %d", len(outsiderItems))
+	if len(outsiderItems.Items) != 0 || outsiderItems.Total != 0 {
+		t.Fatalf("outsider should see nothing, got %d", len(outsiderItems.Items))
 	}
 	ownerItems, _ := e.service.PendingApprovals(e.ctx, e.owner, ApprovalFilter{})
-	if len(ownerItems) != 1 {
-		t.Fatalf("owner should see 1 pending item, got %d", len(ownerItems))
+	if len(ownerItems.Items) != 1 || ownerItems.Total != 1 {
+		t.Fatalf("owner should see 1 pending item, got %d", len(ownerItems.Items))
 	}
 }
 

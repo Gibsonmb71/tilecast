@@ -1,19 +1,35 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useSearchParams } from "react-router";
-import type { DataSourceDetail, FormDataSource } from "../api/types";
+import type {
+  DataSourceDetail,
+  FormDataSource,
+  FormRecordListParams,
+} from "../api/types";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
 import {
   Button,
+  EmptyState,
   Field,
   Input,
   Notice,
   PageHeader,
+  Pagination,
+  Select,
+  Spinner,
+  StatusBadge,
+  TableContainer,
   Textarea,
+  ViewTabs,
 } from "../components/ui";
 import { FormBuilder } from "../forms/FormBuilder";
 import { FormRenderer } from "../forms/FormRenderer";
+import { RecordReview } from "../forms/RecordReview";
+import { canViewResponses } from "../forms/capabilities";
+import { stateLabel, stateTone } from "../forms/formStatus";
+
+type TabValue = "responses" | "form";
 
 export function FormDataSourcePage({
   dataSource,
@@ -23,10 +39,7 @@ export function FormDataSourcePage({
   const { id } = useParams();
   const auth = useAuth();
   const csrf = auth.status?.csrfToken ?? "";
-  const [searchParams] = useSearchParams();
-  // Only the form builder exists in this pass. Future tabs (responses, workflow, views, outputs,
-  // access) will read this; unknown values normalize to the form builder.
-  void searchParams.get("tab");
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const form = useQuery({
     queryKey: ["form-data-source", id],
@@ -47,6 +60,29 @@ export function FormDataSourcePage({
 
   const detail = form.data;
   const canManage = detail.grantedCapabilities.includes("manage");
+  const showResponses = canViewResponses(detail.grantedCapabilities);
+
+  // Tabs are query-string driven. Opening a specific record (?record=) forces the Responses tab.
+  // Absent a tab param the page defaults to the Form tab so /data-sources/:id and ?tab=form stay
+  // compatible with the earlier builder-only behavior.
+  const recordParam = searchParams.get("record");
+  const requestedTab = searchParams.get("tab");
+  const activeTab: TabValue =
+    recordParam || requestedTab === "responses" ? "responses" : "form";
+
+  const setTab = (tab: TabValue) => {
+    const next = new URLSearchParams(searchParams);
+    next.set("tab", tab);
+    if (tab !== "responses") next.delete("record");
+    setSearchParams(next, { replace: true });
+  };
+
+  const tabs = [
+    ...(showResponses
+      ? [{ value: "responses" as const, label: "Responses" }]
+      : []),
+    { value: "form" as const, label: "Form" },
+  ];
 
   return (
     <section className="app-editor-route form-page">
@@ -55,7 +91,30 @@ export function FormDataSourcePage({
         title={dataSource?.name ?? detail.name}
         description={dataSource?.description ?? detail.description}
       />
-      {canManage ? (
+
+      {showResponses && (
+        <ViewTabs<TabValue>
+          label="Form sections"
+          value={activeTab}
+          items={tabs}
+          onValueChange={setTab}
+        />
+      )}
+
+      {activeTab === "responses" && showResponses ? (
+        <ResponsesTab
+          form={detail}
+          csrf={csrf}
+          selectedRecordId={recordParam}
+          onSelectRecord={(recordId) => {
+            const next = new URLSearchParams(searchParams);
+            next.set("tab", "responses");
+            if (recordId) next.set("record", recordId);
+            else next.delete("record");
+            setSearchParams(next, { replace: true });
+          }}
+        />
+      ) : canManage ? (
         <ManageView form={detail} csrf={csrf} />
       ) : (
         <ReadOnlyView form={detail} />
@@ -63,6 +122,216 @@ export function FormDataSourcePage({
     </section>
   );
 }
+
+// --- Responses tab ---
+
+const PAGE_SIZE = 25;
+
+function ResponsesTab({
+  form,
+  csrf,
+  selectedRecordId,
+  onSelectRecord,
+}: {
+  form: FormDataSource;
+  csrf: string;
+  selectedRecordId: string | null;
+  onSelectRecord: (recordId: string | null) => void;
+}) {
+  const [stateFilter, setStateFilter] = useState<string>("needs_review");
+  const [search, setSearch] = useState("");
+  const [sort, setSort] =
+    useState<NonNullable<FormRecordListParams["sort"]>>("updated");
+  const [page, setPage] = useState(1);
+
+  // States that carry an outstanding review/approve decision, derived from the workflow.
+  const needsReviewStates = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          form.workflow.transitions
+            .filter(
+              (t) =>
+                t.requiredCapability === "review" ||
+                t.requiredCapability === "approve",
+            )
+            .map((t) => t.from),
+        ),
+      ),
+    [form.workflow],
+  );
+
+  const states =
+    stateFilter === "all"
+      ? undefined
+      : stateFilter === "needs_review"
+        ? needsReviewStates
+        : [stateFilter];
+
+  const records = useQuery({
+    queryKey: ["form-records", form.id, { stateFilter, search, sort, page }],
+    queryFn: () =>
+      api.listFormRecords(form.id, {
+        states,
+        search: search.trim() || undefined,
+        sort,
+        page,
+        pageSize: PAGE_SIZE,
+      }),
+  });
+
+  if (selectedRecordId) {
+    return (
+      <div className="responses-tab responses-tab--detail">
+        <Button variant="quiet" compact onClick={() => onSelectRecord(null)}>
+          ← Back to responses
+        </Button>
+        <RecordReview
+          form={form}
+          recordId={selectedRecordId}
+          csrf={csrf}
+          onAfterTransition={() => void records.refetch()}
+        />
+      </div>
+    );
+  }
+
+  const total = records.data?.total ?? 0;
+  const items = records.data?.items ?? [];
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  return (
+    <div className="responses-tab">
+      <div className="responses-tab__filters">
+        <Field label="State">
+          <Select
+            value={stateFilter}
+            onChange={(event) => {
+              setStateFilter(event.target.value);
+              setPage(1);
+            }}
+          >
+            <option value="needs_review">Needs review</option>
+            <option value="all">All states</option>
+            {form.workflow.states.map((state) => (
+              <option key={state.key} value={state.key}>
+                {state.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Search">
+          <Input
+            value={search}
+            placeholder="Title or submitter"
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setPage(1);
+            }}
+          />
+        </Field>
+        <Field label="Sort">
+          <Select
+            value={sort}
+            onChange={(event) => setSort(event.target.value as typeof sort)}
+          >
+            <option value="updated">Recently updated</option>
+            <option value="newest">Newest</option>
+            <option value="oldest">Oldest</option>
+            <option value="priority">Priority</option>
+          </Select>
+        </Field>
+      </div>
+
+      {records.isError && (
+        <Notice variant="danger" title="Could not load responses">
+          {records.error instanceof Error
+            ? records.error.message
+            : "Please try again."}
+        </Notice>
+      )}
+
+      {records.isLoading ? (
+        <Spinner label="Loading responses…" />
+      ) : items.length === 0 ? (
+        <EmptyState
+          title="No responses"
+          message={
+            stateFilter === "needs_review"
+              ? "Nothing is waiting for review right now."
+              : "No submissions match these filters yet."
+          }
+        />
+      ) : (
+        <>
+          <TableContainer>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th scope="col">Submission</th>
+                  <th scope="col">Submitter</th>
+                  <th scope="col">State</th>
+                  <th scope="col">Priority</th>
+                  <th scope="col">Updated</th>
+                  <th scope="col">Display window</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((record) => (
+                  <tr
+                    key={record.id}
+                    className="data-table__row--clickable"
+                    tabIndex={0}
+                    role="button"
+                    onClick={() => onSelectRecord(record.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        onSelectRecord(record.id);
+                      }
+                    }}
+                  >
+                    <td>{record.displayTitle || "Untitled submission"}</td>
+                    <td>{record.submitterName || "Unknown"}</td>
+                    <td>
+                      <StatusBadge
+                        label={stateLabel(form.workflow, record.state)}
+                        tone={stateTone(form.workflow, record.state)}
+                      />
+                    </td>
+                    <td>{record.priority}</td>
+                    <td>{new Date(record.updatedAt).toLocaleString()}</td>
+                    <td>{displayWindow(record.displayAt, record.expiresAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableContainer>
+          <Pagination
+            label="Responses pages"
+            status={`Page ${page} of ${totalPages} · ${total} total`}
+            previous={() => setPage((current) => Math.max(1, current - 1))}
+            next={() => setPage((current) => Math.min(totalPages, current + 1))}
+            previousDisabled={page <= 1}
+            nextDisabled={page >= totalPages}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+function displayWindow(
+  displayAt: string | null | undefined,
+  expiresAt: string | null | undefined,
+): string {
+  const start = displayAt ? new Date(displayAt).toLocaleDateString() : null;
+  const end = expiresAt ? new Date(expiresAt).toLocaleDateString() : null;
+  if (!start && !end) return "—";
+  return `${start ?? "now"} → ${end ?? "∞"}`;
+}
+
+// --- Form tab (builder / read-only) ---
 
 function ManageView({ form, csrf }: { form: FormDataSource; csrf: string }) {
   return (

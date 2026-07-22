@@ -949,6 +949,139 @@ export type CreateFormInput = {
 };
 
 export type FormMetadataInput = { name: string; description: string };
+
+// --- Form submissions, records, approvals (Studio 2B) ---
+
+// SubmissionCounts buckets a user's own submissions by workflow-derived meaning.
+export type FormSubmissionCounts = {
+  draft: number;
+  submitted: number;
+  changesRequested: number;
+  total: number;
+};
+
+// FormSummary is a lightweight accessible-form entry for the Forms portal and navigation.
+export type FormSummary = {
+  id: string;
+  name: string;
+  description: string;
+  publishedRevisionNumber?: number;
+  grantedCapabilities: FormCapability[];
+  submissionCounts: FormSubmissionCounts;
+};
+
+// FormRecord is one submission row.
+export type FormRecord = {
+  id: string;
+  dataSourceId: string;
+  revisionId: string;
+  state: string;
+  values: Record<string, unknown>;
+  submittedBy?: string;
+  submitterName: string;
+  displayTitle: string;
+  priority: number;
+  displayAt?: string | null;
+  expiresAt?: string | null;
+  eligible: boolean;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type FormRecordPage = {
+  items: FormRecord[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+export type FormRecordEvent = {
+  id: string;
+  eventType: string;
+  fromState?: string;
+  toState?: string;
+  actorName?: string;
+  note?: string;
+  createdAt: string;
+};
+
+export type FormRecordComment = {
+  id: string;
+  authorName: string;
+  body: string;
+  createdAt: string;
+};
+
+export type FormAttachment = {
+  id: string;
+  assetId: string;
+  fieldKey: string;
+};
+
+// FormAvailableTransition is a workflow transition the server has authorized for the viewer.
+export type FormAvailableTransition = {
+  to: string;
+  toLabel: string;
+  label: string;
+  requiredCapability: FormCapability;
+  requiresNote: boolean;
+};
+
+// FormRecordDetail is a record decorated server-side with its immutable revision and the exact
+// actions the viewer may take, so the UI never re-implements authorization.
+export type FormRecordDetail = FormRecord & {
+  revision?: FormRevision;
+  events: FormRecordEvent[];
+  comments: FormRecordComment[];
+  attachments: FormAttachment[];
+  canEdit: boolean;
+  canComment: boolean;
+  canDelete: boolean;
+  availableTransitions: FormAvailableTransition[];
+};
+
+export type FormApprovalItem = {
+  recordId: string;
+  dataSourceId: string;
+  formName: string;
+  title: string;
+  submitterName: string;
+  state: string;
+  stateLabel: string;
+  displayAt?: string | null;
+  expiresAt?: string | null;
+  submittedAt: string;
+};
+
+export type FormApprovalPage = {
+  items: FormApprovalItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+// Tri-state display-metadata fields for record create/update. `undefined` (omitted) preserves the
+// stored value, `null` clears it, and a value sets it — mirroring the server's Optional[T] contract.
+export type FormRecordInput = {
+  values: Record<string, unknown>;
+  displayTitle?: string | null;
+  priority?: number | null;
+  displayAt?: string | null;
+  expiresAt?: string | null;
+  version?: number;
+};
+
+export type FormRecordListParams = {
+  states?: string[];
+  search?: string;
+  sort?: "newest" | "oldest" | "priority" | "updated";
+  // mine scopes the list to the caller's own submissions server-side (used by the Forms portal).
+  mine?: boolean;
+  page?: number;
+  pageSize?: number;
+};
+
 export type ContentDefinitionField = {
   key: string;
   label: string;

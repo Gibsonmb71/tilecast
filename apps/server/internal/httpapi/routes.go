@@ -182,6 +182,7 @@ func (s *server) routes() http.Handler {
 			// form requires the editor+ global role; the creator becomes its manager.
 			if s.forms != nil {
 				dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/forms", s.createForm)
+				dashboard.Get("/forms", s.listForms)
 				dashboard.Get("/data-sources/{id}/form", s.getForm)
 				dashboard.With(s.requireCSRF).Patch("/data-sources/{id}/form", s.updateFormMetadata)
 				dashboard.With(s.requireCSRF).Patch("/data-sources/{id}/form/draft", s.updateFormDraft)
@@ -195,6 +196,8 @@ func (s *server) routes() http.Handler {
 				dashboard.With(s.requireCSRF).Post("/data-sources/{id}/records/{recordId}/transitions", s.transitionFormRecord)
 				dashboard.With(s.requireCSRF).Post("/data-sources/{id}/records/{recordId}/comments", s.addFormRecordComment)
 				dashboard.With(s.requireCSRF).Post("/data-sources/{id}/records/{recordId}/attachments", s.uploadFormRecordAttachment)
+				dashboard.Get("/data-sources/{id}/records/{recordId}/attachments/{attachmentId}/content", s.serveFormRecordAttachment)
+				dashboard.With(s.requireCSRF).Delete("/data-sources/{id}/records/{recordId}/attachments/{attachmentId}", s.removeFormRecordAttachment)
 				dashboard.Get("/data-sources/{id}/views", s.listFormViews)
 				dashboard.With(s.requireCSRF).Put("/data-sources/{id}/views", s.upsertFormView)
 				dashboard.With(s.requireCSRF).Delete("/data-sources/{id}/views/{viewId}", s.deleteFormView)

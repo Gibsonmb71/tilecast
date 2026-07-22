@@ -68,19 +68,37 @@ func validateSchema(schema FormSchema) error {
 // validateRecordValues checks submitted values against a schema and returns the normalized value
 // map. When requireComplete is true, required fields must be present (used when submitting for
 // review or approving). Unknown keys are rejected; presentation-only controls carry no value.
-func validateRecordValues(schema FormSchema, values map[string]any, requireComplete bool) (map[string]any, error) {
+//
+// Image fields are never taken from the client here: their value is an attachment asset id owned by
+// the attachment upload/remove endpoints. This function ignores any client-supplied image value and
+// omits image fields from the normalized map; the caller merges the record's real (bound) image
+// values back in. Required-image completeness is verified against boundImages — the set of field
+// keys that currently have a live attachment bound to the record — not against the client payload.
+func validateRecordValues(schema FormSchema, values map[string]any, requireComplete bool, boundImages map[string]bool) (map[string]any, error) {
 	fields := map[string]FormField{}
 	for _, field := range schema.Fields {
 		fields[field.Key] = field
 	}
 	for key := range values {
-		if _, ok := fields[key]; !ok {
+		field, ok := fields[key]
+		if !ok {
 			return nil, fmt.Errorf("%w: value provided for unknown field %q", ErrValidation, key)
+		}
+		// A client may not set an image field's value directly; those are managed by attachments.
+		if field.Control == ControlImage {
+			return nil, fmt.Errorf("%w: field %q is an image and is set by uploading an attachment", ErrValidation, key)
 		}
 	}
 	normalized := map[string]any{}
 	for _, field := range schema.Fields {
 		if outputTypeFor(field.Control) == "" {
+			continue
+		}
+		if field.Control == ControlImage {
+			// Completeness is satisfied only by a live bound attachment, never by a client value.
+			if field.Required && requireComplete && !boundImages[field.Key] {
+				return nil, fmt.Errorf("%w: field %q requires an uploaded image", ErrValidation, field.Key)
+			}
 			continue
 		}
 		raw, present := values[field.Key]

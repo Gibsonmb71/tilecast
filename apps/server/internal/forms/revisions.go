@@ -338,6 +338,27 @@ func (s *Service) loadPublishedRevision(ctx context.Context, q rowQuerier, id uu
 	return revision, nil
 }
 
+// loadRevisionByID loads a full revision (number, title, description, schema) by id. Used to attach
+// the immutable revision a record was created against to its detail response.
+func (s *Service) loadRevisionByID(ctx context.Context, q rowQuerier, revisionID uuid.UUID) (Revision, error) {
+	var revision Revision
+	var schemaRaw []byte
+	err := q.QueryRow(ctx, `SELECT id,data_source_id,revision_number,title,description,schema,published_at
+		FROM form_revisions WHERE id=$1`, revisionID).
+		Scan(&revision.ID, &revision.DataSourceID, &revision.RevisionNumber, &revision.Title, &revision.Description, &schemaRaw, &revision.PublishedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Revision{}, ErrNotFound
+	}
+	if err != nil {
+		return Revision{}, err
+	}
+	revision.Schema = FormSchema{Fields: []FormField{}}
+	if len(schemaRaw) > 0 {
+		_ = json.Unmarshal(schemaRaw, &revision.Schema)
+	}
+	return revision, nil
+}
+
 // revisionSchema loads the schema for a specific revision id (used to validate record values).
 func (s *Service) revisionSchema(ctx context.Context, q rowQuerier, revisionID uuid.UUID) (FormSchema, error) {
 	var schemaRaw []byte

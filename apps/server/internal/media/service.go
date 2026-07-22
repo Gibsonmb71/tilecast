@@ -326,7 +326,34 @@ func (s *Service) CancelUpload(ctx context.Context, id, userID uuid.UUID) error 
 	return s.storage.Delete(key)
 }
 
+// assetOrigin returns the origin ('library' or 'form_attachment') of a live asset, or ErrNotFound.
+// It backs the guards that keep form-submission attachments out of every generic Media surface.
+func (s *Service) assetOrigin(ctx context.Context, id uuid.UUID) (string, error) {
+	var origin string
+	err := s.db.QueryRow(ctx, `SELECT origin FROM assets WHERE id=$1 AND deleted_at IS NULL`, id).Scan(&origin)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	return origin, err
+}
+
+// GetAsset returns a library or widget asset. Form-submission attachments (origin='form_attachment')
+// are never returned here: they are reachable only through the record-scoped Form attachment
+// endpoint and authorized Player delivery, so the generic Media detail surface treats them as absent.
 func (s *Service) GetAsset(ctx context.Context, id uuid.UUID) (Asset, error) {
+	return s.getAsset(ctx, id, false)
+}
+
+func (s *Service) getAsset(ctx context.Context, id uuid.UUID, allowFormAttachment bool) (Asset, error) {
+	if !allowFormAttachment {
+		origin, err := s.assetOrigin(ctx, id)
+		if err != nil {
+			return Asset{}, err
+		}
+		if origin == "form_attachment" {
+			return Asset{}, ErrNotFound
+		}
+	}
 	row := s.db.QueryRow(ctx, assetSelect+` WHERE a.id=$1 AND a.deleted_at IS NULL`, id)
 	asset, err := scanAsset(row)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -528,6 +555,12 @@ func (s *Service) ListAssets(ctx context.Context, o ListOptions) (ListResult, er
 }
 
 func (s *Service) UpdateAsset(ctx context.Context, id, userID uuid.UUID, name, description *string) (Asset, error) {
+	// Form attachments are not editable through the generic Media surface.
+	if origin, err := s.assetOrigin(ctx, id); err != nil {
+		return Asset{}, err
+	} else if origin == "form_attachment" {
+		return Asset{}, ErrNotFound
+	}
 	if name != nil {
 		v := strings.TrimSpace(*name)
 		if v == "" || len(v) > 180 {
@@ -560,11 +593,16 @@ func (s *Service) RetryAsset(ctx context.Context, id, userID uuid.UUID) error {
 	}
 	defer tx.Rollback(ctx)
 	var status AssetStatus
-	if err = tx.QueryRow(ctx, `SELECT processing_status FROM assets WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, id).Scan(&status); errors.Is(err, pgx.ErrNoRows) {
+	var origin string
+	if err = tx.QueryRow(ctx, `SELECT processing_status,origin FROM assets WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, id).Scan(&status, &origin); errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound
 	}
 	if err != nil {
 		return err
+	}
+	// Form attachments are not retryable through the generic Media surface.
+	if origin == "form_attachment" {
+		return ErrNotFound
 	}
 	if status != StatusFailed {
 		return errors.New("only failed assets can be retried")
@@ -597,11 +635,15 @@ func (s *Service) DeleteAsset(ctx context.Context, id, userID uuid.UUID) error {
 	if inUse {
 		return errors.New("asset is in use by a playlist, Layout, or shared configuration")
 	}
-	var assetType string
-	if err := tx.QueryRow(ctx, `SELECT type FROM assets WHERE id=$1 AND deleted_at IS NULL`, id).Scan(&assetType); errors.Is(err, pgx.ErrNoRows) {
+	var assetType, assetOrigin string
+	if err := tx.QueryRow(ctx, `SELECT type,origin FROM assets WHERE id=$1 AND deleted_at IS NULL`, id).Scan(&assetType, &assetOrigin); errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound
 	} else if err != nil {
 		return err
+	}
+	// Form attachments are removed only through the record-scoped Form attachment endpoint.
+	if assetOrigin == "form_attachment" {
+		return ErrNotFound
 	}
 	tag, err := tx.Exec(ctx, `UPDATE assets SET processing_status='deleting',deleted_at=COALESCE(deleted_at,now()),updated_at=now() WHERE id=$1 AND processing_status NOT IN ('deleting','deleted')`, id)
 	if err != nil {
@@ -671,7 +713,8 @@ func (s *Service) Preview(ctx context.Context, assetID uuid.UUID) (Delivery, err
 	var d Delivery
 	d.AssetID = assetID
 	var key string
-	err := s.db.QueryRow(ctx, `SELECT v.id,v.storage_key,v.mime_type,v.file_size,encode(v.sha256,'hex') FROM asset_variants v JOIN assets a ON a.id=v.asset_id WHERE a.id=$1 AND a.deleted_at IS NULL AND v.deleted_at IS NULL AND v.kind IN ('thumbnail','poster') ORDER BY CASE v.kind WHEN 'thumbnail' THEN 0 ELSE 1 END LIMIT 1`, assetID).Scan(&d.VariantID, &key, &d.MIMEType, &d.Size, &d.HashHex)
+	// Form attachments are excluded: they are served only through the record-scoped endpoint.
+	err := s.db.QueryRow(ctx, `SELECT v.id,v.storage_key,v.mime_type,v.file_size,encode(v.sha256,'hex') FROM asset_variants v JOIN assets a ON a.id=v.asset_id WHERE a.id=$1 AND a.deleted_at IS NULL AND a.origin<>'form_attachment' AND v.deleted_at IS NULL AND v.kind IN ('thumbnail','poster') ORDER BY CASE v.kind WHEN 'thumbnail' THEN 0 ELSE 1 END LIMIT 1`, assetID).Scan(&d.VariantID, &key, &d.MIMEType, &d.Size, &d.HashHex)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Delivery{}, ErrVariantUnavailable
 	}
@@ -684,7 +727,8 @@ func (s *Service) Preview(ctx context.Context, assetID uuid.UUID) (Delivery, err
 
 func (s *Service) PlaybackPreview(ctx context.Context, assetID uuid.UUID) (Delivery, error) {
 	var variantID uuid.UUID
-	err := s.db.QueryRow(ctx, `SELECT v.id FROM asset_variants v JOIN assets a ON a.id=v.asset_id WHERE a.id=$1 AND a.deleted_at IS NULL AND a.processing_status='ready' AND a.type IN ('image','video') AND v.deleted_at IS NULL AND v.player_compatible=TRUE ORDER BY CASE v.kind WHEN 'playback' THEN 0 WHEN 'original' THEN 1 ELSE 2 END LIMIT 1`, assetID).Scan(&variantID)
+	// Form attachments are excluded: the generic playback-preview surface must not serve them.
+	err := s.db.QueryRow(ctx, `SELECT v.id FROM asset_variants v JOIN assets a ON a.id=v.asset_id WHERE a.id=$1 AND a.deleted_at IS NULL AND a.origin<>'form_attachment' AND a.processing_status='ready' AND a.type IN ('image','video') AND v.deleted_at IS NULL AND v.player_compatible=TRUE ORDER BY CASE v.kind WHEN 'playback' THEN 0 WHEN 'original' THEN 1 ELSE 2 END LIMIT 1`, assetID).Scan(&variantID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Delivery{}, ErrVariantUnavailable
 	}

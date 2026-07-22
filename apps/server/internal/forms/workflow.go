@@ -114,6 +114,33 @@ func loadWorkflow(ctx context.Context, q rowQuerier, formID uuid.UUID) (Workflow
 	return wf, transitionRows.Err()
 }
 
+// transitionRequiresNote reports whether a transition must carry a reviewer note. It is the single
+// source of truth shared by availableTransitions (decorateDetail) and the Transition enforcement:
+// a reviewer-driven (review/approve) transition that sends a record back into a still-editable,
+// non-initial state — the default "request changes" path — requires a note. Derived from the
+// configured workflow rather than any hardcoded state key.
+func transitionRequiresNote(wf Workflow, transition WorkflowTransition) bool {
+	if transition.RequiredCapability != CapReview && transition.RequiredCapability != CapApprove {
+		return false
+	}
+	editable := false
+	for _, candidate := range wf.Transitions {
+		if candidate.From == transition.To && candidate.RequiredCapability == CapSubmit {
+			editable = true
+			break
+		}
+	}
+	if !editable {
+		return false
+	}
+	for _, state := range wf.States {
+		if state.Key == transition.To {
+			return !state.Initial
+		}
+	}
+	return true
+}
+
 // validateWorkflow enforces the bounded, script-free workflow rules.
 func validateWorkflow(wf Workflow) error {
 	if len(wf.States) == 0 || len(wf.States) > maxWorkflowStates {
