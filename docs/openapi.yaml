@@ -1225,6 +1225,26 @@ paths:
         "200": { description: Draft saved with a new revision and ETag }
         "409": { description: Draft revision conflict }
         "422": { description: Layout document or dependency rejected }
+  /api/v1/layouts/{id}/preview-image:
+    get:
+      operationId: getLayoutPreviewImage
+      description: Serves the authenticated, frozen JPEG captured from the real Layout editor canvas.
+      responses:
+        "200": { description: Current Layout preview JPEG }
+        "404": { description: Layout or preview image not found }
+    put:
+      operationId: updateLayoutPreviewImage
+      description: Stores an aspect-preserving JPEG of at most 500 KB when draftRevision still matches the current Layout draft.
+      parameters:
+        - name: draftRevision
+          in: query
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        "204": { description: Preview image stored }
+        "409": { description: Draft revision conflict }
+        "413": { description: Preview exceeds 500 KB }
+        "422": { description: Invalid JPEG dimensions or canvas aspect ratio }
   /api/v1/layouts/{id}/publish:
     post:
       operationId: publishLayout

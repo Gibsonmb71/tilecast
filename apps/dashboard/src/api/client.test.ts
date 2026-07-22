@@ -189,3 +189,26 @@ describe("Widget preview snapshots", () => {
     );
   });
 });
+
+describe("Layout preview snapshots", () => {
+  it("uploads the frozen JPEG with CSRF protection", async () => {
+    const fetch = vi.fn().mockResolvedValue({ ok: true, status: 204 });
+    vi.stubGlobal("fetch", fetch);
+    const image = new Blob(["jpeg"], { type: "image/jpeg" });
+
+    await api.uploadLayoutPreview("layout 1", 7, image, "csrf-token");
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/v1/layouts/layout%201/preview-image?draftRevision=7",
+      expect.objectContaining({
+        method: "PUT",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "image/jpeg",
+          "X-CSRF-Token": "csrf-token",
+        },
+        body: image,
+      }),
+    );
+  });
+});

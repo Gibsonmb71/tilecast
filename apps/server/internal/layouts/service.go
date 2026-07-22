@@ -1,18 +1,22 @@
 package layouts
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image/jpeg"
 	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+const MaxPreviewImageBytes = 500 * 1024
 
 type Notifier interface{ ManifestChanged(uuid.UUID, int64) }
 type Service struct {
@@ -74,7 +78,7 @@ func (s *Service) List(ctx context.Context, search string, page, pageSize int) (
 	if err := s.db.QueryRow(ctx, `SELECT count(*) FROM layouts WHERE deleted_at IS NULL AND($1='' OR name ILIKE '%'||$1||'%')`, search).Scan(&result.Total); err != nil {
 		return result, err
 	}
-	rows, err := s.db.Query(ctx, `SELECT l.id,l.name,l.description,l.orientation,l.canvas_width,l.canvas_height,l.draft_revision,r.revision,r.published_at,l.created_at,l.updated_at FROM layouts l LEFT JOIN layout_revisions r ON r.id=l.published_revision_id WHERE l.deleted_at IS NULL AND($1='' OR l.name ILIKE '%'||$1||'%') ORDER BY l.updated_at DESC,l.id LIMIT $2 OFFSET $3`, search, pageSize, (page-1)*pageSize)
+	rows, err := s.db.Query(ctx, `SELECT l.id,l.name,l.description,l.orientation,l.canvas_width,l.canvas_height,l.draft_revision,r.revision,r.published_at,l.created_at,l.updated_at,l.preview_image IS NOT NULL FROM layouts l LEFT JOIN layout_revisions r ON r.id=l.published_revision_id WHERE l.deleted_at IS NULL AND($1='' OR l.name ILIKE '%'||$1||'%') ORDER BY l.updated_at DESC,l.id LIMIT $2 OFFSET $3`, search, pageSize, (page-1)*pageSize)
 	if err != nil {
 		return result, err
 	}
@@ -82,8 +86,12 @@ func (s *Service) List(ctx context.Context, search string, page, pageSize int) (
 	result.Items = []Summary{}
 	for rows.Next() {
 		var item Summary
-		if err = rows.Scan(&item.ID, &item.Name, &item.Description, &item.Orientation, &item.CanvasWidth, &item.CanvasHeight, &item.DraftRevision, &item.PublishedRevision, &item.PublishedAt, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		var hasPreview bool
+		if err = rows.Scan(&item.ID, &item.Name, &item.Description, &item.Orientation, &item.CanvasWidth, &item.CanvasHeight, &item.DraftRevision, &item.PublishedRevision, &item.PublishedAt, &item.CreatedAt, &item.UpdatedAt, &hasPreview); err != nil {
 			return result, err
+		}
+		if hasPreview {
+			item.PreviewImageURL = "/api/v1/layouts/" + item.ID.String() + "/preview-image"
 		}
 		result.Items = append(result.Items, item)
 	}
@@ -94,7 +102,8 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (Layout, error) {
 	var result Layout
 	var raw []byte
 	result.ID = id
-	err := s.db.QueryRow(ctx, `SELECT l.name,l.description,l.orientation,l.canvas_width,l.canvas_height,l.draft_document,l.draft_revision,l.published_revision_id,r.revision,r.published_at,l.created_at,l.updated_at FROM layouts l LEFT JOIN layout_revisions r ON r.id=l.published_revision_id WHERE l.id=$1 AND l.deleted_at IS NULL`, id).Scan(&result.Name, &result.Description, &result.Orientation, &result.CanvasWidth, &result.CanvasHeight, &raw, &result.DraftRevision, &result.PublishedRevisionID, &result.PublishedRevision, &result.PublishedAt, &result.CreatedAt, &result.UpdatedAt)
+	var hasPreview bool
+	err := s.db.QueryRow(ctx, `SELECT l.name,l.description,l.orientation,l.canvas_width,l.canvas_height,l.draft_document,l.draft_revision,l.published_revision_id,r.revision,r.published_at,l.created_at,l.updated_at,l.preview_image IS NOT NULL FROM layouts l LEFT JOIN layout_revisions r ON r.id=l.published_revision_id WHERE l.id=$1 AND l.deleted_at IS NULL`, id).Scan(&result.Name, &result.Description, &result.Orientation, &result.CanvasWidth, &result.CanvasHeight, &raw, &result.DraftRevision, &result.PublishedRevisionID, &result.PublishedRevision, &result.PublishedAt, &result.CreatedAt, &result.UpdatedAt, &hasPreview)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Layout{}, ErrNotFound
 	}
@@ -103,6 +112,9 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (Layout, error) {
 	}
 	if err = json.Unmarshal(raw, &result.Draft); err != nil {
 		return Layout{}, err
+	}
+	if hasPreview {
+		result.PreviewImageURL = "/api/v1/layouts/" + result.ID.String() + "/preview-image"
 	}
 	result.Dependencies, err = s.draftDependencies(ctx, id)
 	if err != nil {
@@ -175,7 +187,7 @@ func (s *Service) SaveDraft(ctx context.Context, id, userID uuid.UUID, expected 
 		return Layout{}, err
 	}
 	defer tx.Rollback(ctx)
-	command, err := tx.Exec(ctx, `UPDATE layouts SET draft_document=$1,draft_revision=draft_revision+1,orientation=$2,canvas_width=$3,canvas_height=$4,updated_by=$5,updated_at=now() WHERE id=$6 AND deleted_at IS NULL AND draft_revision=$7`, encoded, document.Canvas.Orientation, document.Canvas.Width, document.Canvas.Height, userID, id, expected)
+	command, err := tx.Exec(ctx, `UPDATE layouts SET draft_document=$1,draft_revision=draft_revision+1,orientation=$2,canvas_width=$3,canvas_height=$4,preview_image=NULL,preview_content_type=NULL,preview_width=NULL,preview_height=NULL,preview_updated_at=NULL,updated_by=$5,updated_at=now() WHERE id=$6 AND deleted_at IS NULL AND draft_revision=$7`, encoded, document.Canvas.Orientation, document.Canvas.Width, document.Canvas.Height, userID, id, expected)
 	if err != nil {
 		return Layout{}, err
 	}
@@ -194,6 +206,69 @@ func (s *Service) SaveDraft(ctx context.Context, id, userID uuid.UUID, expected 
 		return Layout{}, err
 	}
 	return s.Get(ctx, id)
+}
+
+func validatePreviewImage(data []byte, canvasWidth, canvasHeight int) (int, int, error) {
+	if len(data) < 1 || len(data) > MaxPreviewImageBytes {
+		return 0, 0, fmt.Errorf("layout preview image must be between 1 and %d bytes", MaxPreviewImageBytes)
+	}
+	config, err := jpeg.DecodeConfig(bytes.NewReader(data))
+	if err != nil || config.Width < 1 || config.Height < 1 || config.Width > 960 || config.Height > 960 {
+		return 0, 0, errors.New("layout preview image must be a JPEG no larger than 960 by 960")
+	}
+	difference := config.Width*canvasHeight - config.Height*canvasWidth
+	if difference < 0 {
+		difference = -difference
+	}
+	if difference*200 > config.Width*canvasHeight {
+		return 0, 0, errors.New("layout preview image aspect ratio must match the Layout canvas")
+	}
+	return config.Width, config.Height, nil
+}
+
+func (s *Service) StorePreviewImage(ctx context.Context, id, userID uuid.UUID, expectedRevision int64, data []byte) error {
+	var canvasWidth, canvasHeight int
+	if err := s.db.QueryRow(ctx, `SELECT canvas_width,canvas_height FROM layouts WHERE id=$1 AND deleted_at IS NULL`, id).Scan(&canvasWidth, &canvasHeight); errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	} else if err != nil {
+		return err
+	}
+	width, height, err := validatePreviewImage(data, canvasWidth, canvasHeight)
+	if err != nil {
+		return err
+	}
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	tag, err := tx.Exec(ctx, `UPDATE layouts SET preview_image=$2,preview_content_type='image/jpeg',preview_width=$3,preview_height=$4,preview_updated_at=now() WHERE id=$1 AND deleted_at IS NULL AND draft_revision=$5`, id, data, width, height, expectedRevision)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		var exists bool
+		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM layouts WHERE id=$1 AND deleted_at IS NULL)`, id).Scan(&exists); err != nil {
+			return err
+		}
+		if !exists {
+			return ErrNotFound
+		}
+		return ErrConflict
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)VALUES($1,$2,'layout.preview.updated','layout',$3)`, uuid.New(), userID, id.String()); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func (s *Service) PreviewImage(ctx context.Context, id uuid.UUID) (PreviewImage, error) {
+	var image PreviewImage
+	err := s.db.QueryRow(ctx, `SELECT preview_image,preview_content_type,preview_width,preview_height,preview_updated_at FROM layouts WHERE id=$1 AND deleted_at IS NULL AND preview_image IS NOT NULL`, id).Scan(&image.Data, &image.ContentType, &image.Width, &image.Height, &image.UpdatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return PreviewImage{}, ErrNotFound
+	}
+	return image, err
 }
 
 func (s *Service) Publish(ctx context.Context, id, userID uuid.UUID, expected int64) (Revision, error) {

@@ -1,5 +1,5 @@
-const SNAPSHOT_WIDTH = 960;
-const SNAPSHOT_HEIGHT = 540;
+const WIDGET_SNAPSHOT_WIDTH = 960;
+const WIDGET_SNAPSHOT_HEIGHT = 540;
 
 function blobToDataURL(blob: Blob) {
   return new Promise<string>((resolve, reject) => {
@@ -20,10 +20,10 @@ async function inlineImages(source: HTMLElement, clone: HTMLElement) {
   await Promise.all(
     originals.map(async (image, index) => {
       const copy = copies[index];
-      if (!copy || !image.currentSrc || image.currentSrc.startsWith("data:"))
-        return;
+      const sourceURL = image.currentSrc || image.src;
+      if (!copy || !sourceURL || sourceURL.startsWith("data:")) return;
       try {
-        const response = await fetch(image.currentSrc, {
+        const response = await fetch(sourceURL, {
           credentials: "same-origin",
         });
         if (response.ok) copy.src = await blobToDataURL(await response.blob());
@@ -55,8 +55,7 @@ function loadImage(url: string) {
   return new Promise<HTMLImageElement>((resolve, reject) => {
     const image = new Image();
     image.onload = () => resolve(image);
-    image.onerror = () =>
-      reject(new Error("Widget preview could not be rasterized."));
+    image.onerror = () => reject(new Error("Preview could not be rasterized."));
     image.src = url;
   });
 }
@@ -67,49 +66,80 @@ function encodeJPEG(canvas: HTMLCanvasElement, quality: number) {
       (blob) =>
         blob
           ? resolve(blob)
-          : reject(new Error("Widget preview image could not be created.")),
+          : reject(new Error("Preview image could not be created.")),
       "image/jpeg",
       quality,
     ),
   );
 }
 
-export async function captureWidgetPreview(
+async function captureRenderPreview(
   element: HTMLElement,
+  snapshotWidth: number,
+  snapshotHeight: number,
+  exclude: string[] = [],
 ): Promise<Blob> {
   await document.fonts.ready;
   const bounds = element.getBoundingClientRect();
   if (bounds.width < 1 || bounds.height < 1)
-    throw new Error("Widget preview is not ready yet.");
+    throw new Error("Preview is not ready yet.");
   const clone = element.cloneNode(true) as HTMLElement;
   inlineComputedStyles(element, clone);
   await inlineImages(element, clone);
+  exclude.forEach((selector) =>
+    clone.querySelectorAll(selector).forEach((child) => child.remove()),
+  );
+  clone
+    .querySelectorAll(".is-selected")
+    .forEach((child) => child.classList.remove("is-selected"));
   clone.setAttribute("xmlns", "http://www.w3.org/1999/xhtml");
   clone.style.width = `${bounds.width}px`;
   clone.style.height = `${bounds.height}px`;
   clone.style.border = "0";
   clone.style.borderRadius = "0";
   const markup = new XMLSerializer().serializeToString(clone);
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${SNAPSHOT_WIDTH}" height="${SNAPSHOT_HEIGHT}" viewBox="0 0 ${bounds.width} ${bounds.height}"><foreignObject width="100%" height="100%">${markup}</foreignObject></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${snapshotWidth}" height="${snapshotHeight}" viewBox="0 0 ${bounds.width} ${bounds.height}"><foreignObject width="100%" height="100%">${markup}</foreignObject></svg>`;
   const svgURL = URL.createObjectURL(
     new Blob([svg], { type: "image/svg+xml" }),
   );
   try {
     const image = await loadImage(svgURL);
     const canvas = document.createElement("canvas");
-    canvas.width = SNAPSHOT_WIDTH;
-    canvas.height = SNAPSHOT_HEIGHT;
+    canvas.width = snapshotWidth;
+    canvas.height = snapshotHeight;
     const context = canvas.getContext("2d");
-    if (!context) throw new Error("Widget preview canvas is unavailable.");
+    if (!context) throw new Error("Preview canvas is unavailable.");
     context.fillStyle = "#000";
-    context.fillRect(0, 0, SNAPSHOT_WIDTH, SNAPSHOT_HEIGHT);
-    context.drawImage(image, 0, 0, SNAPSHOT_WIDTH, SNAPSHOT_HEIGHT);
+    context.fillRect(0, 0, snapshotWidth, snapshotHeight);
+    context.drawImage(image, 0, 0, snapshotWidth, snapshotHeight);
     for (const quality of [0.82, 0.68, 0.52]) {
       const snapshot = await encodeJPEG(canvas, quality);
       if (snapshot.size <= 500 * 1024) return snapshot;
     }
-    throw new Error("Widget preview image is too detailed to store.");
+    throw new Error("Preview image is too detailed to store.");
   } finally {
     URL.revokeObjectURL(svgURL);
   }
+}
+
+export function captureWidgetPreview(element: HTMLElement): Promise<Blob> {
+  return captureRenderPreview(
+    element,
+    WIDGET_SNAPSHOT_WIDTH,
+    WIDGET_SNAPSHOT_HEIGHT,
+  );
+}
+
+export function captureLayoutPreview(
+  element: HTMLElement,
+  canvasWidth: number,
+  canvasHeight: number,
+): Promise<Blob> {
+  const scale = 960 / Math.max(canvasWidth, canvasHeight);
+  return captureRenderPreview(
+    element,
+    Math.max(1, Math.round(canvasWidth * scale)),
+    Math.max(1, Math.round(canvasHeight * scale)),
+    [".layout-safe-area", ".layout-guide", ".layout-resize-handle"],
+  );
 }
