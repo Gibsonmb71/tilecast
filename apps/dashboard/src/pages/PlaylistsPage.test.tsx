@@ -1,7 +1,17 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PlaylistItem } from "../api/types";
-import { canManagePlaylists, playlistDuration } from "./PlaylistsPage";
+import {
+  canManagePlaylists,
+  openPlaylistPreview,
+  playlistDuration,
+} from "./PlaylistsPage";
+import {
+  nextPlaylistPreviewItem,
+  playlistPreviewItemDuration,
+} from "./PlaylistPreviewPage";
+
+afterEach(() => vi.restoreAllMocks());
 
 const item = (values: Partial<PlaylistItem>): PlaylistItem => ({
   id: "item",
@@ -63,5 +73,34 @@ describe("playlist editor", () => {
         item({ id: "image", durationMs: 10_000 }),
       ]),
     ).toBe(40_000);
+  });
+
+  it("opens the playlist preview in a focused popup window", () => {
+    const focus = vi.fn();
+    const popup = { focus, opener: window } as unknown as Window;
+    const open = vi.spyOn(window, "open").mockReturnValue(popup);
+
+    expect(openPlaylistPreview("playlist 1")).toBe(popup);
+    expect(open).toHaveBeenCalledWith(
+      "/playlists/playlist%201/preview",
+      "tilecast-playlist-preview-playlist 1",
+      "popup=yes,width=1280,height=800,resizable=yes,scrollbars=no",
+    );
+    expect(popup.opener).toBeNull();
+    expect(focus).toHaveBeenCalledOnce();
+  });
+
+  it("loops popup preview navigation and uses bounded non-video durations", () => {
+    expect(nextPlaylistPreviewItem(2, 3, 1)).toBe(0);
+    expect(nextPlaylistPreviewItem(0, 3, -1)).toBe(2);
+    expect(playlistPreviewItemDuration(item({ durationMs: 7_500 }))).toBe(
+      7_500,
+    );
+    expect(playlistPreviewItemDuration(item({ assetType: "layout" }))).toBe(
+      10_000,
+    );
+    expect(
+      playlistPreviewItemDuration(item({ assetType: "video" })),
+    ).toBeUndefined();
   });
 });

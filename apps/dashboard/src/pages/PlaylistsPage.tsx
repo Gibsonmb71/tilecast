@@ -15,6 +15,7 @@ import {
   Plus,
   Trash2,
   Globe2,
+  ExternalLink,
 } from "lucide-react";
 import { useEffect, useState, type DragEvent } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
@@ -37,6 +38,19 @@ import {
 
 export function canManagePlaylists(role?: string) {
   return role !== "viewer";
+}
+
+export function openPlaylistPreview(id: string) {
+  const popup = window.open(
+    `/playlists/${encodeURIComponent(id)}/preview`,
+    `tilecast-playlist-preview-${id}`,
+    "popup=yes,width=1280,height=800,resizable=yes,scrollbars=no",
+  );
+  if (popup) {
+    popup.opener = null;
+    popup.focus();
+  }
+  return popup;
 }
 export function playlistDuration(items: PlaylistItem[] | null | undefined) {
   const safeItems = Array.isArray(items) ? items : [];
@@ -304,26 +318,35 @@ export function PlaylistEditorPage() {
           </>
         }
         actions={
-          canManage ? (
-            <>
-              <button
-                className="button button--quiet"
-                onClick={() => duplicate.mutate()}
-              >
-                <Copy size={15} />
-                Duplicate
-              </button>
-              <button
-                className="button button--danger"
-                onClick={() => {
-                  if (confirm(`Delete ${playlist.name}?`)) remove.mutate();
-                }}
-              >
-                <Trash2 size={15} />
-                Delete
-              </button>
-            </>
-          ) : undefined
+          <>
+            <button
+              className="button button--quiet"
+              onClick={() => openPlaylistPreview(playlist.id)}
+            >
+              <ExternalLink size={15} aria-hidden="true" />
+              Preview
+            </button>
+            {canManage && (
+              <>
+                <button
+                  className="button button--quiet"
+                  onClick={() => duplicate.mutate()}
+                >
+                  <Copy size={15} />
+                  Duplicate
+                </button>
+                <button
+                  className="button button--danger"
+                  onClick={() => {
+                    if (confirm(`Delete ${playlist.name}?`)) remove.mutate();
+                  }}
+                >
+                  <Trash2 size={15} />
+                  Delete
+                </button>
+              </>
+            )}
+          </>
         }
       />
       {(playlist.warnings ?? []).map((w) => (
