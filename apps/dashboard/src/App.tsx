@@ -9,6 +9,7 @@ import { PairScreenPage, ScreensPage } from "./pages/ScreensPage";
 import { ScreenDetailWithPreviewPage } from "./pages/ScreenDetailWithPreviewPage";
 import { ContentPage } from "./pages/ContentPage";
 import { PlaylistEditorPage, PlaylistsPage } from "./pages/PlaylistsPage";
+import { PlaylistPreviewPage } from "./pages/PlaylistPreviewPage";
 import {
   GroupsPage,
   GroupDetailPage,
@@ -40,6 +41,7 @@ const search = (
 export const studioRoutes: RouteObject[] = [
   { path: "/setup", element: <AuthPage mode="setup" /> },
   { path: "/login", element: <AuthPage mode="login" /> },
+  { path: "/playlists/:id/preview", element: <PlaylistPreviewPage /> },
   {
     path: "/",
     element: <DashboardShell />,
