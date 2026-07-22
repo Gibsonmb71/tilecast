@@ -163,6 +163,7 @@ func (s *server) routes() http.Handler {
 			// Widgets — renderable visual content.
 			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/widgets", s.createWidget)
 			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/widgets/compile-preview", s.compileWidgetPreview)
+			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Put("/widgets/{id}/preview-image", s.updateWidgetPreviewImage)
 			dashboard.Get("/provider-catalog", s.providerCatalog)
 			dashboard.Get("/content-definitions", s.contentDefinitions)
 			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Patch("/widgets/{id}", s.updateWidget)

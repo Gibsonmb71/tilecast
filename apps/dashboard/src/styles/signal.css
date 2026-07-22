@@ -11,58 +11,15 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-.asset-widget-preview {
+.asset-preview-unavailable {
   display: grid;
   width: 100%;
   height: 100%;
-  min-height: 0;
-  padding: 14px;
-  align-content: space-between;
-  gap: 8px;
-  color: var(--asset-widget-foreground);
-  background: var(--asset-widget-background);
-}
-
-.asset-widget-preview__topline {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  min-width: 0;
+  place-items: center;
+  padding: var(--tc-space-3);
+  color: var(--tc-text-muted);
+  background: var(--tc-bg-subtle);
   font: var(--tc-text-caption);
-  text-transform: uppercase;
-}
-
-.asset-widget-preview__topline span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.asset-widget-preview strong {
-  overflow: hidden;
-  font: var(--tc-text-panel-title);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.asset-widget-preview__rows {
-  display: grid;
-  gap: 5px;
-}
-
-.asset-widget-preview__rows i {
-  width: 100%;
-  height: 3px;
-  background: currentColor;
-  opacity: 0.38;
-}
-
-.asset-widget-preview__rows i:nth-child(2) {
-  width: 78%;
-}
-
-.asset-widget-preview__rows i:nth-child(3) {
-  width: 58%;
 }
 
 h1,

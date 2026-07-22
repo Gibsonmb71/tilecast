@@ -1,8 +1,12 @@
 package httpapi
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strconv"
@@ -42,6 +46,25 @@ func (s *server) compileWidgetPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": presentation})
+}
+
+func (s *server) updateWidgetPreviewImage(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, media.MaxWidgetPreviewBytes+1)
+	data, err := io.ReadAll(r.Body)
+	if err != nil || len(data) > media.MaxWidgetPreviewBytes {
+		writeError(w, http.StatusRequestEntityTooLarge, "preview_too_large", "The Widget preview image exceeded 500 KB.")
+		return
+	}
+	user := r.Context().Value(sessionContextKey).(auth.Session).User
+	if err = s.media.StoreWidgetPreview(r.Context(), id, user.ID, data); err != nil {
+		s.writeMediaError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 type createUploadRequest struct {
@@ -577,6 +600,20 @@ func (s *server) deleteAsset(w http.ResponseWriter, r *http.Request) {
 func (s *server) assetThumbnail(w http.ResponseWriter, r *http.Request) {
 	id, ok := urlUUID(w, r, "id")
 	if !ok {
+		return
+	}
+	widgetPreview, widgetErr := s.media.WidgetPreview(r.Context(), id)
+	if widgetErr == nil {
+		hash := sha256.Sum256(widgetPreview.Data)
+		w.Header().Set("Content-Type", widgetPreview.ContentType)
+		w.Header().Set("Content-Disposition", "inline")
+		w.Header().Set("Cache-Control", "private, max-age=0, must-revalidate")
+		w.Header().Set("ETag", fmt.Sprintf(`"sha256-%x"`, hash))
+		http.ServeContent(w, r, "", widgetPreview.UpdatedAt, bytes.NewReader(widgetPreview.Data))
+		return
+	}
+	if !errors.Is(widgetErr, media.ErrNotFound) {
+		s.writeMediaError(w, r, widgetErr)
 		return
 	}
 	delivery, err := s.media.Preview(r.Context(), id)

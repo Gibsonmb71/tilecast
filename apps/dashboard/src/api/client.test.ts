@@ -166,3 +166,26 @@ describe("mixed-version collection compatibility", () => {
     });
   });
 });
+
+describe("Widget preview snapshots", () => {
+  it("uploads the frozen JPEG with CSRF protection", async () => {
+    const fetch = vi.fn().mockResolvedValue({ ok: true, status: 204 });
+    vi.stubGlobal("fetch", fetch);
+    const image = new Blob(["jpeg"], { type: "image/jpeg" });
+
+    await api.uploadWidgetPreview("widget 1", image, "csrf-token");
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/v1/widgets/widget%201/preview-image",
+      expect.objectContaining({
+        method: "PUT",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "image/jpeg",
+          "X-CSRF-Token": "csrf-token",
+        },
+        body: image,
+      }),
+    );
+  });
+});

@@ -396,7 +396,7 @@ func (s *Service) getAsset(ctx context.Context, id uuid.UUID, allowFormAttachmen
 	return asset, nil
 }
 
-const assetSelect = `SELECT a.id,a.name,a.description,a.type,a.original_filename,a.declared_mime_type,a.detected_mime_type,encode(a.sha256,'hex'),a.original_size,a.width,a.height,a.duration_seconds,a.frame_rate,a.video_codec,a.audio_codec,a.audio_channels,a.metadata,a.processing_status,a.processing_progress,a.error_code,a.error_message,u.id,u.name,a.created_at,a.updated_at,EXISTS(SELECT 1 FROM asset_variants preview WHERE preview.asset_id=a.id AND preview.deleted_at IS NULL AND preview.kind IN ('thumbnail','poster')) FROM assets a LEFT JOIN users u ON u.id=a.created_by`
+const assetSelect = `SELECT a.id,a.name,a.description,a.type,a.original_filename,a.declared_mime_type,a.detected_mime_type,encode(a.sha256,'hex'),a.original_size,a.width,a.height,a.duration_seconds,a.frame_rate,a.video_codec,a.audio_codec,a.audio_channels,a.metadata,a.processing_status,a.processing_progress,a.error_code,a.error_message,u.id,u.name,a.created_at,a.updated_at,(EXISTS(SELECT 1 FROM asset_variants preview WHERE preview.asset_id=a.id AND preview.deleted_at IS NULL AND preview.kind IN ('thumbnail','poster')) OR EXISTS(SELECT 1 FROM widgets widget_preview WHERE widget_preview.asset_id=a.id AND widget_preview.preview_image IS NOT NULL)) FROM assets a LEFT JOIN users u ON u.id=a.created_by`
 
 type rowScanner interface{ Scan(...any) error }
 

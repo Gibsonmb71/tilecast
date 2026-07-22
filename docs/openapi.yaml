@@ -783,6 +783,20 @@ paths:
       responses:
         "200": { description: Widget updated and affected manifests revised }
         "422": { description: Provider configuration rejected }
+  /api/v1/widgets/{id}/preview-image:
+    put:
+      operationId: updateWidgetPreviewImage
+      description: Stores the frozen image captured from the actual Widget editor render. Requires an editor-capable dashboard session and CSRF token. The server accepts only a 960 by 540 JPEG no larger than 500 KB; Widget configuration updates clear the prior snapshot so stale renders are never shown.
+      requestBody:
+        required: true
+        content:
+          image/jpeg:
+            schema: { type: string, format: binary, maxLength: 512000 }
+      responses:
+        "204": { description: Widget preview image stored }
+        "404": { description: Widget not found }
+        "413": { description: Preview image exceeds 500 KB }
+        "422": { description: Preview is not a valid 960 by 540 JPEG }
   /api/v1/widgets/{id}/duplicate:
     post:
       operationId: duplicateWidget

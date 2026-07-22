@@ -5,10 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"image/jpeg"
 	"io"
 	"net/url"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -24,6 +27,16 @@ type websiteWidgetProvider struct{ service *Service }
 type youtubeWidgetProvider struct{ service *Service }
 
 var youtubeIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{6,128}$`)
+
+const MaxWidgetPreviewBytes = 500 * 1024
+
+type WidgetPreviewImage struct {
+	Data        []byte
+	ContentType string
+	Width       int
+	Height      int
+	UpdatedAt   time.Time
+}
 
 // decodeConfig strictly decodes exactly one JSON object into target, rejecting unknown
 // fields and any trailing content. Shared by widget and Data Source normalizers.
@@ -272,7 +285,7 @@ func (s *Service) UpdateWidget(ctx context.Context, id, user uuid.UUID, input Wi
 	if err != nil || tag.RowsAffected() == 0 {
 		return Asset{}, ErrNotFound
 	}
-	if _, err = tx.Exec(ctx, `UPDATE widgets SET configuration=$2::jsonb,config_version=$3,preset_id=$4,updated_at=now() WHERE asset_id=$1`, id, string(encoded), widgetConfigVersion(input.Provider), input.PresetID); err != nil {
+	if _, err = tx.Exec(ctx, `UPDATE widgets SET configuration=$2::jsonb,config_version=$3,preset_id=$4,preview_image=NULL,preview_content_type=NULL,preview_width=NULL,preview_height=NULL,preview_updated_at=NULL,updated_at=now() WHERE asset_id=$1`, id, string(encoded), widgetConfigVersion(input.Provider), input.PresetID); err != nil {
 		return Asset{}, err
 	}
 	if _, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id) VALUES($1,$2,'widget.updated','widget',$3)`, uuid.New(), user, id.String()); err != nil {
@@ -285,6 +298,51 @@ func (s *Service) UpdateWidget(ctx context.Context, id, user uuid.UUID, input Wi
 		_ = s.invalidator.AssetChanged(ctx, id, "widget.updated")
 	}
 	return s.GetAsset(ctx, id)
+}
+
+func (s *Service) StoreWidgetPreview(ctx context.Context, id, user uuid.UUID, data []byte) error {
+	if err := validateWidgetPreview(data); err != nil {
+		return err
+	}
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	tag, err := tx.Exec(ctx, `UPDATE widgets widget SET preview_image=$2,preview_content_type='image/jpeg',preview_width=960,preview_height=540,preview_updated_at=now(),updated_at=now() FROM assets asset WHERE widget.asset_id=$1 AND asset.id=widget.asset_id AND asset.type='widget' AND asset.deleted_at IS NULL`, id, data)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)VALUES($1,$2,'widget.preview.updated','widget',$3)`, uuid.New(), user, id.String()); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func validateWidgetPreview(data []byte) error {
+	if len(data) < 1 || len(data) > MaxWidgetPreviewBytes {
+		return fmt.Errorf("widget preview image must be between 1 and %d bytes", MaxWidgetPreviewBytes)
+	}
+	config, err := jpeg.DecodeConfig(bytes.NewReader(data))
+	if err != nil || config.Width != 960 || config.Height != 540 {
+		return errors.New("widget preview image must be a 960 by 540 JPEG")
+	}
+	return nil
+}
+
+func (s *Service) WidgetPreview(ctx context.Context, id uuid.UUID) (WidgetPreviewImage, error) {
+	var image WidgetPreviewImage
+	err := s.db.QueryRow(ctx, `SELECT widget.preview_image,widget.preview_content_type,widget.preview_width,widget.preview_height,widget.preview_updated_at FROM widgets widget JOIN assets asset ON asset.id=widget.asset_id AND asset.type='widget' AND asset.deleted_at IS NULL WHERE widget.asset_id=$1 AND widget.preview_image IS NOT NULL`, id).Scan(&image.Data, &image.ContentType, &image.Width, &image.Height, &image.UpdatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return WidgetPreviewImage{}, ErrNotFound
+	}
+	if err != nil {
+		return WidgetPreviewImage{}, err
+	}
+	return image, nil
 }
 
 func widgetConfigVersion(provider string) int {

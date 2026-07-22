@@ -116,13 +116,14 @@ describe("content library", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders a configured widget preview instead of an empty thumbnail", () => {
+  it("renders a saved Widget snapshot instead of a live approximation", () => {
     const widget: Asset = {
       ...asset,
       id: "widget-1",
       name: "Lobby clock",
       type: "widget",
       originalFilename: "",
+      thumbnailUrl: "/api/v1/assets/widget-1/thumbnail",
       widget: {
         provider: "clock",
         configVersion: 1,
@@ -136,16 +137,11 @@ describe("content library", () => {
       },
     };
     render(<AssetCollection items={[widget]} view="grid" onSelect={vi.fn()} />);
-    expect(screen.getByText("clock")).toBeInTheDocument();
-    const preview = document.querySelector<HTMLElement>(
-      ".asset-widget-preview",
+    expect(document.querySelector(".asset-preview img")).toHaveAttribute(
+      "src",
+      "/api/v1/assets/widget-1/thumbnail",
     );
-    expect(preview?.style.getPropertyValue("--asset-widget-foreground")).toBe(
-      "#ffffff",
-    );
-    expect(preview?.style.getPropertyValue("--asset-widget-background")).toBe(
-      "#111111",
-    );
+    expect(document.querySelector(".asset-widget-preview")).toBeNull();
   });
 
   it("renders asset thumbnails as non-draggable", () => {
@@ -157,7 +153,7 @@ describe("content library", () => {
     );
   });
 
-  it("falls back to a widget tile when a remote thumbnail fails", () => {
+  it("shows an honest unavailable state instead of a fake Widget preview", () => {
     const widget: Asset = {
       ...asset,
       id: "widget-2",
@@ -171,7 +167,8 @@ describe("content library", () => {
     };
     render(<AssetCollection items={[widget]} view="grid" onSelect={vi.fn()} />);
     fireEvent.error(document.querySelector(".asset-preview img")!);
-    expect(screen.getByText("website")).toBeInTheDocument();
+    expect(screen.getByText("Preview unavailable")).toBeInTheDocument();
+    expect(document.querySelector(".asset-widget-preview")).toBeNull();
   });
 
   it("uses honest processing labels", () => {

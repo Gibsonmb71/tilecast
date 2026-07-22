@@ -16,7 +16,7 @@ import {
   X,
   Youtube,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { api } from "../api/client";
 import type {
@@ -45,6 +45,7 @@ import type {
   WidgetPresentation,
   PresentationNode,
 } from "../api/types";
+import { captureWidgetPreview } from "./widgetPreviewCapture";
 
 export function WidgetProviderGallery({
   onChoose,
@@ -517,6 +518,7 @@ export function NativeAppEditor({
   presetId?: WidgetPreset;
 }) {
   const queryClient = useQueryClient();
+  const previewRef = useRef<HTMLDivElement>(null);
   const catalog = useQuery({
     queryKey: ["provider-catalog"],
     queryFn: api.providerCatalog,
@@ -655,11 +657,24 @@ export function NativeAppEditor({
   });
   const availableFields = selectedDataSource.data?.fields ?? [];
   const save = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
+      if (
+        !previewRef.current ||
+        !compiledPreview.data ||
+        (selectedDataSourceId && sourcePreview.isLoading)
+      )
+        throw new Error("Wait for the Widget preview before saving.");
+      const previewImage = await captureWidgetPreview(previewRef.current);
       const input = { provider, presetId, name, description, configuration };
-      return asset
+      const saved = asset
         ? api.updateWidget(asset.id, input, csrf)
         : api.createWidget(input, csrf);
+      const result = await saved;
+      await api.uploadWidgetPreview(result.id, previewImage, csrf);
+      return {
+        ...result,
+        thumbnailUrl: `/api/v1/assets/${encodeURIComponent(result.id)}/thumbnail`,
+      };
     },
     onSuccess: (saved) => {
       void queryClient.invalidateQueries({ queryKey: ["assets"] });
@@ -2512,7 +2527,10 @@ export function NativeAppEditor({
               />
             </label>
           </div>
-          <div className="native-app-preview declarative-widget-preview">
+          <div
+            ref={previewRef}
+            className="native-app-preview declarative-widget-preview"
+          >
             {compiledPreview.data ? (
               <DeclarativePresentationPreview
                 presentation={compiledPreview.data}
@@ -2535,7 +2553,12 @@ export function NativeAppEditor({
           {!readOnly && (
             <button
               className="button button--primary"
-              disabled={save.isPending || !name.trim()}
+              disabled={
+                save.isPending ||
+                !name.trim() ||
+                !compiledPreview.data ||
+                Boolean(selectedDataSourceId && sourcePreview.isLoading)
+              }
               onClick={() => save.mutate()}
             >
               {save.isPending ? "Saving…" : "Save Widget"}

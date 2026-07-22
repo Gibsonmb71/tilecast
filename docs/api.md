@@ -131,6 +131,8 @@ Tilecast separates renderable **Widgets** from non-visual **Data Sources**. See 
 
 Widget requests and responses may include nullable authoring-only `presetId` metadata for Leaderboard, Status Board, Queue Board, Schedule / Departures, Opening Hours, and Directory. Presets compile through their underlying generic provider and `presetId` is omitted from Player presentation logic.
 
+Studio freezes the actual 16:9 Widget editor render when a native Widget is saved. `PUT /api/v1/widgets/{id}/preview-image` accepts only a CSRF-protected 960×540 JPEG of at most 500 KB, validates the image bytes and dimensions server-side, and replaces the prior snapshot. `GET /api/v1/assets/{id}/thumbnail` serves that private snapshot through the normal asset thumbnail contract. Updating Widget configuration clears the old snapshot before the new render is stored, so the Widgets page never presents stale or hand-built approximations; Widgets without a captured render show an explicit unavailable state.
+
 `GET /api/v1/content-definitions` returns the Server-owned catalog used by Studio to build galleries, categories, defaults, forms, compatibility filters, field selectors, and validation guidance. Definitions are embedded in Tilecast releases; this endpoint does not accept uploads or third-party code. `GET /api/v1/provider-catalog` remains as a compatibility endpoint.
 
 `GET /api/v1/data-sources` includes the established providers plus the release-defined School Status manual object Source. School Status emits Data Document v1 object fields `status`, `message`, `severity`, `effectiveAt`, `expiresAt`, and `updatedAt`. Player manifests never contain fetch URLs, uploaded CSV bytes, coordinates, contacts, source credentials, or upstream request details.
