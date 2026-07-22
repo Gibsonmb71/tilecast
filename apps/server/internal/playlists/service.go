@@ -1424,7 +1424,8 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 	if len(encoded) > 5*1024*1024 {
 		return Manifest{}, "", fmt.Errorf("%w: manifest exceeds the five MiB limit", ErrConflict)
 	}
-	return manifest, manifestETagForSchema(screenID, assignment.ManifestVersion, manifest.SchemaVersion), nil
+	baseETag := manifestETagForSchema(screenID, assignment.ManifestVersion, manifest.SchemaVersion)
+	return manifest, manifestETagForSchedules(baseETag, manifest.Schedules), nil
 }
 
 const crossfadePlayerVersionCode = 33
@@ -1714,6 +1715,22 @@ func manifestETagForSchema(screenID uuid.UUID, version int64, schemaVersion int)
 	}
 	value := sha256.Sum256([]byte(fmt.Sprintf("%s:%d:%d", screenID, version, schemaVersion)))
 	return `"sha256-` + hex.EncodeToString(value[:]) + `"`
+}
+
+// The set of one-time schedules in a manifest changes as entries cross the
+// prefetch horizon or expire without a database mutation. Include that set in
+// the validator so a player's periodic conditional request cannot receive a
+// stale 304 at the horizon boundary.
+func manifestETagForSchedules(base string, schedules []ManifestSchedule) string {
+	if len(schedules) == 0 {
+		return base
+	}
+	value := base
+	for _, schedule := range schedules {
+		value += ":" + schedule.ID.String()
+	}
+	sum := sha256.Sum256([]byte(value))
+	return `"sha256-` + hex.EncodeToString(sum[:]) + `"`
 }
 
 func (s *Service) ReportStatus(ctx context.Context, screenID uuid.UUID, status PlayerStatus) error {

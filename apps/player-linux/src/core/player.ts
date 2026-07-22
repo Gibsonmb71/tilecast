@@ -130,6 +130,20 @@ export type Presentation =
       generation: number;
     };
 
+export function presentationIdentity(presentation: Presentation): string {
+  return JSON.stringify(presentation, (name, value) =>
+    name === "generation" ? undefined : value,
+  );
+}
+
+export function manifestActivationGraceMilliseconds(
+  manifest: Manifest,
+): number {
+  return (
+    Math.min(Math.max(manifest.activationGraceSeconds || 30, 1), 3_600) * 1_000
+  );
+}
+
 export interface PlayerHost {
   /** Replace what the renderer is showing. */
   present(presentation: Presentation): void;
@@ -207,6 +221,9 @@ export class PlayerRuntime {
 
   private timers: NodeJS.Timeout[] = [];
   private reconnectTimer: NodeJS.Timeout | null = null;
+  private pendingActivationTimer: NodeJS.Timeout | null = null;
+  private selectionTransitionTimer: NodeJS.Timeout | null = null;
+  private selectionTransitionAt: string | null = null;
   private stopped = false;
   private socketOpen = false;
   private readonly startedAt = Date.now();
@@ -275,6 +292,9 @@ export class PlayerRuntime {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
     }
+    if (this.pendingActivationTimer) clearTimeout(this.pendingActivationTimer);
+    if (this.selectionTransitionTimer)
+      clearTimeout(this.selectionTransitionTimer);
     this.socket?.close();
     this.manifestSync.stop();
     this.commands?.stop();
@@ -551,6 +571,10 @@ export class PlayerRuntime {
       emergencyNow
     ) {
       // Nothing on screen yet, or an emergency: activate immediately.
+      if (this.pendingActivationTimer) {
+        clearTimeout(this.pendingActivationTimer);
+        this.pendingActivationTimer = null;
+      }
       this.activeManifest = manifest;
       this.pendingManifest = null;
       this.evaluatePresentation(true);
@@ -558,14 +582,33 @@ export class PlayerRuntime {
     }
     // Seamless: hold until the next item boundary.
     this.pendingManifest = manifest;
+    if (this.pendingActivationTimer) clearTimeout(this.pendingActivationTimer);
+    const graceMilliseconds = manifestActivationGraceMilliseconds(manifest);
+    this.pendingActivationTimer = setTimeout(() => {
+      this.pendingActivationTimer = null;
+      if (!this.pendingManifest) return;
+      this.activeManifest = this.pendingManifest;
+      this.pendingManifest = null;
+      log.warn("activated pending manifest after boundary grace elapsed", {
+        manifestVersion: this.activeManifest.manifestVersion,
+        graceSeconds: graceMilliseconds / 1_000,
+      });
+      this.evaluatePresentation(true);
+    }, graceMilliseconds);
+    this.pendingActivationTimer.unref?.();
     log.info("manifest prepared; will activate at next item boundary", {
       manifestVersion: manifest.manifestVersion,
+      graceSeconds: graceMilliseconds / 1_000,
     });
   }
 
   /** Renderer reported an item boundary. */
   onItemBoundary(): void {
     if (this.pendingManifest) {
+      if (this.pendingActivationTimer) {
+        clearTimeout(this.pendingActivationTimer);
+        this.pendingActivationTimer = null;
+      }
       this.activeManifest = this.pendingManifest;
       this.pendingManifest = null;
       log.info("activated pending manifest at item boundary", {
@@ -621,7 +664,10 @@ export class PlayerRuntime {
   /** Recompute what should be on screen; presents only when it changed. */
   evaluatePresentation(force = false): void {
     const next = this.buildPresentation();
-    const key = JSON.stringify(next);
+    // generation is a renderer transport counter, not presentation content.
+    // Including it here restarted otherwise-unchanged playback every 30s.
+    const key = presentationIdentity(next);
+    this.scheduleSelectionTransition();
     if (!force && key === this.lastPresentedKey) {
       return;
     }
@@ -636,6 +682,28 @@ export class PlayerRuntime {
     }
   }
   private lastPresentedKey = "";
+
+  private scheduleSelectionTransition(): void {
+    const at = this.selection?.nextTransitionAt ?? null;
+    if (at === this.selectionTransitionAt) return;
+    if (this.selectionTransitionTimer) {
+      clearTimeout(this.selectionTransitionTimer);
+      this.selectionTransitionTimer = null;
+    }
+    this.selectionTransitionAt = at;
+    if (!at) return;
+    const delay = Date.parse(at) - Date.now();
+    if (!Number.isFinite(delay)) return;
+    this.selectionTransitionTimer = setTimeout(
+      () => {
+        this.selectionTransitionTimer = null;
+        this.selectionTransitionAt = null;
+        this.evaluatePresentation();
+      },
+      Math.min(Math.max(delay + 100, 0), 2_147_000_000),
+    );
+    this.selectionTransitionTimer.unref?.();
+  }
 
   private buildPresentation(): Presentation {
     if (this.supervisorState.safeMode) {
@@ -1122,6 +1190,9 @@ export class PlayerRuntime {
       if (this.selection.emergencyId) {
         heartbeat.activeEmergencyId = this.selection.emergencyId;
         heartbeat.emergencyState = "active";
+      }
+      if (this.selection.nextTransitionAt) {
+        heartbeat.nextTransitionAt = this.selection.nextTransitionAt;
       }
     }
     if (this.config) {

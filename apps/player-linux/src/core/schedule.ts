@@ -1,175 +1,319 @@
-/**
- * Local schedule and emergency resolution.
- *
- * The player selects the active playlist entirely locally — with the device
- * clock and the schedules cached in the manifest — so weekly schedules keep
- * working offline indefinitely. Selection uses half-open [start, end)
- * intervals. Weekly windows are evaluated in the schedule's IANA timezone
- * via Intl (no bundled tz database), and an end at or before the start means
- * an overnight window belonging to the start day.
- *
- * Precedence: an active emergency always wins; otherwise the applicable
- * schedule with the highest priority (then specificity) wins; otherwise the
- * direct assignment / fallback plays. The caller re-evaluates on a short
- * timer and on clock/manifest changes, so DST transitions and one-time
- * boundaries are honored without fragile next-wakeup math.
- */
+/** Offline, timezone-aware schedule and emergency resolution. */
 
 import type { Manifest, ManifestSchedule } from "./types";
 
 export interface Selection {
   playlistId: string | null;
-  /** Set when the active assignment is a Layout rather than a playlist. */
   layoutId: string | null;
   scheduleId: string | null;
   emergencyId: string | null;
-  /** "emergency" | "schedule" | "direct" | "none" */
   source: string;
+  /** Exact next schedule/emergency boundary, for prompt unattended changes. */
+  nextTransitionAt: string | null;
+  /** Start of the winning window, used as a synchronized-playback anchor. */
+  playbackAnchor: string | null;
 }
 
-interface LocalTime {
-  weekday: number; // 0 = Sunday .. 6 = Saturday (matches manifest daysOfWeek)
-  minutes: number; // minutes since local midnight
-  date: string; // YYYY-MM-DD in the schedule's timezone
+interface ZonedParts {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
 }
 
-function localTimeIn(timezone: string, at: Date): LocalTime | null {
-  let parts: Intl.DateTimeFormatPart[];
-  try {
-    parts = new Intl.DateTimeFormat("en-US", {
+interface Window {
+  schedule: ManifestSchedule;
+  start: number;
+  end: number;
+}
+
+const formatters = new Map<string, Intl.DateTimeFormat>();
+const weeklyWindowCache = new Map<
+  string,
+  Array<{ start: number; end: number }>
+>();
+
+function formatter(timezone: string): Intl.DateTimeFormat {
+  let value = formatters.get(timezone);
+  if (!value) {
+    value = new Intl.DateTimeFormat("en-US", {
       timeZone: timezone,
-      weekday: "short",
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
       hour: "2-digit",
       minute: "2-digit",
       hourCycle: "h23",
-    }).formatToParts(at);
+    });
+    formatters.set(timezone, value);
+  }
+  return value;
+}
+
+function zonedParts(timezone: string, at: Date): ZonedParts | null {
+  try {
+    const parts = formatter(timezone).formatToParts(at);
+    const get = (type: string) =>
+      Number(parts.find((part) => part.type === type)?.value ?? NaN);
+    const value = {
+      year: get("year"),
+      month: get("month"),
+      day: get("day"),
+      hour: get("hour"),
+      minute: get("minute"),
+    };
+    return Object.values(value).every(Number.isFinite) ? value : null;
   } catch {
-    return null; // unknown timezone: schedule cannot apply
-  }
-  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
-  const weekdays: Record<string, number> = {
-    Sun: 0,
-    Mon: 1,
-    Tue: 2,
-    Wed: 3,
-    Thu: 4,
-    Fri: 5,
-    Sat: 6,
-  };
-  const weekday = weekdays[get("weekday")];
-  const hour = Number(get("hour"));
-  const minute = Number(get("minute"));
-  if (
-    weekday === undefined ||
-    !Number.isFinite(hour) ||
-    !Number.isFinite(minute)
-  ) {
     return null;
   }
+}
+
+function dateString(parts: ZonedParts): string {
+  return `${String(parts.year).padStart(4, "0")}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
+}
+
+function dateParts(value: string): ZonedParts | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return null;
   return {
-    weekday,
-    minutes: hour * 60 + minute,
-    date: `${get("year")}-${get("month")}-${get("day")}`,
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+    hour: 0,
+    minute: 0,
   };
 }
 
-function parseHHMM(value: string | null | undefined): number | null {
-  if (!value) {
-    return null;
-  }
-  const match = /^(\d{2}):(\d{2})$/.exec(value);
-  if (!match) {
-    return null;
-  }
-  return Number(match[1]) * 60 + Number(match[2]);
+function addDays(value: string, days: number): string {
+  const parts = dateParts(value);
+  if (!parts) return value;
+  const date = new Date(
+    Date.UTC(parts.year, parts.month - 1, parts.day + days),
+  );
+  return date.toISOString().slice(0, 10);
 }
 
-/** Is the schedule active at `at` (half-open interval semantics)? */
-export function scheduleApplies(schedule: ManifestSchedule, at: Date): boolean {
-  if (schedule.type === "one_time") {
-    const start = schedule.oneTimeStart
-      ? Date.parse(schedule.oneTimeStart)
-      : NaN;
-    const end = schedule.oneTimeEnd ? Date.parse(schedule.oneTimeEnd) : NaN;
-    if (!Number.isFinite(start) || !Number.isFinite(end)) {
-      return false;
-    }
-    const t = at.getTime();
-    return t >= start && t < end;
-  }
+function weekday(value: string): number {
+  const parts = dateParts(value)!;
+  return new Date(Date.UTC(parts.year, parts.month - 1, parts.day)).getUTCDay();
+}
 
-  // Weekly.
-  const local = localTimeIn(schedule.timezone, at);
-  if (!local) {
-    return false;
-  }
-  if (schedule.startDate && local.date < schedule.startDate) {
-    return false;
-  }
-  if (schedule.endDate && local.date > schedule.endDate) {
-    return false;
-  }
-  const start = parseHHMM(schedule.dailyStart);
-  const end = parseHHMM(schedule.dailyEnd);
-  if (start === null || end === null) {
-    return false;
-  }
-  const days = new Set(schedule.daysOfWeek ?? []);
-  if (end > start) {
-    // Same-day window [start, end).
-    return (
-      days.has(local.weekday) && local.minutes >= start && local.minutes < end
+function parseClock(value: string | null | undefined): [number, number] | null {
+  const match = /^(\d{2}):(\d{2})$/.exec(value ?? "");
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  return hour <= 23 && minute <= 59 ? [hour, minute] : null;
+}
+
+function sameParts(a: ZonedParts | null, b: ZonedParts): boolean {
+  return (
+    a !== null &&
+    a.year === b.year &&
+    a.month === b.month &&
+    a.day === b.day &&
+    a.hour === b.hour &&
+    a.minute === b.minute
+  );
+}
+
+/**
+ * Resolve a wall-clock minute in an IANA zone. Repeated times use the earlier
+ * instant for starts and the later instant for ends. Gap times advance to the
+ * first valid minute, matching Go and java.time.
+ */
+function resolveLocal(
+  date: string,
+  clock: [number, number],
+  timezone: string,
+  end: boolean,
+): number | null {
+  const day = dateParts(date);
+  if (!day) return null;
+  const wanted = { ...day, hour: clock[0], minute: clock[1] };
+  const naive = Date.UTC(
+    wanted.year,
+    wanted.month - 1,
+    wanted.day,
+    wanted.hour,
+    wanted.minute,
+  );
+  const matches = localCandidates(wanted, naive, timezone);
+  if (matches.length > 0) return end ? matches.at(-1)! : matches[0]!;
+
+  // A DST spring gap is at most a few hours. Walk wall-clock minutes, not
+  // elapsed instants, to land on the zone's first valid local minute.
+  for (let minute = 1; minute <= 180; minute += 1) {
+    const shifted = new Date(naive + minute * 60_000);
+    const shiftedWanted: ZonedParts = {
+      year: shifted.getUTCFullYear(),
+      month: shifted.getUTCMonth() + 1,
+      day: shifted.getUTCDate(),
+      hour: shifted.getUTCHours(),
+      minute: shifted.getUTCMinutes(),
+    };
+    const shiftedMatches = localCandidates(
+      shiftedWanted,
+      shifted.getTime(),
+      timezone,
     );
+    if (shiftedMatches.length > 0) {
+      return end ? shiftedMatches.at(-1)! : shiftedMatches[0]!;
+    }
   }
-  // Overnight window belongs to the start day: active from start..midnight on
-  // a selected day, and from midnight..end on the following day.
-  const previousWeekday = (local.weekday + 6) % 7;
-  if (days.has(local.weekday) && local.minutes >= start) {
-    return true;
+  return null;
+}
+
+function localCandidates(
+  wanted: ZonedParts,
+  naive: number,
+  timezone: string,
+): number[] {
+  const offsets = new Set<number>();
+  for (let hours = -36; hours <= 36; hours += 6) {
+    const sample = naive + hours * 60 * 60 * 1000;
+    const local = zonedParts(timezone, new Date(sample));
+    if (local) {
+      const localAsUtc = Date.UTC(
+        local.year,
+        local.month - 1,
+        local.day,
+        local.hour,
+        local.minute,
+      );
+      offsets.add(localAsUtc - sample);
+    }
   }
-  return days.has(previousWeekday) && local.minutes < end;
+  return [...offsets]
+    .map((offset) => naive - offset)
+    .filter((candidate) =>
+      sameParts(zonedParts(timezone, new Date(candidate)), wanted),
+    )
+    .sort((a, b) => a - b);
+}
+
+function windows(schedule: ManifestSchedule, at: Date): Window[] {
+  if (schedule.type === "one_time") {
+    const start = Date.parse(schedule.oneTimeStart ?? "");
+    const end = Date.parse(schedule.oneTimeEnd ?? "");
+    return Number.isFinite(start) && Number.isFinite(end) && end > start
+      ? [{ schedule, start, end }]
+      : [];
+  }
+  if (schedule.type !== "weekly") return [];
+  const local = zonedParts(schedule.timezone, at);
+  const startClock = parseClock(schedule.dailyStart);
+  const endClock = parseClock(schedule.dailyEnd);
+  if (!local || !startClock || !endClock) return [];
+
+  const today = dateString(local);
+  const days = new Set(schedule.daysOfWeek ?? []);
+  const cacheKey = [
+    schedule.timezone,
+    today,
+    schedule.dailyStart,
+    schedule.dailyEnd,
+    [...days].sort((a, b) => a - b).join(","),
+    schedule.startDate ?? "",
+    schedule.endDate ?? "",
+  ].join("|");
+  const cached = weeklyWindowCache.get(cacheKey);
+  if (cached) return cached.map((window) => ({ schedule, ...window }));
+  const overnight =
+    endClock[0] * 60 + endClock[1] <= startClock[0] * 60 + startClock[1];
+  const result: Window[] = [];
+  for (let offset = -1; offset <= 8; offset += 1) {
+    const origin = addDays(today, offset);
+    // Bounds belong to the window's start day. This is important for the
+    // after-midnight portion of a schedule whose endDate was yesterday.
+    if (
+      !days.has(weekday(origin)) ||
+      (schedule.startDate && origin < schedule.startDate) ||
+      (schedule.endDate && origin > schedule.endDate)
+    ) {
+      continue;
+    }
+    const start = resolveLocal(origin, startClock, schedule.timezone, false);
+    const end = resolveLocal(
+      overnight ? addDays(origin, 1) : origin,
+      endClock,
+      schedule.timezone,
+      true,
+    );
+    if (start !== null && end !== null && end > start) {
+      result.push({ schedule, start, end });
+    }
+  }
+  if (weeklyWindowCache.size >= 20_000) weeklyWindowCache.clear();
+  weeklyWindowCache.set(
+    cacheKey,
+    result.map(({ start, end }) => ({ start, end })),
+  );
+  return result;
+}
+
+export function scheduleApplies(schedule: ManifestSchedule, at: Date): boolean {
+  const now = at.getTime();
+  return windows(schedule, at).some(
+    (window) => now >= window.start && now < window.end,
+  );
 }
 
 export function emergencyActive(manifest: Manifest, at: Date): boolean {
   const emergency = manifest.emergency;
-  if (!emergency) {
-    return false;
-  }
+  if (!emergency) return false;
   const start = Date.parse(emergency.activatedAt);
   const end = Date.parse(emergency.expiresAt);
-  const t = at.getTime();
+  const now = at.getTime();
   return (
-    Number.isFinite(start) && Number.isFinite(end) && t >= start && t < end
+    Number.isFinite(start) && Number.isFinite(end) && now >= start && now < end
   );
 }
 
-/** Resolve what should be playing right now. */
 export function resolveSelection(manifest: Manifest, at: Date): Selection {
+  const now = at.getTime();
+  const allWindows = (manifest.schedules ?? []).flatMap((schedule) =>
+    schedule.playlistId || schedule.layoutId ? windows(schedule, at) : [],
+  );
+  const futureTransitions = allWindows
+    .flatMap((window) => [window.start, window.end])
+    .filter((transition) => transition > now);
+
   if (emergencyActive(manifest, at)) {
+    const expires = Date.parse(manifest.emergency!.expiresAt);
+    if (Number.isFinite(expires) && expires > now)
+      futureTransitions.push(expires);
     return {
       playlistId: manifest.emergency!.playlistId,
       layoutId: null,
       scheduleId: null,
       emergencyId: manifest.emergency!.id,
       source: "emergency",
+      nextTransitionAt: nextTransition(futureTransitions),
+      playbackAnchor: manifest.emergency!.activatedAt,
     };
   }
 
-  const applicable = (manifest.schedules ?? [])
-    .filter((s) => s.playlistId || s.layoutId)
-    .filter((s) => scheduleApplies(s, at))
-    .sort((a, b) => b.priority - a.priority || b.specificity - a.specificity);
-  const winner = applicable[0];
+  const winner = allWindows
+    .filter((window) => now >= window.start && now < window.end)
+    .sort(
+      (a, b) =>
+        b.schedule.priority - a.schedule.priority ||
+        b.schedule.specificity - a.schedule.specificity ||
+        b.start - a.start ||
+        a.schedule.id.localeCompare(b.schedule.id),
+    )[0];
+  const transition = nextTransition(futureTransitions);
   if (winner) {
     return {
-      playlistId: winner.playlistId ?? null,
-      layoutId: winner.layoutId ?? null,
-      scheduleId: winner.id,
+      playlistId: winner.schedule.playlistId ?? null,
+      layoutId: winner.schedule.layoutId ?? null,
+      scheduleId: winner.schedule.id,
       emergencyId: null,
       source: "schedule",
+      nextTransitionAt: transition,
+      playbackAnchor: new Date(winner.start).toISOString(),
     };
   }
 
@@ -181,10 +325,10 @@ export function resolveSelection(manifest: Manifest, at: Date): Selection {
       scheduleId: null,
       emergencyId: null,
       source: "direct",
+      nextTransitionAt: transition,
+      playbackAnchor: null,
     };
   }
-
-  // A Layout may be assigned directly with no playlist.
   const directLayout = (manifest.layout ?? manifest.directFallbackLayout) as
     { id: string } | null | undefined;
   if (directLayout) {
@@ -194,27 +338,33 @@ export function resolveSelection(manifest: Manifest, at: Date): Selection {
       scheduleId: null,
       emergencyId: null,
       source: "direct",
+      nextTransitionAt: transition,
+      playbackAnchor: null,
     };
   }
-
   return {
     playlistId: null,
     layoutId: null,
     scheduleId: null,
     emergencyId: null,
     source: "none",
+    nextTransitionAt: transition,
+    playbackAnchor: null,
   };
 }
 
+function nextTransition(values: number[]): string | null {
+  const value = values.length > 0 ? Math.min(...values) : NaN;
+  return Number.isFinite(value) ? new Date(value).toISOString() : null;
+}
+
 export function findPlaylist(manifest: Manifest, playlistId: string | null) {
-  if (!playlistId) {
-    return null;
-  }
-  if (manifest.playlist?.id === playlistId) {
-    return manifest.playlist;
-  }
-  if (manifest.directFallbackPlaylist?.id === playlistId) {
+  if (!playlistId) return null;
+  if (manifest.playlist?.id === playlistId) return manifest.playlist;
+  if (manifest.directFallbackPlaylist?.id === playlistId)
     return manifest.directFallbackPlaylist;
-  }
-  return (manifest.playlists ?? []).find((p) => p.id === playlistId) ?? null;
+  return (
+    (manifest.playlists ?? []).find((playlist) => playlist.id === playlistId) ??
+    null
+  );
 }
