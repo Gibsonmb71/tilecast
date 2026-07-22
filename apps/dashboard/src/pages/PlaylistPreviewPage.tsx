@@ -28,10 +28,87 @@ export function playlistPreviewItemDuration(item: PlaylistItem) {
   return item.durationMs && item.durationMs > 0 ? item.durationMs : 10_000;
 }
 
+export const PLAYLIST_PREVIEW_FADE_MS = 300;
+
 function mediaStyle(item: PlaylistItem) {
   return {
     objectFit: item.fitMode === "stretch" ? ("fill" as const) : item.fitMode,
   };
+}
+
+function PreviewMedia({
+  item,
+  active,
+  paused,
+  muted,
+  className,
+  onReady,
+  onDone,
+  onError,
+}: {
+  item: PlaylistItem;
+  active: boolean;
+  paused: boolean;
+  muted: boolean;
+  className: string;
+  onReady: () => void;
+  onDone: () => void;
+  onError: () => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (paused) video.pause();
+    else void video.play().catch(() => undefined);
+  }, [paused]);
+
+  if (item.assetType === "video") {
+    return (
+      <video
+        ref={videoRef}
+        className={className}
+        src={api.assetPreviewUrl(item.assetId)}
+        style={mediaStyle(item)}
+        autoPlay={!paused}
+        playsInline
+        muted={!active || muted || !item.audioEnabled}
+        preload="auto"
+        onLoadedMetadata={(event) => {
+          event.currentTarget.volume = item.volume;
+          if (item.videoStartOffsetMs)
+            event.currentTarget.currentTime = item.videoStartOffsetMs / 1000;
+        }}
+        onLoadedData={onReady}
+        onTimeUpdate={(event) => {
+          if (
+            active &&
+            item.videoEndOffsetMs &&
+            event.currentTarget.currentTime >= item.videoEndOffsetMs / 1000
+          )
+            onDone();
+        }}
+        onEnded={() => active && onDone()}
+        onError={() => active && onError()}
+      />
+    );
+  }
+
+  return (
+    <img
+      className={className}
+      src={
+        item.assetType === "image"
+          ? api.assetPreviewUrl(item.assetId)
+          : item.thumbnailUrl
+      }
+      style={mediaStyle(item)}
+      alt=""
+      onLoad={onReady}
+      onError={() => active && onError()}
+    />
+  );
 }
 
 export function PlaylistPreviewPage() {
@@ -52,26 +129,63 @@ export function PlaylistPreviewPage() {
   const [paused, setPaused] = useState(false);
   const [muted, setMuted] = useState(false);
   const [failed, setFailed] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const [crossfade, setCrossfade] = useState<{
+    outgoing: PlaylistItem;
+    incomingId: string;
+    ready: boolean;
+  }>();
+  const indexRef = useRef(0);
   const current = items[index % Math.max(items.length, 1)];
 
   const move = useCallback(
     (direction: number) => {
-      setIndex((value) =>
-        nextPlaylistPreviewItem(value, items.length, direction),
+      const previousIndex = indexRef.current;
+      const nextIndex = nextPlaylistPreviewItem(
+        previousIndex,
+        items.length,
+        direction,
       );
+      const outgoing = items[previousIndex];
+      const incoming = items[nextIndex];
+      if (
+        outgoing &&
+        incoming &&
+        outgoing.id !== incoming.id &&
+        incoming.transition === "crossfade"
+      ) {
+        setCrossfade({ outgoing, incomingId: incoming.id, ready: false });
+      } else {
+        setCrossfade(undefined);
+      }
+      setFailed(false);
+      indexRef.current = nextIndex;
+      setIndex(nextIndex);
     },
-    [items.length],
+    [items],
   );
   const advance = useCallback(() => move(1), [move]);
 
   useEffect(() => {
+    indexRef.current = 0;
     setIndex(0);
+    setCrossfade(undefined);
   }, [query.data?.id, query.data?.revision]);
   useEffect(() => {
-    if (index >= items.length) setIndex(0);
+    if (index >= items.length) {
+      indexRef.current = 0;
+      setIndex(0);
+      setCrossfade(undefined);
+    }
   }, [index, items.length]);
   useEffect(() => setFailed(false), [current?.id]);
+  useEffect(() => {
+    if (!crossfade?.ready) return;
+    const timer = window.setTimeout(
+      () => setCrossfade(undefined),
+      PLAYLIST_PREVIEW_FADE_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [crossfade?.incomingId, crossfade?.ready]);
   useEffect(() => {
     if (!query.data) return;
     const previous = document.title;
@@ -88,12 +202,6 @@ export function PlaylistPreviewPage() {
     );
     return () => window.clearTimeout(timer);
   }, [advance, current, paused]);
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    if (paused) video.pause();
-    else void video.play().catch(() => undefined);
-  }, [current?.id, paused]);
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
       if (event.key === "ArrowRight") move(1);
@@ -171,47 +279,42 @@ export function PlaylistPreviewPage() {
             <strong>{current.assetName}</strong>
             <span>This item could not be previewed in Studio.</span>
           </div>
-        ) : current.assetType === "video" ? (
-          <video
-            ref={videoRef}
-            key={current.id}
-            className={`playlist-preview-page__media playlist-preview-page__media--${current.transition}`}
-            src={api.assetPreviewUrl(current.assetId)}
-            style={mediaStyle(current)}
-            autoPlay={!paused}
-            playsInline
-            muted={muted || !current.audioEnabled}
-            preload="auto"
-            onLoadedMetadata={(event) => {
-              event.currentTarget.volume = current.volume;
-              if (current.videoStartOffsetMs)
-                event.currentTarget.currentTime =
-                  current.videoStartOffsetMs / 1000;
-            }}
-            onTimeUpdate={(event) => {
-              if (
-                current.videoEndOffsetMs &&
-                event.currentTarget.currentTime >=
-                  current.videoEndOffsetMs / 1000
-              )
-                advance();
-            }}
-            onEnded={advance}
-            onError={() => setFailed(true)}
-          />
         ) : (
-          <img
-            key={current.id}
-            className={`playlist-preview-page__media playlist-preview-page__media--${current.transition}`}
-            src={
-              current.assetType === "image"
-                ? api.assetPreviewUrl(current.assetId)
-                : current.thumbnailUrl
-            }
-            style={mediaStyle(current)}
-            alt=""
-            onError={() => setFailed(true)}
-          />
+          <>
+            <PreviewMedia
+              key={current.id}
+              item={current}
+              active
+              paused={paused}
+              muted={muted}
+              className={`playlist-preview-page__media ${crossfade ? "playlist-preview-page__media--incoming" : `playlist-preview-page__media--${current.transition}`}`}
+              onReady={() =>
+                setCrossfade((value) =>
+                  value?.incomingId === current.id
+                    ? { ...value, ready: true }
+                    : value,
+                )
+              }
+              onDone={advance}
+              onError={() => {
+                setCrossfade(undefined);
+                setFailed(true);
+              }}
+            />
+            {crossfade && (
+              <PreviewMedia
+                key={crossfade.outgoing.id}
+                item={crossfade.outgoing}
+                active={false}
+                paused={paused}
+                muted
+                className={`playlist-preview-page__media playlist-preview-page__media--outgoing${crossfade.ready ? " playlist-preview-page__media--outgoing-active" : ""}`}
+                onReady={() => undefined}
+                onDone={() => undefined}
+                onError={() => undefined}
+              />
+            )}
+          </>
         )}
       </section>
 
