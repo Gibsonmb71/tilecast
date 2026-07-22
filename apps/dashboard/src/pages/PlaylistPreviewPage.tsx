@@ -59,14 +59,11 @@ function PreviewMedia({
   onError: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const nativeWidget =
-    item.assetType === "widget" &&
-    item.widgetProvider !== "website" &&
-    item.widgetProvider !== "youtube";
+  const widgetItem = item.assetType === "widget";
   const widgetQuery = useQuery({
     queryKey: ["assets", item.assetId, "playlist-preview"],
     queryFn: () => api.asset(item.assetId),
-    enabled: nativeWidget,
+    enabled: widgetItem,
     retry: false,
   });
   const savedWidget = widgetQuery.data?.widget;
@@ -82,7 +79,7 @@ function PreviewMedia({
         savedWidget!.configuration,
         csrfToken,
       ),
-    enabled: nativeWidget && Boolean(savedWidget),
+    enabled: widgetItem && Boolean(savedWidget),
     retry: false,
   });
   const dataSourceId =
@@ -111,15 +108,18 @@ function PreviewMedia({
     else void video.play().catch(() => undefined);
   }, [paused]);
   useEffect(() => {
-    if (!nativeWidget) return;
-    if (presentationQuery.data && (!dataSourceId || !sourceQuery.isLoading))
+    if (!widgetItem) return;
+    if (
+      presentationQuery.data?.kind === "native" &&
+      (!dataSourceId || !sourceQuery.isLoading)
+    )
       onReady();
     else if ((widgetQuery.isError || presentationQuery.isError) && active)
       onError();
   }, [
     active,
     dataSourceId,
-    nativeWidget,
+    widgetItem,
     onError,
     onReady,
     presentationQuery.data,
@@ -130,13 +130,13 @@ function PreviewMedia({
   ]);
   const [, setWidgetTick] = useState(0);
   useEffect(() => {
-    if (!active || !nativeWidget) return;
+    if (!active || !widgetItem) return;
     const timer = window.setInterval(
       () => setWidgetTick((value) => value + 1),
       1_000,
     );
     return () => window.clearInterval(timer);
-  }, [active, nativeWidget]);
+  }, [active, widgetItem]);
 
   if (item.assetType === "video") {
     return (
@@ -169,7 +169,7 @@ function PreviewMedia({
     );
   }
 
-  if (nativeWidget) {
+  if (widgetItem) {
     return (
       <div className={`${className} playlist-preview-page__widget`}>
         {presentationQuery.data ? (
@@ -180,6 +180,7 @@ function PreviewMedia({
             assetImageUrl={
               imageAssetId ? api.assetPreviewUrl(imageAssetId) : undefined
             }
+            onWebReady={onReady}
           />
         ) : (
           <span>Preparing Widget…</span>

@@ -395,3 +395,37 @@ it("renders shared compiled nodes for data-backed and catalog Widgets", () => {
     document.querySelectorAll(".presentation-preview__chart i"),
   ).toHaveLength(1);
 });
+
+it("renders compiled Website and YouTube presentations in a sandboxed frame", () => {
+  const ready = vi.fn();
+  render(
+    <DeclarativePresentationPreview
+      presentation={{
+        schemaVersion: 1,
+        kind: "web",
+        requiredCapabilities: { "web.remote": 1 },
+        web: {
+          mode: "remote",
+          url: "https://www.youtube.com/embed/video-id",
+          allowedHosts: ["www.youtube.com"],
+          onlineOnly: true,
+          lifecycle: "destroy_on_hide",
+        },
+      }}
+      source={undefined}
+      onWebReady={ready}
+    />,
+  );
+
+  const frame = screen.getByTitle("Web Widget preview");
+  expect(frame).toHaveAttribute(
+    "src",
+    "https://www.youtube.com/embed/video-id",
+  );
+  expect(frame).toHaveAttribute(
+    "sandbox",
+    expect.stringContaining("allow-scripts"),
+  );
+  fireEvent.load(frame);
+  expect(ready).toHaveBeenCalledOnce();
+});

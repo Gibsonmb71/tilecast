@@ -2550,21 +2550,29 @@ export function DeclarativePresentationPreview({
   source,
   now = new Date(),
   assetImageUrl,
+  onWebReady,
 }: {
   presentation: WidgetPresentation;
   source: unknown;
   now?: Date;
   assetImageUrl?: string;
+  onWebReady?: () => void;
 }) {
   if (presentation.kind === "web") {
+    const url = presentation.web?.url;
+    if (!url) return "Web presentation URL is unavailable.";
+    const external =
+      new URL(url, window.location.href).origin !== window.location.origin;
     return (
-      <div>
-        <strong>Sandboxed web</strong>
-        <br />
-        {presentation.web?.url ?? "Local signed bundle"}
-        <br />
-        <small>{presentation.web?.lifecycle ?? "destroy_on_hide"}</small>
-      </div>
+      <iframe
+        className="presentation-preview__web"
+        src={url}
+        title="Web Widget preview"
+        sandbox={`allow-scripts allow-forms allow-popups allow-presentation${external ? " allow-same-origin" : ""}`}
+        allow="autoplay; encrypted-media; fullscreen"
+        referrerPolicy="strict-origin-when-cross-origin"
+        onLoad={onWebReady}
+      />
     );
   }
   const records = previewRecordMaps(source);
