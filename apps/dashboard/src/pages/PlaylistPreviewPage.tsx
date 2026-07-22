@@ -13,7 +13,7 @@ import { Navigate, useLocation, useParams } from "react-router";
 import { api } from "../api/client";
 import type { PlaylistItem } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
-import { WidgetPreview } from "../components/content/AssetPreview";
+import { DeclarativePresentationPreview } from "../content/SourceEditors";
 
 export function nextPlaylistPreviewItem(
   index: number,
@@ -42,6 +42,7 @@ function PreviewMedia({
   active,
   paused,
   muted,
+  csrfToken,
   className,
   onReady,
   onDone,
@@ -51,6 +52,7 @@ function PreviewMedia({
   active: boolean;
   paused: boolean;
   muted: boolean;
+  csrfToken: string;
   className: string;
   onReady: () => void;
   onDone: () => void;
@@ -67,6 +69,40 @@ function PreviewMedia({
     enabled: nativeWidget,
     retry: false,
   });
+  const savedWidget = widgetQuery.data?.widget;
+  const presentationQuery = useQuery({
+    queryKey: [
+      "compiled-widget-preview",
+      savedWidget?.provider,
+      savedWidget?.configuration,
+    ],
+    queryFn: () =>
+      api.compileWidgetPreview(
+        savedWidget!.provider,
+        savedWidget!.configuration,
+        csrfToken,
+      ),
+    enabled: nativeWidget && Boolean(savedWidget),
+    retry: false,
+  });
+  const dataSourceId =
+    savedWidget?.configuration &&
+    "dataSourceId" in savedWidget.configuration &&
+    typeof savedWidget.configuration.dataSourceId === "string"
+      ? savedWidget.configuration.dataSourceId
+      : "";
+  const imageAssetId =
+    savedWidget?.configuration &&
+    "imageAssetId" in savedWidget.configuration &&
+    typeof savedWidget.configuration.imageAssetId === "string"
+      ? savedWidget.configuration.imageAssetId
+      : "";
+  const sourceQuery = useQuery({
+    queryKey: ["widget-data-source-preview", dataSourceId],
+    queryFn: () => api.previewSavedDataSource(dataSourceId),
+    enabled: Boolean(dataSourceId),
+    retry: false,
+  });
 
   useEffect(() => {
     const video = videoRef.current;
@@ -76,25 +112,31 @@ function PreviewMedia({
   }, [paused]);
   useEffect(() => {
     if (!nativeWidget) return;
-    if (widgetQuery.data) onReady();
-    else if (widgetQuery.isError && active) onError();
+    if (presentationQuery.data && (!dataSourceId || !sourceQuery.isLoading))
+      onReady();
+    else if ((widgetQuery.isError || presentationQuery.isError) && active)
+      onError();
   }, [
     active,
+    dataSourceId,
     nativeWidget,
     onError,
     onReady,
+    presentationQuery.data,
+    presentationQuery.isError,
+    sourceQuery.isLoading,
     widgetQuery.data,
     widgetQuery.isError,
   ]);
   const [, setWidgetTick] = useState(0);
   useEffect(() => {
-    if (!active || !nativeWidget || item.widgetProvider !== "clock") return;
+    if (!active || !nativeWidget) return;
     const timer = window.setInterval(
       () => setWidgetTick((value) => value + 1),
       1_000,
     );
     return () => window.clearInterval(timer);
-  }, [active, item.widgetProvider, nativeWidget]);
+  }, [active, nativeWidget]);
 
   if (item.assetType === "video") {
     return (
@@ -130,10 +172,17 @@ function PreviewMedia({
   if (nativeWidget) {
     return (
       <div className={`${className} playlist-preview-page__widget`}>
-        {widgetQuery.data ? (
-          <WidgetPreview asset={widgetQuery.data} />
+        {presentationQuery.data ? (
+          <DeclarativePresentationPreview
+            presentation={presentationQuery.data}
+            source={sourceQuery.data}
+            now={new Date()}
+            assetImageUrl={
+              imageAssetId ? api.assetPreviewUrl(imageAssetId) : undefined
+            }
+          />
         ) : (
-          <span>Loading Widget…</span>
+          <span>Preparing Widget…</span>
         )}
       </div>
     );
@@ -331,6 +380,7 @@ export function PlaylistPreviewPage() {
               active
               paused={paused}
               muted={muted}
+              csrfToken={auth.status.csrfToken ?? ""}
               className={`playlist-preview-page__media ${crossfade ? "playlist-preview-page__media--incoming" : `playlist-preview-page__media--${current.transition}`}`}
               onReady={() =>
                 setCrossfade((value) =>
@@ -354,6 +404,7 @@ export function PlaylistPreviewPage() {
                 active={false}
                 paused={paused}
                 muted
+                csrfToken={auth.status.csrfToken ?? ""}
                 className={`playlist-preview-page__media playlist-preview-page__media--outgoing${crossfade.ready ? " playlist-preview-page__media--outgoing-active" : ""}`}
                 onReady={() => undefined}
                 onDone={() => undefined}

@@ -1318,21 +1318,72 @@ button.organizer-chip:disabled {
 .playlist-preview-page__widget {
   display: grid;
   place-items: stretch;
+  overflow: hidden;
+  font-size: clamp(18px, 3vw, 44px);
 }
-.playlist-preview-page__widget > span:not(.asset-widget-preview) {
+.playlist-preview-page__widget > span {
   place-self: center;
   color: #aab8c5;
 }
-.playlist-preview-page__widget .asset-widget-preview {
-  padding: clamp(24px, 5vw, 72px);
+.playlist-preview-page__widget .presentation-preview__surface {
+  width: 100%;
+  height: 100%;
+  justify-content: center;
+  overflow: hidden;
 }
-.playlist-preview-page__widget .asset-widget-preview__topline {
-  font-size: clamp(14px, 2vw, 26px);
+.playlist-preview-page__widget .presentation-preview__grid,
+.playlist-preview-page__widget .presentation-preview__column,
+.playlist-preview-page__widget .presentation-preview__row {
+  min-width: 0;
+  min-height: 0;
 }
-.playlist-preview-page__widget .asset-widget-preview strong {
-  font-size: clamp(42px, 12vw, 180px);
-  line-height: 1;
-  text-align: center;
+.playlist-preview-page__widget .presentation-preview__text--metric,
+.playlist-preview-page__widget .presentation-preview__surface > span {
+  font-size: clamp(36px, 9vw, 150px);
+}
+.playlist-preview-page__widget .presentation-preview__progress {
+  position: relative;
+  width: min(760px, 80vw);
+  height: 36px;
+  overflow: hidden;
+  background: #ffffff30;
+  border-radius: 18px;
+}
+.playlist-preview-page__widget .presentation-preview__progress > span {
+  display: block;
+  height: 100%;
+  background: currentColor;
+}
+.playlist-preview-page__widget .presentation-preview__progress > strong {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  color: #05070a;
+}
+.playlist-preview-page__widget .presentation-preview__chart {
+  display: flex;
+  width: min(900px, 86vw);
+  height: min(460px, 55vh);
+  align-items: end;
+  gap: 6px;
+}
+.playlist-preview-page__widget .presentation-preview__chart i {
+  flex: 1;
+  min-width: 3px;
+  background: currentColor;
+  border-radius: 3px 3px 0 0;
+}
+.playlist-preview-page__widget .presentation-preview__qr-code {
+  width: min(58vh, 58vw);
+  height: min(58vh, 58vw);
+  object-fit: contain;
+}
+.playlist-preview-page__widget .presentation-preview__asset-image {
+  width: 100%;
+  min-height: 0;
+  object-fit: cover;
 }
 @keyframes playlist-preview-fade-in {
   from {

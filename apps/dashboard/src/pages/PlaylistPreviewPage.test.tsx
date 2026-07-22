@@ -11,8 +11,12 @@ import {
 import { RouterProvider, createMemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 import { api } from "../api/client";
-import type { Asset } from "../api/types";
+import type { Asset, WidgetPresentation } from "../api/types";
 import * as authModule from "../auth/AuthProvider";
+import {
+  DeclarativePresentationPreview,
+  formatCountdownPreview,
+} from "../content/SourceEditors";
 import { PlaylistPreviewPage } from "./PlaylistPreviewPage";
 import { PLAYLIST_PREVIEW_FADE_MS } from "./PlaylistPreviewPage";
 
@@ -257,6 +261,27 @@ it("loads the saved configuration and renders a native Clock Widget", async () =
       },
     },
   } satisfies Asset);
+  vi.spyOn(api, "compileWidgetPreview").mockResolvedValue({
+    schemaVersion: 1,
+    kind: "native",
+    requiredCapabilities: {},
+    native: {
+      root: {
+        type: "surface",
+        props: { backgroundColor: "#111111", padding: 10 },
+        children: [
+          {
+            type: "text",
+            props: { color: "#ffffff", role: "metric" },
+            binding: {
+              source: "environment",
+              format: "time:24:true:UTC",
+            },
+          },
+        ],
+      },
+    },
+  });
   const router = createMemoryRouter(
     [{ path: "/playlists/:id/preview", element: <PlaylistPreviewPage /> }],
     { initialEntries: ["/playlists/p1/preview"] },
@@ -272,14 +297,101 @@ it("loads the saved configuration and renders a native Clock Widget", async () =
     </QueryClientProvider>,
   );
 
-  expect(await screen.findByText("clock")).toBeInTheDocument();
-  expect(api.asset).toHaveBeenCalledWith("clock-asset");
   expect(
-    document
-      .querySelector<HTMLElement>(".asset-widget-preview")
-      ?.style.getPropertyValue("--asset-widget-background"),
-  ).toBe("#111111");
+    await screen.findByText((value) => /^\d{2}:\d{2}:\d{2}$/.test(value)),
+  ).toBeInTheDocument();
+  expect(api.asset).toHaveBeenCalledWith("clock-asset");
+  expect(api.compileWidgetPreview).toHaveBeenCalledWith(
+    "clock",
+    expect.objectContaining({ timezone: "UTC", showSeconds: true }),
+    "token",
+  );
+  expect(
+    document.querySelector<HTMLElement>(".presentation-preview__surface"),
+  ).toHaveStyle({ background: "#111111" });
   expect(
     screen.queryByText("This item could not be previewed in Studio."),
   ).not.toBeInTheDocument();
+});
+
+it("formats Countdown Widgets from their real target and completion state", () => {
+  const now = new Date("2026-07-21T12:00:00Z");
+  expect(
+    formatCountdownPreview(
+      "2026-07-23T14:03:04Z",
+      "countdown",
+      "Doors open",
+      now,
+    ),
+  ).toBe("2d 2h 3m 4s");
+  expect(
+    formatCountdownPreview(
+      "2026-07-20T12:00:00Z",
+      "countdown",
+      "Doors open",
+      now,
+    ),
+  ).toBe("Doors open");
+  expect(
+    formatCountdownPreview("2026-07-20T12:00:00Z", "count_up", "Complete", now),
+  ).toBe("1d 0h 0m 0s");
+});
+
+it("renders shared compiled nodes for data-backed and catalog Widgets", () => {
+  const presentation: WidgetPresentation = {
+    schemaVersion: 1,
+    kind: "native",
+    requiredCapabilities: {},
+    native: {
+      root: {
+        type: "surface",
+        children: [
+          {
+            type: "text",
+            props: { role: "metric" },
+            binding: {
+              source: "environment",
+              format: "countdown:2026-07-23T14:03:04Z:UTC:countdown:Complete",
+            },
+          },
+          {
+            type: "repeat",
+            repeat: { dataset: "source:records", limit: 2 },
+            children: [
+              {
+                type: "text",
+                binding: { source: "repeat", path: "title" },
+              },
+            ],
+          },
+          {
+            type: "progress",
+            props: { target: 100, showPercent: true },
+            binding: { source: "dataset", path: "value" },
+          },
+          {
+            type: "bar_chart",
+            binding: { source: "dataset", fields: ["value"] },
+          },
+        ],
+      },
+    },
+  };
+
+  render(
+    <DeclarativePresentationPreview
+      presentation={presentation}
+      source={{
+        records: [{ id: "1", values: { title: "Welcome", value: "50" } }],
+      }}
+      now={new Date("2026-07-21T12:00:00Z")}
+    />,
+  );
+
+  expect(screen.getByText("2d 2h 3m 4s")).toBeInTheDocument();
+  expect(screen.getByText("Welcome")).toBeInTheDocument();
+  expect(screen.getByText("50%")).toBeInTheDocument();
+  expect(
+    document.querySelectorAll(".presentation-preview__chart i"),
+  ).toHaveLength(1);
 });
