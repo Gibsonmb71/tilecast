@@ -21,6 +21,8 @@ var (
 	ErrForbidden = errors.New("insufficient form access")
 	// ErrValidation wraps a caller-correctable validation failure.
 	ErrValidation = errors.New("form request is invalid")
+	// ErrInUse is returned when a resource cannot be deleted because it is still referenced.
+	ErrInUse = errors.New("form resource is in use")
 )
 
 // Capability is a per-form access grant. Global roles are unchanged; a grant additionally
@@ -143,7 +145,10 @@ type Revision struct {
 	PublishedAt    time.Time  `json:"publishedAt"`
 }
 
-// WorkflowState is one configurable workflow state.
+// WorkflowState is one configurable workflow state. RecordCount and Removable are read-only
+// decorations (populated on GetForm, ignored on write): RecordCount is the number of non-deleted
+// records currently in the state, and Removable reports whether the state key may be renamed or
+// removed (false once any record or saved view references it).
 type WorkflowState struct {
 	Key               string `json:"key"`
 	Label             string `json:"label"`
@@ -151,6 +156,8 @@ type WorkflowState struct {
 	EligibleForOutput bool   `json:"eligibleForOutput"`
 	Initial           bool   `json:"initial"`
 	Terminal          bool   `json:"terminal"`
+	RecordCount       int    `json:"recordCount"`
+	Removable         bool   `json:"removable"`
 }
 
 // WorkflowTransition is one configurable transition between states.
@@ -293,6 +300,27 @@ type Grant struct {
 	UserID     uuid.UUID  `json:"userId"`
 	UserName   string     `json:"userName"`
 	Capability Capability `json:"capability"`
+}
+
+// AccessEntry is one user's effective access to a form, for the Access tab. Capabilities is the
+// collapsed (non-redundant) generating set actually granted; the creator and global Owners appear
+// as implicit managers that cannot be removed.
+type AccessEntry struct {
+	UserID        uuid.UUID    `json:"userId"`
+	Name          string       `json:"name"`
+	Username      string       `json:"username"`
+	Role          string       `json:"role"`
+	Capabilities  []Capability `json:"capabilities"`
+	IsCreator     bool         `json:"isCreator"`
+	IsGlobalOwner bool         `json:"isGlobalOwner"`
+}
+
+// DirectoryUser is the minimal user record the manager-scoped directory returns for granting access.
+type DirectoryUser struct {
+	ID       uuid.UUID `json:"id"`
+	Name     string    `json:"name"`
+	Username string    `json:"username"`
+	Role     string    `json:"role"`
 }
 
 // ApprovalItem is one pending record surfaced in the central approvals inbox.

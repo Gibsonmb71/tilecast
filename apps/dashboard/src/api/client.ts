@@ -12,6 +12,13 @@ import type {
   FormRecordInput,
   FormRecordListParams,
   FormApprovalPage,
+  FormWorkflow,
+  FormView,
+  FormViewInput,
+  FormTypedDataset,
+  FormOutputs,
+  FormAccessEntry,
+  FormDirectoryUser,
   AuthStatus,
   LoginInput,
   PairingRequest,
@@ -1070,6 +1077,67 @@ export const api = {
     attachmentId: string,
   ) =>
     `/api/v1/data-sources/${id}/records/${recordId}/attachments/${attachmentId}/content`,
+  // Workflow, views, outputs, and access (Studio 2C).
+  configureFormWorkflow: (
+    id: string,
+    workflow: FormWorkflow,
+    csrfToken: string,
+  ) =>
+    request<FormDataSource>(`/data-sources/${id}/form/workflow`, {
+      method: "PUT",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(workflow),
+    }),
+  upsertFormView: (id: string, input: FormViewInput, csrfToken: string) =>
+    request<FormView>(`/data-sources/${id}/views`, {
+      method: "PUT",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  previewFormView: (id: string, input: FormViewInput, csrfToken: string) =>
+    request<FormTypedDataset>(`/data-sources/${id}/views/preview`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  deleteFormView: (id: string, viewId: string, csrfToken: string) =>
+    request<void>(`/data-sources/${id}/views/${viewId}`, {
+      method: "DELETE",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
+  getFormOutputs: (id: string) =>
+    request<FormOutputs>(`/data-sources/${id}/outputs`),
+  rebuildFormOutputs: (id: string, csrfToken: string) =>
+    request<FormOutputs>(`/data-sources/${id}/outputs/rebuild`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
+  listFormAccess: (id: string) =>
+    request<{ entries: FormAccessEntry[] }>(`/data-sources/${id}/access`).then(
+      (result) => result.entries,
+    ),
+  replaceFormGrants: (
+    id: string,
+    userId: string,
+    capabilities: string[],
+    csrfToken: string,
+  ) =>
+    request<{ entries: FormAccessEntry[] }>(
+      `/data-sources/${id}/access/${userId}`,
+      {
+        method: "PUT",
+        headers: { "X-CSRF-Token": csrfToken },
+        body: JSON.stringify({ capabilities }),
+      },
+    ).then((result) => result.entries),
+  searchFormUsers: (id: string, search: string) => {
+    const query = new URLSearchParams();
+    if (search) query.set("search", search);
+    const encoded = query.toString();
+    return request<{ items: FormDirectoryUser[] }>(
+      `/data-sources/${id}/user-directory${encoded ? `?${encoded}` : ""}`,
+    ).then((result) => result.items);
+  },
   // Central approvals inbox.
   listApprovals: (params?: { page?: number; pageSize?: number }) => {
     const query = new URLSearchParams();

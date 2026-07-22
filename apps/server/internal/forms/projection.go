@@ -28,14 +28,8 @@ func (s *Service) RebuildProjection(ctx context.Context, formID uuid.UUID) error
 	if err != nil {
 		return err
 	}
-	fieldTypes := map[string]string{}
-	fieldLabels := map[string]string{}
-	if revision, err := s.loadPublishedRevision(ctx, s.db, formID); err == nil {
-		for _, spec := range outputFieldSpecs(revision.Schema) {
-			fieldTypes[spec.Key] = spec.Type
-			fieldLabels[spec.Key] = spec.Label
-		}
-	} else if !errors.Is(err, ErrNotFound) {
+	fieldTypes, fieldLabels, err := s.outputFieldMaps(ctx, formID)
+	if err != nil {
 		return err
 	}
 
@@ -100,6 +94,25 @@ func (s *Service) RebuildProjection(ctx context.Context, formID uuid.UUID) error
 		return s.invalidator.DataSourceChanged(ctx, formID, "form.projected")
 	}
 	return nil
+}
+
+// outputFieldMaps returns the key→type and key→label maps for a form's output fields, derived from
+// its published revision (empty when nothing is published yet).
+func (s *Service) outputFieldMaps(ctx context.Context, formID uuid.UUID) (map[string]string, map[string]string, error) {
+	fieldTypes := map[string]string{}
+	fieldLabels := map[string]string{}
+	revision, err := s.loadPublishedRevision(ctx, s.db, formID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return fieldTypes, fieldLabels, nil
+		}
+		return nil, nil, err
+	}
+	for _, spec := range outputFieldSpecs(revision.Schema) {
+		fieldTypes[spec.Key] = spec.Type
+		fieldLabels[spec.Key] = spec.Label
+	}
+	return fieldTypes, fieldLabels, nil
 }
 
 // projectView builds one typed dataset for a saved view. noteBoundary is called with every future

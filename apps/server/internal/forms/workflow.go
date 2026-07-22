@@ -141,6 +141,57 @@ func transitionRequiresNote(wf Workflow, transition WorkflowTransition) bool {
 	return true
 }
 
+// decorateWorkflowUsage fills each state's RecordCount from live record usage and Removable from
+// every persisted reference. A state referenced by a non-deleted record or saved view cannot be
+// renamed or removed (its key is immutable), matching the ConfigureWorkflow reconciliation rules;
+// the UI uses this to lock those controls.
+func (s *Service) decorateWorkflowUsage(ctx context.Context, q rowQuerier, id uuid.UUID, wf *Workflow) error {
+	rows, err := q.Query(ctx, `SELECT state_key,count(*) FROM form_records
+		WHERE data_source_id=$1 AND deleted_at IS NULL GROUP BY state_key`, id)
+	if err != nil {
+		return err
+	}
+	counts := map[string]int{}
+	for rows.Next() {
+		var key string
+		var count int
+		if err := rows.Scan(&key, &count); err != nil {
+			rows.Close()
+			return err
+		}
+		counts[key] = count
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	viewRows, err := q.Query(ctx, `SELECT DISTINCT state_key FROM form_views
+		CROSS JOIN LATERAL unnest(included_states) AS state_key
+		WHERE data_source_id=$1 AND deleted_at IS NULL`, id)
+	if err != nil {
+		return err
+	}
+	viewStates := map[string]bool{}
+	for viewRows.Next() {
+		var key string
+		if err := viewRows.Scan(&key); err != nil {
+			viewRows.Close()
+			return err
+		}
+		viewStates[key] = true
+	}
+	viewRows.Close()
+	if err := viewRows.Err(); err != nil {
+		return err
+	}
+	for i := range wf.States {
+		count := counts[wf.States[i].Key]
+		wf.States[i].RecordCount = count
+		wf.States[i].Removable = count == 0 && !viewStates[wf.States[i].Key]
+	}
+	return nil
+}
+
 // validateWorkflow enforces the bounded, script-free workflow rules.
 func validateWorkflow(wf Workflow) error {
 	if len(wf.States) == 0 || len(wf.States) > maxWorkflowStates {
@@ -202,12 +253,11 @@ type WorkflowInput struct {
 }
 
 // ConfigureWorkflow reconciles a form's workflow in place rather than dropping and recreating it,
-// so states referenced by existing records are never orphaned. State keys are immutable once a
-// record references them: a used state may have its label, order, terminal flag, and output
-// eligibility changed, but it cannot be removed or renamed, and the initial state cannot move
-// while records still sit in the current initial state. Transitions (which no record references)
-// are replaced wholesale. Eligibility changes are re-derived immediately and the projection is
-// rebuilt.
+// so states referenced by existing records or saved views are never orphaned. Referenced state keys
+// are immutable: their labels, order, terminal flag, and output eligibility may change, but the
+// states cannot be removed or renamed. The initial state cannot move while records still sit in the
+// current initial state. Transitions are replaced wholesale. Eligibility changes are re-derived
+// immediately and the projection is rebuilt.
 func (s *Service) ConfigureWorkflow(ctx context.Context, id, actor uuid.UUID, in WorkflowInput) error {
 	if _, err := s.ensureForm(ctx, s.db, id); err != nil {
 		return err
@@ -260,9 +310,33 @@ func (s *Service) ConfigureWorkflow(ctx context.Context, id, actor uuid.UUID, in
 	if err := usedRows.Err(); err != nil {
 		return err
 	}
+	viewRows, err := tx.Query(ctx, `SELECT DISTINCT state_key FROM form_views
+		CROSS JOIN LATERAL unnest(included_states) AS state_key
+		WHERE data_source_id=$1 AND deleted_at IS NULL`, id)
+	if err != nil {
+		return err
+	}
+	viewStates := map[string]bool{}
+	for viewRows.Next() {
+		var key string
+		if err := viewRows.Scan(&key); err != nil {
+			viewRows.Close()
+			return err
+		}
+		viewStates[key] = true
+	}
+	viewRows.Close()
+	if err := viewRows.Err(); err != nil {
+		return err
+	}
 	for key := range usedStates {
 		if _, ok := newByKey[key]; !ok {
 			return fmt.Errorf("%w: state %q is referenced by existing records and cannot be removed or renamed", ErrValidation, key)
+		}
+	}
+	for key := range viewStates {
+		if _, ok := newByKey[key]; !ok {
+			return fmt.Errorf("%w: state %q is referenced by a saved view and cannot be removed or renamed", ErrValidation, key)
 		}
 	}
 	// Changing which state is initial while records still occupy the current initial state would

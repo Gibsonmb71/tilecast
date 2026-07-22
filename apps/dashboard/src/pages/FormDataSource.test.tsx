@@ -311,4 +311,22 @@ describe("Form Data Source Studio", () => {
       await screen.findByText("Leave without saving?"),
     ).toBeInTheDocument();
   });
+
+  it("blocks switching Form tabs while the builder is dirty", async () => {
+    mockAuth("owner");
+    vi.spyOn(api, "getDataSource").mockResolvedValue(formDataSourceDetail);
+    vi.spyOn(api, "getForm").mockResolvedValue(formDetail(["manage"]));
+    const user = userEvent.setup();
+    renderAt("/data-sources/f1?tab=form");
+
+    await user.type(await screen.findByLabelText("Form title"), "X");
+    await user.click(screen.getByRole("button", { name: "Workflow" }));
+
+    expect(
+      await screen.findByText("Leave without saving?"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Save draft" }),
+    ).toBeInTheDocument();
+  });
 });

@@ -879,6 +879,10 @@ export type FormWorkflowState = {
   eligibleForOutput: boolean;
   initial: boolean;
   terminal: boolean;
+  // Read-only usage decoration from GetForm: how many records are in the state, and whether the
+  // state key may still be renamed/removed (false once any record references it).
+  recordCount?: number;
+  removable?: boolean;
 };
 
 export type FormWorkflowTransition = {
@@ -940,6 +944,83 @@ export type FormDataSource = {
   workflow: FormWorkflow;
   views: FormView[];
   grantedCapabilities: FormCapability[];
+};
+
+// --- Studio 2C: views, outputs, access ---
+
+// FormViewInput is the create/update/preview payload for a saved view.
+export type FormViewInput = {
+  key: string;
+  name: string;
+  includedStates: string[];
+  fieldFilters: {
+    field: string;
+    operator: FormFilterOperator;
+    value: string;
+  }[];
+  timeFilter: {
+    enabled: boolean;
+    startField?: string;
+    endField?: string;
+    startBeforeNow?: boolean;
+    endAfterNow?: boolean;
+  };
+  sort: { field: string; direction: FormSortDirection }[];
+  outputFields: string[];
+  recordLimit: number;
+  position: number;
+};
+
+// FormTypedField / FormTypedRecord / FormTypedDataset mirror the server's typed-dataset shapes
+// returned by the view preview and the Outputs tab.
+export type FormTypedField = { key: string; label: string; type: string };
+export type FormTypedRecord = { id: string; values: Record<string, string> };
+export type FormTypedDataset = {
+  id: string;
+  kind: string;
+  fields?: FormTypedField[];
+  records?: FormTypedRecord[];
+};
+
+export type FormOutputUsage = {
+  widgets: number;
+  layouts: number;
+  names: string[];
+};
+
+export type FormOutputView = {
+  key: string;
+  name: string;
+  fields: FormTypedField[];
+  recordCount: number;
+  previewRecords: FormTypedRecord[];
+  usage: FormOutputUsage;
+};
+
+export type FormOutputs = {
+  views: FormOutputView[];
+  lastSuccessAt?: string | null;
+  nextRefreshAt?: string | null;
+  usingCachedData: boolean;
+  errorCode?: string | null;
+  stale: boolean;
+};
+
+export type FormAccessEntry = {
+  userId: string;
+  name: string;
+  username: string;
+  role: string;
+  capabilities: FormCapability[];
+  isCreator: boolean;
+  isGlobalOwner: boolean;
+};
+
+export type FormDirectoryUser = {
+  id: string;
+  name: string;
+  username: string;
+  role: string;
 };
 
 export type CreateFormInput = {
