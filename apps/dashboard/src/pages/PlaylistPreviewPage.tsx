@@ -13,6 +13,7 @@ import { Navigate, useLocation, useParams } from "react-router";
 import { api } from "../api/client";
 import type { PlaylistItem } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
+import { DeclarativePresentationPreview } from "../content/SourceEditors";
 
 export function nextPlaylistPreviewItem(
   index: number,
@@ -41,6 +42,7 @@ function PreviewMedia({
   active,
   paused,
   muted,
+  csrfToken,
   className,
   onReady,
   onDone,
@@ -50,12 +52,54 @@ function PreviewMedia({
   active: boolean;
   paused: boolean;
   muted: boolean;
+  csrfToken: string;
   className: string;
   onReady: () => void;
   onDone: () => void;
   onError: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const widgetItem = item.assetType === "widget";
+  const widgetQuery = useQuery({
+    queryKey: ["assets", item.assetId, "playlist-preview"],
+    queryFn: () => api.asset(item.assetId),
+    enabled: widgetItem,
+    retry: false,
+  });
+  const savedWidget = widgetQuery.data?.widget;
+  const presentationQuery = useQuery({
+    queryKey: [
+      "compiled-widget-preview",
+      savedWidget?.provider,
+      savedWidget?.configuration,
+    ],
+    queryFn: () =>
+      api.compileWidgetPreview(
+        savedWidget!.provider,
+        savedWidget!.configuration,
+        csrfToken,
+      ),
+    enabled: widgetItem && Boolean(savedWidget),
+    retry: false,
+  });
+  const dataSourceId =
+    savedWidget?.configuration &&
+    "dataSourceId" in savedWidget.configuration &&
+    typeof savedWidget.configuration.dataSourceId === "string"
+      ? savedWidget.configuration.dataSourceId
+      : "";
+  const imageAssetId =
+    savedWidget?.configuration &&
+    "imageAssetId" in savedWidget.configuration &&
+    typeof savedWidget.configuration.imageAssetId === "string"
+      ? savedWidget.configuration.imageAssetId
+      : "";
+  const sourceQuery = useQuery({
+    queryKey: ["widget-data-source-preview", dataSourceId],
+    queryFn: () => api.previewSavedDataSource(dataSourceId),
+    enabled: Boolean(dataSourceId),
+    retry: false,
+  });
 
   useEffect(() => {
     const video = videoRef.current;
@@ -63,6 +107,36 @@ function PreviewMedia({
     if (paused) video.pause();
     else void video.play().catch(() => undefined);
   }, [paused]);
+  useEffect(() => {
+    if (!widgetItem) return;
+    if (
+      presentationQuery.data?.kind === "native" &&
+      (!dataSourceId || !sourceQuery.isLoading)
+    )
+      onReady();
+    else if ((widgetQuery.isError || presentationQuery.isError) && active)
+      onError();
+  }, [
+    active,
+    dataSourceId,
+    widgetItem,
+    onError,
+    onReady,
+    presentationQuery.data,
+    presentationQuery.isError,
+    sourceQuery.isLoading,
+    widgetQuery.data,
+    widgetQuery.isError,
+  ]);
+  const [, setWidgetTick] = useState(0);
+  useEffect(() => {
+    if (!active || !widgetItem) return;
+    const timer = window.setInterval(
+      () => setWidgetTick((value) => value + 1),
+      1_000,
+    );
+    return () => window.clearInterval(timer);
+  }, [active, widgetItem]);
 
   if (item.assetType === "video") {
     return (
@@ -92,6 +166,26 @@ function PreviewMedia({
         onEnded={() => active && onDone()}
         onError={() => active && onError()}
       />
+    );
+  }
+
+  if (widgetItem) {
+    return (
+      <div className={`${className} playlist-preview-page__widget`}>
+        {presentationQuery.data ? (
+          <DeclarativePresentationPreview
+            presentation={presentationQuery.data}
+            source={sourceQuery.data}
+            now={new Date()}
+            assetImageUrl={
+              imageAssetId ? api.assetPreviewUrl(imageAssetId) : undefined
+            }
+            onWebReady={onReady}
+          />
+        ) : (
+          <span>Preparing Widget…</span>
+        )}
+      </div>
     );
   }
 
@@ -287,11 +381,14 @@ export function PlaylistPreviewPage() {
               active
               paused={paused}
               muted={muted}
+              csrfToken={auth.status.csrfToken ?? ""}
               className={`playlist-preview-page__media ${crossfade ? "playlist-preview-page__media--incoming" : `playlist-preview-page__media--${current.transition}`}`}
               onReady={() =>
                 setCrossfade((value) =>
                   value?.incomingId === current.id
-                    ? { ...value, ready: true }
+                    ? value.ready
+                      ? value
+                      : { ...value, ready: true }
                     : value,
                 )
               }
@@ -308,6 +405,7 @@ export function PlaylistPreviewPage() {
                 active={false}
                 paused={paused}
                 muted
+                csrfToken={auth.status.csrfToken ?? ""}
                 className={`playlist-preview-page__media playlist-preview-page__media--outgoing${crossfade.ready ? " playlist-preview-page__media--outgoing-active" : ""}`}
                 onReady={() => undefined}
                 onDone={() => undefined}

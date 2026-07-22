@@ -17,6 +17,7 @@ import {
   Youtube,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import QRCode from "qrcode";
 import { api } from "../api/client";
 import type {
   Asset,
@@ -2544,59 +2545,126 @@ export function NativeAppEditor({
   );
 }
 
-function DeclarativePresentationPreview({
+export function DeclarativePresentationPreview({
   presentation,
   source,
+  now = new Date(),
+  assetImageUrl,
+  onWebReady,
 }: {
   presentation: WidgetPresentation;
   source: unknown;
+  now?: Date;
+  assetImageUrl?: string;
+  onWebReady?: () => void;
 }) {
   if (presentation.kind === "web") {
+    const url = presentation.web?.url;
+    if (!url) return "Web presentation URL is unavailable.";
+    const external =
+      new URL(url, window.location.href).origin !== window.location.origin;
     return (
-      <div>
-        <strong>Sandboxed web</strong>
-        <br />
-        {presentation.web?.url ?? "Local signed bundle"}
-        <br />
-        <small>{presentation.web?.lifecycle ?? "destroy_on_hide"}</small>
-      </div>
+      <iframe
+        className="presentation-preview__web"
+        src={url}
+        title="Web Widget preview"
+        sandbox={`allow-scripts allow-forms allow-popups allow-presentation${external ? " allow-same-origin" : ""}`}
+        allow="autoplay; encrypted-media; fullscreen"
+        referrerPolicy="strict-origin-when-cross-origin"
+        onLoad={onWebReady}
+      />
     );
   }
   const records = previewRecordMaps(source);
   const root = presentation.native?.root;
   return root ? (
-    <PreviewNode node={root} records={records} />
+    <PreviewNode
+      node={root}
+      records={records}
+      now={now}
+      assetImageUrl={assetImageUrl}
+    />
   ) : (
     "Presentation root is unavailable."
   );
+}
+
+export function formatCountdownPreview(
+  target: string,
+  mode: string,
+  completionText: string,
+  now: Date,
+) {
+  const targetTime = Date.parse(target);
+  if (!Number.isFinite(targetTime)) return completionText;
+  const rawDifference =
+    mode === "count_up"
+      ? now.getTime() - targetTime
+      : targetTime - now.getTime();
+  if (rawDifference <= 0 && mode !== "count_up") return completionText;
+  const totalSeconds = Math.floor(Math.abs(rawDifference) / 1000);
+  const days = Math.floor(totalSeconds / 86_400);
+  const hours = Math.floor((totalSeconds % 86_400) / 3_600);
+  const minutes = Math.floor((totalSeconds % 3_600) / 60);
+  const seconds = totalSeconds % 60;
+  return [
+    days > 0 ? `${days}d` : "",
+    days > 0 || hours > 0 ? `${hours}h` : "",
+    `${minutes}m`,
+    `${seconds}s`,
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 function PreviewNode({
   node,
   records,
   record,
+  recordIndex,
+  now,
+  assetImageUrl,
 }: {
   node: PresentationNode;
   records: Record<string, string>[];
   record?: Record<string, string>;
+  recordIndex?: number;
+  now: Date;
+  assetImageUrl?: string;
 }) {
   const props = node.props ?? {};
   const binding = node.binding;
   const resolve = () => {
     if (!binding) return "";
-    if (binding.source === "literal") return binding.value ?? "";
+    if (binding.source === "literal")
+      return formatPresentationValue(binding.value ?? "", binding);
     if (binding.source === "repeat")
-      return record?.[binding.path ?? ""] ?? binding.fallback ?? "";
-    if (binding.source === "dataset")
-      return records
-        .map((item) =>
-          (binding.fields ?? [])
-            .map((field) => item[field])
-            .filter(Boolean)
-            .join(" "),
-        )
-        .filter(Boolean)
-        .join(binding.separator ?? " ");
+      return formatPresentationValue(
+        record?.[binding.path ?? ""] ?? binding.fallback ?? "",
+        binding,
+      );
+    if (binding.source === "repeat_index")
+      return formatPresentationValue(String((recordIndex ?? 0) + 1), binding);
+    if (binding.source === "dataset") {
+      if (binding.path)
+        return formatPresentationValue(
+          records[0]?.[binding.path] ?? binding.fallback ?? "",
+          binding,
+        );
+      const joined =
+        records
+          .map((item) =>
+            (binding.fields ?? [])
+              .map((field) => item[field])
+              .filter(Boolean)
+              .join(" "),
+          )
+          .filter(Boolean)
+          .join(binding.separator ?? " ") ||
+        binding.fallback ||
+        "";
+      return formatPresentationValue(joined, binding);
+    }
     if (binding.source === "environment") {
       const format = binding.format?.split(":") ?? [];
       const timezone = format.at(-1) || "UTC";
@@ -2605,14 +2673,20 @@ function PreviewNode({
           dateStyle:
             (format[1] as "full" | "long" | "medium" | "short") ?? "full",
           timeZone: timezone,
-        }).format(new Date());
+        }).format(now);
       if (format[0] === "time")
         return new Intl.DateTimeFormat(undefined, {
           timeStyle: format[2] === "true" ? "medium" : "short",
           hour12: format[1] !== "24",
           timeZone: timezone,
-        }).format(new Date());
-      if (format[0] === "countdown") return "12d 4h 32m";
+        }).format(now);
+      if (format[0] === "countdown") {
+        const completionText = format.pop() || "Complete";
+        const mode = format.pop() || "countdown";
+        format.pop(); // Timezone is already reflected in the saved ISO target.
+        const target = format.slice(1).join(":");
+        return formatCountdownPreview(target, mode, completionText, now);
+      }
     }
     return binding.fallback ?? "";
   };
@@ -2627,6 +2701,9 @@ function PreviewNode({
                 node={child}
                 records={records}
                 record={item}
+                recordIndex={index}
+                now={now}
+                assetImageUrl={assetImageUrl}
               />
             ))}
           </div>
@@ -2634,19 +2711,69 @@ function PreviewNode({
       </>
     );
   }
-  if (node.type === "qr_code")
-    return <div aria-label="QR Code preview">▦ {resolve()}</div>;
+  if (node.type === "qr_code") return <PresentationQrCode value={resolve()} />;
   if (["text", "badge", "marquee"].includes(node.type))
     return (
-      <span className={`presentation-preview__${node.type}`}>{resolve()}</span>
+      <span
+        className={`presentation-preview__${node.type}${typeof props.role === "string" ? ` presentation-preview__${node.type}--${props.role}` : ""}`}
+      >
+        {resolve()}
+      </span>
     );
+  if (node.type === "progress") {
+    const value = Number(resolve());
+    const targetProp = props.target;
+    const target = props.targetIsField
+      ? Number(records[0]?.[String(targetProp)] ?? 0)
+      : Number(targetProp ?? 100);
+    const percent =
+      target > 0 ? Math.max(0, Math.min(100, (value / target) * 100)) : 0;
+    return (
+      <div className="presentation-preview__progress">
+        <span style={{ width: `${percent}%` }} />
+        {props.showPercent === true && <strong>{Math.round(percent)}%</strong>}
+      </div>
+    );
+  }
+  if (["line_chart", "bar_chart", "donut_chart"].includes(node.type)) {
+    const fields = node.binding?.fields ?? [];
+    const values = records.flatMap((entry) =>
+      fields.map((field) => Number(entry[field])).filter(Number.isFinite),
+    );
+    const maximum = Math.max(...values, 1);
+    return (
+      <div
+        className={`presentation-preview__chart presentation-preview__${node.type}`}
+      >
+        {(values.length ? values : [0]).slice(0, 24).map((value, index) => (
+          <i
+            key={index}
+            style={{ height: `${Math.max(3, (value / maximum) * 100)}%` }}
+          />
+        ))}
+      </div>
+    );
+  }
+  if (node.type === "asset_image")
+    return assetImageUrl ? (
+      <img
+        className="presentation-preview__asset-image"
+        src={assetImageUrl}
+        alt=""
+      />
+    ) : null;
   const direction = node.type === "row" ? "row" : "column";
+  const columns = Math.max(1, Number(props.columns ?? 1));
   return (
     <div
       className={`presentation-preview__${node.type}`}
       style={{
-        display: "flex",
+        display: node.type === "grid" ? "grid" : "flex",
         flexDirection: direction,
+        gridTemplateColumns:
+          node.type === "grid"
+            ? `repeat(${columns}, minmax(0, 1fr))`
+            : undefined,
         gap: `${Number(props.gap ?? 8)}px`,
         background:
           typeof props.backgroundColor === "string"
@@ -2661,9 +2788,70 @@ function PreviewNode({
           node={child}
           records={records}
           record={record}
+          recordIndex={recordIndex}
+          now={now}
+          assetImageUrl={assetImageUrl}
         />
       ))}
     </div>
+  );
+}
+
+function formatPresentationValue(
+  value: string,
+  binding: NonNullable<PresentationNode["binding"]>,
+) {
+  let result = value;
+  const numeric = Number(value);
+  if (value && Number.isFinite(numeric)) {
+    const precision =
+      binding.precision ?? (binding.format === "integer" ? 0 : 2);
+    if (
+      ["number", "integer", "percent", "currency"].includes(
+        binding.format ?? "",
+      )
+    )
+      result = new Intl.NumberFormat(undefined, {
+        maximumFractionDigits: precision,
+        minimumFractionDigits: binding.format === "integer" ? 0 : undefined,
+      }).format(numeric);
+  } else if (value && binding.format?.startsWith("date")) {
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime()))
+      result = new Intl.DateTimeFormat(undefined, {
+        dateStyle: binding.format === "date-long" ? "long" : "short",
+      }).format(parsed);
+  }
+  return `${binding.prefix ?? ""}${result}${binding.suffix ?? ""}`;
+}
+
+function PresentationQrCode({ value }: { value: string }) {
+  const [url, setUrl] = useState("");
+  useEffect(() => {
+    let current = true;
+    if (!value) {
+      setUrl("");
+      return;
+    }
+    void QRCode.toDataURL(value, { margin: 1, width: 640 })
+      .then((next) => {
+        if (current) setUrl(next);
+      })
+      .catch(() => {
+        if (current) setUrl("");
+      });
+    return () => {
+      current = false;
+    };
+  }, [value]);
+  return url ? (
+    <img
+      className="presentation-preview__qr-code"
+      src={url}
+      alt={`QR Code for ${value}`}
+    />
+  ) : (
+    <span>Preparing QR Code…</span>
   );
 }
 
@@ -2679,16 +2867,48 @@ function previewRecordMaps(value: unknown): Record<string, string>[] {
     configuration?.data && typeof configuration.data === "object"
       ? (configuration.data as Record<string, unknown>)
       : undefined;
-  const records = direct ?? (Array.isArray(data?.records) ? data.records : []);
+  const datasets = Array.isArray(root.datasets) ? root.datasets : [];
+  const datasetEntries = datasets.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
+    const dataset = entry as Record<string, unknown>;
+    if (Array.isArray(dataset.records))
+      return (dataset.records as unknown[]).filter(
+        (record): record is Record<string, unknown> =>
+          Boolean(record) && typeof record === "object",
+      );
+    if (Array.isArray(dataset.points))
+      return (dataset.points as unknown[]).filter(
+        (record): record is Record<string, unknown> =>
+          Boolean(record) && typeof record === "object",
+      );
+    return dataset.values && typeof dataset.values === "object"
+      ? [dataset.values]
+      : [];
+  });
+  const records =
+    direct ??
+    (Array.isArray(data?.records)
+      ? data.records
+      : Array.isArray(data?.events)
+        ? data.events
+        : datasetEntries);
   return records.slice(0, 12).map((item, index) => {
     if (!item || typeof item !== "object") return { id: String(index) };
     const record = item as Record<string, unknown>;
     const values =
       record.values && typeof record.values === "object"
         ? (record.values as Record<string, unknown>)
-        : record;
+        : {};
+    const flattened = { ...record, ...values };
+    if (typeof record.start === "string") {
+      flattened.date ??= record.start.split("T")[0];
+      flattened.startTime ??= record.start;
+    }
+    if (typeof record.end === "string") flattened.endTime ??= record.end;
+    if (typeof record.descriptionExcerpt === "string")
+      flattened.description ??= record.descriptionExcerpt;
     return Object.fromEntries(
-      Object.entries(values).map(([key, entry]) => [
+      Object.entries(flattened).map(([key, entry]) => [
         key,
         typeof entry === "string" ||
         typeof entry === "number" ||
