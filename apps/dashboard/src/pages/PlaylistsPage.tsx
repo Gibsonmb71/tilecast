@@ -69,6 +69,14 @@ export function playlistDuration(items: PlaylistItem[] | null | undefined) {
     return total == null || duration == null ? null : total + duration;
   }, 0);
 }
+
+export function playlistItemUsesFixedDuration(item: PlaylistItem) {
+  return (
+    item.assetType === "image" ||
+    item.assetType === "layout" ||
+    (item.assetType === "widget" && item.widgetProvider !== "youtube")
+  );
+}
 function formatDuration(ms: number | null) {
   if (ms == null) return "Contains full-length video";
   const seconds = Math.round(ms / 1000);
@@ -248,7 +256,7 @@ export function PlaylistEditorPage() {
               asset.type === "image"
                 ? 10000
                 : asset.type === "widget" &&
-                    asset.widget?.provider === "website"
+                    asset.widget?.provider !== "youtube"
                   ? 30000
                   : undefined,
             fitMode: "contain",
@@ -670,15 +678,17 @@ function TimelineItem({
               </label>
             )}
           </>
-        ) : item.assetType === "image" ||
-          (item.assetType === "widget" && item.widgetProvider === "website") ? (
+        ) : playlistItemUsesFixedDuration(item) ? (
           <label>
             Seconds
             <input
               disabled={!canManage}
               type="number"
               min="1"
-              value={(item.durationMs ?? 10000) / 1000}
+              value={
+                (item.durationMs ??
+                  (item.assetType === "widget" ? 30000 : 10000)) / 1000
+              }
               onChange={(e) => set("durationMs", Number(e.target.value) * 1000)}
             />
           </label>
