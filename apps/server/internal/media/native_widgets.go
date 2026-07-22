@@ -126,6 +126,21 @@ func (countdownWidgetProvider) Normalize(_ context.Context, raw json.RawMessage)
 	if c.Mode != "countdown" && c.Mode != "count_up" {
 		return nil, errors.New("countdown mode is invalid")
 	}
+	if c.Recurrence == "" {
+		c.Recurrence = "none"
+	}
+	if c.Recurrence != "none" && c.Recurrence != "daily" && c.Recurrence != "weekly" && c.Recurrence != "monthly" && c.Recurrence != "yearly" {
+		return nil, errors.New("countdown recurrence is invalid")
+	}
+	if c.Mode != "countdown" && c.Recurrence != "none" {
+		return nil, errors.New("recurring countdowns must count down")
+	}
+	if c.Layout == "" {
+		c.Layout = "stacked"
+	}
+	if c.Layout != "stacked" && c.Layout != "horizontal" && c.Layout != "countdown_only" {
+		return nil, errors.New("countdown layout is invalid")
+	}
 	if c.CompletionAction == "" {
 		c.CompletionAction = "completed_text"
 	}

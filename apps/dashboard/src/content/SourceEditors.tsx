@@ -375,6 +375,8 @@ const nativeDefault = (provider: NativeProvider): NativeConfig => {
       target: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 16),
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
       mode: "countdown",
+      recurrence: "none",
+      layout: "stacked",
       label: "",
       completionText: "Event started",
       completionAction: "completed_text",
@@ -853,6 +855,11 @@ export function NativeAppEditor({
                         ...(current as CountdownWidgetConfig),
                         mode: event.target
                           .value as CountdownWidgetConfig["mode"],
+                        recurrence:
+                          event.target.value === "count_up"
+                            ? "none"
+                            : ((current as CountdownWidgetConfig).recurrence ??
+                              "none"),
                       }))
                     }
                   >
@@ -861,12 +868,64 @@ export function NativeAppEditor({
                   </Select>
                 </label>
                 <label className="field">
+                  <span className="field__label">Repeat</span>
+                  <Select
+                    value={
+                      (configuration as CountdownWidgetConfig).recurrence ??
+                      "none"
+                    }
+                    disabled={
+                      readOnly ||
+                      (configuration as CountdownWidgetConfig).mode ===
+                        "count_up"
+                    }
+                    onChange={(event) =>
+                      setConfiguration((current) => ({
+                        ...(current as CountdownWidgetConfig),
+                        recurrence: event.target
+                          .value as CountdownWidgetConfig["recurrence"],
+                      }))
+                    }
+                  >
+                    <option value="none">Does not repeat</option>
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                    <option value="yearly">Yearly</option>
+                  </Select>
+                </label>
+                <label className="field">
+                  <span className="field__label">Layout</span>
+                  <Select
+                    value={
+                      (configuration as CountdownWidgetConfig).layout ??
+                      "stacked"
+                    }
+                    disabled={readOnly}
+                    onChange={(event) =>
+                      setConfiguration((current) => ({
+                        ...(current as CountdownWidgetConfig),
+                        layout: event.target
+                          .value as CountdownWidgetConfig["layout"],
+                      }))
+                    }
+                  >
+                    <option value="stacked">Title above countdown</option>
+                    <option value="horizontal">Title beside countdown</option>
+                    <option value="countdown_only">Countdown only</option>
+                  </Select>
+                </label>
+                <label className="field">
                   <span className="field__label">Completion behavior</span>
                   <Select
                     value={
                       (configuration as CountdownWidgetConfig).completionAction
                     }
-                    disabled={readOnly}
+                    disabled={
+                      readOnly ||
+                      ((configuration as CountdownWidgetConfig).recurrence ??
+                        "none") !== "none"
+                    }
                     onChange={(event) =>
                       setConfiguration((current) => ({
                         ...current,
@@ -883,10 +942,14 @@ export function NativeAppEditor({
               </div>
               <div className="form-grid form-grid--2">
                 <label className="field">
-                  <span className="field__label">Label</span>
+                  <span className="field__label">Title</span>
                   <input
                     value={(configuration as CountdownWidgetConfig).label ?? ""}
-                    disabled={readOnly}
+                    disabled={
+                      readOnly ||
+                      ((configuration as CountdownWidgetConfig).layout ??
+                        "stacked") === "countdown_only"
+                    }
                     onChange={(event) =>
                       setConfiguration((current) => ({
                         ...current,
@@ -902,7 +965,11 @@ export function NativeAppEditor({
                       (configuration as CountdownWidgetConfig).completionText ??
                       ""
                     }
-                    disabled={readOnly}
+                    disabled={
+                      readOnly ||
+                      ((configuration as CountdownWidgetConfig).recurrence ??
+                        "none") !== "none"
+                    }
                     onChange={(event) =>
                       setConfiguration((current) => ({
                         ...current,
@@ -2625,27 +2692,195 @@ export function formatCountdownPreview(
   mode: string,
   completionText: string,
   now: Date,
+  recurrence = "none",
+  timezone = "UTC",
+  completionAction = "completed_text",
+  visibleUnits?: string,
 ) {
-  const targetTime = Date.parse(target);
+  const targetTime = resolveCountdownTarget(target, timezone, recurrence, now);
   if (!Number.isFinite(targetTime)) return completionText;
   const rawDifference =
     mode === "count_up"
       ? now.getTime() - targetTime
       : targetTime - now.getTime();
-  if (rawDifference <= 0 && mode !== "count_up") return completionText;
+  if (rawDifference <= 0 && mode !== "count_up") {
+    if (completionAction === "hide") return "";
+    if (completionAction !== "count_up") return completionText;
+  }
   const totalSeconds = Math.floor(Math.abs(rawDifference) / 1000);
   const days = Math.floor(totalSeconds / 86_400);
   const hours = Math.floor((totalSeconds % 86_400) / 3_600);
   const minutes = Math.floor((totalSeconds % 3_600) / 60);
   const seconds = totalSeconds % 60;
-  return [
-    days > 0 ? `${days}d` : "",
-    days > 0 || hours > 0 ? `${hours}h` : "",
-    `${minutes}m`,
-    `${seconds}s`,
-  ]
+  return (
+    visibleUnits
+      ? [
+          visibleUnits[0] === "1" ? `${days}d` : "",
+          visibleUnits[1] === "1" ? `${hours}h` : "",
+          visibleUnits[2] === "1" ? `${minutes}m` : "",
+          visibleUnits[3] === "1" ? `${seconds}s` : "",
+        ]
+      : [
+          days > 0 ? `${days}d` : "",
+          days > 0 || hours > 0 ? `${hours}h` : "",
+          `${minutes}m`,
+          `${seconds}s`,
+        ]
+  )
     .filter(Boolean)
     .join(" ");
+}
+
+function resolveCountdownTarget(
+  target: string,
+  timezone: string,
+  recurrence: string,
+  now: Date,
+) {
+  const explicitOffset = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(target);
+  const original = explicitOffset
+    ? new Date(target)
+    : zonedLocalDate(target, timezone);
+  if (!Number.isFinite(original.getTime()) || recurrence === "none")
+    return original.getTime();
+
+  const seed = zonedParts(original, timezone);
+  const current = zonedParts(now, timezone);
+  const build = (year: number, month: number, day: number) =>
+    zonedLocalDate(
+      `${year.toString().padStart(4, "0")}-${month.toString().padStart(2, "0")}-${day.toString().padStart(2, "0")}T${seed.hour.toString().padStart(2, "0")}:${seed.minute.toString().padStart(2, "0")}:${seed.second.toString().padStart(2, "0")}`,
+      timezone,
+    );
+  let candidate: Date;
+  if (recurrence === "daily") {
+    candidate = build(current.year, current.month, current.day);
+    if (candidate <= now) {
+      const next = addCalendarDays(current, 1);
+      candidate = build(next.year, next.month, next.day);
+    }
+  } else if (recurrence === "weekly") {
+    let offset = (seed.weekday - current.weekday + 7) % 7;
+    let next = addCalendarDays(current, offset);
+    candidate = build(next.year, next.month, next.day);
+    if (candidate <= now) {
+      offset += 7;
+      next = addCalendarDays(current, offset);
+      candidate = build(next.year, next.month, next.day);
+    }
+  } else if (recurrence === "monthly") {
+    const monthly = (year: number, month: number) =>
+      build(year, month, Math.min(seed.day, daysInMonth(year, month)));
+    candidate = monthly(current.year, current.month);
+    if (candidate <= now) {
+      const nextMonth = current.month === 12 ? 1 : current.month + 1;
+      candidate = monthly(
+        current.month === 12 ? current.year + 1 : current.year,
+        nextMonth,
+      );
+    }
+  } else {
+    const yearly = (year: number) =>
+      build(
+        year,
+        seed.month,
+        Math.min(seed.day, daysInMonth(year, seed.month)),
+      );
+    candidate = yearly(current.year);
+    if (candidate <= now) candidate = yearly(current.year + 1);
+  }
+  return candidate.getTime();
+}
+
+function zonedLocalDate(value: string, timezone: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/.exec(
+    value,
+  );
+  if (!match) return new Date(Number.NaN);
+  const desired = {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+    hour: Number(match[4]),
+    minute: Number(match[5]),
+    second: Number(match[6] ?? 0),
+  };
+  let timestamp = Date.UTC(
+    desired.year,
+    desired.month - 1,
+    desired.day,
+    desired.hour,
+    desired.minute,
+    desired.second,
+  );
+  try {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const actual = zonedParts(new Date(timestamp), timezone);
+      const actualAsUTC = Date.UTC(
+        actual.year,
+        actual.month - 1,
+        actual.day,
+        actual.hour,
+        actual.minute,
+        actual.second,
+      );
+      const desiredAsUTC = Date.UTC(
+        desired.year,
+        desired.month - 1,
+        desired.day,
+        desired.hour,
+        desired.minute,
+        desired.second,
+      );
+      timestamp += desiredAsUTC - actualAsUTC;
+    }
+    return new Date(timestamp);
+  } catch {
+    return new Date(Number.NaN);
+  }
+}
+
+function zonedParts(value: Date, timezone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    second: "numeric",
+    hourCycle: "h23",
+    weekday: "short",
+  }).formatToParts(value);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((entry) => entry.type === type)?.value ?? "0";
+  const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  return {
+    year: Number(part("year")),
+    month: Number(part("month")),
+    day: Number(part("day")),
+    hour: Number(part("hour")),
+    minute: Number(part("minute")),
+    second: Number(part("second")),
+    weekday: weekdays.indexOf(part("weekday")),
+  };
+}
+
+function addCalendarDays(
+  value: { year: number; month: number; day: number },
+  days: number,
+) {
+  const date = new Date(
+    Date.UTC(value.year, value.month - 1, value.day + days),
+  );
+  return {
+    year: date.getUTCFullYear(),
+    month: date.getUTCMonth() + 1,
+    day: date.getUTCDate(),
+  };
+}
+
+function daysInMonth(year: number, month: number) {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
 
 function PreviewNode({
@@ -2712,6 +2947,20 @@ function PreviewNode({
           timeZone: timezone,
         }).format(now);
       if (format[0] === "countdown") {
+        if (format[1] === "v2") {
+          const decode = (value: string | undefined) =>
+            decodeURIComponent((value ?? "").replaceAll("+", " "));
+          return formatCountdownPreview(
+            decode(format[2]),
+            format[4] || "countdown",
+            decode(format[8]) || "Complete",
+            now,
+            format[5] || "none",
+            decode(format[3]) || "UTC",
+            format[6] || "completed_text",
+            format[7] || "1111",
+          );
+        }
         const completionText = format.pop() || "Complete";
         const mode = format.pop() || "countdown";
         format.pop(); // Timezone is already reflected in the saved ISO target.
@@ -2804,6 +3053,8 @@ function PreviewNode({
       style={{
         display: node.type === "grid" ? "grid" : "flex",
         flexDirection: direction,
+        alignItems: props.align === "center" ? "center" : undefined,
+        justifyContent: props.justify === "center" ? "center" : undefined,
         gridTemplateColumns:
           node.type === "grid"
             ? `repeat(${columns}, minmax(0, 1fr))`

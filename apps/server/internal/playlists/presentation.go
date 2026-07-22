@@ -25,7 +25,7 @@ var NativePresentationCapabilities = map[string]int{
 	"content.progress": 2, "content.qr_code": 1, "content.marquee": 1,
 	"content.line_chart": 2, "content.bar_chart": 2, "content.donut_chart": 2,
 	"collection.repeat": 2, "collection.conditional": 2, "collection.grouped_sections": 1,
-	"binding.core": 2, "format.typed": 1, "selection.relative_date": 1,
+	"binding.core": 2, "format.typed": 2, "selection.relative_date": 1,
 }
 
 type DataDocument struct {
@@ -567,10 +567,31 @@ func compileNativeRoot(provider string, c map[string]any) (PresentationNode, map
 		surface.Children = []PresentationNode{text(PresentationBinding{Source: "environment", Path: "currentTime", Format: "date:" + stringValue(c, "format", "full") + ":" + stringValue(c, "timezone", "UTC")}, "metric")}
 		caps["environment.time"] = 1
 	case "countdown":
-		surface.Children = []PresentationNode{
-			text(PresentationBinding{Source: "literal", Value: stringValue(c, "label", "")}, "label"),
-			text(PresentationBinding{Source: "environment", Path: "currentTime", Format: "countdown:" + stringValue(c, "target", "") + ":" + stringValue(c, "timezone", "UTC") + ":" + stringValue(c, "mode", "countdown") + ":" + stringValue(c, "completionText", "Complete")}, "metric"),
+		flags := ""
+		for _, key := range []string{"showDays", "showHours", "showMinutes", "showSeconds"} {
+			if boolValue(c[key]) {
+				flags += "1"
+			} else {
+				flags += "0"
+			}
 		}
+		countdown := text(PresentationBinding{Source: "environment", Path: "currentTime", Format: strings.Join([]string{
+			"countdown", "v2", url.QueryEscape(stringValue(c, "target", "")), url.QueryEscape(stringValue(c, "timezone", "UTC")),
+			stringValue(c, "mode", "countdown"), stringValue(c, "recurrence", "none"), stringValue(c, "completionAction", "completed_text"), flags,
+			url.QueryEscape(stringValue(c, "completionText", "Complete")),
+		}, ":")}, "metric")
+		label := text(PresentationBinding{Source: "literal", Value: stringValue(c, "label", "")}, "label")
+		switch stringValue(c, "layout", "stacked") {
+		case "countdown_only":
+			surface.Children = []PresentationNode{countdown}
+		case "horizontal":
+			surface.Children = []PresentationNode{{Type: "row", Props: map[string]any{"gap": 20, "justify": "center"}, Children: []PresentationNode{label, countdown}}}
+			caps["layout.row"] = 1
+		default:
+			surface.Children = []PresentationNode{{Type: "column", Props: map[string]any{"gap": 8, "align": "center", "fill": false}, Children: []PresentationNode{label, countdown}}}
+			caps["layout.column"] = 1
+		}
+		caps["format.typed"] = 2
 		caps["environment.time"] = 1
 	case "qrcode":
 		surface.Children = []PresentationNode{{Type: "qr_code", Props: map[string]any{"errorCorrection": stringValue(c, "errorCorrection", "medium")}, Binding: &PresentationBinding{Source: "literal", Value: stringValue(c, "value", "")}}, text(PresentationBinding{Source: "literal", Value: stringValue(c, "label", "")}, "label")}

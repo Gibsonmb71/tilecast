@@ -105,8 +105,11 @@
       "presentationSchemaVersion": 1,
       "requiredCapabilities": {
         "layout.surface": 1,
+        "layout.row": 1,
+        "layout.column": 1,
         "content.text": 1,
-        "binding.core": 1
+        "binding.core": 1,
+        "format.typed": 2
       },
       "emptyStateBehavior": "text",
       "legacyEditor": true,

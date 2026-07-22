@@ -572,6 +572,8 @@ type CountdownWidgetConfig struct {
 	Target           string `json:"target"`
 	Timezone         string `json:"timezone"`
 	Mode             string `json:"mode"`
+	Recurrence       string `json:"recurrence"`
+	Layout           string `json:"layout"`
 	Label            string `json:"label,omitempty"`
 	CompletionText   string `json:"completionText,omitempty"`
 	CompletionAction string `json:"completionAction"`

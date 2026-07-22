@@ -38,6 +38,8 @@ A Widget is a Content record (an asset of type `widget`) and may play fullscreen
 
 Native Widget content automatically follows the Widget's rendered bounds, whether it is fullscreen, in a playlist zone, or directly placed in a Layout. The default `contentPadding` is 10 percent on each edge, giving the content the center 80 percent of the Widget; authors may set it from 0–40 percent. Long text is fitted within that area, and dense list-style Widgets reduce row typography or visible rows instead of clipping. Authors may optionally set `textScale` from 25–500 percent to reduce or enlarge provider typography; omitting it keeps automatic bounds-first sizing. Fit-to-bounds remains the final guard.
 
+Countdown Widgets may run once or repeat daily, weekly, monthly, or yearly in their configured IANA timezone. Monthly and yearly recurrences preserve the selected local day and time, clamping dates such as the 31st or February 29 to the final valid day when necessary. The title can appear above the countdown, beside it, or be hidden with the countdown-only layout. Recurrence is available for count-down mode; one-time countdowns retain their completion-text, hide, and continue-counting-up behaviors.
+
 ### Data-driven Widget compatibility
 
 The server validates that the selected Data Source provider is compatible with the Widget provider and that every selected field exists in the Data Source schema.

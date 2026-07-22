@@ -347,7 +347,7 @@ func (s *Service) WidgetPreview(ctx context.Context, id uuid.UUID) (WidgetPrevie
 
 func widgetConfigVersion(provider string) int {
 	switch provider {
-	case "ticker", "menu", "list", "table", "agenda", "metric", "cards", "weather", "spotlight", "stat_grid", "chart", "progress", "timeline":
+	case "countdown", "ticker", "menu", "list", "table", "agenda", "metric", "cards", "weather", "spotlight", "stat_grid", "chart", "progress", "timeline":
 		return 2
 	default:
 		return 1

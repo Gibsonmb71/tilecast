@@ -138,6 +138,37 @@ func TestSchoolStatusBannerCompilesFromReleaseDefinition(t *testing.T) {
 	}
 }
 
+func TestCountdownPresentationCompilesRecurrenceAndLayouts(t *testing.T) {
+	configuration := func(layout string) json.RawMessage {
+		return json.RawMessage(`{"target":"2026-12-01T09:00","timezone":"America/New_York","mode":"countdown","recurrence":"weekly","layout":"` + layout + `","label":"Board meeting","completionAction":"completed_text","completionText":"Started","showDays":true,"showHours":true,"showMinutes":true,"showSeconds":false,"foregroundColor":"#ffffff","backgroundColor":"#000000"}`)
+	}
+	for layout, wantType := range map[string]string{"stacked": "column", "horizontal": "row"} {
+		presentation, err := presentationTestService().compileWidgetPresentation("countdown", configuration(layout))
+		if err != nil {
+			t.Fatal(err)
+		}
+		root := presentation.Native.Root
+		if len(root.Children) != 1 || root.Children[0].Type != wantType || len(root.Children[0].Children) != 2 {
+			t.Fatalf("%s layout compiled as %#v", layout, root.Children)
+		}
+		format := root.Children[0].Children[1].Binding.Format
+		if !strings.Contains(format, "countdown:v2:") || !strings.Contains(format, ":weekly:") || !strings.Contains(format, ":1110:") {
+			t.Fatalf("countdown format did not preserve recurrence and units: %q", format)
+		}
+		if presentation.RequiredCapabilities["format.typed"] != 2 {
+			t.Fatalf("new countdown format must require format.typed@2: %#v", presentation.RequiredCapabilities)
+		}
+	}
+
+	presentation, err := presentationTestService().compileWidgetPresentation("countdown", configuration("countdown_only"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(presentation.Native.Root.Children) != 1 || presentation.Native.Root.Children[0].Type != "text" {
+		t.Fatalf("countdown-only layout retained its title: %#v", presentation.Native.Root.Children)
+	}
+}
+
 func TestCompatibilityChecksOnlyPresentationRequirements(t *testing.T) {
 	presentation := &WidgetPresentation{
 		SchemaVersion: 1,

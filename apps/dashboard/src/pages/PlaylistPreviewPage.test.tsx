@@ -335,6 +335,28 @@ it("formats Countdown Widgets from their real target and completion state", () =
   expect(
     formatCountdownPreview("2026-07-20T12:00:00Z", "count_up", "Complete", now),
   ).toBe("1d 0h 0m 0s");
+  expect(
+    formatCountdownPreview(
+      "2026-07-20T14:00:00Z",
+      "countdown",
+      "Complete",
+      now,
+      "daily",
+      "UTC",
+      "completed_text",
+      "0110",
+    ),
+  ).toBe("2h 0m");
+  expect(
+    formatCountdownPreview(
+      "2026-07-14T12:00:00Z",
+      "countdown",
+      "Complete",
+      now,
+      "weekly",
+      "UTC",
+    ),
+  ).toBe("7d 0h 0m 0s");
 });
 
 it("renders shared compiled nodes for data-backed and catalog Widgets", () => {
