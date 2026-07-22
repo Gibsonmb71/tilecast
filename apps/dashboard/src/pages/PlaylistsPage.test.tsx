@@ -5,6 +5,7 @@ import {
   canManagePlaylists,
   openPlaylistPreview,
   playlistDuration,
+  playlistItemUsesFixedDuration,
 } from "./PlaylistsPage";
 import {
   nextPlaylistPreviewItem,
@@ -73,6 +74,19 @@ describe("playlist editor", () => {
         item({ id: "image", durationMs: 10_000 }),
       ]),
     ).toBe(40_000);
+  });
+
+  it("offers fixed duration for native widgets but preserves YouTube until-end playback", () => {
+    expect(
+      playlistItemUsesFixedDuration(
+        item({ assetType: "widget", widgetProvider: "clock" }),
+      ),
+    ).toBe(true);
+    expect(
+      playlistItemUsesFixedDuration(
+        item({ assetType: "widget", widgetProvider: "youtube" }),
+      ),
+    ).toBe(false);
   });
 
   it("opens the playlist preview in a focused popup window", () => {
