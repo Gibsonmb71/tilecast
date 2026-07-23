@@ -95,6 +95,38 @@ describe("scheduleApplies", () => {
     );
   });
 
+  it("keeps the after-midnight portion of the final bounded day", () => {
+    const bounded = weekly({
+      dailyStart: "22:00",
+      dailyEnd: "06:00",
+      daysOfWeek: [5],
+      startDate: "2026-07-17",
+      endDate: "2026-07-17",
+    });
+    // Saturday 02:00 belongs to the Friday window whose start day is allowed.
+    expect(scheduleApplies(bounded, new Date("2026-07-18T06:00:00Z"))).toBe(
+      true,
+    );
+  });
+
+  it("uses the shared DST gap and repeated-time policies", () => {
+    const spring = weekly({
+      dailyStart: "02:30",
+      dailyEnd: "04:00",
+      daysOfWeek: [0],
+    });
+    expect(scheduleApplies(spring, new Date("2026-03-08T07:15:00Z"))).toBe(
+      true,
+    );
+    const fall = weekly({
+      dailyStart: "01:30",
+      dailyEnd: "01:45",
+      daysOfWeek: [0],
+    });
+    // The repeated window spans earlier start through later end.
+    expect(scheduleApplies(fall, new Date("2026-11-01T06:35:00Z"))).toBe(true);
+  });
+
   it("one-time schedules use half-open UTC instants", () => {
     const oneTime: ManifestSchedule = {
       id: "ot",
@@ -151,6 +183,34 @@ describe("resolveSelection", () => {
       ],
     });
     expect(resolveSelection(manifest, inWindow).playlistId).toBe("b");
+  });
+
+  it("later effective start then stable ID break full precedence ties", () => {
+    const manifest = baseManifest({
+      playlists: [
+        { id: "early", revision: 1, name: "Early", items: [] },
+        { id: "late", revision: 1, name: "Late", items: [] },
+      ],
+      schedules: [
+        weekly({ id: "a", playlistId: "early", dailyStart: "08:00" }),
+        weekly({ id: "z", playlistId: "late", dailyStart: "10:00" }),
+      ],
+    });
+    expect(resolveSelection(manifest, inWindow).playlistId).toBe("late");
+
+    manifest.schedules = [
+      weekly({ id: "z", playlistId: "late" }),
+      weekly({ id: "a", playlistId: "early" }),
+    ];
+    expect(resolveSelection(manifest, inWindow).playlistId).toBe("early");
+  });
+
+  it("reports the exact next transition for an unattended wakeup", () => {
+    const selection = resolveSelection(
+      baseManifest({ schedules: [weekly()] }),
+      new Date("2026-07-17T12:59:00Z"),
+    );
+    expect(selection.nextTransitionAt).toBe("2026-07-17T13:00:00.000Z");
   });
 
   it("an active emergency overrides everything, honoring [start, end)", () => {

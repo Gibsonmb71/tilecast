@@ -58,6 +58,7 @@ import org.tilecast.player.content.PlayerConfigManager
 import org.tilecast.player.content.PlayerUpdateManager
 import org.tilecast.player.content.UpdateUiState
 import org.tilecast.player.content.synchronizedPlaybackStart
+import org.tilecast.player.content.pendingActivationDelayMillis
 import org.tilecast.player.network.PlayerConfig
 import org.tilecast.player.reliability.ActiveHoursEngine
 import org.tilecast.player.reliability.ActiveHoursRule
@@ -543,7 +544,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 	// a content update can never sit undelivered indefinitely.
 	private fun schedulePendingActivationFallback(url: String, credential: String) {
 		pendingActivationJob?.cancel()
-		pendingActivationJob = viewModelScope.launch { delay(10 * 60_000L); pendingActivationJob = null; val pending = pendingContent ?: return@launch; activatePrepared(pending, url, credential) }
+		val graceMillis = pendingActivationDelayMillis(pendingContent?.manifest?.activationGraceSeconds ?: 30)
+		pendingActivationJob = viewModelScope.launch { delay(graceMillis); pendingActivationJob = null; val pending = pendingContent ?: return@launch; activatePrepared(pending, url, credential) }
 	}
 
 	private suspend fun activatePrepared(prepared: PreparedContent, url: String, credential: String) {

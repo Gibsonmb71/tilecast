@@ -17,6 +17,18 @@ func TestManifestETagStableAndVersioned(t *testing.T) {
 	}
 }
 
+func TestManifestETagChangesWhenScheduleCrossesPrefetchHorizon(t *testing.T) {
+	base := manifestETag(uuid.New(), 4)
+	schedule := ManifestSchedule{ID: uuid.New()}
+	withSchedule := manifestETagForSchedules(base, []ManifestSchedule{schedule})
+	if withSchedule == base {
+		t.Fatal("schedule set did not affect manifest ETag")
+	}
+	if withSchedule != manifestETagForSchedules(base, []ManifestSchedule{schedule}) {
+		t.Fatal("schedule-aware manifest ETag is unstable")
+	}
+}
+
 func TestDowngradeManifestCrossfadesPreservesOtherTransitions(t *testing.T) {
 	direct := &ManifestPlaylist{Items: []ManifestItem{{Transition: "crossfade"}}}
 	manifest := Manifest{Playlist: direct, Playlists: []ManifestPlaylist{{Items: []ManifestItem{
