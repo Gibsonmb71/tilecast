@@ -92,8 +92,9 @@ export type RenderNode =
     }
   | {
       t: "countdown";
-      /** Epoch ms of the target instant. */
-      targetMs: number;
+      target: string;
+      timezone: string;
+      recurrence: "none" | "daily" | "weekly" | "monthly" | "yearly";
       countUp: boolean;
       showDays: boolean;
       showHours: boolean;

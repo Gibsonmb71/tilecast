@@ -294,16 +294,23 @@ function formatClock(node: AnyNode): string {
 }
 
 function formatCountdown(node: AnyNode): string {
-  const target = Number(node["targetMs"]);
-  let remaining = target - Date.now();
+  const now = Date.now();
+  const recurrence = String(node["recurrence"] ?? "none");
+  const target = resolveCountdownTarget(
+    String(node["target"] ?? ""),
+    String(node["timezone"] ?? "UTC"),
+    recurrence,
+    now,
+  );
+  let remaining = target - now;
   const countUp = node["countUp"] === true;
-  if (remaining <= 0 && !countUp) {
+  if (remaining <= 0 && !countUp && recurrence === "none") {
     const action = String(node["completionAction"] ?? "completed_text");
     if (action === "hide") return "";
-    if (action === "count_up") remaining = Date.now() - target;
+    if (action === "count_up") remaining = now - target;
     else return String(node["completionText"] ?? "");
   } else if (remaining <= 0) {
-    remaining = Date.now() - target;
+    remaining = now - target;
   }
   const abs = Math.abs(remaining);
   const days = Math.floor(abs / 86_400_000);
@@ -319,6 +326,217 @@ function formatCountdown(node: AnyNode): string {
   if (node["showSeconds"] === true)
     parts.push(`${String(seconds).padStart(2, "0")}s`);
   return parts.join(" ");
+}
+
+function resolveCountdownTarget(
+  target: string,
+  timezone: string,
+  recurrence: string,
+  now: number,
+): number {
+  const zone = validCountdownTimezone(timezone);
+  const original = parseCountdownTarget(target, zone);
+  if (original === null || recurrence === "none") return original ?? now;
+
+  const seed = countdownDateParts(original, zone);
+  const current = countdownDateParts(now, zone);
+  let date = countdownRecurringDate(seed, current, recurrence);
+  let candidate = countdownZonedEpoch(
+    { ...date, ...countdownTime(seed) },
+    zone,
+  );
+  if (candidate <= now) {
+    date = advanceCountdownDate(date, seed, recurrence);
+    candidate = countdownZonedEpoch({ ...date, ...countdownTime(seed) }, zone);
+  }
+  return candidate;
+}
+
+interface CountdownDateParts {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+}
+
+type CountdownDate = Pick<CountdownDateParts, "year" | "month" | "day">;
+
+function validCountdownTimezone(timezone: string): string {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format(0);
+    return timezone;
+  } catch {
+    return "UTC";
+  }
+}
+
+function parseCountdownTarget(target: string, timezone: string): number | null {
+  if (/(?:Z|[+-]\d{2}:\d{2})$/i.test(target)) {
+    const parsed = Date.parse(target);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?$/.exec(
+      target,
+    );
+  if (!match) return null;
+  return countdownZonedEpoch(
+    {
+      year: Number(match[1]),
+      month: Number(match[2]),
+      day: Number(match[3]),
+      hour: Number(match[4]),
+      minute: Number(match[5]),
+      second: Number(match[6] ?? 0),
+    },
+    timezone,
+  );
+}
+
+function countdownDateParts(
+  epochMs: number,
+  timezone: string,
+): CountdownDateParts {
+  const values: Record<string, number> = {};
+  for (const part of new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(epochMs))) {
+    if (part.type !== "literal") values[part.type] = Number(part.value);
+  }
+  return {
+    year: values["year"]!,
+    month: values["month"]!,
+    day: values["day"]!,
+    hour: values["hour"]!,
+    minute: values["minute"]!,
+    second: values["second"]!,
+  };
+}
+
+function countdownZonedEpoch(
+  parts: CountdownDateParts,
+  timezone: string,
+): number {
+  const desired = Date.UTC(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    parts.second,
+  );
+  let candidate = desired;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const actual = countdownDateParts(candidate, timezone);
+    const rendered = Date.UTC(
+      actual.year,
+      actual.month - 1,
+      actual.day,
+      actual.hour,
+      actual.minute,
+      actual.second,
+    );
+    const adjustment = desired - rendered;
+    if (adjustment === 0) break;
+    candidate += adjustment;
+  }
+  return candidate;
+}
+
+function countdownRecurringDate(
+  seed: CountdownDateParts,
+  current: CountdownDateParts,
+  recurrence: string,
+): CountdownDate {
+  if (recurrence === "daily")
+    return countdownDate(current.year, current.month, current.day);
+  if (recurrence === "weekly") {
+    const currentDay = countdownUTCDate(current).getUTCDay();
+    const seedDay = countdownUTCDate(seed).getUTCDay();
+    return addCountdownDays(
+      countdownDate(current.year, current.month, current.day),
+      (seedDay - currentDay + 7) % 7,
+    );
+  }
+  if (recurrence === "monthly") {
+    return countdownDate(
+      current.year,
+      current.month,
+      Math.min(seed.day, countdownDaysInMonth(current.year, current.month)),
+    );
+  }
+  return countdownDate(
+    current.year,
+    seed.month,
+    Math.min(seed.day, countdownDaysInMonth(current.year, seed.month)),
+  );
+}
+
+function advanceCountdownDate(
+  date: CountdownDate,
+  seed: CountdownDateParts,
+  recurrence: string,
+): CountdownDate {
+  if (recurrence === "daily") return addCountdownDays(date, 1);
+  if (recurrence === "weekly") return addCountdownDays(date, 7);
+  if (recurrence === "monthly") {
+    const next = new Date(Date.UTC(date.year, date.month, 1));
+    return countdownDate(
+      next.getUTCFullYear(),
+      next.getUTCMonth() + 1,
+      Math.min(
+        seed.day,
+        countdownDaysInMonth(next.getUTCFullYear(), next.getUTCMonth() + 1),
+      ),
+    );
+  }
+  return countdownDate(
+    date.year + 1,
+    seed.month,
+    Math.min(seed.day, countdownDaysInMonth(date.year + 1, seed.month)),
+  );
+}
+
+function countdownDate(
+  year: number,
+  month: number,
+  day: number,
+): CountdownDate {
+  return { year, month, day };
+}
+
+function countdownTime(
+  parts: CountdownDateParts,
+): Pick<CountdownDateParts, "hour" | "minute" | "second"> {
+  return { hour: parts.hour, minute: parts.minute, second: parts.second };
+}
+
+function addCountdownDays(parts: CountdownDate, days: number): CountdownDate {
+  const value = new Date(
+    Date.UTC(parts.year, parts.month - 1, parts.day + days),
+  );
+  return countdownDate(
+    value.getUTCFullYear(),
+    value.getUTCMonth() + 1,
+    value.getUTCDate(),
+  );
+}
+
+function countdownUTCDate(parts: CountdownDate): Date {
+  return new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
+}
+
+function countdownDaysInMonth(year: number, month: number): number {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
 
 function buildRenderNode(node: AnyNode): HTMLElement {

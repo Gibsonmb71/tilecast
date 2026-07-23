@@ -12,6 +12,7 @@
  */
 
 import { formatValue, safeColor, type ValueFormat } from "./format";
+import type { CountdownRecurrence } from "./countdown";
 import { normalizeSource, type NormalizedSource } from "./datasource";
 import { qrDataUri } from "./qr";
 import { renderPresentation } from "./presentation-render";
@@ -144,13 +145,45 @@ export function renderWidget(
       });
 
     case "countdown": {
-      const targetMs = Date.parse(str(config, "target"));
-      if (!Number.isFinite(targetMs)) {
+      const target = str(config, "target");
+      if (!target) {
         return centered(
           textNode(str(config, "label") || "Countdown", fg, scale(48, config)),
         );
       }
       const completion = str(config, "completionAction", "completed_text");
+      const recurrence = str(
+        config,
+        "recurrence",
+        "none",
+      ) as CountdownRecurrence;
+      const layout = str(config, "layout", "stacked");
+      const label =
+        layout !== "countdown_only" && str(config, "label")
+          ? [textNode(str(config, "label"), fg, scale(40, config))]
+          : [];
+      const countdown: RenderNode = {
+        t: "countdown",
+        target,
+        timezone: str(config, "timezone", "UTC"),
+        recurrence,
+        countUp: str(config, "mode", "countdown") === "count_up",
+        showDays: bool(config, "showDays", true),
+        showHours: bool(config, "showHours", true),
+        showMinutes: bool(config, "showMinutes", true),
+        showSeconds: bool(config, "showSeconds", false),
+        completionText: str(config, "completionText"),
+        completionAction:
+          completion === "hide" || completion === "count_up"
+            ? completion
+            : "completed_text",
+        style: {
+          color: fg,
+          fontSize: scale(88, config),
+          fontWeight: 700,
+          align: "center",
+        },
+      };
       return {
         background: bg,
         root: {
@@ -158,7 +191,7 @@ export function renderWidget(
           style: {
             width: 100,
             height: 100,
-            direction: "column",
+            direction: layout === "horizontal" ? "row" : "column",
             justify: "center",
             align: "center",
             gap: 12,
@@ -166,31 +199,7 @@ export function renderWidget(
             background: bg,
             color: fg,
           },
-          children: [
-            ...(str(config, "label")
-              ? [textNode(str(config, "label"), fg, scale(40, config))]
-              : []),
-            {
-              t: "countdown",
-              targetMs,
-              countUp: str(config, "mode", "countdown") === "count_up",
-              showDays: bool(config, "showDays", true),
-              showHours: bool(config, "showHours", true),
-              showMinutes: bool(config, "showMinutes", true),
-              showSeconds: bool(config, "showSeconds", false),
-              completionText: str(config, "completionText"),
-              completionAction:
-                completion === "hide" || completion === "count_up"
-                  ? completion
-                  : "completed_text",
-              style: {
-                color: fg,
-                fontSize: scale(88, config),
-                fontWeight: 700,
-                align: "center",
-              },
-            },
-          ],
+          children: [...label, countdown],
         },
       };
     }
