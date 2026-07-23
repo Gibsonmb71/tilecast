@@ -99,27 +99,24 @@ async function captureRenderPreview(
   clone.style.borderRadius = "0";
   const markup = new XMLSerializer().serializeToString(clone);
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${snapshotWidth}" height="${snapshotHeight}" viewBox="0 0 ${bounds.width} ${bounds.height}"><foreignObject width="100%" height="100%">${markup}</foreignObject></svg>`;
-  const svgURL = URL.createObjectURL(
-    new Blob([svg], { type: "image/svg+xml" }),
+  // Dashboard CSP intentionally excludes blob: images. An encoded data URL is
+  // already permitted and keeps this temporary SVG local to the browser.
+  const image = await loadImage(
+    `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`,
   );
-  try {
-    const image = await loadImage(svgURL);
-    const canvas = document.createElement("canvas");
-    canvas.width = snapshotWidth;
-    canvas.height = snapshotHeight;
-    const context = canvas.getContext("2d");
-    if (!context) throw new Error("Preview canvas is unavailable.");
-    context.fillStyle = "#000";
-    context.fillRect(0, 0, snapshotWidth, snapshotHeight);
-    context.drawImage(image, 0, 0, snapshotWidth, snapshotHeight);
-    for (const quality of [0.82, 0.68, 0.52]) {
-      const snapshot = await encodeJPEG(canvas, quality);
-      if (snapshot.size <= 500 * 1024) return snapshot;
-    }
-    throw new Error("Preview image is too detailed to store.");
-  } finally {
-    URL.revokeObjectURL(svgURL);
+  const canvas = document.createElement("canvas");
+  canvas.width = snapshotWidth;
+  canvas.height = snapshotHeight;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Preview canvas is unavailable.");
+  context.fillStyle = "#000";
+  context.fillRect(0, 0, snapshotWidth, snapshotHeight);
+  context.drawImage(image, 0, 0, snapshotWidth, snapshotHeight);
+  for (const quality of [0.82, 0.68, 0.52]) {
+    const snapshot = await encodeJPEG(canvas, quality);
+    if (snapshot.size <= 500 * 1024) return snapshot;
   }
+  throw new Error("Preview image is too detailed to store.");
 }
 
 export function captureWidgetPreview(element: HTMLElement): Promise<Blob> {
