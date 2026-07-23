@@ -66,6 +66,46 @@ describe("renderWidget", () => {
     expect(stack).toContain('"hour12":false');
   });
 
+  it("renders a recurring countdown in the selected horizontal layout", () => {
+    const widget: ManifestWidget = {
+      assetId: "countdown-horizontal",
+      name: "Countdown",
+      provider: "countdown",
+      configVersion: 13,
+      configuration: {
+        target: "2026-07-22T09:00:00",
+        timezone: "America/New_York",
+        recurrence: "daily",
+        layout: "horizontal",
+        label: "Doors open",
+      },
+    };
+    const payload = renderWidget(widget, ctx([]))!;
+    expect(payload.root).toMatchObject({
+      t: "box",
+      style: { direction: "row" },
+    });
+    expect(JSON.stringify(payload.root)).toContain('"recurrence":"daily"');
+    expect(JSON.stringify(payload.root)).toContain("Doors open");
+  });
+
+  it("omits the title from a countdown-only layout", () => {
+    const widget: ManifestWidget = {
+      assetId: "countdown-only",
+      name: "Countdown",
+      provider: "countdown",
+      configVersion: 13,
+      configuration: {
+        target: "2026-07-22T09:00:00Z",
+        recurrence: "none",
+        layout: "countdown_only",
+        label: "Hidden title",
+      },
+    };
+    const payload = renderWidget(widget, ctx([]))!;
+    expect(JSON.stringify(payload.root)).not.toContain("Hidden title");
+  });
+
   it("renders a metric from a typed source with currency formatting", () => {
     const widget: ManifestWidget = {
       assetId: "w2",
@@ -110,6 +150,29 @@ describe("renderWidget", () => {
 });
 
 describe("renderPresentation (v13 declarative)", () => {
+  it("projects a v2 countdown binding as a self-updating countdown node", () => {
+    const tree = renderPresentation(
+      {
+        type: "text",
+        binding: {
+          source: "environment",
+          path: "currentTime",
+          format:
+            "countdown:v2:2026-12-01T09%3A00:America%2FNew_York:countdown:weekly:completed_text:1110:Started",
+        },
+      },
+      { datasets: new Map(), at },
+    );
+    expect(tree).toMatchObject({
+      t: "countdown",
+      target: "2026-12-01T09:00",
+      timezone: "America/New_York",
+      recurrence: "weekly",
+      showSeconds: false,
+      completionText: "Started",
+    });
+  });
+
   it("expands a repeat with dataset bindings and formatting", () => {
     const root: PresentationNode = {
       type: "column",

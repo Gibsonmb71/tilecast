@@ -9,6 +9,7 @@
  */
 
 import { formatValue, safeColor, type ValueFormat } from "./format";
+import { parseCountdownFormat } from "./countdown";
 import { qrDataUri } from "./qr";
 import type { NormalizedSource } from "./datasource";
 import type {
@@ -278,6 +279,25 @@ export function renderPresentation(
         };
       case "text":
       case "badge": {
+        const countdown = node.binding
+          ? parseCountdownFormat(node.binding.format ?? "")
+          : null;
+        if (countdown) {
+          return {
+            t: "countdown",
+            target: countdown.target,
+            timezone: countdown.timezone,
+            recurrence: countdown.recurrence,
+            countUp: countdown.mode === "count_up",
+            showDays: countdown.visibleUnits[0] === "1",
+            showHours: countdown.visibleUnits[1] === "1",
+            showMinutes: countdown.visibleUnits[2] === "1",
+            showSeconds: countdown.visibleUnits[3] === "1",
+            completionText: countdown.completionText,
+            completionAction: countdown.completionAction,
+            style: textStyleFromProps(props),
+          };
+        }
         const value = node.binding
           ? resolveBinding(node.binding, local)
           : String(props["text"] ?? "");
