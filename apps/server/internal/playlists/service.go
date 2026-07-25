@@ -163,7 +163,49 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (Playlist, error) {
 		}
 		p.LayoutUsage = append(p.LayoutUsage, usage)
 	}
-	return p, usageRows.Err()
+	if err = usageRows.Err(); err != nil {
+		return Playlist{}, err
+	}
+	if p.Usage, err = s.usage(ctx, id); err != nil {
+		return Playlist{}, err
+	}
+	return p, nil
+}
+
+// usage reports the screens and schedules that play a playlist. Screens are reached either by a
+// direct assignment or through a synchronized group, matching how the Layout usage read resolves
+// the same question.
+func (s *Service) usage(ctx context.Context, id uuid.UUID) (Usage, error) {
+	result := Usage{Screens: []UsageItem{}, Schedules: []UsageItem{}}
+	screens, err := s.db.Query(ctx, `SELECT DISTINCT sc.id,sc.name FROM screens sc LEFT JOIN screen_playlist_assignments a ON a.screen_id=sc.id LEFT JOIN screen_group_memberships m ON m.screen_id=sc.id LEFT JOIN screen_group_playlist_assignments ga ON ga.screen_group_id=m.screen_group_id WHERE a.playlist_id=$1 OR ga.playlist_id=$1 ORDER BY sc.name`, id)
+	if err != nil {
+		return Usage{}, err
+	}
+	for screens.Next() {
+		var item UsageItem
+		if err = screens.Scan(&item.ID, &item.Name); err != nil {
+			screens.Close()
+			return Usage{}, err
+		}
+		result.Screens = append(result.Screens, item)
+	}
+	screens.Close()
+	if err = screens.Err(); err != nil {
+		return Usage{}, err
+	}
+	schedules, err := s.db.Query(ctx, `SELECT id,name FROM schedules WHERE playlist_id=$1 AND deleted_at IS NULL ORDER BY name`, id)
+	if err != nil {
+		return Usage{}, err
+	}
+	defer schedules.Close()
+	for schedules.Next() {
+		var item UsageItem
+		if err = schedules.Scan(&item.ID, &item.Name); err != nil {
+			return Usage{}, err
+		}
+		result.Schedules = append(result.Schedules, item)
+	}
+	return result, schedules.Err()
 }
 
 func (s *Service) Update(ctx context.Context, id, userID uuid.UUID, name, description string) (Playlist, error) {

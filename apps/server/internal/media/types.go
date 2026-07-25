@@ -102,15 +102,24 @@ type Asset struct {
 	Widget             *Widget        `json:"widget,omitempty"`
 	PlaylistUsage      int            `json:"playlistUsage"`
 	LayoutUsage        []LayoutUsage  `json:"layoutUsage"`
-	FolderID           *uuid.UUID     `json:"folderId,omitempty"`
-	Tags               []ContentTag   `json:"tags"`
-	CollectionIDs      []uuid.UUID    `json:"collectionIds"`
+	// PlaylistsUsing names the playlists containing this asset. The list read reports only the
+	// PlaylistUsage count, because resolving identities per row would add a second per-asset
+	// query to a paged endpoint; the detail read populates this so Studio can link through.
+	PlaylistsUsing []PlaylistUsage `json:"playlistsUsing,omitempty"`
+	FolderID       *uuid.UUID      `json:"folderId,omitempty"`
+	Tags           []ContentTag    `json:"tags"`
+	CollectionIDs  []uuid.UUID     `json:"collectionIds"`
 }
 
 type LayoutUsage struct {
 	ID        uuid.UUID `json:"id"`
 	Name      string    `json:"name"`
 	Published bool      `json:"published"`
+}
+
+type PlaylistUsage struct {
+	ID   uuid.UUID `json:"id"`
+	Name string    `json:"name"`
 }
 
 type ContentFolder struct {

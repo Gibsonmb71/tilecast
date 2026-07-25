@@ -24,6 +24,7 @@ import type {
   User,
 } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
+import { ScreenContentChain } from "../content/ScreenContentChain";
 import { FormField } from "../components/FormField";
 import { PlayerPolicyEditor } from "../settings/PlayerPolicyEditor";
 
@@ -1210,6 +1211,7 @@ export function ScreenDetailPage() {
           ) : (
             <p>{assignment.data?.playlistName ?? "No playlist assigned"}</p>
           )}
+          <ScreenContentChain assignment={assignment.data} />
           <dl className="detail-list">
             <div>
               <dt>Direct fallback</dt>

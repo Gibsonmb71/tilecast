@@ -94,6 +94,12 @@ export type Playlist = {
   itemCount: number;
   warnings: string[];
   layoutUsage: { id: string; name: string; published: boolean }[];
+  // Screens and schedules that play this playlist. Populated on the detail read only, and
+  // shaped like Layout.usage so one panel renders both.
+  usage?: {
+    screens: { id: string; name: string }[];
+    schedules: { id: string; name: string }[];
+  };
 };
 
 export type PlaylistList = {
@@ -742,6 +748,9 @@ export type Asset = {
   website?: WebsiteConfig;
   widget?: Widget;
   playlistUsage?: number;
+  // Identified playlists containing this asset. The list endpoint reports only the
+  // playlistUsage count; the detail endpoint populates this so Studio can link through.
+  playlistsUsing?: { id: string; name: string }[];
   layoutUsage?: { id: string; name: string; published: boolean }[];
   folderId?: string;
   tags?: ContentTag[];
