@@ -235,10 +235,11 @@ describe("DefinitionForm data source controls", () => {
       },
     ]);
 
-    await waitFor(() =>
-      expect(optionsFor("Data")).toContain("Campus weather — Weather"),
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Data: Choose data" }),
     );
-    expect(optionsFor("Data")).not.toContain("Lunch rows — CSV");
+    expect(screen.getByRole("button", { name: /Campus weather/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Lunch rows/ })).toBeNull();
   });
 
   it("explains the empty state and offers to connect data instead of disabling the control", async () => {

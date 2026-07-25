@@ -103,6 +103,27 @@ export function GenericWidgetEditor({
       onClose={onClose}
       onSave={() => save.mutate()}
       saveLabel="Save Widget"
+      preview={
+        <div
+          ref={previewRef}
+          className="native-app-preview declarative-widget-preview"
+        >
+          {compiledPreview.data ? (
+            <DeclarativePresentationPreview
+              presentation={compiledPreview.data}
+              source={primarySourcePreview}
+              assetImageUrl={
+                typeof configuration.imageAssetId === "string" &&
+                configuration.imageAssetId
+                  ? api.assetPreviewUrl(configuration.imageAssetId)
+                  : undefined
+              }
+            />
+          ) : (
+            <span>Preparing preview…</span>
+          )}
+        </div>
+      }
     >
       <DefinitionForm
         fields={definition.configurationSchema.fields}
@@ -111,25 +132,6 @@ export function GenericWidgetEditor({
         readOnly={readOnly}
         csrf={csrf}
       />
-      <div
-        ref={previewRef}
-        className="native-app-preview declarative-widget-preview"
-      >
-        {compiledPreview.data ? (
-          <DeclarativePresentationPreview
-            presentation={compiledPreview.data}
-            source={primarySourcePreview}
-            assetImageUrl={
-              typeof configuration.imageAssetId === "string" &&
-              configuration.imageAssetId
-                ? api.assetPreviewUrl(configuration.imageAssetId)
-                : undefined
-            }
-          />
-        ) : (
-          <span>Compiling presentation preview…</span>
-        )}
-      </div>
     </GenericEditorShell>
   );
 }
@@ -215,6 +217,7 @@ function GenericEditorShell({
   onClose,
   onSave,
   saveLabel,
+  preview,
   children,
 }: {
   title: string;
@@ -230,11 +233,41 @@ function GenericEditorShell({
   onClose: () => void;
   onSave: () => void;
   saveLabel: string;
+  preview?: ReactNode;
   children: ReactNode;
 }) {
+  const subject = preview ? "Widget" : "Data Source";
+  const details = (
+    <div className="form-grid">
+      <label className="field">
+        <span className="field__label">{subject} name</span>
+        <input
+          value={name}
+          disabled={readOnly}
+          maxLength={180}
+          onChange={(event) => setName(event.target.value)}
+        />
+        <small>Used to find this {subject} later.</small>
+      </label>
+      <label className="field field--wide">
+        <span className="field__label">Description</span>
+        <textarea
+          value={detail}
+          disabled={readOnly}
+          maxLength={2000}
+          onChange={(event) => setDetail(event.target.value)}
+        />
+        <small>
+          Optional notes for other people managing this installation.
+        </small>
+      </label>
+    </div>
+  );
   return (
     <div className="details-backdrop">
-      <section className="asset-details source-editor">
+      <section
+        className={`asset-details source-editor${preview ? " widget-editor" : ""}`}
+      >
         <header>
           <div>
             <h2>{title}</h2>
@@ -244,31 +277,45 @@ function GenericEditorShell({
             Close
           </button>
         </header>
-        <div className="form-grid">
-          <label className="field">
-            <span className="field__label">Name</span>
-            <input
-              value={name}
-              disabled={readOnly}
-              maxLength={180}
-              onChange={(event) => setName(event.target.value)}
-            />
-          </label>
-          <label className="field field--wide">
-            <span className="field__label">Description</span>
-            <textarea
-              value={detail}
-              disabled={readOnly}
-              maxLength={2000}
-              onChange={(event) => setDetail(event.target.value)}
-            />
-          </label>
-        </div>
-        {children}
-        {error && (
-          <div className="notice notice--error">
-            {error instanceof ApiError ? error.message : error.message}
+        {preview ? (
+          <div className="widget-editor__layout">
+            <div className="widget-editor__form">
+              <EditorSection
+                title="Widget details"
+                description="Name this Widget so it is easy to recognize later."
+              >
+                {details}
+              </EditorSection>
+              <EditorSection
+                title="Content and appearance"
+                description="Choose what appears on screen and how it should be presented."
+              >
+                {children}
+              </EditorSection>
+              {error && (
+                <div className="notice notice--error">
+                  {error instanceof ApiError ? error.message : error.message}
+                </div>
+              )}
+            </div>
+            <aside className="widget-editor__preview" aria-label="Live preview">
+              <header>
+                <strong>Live preview</strong>
+                <span>Updates as you make changes.</span>
+              </header>
+              {preview}
+            </aside>
           </div>
+        ) : (
+          <>
+            {details}
+            {children}
+            {error && (
+              <div className="notice notice--error">
+                {error instanceof ApiError ? error.message : error.message}
+              </div>
+            )}
+          </>
         )}
         <footer>
           <button className="button button--quiet" onClick={onClose}>
@@ -286,5 +333,25 @@ function GenericEditorShell({
         </footer>
       </section>
     </div>
+  );
+}
+
+function EditorSection({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="widget-editor__section">
+      <header>
+        <h3>{title}</h3>
+        <p>{description}</p>
+      </header>
+      <div className="widget-editor__section-body">{children}</div>
+    </section>
   );
 }

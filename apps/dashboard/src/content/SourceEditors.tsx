@@ -504,6 +504,58 @@ const nativeDefault = (provider: NativeProvider): NativeConfig => {
   };
 };
 
+function nativeWidgetGuidance(provider: NativeProvider) {
+  if (
+    [
+      "ticker",
+      "menu",
+      "list",
+      "table",
+      "agenda",
+      "metric",
+      "cards",
+      "weather",
+      "spotlight",
+      "stat_grid",
+      "chart",
+      "progress",
+      "timeline",
+    ].includes(provider)
+  )
+    return "Connect the information to show, choose how it is presented, and check the live preview.";
+  return "Configure what appears on screen and check the live preview as you work.";
+}
+
+function nativeWidgetContentGuidance(provider: NativeProvider) {
+  if (
+    [
+      "ticker",
+      "menu",
+      "list",
+      "table",
+      "agenda",
+      "metric",
+      "cards",
+      "weather",
+      "spotlight",
+      "stat_grid",
+      "chart",
+      "progress",
+      "timeline",
+    ].includes(provider)
+  )
+    return "Start by choosing the data this Widget should use, then map and format the fields that appear.";
+  if (provider === "countdown")
+    return "Set the target time, decide what happens when it is reached, and choose which time units appear.";
+  if (provider === "qrcode")
+    return "Enter the destination people should open after scanning, then add an optional on-screen label.";
+  if (provider === "world_clock")
+    return "Add each location and its IANA timezone, such as America/New_York or Europe/London.";
+  if (provider === "clock" || provider === "date")
+    return "Choose the timezone and format that should appear on the screen.";
+  return "Enter the content people should see and choose how it behaves on screen.";
+}
+
 export function NativeAppEditor({
   provider,
   asset,
@@ -525,11 +577,6 @@ export function NativeAppEditor({
 }) {
   const queryClient = useQueryClient();
   const previewRef = useRef<HTMLDivElement>(null);
-  const catalog = useQuery({
-    queryKey: ["provider-catalog"],
-    queryFn: api.providerCatalog,
-    staleTime: 5 * 60_000,
-  });
   // Data Source definitions back the picker's Connect flow, which needs each provider's name,
   // description, and icon to offer a choice.
   const contentDefinitions = useQuery({
@@ -537,9 +584,6 @@ export function NativeAppEditor({
     queryFn: api.contentDefinitions,
   });
   const sourceDefinitions = contentDefinitions.data?.dataSources ?? [];
-  const providerRuntime = catalog.data?.providers?.find(
-    (entry) => entry.role === "widget" && entry.id === provider,
-  );
   const [name, setName] = useState(asset?.name ?? "");
   const [description, setDescription] = useState(asset?.description ?? "");
   const [configuration, setConfiguration] = useState<NativeConfig>(
@@ -710,7 +754,7 @@ export function NativeAppEditor({
   return (
     <div className="details-backdrop" role={page ? undefined : "presentation"}>
       <section
-        className="asset-details source-editor"
+        className="asset-details source-editor widget-editor"
         role={page ? undefined : "dialog"}
         aria-modal={page ? undefined : true}
         aria-labelledby="native-app-title"
@@ -724,11 +768,7 @@ export function NativeAppEditor({
                 : provider[0]!.toUpperCase() + provider.slice(1)}{" "}
               Widget
             </h2>
-            <p>
-              Reusable Widget configuration. Runtime:{" "}
-              <strong>{providerRuntime?.presentationKind ?? "native"}</strong>.
-              The Player interprets its compiled presentation document.
-            </p>
+            <p>{nativeWidgetGuidance(provider)}</p>
           </div>
           <button className="icon-button" aria-label="Close" onClick={onClose}>
             <X size={18} />
@@ -742,22 +782,40 @@ export function NativeAppEditor({
               playback does not depend on the preset.
             </div>
           )}
-          <label className="field">
-            <span className="field__label">Name</span>
-            <input
-              value={name}
-              disabled={readOnly}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </label>
-          <label className="field">
-            <span className="field__label">Description</span>
-            <input
-              value={description}
-              disabled={readOnly}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </label>
+          <section className="widget-editor__section">
+            <header>
+              <h3>Widget details</h3>
+              <p>Name this Widget so it is easy to recognize later.</p>
+            </header>
+            <div className="widget-editor__section-body">
+              <label className="field">
+                <span className="field__label">Widget name</span>
+                <input
+                  value={name}
+                  disabled={readOnly}
+                  onChange={(e) => setName(e.target.value)}
+                />
+                <small>
+                  Used to find this Widget in Content and playlists.
+                </small>
+              </label>
+              <label className="field">
+                <span className="field__label">Description</span>
+                <input
+                  value={description}
+                  disabled={readOnly}
+                  onChange={(e) => setDescription(e.target.value)}
+                />
+                <small>
+                  Optional notes for other people managing this installation.
+                </small>
+              </label>
+            </div>
+          </section>
+          <div className="widget-editor__section-heading">
+            <h3>Content and behavior</h3>
+            <p>{nativeWidgetContentGuidance(provider)}</p>
+          </div>
           {(provider === "clock" || provider === "date") && (
             <label className="field">
               <span className="field__label">Timezone</span>
@@ -774,6 +832,10 @@ export function NativeAppEditor({
                   }))
                 }
               />
+              <small>
+                Use an IANA timezone such as America/New_York. Use UTC for
+                universal time.
+              </small>
             </label>
           )}
           {provider === "clock" && (
@@ -1074,6 +1136,10 @@ export function NativeAppEditor({
                     <option value="quartile">Quartile</option>
                     <option value="high">High</option>
                   </Select>
+                  <small>
+                    Higher correction is easier to scan if the code is damaged,
+                    but makes the pattern denser.
+                  </small>
                 </label>
               </div>
               <div className="form-grid form-grid--2">
@@ -1452,7 +1518,9 @@ export function NativeAppEditor({
                                 value={existing.label ?? ""}
                                 disabled={readOnly}
                                 onChange={(event) =>
-                                  updateColumn({ label: event.target.value })
+                                  updateColumn({
+                                    label: event.target.value,
+                                  })
                                 }
                               />
                             </label>
@@ -1559,9 +1627,14 @@ export function NativeAppEditor({
                     }))
                   }
                 />
+                <small>
+                  Limits how many rows or events can appear at once.
+                </small>
               </label>
               <label className="field">
-                <span className="field__label">Empty state</span>
+                <span className="field__label">
+                  Message when there is no data
+                </span>
                 <input
                   value={
                     (configuration as DisplayWidgetConfig).emptyState ?? ""
@@ -1574,6 +1647,9 @@ export function NativeAppEditor({
                     }))
                   }
                 />
+                <small>
+                  Shown on screen when the source returns no usable records.
+                </small>
               </label>
             </>
           )}
@@ -1917,7 +1993,10 @@ export function NativeAppEditor({
                 csrf={csrf}
                 disabled={readOnly}
                 onChange={(dataSourceId) =>
-                  setConfiguration((current) => ({ ...current, dataSourceId }))
+                  setConfiguration((current) => ({
+                    ...current,
+                    dataSourceId,
+                  }))
                 }
               />
               <div className="form-grid form-grid--2">
@@ -1981,7 +2060,10 @@ export function NativeAppEditor({
                 csrf={csrf}
                 disabled={readOnly}
                 onChange={(dataSourceId) =>
-                  setConfiguration((current) => ({ ...current, dataSourceId }))
+                  setConfiguration((current) => ({
+                    ...current,
+                    dataSourceId,
+                  }))
                 }
               />
               <label className="field">
@@ -2018,7 +2100,10 @@ export function NativeAppEditor({
                                 metrics: config.metrics.map(
                                   (item, itemIndex) =>
                                     itemIndex === index
-                                      ? { ...item, label: event.target.value }
+                                      ? {
+                                          ...item,
+                                          label: event.target.value,
+                                        }
                                       : item,
                                 ),
                               };
@@ -2115,7 +2200,11 @@ export function NativeAppEditor({
                       ...current,
                       metrics: [
                         ...(current as StatGridWidgetConfig).metrics,
-                        { label: "Value", valueField: "", format: "number" },
+                        {
+                          label: "Value",
+                          valueField: "",
+                          format: "number",
+                        },
                       ],
                     }))
                   }
@@ -2135,7 +2224,10 @@ export function NativeAppEditor({
                 csrf={csrf}
                 disabled={readOnly}
                 onChange={(dataSourceId) =>
-                  setConfiguration((current) => ({ ...current, dataSourceId }))
+                  setConfiguration((current) => ({
+                    ...current,
+                    dataSourceId,
+                  }))
                 }
               />
               <div className="form-grid form-grid--2">
@@ -2209,7 +2301,10 @@ export function NativeAppEditor({
                                 ...config,
                                 series: config.series.map((item, itemIndex) =>
                                   itemIndex === index
-                                    ? { ...item, label: event.target.value }
+                                    ? {
+                                        ...item,
+                                        label: event.target.value,
+                                      }
                                     : item,
                                 ),
                               };
@@ -2230,7 +2325,10 @@ export function NativeAppEditor({
                                 ...config,
                                 series: config.series.map((item, itemIndex) =>
                                   itemIndex === index
-                                    ? { ...item, color: event.target.value }
+                                    ? {
+                                        ...item,
+                                        color: event.target.value,
+                                      }
                                     : item,
                                 ),
                               };
@@ -2274,7 +2372,11 @@ export function NativeAppEditor({
                       ...current,
                       series: [
                         ...(current as ChartWidgetConfig).series,
-                        { field: "", label: "Series", color: "#FFB547" },
+                        {
+                          field: "",
+                          label: "Series",
+                          color: "#FFB547",
+                        },
                       ],
                     }))
                   }
@@ -2294,7 +2396,10 @@ export function NativeAppEditor({
                 csrf={csrf}
                 disabled={readOnly}
                 onChange={(dataSourceId) =>
-                  setConfiguration((current) => ({ ...current, dataSourceId }))
+                  setConfiguration((current) => ({
+                    ...current,
+                    dataSourceId,
+                  }))
                 }
               />
               <div className="form-grid form-grid--2">
@@ -2308,7 +2413,10 @@ export function NativeAppEditor({
                   )}
                   disabled={readOnly}
                   onChange={(valueField) =>
-                    setConfiguration((current) => ({ ...current, valueField }))
+                    setConfiguration((current) => ({
+                      ...current,
+                      valueField,
+                    }))
                   }
                 />
                 <FieldSelect
@@ -2378,7 +2486,10 @@ export function NativeAppEditor({
                 csrf={csrf}
                 disabled={readOnly}
                 onChange={(dataSourceId) =>
-                  setConfiguration((current) => ({ ...current, dataSourceId }))
+                  setConfiguration((current) => ({
+                    ...current,
+                    dataSourceId,
+                  }))
                 }
               />
               <div className="form-grid form-grid--2">
@@ -2479,7 +2590,10 @@ export function NativeAppEditor({
                                 ...config,
                                 zones: config.zones.map((item, itemIndex) =>
                                   itemIndex === index
-                                    ? { ...item, label: event.target.value }
+                                    ? {
+                                        ...item,
+                                        label: event.target.value,
+                                      }
                                     : item,
                                 ),
                               };
@@ -2499,7 +2613,10 @@ export function NativeAppEditor({
                                 ...config,
                                 zones: config.zones.map((item, itemIndex) =>
                                   itemIndex === index
-                                    ? { ...item, timezone: event.target.value }
+                                    ? {
+                                        ...item,
+                                        timezone: event.target.value,
+                                      }
                                     : item,
                                 ),
                               };
@@ -2532,115 +2649,131 @@ export function NativeAppEditor({
               </fieldset>
             </>
           )}
-          <fieldset>
-            <legend>Content sizing</legend>
-            <label className="switch-row">
-              <input
-                type="checkbox"
-                checked={configuration.textScale !== undefined}
-                disabled={readOnly}
-                onChange={(event) =>
-                  setConfiguration((current) => {
-                    if (event.target.checked)
-                      return { ...current, textScale: 100 };
-                    const automatic = { ...current };
-                    delete automatic.textScale;
-                    return automatic;
-                  })
-                }
-              />
-              <span>Use a custom scale</span>
-            </label>
-            {configuration.textScale !== undefined && (
-              <label className="field">
-                <span className="field__label">
-                  Scale ({configuration.textScale}%)
-                </span>
-                <input
-                  type="range"
-                  min={25}
-                  max={500}
-                  step={25}
-                  value={configuration.textScale}
-                  disabled={readOnly}
-                  onChange={(event) =>
-                    setConfiguration((current) => ({
-                      ...current,
-                      textScale: Number(event.target.value),
-                    }))
+          <section className="widget-editor__section">
+            <header>
+              <h3>Appearance</h3>
+              <p>
+                Adjust spacing, scale, and colors after the content looks right.
+              </p>
+            </header>
+            <div className="widget-editor__section-body">
+              <fieldset>
+                <legend>Content sizing</legend>
+                <label className="switch-row">
+                  <input
+                    type="checkbox"
+                    checked={configuration.textScale !== undefined}
+                    disabled={readOnly}
+                    onChange={(event) =>
+                      setConfiguration((current) => {
+                        if (event.target.checked)
+                          return { ...current, textScale: 100 };
+                        const automatic = { ...current };
+                        delete automatic.textScale;
+                        return automatic;
+                      })
+                    }
+                  />
+                  <span>Use a custom scale</span>
+                </label>
+                {configuration.textScale !== undefined && (
+                  <label className="field">
+                    <span className="field__label">
+                      Scale ({configuration.textScale}%)
+                    </span>
+                    <input
+                      type="range"
+                      min={25}
+                      max={500}
+                      step={25}
+                      value={configuration.textScale}
+                      disabled={readOnly}
+                      onChange={(event) =>
+                        setConfiguration((current) => ({
+                          ...current,
+                          textScale: Number(event.target.value),
+                        }))
+                      }
+                    />
+                  </label>
+                )}
+                <label className="field">
+                  <span className="field__label">
+                    Padding ({configuration.contentPadding ?? 10}%)
+                  </span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={40}
+                    step={1}
+                    value={configuration.contentPadding ?? 10}
+                    disabled={readOnly}
+                    onChange={(event) =>
+                      setConfiguration((current) => ({
+                        ...current,
+                        contentPadding: Number(event.target.value),
+                      }))
+                    }
+                  />
+                </label>
+                <small>
+                  By default, content uses the center 80% of the Widget. Reduce
+                  padding to let it fill more space; custom scale ranges up to
+                  500% and still fits long text within the available area.
+                </small>
+              </fieldset>
+              <div className="form-grid form-grid--2">
+                <label className="field">
+                  <span className="field__label">Text and accent color</span>
+                  <input
+                    type="color"
+                    value={configuration.foregroundColor}
+                    disabled={readOnly}
+                    onChange={(e) =>
+                      updateColors("foregroundColor", e.target.value)
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span className="field__label">Background color</span>
+                  <input
+                    type="color"
+                    value={configuration.backgroundColor}
+                    disabled={readOnly}
+                    onChange={(e) =>
+                      updateColors("backgroundColor", e.target.value)
+                    }
+                  />
+                </label>
+              </div>
+            </div>
+          </section>
+          <aside className="widget-editor__preview" aria-label="Live preview">
+            <header>
+              <strong>Live preview</strong>
+              <span>Updates as you make changes.</span>
+            </header>
+            <div
+              ref={previewRef}
+              className="native-app-preview declarative-widget-preview"
+            >
+              {compiledPreview.data ? (
+                <DeclarativePresentationPreview
+                  presentation={compiledPreview.data}
+                  source={sourcePreview.data}
+                  assetImageUrl={
+                    previewImageAssetId
+                      ? api.assetPreviewUrl(previewImageAssetId)
+                      : undefined
                   }
                 />
-              </label>
-            )}
-            <label className="field">
-              <span className="field__label">
-                Padding ({configuration.contentPadding ?? 10}%)
-              </span>
-              <input
-                type="range"
-                min={0}
-                max={40}
-                step={1}
-                value={configuration.contentPadding ?? 10}
-                disabled={readOnly}
-                onChange={(event) =>
-                  setConfiguration((current) => ({
-                    ...current,
-                    contentPadding: Number(event.target.value),
-                  }))
-                }
-              />
-            </label>
-            <small>
-              By default, content uses the center 80% of the Widget. Reduce
-              padding to let it fill more space; custom scale ranges up to 500%
-              and still fits long text within the available area.
-            </small>
-          </fieldset>
-          <div className="form-grid form-grid--2">
-            <label className="field">
-              <span className="field__label">Foreground</span>
-              <input
-                type="color"
-                value={configuration.foregroundColor}
-                disabled={readOnly}
-                onChange={(e) =>
-                  updateColors("foregroundColor", e.target.value)
-                }
-              />
-            </label>
-            <label className="field">
-              <span className="field__label">Background</span>
-              <input
-                type="color"
-                value={configuration.backgroundColor}
-                disabled={readOnly}
-                onChange={(e) =>
-                  updateColors("backgroundColor", e.target.value)
-                }
-              />
-            </label>
-          </div>
-          <div
-            ref={previewRef}
-            className="native-app-preview declarative-widget-preview"
-          >
-            {compiledPreview.data ? (
-              <DeclarativePresentationPreview
-                presentation={compiledPreview.data}
-                source={sourcePreview.data}
-                assetImageUrl={
-                  previewImageAssetId
-                    ? api.assetPreviewUrl(previewImageAssetId)
-                    : undefined
-                }
-              />
-            ) : compiledPreview.isLoading || sourcePreview.isLoading ? (
-              "Compiling presentation preview…"
-            ) : (
-              "The current configuration cannot be compiled yet."
-            )}
-          </div>
+              ) : compiledPreview.isLoading || sourcePreview.isLoading ? (
+                "Preparing preview…"
+              ) : (
+                "Complete the required fields to see a preview."
+              )}
+            </div>
+          </aside>
           {save.error && <p className="form-error">{save.error.message}</p>}
         </div>
         <footer>
@@ -3191,6 +3324,7 @@ function DataSourceSelect({
   return (
     <DataSourcePicker
       value={value}
+      description="Choose the information this Widget should display. You can connect a new source without leaving the editor."
       sources={sources}
       definitions={definitions}
       createProviders={createProviders}
@@ -3233,6 +3367,9 @@ function FieldSelect({
           </option>
         ))}
       </Select>
+      <small>
+        Choose which field from the connected data supplies this value.
+      </small>
     </label>
   );
 }
