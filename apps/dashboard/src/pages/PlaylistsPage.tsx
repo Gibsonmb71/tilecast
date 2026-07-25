@@ -366,6 +366,7 @@ export function PlaylistEditorPage() {
         </div>
       ))}
       <UsedByPanel
+        compact
         emptyMessage="No Layout, screen, or schedule plays this playlist yet."
         groups={[
           {
