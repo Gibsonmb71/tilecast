@@ -89,7 +89,7 @@ Uploaded filenames are display metadata only. API responses never include a stor
 
 Folders, collections, and tags are installation-scoped metadata. Authenticated users can list them through `GET /api/v1/content-folders`, `/content-collections`, and `/content-tags`. Owner, Administrator, and Editor mutations require CSRF. Creation and deletion use the matching collection route; folders also support `PATCH /content-folders/{id}` for hierarchy and details.
 
-`POST /api/v1/assets/bulk-organize` accepts 1–250 unique `assetIds`, an optional folder assignment, and tag or collection additions/removals. It validates every asset and referenced organization record before applying an all-or-nothing transaction. Deleting a folder moves its direct content to Unfiled and moves child folders to the root. Deleting a tag or collection removes only its relationships and never deletes content. These records are Studio metadata and do not change Player manifests.
+`POST /api/v1/assets/bulk-organize` accepts 1–250 unique `assetIds`, an optional folder assignment, and tag or collection additions/removals. It validates every asset and referenced organization record before applying an all-or-nothing transaction. Deleting a folder moves its direct content to Unfiled and moves child folders to the root. Deleting a tag or collection removes only its relationships and never deletes content; deleting a tag referenced by a tag-driven playlist is refused until the playlist rule is changed. Tag changes invalidate affected tag-driven playlist manifests; folders and collections remain Studio-only metadata.
 
 ## Player media delivery
 
@@ -100,6 +100,10 @@ Responses include a hash-derived ETag, correct MIME type and length, and `Accept
 ## Playlists, assignments, and manifests
 
 Owner, Administrator, and Editor may create, edit, duplicate, reorder, or delete unassigned playlists; Viewer is read-only. Items accept only ready image/video assets with a player-compatible variant. Images require a positive duration, video offsets must remain within trusted duration, and reordering must contain every item exactly once.
+
+Media assets may define optional `availableFrom` and `expiresAt` RFC 3339 timestamps through `PATCH /api/v1/assets/{id}` with `availabilitySet: true`. The start is inclusive and expiration is exclusive. The manifest carries both values on every playlist item, and the Player filters and reevaluates them against its server-corrected clock, including from a cached manifest while offline.
+
+`PUT /api/v1/playlists/{id}/tag-rule` switches a playlist between a manual timeline and an automatically populated media timeline. An enabled rule contains 1–20 tag IDs, `match: "any" | "all"`, and an image duration from one second through 24 hours. Tag playlists include only ready library images and videos with a playable variant, sort deterministically by name and ID, use full-length video, and retain their manual items so switching back to manual restores the previous timeline. Direct item mutations are rejected while the tag rule is active.
 
 Tilecast Studio can open a playlist preview in a separate authenticated browser window. The preview follows the saved item order, durations, fit, transitions, video trim points, audio settings, and looping behavior without assigning the playlist to a screen. Images and videos use their playable variants; Widget and Layout items use their generated Studio preview image when available. This browser preview is an authoring aid and does not replace validation on an Android TV or Fire TV device.
 

@@ -81,6 +81,9 @@ export type PlaylistItem = {
   assetDurationSeconds?: number;
   thumbnailUrl: string;
   variantId?: string;
+  availableFrom?: string;
+  expiresAt?: string;
+  dynamic?: boolean;
 };
 
 export type Playlist = {
@@ -103,6 +106,12 @@ export type Playlist = {
   // Data Sources reached through this playlist's items — those its Widgets read plus those any
   // embedded Layout depends on. Only IDs; names and refresh status come from the Data Source list.
   dataSourceIds?: string[];
+  sourceType?: "static" | "tag";
+  tagRule?: {
+    match: "any" | "all";
+    imageDurationMs: number;
+    tags: ContentTag[];
+  };
 };
 
 export type PlaylistList = {
@@ -746,6 +755,8 @@ export type Asset = {
   creator?: { id: string; name: string };
   createdAt: string;
   updatedAt: string;
+  availableFrom?: string;
+  expiresAt?: string;
   variants: AssetVariant[];
   thumbnailUrl?: string;
   website?: WebsiteConfig;
