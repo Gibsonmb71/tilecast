@@ -10,6 +10,9 @@ import { Link } from "react-router";
 import { api } from "../api/client";
 import type { Schedule, ScreenStatus } from "../api/types";
 import { PageHeader } from "../components/ui";
+import { guidedJobs } from "../navigation/guidedJobs";
+import { canManageContent } from "./ContentPage";
+import { useAuth } from "../auth/AuthProvider";
 import "./OperationsDashboard.css";
 
 const statusLabels: Record<ScreenStatus, string> = {
@@ -22,6 +25,7 @@ const statusLabels: Record<ScreenStatus, string> = {
 };
 
 export function OperationsDashboard() {
+  const auth = useAuth();
   const screens = useQuery({
     queryKey: ["screens"],
     queryFn: api.screens,
@@ -58,6 +62,27 @@ export function OperationsDashboard() {
         title="System overview"
         description="Live player state, items requiring attention, and what changes next."
       />
+
+      {canManageContent(auth.status?.user) && (
+        <section className="ops-jobs" aria-labelledby="ops-jobs-heading">
+          <header>
+            <h3 id="ops-jobs-heading">Put something on a screen</h3>
+            <p>
+              Each of these sets up the data, the Widget, and the assignment in
+              one pass. What they create are ordinary records you can edit
+              afterward.
+            </p>
+          </header>
+          <div className="ops-jobs__grid">
+            {guidedJobs.map((job) => (
+              <Link key={job.id} to={`/start/${job.id}`}>
+                <strong>{job.title}</strong>
+                <span>{job.outcome}</span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="ops-summary" aria-label="Current status">
         <Summary

@@ -327,3 +327,53 @@
     border-bottom: 0;
   }
 }
+
+/* Guided jobs on Overview: the task-shaped way into Studio, for authors who do not yet know the
+   record model. */
+.ops-jobs {
+  background: var(--tc-bg-surface);
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-panel, 8px);
+  overflow: hidden;
+}
+.ops-jobs > header {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--tc-border-default);
+}
+.ops-jobs > header h3 {
+  margin: 0;
+  font-size: 15px;
+}
+.ops-jobs > header p {
+  margin: 4px 0 0;
+  color: var(--tc-text-secondary);
+  font-size: 13px;
+}
+.ops-jobs__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1px;
+  background: var(--tc-border-default);
+}
+.ops-jobs__grid a {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+  padding: 14px 16px;
+  color: var(--tc-text-primary);
+  text-decoration: none;
+  background: var(--tc-bg-surface);
+}
+.ops-jobs__grid a:hover {
+  background: var(--tc-bg-subtle);
+}
+.ops-jobs__grid span {
+  color: var(--tc-text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+}
+@media (max-width: 480px) {
+  .ops-jobs__grid {
+    grid-template-columns: 1fr;
+  }
+}

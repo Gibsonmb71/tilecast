@@ -20,7 +20,9 @@ afterEach(() => {
 
 function CurrentPath() {
   const location = useLocation();
-  return <div data-testid="path">{location.pathname}</div>;
+  return (
+    <div data-testid="path">{`${location.pathname}${location.search}`}</div>
+  );
 }
 
 const widget = {
@@ -97,6 +99,7 @@ function editorAt(url: string) {
             <Route path="/widgets/:id" element={<WidgetEditorPage />} />
             <Route path="/widgets" element={<div>Widget list</div>} />
             <Route path="/layouts/:id" element={<div>Layout editor</div>} />
+            <Route path="/start/:job" element={<div>Guided job</div>} />
           </Routes>
         </MemoryRouter>
       </AuthProvider>
@@ -140,6 +143,34 @@ describe("Widget editor returnTo", () => {
 
     await waitFor(() =>
       expect(screen.getByTestId("path")).toHaveTextContent("/widgets"),
+    );
+  });
+
+  it("returns to a guided job with the saved Widget id", async () => {
+    editorAt(
+      "/widgets/widget-1?flowReturn=%2Fstart%2Flunch-menu%3Fscreen%3Dscreen-1",
+    );
+
+    vi.spyOn(api, "updateWidget").mockResolvedValue(widget);
+
+    const save = await screen.findByRole("button", { name: "Save website" });
+    await userEvent.click(save);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("path")).toHaveTextContent(
+        "/start/lunch-menu?screen=screen-1&widget=widget-1",
+      ),
+    );
+  });
+
+  it("returns to a guided job when the editor is closed without saving", async () => {
+    editorAt("/widgets/widget-1?flowReturn=%2Fstart%2Flunch-menu");
+
+    const [close] = await screen.findAllByRole("button", { name: /^Close$/ });
+    await userEvent.click(close!);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("path")).toHaveTextContent("/start/lunch-menu"),
     );
   });
 
