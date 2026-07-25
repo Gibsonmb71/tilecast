@@ -262,6 +262,9 @@ class ManifestSyncManager(
 				else -> require(item.variantId != null && assets[item.variantId]?.assetId == item.assetId) { "Manifest item references an unavailable variant" }
 			}
 			require(item.fitMode in listOf("contain", "cover", "stretch") && item.transition in (if (manifest.schemaVersion >= 14) listOf("none", "fade", "crossfade") else listOf("none", "fade")) && item.deliveryPolicy in listOf("download", "stream", "automatic") && item.volume in 0f..1f) { "Manifest item settings are invalid" }
+			val availableFrom = item.availableFrom?.let(Instant::parse)
+			val expiresAt = item.expiresAt?.let(Instant::parse)
+			require(availableFrom == null || expiresAt == null || availableFrom.isBefore(expiresAt)) { "Manifest item availability is invalid" }
 			if (item.variantId?.let { assets[it]?.mimeType?.startsWith("image/") } == true) require((item.durationMs ?: 0) > 0) { "Image duration is invalid" }
 			if (item.videoEndOffsetMs != null) require(item.videoEndOffsetMs > (item.videoStartOffsetMs ?: 0)) { "Video offsets are invalid" }
 		}

@@ -207,7 +207,9 @@ export function PlaylistPreviewPage() {
   });
   const items = useMemo(
     () =>
-      (query.data?.items ?? []).filter((item) => item.assetStatus === "ready"),
+      (query.data?.items ?? []).filter((item) =>
+        playlistPreviewItemAvailable(item),
+      ),
     [query.data?.items],
   );
   const [index, setIndex] = useState(0);
@@ -454,5 +456,16 @@ export function PlaylistPreviewPage() {
         </button>
       </footer>
     </main>
+  );
+}
+
+export function playlistPreviewItemAvailable(
+  item: PlaylistItem,
+  now = Date.now(),
+) {
+  return (
+    item.assetStatus === "ready" &&
+    (!item.availableFrom || Date.parse(item.availableFrom) <= now) &&
+    (!item.expiresAt || now < Date.parse(item.expiresAt))
   );
 }

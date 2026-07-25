@@ -925,11 +925,32 @@ export const api = {
     `/api/v1/assets/${encodeURIComponent(id)}/preview`,
   updateAsset: (
     id: string,
-    input: { name?: string; description?: string },
+    input: {
+      name?: string;
+      description?: string;
+      availabilitySet?: boolean;
+      availableFrom?: string;
+      expiresAt?: string;
+    },
     csrfToken: string,
   ) =>
     request<Asset>(`/assets/${id}`, {
       method: "PATCH",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  setPlaylistTagRule: (
+    id: string,
+    input: {
+      enabled: boolean;
+      match: "any" | "all";
+      imageDurationMs: number;
+      tagIds: string[];
+    },
+    csrfToken: string,
+  ) =>
+    request<Playlist>(`/playlists/${id}/tag-rule`, {
+      method: "PUT",
       headers: { "X-CSRF-Token": csrfToken },
       body: JSON.stringify(input),
     }),

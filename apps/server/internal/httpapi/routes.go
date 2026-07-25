@@ -156,6 +156,7 @@ func (s *server) routes() http.Handler {
 			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Patch("/playlists/{id}/items/{itemId}", s.updatePlaylistItem)
 			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Delete("/playlists/{id}/items/{itemId}", s.deletePlaylistItem)
 			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Put("/playlists/{id}/items/order", s.reorderPlaylistItems)
+			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Put("/playlists/{id}/tag-rule", s.setPlaylistTagRule)
 			dashboard.Get("/screens/{id}/playlist-assignment", s.getPlaylistAssignment)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Put("/screens/{id}/playlist-assignment", s.assignPlaylist)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Delete("/screens/{id}/playlist-assignment", s.unassignPlaylist)

@@ -96,6 +96,8 @@ type Asset struct {
 	Creator            *Creator       `json:"creator,omitempty"`
 	CreatedAt          time.Time      `json:"createdAt"`
 	UpdatedAt          time.Time      `json:"updatedAt"`
+	AvailableFrom      *time.Time     `json:"availableFrom,omitempty"`
+	ExpiresAt          *time.Time     `json:"expiresAt,omitempty"`
 	Variants           []Variant      `json:"variants"`
 	ThumbnailURL       *string        `json:"thumbnailUrl,omitempty"`
 	Website            *WebsiteConfig `json:"website,omitempty"`
@@ -811,6 +813,7 @@ type WebsiteReportingScreen struct {
 
 type AssetInvalidator interface {
 	AssetChanged(context.Context, uuid.UUID, string) error
+	TagAssignmentsChanged(context.Context, []uuid.UUID, string) error
 	DataSourceChanged(context.Context, uuid.UUID, string) error
 }
 

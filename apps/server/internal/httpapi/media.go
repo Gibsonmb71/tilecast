@@ -545,8 +545,11 @@ func (s *server) previewDataSource(w http.ResponseWriter, r *http.Request) {
 }
 
 type updateAssetRequest struct {
-	Name        *string `json:"name"`
-	Description *string `json:"description"`
+	Name            *string    `json:"name"`
+	Description     *string    `json:"description"`
+	AvailableFrom   *time.Time `json:"availableFrom"`
+	ExpiresAt       *time.Time `json:"expiresAt"`
+	AvailabilitySet *bool      `json:"availabilitySet"`
 }
 
 func (s *server) updateAsset(w http.ResponseWriter, r *http.Request) {
@@ -560,7 +563,14 @@ func (s *server) updateAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user := r.Context().Value(sessionContextKey).(auth.Session).User
-	asset, err := s.media.UpdateAsset(r.Context(), id, user.ID, body.Name, body.Description)
+	availabilitySet := body.AvailabilitySet != nil && *body.AvailabilitySet
+	var asset media.Asset
+	var err error
+	if availabilitySet {
+		asset, err = s.media.UpdateAssetAvailability(r.Context(), id, user.ID, body.Name, body.Description, body.AvailableFrom, body.ExpiresAt)
+	} else {
+		asset, err = s.media.UpdateAsset(r.Context(), id, user.ID, body.Name, body.Description)
+	}
 	if err != nil {
 		s.writeMediaError(w, r, err)
 		return

@@ -91,7 +91,23 @@ func (s *Service) List(ctx context.Context, search string, page, pageSize int) (
 	if err := s.db.QueryRow(ctx, `SELECT count(*) FROM playlists WHERE deleted_at IS NULL AND ($1='' OR name ILIKE '%'||$1||'%')`, search).Scan(&total); err != nil {
 		return ListResult{}, err
 	}
-	rows, err := s.db.Query(ctx, `SELECT p.id,p.name,p.description,p.revision,p.created_at,p.updated_at,count(i.id) FROM playlists p LEFT JOIN playlist_items i ON i.playlist_id=p.id WHERE p.deleted_at IS NULL AND ($1='' OR p.name ILIKE '%'||$1||'%') GROUP BY p.id ORDER BY p.updated_at DESC,p.id LIMIT $2 OFFSET $3`, search, pageSize, (page-1)*pageSize)
+	rows, err := s.db.Query(ctx, `SELECT p.id,p.name,p.description,p.revision,p.created_at,p.updated_at,p.source_type,
+		CASE WHEN p.source_type='static' THEN count(i.id) ELSE (
+			SELECT count(*) FROM assets a
+			WHERE a.deleted_at IS NULL AND a.origin='library' AND a.type IN('image','video') AND a.processing_status='ready'
+			  AND EXISTS(SELECT 1 FROM asset_variants v WHERE v.asset_id=a.id AND v.deleted_at IS NULL AND v.player_compatible=TRUE)
+			  AND EXISTS(SELECT 1 FROM playlist_tags selected WHERE selected.playlist_id=p.id)
+			  AND ((p.tag_match='any' AND EXISTS(
+			       SELECT 1 FROM content_asset_tags at JOIN playlist_tags selected ON selected.tag_id=at.tag_id
+			       WHERE at.asset_id=a.id AND selected.playlist_id=p.id
+			  )) OR (p.tag_match='all' AND NOT EXISTS(
+			       SELECT 1 FROM playlist_tags selected WHERE selected.playlist_id=p.id
+			       AND NOT EXISTS(SELECT 1 FROM content_asset_tags at WHERE at.asset_id=a.id AND at.tag_id=selected.tag_id)
+			  )))
+		) END
+		FROM playlists p LEFT JOIN playlist_items i ON i.playlist_id=p.id
+		WHERE p.deleted_at IS NULL AND ($1='' OR p.name ILIKE '%'||$1||'%')
+		GROUP BY p.id ORDER BY p.updated_at DESC,p.id LIMIT $2 OFFSET $3`, search, pageSize, (page-1)*pageSize)
 	if err != nil {
 		return ListResult{}, err
 	}
@@ -99,7 +115,7 @@ func (s *Service) List(ctx context.Context, search string, page, pageSize int) (
 	items := []Playlist{}
 	for rows.Next() {
 		var p Playlist
-		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.Revision, &p.CreatedAt, &p.UpdatedAt, &p.ItemCount); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.Revision, &p.CreatedAt, &p.UpdatedAt, &p.SourceType, &p.ItemCount); err != nil {
 			return ListResult{}, err
 		}
 		p.Items = []Item{}
@@ -112,14 +128,58 @@ func (s *Service) List(ctx context.Context, search string, page, pageSize int) (
 
 func (s *Service) Get(ctx context.Context, id uuid.UUID) (Playlist, error) {
 	var p Playlist
-	err := s.db.QueryRow(ctx, `SELECT id,name,description,revision,created_at,updated_at FROM playlists WHERE id=$1 AND deleted_at IS NULL`, id).Scan(&p.ID, &p.Name, &p.Description, &p.Revision, &p.CreatedAt, &p.UpdatedAt)
+	var tagMatch string
+	var tagImageDuration int64
+	err := s.db.QueryRow(ctx, `SELECT id,name,description,revision,created_at,updated_at,source_type,tag_match,tag_image_duration_ms FROM playlists WHERE id=$1 AND deleted_at IS NULL`, id).Scan(&p.ID, &p.Name, &p.Description, &p.Revision, &p.CreatedAt, &p.UpdatedAt, &p.SourceType, &tagMatch, &tagImageDuration)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Playlist{}, ErrNotFound
 	}
 	if err != nil {
 		return Playlist{}, err
 	}
-	rows, err := s.db.Query(ctx, `SELECT i.id,COALESCE(i.asset_id,'00000000-0000-0000-0000-000000000000'::uuid),i.layout_id,i.position,i.duration_ms,i.fit_mode,i.transition,i.audio_enabled,i.volume,i.video_start_offset_ms,i.video_end_offset_ms,i.delivery_policy,COALESCE(a.name,l.name),CASE WHEN i.layout_id IS NOT NULL THEN 'layout' ELSE a.type END,COALESCE(s.provider,''),CASE WHEN i.layout_id IS NOT NULL THEN CASE WHEN l.published_revision_id IS NOT NULL THEN 'ready' ELSE 'draft' END ELSE a.processing_status END,a.duration_seconds,v.id,i.created_at,i.updated_at FROM playlist_items i LEFT JOIN assets a ON a.id=i.asset_id LEFT JOIN layouts l ON l.id=i.layout_id AND l.deleted_at IS NULL LEFT JOIN widgets s ON s.asset_id=a.id LEFT JOIN LATERAL(SELECT id FROM asset_variants WHERE asset_id=a.id AND deleted_at IS NULL AND player_compatible=TRUE ORDER BY CASE kind WHEN 'playback' THEN 0 WHEN 'original' THEN 1 ELSE 2 END LIMIT 1)v ON TRUE WHERE i.playlist_id=$1 ORDER BY i.position`, id)
+	if p.SourceType == "tag" {
+		p.TagRule = &TagRule{Match: tagMatch, ImageDurationMS: tagImageDuration, Tags: []PlaylistTag{}}
+		tagRows, tagErr := s.db.Query(ctx, `SELECT t.id,t.name,t.color FROM playlist_tags pt JOIN content_tags t ON t.id=pt.tag_id WHERE pt.playlist_id=$1 ORDER BY lower(t.name),t.id`, id)
+		if tagErr != nil {
+			return Playlist{}, tagErr
+		}
+		for tagRows.Next() {
+			var tag PlaylistTag
+			if tagErr = tagRows.Scan(&tag.ID, &tag.Name, &tag.Color); tagErr != nil {
+				tagRows.Close()
+				return Playlist{}, tagErr
+			}
+			p.TagRule.Tags = append(p.TagRule.Tags, tag)
+		}
+		tagRows.Close()
+		if tagErr = tagRows.Err(); tagErr != nil {
+			return Playlist{}, tagErr
+		}
+	}
+	itemQuery := `SELECT i.id,COALESCE(i.asset_id,'00000000-0000-0000-0000-000000000000'::uuid),i.layout_id,i.position,i.duration_ms,i.fit_mode,i.transition,i.audio_enabled,i.volume,i.video_start_offset_ms,i.video_end_offset_ms,i.delivery_policy,COALESCE(a.name,l.name),CASE WHEN i.layout_id IS NOT NULL THEN 'layout' ELSE a.type END,COALESCE(s.provider,''),CASE WHEN i.layout_id IS NOT NULL THEN CASE WHEN l.published_revision_id IS NOT NULL THEN 'ready' ELSE 'draft' END ELSE a.processing_status END,a.duration_seconds,v.id,i.created_at,i.updated_at,a.available_from,a.expires_at,FALSE FROM playlist_items i LEFT JOIN assets a ON a.id=i.asset_id LEFT JOIN layouts l ON l.id=i.layout_id AND l.deleted_at IS NULL LEFT JOIN widgets s ON s.asset_id=a.id LEFT JOIN LATERAL(SELECT id FROM asset_variants WHERE asset_id=a.id AND deleted_at IS NULL AND player_compatible=TRUE ORDER BY CASE kind WHEN 'playback' THEN 0 WHEN 'original' THEN 1 ELSE 2 END LIMIT 1)v ON TRUE WHERE i.playlist_id=$1 ORDER BY i.position`
+	if p.SourceType == "tag" {
+		itemQuery = `WITH matched AS (
+			SELECT at.asset_id
+			FROM content_asset_tags at JOIN playlist_tags pt ON pt.tag_id=at.tag_id
+			WHERE pt.playlist_id=$1
+			GROUP BY at.asset_id
+			HAVING ($2='any' AND count(*)>0) OR ($2='all' AND count(*)=(SELECT count(*) FROM playlist_tags WHERE playlist_id=$1))
+		)
+		SELECT a.id,a.id,NULL::uuid,row_number() OVER(ORDER BY lower(a.name),a.id)-1,
+			CASE WHEN a.type='image' THEN $3::bigint ELSE NULL::bigint END,
+			'contain','none',TRUE,1,NULL::bigint,NULL::bigint,'download',a.name,a.type,'',
+			a.processing_status,a.duration_seconds,v.id,a.created_at,a.updated_at,a.available_from,a.expires_at,TRUE
+		FROM matched m JOIN assets a ON a.id=m.asset_id
+		LEFT JOIN LATERAL(SELECT id FROM asset_variants WHERE asset_id=a.id AND deleted_at IS NULL AND player_compatible=TRUE ORDER BY CASE kind WHEN 'playback' THEN 0 WHEN 'original' THEN 1 ELSE 2 END LIMIT 1)v ON TRUE
+		WHERE a.deleted_at IS NULL AND a.origin='library' AND a.type IN ('image','video') AND a.processing_status='ready' AND v.id IS NOT NULL
+		ORDER BY lower(a.name),a.id`
+	}
+	var rows pgx.Rows
+	if p.SourceType == "tag" {
+		rows, err = s.db.Query(ctx, itemQuery, id, tagMatch, tagImageDuration)
+	} else {
+		rows, err = s.db.Query(ctx, itemQuery, id)
+	}
 	if err != nil {
 		return Playlist{}, err
 	}
@@ -129,7 +189,7 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (Playlist, error) {
 	p.LayoutUsage = []LayoutUsage{}
 	for rows.Next() {
 		var item Item
-		if err := rows.Scan(&item.ID, &item.AssetID, &item.LayoutID, &item.Position, &item.DurationMS, &item.FitMode, &item.Transition, &item.AudioEnabled, &item.Volume, &item.VideoStartOffsetMS, &item.VideoEndOffsetMS, &item.DeliveryPolicy, &item.AssetName, &item.AssetType, &item.WidgetProvider, &item.AssetStatus, &item.AssetDurationSeconds, &item.VariantID, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.AssetID, &item.LayoutID, &item.Position, &item.DurationMS, &item.FitMode, &item.Transition, &item.AudioEnabled, &item.Volume, &item.VideoStartOffsetMS, &item.VideoEndOffsetMS, &item.DeliveryPolicy, &item.AssetName, &item.AssetType, &item.WidgetProvider, &item.AssetStatus, &item.AssetDurationSeconds, &item.VariantID, &item.CreatedAt, &item.UpdatedAt, &item.AvailableFrom, &item.ExpiresAt, &item.Dynamic); err != nil {
 			return Playlist{}, err
 		}
 		if item.AssetID != uuid.Nil {
@@ -173,6 +233,73 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (Playlist, error) {
 		return Playlist{}, err
 	}
 	return p, nil
+}
+
+func (s *Service) SetTagRule(ctx context.Context, id, userID uuid.UUID, input TagRuleInput) (Playlist, error) {
+	if input.Match == "" {
+		input.Match = "any"
+	}
+	if input.Match != "any" && input.Match != "all" {
+		return Playlist{}, errors.New("tag match must be any or all")
+	}
+	if input.ImageDurationMS == 0 {
+		input.ImageDurationMS = 10000
+	}
+	if input.ImageDurationMS < 1000 || input.ImageDurationMS > 86400000 {
+		return Playlist{}, errors.New("tag playlist image duration must be between 1 second and 24 hours")
+	}
+	if input.Enabled && (len(input.TagIDs) < 1 || len(input.TagIDs) > 20) {
+		return Playlist{}, errors.New("tagIds must contain between 1 and 20 tags")
+	}
+	tagIDs := uniqueUUIDs(input.TagIDs)
+	if input.Enabled && len(tagIDs) != len(input.TagIDs) {
+		return Playlist{}, errors.New("tagIds must not contain duplicates")
+	}
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return Playlist{}, err
+	}
+	defer tx.Rollback(ctx)
+	if input.Enabled {
+		var count int
+		if err = tx.QueryRow(ctx, `SELECT count(*) FROM content_tags WHERE id=ANY($1)`, tagIDs).Scan(&count); err != nil {
+			return Playlist{}, err
+		}
+		if count != len(tagIDs) {
+			return Playlist{}, ErrInvalidItem
+		}
+	}
+	sourceType := "static"
+	if input.Enabled {
+		sourceType = "tag"
+	}
+	result, err := tx.Exec(ctx, `UPDATE playlists SET source_type=$2,tag_match=$3,tag_image_duration_ms=$4,revision=revision+1,updated_at=now() WHERE id=$1 AND deleted_at IS NULL`, id, sourceType, input.Match, input.ImageDurationMS)
+	if err != nil {
+		return Playlist{}, err
+	}
+	if result.RowsAffected() == 0 {
+		return Playlist{}, ErrNotFound
+	}
+	if _, err = tx.Exec(ctx, `DELETE FROM playlist_tags WHERE playlist_id=$1`, id); err != nil {
+		return Playlist{}, err
+	}
+	for _, tagID := range tagIDs {
+		if _, err = tx.Exec(ctx, `INSERT INTO playlist_tags(playlist_id,tag_id) VALUES($1,$2)`, id, tagID); err != nil {
+			return Playlist{}, err
+		}
+	}
+	notes, err := bumpAssigned(ctx, tx, id, "playlist.tag_rule_updated")
+	if err != nil {
+		return Playlist{}, err
+	}
+	if err = insertAudit(ctx, tx, userID, "playlist.tag_rule_updated", id); err != nil {
+		return Playlist{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return Playlist{}, err
+	}
+	s.notify(notes)
+	return s.Get(ctx, id)
 }
 
 // reachableDataSources reports the Data Sources a playlist reaches through its items.
@@ -298,7 +425,10 @@ func (s *Service) Duplicate(ctx context.Context, id, userID uuid.UUID) (Playlist
 	if err != nil {
 		return Playlist{}, err
 	}
-	if _, err = tx.Exec(ctx, `UPDATE playlists SET revision=revision+1 WHERE id=$1`, created.ID); err != nil {
+	if _, err = tx.Exec(ctx, `UPDATE playlists destination SET source_type=source.source_type,tag_match=source.tag_match,tag_image_duration_ms=source.tag_image_duration_ms,revision=revision+1 FROM playlists source WHERE destination.id=$1 AND source.id=$2`, created.ID, id); err != nil {
+		return Playlist{}, err
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO playlist_tags(playlist_id,tag_id) SELECT $2,tag_id FROM playlist_tags WHERE playlist_id=$1`, id, created.ID); err != nil {
 		return Playlist{}, err
 	}
 	if err = tx.Commit(ctx); err != nil {
@@ -481,6 +611,9 @@ func validateLayoutItemCycle(ctx context.Context, q interface {
 }
 
 func (s *Service) AddItem(ctx context.Context, playlistID, userID uuid.UUID, input ItemInput) (Playlist, error) {
+	if err := s.requireStaticPlaylist(ctx, playlistID); err != nil {
+		return Playlist{}, err
+	}
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return Playlist{}, err
@@ -527,6 +660,9 @@ func (s *Service) AddItem(ctx context.Context, playlistID, userID uuid.UUID, inp
 }
 
 func (s *Service) UpdateItem(ctx context.Context, playlistID, itemID, userID uuid.UUID, input ItemInput) (Playlist, error) {
+	if err := s.requireStaticPlaylist(ctx, playlistID); err != nil {
+		return Playlist{}, err
+	}
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return Playlist{}, err
@@ -568,6 +704,9 @@ func (s *Service) UpdateItem(ctx context.Context, playlistID, itemID, userID uui
 }
 
 func (s *Service) DeleteItem(ctx context.Context, playlistID, itemID, userID uuid.UUID) (Playlist, error) {
+	if err := s.requireStaticPlaylist(ctx, playlistID); err != nil {
+		return Playlist{}, err
+	}
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return Playlist{}, err
@@ -604,6 +743,9 @@ func (s *Service) DeleteItem(ctx context.Context, playlistID, itemID, userID uui
 }
 
 func (s *Service) Reorder(ctx context.Context, playlistID, userID uuid.UUID, ids []uuid.UUID) (Playlist, error) {
+	if err := s.requireStaticPlaylist(ctx, playlistID); err != nil {
+		return Playlist{}, err
+	}
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return Playlist{}, err
@@ -650,6 +792,19 @@ func (s *Service) Reorder(ctx context.Context, playlistID, userID uuid.UUID, ids
 	}
 	s.notify(notifications)
 	return s.Get(ctx, playlistID)
+}
+
+func (s *Service) requireStaticPlaylist(ctx context.Context, id uuid.UUID) error {
+	var sourceType string
+	if err := s.db.QueryRow(ctx, `SELECT source_type FROM playlists WHERE id=$1 AND deleted_at IS NULL`, id).Scan(&sourceType); errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	} else if err != nil {
+		return err
+	}
+	if sourceType != "static" {
+		return fmt.Errorf("%w: tag-driven playlist items are managed by their tag rule", ErrConflict)
+	}
+	return nil
 }
 
 type notification struct {
@@ -1285,7 +1440,7 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 				if !foundWidget {
 					manifest.Widgets = append(manifest.Widgets, widget)
 				}
-				mp.Items = append(mp.Items, ManifestItem{ID: item.ID, AssetID: item.AssetID, AssetType: "widget", DurationMS: item.DurationMS, FitMode: item.FitMode, Transition: item.Transition, AudioEnabled: item.AudioEnabled, Volume: item.Volume, DeliveryPolicy: "stream"})
+				mp.Items = append(mp.Items, ManifestItem{ID: item.ID, AssetID: item.AssetID, AssetType: "widget", DurationMS: item.DurationMS, FitMode: item.FitMode, Transition: item.Transition, AudioEnabled: item.AudioEnabled, Volume: item.Volume, DeliveryPolicy: "stream", AvailableFrom: item.AvailableFrom, ExpiresAt: item.ExpiresAt})
 				continue
 			}
 			if item.AssetType == "website" {
@@ -1318,7 +1473,7 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 				if !found {
 					manifest.Websites = append(manifest.Websites, website)
 				}
-				mp.Items = append(mp.Items, ManifestItem{ID: item.ID, AssetID: item.AssetID, AssetType: "website", DurationMS: item.DurationMS, FitMode: item.FitMode, Transition: item.Transition, AudioEnabled: false, Volume: 0, DeliveryPolicy: "stream"})
+				mp.Items = append(mp.Items, ManifestItem{ID: item.ID, AssetID: item.AssetID, AssetType: "website", DurationMS: item.DurationMS, FitMode: item.FitMode, Transition: item.Transition, AudioEnabled: false, Volume: 0, DeliveryPolicy: "stream", AvailableFrom: item.AvailableFrom, ExpiresAt: item.ExpiresAt})
 				continue
 			}
 			var asset ManifestAsset
@@ -1327,7 +1482,7 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 				return Manifest{}, "", err
 			}
 			asset.DownloadPath = "/api/v1/player/assets/" + asset.AssetID.String() + "/variants/" + asset.VariantID.String()
-			mp.Items = append(mp.Items, ManifestItem{ID: item.ID, AssetID: item.AssetID, AssetType: item.AssetType, VariantID: item.VariantID, DurationMS: item.DurationMS, FitMode: item.FitMode, Transition: item.Transition, AudioEnabled: item.AudioEnabled, Volume: item.Volume, VideoStartOffsetMS: item.VideoStartOffsetMS, VideoEndOffsetMS: item.VideoEndOffsetMS, DeliveryPolicy: item.DeliveryPolicy})
+			mp.Items = append(mp.Items, ManifestItem{ID: item.ID, AssetID: item.AssetID, AssetType: item.AssetType, VariantID: item.VariantID, DurationMS: item.DurationMS, FitMode: item.FitMode, Transition: item.Transition, AudioEnabled: item.AudioEnabled, Volume: item.Volume, VideoStartOffsetMS: item.VideoStartOffsetMS, VideoEndOffsetMS: item.VideoEndOffsetMS, DeliveryPolicy: item.DeliveryPolicy, AvailableFrom: item.AvailableFrom, ExpiresAt: item.ExpiresAt})
 			if !seen[asset.VariantID] {
 				manifest.Assets = append(manifest.Assets, asset)
 				seen[asset.VariantID] = true
@@ -1686,7 +1841,11 @@ func (s *Service) AssetChanged(ctx context.Context, assetID uuid.UUID, reason st
 		return err
 	}
 	defer tx.Rollback(ctx)
-	rows, err := tx.Query(ctx, `SELECT DISTINCT i.playlist_id FROM playlist_items i WHERE i.asset_id=$1`, assetID)
+	rows, err := tx.Query(ctx, `SELECT DISTINCT i.playlist_id FROM playlist_items i WHERE i.asset_id=$1
+		UNION
+		SELECT DISTINCT pt.playlist_id
+		FROM playlist_tags pt JOIN content_asset_tags at ON at.tag_id=pt.tag_id
+		WHERE at.asset_id=$1`, assetID)
 	if err != nil {
 		return err
 	}
@@ -1705,6 +1864,48 @@ func (s *Service) AssetChanged(ctx context.Context, assetID uuid.UUID, reason st
 		changed, e := bumpAssigned(ctx, tx, id, reason)
 		if e != nil {
 			return e
+		}
+		notes = append(notes, changed...)
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return err
+	}
+	s.notify(notes)
+	return nil
+}
+
+// TagAssignmentsChanged invalidates every tag-driven playlist that references a changed tag.
+// It intentionally does not depend on the asset's post-mutation tag set, so removing the final
+// matching tag still delivers the now-shorter playlist to every affected screen.
+func (s *Service) TagAssignmentsChanged(ctx context.Context, tagIDs []uuid.UUID, reason string) error {
+	tagIDs = uniqueUUIDs(tagIDs)
+	if len(tagIDs) == 0 {
+		return nil
+	}
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	rows, err := tx.Query(ctx, `SELECT DISTINCT playlist_id FROM playlist_tags WHERE tag_id=ANY($1)`, tagIDs)
+	if err != nil {
+		return err
+	}
+	playlistIDs := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err = rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		playlistIDs = append(playlistIDs, id)
+	}
+	rows.Close()
+	notes := []notification{}
+	for _, playlistID := range playlistIDs {
+		changed, bumpErr := bumpAssigned(ctx, tx, playlistID, reason)
+		if bumpErr != nil {
+			return bumpErr
 		}
 		notes = append(notes, changed...)
 	}

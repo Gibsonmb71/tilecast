@@ -209,14 +209,26 @@ export function PlaylistEditorPage() {
   const [picker, setPicker] = useState(false);
   const [layoutPicker, setLayoutPicker] = useState(false);
   const [dragged, setDragged] = useState<string>();
+  const [sourceType, setSourceType] = useState<"static" | "tag">("static");
+  const [tagMatch, setTagMatch] = useState<"any" | "all">("any");
+  const [tagIds, setTagIds] = useState<string[]>([]);
+  const [tagImageSeconds, setTagImageSeconds] = useState(10);
   const layouts = useQuery({
     queryKey: ["layouts", "playlist-items"],
     queryFn: () => api.layouts(""),
+  });
+  const tags = useQuery({
+    queryKey: ["content-tags"],
+    queryFn: api.contentTags,
   });
   useEffect(() => {
     if (query.data) {
       setName(query.data.name);
       setDescription(query.data.description);
+      setSourceType(query.data.sourceType ?? "static");
+      setTagMatch(query.data.tagRule?.match ?? "any");
+      setTagIds(query.data.tagRule?.tags.map((tag) => tag.id) ?? []);
+      setTagImageSeconds((query.data.tagRule?.imageDurationMs ?? 10000) / 1000);
       setDirty(false);
     }
   }, [query.data]);
@@ -246,6 +258,20 @@ export function PlaylistEditorPage() {
   const remove = useMutation({
     mutationFn: () => api.deletePlaylist(id, csrf),
     onSuccess: () => void navigate("/playlists"),
+  });
+  const saveTagRule = useMutation({
+    mutationFn: () =>
+      api.setPlaylistTagRule(
+        id,
+        {
+          enabled: sourceType === "tag",
+          match: tagMatch,
+          imageDurationMs: Math.round(tagImageSeconds * 1000),
+          tagIds,
+        },
+        csrf,
+      ),
+    onSuccess: update,
   });
   const add = async (selected: Asset[]): Promise<ContentPickerResult> => {
     const failures: ContentPickerResult["failures"] = [];
@@ -422,13 +448,103 @@ export function PlaylistEditorPage() {
             Save details
           </button>
         )}
+        <div className="field">
+          <span className="field__label">Playlist contents</span>
+          <Select
+            disabled={!canManage}
+            value={sourceType}
+            onChange={(event) =>
+              setSourceType(event.target.value as "static" | "tag")
+            }
+          >
+            <option value="static">Manual timeline</option>
+            <option value="tag">Automatically from media tags</option>
+          </Select>
+          <span className="field__hint">
+            Tag-driven playlists update whenever matching ready media is tagged
+            or untagged.
+          </span>
+        </div>
+        {sourceType === "tag" && (
+          <>
+            <label className="field">
+              <span className="field__label">Match</span>
+              <Select
+                disabled={!canManage}
+                value={tagMatch}
+                onChange={(event) =>
+                  setTagMatch(event.target.value as "any" | "all")
+                }
+              >
+                <option value="any">Any selected tag</option>
+                <option value="all">All selected tags</option>
+              </Select>
+            </label>
+            <div className="asset-organization__chips">
+              {(tags.data ?? []).map((tag) => {
+                const active = tagIds.includes(tag.id);
+                return (
+                  <button
+                    key={tag.id}
+                    type="button"
+                    className={`organizer-chip${active ? " organizer-chip--active" : ""}`}
+                    aria-pressed={active}
+                    disabled={!canManage}
+                    onClick={() =>
+                      setTagIds((current) =>
+                        active
+                          ? current.filter((id) => id !== tag.id)
+                          : [...current, tag.id],
+                      )
+                    }
+                  >
+                    <span
+                      className="organizer-chip__dot"
+                      style={{ backgroundColor: tag.color }}
+                      aria-hidden
+                    />
+                    {tag.name}
+                  </button>
+                );
+              })}
+            </div>
+            <label className="field">
+              <span className="field__label">Image duration (seconds)</span>
+              <input
+                type="number"
+                min="1"
+                max="86400"
+                disabled={!canManage}
+                value={tagImageSeconds}
+                onChange={(event) =>
+                  setTagImageSeconds(Number(event.target.value))
+                }
+              />
+            </label>
+          </>
+        )}
+        {canManage && (
+          <Button
+            variant="quiet"
+            loading={saveTagRule.isPending}
+            disabled={sourceType === "tag" && tagIds.length === 0}
+            onClick={() => saveTagRule.mutate()}
+          >
+            Save playlist contents
+          </Button>
+        )}
+        {saveTagRule.error && (
+          <div className="notice notice--error">
+            {saveTagRule.error.message}
+          </div>
+        )}
       </section>
       <div className="timeline-heading">
         <div>
           <h3>Playback timeline</h3>
           <p>Items play from top to bottom, then loop.</p>
         </div>
-        {canManage && (
+        {canManage && sourceType === "static" && (
           <div className="editor-actions">
             <button
               className="button button--quiet"
@@ -449,7 +565,9 @@ export function PlaylistEditorPage() {
       </div>
       {(playlist.items?.length ?? 0) === 0 ? (
         <div className="timeline-empty">
-          Add ready media to begin this playlist.
+          {sourceType === "tag"
+            ? "No ready media currently matches this playlist’s tags."
+            : "Add ready media to begin this playlist."}
         </div>
       ) : (
         <div className="playlist-timeline">
@@ -458,7 +576,7 @@ export function PlaylistEditorPage() {
               key={item.id}
               item={item}
               index={index}
-              canManage={canManage}
+              canManage={canManage && sourceType === "static"}
               onDragStart={() => setDragged(item.id)}
               onDrop={(e) => {
                 e.preventDefault();

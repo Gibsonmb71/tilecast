@@ -20,6 +20,9 @@ import (
 type fakeInvalidator struct{ dataSourceCalls []uuid.UUID }
 
 func (f *fakeInvalidator) AssetChanged(context.Context, uuid.UUID, string) error { return nil }
+func (f *fakeInvalidator) TagAssignmentsChanged(context.Context, []uuid.UUID, string) error {
+	return nil
+}
 func (f *fakeInvalidator) DataSourceChanged(_ context.Context, id uuid.UUID, _ string) error {
 	f.dataSourceCalls = append(f.dataSourceCalls, id)
 	return nil

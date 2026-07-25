@@ -1441,8 +1441,29 @@ function MediaAssetDetails({
 }) {
   const [name, setName] = useState(asset.name);
   const [description, setDescription] = useState(asset.description);
+  const [availableFrom, setAvailableFrom] = useState(
+    dateTimeLocalValue(asset.availableFrom),
+  );
+  const [expiresAt, setExpiresAt] = useState(
+    dateTimeLocalValue(asset.expiresAt),
+  );
   const mutation = useMutation({
-    mutationFn: () => api.updateAsset(asset.id, { name, description }, csrf),
+    mutationFn: () =>
+      api.updateAsset(
+        asset.id,
+        {
+          name,
+          description,
+          availabilitySet: true,
+          ...(availableFrom
+            ? { availableFrom: new Date(availableFrom).toISOString() }
+            : {}),
+          ...(expiresAt
+            ? { expiresAt: new Date(expiresAt).toISOString() }
+            : {}),
+        },
+        csrf,
+      ),
     onSuccess: onChanged,
   });
   return (
@@ -1502,6 +1523,33 @@ function MediaAssetDetails({
             onChange={(event) => setName(event.target.value)}
           />
         </label>
+        <div className="form-grid form-grid--two">
+          <label className="field">
+            <span className="field__label">Available from</span>
+            <input
+              type="datetime-local"
+              value={availableFrom}
+              disabled={!canManage}
+              onChange={(event) => setAvailableFrom(event.target.value)}
+            />
+            <span className="field__hint">
+              Leave blank to make this content available immediately.
+            </span>
+          </label>
+          <label className="field">
+            <span className="field__label">Expires at</span>
+            <input
+              type="datetime-local"
+              value={expiresAt}
+              disabled={!canManage}
+              onChange={(event) => setExpiresAt(event.target.value)}
+            />
+            <span className="field__hint">
+              The Player stops using it at this local date and time, even
+              offline.
+            </span>
+          </label>
+        </div>
         <label className="field">
           <span className="field__label">Description</span>
           <textarea
@@ -1559,6 +1607,13 @@ function MediaAssetDetails({
       </div>
     </Drawer>
   );
+}
+
+function dateTimeLocalValue(value?: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
 }
 
 const defaultWebsite: WebsiteInput = {

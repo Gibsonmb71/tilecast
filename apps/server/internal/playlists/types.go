@@ -37,6 +37,27 @@ type Playlist struct {
 	// Studio cannot do without one detail request per item. Only the IDs are returned; the caller
 	// already reads the Data Source list to resolve names and refresh status. Detail read only.
 	DataSourceIDs []uuid.UUID `json:"dataSourceIds"`
+	SourceType    string      `json:"sourceType"`
+	TagRule       *TagRule    `json:"tagRule,omitempty"`
+}
+
+type PlaylistTag struct {
+	ID    uuid.UUID `json:"id"`
+	Name  string    `json:"name"`
+	Color string    `json:"color"`
+}
+
+type TagRule struct {
+	Match           string        `json:"match"`
+	ImageDurationMS int64         `json:"imageDurationMs"`
+	Tags            []PlaylistTag `json:"tags"`
+}
+
+type TagRuleInput struct {
+	Enabled         bool        `json:"enabled"`
+	Match           string      `json:"match"`
+	ImageDurationMS int64       `json:"imageDurationMs"`
+	TagIDs          []uuid.UUID `json:"tagIds"`
 }
 
 type LayoutUsage struct {
@@ -77,6 +98,9 @@ type Item struct {
 	VariantID            *uuid.UUID `json:"variantId,omitempty"`
 	CreatedAt            time.Time  `json:"createdAt"`
 	UpdatedAt            time.Time  `json:"updatedAt"`
+	AvailableFrom        *time.Time `json:"availableFrom,omitempty"`
+	ExpiresAt            *time.Time `json:"expiresAt,omitempty"`
+	Dynamic              bool       `json:"dynamic"`
 }
 
 type ItemInput struct {
@@ -286,6 +310,8 @@ type ManifestItem struct {
 	VideoStartOffsetMS *int64     `json:"videoStartOffsetMs,omitempty"`
 	VideoEndOffsetMS   *int64     `json:"videoEndOffsetMs,omitempty"`
 	DeliveryPolicy     string     `json:"deliveryPolicy"`
+	AvailableFrom      *time.Time `json:"availableFrom,omitempty"`
+	ExpiresAt          *time.Time `json:"expiresAt,omitempty"`
 }
 type ManifestAsset struct {
 	AssetID         uuid.UUID `json:"assetId"`
