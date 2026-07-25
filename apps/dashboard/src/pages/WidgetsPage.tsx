@@ -25,7 +25,7 @@ import {
 } from "../content/SourceEditors";
 import { GenericWidgetEditor } from "../content/GenericDefinitionEditors";
 import { UsedByPanel } from "../content/UsedByPanel";
-import { inAppPath, withParam } from "../navigation/returnPaths";
+import { inAppPath } from "../navigation/returnPaths";
 import { WorkspaceTabs, contentTabs } from "../navigation/WorkspaceTabs";
 import {
   AssetCollection,
@@ -175,18 +175,8 @@ export function WidgetEditorPage() {
   // A Layout links here with returnTo so closing the Widget lands back on the Layout the author
   // was building, rather than on the Widget list.
   const returnTo = inAppPath(search.get("returnTo"));
-  // A guided job links here with flowReturn. It differs from returnTo in what saving does: the job
-  // continues as soon as the Widget exists, so the new id is handed back rather than leaving the
-  // author parked in the editor.
-  const flowReturn = inAppPath(search.get("flowReturn"));
-  const close = () => void navigate(flowReturn ?? returnTo ?? "/widgets");
+  const close = () => void navigate(returnTo ?? "/widgets");
   const saved = (value: Asset) => {
-    if (flowReturn) {
-      void navigate(withParam(flowReturn, "widget", value.id), {
-        replace: true,
-      });
-      return;
-    }
     // Preserve returnTo across the save so a Widget opened from a Layout still returns there.
     const query = returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : "";
     void navigate(`/widgets/${value.id}${query}`, { replace: true });

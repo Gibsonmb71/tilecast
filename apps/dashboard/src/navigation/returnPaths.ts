@@ -8,18 +8,3 @@ export function inAppPath(value: string | null | undefined) {
     ? value
     : null;
 }
-
-// withParam adds or replaces one query parameter on an in-app path, preserving the rest.
-export function withParam(path: string, key: string, value: string) {
-  const fragmentIndex = path.indexOf("#");
-  const beforeFragment =
-    fragmentIndex === -1 ? path : path.slice(0, fragmentIndex);
-  const fragment = fragmentIndex === -1 ? "" : path.slice(fragmentIndex);
-  const queryIndex = beforeFragment.indexOf("?");
-  const base =
-    queryIndex === -1 ? beforeFragment : beforeFragment.slice(0, queryIndex);
-  const query = queryIndex === -1 ? "" : beforeFragment.slice(queryIndex + 1);
-  const params = new URLSearchParams(query);
-  params.set(key, value);
-  return `${base}?${params.toString()}${fragment}`;
-}
