@@ -297,9 +297,12 @@ function ConnectDataFlow({
     );
 
   return (
-    <div className="details-backdrop" role="presentation">
+    <div
+      className="details-backdrop data-source-connect-backdrop"
+      role="presentation"
+    >
       <section
-        className="source-editor data-source-connect"
+        className="asset-details source-editor data-source-connect"
         role="dialog"
         aria-modal="true"
         aria-label="Connect new data"

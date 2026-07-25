@@ -276,53 +276,14 @@ the database.
 Removed as dead: `.sidebar__nav-group` and `.sidebar__nav-label`, along with the three compact and
 responsive rules that referenced them. No component emits those classes now.
 
-## Phase 4 — Task-first entry — **done**
+## Phase 4 — Task-first entry — **removed**
 
-Goal: a first-time user gets something on a screen without learning the model at all.
+The four guided recipes added to Overview were removed. A short, hard-coded list made the Overview
+page compete with the complete Widget catalog and implied that calendar, lunch menu, announcements,
+and countdown were privileged creation paths. It did not simplify general Widget creation.
 
-Add a small set of jobs to Overview (`pages/OperationsDashboard.tsx`) — Show a calendar, Show a
-lunch menu, Countdown to an event, Announcements. Each runs one guided pass that creates source,
-widget, presentation, and assignment, ending on a preview of the target screen.
-
-What it produces are ordinary records with no special state or provenance flag, so nothing forks and
-every artifact is editable through the normal editors afterward. Most of the content already
-exists: the catalog carries name, description, category, icon, and setup guidance
-(`docs/widgets-and-layouts.md:86`), and the guided presets (Leaderboard, Status Board, Queue Board,
-Schedule/Departures, Opening Hours, Directory) cover the common jobs.
-
-Build this last. A wizard over awkward primitives is a workaround; a wizard over good primitives is
-a shortcut.
-
-**Exit criteria** — A new installation can go from paired screen to live lunch menu in one flow,
-and every record it created is indistinguishable from a hand-built one.
-
-### As built
-
-`navigation/guidedJobs.ts` holds the four recipes; `pages/GuidedJobPage.tsx` runs them; Overview
-lists them under "Put something on a screen", shown only to authors who can create content.
-
-The flow turned out much thinner than planned, because Phase 1 removed the step it would otherwise
-have owned. A job is three steps — choose the screen, build the Widget, put it on air — and the
-data step does not exist: the Widget editor's own Data Source picker connects data inline, so the
-job never has to orchestrate source creation. Everything else is the ordinary path: the Widget is
-built in the real editor, and the playlist, item, and assignment use the same calls the Playlists
-and Screens pages use. There is no wizard-only creation path that could drift from the real one, and
-nothing written carries a marker saying a wizard made it.
-
-Three details worth knowing:
-
-- **Progress lives in the URL** (`/start/:job?screen=…&widget=…`), so a refresh or the round trip
-  through the Widget editor does not lose it.
-- **The editor hands the new Widget id back** through a `flowReturn` parameter. It is deliberately
-  distinct from Phase 2's `returnTo`: `returnTo` keeps the author in the editor after saving, while
-  `flowReturn` continues the job as soon as the Widget exists. Both share one validator, so neither
-  can be pointed off-site.
-- **A refused assignment is reported as a partial result.** Assignment can fail on its own — most
-  often a Player too old for the content — and the playlist still exists at that point. The flow
-  says so and links to it rather than implying nothing was created.
-
-Deciding the screen later is a first-class choice rather than an unanswered question, and a job
-started with no screens paired offers to build the content anyway.
+Widget creation remains in the Content workspace and the global Create menu. Both lead to the real
+provider gallery, which is driven by the complete server catalog rather than a partial list.
 
 ## Smaller fixes to fold in
 
