@@ -47,6 +47,15 @@ updates:
       android-dependencies:
         patterns:
           - "*"
+    ignore:
+      # The Kotlin plugins are deliberately held back in
+      # apps/player-android/build.gradle.kts: the CodeQL extractor does not yet
+      # support Kotlin 2.4.10, and AGP 9 takes its compiler version from these
+      # plugin declarations, so bumping them fails the CodeQL analysis. Without
+      # this, Dependabot reproposes the bump every week. Remove the ignore when
+      # the extractor supports the newer Kotlin, and bump deliberately.
+      - dependency-name: "org.jetbrains.kotlin.plugin.compose"
+      - dependency-name: "org.jetbrains.kotlin.plugin.serialization"
 
   # Server container base images
   - package-ecosystem: "docker"
