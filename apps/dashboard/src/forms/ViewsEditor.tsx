@@ -406,7 +406,12 @@ function ViewForm({
       <fieldset className="form-view-form__section">
         <legend>Output fields &amp; order</legend>
         <div className="form-view-form__add-field">
-          <Select value="" onChange={(e) => addOutputField(e.target.value)}>
+          {/* No wrapping label: the control sits alone under the section legend. */}
+          <Select
+            aria-label="Add an output field"
+            value=""
+            onChange={(e) => addOutputField(e.target.value)}
+          >
             <option value="">Add a field…</option>
             {fields
               .filter((f) => !draft.outputFields.includes(f.key))

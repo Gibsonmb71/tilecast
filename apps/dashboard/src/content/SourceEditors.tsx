@@ -48,7 +48,7 @@ import type {
   PresentationNode,
 } from "../api/types";
 import { DataSourcePicker } from "./DataSourcePicker";
-import { previewRecordMaps } from "./previewRecords";
+import { previewRecordMaps, type PreviewDatasets } from "./previewRecords";
 import { captureWidgetPreview } from "./widgetPreviewCapture";
 
 export function WidgetProviderGallery({
@@ -2800,12 +2800,17 @@ export function NativeAppEditor({
 export function DeclarativePresentationPreview({
   presentation,
   source,
+  datasets,
   now,
   assetImageUrl,
   onWebReady,
 }: {
   presentation: WidgetPresentation;
+  // The primary source's payload. Bindings that name a dataset the map does not carry fall back
+  // to this, which keeps every single-source Widget rendering exactly as before.
   source: unknown;
+  // Records keyed "<dataSourceId>:<datasetId>", for Widgets that reference several sources.
+  datasets?: PreviewDatasets;
   now?: Date;
   assetImageUrl?: string;
   onWebReady?: () => void;
@@ -2839,6 +2844,7 @@ export function DeclarativePresentationPreview({
     <PreviewNode
       node={root}
       records={records}
+      datasets={datasets}
       now={now ?? liveNow}
       assetImageUrl={assetImageUrl}
     />
@@ -3046,6 +3052,7 @@ function daysInMonth(year: number, month: number) {
 function PreviewNode({
   node,
   records,
+  datasets,
   record,
   recordIndex,
   now,
@@ -3053,6 +3060,7 @@ function PreviewNode({
 }: {
   node: PresentationNode;
   records: Record<string, string>[];
+  datasets?: PreviewDatasets;
   record?: Record<string, string>;
   recordIndex?: number;
   now: Date;
@@ -3060,6 +3068,10 @@ function PreviewNode({
 }) {
   const props = node.props ?? {};
   const binding = node.binding;
+  // A node reads the dataset it names. An unknown name falls back to the primary records so a
+  // single-source Widget, and any presentation compiled before datasets were keyed, is unchanged.
+  const datasetRecords = (name?: string) =>
+    (name && datasets?.[name]) || records;
   const resolve = () => {
     if (!binding) return "";
     if (binding.source === "literal")
@@ -3072,13 +3084,14 @@ function PreviewNode({
     if (binding.source === "repeat_index")
       return formatPresentationValue(String((recordIndex ?? 0) + 1), binding);
     if (binding.source === "dataset") {
+      const scoped = datasetRecords(binding.dataset);
       if (binding.path)
         return formatPresentationValue(
-          records[0]?.[binding.path] ?? binding.fallback ?? "",
+          scoped[0]?.[binding.path] ?? binding.fallback ?? "",
           binding,
         );
       const joined =
-        records
+        scoped
           .map((item) =>
             (binding.fields ?? [])
               .map((field) => item[field])
@@ -3131,15 +3144,17 @@ function PreviewNode({
     return binding.fallback ?? "";
   };
   if (node.type === "repeat") {
+    const scoped = datasetRecords(node.repeat?.dataset);
     return (
       <>
-        {records.slice(0, node.repeat?.limit ?? 20).map((item, index) => (
+        {scoped.slice(0, node.repeat?.limit ?? 20).map((item, index) => (
           <div key={item.id ?? index}>
             {node.children?.map((child, childIndex) => (
               <PreviewNode
                 key={child.id ?? childIndex}
                 node={child}
                 records={records}
+                datasets={datasets}
                 record={item}
                 recordIndex={index}
                 now={now}
@@ -3167,7 +3182,7 @@ function PreviewNode({
     const value = Number(resolve());
     const targetProp = props.target;
     const target = props.targetIsField
-      ? Number(records[0]?.[String(targetProp)] ?? 0)
+      ? Number(datasetRecords(binding?.dataset)[0]?.[String(targetProp)] ?? 0)
       : Number(targetProp ?? 100);
     const percent =
       target > 0 ? Math.max(0, Math.min(100, (value / target) * 100)) : 0;
@@ -3180,7 +3195,7 @@ function PreviewNode({
   }
   if (["line_chart", "bar_chart", "donut_chart"].includes(node.type)) {
     const fields = node.binding?.fields ?? [];
-    const values = records.flatMap((entry) =>
+    const values = datasetRecords(node.binding?.dataset).flatMap((entry) =>
       fields.map((field) => Number(entry[field])).filter(Number.isFinite),
     );
     const maximum = Math.max(...values, 1);
@@ -3232,6 +3247,7 @@ function PreviewNode({
           key={child.id ?? index}
           node={child}
           records={records}
+          datasets={datasets}
           record={record}
           recordIndex={recordIndex}
           now={now}
