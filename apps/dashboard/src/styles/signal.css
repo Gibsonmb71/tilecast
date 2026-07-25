@@ -4160,6 +4160,17 @@ tbody tr:hover {
   background: #000;
 }
 
+/* Holds the Widget being captured for the library so it can be rendered at full snapshot width
+   without appearing on the page. It is positioned away rather than hidden: a capture reads real
+   geometry, so `display: none`, `visibility: hidden`, or a zero-size box would produce nothing. */
+.widget-snapshot-backfill {
+  position: fixed;
+  top: 0;
+  left: -20000px;
+  width: 960px;
+  pointer-events: none;
+}
+
 .declarative-widget-preview {
   container-type: inline-size;
   display: grid;
