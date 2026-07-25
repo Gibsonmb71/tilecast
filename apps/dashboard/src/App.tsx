@@ -112,22 +112,27 @@ export const studioRoutes: RouteObject[] = [
         handle: {
           breadcrumb: "Media",
           search: search(
-            "Media",
+            "Content: Media",
             "Browse uploaded images, videos, and website content",
             "/assets",
-            ["content", "uploads", "library"],
+            ["content", "uploads", "library", "media"],
           ),
         },
       },
       { path: "content", element: <Navigate to="/assets" replace /> },
       {
+        path: "presentations",
+        element: <Navigate to="/playlists" replace />,
+      },
+      {
         path: "widgets",
         handle: {
           breadcrumb: "Widgets",
           search: search(
-            "Widgets",
+            "Content: Widgets",
             "Manage reusable dynamic signage content",
             "/widgets",
+            ["content"],
           ),
         },
         children: [
@@ -154,10 +159,10 @@ export const studioRoutes: RouteObject[] = [
         handle: {
           breadcrumb: "Data Sources",
           search: search(
-            "Data Sources",
+            "Content: Data",
             "Manage reusable data connections",
             "/data-sources",
-            ["feeds", "integrations"],
+            ["feeds", "integrations", "content", "data sources"],
           ),
         },
         children: [
@@ -184,9 +189,10 @@ export const studioRoutes: RouteObject[] = [
         handle: {
           breadcrumb: "Playlists",
           search: search(
-            "Playlists",
+            "Presentations: Playlists",
             "Build ordered fullscreen playback",
             "/playlists",
+            ["presentations"],
           ),
         },
         children: [
@@ -203,9 +209,10 @@ export const studioRoutes: RouteObject[] = [
         handle: {
           breadcrumb: "Layouts",
           search: search(
-            "Layouts",
+            "Presentations: Layouts",
             "Arrange content on a presentation canvas",
             "/layouts",
+            ["presentations"],
           ),
         },
         children: [

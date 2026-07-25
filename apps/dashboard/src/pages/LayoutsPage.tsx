@@ -16,6 +16,7 @@ import {
   DashboardListToolbar,
   DashboardSearch,
 } from "../components/DashboardListToolbar";
+import { WorkspaceTabs, presentationTabs } from "../navigation/WorkspaceTabs";
 
 const presets = [
   {
@@ -186,6 +187,7 @@ export function LayoutsPage() {
   };
   return (
     <section className="layouts-page">
+      <WorkspaceTabs label="Presentations" tabs={presentationTabs} />
       <PageHeader
         title="Layouts"
         description="Compose complete screen presentations from native primitives and reusable Content."

@@ -49,6 +49,7 @@ import { NativeAppEditor, YouTubeSourceEditor } from "../content/SourceEditors";
 import { AssetPreview } from "../components/content/AssetPreview";
 import { droppedFiles } from "../components/content/dragDrop";
 import { UsedByPanel } from "../content/UsedByPanel";
+import { WorkspaceTabs, contentTabs } from "../navigation/WorkspaceTabs";
 
 type QueueItem = {
   localId: string;
@@ -316,6 +317,7 @@ export function ContentPage() {
       onDragOver={(event) => event.preventDefault()}
       onDrop={dropFiles}
     >
+      <WorkspaceTabs label="Content library" tabs={contentTabs} />
       <PageHeader
         title="Media"
         description="Uploaded images and videos available to playlists and Layouts."

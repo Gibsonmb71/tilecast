@@ -53,6 +53,8 @@ apps/server/                 Go application and embedded dashboard host
 apps/dashboard/              React, TypeScript, Vite, TanStack Query
   src/api/                   public browser contract types and fetch client
   src/auth/                  session state and forms
+  src/content/               Widget and Data Source authoring controls
+  src/navigation/            route metadata and workspace tab definitions
   src/pages/                 authenticated Studio routes
 apps/player-android/         native Android TV application
   app/src/main/              Compose UI and production player code
