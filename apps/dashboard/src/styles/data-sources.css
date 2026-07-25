@@ -699,6 +699,159 @@
   }
 }
 
+/* Widget authoring keeps the configuration grouped and the live result in view. */
+.widget-editor > .source-editor__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 0.82fr);
+  gap: var(--tc-space-4) var(--tc-space-5);
+  align-items: start;
+}
+
+.widget-editor > .source-editor__body > :not(.widget-editor__preview) {
+  grid-column: 1;
+}
+
+.widget-editor__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 0.82fr);
+  gap: var(--tc-space-5);
+  align-items: start;
+}
+
+.widget-editor__form {
+  display: grid;
+  gap: var(--tc-space-4);
+  min-width: 0;
+}
+
+.widget-editor__section {
+  min-width: 0;
+  overflow: hidden;
+  background: var(--tc-bg-surface);
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-panel);
+}
+
+.widget-editor__section > header {
+  padding: var(--tc-space-4);
+  border-bottom: 1px solid var(--tc-border-default);
+}
+
+.widget-editor__section > header h3,
+.widget-editor__section > header p {
+  margin: 0;
+}
+
+.widget-editor__section-heading {
+  padding-top: var(--tc-space-2);
+  border-top: 1px solid var(--tc-border-default);
+}
+
+.widget-editor__section-heading h3,
+.widget-editor__section-heading p {
+  margin: 0;
+}
+
+.widget-editor__section-heading h3 {
+  font-size: 15px;
+}
+
+.widget-editor__section-heading p {
+  margin-top: var(--tc-space-1);
+  color: var(--tc-text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.widget-editor__section > header h3 {
+  font-size: 15px;
+}
+
+.widget-editor__section > header p {
+  margin-top: var(--tc-space-1);
+  color: var(--tc-text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.widget-editor__section-body {
+  display: grid;
+  gap: var(--tc-space-4);
+  padding: var(--tc-space-4);
+}
+
+.widget-editor__section-body > .form-grid,
+.widget-editor__section-body > .field,
+.widget-editor__section-body > fieldset {
+  margin: 0;
+}
+
+.widget-editor__preview {
+  position: sticky;
+  top: var(--tc-space-4);
+  display: grid;
+  gap: var(--tc-space-3);
+  min-width: 0;
+  padding: var(--tc-space-4);
+  background: var(--tc-bg-surface);
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-panel);
+  box-shadow: 0 8px 24px rgb(15 24 21 / 8%);
+}
+
+.widget-editor > .source-editor__body > .widget-editor__preview {
+  grid-column: 2;
+  grid-row: 1 / span 999;
+}
+
+.widget-editor__preview > header {
+  display: grid;
+  gap: 2px;
+}
+
+.widget-editor__preview > header strong {
+  font-size: 14px;
+}
+
+.widget-editor__preview > header span {
+  color: var(--tc-text-secondary);
+  font-size: 12px;
+}
+
+.widget-editor > footer {
+  position: sticky;
+  z-index: 2;
+  bottom: 0;
+  display: flex;
+  gap: var(--tc-space-2);
+  justify-content: flex-end;
+  margin-top: var(--tc-space-4);
+  padding: var(--tc-space-3) 0;
+  background: var(--tc-bg-canvas);
+  border-top: 1px solid var(--tc-border-default);
+}
+
+@media (max-width: 900px) {
+  .widget-editor > .source-editor__body {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .widget-editor > .source-editor__body > * {
+    width: 100%;
+  }
+
+  .widget-editor__layout {
+    grid-template-columns: 1fr;
+  }
+
+  .widget-editor__preview {
+    position: static;
+    grid-row: 1;
+    order: -1;
+  }
+}
+
 /* DataSourcePicker: the shared control for choosing the data behind a Widget or a Layout text
    binding. The empty state carries a Connect action instead of leaving a control disabled. */
 .data-source-picker {
