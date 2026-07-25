@@ -247,7 +247,13 @@ export function GroupDetailPage() {
             value={screenSearch}
             onChange={(e) => setScreenSearch(e.target.value)}
           />
-          <Select value="" onChange={(e) => add.mutate(e.target.value)}>
+          {/* This label already names the search input beside it — a label names only its first
+              labelable descendant — so the select states its own name. */}
+          <Select
+            aria-label="Add ungrouped screen"
+            value=""
+            onChange={(e) => add.mutate(e.target.value)}
+          >
             <option value="">Choose a screen…</option>
             {available.map((s) => (
               <option value={s.id} key={s.id}>
