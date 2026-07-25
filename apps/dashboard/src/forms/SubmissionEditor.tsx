@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useBlocker } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
+import { AlertCircle } from "lucide-react";
 import type {
   FormAvailableTransition,
   FormDataSource,
@@ -13,18 +14,23 @@ import { api, ApiError } from "../api/client";
 import { Button, Notice } from "../components/ui";
 import {
   FormRenderer,
+  fieldControlId,
   type FormValues,
   type ImageFieldState,
 } from "./FormRenderer";
 import {
   applyDefaults,
   coerceScalar,
+  fieldError,
   formValuesToPayload,
   recordValuesToForm,
   validateSubmission,
 } from "./formValues";
 import { hasCapability } from "./capabilities";
 import { stateLabel } from "./formStatus";
+
+// Control ids are predictable so a failed validation can move focus straight to the offending field.
+const FIELD_ID_PREFIX = "submission-field";
 
 // SubmissionEditor is the submitter-facing editable form for one submission. It handles a brand-new
 // submission (no record yet) and editing an existing draft or changes-requested record, including
@@ -90,8 +96,15 @@ export function SubmissionEditor({
   const dirtyRef = useRef(dirty);
   dirtyRef.current = dirty;
 
+  // A completed submit navigates away on purpose. The dirty flag is derived during render, so a
+  // navigation issued in the same tick as the final resync still sees the pre-save value and the
+  // unsaved-changes guard would trap the submitter on a form they just successfully sent. This ref is
+  // set immediately before the intentional departure and is visible to the predicate at once.
+  const completing = useRef(false);
+
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
+      !completing.current &&
       dirty &&
       (currentLocation.pathname !== nextLocation.pathname ||
         currentLocation.search !== nextLocation.search),
@@ -324,6 +337,36 @@ export function SubmissionEditor({
     return detail;
   }
 
+  // handleFieldChange records the edit and re-checks only fields that are already flagged, so a
+  // corrected field stops showing red immediately instead of waiting for another submit attempt.
+  // Clean fields are never validated mid-typing — nobody wants "must be a valid URL" after one
+  // character.
+  function handleFieldChange(key: string, value: string | string[] | boolean) {
+    setValues((current) => ({ ...current, [key]: value }));
+    const field = schema.fields.find((candidate) => candidate.key === key);
+    if (!field) return;
+    const satisfied = satisfiedImages();
+    setErrors((current) => {
+      if (!current[key]) return current;
+      const next = { ...current };
+      const message = fieldError(field, value, true, satisfied);
+      if (message) next[key] = message;
+      else delete next[key];
+      return next;
+    });
+  }
+
+  // reportValidation stores the field errors and, when there are any, pulls focus to the first one in
+  // form order. Without this a submit attempt on a long form looks like nothing happened: the button
+  // does nothing visible and the offending field can be far below the fold.
+  function reportValidation(validation: Record<string, string>): boolean {
+    setErrors(validation);
+    const firstInvalid = schema.fields.find((field) => validation[field.key]);
+    if (!firstInvalid) return true;
+    focusField(firstInvalid.key);
+    return false;
+  }
+
   async function saveDraft() {
     setFormError("");
     const validation = validateSubmission(
@@ -332,8 +375,7 @@ export function SubmissionEditor({
       false,
       satisfiedImages(),
     );
-    setErrors(validation);
-    if (Object.keys(validation).length > 0) return;
+    if (!reportValidation(validation)) return;
     setBusy("draft");
     try {
       await persist();
@@ -352,8 +394,7 @@ export function SubmissionEditor({
       true,
       satisfiedImages(),
     );
-    setErrors(validation);
-    if (Object.keys(validation).length > 0) return;
+    if (!reportValidation(validation)) return;
     setBusy("submit");
     try {
       const detail = await persist();
@@ -371,6 +412,8 @@ export function SubmissionEditor({
         csrf,
       );
       invalidate(detail.id);
+      // Everything is persisted; leaving is intentional from here.
+      completing.current = true;
       onCompleted(detail.id);
     } catch (error) {
       // The draft (and any uploads) are saved server-side; keep the editor so the user can retry.
@@ -414,23 +457,67 @@ export function SubmissionEditor({
         </Notice>
       )}
 
-      <FormRenderer
-        schema={schema}
-        values={values}
-        readOnly={!editable}
-        onChange={
-          editable
-            ? (key, value) =>
-                setValues((current) => ({ ...current, [key]: value }))
-            : undefined
-        }
-        errors={errors}
-        imageHandlers={{
-          state: (fieldKey) => images[fieldKey],
-          onSelect: (fieldKey, file) => void handleImageSelect(fieldKey, file),
-          onRemove: (fieldKey) => void handleImageRemove(fieldKey),
+      <ErrorSummary schema={schema} errors={errors} onSelect={focusField} />
+
+      {/* A real form element so Enter in a text field submits, and noValidate so our own validation
+          (which produces the summary above) is the only thing that ever blocks a submit. */}
+      <form
+        className="submission-editor__form"
+        noValidate
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!editable || busy !== "") return;
+          if (canSubmit) void submit();
+          else void saveDraft();
         }}
-      />
+      >
+        <FormRenderer
+          schema={schema}
+          idPrefix={FIELD_ID_PREFIX}
+          values={values}
+          readOnly={!editable}
+          onChange={editable ? handleFieldChange : undefined}
+          errors={errors}
+          imageHandlers={{
+            state: (fieldKey) => images[fieldKey],
+            onSelect: (fieldKey, file) =>
+              void handleImageSelect(fieldKey, file),
+            onRemove: (fieldKey) => void handleImageRemove(fieldKey),
+          }}
+        />
+
+        {editable ? (
+          <div className="submission-editor__actions">
+            <Button
+              type="button"
+              variant="secondary"
+              loading={busy === "draft"}
+              disabled={busy !== ""}
+              onClick={() => void saveDraft()}
+            >
+              Save draft
+            </Button>
+            {canSubmit && (
+              <Button
+                type="submit"
+                variant="primary"
+                loading={busy === "submit"}
+                disabled={busy !== ""}
+              >
+                {submitLabel}
+              </Button>
+            )}
+          </div>
+        ) : (
+          <Notice
+            variant="info"
+            title={`This submission is ${stateLabel(form.workflow, state)}`}
+          >
+            It can no longer be edited. A reviewer will follow up if changes are
+            needed.
+          </Notice>
+        )}
+      </form>
 
       {comments.length > 0 && (
         <section className="submission-editor__comments" aria-label="Comments">
@@ -445,39 +532,64 @@ export function SubmissionEditor({
           </ul>
         </section>
       )}
-
-      {editable ? (
-        <div className="submission-editor__actions">
-          <Button
-            variant="secondary"
-            loading={busy === "draft"}
-            disabled={busy !== ""}
-            onClick={() => void saveDraft()}
-          >
-            Save draft
-          </Button>
-          {canSubmit && (
-            <Button
-              variant="primary"
-              loading={busy === "submit"}
-              disabled={busy !== ""}
-              onClick={() => void submit()}
-            >
-              {submitLabel}
-            </Button>
-          )}
-        </div>
-      ) : (
-        <Notice
-          variant="info"
-          title={`This submission is ${stateLabel(form.workflow, state)}`}
-        >
-          It can no longer be edited. A reviewer will follow up if changes are
-          needed.
-        </Notice>
-      )}
     </div>
   );
+}
+
+// ErrorSummary lists every blocked field in form order with a jump link to each. It is an alert so
+// the count is announced the moment a submit is rejected, and it gives a keyboard user a direct route
+// to each problem rather than a hunt through the form.
+function ErrorSummary({
+  schema,
+  errors,
+  onSelect,
+}: {
+  schema: FormSchema;
+  errors: Record<string, string>;
+  onSelect: (fieldKey: string) => void;
+}) {
+  const invalid = schema.fields.filter((field) => errors[field.key]);
+  if (invalid.length === 0) return null;
+  return (
+    <div
+      className="notice notice--danger submission-editor__errors"
+      role="alert"
+    >
+      <AlertCircle size={18} aria-hidden="true" />
+      <div>
+        <strong>
+          {invalid.length === 1
+            ? "Fix 1 field before continuing"
+            : `Fix ${invalid.length} fields before continuing`}
+        </strong>
+        <ul>
+          {invalid.map((field) => (
+            <li key={field.key}>
+              <button
+                type="button"
+                className="text-link"
+                onClick={() => onSelect(field.key)}
+              >
+                {errors[field.key]}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+// focusField moves keyboard focus and the viewport to one field's control, so an error is never
+// reported for something the submitter cannot see.
+function focusField(fieldKey: string) {
+  const element = document.getElementById(
+    fieldControlId(FIELD_ID_PREFIX, fieldKey),
+  );
+  if (!element) return;
+  // jsdom has no layout engine, so scrollIntoView is absent under test.
+  element.scrollIntoView?.({ block: "center" });
+  element.focus({ preventScroll: true });
 }
 
 function imagesFromDetail(
