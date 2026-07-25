@@ -242,6 +242,22 @@ func (s *Service) CreateWidget(ctx context.Context, user uuid.UUID, input Widget
 	return s.GetAsset(ctx, id)
 }
 
+// A stored snapshot depicts a Widget's configuration, so it survives edits that cannot change what
+// was rendered — renaming a Widget or rewording its description keeps the image the library already
+// shows. Only a configuration, config version, or preset change discards it, and the editor uploads
+// a replacement immediately after saving. Postgres evaluates every assignment against the row's
+// existing values, so this condition compares what is stored with what is arriving; jsonb equality
+// rather than raw bytes keeps the comparison honest about key order.
+const widgetPreviewStillDepicts = `configuration=$2::jsonb AND config_version=$3 AND preset_id IS NOT DISTINCT FROM $4`
+
+var updateWidgetStatement = fmt.Sprintf(`UPDATE widgets SET configuration=$2::jsonb,config_version=$3,preset_id=$4,updated_at=now(),
+	preview_image=CASE WHEN %[1]s THEN preview_image ELSE NULL END,
+	preview_content_type=CASE WHEN %[1]s THEN preview_content_type ELSE NULL END,
+	preview_width=CASE WHEN %[1]s THEN preview_width ELSE NULL END,
+	preview_height=CASE WHEN %[1]s THEN preview_height ELSE NULL END,
+	preview_updated_at=CASE WHEN %[1]s THEN preview_updated_at ELSE NULL END
+	WHERE asset_id=$1`, widgetPreviewStillDepicts)
+
 func (s *Service) UpdateWidget(ctx context.Context, id, user uuid.UUID, input WidgetInput) (Asset, error) {
 	existing, err := s.GetAsset(ctx, id)
 	if err != nil || existing.Widget == nil {
@@ -285,7 +301,7 @@ func (s *Service) UpdateWidget(ctx context.Context, id, user uuid.UUID, input Wi
 	if err != nil || tag.RowsAffected() == 0 {
 		return Asset{}, ErrNotFound
 	}
-	if _, err = tx.Exec(ctx, `UPDATE widgets SET configuration=$2::jsonb,config_version=$3,preset_id=$4,preview_image=NULL,preview_content_type=NULL,preview_width=NULL,preview_height=NULL,preview_updated_at=NULL,updated_at=now() WHERE asset_id=$1`, id, string(encoded), widgetConfigVersion(input.Provider), input.PresetID); err != nil {
+	if _, err = tx.Exec(ctx, updateWidgetStatement, id, string(encoded), widgetConfigVersion(input.Provider), input.PresetID); err != nil {
 		return Asset{}, err
 	}
 	if _, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id) VALUES($1,$2,'widget.updated','widget',$3)`, uuid.New(), user, id.String()); err != nil {
@@ -359,7 +375,17 @@ func (s *Service) DuplicateWidget(ctx context.Context, id, user uuid.UUID) (Asse
 	if err != nil || asset.Widget == nil {
 		return Asset{}, ErrNotFound
 	}
-	return s.CreateWidget(ctx, user, WidgetInput{Provider: asset.Widget.Provider, PresetID: asset.Widget.PresetID, Name: asset.Name + " copy", Description: asset.Description, Configuration: asset.Widget.Configuration})
+	copied, err := s.CreateWidget(ctx, user, WidgetInput{Provider: asset.Widget.Provider, PresetID: asset.Widget.PresetID, Name: asset.Name + " copy", Description: asset.Description, Configuration: asset.Widget.Configuration})
+	if err != nil {
+		return Asset{}, err
+	}
+	// The copy renders exactly what the original renders, so the original's snapshot already depicts
+	// it. Carrying the image over means a duplicate appears in the library with a preview instead of
+	// waiting for someone to open it in the editor and save it again.
+	if _, err := s.db.Exec(ctx, `UPDATE widgets copy SET preview_image=original.preview_image,preview_content_type=original.preview_content_type,preview_width=original.preview_width,preview_height=original.preview_height,preview_updated_at=original.preview_updated_at FROM widgets original WHERE copy.asset_id=$1 AND original.asset_id=$2 AND original.preview_image IS NOT NULL`, copied.ID, id); err != nil {
+		return Asset{}, err
+	}
+	return s.GetAsset(ctx, copied.ID)
 }
 
 func (s *Service) loadWidget(ctx context.Context, id uuid.UUID) (*Widget, error) {
