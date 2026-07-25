@@ -164,8 +164,7 @@ code,
 }
 
 .app-shell--sidebar-compact .sidebar nav a span,
-.app-shell--sidebar-compact .sidebar__account-copy,
-.app-shell--sidebar-compact .sidebar__nav-label {
+.app-shell--sidebar-compact .sidebar__account-copy {
   display: none;
 }
 
@@ -196,24 +195,6 @@ code,
   min-height: 0;
   overflow-y: auto;
   scrollbar-width: thin;
-}
-
-.sidebar__nav-group {
-  display: grid;
-  gap: var(--tc-space-1);
-  margin-top: var(--tc-space-3);
-}
-
-.sidebar__nav-label {
-  margin: 0;
-  padding: var(--tc-space-1) var(--tc-space-3) 2px;
-  color: var(--tc-sidebar-text);
-  font: var(--tc-text-supporting);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  line-height: 1.4;
-  text-transform: uppercase;
 }
 
 .sidebar__nav-standalone {
@@ -1648,8 +1629,10 @@ label > .signal-select,
   scrollbar-width: thin;
 }
 
-.view-tabs button {
+.view-tabs button,
+.view-tabs a {
   position: relative;
+  text-decoration: none;
   display: inline-flex;
   min-height: 42px;
   flex: 0 0 auto;
@@ -1663,7 +1646,8 @@ label > .signal-select,
   font: var(--tc-text-label);
 }
 
-.view-tabs button::after {
+.view-tabs button::after,
+.view-tabs a::after {
   position: absolute;
   right: 0;
   bottom: -1px;
@@ -1674,11 +1658,14 @@ label > .signal-select,
 }
 
 .view-tabs button:hover:not(:disabled),
-.view-tabs button[aria-current="page"] {
+.view-tabs a:hover,
+.view-tabs button[aria-current="page"],
+.view-tabs a[aria-current="page"] {
   color: var(--tc-text-primary);
 }
 
-.view-tabs button[aria-current="page"]::after {
+.view-tabs button[aria-current="page"]::after,
+.view-tabs a[aria-current="page"]::after {
   background: var(--tc-action-primary);
 }
 
@@ -1687,7 +1674,8 @@ label > .signal-select,
   cursor: not-allowed;
 }
 
-.view-tabs button small {
+.view-tabs button small,
+.view-tabs a small {
   padding: 1px 6px;
   color: var(--tc-status-warning);
   background: var(--tc-status-warning-bg);
@@ -2183,8 +2171,7 @@ tbody tr:hover {
   }
 
   .sidebar nav a span,
-  .sidebar__account-copy,
-  .sidebar__nav-label {
+  .sidebar__account-copy {
     display: none;
   }
 
@@ -2252,7 +2239,6 @@ tbody tr:hover {
   }
 
   .sidebar__nav-main,
-  .sidebar__nav-group,
   .sidebar__nav-standalone,
   .sidebar__nav-footer {
     display: contents;

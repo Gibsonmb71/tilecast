@@ -3,13 +3,10 @@ import {
   CalendarDays,
   ClipboardCheck,
   ClipboardList,
-  Database,
   Ellipsis,
   Home,
-  Image,
-  Blocks,
   Layers3,
-  ListVideo,
+  Library,
   LogOut,
   Monitor,
   PanelLeftClose,
@@ -21,6 +18,11 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
+import {
+  contentTabs,
+  presentationTabs,
+  tabMatchesPath,
+} from "../navigation/WorkspaceTabs";
 import { useAuth } from "../auth/AuthProvider";
 import { Brand } from "../components/Brand";
 import { RouteErrorBoundary } from "../components/RouteErrorBoundary";
@@ -29,20 +31,29 @@ import { api } from "../api/client";
 import { canReviewForm } from "../forms/capabilities";
 import { OperationsDashboard } from "./OperationsDashboard";
 
-type NavItem = readonly [label: string, to: string, icon: LucideIcon];
+// A nav item may own several routes: Content covers Media, Widgets, and Data, and Presentations
+// covers Playlists and Layouts. `owns` lists those extra paths so the entry stays highlighted while
+// the author moves between a workspace's tabs.
+type NavItem = readonly [
+  label: string,
+  to: string,
+  icon: LucideIcon,
+  owns?: readonly string[],
+];
 
-const pinnedNav = [
+// Seven destinations, each a task rather than a table. The record types are still first-class
+// records with their own routes; they are reached as facets of a workspace instead of as peers in
+// the sidebar.
+const primaryNav = [
   ["Overview", "/", Home],
   ["Screens", "/screens", Monitor],
-] as const satisfies readonly NavItem[];
-const contentNav = [
-  ["Media", "/assets", Image],
-  ["Widgets", "/widgets", Blocks],
-  ["Data Sources", "/data-sources", Database],
-] as const satisfies readonly NavItem[];
-const composeNav = [
-  ["Playlists", "/playlists", ListVideo],
-  ["Layouts", "/layouts", Layers3],
+  ["Content", "/assets", Library, contentTabs.map((tab) => tab.to)],
+  [
+    "Presentations",
+    "/playlists",
+    Layers3,
+    presentationTabs.map((tab) => tab.to),
+  ],
   ["Schedules", "/schedules", CalendarDays],
 ] as const satisfies readonly NavItem[];
 const activityNav = [
@@ -58,32 +69,23 @@ const settingsNav = [
 const sidebarCompactKey = "tilecast.sidebar.compact";
 
 function SidebarLink({ item }: { item: NavItem }) {
-  const [label, to, Icon] = item;
+  const [label, to, Icon, owns] = item;
+  const location = useLocation();
+  // NavLink alone would only match its own path, so a workspace entry would go dark as soon as the
+  // author switched to another of its tabs.
+  const ownsCurrent = (owns ?? []).some((path) =>
+    tabMatchesPath(path, location.pathname),
+  );
   return (
-    <NavLink to={to} end={to === "/"} aria-label={label}>
+    <NavLink
+      to={to}
+      end={to === "/"}
+      aria-label={label}
+      className={({ isActive }) => (isActive || ownsCurrent ? "active" : "")}
+    >
       <Icon size={18} strokeWidth={1.8} aria-hidden="true" />
       <span>{label}</span>
     </NavLink>
-  );
-}
-
-function SidebarGroup({
-  label,
-  items,
-}: {
-  label: string;
-  items: readonly NavItem[];
-}) {
-  const id = `sidebar-${label.toLowerCase()}-label`;
-  return (
-    <section className="sidebar__nav-group" aria-labelledby={id}>
-      <h2 className="sidebar__nav-label" id={id}>
-        {label}
-      </h2>
-      {items.map((item) => (
-        <SidebarLink key={item[1]} item={item} />
-      ))}
-    </section>
   );
 }
 
@@ -107,11 +109,9 @@ export function SidebarNavigation() {
   return (
     <nav aria-label="Primary">
       <div className="sidebar__nav-main">
-        {pinnedNav.map((item) => (
+        {primaryNav.map((item) => (
           <SidebarLink key={item[1]} item={item} />
         ))}
-        <SidebarGroup label="Content" items={contentNav} />
-        <SidebarGroup label="Compose" items={composeNav} />
         <div className="sidebar__nav-standalone">
           <SidebarLink item={activityNav} />
           {canReview && <SidebarLink item={approvalsNav} />}

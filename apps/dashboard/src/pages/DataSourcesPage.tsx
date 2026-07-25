@@ -38,6 +38,7 @@ import {
   sourceIcon,
 } from "../content/dataSourceProviderMeta";
 import { UsedByPanel } from "../content/UsedByPanel";
+import { WorkspaceTabs, contentTabs } from "../navigation/WorkspaceTabs";
 import { canManageContent } from "./ContentPage";
 import { CreateFormDataSourcePage } from "./CreateFormDataSourcePage";
 import { FormDataSourcePage } from "./FormDataSourcePage";
@@ -279,6 +280,7 @@ export function DataSourcesPage() {
 
   return (
     <section className="content-page apps-page">
+      <WorkspaceTabs label="Content library" tabs={contentTabs} />
       <PageHeader
         title="Data Sources"
         description="Reusable connections that fetch, parse, and cache data."

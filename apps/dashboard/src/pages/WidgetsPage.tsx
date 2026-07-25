@@ -25,6 +25,7 @@ import {
 } from "../content/SourceEditors";
 import { GenericWidgetEditor } from "../content/GenericDefinitionEditors";
 import { UsedByPanel } from "../content/UsedByPanel";
+import { WorkspaceTabs, contentTabs } from "../navigation/WorkspaceTabs";
 import {
   AssetCollection,
   WebsiteEditor,
@@ -71,6 +72,7 @@ export function WidgetsPage() {
 
   return (
     <section className="content-page apps-page">
+      <WorkspaceTabs label="Content library" tabs={contentTabs} />
       <PageHeader
         title="Widgets"
         description="Reusable visual content for playlists and Layouts."

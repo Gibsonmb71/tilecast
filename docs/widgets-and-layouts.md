@@ -23,7 +23,7 @@ A Data Source is a reusable, non-visual connection. It owns everything about acq
 
 Providers: **Calendar, RSS, Atom, JSON, CSV, Manual Table, Weather, Transit, CAP Alerts, and Air Quality**. Transit joins public GTFS Static metadata with Realtime trip updates and optional service alerts. CAP Alerts normalizes active public CAP 1.2 warnings. Air Quality exposes current and hourly Open-Meteo/CAMS values with mandatory attribution and a noncommercial-or-self-hosted endpoint policy. A Data Source cannot be assigned to a screen, added to a playlist, or dragged into a Layout as visual content.
 
-Data Sources appear in their own Studio section. Each detail view shows the provider, current status, last successful and last attempted refresh, cached record count, available fields, date-selection policy, errors and diagnostics, the Widgets using the Data Source, and the Layout text bindings using it.
+Data Sources appear under the Data tab of the Studio Content workspace, and are also created inline from any Widget or Layout binding that needs one. Each detail view shows the provider, current status, last successful and last attempted refresh, cached record count, available fields, date-selection policy, errors and diagnostics, the Widgets using the Data Source, and the Layout text bindings using it. Usage entries link to the records that consume the Data Source.
 
 ## Widgets
 
@@ -120,4 +120,6 @@ The CSV Data Source fetches, parses, caches, and date-selects the lunch rows. Th
 
 ## API and routing
 
-Studio uses `/api/v1/widgets` for Widgets and `/api/v1/data-sources` for Data Sources. There are no `/api/v1/apps` or `/api/v1/sources` aliases. `/assets` owns uploaded Media. Studio Content is organized into Media, Widgets, and Data Sources sections.
+Studio uses `/api/v1/widgets` for Widgets and `/api/v1/data-sources` for Data Sources. There are no `/api/v1/apps` or `/api/v1/sources` aliases. `/assets` owns uploaded Media.
+
+Studio navigation is organized by task rather than by record type. **Content** is one workspace whose tabs are Media (`/assets`), Widgets (`/widgets`), and Data (`/data-sources`); **Presentations** is one workspace whose tabs are Playlists (`/playlists`) and Layouts (`/layouts`). Those five routes remain canonical, so deep links, breadcrumbs, and search entries are unchanged; `/content` and `/presentations` redirect to the first tab of their workspace. The records themselves are unchanged — a Data Source is still a Data Source, and the "Data" tab label names the category, not the record type.

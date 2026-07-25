@@ -206,7 +206,7 @@ back to the Layout, replacing a confirmation dialog that navigated to the Widget
 author's place. `returnTo` is read from the URL, so only in-app absolute paths are honored — a
 protocol-relative value falls back to `/widgets`, which is covered by a test.
 
-## Phase 3 — Collapse six nouns into three
+## Phase 3 — Collapse six nouns into three — **done**
 
 Goal: navigation describes jobs, not tables. Do this after Phases 1 and 2 because it disrupts
 muscle memory and is most defensible once the underlying flows are already pleasant.
@@ -244,6 +244,34 @@ routes to avoid churning every deep link, breadcrumb `resource`, and `handle.sea
   in the same commit.
 
 **Exit criteria** — Seven primary destinations, no orphaned links, every prior URL still resolves.
+
+### As built
+
+`navigation/WorkspaceTabs.tsx` owns both tab sets and the path-matching rule, so the sidebar and the
+tab bars cannot disagree about which routes belong to a workspace. The five index pages render the
+tab bar above their existing `PageHeader`.
+
+Three notes:
+
+- **No route moved.** Rather than introduce nested `/content/*` and `/presentations/*` trees, the
+  tabs link straight to the canonical index routes. `/content` and `/presentations` redirect to the
+  first tab of their workspace. Every deep link, breadcrumb `resource`, and `handle.search` entry is
+  untouched, so nothing had to be migrated and no redirect chain was created.
+- **The tabs are links, not `ViewTabs` buttons.** `ViewTabs` is stateful and button-based, which
+  would have made a workspace switch un-openable in a new tab. The `.view-tabs` selectors now also
+  match `a`, so the link tab bar inherits the existing appearance exactly — verified by rendering
+  both forms against the built stylesheet side by side.
+- **`NavLink` alone was not enough.** A workspace entry would go dark as soon as the author switched
+  to another of its tabs, so `SidebarLink` takes an `owns` list of paths and computes the active
+  class itself. Covered by tests for both workspaces.
+
+The `Data Sources` label became `Data` in the tab bar and the sidebar only. Each page keeps its own
+heading (`Data Sources`, `Media`, `Widgets`), because the tab names a category while the heading
+names the record type — the product term stays intact in `docs/widgets-and-layouts.md`, the API, and
+the database.
+
+Removed as dead: `.sidebar__nav-group` and `.sidebar__nav-label`, along with the three compact and
+responsive rules that referenced them. No component emits those classes now.
 
 ## Phase 4 — Task-first entry
 

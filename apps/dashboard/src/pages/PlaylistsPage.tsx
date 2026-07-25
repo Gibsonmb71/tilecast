@@ -32,6 +32,7 @@ import {
   DashboardSearch,
 } from "../components/DashboardListToolbar";
 import { UsedByPanel } from "../content/UsedByPanel";
+import { WorkspaceTabs, presentationTabs } from "../navigation/WorkspaceTabs";
 import {
   ContentPicker,
   type ContentPickerResult,
@@ -114,6 +115,7 @@ export function PlaylistsPage() {
   };
   return (
     <section className="playlists-page">
+      <WorkspaceTabs label="Presentations" tabs={presentationTabs} />
       <PageHeader
         title="Playlists"
         description="Ordered fullscreen playback for assigned screens."
