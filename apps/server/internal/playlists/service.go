@@ -169,7 +169,47 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (Playlist, error) {
 	if p.Usage, err = s.usage(ctx, id); err != nil {
 		return Playlist{}, err
 	}
+	if p.DataSourceIDs, err = s.reachableDataSources(ctx, id); err != nil {
+		return Playlist{}, err
+	}
 	return p, nil
+}
+
+// reachableDataSources reports the Data Sources a playlist reaches through its items.
+//
+// A Widget references a Source whenever one of its configuration values is that Source's ID, the
+// same rule the deletion check uses — matching any value rather than a fixed key covers Widgets
+// that expose several Data Source selectors under arbitrary keys, and Source IDs are unique so it
+// cannot collide with an unrelated value. A Layout placed in the playlist contributes its own
+// stored dependencies, which already include Sources reached only through a text binding.
+//
+// Embedded Layouts contribute their draft dependencies, matching what Studio shows for a Layout
+// assigned to a screen directly; the two legs would otherwise disagree about the same Layout.
+func (s *Service) reachableDataSources(ctx context.Context, id uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := s.db.Query(ctx, `
+		SELECT ds.id FROM playlist_items i
+		JOIN widgets w ON w.asset_id=i.asset_id
+		CROSS JOIN LATERAL jsonb_each_text(w.configuration) field
+		JOIN data_sources ds ON ds.id::text=field.value AND ds.deleted_at IS NULL
+		WHERE i.playlist_id=$1
+		UNION
+		SELECT ds.id FROM playlist_items i
+		JOIN layout_draft_dependencies d ON d.layout_id=i.layout_id AND d.dependency_type='data_source'
+		JOIN data_sources ds ON ds.id=d.dependency_id AND ds.deleted_at IS NULL
+		WHERE i.playlist_id=$1`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := []uuid.UUID{}
+	for rows.Next() {
+		var sourceID uuid.UUID
+		if err = rows.Scan(&sourceID); err != nil {
+			return nil, err
+		}
+		result = append(result, sourceID)
+	}
+	return result, rows.Err()
 }
 
 // usage reports the screens and schedules that play a playlist. Screens are reached either by a

@@ -72,6 +72,20 @@ func TestReverseUsageReachesScreens(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// A Widget reading two Data Sources, so the playlist has sources to reach through its items.
+	// The second sits under a non-canonical key: the resolver matches any configured value, which
+	// is what covers release-defined Widgets exposing several Data Source selectors.
+	sourceID, secondSourceID, widgetID := uuid.New(), uuid.New(), uuid.New()
+	if _, err = pool.Exec(ctx, `INSERT INTO data_sources(id,organization_id,name,provider,configuration,created_by)VALUES($1,$3,'Lunch rows','csv','{}'::jsonb,$4),($2,$3,'Allergen notes','csv','{}'::jsonb,$4)`, sourceID, secondSourceID, org, owner.User.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO assets(id,organization_id,name,type,original_filename,detected_mime_type,sha256,original_size,processing_status,created_by)VALUES($1,$2,'Today''s Lunch','widget','','application/json',$3,0,'ready',$4)`, widgetID, org, make([]byte, 32), owner.User.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO widgets(asset_id,provider,config_version,configuration)VALUES($1,'menu',1,jsonb_build_object('dataSourceId',$2::text,'allergenSource',$3::text,'fields',jsonb_build_array('title','price')))`, widgetID, sourceID.String(), secondSourceID.String()); err != nil {
+		t.Fatal(err)
+	}
+
 	service := NewService(pool, &testNotifier{})
 	playlist, err := service.Create(ctx, owner.User.ID, "Cafeteria loop", "")
 	if err != nil {
@@ -79,6 +93,9 @@ func TestReverseUsageReachesScreens(t *testing.T) {
 	}
 	duration := int64(10_000)
 	if _, err = service.AddItem(ctx, playlist.ID, owner.User.ID, ItemInput{AssetID: assetID, DurationMS: &duration}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = service.AddItem(ctx, playlist.ID, owner.User.ID, ItemInput{AssetID: widgetID, DurationMS: &duration}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -133,10 +150,23 @@ func TestReverseUsageReachesScreens(t *testing.T) {
 		t.Fatalf("usage.schedules=%#v", detail.Usage.Schedules)
 	}
 
+	// The playlist reaches both Data Sources its Widget reads, without Studio having to open each
+	// item. This is the leg that used to stop at the Widget list.
+	reached := map[uuid.UUID]bool{}
+	for _, source := range detail.DataSourceIDs {
+		reached[source] = true
+	}
+	if len(detail.DataSourceIDs) != 2 || !reached[sourceID] || !reached[secondSourceID] {
+		t.Fatalf("dataSourceIds=%v, want %s and %s", detail.DataSourceIDs, sourceID, secondSourceID)
+	}
+
 	// A playlist nothing plays reports empty arrays, never null, so Studio can render it directly.
 	empty, err := service.Get(ctx, other.ID)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if empty.DataSourceIDs == nil || len(empty.DataSourceIDs) != 0 {
+		t.Fatalf("unused playlist dataSourceIds=%v", empty.DataSourceIDs)
 	}
 	if empty.Usage.Screens == nil || empty.Usage.Schedules == nil {
 		t.Fatalf("unused playlist usage=%#v", empty.Usage)

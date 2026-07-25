@@ -3,10 +3,10 @@
 // this screen look stale?" — the source status is shown next to the source, so a failed refresh is
 // visible from the screen rather than only from the Data Source page.
 //
-// A Layout resolves completely: its stored dependencies already name every Data Source it reaches,
-// including sources reached through a text binding with no Widget. A playlist links its items
-// instead of resolving each Widget's sources, because that would be one detail request per item on
-// a page that must stay cheap; each Widget reports its own data when opened.
+// Both assignment kinds resolve completely. A Layout's stored dependencies already name every
+// Data Source it reaches, including sources reached through a text binding with no Widget. A
+// playlist reports the sources reached through its items — read server-side, so closing this leg
+// costs one query rather than a detail request per playlist item.
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { api } from "../api/client";
@@ -42,24 +42,27 @@ export function ScreenContentChain({
     queryFn: () => api.playlist(playlistId!),
     enabled: Boolean(playlistId),
   });
-  // One list read resolves every source's name and status; the Layout stores only dependency IDs.
+  // One list read resolves every source's name and status for either assignment kind; the Layout
+  // and the playlist both report only dependency IDs.
   const sources = useQuery({
     queryKey: ["screen-chain-data-sources"],
     queryFn: () =>
       api.listDataSources(
         new URLSearchParams({ page: "1", pageSize: "100", sort: "name" }),
       ),
-    enabled: Boolean(layoutId),
+    enabled: Boolean(layoutId || playlistId),
   });
 
   if (!layoutId && !playlistId) return null;
 
-  const dataSourceIds = (layout.data?.dependencies ?? [])
-    .filter((dependency) => dependency.type === "data_source")
-    .map((dependency) => dependency.id);
-  const feeding = (sources.data?.items ?? []).filter((source) =>
-    dataSourceIds.includes(source.id),
+  const resolve = (ids: string[]) =>
+    (sources.data?.items ?? []).filter((source) => ids.includes(source.id));
+  const layoutSources = resolve(
+    (layout.data?.dependencies ?? [])
+      .filter((dependency) => dependency.type === "data_source")
+      .map((dependency) => dependency.id),
   );
+  const playlistSources = resolve(playlist.data?.dataSourceIds ?? []);
   const widgetItems = (playlist.data?.items ?? []).filter(
     (item) => item.assetType === "widget",
   );
@@ -79,13 +82,13 @@ export function ScreenContentChain({
           </ul>
           {layout.isLoading ? (
             <p className="screen-chain__note">Resolving Layout data…</p>
-          ) : feeding.length === 0 ? (
+          ) : layoutSources.length === 0 ? (
             <p className="screen-chain__note">
               This Layout reads no Data Sources.
             </p>
           ) : (
             <ul className="screen-chain__list">
-              {feeding.map((source) => (
+              {layoutSources.map((source) => (
                 <li key={source.id}>
                   <Link to={`/data-sources/${source.id}`}>
                     <span>{source.name}</span>
@@ -123,6 +126,30 @@ export function ScreenContentChain({
                   <Link to={`/widgets/${item.assetId}`}>
                     <span>{item.assetName}</span>
                     <small>Widget</small>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+          {playlist.isLoading ? (
+            <p className="screen-chain__note">Resolving playlist data…</p>
+          ) : playlistSources.length === 0 ? (
+            <p className="screen-chain__note">
+              Nothing in this playlist reads a Data Source.
+            </p>
+          ) : (
+            <ul className="screen-chain__list">
+              {playlistSources.map((source) => (
+                <li key={source.id}>
+                  <Link to={`/data-sources/${source.id}`}>
+                    <span>{source.name}</span>
+                    <StatusDot
+                      tone={statusTone(source.status)}
+                      label={statusText(
+                        source.status,
+                        source.cachedRecordCount,
+                      )}
+                    />
                   </Link>
                 </li>
               ))}
