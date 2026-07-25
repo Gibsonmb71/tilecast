@@ -1,5 +1,6 @@
 import {
   Button,
+  ContextMenu,
   Dialog,
   Drawer,
   Notice,
@@ -7,14 +8,20 @@ import {
   Select,
   ToggleGroup,
   ViewToggle,
+  useContextMenu,
+  type ContextMenuItem,
 } from "../components/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  EllipsisVertical,
   FileImage,
   Folder,
   Upload,
   Copy,
   Pencil,
+  Square,
+  SquareCheck,
+  SquarePen,
   Trash2,
   X,
   FolderPlus,
@@ -609,109 +616,177 @@ export function AssetCollection({
   onToggle?: (id: string) => void;
   folderNames?: Map<string, string>;
 }) {
+  const menu = useContextMenu<Asset>();
+  // Every action is also reachable from a visible control, so the menu stays a shortcut
+  // rather than the only route to duplication or deletion.
+  const actionsFor = (asset: Asset): ContextMenuItem[] => {
+    const actions: ContextMenuItem[] = [
+      {
+        label: canManage ? "Edit" : "Open",
+        icon: <SquarePen size={14} />,
+        onSelect: () => onSelect(asset),
+      },
+    ];
+    if (canManage && onToggle)
+      actions.push({
+        label: selectedIds.has(asset.id) ? "Clear selection" : "Select",
+        icon: selectedIds.has(asset.id) ? (
+          <Square size={14} />
+        ) : (
+          <SquareCheck size={14} />
+        ),
+        onSelect: () => onToggle(asset.id),
+      });
+    // Only Widgets have a duplicate endpoint; uploaded media has no server-side copy.
+    if (canManage && onDuplicate && asset.type === "widget")
+      actions.push({
+        label: "Duplicate",
+        icon: <Copy size={14} />,
+        onSelect: () => onDuplicate(asset),
+      });
+    if (canManage && onDelete)
+      actions.push({
+        label: "Delete",
+        icon: <Trash2 size={14} />,
+        danger: true,
+        separated: actions.length > 0,
+        onSelect: () => onDelete(asset),
+      });
+    return actions;
+  };
   return (
     <div className={`asset-collection asset-collection--${view}`}>
-      {items.map((asset) => (
-        <article className="asset-card" key={asset.id}>
-          {canManage && onToggle && (
-            <label className="asset-card__select">
-              <input
-                type="checkbox"
-                checked={selectedIds.has(asset.id)}
-                onChange={() => onToggle(asset.id)}
-              />
-              <span className="visually-hidden">Select {asset.name}</span>
-            </label>
-          )}
-          <button
-            className="asset-card__open"
-            onClick={() => onSelect(asset)}
-            aria-label={`Edit ${asset.name}`}
+      {items.map((asset) => {
+        // Widget cards already spell their actions out in a footer, so they skip the trigger
+        // and keep right-click as the shortcut.
+        const showTrigger = !(asset.type === "widget" && canManage);
+        return (
+          <article
+            className={`asset-card${showTrigger ? " asset-card--has-menu" : ""}`}
+            key={asset.id}
+            onContextMenu={(event) => menu.open(event, asset)}
           >
-            <span className="asset-preview">
-              <AssetPreview asset={asset} />
-            </span>
-            <span className="asset-card__body">
-              <strong>{asset.name}</strong>
-              <small>
-                {asset.type === "video" &&
-                  formatDuration(asset.durationSeconds)}
-                {asset.type === "widget" &&
-                  (asset.widget?.provider === "youtube"
-                    ? "YouTube"
-                    : asset.widget?.provider
-                      ? asset.widget.provider.toUpperCase()
-                      : asset.website?.displayUrl)}
-                {asset.width && asset.height
-                  ? `${asset.type === "video" ? " · " : ""}${asset.width} × ${asset.height}`
-                  : ""}
-              </small>
-              <small>{formatBytes(asset.originalSize)}</small>
-              {(() => {
-                const folderLabel = asset.folderId
-                  ? folderNames?.get(asset.folderId)
-                  : undefined;
-                if (!folderLabel && !asset.tags?.length) return null;
-                return (
-                  <span className="asset-card__organization">
-                    {folderLabel && (
-                      <span className="organizer-chip organizer-chip--folder">
-                        <Folder size={11} aria-hidden />
-                        {folderLabel}
-                      </span>
-                    )}
-                    {asset.tags?.map((tag) => (
-                      <span key={tag.id} className="organizer-chip">
-                        <span
-                          className="organizer-chip__dot"
-                          style={{ backgroundColor: tag.color }}
-                          aria-hidden
-                        />
-                        {tag.name}
-                      </span>
-                    ))}
-                  </span>
-                );
-              })()}
-            </span>
-            <span
-              className={`media-status media-status--${asset.processingStatus}`}
+            {showTrigger && (
+              <button
+                type="button"
+                className="asset-card__menu"
+                aria-haspopup="menu"
+                aria-expanded={menu.anchor?.target.id === asset.id}
+                aria-label={`Actions for ${asset.name}`}
+                onClick={(event) => menu.open(event, asset)}
+              >
+                <EllipsisVertical size={15} aria-hidden="true" />
+              </button>
+            )}
+            {canManage && onToggle && (
+              <label className="asset-card__select">
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(asset.id)}
+                  onChange={() => onToggle(asset.id)}
+                />
+                <span className="visually-hidden">Select {asset.name}</span>
+              </label>
+            )}
+            <button
+              className="asset-card__open"
+              onClick={() => onSelect(asset)}
+              aria-label={`Edit ${asset.name}`}
             >
-              {statusLabel(asset.processingStatus)}
-            </span>
-          </button>
-          {asset.type === "widget" && (
-            <footer className="source-card-actions">
-              <span>
-                {asset.playlistUsage ?? 0} playlist
-                {asset.playlistUsage === 1 ? "" : "s"}
-                {` · ${asset.layoutUsage?.length ?? 0} Layout${asset.layoutUsage?.length === 1 ? "" : "s"}`}
+              <span className="asset-preview">
+                <AssetPreview asset={asset} />
               </span>
-              {canManage && (
-                <>
-                  <button type="button" onClick={() => onSelect(asset)}>
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onDuplicate?.(asset)}
-                    aria-label={`Duplicate ${asset.name}`}
-                  >
-                    <Copy size={14} /> Duplicate
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onDelete?.(asset)}
-                    aria-label={`Delete ${asset.name}`}
-                  >
-                    <Trash2 size={14} /> Delete
-                  </button>
-                </>
-              )}
-            </footer>
-          )}
-        </article>
-      ))}
+              <span className="asset-card__body">
+                <strong>{asset.name}</strong>
+                <small>
+                  {asset.type === "video" &&
+                    formatDuration(asset.durationSeconds)}
+                  {asset.type === "widget" &&
+                    (asset.widget?.provider === "youtube"
+                      ? "YouTube"
+                      : asset.widget?.provider
+                        ? asset.widget.provider.toUpperCase()
+                        : asset.website?.displayUrl)}
+                  {asset.width && asset.height
+                    ? `${asset.type === "video" ? " · " : ""}${asset.width} × ${asset.height}`
+                    : ""}
+                </small>
+                <small>{formatBytes(asset.originalSize)}</small>
+                {(() => {
+                  const folderLabel = asset.folderId
+                    ? folderNames?.get(asset.folderId)
+                    : undefined;
+                  if (!folderLabel && !asset.tags?.length) return null;
+                  return (
+                    <span className="asset-card__organization">
+                      {folderLabel && (
+                        <span className="organizer-chip organizer-chip--folder">
+                          <Folder size={11} aria-hidden />
+                          {folderLabel}
+                        </span>
+                      )}
+                      {asset.tags?.map((tag) => (
+                        <span key={tag.id} className="organizer-chip">
+                          <span
+                            className="organizer-chip__dot"
+                            style={{ backgroundColor: tag.color }}
+                            aria-hidden
+                          />
+                          {tag.name}
+                        </span>
+                      ))}
+                    </span>
+                  );
+                })()}
+              </span>
+              <span
+                className={`media-status media-status--${asset.processingStatus}`}
+              >
+                {statusLabel(asset.processingStatus)}
+              </span>
+            </button>
+            {asset.type === "widget" && (
+              <footer className="source-card-actions">
+                <span>
+                  {asset.playlistUsage ?? 0} playlist
+                  {asset.playlistUsage === 1 ? "" : "s"}
+                  {` · ${asset.layoutUsage?.length ?? 0} Layout${asset.layoutUsage?.length === 1 ? "" : "s"}`}
+                </span>
+                {canManage && (
+                  <>
+                    <button type="button" onClick={() => onSelect(asset)}>
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onDuplicate?.(asset)}
+                      aria-label={`Duplicate ${asset.name}`}
+                    >
+                      <Copy size={14} /> Duplicate
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onDelete?.(asset)}
+                      aria-label={`Delete ${asset.name}`}
+                    >
+                      <Trash2 size={14} /> Delete
+                    </button>
+                  </>
+                )}
+              </footer>
+            )}
+          </article>
+        );
+      })}
+      {menu.anchor && (
+        <ContextMenu
+          x={menu.anchor.x}
+          y={menu.anchor.y}
+          label={`Actions for ${menu.anchor.target.name}`}
+          items={actionsFor(menu.anchor.target)}
+          onClose={menu.close}
+        />
+      )}
     </div>
   );
 }
@@ -1185,13 +1260,6 @@ function ContentOrganizer({
           </button>
         </div>
       )}
-      {assetIds.length === 0 &&
-        (folders.length > 0 || collections.length > 0 || tags.length > 0) && (
-          <span className="content-organizer__hint">
-            Select items to move them into a folder or apply tags and
-            collections.
-          </span>
-        )}
       {error && <span className="notice notice--error">{error}</span>}
       {creating && (
         <CreateOrganizerDialog

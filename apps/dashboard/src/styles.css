@@ -763,11 +763,6 @@ a {
   border: 1px solid var(--tc-border-strong);
   border-radius: var(--tc-radius-sm);
 }
-.content-organizer__hint {
-  margin-left: auto;
-  color: var(--tc-ink-muted);
-  font-size: 12px;
-}
 .organizer-chip {
   display: inline-flex;
   align-items: center;

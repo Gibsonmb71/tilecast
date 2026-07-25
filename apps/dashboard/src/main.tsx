@@ -20,6 +20,7 @@ import "./styles/issues-48-49.css";
 import "./styles/data-sources.css";
 import "./styles/forms.css";
 import "./styles/player-updates.css";
+import "./styles/context-menu.css";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false } },

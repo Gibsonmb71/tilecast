@@ -1,15 +1,41 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
-import type { DataSourceDefinition } from "../api/types";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { MemoryRouter } from "react-router";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { api } from "../api/client";
+import type {
+  DataSource,
+  DataSourceDefinition,
+  DataSourceDetail,
+} from "../api/types";
 import {
   iconForIdentifier,
   resolveSetup,
   sourceIcon,
 } from "../content/dataSourceProviderMeta";
+import { DataSourcesPage } from "./DataSourcesPage";
 
-afterEach(cleanup);
+vi.mock("../auth/AuthProvider", () => ({
+  useAuth: () => ({
+    status: {
+      csrfToken: "csrf-token",
+      user: { id: "user-1", role: "administrator" },
+    },
+  }),
+}));
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 // A release-defined Data Source whose provider ID is NOT present in any TypeScript union,
 // hardcoded copy map, or icon switch. The open `DataSourceProvider` contract accepts it,
@@ -68,5 +94,76 @@ describe("release-defined Data Source Studio metadata", () => {
   it("uses the definition icon for a release-defined source", () => {
     const { container } = render(sourceIcon(fakeDefinition.id, fakeDefinition));
     expect(container.querySelector("svg")).toBeInTheDocument();
+  });
+});
+
+describe("Data Source card actions", () => {
+  const source = {
+    id: "source-1",
+    provider: "rss",
+    name: "District news",
+    description: "",
+    configuration: {},
+    createdAt: "2026-07-21T12:00:00Z",
+    updatedAt: "2026-07-21T12:00:00Z",
+    status: "ready",
+    diagnostics: {},
+    fields: [],
+    cachedRecordCount: 4,
+    widgetUsage: [],
+    bindingUsage: [],
+  } as unknown as DataSource;
+
+  function renderPage() {
+    vi.spyOn(api, "listDataSources").mockResolvedValue({
+      items: [source],
+      total: 1,
+      page: 1,
+      pageSize: 100,
+    });
+    vi.spyOn(api, "contentDefinitions").mockResolvedValue({
+      revision: "1",
+      compilerVersion: "1",
+      fingerprint: "test",
+      widgets: [],
+      dataSources: [],
+    });
+    return render(
+      <QueryClientProvider
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      >
+        <MemoryRouter>
+          <DataSourcesPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+  }
+
+  it("duplicates a Data Source from its right-click menu", async () => {
+    const duplicate = vi
+      .spyOn(api, "duplicateDataSource")
+      .mockResolvedValue({ ...source, id: "source-2" } as DataSourceDetail);
+    renderPage();
+    fireEvent.contextMenu(await screen.findByText("District news"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Duplicate" }));
+    await waitFor(() =>
+      expect(duplicate).toHaveBeenCalledWith("source-1", "csrf-token"),
+    );
+  });
+
+  it("confirms before deleting a Data Source", async () => {
+    const remove = vi
+      .spyOn(api, "deleteDataSource")
+      .mockResolvedValue(undefined);
+    const confirmed = vi.spyOn(window, "confirm").mockReturnValue(false);
+    renderPage();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Actions for District news" }),
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
+    expect(confirmed).toHaveBeenCalledWith("Delete District news?");
+    expect(remove).not.toHaveBeenCalled();
   });
 });
