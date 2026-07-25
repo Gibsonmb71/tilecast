@@ -24,6 +24,7 @@ import type {
   DataSource,
   DataSourceDefinition,
   DataSourceField,
+  DataSourceProvider,
   WidgetProvider,
   ClockWidgetConfig,
   DateWidgetConfig,
@@ -618,6 +619,10 @@ export function NativeAppEditor({
   const compatibleDataSources = (dataSources.data?.items ?? []).filter(
     (source) => (acceptedProviders[provider] ?? []).includes(source.provider),
   );
+  // The same acceptance list narrows what the picker's Connect flow may create, so an author
+  // cannot connect a provider this Widget would then refuse.
+  const acceptedCreateProviders = (acceptedProviders[provider] ??
+    []) as DataSourceProvider[];
   const selectedDataSourceId = [
     "ticker",
     "menu",
@@ -1121,6 +1126,7 @@ export function NativeAppEditor({
                 value={(configuration as TickerWidgetConfig).dataSourceId}
                 sources={compatibleDataSources}
                 definitions={sourceDefinitions}
+                createProviders={acceptedCreateProviders}
                 csrf={csrf}
                 disabled={readOnly}
                 onChange={(dataSourceId) =>
@@ -1212,6 +1218,7 @@ export function NativeAppEditor({
                 value={(configuration as DisplayWidgetConfig).dataSourceId}
                 sources={compatibleDataSources}
                 definitions={sourceDefinitions}
+                createProviders={acceptedCreateProviders}
                 csrf={csrf}
                 disabled={readOnly}
                 onChange={(dataSourceId) =>
@@ -1576,6 +1583,7 @@ export function NativeAppEditor({
                 value={(configuration as MetricWidgetConfig).dataSourceId}
                 sources={compatibleDataSources}
                 definitions={sourceDefinitions}
+                createProviders={acceptedCreateProviders}
                 csrf={csrf}
                 disabled={readOnly}
                 onChange={(dataSourceId) =>
@@ -1744,6 +1752,7 @@ export function NativeAppEditor({
                 value={(configuration as CardsWidgetConfig).dataSourceId}
                 sources={compatibleDataSources}
                 definitions={sourceDefinitions}
+                createProviders={acceptedCreateProviders}
                 csrf={csrf}
                 disabled={readOnly}
                 onChange={(dataSourceId) =>
@@ -1842,6 +1851,7 @@ export function NativeAppEditor({
                 value={(configuration as WeatherWidgetConfig).dataSourceId}
                 sources={compatibleDataSources}
                 definitions={sourceDefinitions}
+                createProviders={acceptedCreateProviders}
                 csrf={csrf}
                 disabled={readOnly}
                 onChange={(dataSourceId) =>
@@ -1903,6 +1913,7 @@ export function NativeAppEditor({
                 value={(configuration as SpotlightWidgetConfig).dataSourceId}
                 sources={compatibleDataSources}
                 definitions={sourceDefinitions}
+                createProviders={acceptedCreateProviders}
                 csrf={csrf}
                 disabled={readOnly}
                 onChange={(dataSourceId) =>
@@ -1966,6 +1977,7 @@ export function NativeAppEditor({
                 value={(configuration as StatGridWidgetConfig).dataSourceId}
                 sources={compatibleDataSources}
                 definitions={sourceDefinitions}
+                createProviders={acceptedCreateProviders}
                 csrf={csrf}
                 disabled={readOnly}
                 onChange={(dataSourceId) =>
@@ -2119,6 +2131,7 @@ export function NativeAppEditor({
                 value={(configuration as ChartWidgetConfig).dataSourceId}
                 sources={compatibleDataSources}
                 definitions={sourceDefinitions}
+                createProviders={acceptedCreateProviders}
                 csrf={csrf}
                 disabled={readOnly}
                 onChange={(dataSourceId) =>
@@ -2277,6 +2290,7 @@ export function NativeAppEditor({
                 value={(configuration as ProgressWidgetConfig).dataSourceId}
                 sources={compatibleDataSources}
                 definitions={sourceDefinitions}
+                createProviders={acceptedCreateProviders}
                 csrf={csrf}
                 disabled={readOnly}
                 onChange={(dataSourceId) =>
@@ -2360,6 +2374,7 @@ export function NativeAppEditor({
                 value={(configuration as TimelineWidgetConfig).dataSourceId}
                 sources={compatibleDataSources}
                 definitions={sourceDefinitions}
+                createProviders={acceptedCreateProviders}
                 csrf={csrf}
                 disabled={readOnly}
                 onChange={(dataSourceId) =>
@@ -3159,6 +3174,7 @@ function DataSourceSelect({
   value,
   sources,
   definitions,
+  createProviders,
   csrf,
   disabled,
   onChange,
@@ -3166,6 +3182,8 @@ function DataSourceSelect({
   value: string;
   sources: DataSource[];
   definitions?: DataSourceDefinition[];
+  // Providers this Widget accepts, so the Connect flow cannot create a source it would reject.
+  createProviders?: DataSourceProvider[];
   csrf?: string;
   disabled?: boolean;
   onChange: (value: string) => void;
@@ -3175,6 +3193,7 @@ function DataSourceSelect({
       value={value}
       sources={sources}
       definitions={definitions}
+      createProviders={createProviders}
       csrf={csrf}
       disabled={disabled}
       onChange={onChange}

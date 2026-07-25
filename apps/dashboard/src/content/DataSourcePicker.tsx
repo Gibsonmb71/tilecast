@@ -137,12 +137,18 @@ export function DataSourcePicker({
 }) {
   const [creating, setCreating] = useState<DataSourceProvider | "choose">();
   const selected = sources.find((source) => source.id === value);
+  // A referenced source that is not in the compatible list — deleted, or no longer accepted by
+  // this field — must be shown as missing rather than silently resolving to another source.
+  const missing = Boolean(value) && !selected;
   const canCreate = allowCreate && !disabled && Boolean(csrf);
 
   // Sample values come from the saved-source preview, fetched only for the selected source.
   // The list response carries no records, so previewing every row would be an N+1.
+  //
+  // The key deliberately matches the one the Widget editors use for the same request, so opening a
+  // Widget whose preview already fetched this payload reuses it instead of issuing a second call.
   const preview = useQuery({
-    queryKey: ["data-source-picker-preview", value],
+    queryKey: ["widget-data-source-preview", value],
     queryFn: () => api.previewSavedDataSource(value),
     enabled: Boolean(value),
     retry: false,
@@ -165,7 +171,10 @@ export function DataSourcePicker({
 
   return (
     <div className="data-source-picker">
-      {sources.length === 0 ? (
+      {/* With no compatible sources the empty state is the whole control — unless something is
+          still referenced, in which case the select must stay so the missing reference is visible
+          rather than replaced by a "nothing here yet" message. */}
+      {sources.length === 0 && !missing ? (
         <ConnectDataNotice
           message={emptyMessage}
           definitions={definitions}
@@ -189,6 +198,12 @@ export function DataSourcePicker({
                 onChange={(event) => onChange(event.target.value)}
               >
                 {allowEmpty && <option value="">Select data…</option>}
+                {/* A configuration or Layout binding can reference a source that has since been
+                    deleted. Without an option carrying that id the control would fall back to
+                    displaying the first source, claiming data the record does not actually use. */}
+                {missing && (
+                  <option value={value}>Unavailable Data Source</option>
+                )}
                 {sources.map((source) => (
                   <option key={source.id} value={source.id}>
                     {source.name} — {providerLabel(source.provider)}
@@ -199,6 +214,12 @@ export function DataSourcePicker({
             </div>
             {description && <small>{description}</small>}
           </label>
+          {missing && (
+            <p className="data-source-picker__missing" role="alert">
+              The Data Source this was built with is no longer available. Choose
+              another to keep this content working.
+            </p>
+          )}
           {selected && (
             <div className="data-source-picker__detail">
               <StatusDot

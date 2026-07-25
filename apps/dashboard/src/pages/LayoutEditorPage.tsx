@@ -2702,8 +2702,25 @@ function PlacementInspector({
   });
   const sourceDefinitions = contentDefinitions.data?.dataSources ?? [];
   const csrf = auth.status?.csrfToken ?? "";
-  const refreshDataSources = () =>
-    void queryClient.invalidateQueries({ queryKey: ["layout-data-sources"] });
+  // Connecting data from the empty state must also apply the binding, matching what selecting an
+  // existing source does. The refreshed list is awaited so the new source's own first field is
+  // used, rather than guessing a field name the source may not have.
+  const bindNewDataSource = async (
+    dataSourceId: string,
+    apply: (binding: { dataSourceId: string; field: string }) => void,
+  ) => {
+    await queryClient.invalidateQueries({ queryKey: ["layout-data-sources"] });
+    const refreshed = queryClient.getQueryData<{ items: DataSource[] }>([
+      "layout-data-sources",
+    ]);
+    const created = refreshed?.items?.find(
+      (source) => source.id === dataSourceId,
+    );
+    apply({
+      dataSourceId,
+      field: (created ? structuredFields(created)[0] : undefined) ?? "title",
+    });
+  };
   const primitive = item.primitive;
   return (
     <div className="layout-inspector">
@@ -3115,7 +3132,16 @@ function PlacementInspector({
               message="Connect data to hide this group when a field is empty."
               definitions={sourceDefinitions}
               csrf={csrf}
-              onCreated={refreshDataSources}
+              onCreated={(dataSourceId) =>
+                void bindNewDataSource(dataSourceId, (binding) =>
+                  update((target) => {
+                    target.primitive!.binding = {
+                      ...binding,
+                      hideWhenEmpty: true,
+                    };
+                  }),
+                )
+              }
             />
           ) : (
             <label className="field">
@@ -3191,7 +3217,16 @@ function PlacementInspector({
               message="Connect data to bind this text to a live field."
               definitions={sourceDefinitions}
               csrf={csrf}
-              onCreated={refreshDataSources}
+              onCreated={(dataSourceId) =>
+                void bindNewDataSource(dataSourceId, (binding) =>
+                  update((target) => {
+                    target.primitive!.binding = {
+                      ...binding,
+                      format: "text",
+                    };
+                  }),
+                )
+              }
             />
           ) : (
             <label className="field">

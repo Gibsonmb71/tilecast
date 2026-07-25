@@ -13,7 +13,11 @@ boundary; it stays exactly as it is.
 Phases are ordered by leverage and are independently shippable. Each phase leaves the app in a
 releasable state.
 
-## Current friction, with locations
+## Friction this plan addresses, as it stood before Phase 1
+
+Line references point at the code as it was when the plan was written. Rows 1, 2, 4, and 5 are
+resolved by Phase 1; row 3 is resolved by Phase 2. They are kept because they are the rationale for
+the phases below, not a list of open defects.
 
 | #   | Problem                                                                                                                        | Location                                                                                                                   |
 | --- | ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
@@ -85,10 +89,13 @@ the field name instead of only the `{{field}}` placeholder — `previewValues` i
   _sibling_ `data_source` field rather than the hardcoded `value.dataSourceId`. Add an explicit
   `dataSourceKey` to the field contract (`ContentDefinitionField`) naming which `data_source`
   control a field picker belongs to, defaulting to the single `data_source` field when a definition
-  has exactly one. Fall back to today's behavior when the key is absent so existing catalog
-  definitions keep working.
-- `GenericDefinitionEditors.tsx:43-46`: preview every source referenced by the configuration, not
-  just `configuration.dataSourceId`, and gate save on all of them.
+  has exactly one. A definition declaring several sources without saying which one a field picker
+  belongs to offers **no** fields, rather than silently listing another source's schema.
+- `GenericDefinitionEditors.tsx:43-46`: **fetch and gate on** every source referenced by the
+  configuration, not just `configuration.dataSourceId`, including sources nested inside a
+  `repeating_group`. Rendering stays single-source: the compiled presentation preview takes one
+  dataset, so it renders from the first declared source while all of them gate saving. Keying that
+  preview by dataset is deliberately out of scope here — see "As built".
 
 ### 1.4 Tests
 

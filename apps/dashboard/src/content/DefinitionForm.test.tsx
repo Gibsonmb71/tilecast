@@ -12,7 +12,11 @@ import type {
   DataSourceDefinition,
   DataSourceDetail,
 } from "../api/types";
-import { DefinitionForm, resolveDataSourceKey } from "./DefinitionForm";
+import {
+  DefinitionForm,
+  dataSourceKeysIn,
+  resolveDataSourceKey,
+} from "./DefinitionForm";
 
 afterEach(() => {
   cleanup();
@@ -101,6 +105,57 @@ function form(
   );
   return { ...result, onChange };
 }
+
+describe("dataSourceKeysIn", () => {
+  it("collects every Data Source a configuration references", () => {
+    expect(
+      dataSourceKeysIn(
+        [
+          { key: "primarySource", label: "Primary", control: "data_source" },
+          { key: "compareSource", label: "Compare", control: "data_source" },
+        ],
+        { primarySource: "a", compareSource: "b" },
+      ),
+    ).toEqual(["a", "b"]);
+  });
+
+  // itemFields is recursive, so a Data Source inside a repeating group must still be found; missing
+  // it would let the Widget editor save while that source's data was still loading.
+  it("finds Data Sources nested inside a repeating group", () => {
+    expect(
+      dataSourceKeysIn(
+        [
+          { key: "primarySource", label: "Primary", control: "data_source" },
+          {
+            key: "rows",
+            label: "Rows",
+            control: "repeating_group",
+            maximumItems: 4,
+            itemFields: [
+              { key: "rowSource", label: "Row data", control: "data_source" },
+            ],
+          },
+        ],
+        {
+          primarySource: "a",
+          rows: [{ rowSource: "b" }, { rowSource: "c" }, {}],
+        },
+      ),
+    ).toEqual(["a", "b", "c"]);
+  });
+
+  it("reports each source once even when several fields share it", () => {
+    expect(
+      dataSourceKeysIn(
+        [
+          { key: "one", label: "One", control: "data_source" },
+          { key: "two", label: "Two", control: "data_source" },
+        ],
+        { one: "same", two: "same" },
+      ),
+    ).toEqual(["same"]);
+  });
+});
 
 describe("resolveDataSourceKey", () => {
   const sourceField: ContentDefinitionField = {
@@ -233,6 +288,41 @@ describe("DefinitionForm data source controls", () => {
     expect(screen.getByRole("button", { name: /csv source/ })).toBeTruthy();
     // Form Data Sources are authored in the Forms portal, never through this editor.
     expect(screen.queryByRole("button", { name: /form source/ })).toBeNull();
+  });
+
+  // Without narrowing, an author could connect a provider the field then refuses, leaving them
+  // with a new Data Source that does not appear in the picker they created it from.
+  it("offers only providers the field accepts when connecting new data", async () => {
+    vi.spyOn(api, "contentDefinitions").mockResolvedValue(
+      catalog([
+        definition("csv", [{ key: "title", label: "Title", type: "text" }]),
+        definition("weather", [
+          { key: "temperature", label: "Temperature", type: "number" },
+        ]),
+      ]),
+    );
+    vi.spyOn(api, "listDataSources").mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      pageSize: 100,
+    });
+
+    form([
+      {
+        key: "dataSourceId",
+        label: "Data",
+        control: "data_source",
+        requiredFields: { temperature: "number" },
+      },
+    ]);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Connect new data/ }),
+    );
+
+    expect(screen.getByRole("button", { name: /weather source/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /csv source/ })).toBeNull();
   });
 
   it("resolves each field picker against its own Data Source", async () => {

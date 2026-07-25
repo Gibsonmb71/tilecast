@@ -761,6 +761,12 @@
   text-overflow: ellipsis;
 }
 
+.data-source-picker__missing {
+  margin: 0;
+  color: var(--tc-status-danger);
+  font-size: 13px;
+}
+
 .data-source-picker__empty {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr);

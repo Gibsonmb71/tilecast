@@ -150,6 +150,91 @@ describe("DataSourcePicker", () => {
     expect(screen.getByText("Ready · 12 records")).toBeTruthy();
   });
 
+  // Without an option carrying the stale id, the select would fall back to displaying the first
+  // source, claiming data the record does not actually reference.
+  it("reports a referenced source that is no longer available", () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <DataSourcePicker
+          value="deleted-source"
+          sources={[existing]}
+          definitions={[csvDefinition]}
+          csrf="csrf-token"
+          allowEmpty={false}
+          onChange={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+
+    const field = screen.getByText("Data Source").closest("label");
+    const select = field?.querySelector("select");
+    expect(select?.value).toBe("deleted-source");
+    expect(
+      Array.from(select?.options ?? []).map((option) => option.textContent),
+    ).toEqual(["Unavailable Data Source", "Lunch rows — CSV"]);
+    expect(screen.getByRole("alert")).toHaveTextContent("no longer available");
+  });
+
+  // With nothing compatible left, the empty state must not hide the fact that something is still
+  // referenced.
+  it("keeps the missing reference visible when no compatible source remains", () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <DataSourcePicker
+          value="deleted-source"
+          sources={[]}
+          definitions={[csvDefinition]}
+          csrf="csrf-token"
+          onChange={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(screen.queryByText("No compatible data connected yet")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /Connect new data/ }),
+    ).toBeTruthy();
+  });
+
+  it("offers only providers the consumer accepts when connecting new data", async () => {
+    const weatherDefinition: DataSourceDefinition = {
+      ...csvDefinition,
+      id: "weather",
+      name: "Weather",
+      description: "Cache a forecast.",
+    };
+    const onChange = vi.fn();
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <DataSourcePicker
+          value=""
+          sources={[]}
+          definitions={[csvDefinition, weatherDefinition]}
+          createProviders={["csv"]}
+          csrf="csrf-token"
+          onChange={onChange}
+        />
+      </QueryClientProvider>,
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /Connect new data/ }),
+    );
+
+    expect(screen.getByRole("button", { name: /CSV/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Weather/ })).toBeNull();
+  });
+
   it("does not offer creation to an author without write access", () => {
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },

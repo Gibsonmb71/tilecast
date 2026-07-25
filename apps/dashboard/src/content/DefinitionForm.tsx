@@ -36,14 +36,29 @@ export function resolveDataSourceKey(
 
 // dataSourceKeysIn lists every Data Source referenced by a configuration, so callers can
 // resolve, preview, and validate all of them rather than assuming a single `dataSourceId`.
+//
+// Fields nest: a `repeating_group` carries `itemFields`, and a Data Source control may live inside
+// one. Missing those would under-count the sources a Widget depends on, so preview and save gating
+// would pass while data was still in flight.
 export function dataSourceKeysIn(
   fields: ContentDefinitionField[],
   value: Values,
 ): string[] {
-  const ids = fields
-    .filter((field) => field.control === "data_source")
-    .map((field) => fieldText(value[field.key]))
-    .filter(Boolean);
+  const ids: string[] = [];
+  for (const field of fields) {
+    if (field.control === "data_source") {
+      const id = fieldText(value[field.key]);
+      if (id) ids.push(id);
+      continue;
+    }
+    if (field.control !== "repeating_group" || !field.itemFields?.length)
+      continue;
+    const items = Array.isArray(value[field.key])
+      ? (value[field.key] as Values[])
+      : [];
+    for (const item of items)
+      ids.push(...dataSourceKeysIn(field.itemFields, item ?? {}));
+  }
   return [...new Set(ids)];
 }
 
@@ -113,8 +128,24 @@ export function DefinitionForm({
   );
 }
 
-// compatibleSources applies a `data_source` control's declared acceptance rules: the dataset
-// kind it renders and any output fields it requires.
+// acceptsDefinition applies a `data_source` control's declared acceptance rules to a provider
+// definition: the dataset kind it renders and any output fields it requires.
+function acceptsDefinition(
+  field: ContentDefinitionField,
+  definition: DataSourceDefinition,
+) {
+  if (
+    field.acceptedDataSourceKinds?.length &&
+    !field.acceptedDataSourceKinds.includes(definition.outputSchema.kind)
+  )
+    return false;
+  return Object.entries(field.requiredFields ?? {}).every(([key, type]) =>
+    definition.outputSchema.fields.some(
+      (output) => output.key === key && output.type === type,
+    ),
+  );
+}
+
 function compatibleSources(
   field: ContentDefinitionField,
   dataSources: DataSource[],
@@ -124,18 +155,19 @@ function compatibleSources(
     const definition = dataSourceDefinitions.find(
       (candidate) => candidate.id === source.provider,
     );
-    if (!definition) return false;
-    if (
-      field.acceptedDataSourceKinds?.length &&
-      !field.acceptedDataSourceKinds.includes(definition.outputSchema.kind)
-    )
-      return false;
-    return Object.entries(field.requiredFields ?? {}).every(([key, type]) =>
-      definition.outputSchema.fields.some(
-        (output) => output.key === key && output.type === type,
-      ),
-    );
+    return definition ? acceptsDefinition(field, definition) : false;
   });
+}
+
+// creatableProviders narrows what the picker's Connect flow offers to providers this field would
+// actually accept, so an author cannot create a Data Source the field then rejects.
+function creatableProviders(
+  field: ContentDefinitionField,
+  dataSourceDefinitions: DataSourceDefinition[],
+) {
+  return dataSourceDefinitions
+    .filter((definition) => acceptsDefinition(field, definition))
+    .map((definition) => definition.id);
 }
 
 function DefinitionControl({
@@ -191,6 +223,7 @@ function DefinitionControl({
         value={fieldText(value)}
         sources={compatibleSources(field, dataSources, dataSourceDefinitions)}
         definitions={dataSourceDefinitions}
+        createProviders={creatableProviders(field, dataSourceDefinitions)}
         csrf={csrf}
         disabled={readOnly}
         required={field.required}
