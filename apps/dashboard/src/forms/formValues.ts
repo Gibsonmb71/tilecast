@@ -123,29 +123,40 @@ export function validateSubmission(
 ): Record<string, string> {
   const errors: Record<string, string> = {};
   for (const field of schema.fields) {
-    if (isPresentationControl(field.control)) continue;
-    if (field.control === "image") {
-      if (
-        field.required &&
-        requireComplete &&
-        !satisfiedImages.has(field.key)
-      ) {
-        errors[field.key] = `${field.label} requires an image.`;
-      }
-      continue;
-    }
-    const value = values[field.key];
-    const empty = isEmpty(field, value);
-    if (empty) {
-      if (field.required && requireComplete) {
-        errors[field.key] = `${field.label} is required.`;
-      }
-      continue;
-    }
-    const error = validateField(field, value);
+    const error = fieldError(
+      field,
+      values[field.key],
+      requireComplete,
+      satisfiedImages,
+    );
     if (error) errors[field.key] = error;
   }
   return errors;
+}
+
+// fieldError validates one field in isolation using exactly the rules validateSubmission applies to
+// it. The editor calls this as the submitter edits so a resolved error clears immediately instead of
+// lingering until the next submit attempt.
+export function fieldError(
+  field: FormField,
+  value: FormValues[string],
+  requireComplete: boolean,
+  satisfiedImages: Set<string>,
+): string | undefined {
+  if (isPresentationControl(field.control)) return undefined;
+  if (field.control === "image") {
+    if (field.required && requireComplete && !satisfiedImages.has(field.key)) {
+      return `${field.label} requires an image.`;
+    }
+    return undefined;
+  }
+  if (isEmpty(field, value)) {
+    if (field.required && requireComplete) {
+      return `${field.label} is required.`;
+    }
+    return undefined;
+  }
+  return validateField(field, value);
 }
 
 function isEmpty(field: FormField, value: FormValues[string]): boolean {

@@ -44,4 +44,100 @@ describe("FormRenderer", () => {
     render(<FormRenderer schema={schema} readOnly />);
     expect(screen.getByLabelText(/Title/)).toBeDisabled();
   });
+
+  it("announces a field error through the control it belongs to", () => {
+    render(
+      <FormRenderer
+        schema={schema}
+        idPrefix="t"
+        onChange={() => {}}
+        errors={{ title: "Title is required." }}
+      />,
+    );
+    const title = screen.getByLabelText(/Title/);
+    expect(title).toHaveAttribute("aria-invalid", "true");
+    // The error text must be reachable from the control, not just visually adjacent to it.
+    expect(title).toHaveAccessibleDescription(/Title is required\./);
+    // Untouched fields stay clean.
+    expect(screen.getByLabelText(/Body/)).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("gives a multi-select native group semantics instead of a label pointing at a div", () => {
+    render(
+      <FormRenderer
+        schema={{
+          fields: [
+            {
+              key: "tags",
+              label: "Tags",
+              control: "multi_select",
+              options: [
+                { value: "a", label: "Alpha" },
+                { value: "b", label: "Beta" },
+              ],
+            },
+          ],
+        }}
+        onChange={() => {}}
+      />,
+    );
+    const group = screen.getByRole("group", { name: "Tags" });
+    expect(group.tagName).toBe("FIELDSET");
+    expect(screen.getByRole("checkbox", { name: "Alpha" })).toBeInTheDocument();
+  });
+
+  it("labels a boolean field on its own checkbox", () => {
+    render(
+      <FormRenderer
+        schema={{
+          fields: [{ key: "ok", label: "Approved", control: "boolean" }],
+        }}
+        onChange={() => {}}
+      />,
+    );
+    expect(
+      screen.getByRole("checkbox", { name: "Approved" }),
+    ).not.toBeChecked();
+  });
+
+  it("shows the remaining character budget when a field is capped", () => {
+    render(
+      <FormRenderer
+        schema={{
+          fields: [
+            {
+              key: "note",
+              label: "Note",
+              control: "short_text",
+              maxLength: 10,
+            },
+          ],
+        }}
+        values={{ note: "abc" }}
+        onChange={() => {}}
+      />,
+    );
+    // The control hard-caps typing, so the limit has to be visible before it is hit.
+    expect(screen.getByText("7 of 10 characters left")).toBeInTheDocument();
+  });
+
+  it("does not offer a character budget on a read-only render", () => {
+    render(
+      <FormRenderer
+        schema={{
+          fields: [
+            {
+              key: "note",
+              label: "Note",
+              control: "short_text",
+              maxLength: 10,
+            },
+          ],
+        }}
+        values={{ note: "abc" }}
+        readOnly
+      />,
+    );
+    expect(screen.queryByText(/characters left/)).not.toBeInTheDocument();
+  });
 });

@@ -272,11 +272,90 @@ describe("Forms portal", () => {
     const user = userEvent.setup();
     renderPortal("/forms/f1/new");
 
-    await screen.findByLabelText(/Title/);
+    const title = await screen.findByLabelText(/Title/);
     await user.click(screen.getByRole("button", { name: "Submit" }));
 
-    expect(await screen.findByText("Title is required.")).toBeInTheDocument();
+    // The message appears twice: in the error summary (as a jump link) and beneath the field itself.
+    expect(await screen.findAllByText("Title is required.")).toHaveLength(2);
     expect(create).not.toHaveBeenCalled();
+    // A rejected submit puts the cursor on the offending field rather than leaving the submitter to
+    // hunt for it.
+    expect(title).toHaveFocus();
+  });
+
+  it("clears a field error as soon as the submitter corrects it", async () => {
+    mockAuth();
+    vi.spyOn(api, "getForm").mockResolvedValue(form(["submit"]));
+    const user = userEvent.setup();
+    renderPortal("/forms/f1/new");
+
+    const title = await screen.findByLabelText(/Title/);
+    await user.click(screen.getByRole("button", { name: "Submit" }));
+    expect(await screen.findAllByText("Title is required.")).toHaveLength(2);
+
+    // Fixing the field resolves it immediately; the submitter should not have to press Submit again
+    // to find out the complaint is gone.
+    await user.type(title, "Big news");
+    await waitFor(() =>
+      expect(screen.queryByText("Title is required.")).not.toBeInTheDocument(),
+    );
+    expect(title).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("submits when Enter is pressed inside a field", async () => {
+    mockAuth();
+    vi.spyOn(api, "getForm").mockResolvedValue(form(["submit"]));
+    vi.spyOn(api, "listFormRecords").mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      pageSize: 100,
+    });
+    const create = vi
+      .spyOn(api, "createFormRecord")
+      .mockResolvedValue(record({ id: "rec9", version: 1, state: "draft" }));
+    vi.spyOn(api, "getFormRecord").mockResolvedValue(
+      detail({ id: "rec9", version: 1, state: "draft" }),
+    );
+    const transition = vi
+      .spyOn(api, "transitionFormRecord")
+      .mockResolvedValue(
+        record({ id: "rec9", version: 2, state: "submitted" }),
+      );
+    const user = userEvent.setup();
+    renderPortal("/forms/f1/new");
+
+    await user.type(await screen.findByLabelText(/Title/), "Big news{Enter}");
+
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    await waitFor(() => expect(transition).toHaveBeenCalled());
+  });
+
+  it("confirms the submission landed after returning to the form", async () => {
+    mockAuth();
+    vi.spyOn(api, "getForm").mockResolvedValue(form(["submit"]));
+    vi.spyOn(api, "listFormRecords").mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      pageSize: 100,
+    });
+    vi.spyOn(api, "createFormRecord").mockResolvedValue(
+      record({ id: "rec9", version: 1, state: "draft" }),
+    );
+    vi.spyOn(api, "getFormRecord").mockResolvedValue(
+      detail({ id: "rec9", version: 1, state: "draft" }),
+    );
+    vi.spyOn(api, "transitionFormRecord").mockResolvedValue(
+      record({ id: "rec9", version: 2, state: "submitted" }),
+    );
+    const user = userEvent.setup();
+    renderPortal("/forms/f1/new");
+
+    await user.type(await screen.findByLabelText(/Title/), "Big news");
+    await user.click(screen.getByRole("button", { name: "Submit" }));
+
+    expect(await screen.findByText("Submission sent")).toBeInTheDocument();
   });
 
   it("creates a draft and submits via the server-provided transition", async () => {
