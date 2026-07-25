@@ -31,6 +31,12 @@ type Playlist struct {
 	// Data Source through its Widgets and playlists to the screens actually displaying it. It
 	// mirrors the Layout usage shape and is populated on the detail read only.
 	Usage Usage `json:"usage"`
+	// DataSourceIDs are the Data Sources this playlist reaches through its items: the ones its
+	// Widgets read, plus the ones any Layout it embeds depends on. A Layout already stores its own
+	// dependencies, but a playlist's are only discoverable by looking through each item, which
+	// Studio cannot do without one detail request per item. Only the IDs are returned; the caller
+	// already reads the Data Source list to resolve names and refresh status. Detail read only.
+	DataSourceIDs []uuid.UUID `json:"dataSourceIds"`
 }
 
 type LayoutUsage struct {

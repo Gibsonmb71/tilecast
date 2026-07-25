@@ -100,6 +100,9 @@ export type Playlist = {
     screens: { id: string; name: string }[];
     schedules: { id: string; name: string }[];
   };
+  // Data Sources reached through this playlist's items — those its Widgets read plus those any
+  // embedded Layout depends on. Only IDs; names and refresh status come from the Data Source list.
+  dataSourceIds?: string[];
 };
 
 export type PlaylistList = {
