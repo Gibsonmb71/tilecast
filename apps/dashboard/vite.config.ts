@@ -1,4 +1,6 @@
-import { defineConfig } from "vite";
+// vitest/config re-exports Vite's defineConfig with the `test` key typed, so the shared test
+// setup below is checked rather than silently ignored.
+import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
 export default defineConfig({
@@ -13,4 +15,5 @@ export default defineConfig({
     },
   },
   build: { sourcemap: true },
+  test: { setupFiles: ["./src/testSetup.ts"] },
 });
