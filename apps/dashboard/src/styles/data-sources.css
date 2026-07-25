@@ -1072,6 +1072,7 @@
   align-items: center;
   justify-content: center;
   padding: var(--tc-space-4);
+  background: var(--tc-overlay-scrim);
   backdrop-filter: blur(2px);
 }
 
@@ -1196,6 +1197,7 @@
   align-items: center;
   justify-content: center;
   padding: var(--tc-space-4);
+  background: var(--tc-overlay-scrim);
   backdrop-filter: blur(2px);
 }
 
