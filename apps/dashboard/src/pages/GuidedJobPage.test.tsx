@@ -34,12 +34,28 @@ const playlistRecord = {
   items: [],
 } as unknown as Playlist;
 
-function flowAt(url: string, role: "owner" | "viewer" = "owner") {
-  vi.spyOn(api, "screens").mockResolvedValue({
-    items: [screenRecord],
-    total: 1,
-  });
-  vi.spyOn(api, "asset").mockResolvedValue(widgetRecord);
+function flowAt(
+  url: string,
+  role: "owner" | "viewer" = "owner",
+  options: {
+    screens?: Screen[];
+    screensError?: boolean;
+    widgetError?: boolean;
+  } = {},
+) {
+  const screensRequest = vi.spyOn(api, "screens");
+  if (options.screensError) {
+    screensRequest.mockRejectedValue(new Error("screens unavailable"));
+  } else {
+    const items = options.screens ?? [screenRecord];
+    screensRequest.mockResolvedValue({ items, total: items.length });
+  }
+  const widgetRequest = vi.spyOn(api, "asset");
+  if (options.widgetError) {
+    widgetRequest.mockRejectedValue(new Error("widget unavailable"));
+  } else {
+    widgetRequest.mockResolvedValue(widgetRecord);
+  }
   vi.spyOn(api, "authStatus").mockResolvedValue({
     setupRequired: false,
     authenticated: true,
@@ -91,6 +107,52 @@ describe("GuidedJobPage", () => {
     flowAt("/start/lunch-menu?screen=screen-1");
 
     expect(await screen.findByText("Build the menu board")).toBeTruthy();
+  });
+
+  it("returns to screen selection when changing the first step", async () => {
+    flowAt("/start/lunch-menu?screen=screen-1");
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Change" }),
+    );
+
+    expect(screen.getByTestId("path")).toHaveTextContent("/start/lunch-menu");
+    expect(await screen.findByRole("combobox")).toBeTruthy();
+  });
+
+  it("reports a screen request failure instead of an empty screen list", async () => {
+    flowAt("/start/lunch-menu", "owner", { screensError: true });
+
+    expect(await screen.findByText(/Screens could not be loaded/)).toBeTruthy();
+    expect(screen.queryByText(/No screens are paired yet/)).toBeNull();
+  });
+
+  it("reports a Widget request failure before publishing", async () => {
+    flowAt("/start/lunch-menu?screen=screen-1&widget=widget-1", "owner", {
+      widgetError: true,
+    });
+
+    expect(
+      await screen.findByText(/The Widget could not be loaded/),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: /Publish to the screen/ }),
+    ).toBeDisabled();
+  });
+
+  it("does not publish when the selected screen no longer exists", async () => {
+    const createPlaylist = vi.spyOn(api, "createPlaylist");
+    flowAt("/start/lunch-menu?screen=missing&widget=widget-1", "owner", {
+      screens: [],
+    });
+
+    expect(
+      await screen.findByText(/The selected screen could not be found/),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: /Create the playlist/ }),
+    ).toBeDisabled();
+    expect(createPlaylist).not.toHaveBeenCalled();
   });
 
   it("hands the chosen screen to the Widget editor as a return path", async () => {
@@ -145,6 +207,9 @@ describe("GuidedJobPage", () => {
     expect(
       await screen.findByText(/Cafeteria TV is now playing Today's Lunch/),
     ).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: /Open the Widget/ }),
+    ).toHaveAttribute("href", "/widgets/widget-1");
   });
 
   // Assignment is refused on its own — most often an out-of-date Player. The playlist still

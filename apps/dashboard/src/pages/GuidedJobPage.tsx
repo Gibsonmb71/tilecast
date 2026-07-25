@@ -46,11 +46,35 @@ export function GuidedJobPage() {
   const targetScreen = screens.data?.items?.find(
     (screen) => screen.id === screenChoice,
   );
+  const needsSelectedScreen =
+    Boolean(screenChoice) && screenChoice !== decideLater;
+  const assignmentTarget =
+    screenChoice === decideLater ? undefined : targetScreen;
+  const screenSelectionError = !needsSelectedScreen
+    ? undefined
+    : screens.isError
+      ? "Screens could not be loaded. Refresh the page or check the Tilecast server connection."
+      : !screens.isLoading && !targetScreen
+        ? "The selected screen could not be found. It may have been removed."
+        : undefined;
 
   const publish = useMutation({
     mutationFn: async (): Promise<Published> => {
+      if (widget.isError)
+        throw new Error(
+          "The Widget could not be loaded. Refresh the page or check the Tilecast server connection.",
+        );
       const built = widget.data;
       if (!built) throw new Error("The Widget is not ready yet.");
+      if (screenChoice !== decideLater) {
+        if (screens.isLoading)
+          throw new Error("The selected screen is still loading.");
+        if (screenSelectionError) throw new Error(screenSelectionError);
+        if (!assignmentTarget)
+          throw new Error(
+            "The selected screen could not be found. It may have been removed.",
+          );
+      }
       const playlist = await api.createPlaylist(
         { name: built.name, description: job?.outcome ?? "" },
         csrf,
@@ -68,12 +92,14 @@ export function GuidedJobPage() {
         },
         csrf,
       );
-      if (!targetScreen) return { playlist };
+      // A missing selected screen was rejected before creating the playlist, so only the explicit
+      // "decide later" choice can reach this no-assignment result.
+      if (!assignmentTarget) return { playlist };
       // Assignment can be refused on its own — most often because the screen's Player is too old
       // for the content. The playlist still exists, so that is reported as a partial result rather
       // than discarding what was built.
       try {
-        await api.assignPlaylist(targetScreen.id, playlist.id, csrf);
+        await api.assignPlaylist(assignmentTarget.id, playlist.id, csrf);
         return { playlist };
       } catch (error) {
         return {
@@ -119,6 +145,16 @@ export function GuidedJobPage() {
       { replace: true },
     );
   };
+  const clearScreen = () => {
+    setSearch(
+      (current) => {
+        const next = new URLSearchParams(current);
+        next.delete("screen");
+        return next;
+      },
+      { replace: true },
+    );
+  };
 
   const step: "where" | "build" | "publish" = !screenChoice
     ? "where"
@@ -145,12 +181,11 @@ export function GuidedJobPage() {
                 ? targetScreen.name
                 : undefined
           }
-          onReopen={
-            step === "where" ? undefined : () => chooseScreen(screenChoice!)
-          }
+          onReopen={step === "where" ? undefined : clearScreen}
         >
           <WhereStep
             loading={screens.isLoading}
+            error={screens.isError}
             screens={screens.data?.items ?? []}
             onChoose={chooseScreen}
           />
@@ -198,7 +233,12 @@ export function GuidedJobPage() {
           {step === "publish" && (
             <PublishStep
               screenName={targetScreen?.name}
+              screenLoading={needsSelectedScreen && screens.isLoading}
+              screenError={screenSelectionError}
+              widgetId={widgetId ?? undefined}
               widgetName={widget.data?.name}
+              widgetLoading={widget.isLoading}
+              widgetError={widget.isError ? widget.error : undefined}
               published={published}
               pending={publish.isPending}
               error={publish.error}
@@ -253,15 +293,24 @@ function GuidedStep({
 
 function WhereStep({
   loading,
+  error,
   screens,
   onChoose,
 }: {
   loading: boolean;
+  error: boolean;
   screens: { id: string; name: string }[];
   onChoose: (value: string) => void;
 }) {
   const [value, setValue] = useState("");
   if (loading) return <div className="table-loading">Loading screens…</div>;
+  if (error)
+    return (
+      <Notice variant="danger">
+        Screens could not be loaded. Refresh the page or check the Tilecast
+        server connection.
+      </Notice>
+    );
   if (screens.length === 0)
     return (
       <div className="guided-job__action">
@@ -313,14 +362,24 @@ function WhereStep({
 
 function PublishStep({
   screenName,
+  screenLoading,
+  screenError,
+  widgetId,
   widgetName,
+  widgetLoading,
+  widgetError,
   published,
   pending,
   error,
   onPublish,
 }: {
   screenName?: string;
+  screenLoading: boolean;
+  screenError?: string;
+  widgetId?: string;
   widgetName?: string;
+  widgetLoading: boolean;
+  widgetError: unknown;
   published?: Published;
   pending: boolean;
   error: unknown;
@@ -350,7 +409,10 @@ function PublishStep({
           >
             Open the playlist
           </Link>
-          <Link className="button button--secondary" to="/widgets">
+          <Link
+            className="button button--secondary"
+            to={widgetId ? `/widgets/${widgetId}` : "/widgets"}
+          >
             Open the Widget
           </Link>
           <Link className="button button--quiet" to="/">
@@ -366,6 +428,19 @@ function PublishStep({
         This creates a playlist containing <strong>{widgetName}</strong>
         {screenName ? ` and assigns it to ${screenName}.` : "."}
       </p>
+      {screenLoading && (
+        <div className="table-loading">Loading the selected screen…</div>
+      )}
+      {screenError && <Notice variant="danger">{screenError}</Notice>}
+      {widgetLoading && (
+        <div className="table-loading">Loading the Widget…</div>
+      )}
+      {Boolean(widgetError) && (
+        <Notice variant="danger">
+          The Widget could not be loaded. Refresh the page or check the Tilecast
+          server connection.
+        </Notice>
+      )}
       {Boolean(error) && (
         <Notice variant="danger">
           {error instanceof Error
@@ -373,7 +448,18 @@ function PublishStep({
             : "This could not be published."}
         </Notice>
       )}
-      <Button variant="primary" loading={pending} onClick={onPublish}>
+      <Button
+        variant="primary"
+        loading={pending}
+        disabled={
+          screenLoading ||
+          Boolean(screenError) ||
+          widgetLoading ||
+          Boolean(widgetError) ||
+          !widgetName
+        }
+        onClick={onPublish}
+      >
         {screenName ? "Publish to the screen" : "Create the playlist"}
       </Button>
     </div>

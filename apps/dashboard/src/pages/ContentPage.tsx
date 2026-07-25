@@ -71,7 +71,7 @@ const resumeKey = "tilecast.resumable-uploads.v1";
 const chunkSize = 5 * 1024 * 1024;
 
 export function canManageContent(user?: User) {
-  return user?.role !== "viewer";
+  return Boolean(user && user.role !== "viewer");
 }
 
 export function statusLabel(status: AssetStatus) {

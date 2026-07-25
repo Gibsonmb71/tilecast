@@ -15,6 +15,7 @@ describe("inAppPath", () => {
   // These arrive from the URL, so an attacker-supplied value must not become a navigation target.
   it.each<string | null>([
     "//evil.example.com", // protocol-relative
+    "/\\evil.example.com", // browser-normalized protocol-relative path
     "https://evil.example.com", // absolute URL
     "javascript:alert(1)", // scheme
     "widgets", // relative path
@@ -47,6 +48,18 @@ describe("withParam", () => {
   it("encodes values that need it", () => {
     expect(withParam("/start/x", "name", "a b&c")).toBe(
       "/start/x?name=a+b%26c",
+    );
+  });
+
+  it("preserves a fragment", () => {
+    expect(withParam("/start/x?screen=s1#publish", "widget", "w1")).toBe(
+      "/start/x?screen=s1&widget=w1#publish",
+    );
+  });
+
+  it("preserves a question mark inside an existing query value", () => {
+    expect(withParam("/start/x?next=/one?two", "widget", "w1")).toBe(
+      "/start/x?next=%2Fone%3Ftwo&widget=w1",
     );
   });
 });
