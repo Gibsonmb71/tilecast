@@ -1,4 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useRef, useState, type ReactNode } from "react";
 import { api, ApiError } from "../api/client";
 import type {
@@ -7,7 +12,7 @@ import type {
   DataSourceDetail,
   WidgetDefinition,
 } from "../api/types";
-import { DefinitionForm } from "./DefinitionForm";
+import { DefinitionForm, dataSourceKeysIn } from "./DefinitionForm";
 import { DeclarativePresentationPreview } from "./SourceEditors";
 import { captureWidgetPreview } from "./widgetPreviewCapture";
 
@@ -40,23 +45,26 @@ export function GenericWidgetEditor({
     queryFn: () => api.compileWidgetPreview(definition.id, configuration, csrf),
     retry: false,
   });
-  const dataSourceId =
-    typeof configuration.dataSourceId === "string"
-      ? configuration.dataSourceId
-      : "";
-  const sourcePreview = useQuery({
-    queryKey: ["widget-data-source-preview", dataSourceId],
-    queryFn: () => api.previewSavedDataSource(dataSourceId),
-    enabled: Boolean(dataSourceId),
-    retry: false,
+  // Every `data_source` control in the definition is followed, not just a field literally named
+  // `dataSourceId`, because a Widget may reference more than one Data Source. The first declared
+  // source drives the rendered preview; all of them gate saving so the captured thumbnail is
+  // never uploaded with data still in flight.
+  const dataSourceIds = dataSourceKeysIn(
+    definition.configurationSchema.fields,
+    configuration,
+  );
+  const sourcePreviews = useQueries({
+    queries: dataSourceIds.map((id) => ({
+      queryKey: ["widget-data-source-preview", id],
+      queryFn: () => api.previewSavedDataSource(id),
+      retry: false,
+    })),
   });
+  const sourcesLoading = sourcePreviews.some((preview) => preview.isLoading);
+  const primarySourcePreview = sourcePreviews[0]?.data;
   const save = useMutation({
     mutationFn: async () => {
-      if (
-        !previewRef.current ||
-        !compiledPreview.data ||
-        (dataSourceId && sourcePreview.isLoading)
-      )
+      if (!previewRef.current || !compiledPreview.data || sourcesLoading)
         throw new Error("Wait for the Widget preview before saving.");
       const previewImage = await captureWidgetPreview(previewRef.current);
       const input = {
@@ -90,10 +98,7 @@ export function GenericWidgetEditor({
       setDetail={setDescription}
       readOnly={readOnly}
       pending={save.isPending}
-      saveDisabled={
-        !compiledPreview.data ||
-        Boolean(dataSourceId && sourcePreview.isLoading)
-      }
+      saveDisabled={!compiledPreview.data || sourcesLoading}
       error={save.error}
       onClose={onClose}
       onSave={() => save.mutate()}
@@ -104,6 +109,7 @@ export function GenericWidgetEditor({
         value={configuration}
         onChange={setConfiguration}
         readOnly={readOnly}
+        csrf={csrf}
       />
       <div
         ref={previewRef}
@@ -112,7 +118,7 @@ export function GenericWidgetEditor({
         {compiledPreview.data ? (
           <DeclarativePresentationPreview
             presentation={compiledPreview.data}
-            source={sourcePreview.data}
+            source={primarySourcePreview}
             assetImageUrl={
               typeof configuration.imageAssetId === "string" &&
               configuration.imageAssetId
@@ -189,6 +195,7 @@ export function GenericDataSourceEditor({
         value={configuration}
         onChange={setConfiguration}
         readOnly={readOnly}
+        csrf={csrf}
       />
     </GenericEditorShell>
   );

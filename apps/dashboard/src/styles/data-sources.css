@@ -698,3 +698,146 @@
     width: 100%;
   }
 }
+
+/* DataSourcePicker: the shared control for choosing the data behind a Widget or a Layout text
+   binding. The empty state carries a Connect action instead of leaving a control disabled. */
+.data-source-picker {
+  display: grid;
+  gap: var(--tc-space-2);
+  min-width: 0;
+}
+
+.data-source-picker__row {
+  display: flex;
+  gap: var(--tc-space-2);
+  align-items: center;
+  min-width: 0;
+}
+
+.data-source-picker__row select {
+  flex: 1;
+  min-width: 0;
+}
+
+.data-source-picker__row .button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.data-source-picker__detail {
+  display: grid;
+  gap: var(--tc-space-2);
+  padding: var(--tc-space-3);
+  background: var(--tc-bg-subtle);
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-panel);
+}
+
+.data-source-picker__samples {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--tc-space-2);
+  margin: 0;
+  min-width: 0;
+}
+
+.data-source-picker__samples div {
+  min-width: 0;
+}
+
+.data-source-picker__samples dt {
+  color: var(--tc-text-secondary);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.data-source-picker__samples dd {
+  margin: 0;
+  overflow: hidden;
+  color: var(--tc-text-primary);
+  font-size: 13px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.data-source-picker__missing {
+  margin: 0;
+  color: var(--tc-status-danger);
+  font-size: 13px;
+}
+
+.data-source-picker__empty {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: var(--tc-space-2) var(--tc-space-3);
+  align-items: start;
+  padding: var(--tc-space-4);
+  background: var(--tc-bg-subtle);
+  border: 1px dashed var(--tc-border-default);
+  border-radius: var(--tc-radius-panel);
+}
+
+.data-source-picker__empty-icon {
+  display: grid;
+  place-items: center;
+  color: var(--tc-text-secondary);
+}
+
+.data-source-picker__empty strong {
+  display: block;
+}
+
+.data-source-picker__empty p {
+  margin: var(--tc-space-1) 0 0;
+  color: var(--tc-text-secondary);
+  font-size: 13px;
+}
+
+.data-source-picker__empty .button {
+  grid-column: 2;
+  justify-self: start;
+}
+
+/* The Connect flow's provider chooser, shown before the ordinary Data Source editor. */
+.data-source-connect__choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--tc-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.data-source-connect__choices button {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: var(--tc-space-3);
+  align-items: center;
+  width: 100%;
+  padding: var(--tc-space-3);
+  background: var(--tc-bg-surface);
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-panel);
+  text-align: start;
+  cursor: pointer;
+}
+
+.data-source-connect__choices button:hover {
+  background: var(--tc-bg-subtle);
+}
+
+.data-source-connect__choices button > span:last-child {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.data-source-connect__choices small {
+  overflow: hidden;
+  color: var(--tc-text-secondary);
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}

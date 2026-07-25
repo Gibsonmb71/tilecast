@@ -5,8 +5,10 @@ import type {
   ContentDefinitionField,
   DataSource,
   DataSourceDefinition,
+  DataSourceField,
 } from "../api/types";
 import { Select } from "../components/ui";
+import { DataSourcePicker } from "./DataSourcePicker";
 
 type Values = Record<string, unknown>;
 
@@ -16,28 +18,74 @@ function fieldText(value: unknown) {
     : "";
 }
 
+// resolveDataSourceKey returns which `data_source` control supplies the field list for a
+// `data_source_field` control. An explicit `dataSourceKey` wins; otherwise a definition with
+// exactly one Data Source control is unambiguous. When a definition declares several and the
+// field does not say which, there is no correct answer, so no fields are offered rather than
+// silently listing another source's schema.
+export function resolveDataSourceKey(
+  field: ContentDefinitionField,
+  fields: ContentDefinitionField[],
+): string | undefined {
+  if (field.dataSourceKey) return field.dataSourceKey;
+  const sourceFields = fields.filter(
+    (candidate) => candidate.control === "data_source",
+  );
+  return sourceFields.length === 1 ? sourceFields[0]?.key : undefined;
+}
+
+// dataSourceKeysIn lists every Data Source referenced by a configuration, so callers can
+// resolve, preview, and validate all of them rather than assuming a single `dataSourceId`.
+//
+// Fields nest: a `repeating_group` carries `itemFields`, and a Data Source control may live inside
+// one. Missing those would under-count the sources a Widget depends on, so preview and save gating
+// would pass while data was still in flight.
+export function dataSourceKeysIn(
+  fields: ContentDefinitionField[],
+  value: Values,
+): string[] {
+  const ids: string[] = [];
+  for (const field of fields) {
+    if (field.control === "data_source") {
+      const id = fieldText(value[field.key]);
+      if (id) ids.push(id);
+      continue;
+    }
+    if (field.control !== "repeating_group" || !field.itemFields?.length)
+      continue;
+    const items = Array.isArray(value[field.key])
+      ? (value[field.key] as Values[])
+      : [];
+    for (const item of items)
+      ids.push(...dataSourceKeysIn(field.itemFields, item ?? {}));
+  }
+  return [...new Set(ids)];
+}
+
 export function DefinitionForm({
   fields,
   value,
   onChange,
   readOnly = false,
+  csrf,
 }: {
   fields: ContentDefinitionField[];
   value: Values;
   onChange: (value: Values) => void;
   readOnly?: boolean;
+  csrf?: string;
 }) {
+  const needsDataSources = fields.some(
+    (field) =>
+      field.control === "data_source" || field.control === "data_source_field",
+  );
   const dataSources = useQuery({
     queryKey: ["definition-form-data-sources"],
     queryFn: () =>
       api.listDataSources(
         new URLSearchParams({ page: "1", pageSize: "100", sort: "name" }),
       ),
-    enabled: fields.some(
-      (field) =>
-        field.control === "data_source" ||
-        field.control === "data_source_field",
-    ),
+    enabled: needsDataSources,
   });
   const definitions = useQuery({
     queryKey: ["content-definitions"],
@@ -56,12 +104,6 @@ export function DefinitionForm({
       ),
     enabled: fields.some((field) => field.control === "media_asset"),
   });
-  const selectedSourceID = fieldText(value.dataSourceId);
-  const selectedSource = useQuery({
-    queryKey: ["definition-form-data-source", selectedSourceID],
-    queryFn: () => api.getDataSource(selectedSourceID),
-    enabled: Boolean(selectedSourceID),
-  });
   const set = (key: string, next: unknown) =>
     onChange({ ...value, [key]: next });
 
@@ -71,12 +113,14 @@ export function DefinitionForm({
         <DefinitionControl
           key={field.key}
           field={field}
+          fields={fields}
+          values={value}
           value={value[field.key]}
           setValue={(next) => set(field.key, next)}
           readOnly={readOnly}
+          csrf={csrf}
           dataSources={dataSources.data?.items ?? []}
           dataSourceDefinitions={definitions.data?.dataSources ?? []}
-          dataSourceFields={selectedSource.data?.fields ?? []}
           assets={assets.data?.items ?? []}
         />
       ))}
@@ -84,25 +128,83 @@ export function DefinitionForm({
   );
 }
 
+// acceptsDefinition applies a `data_source` control's declared acceptance rules to a provider
+// definition: the dataset kind it renders and any output fields it requires.
+function acceptsDefinition(
+  field: ContentDefinitionField,
+  definition: DataSourceDefinition,
+) {
+  if (
+    field.acceptedDataSourceKinds?.length &&
+    !field.acceptedDataSourceKinds.includes(definition.outputSchema.kind)
+  )
+    return false;
+  return Object.entries(field.requiredFields ?? {}).every(([key, type]) =>
+    definition.outputSchema.fields.some(
+      (output) => output.key === key && output.type === type,
+    ),
+  );
+}
+
+function compatibleSources(
+  field: ContentDefinitionField,
+  dataSources: DataSource[],
+  dataSourceDefinitions: DataSourceDefinition[],
+) {
+  return dataSources.filter((source) => {
+    const definition = dataSourceDefinitions.find(
+      (candidate) => candidate.id === source.provider,
+    );
+    return definition ? acceptsDefinition(field, definition) : false;
+  });
+}
+
+// creatableProviders narrows what the picker's Connect flow offers to providers this field would
+// actually accept, so an author cannot create a Data Source the field then rejects.
+function creatableProviders(
+  field: ContentDefinitionField,
+  dataSourceDefinitions: DataSourceDefinition[],
+) {
+  return dataSourceDefinitions
+    .filter((definition) => acceptsDefinition(field, definition))
+    .map((definition) => definition.id);
+}
+
 function DefinitionControl({
   field,
+  fields,
+  values,
   value,
   setValue,
   readOnly,
+  csrf,
   dataSources,
   dataSourceDefinitions,
-  dataSourceFields,
   assets,
 }: {
   field: ContentDefinitionField;
+  fields: ContentDefinitionField[];
+  values: Values;
   value: unknown;
   setValue: (value: unknown) => void;
   readOnly: boolean;
+  csrf?: string;
   dataSources: DataSource[];
   dataSourceDefinitions: DataSourceDefinition[];
-  dataSourceFields: { key: string; label: string; type: string }[];
   assets: { id: string; name: string; type: string }[];
 }) {
+  // A field picker resolves against the source chosen by its own `data_source` control, not a
+  // hardcoded `dataSourceId`, so a definition may reference several Data Sources.
+  const fieldSourceKey =
+    field.control === "data_source_field"
+      ? resolveDataSourceKey(field, fields)
+      : undefined;
+  const fieldSourceID = fieldSourceKey ? fieldText(values[fieldSourceKey]) : "";
+  const fieldSource = useQuery({
+    queryKey: ["definition-form-data-source", fieldSourceID],
+    queryFn: () => api.getDataSource(fieldSourceID),
+    enabled: Boolean(fieldSourceID),
+  });
   const common = {
     disabled: readOnly,
     required: field.required,
@@ -113,6 +215,21 @@ function DefinitionControl({
       {field.required ? " *" : ""}
     </span>
   );
+  if (field.control === "data_source")
+    return (
+      <DataSourcePicker
+        label={field.label}
+        description={field.description}
+        value={fieldText(value)}
+        sources={compatibleSources(field, dataSources, dataSourceDefinitions)}
+        definitions={dataSourceDefinitions}
+        createProviders={creatableProviders(field, dataSourceDefinitions)}
+        csrf={csrf}
+        disabled={readOnly}
+        required={field.required}
+        onChange={setValue}
+      />
+    );
   if (field.control === "boolean")
     return (
       <label className="setting-switch">
@@ -140,59 +257,34 @@ function DefinitionControl({
     );
   if (
     field.control === "select" ||
-    field.control === "data_source" ||
     field.control === "data_source_field" ||
     field.control === "media_asset"
   ) {
     const options =
       field.control === "select"
         ? (field.options ?? [])
-        : field.control === "data_source"
-          ? dataSources
-              .map((source) => ({
-                source,
-                definition: dataSourceDefinitions.find(
-                  (definition) => definition.id === source.provider,
-                ),
+        : field.control === "data_source_field"
+          ? (fieldSource.data?.fields ?? [])
+              .filter(
+                (sourceField: DataSourceField) =>
+                  !field.dataSourceFieldTypes?.length ||
+                  field.dataSourceFieldTypes.includes(sourceField.type),
+              )
+              .map((sourceField: DataSourceField) => ({
+                value: sourceField.key,
+                label: `${sourceField.label} (${sourceField.type})`,
               }))
-              .filter(({ definition }) => {
-                if (!definition) return false;
-                if (
-                  field.acceptedDataSourceKinds?.length &&
-                  !field.acceptedDataSourceKinds.includes(
-                    definition.outputSchema.kind,
-                  )
-                )
-                  return false;
-                return Object.entries(field.requiredFields ?? {}).every(
-                  ([key, type]) =>
-                    definition.outputSchema.fields.some(
-                      (output) => output.key === key && output.type === type,
-                    ),
-                );
-              })
-              .map(({ source }) => ({
-                value: source.id,
-                label: source.name,
-              }))
-          : field.control === "data_source_field"
-            ? dataSourceFields
-                .filter(
-                  (sourceField) =>
-                    !field.dataSourceFieldTypes?.length ||
-                    field.dataSourceFieldTypes.includes(sourceField.type),
-                )
-                .map((sourceField) => ({
-                  value: sourceField.key,
-                  label: `${sourceField.label} (${sourceField.type})`,
-                }))
-            : assets
-                .filter(
-                  (asset) =>
-                    !field.mediaTypes?.length ||
-                    field.mediaTypes.includes(asset.type),
-                )
-                .map((asset) => ({ value: asset.id, label: asset.name }));
+          : assets
+              .filter(
+                (asset) =>
+                  !field.mediaTypes?.length ||
+                  field.mediaTypes.includes(asset.type),
+              )
+              .map((asset) => ({ value: asset.id, label: asset.name }));
+    const placeholder =
+      field.control === "data_source_field" && !fieldSourceID
+        ? "Select a Data Source first"
+        : "Select…";
     return (
       <label className="field">
         {label}
@@ -201,13 +293,14 @@ function DefinitionControl({
           value={fieldText(value)}
           onChange={(event) => setValue(event.target.value)}
         >
-          <option value="">Select…</option>
+          <option value="">{placeholder}</option>
           {options.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
             </option>
           ))}
         </Select>
+        {field.description && <small>{field.description}</small>}
       </label>
     );
   }
@@ -222,6 +315,7 @@ function DefinitionControl({
               fields={field.itemFields ?? []}
               value={item}
               readOnly={readOnly}
+              csrf={csrf}
               onChange={(next) =>
                 setValue(
                   items.map((current, currentIndex) =>

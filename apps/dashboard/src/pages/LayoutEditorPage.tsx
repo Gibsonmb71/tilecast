@@ -62,6 +62,10 @@ import type {
   TickerWidgetConfig,
 } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
+import {
+  ConnectDataNotice,
+  DataSourcePicker,
+} from "../content/DataSourcePicker";
 import { layoutFontStack } from "../layoutFonts";
 import { captureLayoutPreview } from "../content/widgetPreviewCapture";
 
@@ -2688,6 +2692,35 @@ function PlacementInspector({
   canGroup: boolean;
 }) {
   const navigate = useNavigate();
+  const auth = useAuth();
+  const queryClient = useQueryClient();
+  // Definitions back the picker's Connect flow; connecting refreshes the Layout's source list so
+  // the new source is immediately bindable without leaving the editor.
+  const contentDefinitions = useQuery({
+    queryKey: ["content-definitions"],
+    queryFn: api.contentDefinitions,
+  });
+  const sourceDefinitions = contentDefinitions.data?.dataSources ?? [];
+  const csrf = auth.status?.csrfToken ?? "";
+  // Connecting data from the empty state must also apply the binding, matching what selecting an
+  // existing source does. The refreshed list is awaited so the new source's own first field is
+  // used, rather than guessing a field name the source may not have.
+  const bindNewDataSource = async (
+    dataSourceId: string,
+    apply: (binding: { dataSourceId: string; field: string }) => void,
+  ) => {
+    await queryClient.invalidateQueries({ queryKey: ["layout-data-sources"] });
+    const refreshed = queryClient.getQueryData<{ items: DataSource[] }>([
+      "layout-data-sources",
+    ]);
+    const created = refreshed?.items?.find(
+      (source) => source.id === dataSourceId,
+    );
+    apply({
+      dataSourceId,
+      field: (created ? structuredFields(created)[0] : undefined) ?? "title",
+    });
+  };
   const primitive = item.primitive;
   return (
     <div className="layout-inspector">
@@ -3094,52 +3127,63 @@ function PlacementInspector({
             <Ungroup size={16} />
             Ungroup
           </button>
-          <label className="field">
-            <span className="field__label">Visibility</span>
-            <Select
-              value={primitive.binding ? "field" : "always"}
-              disabled={!primitive.binding && dataSources.length === 0}
-              onChange={(event) =>
-                update((target) => {
-                  if (event.target.value === "always") {
-                    delete target.primitive!.binding;
-                    return;
-                  }
-                  const source = dataSources[0];
-                  if (source)
+          {!primitive.binding && dataSources.length === 0 ? (
+            <ConnectDataNotice
+              message="Connect data to hide this group when a field is empty."
+              definitions={sourceDefinitions}
+              csrf={csrf}
+              onCreated={(dataSourceId) =>
+                void bindNewDataSource(dataSourceId, (binding) =>
+                  update((target) => {
                     target.primitive!.binding = {
-                      dataSourceId: source.id,
-                      field: structuredFields(source)[0] ?? "title",
+                      ...binding,
                       hideWhenEmpty: true,
                     };
-                })
+                  }),
+                )
               }
-            >
-              <option value="always">Always visible</option>
-              <option value="field">Hide when field is empty</option>
-            </Select>
-          </label>
+            />
+          ) : (
+            <label className="field">
+              <span className="field__label">Visibility</span>
+              <Select
+                value={primitive.binding ? "field" : "always"}
+                onChange={(event) =>
+                  update((target) => {
+                    if (event.target.value === "always") {
+                      delete target.primitive!.binding;
+                      return;
+                    }
+                    const source = dataSources[0];
+                    if (source)
+                      target.primitive!.binding = {
+                        dataSourceId: source.id,
+                        field: structuredFields(source)[0] ?? "title",
+                        hideWhenEmpty: true,
+                      };
+                  })
+                }
+              >
+                <option value="always">Always visible</option>
+                <option value="field">Hide when field is empty</option>
+              </Select>
+            </label>
+          )}
           {primitive.binding && (
             <div className="form-grid form-grid--2">
-              <label className="field">
-                <span className="field__label">Data Source</span>
-                <Select
-                  value={primitive.binding.dataSourceId}
-                  onChange={(event) =>
-                    update(
-                      (target) =>
-                        (target.primitive!.binding!.dataSourceId =
-                          event.target.value),
-                    )
-                  }
-                >
-                  {dataSources.map((asset) => (
-                    <option key={asset.id} value={asset.id}>
-                      {asset.name}
-                    </option>
-                  ))}
-                </Select>
-              </label>
+              <DataSourcePicker
+                value={primitive.binding.dataSourceId}
+                sources={dataSources}
+                definitions={sourceDefinitions}
+                csrf={csrf}
+                allowEmpty={false}
+                onChange={(dataSourceId) =>
+                  update(
+                    (target) =>
+                      (target.primitive!.binding!.dataSourceId = dataSourceId),
+                  )
+                }
+              />
               <label className="field">
                 <span className="field__label">Field</span>
                 <Select
@@ -3168,59 +3212,71 @@ function PlacementInspector({
       )}
       {primitive?.kind === "text" && (
         <>
-          <label className="field">
-            <span className="field__label">Content mode</span>
-            <Select
-              value={primitive.binding ? "dynamic" : "static"}
-              onChange={(event) =>
-                update((target) => {
-                  if (event.target.value === "static") {
-                    delete target.primitive!.binding;
-                    return;
-                  }
-                  const source = dataSources[0];
-                  if (source)
+          {!primitive.binding && dataSources.length === 0 ? (
+            <ConnectDataNotice
+              message="Connect data to bind this text to a live field."
+              definitions={sourceDefinitions}
+              csrf={csrf}
+              onCreated={(dataSourceId) =>
+                void bindNewDataSource(dataSourceId, (binding) =>
+                  update((target) => {
                     target.primitive!.binding = {
-                      dataSourceId: source.id,
-                      field: structuredFields(source)[0] ?? "title",
+                      ...binding,
                       format: "text",
                     };
-                })
+                  }),
+                )
               }
-              disabled={!primitive.binding && dataSources.length === 0}
-            >
-              <option value="static">Static</option>
-              <option value="dynamic">Dynamic field</option>
-            </Select>
-          </label>
+            />
+          ) : (
+            <label className="field">
+              <span className="field__label">Content mode</span>
+              <Select
+                value={primitive.binding ? "dynamic" : "static"}
+                onChange={(event) =>
+                  update((target) => {
+                    if (event.target.value === "static") {
+                      delete target.primitive!.binding;
+                      return;
+                    }
+                    const source = dataSources[0];
+                    if (source)
+                      target.primitive!.binding = {
+                        dataSourceId: source.id,
+                        field: structuredFields(source)[0] ?? "title",
+                        format: "text",
+                      };
+                  })
+                }
+              >
+                <option value="static">Static</option>
+                <option value="dynamic">Dynamic field</option>
+              </Select>
+            </label>
+          )}
           {primitive.binding && (
             <div className="layout-placement-settings">
-              <label className="field">
-                <span className="field__label">Data Source</span>
-                <Select
-                  value={primitive.binding.dataSourceId}
-                  onChange={(event) =>
-                    update((target) => {
-                      const source = dataSources.find(
-                        (asset) => asset.id === event.target.value,
-                      );
-                      target.primitive!.binding = {
-                        ...target.primitive!.binding!,
-                        dataSourceId: event.target.value,
-                        field: source
-                          ? (structuredFields(source)[0] ?? "title")
-                          : "title",
-                      };
-                    })
-                  }
-                >
-                  {dataSources.map((asset) => (
-                    <option key={asset.id} value={asset.id}>
-                      {asset.name}
-                    </option>
-                  ))}
-                </Select>
-              </label>
+              <DataSourcePicker
+                value={primitive.binding.dataSourceId}
+                sources={dataSources}
+                definitions={sourceDefinitions}
+                csrf={csrf}
+                allowEmpty={false}
+                onChange={(dataSourceId) =>
+                  update((target) => {
+                    const source = dataSources.find(
+                      (asset) => asset.id === dataSourceId,
+                    );
+                    target.primitive!.binding = {
+                      ...target.primitive!.binding!,
+                      dataSourceId,
+                      field: source
+                        ? (structuredFields(source)[0] ?? "title")
+                        : "title",
+                    };
+                  })
+                }
+              />
               <label className="field">
                 <span className="field__label">Field</span>
                 <Select
