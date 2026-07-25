@@ -90,6 +90,31 @@ describe("Widget editor experience", () => {
     expect(
       screen.getByText(/Use an IANA timezone such as America\/New_York/),
     ).toBeTruthy();
+
+    const contentSection = screen
+      .getByRole("heading", { name: "Content and behavior" })
+      .closest("section");
+    expect(contentSection).toHaveClass("widget-editor__section");
+    expect(contentSection).toContainElement(screen.getByText("Timezone"));
+  });
+
+  it("presents appearance controls as consistent subsections instead of a one-off fieldset", () => {
+    renderEditor(
+      <NativeAppEditor
+        provider="clock"
+        csrf="csrf"
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+        page
+      />,
+    );
+
+    expect(screen.getByText("Size and spacing")).toBeTruthy();
+    expect(screen.getByText("Colors")).toBeTruthy();
+    expect(screen.queryByRole("group", { name: "Content sizing" })).toBeNull();
+    expect(
+      document.querySelectorAll(".widget-editor__subsection"),
+    ).toHaveLength(2);
   });
 
   it("uses the same guided structure for catalog-defined Widgets", () => {
