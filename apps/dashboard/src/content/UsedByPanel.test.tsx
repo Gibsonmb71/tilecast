@@ -7,10 +7,14 @@ import { UsedByPanel, type UsedByGroup } from "./UsedByPanel";
 
 afterEach(cleanup);
 
-function panel(groups: UsedByGroup[], emptyMessage?: string) {
+function panel(groups: UsedByGroup[], emptyMessage?: string, compact = false) {
   return render(
     <MemoryRouter>
-      <UsedByPanel groups={groups} emptyMessage={emptyMessage} />
+      <UsedByPanel
+        groups={groups}
+        emptyMessage={emptyMessage}
+        compact={compact}
+      />
     </MemoryRouter>,
   );
 }
@@ -90,5 +94,38 @@ describe("UsedByPanel", () => {
 
     expect(screen.getByText("Cafeteria TV")).toBeTruthy();
     expect(screen.queryByRole("link")).toBeNull();
+  });
+
+  it("summarizes large usage groups behind expandable counts", () => {
+    panel(
+      [
+        {
+          label: "Screens",
+          items: [
+            { id: "s1", name: "Cafeteria TV" },
+            { id: "s2", name: "Lobby TV" },
+          ],
+          to: (id) => `/screens/${id}`,
+        },
+        {
+          label: "Schedules",
+          items: [{ id: "sc1", name: "Weekdays" }],
+          to: (id) => `/schedules/${id}`,
+        },
+      ],
+      undefined,
+      true,
+    );
+
+    const screenSummary = screen.getByText("Screens").closest("summary");
+    expect(screenSummary).toHaveTextContent("2");
+    expect(screenSummary?.parentElement).not.toHaveAttribute("open");
+    expect(screen.getByText("Schedules").closest("summary")).toHaveTextContent(
+      "1",
+    );
+    expect(screen.getByRole("link", { name: /Cafeteria TV/ })).toHaveAttribute(
+      "href",
+      "/screens/s1",
+    );
   });
 });
