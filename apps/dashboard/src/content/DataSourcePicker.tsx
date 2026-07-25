@@ -14,6 +14,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Check, ChevronRight, Database, Plus, X } from "lucide-react";
 import { useId, useState } from "react";
+import { createPortal } from "react-dom";
 import { api } from "../api/client";
 import type {
   DataSource,
@@ -303,7 +304,7 @@ function DataSourceSelectionDialog({
   onConnect: () => void;
   onClose: () => void;
 }) {
-  return (
+  return createPortal(
     <div
       className="details-backdrop data-source-select-backdrop"
       role="presentation"
@@ -378,7 +379,8 @@ function DataSourceSelectionDialog({
           </Button>
         </footer>
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -410,17 +412,19 @@ function ConnectDataFlow({
       (!createProviders?.length || createProviders.includes(definition.id)),
   );
 
-  if (provider)
-    return (
+  if (provider) {
+    return createPortal(
       <DataSourceEditor
         provider={provider}
         csrf={csrf}
         onClose={onClose}
         onSaved={(created) => onCreated(created.id)}
-      />
+      />,
+      document.body,
     );
+  }
 
-  return (
+  return createPortal(
     <div
       className="details-backdrop data-source-connect-backdrop"
       role="presentation"
@@ -470,6 +474,7 @@ function ConnectDataFlow({
           </Button>
         </footer>
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }

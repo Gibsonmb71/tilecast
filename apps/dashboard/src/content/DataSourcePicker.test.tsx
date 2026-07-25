@@ -65,13 +65,15 @@ function picker(sources: DataSource[]) {
   });
   const result = render(
     <QueryClientProvider client={client}>
-      <DataSourcePicker
-        value=""
-        sources={sources}
-        definitions={[csvDefinition]}
-        csrf="csrf-token"
-        onChange={onChange}
-      />
+      <div className="asset-details-drawer">
+        <DataSourcePicker
+          value=""
+          sources={sources}
+          definitions={[csvDefinition]}
+          csrf="csrf-token"
+          onChange={onChange}
+        />
+      </div>
     </QueryClientProvider>,
   );
   return { ...result, onChange };
@@ -102,7 +104,11 @@ describe("DataSourcePicker", () => {
       screen.getByRole("button", { name: "Data Source: Choose data" }),
     );
 
-    expect(screen.getByRole("dialog", { name: "Choose data" })).toBeTruthy();
+    const dialog = screen.getByRole("dialog", { name: "Choose data" });
+    expect(dialog).toBeTruthy();
+    // Portaling prevents the drawer's descendant reset from stripping the modal surface.
+    expect(dialog.closest(".asset-details-drawer")).toBeNull();
+    expect(dialog.parentElement?.parentElement).toBe(document.body);
     expect(screen.getByText("CSV")).toBeTruthy();
     expect(screen.getByText("Ready · 12 records")).toBeTruthy();
 
