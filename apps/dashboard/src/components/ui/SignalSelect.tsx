@@ -249,20 +249,13 @@ export const Select = forwardRef<
 
   return (
     <span className={`signal-select ${className}`} style={style}>
-      <select
-        {...nativeProps}
-        ref={nativeRef}
-        className="signal-select__native"
-        value={selectedValue}
-        disabled={disabled}
-        tabIndex={-1}
-        aria-hidden="true"
-        onChange={onChange}
-        onBlur={onBlur}
-        onFocus={onFocus}
-      >
-        {children}
-      </select>
+      {/* The trigger is rendered before the hidden native select on purpose. Studio's fields wrap
+          their control in a <label>, and a label names its *first* labelable descendant. With the
+          native select first, the label's text went to an aria-hidden element and the visible
+          trigger was left with no accessible name — so nearly every select in the app was
+          unnamed to a screen reader. Putting the button first hands it the label instead, and
+          also makes clicking the label open the menu. The native select stays for form
+          semantics and change events; it is visually hidden and never tab-focusable. */}
       <button
         ref={triggerRef}
         id={controlId}
@@ -281,6 +274,20 @@ export const Select = forwardRef<
         <span>{selected?.label ?? "Select an option"}</span>
         <ChevronDown size={16} aria-hidden="true" />
       </button>
+      <select
+        {...nativeProps}
+        ref={nativeRef}
+        className="signal-select__native"
+        value={selectedValue}
+        disabled={disabled}
+        tabIndex={-1}
+        aria-hidden="true"
+        onChange={onChange}
+        onBlur={onBlur}
+        onFocus={onFocus}
+      >
+        {children}
+      </select>
       {open &&
         menuStyle &&
         createPortal(
