@@ -83,6 +83,7 @@ describe("content library", () => {
     expect(canManageContent(user("administrator"))).toBe(true);
     expect(canManageContent(user("editor"))).toBe(true);
     expect(canManageContent(user("viewer"))).toBe(false);
+    expect(canManageContent(undefined)).toBe(false);
   });
 
   it("renders a writable empty state", () => {

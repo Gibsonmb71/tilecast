@@ -22,6 +22,7 @@ import { LayoutsPage } from "./pages/LayoutsPage";
 import { LayoutEditorPage } from "./pages/LayoutEditorPage";
 import { WidgetEditorPage, WidgetsPage } from "./pages/WidgetsPage";
 import { DataSourceEditorPage, DataSourcesPage } from "./pages/DataSourcesPage";
+import { GuidedJobPage } from "./pages/GuidedJobPage";
 import { ActivityPage } from "./pages/ActivityPage";
 import { ApprovalsPage } from "./pages/ApprovalsPage";
 import {
@@ -118,6 +119,11 @@ export const studioRoutes: RouteObject[] = [
             ["content", "uploads", "library", "media"],
           ),
         },
+      },
+      {
+        path: "start/:job",
+        element: <GuidedJobPage />,
+        handle: { breadcrumb: "Guided setup" },
       },
       { path: "content", element: <Navigate to="/assets" replace /> },
       {

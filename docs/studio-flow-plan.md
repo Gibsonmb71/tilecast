@@ -273,7 +273,7 @@ the database.
 Removed as dead: `.sidebar__nav-group` and `.sidebar__nav-label`, along with the three compact and
 responsive rules that referenced them. No component emits those classes now.
 
-## Phase 4 — Task-first entry
+## Phase 4 — Task-first entry — **done**
 
 Goal: a first-time user gets something on a screen without learning the model at all.
 
@@ -292,6 +292,34 @@ a shortcut.
 
 **Exit criteria** — A new installation can go from paired screen to live lunch menu in one flow,
 and every record it created is indistinguishable from a hand-built one.
+
+### As built
+
+`navigation/guidedJobs.ts` holds the four recipes; `pages/GuidedJobPage.tsx` runs them; Overview
+lists them under "Put something on a screen", shown only to authors who can create content.
+
+The flow turned out much thinner than planned, because Phase 1 removed the step it would otherwise
+have owned. A job is three steps — choose the screen, build the Widget, put it on air — and the
+data step does not exist: the Widget editor's own Data Source picker connects data inline, so the
+job never has to orchestrate source creation. Everything else is the ordinary path: the Widget is
+built in the real editor, and the playlist, item, and assignment use the same calls the Playlists
+and Screens pages use. There is no wizard-only creation path that could drift from the real one, and
+nothing written carries a marker saying a wizard made it.
+
+Three details worth knowing:
+
+- **Progress lives in the URL** (`/start/:job?screen=…&widget=…`), so a refresh or the round trip
+  through the Widget editor does not lose it.
+- **The editor hands the new Widget id back** through a `flowReturn` parameter. It is deliberately
+  distinct from Phase 2's `returnTo`: `returnTo` keeps the author in the editor after saving, while
+  `flowReturn` continues the job as soon as the Widget exists. Both share one validator, so neither
+  can be pointed off-site.
+- **A refused assignment is reported as a partial result.** Assignment can fail on its own — most
+  often a Player too old for the content — and the playlist still exists at that point. The flow
+  says so and links to it rather than implying nothing was created.
+
+Deciding the screen later is a first-class choice rather than an unanswered question, and a job
+started with no screens paired offers to build the content anyway.
 
 ## Smaller fixes to fold in
 

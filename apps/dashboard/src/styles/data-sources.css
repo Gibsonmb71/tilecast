@@ -987,3 +987,127 @@
   flex-shrink: 0;
   color: var(--tc-text-secondary);
 }
+
+/* The guided job flow: one pass from "show a lunch menu" to a screen playing it. */
+.guided-job {
+  width: min(760px, 100%);
+  margin: 0 auto;
+}
+
+.guided-job__back {
+  display: inline-flex;
+  gap: var(--tc-space-1);
+  align-items: center;
+  margin-bottom: var(--tc-space-3);
+  color: var(--tc-text-secondary);
+  text-decoration: none;
+  font-size: 13px;
+}
+
+.guided-job__back:hover {
+  color: var(--tc-text-primary);
+}
+
+.guided-job__steps {
+  display: grid;
+  gap: var(--tc-space-2);
+  margin: var(--tc-space-4) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.guided-job__step {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: var(--tc-space-3);
+  align-items: start;
+  padding: var(--tc-space-4);
+  background: var(--tc-bg-surface);
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-panel);
+}
+
+.guided-job__step--todo {
+  color: var(--tc-text-secondary);
+  background: transparent;
+}
+
+.guided-job__step--current {
+  border-color: var(--tc-action-primary);
+}
+
+.guided-job__marker {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  color: var(--tc-text-secondary);
+  background: var(--tc-bg-subtle);
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-pill);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.guided-job__step--current .guided-job__marker {
+  color: var(--tc-button-primary-text);
+  background: var(--tc-action-primary);
+  border-color: var(--tc-action-primary);
+}
+
+.guided-job__step--done .guided-job__marker {
+  color: var(--tc-status-success);
+  border-color: var(--tc-status-success);
+}
+
+.guided-job__body {
+  display: grid;
+  gap: var(--tc-space-3);
+  min-width: 0;
+}
+
+.guided-job__heading {
+  display: flex;
+  gap: var(--tc-space-3);
+  align-items: baseline;
+  min-height: 26px;
+}
+
+.guided-job__heading h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.guided-job__summary {
+  flex: 1;
+  overflow: hidden;
+  color: var(--tc-text-secondary);
+  font-size: 13px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.guided-job__action {
+  display: grid;
+  gap: var(--tc-space-3);
+}
+
+.guided-job__action p {
+  margin: 0;
+  color: var(--tc-text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.guided-job__hint {
+  padding: var(--tc-space-3);
+  background: var(--tc-bg-subtle);
+  border-radius: var(--tc-radius-panel);
+}
+
+.guided-job__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--tc-space-2);
+  align-items: center;
+}
