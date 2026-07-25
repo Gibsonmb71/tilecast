@@ -67,14 +67,14 @@ func TestSyncGroupRemovalRestoresScreenContent(t *testing.T) {
 	}
 	service := NewService(pool, &testNotifier{})
 	duration := int64(10_000)
-	lobbyPlaylist, err := service.Create(ctx, owner.User.ID, "Lobby loop", "")
+	lobbyPlaylist, err := service.Create(ctx, owner.User.ID, "Lobby loop", "", "static")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err = service.AddItem(ctx, lobbyPlaylist.ID, owner.User.ID, ItemInput{AssetID: imageID, DurationMS: &duration}); err != nil {
 		t.Fatal(err)
 	}
-	groupPlaylist, err := service.Create(ctx, owner.User.ID, "Group loop", "")
+	groupPlaylist, err := service.Create(ctx, owner.User.ID, "Group loop", "", "static")
 	if err != nil {
 		t.Fatal(err)
 	}

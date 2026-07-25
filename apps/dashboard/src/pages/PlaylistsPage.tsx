@@ -94,12 +94,14 @@ export function PlaylistsPage() {
   const [search, setSearch] = useState("");
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
+  const [sourceType, setSourceType] = useState<"static" | "tag">("static");
   const query = useQuery({
     queryKey: ["playlists", search],
     queryFn: () => api.playlists(search),
   });
   const create = useMutation({
-    mutationFn: () => api.createPlaylist({ name, description: "" }, csrf),
+    mutationFn: () =>
+      api.createPlaylist({ name, description: "", sourceType }, csrf),
     onSuccess: (playlist) => void navigate(`/playlists/${playlist.id}`),
   });
   useEffect(() => {
@@ -171,6 +173,25 @@ export function PlaylistsPage() {
             onChange={(event) => setName(event.target.value)}
           />
         </Field>
+        <fieldset className="playlist-type-chooser">
+          <legend>Playlist type</legend>
+          <button
+            type="button"
+            aria-pressed={sourceType === "static"}
+            onClick={() => setSourceType("static")}
+          >
+            <strong>Standard playlist</strong>
+            <span>Manually arrange media and Layouts in a timeline.</span>
+          </button>
+          <button
+            type="button"
+            aria-pressed={sourceType === "tag"}
+            onClick={() => setSourceType("tag")}
+          >
+            <strong>Tag-driven playlist</strong>
+            <span>Automatically include ready media that matches tags.</span>
+          </button>
+        </fieldset>
         {create.error && (
           <div className="notice notice--error">{create.error.message}</div>
         )}
@@ -417,127 +438,145 @@ export function PlaylistEditorPage() {
         ]}
       />
       <section className="playlist-settings">
-        <label className="field">
-          <span className="field__label">Name</span>
-          <input
-            disabled={!canManage}
-            value={name}
-            onChange={(e) => {
-              setName(e.target.value);
-              setDirty(true);
-            }}
-          />
-        </label>
-        <label className="field">
-          <span className="field__label">Description</span>
-          <textarea
-            disabled={!canManage}
-            value={description}
-            onChange={(e) => {
-              setDescription(e.target.value);
-              setDirty(true);
-            }}
-          />
-        </label>
-        {canManage && (
-          <button
-            className="button button--primary"
-            disabled={!dirty || save.isPending}
-            onClick={() => save.mutate()}
-          >
-            Save details
-          </button>
-        )}
-        <div className="field">
-          <span className="field__label">Playlist contents</span>
-          <Select
-            disabled={!canManage}
-            value={sourceType}
-            onChange={(event) =>
-              setSourceType(event.target.value as "static" | "tag")
-            }
-          >
-            <option value="static">Manual timeline</option>
-            <option value="tag">Automatically from media tags</option>
-          </Select>
-          <span className="field__hint">
-            Tag-driven playlists update whenever matching ready media is tagged
-            or untagged.
-          </span>
-        </div>
-        {sourceType === "tag" && (
-          <>
+        <div className="playlist-settings__section">
+          <div className="playlist-settings__fields playlist-settings__fields--details">
             <label className="field">
-              <span className="field__label">Match</span>
-              <Select
-                disabled={!canManage}
-                value={tagMatch}
-                onChange={(event) =>
-                  setTagMatch(event.target.value as "any" | "all")
-                }
-              >
-                <option value="any">Any selected tag</option>
-                <option value="all">All selected tags</option>
-              </Select>
-            </label>
-            <div className="asset-organization__chips">
-              {(tags.data ?? []).map((tag) => {
-                const active = tagIds.includes(tag.id);
-                return (
-                  <button
-                    key={tag.id}
-                    type="button"
-                    className={`organizer-chip${active ? " organizer-chip--active" : ""}`}
-                    aria-pressed={active}
-                    disabled={!canManage}
-                    onClick={() =>
-                      setTagIds((current) =>
-                        active
-                          ? current.filter((id) => id !== tag.id)
-                          : [...current, tag.id],
-                      )
-                    }
-                  >
-                    <span
-                      className="organizer-chip__dot"
-                      style={{ backgroundColor: tag.color }}
-                      aria-hidden
-                    />
-                    {tag.name}
-                  </button>
-                );
-              })}
-            </div>
-            <label className="field">
-              <span className="field__label">Image duration (seconds)</span>
+              <span className="field__label">Name</span>
               <input
-                type="number"
-                min="1"
-                max="86400"
                 disabled={!canManage}
-                value={tagImageSeconds}
-                onChange={(event) =>
-                  setTagImageSeconds(Number(event.target.value))
-                }
+                value={name}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  setDirty(true);
+                }}
               />
             </label>
-          </>
-        )}
-        {canManage && (
-          <Button
-            variant="quiet"
-            loading={saveTagRule.isPending}
-            disabled={sourceType === "tag" && tagIds.length === 0}
-            onClick={() => saveTagRule.mutate()}
-          >
-            Save playlist contents
-          </Button>
-        )}
-        {saveTagRule.error && (
-          <div className="notice notice--error">
-            {saveTagRule.error.message}
+            <label className="field">
+              <span className="field__label">Description</span>
+              <textarea
+                disabled={!canManage}
+                value={description}
+                onChange={(e) => {
+                  setDescription(e.target.value);
+                  setDirty(true);
+                }}
+              />
+            </label>
           </div>
-        )}
+          {canManage && (
+            <div className="playlist-settings__actions">
+              <button
+                className="button button--primary"
+                disabled={!dirty || save.isPending}
+                onClick={() => save.mutate()}
+              >
+                Save details
+              </button>
+            </div>
+          )}
+        </div>
+        <div className="playlist-settings__section">
+          <div className="playlist-settings__heading">
+            <h3>Playlist contents</h3>
+            <p>
+              Tag-driven playlists update whenever matching ready media is
+              tagged or untagged.
+            </p>
+          </div>
+          <div className="playlist-settings__fields">
+            <label className="field">
+              <span className="field__label">Content source</span>
+              <Select
+                disabled={!canManage}
+                value={sourceType}
+                onChange={(event) =>
+                  setSourceType(event.target.value as "static" | "tag")
+                }
+              >
+                <option value="static">Manual timeline</option>
+                <option value="tag">Automatically from media tags</option>
+              </Select>
+            </label>
+            {sourceType === "tag" && (
+              <>
+                <label className="field">
+                  <span className="field__label">Match</span>
+                  <Select
+                    disabled={!canManage}
+                    value={tagMatch}
+                    onChange={(event) =>
+                      setTagMatch(event.target.value as "any" | "all")
+                    }
+                  >
+                    <option value="any">Any selected tag</option>
+                    <option value="all">All selected tags</option>
+                  </Select>
+                </label>
+                <div className="field playlist-settings__tags">
+                  <span className="field__label">Media tags</span>
+                  <div className="asset-organization__chips">
+                    {(tags.data ?? []).map((tag) => {
+                      const active = tagIds.includes(tag.id);
+                      return (
+                        <button
+                          key={tag.id}
+                          type="button"
+                          className={`organizer-chip${active ? " organizer-chip--active" : ""}`}
+                          aria-pressed={active}
+                          disabled={!canManage}
+                          onClick={() =>
+                            setTagIds((current) =>
+                              active
+                                ? current.filter((id) => id !== tag.id)
+                                : [...current, tag.id],
+                            )
+                          }
+                        >
+                          <span
+                            className="organizer-chip__dot"
+                            style={{ backgroundColor: tag.color }}
+                            aria-hidden
+                          />
+                          {tag.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <label className="field">
+                  <span className="field__label">Image duration (seconds)</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="86400"
+                    disabled={!canManage}
+                    value={tagImageSeconds}
+                    onChange={(event) =>
+                      setTagImageSeconds(Number(event.target.value))
+                    }
+                  />
+                </label>
+              </>
+            )}
+          </div>
+          {canManage && (
+            <div className="playlist-settings__actions">
+              <Button
+                variant="quiet"
+                loading={saveTagRule.isPending}
+                disabled={sourceType === "tag" && tagIds.length === 0}
+                onClick={() => saveTagRule.mutate()}
+              >
+                Save playlist contents
+              </Button>
+            </div>
+          )}
+          {saveTagRule.error && (
+            <div className="notice notice--error">
+              {saveTagRule.error.message}
+            </div>
+          )}
+        </div>
       </section>
       <div className="timeline-heading">
         <div>

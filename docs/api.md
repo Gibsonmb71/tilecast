@@ -99,7 +99,7 @@ Responses include a hash-derived ETag, correct MIME type and length, and `Accept
 
 ## Playlists, assignments, and manifests
 
-Owner, Administrator, and Editor may create, edit, duplicate, reorder, or delete unassigned playlists; Viewer is read-only. Items accept only ready image/video assets with a player-compatible variant. Images require a positive duration, video offsets must remain within trusted duration, and reordering must contain every item exactly once.
+Owner, Administrator, and Editor may create, edit, duplicate, reorder, or delete unassigned playlists; Viewer is read-only. `POST /api/v1/playlists` requires a `sourceType` of `static` or `tag`, so Studio can create a standard manual timeline or an initially empty tag-driven playlist in one operation. Items accept only ready image/video assets with a player-compatible variant. Images require a positive duration, video offsets must remain within trusted duration, and reordering must contain every item exactly once.
 
 Media assets may define optional `availableFrom` and `expiresAt` RFC 3339 timestamps through `PATCH /api/v1/assets/{id}` with `availabilitySet: true`. The start is inclusive and expiration is exclusive. The manifest carries both values on every playlist item, and the Player filters and reevaluates them against its server-corrected clock, including from a cached manifest while offline.
 

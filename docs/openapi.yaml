@@ -476,6 +476,22 @@ paths:
     post:
       operationId: createPlaylist
       parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, description, sourceType]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 180 }
+                description: { type: string, maxLength: 2000 }
+                sourceType:
+                  {
+                    type: string,
+                    enum: [static, tag],
+                    description: static creates a manually ordered timeline; tag creates an initially empty tag-driven playlist,
+                  }
       responses:
         {
           "201": { description: Playlist created },

@@ -79,7 +79,14 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 	}
 	notifier := &testNotifier{}
 	service := NewService(pool, notifier)
-	playlist, err := service.Create(ctx, owner.User.ID, "Morning announcements", "")
+	tagPlaylist, err := service.Create(ctx, owner.User.ID, "Tagged announcements", "", "tag")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tagPlaylist.SourceType != "tag" || tagPlaylist.TagRule == nil || len(tagPlaylist.TagRule.Tags) != 0 {
+		t.Fatalf("new tag playlist=%#v", tagPlaylist)
+	}
+	playlist, err := service.Create(ctx, owner.User.ID, "Morning announcements", "", "static")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +265,7 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	webPlaylist, err := service.Create(ctx, owner.User.ID, "Web status", "")
+	webPlaylist, err := service.Create(ctx, owner.User.ID, "Web status", "", "static")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -292,7 +299,7 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	calendarPlaylist, err := service.Create(ctx, owner.User.ID, "Calendar rotation", "")
+	calendarPlaylist, err := service.Create(ctx, owner.User.ID, "Calendar rotation", "", "static")
 	if err != nil {
 		t.Fatal(err)
 	}
