@@ -66,3 +66,32 @@ export function previewRecordMaps(value: unknown): Record<string, string>[] {
     );
   });
 }
+
+// A Widget may reference more than one Data Source. The compiled presentation names the dataset
+// each binding reads as "<dataSourceId>:<datasetId>", so the preview resolves bindings against a
+// map keyed the same way rather than against one flat record list. Without this, a two-source
+// Widget rendered every binding from whichever source happened to be declared first.
+export type PreviewDatasets = Record<string, Record<string, string>[]>;
+
+export function previewDatasetMaps(
+  dataSourceId: string,
+  value: unknown,
+): PreviewDatasets {
+  if (!value || typeof value !== "object") return {};
+  const root = value as Record<string, unknown>;
+  const datasets = Array.isArray(root.datasets) ? root.datasets : undefined;
+  if (!datasets)
+    // The single-dataset payload shapes have no id of their own; the server names their dataset
+    // "records" when it builds the Data Document, so match that.
+    return { [`${dataSourceId}:records`]: previewRecordMaps(value) };
+  const result: PreviewDatasets = {};
+  for (const entry of datasets) {
+    if (!entry || typeof entry !== "object") continue;
+    const dataset = entry as Record<string, unknown>;
+    const id = typeof dataset.id === "string" ? dataset.id : "records";
+    result[`${dataSourceId}:${id}`] = previewRecordMaps({
+      datasets: [dataset],
+    });
+  }
+  return result;
+}

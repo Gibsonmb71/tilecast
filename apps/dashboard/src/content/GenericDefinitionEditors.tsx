@@ -13,6 +13,7 @@ import type {
   WidgetDefinition,
 } from "../api/types";
 import { DefinitionForm, dataSourceKeysIn } from "./DefinitionForm";
+import { previewDatasetMaps, type PreviewDatasets } from "./previewRecords";
 import { DeclarativePresentationPreview } from "./SourceEditors";
 import { captureWidgetPreview } from "./widgetPreviewCapture";
 
@@ -62,6 +63,16 @@ export function GenericWidgetEditor({
   });
   const sourcesLoading = sourcePreviews.some((preview) => preview.isLoading);
   const primarySourcePreview = sourcePreviews[0]?.data;
+  // Bindings name their dataset "<dataSourceId>:<datasetId>", so every referenced source is
+  // normalized under that key. A Widget reading two sources now renders each binding from the
+  // source it actually names rather than from whichever was declared first.
+  const previewDatasets = dataSourceIds.reduce<PreviewDatasets>(
+    (all, id, index) => ({
+      ...all,
+      ...previewDatasetMaps(id, sourcePreviews[index]?.data),
+    }),
+    {},
+  );
   const save = useMutation({
     mutationFn: async () => {
       if (!previewRef.current || !compiledPreview.data || sourcesLoading)
@@ -119,6 +130,7 @@ export function GenericWidgetEditor({
           <DeclarativePresentationPreview
             presentation={compiledPreview.data}
             source={primarySourcePreview}
+            datasets={previewDatasets}
             assetImageUrl={
               typeof configuration.imageAssetId === "string" &&
               configuration.imageAssetId
