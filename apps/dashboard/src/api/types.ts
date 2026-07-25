@@ -1194,6 +1194,10 @@ export type ContentDefinitionField = {
   acceptedDataSourceKinds?: string[];
   requiredFields?: Record<string, string>;
   dataSourceFieldTypes?: string[];
+  // For a `data_source_field` control: the key of the `data_source` control whose selected
+  // source supplies this field list. A definition with exactly one `data_source` field may omit
+  // it. Required to disambiguate when a definition references more than one Data Source.
+  dataSourceKey?: string;
   mediaTypes?: string[];
   maximumItems?: number;
   itemFields?: ContentDefinitionField[];

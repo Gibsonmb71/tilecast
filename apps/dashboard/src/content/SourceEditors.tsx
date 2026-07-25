@@ -22,6 +22,7 @@ import { api } from "../api/client";
 import type {
   Asset,
   DataSource,
+  DataSourceDefinition,
   DataSourceField,
   WidgetProvider,
   ClockWidgetConfig,
@@ -45,6 +46,8 @@ import type {
   WidgetPresentation,
   PresentationNode,
 } from "../api/types";
+import { DataSourcePicker } from "./DataSourcePicker";
+import { previewRecordMaps } from "./previewRecords";
 import { captureWidgetPreview } from "./widgetPreviewCapture";
 
 export function WidgetProviderGallery({
@@ -526,6 +529,13 @@ export function NativeAppEditor({
     queryFn: api.providerCatalog,
     staleTime: 5 * 60_000,
   });
+  // Data Source definitions back the picker's Connect flow, which needs each provider's name,
+  // description, and icon to offer a choice.
+  const contentDefinitions = useQuery({
+    queryKey: ["content-definitions"],
+    queryFn: api.contentDefinitions,
+  });
+  const sourceDefinitions = contentDefinitions.data?.dataSources ?? [];
   const providerRuntime = catalog.data?.providers?.find(
     (entry) => entry.role === "widget" && entry.id === provider,
   );
@@ -1107,26 +1117,19 @@ export function NativeAppEditor({
           )}
           {provider === "ticker" && (
             <>
-              <label className="field">
-                <span className="field__label">Data Source</span>
-                <Select
-                  value={(configuration as TickerWidgetConfig).dataSourceId}
-                  disabled={readOnly}
-                  onChange={(e) =>
-                    setConfiguration((current) => ({
-                      ...current,
-                      dataSourceId: e.target.value,
-                    }))
-                  }
-                >
-                  <option value="">Select data</option>
-                  {compatibleDataSources.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name}
-                    </option>
-                  ))}
-                </Select>
-              </label>
+              <DataSourceSelect
+                value={(configuration as TickerWidgetConfig).dataSourceId}
+                sources={compatibleDataSources}
+                definitions={sourceDefinitions}
+                csrf={csrf}
+                disabled={readOnly}
+                onChange={(dataSourceId) =>
+                  setConfiguration((current) => ({
+                    ...current,
+                    dataSourceId,
+                  }))
+                }
+              />
               <div className="form-grid form-grid--2">
                 <fieldset>
                   <legend>Fields (up to three)</legend>
@@ -1205,26 +1208,19 @@ export function NativeAppEditor({
           )}
           {["menu", "list", "table", "agenda"].includes(provider) && (
             <>
-              <label className="field">
-                <span className="field__label">Data Source</span>
-                <Select
-                  value={(configuration as DisplayWidgetConfig).dataSourceId}
-                  disabled={readOnly}
-                  onChange={(event) =>
-                    setConfiguration((current) => ({
-                      ...current,
-                      dataSourceId: event.target.value,
-                    }))
-                  }
-                >
-                  <option value="">Select data</option>
-                  {compatibleDataSources.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name}
-                    </option>
-                  ))}
-                </Select>
-              </label>
+              <DataSourceSelect
+                value={(configuration as DisplayWidgetConfig).dataSourceId}
+                sources={compatibleDataSources}
+                definitions={sourceDefinitions}
+                csrf={csrf}
+                disabled={readOnly}
+                onChange={(dataSourceId) =>
+                  setConfiguration((current) => ({
+                    ...current,
+                    dataSourceId,
+                  }))
+                }
+              />
               <fieldset>
                 <legend>Displayed fields</legend>
                 {!availableFields.length ? (
@@ -1579,6 +1575,8 @@ export function NativeAppEditor({
               <DataSourceSelect
                 value={(configuration as MetricWidgetConfig).dataSourceId}
                 sources={compatibleDataSources}
+                definitions={sourceDefinitions}
+                csrf={csrf}
                 disabled={readOnly}
                 onChange={(dataSourceId) =>
                   setConfiguration((current) => ({
@@ -1745,6 +1743,8 @@ export function NativeAppEditor({
               <DataSourceSelect
                 value={(configuration as CardsWidgetConfig).dataSourceId}
                 sources={compatibleDataSources}
+                definitions={sourceDefinitions}
+                csrf={csrf}
                 disabled={readOnly}
                 onChange={(dataSourceId) =>
                   setConfiguration((current) => ({
@@ -1841,6 +1841,8 @@ export function NativeAppEditor({
               <DataSourceSelect
                 value={(configuration as WeatherWidgetConfig).dataSourceId}
                 sources={compatibleDataSources}
+                definitions={sourceDefinitions}
+                csrf={csrf}
                 disabled={readOnly}
                 onChange={(dataSourceId) =>
                   setConfiguration((current) => ({
@@ -1900,6 +1902,8 @@ export function NativeAppEditor({
               <DataSourceSelect
                 value={(configuration as SpotlightWidgetConfig).dataSourceId}
                 sources={compatibleDataSources}
+                definitions={sourceDefinitions}
+                csrf={csrf}
                 disabled={readOnly}
                 onChange={(dataSourceId) =>
                   setConfiguration((current) => ({ ...current, dataSourceId }))
@@ -1961,6 +1965,8 @@ export function NativeAppEditor({
               <DataSourceSelect
                 value={(configuration as StatGridWidgetConfig).dataSourceId}
                 sources={compatibleDataSources}
+                definitions={sourceDefinitions}
+                csrf={csrf}
                 disabled={readOnly}
                 onChange={(dataSourceId) =>
                   setConfiguration((current) => ({ ...current, dataSourceId }))
@@ -2112,6 +2118,8 @@ export function NativeAppEditor({
               <DataSourceSelect
                 value={(configuration as ChartWidgetConfig).dataSourceId}
                 sources={compatibleDataSources}
+                definitions={sourceDefinitions}
+                csrf={csrf}
                 disabled={readOnly}
                 onChange={(dataSourceId) =>
                   setConfiguration((current) => ({ ...current, dataSourceId }))
@@ -2268,6 +2276,8 @@ export function NativeAppEditor({
               <DataSourceSelect
                 value={(configuration as ProgressWidgetConfig).dataSourceId}
                 sources={compatibleDataSources}
+                definitions={sourceDefinitions}
+                csrf={csrf}
                 disabled={readOnly}
                 onChange={(dataSourceId) =>
                   setConfiguration((current) => ({ ...current, dataSourceId }))
@@ -2349,6 +2359,8 @@ export function NativeAppEditor({
               <DataSourceSelect
                 value={(configuration as TimelineWidgetConfig).dataSourceId}
                 sources={compatibleDataSources}
+                definitions={sourceDefinitions}
+                csrf={csrf}
                 disabled={readOnly}
                 onChange={(dataSourceId) =>
                   setConfiguration((current) => ({ ...current, dataSourceId }))
@@ -3140,98 +3152,33 @@ function PresentationQrCode({ value }: { value: string }) {
   );
 }
 
-function previewRecordMaps(value: unknown): Record<string, string>[] {
-  if (!value || typeof value !== "object") return [];
-  const root = value as Record<string, unknown>;
-  const direct = Array.isArray(root.records) ? root.records : undefined;
-  const configuration =
-    root.configuration && typeof root.configuration === "object"
-      ? (root.configuration as Record<string, unknown>)
-      : undefined;
-  const data =
-    configuration?.data && typeof configuration.data === "object"
-      ? (configuration.data as Record<string, unknown>)
-      : undefined;
-  const datasets = Array.isArray(root.datasets) ? root.datasets : [];
-  const datasetEntries = datasets.flatMap((entry) => {
-    if (!entry || typeof entry !== "object") return [];
-    const dataset = entry as Record<string, unknown>;
-    if (Array.isArray(dataset.records))
-      return (dataset.records as unknown[]).filter(
-        (record): record is Record<string, unknown> =>
-          Boolean(record) && typeof record === "object",
-      );
-    if (Array.isArray(dataset.points))
-      return (dataset.points as unknown[]).filter(
-        (record): record is Record<string, unknown> =>
-          Boolean(record) && typeof record === "object",
-      );
-    return dataset.values && typeof dataset.values === "object"
-      ? [dataset.values]
-      : [];
-  });
-  const records =
-    direct ??
-    (Array.isArray(data?.records)
-      ? data.records
-      : Array.isArray(data?.events)
-        ? data.events
-        : datasetEntries);
-  return records.slice(0, 12).map((item, index) => {
-    if (!item || typeof item !== "object") return { id: String(index) };
-    const record = item as Record<string, unknown>;
-    const values =
-      record.values && typeof record.values === "object"
-        ? (record.values as Record<string, unknown>)
-        : {};
-    const flattened = { ...record, ...values };
-    if (typeof record.start === "string") {
-      flattened.date ??= record.start.split("T")[0];
-      flattened.startTime ??= record.start;
-    }
-    if (typeof record.end === "string") flattened.endTime ??= record.end;
-    if (typeof record.descriptionExcerpt === "string")
-      flattened.description ??= record.descriptionExcerpt;
-    return Object.fromEntries(
-      Object.entries(flattened).map(([key, entry]) => [
-        key,
-        typeof entry === "string" ||
-        typeof entry === "number" ||
-        typeof entry === "boolean"
-          ? String(entry)
-          : "",
-      ]),
-    );
-  });
-}
-
+// The legacy Widget editors reach the shared picker through this thin wrapper so every provider
+// branch below keeps its existing call shape while gaining inline source creation, status, and
+// sample values.
 function DataSourceSelect({
   value,
   sources,
+  definitions,
+  csrf,
   disabled,
   onChange,
 }: {
   value: string;
   sources: DataSource[];
+  definitions?: DataSourceDefinition[];
+  csrf?: string;
   disabled?: boolean;
   onChange: (value: string) => void;
 }) {
   return (
-    <label className="field">
-      <span className="field__label">Data Source</span>
-      <Select
-        value={value}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.value)}
-      >
-        <option value="">Select data</option>
-        {sources.map((source) => (
-          <option key={source.id} value={source.id}>
-            {source.name}
-          </option>
-        ))}
-      </Select>
-    </label>
+    <DataSourcePicker
+      value={value}
+      sources={sources}
+      definitions={definitions}
+      csrf={csrf}
+      disabled={disabled}
+      onChange={onChange}
+    />
   );
 }
 

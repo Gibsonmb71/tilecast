@@ -3,7 +3,11 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { DataSourceDefinition } from "../api/types";
-import { iconForIdentifier, resolveSetup, sourceIcon } from "./DataSourcesPage";
+import {
+  iconForIdentifier,
+  resolveSetup,
+  sourceIcon,
+} from "../content/dataSourceProviderMeta";
 
 afterEach(cleanup);
 

@@ -1,0 +1,68 @@
+// previewRecordMaps normalizes every Data Source preview payload shape
+// (StructuredPreview, CalendarPreview, TypedRecordData, TypedDatasetPayload) into flat
+// string record maps. Shared by the Widget presentation preview and the DataSourcePicker
+// sample rows so the union handling exists in exactly one place.
+export function previewRecordMaps(value: unknown): Record<string, string>[] {
+  if (!value || typeof value !== "object") return [];
+  const root = value as Record<string, unknown>;
+  const direct = Array.isArray(root.records) ? root.records : undefined;
+  const configuration =
+    root.configuration && typeof root.configuration === "object"
+      ? (root.configuration as Record<string, unknown>)
+      : undefined;
+  const data =
+    configuration?.data && typeof configuration.data === "object"
+      ? (configuration.data as Record<string, unknown>)
+      : undefined;
+  const datasets = Array.isArray(root.datasets) ? root.datasets : [];
+  const datasetEntries = datasets.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
+    const dataset = entry as Record<string, unknown>;
+    if (Array.isArray(dataset.records))
+      return (dataset.records as unknown[]).filter(
+        (record): record is Record<string, unknown> =>
+          Boolean(record) && typeof record === "object",
+      );
+    if (Array.isArray(dataset.points))
+      return (dataset.points as unknown[]).filter(
+        (record): record is Record<string, unknown> =>
+          Boolean(record) && typeof record === "object",
+      );
+    return dataset.values && typeof dataset.values === "object"
+      ? [dataset.values]
+      : [];
+  });
+  const records =
+    direct ??
+    (Array.isArray(data?.records)
+      ? data.records
+      : Array.isArray(data?.events)
+        ? data.events
+        : datasetEntries);
+  return records.slice(0, 12).map((item, index) => {
+    if (!item || typeof item !== "object") return { id: String(index) };
+    const record = item as Record<string, unknown>;
+    const values =
+      record.values && typeof record.values === "object"
+        ? (record.values as Record<string, unknown>)
+        : {};
+    const flattened = { ...record, ...values };
+    if (typeof record.start === "string") {
+      flattened.date ??= record.start.split("T")[0];
+      flattened.startTime ??= record.start;
+    }
+    if (typeof record.end === "string") flattened.endTime ??= record.end;
+    if (typeof record.descriptionExcerpt === "string")
+      flattened.description ??= record.descriptionExcerpt;
+    return Object.fromEntries(
+      Object.entries(flattened).map(([key, entry]) => [
+        key,
+        typeof entry === "string" ||
+        typeof entry === "number" ||
+        typeof entry === "boolean"
+          ? String(entry)
+          : "",
+      ]),
+    );
+  });
+}
