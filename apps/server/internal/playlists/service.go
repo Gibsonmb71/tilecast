@@ -919,7 +919,7 @@ func presentationRequiresManifestV12(ctx context.Context, tx pgx.Tx, playlistID,
 	var required bool
 	err := tx.QueryRow(ctx, `SELECT EXISTS(
 		SELECT 1 FROM layouts l
-		JOIN layout_revision_dependencies d ON d.layout_revision_id=l.published_revision_id
+		JOIN layout_revision_dependencies d ON d.revision_id=l.published_revision_id
 		LEFT JOIN widgets w ON d.dependency_type='widget' AND w.asset_id=d.dependency_id
 		LEFT JOIN data_sources ds ON d.dependency_type='data_source' AND ds.id=d.dependency_id
 		WHERE l.id=$1 AND (
