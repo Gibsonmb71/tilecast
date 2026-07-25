@@ -28,15 +28,18 @@ import { providerLabel, sourceIcon } from "./dataSourceProviderMeta";
 // Studio shows at most this many sample values so a wide source cannot overflow the control.
 const sampleFieldLimit = 4;
 
-function statusTone(status: string) {
+function statusTone(status: unknown) {
   if (status === "ready") return "success" as const;
   if (status === "error") return "danger" as const;
   return "info" as const;
 }
 
-function statusLabel(status: string, recordCount: number) {
+function statusLabel(status: unknown, recordCount: unknown) {
   if (status === "error") return "Last refresh failed";
+  if (typeof status !== "string" || status.length === 0)
+    return "Status unavailable";
   if (status !== "ready") return status.replaceAll("_", " ");
+  if (typeof recordCount !== "number") return "Ready";
   return `Ready · ${recordCount} record${recordCount === 1 ? "" : "s"}`;
 }
 

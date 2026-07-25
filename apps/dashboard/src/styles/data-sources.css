@@ -541,7 +541,7 @@
   font-weight: 650;
 }
 
-/* Provider selection is a compact page panel, not a modal gallery. */
+/* Provider selection is a page-level choice, not a stack of nested cards. */
 .app-editor-route > .details-backdrop:has(.source-gallery) {
   position: static;
   display: block;
@@ -551,18 +551,20 @@
 }
 
 .app-editor-route .source-gallery {
-  width: min(960px, 100%);
+  width: min(900px, 100%);
   max-width: none;
   margin: 0 auto;
-  overflow: hidden;
-  background: var(--tc-bg-surface);
-  border: 1px solid var(--tc-border-default);
-  border-radius: var(--tc-radius-panel);
+  padding: 0;
+  overflow: visible;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
   box-shadow: none;
 }
 
 .app-editor-route .source-gallery > header {
-  padding: var(--tc-space-6);
+  margin-bottom: var(--tc-space-6);
+  padding: 0 0 var(--tc-space-4);
   border-bottom: 1px solid var(--tc-border-default);
 }
 
@@ -581,8 +583,8 @@
 
 .app-editor-route .source-provider-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--tc-space-2);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--tc-space-3);
   padding: 0;
 }
 
@@ -592,16 +594,36 @@
 }
 
 .app-editor-route .source-provider-groups {
-  gap: var(--tc-space-5);
-  padding: var(--tc-space-4);
+  gap: var(--tc-space-8);
+  padding: 0;
 }
 
 .app-editor-route .source-provider-group {
-  gap: var(--tc-space-2);
+  gap: var(--tc-space-3);
 }
 
-.app-editor-route .source-provider-group > h3 {
-  padding-inline: var(--tc-space-1);
+.app-editor-route .source-provider-group__heading {
+  display: grid;
+  gap: 2px;
+}
+
+.app-editor-route .source-provider-group__heading h3,
+.app-editor-route .source-provider-group__heading p {
+  margin: 0;
+}
+
+.app-editor-route .source-provider-group__heading h3 {
+  color: var(--tc-text-primary);
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.app-editor-route .source-provider-group__heading p {
+  color: var(--tc-text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .app-editor-route .source-provider-grid button {
@@ -611,13 +633,13 @@
   column-gap: var(--tc-space-3);
   row-gap: 2px;
   align-items: center;
-  min-height: 82px;
-  padding: var(--tc-space-3);
+  min-height: 92px;
+  padding: var(--tc-space-4);
   color: var(--tc-text-primary);
   text-align: left;
   background: var(--tc-bg-surface);
   border: 1px solid var(--tc-border-default);
-  border-radius: var(--tc-radius-control);
+  border-radius: var(--tc-radius-chip);
   cursor: pointer;
   transition:
     background var(--tc-motion-fast),
