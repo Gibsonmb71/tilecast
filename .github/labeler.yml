@@ -1,0 +1,68 @@
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "docs/**"
+          - "README.md"
+          - "**/README.md"
+
+server:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "apps/server/**"
+          - "packages/api-schema/**"
+
+studio:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "apps/dashboard/**"
+          - "packages/design-tokens/**"
+
+"android player":
+  - changed-files:
+      - any-glob-to-any-file: "apps/player-android/**"
+
+"linux player":
+  - changed-files:
+      - any-glob-to-any-file: "apps/player-linux/**"
+
+docker:
+  - changed-files:
+      - any-glob-to-any-file: "deploy/docker/**"
+
+github_actions:
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".github/actions/**"
+          - ".github/dependabot.yml"
+          - ".github/labeler.yml"
+          - ".github/workflows/**"
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/package.json"
+          - "**/package-lock.json"
+          - "apps/server/go.mod"
+          - "apps/server/go.sum"
+          - "apps/player-android/**/*.gradle"
+          - "apps/player-android/**/*.gradle.kts"
+          - "apps/player-android/gradle.properties"
+          - "apps/player-android/gradle/**"
+          - "deploy/docker/Dockerfile"
+
+go:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "apps/server/**/*.go"
+          - "apps/server/go.mod"
+          - "apps/server/go.sum"
+
+javascript:
+  - changed-files:
+      - any-glob-to-any-file: "**/*.{js,jsx,ts,tsx,mjs,cjs}"
+
+java:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "apps/player-android/**/*.{java,kt,kts}"
+          - "apps/player-android/gradle.properties"
