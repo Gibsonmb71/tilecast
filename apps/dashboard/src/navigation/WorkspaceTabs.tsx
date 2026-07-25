@@ -7,22 +7,31 @@
 // The detail routes stay canonical (`/assets`, `/widgets`, `/data-sources`, `/playlists`,
 // `/layouts`), so no deep link, breadcrumb, or search entry has to move. These are real links
 // rather than buttons so a tab can be opened in a new tab like any other destination.
+import {
+  Blocks,
+  Database,
+  Image,
+  ListVideo,
+  PanelsTopLeft,
+  type LucideIcon,
+} from "lucide-react";
 import { Link, useLocation } from "react-router";
 
 export type WorkspaceTab = {
   label: string;
   to: string;
+  icon: LucideIcon;
 };
 
 export const contentTabs: readonly WorkspaceTab[] = [
-  { label: "Media", to: "/assets" },
-  { label: "Widgets", to: "/widgets" },
-  { label: "Data", to: "/data-sources" },
+  { label: "Media", to: "/assets", icon: Image },
+  { label: "Widgets", to: "/widgets", icon: Blocks },
+  { label: "Data", to: "/data-sources", icon: Database },
 ];
 
 export const presentationTabs: readonly WorkspaceTab[] = [
-  { label: "Playlists", to: "/playlists" },
-  { label: "Layouts", to: "/layouts" },
+  { label: "Playlists", to: "/playlists", icon: ListVideo },
+  { label: "Layouts", to: "/layouts", icon: PanelsTopLeft },
 ];
 
 // Every route beneath a tab's path belongs to that tab, so a Widget editor still shows Widgets as
@@ -41,17 +50,21 @@ export function WorkspaceTabs({
   const location = useLocation();
   return (
     <nav className="view-tabs workspace-tabs" aria-label={label}>
-      {tabs.map((tab) => (
-        <Link
-          key={tab.to}
-          to={tab.to}
-          aria-current={
-            tabMatchesPath(tab.to, location.pathname) ? "page" : undefined
-          }
-        >
-          <span>{tab.label}</span>
-        </Link>
-      ))}
+      {tabs.map((tab) => {
+        const Icon = tab.icon;
+        return (
+          <Link
+            key={tab.to}
+            to={tab.to}
+            aria-current={
+              tabMatchesPath(tab.to, location.pathname) ? "page" : undefined
+            }
+          >
+            <Icon size={16} strokeWidth={1.8} aria-hidden="true" />
+            <span>{tab.label}</span>
+          </Link>
+        );
+      })}
     </nav>
   );
 }
