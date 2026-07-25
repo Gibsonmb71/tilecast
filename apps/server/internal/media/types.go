@@ -861,10 +861,18 @@ type DataSourceListOptions struct {
 }
 
 type DataSourceListResult struct {
-	Items    []DataSource `json:"items"`
-	Total    int          `json:"total"`
-	Page     int          `json:"page"`
-	PageSize int          `json:"pageSize"`
+	Items    []DataSourceListItem `json:"items"`
+	Total    int                  `json:"total"`
+	Page     int                  `json:"page"`
+	PageSize int                  `json:"pageSize"`
+}
+
+// DataSourceListItem includes the refresh summary Studio needs to present and
+// select a source without fetching every source's detail separately.
+type DataSourceListItem struct {
+	DataSource
+	Status        string `json:"status"`
+	CachedRecords int    `json:"cachedRecordCount"`
 }
 type ListResult struct {
 	Items    []Asset `json:"items"`

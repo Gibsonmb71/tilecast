@@ -60,13 +60,6 @@ export function WidgetProviderGallery({
   onClose: () => void;
   page?: boolean;
 }) {
-  const catalog = useQuery({
-    queryKey: ["provider-catalog"],
-    queryFn: api.providerCatalog,
-    staleTime: 5 * 60_000,
-  });
-  const widgetProviders =
-    catalog.data?.providers?.filter((entry) => entry.role === "widget") ?? [];
   const definitions = useQuery({
     queryKey: ["content-definitions"],
     queryFn: api.contentDefinitions,
@@ -98,10 +91,8 @@ export function WidgetProviderGallery({
           <div>
             <h2 id="source-gallery-title">Create Widget</h2>
             <p>
-              Choose a Tilecast provider compiled to the declarative runtime.
-              {widgetProviders.length > 0
-                ? ` ${widgetProviders.filter((entry) => entry.presentationKind === "native").length} native and ${widgetProviders.filter((entry) => entry.presentationKind === "web").length} sandboxed web providers are available.`
-                : ""}
+              Choose what you want to show. If a Widget needs connected data,
+              you can choose or create it in the next step.
             </p>
           </div>
           <button className="icon-button" aria-label="Close" onClick={onClose}>
@@ -111,7 +102,12 @@ export function WidgetProviderGallery({
         <div className="source-provider-groups">
           {releaseDefined.length > 0 && (
             <section className="source-provider-group">
-              <h3>Release-defined</h3>
+              <header className="source-provider-group__heading">
+                <h3>Included with this release</h3>
+                <p>
+                  Additional Widget types provided by this Tilecast release.
+                </p>
+              </header>
               <div className="source-provider-grid">
                 {releaseDefined.map((definition) => (
                   <button
@@ -128,7 +124,10 @@ export function WidgetProviderGallery({
             </section>
           )}
           <section className="source-provider-group">
-            <h3>Web and video</h3>
+            <header className="source-provider-group__heading">
+              <h3>Web and video</h3>
+              <p>Show a webpage or play YouTube content.</p>
+            </header>
             <div className="source-provider-grid">
               <button type="button" onClick={() => onChoose("website")}>
                 <Globe2 size={26} />
@@ -145,7 +144,10 @@ export function WidgetProviderGallery({
             </div>
           </section>
           <section className="source-provider-group">
-            <h3>Essentials</h3>
+            <header className="source-provider-group__heading">
+              <h3>Essentials</h3>
+              <p>Simple Widgets that do not need a Data Source.</p>
+            </header>
             <div className="source-provider-grid">
               <button type="button" onClick={() => onChoose("clock")}>
                 <Clock3 size={26} />
@@ -172,7 +174,12 @@ export function WidgetProviderGallery({
             </div>
           </section>
           <section className="source-provider-group">
-            <h3>Data Display</h3>
+            <header className="source-provider-group__heading">
+              <h3>Display connected data</h3>
+              <p>
+                Choose how records should look. You can connect the data next.
+              </p>
+            </header>
             <div className="source-provider-grid">
               <button type="button" onClick={() => onChoose("ticker")}>
                 <TextQuote size={26} />
@@ -237,7 +244,10 @@ export function WidgetProviderGallery({
             </div>
           </section>
           <section className="source-provider-group">
-            <h3>Schedules</h3>
+            <header className="source-provider-group__heading">
+              <h3>Schedules and time</h3>
+              <p>Show milestones or time across multiple locations.</p>
+            </header>
             <div className="source-provider-grid">
               <button type="button" onClick={() => onChoose("timeline")}>
                 <ListTree size={26} />
@@ -252,7 +262,10 @@ export function WidgetProviderGallery({
             </div>
           </section>
           <section className="source-provider-group">
-            <h3>Presets</h3>
+            <header className="source-provider-group__heading">
+              <h3>Common starting points</h3>
+              <p>Start with familiar signage patterns and customize them.</p>
+            </header>
             <div className="source-provider-grid">
               {[
                 [
@@ -305,7 +318,6 @@ export function WidgetProviderGallery({
                   <LayoutGrid size={26} />
                   <strong>{label}</strong>
                   <span>{description}</span>
-                  <small>Guided preset</small>
                 </button>
               ))}
             </div>

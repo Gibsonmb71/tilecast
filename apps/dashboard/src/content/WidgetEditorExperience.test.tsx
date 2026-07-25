@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { api } from "../api/client";
 import type { WidgetDefinition, WidgetPresentation } from "../api/types";
 import { GenericWidgetEditor } from "./GenericDefinitionEditors";
-import { NativeAppEditor } from "./SourceEditors";
+import { NativeAppEditor, WidgetProviderGallery } from "./SourceEditors";
 
 afterEach(() => {
   cleanup();
@@ -39,6 +39,30 @@ function renderEditor(editor: ReactNode) {
 }
 
 describe("Widget editor experience", () => {
+  it("organizes Widget choices by what the editor wants to show", () => {
+    renderEditor(
+      <WidgetProviderGallery onChoose={vi.fn()} onClose={vi.fn()} page />,
+    );
+
+    expect(
+      screen.getByText(
+        "Choose what you want to show. If a Widget needs connected data, you can choose or create it in the next step.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Essentials" })).toBeTruthy();
+    expect(
+      screen.getByText("Simple Widgets that do not need a Data Source."),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "Display connected data" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Choose how records should look. You can connect the data next.",
+      ),
+    ).toBeTruthy();
+  });
+
   it("groups built-in Widget settings and keeps a named live preview", () => {
     renderEditor(
       <NativeAppEditor

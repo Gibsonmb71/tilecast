@@ -112,6 +112,23 @@ describe("DataSourcePicker", () => {
     expect(screen.queryByRole("dialog", { name: "Choose data" })).toBeNull();
   });
 
+  it("keeps the chooser usable when an older list response omits refresh metadata", async () => {
+    const legacySource = {
+      ...existing,
+      status: undefined,
+      cachedRecordCount: undefined,
+    } as unknown as DataSource;
+    const { onChange } = picker([legacySource]);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Data Source: Choose data" }),
+    );
+
+    expect(screen.getByText("Status unavailable")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: /Lunch rows/ }));
+    expect(onChange).toHaveBeenCalledWith("existing");
+  });
+
   it("offers connecting new data alongside existing sources", async () => {
     picker([existing]);
 

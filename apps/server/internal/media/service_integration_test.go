@@ -166,6 +166,20 @@ func TestMediaUploadProcessingAndDeletionLifecycle(t *testing.T) {
 	if err != nil || calendarDiagnostics.ParseStatus != "success" || calendarDiagnostics.AvailableEventCount != 1 || calendarDiagnostics.LastSuccessfulAt == nil {
 		t.Fatalf("calendar diagnostics=%#v err=%v", calendarDiagnostics, err)
 	}
+	dataSources, err := service.ListDataSources(ctx, DataSourceListOptions{Page: 1, PageSize: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var listedCalendar DataSourceListItem
+	for _, source := range dataSources.Items {
+		if source.ID == calendarAsset.ID {
+			listedCalendar = source
+			break
+		}
+	}
+	if listedCalendar.ID != calendarAsset.ID || listedCalendar.Status != "ready" || listedCalendar.CachedRecords != 1 {
+		t.Fatalf("listed calendar=%#v", listedCalendar)
+	}
 	projected, err := service.PlayerDataSourceConfiguration(ctx, calendarAsset.ID, "calendar", calendarConfiguration)
 	if err != nil || strings.Contains(string(projected), calendarServer.URL) || !strings.Contains(string(projected), "Board meeting") {
 		t.Fatalf("calendar projection=%s err=%v", projected, err)
