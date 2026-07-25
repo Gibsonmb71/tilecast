@@ -87,7 +87,7 @@ func TestReverseUsageReachesScreens(t *testing.T) {
 	}
 
 	service := NewService(pool, &testNotifier{})
-	playlist, err := service.Create(ctx, owner.User.ID, "Cafeteria loop", "")
+	playlist, err := service.Create(ctx, owner.User.ID, "Cafeteria loop", "", "static")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestReverseUsageReachesScreens(t *testing.T) {
 	}
 
 	// An unrelated playlist must not appear in the asset's usage.
-	other, err := service.Create(ctx, owner.User.ID, "Unrelated", "")
+	other, err := service.Create(ctx, owner.User.ID, "Unrelated", "", "static")
 	if err != nil {
 		t.Fatal(err)
 	}

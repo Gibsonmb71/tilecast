@@ -48,3 +48,29 @@ func TestDowngradeManifestCrossfadesPreservesOtherTransitions(t *testing.T) {
 		t.Fatalf("direct playlist was not downgraded: %#v", manifest.Playlist.Items)
 	}
 }
+
+func TestNormalizeSourceType(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "legacy omitted value", input: "", want: "static"},
+		{name: "standard playlist", input: "static", want: "static"},
+		{name: "tag-driven playlist", input: "tag", want: "tag"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := normalizeSourceType(test.input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != test.want {
+				t.Fatalf("normalizeSourceType(%q)=%q, want %q", test.input, got, test.want)
+			}
+		})
+	}
+
+	if _, err := normalizeSourceType("automatic"); err == nil {
+		t.Fatal("invalid source type was accepted")
+	}
+}

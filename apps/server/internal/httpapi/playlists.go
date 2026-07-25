@@ -18,6 +18,12 @@ type playlistDetailsRequest struct {
 	Description string `json:"description"`
 }
 
+type playlistCreateRequest struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	SourceType  string `json:"sourceType"`
+}
+
 func (s *server) listPlaylists(w http.ResponseWriter, r *http.Request) {
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	pageSize, _ := strconv.Atoi(r.URL.Query().Get("pageSize"))
@@ -29,13 +35,13 @@ func (s *server) listPlaylists(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 func (s *server) createPlaylist(w http.ResponseWriter, r *http.Request) {
-	var body playlistDetailsRequest
+	var body playlistCreateRequest
 	if err := decodeJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
 	user := r.Context().Value(sessionContextKey).(auth.Session).User
-	result, err := s.playlists.Create(r.Context(), user.ID, body.Name, body.Description)
+	result, err := s.playlists.Create(r.Context(), user.ID, body.Name, body.Description, body.SourceType)
 	if err != nil {
 		s.writePlaylistError(w, r, err)
 		return

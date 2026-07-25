@@ -1324,7 +1324,11 @@ export const api = {
   },
   playlist: (id: string) => requestPlaylist(`/playlists/${id}`),
   createPlaylist: (
-    input: { name: string; description: string },
+    input: {
+      name: string;
+      description: string;
+      sourceType: "static" | "tag";
+    },
     csrfToken: string,
   ) =>
     requestPlaylist("/playlists", {

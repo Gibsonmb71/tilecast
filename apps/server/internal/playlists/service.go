@@ -38,10 +38,14 @@ func (s *Service) SetScheduling(service *scheduling.Service)          { s.schedu
 func (s *Service) SetSourceProjector(projector SourceProjector)       { s.sources = projector }
 func (s *Service) SetContentDefinitions(catalog *contentdefs.Catalog) { s.definitions = catalog }
 
-func (s *Service) Create(ctx context.Context, userID uuid.UUID, name, description string) (Playlist, error) {
+func (s *Service) Create(ctx context.Context, userID uuid.UUID, name, description, sourceType string) (Playlist, error) {
 	name = strings.TrimSpace(name)
 	description = strings.TrimSpace(description)
 	if err := validateDetails(name, description); err != nil {
+		return Playlist{}, err
+	}
+	sourceType, err := normalizeSourceType(sourceType)
+	if err != nil {
 		return Playlist{}, err
 	}
 	var org uuid.UUID
@@ -54,7 +58,7 @@ func (s *Service) Create(ctx context.Context, userID uuid.UUID, name, descriptio
 		return Playlist{}, err
 	}
 	defer tx.Rollback(ctx)
-	_, err = tx.Exec(ctx, `INSERT INTO playlists(id,organization_id,name,description,created_by)VALUES($1,$2,$3,$4,$5)`, id, org, name, description, userID)
+	_, err = tx.Exec(ctx, `INSERT INTO playlists(id,organization_id,name,description,source_type,created_by)VALUES($1,$2,$3,$4,$5,$6)`, id, org, name, description, sourceType, userID)
 	if err != nil {
 		return Playlist{}, err
 	}
@@ -66,6 +70,18 @@ func (s *Service) Create(ctx context.Context, userID uuid.UUID, name, descriptio
 	}
 	return s.Get(ctx, id)
 }
+
+func normalizeSourceType(sourceType string) (string, error) {
+	sourceType = strings.TrimSpace(sourceType)
+	if sourceType == "" {
+		return "static", nil
+	}
+	if sourceType != "static" && sourceType != "tag" {
+		return "", errors.New("playlist sourceType must be static or tag")
+	}
+	return sourceType, nil
+}
+
 func validateDetails(name, description string) error {
 	if len(name) < 1 || len(name) > 180 {
 		return errors.New("playlist name must be between 1 and 180 characters")
@@ -412,7 +428,7 @@ func (s *Service) Duplicate(ctx context.Context, id, userID uuid.UUID) (Playlist
 	if err != nil {
 		return Playlist{}, err
 	}
-	created, err := s.Create(ctx, userID, source.Name+" copy", source.Description)
+	created, err := s.Create(ctx, userID, source.Name+" copy", source.Description, source.SourceType)
 	if err != nil {
 		return Playlist{}, err
 	}

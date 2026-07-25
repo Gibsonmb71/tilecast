@@ -167,6 +167,41 @@ describe("mixed-version collection compatibility", () => {
   });
 });
 
+describe("playlist creation contract", () => {
+  it("sends the selected playlist type", async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: () =>
+        Promise.resolve({
+          data: { id: "playlist-1", sourceType: "tag" },
+        }),
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    await api.createPlaylist(
+      { name: "Tagged media", description: "", sourceType: "tag" },
+      "csrf-token",
+    );
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/v1/playlists",
+      expect.objectContaining({
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": "csrf-token",
+        },
+        body: JSON.stringify({
+          name: "Tagged media",
+          description: "",
+          sourceType: "tag",
+        }),
+      }),
+    );
+  });
+});
+
 describe("Widget preview snapshots", () => {
   it("uploads the frozen JPEG with CSRF protection", async () => {
     const fetch = vi.fn().mockResolvedValue({ ok: true, status: 204 });
