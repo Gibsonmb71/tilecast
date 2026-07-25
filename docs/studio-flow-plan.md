@@ -124,7 +124,10 @@ Two deviations from the plan as written:
   fetched and all of them gate saving, so the captured thumbnail is never uploaded with data in
   flight. Rendering several datasets at once would require `DeclarativePresentationPreview` and
   `previewRecordMaps` to accept a keyed set instead of one payload — a change to preview semantics
-  that belongs in its own commit, not in a picker change.
+  that belongs in its own commit, not in a picker change. **Resolved:** the preview now resolves
+  each binding against a map keyed `<dataSourceId>:<datasetId>`, matching how the Server compiles
+  dataset references, with an unknown name falling back to the primary payload so single-source
+  Widgets are unchanged.
 
 Noted while working, not fixed: the shared `Select` primitive renders its trigger as a `<button
 role="combobox">` inside a `<label>`, and a label does not name a button, so most select controls in
