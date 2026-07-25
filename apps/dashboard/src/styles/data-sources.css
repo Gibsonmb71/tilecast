@@ -800,9 +800,52 @@
 }
 
 /* The Connect flow's provider chooser, shown before the ordinary Data Source editor. */
+.data-source-connect-backdrop {
+  align-items: center;
+  justify-content: center;
+  padding: var(--tc-space-4);
+  backdrop-filter: blur(2px);
+}
+
+.data-source-connect {
+  width: min(620px, 100%);
+  height: auto;
+  max-height: min(720px, calc(100vh - 32px));
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-panel);
+  background: var(--tc-bg-surface);
+  box-shadow: 0 18px 48px rgb(15 24 21 / 24%);
+}
+
+.data-source-connect > header {
+  padding: var(--tc-space-5);
+  margin: 0;
+  border-bottom: 1px solid var(--tc-border-default);
+}
+
+.data-source-connect > header p {
+  margin: var(--tc-space-1) 0 0;
+  color: var(--tc-text-secondary);
+  font-size: 13px;
+}
+
+.data-source-connect > .source-editor__body {
+  padding: var(--tc-space-4);
+  overflow-y: auto;
+}
+
+.data-source-connect > footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--tc-space-3) var(--tc-space-4);
+  border-top: 1px solid var(--tc-border-default);
+}
+
 .data-source-connect__choices {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: 1fr;
   gap: var(--tc-space-2);
   margin: 0;
   padding: 0;
@@ -815,8 +858,10 @@
   gap: var(--tc-space-3);
   align-items: center;
   width: 100%;
-  padding: var(--tc-space-3);
-  background: var(--tc-bg-surface);
+  min-height: 64px;
+  padding: var(--tc-space-3) var(--tc-space-4);
+  color: var(--tc-text-primary);
+  background: var(--tc-bg-subtle);
   border: 1px solid var(--tc-border-default);
   border-radius: var(--tc-radius-panel);
   text-align: start;
@@ -824,7 +869,13 @@
 }
 
 .data-source-connect__choices button:hover {
-  background: var(--tc-bg-subtle);
+  border-color: var(--tc-action-primary);
+  background: var(--tc-action-primary-soft);
+}
+
+.data-source-connect__choices button:focus-visible {
+  outline: 2px solid var(--tc-action-primary);
+  outline-offset: 2px;
 }
 
 .data-source-connect__choices button > span:last-child {

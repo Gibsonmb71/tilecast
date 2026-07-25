@@ -84,6 +84,9 @@ describe("DataSourcePicker", () => {
     await userEvent.click(
       screen.getByRole("button", { name: /Connect new data/ }),
     );
+    expect(
+      screen.getByRole("dialog", { name: "Connect new data" }),
+    ).toHaveClass("asset-details", "data-source-connect");
     await userEvent.click(screen.getByRole("button", { name: /CSV/ }));
     await userEvent.click(screen.getByRole("button", { name: "Save csv" }));
 
