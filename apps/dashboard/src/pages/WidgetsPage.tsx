@@ -24,6 +24,7 @@ import {
   YouTubeSourceEditor,
 } from "../content/SourceEditors";
 import { GenericWidgetEditor } from "../content/GenericDefinitionEditors";
+import { UsedByPanel } from "../content/UsedByPanel";
 import {
   AssetCollection,
   WebsiteEditor,
@@ -165,11 +166,21 @@ export function WidgetEditorPage() {
   });
   const asset = widget.data;
   const provider = providerParam ?? asset?.widget?.provider;
-  const presetId = new URLSearchParams(location.search).get("preset") as
+  const search = new URLSearchParams(location.search);
+  const presetId = search.get("preset") as
     import("../api/types").WidgetPreset | null;
-  const close = () => void navigate("/widgets");
+  // A Layout links here with returnTo so closing the Widget lands back on the Layout the author
+  // was building, rather than on the Widget list. Only same-origin app paths are honored.
+  const returnToParam = search.get("returnTo");
+  const returnTo =
+    returnToParam?.startsWith("/") && !returnToParam.startsWith("//")
+      ? returnToParam
+      : null;
+  const close = () => void navigate(returnTo ?? "/widgets");
   const saved = (value: Asset) => {
-    void navigate(`/widgets/${value.id}`, { replace: true });
+    // Preserve returnTo across the save so a Widget opened from a Layout still returns there.
+    const query = returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : "";
+    void navigate(`/widgets/${value.id}${query}`, { replace: true });
   };
   const definition = definitions.data?.widgets?.find(
     (candidate) => candidate.id === provider,
@@ -225,6 +236,29 @@ export function WidgetEditorPage() {
           {...common}
           provider={provider as NativeProvider}
           presetId={asset?.widget?.presetId ?? presetId ?? undefined}
+        />
+      )}
+      {/* Rendered here rather than inside each provider editor so every Widget reports its
+          consumers, and so editing a shared Widget shows what else it would change. */}
+      {asset && (
+        <UsedByPanel
+          emptyMessage="No playlist or Layout uses this Widget yet."
+          groups={[
+            {
+              label: "Playlists",
+              items: asset.playlistsUsing ?? [],
+              to: (playlistId) => `/playlists/${playlistId}`,
+            },
+            {
+              label: "Layouts",
+              items: (asset.layoutUsage ?? []).map((usage) => ({
+                id: usage.id,
+                name: usage.name,
+                hint: usage.published ? "Published" : "Draft",
+              })),
+              to: (layoutId) => `/layouts/${layoutId}`,
+            },
+          ]}
         />
       )}
     </section>

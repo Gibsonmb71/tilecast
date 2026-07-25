@@ -131,7 +131,7 @@ role="combobox">` inside a `<label>`, and a label does not name a button, so mos
 Studio have no accessible name. This predates Phase 1 and affects every field in the app, so it
 wants a single pass over the `Field`/`Select` primitives rather than a local patch here.
 
-## Phase 2 — Make the dependency graph walkable
+## Phase 2 — Make the dependency graph walkable — **done**
 
 Goal: an author can trace `lunch.csv → Today's Lunch → Cafeteria Layout → Cafeteria TV` and back.
 This is the change that makes the app feel connected rather than segmented — the edges exist in the
@@ -173,6 +173,38 @@ and it reuses the same edges in the other direction.
 
 **Exit criteria** — From any Data Source, reach every screen displaying it in clicks. From any
 screen, reach every source feeding it.
+
+### As built
+
+Server: `Asset.playlistsUsing` on the detail read (`media/service.go`), and `Playlist.usage` with
+screens and schedules (`playlists/service.go`), matching the `Layout.usage` shape. Dashboard:
+`content/UsedByPanel.tsx` on the Data Source, Widget, Playlist, Layout, and Media detail views, and
+`content/ScreenContentChain.tsx` for the downward walk.
+
+Three notes:
+
+- **The reverse edges are hand-written SQL, so they were verified against a real Postgres**, not
+  just compiled. Running them caught two defects that `go build` and `go test` without a database
+  both missed: a `starts_on`/`recurrence` fixture that does not match the `schedules` schema, and a
+  production query using `SELECT DISTINCT` with `ORDER BY lower(p.name)`, which Postgres rejects
+  because the sort expression is not in the select list. The asset query now uses `GROUP BY`, as
+  `layoutUsage` already did. Coverage lives in
+  `playlists/reverse_usage_integration_test.go` and needs `TEST_DATABASE_URL`.
+- **`playlistUsage` stays a count on the list read.** Resolving playlist identities per row would
+  add a second per-asset query to a paged endpoint; `layoutUsage` already does that, and this
+  change does not make it worse.
+- **The downward chain resolves fully for Layouts and partially for playlists.** A Layout's stored
+  dependencies already name every Data Source it reaches, including one reached through a text
+  binding with no Widget, so the screen page shows each source and its status for one extra list
+  read. A playlist links its Widgets instead of resolving their sources, because that is one detail
+  request per item on a page that should stay cheap. Closing that leg properly wants a server-side
+  resolved-chain read rather than client fan-out, which is more than the two reverse edges this
+  phase budgeted.
+
+Also folded in, as planned: **"Edit shared Widget" now opens the Widget** with a `returnTo` path
+back to the Layout, replacing a confirmation dialog that navigated to the Widget _list_ and lost the
+author's place. `returnTo` is read from the URL, so only in-app absolute paths are honored — a
+protocol-relative value falls back to `/widgets`, which is covered by a test.
 
 ## Phase 3 — Collapse six nouns into three
 

@@ -31,6 +31,7 @@ import {
   DashboardListToolbar,
   DashboardSearch,
 } from "../components/DashboardListToolbar";
+import { UsedByPanel } from "../content/UsedByPanel";
 import {
   ContentPicker,
   type ContentPickerResult,
@@ -362,20 +363,30 @@ export function PlaylistEditorPage() {
           {w}
         </div>
       ))}
-      {playlist.layoutUsage?.length > 0 && (
-        <div className="notice notice--neutral">
-          <strong>Used in Layouts</strong>
-          <span>
-            {(playlist.layoutUsage ?? []).map((layout, index) => (
-              <span key={layout.id}>
-                {index > 0 ? ", " : ""}
-                <Link to={`/layouts/${layout.id}`}>{layout.name}</Link>
-                {layout.published ? " (published)" : " (draft)"}
-              </span>
-            ))}
-          </span>
-        </div>
-      )}
+      <UsedByPanel
+        emptyMessage="No Layout, screen, or schedule plays this playlist yet."
+        groups={[
+          {
+            label: "Layouts",
+            items: (playlist.layoutUsage ?? []).map((layout) => ({
+              id: layout.id,
+              name: layout.name,
+              hint: layout.published ? "Published" : "Draft",
+            })),
+            to: (layoutId) => `/layouts/${layoutId}`,
+          },
+          {
+            label: "Screens",
+            items: playlist.usage?.screens ?? [],
+            to: (screenId) => `/screens/${screenId}`,
+          },
+          {
+            label: "Schedules",
+            items: playlist.usage?.schedules ?? [],
+            to: (scheduleId) => `/schedules/${scheduleId}`,
+          },
+        ]}
+      />
       <section className="playlist-settings">
         <label className="field">
           <span className="field__label">Name</span>

@@ -27,12 +27,26 @@ type Playlist struct {
 	ItemCount   int           `json:"itemCount"`
 	Warnings    []string      `json:"warnings"`
 	LayoutUsage []LayoutUsage `json:"layoutUsage"`
+	// Usage names the screens and schedules that play this playlist, so Studio can walk from a
+	// Data Source through its Widgets and playlists to the screens actually displaying it. It
+	// mirrors the Layout usage shape and is populated on the detail read only.
+	Usage Usage `json:"usage"`
 }
 
 type LayoutUsage struct {
 	ID        uuid.UUID `json:"id"`
 	Name      string    `json:"name"`
 	Published bool      `json:"published"`
+}
+
+type UsageItem struct {
+	ID   uuid.UUID `json:"id"`
+	Name string    `json:"name"`
+}
+
+type Usage struct {
+	Screens   []UsageItem `json:"screens"`
+	Schedules []UsageItem `json:"schedules"`
 }
 
 type Item struct {

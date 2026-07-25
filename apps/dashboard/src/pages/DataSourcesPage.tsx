@@ -37,6 +37,7 @@ import {
   resolveSetup,
   sourceIcon,
 } from "../content/dataSourceProviderMeta";
+import { UsedByPanel } from "../content/UsedByPanel";
 import { canManageContent } from "./ContentPage";
 import { CreateFormDataSourcePage } from "./CreateFormDataSourcePage";
 import { FormDataSourcePage } from "./FormDataSourcePage";
@@ -466,31 +467,27 @@ export function DataSourceEditorPage() {
         </section>
       )}
       {dataSource && (
-        <aside className="source-diagnostics">
-          <strong>Usage</strong>
-          <p>
-            {dataSource.widgetUsage.length} Widget
-            {dataSource.widgetUsage.length === 1 ? "" : "s"} ·{" "}
-            {dataSource.bindingUsage.length} Layout text binding
-            {dataSource.bindingUsage.length === 1 ? "" : "s"}
-          </p>
-          {dataSource.widgetUsage.length > 0 && (
-            <ul>
-              {dataSource.widgetUsage.map((usage) => (
-                <li key={usage.id}>{usage.name}</li>
-              ))}
-            </ul>
-          )}
-          {dataSource.bindingUsage.length > 0 && (
-            <ul>
-              {dataSource.bindingUsage.map((usage) => (
-                <li key={`${usage.layoutId}-${usage.field}`}>
-                  {usage.layoutName} ({usage.field})
-                </li>
-              ))}
-            </ul>
-          )}
-        </aside>
+        <UsedByPanel
+          emptyMessage="No Widget or Layout binding reads this Data Source yet."
+          groups={[
+            {
+              label: "Widgets",
+              items: dataSource.widgetUsage,
+              to: (id) => `/widgets/${id}`,
+            },
+            {
+              label: "Layout text bindings",
+              // A Layout may bind several fields of one source, so the field is the hint and the
+              // layout is what the entry links to.
+              items: dataSource.bindingUsage.map((usage) => ({
+                id: usage.layoutId,
+                name: usage.layoutName,
+                hint: usage.field,
+              })),
+              to: (id) => `/layouts/${id}`,
+            },
+          ]}
+        />
       )}
     </section>
   );

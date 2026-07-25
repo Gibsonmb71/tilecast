@@ -379,6 +379,10 @@ func (s *Service) getAsset(ctx context.Context, id uuid.UUID, allowFormAttachmen
 		}
 	}
 	_ = s.db.QueryRow(ctx, `SELECT count(DISTINCT playlist_id) FROM playlist_items WHERE asset_id=$1`, id).Scan(&asset.PlaylistUsage)
+	asset.PlaylistsUsing, err = s.playlistUsage(ctx, id)
+	if err != nil {
+		return Asset{}, err
+	}
 	asset.LayoutUsage, err = s.layoutUsage(ctx, id)
 	if err != nil {
 		return Asset{}, err
@@ -439,6 +443,25 @@ func (s *Service) variants(ctx context.Context, assetID uuid.UUID) ([]Variant, e
 			return nil, err
 		}
 		result = append(result, v)
+	}
+	return result, rows.Err()
+}
+
+// playlistUsage names the playlists containing an asset. Only the detail read calls this; the
+// list read keeps its cheap count so a paged response does not grow a second per-row query.
+func (s *Service) playlistUsage(ctx context.Context, assetID uuid.UUID) ([]PlaylistUsage, error) {
+	rows, err := s.db.Query(ctx, `SELECT p.id,p.name FROM playlists p JOIN playlist_items i ON i.playlist_id=p.id WHERE i.asset_id=$1 AND p.deleted_at IS NULL GROUP BY p.id,p.name ORDER BY lower(p.name),p.id`, assetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := []PlaylistUsage{}
+	for rows.Next() {
+		var usage PlaylistUsage
+		if err = rows.Scan(&usage.ID, &usage.Name); err != nil {
+			return nil, err
+		}
+		result = append(result, usage)
 	}
 	return result, rows.Err()
 }

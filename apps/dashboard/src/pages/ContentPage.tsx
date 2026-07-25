@@ -48,6 +48,7 @@ import { useAuth } from "../auth/AuthProvider";
 import { NativeAppEditor, YouTubeSourceEditor } from "../content/SourceEditors";
 import { AssetPreview } from "../components/content/AssetPreview";
 import { droppedFiles } from "../components/content/dragDrop";
+import { UsedByPanel } from "../content/UsedByPanel";
 
 type QueueItem = {
   localId: string;
@@ -1531,17 +1532,25 @@ function MediaAssetDetails({
             <dd className="hash">{asset.sha256}</dd>
           </div>
         </dl>
-        {asset.layoutUsage?.length ? (
-          <section className="content-usage-list">
-            <h3>Used in Layouts</h3>
-            {asset.layoutUsage.map((usage) => (
-              <a key={usage.id} href={`/layouts/${usage.id}`}>
-                <span>{usage.name}</span>
-                <small>{usage.published ? "Published" : "Draft"}</small>
-              </a>
-            ))}
-          </section>
-        ) : null}
+        <UsedByPanel
+          emptyMessage="No playlist or Layout uses this media yet."
+          groups={[
+            {
+              label: "Playlists",
+              items: asset.playlistsUsing ?? [],
+              to: (playlistId) => `/playlists/${playlistId}`,
+            },
+            {
+              label: "Layouts",
+              items: (asset.layoutUsage ?? []).map((usage) => ({
+                id: usage.id,
+                name: usage.name,
+                hint: usage.published ? "Published" : "Draft",
+              })),
+              to: (layoutId) => `/layouts/${layoutId}`,
+            },
+          ]}
+        />
         {asset.errorMessage && (
           <div className="notice notice--error">{asset.errorMessage}</div>
         )}

@@ -39,7 +39,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { useNavigate, useParams } from "react-router";
+import { useLocation, useNavigate, useParams } from "react-router";
 import QRCode from "qrcode";
 import { api, ApiError } from "../api/client";
 import type {
@@ -66,6 +66,7 @@ import {
   ConnectDataNotice,
   DataSourcePicker,
 } from "../content/DataSourcePicker";
+import { UsedByPanel } from "../content/UsedByPanel";
 import { layoutFontStack } from "../layoutFonts";
 import { captureLayoutPreview } from "../content/widgetPreviewCapture";
 
@@ -1404,23 +1405,22 @@ export function LayoutEditorPage() {
                 <strong>Layout settings</strong>
               </div>
               <CanvasInspector document={document} update={update} />
-              {(layoutQuery.data?.usage.screens.length ||
-                layoutQuery.data?.usage.schedules.length) && (
-                <div className="content-usage-list">
-                  <h3>Used in</h3>
-                  {layoutQuery.data.usage.screens.map((screen) => (
-                    <a key={screen.id} href={`/screens/${screen.id}`}>
-                      <span>{screen.name}</span>
-                      <small>Screen</small>
-                    </a>
-                  ))}
-                  {layoutQuery.data.usage.schedules.map((schedule) => (
-                    <a key={schedule.id} href={`/schedules/${schedule.id}`}>
-                      <span>{schedule.name}</span>
-                      <small>Schedule</small>
-                    </a>
-                  ))}
-                </div>
+              {layoutQuery.data && (
+                <UsedByPanel
+                  emptyMessage="No screen or schedule shows this Layout yet."
+                  groups={[
+                    {
+                      label: "Screens",
+                      items: layoutQuery.data.usage.screens,
+                      to: (screenId) => `/screens/${screenId}`,
+                    },
+                    {
+                      label: "Schedules",
+                      items: layoutQuery.data.usage.schedules,
+                      to: (scheduleId) => `/schedules/${scheduleId}`,
+                    },
+                  ]}
+                />
               )}
             </>
           )}
@@ -2692,6 +2692,7 @@ function PlacementInspector({
   canGroup: boolean;
 }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const auth = useAuth();
   const queryClient = useQueryClient();
   // Definitions back the picker's Connect flow; connecting refreshes the Layout's source list so
@@ -2918,15 +2919,18 @@ function PlacementInspector({
               Muted in this Layout
             </label>
           )}
+          {/* Opens the Widget itself and carries a return path, instead of asking for confirmation
+              and then abandoning the author at the Widget list. The Widget editor reports its own
+              consumers, so the warning this dialog used to guess at is shown where it is
+              actionable. */}
           <button
             className="button button--secondary"
+            disabled={!content}
             onClick={() => {
-              if (
-                window.confirm(
-                  `${content?.name ?? "This Widget"} may be used by other playlists and Layouts. Open the shared Widget editor?`,
-                )
-              )
-                void navigate("/widgets");
+              if (!content) return;
+              void navigate(
+                `/widgets/${content.id}?returnTo=${encodeURIComponent(location.pathname)}`,
+              );
             }}
           >
             <AppWindow size={16} />
