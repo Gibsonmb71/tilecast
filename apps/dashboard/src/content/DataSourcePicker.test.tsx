@@ -95,21 +95,35 @@ describe("DataSourcePicker", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("offers connecting new data alongside existing sources", () => {
+  it("chooses existing data from a modal with source context", async () => {
+    const { onChange } = picker([existing]);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Data Source: Choose data" }),
+    );
+
+    expect(screen.getByRole("dialog", { name: "Choose data" })).toBeTruthy();
+    expect(screen.getByText("CSV")).toBeTruthy();
+    expect(screen.getByText("Ready · 12 records")).toBeTruthy();
+
+    await userEvent.click(screen.getByRole("button", { name: /Lunch rows/ }));
+
+    expect(onChange).toHaveBeenCalledWith("existing");
+    expect(screen.queryByRole("dialog", { name: "Choose data" })).toBeNull();
+  });
+
+  it("offers connecting new data alongside existing sources", async () => {
     picker([existing]);
 
+    await userEvent.click(
+      screen.getByRole("button", { name: "Data Source: Choose data" }),
+    );
     expect(
       screen.getByRole("button", { name: /Connect new data/ }),
     ).toBeTruthy();
-    const select = screen.getByText("Data Source").closest("label");
-    expect(
-      Array.from(select?.querySelectorAll("option") ?? []).map(
-        (option) => option.textContent,
-      ),
-    ).toEqual(["Select data…", "Lunch rows — CSV"]);
   });
 
-  it("omits the empty option when a binding must always reference a source", () => {
+  it("omits the empty option when a binding must always reference a source", async () => {
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
@@ -126,12 +140,10 @@ describe("DataSourcePicker", () => {
       </QueryClientProvider>,
     );
 
-    const field = screen.getByText("Data Source").closest("label");
-    expect(
-      Array.from(field?.querySelectorAll("option") ?? []).map(
-        (option) => option.textContent,
-      ),
-    ).toEqual(["Lunch rows — CSV"]);
+    await userEvent.click(
+      screen.getByRole("button", { name: "Data Source: Lunch rows" }),
+    );
+    expect(screen.queryByRole("button", { name: /No data/ })).toBeNull();
   });
 
   it("reports the selected source's status and cached record count", () => {
@@ -153,9 +165,9 @@ describe("DataSourcePicker", () => {
     expect(screen.getByText("Ready · 12 records")).toBeTruthy();
   });
 
-  // Without an option carrying the stale id, the select would fall back to displaying the first
-  // source, claiming data the record does not actually reference.
-  it("reports a referenced source that is no longer available", () => {
+  // The trigger must keep a stale reference visible rather than presenting the first compatible
+  // source as though it were already selected.
+  it("reports a referenced source that is no longer available", async () => {
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
@@ -172,18 +184,24 @@ describe("DataSourcePicker", () => {
       </QueryClientProvider>,
     );
 
-    const field = screen.getByText("Data Source").closest("label");
-    const select = field?.querySelector("select");
-    expect(select?.value).toBe("deleted-source");
     expect(
-      Array.from(select?.options ?? []).map((option) => option.textContent),
-    ).toEqual(["Unavailable Data Source", "Lunch rows — CSV"]);
+      screen.getByRole("button", {
+        name: "Data Source: Unavailable Data Source",
+      }),
+    ).toBeTruthy();
     expect(screen.getByRole("alert")).toHaveTextContent("no longer available");
+
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: "Data Source: Unavailable Data Source",
+      }),
+    );
+    expect(screen.getByRole("button", { name: /Lunch rows/ })).toBeTruthy();
   });
 
   // With nothing compatible left, the empty state must not hide the fact that something is still
   // referenced.
-  it("keeps the missing reference visible when no compatible source remains", () => {
+  it("keeps the missing reference visible when no compatible source remains", async () => {
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
@@ -201,6 +219,12 @@ describe("DataSourcePicker", () => {
 
     expect(screen.getByRole("alert")).toBeTruthy();
     expect(screen.queryByText("No compatible data connected yet")).toBeNull();
+
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: "Data Source: Unavailable Data Source",
+      }),
+    );
     expect(
       screen.getByRole("button", { name: /Connect new data/ }),
     ).toBeTruthy();

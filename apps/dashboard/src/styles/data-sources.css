@@ -707,21 +707,58 @@
   min-width: 0;
 }
 
-.data-source-picker__row {
-  display: flex;
-  gap: var(--tc-space-2);
+.data-source-picker__trigger {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  gap: var(--tc-space-3);
   align-items: center;
+  width: 100%;
+  min-height: 58px;
+  padding: var(--tc-space-3);
+  color: var(--tc-text-primary);
+  background: var(--tc-bg-surface);
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-control);
+  text-align: start;
+  cursor: pointer;
+}
+
+.data-source-picker__trigger:hover:not(:disabled) {
+  border-color: var(--tc-action-primary);
+  background: var(--tc-action-primary-soft);
+}
+
+.data-source-picker__trigger:focus-visible {
+  outline: 2px solid var(--tc-action-primary);
+  outline-offset: 2px;
+}
+
+.data-source-picker__trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.data-source-picker__trigger-icon {
+  display: grid;
+  place-items: center;
+  color: var(--tc-text-secondary);
+}
+
+.data-source-picker__trigger-copy {
+  display: grid;
+  gap: 2px;
   min-width: 0;
 }
 
-.data-source-picker__row select {
-  flex: 1;
-  min-width: 0;
-}
-
-.data-source-picker__row .button {
-  flex-shrink: 0;
+.data-source-picker__trigger-copy strong,
+.data-source-picker__trigger-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.data-source-picker__trigger-copy small {
+  color: var(--tc-text-secondary);
 }
 
 .data-source-picker__detail {
@@ -797,6 +834,130 @@
 .data-source-picker__empty .button {
   grid-column: 2;
   justify-self: start;
+}
+
+/* Existing sources are selected in a modal so their type, health, and record count remain visible. */
+.data-source-select-backdrop {
+  align-items: center;
+  justify-content: center;
+  padding: var(--tc-space-4);
+  backdrop-filter: blur(2px);
+}
+
+.data-source-select-dialog {
+  width: min(680px, 100%);
+  height: auto;
+  max-height: min(760px, calc(100vh - 32px));
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-panel);
+  background: var(--tc-bg-surface);
+  box-shadow: 0 18px 48px rgb(15 24 21 / 24%);
+}
+
+.data-source-select-dialog > header {
+  padding: var(--tc-space-5);
+  margin: 0;
+  border-bottom: 1px solid var(--tc-border-default);
+}
+
+.data-source-select-dialog > header p {
+  margin: var(--tc-space-1) 0 0;
+  color: var(--tc-text-secondary);
+  font-size: 13px;
+}
+
+.data-source-select-dialog > .source-editor__body {
+  padding: var(--tc-space-4);
+  overflow-y: auto;
+}
+
+.data-source-select-dialog > footer {
+  display: flex;
+  gap: var(--tc-space-2);
+  justify-content: flex-end;
+  padding: var(--tc-space-3) var(--tc-space-4);
+  border-top: 1px solid var(--tc-border-default);
+}
+
+.data-source-select__choices {
+  display: grid;
+  gap: var(--tc-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.data-source-select__choices button {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) minmax(130px, auto) 20px;
+  gap: var(--tc-space-3);
+  align-items: center;
+  width: 100%;
+  min-height: 64px;
+  padding: var(--tc-space-3) var(--tc-space-4);
+  color: var(--tc-text-primary);
+  background: var(--tc-bg-subtle);
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-panel);
+  text-align: start;
+  cursor: pointer;
+}
+
+.data-source-select__choices button:hover {
+  border-color: var(--tc-action-primary);
+  background: var(--tc-action-primary-soft);
+}
+
+.data-source-select__choices button:focus-visible {
+  outline: 2px solid var(--tc-action-primary);
+  outline-offset: 2px;
+}
+
+.data-source-select__icon {
+  display: grid;
+  place-items: center;
+  color: var(--tc-text-secondary);
+}
+
+.data-source-select__copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.data-source-select__copy strong,
+.data-source-select__copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.data-source-select__copy small {
+  color: var(--tc-text-secondary);
+}
+
+.data-source-select__status {
+  justify-self: end;
+}
+
+@media (max-width: 560px) {
+  .data-source-select__choices button {
+    grid-template-columns: 28px minmax(0, 1fr) 20px;
+  }
+
+  .data-source-select__status {
+    display: none;
+  }
+
+  .data-source-select-dialog > footer {
+    flex-direction: column;
+  }
+
+  .data-source-select-dialog > footer .button {
+    width: 100%;
+  }
 }
 
 /* The Connect flow's provider chooser, shown before the ordinary Data Source editor. */
