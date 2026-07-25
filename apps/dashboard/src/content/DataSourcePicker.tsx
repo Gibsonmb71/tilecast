@@ -12,15 +12,15 @@
 //   3. Show the data, not just its name. The selected source reports status, cached record
 //      count, and sample values.
 import { useQuery } from "@tanstack/react-query";
-import { Database, Plus, X } from "lucide-react";
-import { useState } from "react";
+import { Check, ChevronRight, Database, Plus, X } from "lucide-react";
+import { useId, useState } from "react";
 import { api } from "../api/client";
 import type {
   DataSource,
   DataSourceDefinition,
   DataSourceProvider,
 } from "../api/types";
-import { Button, Select, StatusDot } from "../components/ui";
+import { Button, StatusDot } from "../components/ui";
 import { DataSourceEditor } from "./DataSourceEditors";
 import { previewRecordMaps } from "./previewRecords";
 import { providerLabel, sourceIcon } from "./dataSourceProviderMeta";
@@ -136,6 +136,8 @@ export function DataSourcePicker({
   onChange: (value: string) => void;
 }) {
   const [creating, setCreating] = useState<DataSourceProvider | "choose">();
+  const [choosing, setChoosing] = useState(false);
+  const dialogTitleId = useId();
   const selected = sources.find((source) => source.id === value);
   // A referenced source that is not in the compatible list — deleted, or no longer accepted by
   // this field — must be shown as missing rather than silently resolving to another source.
@@ -158,21 +160,10 @@ export function DataSourcePicker({
     .filter(([key, entry]) => key !== "id" && entry !== "")
     .slice(0, sampleFieldLimit);
 
-  const connect = canCreate ? (
-    <Button
-      type="button"
-      variant="secondary"
-      compact
-      onClick={() => setCreating("choose")}
-    >
-      <Plus size={15} aria-hidden="true" /> Connect new data
-    </Button>
-  ) : undefined;
-
   return (
     <div className="data-source-picker">
       {/* With no compatible sources the empty state is the whole control — unless something is
-          still referenced, in which case the select must stay so the missing reference is visible
+          still referenced, in which case the picker must stay so the missing reference is visible
           rather than replaced by a "nothing here yet" message. */}
       {sources.length === 0 && !missing ? (
         <ConnectDataNotice
@@ -185,35 +176,49 @@ export function DataSourcePicker({
         />
       ) : (
         <>
-          <label className="field">
+          <div className="field">
             <span className="field__label">
               {label}
               {required ? " *" : ""}
             </span>
-            <div className="data-source-picker__row">
-              <Select
-                value={value}
-                disabled={disabled}
-                required={required}
-                onChange={(event) => onChange(event.target.value)}
-              >
-                {allowEmpty && <option value="">Select data…</option>}
-                {/* A configuration or Layout binding can reference a source that has since been
-                    deleted. Without an option carrying that id the control would fall back to
-                    displaying the first source, claiming data the record does not actually use. */}
-                {missing && (
-                  <option value={value}>Unavailable Data Source</option>
+            <button
+              type="button"
+              className="data-source-picker__trigger"
+              aria-label={`${label}: ${
+                selected?.name ??
+                (missing ? "Unavailable Data Source" : "Choose data")
+              }`}
+              aria-haspopup="dialog"
+              aria-expanded={choosing}
+              disabled={disabled}
+              onClick={() => setChoosing(true)}
+            >
+              <span className="data-source-picker__trigger-icon" aria-hidden>
+                {selected ? (
+                  sourceIcon(selected.provider, undefined, 20)
+                ) : (
+                  <Database size={20} />
                 )}
-                {sources.map((source) => (
-                  <option key={source.id} value={source.id}>
-                    {source.name} — {providerLabel(source.provider)}
-                  </option>
-                ))}
-              </Select>
-              {connect}
-            </div>
+              </span>
+              <span className="data-source-picker__trigger-copy">
+                <strong>
+                  {selected?.name ??
+                    (missing ? "Unavailable Data Source" : "Choose data")}
+                </strong>
+                <small>
+                  {selected
+                    ? providerLabel(selected.provider)
+                    : missing
+                      ? "Choose a replacement"
+                      : `${sources.length} compatible ${
+                          sources.length === 1 ? "source" : "sources"
+                        }`}
+                </small>
+              </span>
+              <ChevronRight size={18} aria-hidden />
+            </button>
             {description && <small>{description}</small>}
-          </label>
+          </div>
           {missing && (
             <p className="data-source-picker__missing" role="alert">
               The Data Source this was built with is no longer available. Choose
@@ -238,6 +243,24 @@ export function DataSourcePicker({
               )}
             </div>
           )}
+          {choosing && (
+            <DataSourceSelectionDialog
+              titleId={dialogTitleId}
+              value={value}
+              sources={sources}
+              allowEmpty={allowEmpty}
+              canCreate={canCreate}
+              onSelect={(id) => {
+                onChange(id);
+                setChoosing(false);
+              }}
+              onConnect={() => {
+                setChoosing(false);
+                setCreating("choose");
+              }}
+              onClose={() => setChoosing(false)}
+            />
+          )}
         </>
       )}
       {creating && (
@@ -254,6 +277,104 @@ export function DataSourcePicker({
           }}
         />
       )}
+    </div>
+  );
+}
+
+function DataSourceSelectionDialog({
+  titleId,
+  value,
+  sources,
+  allowEmpty,
+  canCreate,
+  onSelect,
+  onConnect,
+  onClose,
+}: {
+  titleId: string;
+  value: string;
+  sources: DataSource[];
+  allowEmpty: boolean;
+  canCreate: boolean;
+  onSelect: (id: string) => void;
+  onConnect: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="details-backdrop data-source-select-backdrop"
+      role="presentation"
+    >
+      <section
+        className="asset-details source-editor data-source-select-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+      >
+        <header>
+          <div>
+            <h2 id={titleId}>Choose data</h2>
+            <p>Select an existing compatible source or connect a new one.</p>
+          </div>
+          <button className="icon-button" aria-label="Close" onClick={onClose}>
+            <X size={18} aria-hidden />
+          </button>
+        </header>
+        <div className="source-editor__body">
+          <ul className="data-source-select__choices">
+            {allowEmpty && (
+              <li>
+                <button type="button" onClick={() => onSelect("")}>
+                  <span className="data-source-select__icon" aria-hidden>
+                    <X size={18} />
+                  </span>
+                  <span className="data-source-select__copy">
+                    <strong>No data</strong>
+                    <small>Leave this Widget disconnected.</small>
+                  </span>
+                  <span aria-hidden />
+                  {!value && <Check size={18} aria-label="Selected" />}
+                </button>
+              </li>
+            )}
+            {sources.map((source) => (
+              <li key={source.id}>
+                <button type="button" onClick={() => onSelect(source.id)}>
+                  <span className="data-source-select__icon" aria-hidden>
+                    {sourceIcon(source.provider, undefined, 20)}
+                  </span>
+                  <span className="data-source-select__copy">
+                    <strong>{source.name}</strong>
+                    <small>{providerLabel(source.provider)}</small>
+                  </span>
+                  <span className="data-source-select__status">
+                    <StatusDot
+                      tone={statusTone(source.status)}
+                      label={statusLabel(
+                        source.status,
+                        source.cachedRecordCount,
+                      )}
+                    />
+                  </span>
+                  {value === source.id && (
+                    <Check size={18} aria-label="Selected" />
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <footer>
+          {canCreate && (
+            <Button type="button" variant="primary" onClick={onConnect}>
+              <Plus size={15} aria-hidden /> Connect new data
+            </Button>
+          )}
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+        </footer>
+      </section>
     </div>
   );
 }

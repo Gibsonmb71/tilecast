@@ -43,10 +43,9 @@ describe("WorkspaceTabs", () => {
   it("links every facet of the workspace", () => {
     tabs("/assets");
 
-    expect(screen.getByRole("link", { name: "Media" })).toHaveAttribute(
-      "href",
-      "/assets",
-    );
+    const media = screen.getByRole("link", { name: "Media" });
+    expect(media).toHaveAttribute("href", "/assets");
+    expect(media.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
     expect(screen.getByRole("link", { name: "Widgets" })).toHaveAttribute(
       "href",
       "/widgets",
