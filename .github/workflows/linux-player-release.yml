@@ -169,10 +169,25 @@ jobs:
         run: |
           set -euo pipefail
           output="$RUNNER_TEMP/tilecast-linux-player-release"
+          extract_root="$RUNNER_TEMP/tilecast-linux-appimage"
           test "$(find "$output" -maxdepth 1 -type f | wc -l)" -eq 3
           test -f "$output/tilecast-player.AppImage"
           test -f "$output/tilecast-player-update-linux.json"
           test -f "$output/tilecast-player-update-linux.json.sig"
+
+          mkdir -p "$extract_root"
+          chmod +x "$output/tilecast-player.AppImage"
+          (
+            cd "$extract_root"
+            "$output/tilecast-player.AppImage" --appimage-extract >/dev/null
+            node "$GITHUB_WORKSPACE/node_modules/@electron/asar/bin/asar.js" \
+              extract-file "$extract_root/squashfs-root/resources/app.asar" package.json
+          )
+          packaged_version="$(jq -r .version "$extract_root/package.json")"
+          echo "Expected packaged version: $RELEASE_VERSION"
+          echo "Actual packaged version:   $packaged_version"
+          test "$packaged_version" = "$RELEASE_VERSION"
+
           test "$(jq -r .platform "$output/tilecast-player-update-linux.json")" = "linux"
           test "$(jq -r .versionName "$output/tilecast-player-update-linux.json")" = "$RELEASE_VERSION"
           test "$(jq -r .channel "$output/tilecast-player-update-linux.json")" = "$RELEASE_CHANNEL"

@@ -14,19 +14,19 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUTPUT="${TILECAST_RELEASE_OUTPUT:-$ROOT/release-output}"
 mkdir -p "$OUTPUT"
 
-# Build the AppImage (tsc + electron-builder --linux).
-npm run player:linux:dist --prefix "$ROOT"
-
-DIST="$ROOT/apps/player-linux/dist"
-APPIMAGE="$(find "$DIST" -maxdepth 1 -type f -name '*.AppImage' | head -1)"
-if [ -z "$APPIMAGE" ] || [ ! -f "$APPIMAGE" ]; then
-	echo "No AppImage was produced under $DIST." >&2
-	exit 1
-fi
-
 VERSION_NAME="$(node -p "require('$ROOT/apps/player-linux/package.json').version")"
 if ! [[ "$VERSION_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
 	echo "package.json version '$VERSION_NAME' is not a semantic version." >&2
+	exit 1
+fi
+
+# Build the exact versioned AppImage (tsc + electron-builder --linux).
+npm run player:linux:dist --prefix "$ROOT"
+
+DIST="$ROOT/apps/player-linux/dist"
+APPIMAGE="$DIST/tilecast-player-$VERSION_NAME.AppImage"
+if [ ! -f "$APPIMAGE" ]; then
+	echo "Expected AppImage was not produced at $APPIMAGE." >&2
 	exit 1
 fi
 
@@ -46,7 +46,8 @@ else
 	ARTIFACT_SHA="$(shasum -a 256 "$APPIMAGE" | awk '{print $1}')"
 fi
 
-cp "$APPIMAGE" "$OUTPUT/tilecast-player.AppImage"
+MANIFEST_TMP="$(mktemp "${TMPDIR:-/tmp}/tilecast-linux-manifest.XXXXXX")"
+trap 'rm -f "$MANIFEST_TMP"' EXIT
 jq -n \
 	--argjson versionCode "$VERSION_CODE" \
 	--arg versionName "$VERSION_NAME" \
@@ -55,7 +56,17 @@ jq -n \
 	--arg sha "$ARTIFACT_SHA" \
 	--arg notes "$NOTES" \
 	'{schemaVersion:1,product:"tilecast-player",platform:"linux",versionCode:$versionCode,versionName:$versionName,channel:$channel,artifactAssetName:"tilecast-player.AppImage",artifactSizeBytes:$size,artifactSha256:$sha,releaseNotes:$notes}' \
-	>"$OUTPUT/tilecast-player-update-linux.json"
+	>"$MANIFEST_TMP"
+
+# Fail before copying or signing release assets unless the package version,
+# packaged Electron metadata, manifest ordering, and artifact integrity agree.
+node "$ROOT/scripts/verify-linux-player-release.mjs" \
+	--appimage "$APPIMAGE" \
+	--package "$ROOT/apps/player-linux/package.json" \
+	--manifest "$MANIFEST_TMP"
+
+cp "$APPIMAGE" "$OUTPUT/tilecast-player.AppImage"
+cp "$MANIFEST_TMP" "$OUTPUT/tilecast-player-update-linux.json"
 
 openssl pkeyutl -sign -rawin -inkey "$TILECAST_UPDATE_MANIFEST_PRIVATE_KEY" \
 	-in "$OUTPUT/tilecast-player-update-linux.json" |
@@ -65,5 +76,8 @@ openssl pkeyutl -verify -rawin -pubin \
 	-inkey "${TILECAST_UPDATE_MANIFEST_PUBLIC_KEY_FILE:?Set TILECAST_UPDATE_MANIFEST_PUBLIC_KEY_FILE}" \
 	-in "$OUTPUT/tilecast-player-update-linux.json" \
 	-sigfile <(openssl base64 -d -A -in "$OUTPUT/tilecast-player-update-linux.json.sig")
+
+rm -f "$MANIFEST_TMP"
+trap - EXIT
 
 echo "Created signed Tilecast Player $VERSION_NAME ($VERSION_CODE) Linux release assets in $OUTPUT"
