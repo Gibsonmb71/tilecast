@@ -8,7 +8,8 @@ import { DashboardShell, FoundationPage } from "./pages/Dashboard";
 import { PairScreenPage, ScreensPage } from "./pages/ScreensPage";
 import { ScreenDetailWithPreviewPage } from "./pages/ScreenDetailWithPreviewPage";
 import { ContentPage } from "./pages/ContentPage";
-import { PlaylistEditorPage, PlaylistsPage } from "./pages/PlaylistsPage";
+import { PlaylistEditorPage } from "./pages/PlaylistsPage";
+import { PlaylistLibraryPage } from "./pages/PlaylistLibraryPage";
 import { PlaylistPreviewPage } from "./pages/PlaylistPreviewPage";
 import {
   GroupsPage,
@@ -196,7 +197,7 @@ export const studioRoutes: RouteObject[] = [
           ),
         },
         children: [
-          { index: true, element: <PlaylistsPage /> },
+          { index: true, element: <PlaylistLibraryPage /> },
           {
             path: ":id",
             element: <PlaylistEditorPage />,
