@@ -10,8 +10,6 @@ const playlist = (
   values: Partial<PlaylistLibraryItem> &
     Pick<PlaylistLibraryItem, "id" | "name">,
 ): PlaylistLibraryItem => ({
-  id: values.id,
-  name: values.name,
   description: "",
   revision: 1,
   createdAt: "2026-07-01T12:00:00Z",
