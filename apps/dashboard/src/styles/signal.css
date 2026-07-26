@@ -202,6 +202,30 @@ code,
   margin-top: var(--tc-space-3);
 }
 
+.sidebar__nav-group {
+  display: grid;
+  gap: 2px;
+}
+
+.sidebar__submenu {
+  display: grid;
+  gap: 1px;
+  margin: 0 0 var(--tc-space-1) 18px;
+  padding-left: 11px;
+  border-left: 1px solid var(--tc-sidebar-border);
+}
+
+.sidebar nav .sidebar__submenu a {
+  min-height: 32px;
+  padding-block: 5px;
+  color: var(--tc-sidebar-text);
+  font-size: 12px;
+}
+
+.sidebar nav .sidebar__submenu a.active {
+  background: var(--tc-sidebar-active);
+}
+
 .sidebar__nav-footer {
   display: grid;
   gap: var(--tc-space-1);
@@ -1682,6 +1706,28 @@ label > .signal-select,
   border: 1px solid var(--tc-status-warning-border);
   border-radius: var(--tc-radius-chip);
   font: var(--tc-text-supporting);
+}
+
+/* Workspace facets live in the sidebar when it has room. Keep the page tabs available when the
+   sidebar is compact or reduced to its narrow responsive form. */
+@media (min-width: 801px) {
+  .workspace-tabs {
+    display: none;
+  }
+
+  .app-shell--sidebar-compact .sidebar__submenu {
+    display: none;
+  }
+
+  .app-shell--sidebar-compact .workspace-tabs {
+    display: flex;
+  }
+}
+
+@media (max-width: 800px) {
+  .sidebar__submenu {
+    display: none;
+  }
 }
 
 .pagination {

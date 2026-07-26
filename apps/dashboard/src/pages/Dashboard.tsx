@@ -33,7 +33,7 @@ import { OperationsDashboard } from "./OperationsDashboard";
 
 // A nav item may own several routes: Content covers Media, Widgets, and Data, and Presentations
 // covers Playlists and Layouts. `owns` lists those extra paths so the entry stays highlighted while
-// the author moves between a workspace's tabs.
+// the author moves between a workspace's submenu.
 type NavItem = readonly [
   label: string,
   to: string,
@@ -89,6 +89,39 @@ function SidebarLink({ item }: { item: NavItem }) {
   );
 }
 
+function SidebarWorkspace({
+  item,
+  tabs,
+}: {
+  item: NavItem;
+  tabs: typeof contentTabs;
+}) {
+  const [label] = item;
+  const location = useLocation();
+  return (
+    <div className="sidebar__nav-group">
+      <SidebarLink item={item} />
+      <div className="sidebar__submenu" aria-label={`${label} submenu`}>
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          const isCurrent = tabMatchesPath(tab.to, location.pathname);
+          return (
+            <NavLink
+              key={tab.to}
+              to={tab.to}
+              aria-current={isCurrent ? "page" : undefined}
+              className={isCurrent ? "active" : ""}
+            >
+              <Icon size={15} strokeWidth={1.8} aria-hidden="true" />
+              <span>{tab.label}</span>
+            </NavLink>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 const approvalsNav = [
   "Approvals",
   "/approvals",
@@ -109,9 +142,19 @@ export function SidebarNavigation() {
   return (
     <nav aria-label="Primary">
       <div className="sidebar__nav-main">
-        {primaryNav.map((item) => (
-          <SidebarLink key={item[1]} item={item} />
-        ))}
+        {primaryNav.map((item) =>
+          item[0] === "Content" ? (
+            <SidebarWorkspace key={item[1]} item={item} tabs={contentTabs} />
+          ) : item[0] === "Presentations" ? (
+            <SidebarWorkspace
+              key={item[1]}
+              item={item}
+              tabs={presentationTabs}
+            />
+          ) : (
+            <SidebarLink key={item[1]} item={item} />
+          ),
+        )}
         <div className="sidebar__nav-standalone">
           <SidebarLink item={activityNav} />
           {canReview && <SidebarLink item={approvalsNav} />}

@@ -37,9 +37,7 @@ const summary = (
 });
 
 describe("SidebarNavigation", () => {
-  // Navigation names tasks, not record types. Media, Widgets, and Data are facets of Content, and
-  // Playlists and Layouts are facets of Presentations, so neither appears as its own destination.
-  it("lists one destination per job rather than one per record type", async () => {
+  it("lists workspace facets beneath Content and Presentations", async () => {
     // A submitter-only form does not surface Approvals.
     vi.spyOn(api, "listForms").mockResolvedValue([summary(["submit"])]);
     renderNav();
@@ -51,12 +49,22 @@ describe("SidebarNavigation", () => {
         "Overview",
         "Screens",
         "Content",
+        "Media",
+        "Widgets",
+        "Data",
         "Presentations",
+        "Playlists",
+        "Layouts",
         "Schedules",
         "Activity",
         "Settings",
       ]);
     });
+    expect(
+      screen
+        .getByLabelText("Content submenu")
+        .querySelectorAll('a[aria-current="page"]'),
+    ).toHaveLength(0);
     expect(screen.queryByRole("heading", { name: "Compose" })).toBeNull();
   });
 
@@ -69,6 +77,11 @@ describe("SidebarNavigation", () => {
       "active",
     );
     expect(
+      screen
+        .getByRole("link", { name: "Widgets" })
+        .getAttribute("aria-current"),
+    ).toBe("page");
+    expect(
       screen.getByRole("link", { name: "Presentations" }).className,
     ).not.toContain("active");
   });
@@ -80,6 +93,11 @@ describe("SidebarNavigation", () => {
     expect(
       screen.getByRole("link", { name: "Presentations" }).className,
     ).toContain("active");
+    expect(
+      screen
+        .getByRole("link", { name: "Layouts" })
+        .getAttribute("aria-current"),
+    ).toBe("page");
     expect(
       screen.getByRole("link", { name: "Content" }).className,
     ).not.toContain("active");
