@@ -200,7 +200,7 @@ code,
 
 .sidebar__nav-standalone {
   display: grid;
-  margin-top: var(--tc-space-3);
+  gap: var(--tc-space-1);
 }
 
 .sidebar__nav-group {
