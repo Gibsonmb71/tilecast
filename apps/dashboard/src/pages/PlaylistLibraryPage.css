@@ -35,7 +35,7 @@
   background: var(--tc-bg-surface);
   border: 1px solid var(--tc-border-default);
   border-radius: var(--tc-radius-card);
-  box-shadow: var(--tc-shadow-xs);
+  box-shadow: var(--tc-shadow-sm);
 }
 
 .playlist-library-card:hover {
@@ -77,13 +77,13 @@
   background: var(--tc-bg-surface);
   border: 1px solid var(--tc-border-default);
   border-radius: var(--tc-radius-pill);
-  box-shadow: var(--tc-shadow-xs);
+  box-shadow: var(--tc-shadow-sm);
   font-size: 11px;
   font-weight: 700;
 }
 
 .playlist-library-card[data-empty="true"] .playlist-library-card__status {
-  color: var(--tc-status-warning-text);
+  color: var(--tc-status-warning);
   background: var(--tc-status-warning-bg);
   border-color: var(--tc-status-warning-border);
 }
