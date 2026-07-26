@@ -1,6 +1,7 @@
 import {
   Activity,
   CalendarDays,
+  ChevronRight,
   ClipboardCheck,
   ClipboardList,
   Ellipsis,
@@ -69,21 +70,16 @@ const settingsNav = [
 const sidebarCompactKey = "tilecast.sidebar.compact";
 
 function SidebarLink({ item }: { item: NavItem }) {
-  const [label, to, Icon, owns] = item;
-  const location = useLocation();
-  // NavLink alone would only match its own path, so a workspace entry would go dark as soon as the
-  // author switched to another of its tabs.
-  const ownsCurrent = (owns ?? []).some((path) =>
-    tabMatchesPath(path, location.pathname),
-  );
+  const [label, to, Icon] = item;
   return (
     <NavLink
       to={to}
       end={to === "/"}
       aria-label={label}
-      className={({ isActive }) => (isActive || ownsCurrent ? "active" : "")}
+      title={label}
+      className={({ isActive }) => (isActive ? "active" : "")}
     >
-      <Icon size={18} strokeWidth={1.8} aria-hidden="true" />
+      <Icon size={20} strokeWidth={1.8} aria-hidden="true" />
       <span>{label}</span>
     </NavLink>
   );
@@ -96,12 +92,37 @@ function SidebarWorkspace({
   item: NavItem;
   tabs: typeof contentTabs;
 }) {
-  const [label] = item;
+  const [label, to, ParentIcon] = item;
   const location = useLocation();
+  const expanded = tabs.some((tab) =>
+    tabMatchesPath(tab.to, location.pathname),
+  );
+  const submenuId = `sidebar-${label.toLowerCase()}-submenu`;
   return (
-    <div className="sidebar__nav-group">
-      <SidebarLink item={item} />
-      <div className="sidebar__submenu" aria-label={`${label} submenu`}>
+    <div className={`sidebar__nav-group${expanded ? " is-expanded" : ""}`}>
+      <Link
+        className="sidebar__parent"
+        to={to}
+        aria-expanded={expanded}
+        aria-controls={submenuId}
+        aria-label={label}
+        title={label}
+      >
+        <ParentIcon size={20} strokeWidth={1.8} aria-hidden="true" />
+        <span>{label}</span>
+        <ChevronRight
+          className="sidebar__parent-chevron"
+          size={16}
+          strokeWidth={1.8}
+          aria-hidden="true"
+        />
+      </Link>
+      <div
+        className="sidebar__submenu"
+        id={submenuId}
+        aria-label={`${label} submenu`}
+        hidden={!expanded}
+      >
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isCurrent = tabMatchesPath(tab.to, location.pathname);
@@ -111,8 +132,9 @@ function SidebarWorkspace({
               to={tab.to}
               aria-current={isCurrent ? "page" : undefined}
               className={isCurrent ? "active" : ""}
+              title={tab.label}
             >
-              <Icon size={15} strokeWidth={1.8} aria-hidden="true" />
+              <Icon size={20} strokeWidth={1.8} aria-hidden="true" />
               <span>{tab.label}</span>
             </NavLink>
           );
