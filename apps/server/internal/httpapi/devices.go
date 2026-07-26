@@ -156,10 +156,12 @@ func (s *server) listPendingPairings(w http.ResponseWriter, r *http.Request) {
 }
 
 type approvePairingRequest struct {
-	Name                      string `json:"name"`
-	Location                  string `json:"location"`
-	Description               string `json:"description"`
-	ReplaceExistingCredential bool   `json:"replaceExistingCredential"`
+	Name                      string     `json:"name"`
+	LocationID                *uuid.UUID `json:"locationId"`
+	RoomName                  string     `json:"roomName"`
+	RoomNumber                string     `json:"roomNumber"`
+	Description               string     `json:"description"`
+	ReplaceExistingCredential bool       `json:"replaceExistingCredential"`
 }
 
 func (s *server) approvePairing(w http.ResponseWriter, r *http.Request) {
@@ -173,7 +175,7 @@ func (s *server) approvePairing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user := r.Context().Value(sessionContextKey).(auth.Session).User
-	screen, err := s.devices.ApprovePairing(r.Context(), id, user.ID, body.Name, body.Location, body.Description, body.ReplaceExistingCredential)
+	screen, err := s.devices.ApprovePairing(r.Context(), id, user.ID, body.Name, body.LocationID, body.RoomName, body.RoomNumber, body.Description, body.ReplaceExistingCredential)
 	if err != nil {
 		s.writeDeviceError(w, r, err)
 		return
@@ -234,7 +236,7 @@ func (s *server) updateScreen(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user := r.Context().Value(sessionContextKey).(auth.Session).User
-	screen, err := s.devices.UpdateScreen(r.Context(), id, user.ID, body.Name, body.Location, body.Description)
+	screen, err := s.devices.UpdateScreen(r.Context(), id, user.ID, body.Name, body.LocationID, body.RoomName, body.RoomNumber, body.Description)
 	if err != nil {
 		s.writeDeviceError(w, r, err)
 		return

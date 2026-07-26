@@ -20,7 +20,7 @@ func TestPairingJSONContracts(t *testing.T) {
 				Code string `json:"code"`
 			}{}
 		}},
-		{"studio repair approval", `{"name":"Cafeteria Display","location":"","description":"","replaceExistingCredential":true}`, func() any { return &approvePairingRequest{} }},
+		{"studio repair approval", `{"name":"Cafeteria Display","locationId":null,"roomName":"Cafeteria","roomNumber":"","description":"","replaceExistingCredential":true}`, func() any { return &approvePairingRequest{} }},
 		{"android enrollment", `{"pairingSessionId":"` + uuid.NewString() + `","enrollmentToken":"private-token"}`, func() any { return &enrollmentRequest{} }},
 	}
 	for _, test := range tests {
@@ -37,7 +37,7 @@ func TestPairingJSONErrorsAreActionable(t *testing.T) {
 	tests := []struct{ body, want string }{
 		{"", "Request body is missing."},
 		{"{", "Request body contains malformed JSON."},
-		{`{"name":"Display","location":"","description":"","replaceCredential":true}`, "Unsupported request field: replaceCredential."},
+		{`{"name":"Display","locationId":null,"roomName":"","roomNumber":"","description":"","replaceCredential":true}`, "Unsupported request field: replaceCredential."},
 		{`{} {}`, "Request body must contain one JSON object."},
 	}
 	for _, test := range tests {

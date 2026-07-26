@@ -27,11 +27,41 @@ export type LoginInput = { username: string; password: string };
 export type ScreenStatus =
   "online" | "recent" | "stale" | "offline" | "disabled" | "revoked";
 
+export type Location = {
+  id: string;
+  name: string;
+  addressLine1: string;
+  addressLine2: string;
+  city: string;
+  state: string;
+  postalCode: string;
+  country: string;
+  latitude?: number;
+  longitude?: number;
+  screenCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type LocationInput = Omit<
+  Location,
+  "id" | "screenCount" | "createdAt" | "updatedAt"
+>;
+
 export type Screen = {
   id: string;
   name: string;
   description: string;
+  /** Derived from locationDetails for compatibility with compact screen references. */
   location: string;
+  locationId?: string;
+  locationDetails?: Location;
+  roomName?: string;
+  roomNumber?: string;
+  syncGroupId?: string;
+  syncGroupName?: string;
+  nowPlayingName?: string;
+  nowPlayingType?: "playlist" | "presentation";
   platform: string;
   deviceManufacturer: string;
   deviceModel: string;

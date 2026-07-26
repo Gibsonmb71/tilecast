@@ -306,6 +306,7 @@ export const subsectionOrder: Record<
     },
   ],
   users: [],
+  locations: [],
   "player-updates": [],
   system: [],
   "import-export": [],

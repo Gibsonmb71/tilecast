@@ -39,6 +39,12 @@ export function GroupsPage() {
           ) : undefined
         }
       />
+      <nav className="screen-primary-tabs" aria-label="Screen management">
+        <Link to="/screens">Screens</Link>
+        <Link to="/groups" aria-current="page">
+          Sync groups
+        </Link>
+      </nav>
       <div className="schedule-list">
         {q.data?.items?.map((g) => (
           <Link className="schedule-card" to={`/groups/${g.id}`} key={g.id}>

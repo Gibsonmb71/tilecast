@@ -80,6 +80,14 @@ type Screen struct {
 	Name                      string     `json:"name"`
 	Description               string     `json:"description"`
 	Location                  string     `json:"location"`
+	LocationID                *uuid.UUID `json:"locationId,omitempty"`
+	LocationDetails           *Location  `json:"locationDetails,omitempty"`
+	RoomName                  string     `json:"roomName"`
+	RoomNumber                string     `json:"roomNumber"`
+	SyncGroupID               *uuid.UUID `json:"syncGroupId,omitempty"`
+	SyncGroupName             *string    `json:"syncGroupName,omitempty"`
+	NowPlayingName            *string    `json:"nowPlayingName,omitempty"`
+	NowPlayingType            *string    `json:"nowPlayingType,omitempty"`
 	Platform                  string     `json:"platform"`
 	DeviceManufacturer        string     `json:"deviceManufacturer"`
 	DeviceModel               string     `json:"deviceModel"`

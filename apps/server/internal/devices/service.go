@@ -234,16 +234,25 @@ func (s *Service) PollPairing(ctx context.Context, id uuid.UUID, pollSecret stri
 	return result, nil
 }
 
-func (s *Service) ApprovePairing(ctx context.Context, id, userID uuid.UUID, name, location, description string, replaceExistingCredential bool) (Screen, error) {
-	name, location, description = strings.TrimSpace(name), strings.TrimSpace(location), strings.TrimSpace(description)
-	if len(name) < 2 || len(name) > 120 || len(location) > 240 || len(description) > 1000 {
-		return Screen{}, errors.New("screen name must be 2 to 120 characters; location and description are too long")
+func (s *Service) ApprovePairing(ctx context.Context, id, userID uuid.UUID, name string, locationID *uuid.UUID, roomName, roomNumber, description string, replaceExistingCredential bool) (Screen, error) {
+	name, roomName, roomNumber, description = strings.TrimSpace(name), strings.TrimSpace(roomName), strings.TrimSpace(roomNumber), strings.TrimSpace(description)
+	if len(name) < 2 || len(name) > 120 || len(roomName) > 120 || len(roomNumber) > 80 || len(description) > 1000 {
+		return Screen{}, errors.New("screen name, room details, or description are invalid")
 	}
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return Screen{}, fmt.Errorf("begin pairing approval: %w", err)
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
+	if locationID != nil {
+		var exists bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM locations WHERE id=$1)`, locationID).Scan(&exists); err != nil {
+			return Screen{}, err
+		}
+		if !exists {
+			return Screen{}, errors.New("location is invalid")
+		}
+	}
 	var status string
 	var expiresAt time.Time
 	var encoded []byte
@@ -285,9 +294,9 @@ func (s *Service) ApprovePairing(ctx context.Context, id, userID uuid.UUID, name
 			return Screen{}, ErrPairingRecovery
 		}
 		screenID = existingID
-		_, err = tx.Exec(ctx, `UPDATE screens SET name=$2,description=$3,location=$4,platform=$5,device_manufacturer=$6,device_model=$7,android_version=$8,player_version=$9,screen_width=$10,screen_height=$11,density=$12,locale=$13,timezone=$14,enabled=TRUE,paired_at=now(),updated_at=now() WHERE id=$1`, screenID, name, description, location, metadata.Platform, metadata.Manufacturer, metadata.Model, metadata.AndroidVersion, metadata.PlayerVersion, metadata.ScreenWidth, metadata.ScreenHeight, metadata.Density, metadata.Locale, metadata.Timezone)
+		_, err = tx.Exec(ctx, `UPDATE screens SET name=$2,description=$3,location_id=$4,room_name=$5,room_number=$6,platform=$7,device_manufacturer=$8,device_model=$9,android_version=$10,player_version=$11,screen_width=$12,screen_height=$13,density=$14,locale=$15,timezone=$16,enabled=TRUE,paired_at=now(),updated_at=now() WHERE id=$1`, screenID, name, description, locationID, roomName, roomNumber, metadata.Platform, metadata.Manufacturer, metadata.Model, metadata.AndroidVersion, metadata.PlayerVersion, metadata.ScreenWidth, metadata.ScreenHeight, metadata.Density, metadata.Locale, metadata.Timezone)
 	} else if errors.Is(err, pgx.ErrNoRows) {
-		_, err = tx.Exec(ctx, `INSERT INTO screens (id,organization_id,player_installation_id,name,description,location,platform,device_manufacturer,device_model,android_version,player_version,screen_width,screen_height,density,locale,timezone) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`, screenID, organizationID, metadata.PlayerInstallationID, name, description, location, metadata.Platform, metadata.Manufacturer, metadata.Model, metadata.AndroidVersion, metadata.PlayerVersion, metadata.ScreenWidth, metadata.ScreenHeight, metadata.Density, metadata.Locale, metadata.Timezone)
+		_, err = tx.Exec(ctx, `INSERT INTO screens (id,organization_id,player_installation_id,name,description,location_id,room_name,room_number,platform,device_manufacturer,device_model,android_version,player_version,screen_width,screen_height,density,locale,timezone) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`, screenID, organizationID, metadata.PlayerInstallationID, name, description, locationID, roomName, roomNumber, metadata.Platform, metadata.Manufacturer, metadata.Model, metadata.AndroidVersion, metadata.PlayerVersion, metadata.ScreenWidth, metadata.ScreenHeight, metadata.Density, metadata.Locale, metadata.Timezone)
 	}
 	if err != nil {
 		return Screen{}, fmt.Errorf("save screen: %w", err)

@@ -2,6 +2,7 @@ export type SettingsSectionId =
   | "general"
   | "branding"
   | "users"
+  | "locations"
   | "playback"
   | "media"
   | "websites"
@@ -32,6 +33,7 @@ export const settingsNavigation: SettingsNavigationGroup[] = [
       { id: "general", label: "General", path: "general" },
       { id: "branding", label: "Branding", path: "branding" },
       { id: "users", label: "Users", path: "users" },
+      { id: "locations", label: "Locations", path: "locations" },
     ],
   },
   {
@@ -110,6 +112,11 @@ export const sectionDetails: Record<
     title: "Users",
     description:
       "Give each person an individual sign-in and assign only the permissions they need. Appearance and density preferences remain separate for every account.",
+  },
+  locations: {
+    title: "Locations",
+    description:
+      "Reusable buildings and campuses that can be assigned to multiple screens.",
   },
   playback: {
     title: "Playback",

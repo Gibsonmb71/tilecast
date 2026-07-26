@@ -22,6 +22,7 @@ import {
 } from "../settings/SettingsOperations";
 import { UsersPage } from "./UsersPage";
 import { BackupPanel } from "../settings/BackupPanel";
+import { LocationsPanel } from "../settings/LocationsPanel";
 
 export { PlayerPolicyEditor } from "../settings/PlayerPolicyEditor";
 export {
@@ -171,6 +172,7 @@ function Destination({
   onChange: (key: string, value: unknown) => void;
 }) {
   if (active === "users") return <UsersPage />;
+  if (active === "locations") return <LocationsPanel canManage={manageable} />;
   if (active === "system") return <SystemPanel canManage={manageable} />;
   if (active === "backups")
     return (

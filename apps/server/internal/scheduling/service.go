@@ -138,7 +138,7 @@ func (s *Service) ListGroups(ctx context.Context, search string, page, size int)
 		ids = append(ids, out.Items[index].ID)
 		byID[out.Items[index].ID] = &out.Items[index]
 	}
-	members, err := s.db.Query(ctx, `SELECT m.screen_group_id,sc.id,sc.name,sc.location FROM screen_group_memberships m JOIN screens sc ON sc.id=m.screen_id WHERE m.screen_group_id=ANY($1) ORDER BY lower(sc.name),sc.id`, ids)
+	members, err := s.db.Query(ctx, `SELECT m.screen_group_id,sc.id,sc.name,COALESCE(l.name,'') FROM screen_group_memberships m JOIN screens sc ON sc.id=m.screen_id LEFT JOIN locations l ON l.id=sc.location_id WHERE m.screen_group_id=ANY($1) ORDER BY lower(sc.name),sc.id`, ids)
 	if err != nil {
 		return out, err
 	}
@@ -185,7 +185,7 @@ func (s *Service) GetGroup(ctx context.Context, id uuid.UUID) (Group, error) {
 	if err != nil {
 		return g, err
 	}
-	rows, err := s.db.Query(ctx, `SELECT sc.id,sc.name,sc.location FROM screen_group_memberships m JOIN screens sc ON sc.id=m.screen_id WHERE m.screen_group_id=$1 ORDER BY lower(sc.name),sc.id`, id)
+	rows, err := s.db.Query(ctx, `SELECT sc.id,sc.name,COALESCE(l.name,'') FROM screen_group_memberships m JOIN screens sc ON sc.id=m.screen_id LEFT JOIN locations l ON l.id=sc.location_id WHERE m.screen_group_id=$1 ORDER BY lower(sc.name),sc.id`, id)
 	if err != nil {
 		return g, err
 	}
