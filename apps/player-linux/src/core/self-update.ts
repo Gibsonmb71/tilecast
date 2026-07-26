@@ -5,18 +5,19 @@
  * its own AppImage. On an `install_player_update` command the updater fetches
  * the release metadata, downloads and verifies the AppImage (SHA-256 + size,
  * reusing the resumable `downloadVerified` helper), atomically renames it over
- * the running AppImage (`process.env.APPIMAGE`), then relaunches so the systemd
- * unit restarts into the new version. Progress is reported to the server's
+ * the running AppImage (`process.env.APPIMAGE`), then exits so the systemd unit
+ * starts the new version. Progress is reported to the server's
  * update-deployment status endpoint; the terminal `succeeded` transition is
  * derived server-side from the next heartbeat's higher version code.
  *
  * The command is dispatched as a "disruptive" command, so the coordinator has
  * already persisted the idempotency key and reported the command result before
- * this runs — a relaunch therefore neither re-runs nor dangles the command, and
+ * this runs — a restart therefore neither re-runs nor dangles the command, and
  * a failed update is surfaced purely through the status endpoint (a retry gets a
  * fresh command).
  */
 
+import { chmod, rename } from "node:fs/promises";
 import type { DownloadRequest } from "./download";
 import { logger } from "./log";
 import type {
@@ -29,6 +30,16 @@ const log = logger("self-update");
 
 /** Longest we will hold a maintenance-window install pending before giving up. */
 const MAX_WINDOW_DELAY_MS = 24 * 60 * 60 * 1_000;
+
+/**
+ * Make the verified download executable before atomically replacing the
+ * running AppImage. Downloads intentionally start as mode 0600; renaming that
+ * file without this chmod leaves systemd unable to execute the replacement.
+ */
+export async function promoteAppImage(from: string, to: string): Promise<void> {
+  await chmod(from, 0o755);
+  await rename(from, to);
+}
 
 export interface SelfUpdateDeps {
   /** The running AppImage path (process.env.APPIMAGE), or null when not packaged. */
@@ -44,7 +55,7 @@ export interface SelfUpdateDeps {
   authHeaders(): Record<string, string>;
   /** Atomically promote the staged AppImage over the running one. */
   promote(from: string, to: string): Promise<void>;
-  /** End the process so systemd relaunches into the new AppImage. */
+  /** End the process so systemd starts the new AppImage. */
   restart(): void;
   now(): number;
 }
@@ -177,10 +188,12 @@ export class SelfUpdater {
 
       await this.report(deploymentId, { state: "installing" });
       await this.deps.promote(this.deps.stagePath, this.deps.appImagePath);
-      // Signal that a relaunch is imminent; the next heartbeat's higher version
-      // code is what the server settles to "succeeded".
+      // Signal that a supervised restart is imminent; the next heartbeat's
+      // higher version code is what the server settles to "succeeded".
       await this.report(deploymentId, { state: "reconnecting" });
-      log.info("update installed; relaunching", { deploymentId });
+      log.info("update installed; exiting for systemd restart", {
+        deploymentId,
+      });
       this.deps.restart();
     } catch (err) {
       log.warn("self-update failed", { deploymentId, error: String(err) });

@@ -7,6 +7,7 @@ import {
   normalizePlaylistAssignment,
   normalizeProviderCatalog,
   normalizeScreen,
+  playerReleaseContentType,
 } from "./client";
 import type { AuthStatus, Layout, Screen } from "./types";
 
@@ -21,6 +22,20 @@ describe("authentication contract", () => {
     };
     expect(setup.setupRequired).toBe(true);
     expect(signedOut.setupRequired).toBe(false);
+  });
+});
+
+describe("Player release upload contract", () => {
+  it("uses server-accepted media types for the Linux release files", () => {
+    expect(playerReleaseContentType("tilecast-player.AppImage")).toBe(
+      "application/octet-stream",
+    );
+    expect(playerReleaseContentType("tilecast-player-update-linux.json")).toBe(
+      "application/json",
+    );
+    expect(
+      playerReleaseContentType("tilecast-player-update-linux.json.sig"),
+    ).toBe("text/plain");
   });
 });
 
