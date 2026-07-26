@@ -48,6 +48,7 @@ func (s *server) routes() http.Handler {
 		api.Group(func(dashboard chi.Router) {
 			dashboard.Use(s.requireSession)
 			dashboard.Get("/screens", s.listScreens)
+			dashboard.Get("/screens/archive", s.listArchivedScreens)
 			dashboard.Get("/screens/{id}", s.getScreen)
 			dashboard.Get("/screens/{id}/reliability", s.screenReliability)
 			dashboard.Get("/locations", s.listLocations)
