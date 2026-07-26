@@ -97,10 +97,9 @@ describe("layout library page", () => {
   it("shows the saved layout render instead of rebuilding a live preview", async () => {
     const { container } = renderPage();
     await screen.findByRole("button", { name: "Edit Lobby" });
-    expect(container.querySelector(".layout-library-thumbnail")).toHaveAttribute(
-      "src",
-      savedLayout.previewImageUrl,
-    );
+    expect(
+      container.querySelector(".layout-library-thumbnail"),
+    ).toHaveAttribute("src", savedLayout.previewImageUrl);
   });
 
   it("renames a layout from its card menu", async () => {
