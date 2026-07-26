@@ -200,7 +200,7 @@ code,
 
 .sidebar__nav-standalone {
   display: grid;
-  margin-top: var(--tc-space-3);
+  gap: var(--tc-space-1);
 }
 
 .sidebar__nav-group {
@@ -223,7 +223,7 @@ code,
   width: 16px;
   height: 16px;
   margin-left: auto;
-  transition: transform var(--tc-motion-fast);
+  transition: transform 180ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 .sidebar__nav-group.is-expanded .sidebar__parent-chevron {
@@ -233,12 +233,31 @@ code,
 .sidebar__submenu {
   display: grid;
   gap: 1px;
-  margin: 0 0 var(--tc-space-1);
+  max-height: 0;
+  margin: 0;
+  overflow: hidden;
   padding-left: 26px;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-5px);
+  transform-origin: top;
+  transition:
+    max-height 220ms cubic-bezier(0.2, 0, 0, 1),
+    margin-bottom 180ms ease,
+    opacity 140ms ease,
+    transform 180ms cubic-bezier(0.2, 0, 0, 1),
+    visibility 0s linear 220ms;
 }
 
-.sidebar__submenu[hidden] {
-  display: none;
+.sidebar__nav-group.is-expanded > .sidebar__submenu {
+  max-height: 120px;
+  margin-bottom: var(--tc-space-1);
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+  transition-delay: 0s;
 }
 
 .sidebar nav .sidebar__submenu a {
@@ -269,7 +288,8 @@ code,
   border-radius: var(--tc-radius-control);
   transition:
     color var(--tc-motion-fast),
-    background var(--tc-motion-fast);
+    background var(--tc-motion-fast),
+    transform 140ms ease;
 }
 
 .sidebar nav a > svg:first-child {
@@ -281,6 +301,12 @@ code,
 .sidebar nav a:hover {
   color: var(--tc-sidebar-text-active);
   background: var(--tc-sidebar-hover);
+}
+
+@media (hover: hover) and (min-width: 801px) {
+  .sidebar nav a:not(.active):hover {
+    transform: translateX(2px);
+  }
 }
 
 .sidebar nav a.active {

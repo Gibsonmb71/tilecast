@@ -61,8 +61,9 @@ describe("SidebarNavigation", () => {
         .getAttribute("aria-expanded"),
     ).toBe("false");
     expect(
-      screen.getByLabelText("Content submenu").hasAttribute("hidden"),
-    ).toBe(true);
+      screen.getByLabelText("Content submenu").getAttribute("aria-hidden"),
+    ).toBe("true");
+    expect(screen.queryByRole("link", { name: "Media" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "Compose" })).toBeNull();
   });
 
