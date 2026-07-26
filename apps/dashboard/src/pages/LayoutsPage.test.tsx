@@ -65,6 +65,13 @@ const savedLayout = layout({
 });
 
 beforeEach(() => {
+  HTMLDialogElement.prototype.showModal = function showModal() {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close = function close() {
+    this.open = false;
+    this.dispatchEvent(new Event("close"));
+  };
   vi.mocked(api.layouts).mockResolvedValue({
     items: [savedLayout],
     total: 1,
