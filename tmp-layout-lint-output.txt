@@ -1,0 +1,22 @@
+
+> tilecast@0.1.0 lint
+> npm run lint --workspace @tilecast/dashboard
+
+
+> @tilecast/dashboard@0.1.0 lint
+> eslint . --max-warnings=0
+
+
+/home/runner/work/tilecast/tilecast/apps/dashboard/src/pages/LayoutsPage.test.tsx
+  0:0  error  Parsing error: "parserOptions.project" has been provided for @typescript-eslint/parser.
+The file was not found in any of the provided project(s): src/pages/LayoutsPage.test.tsx
+
+✖ 1 problem (1 error, 0 warnings)
+
+npm error Lifecycle script `lint` failed with error:
+npm error code 1
+npm error path /home/runner/work/tilecast/tilecast/apps/dashboard
+npm error workspace @tilecast/dashboard@0.1.0
+npm error location /home/runner/work/tilecast/tilecast/apps/dashboard
+npm error command failed
+npm error command sh -c eslint . --max-warnings=0
