@@ -41,7 +41,7 @@ type LocationInput struct {
 }
 
 const locationSelect = `SELECT l.id,l.name,l.address_line_1,l.address_line_2,l.city,l.state,l.postal_code,l.country,l.latitude,l.longitude,
-	(SELECT count(*) FROM screens s WHERE s.location_id=l.id),l.created_at,l.updated_at FROM locations l`
+	(SELECT count(*) FROM screens s WHERE s.location_id=l.id AND s.archived_at IS NULL),l.created_at,l.updated_at FROM locations l`
 
 func normalizeLocationInput(input LocationInput) (LocationInput, error) {
 	input.Name = strings.TrimSpace(input.Name)
@@ -138,20 +138,33 @@ func (s *Service) UpdateLocation(ctx context.Context, id, userID uuid.UUID, inpu
 }
 
 func (s *Service) DeleteLocation(ctx context.Context, id, userID uuid.UUID) error {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	// Archived rows must never keep a reusable location alive. This also cleans
+	// up installations upgraded from versions that only hid revoked screens.
+	if _, err := tx.Exec(ctx, `UPDATE screens SET location_id=NULL,updated_at=now() WHERE location_id=$1 AND archived_at IS NOT NULL`, id); err != nil {
+		return fmt.Errorf("detach archived screens from location: %w", err)
+	}
 	var assigned int
-	if err := s.db.QueryRow(ctx, `SELECT count(*) FROM screens WHERE location_id=$1`, id).Scan(&assigned); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM screens WHERE location_id=$1 AND archived_at IS NULL`, id).Scan(&assigned); err != nil {
 		return err
 	}
 	if assigned > 0 {
 		return ErrConflict
 	}
-	result, err := s.db.Exec(ctx, `DELETE FROM locations WHERE id=$1`, id)
+	result, err := tx.Exec(ctx, `DELETE FROM locations WHERE id=$1`, id)
 	if err != nil {
 		return fmt.Errorf("delete location: %w", err)
 	}
 	if result.RowsAffected() != 1 {
 		return ErrNotFound
 	}
-	_, _ = s.db.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id) VALUES($1,$2,'location.deleted','location',$3)`, uuid.New(), userID, id.String())
-	return nil
+	if _, err := tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id) VALUES($1,$2,'location.deleted','location',$3)`, uuid.New(), userID, id.String()); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
