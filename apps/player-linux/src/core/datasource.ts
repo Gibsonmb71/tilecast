@@ -34,6 +34,12 @@ export interface NormalizedRecord {
 export interface NormalizedSource {
   provider: string;
   records: NormalizedRecord[];
+  /**
+   * Display-ready values of an object-kind dataset, keyed by field key. Object Data
+   * Sources (a single current status, goal, or count) carry one value map rather than
+   * records, and presentation bindings read them by path.
+   */
+  objectValues: Record<string, string>;
   fieldTypes: Record<string, string>;
   attribution: string;
   unavailable: boolean;
@@ -121,6 +127,24 @@ function firstRecordsDataset(doc: DataDocument): DocumentDataset | undefined {
   );
 }
 
+function firstObjectDataset(doc: DataDocument): DocumentDataset | undefined {
+  return doc.datasets.find((d) => d.kind === "object");
+}
+
+function normalizeDocumentObject(
+  dataset: DocumentDataset,
+): Record<string, string> {
+  const fieldTypes: Record<string, string> = {};
+  for (const f of dataset.fields ?? []) {
+    fieldTypes[f.key] = f.type;
+  }
+  const values: Record<string, string> = {};
+  for (const [key, value] of Object.entries(dataset.value?.object ?? {})) {
+    values[key] = docValueToString(value, fieldTypes[key]);
+  }
+  return values;
+}
+
 /** Normalize any manifest data source into uniform records. */
 export function normalizeSource(
   source: ManifestDataSource,
@@ -129,6 +153,7 @@ export function normalizeSource(
   const base: NormalizedSource = {
     provider: source.provider,
     records: [],
+    objectValues: {},
     fieldTypes: {},
     attribution: "",
     unavailable: false,
@@ -139,6 +164,12 @@ export function normalizeSource(
 
   // v13 DataDocument.
   if (source.dataDocument) {
+    // An object dataset carries a single current value map. It can accompany records,
+    // so it is read before the records branch returns.
+    const objectDataset = firstObjectDataset(source.dataDocument);
+    if (objectDataset) {
+      base.objectValues = normalizeDocumentObject(objectDataset);
+    }
     const dataset = firstRecordsDataset(source.dataDocument);
     if (dataset) {
       const { records, fieldTypes } = normalizeDocumentRecords(dataset);
@@ -151,6 +182,13 @@ export function normalizeSource(
         dataset.timezone ?? "UTC",
         at,
       );
+      return base;
+    }
+    if (objectDataset) {
+      for (const f of objectDataset.fields ?? []) {
+        base.fieldTypes[f.key] = f.type;
+      }
+      base.attribution = objectDataset.attribution ?? "";
       return base;
     }
   }

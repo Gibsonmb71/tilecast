@@ -41,6 +41,14 @@ var dataSourceAdapterRegistry = map[string]dataSourceAdapterFactory{
 		definition, _ := service.definitions.DataSource(provider)
 		return definitionConfigNormalizer{service: service, schema: definition.ConfigurationSchema}
 	},
+	"manual_records": func(service *Service, provider string) configNormalizer {
+		definition, _ := service.definitions.DataSource(provider)
+		return definitionConfigNormalizer{service: service, schema: definition.ConfigurationSchema}
+	},
+	"http_records": func(service *Service, provider string) configNormalizer {
+		definition, _ := service.definitions.DataSource(provider)
+		return definitionConfigNormalizer{service: service, schema: definition.ConfigurationSchema}
+	},
 	"form_records": func(service *Service, _ string) configNormalizer {
 		return formSourceProvider{service}
 	},
@@ -50,6 +58,9 @@ func ValidateContentAdapters(catalog *contentdefs.Catalog) error {
 	for _, definition := range catalog.DataSources {
 		if _, ok := dataSourceAdapterRegistry[definition.AdapterID]; !ok {
 			return fmt.Errorf("Data Source definition %q references unregistered adapter %q", definition.ID, definition.AdapterID)
+		}
+		if definition.AdapterID == "http_records" && definition.Fetch == nil {
+			return fmt.Errorf("Data Source definition %q uses the http_records adapter without a fetch specification", definition.ID)
 		}
 	}
 	return nil
@@ -72,23 +83,43 @@ func (s *Service) DataSourceNormalizer(name string) (configNormalizer, error) {
 	return s.dataSourceProvider(name)
 }
 
-// manualObjectRefreshPayload builds the cached typed-object payload for a manual_object
-// Data Source from its normalized configuration. ok is false when the provider is not a
-// manual_object definition, letting callers fall back to the default refresh behavior.
-func (s *Service) manualObjectRefreshPayload(provider string, configuration any) ([]byte, bool, error) {
+// manualRefreshSeed is the cached refresh state a Studio-maintained Data Source is stored
+// with. It replaces a network fetch: the payload is projected from the configuration the
+// author just saved.
+type manualRefreshSeed struct {
+	Payload []byte
+	// ItemCount is the number of rows visible at save time.
+	ItemCount int
+	// NextRefresh is when the Server must re-project because the visible set changes on
+	// its own, or nil when only an edit can change it.
+	NextRefresh *time.Time
+}
+
+// manualRefreshPayload builds the cached payload for a Studio-maintained Data Source from
+// its normalized configuration. ok is false when the provider is not one of them, letting
+// callers fall back to the network refresh path.
+func (s *Service) manualRefreshPayload(provider string, configuration any) (manualRefreshSeed, bool, error) {
 	definition, ok := s.definitions.DataSource(provider)
-	if !ok || definition.AdapterID != "manual_object" {
-		return nil, false, nil
+	if !ok || (definition.AdapterID != "manual_object" && definition.AdapterID != "manual_records") {
+		return manualRefreshSeed{}, false, nil
 	}
 	config, err := manualObjectConfiguration(configuration)
 	if err != nil {
-		return nil, false, err
+		return manualRefreshSeed{}, false, err
 	}
-	payload, err := json.Marshal(manualObjectPayload(definition, config, time.Now().UTC()))
+	if definition.AdapterID == "manual_object" {
+		payload, marshalErr := json.Marshal(manualObjectPayload(definition, config, time.Now().UTC()))
+		if marshalErr != nil {
+			return manualRefreshSeed{}, false, marshalErr
+		}
+		return manualRefreshSeed{Payload: payload, ItemCount: 1}, true, nil
+	}
+	projection := manualRecordsPayload(definition, config, time.Now())
+	payload, err := json.Marshal(projection.Payload)
 	if err != nil {
-		return nil, false, err
+		return manualRefreshSeed{}, false, err
 	}
-	return payload, true, nil
+	return manualRefreshSeed{Payload: payload, ItemCount: projection.Visible, NextRefresh: projection.NextBoundary}, true, nil
 }
 
 // ManualObjectPreview projects an unsaved manual_object configuration into the same
@@ -151,11 +182,11 @@ func (s *Service) CreateDataSource(ctx context.Context, user uuid.UUID, input Da
 		if _, err = tx.Exec(ctx, `INSERT INTO data_source_refresh_states(data_source_id,next_refresh_at,last_attempt_at,last_success_at,http_result_category,parse_status,available_item_count,cache_updated_at,cache_expires_at,cached_payload) VALUES($1,now()+interval '100 years',now(),now(),'manual','success',$2,now(),now()+interval '100 years',$3::jsonb)`, id, len(manual.Rows), string(payload)); err != nil {
 			return DataSource{}, err
 		}
-	} else if payload, ok, payloadErr := s.manualObjectRefreshPayload(input.Provider, configuration); ok {
+	} else if seed, ok, payloadErr := s.manualRefreshPayload(input.Provider, configuration); ok {
 		if payloadErr != nil {
 			return DataSource{}, payloadErr
 		}
-		if _, err = tx.Exec(ctx, `INSERT INTO data_source_refresh_states(data_source_id,next_refresh_at,last_attempt_at,last_success_at,http_result_category,parse_status,available_item_count,cache_updated_at,cache_expires_at,cached_payload) VALUES($1,now()+interval '100 years',now(),now(),'manual','success',1,now(),now()+interval '100 years',$2::jsonb)`, id, string(payload)); err != nil {
+		if _, err = tx.Exec(ctx, `INSERT INTO data_source_refresh_states(data_source_id,next_refresh_at,last_attempt_at,last_success_at,http_result_category,parse_status,available_item_count,cache_updated_at,cache_expires_at,cached_payload) VALUES($1,COALESCE($2,now()+interval '100 years'),now(),now(),'manual','success',$3,now(),now()+interval '100 years',$4::jsonb)`, id, seed.NextRefresh, seed.ItemCount, string(seed.Payload)); err != nil {
 			return DataSource{}, err
 		}
 	} else if _, err = tx.Exec(ctx, `INSERT INTO data_source_refresh_states(data_source_id) VALUES($1)`, id); err != nil {
@@ -223,11 +254,11 @@ func (s *Service) UpdateDataSource(ctx context.Context, id, user uuid.UUID, inpu
 		if _, err = tx.Exec(ctx, `UPDATE data_source_refresh_states SET next_refresh_at=now()+interval '100 years',last_attempt_at=now(),last_success_at=now(),http_result_category='manual',parse_status='success',available_event_count=0,available_item_count=$2,using_cached_data=FALSE,cache_updated_at=now(),cache_expires_at=now()+interval '100 years',cached_payload=$3::jsonb,error_code=NULL,locked_at=NULL,locked_by=NULL,updated_at=now() WHERE data_source_id=$1`, id, len(manual.Rows), string(payload)); err != nil {
 			return DataSource{}, err
 		}
-	} else if payload, ok, payloadErr := s.manualObjectRefreshPayload(input.Provider, configuration); ok {
+	} else if seed, ok, payloadErr := s.manualRefreshPayload(input.Provider, configuration); ok {
 		if payloadErr != nil {
 			return DataSource{}, payloadErr
 		}
-		if _, err = tx.Exec(ctx, `UPDATE data_source_refresh_states SET next_refresh_at=now()+interval '100 years',last_attempt_at=now(),last_success_at=now(),http_result_category='manual',parse_status='success',available_item_count=1,using_cached_data=FALSE,cache_updated_at=now(),cache_expires_at=now()+interval '100 years',cached_payload=$2::jsonb,error_code=NULL,locked_at=NULL,locked_by=NULL,updated_at=now() WHERE data_source_id=$1`, id, string(payload)); err != nil {
+		if _, err = tx.Exec(ctx, `UPDATE data_source_refresh_states SET next_refresh_at=COALESCE($2,now()+interval '100 years'),last_attempt_at=now(),last_success_at=now(),http_result_category='manual',parse_status='success',available_item_count=$3,using_cached_data=FALSE,cache_updated_at=now(),cache_expires_at=now()+interval '100 years',cached_payload=$4::jsonb,error_code=NULL,locked_at=NULL,locked_by=NULL,updated_at=now() WHERE data_source_id=$1`, id, seed.NextRefresh, seed.ItemCount, string(seed.Payload)); err != nil {
 			return DataSource{}, err
 		}
 	} else if _, err = tx.Exec(ctx, `INSERT INTO data_source_refresh_states(data_source_id,next_refresh_at) VALUES($1,now()) ON CONFLICT(data_source_id) DO UPDATE SET next_refresh_at=now(),error_code=NULL,locked_at=NULL,locked_by=NULL,updated_at=now()`, id); err != nil {
@@ -305,7 +336,7 @@ func (s *Service) PreviewDataSourceByID(ctx context.Context, id uuid.UUID, previ
 	if raw.Provider == "manual" {
 		return s.ManualPreview(ctx, raw.Configuration)
 	}
-	if definition, ok := s.definitions.DataSource(raw.Provider); ok && definition.AdapterID == "manual_object" {
+	if definition, ok := s.definitions.DataSource(raw.Provider); ok && (definition.AdapterID == "manual_object" || definition.AdapterID == "manual_records") {
 		projected, projectErr := s.PlayerTypedDataSourceConfiguration(ctx, raw.ID, raw.Provider, raw.Configuration)
 		if projectErr != nil {
 			return nil, projectErr
@@ -319,7 +350,8 @@ func (s *Service) PreviewDataSourceByID(ctx context.Context, id uuid.UUID, previ
 	if raw.Provider == "weather" {
 		return s.WeatherPreview(ctx, raw.Configuration)
 	}
-	if raw.Provider == "transit" || raw.Provider == "cap_alerts" || raw.Provider == "air_quality" {
+	_, fetchesRecords := s.httpRecordsSpec(raw.Provider)
+	if raw.Provider == "transit" || raw.Provider == "cap_alerts" || raw.Provider == "air_quality" || fetchesRecords {
 		projected, projectErr := s.PlayerTypedDataSourceConfiguration(ctx, raw.ID, raw.Provider, raw.Configuration)
 		if projectErr != nil {
 			return nil, projectErr

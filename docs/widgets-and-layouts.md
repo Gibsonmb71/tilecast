@@ -23,14 +23,20 @@ A Data Source is a reusable, non-visual connection. It owns everything about acq
 
 Providers: **Calendar, RSS, Atom, JSON, CSV, Manual Table, Weather, Transit, CAP Alerts, and Air Quality**. Transit joins public GTFS Static metadata with Realtime trip updates and optional service alerts. CAP Alerts normalizes active public CAP 1.2 warnings. Air Quality exposes current and hourly Open-Meteo/CAMS values with mandatory attribution and a noncommercial-or-self-hosted endpoint policy. A Data Source cannot be assigned to a screen, added to a playlist, or dragged into a Layout as visual content.
 
+Release-defined Data Sources add three further groups, all built on generic adapters rather than provider-specific code:
+
+- **Single current value** (`manual_object`): School Status, Emergency Message, Fundraising Goal, Occupancy Count, and Today's Hours. Each maintains one typed object in Studio.
+- **Studio-maintained tables** (`manual_records`): Announcements, Events, Closures and Delays, Directory, Menu Items, and Shout-outs. See [Time-windowed record tables](#time-windowed-record-tables).
+- **Guided public feeds** (`http_records`): Google Sheet, US Weather Alerts, and Public Holidays. See [Guided public feeds](#guided-public-feeds).
+
 Data Sources appear under the Data tab of the Studio Content workspace, and are also created inline from any Widget or Layout binding that needs one. Each detail view shows the provider, current status, last successful and last attempted refresh, cached record count, available fields, date-selection policy, errors and diagnostics, the Widgets using the Data Source, and the Layout text bindings using it. Usage entries link to the records that consume the Data Source.
 
 ## Widgets
 
 A Widget owns how content appears. A Widget is either **standalone** or references exactly **one** Data Source. It owns visual settings, the selected Data Source, selected fields, labels, typography, colors, spacing, record count, empty-state presentation, and provider-specific behavior. It does **not** own fetching, parsing, source refresh, cached records, date selection, or source diagnostics — those belong to the Data Source.
 
-- Standalone providers: **Website, YouTube, Clock, Date, QR Code, Countdown, World Clock**.
-- Data-driven providers: **Ticker, Menu / Price Board, List, Table, Agenda, Metric, Cards, Weather, Spotlight, Stat Grid, Chart, Progress, Timeline**.
+- Standalone providers: **Website, YouTube, Clock, Date, QR Code, Countdown, World Clock**, plus the release-defined **Text Notice, Image Notice, and QR Call to Action**.
+- Data-driven providers: **Ticker, Menu / Price Board, List, Table, Agenda, Metric, Cards, Weather, Spotlight, Stat Grid, Chart, Progress, Timeline**, plus the release-defined **School Status Banner, Alert Banner, Fundraising Thermometer, Now and Next, and Recognition Board**.
 
 Studio also offers the guided presets **Leaderboard, Status Board, Queue Board, Schedule / Departures, Opening Hours, and Directory**. Presets persist authoring-only `presetId` metadata and compile through their underlying generic provider; the Player does not dispatch on preset identity.
 
@@ -55,7 +61,37 @@ The server validates that the selected Data Source provider is compatible with t
 | Cards              | Any record-based Data Source             |
 | Weather            | Weather Data Source                      |
 
+| Now and Next | Any record-based Data Source |
+| Recognition Board | Any record-based Data Source |
+| Alert Banner | An object Data Source exposing message and severity |
+| Fundraising Thermometer | An object Data Source exposing two numeric fields |
+
 The registry never loads third-party code and rejects unknown providers, unknown configuration keys, scripts, HTML templates, and executable expressions.
+
+### Time-windowed record tables
+
+A `manual_records` Data Source is a bounded table maintained in Studio. Unlike Manual Table, its rows carry their own visibility window, so content retires itself:
+
+| Output field | Behavior when the definition declares it   |
+| ------------ | ------------------------------------------ |
+| `publishAt`  | The row is hidden until this moment.       |
+| `expiresAt`  | The row is hidden from this moment onward. |
+| `priority`   | Higher values sort first.                  |
+
+The keys are conventions read from the definition's output schema, not requirements. A definition that declares none of them produces an unfiltered list in the order the author entered. Rows are otherwise ordered by descending priority, then by the definition's first declared date or datetime field.
+
+Visibility depends on the clock rather than on an edit, so the projection also reports the next moment the visible set changes. The Server schedules that Data Source's next refresh for exactly that moment instead of polling, and bumps affected manifests only when the projected payload actually changed. Entering tomorrow's closures tonight with a publish time therefore reaches every screen in the morning without anyone touching Studio, and an expired announcement disappears without a cleanup pass. A table is bounded at 200 visible rows.
+
+### Guided public feeds
+
+An `http_records` Data Source fetches an endpoint that the **release** pins and maps the response using a mapping the release fixes. It exists so a recognizable source ("a published Google Sheet", "active weather alerts for a state") can ship as a definition instead of another bespoke provider. It is deliberately narrower than the JSON and CSV providers, which remain the right choice for an arbitrary endpoint an operator maps by hand:
+
+- The scheme and host come from the definition. A definition whose URL template placed a placeholder in its scheme or host is rejected at startup.
+- The author fills only the placeholders the definition declares, and each substituted value is percent-encoded, so a value can never add a path segment, add a query parameter, or reach another host.
+- The response mapping is a set of plain dot paths (JSON) or column names (CSV). There are no expressions, scripts, or templates.
+- Every request still passes the standard source-fetch policy: private-network refusal, size cap, redirect cap, and timeout.
+
+Attribution declared by the definition is carried through to the Player alongside the records.
 
 ## Layouts
 
@@ -86,6 +122,13 @@ The database no longer enumerates providers. `widgets.provider` and `data_source
 The School Status Source and School Status Banner are the reference implementation. The Source uses the registered generic `manual_object` Server adapter and emits a Data Document v1 object; that adapter validates configuration from the definition, converts configured values into the declared output fields, generates declared fields such as `updatedAt`, caches and previews the typed object, and projects it into Data Document v1 with no provider-specific lifecycle branches. The Banner resolves configuration placeholders on the Server and uses only existing `surface`, `column`, `badge`, `text`, and `conditional` nodes. Neither provider appears in Android production source. Studio renders both from catalog metadata (name, description, category, icon, and optional setup guidance) rather than provider-specific copy, and derives selectable fields directly from each Source definition's output schema.
 
 New Data Source adapters that normalize to Data Document v1 and new native Widgets using existing declarative nodes therefore require only a catalog definition — no Android, TypeScript provider-union, Studio gallery, or database change. A new Android rendering primitive, presentation schema, or playback capability still requires a Player update.
+
+Two narrow additions extend what a definition may express without weakening that boundary:
+
+- A presentation template may reference a **derived configuration key** that manifest projection supplies rather than the author. Today the only one is `imageVariantId`, written from the author's `imageAssetId` media selection; the Image Notice Widget uses it. Derived keys are never accepted from a client and resolve to an empty value when projection produced none, so previewing a Widget before its image is projected does not fail the compile.
+- A `repeat` node may declare an **offset**, so one Widget can feature the current record and list the ones that follow it. Now and Next uses an offset of one.
+
+Studio draws a catalog preview for each Widget rather than an icon. The preview is inline SVG built from the definition's `thumbnail` name, follows the active theme, and needs no asset or network request. An unknown or missing name falls back to a generic preview, so a definition from a later release never breaks the gallery.
 
 A Data Source that requires manifest v13 declares `requiresManifestV13` in its definition; the Server reads that metadata from the catalog rather than matching provider names. A Widget may reference more than one Data Source: every configuration field whose control is `data_source` is followed for manifest projection, usage tracking, deletion protection, assignment compatibility, and catalog invalidation.
 

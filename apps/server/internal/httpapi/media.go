@@ -523,8 +523,17 @@ func (s *server) previewDataSource(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"data": preview})
 		return
 	}
-	if definition, ok := s.media.ContentDefinitions().DataSource(provider); ok && definition.AdapterID == "manual_object" {
-		preview, err := s.media.ManualObjectPreview(r.Context(), provider, body.Configuration)
+	if definition, ok := s.media.ContentDefinitions().DataSource(provider); ok && (definition.AdapterID == "manual_object" || definition.AdapterID == "manual_records" || definition.AdapterID == "http_records") {
+		var preview media.TypedDatasetPayload
+		var err error
+		switch definition.AdapterID {
+		case "manual_object":
+			preview, err = s.media.ManualObjectPreview(r.Context(), provider, body.Configuration)
+		case "manual_records":
+			preview, err = s.media.ManualRecordsPreview(r.Context(), provider, body.Configuration)
+		default:
+			preview, err = s.media.HTTPRecordsPreview(r.Context(), provider, body.Configuration)
+		}
 		if err != nil {
 			s.writeMediaError(w, r, err)
 			return

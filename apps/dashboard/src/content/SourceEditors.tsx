@@ -1,21 +1,6 @@
 import { Select } from "../components/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  CalendarDays,
-  CloudSun,
-  Clock3,
-  Gauge,
-  LayoutGrid,
-  QrCode,
-  TextQuote,
-  Globe2,
-  ListTree,
-  Table2,
-  Utensils,
-  Timer,
-  X,
-  Youtube,
-} from "lucide-react";
+import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { api } from "../api/client";
@@ -48,6 +33,7 @@ import type {
   PresentationNode,
 } from "../api/types";
 import { DataSourcePicker } from "./DataSourcePicker";
+import { WidgetThumbnail } from "./WidgetThumbnail";
 import { previewRecordMaps, type PreviewDatasets } from "./previewRecords";
 import { captureWidgetPreview } from "./widgetPreviewCapture";
 
@@ -115,7 +101,10 @@ export function WidgetProviderGallery({
                     key={definition.id}
                     onClick={() => onChoose(definition.id)}
                   >
-                    <LayoutGrid size={26} />
+                    <WidgetThumbnail
+                      name={definition.thumbnail ?? definition.id}
+                      label={definition.name}
+                    />
                     <strong>{definition.name}</strong>
                     <span>{definition.description}</span>
                   </button>
@@ -130,12 +119,12 @@ export function WidgetProviderGallery({
             </header>
             <div className="source-provider-grid">
               <button type="button" onClick={() => onChoose("website")}>
-                <Globe2 size={26} />
+                <WidgetThumbnail name="website" label="Website" />
                 <strong>Website</strong>
                 <span>Display an approved webpage.</span>
               </button>
               <button type="button" onClick={() => onChoose("youtube")}>
-                <Youtube size={26} />
+                <WidgetThumbnail name="youtube" label="YouTube" />
                 <strong>YouTube</strong>
                 <span>
                   Play a YouTube video or playlist without an API key.
@@ -150,22 +139,22 @@ export function WidgetProviderGallery({
             </header>
             <div className="source-provider-grid">
               <button type="button" onClick={() => onChoose("clock")}>
-                <Clock3 size={26} />
+                <WidgetThumbnail name="clock" label="Clock" />
                 <strong>Clock</strong>
                 <span>Show live local time in a configured timezone.</span>
               </button>
               <button type="button" onClick={() => onChoose("date")}>
-                <CalendarDays size={26} />
+                <WidgetThumbnail name="date" label="Date" />
                 <strong>Date</strong>
                 <span>Show a live localized calendar date.</span>
               </button>
               <button type="button" onClick={() => onChoose("qrcode")}>
-                <QrCode size={26} />
+                <WidgetThumbnail name="qrcode" label="QR Code" />
                 <strong>QR Code</strong>
                 <span>Display text or a URL as a scannable code.</span>
               </button>
               <button type="button" onClick={() => onChoose("countdown")}>
-                <Timer size={26} />
+                <WidgetThumbnail name="countdown" label="Countdown" />
                 <strong>Countdown</strong>
                 <span>
                   Count down to or up from a configured date and time.
@@ -182,62 +171,62 @@ export function WidgetProviderGallery({
             </header>
             <div className="source-provider-grid">
               <button type="button" onClick={() => onChoose("ticker")}>
-                <TextQuote size={26} />
+                <WidgetThumbnail name="ticker" label="Ticker" />
                 <strong>Ticker</strong>
                 <span>Scroll a selected field from a Data Source.</span>
               </button>
               <button type="button" onClick={() => onChoose("menu")}>
-                <Utensils size={26} />
+                <WidgetThumbnail name="menu" label="Menu" />
                 <strong>Menu</strong>
                 <span>Format selected fields as a signage menu.</span>
               </button>
               <button type="button" onClick={() => onChoose("list")}>
-                <ListTree size={26} />
+                <WidgetThumbnail name="list" label="List" />
                 <strong>List</strong>
                 <span>Present records from a reusable Data Source.</span>
               </button>
               <button type="button" onClick={() => onChoose("table")}>
-                <Table2 size={26} />
+                <WidgetThumbnail name="table" label="Table" />
                 <strong>Table</strong>
                 <span>Show selected fields in structured columns.</span>
               </button>
               <button type="button" onClick={() => onChoose("agenda")}>
-                <CalendarDays size={26} />
+                <WidgetThumbnail name="agenda" label="Agenda" />
                 <strong>Agenda</strong>
                 <span>Display dated records in agenda form.</span>
               </button>
               <button type="button" onClick={() => onChoose("metric")}>
-                <Gauge size={26} />
+                <WidgetThumbnail name="metric" label="Metric" />
                 <strong>Metric</strong>
                 <span>Highlight a numeric value from a Data Source.</span>
               </button>
               <button type="button" onClick={() => onChoose("cards")}>
-                <LayoutGrid size={26} />
+                <WidgetThumbnail name="cards" label="Cards" />
                 <strong>Cards</strong>
                 <span>Arrange reusable records in a responsive card grid.</span>
               </button>
               <button type="button" onClick={() => onChoose("weather")}>
-                <CloudSun size={26} />
+                <WidgetThumbnail name="weather" label="Weather" />
                 <strong>Weather</strong>
                 <span>Show current conditions and a daily forecast.</span>
               </button>
               <button type="button" onClick={() => onChoose("spotlight")}>
-                <TextQuote size={26} />
+                <WidgetThumbnail name="spotlight" label="Spotlight" />
                 <strong>Spotlight</strong>
                 <span>Feature one record with optional uploaded artwork.</span>
               </button>
               <button type="button" onClick={() => onChoose("stat_grid")}>
-                <LayoutGrid size={26} />
+                <WidgetThumbnail name="stat_grid" label="Stat Grid" />
                 <strong>Stat Grid</strong>
                 <span>Arrange numeric values in a responsive grid.</span>
               </button>
               <button type="button" onClick={() => onChoose("chart")}>
-                <Gauge size={26} />
+                <WidgetThumbnail name="chart" label="Chart" />
                 <strong>Chart</strong>
                 <span>Plot up to four numeric series.</span>
               </button>
               <button type="button" onClick={() => onChoose("progress")}>
-                <Gauge size={26} />
+                <WidgetThumbnail name="progress" label="Progress" />
                 <strong>Progress</strong>
                 <span>Show progress toward a numeric target.</span>
               </button>
@@ -250,12 +239,12 @@ export function WidgetProviderGallery({
             </header>
             <div className="source-provider-grid">
               <button type="button" onClick={() => onChoose("timeline")}>
-                <ListTree size={26} />
+                <WidgetThumbnail name="timeline" label="Timeline" />
                 <strong>Timeline</strong>
                 <span>Show dated milestones and their current status.</span>
               </button>
               <button type="button" onClick={() => onChoose("world_clock")}>
-                <Clock3 size={26} />
+                <WidgetThumbnail name="world_clock" label="World Clock" />
                 <strong>World Clock</strong>
                 <span>Show live time across multiple locations.</span>
               </button>
@@ -315,7 +304,7 @@ export function WidgetProviderGallery({
                     )
                   }
                 >
-                  <LayoutGrid size={26} />
+                  <WidgetThumbnail name={underlying} label={label!} />
                   <strong>{label}</strong>
                   <span>{description}</span>
                 </button>

@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -27,6 +29,15 @@ var supportedNodes = map[string]bool{
 	"asset_image": true, "badge": true, "progress": true, "qr_code": true,
 	"marquee": true, "line_chart": true, "bar_chart": true, "donut_chart": true,
 	"repeat": true, "conditional": true, "grouped_sections": true,
+}
+
+// DerivedConfigurationKeys are configuration keys a presentation template may reference
+// that the Server derives during manifest projection rather than the author entering
+// them. They are never part of a configuration schema, are never accepted from a client,
+// and resolve to an empty value when projection did not produce one.
+var DerivedConfigurationKeys = map[string]bool{
+	// Written by playlist manifest projection from the author's imageAssetId selection.
+	"imageVariantId": true,
 }
 
 // supportedOutputFieldTypes bounds the typed values a Data Source may declare. The set
@@ -149,6 +160,49 @@ type OutputSchema struct {
 	Fields []OutputField `json:"fields"`
 }
 
+// FetchSpec pins how a release-defined Data Source reaches a public endpoint and how the
+// response becomes typed records. The release owns the endpoint and the field mapping; the
+// author only fills in the placeholders the definition declares.
+//
+// The template's scheme and host are fixed by the release and may not contain a
+// placeholder, so an author can never point a definition at a different service. Every
+// request still passes the Server's normal source-fetch policy, which enforces the private
+// network, size, redirect, and timeout limits.
+type FetchSpec struct {
+	// URLTemplate is an absolute HTTPS URL whose path and query may contain {key}
+	// placeholders naming configuration fields.
+	URLTemplate string `json:"urlTemplate"`
+	// Format is "json" or "csv".
+	Format string `json:"format"`
+	Accept string `json:"accept,omitempty"`
+	// RecordsPath is a dot path to the JSON array holding the records. Empty means the
+	// document itself is the array. It is unused for CSV.
+	RecordsPath string `json:"recordsPath,omitempty"`
+	// Mapping maps an output-schema field key to a dot path within one record (JSON) or a
+	// column name (CSV).
+	Mapping        map[string]string `json:"mapping"`
+	MaximumRecords int               `json:"maximumRecords,omitempty"`
+	RefreshSeconds int               `json:"refreshSeconds,omitempty"`
+}
+
+// placeholderPattern matches the {key} placeholders a FetchSpec URL template may contain.
+var placeholderPattern = regexp.MustCompile(`\{([a-zA-Z][a-zA-Z0-9_]*)\}`)
+
+// FetchPlaceholders returns the configuration keys a URL template substitutes.
+func (spec FetchSpec) FetchPlaceholders() []string {
+	matches := placeholderPattern.FindAllStringSubmatch(spec.URLTemplate, -1)
+	keys := make([]string, 0, len(matches))
+	seen := map[string]bool{}
+	for _, match := range matches {
+		if seen[match[1]] {
+			continue
+		}
+		seen[match[1]] = true
+		keys = append(keys, match[1])
+	}
+	return keys
+}
+
 type OutputField struct {
 	Key      string `json:"key"`
 	Label    string `json:"label"`
@@ -157,12 +211,16 @@ type OutputField struct {
 }
 
 type WidgetDefinition struct {
-	ID                        string              `json:"id"`
-	Version                   int                 `json:"version"`
-	Name                      string              `json:"name"`
-	Description               string              `json:"description"`
-	Category                  string              `json:"category"`
-	Icon                      string              `json:"icon"`
+	ID          string `json:"id"`
+	Version     int    `json:"version"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Category    string `json:"category"`
+	Icon        string `json:"icon"`
+	// Thumbnail names the Studio catalog preview drawn for this Widget. Studio falls back
+	// to a generic preview when the name is empty or unknown, so a definition never has to
+	// ship one and an unknown name never breaks the gallery.
+	Thumbnail                 string              `json:"thumbnail,omitempty"`
 	Runtime                   string              `json:"runtime"`
 	ConfigurationSchema       ConfigurationSchema `json:"configurationSchema"`
 	DefaultConfiguration      map[string]any      `json:"defaultConfiguration"`
@@ -188,6 +246,7 @@ type DataSourceDefinition struct {
 	ConfigurationSchema  ConfigurationSchema `json:"configurationSchema"`
 	DefaultConfiguration map[string]any      `json:"defaultConfiguration"`
 	OutputSchema         OutputSchema        `json:"outputSchema"`
+	Fetch                *FetchSpec          `json:"fetch,omitempty"`
 	AdapterID            string              `json:"adapterId"`
 	RefreshBehavior      string              `json:"refreshBehavior"`
 	Attribution          string              `json:"attribution,omitempty"`
@@ -352,6 +411,11 @@ func (c *Catalog) validate() error {
 		if err := validateOutputSchema(definition.OutputSchema); err != nil {
 			return fmt.Errorf("Data Source definition %q: %w", definition.ID, err)
 		}
+		if definition.Fetch != nil {
+			if err := validateFetchSpec(*definition.Fetch, definition.ConfigurationSchema, definition.OutputSchema); err != nil {
+				return fmt.Errorf("Data Source definition %q: %w", definition.ID, err)
+			}
+		}
 		c.dataSourcesByID[definition.ID] = definition
 	}
 	for _, definition := range c.Widgets {
@@ -378,6 +442,77 @@ func validateOutputSchema(schema OutputSchema) error {
 		if !supportedOutputFieldTypes[field.Type] {
 			return fmt.Errorf("output field %q uses unsupported type %q", field.Key, field.Type)
 		}
+	}
+	return nil
+}
+
+// Bounds on a release-defined fetch specification. They keep one refresh small enough to
+// parse and cache on a modest self-hosted server.
+const (
+	maxFetchRecords     = 500
+	minFetchRefresh     = 60
+	maxFetchPathSegment = 200
+)
+
+// validateFetchSpec rejects a fetch specification that could reach an endpoint the release
+// did not pin, or that maps fields the output schema does not declare.
+func validateFetchSpec(spec FetchSpec, schema ConfigurationSchema, output OutputSchema) error {
+	if spec.Format != "json" && spec.Format != "csv" {
+		return fmt.Errorf("fetch format %q is not supported", spec.Format)
+	}
+	parsed, err := url.Parse(spec.URLTemplate)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
+		return errors.New("fetch url template must be an absolute HTTPS URL")
+	}
+	// The scheme and host are the release's guarantee about which service is contacted, so
+	// neither may be author-controlled.
+	if strings.ContainsAny(parsed.Host, "{}") || strings.ContainsAny(parsed.Scheme, "{}") {
+		return errors.New("fetch url template may not place a placeholder in its scheme or host")
+	}
+	if parsed.User != nil {
+		return errors.New("fetch url template may not carry credentials")
+	}
+	fields := map[string]FieldDefinition{}
+	for _, field := range schema.Fields {
+		fields[field.Key] = field
+	}
+	for _, key := range spec.FetchPlaceholders() {
+		field, ok := fields[key]
+		if !ok {
+			return fmt.Errorf("fetch url template references unknown configuration %q", key)
+		}
+		switch field.Control {
+		case "text", "select", "integer", "number":
+		default:
+			return fmt.Errorf("fetch url placeholder %q must name a text, select, integer, or number field", key)
+		}
+		if field.Control == "text" && (field.MaxLength <= 0 || field.MaxLength > maxFetchPathSegment) {
+			return fmt.Errorf("fetch url placeholder %q must declare a maximum length of 1 to %d", key, maxFetchPathSegment)
+		}
+	}
+	if len(spec.Mapping) == 0 {
+		return errors.New("fetch specification declares no field mapping")
+	}
+	declared := map[string]bool{}
+	for _, field := range output.Fields {
+		declared[field.Key] = true
+	}
+	for key, path := range spec.Mapping {
+		if !declared[key] {
+			return fmt.Errorf("fetch mapping targets undeclared output field %q", key)
+		}
+		if path == "" || len(path) > 200 || strings.ContainsAny(path, "{}") {
+			return fmt.Errorf("fetch mapping for %q is not a plain path", key)
+		}
+	}
+	if spec.RecordsPath != "" && (len(spec.RecordsPath) > 200 || strings.ContainsAny(spec.RecordsPath, "{}")) {
+		return errors.New("fetch records path is not a plain path")
+	}
+	if spec.MaximumRecords < 0 || spec.MaximumRecords > maxFetchRecords {
+		return fmt.Errorf("fetch maximum record count must be between 0 and %d", maxFetchRecords)
+	}
+	if spec.RefreshSeconds != 0 && spec.RefreshSeconds < minFetchRefresh {
+		return fmt.Errorf("fetch refresh interval must be at least %d seconds", minFetchRefresh)
 	}
 	return nil
 }
@@ -642,7 +777,7 @@ func walkTemplate(value any, fields map[string]FieldDefinition) error {
 		}
 	case map[string]any:
 		if key, ok := typed["$config"].(string); ok {
-			if _, exists := fields[key]; !exists {
+			if _, exists := fields[key]; !exists && !DerivedConfigurationKeys[key] {
 				return fmt.Errorf("presentation template references unknown configuration %q", key)
 			}
 		}

@@ -172,6 +172,8 @@ export interface PresentationBinding {
 export interface PresentationRepeat {
   dataset: string;
   limit: number;
+  /** Leading records to skip, so a second region can list what follows the current one. */
+  offset?: number;
 }
 
 export interface PresentationCondition {

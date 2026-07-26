@@ -141,6 +141,9 @@ type PresentationBinding struct {
 type PresentationRepeat struct {
 	Dataset string `json:"dataset"`
 	Limit   int    `json:"limit"`
+	// Offset skips leading records, so one Widget can feature the current record and a
+	// second region can list the ones that follow it. Zero keeps the existing behavior.
+	Offset int `json:"offset,omitempty"`
 }
 
 type PresentationCondition struct {
@@ -429,7 +432,13 @@ func resolveDefinitionTemplate(value any, configuration map[string]any) (any, bo
 		if key, ok := typed["$config"].(string); ok {
 			resolved, exists := configuration[key]
 			if !exists {
-				return nil, false, fmt.Errorf("presentation template references missing configuration %q", key)
+				// Server-derived keys are produced during manifest projection. A Widget whose
+				// author left the optional selection empty simply has no derived value, so the
+				// reference resolves to an empty value rather than failing the compile.
+				if !contentdefs.DerivedConfigurationKeys[key] {
+					return nil, false, fmt.Errorf("presentation template references missing configuration %q", key)
+				}
+				resolved = ""
 			}
 			if suffix, ok := typed["suffix"].(string); ok {
 				text, textOK := resolved.(string)

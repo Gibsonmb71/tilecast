@@ -1272,6 +1272,11 @@ export type WidgetDefinition = {
   description: string;
   category: string;
   icon: string;
+  /**
+   * Names the catalog preview drawn for this Widget. Unknown and missing names fall back
+   * to a generic preview, so a new definition never breaks the gallery.
+   */
+  thumbnail?: string;
   runtime: "native" | "web";
   configurationSchema: { fields: ContentDefinitionField[] };
   defaultConfiguration: Record<string, unknown>;
