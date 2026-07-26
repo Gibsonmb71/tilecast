@@ -23,9 +23,13 @@ export async function archivedScreens(): Promise<{
   const response = await fetch("/api/v1/screens/archive", {
     credentials: "same-origin",
   });
-  const body = (await response.json().catch(() => ({}))) as ArchivedScreenResponse;
+  const body = (await response
+    .json()
+    .catch(() => ({}))) as ArchivedScreenResponse;
   if (!response.ok) {
-    throw new Error(body.error?.message ?? "Archived screens could not be loaded.");
+    throw new Error(
+      body.error?.message ?? "Archived screens could not be loaded.",
+    );
   }
   const result = body.data;
   return {
