@@ -88,7 +88,7 @@ export class LivePreview {
       if (!session || session["active"] === false) {
         return;
       }
-      const manualCapture = session["manualCapture"] === true;
+      const manualCapture = session["captureNow"] === true;
       const due = this.now() - this.lastCaptureMs >= ACTIVE_CAPTURE_MS;
       if (!manualCapture && !due && this.lastCaptureMs !== 0) {
         return;
@@ -114,6 +114,7 @@ export class LivePreview {
 
     const form = new FormData();
     if (capture) {
+      form.append("capturedAt", new Date(this.now()).toISOString());
       form.append("width", String(capture.width));
       form.append("height", String(capture.height));
       form.append("fileSize", String(capture.jpeg.byteLength));
