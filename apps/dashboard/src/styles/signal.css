@@ -1860,6 +1860,106 @@ label > .signal-select,
   box-shadow: 0 0 0 1px var(--tc-border-default);
 }
 
+/* Segmented metric readout, following the pattern established by .ops-summary on
+   the Overview page: one panel divided into equal cells, value in tabular figures
+   above a supporting label. Cell dividers come from a hairline grid gap so the row
+   survives wrapping. (.ops-summary keeps its own hand-tuned nth-child breakpoints
+   for now; it is a candidate to fold into this class later.) */
+.summary-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  background: var(--tc-border-default);
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-panel);
+}
+
+.summary-bar__item {
+  display: grid;
+  gap: 2px;
+  padding: 14px 16px;
+  color: inherit;
+  text-align: left;
+  background: var(--tc-bg-surface);
+  border: 0;
+}
+
+.summary-bar__item strong {
+  color: var(--tc-text-primary);
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.summary-bar__item span {
+  color: var(--tc-text-secondary);
+  font: var(--tc-text-supporting);
+}
+
+.summary-bar__item--urgent strong {
+  color: var(--tc-status-warning);
+}
+
+button.summary-bar__item {
+  cursor: pointer;
+  transition: background var(--tc-motion-fast);
+}
+
+button.summary-bar__item:hover {
+  background: var(--tc-table-row-hover);
+}
+
+button.summary-bar__item[aria-pressed="true"] {
+  background: var(--tc-action-primary-soft);
+}
+
+button.summary-bar__item[aria-pressed="true"] strong {
+  color: var(--tc-action-primary);
+}
+
+/* Removable chip describing one active selection, shared with the schedule target
+   chips below. */
+.filter-chip {
+  display: inline-flex;
+  min-height: 32px;
+  max-width: 100%;
+  align-items: center;
+  gap: var(--tc-space-1);
+  padding-left: var(--tc-space-3);
+  border: 1px solid var(--tc-action-primary);
+  border-radius: var(--tc-radius-pill);
+  color: var(--tc-action-primary);
+  background: var(--tc-action-primary-soft);
+  font: var(--tc-text-supporting);
+}
+
+.filter-chip__facet {
+  font-weight: 650;
+}
+
+.filter-chip__value {
+  overflow: hidden;
+  color: var(--tc-text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filter-chip > button {
+  display: grid;
+  width: 32px;
+  height: 30px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+.filter-chip > button:hover {
+  background: var(--tc-bg-surface);
+}
+
 .toggle-group {
   display: inline-flex;
   flex: 0 0 auto;
@@ -1957,6 +2057,20 @@ label > .signal-select,
   text-transform: none;
 }
 
+/* .status-chip only ever declared its size and radius, so every StatusBadge
+   rendered as bare inline text with no box. .status-badge and .source-badge
+   already carry their own box, which is why this went unnoticed. */
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tc-space-1);
+  width: max-content;
+  max-width: 100%;
+  border: 1px solid transparent;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .status-dot-label {
   display: inline-flex;
   align-items: center;
@@ -1988,9 +2102,13 @@ label > .signal-select,
   color: var(--tc-status-neutral);
 }
 
+/* Tone groups accept both the semantic name StatusBadge passes (success, warning,
+   danger, info, neutral) and the domain names pages use. The semantic aliases were
+   missing, so `<StatusBadge tone="warning">` had no tone at all. */
 .status-badge,
-.status-chip--online,
 .status-chip--success,
+.status-chip--online,
+.status-chip--recent,
 .status-chip--verified,
 .status-chip--succeeded,
 .status-chip--completed {
@@ -1999,23 +2117,36 @@ label > .signal-select,
   border-color: var(--tc-status-success-border);
 }
 
+.status-chip--neutral,
 .status-chip--offline,
 .status-chip--disabled,
 .status-chip--draft,
-.status-chip--cancelled {
+.status-chip--cancelled,
+.status-chip--unknown {
   color: var(--tc-status-neutral);
   background: var(--tc-status-neutral-bg);
   border-color: var(--tc-status-neutral-border);
 }
 
+.status-chip--warning,
+.status-chip--stale,
+.status-chip--degraded {
+  color: var(--tc-status-warning);
+  background: var(--tc-status-warning-bg);
+  border-color: var(--tc-status-warning-border);
+}
+
+.status-chip--danger,
 .status-chip--failed,
 .status-chip--error,
+.status-chip--revoked,
 .status-chip--needs-attention {
   color: var(--tc-status-danger);
   background: var(--tc-status-danger-bg);
   border-color: var(--tc-status-danger-border);
 }
 
+.status-chip--info,
 .status-chip--pending,
 .status-chip--waiting,
 .status-chip--updating,
@@ -4702,6 +4833,10 @@ tbody tr {
   color: var(--tc-input-text);
   background: transparent;
 }
+/* Row-level overflow action. Borderless on purpose — .icon-button carries a
+   visible border, which would put an outlined control on every row of every list. */
+.screen-row__actions button,
+.screen-card header button,
 .location-list__actions button {
   display: grid;
   place-items: center;
@@ -4713,6 +4848,8 @@ tbody tr {
   background: transparent;
   cursor: pointer;
 }
+.screen-row__actions button:hover,
+.screen-card header button:hover,
 .location-list__actions button:hover {
   color: var(--tc-text-primary);
   background: var(--tc-bg-subtle);

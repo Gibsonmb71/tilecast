@@ -1,130 +1,53 @@
 /* Screens page.
 
-   This file is the single home for the fleet workspace: the tabs, the emergency
-   takeover surfaces, the summary, the filter toolbar, and both result views.
-   Rules for these classes previously lived in two stylesheets that disagreed with
-   each other about column counts and breakpoints, which is what knocked rows out
-   of alignment with their own header.
+   This file is the single home for the fleet workspace: the emergency takeover
+   surfaces, the pairing queue, the filter toolbar, and both result views. Rules for
+   these classes previously lived in two stylesheets that disagreed with each other
+   about column counts and breakpoints, which is what knocked rows out of alignment
+   with their own header.
 
-   Every length here comes from the shared spacing, control-height, and radius
-   tokens. The page used to mix a px scale with off-scale rem values such as
-   0.45rem and 3.65rem, so nothing shared a baseline or a rhythm. */
+   Anything the design system already ships is used rather than restated here: the
+   tabs are .view-tabs, the summary is .summary-bar, the view switch is
+   .toggle-group, status pills are .status-chip tones, active filters are
+   .filter-chip, and the takeover banner is a .notice. Lengths come from the shared
+   spacing, control-height, and radius tokens. */
 
 .screens-page {
   display: grid;
-  gap: var(--tc-space-5);
-  width: min(1180px, 100%);
-
-  /* 12px supporting text sat on --tc-text-secondary, which only just clears the
-     contrast floor at that size. One step toward the primary ink in both themes. */
-  --screen-ink-supporting: color-mix(
-    in srgb,
-    var(--tc-text-secondary) 70%,
-    var(--tc-text-primary)
-  );
-}
-
-.screens-page > .page-header {
-  /* The page grid owns vertical rhythm now, so the header's own margin would
-     double the gap under the title. */
-  margin-bottom: 0;
-}
-
-/* Tabs ------------------------------------------------------------------ */
-
-.screen-primary-tabs {
-  display: flex;
+  /* One rhythm for the whole page, at the same 24px the system puts under every
+     .page-header. The header and tab strip hand their own margins to this grid so
+     the two mechanisms cannot stack. */
   gap: var(--tc-space-6);
-  margin: 0;
-  border-bottom: 1px solid var(--tc-border-default);
+  width: min(1180px, 100%);
 }
 
-.screen-primary-tabs a {
-  /* No horizontal padding: the first tab has to start on the same left edge as
-     the page title, the summary, and the table frame. */
-  position: relative;
-  padding: var(--tc-space-2) 0 var(--tc-space-3);
-  color: var(--tc-text-secondary);
-  font: var(--tc-text-panel-title);
-  text-decoration: none;
-}
-
-.screen-primary-tabs a:hover {
-  color: var(--tc-text-primary);
-}
-
-.screen-primary-tabs a[aria-current="page"] {
-  color: var(--tc-text-primary);
-}
-
-.screen-primary-tabs a[aria-current="page"]::after {
-  position: absolute;
-  inset: auto 0 -1px;
-  height: 3px;
-  border-radius: 3px 3px 0 0;
-  background: var(--tc-action-primary);
-  content: "";
+.screens-page > .page-header,
+.screens-page > .view-tabs {
+  margin-bottom: 0;
 }
 
 /* Emergency takeover ---------------------------------------------------- */
 
-/* Quiet until it matters: the trigger is a header utility, and the danger
-   treatment is reserved for a takeover that is actually running. */
+/* Quiet until it matters: the trigger is a .button--danger-quiet header utility,
+   and the loud treatment is reserved for a takeover that is actually running,
+   where it is a plain danger .notice. */
 .emergency-trigger {
   gap: var(--tc-space-2);
-  color: var(--tc-status-danger);
-}
-
-.emergency-trigger:hover:not(:disabled) {
-  background: var(--tc-status-danger-bg);
-  border-color: var(--tc-status-danger-border);
 }
 
 .emergency-trigger__count {
-  padding: 0 var(--tc-space-2);
-  border-radius: var(--tc-radius-pill);
-  color: var(--tc-text-inverse);
-  background: var(--tc-status-danger-solid);
+  padding: 1px 6px;
+  border-radius: var(--tc-radius-chip);
+  color: var(--tc-status-danger);
+  background: var(--tc-status-danger-bg);
+  border: 1px solid var(--tc-status-danger-border);
   font: var(--tc-text-supporting);
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .emergency-banners {
   display: grid;
   gap: var(--tc-space-3);
-}
-
-.emergency-banner {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: var(--tc-space-3);
-  align-items: start;
-  padding: var(--tc-space-4);
-  border: 1px solid var(--tc-status-danger-border);
-  border-left: 3px solid var(--tc-status-danger);
-  border-radius: var(--tc-radius-panel);
-  background: var(--tc-status-danger-bg);
-}
-
-.emergency-banner__icon {
-  display: grid;
-  place-items: center;
-  color: var(--tc-status-danger);
-}
-
-.emergency-banner__copy {
-  display: grid;
-  gap: var(--tc-space-1);
-  min-width: 0;
-}
-
-.emergency-banner__copy strong {
-  font: var(--tc-text-panel-title);
-}
-
-.emergency-banner__copy p {
-  margin: 0;
-  color: var(--tc-text-primary);
 }
 
 .emergency-banner__counts {
@@ -133,12 +56,12 @@
   gap: var(--tc-space-1) var(--tc-space-4);
   margin: var(--tc-space-1) 0 0;
   padding: 0;
-  color: var(--screen-ink-supporting);
+  color: var(--tc-text-secondary);
   font: var(--tc-text-supporting);
   list-style: none;
 }
 
-.emergency-banner .button {
+.emergency-banners > .notice .button {
   white-space: nowrap;
 }
 
@@ -191,7 +114,7 @@
 }
 
 .emergency-form__targets small {
-  color: var(--screen-ink-supporting);
+  color: var(--tc-text-secondary);
   font: var(--tc-text-supporting);
 }
 
@@ -205,7 +128,7 @@
 
 .emergency-dialog__footer p {
   margin: 0;
-  color: var(--screen-ink-supporting);
+  color: var(--tc-text-secondary);
   font: var(--tc-text-supporting);
 }
 
@@ -218,19 +141,20 @@
 /* Pairing queue -------------------------------------------------------- */
 
 .pending-panel {
-  border: 1px solid var(--tc-status-info-border);
+  border: 1px solid var(--tc-border-default);
   border-radius: var(--tc-radius-panel);
   background: var(--tc-bg-surface);
   overflow: hidden;
 }
 
+/* Neutral panel chrome, matching .ops-panel and .detail-card. Nothing else in
+   Studio tints a panel header, so the status colour lives on the icon alone. */
 .pending-panel > header {
   display: flex;
   gap: var(--tc-space-3);
   align-items: center;
-  padding: var(--tc-space-3) var(--tc-space-4);
+  padding: 14px var(--tc-space-4);
   border-bottom: 1px solid var(--tc-border-default);
-  background: var(--tc-status-info-bg);
 }
 
 .pending-panel__icon {
@@ -246,7 +170,7 @@
 
 .pending-panel > header p {
   margin: 0;
-  color: var(--screen-ink-supporting);
+  color: var(--tc-text-secondary);
   font: var(--tc-text-supporting);
 }
 
@@ -255,8 +179,8 @@
   grid-template-columns: minmax(0, 1fr) auto auto;
   gap: var(--tc-space-4);
   align-items: center;
-  min-height: 56px;
-  padding: var(--tc-space-2) var(--tc-space-4);
+  min-height: 48px;
+  padding: 10px var(--tc-space-4);
   border-top: 1px solid var(--tc-border-default);
 }
 
@@ -276,7 +200,7 @@
 
 .pending-row small,
 .pending-row__expiry {
-  color: var(--screen-ink-supporting);
+  color: var(--tc-text-secondary);
   font: var(--tc-text-supporting);
 }
 
@@ -292,62 +216,10 @@
   gap: var(--tc-space-4);
 }
 
+/* Four measures, so they stay on one row until the panel genuinely cannot hold
+   them. Everything else comes from .summary-bar. */
 .screen-summary {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--tc-space-2);
-}
-
-/* Value and label are separated by weight, size, and colour so the row reads as
-   four discrete measures rather than one run-on sentence. */
-.screen-stat {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--tc-space-2);
-  height: var(--tc-control-height-sm);
-  padding: 0 var(--tc-space-3);
-  border: 1px solid var(--tc-border-default);
-  border-radius: var(--tc-radius-pill);
-  color: var(--tc-text-secondary);
-  background: var(--tc-bg-surface);
-  font: var(--tc-text-supporting);
-  white-space: nowrap;
-}
-
-.screen-stat strong {
-  color: var(--tc-text-primary);
-  font-size: 15px;
-  font-weight: 650;
-}
-
-button.screen-stat {
-  cursor: pointer;
-}
-
-button.screen-stat:hover {
-  border-color: var(--tc-border-strong);
-  background: var(--tc-bg-subtle);
-}
-
-button.screen-stat[aria-pressed="true"] {
-  border-color: var(--tc-action-primary);
-  background: var(--tc-action-primary-soft);
-}
-
-.screen-stat--online svg,
-.screen-stat--healthy svg {
-  color: var(--tc-status-success);
-}
-
-.screen-stat--attention {
-  border-color: var(--tc-status-warning-border);
-  background: var(--tc-status-warning-bg);
-}
-
-.screen-stat--attention svg,
-.screen-stat--attention strong {
-  color: var(--tc-status-warning);
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
 }
 
 /* Controls -------------------------------------------------------------- */
@@ -437,7 +309,9 @@ button.screen-stat[aria-pressed="true"] {
   flex: 0 0 auto;
 }
 
-.screen-more-filters summary {
+/* Reads as one of the filter controls, not as a page action: same field surface,
+   border, radius, and height as the selects beside it. */
+.screen-more-filters__trigger {
   display: flex;
   align-items: center;
   gap: var(--tc-space-2);
@@ -445,40 +319,32 @@ button.screen-stat[aria-pressed="true"] {
   padding: 0 var(--tc-space-3);
   border: 1px solid var(--tc-input-border);
   border-radius: var(--tc-radius-control);
-  color: var(--tc-text-secondary);
+  color: var(--tc-input-text);
   background: var(--tc-input-bg);
   cursor: pointer;
-  list-style: none;
+  font: var(--tc-text-body);
 }
 
-.screen-more-filters summary::-webkit-details-marker {
-  display: none;
-}
-
-.screen-more-filters summary:hover {
-  color: var(--tc-text-primary);
+.screen-more-filters__trigger:hover {
   border-color: var(--tc-border-strong);
 }
 
-.screen-more-filters[open] summary {
-  color: var(--tc-text-primary);
+.screen-more-filters__trigger[aria-expanded="true"] {
   border-color: var(--tc-action-primary);
 }
 
+/* Same inline count badge geometry as .view-tabs button small. */
 .screen-more-filters__count {
-  display: grid;
-  place-items: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: var(--tc-radius-pill);
-  color: var(--tc-text-inverse);
-  background: var(--tc-action-primary);
+  padding: 1px 6px;
+  border-radius: var(--tc-radius-chip);
+  color: var(--tc-action-primary);
+  background: var(--tc-action-primary-soft);
   font: var(--tc-text-supporting);
-  font-weight: 650;
+  font-weight: 600;
 }
 
-.screen-more-filters > div {
+/* Matches .signal-select__menu, the overlay language for every popover here. */
+.screen-more-filters__panel {
   position: absolute;
   z-index: 20;
   top: calc(100% + var(--tc-space-1));
@@ -501,92 +367,25 @@ button.screen-stat[aria-pressed="true"] {
 }
 
 .screen-filter-chips__label {
-  color: var(--screen-ink-supporting);
+  color: var(--tc-text-secondary);
   font: var(--tc-text-supporting);
   font-weight: 600;
 }
 
-.screen-filter-chips > button {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--tc-space-2);
-  height: var(--tc-control-height-sm);
-  padding: 0 var(--tc-space-3);
-  border: 1px solid var(--tc-border-default);
-  border-radius: var(--tc-radius-pill);
-  color: var(--tc-text-primary);
-  background: var(--tc-bg-subtle);
-  cursor: pointer;
-  font: var(--tc-text-supporting);
-}
-
-.screen-filter-chips > button:hover {
-  border-color: var(--tc-border-strong);
-}
-
-.screen-filter-chips__facet {
-  color: var(--tc-text-secondary);
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.screen-filter-chips .screen-filter-clear {
-  height: var(--tc-control-height-sm);
+.screen-filter-clear {
+  min-height: 32px;
   padding: 0 var(--tc-space-2);
   border: 0;
   background: transparent;
   color: var(--tc-action-primary);
   cursor: pointer;
   font: var(--tc-text-supporting);
-  font-weight: 650;
-}
-
-.screen-view-switch {
-  display: flex;
-  flex: 0 0 auto;
-}
-
-.screen-view-switch button {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--tc-space-2);
-  height: var(--tc-control-height);
-  padding: 0 var(--tc-space-3);
-  border: 1px solid var(--tc-input-border);
-  color: var(--tc-text-secondary);
-  background: var(--tc-input-bg);
-  cursor: pointer;
-  font: var(--tc-text-control-secondary);
-}
-
-.screen-view-switch button:first-child {
-  border-radius: var(--tc-radius-control) 0 0 var(--tc-radius-control);
-}
-
-.screen-view-switch button:last-child {
-  border-radius: 0 var(--tc-radius-control) var(--tc-radius-control) 0;
-  margin-left: -1px;
-}
-
-.screen-view-switch button:hover {
-  color: var(--tc-text-primary);
-}
-
-/* The selected view now carries a filled swatch instead of a tint that was hard
-   to tell apart from the unselected control. */
-.screen-view-switch button[aria-pressed="true"] {
-  z-index: 1;
-  border-color: var(--tc-action-primary);
-  color: var(--tc-text-inverse);
-  background: var(--tc-action-primary);
-  font: var(--tc-text-control-primary);
+  font-weight: 600;
 }
 
 .screen-results-hint {
   margin: 0;
-  color: var(--screen-ink-supporting);
+  color: var(--tc-text-secondary);
   font: var(--tc-text-supporting);
 }
 
@@ -602,7 +401,6 @@ button.screen-stat[aria-pressed="true"] {
   border: 1px solid var(--tc-action-primary);
   border-radius: var(--tc-radius-panel);
   background: var(--tc-bg-elevated);
-  box-shadow: var(--tc-shadow-sm);
 }
 
 .screen-bulk-bar strong {
@@ -643,13 +441,15 @@ button.screen-stat[aria-pressed="true"] {
   display: flex;
   align-items: center;
   gap: var(--tc-space-3);
-  min-height: 46px;
+  min-height: 48px;
   /* Same 16px inset and 20px first slot as a table row, so the disclosure lands
      in the column the row checkboxes occupy. */
   padding: var(--tc-space-2) var(--tc-space-4);
   border: 1px solid var(--tc-border-default);
   border-radius: var(--tc-radius-panel);
-  background: var(--tc-bg-subtle);
+  /* Surface, not --tc-table-header-bg: the column header directly below it already
+     owns that fill, and two grey bands in a row read as one. */
+  background: var(--tc-bg-surface);
 }
 
 .screen-results--table
@@ -664,7 +464,7 @@ button.screen-stat[aria-pressed="true"] {
   flex: 0 0 auto;
   place-items: center;
   width: 20px;
-  height: 24px;
+  height: 20px;
   border: 0;
   border-radius: var(--tc-radius-control);
   color: var(--tc-text-secondary);
@@ -691,23 +491,19 @@ button.screen-stat[aria-pressed="true"] {
 }
 
 .screen-group-header__count {
-  display: grid;
-  place-items: center;
-  min-width: 22px;
-  height: 20px;
-  padding: 0 var(--tc-space-2);
-  border: 1px solid var(--tc-border-default);
-  border-radius: var(--tc-radius-pill);
-  color: var(--tc-text-secondary);
-  background: var(--tc-bg-surface);
+  padding: 1px 6px;
+  border: 1px solid var(--tc-chip-border);
+  border-radius: var(--tc-radius-chip);
+  color: var(--tc-chip-text);
+  background: var(--tc-chip-bg);
   font: var(--tc-text-supporting);
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .screen-group-header__title small {
   flex-basis: 100%;
   overflow: hidden;
-  color: var(--screen-ink-supporting);
+  color: var(--tc-text-secondary);
   font: var(--tc-text-supporting);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -726,7 +522,7 @@ button.screen-stat[aria-pressed="true"] {
   display: inline-flex;
   align-items: center;
   gap: var(--tc-space-1);
-  color: var(--screen-ink-supporting);
+  color: var(--tc-text-secondary);
   font: var(--tc-text-supporting);
   white-space: nowrap;
 }
@@ -776,20 +572,20 @@ button.screen-stat[aria-pressed="true"] {
   padding: 0 var(--tc-space-4);
 }
 
+/* Same treatment as the system's `th`: 40px tall, --tc-text-label, sentence case.
+   Micro-caps were deliberately dropped from this design system — .status-chip
+   still resets letter-spacing and text-transform to prove it. */
 .screen-table__header {
-  min-height: 34px;
+  min-height: 40px;
   border-bottom: 1px solid var(--tc-border-default);
-  background: var(--tc-bg-subtle);
+  background: var(--tc-table-header-bg);
   color: var(--tc-text-secondary);
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  font: var(--tc-text-label);
 }
 
 .screen-row {
-  min-height: 58px;
-  padding-block: var(--tc-space-2);
+  min-height: 48px;
+  padding-block: 10px;
   border-bottom: 1px solid var(--tc-border-default);
   cursor: pointer;
 }
@@ -836,7 +632,7 @@ button.screen-stat[aria-pressed="true"] {
 
 .screen-identity__copy {
   display: grid;
-  gap: 1px;
+  gap: 2px;
   min-width: 0;
 }
 
@@ -846,7 +642,6 @@ button.screen-stat[aria-pressed="true"] {
   overflow: hidden;
   color: var(--tc-text-primary);
   font: var(--tc-text-label);
-  font-size: 14px;
   text-decoration: none;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -864,7 +659,7 @@ button.screen-stat[aria-pressed="true"] {
 
 .screen-identity__copy small {
   overflow: hidden;
-  color: var(--screen-ink-supporting);
+  color: var(--tc-text-secondary);
   font: var(--tc-text-supporting);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -876,12 +671,13 @@ button.screen-stat[aria-pressed="true"] {
   align-items: center;
   gap: var(--tc-space-1);
   max-width: 9rem;
-  height: 22px;
-  padding: 0 var(--tc-space-2);
+  min-height: 24px;
+  padding: 2px var(--tc-space-2);
   overflow: hidden;
-  border: 1px solid var(--tc-border-default);
+  border: 1px solid var(--tc-chip-border);
   border-radius: var(--tc-radius-pill);
-  color: var(--tc-text-secondary);
+  color: var(--tc-chip-text);
+  background: var(--tc-chip-bg);
   font: var(--tc-text-supporting);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -889,21 +685,20 @@ button.screen-stat[aria-pressed="true"] {
 
 .screen-row__playing {
   display: grid;
-  gap: 1px;
+  gap: 2px;
   min-width: 0;
 }
 
 .screen-row__playing strong {
   overflow: hidden;
-  font: var(--tc-text-body);
-  font-weight: 550;
+  font: var(--tc-text-label);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .screen-row__playing small,
 .screen-row__status small {
-  color: var(--screen-ink-supporting);
+  color: var(--tc-text-secondary);
   font: var(--tc-text-supporting);
 }
 
@@ -927,67 +722,6 @@ button.screen-stat[aria-pressed="true"] {
   justify-self: end;
 }
 
-.screen-row__actions button,
-.screen-card header button {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border: 0;
-  border-radius: var(--tc-radius-control);
-  color: var(--tc-text-secondary);
-  background: transparent;
-  cursor: pointer;
-}
-
-.screen-row__actions button:hover,
-.screen-card header button:hover {
-  color: var(--tc-text-primary);
-  background: var(--tc-bg-subtle);
-}
-
-/* Status chip --------------------------------------------------------- */
-
-.screen-status {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--tc-space-1);
-  height: 22px;
-  padding: 0 var(--tc-space-2);
-  border: 1px solid;
-  border-radius: var(--tc-radius-chip);
-  font-size: 11px;
-  font-weight: 650;
-  white-space: nowrap;
-}
-
-.screen-status--online,
-.screen-status--recent {
-  color: var(--tc-status-success);
-  background: var(--tc-status-success-bg);
-  border-color: var(--tc-status-success-border);
-}
-
-.screen-status--stale {
-  color: var(--tc-status-warning);
-  background: var(--tc-status-warning-bg);
-  border-color: var(--tc-status-warning-border);
-}
-
-.screen-status--offline,
-.screen-status--unknown {
-  color: var(--tc-status-neutral);
-  background: var(--tc-status-neutral-bg);
-  border-color: var(--tc-status-neutral-border);
-}
-
-.screen-status--disabled,
-.screen-status--revoked {
-  color: var(--tc-status-danger);
-  background: var(--tc-status-danger-bg);
-  border-color: var(--tc-status-danger-border);
-}
-
 /* Preview cards ------------------------------------------------------- */
 
 .screen-grid {
@@ -1003,17 +737,13 @@ button.screen-stat[aria-pressed="true"] {
   border-radius: var(--tc-radius-panel);
   background: var(--tc-bg-surface);
   cursor: pointer;
-  transition:
-    border-color var(--tc-motion-fast),
-    transform var(--tc-motion-fast);
+  transition: border-color var(--tc-motion-fast);
 }
 
 .screen-card:hover,
 .screen-card:focus-visible {
   border-color: var(--tc-border-strong);
   outline: 2px solid transparent;
-  box-shadow: var(--tc-shadow-sm);
-  transform: translateY(-1px);
 }
 
 .screen-card--attention {
@@ -1088,21 +818,20 @@ button.screen-stat[aria-pressed="true"] {
 
 .screen-card__body header > span {
   display: grid;
-  gap: 1px;
+  gap: 2px;
   min-width: 0;
 }
 
 .screen-card__body header strong {
   overflow: hidden;
   font: var(--tc-text-label);
-  font-size: 14px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .screen-card__body header small {
   overflow: hidden;
-  color: var(--screen-ink-supporting);
+  color: var(--tc-text-secondary);
   font: var(--tc-text-supporting);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1112,7 +841,7 @@ button.screen-stat[aria-pressed="true"] {
   display: flex;
   align-items: center;
   gap: var(--tc-space-3);
-  color: var(--screen-ink-supporting);
+  color: var(--tc-text-secondary);
   font: var(--tc-text-supporting);
 }
 
@@ -1142,12 +871,13 @@ button.screen-stat[aria-pressed="true"] {
   gap: var(--tc-space-1);
   width: max-content;
   max-width: 100%;
-  height: 22px;
-  padding: 0 var(--tc-space-2);
+  min-height: 24px;
+  padding: 2px var(--tc-space-2);
   overflow: hidden;
-  border: 1px solid var(--tc-border-default);
+  border: 1px solid var(--tc-chip-border);
   border-radius: var(--tc-radius-pill);
-  color: var(--tc-text-secondary);
+  color: var(--tc-chip-text);
+  background: var(--tc-chip-bg);
   font: var(--tc-text-supporting);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1208,7 +938,7 @@ button.screen-stat[aria-pressed="true"] {
 
   /* Right-aligned, the panel would hang off the left edge once "More filters"
      wraps to the start of its own row. */
-  .screen-more-filters > div {
+  .screen-more-filters__panel {
     right: auto;
     left: 0;
     width: min(16rem, calc(100vw - var(--tc-space-8)));
@@ -1259,13 +989,8 @@ button.screen-stat[aria-pressed="true"] {
     grid-template-columns: 1fr;
   }
 
-  .emergency-banner {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-
-  .emergency-banner .button {
-    grid-column: 2;
-    justify-self: start;
+  .emergency-banners > .notice {
+    flex-wrap: wrap;
   }
 
   .pending-row {

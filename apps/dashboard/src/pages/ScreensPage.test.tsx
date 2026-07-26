@@ -143,7 +143,7 @@ describe("screen management", () => {
     expect(within(row).getByText(/1920×1080/)).toBeInTheDocument();
   });
 
-  it("reports a healthy fleet without a bare zero count", () => {
+  it("states fleet health as labelled measures rather than a run-on sentence", () => {
     const item: Screen = {
       id: "screen-1",
       name: "Lobby",
@@ -171,8 +171,14 @@ describe("screen management", () => {
       </MemoryRouter>,
     );
     const summary = screen.getByRole("group", { name: "Fleet summary" });
-    expect(within(summary).getByText("No issues")).toBeInTheDocument();
-    expect(within(summary).queryByText(/need attention/)).toBeNull();
+    // Each measure pairs its own count with its own label, so no reading of the
+    // summary produces "0 need attention".
+    expect(
+      within(summary).getByRole("button", { name: "0 Needs attention" }),
+    ).toHaveAttribute("aria-pressed", "false");
+    expect(
+      within(summary).getByRole("button", { name: "1 Online" }),
+    ).toBeInTheDocument();
   });
 
   it("does not confuse requested Managed Kiosk with effective capability", () => {
