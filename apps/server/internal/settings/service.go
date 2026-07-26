@@ -427,7 +427,7 @@ func (s *Service) PlayerConfiguration(ctx context.Context, screen uuid.UUID) (Pl
 		return PlayerConfig{}, "", err
 	}
 	var screenLocation string
-	if err := s.db.QueryRow(ctx, `SELECT location FROM screens WHERE id=$1`, screen).Scan(&screenLocation); err != nil {
+	if err := s.db.QueryRow(ctx, `SELECT concat_ws(' · ',NULLIF(l.name,''),NULLIF(s.room_name,''),NULLIF(s.room_number,'')) FROM screens s LEFT JOIN locations l ON l.id=s.location_id WHERE s.id=$1`, screen).Scan(&screenLocation); err != nil {
 		return PlayerConfig{}, "", err
 	}
 	v := func(key string) any { return effective.Values[key].Value }

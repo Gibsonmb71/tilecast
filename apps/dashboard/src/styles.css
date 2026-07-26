@@ -1139,6 +1139,7 @@ button.organizer-chip:disabled {
   display: flex;
   justify-content: flex-end;
   background: rgb(15 24 21 / 38%);
+  animation: tc-overlay-fade-in 140ms ease-out both;
 }
 .asset-details {
   width: min(470px, 100%);
@@ -1147,6 +1148,13 @@ button.organizer-chip:disabled {
   overflow: auto;
   background: white;
   box-shadow: -8px 0 30px rgb(10 20 16 / 16%);
+  animation: tc-details-enter 200ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+@keyframes tc-details-enter {
+  from {
+    opacity: 0.84;
+    transform: translateX(14px);
+  }
 }
 .asset-details > header {
   display: flex;

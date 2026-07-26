@@ -55,6 +55,10 @@ Device authentication errors use distinct codes: `device_credential_required`, `
 
 All screen routes require a dashboard session. Mutations also require `X-CSRF-Token`. Approval, rejection, updates, disable, enable, and revocation require Owner or Administrator.
 
+Locations are reusable building or campus records. `GET /api/v1/locations` returns structured addresses, optional decimal coordinates, timestamps, and an assigned-screen count. Owner and Administrator may `POST /api/v1/locations`, `PATCH /api/v1/locations/{id}`, and `DELETE /api/v1/locations/{id}`. Names are unique case-insensitively within the installation. A location with assigned screens cannot be deleted and returns `409`; screens must first be reassigned or unassigned.
+
+Screens reference an optional `locationId` and carry independent optional `roomName` and `roomNumber` values. Screen responses include the resolved location name for compact compatibility plus `locationDetails` for structured address display. Pairing approval and screen updates accept `locationId`, `roomName`, and `roomNumber`; they no longer store a duplicated free-text building name. Migration 51 trims existing names, merges case-insensitive duplicates, creates one reusable record per normalized name, and preserves every screen relationship.
+
 - `GET /api/v1/screens`
 - `GET /api/v1/screens/{id}`
 - `GET /api/v1/screens/pairing/pending`
@@ -65,6 +69,10 @@ All screen routes require a dashboard session. Mutations also require `X-CSRF-To
 - `POST /api/v1/screens/{id}/disable`
 - `POST /api/v1/screens/{id}/enable`
 - `POST /api/v1/screens/{id}/revoke`
+- `GET /api/v1/locations`
+- `POST /api/v1/locations`
+- `PATCH /api/v1/locations/{id}`
+- `DELETE /api/v1/locations/{id}`
 
 The machine-readable subset is in [`openapi.yaml`](openapi.yaml).
 

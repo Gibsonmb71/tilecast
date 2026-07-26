@@ -22,6 +22,8 @@ import type {
   AuthStatus,
   LoginInput,
   PairingRequest,
+  Location,
+  LocationInput,
   Screen,
   SetupInput,
   User,
@@ -721,6 +723,24 @@ export const api = {
       total: result?.total ?? 0,
     };
   },
+  locations: () => request<{ items: Location[]; total: number }>("/locations"),
+  createLocation: (input: LocationInput, csrfToken: string) =>
+    request<Location>("/locations", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  updateLocation: (id: string, input: LocationInput, csrfToken: string) =>
+    request<Location>(`/locations/${id}`, {
+      method: "PATCH",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  deleteLocation: (id: string, csrfToken: string) =>
+    request<void>(`/locations/${id}`, {
+      method: "DELETE",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
   pendingPairings: () =>
     request<{ items: PairingRequest[]; total: number }>(
       "/screens/pairing/pending",
@@ -753,7 +773,9 @@ export const api = {
     id: string,
     input: {
       name: string;
-      location: string;
+      locationId?: string;
+      roomName: string;
+      roomNumber: string;
       description: string;
       replaceExistingCredential: boolean;
     },
@@ -772,7 +794,13 @@ export const api = {
     }),
   updateScreen: (
     id: string,
-    input: { name: string; location: string; description: string },
+    input: {
+      name: string;
+      locationId?: string;
+      roomName: string;
+      roomNumber: string;
+      description: string;
+    },
     csrfToken: string,
   ) =>
     request<Screen>(`/screens/${id}`, {

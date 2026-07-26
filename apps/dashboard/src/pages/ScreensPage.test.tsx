@@ -241,12 +241,16 @@ describe("screen management", () => {
     expect(
       pairingApprovalPayload(request, {
         name: "Cafeteria Display",
-        location: "",
+        locationId: undefined,
+        roomName: "Cafeteria",
+        roomNumber: "",
         description: "",
       }),
     ).toEqual({
       name: "Cafeteria Display",
-      location: "",
+      locationId: undefined,
+      roomName: "Cafeteria",
+      roomNumber: "",
       description: "",
       replaceExistingCredential: true,
     });

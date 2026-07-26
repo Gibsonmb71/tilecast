@@ -1,22 +1,45 @@
-import { Button, Dialog, PageHeader, Select, ViewTabs } from "../components/ui";
+import {
+  Button,
+  ContextMenu,
+  Dialog,
+  PageHeader,
+  Select,
+  ViewTabs,
+  useContextMenu,
+  type ContextMenuItem,
+} from "../components/ui";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CircleAlert,
+  ChevronDown,
+  ChevronRight,
+  Grid2X2,
   Link2,
+  List,
+  MoreHorizontal,
   Monitor,
   Pencil,
   RefreshCw,
   ShieldOff,
+  Search,
   Wifi,
   WifiOff,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from "react";
 import { useForm } from "react-hook-form";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { z } from "zod";
 import { api } from "../api/client";
 import type {
+  Location,
   PairingRequest,
   ReliabilityStatus,
   Screen,
@@ -27,6 +50,8 @@ import { useAuth } from "../auth/AuthProvider";
 import { ScreenContentChain } from "../content/ScreenContentChain";
 import { FormField } from "../components/FormField";
 import { PlayerPolicyEditor } from "../settings/PlayerPolicyEditor";
+import { formatLocationAddress } from "../settings/LocationsPanel";
+import { previewApi } from "../api/previews";
 
 export const canManageScreens = (user?: User) =>
   user?.role === "owner" || user?.role === "administrator";
@@ -83,7 +108,9 @@ const codeSchema = z.object({
 });
 const approvalSchema = z.object({
   name: z.string().trim().min(2, "Enter a screen name").max(120),
-  location: z.string().max(240),
+  locationId: z.string().optional(),
+  roomName: z.string().max(120),
+  roomNumber: z.string().max(80),
   description: z.string().max(1000),
 });
 type CodeForm = z.infer<typeof codeSchema>;
@@ -100,6 +127,46 @@ export const pairingApprovalLabel = (request: PairingRequest) =>
   request.previouslyPaired && request.hasActiveCredential
     ? "Repair and replace credential"
     : "Approve and pair";
+
+function LocationPicker({
+  locations,
+  value,
+  onChange,
+}: {
+  locations: Location[];
+  value?: string;
+  onChange: (value?: string) => void;
+}) {
+  const selected = locations.find((location) => location.id === value);
+  return (
+    <label className="field">
+      <span className="field__label">Location (optional)</span>
+      <select
+        value={value ?? ""}
+        onChange={(event) => onChange(event.target.value || undefined)}
+      >
+        <option value="">Unassigned</option>
+        {locations.map((location) => (
+          <option key={location.id} value={location.id}>
+            {location.name}
+            {formatLocationAddress(location)
+              ? ` — ${formatLocationAddress(location)}`
+              : ""}
+          </option>
+        ))}
+      </select>
+      {selected && formatLocationAddress(selected) && (
+        <small>{formatLocationAddress(selected)}</small>
+      )}
+      <Link
+        className="text-link location-picker__create"
+        to="/settings/locations"
+      >
+        Create new location
+      </Link>
+    </label>
+  );
+}
 
 export function resolveScreenDetail(
   detail: Screen | null | undefined,
@@ -136,19 +203,22 @@ export function ScreensPage() {
     refetchInterval: 10_000,
     enabled: manageable,
   });
+  const locations = useQuery({
+    queryKey: ["locations"],
+    queryFn: api.locations,
+  });
   return (
     <div className="screens-page">
       <PageHeader
         title="Screens"
         description="Pair and monitor Android TV, Google TV, and Fire TV players."
-        actions={
-          manageable ? (
-            <Link className="button button--quiet" to="/groups">
-              Sync groups
-            </Link>
-          ) : undefined
-        }
       />
+      <nav className="screen-primary-tabs" aria-label="Screen management">
+        <Link to="/screens" aria-current="page">
+          Screens
+        </Link>
+        <Link to="/groups">Sync groups</Link>
+      </nav>
       <EmergencyPanel
         screens={screens.data?.items ?? []}
         canManage={manageable}
@@ -164,6 +234,12 @@ export function ScreensPage() {
         screens={screens.data?.items ?? []}
         loading={screens.isLoading}
         canManage={manageable}
+        locations={locations.data?.items ?? []}
+        locationsError={locations.isError}
+        csrfToken={auth.status?.csrfToken ?? ""}
+        onRefresh={async () => {
+          await Promise.all([screens.refetch(), locations.refetch()]);
+        }}
       />
     </div>
   );
@@ -411,11 +487,252 @@ export function ScreenListContent({
   screens,
   loading,
   canManage,
+  locations: locationItems = [],
+  locationsError = false,
+  csrfToken = "",
+  onRefresh,
 }: {
   screens: Screen[];
   loading: boolean;
   canManage: boolean;
+  locations?: Location[];
+  locationsError?: boolean;
+  csrfToken?: string;
+  onRefresh?: () => Promise<unknown>;
 }) {
+  const navigate = useNavigate();
+  const menu = useContextMenu<Screen>();
+  const [search, setSearch] = useStoredState<string>(
+    "tilecast.screens.search",
+    "",
+  );
+  const [status, setStatus] = useStoredState<string>(
+    "tilecast.screens.status",
+    "",
+  );
+  const [location, setLocation] = useStoredState<string>(
+    "tilecast.screens.location",
+    "",
+  );
+  const [platform, setPlatform] = useStoredState<string>(
+    "tilecast.screens.platform",
+    "",
+  );
+  const [playing, setPlaying] = useStoredState<string>(
+    "tilecast.screens.playing",
+    "",
+  );
+  const [syncGroup, setSyncGroup] = useStoredState<string>(
+    "tilecast.screens.syncGroup",
+    "",
+  );
+  const [orientation, setOrientation] = useStoredState<string>(
+    "tilecast.screens.orientation",
+    "",
+  );
+  const [update, setUpdate] = useStoredState<string>(
+    "tilecast.screens.update",
+    "",
+  );
+  const [groupBy, setGroupBy] = useStoredState<string>(
+    "tilecast.screens.groupBy",
+    "location",
+  );
+  const [sort, setSort] = useStoredState<string>(
+    "tilecast.screens.sort",
+    "name-asc",
+  );
+  const [view, setView] = useStoredState<"table" | "grid">(
+    "tilecast.screens.view",
+    "table",
+  );
+  const [collapsed, setCollapsed] = useState<Set<string>>(
+    () =>
+      new Set(
+        JSON.parse(
+          storageGet("session", "tilecast.screens.collapsed") ?? "[]",
+        ) as string[],
+      ),
+  );
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkLocation, setBulkLocation] = useState("");
+  const filtered = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return screens.filter((screen) => {
+      const attention = needsAttention(screen);
+      const statusMatch =
+        !status ||
+        (status === "attention" && attention) ||
+        (status === "updating" && Boolean(screen.updateState)) ||
+        (status === "syncing" && screen.updateState === "syncing") ||
+        screen.status === status;
+      const playingMatch =
+        !playing ||
+        (playing === "nothing" && !screen.nowPlayingName) ||
+        screen.nowPlayingType === playing;
+      const syncMatch =
+        !syncGroup ||
+        (syncGroup === "any" && Boolean(screen.syncGroupId)) ||
+        (syncGroup === "none" && !screen.syncGroupId) ||
+        screen.syncGroupId === syncGroup;
+      const orientationValue =
+        screen.screenHeight > screen.screenWidth ? "portrait" : "landscape";
+      const updateMatch =
+        !update ||
+        (update === "current" && !screen.updateState && !screen.updateError) ||
+        (update === "attention" && Boolean(screen.updateError)) ||
+        screen.updateState === update;
+      const haystack = [
+        screen.name,
+        screen.location,
+        formatLocationAddress(screen.locationDetails),
+        screen.roomName,
+        screen.roomNumber,
+        screen.platform,
+        screen.deviceModel,
+        screen.nowPlayingName,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return (
+        (!needle || haystack.includes(needle)) &&
+        statusMatch &&
+        (!location || screen.locationId === location) &&
+        (!platform || screen.platform === platform) &&
+        playingMatch &&
+        syncMatch &&
+        (!orientation || orientation === orientationValue) &&
+        updateMatch
+      );
+    });
+  }, [
+    location,
+    orientation,
+    platform,
+    playing,
+    screens,
+    search,
+    status,
+    syncGroup,
+    update,
+  ]);
+  const visibleGroups = useMemo(
+    () => buildScreenGroups(filtered, groupBy, sort),
+    [filtered, groupBy, sort],
+  );
+  const activeFilters: [string, () => void][] = [];
+  if (search) activeFilters.push(["Search", () => setSearch("")]);
+  if (status) activeFilters.push([statusLabel(status), () => setStatus("")]);
+  if (location)
+    activeFilters.push([
+      locationItems.find((item) => item.id === location)?.name ?? "Location",
+      () => setLocation(""),
+    ]);
+  if (platform)
+    activeFilters.push([platformLabel(platform), () => setPlatform("")]);
+  if (playing)
+    activeFilters.push([
+      playing === "nothing" ? "Nothing assigned" : playing,
+      () => setPlaying(""),
+    ]);
+  if (syncGroup) activeFilters.push(["Sync group", () => setSyncGroup("")]);
+  if (orientation) activeFilters.push([orientation, () => setOrientation("")]);
+  if (update) activeFilters.push(["Update status", () => setUpdate("")]);
+  const clearFilters = () => {
+    setSearch("");
+    setStatus("");
+    setLocation("");
+    setPlatform("");
+    setPlaying("");
+    setSyncGroup("");
+    setOrientation("");
+    setUpdate("");
+  };
+  const toggleCollapsed = (key: string) => {
+    const next = new Set(collapsed);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    setCollapsed(next);
+    storageSet(
+      "session",
+      "tilecast.screens.collapsed",
+      JSON.stringify([...next]),
+    );
+  };
+  const restartSelected = async () => {
+    await Promise.all(
+      [...selected].map((id) =>
+        api.createScreenCommand(id, "restart_player_process", {}, csrfToken),
+      ),
+    );
+    setSelected(new Set());
+  };
+  const changeSelectedLocation = async () => {
+    const chosen = bulkLocation || undefined;
+    await Promise.all(
+      screens
+        .filter((screen) => selected.has(screen.id))
+        .map((screen) =>
+          api.updateScreen(
+            screen.id,
+            {
+              name: screen.name,
+              description: screen.description,
+              locationId: chosen,
+              roomName: screen.roomName ?? "",
+              roomNumber: screen.roomNumber ?? "",
+            },
+            csrfToken,
+          ),
+        ),
+    );
+    setSelected(new Set());
+    await onRefresh?.();
+  };
+  const actionsFor = (screen: Screen): ContextMenuItem[] => [
+    {
+      label: "Preview",
+      icon: <Monitor size={15} />,
+      onSelect: () => void navigate(`/screens/${screen.id}`),
+    },
+    {
+      label: "Open details",
+      onSelect: () => void navigate(`/screens/${screen.id}`),
+    },
+    ...(canManage
+      ? [
+          {
+            label: "Restart player",
+            onSelect: () =>
+              void api.createScreenCommand(
+                screen.id,
+                "restart_player_process",
+                {},
+                csrfToken,
+              ),
+          },
+          {
+            label: "Edit",
+            icon: <Pencil size={15} />,
+            onSelect: () => navigate(`/screens/${screen.id}?edit=details`),
+          },
+          {
+            label: "Assign content",
+            onSelect: () => navigate(`/screens/${screen.id}?tab=content`),
+          },
+          {
+            label: screen.syncGroupId ? "Open sync group" : "Add to sync group",
+            onSelect: () =>
+              navigate(
+                screen.syncGroupId
+                  ? `/groups/${screen.syncGroupId}`
+                  : "/groups",
+              ),
+          },
+        ]
+      : []),
+  ];
   if (loading) return <div className="table-loading">Loading screens…</div>;
   if (screens.length === 0)
     return (
@@ -440,47 +757,708 @@ export function ScreenListContent({
       </section>
     );
   return (
-    <section className="screen-table" aria-label="Paired screens">
-      <div className="screen-table__header">
-        <span>Screen</span>
-        <span>Status</span>
-        <span>Device</span>
-        <span>Last contact</span>
+    <section className="screen-workspace" aria-label="Paired screens">
+      <div className="screen-summary" aria-label="Screen summary">
+        <span>
+          <strong>{screens.length}</strong> screens
+        </span>
+        <button type="button" onClick={() => setStatus("online")}>
+          <strong>
+            {screens.filter((item) => item.status === "online").length}
+          </strong>{" "}
+          online
+        </button>
+        <button type="button" onClick={() => setStatus("attention")}>
+          <strong>{screens.filter(needsAttention).length}</strong> need
+          attention
+        </button>
+        <button type="button" onClick={() => setGroupBy("location")}>
+          <strong>
+            {
+              new Set(screens.map((item) => item.locationId).filter(Boolean))
+                .size
+            }
+          </strong>{" "}
+          locations
+        </button>
       </div>
-      {screens.map((screen) => (
-        <Link
-          to={`/screens/${screen.id}`}
-          className="screen-row"
-          key={screen.id}
+      <div className="screen-toolbar">
+        <label className="screen-search">
+          <Search size={16} />
+          <span className="sr-only">Search screens</span>
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search screens, rooms, locations, or content"
+          />
+        </label>
+        <FilterSelect label="Status" value={status} onChange={setStatus}>
+          <option value="">All statuses</option>
+          <option value="online">Online screens</option>
+          <option value="offline">Offline screens</option>
+          <option value="attention">Needs attention</option>
+          <option value="updating">Updating</option>
+          <option value="syncing">Syncing</option>
+        </FilterSelect>
+        <FilterSelect label="Location" value={location} onChange={setLocation}>
+          <option value="">All locations</option>
+          {locationItems.map((item) => (
+            <option value={item.id} key={item.id}>
+              {item.name}
+            </option>
+          ))}
+        </FilterSelect>
+        <FilterSelect label="Platform" value={platform} onChange={setPlatform}>
+          <option value="">All platforms</option>
+          {[...new Set(screens.map((item) => item.platform))]
+            .sort()
+            .map((item) => (
+              <option value={item} key={item}>
+                {platformLabel(item)}
+              </option>
+            ))}
+        </FilterSelect>
+        <FilterSelect
+          label="Currently playing"
+          value={playing}
+          onChange={setPlaying}
         >
-          <span className="screen-name">
-            <span className="screen-icon">
-              <Monitor size={17} />
-            </span>
-            <span>
-              <strong>{screen.name}</strong>
-              <small>{screen.location || "No location"}</small>
-            </span>
-          </span>
-          <StatusLabel status={screen.status} />
+          <option value="">Any content</option>
+          <option value="presentation">Presentation</option>
+          <option value="playlist">Playlist</option>
+          <option value="nothing">Nothing assigned</option>
+        </FilterSelect>
+        <details className="screen-more-filters">
+          <summary>More filters</summary>
+          <div>
+            <FilterSelect
+              label="Sync group"
+              value={syncGroup}
+              onChange={setSyncGroup}
+            >
+              <option value="">All screens</option>
+              <option value="any">In any sync group</option>
+              <option value="none">Not in a sync group</option>
+              {[
+                ...new Map(
+                  screens
+                    .filter((item) => item.syncGroupId)
+                    .map((item) => [item.syncGroupId, item.syncGroupName]),
+                ).entries(),
+              ].map(([id, name]) => (
+                <option value={id} key={id}>
+                  {name}
+                </option>
+              ))}
+            </FilterSelect>
+            <FilterSelect
+              label="Orientation"
+              value={orientation}
+              onChange={setOrientation}
+            >
+              <option value="">Any orientation</option>
+              <option value="landscape">Landscape</option>
+              <option value="portrait">Portrait</option>
+            </FilterSelect>
+            <FilterSelect
+              label="Software update"
+              value={update}
+              onChange={setUpdate}
+            >
+              <option value="">Any update status</option>
+              <option value="current">Current</option>
+              <option value="downloading">Downloading</option>
+              <option value="attention">Needs attention</option>
+            </FilterSelect>
+          </div>
+        </details>
+      </div>
+      {activeFilters.length > 0 && (
+        <div className="screen-filter-chips">
+          {activeFilters.map(([label, remove], index) => (
+            <button type="button" onClick={remove} key={`${label}-${index}`}>
+              {label} <span aria-hidden="true">×</span>
+              <span className="sr-only">Remove {label} filter</span>
+            </button>
+          ))}
+          <button
+            type="button"
+            className="screen-filter-clear"
+            onClick={clearFilters}
+          >
+            Clear all
+          </button>
           <span>
-            <strong>
-              {screen.deviceManufacturer} {screen.deviceModel}
-            </strong>
-            <small>
-              {screen.platform === "linux" ? "Linux" : "Android"}
-              {screen.playerVersion ? ` ${screen.playerVersion}` : ""}
-            </small>
+            {filtered.length} result{filtered.length === 1 ? "" : "s"}
           </span>
-          <span>
-            <strong>{formatContact(screen.lastContactAt)}</strong>
-            <small>
-              {screen.screenWidth} × {screen.screenHeight}
-            </small>
-          </span>
-        </Link>
-      ))}
+        </div>
+      )}
+      <div className="screen-view-controls">
+        <FilterSelect label="Group by" value={groupBy} onChange={setGroupBy}>
+          <option value="location">Group by location</option>
+          <option value="status">Group by status</option>
+          <option value="sync">Group by sync group</option>
+          <option value="none">No grouping</option>
+        </FilterSelect>
+        <FilterSelect label="Sort" value={sort} onChange={setSort}>
+          <option value="name-asc">Screen name · A–Z</option>
+          <option value="name-desc">Screen name · Z–A</option>
+          <option value="location-asc">Location · A–Z</option>
+          <option value="status-asc">Status</option>
+          <option value="contact-desc">Last contact · newest</option>
+          <option value="contact-asc">Last contact · oldest</option>
+          <option value="added-desc">Date added · newest</option>
+          <option value="platform-asc">Platform</option>
+        </FilterSelect>
+        <div
+          className="screen-view-switch"
+          role="group"
+          aria-label="Screen view"
+        >
+          <button
+            type="button"
+            aria-pressed={view === "table"}
+            onClick={() => setView("table")}
+          >
+            <List size={16} /> Table
+          </button>
+          <button
+            type="button"
+            aria-pressed={view === "grid"}
+            onClick={() => setView("grid")}
+          >
+            <Grid2X2 size={16} /> Grid
+          </button>
+        </div>
+      </div>
+      {selected.size > 0 && canManage && (
+        <div className="screen-bulk-bar">
+          <strong>{selected.size} selected</strong>
+          <button type="button" onClick={() => void restartSelected()}>
+            Restart
+          </button>
+          <label>
+            <span className="sr-only">Change selected screens location</span>
+            <select
+              value={bulkLocation}
+              onChange={(event) => setBulkLocation(event.target.value)}
+            >
+              <option value="">Unassigned</option>
+              {locationItems.map((item) => (
+                <option value={item.id} key={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button type="button" onClick={() => void changeSelectedLocation()}>
+            Change location
+          </button>
+          <button type="button" onClick={() => setSelected(new Set())}>
+            Clear selection
+          </button>
+        </div>
+      )}
+      {locationsError && (
+        <div className="notice notice--error">
+          Location data failed to load. Screen names remain available.
+        </div>
+      )}
+      {filtered.length === 0 ? (
+        <div className="screen-empty screen-empty--compact">
+          <Search size={24} />
+          <h3>No screens match the current filters</h3>
+          <p>Remove one or more filters to see screens again.</p>
+          <button
+            className="button button--quiet"
+            type="button"
+            onClick={clearFilters}
+          >
+            Clear filters
+          </button>
+        </div>
+      ) : visibleGroups.every((group) => collapsed.has(group.key)) ? (
+        <div className="screen-empty screen-empty--compact">
+          <h3>All groups are collapsed</h3>
+          <button
+            className="button button--quiet"
+            type="button"
+            onClick={() => {
+              setCollapsed(new Set());
+              storageSet("session", "tilecast.screens.collapsed", "[]");
+            }}
+          >
+            Expand all groups
+          </button>
+        </div>
+      ) : (
+        <div className={`screen-results screen-results--${view}`}>
+          {visibleGroups.map((group) => {
+            const isCollapsed = collapsed.has(group.key);
+            const groupSelected = group.screens.every((screen) =>
+              selected.has(screen.id),
+            );
+            return (
+              <section className="screen-location-group" key={group.key}>
+                {groupBy !== "none" && (
+                  <header className="screen-group-header">
+                    {canManage && (
+                      <input
+                        type="checkbox"
+                        aria-label={`Select all screens in ${group.label}`}
+                        checked={groupSelected}
+                        onChange={(event) => {
+                          const next = new Set(selected);
+                          for (const screen of group.screens) {
+                            if (event.target.checked) next.add(screen.id);
+                            else next.delete(screen.id);
+                          }
+                          setSelected(next);
+                        }}
+                      />
+                    )}
+                    <button
+                      type="button"
+                      aria-label={`${isCollapsed ? "Expand" : "Collapse"} ${group.label}`}
+                      onClick={() => toggleCollapsed(group.key)}
+                    >
+                      {isCollapsed ? (
+                        <ChevronRight size={16} />
+                      ) : (
+                        <ChevronDown size={16} />
+                      )}
+                    </button>
+                    <span>
+                      <strong>{group.label}</strong>
+                      {group.description && <small>{group.description}</small>}
+                    </span>
+                    <span>
+                      {group.screens.length} screen
+                      {group.screens.length === 1 ? "" : "s"}
+                    </span>
+                  </header>
+                )}
+                {!isCollapsed && view === "table" && (
+                  <div className="screen-table">
+                    <div className="screen-table__header">
+                      <span aria-hidden="true" />
+                      <span>Screen</span>
+                      <span>Now playing</span>
+                      <span>Status</span>
+                      <span>Last contact</span>
+                      <span>Actions</span>
+                    </div>
+                    {group.screens.map((screen) => (
+                      <ScreenTableRow
+                        key={screen.id}
+                        screen={screen}
+                        selected={selected.has(screen.id)}
+                        canManage={canManage}
+                        onSelect={(checked) => {
+                          const next = new Set(selected);
+                          if (checked) next.add(screen.id);
+                          else next.delete(screen.id);
+                          setSelected(next);
+                        }}
+                        onOpen={() => void navigate(`/screens/${screen.id}`)}
+                        onMenu={(event) => menu.open(event, screen)}
+                      />
+                    ))}
+                  </div>
+                )}
+                {!isCollapsed && view === "grid" && (
+                  <div className="screen-grid">
+                    {group.screens.map((screen) => (
+                      <ScreenGridCard
+                        key={screen.id}
+                        screen={screen}
+                        selected={selected.has(screen.id)}
+                        canManage={canManage}
+                        onSelect={(checked) => {
+                          const next = new Set(selected);
+                          if (checked) next.add(screen.id);
+                          else next.delete(screen.id);
+                          setSelected(next);
+                        }}
+                        onOpen={() => void navigate(`/screens/${screen.id}`)}
+                        onMenu={(event) => menu.open(event, screen)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </section>
+            );
+          })}
+        </div>
+      )}
+      {menu.anchor && (
+        <ContextMenu
+          x={menu.anchor.x}
+          y={menu.anchor.y}
+          label={`Actions for ${menu.anchor.target.name}`}
+          items={actionsFor(menu.anchor.target)}
+          onClose={menu.close}
+        />
+      )}
     </section>
+  );
+}
+
+function useStoredState<T extends string>(key: string, fallback: T) {
+  const [value, setValue] = useState<T>(
+    () => (storageGet("local", key) as T | null) ?? fallback,
+  );
+  const update = (next: T) => {
+    setValue(next);
+    storageSet("local", key, next);
+  };
+  return [value, update] as const;
+}
+
+function storageGet(kind: "local" | "session", key: string) {
+  try {
+    const storage =
+      kind === "local" ? window.localStorage : window.sessionStorage;
+    return storage?.getItem(key) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function storageSet(kind: "local" | "session", key: string, value: string) {
+  try {
+    const storage =
+      kind === "local" ? window.localStorage : window.sessionStorage;
+    storage?.setItem(key, value);
+  } catch {
+    // Preferences are an enhancement; private browsing may reject storage.
+  }
+}
+
+function FilterSelect({
+  label,
+  value,
+  onChange,
+  children,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  children: ReactNode;
+}) {
+  return (
+    <label className="screen-filter-select">
+      <span className="sr-only">{label}</span>
+      <select
+        aria-label={label}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        {children}
+      </select>
+    </label>
+  );
+}
+
+function platformLabel(value: string) {
+  const normalized = value.toLowerCase();
+  if (normalized === "linux") return "Linux";
+  if (normalized.includes("fire")) return "Fire TV";
+  if (normalized.includes("google")) return "Google TV";
+  if (normalized.includes("android")) return "Android TV";
+  return value || "Unknown platform";
+}
+
+function statusLabel(value: string) {
+  if (value === "attention") return "Needs attention";
+  if (value === "updating") return "Updating";
+  if (value === "syncing") return "Syncing";
+  return statusContent[value as ScreenStatus]?.label ?? value;
+}
+
+function needsAttention(screen: Screen) {
+  return (
+    ["stale", "offline", "disabled", "revoked"].includes(screen.status) ||
+    Boolean(screen.updateError)
+  );
+}
+
+function roomLabel(screen: Screen) {
+  if (screen.roomName && screen.roomNumber)
+    return `${screen.roomName} · Room ${screen.roomNumber}`;
+  if (screen.roomName) return screen.roomName;
+  if (screen.roomNumber) return `Room ${screen.roomNumber}`;
+  return "";
+}
+
+type ScreenGroupView = {
+  key: string;
+  label: string;
+  description?: string;
+  screens: Screen[];
+};
+
+function buildScreenGroups(
+  screens: Screen[],
+  groupBy: string,
+  sort: string,
+): ScreenGroupView[] {
+  const sorted = [...screens].sort((left, right) => {
+    const descending = sort.endsWith("-desc") ? -1 : 1;
+    const field = sort.replace(/-(asc|desc)$/, "");
+    if (field === "contact")
+      return (
+        (new Date(left.lastContactAt ?? 0).getTime() -
+          new Date(right.lastContactAt ?? 0).getTime()) *
+        descending
+      );
+    if (field === "added")
+      return (
+        (new Date(left.pairedAt).getTime() -
+          new Date(right.pairedAt).getTime()) *
+        descending
+      );
+    const a =
+      field === "location"
+        ? left.location
+        : field === "status"
+          ? left.status
+          : field === "platform"
+            ? platformLabel(left.platform)
+            : left.name;
+    const b =
+      field === "location"
+        ? right.location
+        : field === "status"
+          ? right.status
+          : field === "platform"
+            ? platformLabel(right.platform)
+            : right.name;
+    return a.localeCompare(b, undefined, { sensitivity: "base" }) * descending;
+  });
+  if (groupBy === "none")
+    return [{ key: "all", label: "All screens", screens: sorted }];
+  const map = new Map<string, ScreenGroupView>();
+  for (const screen of sorted) {
+    const key =
+      groupBy === "status"
+        ? `status:${screen.status}`
+        : groupBy === "sync"
+          ? `sync:${screen.syncGroupId ?? "none"}`
+          : `location:${screen.locationId ?? "unassigned"}`;
+    const label =
+      groupBy === "status"
+        ? statusContent[screen.status].label
+        : groupBy === "sync"
+          ? (screen.syncGroupName ?? "Not in a sync group")
+          : screen.location || "Unassigned";
+    const description =
+      groupBy === "location"
+        ? formatLocationAddress(screen.locationDetails)
+        : undefined;
+    const existing = map.get(key);
+    if (existing) existing.screens.push(screen);
+    else map.set(key, { key, label, description, screens: [screen] });
+  }
+  return [...map.values()].sort((a, b) =>
+    a.label.localeCompare(b.label, undefined, { sensitivity: "base" }),
+  );
+}
+
+function ScreenTableRow({
+  screen,
+  selected,
+  canManage,
+  onSelect,
+  onOpen,
+  onMenu,
+}: {
+  screen: Screen;
+  selected: boolean;
+  canManage: boolean;
+  onSelect: (checked: boolean) => void;
+  onOpen: () => void;
+  onMenu: (event: ReactMouseEvent<HTMLElement>) => void;
+}) {
+  return (
+    <article
+      className={`screen-row${needsAttention(screen) ? " screen-row--attention" : ""}`}
+      onClick={onOpen}
+      onContextMenu={onMenu}
+    >
+      <span onClick={(event) => event.stopPropagation()}>
+        {canManage && (
+          <input
+            type="checkbox"
+            aria-label={`Select ${screen.name}`}
+            checked={selected}
+            onChange={(event) => onSelect(event.target.checked)}
+          />
+        )}
+      </span>
+      <Link
+        className="screen-name"
+        to={`/screens/${screen.id}`}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <span className="screen-icon">
+          <Monitor size={17} />
+        </span>
+        <span>
+          <strong>{screen.name}</strong>
+          <small>
+            {[
+              roomLabel(screen),
+              `${platformLabel(screen.platform)} · ${screen.screenWidth}×${screen.screenHeight}`,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </small>
+        </span>
+      </Link>
+      <span>
+        <strong>{screen.nowPlayingName || "Nothing assigned"}</strong>
+        <small>
+          {screen.nowPlayingName
+            ? screen.nowPlayingType === "playlist"
+              ? "Playlist"
+              : "Presentation"
+            : "No fallback content"}
+        </small>
+      </span>
+      <StatusLabel status={screen.status} />
+      <span>
+        <strong>{formatContact(screen.lastContactAt)}</strong>
+      </span>
+      <span
+        className="screen-row__actions"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <button
+          type="button"
+          aria-label={`Actions for ${screen.name}`}
+          onClick={(event) => onMenu(event)}
+        >
+          <MoreHorizontal size={17} />
+        </button>
+      </span>
+    </article>
+  );
+}
+
+function ScreenGridCard({
+  screen,
+  selected,
+  canManage,
+  onSelect,
+  onOpen,
+  onMenu,
+}: {
+  screen: Screen;
+  selected: boolean;
+  canManage: boolean;
+  onSelect: (checked: boolean) => void;
+  onOpen: () => void;
+  onMenu: (event: ReactMouseEvent<HTMLElement>) => void;
+}) {
+  const ref = useRef<HTMLElement>(null);
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setVisible(entry?.isIntersecting ?? false),
+      { rootMargin: "180px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+  const preview = useQuery({
+    queryKey: ["screen-preview-card", screen.id],
+    queryFn: () => previewApi.metadata(screen.id),
+    enabled: visible,
+    refetchInterval: visible ? 30_000 : false,
+  });
+  const image =
+    preview.data?.imageAvailable && preview.data.updatedAt
+      ? previewApi.imageUrl(screen.id, preview.data.updatedAt)
+      : undefined;
+  const portrait = screen.screenHeight > screen.screenWidth;
+  return (
+    <article
+      ref={ref}
+      className={`screen-card${needsAttention(screen) ? " screen-card--attention" : ""}`}
+      role="link"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpen();
+        }
+      }}
+      onContextMenu={onMenu}
+    >
+      <div
+        className={`screen-card__preview${portrait ? " screen-card__preview--portrait" : ""}`}
+        style={{
+          aspectRatio: `${screen.screenWidth || 16} / ${screen.screenHeight || 9}`,
+        }}
+      >
+        {preview.isLoading && visible ? (
+          <span
+            className="screen-preview-skeleton"
+            aria-label="Loading preview"
+          />
+        ) : image ? (
+          <img src={image} alt={`Latest preview from ${screen.name}`} />
+        ) : (
+          <span className="screen-preview-empty">
+            <Monitor size={24} />
+            {screen.status === "offline"
+              ? "Screen offline"
+              : "Preview unavailable"}
+          </span>
+        )}
+      </div>
+      <div className="screen-card__body">
+        <header>
+          {canManage && (
+            <input
+              type="checkbox"
+              aria-label={`Select ${screen.name}`}
+              checked={selected}
+              onClick={(event) => event.stopPropagation()}
+              onChange={(event) => onSelect(event.target.checked)}
+            />
+          )}
+          <span>
+            <strong>{screen.name}</strong>
+            <small>
+              {[screen.location, roomLabel(screen)]
+                .filter(Boolean)
+                .join(" · ") || "Unassigned"}
+            </small>
+          </span>
+          <button
+            type="button"
+            aria-label={`Actions for ${screen.name}`}
+            onClick={(event) => onMenu(event)}
+          >
+            <MoreHorizontal size={17} />
+          </button>
+        </header>
+        <div className="screen-card__facts">
+          <StatusLabel status={screen.status} />
+          <span>{screen.nowPlayingName || "Nothing assigned"}</span>
+          <span>{formatContact(screen.lastContactAt)}</span>
+        </div>
+        {screen.syncGroupName && (
+          <span className="screen-card__sync">{screen.syncGroupName}</span>
+        )}
+      </div>
+    </article>
   );
 }
 
@@ -653,9 +1631,15 @@ function ApprovalPanel({
       name:
         request.existingScreenName ??
         `${request.metadata.manufacturer} ${request.metadata.model}`,
-      location: "",
+      locationId: undefined,
+      roomName: "",
+      roomNumber: "",
       description: "",
     },
+  });
+  const locations = useQuery({
+    queryKey: ["locations"],
+    queryFn: api.locations,
   });
   const approve = useMutation({
     mutationFn: (values: ApprovalForm) => {
@@ -776,12 +1760,27 @@ function ApprovalPanel({
           error={form.formState.errors.name?.message}
           {...form.register("name")}
         />
-        <FormField
-          id="screenLocation"
-          label="Location (optional)"
-          error={form.formState.errors.location?.message}
-          {...form.register("location")}
+        <LocationPicker
+          locations={locations.data?.items ?? []}
+          value={form.watch("locationId")}
+          onChange={(locationId) =>
+            form.setValue("locationId", locationId, { shouldDirty: true })
+          }
         />
+        <div className="screen-room-fields">
+          <FormField
+            id="screenRoomName"
+            label="Room name (optional)"
+            placeholder="Library"
+            {...form.register("roomName")}
+          />
+          <FormField
+            id="screenRoomNumber"
+            label="Room number (optional)"
+            placeholder="204"
+            {...form.register("roomNumber")}
+          />
+        </div>
         <label className="field" htmlFor="screenDescription">
           <span className="field__label">Description (optional)</span>
           <textarea id="screenDescription" {...form.register("description")} />
@@ -817,6 +1816,9 @@ export function ScreenDetailPage() {
   const [editingDetails, setEditingDetails] = useState(false);
   const [policyDirty, setPolicyDirty] = useState(false);
   const [selectedPresentation, setSelectedPresentation] = useState("");
+  useEffect(() => {
+    if (searchParams.get("edit") === "details") setEditingDetails(true);
+  }, [searchParams]);
   const query = useQuery({
     queryKey: ["screens", id],
     queryFn: () => api.screen(id),
@@ -829,13 +1831,25 @@ export function ScreenDetailPage() {
   });
   const detailsForm = useForm<ApprovalForm>({
     resolver: zodResolver(approvalSchema),
-    defaultValues: { name: "", location: "", description: "" },
+    defaultValues: {
+      name: "",
+      locationId: undefined,
+      roomName: "",
+      roomNumber: "",
+      description: "",
+    },
+  });
+  const locations = useQuery({
+    queryKey: ["locations"],
+    queryFn: api.locations,
   });
   useEffect(() => {
     if (!query.data || editingDetails) return;
     detailsForm.reset({
       name: query.data.name,
-      location: query.data.location,
+      locationId: query.data.locationId,
+      roomName: query.data.roomName ?? "",
+      roomNumber: query.data.roomNumber ?? "",
       description: query.data.description,
     });
   }, [detailsForm, editingDetails, query.data]);
@@ -974,7 +1988,10 @@ export function ScreenDetailPage() {
     <div className="screen-detail">
       <PageHeader
         title={screen.name}
-        description={screen.location || "No location set"}
+        description={
+          [screen.location, roomLabel(screen)].filter(Boolean).join(" · ") ||
+          "No location set"
+        }
         actions={
           <>
             <StatusLabel status={screen.status} />
@@ -1020,12 +2037,27 @@ export function ScreenDetailPage() {
               error={detailsForm.formState.errors.name?.message}
               {...detailsForm.register("name")}
             />
-            <FormField
-              id="editScreenLocation"
-              label="Location (optional)"
-              error={detailsForm.formState.errors.location?.message}
-              {...detailsForm.register("location")}
+            <LocationPicker
+              locations={locations.data?.items ?? []}
+              value={detailsForm.watch("locationId")}
+              onChange={(locationId) =>
+                detailsForm.setValue("locationId", locationId, {
+                  shouldDirty: true,
+                })
+              }
             />
+            <div className="screen-room-fields">
+              <FormField
+                id="editScreenRoomName"
+                label="Room name (optional)"
+                {...detailsForm.register("roomName")}
+              />
+              <FormField
+                id="editScreenRoomNumber"
+                label="Room number (optional)"
+                {...detailsForm.register("roomNumber")}
+              />
+            </div>
             <label
               className="field screen-details-editor__description"
               htmlFor="editScreenDescription"

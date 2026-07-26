@@ -80,7 +80,7 @@ func TestCompletePairingCredentialAndRevocationFlow(t *testing.T) {
 	if _, err := service.PollPairing(ctx, pairing.ID, "wrong-secret"); !errors.Is(err, ErrWrongSecret) {
 		t.Fatalf("expected wrong poll secret, got %v", err)
 	}
-	screen, err := service.ApprovePairing(ctx, pairing.ID, owner.User.ID, "Lobby display", "Main lobby", "Welcome screen", false)
+	screen, err := service.ApprovePairing(ctx, pairing.ID, owner.User.ID, "Lobby display", nil, "Main lobby", "", "Welcome screen", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,14 +152,14 @@ func TestCompletePairingCredentialAndRevocationFlow(t *testing.T) {
 	if err != nil || !resolvedRepair.PreviouslyPaired || resolvedRepair.ExistingScreenID == nil || *resolvedRepair.ExistingScreenID != screen.ID || !resolvedRepair.HasActiveCredential {
 		t.Fatalf("repair metadata=%#v err=%v", resolvedRepair, err)
 	}
-	if _, err := service.ApprovePairing(ctx, repair.ID, owner.User.ID, screen.Name, screen.Location, screen.Description, false); !errors.Is(err, ErrPairingRecovery) {
+	if _, err := service.ApprovePairing(ctx, repair.ID, owner.User.ID, screen.Name, screen.LocationID, screen.RoomName, screen.RoomNumber, screen.Description, false); !errors.Is(err, ErrPairingRecovery) {
 		t.Fatalf("expected pairing recovery requirement, got %v", err)
 	}
-	repairedScreen, err := service.ApprovePairing(ctx, repair.ID, owner.User.ID, screen.Name, screen.Location, screen.Description, true)
+	repairedScreen, err := service.ApprovePairing(ctx, repair.ID, owner.User.ID, screen.Name, screen.LocationID, screen.RoomName, screen.RoomNumber, screen.Description, true)
 	if err != nil || repairedScreen.ID != screen.ID {
 		t.Fatalf("repair approval=%#v err=%v", repairedScreen, err)
 	}
-	if duplicate, err := service.ApprovePairing(ctx, repair.ID, owner.User.ID, screen.Name, screen.Location, screen.Description, true); err != nil || duplicate.ID != screen.ID {
+	if duplicate, err := service.ApprovePairing(ctx, repair.ID, owner.User.ID, screen.Name, screen.LocationID, screen.RoomName, screen.RoomNumber, screen.Description, true); err != nil || duplicate.ID != screen.ID {
 		t.Fatalf("duplicate approval=%#v err=%v", duplicate, err)
 	}
 	if _, err := service.AuthenticateDevice(ctx, enrollment.DeviceCredential); err != nil {
@@ -255,7 +255,7 @@ func TestCompletePairingCredentialAndRevocationFlow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	withoutActiveScreen, err := service.ApprovePairing(ctx, repairWithoutActive.ID, owner.User.ID, screen.Name, screen.Location, screen.Description, false)
+	withoutActiveScreen, err := service.ApprovePairing(ctx, repairWithoutActive.ID, owner.User.ID, screen.Name, screen.LocationID, screen.RoomName, screen.RoomNumber, screen.Description, false)
 	if err != nil || withoutActiveScreen.ID != screen.ID {
 		t.Fatalf("repair without active credential=%#v err=%v", withoutActiveScreen, err)
 	}

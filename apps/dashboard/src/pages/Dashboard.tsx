@@ -363,7 +363,9 @@ export function DashboardShell() {
         />
         <main className="workspace__content">
           <RouteErrorBoundary key={location.pathname}>
-            <Outlet />
+            <div className="workspace__route">
+              <Outlet />
+            </div>
           </RouteErrorBoundary>
         </main>
       </div>
