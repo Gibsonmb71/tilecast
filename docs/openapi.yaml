@@ -1278,6 +1278,7 @@ paths:
   /api/v1/layouts:
     get:
       operationId: listLayouts
+      description: Layout summaries include hasUnpublishedChanges, computed by comparing the current draft document with the published document rather than by comparing their independent revision counters.
       responses:
         "200": { description: Paginated Layout summaries }
     post:

@@ -95,6 +95,10 @@ func TestLayoutDraftPublishAndRestoreLifecycle(t *testing.T) {
 	if published.Revision != 1 || published.DocumentSHA256 == "" {
 		t.Fatalf("published=%#v", published)
 	}
+	listed, err = service.List(ctx, "Lobby", 1, 10)
+	if err != nil || len(listed.Items) != 1 || listed.Items[0].HasUnpublishedChanges {
+		t.Fatalf("published Layout was reported as having unpublished changes: %#v err=%v", listed, err)
+	}
 	if err = media.NewService(pool, nil, media.Config{}).DeleteAsset(ctx, assetID, owner.User.ID); err == nil || !strings.Contains(err.Error(), "Layout") {
 		t.Fatalf("referenced asset deletion err=%v", err)
 	}
@@ -102,6 +106,10 @@ func TestLayoutDraftPublishAndRestoreLifecycle(t *testing.T) {
 	layout, err = service.SaveDraft(ctx, layout.ID, owner.User.ID, layout.DraftRevision, document)
 	if err != nil {
 		t.Fatal(err)
+	}
+	listed, err = service.List(ctx, "Lobby", 1, 10)
+	if err != nil || len(listed.Items) != 1 || !listed.Items[0].HasUnpublishedChanges {
+		t.Fatalf("changed Layout was not reported as having unpublished changes: %#v err=%v", listed, err)
 	}
 	immutable, err := service.GetRevision(ctx, layout.ID, published.ID)
 	if err != nil {

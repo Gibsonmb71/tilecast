@@ -15,22 +15,23 @@ var (
 )
 
 type Layout struct {
-	ID                  uuid.UUID    `json:"id"`
-	Name                string       `json:"name"`
-	Description         string       `json:"description"`
-	Orientation         string       `json:"orientation"`
-	CanvasWidth         int          `json:"canvasWidth"`
-	CanvasHeight        int          `json:"canvasHeight"`
-	Draft               Document     `json:"draft"`
-	DraftRevision       int64        `json:"draftRevision"`
-	PublishedRevisionID *uuid.UUID   `json:"publishedRevisionId,omitempty"`
-	PublishedRevision   *int64       `json:"publishedRevision,omitempty"`
-	PublishedAt         *time.Time   `json:"publishedAt,omitempty"`
-	CreatedAt           time.Time    `json:"createdAt"`
-	UpdatedAt           time.Time    `json:"updatedAt"`
-	PreviewImageURL     string       `json:"previewImageUrl,omitempty"`
-	Dependencies        []Dependency `json:"dependencies"`
-	Usage               Usage        `json:"usage"`
+	ID                    uuid.UUID    `json:"id"`
+	Name                  string       `json:"name"`
+	Description           string       `json:"description"`
+	Orientation           string       `json:"orientation"`
+	CanvasWidth           int          `json:"canvasWidth"`
+	CanvasHeight          int          `json:"canvasHeight"`
+	Draft                 Document     `json:"draft"`
+	DraftRevision         int64        `json:"draftRevision"`
+	PublishedRevisionID   *uuid.UUID   `json:"publishedRevisionId,omitempty"`
+	PublishedRevision     *int64       `json:"publishedRevision,omitempty"`
+	PublishedAt           *time.Time   `json:"publishedAt,omitempty"`
+	HasUnpublishedChanges bool         `json:"hasUnpublishedChanges"`
+	CreatedAt             time.Time    `json:"createdAt"`
+	UpdatedAt             time.Time    `json:"updatedAt"`
+	PreviewImageURL       string       `json:"previewImageUrl,omitempty"`
+	Dependencies          []Dependency `json:"dependencies"`
+	Usage                 Usage        `json:"usage"`
 }
 
 type Usage struct {
@@ -43,18 +44,19 @@ type UsageItem struct {
 }
 
 type Summary struct {
-	ID                uuid.UUID  `json:"id"`
-	Name              string     `json:"name"`
-	Description       string     `json:"description"`
-	Orientation       string     `json:"orientation"`
-	CanvasWidth       int        `json:"canvasWidth"`
-	CanvasHeight      int        `json:"canvasHeight"`
-	DraftRevision     int64      `json:"draftRevision"`
-	PublishedRevision *int64     `json:"publishedRevision,omitempty"`
-	PublishedAt       *time.Time `json:"publishedAt,omitempty"`
-	CreatedAt         time.Time  `json:"createdAt"`
-	UpdatedAt         time.Time  `json:"updatedAt"`
-	PreviewImageURL   string     `json:"previewImageUrl,omitempty"`
+	ID                    uuid.UUID  `json:"id"`
+	Name                  string     `json:"name"`
+	Description           string     `json:"description"`
+	Orientation           string     `json:"orientation"`
+	CanvasWidth           int        `json:"canvasWidth"`
+	CanvasHeight          int        `json:"canvasHeight"`
+	DraftRevision         int64      `json:"draftRevision"`
+	PublishedRevision     *int64     `json:"publishedRevision,omitempty"`
+	PublishedAt           *time.Time `json:"publishedAt,omitempty"`
+	HasUnpublishedChanges bool       `json:"hasUnpublishedChanges"`
+	CreatedAt             time.Time  `json:"createdAt"`
+	UpdatedAt             time.Time  `json:"updatedAt"`
+	PreviewImageURL       string     `json:"previewImageUrl,omitempty"`
 }
 
 type PreviewImage struct {
