@@ -1793,7 +1793,7 @@ label > .signal-select,
 
 /* Workspace facets live in the sidebar when it has room. Keep the page tabs available when the
    sidebar is compact or reduced to its narrow responsive form. */
-@media (min-width: 801px) {
+@media (min-width: 901px) {
   .workspace-tabs {
     display: none;
   }
@@ -1807,7 +1807,7 @@ label > .signal-select,
   }
 }
 
-@media (max-width: 800px) {
+@media (max-width: 900px) {
   .sidebar__submenu,
   .sidebar__parent-chevron {
     display: none;

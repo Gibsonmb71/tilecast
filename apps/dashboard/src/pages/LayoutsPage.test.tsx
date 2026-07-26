@@ -47,6 +47,7 @@ const layout = (
     canvasWidth: 1920,
     canvasHeight: 1080,
     draftRevision: 1,
+    hasUnpublishedChanges: false,
     createdAt: "2026-07-01T12:00:00Z",
     updatedAt: "2026-07-01T12:00:00Z",
     ...overrides,
@@ -59,6 +60,7 @@ const savedLayout = layout({
   description: "Welcome board",
   draftRevision: 2,
   publishedRevision: 1,
+  hasUnpublishedChanges: true,
   createdAt: "2026-07-21T12:00:00Z",
   updatedAt: "2026-07-21T12:00:00Z",
   previewImageUrl: "/api/v1/layouts/layout-1/preview-image",
@@ -154,6 +156,7 @@ describe("layout library helpers", () => {
         canvasHeight: 1920,
         publishedRevision: 2,
         draftRevision: 3,
+        hasUnpublishedChanges: true,
       }),
     ];
 
@@ -185,6 +188,7 @@ describe("layout library helpers", () => {
         canvasHeight: 1920,
         publishedRevision: 2,
         draftRevision: 3,
+        hasUnpublishedChanges: true,
       }),
     ];
 
@@ -239,12 +243,14 @@ describe("layout library helpers", () => {
       name: "Changes",
       publishedRevision: 2,
       draftRevision: 3,
+      hasUnpublishedChanges: true,
     });
     const published = layout({
       id: "published",
       name: "Published",
       publishedRevision: 2,
-      draftRevision: 2,
+      draftRevision: 5,
+      hasUnpublishedChanges: false,
     });
 
     expect(layoutPublicationState(draft)).toBe("draft");

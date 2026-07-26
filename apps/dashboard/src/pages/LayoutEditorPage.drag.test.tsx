@@ -43,6 +43,7 @@ function buildLayout(): Layout {
     canvasHeight: canvas.height,
     draft: { schemaVersion: 2, canvas, placements: [placement] },
     draftRevision: 1,
+    hasUnpublishedChanges: false,
     dependencies: [],
     usage: { screens: [], schedules: [] },
     createdAt: "2026-01-01T00:00:00Z",

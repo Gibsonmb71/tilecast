@@ -78,7 +78,7 @@ func (s *Service) List(ctx context.Context, search string, page, pageSize int) (
 	if err := s.db.QueryRow(ctx, `SELECT count(*) FROM layouts WHERE deleted_at IS NULL AND($1='' OR name ILIKE '%'||$1||'%')`, search).Scan(&result.Total); err != nil {
 		return result, err
 	}
-	rows, err := s.db.Query(ctx, `SELECT l.id,l.name,l.description,l.orientation,l.canvas_width,l.canvas_height,l.draft_revision,r.revision,r.published_at,l.created_at,l.updated_at,l.preview_image IS NOT NULL FROM layouts l LEFT JOIN layout_revisions r ON r.id=l.published_revision_id WHERE l.deleted_at IS NULL AND($1='' OR l.name ILIKE '%'||$1||'%') ORDER BY l.updated_at DESC,l.id LIMIT $2 OFFSET $3`, search, pageSize, (page-1)*pageSize)
+	rows, err := s.db.Query(ctx, `SELECT l.id,l.name,l.description,l.orientation,l.canvas_width,l.canvas_height,l.draft_revision,r.revision,r.published_at,CASE WHEN r.id IS NULL THEN FALSE ELSE l.draft_document IS DISTINCT FROM r.document END,l.created_at,l.updated_at,l.preview_image IS NOT NULL FROM layouts l LEFT JOIN layout_revisions r ON r.id=l.published_revision_id WHERE l.deleted_at IS NULL AND($1='' OR l.name ILIKE '%'||$1||'%') ORDER BY l.updated_at DESC,l.id LIMIT $2 OFFSET $3`, search, pageSize, (page-1)*pageSize)
 	if err != nil {
 		return result, err
 	}
@@ -87,7 +87,7 @@ func (s *Service) List(ctx context.Context, search string, page, pageSize int) (
 	for rows.Next() {
 		var item Summary
 		var hasPreview bool
-		if err = rows.Scan(&item.ID, &item.Name, &item.Description, &item.Orientation, &item.CanvasWidth, &item.CanvasHeight, &item.DraftRevision, &item.PublishedRevision, &item.PublishedAt, &item.CreatedAt, &item.UpdatedAt, &hasPreview); err != nil {
+		if err = rows.Scan(&item.ID, &item.Name, &item.Description, &item.Orientation, &item.CanvasWidth, &item.CanvasHeight, &item.DraftRevision, &item.PublishedRevision, &item.PublishedAt, &item.HasUnpublishedChanges, &item.CreatedAt, &item.UpdatedAt, &hasPreview); err != nil {
 			return result, err
 		}
 		if hasPreview {
@@ -103,7 +103,7 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (Layout, error) {
 	var raw []byte
 	result.ID = id
 	var hasPreview bool
-	err := s.db.QueryRow(ctx, `SELECT l.name,l.description,l.orientation,l.canvas_width,l.canvas_height,l.draft_document,l.draft_revision,l.published_revision_id,r.revision,r.published_at,l.created_at,l.updated_at,l.preview_image IS NOT NULL FROM layouts l LEFT JOIN layout_revisions r ON r.id=l.published_revision_id WHERE l.id=$1 AND l.deleted_at IS NULL`, id).Scan(&result.Name, &result.Description, &result.Orientation, &result.CanvasWidth, &result.CanvasHeight, &raw, &result.DraftRevision, &result.PublishedRevisionID, &result.PublishedRevision, &result.PublishedAt, &result.CreatedAt, &result.UpdatedAt, &hasPreview)
+	err := s.db.QueryRow(ctx, `SELECT l.name,l.description,l.orientation,l.canvas_width,l.canvas_height,l.draft_document,l.draft_revision,l.published_revision_id,r.revision,r.published_at,CASE WHEN r.id IS NULL THEN FALSE ELSE l.draft_document IS DISTINCT FROM r.document END,l.created_at,l.updated_at,l.preview_image IS NOT NULL FROM layouts l LEFT JOIN layout_revisions r ON r.id=l.published_revision_id WHERE l.id=$1 AND l.deleted_at IS NULL`, id).Scan(&result.Name, &result.Description, &result.Orientation, &result.CanvasWidth, &result.CanvasHeight, &raw, &result.DraftRevision, &result.PublishedRevisionID, &result.PublishedRevision, &result.PublishedAt, &result.HasUnpublishedChanges, &result.CreatedAt, &result.UpdatedAt, &hasPreview)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Layout{}, ErrNotFound
 	}

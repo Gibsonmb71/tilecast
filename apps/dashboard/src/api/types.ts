@@ -244,6 +244,7 @@ export type Layout = {
   publishedRevisionId?: string;
   publishedRevision?: number;
   publishedAt?: string;
+  hasUnpublishedChanges: boolean;
   createdAt: string;
   updatedAt: string;
   previewImageUrl?: string;

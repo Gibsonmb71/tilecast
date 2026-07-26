@@ -100,7 +100,7 @@ export function layoutPublicationState(
   layout: LayoutSummary,
 ): LayoutPublicationState {
   if (!layout.publishedRevision) return "draft";
-  if (layout.draftRevision > layout.publishedRevision) return "changes";
+  if (layout.hasUnpublishedChanges) return "changes";
   return "published";
 }
 
