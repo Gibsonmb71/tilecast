@@ -1,4 +1,12 @@
-import { Select, StatusDot, TableContainer } from "../components/ui";
+import {
+  Button,
+  Dialog,
+  Notice,
+  Select,
+  StatusDot,
+  TableContainer,
+  ViewTabs,
+} from "../components/ui";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -13,7 +21,12 @@ import {
   Upload,
 } from "lucide-react";
 import { api } from "../api/client";
-import type { GitHubDeviceStart, PlayerPlatform } from "../api/types";
+import type {
+  GitHubDeviceStart,
+  PlayerPlatform,
+  PlayerRelease,
+  UpdateDeployment,
+} from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 
 const maintenanceActions = [
@@ -316,6 +329,7 @@ export function PlayerUpdatesPanel({
   const [targetSearch, setTargetSearch] = useState("");
   const [showUpload, setShowUpload] = useState(false);
   const [showAllReleases, setShowAllReleases] = useState(false);
+  const [confirmDeploy, setConfirmDeploy] = useState(false);
   const [deploySuccess, setDeploySuccess] = useState("");
   const [githubFlow, setGitHubFlow] = useState<
     (GitHubDeviceStart & { retryAfterSeconds: number }) | null
@@ -425,7 +439,10 @@ export function PlayerUpdatesPanel({
         },
         auth.status?.csrfToken ?? "",
       ),
-    onMutate: () => setDeploySuccess(""),
+    onMutate: () => {
+      setConfirmDeploy(false);
+      setDeploySuccess("");
+    },
     onSuccess: async (created) => {
       setScreenIds([]);
       setGroupIds([]);
@@ -458,42 +475,54 @@ export function PlayerUpdatesPanel({
   const visibleReleaseItems = showAllReleases
     ? releaseItems
     : releaseItems.slice(0, defaultVisibleReleaseCount);
+  const deployableReleases = releaseItems.filter(
+    (item) =>
+      item.verificationStatus === "verified" && item.cacheStatus === "cached",
+  );
+  const platformLabel = platform === "android" ? "Android" : "Linux";
   const query = targetSearch.toLowerCase();
+  const platformScreens = (screens.data?.items ?? []).filter(
+    (item) => screenFamily(item.platform) === platform,
+  );
+  const matchingScreens = platformScreens.filter((item) =>
+    item.name.toLowerCase().includes(query),
+  );
+  const matchingGroups = (groups.data?.items ?? []).filter((item) =>
+    item.name.toLowerCase().includes(query),
+  );
+  const platformDeployments = (deployments.data?.items ?? []).filter(
+    (item) => item.platform === platform,
+  );
+  const offlineTargets = selectedScreens.filter(
+    (screen) => screen.status === "offline",
+  ).length;
+  const selectionCount = screenIds.length + groupIds.length;
+  const windowMissing = mode === "maintenance_window" && !windowStart;
   return (
     <div className="settings-sections player-updates">
-      <div
+      <ViewTabs
         className="player-updates__platform-tabs"
-        role="tablist"
-        aria-label="Player platform"
-      >
-        {(["android", "linux"] as const).map((value) => (
-          <button
-            key={value}
-            type="button"
-            role="tab"
-            aria-selected={platform === value}
-            className={`button ${platform === value ? "button--primary" : "button--quiet"}`}
-            onClick={() => {
-              if (value === platform) return;
-              setPlatform(value);
-              // Selections do not carry across platforms.
-              setReleaseId("");
-              setScreenIds([]);
-              setGroupIds([]);
-              setShowUpload(false);
-              setShowAllReleases(false);
-            }}
-          >
-            {value === "android" ? "Android" : "Linux"}
-          </button>
-        ))}
-      </div>
+        label="Player platform"
+        value={platform}
+        items={[
+          { value: "android", label: "Android" },
+          { value: "linux", label: "Linux" },
+        ]}
+        onValueChange={(value) => {
+          if (value === platform) return;
+          setPlatform(value);
+          // Selections do not carry across platforms.
+          setReleaseId("");
+          setScreenIds([]);
+          setGroupIds([]);
+          setShowUpload(false);
+          setShowAllReleases(false);
+        }}
+      />
       <section className="settings-subsection player-updates__releases">
         <header className="settings-subsection__action">
           <div>
-            <h3>
-              Available {platform === "android" ? "Android" : "Linux"} releases
-            </h3>
+            <h3>Available {platformLabel} releases</h3>
             <p>
               Upload a signed release directly or optionally synchronize from{" "}
               <code>Gibsonmb71/tilecast</code>.
@@ -501,21 +530,22 @@ export function PlayerUpdatesPanel({
           </div>
           {owner && (
             <div className="settings-inline-actions">
-              <button
-                className="button button--primary"
+              <Button
+                variant="secondary"
+                loading={check.isPending}
+                onClick={() => check.mutate()}
+              >
+                {!check.isPending && <RefreshCw size={16} aria-hidden="true" />}
+                {check.isPending ? "Synchronizing…" : "Sync from GitHub"}
+              </Button>
+              <Button
+                variant="primary"
+                aria-expanded={showUpload}
                 onClick={() => setShowUpload((visible) => !visible)}
               >
                 <Upload size={16} aria-hidden="true" />
                 Upload release
-              </button>
-              <button
-                className="button button--secondary"
-                disabled={check.isPending}
-                onClick={() => check.mutate()}
-              >
-                <RefreshCw size={16} aria-hidden="true" />
-                {check.isPending ? "Synchronizing…" : "Sync from GitHub"}
-              </button>
+              </Button>
             </div>
           )}
         </header>
@@ -533,43 +563,47 @@ export function PlayerUpdatesPanel({
                     : "Anonymous API access"}
                 </span>
               </div>
-              <span
-                className={`status-dot-label status-dot-label--${releases.data.githubAuth.connected ? "success" : "neutral"}`}
-              >
-                <span aria-hidden="true" />
-                {releases.data.githubAuth.connected
-                  ? "Connected"
-                  : "Not connected"}
-              </span>
             </div>
-            {owner && !githubFlow && (
-              <div className="github-auth__actions">
-                {releases.data.githubAuth.canDisconnect ? (
-                  <button
-                    className="button button--quiet"
-                    disabled={disconnectGitHub.isPending}
+            <div className="github-auth__actions">
+              <StatusDot
+                tone={
+                  releases.data.githubAuth.connected ? "success" : "neutral"
+                }
+                label={
+                  releases.data.githubAuth.connected
+                    ? "Connected"
+                    : "Not connected"
+                }
+              />
+              {owner &&
+                !githubFlow &&
+                (releases.data.githubAuth.canDisconnect ? (
+                  <Button
+                    variant="quiet"
+                    loading={disconnectGitHub.isPending}
                     onClick={() => disconnectGitHub.mutate()}
                   >
-                    <LogOut size={16} aria-hidden="true" />
+                    {!disconnectGitHub.isPending && (
+                      <LogOut size={16} aria-hidden="true" />
+                    )}
                     {disconnectGitHub.isPending
                       ? "Disconnecting…"
                       : "Disconnect"}
-                  </button>
+                  </Button>
                 ) : !releases.data.githubAuth.connected ? (
-                  <button
-                    className="button button--secondary"
-                    disabled={
-                      !releases.data.githubAuth.available ||
-                      startGitHubAuth.isPending
-                    }
+                  <Button
+                    variant="secondary"
+                    disabled={!releases.data.githubAuth.available}
+                    loading={startGitHubAuth.isPending}
                     onClick={() => startGitHubAuth.mutate()}
                   >
-                    <Github size={16} aria-hidden="true" />
+                    {!startGitHubAuth.isPending && (
+                      <Github size={16} aria-hidden="true" />
+                    )}
                     {startGitHubAuth.isPending ? "Starting…" : "Connect GitHub"}
-                  </button>
-                ) : null}
-              </div>
-            )}
+                  </Button>
+                ) : null)}
+            </div>
             {githubFlow && (
               <div className="github-auth__device" role="status">
                 <div>
@@ -585,12 +619,9 @@ export function PlayerUpdatesPanel({
                   <ExternalLink size={16} aria-hidden="true" />
                   Open GitHub
                 </a>
-                <button
-                  className="button button--quiet"
-                  onClick={() => setGitHubFlow(null)}
-                >
+                <Button variant="quiet" onClick={() => setGitHubFlow(null)}>
                   Cancel
-                </button>
+                </Button>
                 <small>Waiting for authorization…</small>
               </div>
             )}
@@ -617,137 +648,163 @@ export function PlayerUpdatesPanel({
             }}
           />
         )}
-        {releases.data && !releases.data.manifestKeyConfigured && (
-          <div className="notice notice--error" role="alert">
-            <strong>Player update verification is not configured.</strong>
-            <p>
+        <div className="player-updates__notices">
+          {releases.data && !releases.data.manifestKeyConfigured && (
+            <Notice
+              variant="danger"
+              title="Player update verification is not configured."
+            >
               Set <code>TILECAST_UPDATE_MANIFEST_PUBLIC_KEY</code> on the
               Tilecast server to the public Ed25519 key used by the Player
               release workflow, then restart the server.
-            </p>
-          </div>
-        )}
-        {(check.error || releases.data?.providerError) && (
-          <div className="notice notice--error" role="alert">
-            <strong>GitHub releases could not be synchronized.</strong>
-            <p>{check.error?.message ?? releases.data?.providerError}</p>
-          </div>
-        )}
-        {!releases.isLoading &&
-          !releases.error &&
-          releases.data?.manifestKeyConfigured &&
-          !releases.data?.providerError &&
-          (releases.data?.items?.length ?? 0) === 0 && (
-            <div className="notice">
-              <strong>No Player releases have been imported.</strong>
-              <p>
-                Tilecast checks GitHub automatically. Use Sync from GitHub to
-                retry immediately.
-              </p>
-            </div>
+            </Notice>
           )}
-        <TableContainer className="table-container player-updates-table-wrap">
-          <table className="player-updates-table">
-            <caption className="visually-hidden">
-              Available Player releases
-            </caption>
-            <thead>
-              <tr>
-                <th scope="col">Version</th>
-                <th scope="col">Channel</th>
-                <th scope="col">Source</th>
-                <th scope="col">Published</th>
-                <th scope="col">Size</th>
-                <th scope="col">Verification</th>
-                <th scope="col">Cache</th>
-                <th scope="col" aria-label="Actions" />
-              </tr>
-            </thead>
-            <tbody id="player-releases-table-body">
-              {visibleReleaseItems.map((release) => (
-                <tr key={release.id}>
-                  <td>
-                    <strong>{release.versionName}</strong>
-                    <small className="technical">
-                      Code {release.versionCode}
-                    </small>
-                  </td>
-                  <td>{release.channel === "beta" ? "Beta" : "Stable"}</td>
-                  <td>
-                    {release.source === "upload" ? "Direct upload" : "GitHub"}
-                  </td>
-                  <td>{new Date(release.publishedAt).toLocaleDateString()}</td>
-                  <td>{formatBytes(release.apkSizeBytes)}</td>
-                  <td>
-                    <UpdateStatus value={release.verificationStatus} />
-                  </td>
-                  <td>
-                    <UpdateStatus value={release.cacheStatus} />
-                  </td>
-                  <td>
-                    {owner && release.verificationStatus !== "verified" && (
-                      <button
-                        className="button button--quiet"
-                        onClick={() => cache.mutate(release.id)}
-                      >
-                        <Download size={15} aria-hidden="true" />
-                        Download and verify
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </TableContainer>
-        {releaseItems.length > defaultVisibleReleaseCount && (
-          <div className="player-updates__release-list-controls">
-            <span>
-              Showing {visibleReleaseItems.length} of {releaseItems.length}{" "}
-              releases, newest first.
-            </span>
-            <button
-              type="button"
-              className="button button--quiet"
-              aria-controls="player-releases-table-body"
-              aria-expanded={showAllReleases}
-              onClick={() => setShowAllReleases((visible) => !visible)}
+          {(check.error || releases.data?.providerError) && (
+            <Notice
+              variant="danger"
+              title="GitHub releases could not be synchronized."
             >
-              {showAllReleases
-                ? "Show fewer releases"
-                : "Show all " + releaseItems.length + " releases"}
-            </button>
+              {check.error?.message ?? releases.data?.providerError}
+            </Notice>
+          )}
+          {cache.error && (
+            <Notice variant="danger" title="The release could not be cached.">
+              {mutationError(cache.error)}
+            </Notice>
+          )}
+        </div>
+        {releaseItems.length === 0 ? (
+          <div className="player-updates__empty">
+            {releases.isLoading
+              ? "Loading releases…"
+              : releases.error
+                ? `Releases could not be loaded. ${mutationError(releases.error)}`
+                : `No ${platformLabel} Player releases have been imported. Tilecast checks GitHub automatically; use Sync from GitHub to retry immediately.`}
           </div>
+        ) : (
+          <>
+            <TableContainer className="table-container player-updates-table-wrap">
+              <table className="player-updates-table">
+                <caption className="visually-hidden">
+                  Available {platformLabel} Player releases
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Version</th>
+                    <th scope="col">Source</th>
+                    <th scope="col">Published</th>
+                    <th scope="col">Size</th>
+                    <th scope="col">Status</th>
+                    {owner && <th scope="col" aria-label="Actions" />}
+                  </tr>
+                </thead>
+                <tbody id="player-releases-table-body">
+                  {visibleReleaseItems.map((release) => {
+                    const readiness = releaseReadiness(release);
+                    return (
+                      <tr key={release.id}>
+                        <th scope="row">
+                          <span className="player-updates__version">
+                            <strong>{release.versionName}</strong>
+                            <span
+                              className={`player-updates__channel player-updates__channel--${release.channel}`}
+                            >
+                              {release.channel === "beta" ? "Beta" : "Stable"}
+                            </span>
+                          </span>
+                          <small className="technical">
+                            Code {release.versionCode}
+                          </small>
+                        </th>
+                        <td>
+                          {release.source === "upload"
+                            ? "Direct upload"
+                            : "GitHub"}
+                        </td>
+                        <td>
+                          {new Date(release.publishedAt).toLocaleDateString()}
+                        </td>
+                        <td>{formatBytes(release.apkSizeBytes)}</td>
+                        <td>
+                          <StatusDot
+                            tone={readiness.tone}
+                            label={readiness.label}
+                          />
+                          {readiness.detail && (
+                            <small>{readiness.detail}</small>
+                          )}
+                        </td>
+                        {owner && (
+                          <td>
+                            {readiness.cacheable && (
+                              <ReleaseCacheButton
+                                downloading={
+                                  cache.isPending &&
+                                  cache.variables === release.id
+                                }
+                                onDownload={() => cache.mutate(release.id)}
+                              />
+                            )}
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </TableContainer>
+            {releaseItems.length > defaultVisibleReleaseCount && (
+              <div className="player-updates__release-list-controls">
+                <span>
+                  Showing {visibleReleaseItems.length} of {releaseItems.length}{" "}
+                  releases, newest first.
+                </span>
+                <Button
+                  variant="quiet"
+                  compact
+                  aria-controls="player-releases-table-body"
+                  aria-expanded={showAllReleases}
+                  onClick={() => setShowAllReleases((visible) => !visible)}
+                >
+                  {showAllReleases
+                    ? "Show fewer releases"
+                    : `Show all ${releaseItems.length} releases`}
+                </Button>
+              </div>
+            )}
+          </>
         )}
       </section>
       {manageable && (
         <section className="settings-subsection player-updates__deployment">
           <header>
             <h3>New deployment</h3>
-            <p>Choose a verified release and target screens or sync groups.</p>
+            <p>
+              Choose a cached, verified release and target {platformLabel}{" "}
+              screens or sync groups.
+            </p>
           </header>
           <div className="deployment-fields deployment-fields--primary">
-            <label>
+            <label className="deployment-field deployment-field--release">
               Verified release
               <Select
                 value={releaseId}
                 onChange={(event) => setReleaseId(event.target.value)}
+                disabled={!deployableReleases.length}
               >
-                <option value="">Select a release</option>
-                {releaseItems
-                  .filter(
-                    (item) =>
-                      item.verificationStatus === "verified" &&
-                      item.cacheStatus === "cached",
-                  )
-                  .map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.versionName} · {item.channel}
-                    </option>
-                  ))}
+                <option value="">
+                  {deployableReleases.length
+                    ? "Select a release"
+                    : "No release is ready to deploy"}
+                </option>
+                {deployableReleases.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.versionName} · {item.channel}
+                  </option>
+                ))}
               </Select>
             </label>
-            <label>
+            <label className="deployment-field deployment-field--mode">
               Deployment mode
               <Select
                 value={mode}
@@ -760,17 +817,7 @@ export function PlayerUpdatesPanel({
                 <option value="maintenance_window">Maintenance window</option>
               </Select>
             </label>
-            {mode === "maintenance_window" && (
-              <label>
-                Maintenance window
-                <input
-                  type="datetime-local"
-                  value={windowStart}
-                  onChange={(event) => setWindowStart(event.target.value)}
-                />
-              </label>
-            )}
-            <label>
+            <label className="deployment-field deployment-field--canary">
               Canary screens
               <input
                 type="number"
@@ -782,10 +829,23 @@ export function PlayerUpdatesPanel({
                 }
               />
               <small>
-                Start with this many screens. Remaining targets are held until
-                every canary reconnects successfully. Use 0 for all at once.
+                Remaining targets wait until every canary reconnects. Use 0 to
+                deploy to all targets at once.
               </small>
             </label>
+            {mode === "maintenance_window" && (
+              <label className="deployment-field deployment-field--window">
+                Maintenance window
+                <input
+                  type="datetime-local"
+                  value={windowStart}
+                  onChange={(event) => setWindowStart(event.target.value)}
+                />
+                <small>
+                  Players install at or after this local time on each screen.
+                </small>
+              </label>
+            )}
           </div>
           <div className="deployment-targets">
             <label className="target-search">
@@ -807,22 +867,10 @@ export function PlayerUpdatesPanel({
             >
               <div className="target-picker__column">
                 <h4>
-                  Screens{" "}
-                  <span>
-                    {
-                      (screens.data?.items ?? []).filter(
-                        (item) => screenFamily(item.platform) === platform,
-                      ).length
-                    }
-                  </span>
+                  {platformLabel} screens <span>{matchingScreens.length}</span>
                 </h4>
-                {(screens.data?.items ?? [])
-                  .filter(
-                    (item) =>
-                      screenFamily(item.platform) === platform &&
-                      item.name.toLowerCase().includes(query),
-                  )
-                  .map((screen) => (
+                <div className="target-picker__list">
+                  {matchingScreens.map((screen) => (
                     <Target
                       key={screen.id}
                       checked={screenIds.includes(screen.id)}
@@ -837,14 +885,21 @@ export function PlayerUpdatesPanel({
                       }
                     />
                   ))}
+                  {!matchingScreens.length && (
+                    <p className="target-picker__empty">
+                      {platformScreens.length
+                        ? "No screen matches this search."
+                        : `No ${platformLabel} screens are enrolled.`}
+                    </p>
+                  )}
+                </div>
               </div>
               <div className="target-picker__column">
                 <h4>
-                  Sync groups <span>{groups.data?.items?.length ?? 0}</span>
+                  Sync groups <span>{matchingGroups.length}</span>
                 </h4>
-                {(groups.data?.items ?? [])
-                  .filter((item) => item.name.toLowerCase().includes(query))
-                  .map((group) => (
+                <div className="target-picker__list">
+                  {matchingGroups.map((group) => (
                     <Target
                       key={group.id}
                       checked={groupIds.includes(group.id)}
@@ -859,54 +914,89 @@ export function PlayerUpdatesPanel({
                       }
                     />
                   ))}
+                  {!matchingGroups.length && (
+                    <p className="target-picker__empty">
+                      {groups.data?.items?.length
+                        ? "No sync group matches this search."
+                        : "No sync groups exist yet."}
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
           </div>
           {(deploy.error || deploySuccess) && (
-            <div
-              className={`notice ${deploy.error ? "notice--danger" : "notice--success"}`}
-              role={deploy.error ? "alert" : "status"}
-              aria-live="polite"
-            >
-              {deploy.error ? mutationError(deploy.error) : deploySuccess}
+            <div className="player-updates__notices">
+              <Notice variant={deploy.error ? "danger" : "success"}>
+                {deploy.error ? mutationError(deploy.error) : deploySuccess}
+              </Notice>
             </div>
           )}
           <div className="deployment-submit">
             <div className="target-summary">
-              <strong>{selectedScreens.length} deduplicated targets</strong>
-              {selectedScreens.length > 0 && (
-                <span>
-                  {
-                    selectedScreens.filter(
-                      (screen) => screen.status === "offline",
-                    ).length
-                  }{" "}
-                  offline
-                </span>
+              <strong>
+                {selectedScreens.length}{" "}
+                {selectedScreens.length === 1 ? "screen" : "screens"} selected
+              </strong>
+              {offlineTargets > 0 && <span>{offlineTargets} offline</span>}
+              {selectionCount > 0 && (
+                <Button
+                  variant="quiet"
+                  compact
+                  onClick={() => {
+                    setScreenIds([]);
+                    setGroupIds([]);
+                  }}
+                >
+                  Clear selection
+                </Button>
               )}
             </div>
-            <button
-              className="button button--primary"
-              disabled={
-                !releaseId ||
-                !selectedScreens.length ||
-                deploy.isPending ||
-                (mode === "maintenance_window" && !windowStart)
-              }
-              aria-busy={deploy.isPending}
-              onClick={() => {
-                if (
-                  confirm(
-                    `Deploy this Player update to ${selectedScreens.length} ${selectedScreens.length === 1 ? "screen" : "screens"}? ${platform === "android" ? "Android may require approval on each TV." : "Each Linux player will restart into the new version."}`,
-                  )
-                )
-                  deploy.mutate();
-              }}
+            <Button
+              variant="primary"
+              disabled={!releaseId || !selectedScreens.length || windowMissing}
+              loading={deploy.isPending}
+              onClick={() => setConfirmDeploy(true)}
             >
               <Rocket size={16} aria-hidden="true" />
               {deploy.isPending ? "Creating deployment…" : "Deploy update"}
-            </button>
+            </Button>
           </div>
+          <Dialog
+            className="player-updates-deploy-dialog"
+            open={confirmDeploy}
+            title="Deploy this Player update?"
+            onClose={() => setConfirmDeploy(false)}
+          >
+            <p>
+              {selectedScreens.length}{" "}
+              {selectedScreens.length === 1 ? "screen" : "screens"} will receive{" "}
+              {releaseItems.find((item) => item.id === releaseId)
+                ?.versionName ?? "this release"}{" "}
+              using {humanize(mode).toLowerCase()}.
+            </p>
+            <p>
+              {platform === "android"
+                ? "Android may require installation approval on each TV."
+                : "Each Linux player restarts into the new version."}
+            </p>
+            {offlineTargets > 0 && (
+              <p>
+                {offlineTargets} selected{" "}
+                {offlineTargets === 1 ? "screen is" : "screens are"} offline and
+                will update after reconnecting.
+              </p>
+            )}
+            <footer className="player-updates-deploy-dialog__actions">
+              <Button variant="quiet" onClick={() => setConfirmDeploy(false)}>
+                Cancel
+              </Button>
+              <Button variant="primary" onClick={() => deploy.mutate()}>
+                <Rocket size={16} aria-hidden="true" />
+                Deploy update
+              </Button>
+            </footer>
+          </Dialog>
         </section>
       )}
       <section className="settings-subsection player-updates__history">
@@ -918,73 +1008,67 @@ export function PlayerUpdatesPanel({
           </p>
         </header>
         {deployments.error && (
-          <div className="notice notice--danger" role="alert">
-            Deployment history could not be loaded.{" "}
-            {mutationError(deployments.error)}
+          <div className="player-updates__notices">
+            <Notice
+              variant="danger"
+              title="Deployment history could not be loaded."
+            >
+              {mutationError(deployments.error)}
+            </Notice>
           </div>
         )}
         <TableContainer className="table-container player-updates-table-wrap">
           <table className="player-updates-table">
             <caption className="visually-hidden">
-              Player deployment history
+              {platformLabel} Player deployment history
             </caption>
             <thead>
               <tr>
-                <th scope="col">Name</th>
+                <th scope="col">Deployment</th>
                 <th scope="col">Mode</th>
                 <th scope="col">Status</th>
-                <th scope="col">Rollout</th>
-                <th scope="col">Targets</th>
-                <th scope="col">Succeeded</th>
-                <th scope="col">Waiting</th>
-                <th scope="col">Failed</th>
+                <th scope="col">Progress</th>
                 <th scope="col">Attention</th>
               </tr>
             </thead>
             <tbody>
-              {(deployments.data?.items ?? [])
-                .filter((item) => item.platform === platform)
-                .map((item) => (
-                  <tr key={item.id}>
-                    <td>
-                      {item.name}
-                      <small className="technical">
-                        {item.versionName} ({item.versionCode})
-                      </small>
-                    </td>
-                    <td>{humanize(item.mode)}</td>
-                    <td>
-                      <UpdateStatus value={item.status} />
-                    </td>
-                    <td>
-                      {item.rolloutMode === "canary"
-                        ? `${item.canarySize ?? 0} canaries · ${humanize(item.rolloutPhase ?? "canary")}`
-                        : "All screens"}
-                      {item.pauseReason && <small>{item.pauseReason}</small>}
-                    </td>
-                    <td>{item.targetCount}</td>
-                    <td>{item.succeededCount}</td>
-                    <td>{item.waitingForUserCount}</td>
-                    <td>{item.failedCount}</td>
-                    <td
-                      className={
-                        item.lastFailure ? "deployment-attention" : undefined
-                      }
-                    >
-                      {item.lastFailure ? humanize(item.lastFailure) : "None"}
-                    </td>
-                  </tr>
-                ))}
+              {platformDeployments.map((item) => (
+                <tr key={item.id}>
+                  <th scope="row">
+                    <strong>{item.name}</strong>
+                    <small className="technical">
+                      {item.versionName} ({item.versionCode})
+                    </small>
+                  </th>
+                  <td>{humanize(item.mode)}</td>
+                  <td>
+                    <UpdateStatus value={item.status} />
+                    <small>{rolloutSummary(item)}</small>
+                  </td>
+                  <td>
+                    <strong>
+                      {item.succeededCount} of {item.targetCount} succeeded
+                    </strong>
+                    <small>{outstandingSummary(item)}</small>
+                  </td>
+                  <td>
+                    {item.lastFailure ? (
+                      <span className="deployment-attention">
+                        {humanize(item.lastFailure)}
+                      </span>
+                    ) : (
+                      "None"
+                    )}
+                  </td>
+                </tr>
+              ))}
               {!deployments.isLoading &&
                 !deployments.error &&
-                (deployments.data?.items ?? []).filter(
-                  (item) => item.platform === platform,
-                ).length === 0 && (
+                platformDeployments.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="table-empty-state">
+                    <td colSpan={5} className="table-empty-state">
                       <CheckCircle2 size={18} aria-hidden="true" />
-                      No {platform === "android" ? "Android" : "Linux"} Player
-                      deployments have been created.
+                      No {platformLabel} Player deployments have been created.
                     </td>
                   </tr>
                 )}
@@ -994,6 +1078,106 @@ export function PlayerUpdatesPanel({
       </section>
     </div>
   );
+}
+
+function ReleaseCacheButton({
+  downloading,
+  onDownload,
+}: {
+  downloading: boolean;
+  onDownload: () => void;
+}) {
+  return (
+    <Button
+      variant="quiet"
+      compact
+      title="Download and verify this release"
+      loading={downloading}
+      onClick={onDownload}
+    >
+      {!downloading && <Download size={15} aria-hidden="true" />}
+      {downloading ? "Downloading…" : "Download"}
+    </Button>
+  );
+}
+
+type ReleaseReadiness = {
+  tone: "success" | "info" | "warning" | "danger" | "neutral";
+  label: string;
+  detail: string;
+  cacheable: boolean;
+};
+
+// One column replaces the former Verification and Cache pair. A release is only
+// deployable once its manifest signature is verified and the artifact is cached,
+// so the leading status reports that combined truth and the detail line keeps
+// both underlying values visible.
+function releaseReadiness(release: PlayerRelease): ReleaseReadiness {
+  if (release.verificationStatus === "failed")
+    return {
+      tone: "danger",
+      label: "Verification failed",
+      detail: release.verificationError ?? "Download and verify again.",
+      cacheable: true,
+    };
+  if (release.cacheStatus === "failed")
+    return {
+      tone: "danger",
+      label: "Download failed",
+      detail: "Manifest verified. The artifact could not be cached.",
+      cacheable: true,
+    };
+  if (release.cacheStatus === "downloading")
+    return {
+      tone: "info",
+      label: "Downloading",
+      detail: "Verification finishes once the artifact is cached.",
+      cacheable: false,
+    };
+  if (release.cacheStatus !== "cached")
+    return {
+      tone: "warning",
+      label: "Not cached",
+      detail:
+        release.verificationStatus === "verified_manifest"
+          ? "Manifest signature verified. Download to deploy."
+          : "Download to make this release deployable.",
+      cacheable: true,
+    };
+  if (release.verificationStatus !== "verified")
+    return {
+      tone: "info",
+      label: "Verifying",
+      detail: "Artifact cached. Full verification has not finished.",
+      cacheable: true,
+    };
+  // "Ready to deploy" already states both underlying facts, so no detail line is
+  // added and healthy rows stay one line tall.
+  return {
+    tone: "success",
+    label: "Ready to deploy",
+    detail: "",
+    cacheable: false,
+  };
+}
+
+function rolloutSummary(item: UpdateDeployment) {
+  const rollout =
+    item.rolloutMode === "canary"
+      ? `${item.canarySize ?? 0} canaries · ${humanize(item.rolloutPhase ?? "canary")}`
+      : "All screens at once";
+  return item.pauseReason ? `${rollout} · ${item.pauseReason}` : rollout;
+}
+
+function outstandingSummary(item: UpdateDeployment) {
+  const parts = [
+    item.waitingForUserCount && `${item.waitingForUserCount} waiting for user`,
+    item.failedCount && `${item.failedCount} failed`,
+  ].filter(Boolean);
+  if (parts.length) return parts.join(" · ");
+  return item.succeededCount >= item.targetCount
+    ? "Every target succeeded"
+    : "Remaining targets in progress";
 }
 
 const RELEASE_FILE_NAMES: Record<PlayerPlatform, readonly string[]> = {
