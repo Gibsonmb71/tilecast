@@ -102,7 +102,7 @@ CREATE TRIGGER update_deployment_targets_reject_archived
     BEFORE INSERT OR UPDATE ON update_deployment_targets
     FOR EACH ROW EXECUTE FUNCTION reject_archived_screen_reference();
 CREATE TRIGGER player_commands_reject_archived
-    BEFORE INSERT OR UPDATE ON player_commands
+    BEFORE INSERT ON player_commands
     FOR EACH ROW EXECUTE FUNCTION reject_archived_screen_reference();
 CREATE TRIGGER screen_player_policies_reject_archived
     BEFORE INSERT OR UPDATE ON screen_player_policies
