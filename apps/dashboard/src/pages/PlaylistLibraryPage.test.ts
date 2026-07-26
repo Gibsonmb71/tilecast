@@ -7,7 +7,8 @@ import {
 } from "./PlaylistLibraryPage";
 
 const playlist = (
-  values: Partial<PlaylistLibraryItem> & Pick<PlaylistLibraryItem, "id" | "name">,
+  values: Partial<PlaylistLibraryItem> &
+    Pick<PlaylistLibraryItem, "id" | "name">,
 ): PlaylistLibraryItem => ({
   id: values.id,
   name: values.name,
@@ -34,9 +35,7 @@ describe("playlist library", () => {
         id: "sports",
         name: "After school",
         itemCount: 1,
-        previewItems: [
-          { id: "score", name: "Football scores", type: "image" },
-        ],
+        previewItems: [{ id: "score", name: "Football scores", type: "image" }],
       }),
     ];
 
@@ -100,9 +99,7 @@ describe("playlist library", () => {
       ),
     ).toEqual(["beta", "alpha", "charlie"]);
     expect(
-      filterAndSortPlaylists(items, "", "all", "items").map(
-        (item) => item.id,
-      ),
+      filterAndSortPlaylists(items, "", "all", "items").map((item) => item.id),
     ).toEqual(["beta", "charlie", "alpha"]);
   });
 

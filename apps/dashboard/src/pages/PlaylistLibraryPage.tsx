@@ -115,7 +115,10 @@ export function filterAndSortPlaylists(
   });
 }
 
-export function formatPlaylistUpdatedAt(value: string, now = Date.now()): string {
+export function formatPlaylistUpdatedAt(
+  value: string,
+  now = Date.now(),
+): string {
   const timestamp = Date.parse(value);
   if (!Number.isFinite(timestamp)) return "Update time unavailable";
   const elapsed = Math.max(0, now - timestamp);
@@ -256,7 +259,11 @@ export function PlaylistLibraryPage() {
           <option value="items">Most items</option>
           <option value="created">Recently created</option>
         </Select>
-        <ViewToggle value={view} onValueChange={setView} label="Playlist view" />
+        <ViewToggle
+          value={view}
+          onValueChange={setView}
+          label="Playlist view"
+        />
       </DashboardListToolbar>
 
       {!query.isLoading && allPlaylists.length > 0 && (
