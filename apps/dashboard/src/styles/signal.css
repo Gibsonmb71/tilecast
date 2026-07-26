@@ -164,6 +164,7 @@ code,
 }
 
 .app-shell--sidebar-compact .sidebar nav a span,
+.app-shell--sidebar-compact .sidebar__parent-chevron,
 .app-shell--sidebar-compact .sidebar__account-copy {
   display: none;
 }
@@ -207,23 +208,50 @@ code,
   gap: 2px;
 }
 
+.sidebar nav .sidebar__parent {
+  background: transparent;
+}
+
+.sidebar__nav-group.is-expanded > .sidebar__parent {
+  color: var(--tc-sidebar-text-active);
+  background: transparent;
+  font-weight: 650;
+}
+
+.sidebar__parent-chevron {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  margin-left: auto;
+  transition: transform var(--tc-motion-fast);
+}
+
+.sidebar__nav-group.is-expanded .sidebar__parent-chevron {
+  transform: rotate(90deg);
+}
+
 .sidebar__submenu {
   display: grid;
   gap: 1px;
-  margin: 0 0 var(--tc-space-1) 18px;
-  padding-left: 11px;
-  border-left: 1px solid var(--tc-sidebar-border);
+  margin: 0 0 var(--tc-space-1);
+  padding-left: 26px;
+}
+
+.sidebar__submenu[hidden] {
+  display: none;
 }
 
 .sidebar nav .sidebar__submenu a {
-  min-height: 32px;
-  padding-block: 5px;
+  min-height: 34px;
+  padding: 5px 9px;
   color: var(--tc-sidebar-text);
   font-size: 12px;
 }
 
 .sidebar nav .sidebar__submenu a.active {
+  color: var(--tc-sidebar-text-active);
   background: var(--tc-sidebar-active);
+  font-weight: 650;
 }
 
 .sidebar__nav-footer {
@@ -244,6 +272,12 @@ code,
     background var(--tc-motion-fast);
 }
 
+.sidebar nav a > svg:first-child {
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+}
+
 .sidebar nav a:hover {
   color: var(--tc-sidebar-text-active);
   background: var(--tc-sidebar-hover);
@@ -254,16 +288,6 @@ code,
   background: var(--tc-sidebar-active);
   box-shadow: none;
   font-weight: 650;
-}
-
-.sidebar nav a.active::before {
-  position: absolute;
-  inset-block: 7px;
-  left: -8px;
-  width: 3px;
-  content: "";
-  background: var(--tc-action-primary);
-  border-radius: 0 var(--tc-radius-pill) var(--tc-radius-pill) 0;
 }
 
 .sidebar .avatar {
@@ -1725,7 +1749,8 @@ label > .signal-select,
 }
 
 @media (max-width: 800px) {
-  .sidebar__submenu {
+  .sidebar__submenu,
+  .sidebar__parent-chevron {
     display: none;
   }
 }
@@ -2294,12 +2319,6 @@ tbody tr:hover {
     flex: 0 0 auto;
     justify-content: center;
     min-width: 52px;
-  }
-
-  .sidebar nav a.active::before {
-    inset: auto 8px -8px;
-    width: auto;
-    height: 3px;
   }
 
   .topbar {
