@@ -60,3 +60,10 @@ If GitHub reports an API rate limit, open Settings → Player Updates and connec
 `Waiting for permission` requires enabling unknown-app installation for Tilecast Player. `Waiting for user` requires approving Android or Fire OS. Emergency playback delays installation. Interrupted downloads resume from `.part`. A certificate mismatch means the installed app and release use different Android keys and cannot update in place.
 
 `Installed certificate mismatch` means the Player currently on the TV was signed with a different Android key than the verified release, commonly because a debug APK was installed during setup. Android cannot replace it in place. Uninstall that Player once, install the production-signed `tilecast-player.apk`, and pair the screen again. Preserve the same production keystore for every later release.
+
+Linux Player `0.2.4` and earlier cannot safely complete an AppImage replacement
+from Studio: the staged download loses its executable bit before restart. Install
+`0.2.5` or newer manually once, ensure
+`~/tilecast/tilecast-player.AppImage` is executable and owned by the kiosk user,
+then later Studio deployments can atomically replace the AppImage and let the
+user systemd unit start the verified update.

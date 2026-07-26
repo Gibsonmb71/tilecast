@@ -1,16 +1,35 @@
 # GitHub Player updates
 
-Tilecast distributes Tilecast Player as signed APKs through published releases at `Gibsonmb71/tilecast`. No Google Play, Amazon Developer, or paid Android developer account is required. Unknown-app installation remains a one-time local commissioning permission. On Android 12 and newer, eligible signed self-updates request Android's supported unattended-update mode. Older Android and Fire OS installers may still require local confirmation.
+Tilecast distributes Android APK and Linux AppImage Player builds through signed
+published releases at `Gibsonmb71/tilecast`. No Google Play, Amazon Developer,
+or paid Android developer account is required. Unknown-app installation remains
+a one-time local commissioning permission. On Android 12 and newer, eligible
+signed self-updates request Android's supported unattended-update mode. Older
+Android and Fire OS installers may still require local confirmation.
 
 ## Release contract
 
 Every stable release, and every GitHub prerelease used as the beta channel, must contain exactly named assets:
 
+Android:
+
 - `tilecast-player.apk`
 - `tilecast-player-update.json`
 - `tilecast-player-update.json.sig`
 
-The schema-1 JSON identifies `tilecast-player`, application ID `org.tilecast.player`, version code/name, stable or beta channel, minimum SDK 23, APK name/size/SHA-256, signing-certificate SHA-256, and release notes. The signature is base64 Ed25519 over the exact JSON bytes. Official Tilecast Server builds include the public release-verification key. `TILECAST_UPDATE_MANIFEST_PUBLIC_KEY` may override it for custom Player builds; the private key is never installed on Tilecast Server.
+Linux:
+
+- `tilecast-player.AppImage`
+- `tilecast-player-update-linux.json`
+- `tilecast-player-update-linux.json.sig`
+
+The schema-1 JSON identifies `tilecast-player`, its platform, version code/name,
+stable or beta channel, artifact name/size/SHA-256, and release notes. Android
+also carries application ID `org.tilecast.player`, minimum SDK 23, and signing
+certificate SHA-256. The signature is base64 Ed25519 over the exact JSON bytes.
+Official Tilecast Server builds include the public release-verification key.
+`TILECAST_UPDATE_MANIFEST_PUBLIC_KEY` may override it for custom Player builds;
+the private key is never installed on Tilecast Server.
 
 Drafts, arbitrary repositories, arbitrary asset names/URLs, invalid signatures, downgrades, incompatible SDK declarations, checksum mismatches, invalid APK signatures, and signing-certificate mismatches are rejected. A verified APK is streamed to a temporary file beneath `/data/updates`, checked, and atomically renamed. Players download only from their paired Tilecast server using authenticated range requests.
 
@@ -37,7 +56,14 @@ Pushing a tag named `player-v<versionName>` publishes a release automatically. T
 
 ## Studio and player flow
 
-Owners can either select **Upload release** or **Sync from GitHub** under **Settings → Player Updates**. Direct upload accepts exactly `tilecast-player.apk`, `tilecast-player-update.json`, and `tilecast-player-update.json.sig`. The server applies the same manifest-signature, APK hash/size, package metadata, version, minimum-SDK, and Android signing-certificate checks to both sources. A verified direct upload is moved atomically into the same private update cache and creates the same Player release record used by deployments. GitHub availability is therefore optional.
+Owners can either select **Upload release** or **Sync from GitHub** under
+**Settings → Player Updates**. Direct upload accepts the exact Android or Linux
+three-file set above. The server applies the same manifest-signature, artifact
+hash/size, platform, and version checks to both sources, plus Android package,
+minimum-SDK, and signing-certificate checks for APKs. A verified direct upload
+is moved atomically into the same private update cache and creates the same
+Player release record used by deployments. GitHub availability is therefore
+optional.
 
 Tilecast refreshes the GitHub release catalog automatically when the catalog is empty or the previous check is more than 15 minutes old. Studio keeps **Sync from GitHub** as an immediate retry and displays provider, signature, and release-verification failures instead of showing an unexplained empty table.
 
@@ -45,7 +71,15 @@ Authenticated GitHub requests receive a substantially higher API allowance than 
 
 The Owner starts sign-in in Studio, opens GitHub's device page, and enters the displayed one-time code. The private device code remains only in server memory. After approval, Tilecast validates the GitHub account and stores the access token in `/data/updates/github-oauth.json` with owner-only file permissions. The token is never returned through the API, audit metadata, diagnostics, or logs. Disconnecting removes the local credential; the GitHub account can separately revoke the OAuth App grant. `TILECAST_GITHUB_TOKEN` remains supported as an environment-managed override and cannot be disconnected from Studio.
 
-Owners and Administrators deploy a fully verified cached release to screens and/or sync groups. Sync-group membership is resolved at deployment start and duplicates are removed. Modes are download only, install now, and maintenance window. Screen states distinguish downloading, verification, permission/user approval, installation, reconnecting, success, failure, cancellation, incompatibility, and already-current. Players always retrieve APKs from their paired Tilecast server; the player never contacts GitHub.
+Owners and Administrators deploy a fully verified cached release to screens
+and/or sync groups. Studio and the server restrict Android releases to Android
+screens and Linux releases to Linux screens. Sync-group membership is resolved
+at deployment start and duplicates are removed. Modes are download only,
+install now, and maintenance window. Screen states distinguish downloading,
+verification, permission/user approval, installation, reconnecting, success,
+failure, cancellation, incompatibility, and already-current. Players always
+retrieve the verified APK or AppImage from their paired Tilecast server; the
+player never contacts GitHub.
 
 ## CI publishing
 

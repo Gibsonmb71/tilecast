@@ -29,7 +29,7 @@ import { ReconnectBackoff } from "./backoff";
 import { CommandCoordinator } from "./commands";
 import { ConfigSync } from "./config";
 import { downloadVerified } from "./download";
-import { SelfUpdater, parseVersionCode } from "./self-update";
+import { SelfUpdater, parseVersionCode, promoteAppImage } from "./self-update";
 import { LivePreview, type PreviewHost } from "./preview";
 import { logger } from "./log";
 import { ManifestSync } from "./manifest";
@@ -155,6 +155,8 @@ export interface PlayerHost {
   recreateWindow(): void;
   /** Relaunch the entire process (heal rung / restart commands). */
   restartProcess(): void;
+  /** Exit after replacing an AppImage so the systemd unit starts the new file. */
+  exitForUpdate(): void;
   /** Clear website renderer storage. */
   clearWebsiteData(): Promise<void>;
   /** Ask the renderer to retry or skip the current item. */
@@ -404,8 +406,8 @@ export class PlayerRuntime {
         downloadVerified(request, this.options.fetchImpl ?? fetch),
       buildUrl: (path) => this.client.url(path),
       authHeaders: () => this.client.authHeaders(),
-      promote: (from, to) => fs.rename(from, to),
-      restart: () => this.host.restartProcess(),
+      promote: promoteAppImage,
+      restart: () => this.host.exitForUpdate(),
       now: () => Date.now(),
     });
 

@@ -316,6 +316,19 @@ function formRecordQuery(params: FormRecordListParams = {}): string {
   return encoded ? `?${encoded}` : "";
 }
 
+const playerReleaseContentTypes: Record<string, string> = {
+  "tilecast-player.apk": "application/vnd.android.package-archive",
+  "tilecast-player-update.json": "application/json",
+  "tilecast-player-update.json.sig": "text/plain",
+  "tilecast-player.AppImage": "application/octet-stream",
+  "tilecast-player-update-linux.json": "application/json",
+  "tilecast-player-update-linux.json.sig": "text/plain",
+};
+
+export function playerReleaseContentType(name: string): string {
+  return playerReleaseContentTypes[name] ?? "application/octet-stream";
+}
+
 export const api = {
   providerCatalog: async () =>
     normalizeProviderCatalog(
@@ -493,16 +506,11 @@ export const api = {
     onProgress: (percent: number) => void,
   ) =>
     new Promise<PlayerReleaseImport>((resolve, reject) => {
-      const contentTypes: Record<string, string> = {
-        "tilecast-player.apk": "application/vnd.android.package-archive",
-        "tilecast-player-update.json": "application/json",
-        "tilecast-player-update.json.sig": "text/plain",
-      };
       const form = new FormData();
       for (const file of files)
         form.append(
           "files",
-          new Blob([file], { type: contentTypes[file.name] }),
+          new Blob([file], { type: playerReleaseContentType(file.name) }),
           file.name,
         );
       const xhr = new XMLHttpRequest();
