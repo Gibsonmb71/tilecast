@@ -154,7 +154,7 @@
   place-items: center;
   padding: 0 2px;
   color: var(--tc-neutral-0);
-  background: var(--tc-status-danger);
+  background: var(--tc-status-danger-solid);
   border-radius: var(--tc-radius-chip);
   box-shadow: 0 0 0 2px var(--tc-bg-surface);
   font-size: 10px;

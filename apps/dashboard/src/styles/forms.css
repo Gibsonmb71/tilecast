@@ -80,7 +80,7 @@
 }
 
 .form-builder__status--error {
-  color: var(--tc-text-danger, #b42318);
+  color: var(--tc-status-danger);
 }
 
 .form-builder__status-actions,
@@ -90,7 +90,7 @@
 }
 
 .form-builder__confirm-error {
-  color: var(--tc-text-danger, #b42318);
+  color: var(--tc-status-danger);
 }
 
 .form-builder__layout {
