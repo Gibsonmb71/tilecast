@@ -19,3 +19,23 @@ func TestPresenceNotificationUsesActiveConnection(t *testing.T) {
 		t.Fatal("notification was delivered after disconnect")
 	}
 }
+
+func TestPresenceCleanupOnlyRemovesItsOwnConnection(t *testing.T) {
+	hub := NewPresenceHub()
+	screen := uuid.New()
+	first := hub.ConnectWithNotifier(screen, func() {}, nil)
+	second := hub.ConnectWithNotifier(screen, func() {}, nil)
+
+	if first() {
+		t.Fatal("replaced connection reported that it removed the active connection")
+	}
+	if !hub.Connected(screen) {
+		t.Fatal("replaced connection cleanup removed the active connection")
+	}
+	if !second() {
+		t.Fatal("active connection did not report that it removed itself")
+	}
+	if hub.Connected(screen) {
+		t.Fatal("active connection remained registered after cleanup")
+	}
+}

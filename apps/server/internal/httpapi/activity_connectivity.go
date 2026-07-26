@@ -36,11 +36,14 @@ type heartbeatActivityState struct {
 	CacheLimitBytes    *int64
 }
 
+type heartbeatActivitySnapshot struct {
+	previousHeartbeat *time.Time
+	state             heartbeatActivityState
+}
+
 func (s *server) playerHeartbeatWithActivity(w http.ResponseWriter, r *http.Request) {
 	principal := r.Context().Value(deviceContextKey).(devices.DevicePrincipal)
-	var previousHeartbeat *time.Time
-	_ = s.db.QueryRow(r.Context(), `SELECT last_heartbeat_at FROM screens WHERE id=$1`, principal.ScreenID).Scan(&previousHeartbeat)
-	before, _ := s.readHeartbeatActivityState(r.Context(), principal.ScreenID)
+	snapshot := s.captureHeartbeatActivity(r.Context(), principal.ScreenID)
 
 	wrapped := &auditStatusWriter{ResponseWriter: w}
 	s.playerHeartbeat(wrapped, r)
@@ -51,37 +54,46 @@ func (s *server) playerHeartbeatWithActivity(w http.ResponseWriter, r *http.Requ
 	if status >= 300 {
 		return
 	}
+	s.recordHeartbeatActivity(r, principal.ScreenID, snapshot, time.Now().UTC())
+}
 
-	now := time.Now().UTC()
-	after, _ := s.readHeartbeatActivityState(activityContextWithoutCancel(r.Context()), principal.ScreenID)
+func (s *server) captureHeartbeatActivity(ctx context.Context, screenID uuid.UUID) heartbeatActivitySnapshot {
+	var snapshot heartbeatActivitySnapshot
+	_ = s.db.QueryRow(ctx, `SELECT last_heartbeat_at FROM screens WHERE id=$1`, screenID).Scan(&snapshot.previousHeartbeat)
+	snapshot.state, _ = s.readHeartbeatActivityState(ctx, screenID)
+	return snapshot
+}
+
+func (s *server) recordHeartbeatActivity(r *http.Request, screenID uuid.UUID, snapshot heartbeatActivitySnapshot, now time.Time) {
+	after, _ := s.readHeartbeatActivityState(activityContextWithoutCancel(r.Context()), screenID)
 	tx, err := s.db.Begin(activityContextWithoutCancel(r.Context()))
 	if err != nil {
 		return
 	}
 	defer tx.Rollback(activityContextWithoutCancel(r.Context())) //nolint:errcheck
 
-	if previousHeartbeat == nil {
-		s.recordServerTransition(r, tx, principal.ScreenID, playerActivityEventInput{
+	if snapshot.previousHeartbeat == nil {
+		s.recordServerTransition(r, tx, screenID, playerActivityEventInput{
 			ID: uuid.New(), EventType: "player.connected", Category: "connectivity", Severity: "info",
 			OccurredAt: now, PlayerTimezone: "UTC", Result: "success", Priority: 8,
 		})
-	} else if gap := now.Sub(previousHeartbeat.UTC()); gap > 3*time.Minute {
-		s.recordServerTransition(r, tx, principal.ScreenID, playerActivityEventInput{
+	} else if gap := now.Sub(snapshot.previousHeartbeat.UTC()); gap > 3*time.Minute {
+		s.recordServerTransition(r, tx, screenID, playerActivityEventInput{
 			ID: uuid.New(), EventType: "heartbeat.gap_detected", Category: "connectivity", Severity: "warning",
-			OccurredAt: previousHeartbeat.UTC().Add(3 * time.Minute), PlayerTimezone: "UTC", Result: "unknown",
+			OccurredAt: snapshot.previousHeartbeat.UTC().Add(3 * time.Minute), PlayerTimezone: "UTC", Result: "unknown",
 			DurationMS: durationPointer(gap.Milliseconds()), FailureCode: "heartbeat_gap",
 			FailureMessage: "Player stopped reporting within the expected heartbeat window.", Priority: 9,
-			Metadata: map[string]any{"lastHeartbeatAt": previousHeartbeat.UTC(), "restoredAt": now},
+			Metadata: map[string]any{"lastHeartbeatAt": snapshot.previousHeartbeat.UTC(), "restoredAt": now},
 		})
-		s.recordServerTransition(r, tx, principal.ScreenID, playerActivityEventInput{
+		s.recordServerTransition(r, tx, screenID, playerActivityEventInput{
 			ID: uuid.New(), EventType: "connection.restored", Category: "connectivity", Severity: "info",
 			OccurredAt: now, PlayerTimezone: "UTC", Result: "recovered", DurationMS: durationPointer(gap.Milliseconds()), Priority: 8,
 		})
-		_, _ = tx.Exec(r.Context(), `UPDATE playback_sessions SET ended_at=$2,result='unknown',actual_duration_ms=GREATEST(0,EXTRACT(EPOCH FROM ($2-started_at))*1000)::bigint,metadata=metadata||'{"closedReason":"heartbeat_gap"}'::jsonb,updated_at=now() WHERE screen_id=$1 AND ended_at IS NULL AND started_at<$3`, principal.ScreenID, previousHeartbeat.UTC(), now)
+		_, _ = tx.Exec(r.Context(), `UPDATE playback_sessions SET ended_at=$2,result='unknown',actual_duration_ms=GREATEST(0,EXTRACT(EPOCH FROM ($2-started_at))*1000)::bigint,metadata=metadata||'{"closedReason":"heartbeat_gap"}'::jsonb,updated_at=now() WHERE screen_id=$1 AND ended_at IS NULL AND started_at<$3`, screenID, snapshot.previousHeartbeat.UTC(), now)
 	}
 
-	s.recordHeartbeatStateTransitions(r, tx, principal.ScreenID, before, after, now)
-	s.anchorHeartbeatStateInterval(r, tx, principal.ScreenID, after, now)
+	s.recordHeartbeatStateTransitions(r, tx, screenID, snapshot.state, after, now)
+	s.anchorHeartbeatStateInterval(r, tx, screenID, after, now)
 	_ = tx.Commit(activityContextWithoutCancel(r.Context()))
 }
 
@@ -89,9 +101,9 @@ func (s *server) playerHeartbeatWithActivity(w http.ResponseWriter, r *http.Requ
 // player, whatever activity events it reports. Players do not share one event
 // vocabulary: the Linux player reports content and connection events, while the
 // interval derivation recognises the Android player's presentation events. The
-// heartbeat is the one signal every player sends, so each accepted heartbeat
-// opens an up-state interval when none is open, and replaces a stale impaired
-// interval once the heartbeat itself shows the player is playing again.
+// heartbeat is the one signal every player sends, so each authenticated contact
+// opens an up-state interval when none is open. Valid status metadata replaces a
+// stale impaired interval once it shows the player is playing again.
 // Without this a player that never emits a recognised event is never measured,
 // and one renderer failure would leave a screen impaired forever.
 func (s *server) anchorHeartbeatStateInterval(r *http.Request, tx pgx.Tx, screenID uuid.UUID, status heartbeatActivityState, now time.Time) {

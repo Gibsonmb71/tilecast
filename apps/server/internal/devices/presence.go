@@ -22,10 +22,13 @@ func NewPresenceHub() *PresenceHub {
 }
 
 func (h *PresenceHub) Connect(screenID uuid.UUID, closeConnection func()) func() {
-	return h.ConnectWithNotifier(screenID, closeConnection, nil)
+	unregister := h.ConnectWithNotifier(screenID, closeConnection, nil)
+	return func() {
+		unregister()
+	}
 }
 
-func (h *PresenceHub) ConnectWithNotifier(screenID uuid.UUID, closeConnection func(), notify func(map[string]any) error) func() {
+func (h *PresenceHub) ConnectWithNotifier(screenID uuid.UUID, closeConnection func(), notify func(map[string]any) error) func() bool {
 	h.mu.Lock()
 	previous := h.connections[screenID]
 	token := uuid.New()
@@ -34,12 +37,15 @@ func (h *PresenceHub) ConnectWithNotifier(screenID uuid.UUID, closeConnection fu
 	if previous.close != nil {
 		previous.close()
 	}
-	return func() {
+	return func() bool {
 		h.mu.Lock()
+		removed := false
 		if current, ok := h.connections[screenID]; ok && current.token == token {
 			delete(h.connections, screenID)
+			removed = true
 		}
 		h.mu.Unlock()
+		return removed
 	}
 }
 
