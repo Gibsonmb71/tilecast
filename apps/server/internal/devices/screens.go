@@ -18,6 +18,7 @@ SELECT s.id,s.name,s.description,COALESCE(l.name,''),s.location_id,s.room_name,s
        s.screen_width,s.screen_height,s.density,s.locale,s.timezone,s.available_storage_bytes,s.uptime_seconds,s.enabled,s.paired_at,
        s.last_connected_at,s.last_disconnected_at,s.last_heartbeat_at,s.last_known_ip::text,s.created_at,s.updated_at,
        EXISTS(SELECT 1 FROM device_credentials c WHERE c.screen_id=s.id AND c.revoked_at IS NULL),
+       s.archived_at,s.archived_reason,
        sg.id,sg.name,COALESCE(p.name,ly.name),
        CASE WHEN p.id IS NOT NULL THEN 'playlist' WHEN ly.id IS NOT NULL THEN 'presentation' END,
        ps.player_version_code,ps.android_sdk,ps.installer_source,ps.install_permission_status,ps.current_update_deployment_id,ps.update_state,ps.update_downloaded_bytes,ps.update_expected_bytes,ps.update_error
@@ -32,9 +33,26 @@ LEFT JOIN layouts ly ON ly.id=COALESCE(ga.layout_id,sa.layout_id)
 LEFT JOIN screen_player_status ps ON ps.screen_id=s.id`
 
 func (s *Service) ListScreens(ctx context.Context) ([]Screen, error) {
-	rows, err := s.db.Query(ctx, screenSelect+` WHERE EXISTS (SELECT 1 FROM device_credentials c WHERE c.screen_id=s.id AND c.revoked_at IS NULL) ORDER BY s.name ASC LIMIT 500`)
+	rows, err := s.db.Query(ctx, screenSelect+` WHERE s.archived_at IS NULL AND EXISTS (SELECT 1 FROM device_credentials c WHERE c.screen_id=s.id AND c.revoked_at IS NULL) ORDER BY s.name ASC LIMIT 500`)
 	if err != nil {
 		return nil, fmt.Errorf("list screens: %w", err)
+	}
+	defer rows.Close()
+	result := make([]Screen, 0)
+	for rows.Next() {
+		screen, err := scanScreen(rows, s.presence, s.now())
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, screen)
+	}
+	return result, rows.Err()
+}
+
+func (s *Service) ListArchivedScreens(ctx context.Context) ([]Screen, error) {
+	rows, err := s.db.Query(ctx, screenSelect+` WHERE s.archived_at IS NOT NULL ORDER BY s.archived_at DESC,s.name ASC LIMIT 500`)
+	if err != nil {
+		return nil, fmt.Errorf("list archived screens: %w", err)
 	}
 	defer rows.Close()
 	result := make([]Screen, 0)
@@ -69,6 +87,7 @@ func scanScreen(row scanner, presence *PresenceHub, now time.Time) (Screen, erro
 	if err := row.Scan(&screen.ID, &screen.Name, &screen.Description, &screen.Location, &screen.LocationID, &screen.RoomName, &screen.RoomNumber,
 		&addressLine1, &addressLine2, &city, &state, &postalCode, &country, &latitude, &longitude, &locationCreatedAt, &locationUpdatedAt,
 		&screen.Platform, &screen.DeviceManufacturer, &screen.DeviceModel, &screen.AndroidVersion, &screen.PlayerVersion, &screen.ScreenWidth, &screen.ScreenHeight, &screen.Density, &screen.Locale, &screen.Timezone, &screen.AvailableStorageBytes, &screen.UptimeSeconds, &screen.Enabled, &screen.PairedAt, &screen.LastConnectedAt, &screen.LastDisconnectedAt, &screen.LastHeartbeatAt, &screen.LastKnownIP, &screen.CreatedAt, &screen.UpdatedAt, &screen.HasActiveCredential,
+		&screen.ArchivedAt, &screen.ArchivedReason,
 		&screen.SyncGroupID, &screen.SyncGroupName, &screen.NowPlayingName, &screen.NowPlayingType,
 		&screen.PlayerVersionCode, &screen.AndroidSDK, &screen.InstallerSource, &screen.InstallPermissionStatus, &screen.CurrentUpdateDeploymentID, &screen.UpdateState, &screen.UpdateDownloadedBytes, &screen.UpdateExpectedBytes, &screen.UpdateError); err != nil {
 		return Screen{}, err
@@ -113,7 +132,7 @@ func (s *Service) UpdateScreen(ctx context.Context, id, userID uuid.UUID, name s
 			return Screen{}, errors.New("location is invalid")
 		}
 	}
-	result, err := tx.Exec(ctx, `UPDATE screens SET name=$2,location_id=$3,room_name=$4,room_number=$5,description=$6,updated_at=now() WHERE id=$1`, id, name, locationID, roomName, roomNumber, description)
+	result, err := tx.Exec(ctx, `UPDATE screens SET name=$2,location_id=$3,room_name=$4,room_number=$5,description=$6,updated_at=now() WHERE id=$1 AND archived_at IS NULL`, id, name, locationID, roomName, roomNumber, description)
 	if err != nil {
 		return Screen{}, fmt.Errorf("update screen: %w", err)
 	}
@@ -139,7 +158,7 @@ func (s *Service) SetEnabled(ctx context.Context, id, userID uuid.UUID, enabled 
 		return err
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
-	result, err := tx.Exec(ctx, `UPDATE screens SET enabled=$2,updated_at=now() WHERE id=$1`, id, enabled)
+	result, err := tx.Exec(ctx, `UPDATE screens SET enabled=$2,updated_at=now() WHERE id=$1 AND archived_at IS NULL`, id, enabled)
 	if err != nil {
 		return fmt.Errorf("change screen state: %w", err)
 	}
@@ -178,8 +197,42 @@ func (s *Service) Revoke(ctx context.Context, id, userID uuid.UUID, reason strin
 	if result.RowsAffected() == 0 {
 		return ErrConflict
 	}
-	if _, err := tx.Exec(ctx, `UPDATE screens SET updated_at=now() WHERE id=$1`, id); err != nil {
-		return err
+	result, err = tx.Exec(ctx, `UPDATE screens SET archived_at=now(),archived_reason=$2,enabled=FALSE,location_id=NULL,updated_at=now() WHERE id=$1`, id, reason)
+	if err != nil {
+		return fmt.Errorf("archive screen: %w", err)
+	}
+	if result.RowsAffected() != 1 {
+		return ErrNotFound
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM screen_group_memberships WHERE screen_id=$1`, id); err != nil {
+		return fmt.Errorf("detach archived screen from sync groups: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM screen_playlist_assignments WHERE screen_id=$1`, id); err != nil {
+		return fmt.Errorf("remove archived screen content assignment: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM schedule_targets WHERE target_type='screen' AND screen_id=$1`, id); err != nil {
+		return fmt.Errorf("remove archived screen schedule targets: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM emergency_targets WHERE target_type='screen' AND screen_id=$1`, id); err != nil {
+		return fmt.Errorf("remove archived screen emergency targets: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM update_deployment_targets WHERE target_type='screen' AND screen_id=$1`, id); err != nil {
+		return fmt.Errorf("remove archived screen update targets: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM screen_player_policies WHERE screen_id=$1`, id); err != nil {
+		return fmt.Errorf("remove archived screen policy: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE player_commands SET state='cancelled',completed_at=COALESCE(completed_at,now()),safe_result_code=COALESCE(safe_result_code,'screen_archived'),safe_result_message=COALESCE(safe_result_message,'The screen pairing was revoked.'),updated_at=now() WHERE screen_id=$1 AND state IN ('pending','delivered','acknowledged','running')`, id); err != nil {
+		return fmt.Errorf("cancel archived screen commands: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE emergency_screen_states SET state='cancelled',last_updated_at=now() WHERE screen_id=$1 AND state IN ('pending','notified','preparing','ready','active','offline')`, id); err != nil {
+		return fmt.Errorf("cancel archived screen emergency state: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE screen_update_states SET state='cancelled',completed_at=COALESCE(completed_at,now()),updated_at=now() WHERE screen_id=$1 AND state NOT IN ('succeeded','failed','cancelled','incompatible','already_current')`, id); err != nil {
+		return fmt.Errorf("cancel archived screen update state: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE screen_player_status SET assigned_playlist_id=NULL,current_schedule_id=NULL,current_playlist_id=NULL,selection_source=NULL,next_transition_at=NULL,active_emergency_id=NULL,emergency_state=NULL,emergency_preparation_progress=NULL,current_update_deployment_id=NULL,update_state=NULL,update_downloaded_bytes=NULL,update_expected_bytes=NULL,update_error=NULL WHERE screen_id=$1`, id); err != nil {
+		return fmt.Errorf("clear archived screen live status: %w", err)
 	}
 	if err := insertAudit(ctx, tx, userID, "screen.credential.revoked", id); err != nil {
 		return err
