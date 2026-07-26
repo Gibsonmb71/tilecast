@@ -30,6 +30,18 @@ Layouts have a root activation interval. Meaningful child sessions are recorded 
 
 Date-aware Widgets report the selected cached record by Source ID, placement or Widget ID, selected record ID, selection date, cached-at timestamp or Source revision, and snapshot hash. Raw field values and private CSV payloads are not copied into Activity.
 
+## Uptime derivation
+
+The System overview uptime graphs read `screen_state_intervals`; the schema keeps no heartbeat history, so uptime is measured from recorded state transitions only. Enabled, non-deleted screens are measured over 24 one-hour buckets or 28 six-hour buckets aligned to the bucket size, so the newest bucket is the partial one.
+
+Each measured second falls into one class:
+
+- **up**: `online` or `healthy`;
+- **impaired**: `safe_mode`, or `degraded` for a reason other than a heartbeat gap, such as a renderer failure or cache pressure;
+- **down**: `offline`, `unknown`, or `degraded` because of a detected heartbeat gap.
+
+Players do not report a disconnect, so an open up-state interval is clipped to the last heartbeat plus the three-minute gap grace period that the gap detector uses, and the remainder of the window counts as down. Time before a screen's first recorded interval is reported as unmeasured and excluded from the percentage rather than counted as downtime, so a newly paired fleet shows no percentage instead of a false one.
+
 ## Audit safety
 
 Audit metadata is allowlisted for presentation. Keys associated with passwords, sessions, OAuth tokens, Player credentials, authorization headers, private CSV payloads, and full configuration documents are discarded. IP addresses, request IDs, raw failure messages, and detailed diagnostics are returned only to Owners and Administrators.
@@ -65,6 +77,7 @@ See [`activity-api.yaml`](activity-api.yaml) for request and response shapes.
 
 - `POST /api/v1/player/activity-events`
 - `GET /api/v1/activity/overview`
+- `GET /api/v1/activity/uptime`
 - `GET /api/v1/activity/proof-of-play`
 - `GET /api/v1/activity/proof-of-play/summary`
 - `GET /api/v1/activity/proof-of-play/export.csv`

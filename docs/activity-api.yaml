@@ -32,6 +32,22 @@ paths:
           { $ref: "#/components/parameters/To" },
         ]
       responses: { "200": { description: Activity overview } }
+  /api/v1/activity/uptime:
+    get:
+      summary: Read fleet uptime for the System overview graphs
+      description:
+        Derived from recorded screen-state intervals. An open healthy interval is
+        clipped to the last heartbeat plus the gap grace period, so a player that
+        stopped reporting counts as down. Time before a screen's first recorded
+        interval is reported as unmeasured rather than as downtime.
+      parameters:
+        - name: window
+          in: query
+          schema: { type: string, enum: [24h, 7d], default: 24h }
+      responses:
+        "200":
+          description: Fleet totals, one bucket per interval, and per-screen strips
+        "422": { description: Unsupported window }
   /api/v1/activity/proof-of-play:
     get:
       summary: List Player-confirmed playback sessions

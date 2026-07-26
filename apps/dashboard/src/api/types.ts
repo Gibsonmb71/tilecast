@@ -378,6 +378,46 @@ export type ReliabilityStatus = {
   selfTestCompletedAt?: string;
   powerAssist: PowerAssistResults;
 };
+export type UptimeWindow = "24h" | "7d";
+/** A screen spends every measured second in exactly one of these states. */
+export type UptimeState = "up" | "impaired" | "down" | "unknown";
+export type UptimeBucket = {
+  start: string;
+  upPercent: number;
+  impairedPercent: number;
+  downPercent: number;
+  unknownPercent: number;
+  uptimePercent: number | null;
+  screensDown: number;
+};
+export type UptimeScreen = {
+  screenId: string;
+  screenName: string;
+  uptimePercent: number | null;
+  trackedSeconds: number;
+  upSeconds: number;
+  impairedSeconds: number;
+  downSeconds: number;
+  buckets: UptimeState[];
+};
+export type UptimeReport = {
+  range: { from: string; to: string };
+  window: UptimeWindow;
+  windowLabel: string;
+  bucketSeconds: number;
+  screensTracked: number;
+  screensWithDowntime: number;
+  trackedSeconds: number;
+  upSeconds: number;
+  impairedSeconds: number;
+  downSeconds: number;
+  /** Null until at least one screen has recorded state in the window. */
+  uptimePercent: number | null;
+  previousUptimePercent: number | null;
+  buckets: UptimeBucket[];
+  screens: UptimeScreen[];
+};
+
 export type PowerAssistResults = {
   deviceSleep: string;
   tvStandby: string;
