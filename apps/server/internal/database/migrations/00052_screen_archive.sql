@@ -73,6 +73,7 @@ SET state='cancelled', completed_at=COALESCE(completed_at, now()), updated_at=no
 WHERE screen_id IN (SELECT id FROM screens WHERE archived_at IS NOT NULL)
   AND state NOT IN ('succeeded','failed','cancelled','incompatible','already_current');
 
+-- +goose StatementBegin
 CREATE FUNCTION reject_archived_screen_reference() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
@@ -85,6 +86,7 @@ BEGIN
     RETURN NEW;
 END;
 $$;
+-- +goose StatementEnd
 
 CREATE TRIGGER screen_group_memberships_reject_archived
     BEFORE INSERT OR UPDATE ON screen_group_memberships
