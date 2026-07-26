@@ -991,7 +991,11 @@ export function PlayerUpdatesPanel({
               <Button variant="quiet" onClick={() => setConfirmDeploy(false)}>
                 Cancel
               </Button>
-              <Button variant="primary" onClick={() => deploy.mutate()}>
+              <Button
+                variant="primary"
+                disabled={deploy.isPending}
+                onClick={() => deploy.mutate()}
+              >
                 <Rocket size={16} aria-hidden="true" />
                 Deploy update
               </Button>
