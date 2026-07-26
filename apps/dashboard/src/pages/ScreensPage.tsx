@@ -12,17 +12,22 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CircleAlert,
+  CircleCheck,
   ChevronDown,
   ChevronRight,
   Grid2X2,
   Link2,
   List,
+  MapPin,
   MoreHorizontal,
   Monitor,
   Pencil,
   RefreshCw,
+  ShieldAlert,
   ShieldOff,
   Search,
+  SlidersHorizontal,
+  TriangleAlert,
   Wifi,
   WifiOff,
 } from "lucide-react";
@@ -141,7 +146,7 @@ function LocationPicker({
   return (
     <label className="field">
       <span className="field__label">Location (optional)</span>
-      <select
+      <Select
         value={value ?? ""}
         onChange={(event) => onChange(event.target.value || undefined)}
       >
@@ -154,7 +159,7 @@ function LocationPicker({
               : ""}
           </option>
         ))}
-      </select>
+      </Select>
       {selected && formatLocationAddress(selected) && (
         <small>{formatLocationAddress(selected)}</small>
       )}
@@ -211,7 +216,12 @@ export function ScreensPage() {
     <div className="screens-page">
       <PageHeader
         title="Screens"
-        description="Pair and monitor Android TV, Google TV, and Fire TV players."
+        description="Pair and monitor the players driving every screen in this installation."
+        actions={
+          manageable && (
+            <EmergencyTakeoverAction screens={screens.data?.items ?? []} />
+          )
+        }
       />
       <nav className="screen-primary-tabs" aria-label="Screen management">
         <Link to="/screens" aria-current="page">
@@ -219,10 +229,7 @@ export function ScreensPage() {
         </Link>
         <Link to="/groups">Sync groups</Link>
       </nav>
-      <EmergencyPanel
-        screens={screens.data?.items ?? []}
-        canManage={manageable}
-      />
+      <ActiveEmergencyBanners canManage={manageable} />
       {screens.isError && (
         <div className="notice notice--error">{screens.error.message}</div>
       )}
@@ -245,13 +252,78 @@ export function ScreensPage() {
   );
 }
 
-function EmergencyPanel({
-  screens,
-  canManage,
-}: {
-  screens: Screen[];
-  canManage: boolean;
-}) {
+const useEmergencies = () =>
+  useQuery({
+    queryKey: ["emergencies"],
+    queryFn: api.emergencies,
+    refetchInterval: 10_000,
+  });
+
+/* An emergency takeover is rare, high-impact, and irreversible from the player's
+   point of view, so it stays a quiet header action until one is actually running.
+   While a takeover is active the banner below becomes the loudest thing on the
+   page, which is the only time the danger treatment is truthful. */
+function ActiveEmergencyBanners({ canManage }: { canManage: boolean }) {
+  const auth = useAuth();
+  const queryClient = useQueryClient();
+  const emergencies = useEmergencies();
+  const cancel = useMutation({
+    mutationFn: (id: string) =>
+      api.cancelEmergency(
+        id,
+        prompt("Optional cancellation reason") ?? "",
+        auth.status?.csrfToken ?? "",
+      ),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["emergencies"] }),
+  });
+  const active = (emergencies.data?.items ?? []).filter(
+    (item) => item.status === "active",
+  );
+  if (active.length === 0) return null;
+  return (
+    <div className="emergency-banners">
+      {active.map((item) => (
+        <section className="emergency-banner" role="status" key={item.id}>
+          <span className="emergency-banner__icon" aria-hidden="true">
+            <ShieldAlert size={18} />
+          </span>
+          <div className="emergency-banner__copy">
+            <strong>Emergency takeover active — {item.name}</strong>
+            <p>
+              {item.playlistName} is overriding scheduled and fallback content
+              until {new Date(item.expiresAt).toLocaleString()}.
+            </p>
+            <ul className="emergency-banner__counts">
+              <li>{item.activeCount} playing</li>
+              <li>{item.preparingCount} preparing</li>
+              <li>{item.failedCount} failed</li>
+              <li>{item.affectedCount} targeted</li>
+            </ul>
+          </div>
+          {canManage && (
+            <button
+              className="button button--danger"
+              type="button"
+              onClick={() => {
+                if (
+                  confirm(
+                    "Cancel this takeover and restore current scheduled or fallback playback?",
+                  )
+                )
+                  cancel.mutate(item.id);
+              }}
+            >
+              End takeover
+            </button>
+          )}
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function EmergencyTakeoverAction({ screens }: { screens: Screen[] }) {
   const auth = useAuth();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -260,25 +332,24 @@ function EmergencyPanel({
   const [screenIds, setScreenIds] = useState<string[]>([]);
   const [groupIds, setGroupIds] = useState<string[]>([]);
   const [minutes, setMinutes] = useState(60);
-  const emergencies = useQuery({
-    queryKey: ["emergencies"],
-    queryFn: api.emergencies,
-    refetchInterval: 10_000,
-  });
+  const emergencies = useEmergencies();
+  const activeCount = (emergencies.data?.items ?? []).filter(
+    (item) => item.status === "active",
+  ).length;
   const playlists = useQuery({
     queryKey: ["playlists", "emergency"],
     queryFn: () => api.playlists(),
-    enabled: canManage && open,
+    enabled: open,
   });
   const groups = useQuery({
     queryKey: ["screen-groups", "emergency"],
     queryFn: () => api.screenGroups(),
-    enabled: canManage && open,
+    enabled: open,
   });
   const runtimeSettings = useQuery({
     queryKey: ["settings", "emergency-defaults"],
     queryFn: api.settings,
-    enabled: canManage && open,
+    enabled: open,
   });
   const activate = useMutation({
     mutationFn: (password: string) =>
@@ -303,64 +374,61 @@ function EmergencyPanel({
       await queryClient.invalidateQueries({ queryKey: ["emergencies"] });
     },
   });
-  const cancel = useMutation({
-    mutationFn: (id: string) =>
-      api.cancelEmergency(
-        id,
-        prompt("Optional cancellation reason") ?? "",
-        auth.status?.csrfToken ?? "",
-      ),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ["emergencies"] }),
-  });
+  const offlineSelected = screens.filter(
+    (item) => screenIds.includes(item.id) && item.status !== "online",
+  ).length;
   return (
-    <section className="detail-card emergency-panel">
-      <header>
-        <div>
-          <h3>Emergency takeover</h3>
-          <p>
-            Temporarily override schedules and fallback content on selected
-            screens.
-          </p>
-        </div>
-        {canManage && (
-          <button
-            className="button button--danger"
-            onClick={() => setOpen(!open)}
-          >
-            Emergency takeover
-          </button>
+    <>
+      <button
+        className="button button--quiet emergency-trigger"
+        type="button"
+        aria-haspopup="dialog"
+        onClick={() => setOpen(true)}
+      >
+        <ShieldAlert size={16} aria-hidden="true" />
+        Emergency takeover
+        {activeCount > 0 && (
+          <span className="emergency-trigger__count">{activeCount} active</span>
         )}
-      </header>
-      {open && (
+      </button>
+      <Dialog
+        open={open}
+        title="Emergency takeover"
+        className="emergency-dialog"
+        onClose={() => setOpen(false)}
+      >
+        <p className="emergency-dialog__lede">
+          Temporarily override schedules and fallback content on the selected
+          screens. Existing overlapping takeovers are replaced.
+        </p>
         <div className="emergency-form">
-          <label>
-            Name
+          <label className="field">
+            <span className="field__label">Takeover name</span>
             <input
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(event) => setName(event.target.value)}
               maxLength={180}
             />
           </label>
-          <label>
-            Playlist
+          <label className="field">
+            <span className="field__label">Playlist</span>
             <Select
               value={playlistId}
-              onChange={(e) => setPlaylistId(e.target.value)}
+              onChange={(event) => setPlaylistId(event.target.value)}
             >
               <option value="">Select playlist</option>
-              {playlists.data?.items?.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
+              {playlists.data?.items?.map((playlist) => (
+                <option key={playlist.id} value={playlist.id}>
+                  {playlist.name}
                 </option>
               ))}
             </Select>
           </label>
-          <label>
-            Expires in
+          <label className="field">
+            <span className="field__label">Expires in</span>
             <Select
               value={minutes}
-              onChange={(e) => setMinutes(Number(e.target.value))}
+              onChange={(event) => setMinutes(Number(event.target.value))}
             >
               <option value={15}>15 minutes</option>
               <option value={60}>1 hour</option>
@@ -368,118 +436,106 @@ function EmergencyPanel({
               <option value={1440}>24 hours</option>
             </Select>
           </label>
-          <fieldset>
+          <fieldset className="emergency-form__targets">
             <legend>Target screens</legend>
-            {screens.map((s) => (
-              <label key={s.id}>
-                <input
-                  type="checkbox"
-                  checked={screenIds.includes(s.id)}
-                  onChange={(e) =>
-                    setScreenIds((ids) =>
-                      e.target.checked
-                        ? [...ids, s.id]
-                        : ids.filter((id) => id !== s.id),
-                    )
-                  }
-                />
-                {s.name} · {s.status}
-              </label>
-            ))}
+            <div>
+              {screens.map((item) => (
+                <label className="checkbox-control" key={item.id}>
+                  <input
+                    type="checkbox"
+                    checked={screenIds.includes(item.id)}
+                    onChange={(event) =>
+                      setScreenIds((ids) =>
+                        event.target.checked
+                          ? [...ids, item.id]
+                          : ids.filter((id) => id !== item.id),
+                      )
+                    }
+                  />
+                  <span>
+                    {item.name}
+                    <small>{statusLabel(item.status)}</small>
+                  </span>
+                </label>
+              ))}
+            </div>
           </fieldset>
-          <fieldset>
+          <fieldset className="emergency-form__targets">
             <legend>Target sync groups</legend>
-            {groups.data?.items?.map((g) => (
-              <label key={g.id}>
-                <input
-                  type="checkbox"
-                  checked={groupIds.includes(g.id)}
-                  onChange={(e) =>
-                    setGroupIds((ids) =>
-                      e.target.checked
-                        ? [...ids, g.id]
-                        : ids.filter((id) => id !== g.id),
-                    )
-                  }
-                />
-                {g.name} · {g.membershipCount} screens
-              </label>
-            ))}
+            <div>
+              {groups.data?.items?.map((group) => (
+                <label className="checkbox-control" key={group.id}>
+                  <input
+                    type="checkbox"
+                    checked={groupIds.includes(group.id)}
+                    onChange={(event) =>
+                      setGroupIds((ids) =>
+                        event.target.checked
+                          ? [...ids, group.id]
+                          : ids.filter((id) => id !== group.id),
+                      )
+                    }
+                  />
+                  <span>
+                    {group.name}
+                    <small>{group.membershipCount} screens</small>
+                  </span>
+                </label>
+              ))}
+            </div>
           </fieldset>
-          <p>
-            {screenIds.length} directly selected screen
-            {screenIds.length === 1 ? "" : "s"}; {groupIds.length} sync group
-            {groupIds.length === 1 ? "" : "s"};{" "}
-            {
-              screens.filter(
-                (s) => screenIds.includes(s.id) && s.status !== "online",
-              ).length
-            }{" "}
-            selected screens currently offline.
-          </p>
-          <button
-            className="button button--danger"
-            disabled={
-              !name ||
-              !playlistId ||
-              (screenIds.length === 0 && groupIds.length === 0) ||
-              activate.isPending
-            }
-            onClick={() => {
-              const requiresPassword = Boolean(
-                runtimeSettings.data?.values[
-                  "emergency.reauthentication_required"
-                ],
-              );
-              const password = requiresPassword
-                ? (prompt("Confirm your current password") ?? "")
-                : "";
-              if (requiresPassword && !password) return;
-              if (
-                confirm(
-                  `Activate the selected playlist for these targets? Existing overlapping emergencies will be replaced.`,
-                )
-              )
-                activate.mutate(password);
-            }}
-          >
-            Activate emergency takeover
-          </button>
         </div>
-      )}
-      {(emergencies.data?.items ?? [])
-        .filter((e) => e.status === "active")
-        .map((e) => (
-          <div className="emergency-row" key={e.id}>
-            <span>
-              <strong>{e.name}</strong>
-              <small>
-                {e.playlistName} · expires{" "}
-                {new Date(e.expiresAt).toLocaleString()}
-              </small>
-            </span>
-            <span>
-              {e.activeCount} active · {e.preparingCount} preparing ·{" "}
-              {e.failedCount} failed · {e.affectedCount} total
-            </span>
-            {canManage && (
-              <button
-                className="button button--danger-quiet"
-                onClick={() => {
-                  if (
-                    confirm(
-                      "Cancel this takeover and restore current scheduled or fallback playback?",
-                    )
+        <footer className="emergency-dialog__footer">
+          <p>
+            {screenIds.length} screen{screenIds.length === 1 ? "" : "s"} and{" "}
+            {groupIds.length} sync group{groupIds.length === 1 ? "" : "s"}{" "}
+            selected
+            {offlineSelected > 0
+              ? ` · ${offlineSelected} selected screen${offlineSelected === 1 ? " is" : "s are"} not online`
+              : ""}
+            .
+          </p>
+          <div className="emergency-dialog__actions">
+            <button
+              className="button button--quiet"
+              type="button"
+              onClick={() => setOpen(false)}
+            >
+              Cancel
+            </button>
+            <button
+              className="button button--danger"
+              type="button"
+              disabled={
+                !name ||
+                !playlistId ||
+                (screenIds.length === 0 && groupIds.length === 0) ||
+                activate.isPending
+              }
+              onClick={() => {
+                const requiresPassword = Boolean(
+                  runtimeSettings.data?.values[
+                    "emergency.reauthentication_required"
+                  ],
+                );
+                const password = requiresPassword
+                  ? (prompt("Confirm your current password") ?? "")
+                  : "";
+                if (requiresPassword && !password) return;
+                if (
+                  confirm(
+                    "Activate the selected playlist for these targets? Existing overlapping emergencies will be replaced.",
                   )
-                    cancel.mutate(e.id);
-                }}
-              >
-                Cancel
-              </button>
-            )}
+                )
+                  activate.mutate(password);
+              }}
+            >
+              {activate.isPending ? "Activating…" : "Activate takeover"}
+            </button>
           </div>
-        ))}
-    </section>
+        </footer>
+      </Dialog>
+    </>
   );
 }
 
@@ -621,24 +677,62 @@ export function ScreenListContent({
     () => buildScreenGroups(filtered, groupBy, sort),
     [filtered, groupBy, sort],
   );
-  const activeFilters: [string, () => void][] = [];
-  if (search) activeFilters.push(["Search", () => setSearch("")]);
-  if (status) activeFilters.push([statusLabel(status), () => setStatus("")]);
+  // Chips name their facet as well as their value so a lone "Landscape" or a bare
+  // search term never leaves the reader guessing which control produced it.
+  const activeFilters: { facet: string; value: string; remove: () => void }[] =
+    [];
+  if (search)
+    activeFilters.push({
+      facet: "Search",
+      value: `“${search.trim()}”`,
+      remove: () => setSearch(""),
+    });
+  if (status)
+    activeFilters.push({
+      facet: "Status",
+      value: statusLabel(status),
+      remove: () => setStatus(""),
+    });
   if (location)
-    activeFilters.push([
-      locationItems.find((item) => item.id === location)?.name ?? "Location",
-      () => setLocation(""),
-    ]);
+    activeFilters.push({
+      facet: "Location",
+      value:
+        locationItems.find((item) => item.id === location)?.name ?? "Selected",
+      remove: () => setLocation(""),
+    });
   if (platform)
-    activeFilters.push([platformLabel(platform), () => setPlatform("")]);
+    activeFilters.push({
+      facet: "Platform",
+      value: platformLabel(platform),
+      remove: () => setPlatform(""),
+    });
   if (playing)
-    activeFilters.push([
-      playing === "nothing" ? "Nothing assigned" : playing,
-      () => setPlaying(""),
-    ]);
-  if (syncGroup) activeFilters.push(["Sync group", () => setSyncGroup("")]);
-  if (orientation) activeFilters.push([orientation, () => setOrientation("")]);
-  if (update) activeFilters.push(["Update status", () => setUpdate("")]);
+    activeFilters.push({
+      facet: "Now playing",
+      value: nowPlayingLabel(playing),
+      remove: () => setPlaying(""),
+    });
+  if (syncGroup)
+    activeFilters.push({
+      facet: "Sync group",
+      value: syncGroupFilterLabel(syncGroup, screens),
+      remove: () => setSyncGroup(""),
+    });
+  if (orientation)
+    activeFilters.push({
+      facet: "Orientation",
+      value: orientation === "portrait" ? "Portrait" : "Landscape",
+      remove: () => setOrientation(""),
+    });
+  if (update)
+    activeFilters.push({
+      facet: "Software update",
+      value: updateLabel(update),
+      remove: () => setUpdate(""),
+    });
+  const advancedFilterCount = [syncGroup, orientation, update].filter(
+    Boolean,
+  ).length;
   const clearFilters = () => {
     setSearch("");
     setStatus("");
@@ -758,200 +852,234 @@ export function ScreenListContent({
     );
   return (
     <section className="screen-workspace" aria-label="Paired screens">
-      <div className="screen-summary" aria-label="Screen summary">
-        <span>
-          <strong>{screens.length}</strong> screens
-        </span>
-        <button type="button" onClick={() => setStatus("online")}>
-          <strong>
-            {screens.filter((item) => item.status === "online").length}
-          </strong>{" "}
-          online
-        </button>
-        <button type="button" onClick={() => setStatus("attention")}>
-          <strong>{screens.filter(needsAttention).length}</strong> need
-          attention
-        </button>
-        <button type="button" onClick={() => setGroupBy("location")}>
-          <strong>
-            {
-              new Set(screens.map((item) => item.locationId).filter(Boolean))
-                .size
-            }
-          </strong>{" "}
-          locations
-        </button>
-      </div>
-      <div className="screen-toolbar">
-        <label className="screen-search">
-          <Search size={16} />
-          <span className="sr-only">Search screens</span>
-          <input
-            type="search"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search screens, rooms, locations, or content"
-          />
-        </label>
-        <FilterSelect label="Status" value={status} onChange={setStatus}>
-          <option value="">All statuses</option>
-          <option value="online">Online screens</option>
-          <option value="offline">Offline screens</option>
-          <option value="attention">Needs attention</option>
-          <option value="updating">Updating</option>
-          <option value="syncing">Syncing</option>
-        </FilterSelect>
-        <FilterSelect label="Location" value={location} onChange={setLocation}>
-          <option value="">All locations</option>
-          {locationItems.map((item) => (
-            <option value={item.id} key={item.id}>
-              {item.name}
-            </option>
-          ))}
-        </FilterSelect>
-        <FilterSelect label="Platform" value={platform} onChange={setPlatform}>
-          <option value="">All platforms</option>
-          {[...new Set(screens.map((item) => item.platform))]
-            .sort()
-            .map((item) => (
-              <option value={item} key={item}>
-                {platformLabel(item)}
+      <ScreenSummary
+        screens={screens}
+        status={status}
+        groupBy={groupBy}
+        onStatus={setStatus}
+        onGroupByLocation={() =>
+          setGroupBy(groupBy === "location" ? "none" : "location")
+        }
+      />
+      {/* One controls block, three deliberate bands: filters on the left, presentation
+          utilities right-aligned, then the active-filter chips underneath. Filtering and
+          presentation used to be interleaved, which is why the row order matters here. */}
+      <div className="screen-controls">
+        <div
+          className="screen-toolbar"
+          role="group"
+          aria-label="Filter screens"
+        >
+          <label className="screen-search">
+            <Search size={16} aria-hidden="true" />
+            <span className="visually-hidden">Filter screens</span>
+            <input
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Name, room, location, or content"
+            />
+          </label>
+          <FilterSelect label="Status" value={status} onChange={setStatus}>
+            <option value="">All statuses</option>
+            <option value="online">Online</option>
+            <option value="offline">Offline</option>
+            <option value="attention">Needs attention</option>
+            <option value="updating">Updating</option>
+            <option value="syncing">Syncing</option>
+          </FilterSelect>
+          <FilterSelect
+            label="Location"
+            value={location}
+            onChange={setLocation}
+          >
+            <option value="">All locations</option>
+            {locationItems.map((item) => (
+              <option value={item.id} key={item.id}>
+                {item.name}
               </option>
             ))}
-        </FilterSelect>
-        <FilterSelect
-          label="Currently playing"
-          value={playing}
-          onChange={setPlaying}
-        >
-          <option value="">Any content</option>
-          <option value="presentation">Presentation</option>
-          <option value="playlist">Playlist</option>
-          <option value="nothing">Nothing assigned</option>
-        </FilterSelect>
-        <details className="screen-more-filters">
-          <summary>More filters</summary>
-          <div>
-            <FilterSelect
-              label="Sync group"
-              value={syncGroup}
-              onChange={setSyncGroup}
-            >
-              <option value="">All screens</option>
-              <option value="any">In any sync group</option>
-              <option value="none">Not in a sync group</option>
-              {[
-                ...new Map(
-                  screens
-                    .filter((item) => item.syncGroupId)
-                    .map((item) => [item.syncGroupId, item.syncGroupName]),
-                ).entries(),
-              ].map(([id, name]) => (
-                <option value={id} key={id}>
-                  {name}
+          </FilterSelect>
+          <FilterSelect
+            label="Platform"
+            value={platform}
+            onChange={setPlatform}
+          >
+            <option value="">All platforms</option>
+            {[...new Set(screens.map((item) => item.platform))]
+              .sort()
+              .map((item) => (
+                <option value={item} key={item}>
+                  {platformLabel(item)}
                 </option>
               ))}
-            </FilterSelect>
-            <FilterSelect
-              label="Orientation"
-              value={orientation}
-              onChange={setOrientation}
+          </FilterSelect>
+          <FilterSelect
+            label="Now playing"
+            value={playing}
+            onChange={setPlaying}
+          >
+            <option value="">Any content</option>
+            <option value="presentation">Presentation</option>
+            <option value="playlist">Playlist</option>
+            <option value="nothing">Nothing assigned</option>
+          </FilterSelect>
+          <details className="screen-more-filters">
+            <summary>
+              <SlidersHorizontal size={15} aria-hidden="true" />
+              More filters
+              {advancedFilterCount > 0 && (
+                <span className="screen-more-filters__count">
+                  {advancedFilterCount}
+                </span>
+              )}
+            </summary>
+            <div>
+              <FilterSelect
+                label="Sync group"
+                value={syncGroup}
+                onChange={setSyncGroup}
+                block
+              >
+                <option value="">All screens</option>
+                <option value="any">In any sync group</option>
+                <option value="none">Not in a sync group</option>
+                {[
+                  ...new Map(
+                    screens
+                      .filter((item) => item.syncGroupId)
+                      .map((item) => [item.syncGroupId, item.syncGroupName]),
+                  ).entries(),
+                ].map(([id, name]) => (
+                  <option value={id} key={id}>
+                    {name}
+                  </option>
+                ))}
+              </FilterSelect>
+              <FilterSelect
+                label="Orientation"
+                value={orientation}
+                onChange={setOrientation}
+                block
+              >
+                <option value="">Any orientation</option>
+                <option value="landscape">Landscape</option>
+                <option value="portrait">Portrait</option>
+              </FilterSelect>
+              <FilterSelect
+                label="Software update"
+                value={update}
+                onChange={setUpdate}
+                block
+              >
+                <option value="">Any update status</option>
+                <option value="current">Current</option>
+                <option value="downloading">Downloading</option>
+                <option value="attention">Needs attention</option>
+              </FilterSelect>
+            </div>
+          </details>
+        </div>
+        {activeFilters.length > 0 && (
+          <div className="screen-filter-chips">
+            <span className="screen-filter-chips__label">
+              {activeFilters.length} filter
+              {activeFilters.length === 1 ? "" : "s"} · {filtered.length} of{" "}
+              {screens.length} screens
+            </span>
+            {activeFilters.map((filter) => (
+              <button
+                type="button"
+                onClick={filter.remove}
+                key={filter.facet}
+                title={`Remove the ${filter.facet} filter`}
+              >
+                <span className="screen-filter-chips__facet">
+                  {filter.facet}
+                </span>
+                {filter.value}
+                <span aria-hidden="true">×</span>
+                <span className="visually-hidden">
+                  Remove {filter.facet} filter
+                </span>
+              </button>
+            ))}
+            <button
+              type="button"
+              className="screen-filter-clear"
+              onClick={clearFilters}
             >
-              <option value="">Any orientation</option>
-              <option value="landscape">Landscape</option>
-              <option value="portrait">Portrait</option>
-            </FilterSelect>
-            <FilterSelect
-              label="Software update"
-              value={update}
-              onChange={setUpdate}
-            >
-              <option value="">Any update status</option>
-              <option value="current">Current</option>
-              <option value="downloading">Downloading</option>
-              <option value="attention">Needs attention</option>
-            </FilterSelect>
-          </div>
-        </details>
-      </div>
-      {activeFilters.length > 0 && (
-        <div className="screen-filter-chips">
-          {activeFilters.map(([label, remove], index) => (
-            <button type="button" onClick={remove} key={`${label}-${index}`}>
-              {label} <span aria-hidden="true">×</span>
-              <span className="sr-only">Remove {label} filter</span>
+              Clear all
             </button>
-          ))}
-          <button
-            type="button"
-            className="screen-filter-clear"
-            onClick={clearFilters}
-          >
-            Clear all
-          </button>
-          <span>
-            {filtered.length} result{filtered.length === 1 ? "" : "s"}
-          </span>
-        </div>
-      )}
-      <div className="screen-view-controls">
-        <FilterSelect label="Group by" value={groupBy} onChange={setGroupBy}>
-          <option value="location">Group by location</option>
-          <option value="status">Group by status</option>
-          <option value="sync">Group by sync group</option>
-          <option value="none">No grouping</option>
-        </FilterSelect>
-        <FilterSelect label="Sort" value={sort} onChange={setSort}>
-          <option value="name-asc">Screen name · A–Z</option>
-          <option value="name-desc">Screen name · Z–A</option>
-          <option value="location-asc">Location · A–Z</option>
-          <option value="status-asc">Status</option>
-          <option value="contact-desc">Last contact · newest</option>
-          <option value="contact-asc">Last contact · oldest</option>
-          <option value="added-desc">Date added · newest</option>
-          <option value="platform-asc">Platform</option>
-        </FilterSelect>
+          </div>
+        )}
         <div
-          className="screen-view-switch"
+          className="screen-view-controls"
           role="group"
-          aria-label="Screen view"
+          aria-label="Presentation"
         >
-          <button
-            type="button"
-            aria-pressed={view === "table"}
-            onClick={() => setView("table")}
+          <FilterSelect label="Group by" value={groupBy} onChange={setGroupBy}>
+            <option value="location">Group by location</option>
+            <option value="status">Group by status</option>
+            <option value="sync">Group by sync group</option>
+            <option value="none">No grouping</option>
+          </FilterSelect>
+          <FilterSelect label="Sort" value={sort} onChange={setSort}>
+            <option value="name-asc">Screen name · A–Z</option>
+            <option value="name-desc">Screen name · Z–A</option>
+            <option value="location-asc">Location · A–Z</option>
+            <option value="status-asc">Status</option>
+            <option value="contact-desc">Last contact · newest</option>
+            <option value="contact-asc">Last contact · oldest</option>
+            <option value="added-desc">Date added · newest</option>
+            <option value="platform-asc">Platform</option>
+          </FilterSelect>
+          <div
+            className="screen-view-switch"
+            role="group"
+            aria-label="Screen view"
           >
-            <List size={16} /> Table
-          </button>
-          <button
-            type="button"
-            aria-pressed={view === "grid"}
-            onClick={() => setView("grid")}
-          >
-            <Grid2X2 size={16} /> Grid
-          </button>
+            <button
+              type="button"
+              aria-pressed={view === "table"}
+              onClick={() => setView("table")}
+            >
+              <List size={16} aria-hidden="true" /> Table
+            </button>
+            <button
+              type="button"
+              aria-pressed={view === "grid"}
+              onClick={() => setView("grid")}
+            >
+              <Grid2X2 size={16} aria-hidden="true" /> Previews
+            </button>
+          </div>
         </div>
       </div>
+      {view === "grid" && (
+        <p className="screen-results-hint">
+          Previews show the latest snapshot reported by each player and refresh
+          about every 30 seconds.
+        </p>
+      )}
       {selected.size > 0 && canManage && (
         <div className="screen-bulk-bar">
           <strong>{selected.size} selected</strong>
           <button type="button" onClick={() => void restartSelected()}>
             Restart
           </button>
-          <label>
-            <span className="sr-only">Change selected screens location</span>
-            <select
-              value={bulkLocation}
-              onChange={(event) => setBulkLocation(event.target.value)}
-            >
-              <option value="">Unassigned</option>
-              {locationItems.map((item) => (
-                <option value={item.id} key={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <FilterSelect
+            label="Move selected screens to location"
+            value={bulkLocation}
+            onChange={setBulkLocation}
+          >
+            <option value="">Unassigned</option>
+            {locationItems.map((item) => (
+              <option value={item.id} key={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </FilterSelect>
           <button type="button" onClick={() => void changeSelectedLocation()}>
             Change location
           </button>
@@ -1003,6 +1131,21 @@ export function ScreenListContent({
               <section className="screen-location-group" key={group.key}>
                 {groupBy !== "none" && (
                   <header className="screen-group-header">
+                    {/* The disclosure comes first so the chevron reads as "open this
+                        group" rather than as a menu or a sort control on the title. */}
+                    <button
+                      className="screen-group-header__disclosure"
+                      type="button"
+                      aria-expanded={!isCollapsed}
+                      aria-label={`${isCollapsed ? "Expand" : "Collapse"} ${group.label}`}
+                      onClick={() => toggleCollapsed(group.key)}
+                    >
+                      {isCollapsed ? (
+                        <ChevronRight size={16} aria-hidden="true" />
+                      ) : (
+                        <ChevronDown size={16} aria-hidden="true" />
+                      )}
+                    </button>
                     {canManage && (
                       <input
                         type="checkbox"
@@ -1018,36 +1161,35 @@ export function ScreenListContent({
                         }}
                       />
                     )}
-                    <button
-                      type="button"
-                      aria-label={`${isCollapsed ? "Expand" : "Collapse"} ${group.label}`}
-                      onClick={() => toggleCollapsed(group.key)}
-                    >
-                      {isCollapsed ? (
-                        <ChevronRight size={16} />
-                      ) : (
-                        <ChevronDown size={16} />
-                      )}
-                    </button>
-                    <span>
+                    <span className="screen-group-header__title">
                       <strong>{group.label}</strong>
+                      <span className="screen-group-header__count">
+                        {group.screens.length}
+                        <span className="visually-hidden">
+                          {" "}
+                          screen{group.screens.length === 1 ? "" : "s"}
+                        </span>
+                      </span>
                       {group.description && <small>{group.description}</small>}
                     </span>
-                    <span>
-                      {group.screens.length} screen
-                      {group.screens.length === 1 ? "" : "s"}
-                    </span>
+                    <GroupHealth screens={group.screens} />
                   </header>
                 )}
                 {!isCollapsed && view === "table" && (
                   <div className="screen-table">
+                    {/* "Actions" and the selection column carry visually hidden
+                        labels: their text used to be wider than the columns that
+                        hold them, which clipped the heading at desktop width. */}
                     <div className="screen-table__header">
-                      <span aria-hidden="true" />
+                      <span>
+                        <span className="visually-hidden">Select</span>
+                      </span>
                       <span>Screen</span>
                       <span>Now playing</span>
                       <span>Status</span>
-                      <span>Last contact</span>
-                      <span>Actions</span>
+                      <span>
+                        <span className="visually-hidden">Actions</span>
+                      </span>
                     </div>
                     {group.screens.map((screen) => (
                       <ScreenTableRow
@@ -1055,6 +1197,7 @@ export function ScreenListContent({
                         screen={screen}
                         selected={selected.has(screen.id)}
                         canManage={canManage}
+                        showLocation={groupBy !== "location"}
                         onSelect={(checked) => {
                           const next = new Set(selected);
                           if (checked) next.add(screen.id);
@@ -1075,6 +1218,7 @@ export function ScreenListContent({
                         screen={screen}
                         selected={selected.has(screen.id)}
                         canManage={canManage}
+                        showLocation={groupBy !== "location"}
                         onSelect={(checked) => {
                           const next = new Set(selected);
                           if (checked) next.add(screen.id);
@@ -1140,25 +1284,144 @@ function FilterSelect({
   label,
   value,
   onChange,
+  block,
   children,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
+  block?: boolean;
   children: ReactNode;
 }) {
   return (
-    <label className="screen-filter-select">
-      <span className="sr-only">{label}</span>
-      <select
-        aria-label={label}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      >
-        {children}
-      </select>
-    </label>
+    <Select
+      className={`screen-filter-select${block ? " screen-filter-select--block" : ""}`}
+      aria-label={label}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+    >
+      {children}
+    </Select>
   );
+}
+
+function ScreenSummary({
+  screens,
+  status,
+  groupBy,
+  onStatus,
+  onGroupByLocation,
+}: {
+  screens: Screen[];
+  status: string;
+  groupBy: string;
+  onStatus: (value: string) => void;
+  onGroupByLocation: () => void;
+}) {
+  const online = screens.filter((item) => item.status === "online").length;
+  const attention = screens.filter(needsAttention).length;
+  const locations = new Set(
+    screens.map((item) => item.locationId).filter(Boolean),
+  ).size;
+  return (
+    <div className="screen-summary" role="group" aria-label="Fleet summary">
+      <span className="screen-stat">
+        <Monitor size={15} aria-hidden="true" />
+        <strong>{screens.length}</strong>
+        <span>Screens</span>
+      </span>
+      <button
+        className="screen-stat screen-stat--online"
+        type="button"
+        aria-pressed={status === "online"}
+        onClick={() => onStatus(status === "online" ? "" : "online")}
+      >
+        <Wifi size={15} aria-hidden="true" />
+        <strong>{online}</strong>
+        <span>Online</span>
+      </button>
+      <button
+        className={`screen-stat screen-stat--${attention > 0 ? "attention" : "healthy"}`}
+        type="button"
+        aria-pressed={status === "attention"}
+        onClick={() => onStatus(status === "attention" ? "" : "attention")}
+      >
+        {attention > 0 ? (
+          <>
+            <CircleAlert size={15} aria-hidden="true" />
+            <strong>{attention}</strong>
+            <span>{attention === 1 ? "needs" : "need"} attention</span>
+          </>
+        ) : (
+          <>
+            <CircleCheck size={15} aria-hidden="true" />
+            <span>No issues</span>
+          </>
+        )}
+      </button>
+      <button
+        className="screen-stat"
+        type="button"
+        aria-pressed={groupBy === "location"}
+        onClick={onGroupByLocation}
+      >
+        <MapPin size={15} aria-hidden="true" />
+        <strong>{locations}</strong>
+        <span>Location{locations === 1 ? "" : "s"}</span>
+      </button>
+    </div>
+  );
+}
+
+function GroupHealth({ screens }: { screens: Screen[] }) {
+  const online = screens.filter((item) => item.status === "online").length;
+  const attention = screens.filter(needsAttention).length;
+  const syncGroups = new Set(
+    screens.map((item) => item.syncGroupName).filter(Boolean),
+  );
+  return (
+    <span className="screen-group-header__health">
+      <span
+        className={`screen-group-health screen-group-health--${online === screens.length ? "healthy" : "partial"}`}
+      >
+        {online} of {screens.length} online
+      </span>
+      {attention > 0 && (
+        <span className="screen-group-health screen-group-health--attention">
+          <CircleAlert size={13} aria-hidden="true" />
+          {attention} {attention === 1 ? "needs" : "need"} attention
+        </span>
+      )}
+      {syncGroups.size === 1 && (
+        <span className="screen-group-health">
+          <Link2 size={13} aria-hidden="true" />
+          {[...syncGroups][0]}
+        </span>
+      )}
+    </span>
+  );
+}
+
+function nowPlayingLabel(value: string) {
+  if (value === "nothing") return "Nothing assigned";
+  if (value === "playlist") return "Playlist";
+  if (value === "presentation") return "Presentation";
+  return value;
+}
+
+function syncGroupFilterLabel(value: string, screens: Screen[]) {
+  if (value === "any") return "In any sync group";
+  if (value === "none") return "Not in a sync group";
+  return (
+    screens.find((item) => item.syncGroupId === value)?.syncGroupName ??
+    "Selected"
+  );
+}
+
+function updateLabel(value: string) {
+  if (value === "current") return "Current";
+  if (value === "attention") return "Needs attention";
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 function platformLabel(value: string) {
@@ -1266,10 +1529,22 @@ function buildScreenGroups(
   );
 }
 
+function screenMetadata(screen: Screen, showLocation: boolean) {
+  return [
+    showLocation ? screen.location : "",
+    roomLabel(screen),
+    platformLabel(screen.platform),
+    `${screen.screenWidth}×${screen.screenHeight}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 function ScreenTableRow({
   screen,
   selected,
   canManage,
+  showLocation,
   onSelect,
   onOpen,
   onMenu,
@@ -1277,6 +1552,7 @@ function ScreenTableRow({
   screen: Screen;
   selected: boolean;
   canManage: boolean;
+  showLocation: boolean;
   onSelect: (checked: boolean) => void;
   onOpen: () => void;
   onMenu: (event: ReactMouseEvent<HTMLElement>) => void;
@@ -1297,27 +1573,31 @@ function ScreenTableRow({
           />
         )}
       </span>
-      <Link
-        className="screen-name"
-        to={`/screens/${screen.id}`}
-        onClick={(event) => event.stopPropagation()}
-      >
-        <span className="screen-icon">
-          <Monitor size={17} />
+      {/* Only the name is a link. The metadata line used to sit inside the anchor,
+          so location, platform, and resolution all rendered underlined as if each
+          were separately clickable. */}
+      <span className="screen-identity">
+        <span className="screen-icon" aria-hidden="true">
+          <Monitor size={16} />
         </span>
-        <span>
-          <strong>{screen.name}</strong>
-          <small>
-            {[
-              roomLabel(screen),
-              `${platformLabel(screen.platform)} · ${screen.screenWidth}×${screen.screenHeight}`,
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          </small>
+        <span className="screen-identity__copy">
+          <Link
+            className="screen-name"
+            to={`/screens/${screen.id}`}
+            onClick={(event) => event.stopPropagation()}
+          >
+            {screen.name}
+          </Link>
+          <small>{screenMetadata(screen, showLocation)}</small>
         </span>
-      </Link>
-      <span>
+        {screen.syncGroupName && (
+          <span className="screen-sync-chip">
+            <Link2 size={12} aria-hidden="true" />
+            {screen.syncGroupName}
+          </span>
+        )}
+      </span>
+      <span className="screen-row__playing">
         <strong>{screen.nowPlayingName || "Nothing assigned"}</strong>
         <small>
           {screen.nowPlayingName
@@ -1327,9 +1607,17 @@ function ScreenTableRow({
             : "No fallback content"}
         </small>
       </span>
-      <StatusLabel status={screen.status} />
-      <span>
-        <strong>{formatContact(screen.lastContactAt)}</strong>
+      {/* Status and last contact are one column: apart, each left a wide empty
+          cell and the reader had to join them up anyway. */}
+      <span className="screen-row__status">
+        <StatusLabel status={screen.status} />
+        <small>{formatContact(screen.lastContactAt)}</small>
+        {screen.updateError && (
+          <span className="screen-row__flag">
+            <TriangleAlert size={12} aria-hidden="true" />
+            Update failed
+          </span>
+        )}
       </span>
       <span
         className="screen-row__actions"
@@ -1351,6 +1639,7 @@ function ScreenGridCard({
   screen,
   selected,
   canManage,
+  showLocation,
   onSelect,
   onOpen,
   onMenu,
@@ -1358,6 +1647,7 @@ function ScreenGridCard({
   screen: Screen;
   selected: boolean;
   canManage: boolean;
+  showLocation: boolean;
   onSelect: (checked: boolean) => void;
   onOpen: () => void;
   onMenu: (event: ReactMouseEvent<HTMLElement>) => void;
@@ -1436,7 +1726,7 @@ function ScreenGridCard({
           <span>
             <strong>{screen.name}</strong>
             <small>
-              {[screen.location, roomLabel(screen)]
+              {[showLocation ? screen.location : "", roomLabel(screen)]
                 .filter(Boolean)
                 .join(" · ") || "Unassigned"}
             </small>
@@ -1451,11 +1741,17 @@ function ScreenGridCard({
         </header>
         <div className="screen-card__facts">
           <StatusLabel status={screen.status} />
-          <span>{screen.nowPlayingName || "Nothing assigned"}</span>
           <span>{formatContact(screen.lastContactAt)}</span>
         </div>
+        <dl className="screen-card__meta">
+          <dt>Now playing</dt>
+          <dd>{screen.nowPlayingName || "Nothing assigned"}</dd>
+        </dl>
         {screen.syncGroupName && (
-          <span className="screen-card__sync">{screen.syncGroupName}</span>
+          <span className="screen-card__sync">
+            <Link2 size={12} aria-hidden="true" />
+            {screen.syncGroupName}
+          </span>
         )}
       </div>
     </article>
@@ -1473,6 +1769,9 @@ function PendingPairings({
   return (
     <section className="pending-panel">
       <header>
+        <span className="pending-panel__icon" aria-hidden="true">
+          <RefreshCw size={16} />
+        </span>
         <div>
           <h3>Waiting for approval</h3>
           <p>
@@ -1480,7 +1779,6 @@ function PendingPairings({
             pairing.
           </p>
         </div>
-        <RefreshCw size={16} />
       </header>
       {requests.map((request) => (
         <div className="pending-row" key={request.id}>
@@ -1489,11 +1787,11 @@ function PendingPairings({
               {request.metadata.manufacturer} {request.metadata.model}
             </strong>
             <small>
-              {request.metadata.platform} · {request.metadata.screenWidth} ×{" "}
-              {request.metadata.screenHeight}
+              {platformLabel(request.metadata.platform)} ·{" "}
+              {request.metadata.screenWidth}×{request.metadata.screenHeight}
             </small>
           </span>
-          <span>
+          <span className="pending-row__expiry">
             Expires{" "}
             {new Date(request.expiresAt).toLocaleTimeString([], {
               hour: "numeric",
