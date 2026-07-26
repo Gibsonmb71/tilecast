@@ -18,6 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       android: ${{ steps.paths.outputs.android }}
+      linux: ${{ steps.paths.outputs.linux }}
       server: ${{ steps.paths.outputs.server }}
       dashboard: ${{ steps.paths.outputs.dashboard }}
       container: ${{ steps.paths.outputs.container }}
@@ -34,12 +35,14 @@ jobs:
           set -euo pipefail
 
           android=false
+          linux=false
           server=false
           dashboard=false
           container=false
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             android=true
+            linux=true
             server=true
             dashboard=true
             container=true
@@ -49,12 +52,20 @@ jobs:
                 apps/player-android/*|scripts/build-player-release.sh|scripts/extract-apksigner-sha256.sh)
                   android=true
                   ;;
+                apps/player-linux/*|scripts/build-linux-player-release.sh|scripts/verify-linux-player-release.mjs)
+                  linux=true
+                  ;;
                 apps/server/*)
                   server=true
                   container=true
                   ;;
-                apps/dashboard/*|packages/*|package.json|package-lock.json)
+                apps/dashboard/*|packages/*)
                   dashboard=true
+                  container=true
+                  ;;
+                package.json|package-lock.json)
+                  dashboard=true
+                  linux=true
                   container=true
                   ;;
                 deploy/docker/*)
@@ -62,6 +73,7 @@ jobs:
                   ;;
                 .github/workflows/*)
                   android=true
+                  linux=true
                   server=true
                   dashboard=true
                   container=true
@@ -72,6 +84,7 @@ jobs:
 
           {
             echo "android=$android"
+            echo "linux=$linux"
             echo "server=$server"
             echo "dashboard=$dashboard"
             echo "container=$container"
@@ -104,6 +117,37 @@ jobs:
           path: apps/player-android/app/build/test-results/testDebugUnitTest/*.xml
           reporter: java-junit
           fail-on-empty: false
+
+  linux_player_ci:
+    name: Linux Player release contract
+    needs: changes
+    if: needs.changes.outputs.linux == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run player:linux:test
+      - run: npm run player:linux:build
+      - name: Create test-only release signing keys
+        run: |
+          set -euo pipefail
+          openssl genpkey -algorithm Ed25519 -out "$RUNNER_TEMP/linux-update-private.pem"
+          openssl pkey \
+            -in "$RUNNER_TEMP/linux-update-private.pem" \
+            -pubout \
+            -out "$RUNNER_TEMP/linux-update-public.pem"
+      - name: Build and validate packaged release
+        env:
+          TILECAST_UPDATE_MANIFEST_PRIVATE_KEY: ${{ runner.temp }}/linux-update-private.pem
+          TILECAST_UPDATE_MANIFEST_PUBLIC_KEY_FILE: ${{ runner.temp }}/linux-update-public.pem
+          TILECAST_RELEASE_OUTPUT: ${{ runner.temp }}/linux-player-release
+          TILECAST_RELEASE_CHANNEL: stable
+          TILECAST_RELEASE_NOTES: Pull request release-contract validation
+        run: scripts/build-linux-player-release.sh
 
   server_ci:
     name: Server CI
@@ -208,6 +252,7 @@ jobs:
     needs:
       - changes
       - android_ci
+      - linux_player_ci
       - server_ci
       - dashboard_ci
       - container_ci
