@@ -338,6 +338,22 @@ code,
   padding: var(--tc-space-8);
 }
 
+.workspace__route {
+  animation: tc-route-enter 180ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+@keyframes tc-route-enter {
+  from {
+    opacity: 0.78;
+    transform: translateY(5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .layouts-header {
   display: flex;
   align-items: flex-start;
@@ -1205,7 +1221,8 @@ code,
   transition:
     background var(--tc-motion-fast),
     border-color var(--tc-motion-fast),
-    color var(--tc-motion-fast);
+    color var(--tc-motion-fast),
+    transform 100ms ease;
 }
 
 .button--compact {
@@ -1237,6 +1254,11 @@ code,
 
 .button--primary:active:not(:disabled) {
   background: var(--tc-button-primary-active-bg);
+}
+
+.button:active:not(:disabled),
+.icon-button:active:not(:disabled) {
+  transform: translateY(1px) scale(0.985);
 }
 
 .button--quiet {
@@ -1307,6 +1329,11 @@ code,
   background: var(--tc-button-secondary-bg);
   border-color: var(--tc-button-secondary-border);
   border-radius: var(--tc-radius-control);
+  transition:
+    color var(--tc-motion-fast),
+    background var(--tc-motion-fast),
+    border-color var(--tc-motion-fast),
+    transform 100ms ease;
 }
 
 .icon-button:hover:not(:disabled) {
@@ -1729,6 +1756,11 @@ label > .signal-select,
   height: 2px;
   content: "";
   background: transparent;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition:
+    background var(--tc-motion-fast),
+    transform 160ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 .view-tabs button:hover:not(:disabled),
@@ -1741,6 +1773,7 @@ label > .signal-select,
 .view-tabs button[aria-current="page"]::after,
 .view-tabs a[aria-current="page"]::after {
   background: var(--tc-action-primary);
+  transform: scaleX(1);
 }
 
 .view-tabs button:disabled {
@@ -2033,10 +2066,15 @@ tbody tr:hover {
   background: var(--tc-table-row-hover);
 }
 
+tbody tr {
+  transition: background var(--tc-motion-fast);
+}
+
 .dialog-backdrop,
 .modal-backdrop,
 .drawer-backdrop {
   background: var(--tc-overlay-scrim);
+  animation: tc-overlay-fade-in 140ms ease-out both;
 }
 
 .dialog,
@@ -2051,6 +2089,7 @@ tbody tr:hover {
 
 .dialog::backdrop {
   background: var(--tc-overlay-scrim);
+  animation: tc-overlay-fade-in 140ms ease-out both;
 }
 
 .dialog {
@@ -2061,6 +2100,7 @@ tbody tr:hover {
   overflow: auto;
   padding: var(--tc-space-6);
   border: 1px solid var(--tc-border-default);
+  animation: tc-overlay-rise-in 180ms cubic-bezier(0.2, 0, 0, 1) both;
 }
 
 .dialog > header {
@@ -2101,6 +2141,27 @@ tbody tr:hover {
   border: 0;
   border-left: 1px solid var(--tc-border-default);
   border-radius: 0;
+  animation: tc-drawer-enter 200ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+@keyframes tc-overlay-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes tc-overlay-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.992);
+  }
+}
+
+@keyframes tc-drawer-enter {
+  from {
+    opacity: 0.82;
+    transform: translateX(14px);
+  }
 }
 
 .drawer__header,
