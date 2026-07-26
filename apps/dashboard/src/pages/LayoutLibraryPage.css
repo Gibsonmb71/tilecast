@@ -79,7 +79,8 @@
   place-items: center;
   color: var(--tc-text-primary);
   background: color-mix(in srgb, var(--tc-bg-surface) 88%, transparent);
-  border: 1px solid color-mix(in srgb, var(--tc-border-default) 80%, transparent);
+  border: 1px solid
+    color-mix(in srgb, var(--tc-border-default) 80%, transparent);
   border-radius: var(--tc-radius-control);
   box-shadow: var(--tc-shadow-xs);
   cursor: pointer;

@@ -50,13 +50,7 @@ describe("layout library", () => {
       filterAndSortLayouts(items, "1080x1920", "all", "all", "name"),
     ).toEqual([items[2]]);
     expect(
-      filterAndSortLayouts(
-        items,
-        "unpublished changes",
-        "all",
-        "all",
-        "name",
-      ),
+      filterAndSortLayouts(items, "unpublished changes", "all", "all", "name"),
     ).toEqual([items[2]]);
   });
 
@@ -80,15 +74,15 @@ describe("layout library", () => {
       }),
     ];
 
-    expect(
-      filterAndSortLayouts(items, "", "portrait", "all", "name"),
-    ).toEqual([items[2]]);
-    expect(
-      filterAndSortLayouts(items, "", "all", "published", "name"),
-    ).toEqual([items[1]]);
-    expect(
-      filterAndSortLayouts(items, "", "all", "draft", "name"),
-    ).toEqual([items[0]]);
+    expect(filterAndSortLayouts(items, "", "portrait", "all", "name")).toEqual([
+      items[2],
+    ]);
+    expect(filterAndSortLayouts(items, "", "all", "published", "name")).toEqual(
+      [items[1]],
+    );
+    expect(filterAndSortLayouts(items, "", "all", "draft", "name")).toEqual([
+      items[0],
+    ]);
   });
 
   it("sorts by updates and publication date with name fallbacks", () => {

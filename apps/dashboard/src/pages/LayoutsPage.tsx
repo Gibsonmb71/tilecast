@@ -63,10 +63,7 @@ const presets = [
 
 export type LayoutLibraryOrientationFilter = "all" | LayoutOrientation;
 export type LayoutLibraryPublicationFilter =
-  | "all"
-  | "published"
-  | "changes"
-  | "draft";
+  "all" | "published" | "changes" | "draft";
 export type LayoutLibrarySort = "updated" | "name" | "created" | "published";
 export type LayoutPublicationState = Exclude<
   LayoutLibraryPublicationFilter,
@@ -124,7 +121,8 @@ export function filterAndSortLayouts(
   const normalizedSearch = search.trim().toLocaleLowerCase();
   const filtered = layouts.filter((layout) => {
     const state = layoutPublicationState(layout);
-    if (orientation !== "all" && layout.orientation !== orientation) return false;
+    if (orientation !== "all" && layout.orientation !== orientation)
+      return false;
     if (publication !== "all" && state !== publication) return false;
     if (!normalizedSearch) return true;
     const searchable = [
@@ -164,10 +162,7 @@ export function filterAndSortLayouts(
   });
 }
 
-export function formatLayoutUpdatedAt(
-  value: string,
-  now = Date.now(),
-): string {
+export function formatLayoutUpdatedAt(value: string, now = Date.now()): string {
   const valueTimestamp = Date.parse(value);
   if (!Number.isFinite(valueTimestamp)) return "Update time unavailable";
   const elapsed = Math.max(0, now - valueTimestamp);
@@ -188,9 +183,7 @@ export function formatLayoutUpdatedAt(
     month: "short",
     day: "numeric",
   };
-  if (
-    new Date(valueTimestamp).getFullYear() !== new Date(now).getFullYear()
-  ) {
+  if (new Date(valueTimestamp).getFullYear() !== new Date(now).getFullYear()) {
     options.year = "numeric";
   }
   return `Updated ${new Intl.DateTimeFormat(undefined, options).format(valueTimestamp)}`;
@@ -309,7 +302,13 @@ export function LayoutsPage() {
       ),
   });
   const rename = useMutation({
-    mutationFn: ({ layout, nextName }: { layout: LayoutSummary; nextName: string }) =>
+    mutationFn: ({
+      layout,
+      nextName,
+    }: {
+      layout: LayoutSummary;
+      nextName: string;
+    }) =>
       api.updateLayout(
         layout.id,
         { name: nextName, description: layout.description },
@@ -416,7 +415,8 @@ export function LayoutsPage() {
           separated: true,
           disabled: remove.isPending,
           onSelect: () => {
-            if (window.confirm(`Delete ${layout.name}?`)) remove.mutate(layout.id);
+            if (window.confirm(`Delete ${layout.name}?`))
+              remove.mutate(layout.id);
           },
         },
       );
@@ -451,9 +451,7 @@ export function LayoutsPage() {
           aria-label="Filter layouts by orientation"
           value={orientation}
           onChange={(event) =>
-            setOrientation(
-              event.target.value as LayoutLibraryOrientationFilter,
-            )
+            setOrientation(event.target.value as LayoutLibraryOrientationFilter)
           }
         >
           <option value="all">All orientations</option>
@@ -466,9 +464,7 @@ export function LayoutsPage() {
           aria-label="Filter layouts by publication status"
           value={publication}
           onChange={(event) =>
-            setPublication(
-              event.target.value as LayoutLibraryPublicationFilter,
-            )
+            setPublication(event.target.value as LayoutLibraryPublicationFilter)
           }
         >
           <option value="all">All statuses</option>
@@ -480,20 +476,14 @@ export function LayoutsPage() {
           className="dashboard-list-toolbar__filter"
           aria-label="Sort layouts"
           value={sort}
-          onChange={(event) =>
-            setSort(event.target.value as LayoutLibrarySort)
-          }
+          onChange={(event) => setSort(event.target.value as LayoutLibrarySort)}
         >
           <option value="updated">Recently updated</option>
           <option value="name">Name</option>
           <option value="created">Recently created</option>
           <option value="published">Recently published</option>
         </Select>
-        <ViewToggle
-          value={view}
-          onValueChange={setView}
-          label="Layout view"
-        />
+        <ViewToggle value={view} onValueChange={setView} label="Layout view" />
       </DashboardListToolbar>
 
       {!layouts.isLoading && allLayouts.length > 0 && (
