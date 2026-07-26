@@ -3,6 +3,7 @@ import {
   Bell,
   Blocks,
   CalendarClock,
+  ChevronDown,
   ChevronRight,
   Database,
   FileSliders,
@@ -483,7 +484,9 @@ export function StudioTopbar({
   return (
     <header className="topbar">
       <div className="topbar__left">
-        <BreadcrumbTrail items={breadcrumbs} />
+        {/* A single crumb is just the page title repeated above the page's own <h1>,
+            so the trail only appears once it actually describes a path. */}
+        {breadcrumbs.length > 1 && <BreadcrumbTrail items={breadcrumbs} />}
       </div>
       <button
         className="topbar__search"
@@ -493,9 +496,9 @@ export function StudioTopbar({
         onClick={() => setPaletteOpen(true)}
       >
         <Search size={17} aria-hidden="true" />
-        <span className="topbar__search-placeholder">
-          Search screens, media, playlists…
-        </span>
+        {/* Deliberately not "Search screens…": pages carry their own list filter,
+            and two controls promising to search screens read as competitors. */}
+        <span className="topbar__search-placeholder">Search Tilecast…</span>
         <kbd>{platformShortcut()}</kbd>
       </button>
       <div className="topbar__utilities">
@@ -586,6 +589,7 @@ export function StudioTopbar({
               }}
             >
               <Plus size={16} aria-hidden="true" /> Create
+              <ChevronDown size={15} aria-hidden="true" />
             </Button>
             {createOpen && (
               <div className="topbar__popover topbar__create-menu" role="menu">

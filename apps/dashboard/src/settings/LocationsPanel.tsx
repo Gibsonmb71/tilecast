@@ -114,7 +114,7 @@ export function LocationsPanel({ canManage }: { canManage: boolean }) {
       </header>
       <label className="location-search">
         <Search size={16} />
-        <span className="sr-only">Search locations</span>
+        <span className="visually-hidden">Search locations</span>
         <input
           type="search"
           value={search}

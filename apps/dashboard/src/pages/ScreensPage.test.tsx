@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Screen, User } from "../api/types";
@@ -131,11 +131,48 @@ describe("screen management", () => {
         <ScreenListContent screens={[item]} loading={false} canManage />
       </MemoryRouter>,
     );
-    expect(screen.getByRole("link", { name: /Lobby/ })).toHaveAttribute(
-      "href",
-      "/screens/screen-1",
+    const link = screen.getByRole("link", { name: /Lobby/ });
+    expect(link).toHaveAttribute("href", "/screens/screen-1");
+    // Only the screen name is a link. Device metadata sits outside the anchor so
+    // location, platform, and resolution are not presented as separate targets.
+    expect(link).toHaveTextContent("Lobby");
+    expect(link).not.toHaveTextContent("android-tv");
+    expect(link).not.toHaveTextContent("1920×1080");
+    const row = screen.getByRole("article");
+    expect(within(row).getByText("Online")).toBeInTheDocument();
+    expect(within(row).getByText(/1920×1080/)).toBeInTheDocument();
+  });
+
+  it("reports a healthy fleet without a bare zero count", () => {
+    const item: Screen = {
+      id: "screen-1",
+      name: "Lobby",
+      description: "",
+      location: "Main entrance",
+      platform: "android-tv",
+      deviceManufacturer: "Google",
+      deviceModel: "ADT-3",
+      androidVersion: "14",
+      playerVersion: "0.2.0",
+      screenWidth: 1920,
+      screenHeight: 1080,
+      density: 2,
+      locale: "en-US",
+      timezone: "UTC",
+      enabled: true,
+      pairedAt: new Date().toISOString(),
+      lastContactAt: new Date().toISOString(),
+      status: "online",
+      hasActiveCredential: true,
+    };
+    render(
+      <MemoryRouter>
+        <ScreenListContent screens={[item]} loading={false} canManage />
+      </MemoryRouter>,
     );
-    expect(screen.getByText("Online")).toBeInTheDocument();
+    const summary = screen.getByRole("group", { name: "Fleet summary" });
+    expect(within(summary).getByText("No issues")).toBeInTheDocument();
+    expect(within(summary).queryByText(/need attention/)).toBeNull();
   });
 
   it("does not confuse requested Managed Kiosk with effective capability", () => {

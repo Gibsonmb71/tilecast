@@ -152,7 +152,7 @@ export function OperationsDashboard() {
                     <th>Player</th>
                     <th>Last contact</th>
                     <th>
-                      <span className="sr-only">Open</span>
+                      <span className="visually-hidden">Open</span>
                     </th>
                   </tr>
                 </thead>
