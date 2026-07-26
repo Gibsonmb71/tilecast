@@ -32,7 +32,16 @@ func (s *server) listPlaylists(w http.ResponseWriter, r *http.Request) {
 		s.writePlaylistError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+	playlistIDs := make([]uuid.UUID, 0, len(result.Items))
+	for _, playlist := range result.Items {
+		playlistIDs = append(playlistIDs, playlist.ID)
+	}
+	previews, err := s.playlists.ListPreviewItems(r.Context(), playlistIDs)
+	if err != nil {
+		s.writePlaylistError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": playlistListWithPreviews(result, previews)})
 }
 func (s *server) createPlaylist(w http.ResponseWriter, r *http.Request) {
 	var body playlistCreateRequest
