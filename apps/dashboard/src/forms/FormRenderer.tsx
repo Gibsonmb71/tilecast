@@ -31,6 +31,13 @@ export type ImageHandlers = {
   onRemove: (fieldKey: string) => void;
 };
 
+// fieldControlId derives the DOM id of one field's focusable control from the renderer's id prefix.
+// An owning editor passes an explicit idPrefix and uses this to move focus to a specific field (for
+// example the first invalid one) without reaching into renderer internals.
+export function fieldControlId(prefix: string, fieldKey: string): string {
+  return `${prefix}-${fieldKey}`;
+}
+
 export type FormRendererProps = {
   schema: FormSchema;
   values?: FormValues;
@@ -38,6 +45,9 @@ export type FormRendererProps = {
   onChange?: (key: string, value: string | string[] | boolean) => void;
   errors?: Record<string, string>;
   imageHandlers?: ImageHandlers;
+  // idPrefix makes control ids predictable for the owning editor. Omitted (builder preview, review)
+  // the renderer generates its own so multiple renderers on a page still get unique ids.
+  idPrefix?: string;
 };
 
 export function FormRenderer({
@@ -47,8 +57,10 @@ export function FormRenderer({
   onChange,
   errors = {},
   imageHandlers,
+  idPrefix,
 }: FormRendererProps) {
-  const scope = useId();
+  const generated = useId();
+  const scope = idPrefix ?? generated;
   return (
     <div className="form-renderer">
       {(schema.title || schema.description) && (
@@ -82,6 +94,18 @@ export function FormRenderer({
   );
 }
 
+// RequiredMark renders the visual asterisk only. The required state is conveyed to assistive
+// technology by the control's own required/aria-required attribute, so the mark stays hidden to
+// avoid reading "star" after every label.
+function RequiredMark({ required }: { required?: boolean }) {
+  if (!required) return null;
+  return (
+    <span className="form-renderer__required" aria-hidden="true">
+      {" *"}
+    </span>
+  );
+}
+
 function FieldRow({
   field,
   scope,
@@ -99,8 +123,16 @@ function FieldRow({
   error?: string;
   imageHandlers?: ImageHandlers;
 }) {
-  const controlId = `${scope}-${field.key}`;
-  const describedBy = field.description ? `${controlId}-hint` : undefined;
+  const controlId = fieldControlId(scope, field.key);
+  const hintId = field.description ? `${controlId}-hint` : undefined;
+  const errorId = error ? `${controlId}-error` : undefined;
+  const disabled = readOnly || !onChange;
+  const counted = countsCharacters(field) && !disabled;
+  const counterId = counted ? `${controlId}-counter` : undefined;
+  // Every piece of supporting text is announced with the control: the hint, the remaining-character
+  // budget, and — critically — the validation error, which is otherwise invisible to a screen reader.
+  const describedBy =
+    [hintId, counterId, errorId].filter(Boolean).join(" ") || undefined;
 
   if (field.control === "section") {
     return <h3 className="form-renderer__section">{field.label}</h3>;
@@ -111,120 +143,75 @@ function FieldRow({
     );
   }
 
-  const label = (
-    <span className="form-renderer__label">
-      {field.label}
-      {field.required && (
-        <span className="form-renderer__required" aria-hidden="true">
-          {" *"}
-        </span>
-      )}
+  const hint = hintId ? (
+    <span id={hintId} className="form-renderer__hint">
+      {field.description}
     </span>
-  );
+  ) : null;
 
-  return (
-    <div className="form-renderer__field">
-      <label htmlFor={controlId}>{label}</label>
-      {field.description && (
-        <span id={describedBy} className="form-renderer__hint">
-          {field.description}
-        </span>
+  const support = (
+    <>
+      {counterId && (
+        <CharacterCount
+          id={counterId}
+          value={typeof value === "string" ? value : ""}
+          maxLength={field.maxLength ?? 0}
+        />
       )}
-      <FieldControl
-        field={field}
-        id={controlId}
-        describedBy={describedBy}
-        value={value}
-        readOnly={readOnly}
-        onChange={onChange}
-        imageHandlers={imageHandlers}
-      />
-      {error && (
-        <span className="form-renderer__error" role="alert">
+      {errorId && (
+        <span id={errorId} className="form-renderer__error">
           {error}
         </span>
       )}
-    </div>
+    </>
   );
-}
 
-function FieldControl({
-  field,
-  id,
-  describedBy,
-  value,
-  readOnly,
-  onChange,
-  imageHandlers,
-}: {
-  field: FormField;
-  id: string;
-  describedBy?: string;
-  value: string | string[] | boolean | undefined;
-  readOnly: boolean;
-  onChange?: (key: string, next: string | string[] | boolean) => void;
-  imageHandlers?: ImageHandlers;
-}) {
-  const disabled = readOnly || !onChange;
-  const emit = (next: string | string[] | boolean) =>
-    onChange?.(field.key, next);
-  const stringValue = typeof value === "string" ? value : "";
-  const required = Boolean(field.required);
+  // A checkbox reads as "label, checkbox" only when the box sits next to its own text, so boolean
+  // fields use an inline label instead of the stacked label-above-control layout.
+  if (field.control === "boolean") {
+    return (
+      <div className="form-renderer__field form-renderer__field--inline">
+        <label className="checkbox-control" htmlFor={controlId}>
+          <input
+            id={controlId}
+            type="checkbox"
+            aria-describedby={describedBy}
+            aria-invalid={error ? true : undefined}
+            aria-required={field.required ? true : undefined}
+            disabled={disabled}
+            checked={value === true || value === "true"}
+            onChange={(event) => onChange?.(field.key, event.target.checked)}
+          />
+          <span className="form-renderer__label">
+            {field.label}
+            <RequiredMark required={field.required} />
+          </span>
+        </label>
+        {hint}
+        {support}
+      </div>
+    );
+  }
 
-  switch (field.control) {
-    case "long_text":
-      return (
-        <textarea
-          id={id}
-          aria-describedby={describedBy}
-          className="input"
-          rows={3}
-          required={required}
-          disabled={disabled}
-          value={stringValue}
-          maxLength={field.maxLength || undefined}
-          onChange={(event) => emit(event.target.value)}
-        />
-      );
-    case "boolean":
-      return (
-        <input
-          id={id}
-          type="checkbox"
-          aria-describedby={describedBy}
-          disabled={disabled}
-          checked={value === true || value === "true"}
-          onChange={(event) => emit(event.target.checked)}
-        />
-      );
-    case "select":
-      return (
-        <select
-          id={id}
-          aria-describedby={describedBy}
-          className="input"
-          required={required}
-          disabled={disabled}
-          value={stringValue}
-          onChange={(event) => emit(event.target.value)}
-        >
-          <option value="">Select…</option>
-          {(field.options ?? []).map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      );
-    case "multi_select":
-      return (
-        <div
-          id={id}
-          className="form-renderer__multi"
-          role="group"
-          aria-label={field.label}
-          aria-describedby={describedBy}
-        >
+  // A multi-select is a set of checkboxes, not a single control: a <label for> pointing at the
+  // wrapper would name nothing. fieldset/legend is the native grouping that assistive technology
+  // announces when focus enters any option.
+  if (field.control === "multi_select") {
+    return (
+      <fieldset
+        id={controlId}
+        tabIndex={-1}
+        className="form-renderer__field form-renderer__group"
+        aria-describedby={describedBy}
+        aria-invalid={error ? true : undefined}
+        aria-required={field.required ? true : undefined}
+      >
+        <legend className="form-renderer__label">
+          {field.label}
+          <RequiredMark required={field.required} />
+        </legend>
+        {hint}
+        <div className="form-renderer__multi">
           {(field.options ?? []).map((option) => {
             const selected =
               Array.isArray(value) && value.includes(option.value);
@@ -242,7 +229,7 @@ function FieldControl({
                       const index = current.indexOf(option.value);
                       if (index >= 0) current.splice(index, 1);
                     }
-                    emit(current);
+                    onChange?.(field.key, current);
                   }}
                 />
                 <span>{option.label}</span>
@@ -250,6 +237,126 @@ function FieldControl({
             );
           })}
         </div>
+        {support}
+      </fieldset>
+    );
+  }
+
+  return (
+    <div className="form-renderer__field">
+      <label htmlFor={controlId}>
+        <span className="form-renderer__label">
+          {field.label}
+          <RequiredMark required={field.required} />
+        </span>
+      </label>
+      {hint}
+      <FieldControl
+        field={field}
+        id={controlId}
+        describedBy={describedBy}
+        invalid={Boolean(error)}
+        value={value}
+        readOnly={readOnly}
+        onChange={onChange}
+        imageHandlers={imageHandlers}
+      />
+      {support}
+    </div>
+  );
+}
+
+// countsCharacters reports whether a field should show a remaining-character budget. The control
+// also hard-caps input at maxLength, so without this the cap is silent: typing simply stops.
+function countsCharacters(field: FormField): boolean {
+  if (field.control !== "short_text" && field.control !== "long_text")
+    return false;
+  return Boolean(field.maxLength);
+}
+
+function CharacterCount({
+  id,
+  value,
+  maxLength,
+}: {
+  id: string;
+  value: string;
+  maxLength: number;
+}) {
+  // Count code points, matching the length check in validateSubmission.
+  const used = [...value].length;
+  const remaining = maxLength - used;
+  return (
+    <span
+      id={id}
+      className={`form-renderer__counter${remaining <= 0 ? " is-full" : ""}`}
+    >
+      {remaining <= 0
+        ? `Character limit reached (${maxLength})`
+        : `${remaining} of ${maxLength} characters left`}
+    </span>
+  );
+}
+
+function FieldControl({
+  field,
+  id,
+  describedBy,
+  invalid,
+  value,
+  readOnly,
+  onChange,
+  imageHandlers,
+}: {
+  field: FormField;
+  id: string;
+  describedBy?: string;
+  invalid?: boolean;
+  value: string | string[] | boolean | undefined;
+  readOnly: boolean;
+  onChange?: (key: string, next: string | string[] | boolean) => void;
+  imageHandlers?: ImageHandlers;
+}) {
+  const disabled = readOnly || !onChange;
+  const emit = (next: string | string[] | boolean) =>
+    onChange?.(field.key, next);
+  const stringValue = typeof value === "string" ? value : "";
+  const required = Boolean(field.required);
+  // Shared wiring for every single-control field so no control can silently drop its error state.
+  const common = {
+    id,
+    "aria-describedby": describedBy,
+    "aria-invalid": invalid ? (true as const) : undefined,
+    className: "input",
+    required,
+    disabled,
+  };
+
+  switch (field.control) {
+    case "long_text":
+      return (
+        <textarea
+          {...common}
+          rows={3}
+          value={stringValue}
+          maxLength={field.maxLength || undefined}
+          onChange={(event) => emit(event.target.value)}
+        />
+      );
+    case "select":
+      return (
+        <select
+          {...common}
+          value={stringValue}
+          onChange={(event) => emit(event.target.value)}
+        >
+          <option value="">Select…</option>
+          {(field.options ?? []).map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
       );
     case "image":
       if (imageHandlers) {
@@ -257,6 +364,7 @@ function FieldControl({
           <ImageField
             id={id}
             describedBy={describedBy}
+            invalid={invalid}
             fieldKey={field.key}
             label={field.label}
             disabled={disabled}
@@ -284,12 +392,9 @@ function FieldControl({
     case "integer":
       return (
         <input
-          id={id}
+          {...common}
           type="number"
-          aria-describedby={describedBy}
-          className="input"
-          required={required}
-          disabled={disabled}
+          inputMode={field.control === "integer" ? "numeric" : "decimal"}
           step={field.control === "integer" ? 1 : "any"}
           min={field.minimum}
           max={field.maximum}
@@ -300,12 +405,8 @@ function FieldControl({
     case "date":
       return (
         <input
-          id={id}
+          {...common}
           type="date"
-          aria-describedby={describedBy}
-          className="input"
-          required={required}
-          disabled={disabled}
           value={stringValue}
           onChange={(event) => emit(event.target.value)}
         />
@@ -313,12 +414,8 @@ function FieldControl({
     case "datetime":
       return (
         <input
-          id={id}
+          {...common}
           type="datetime-local"
-          aria-describedby={describedBy}
-          className="input"
-          required={required}
-          disabled={disabled}
           value={stringValue}
           onChange={(event) => emit(event.target.value)}
         />
@@ -326,12 +423,10 @@ function FieldControl({
     case "url":
       return (
         <input
-          id={id}
+          {...common}
           type="url"
-          aria-describedby={describedBy}
-          className="input"
-          required={required}
-          disabled={disabled}
+          inputMode="url"
+          placeholder="https://"
           value={stringValue}
           onChange={(event) => emit(event.target.value)}
         />
@@ -339,12 +434,8 @@ function FieldControl({
     default:
       return (
         <input
-          id={id}
+          {...common}
           type="text"
-          aria-describedby={describedBy}
-          className="input"
-          required={required}
-          disabled={disabled}
           maxLength={field.maxLength || undefined}
           value={stringValue}
           onChange={(event) => emit(event.target.value)}
@@ -359,6 +450,7 @@ function FieldControl({
 function ImageField({
   id,
   describedBy,
+  invalid,
   fieldKey,
   label,
   disabled,
@@ -368,6 +460,7 @@ function ImageField({
 }: {
   id: string;
   describedBy?: string;
+  invalid?: boolean;
   fieldKey: string;
   label: string;
   disabled: boolean;
@@ -386,6 +479,11 @@ function ImageField({
           alt={`${label} attachment`}
         />
       )}
+      {state?.pendingName && !state.uploading && (
+        <span className="form-renderer__image-note">
+          {state.pendingName} — uploads when you save.
+        </span>
+      )}
       {state?.uploading && (
         <span className="form-renderer__image-note">Uploading…</span>
       )}
@@ -403,6 +501,7 @@ function ImageField({
               type="file"
               accept="image/*"
               aria-describedby={describedBy}
+              aria-invalid={invalid ? true : undefined}
               aria-label={hasImage ? `Replace ${label}` : `Choose ${label}`}
               className="visually-hidden"
               disabled={state?.uploading}

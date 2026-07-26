@@ -523,8 +523,17 @@ func (s *server) previewDataSource(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"data": preview})
 		return
 	}
-	if definition, ok := s.media.ContentDefinitions().DataSource(provider); ok && definition.AdapterID == "manual_object" {
-		preview, err := s.media.ManualObjectPreview(r.Context(), provider, body.Configuration)
+	if definition, ok := s.media.ContentDefinitions().DataSource(provider); ok && (definition.AdapterID == "manual_object" || definition.AdapterID == "manual_records" || definition.AdapterID == "http_records") {
+		var preview media.TypedDatasetPayload
+		var err error
+		switch definition.AdapterID {
+		case "manual_object":
+			preview, err = s.media.ManualObjectPreview(r.Context(), provider, body.Configuration)
+		case "manual_records":
+			preview, err = s.media.ManualRecordsPreview(r.Context(), provider, body.Configuration)
+		default:
+			preview, err = s.media.HTTPRecordsPreview(r.Context(), provider, body.Configuration)
+		}
 		if err != nil {
 			s.writeMediaError(w, r, err)
 			return
@@ -545,8 +554,11 @@ func (s *server) previewDataSource(w http.ResponseWriter, r *http.Request) {
 }
 
 type updateAssetRequest struct {
-	Name        *string `json:"name"`
-	Description *string `json:"description"`
+	Name            *string    `json:"name"`
+	Description     *string    `json:"description"`
+	AvailableFrom   *time.Time `json:"availableFrom"`
+	ExpiresAt       *time.Time `json:"expiresAt"`
+	AvailabilitySet *bool      `json:"availabilitySet"`
 }
 
 func (s *server) updateAsset(w http.ResponseWriter, r *http.Request) {
@@ -560,7 +572,14 @@ func (s *server) updateAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user := r.Context().Value(sessionContextKey).(auth.Session).User
-	asset, err := s.media.UpdateAsset(r.Context(), id, user.ID, body.Name, body.Description)
+	availabilitySet := body.AvailabilitySet != nil && *body.AvailabilitySet
+	var asset media.Asset
+	var err error
+	if availabilitySet {
+		asset, err = s.media.UpdateAssetAvailability(r.Context(), id, user.ID, body.Name, body.Description, body.AvailableFrom, body.ExpiresAt)
+	} else {
+		asset, err = s.media.UpdateAsset(r.Context(), id, user.ID, body.Name, body.Description)
+	}
 	if err != nil {
 		s.writeMediaError(w, r, err)
 		return

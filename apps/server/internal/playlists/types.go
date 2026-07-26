@@ -31,6 +31,33 @@ type Playlist struct {
 	// Data Source through its Widgets and playlists to the screens actually displaying it. It
 	// mirrors the Layout usage shape and is populated on the detail read only.
 	Usage Usage `json:"usage"`
+	// DataSourceIDs are the Data Sources this playlist reaches through its items: the ones its
+	// Widgets read, plus the ones any Layout it embeds depends on. A Layout already stores its own
+	// dependencies, but a playlist's are only discoverable by looking through each item, which
+	// Studio cannot do without one detail request per item. Only the IDs are returned; the caller
+	// already reads the Data Source list to resolve names and refresh status. Detail read only.
+	DataSourceIDs []uuid.UUID `json:"dataSourceIds"`
+	SourceType    string      `json:"sourceType"`
+	TagRule       *TagRule    `json:"tagRule,omitempty"`
+}
+
+type PlaylistTag struct {
+	ID    uuid.UUID `json:"id"`
+	Name  string    `json:"name"`
+	Color string    `json:"color"`
+}
+
+type TagRule struct {
+	Match           string        `json:"match"`
+	ImageDurationMS int64         `json:"imageDurationMs"`
+	Tags            []PlaylistTag `json:"tags"`
+}
+
+type TagRuleInput struct {
+	Enabled         bool        `json:"enabled"`
+	Match           string      `json:"match"`
+	ImageDurationMS int64       `json:"imageDurationMs"`
+	TagIDs          []uuid.UUID `json:"tagIds"`
 }
 
 type LayoutUsage struct {
@@ -71,6 +98,9 @@ type Item struct {
 	VariantID            *uuid.UUID `json:"variantId,omitempty"`
 	CreatedAt            time.Time  `json:"createdAt"`
 	UpdatedAt            time.Time  `json:"updatedAt"`
+	AvailableFrom        *time.Time `json:"availableFrom,omitempty"`
+	ExpiresAt            *time.Time `json:"expiresAt,omitempty"`
+	Dynamic              bool       `json:"dynamic"`
 }
 
 type ItemInput struct {
@@ -280,6 +310,8 @@ type ManifestItem struct {
 	VideoStartOffsetMS *int64     `json:"videoStartOffsetMs,omitempty"`
 	VideoEndOffsetMS   *int64     `json:"videoEndOffsetMs,omitempty"`
 	DeliveryPolicy     string     `json:"deliveryPolicy"`
+	AvailableFrom      *time.Time `json:"availableFrom,omitempty"`
+	ExpiresAt          *time.Time `json:"expiresAt,omitempty"`
 }
 type ManifestAsset struct {
 	AssetID         uuid.UUID `json:"assetId"`

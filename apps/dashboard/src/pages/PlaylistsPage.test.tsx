@@ -9,6 +9,7 @@ import {
 } from "./PlaylistsPage";
 import {
   nextPlaylistPreviewItem,
+  playlistPreviewItemAvailable,
   playlistPreviewItemDuration,
 } from "./PlaylistPreviewPage";
 
@@ -116,5 +117,27 @@ describe("playlist editor", () => {
     expect(
       playlistPreviewItemDuration(item({ assetType: "video" })),
     ).toBeUndefined();
+  });
+
+  it("uses inclusive availability and exclusive expiration in preview", () => {
+    const now = Date.parse("2026-07-25T12:00:00Z");
+    expect(
+      playlistPreviewItemAvailable(
+        item({ availableFrom: "2026-07-25T12:00:00Z" }),
+        now,
+      ),
+    ).toBe(true);
+    expect(
+      playlistPreviewItemAvailable(
+        item({ availableFrom: "2026-07-25T12:00:01Z" }),
+        now,
+      ),
+    ).toBe(false);
+    expect(
+      playlistPreviewItemAvailable(
+        item({ expiresAt: "2026-07-25T12:00:00Z" }),
+        now,
+      ),
+    ).toBe(false);
   });
 });

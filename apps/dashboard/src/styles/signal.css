@@ -4068,15 +4068,27 @@ tbody tr:hover {
 
 .source-provider-grid > button {
   display: grid;
+  grid-template-rows: auto auto 1fr;
   gap: var(--tc-space-2);
   min-height: 180px;
-  padding: var(--tc-space-6);
+  padding: var(--tc-space-4);
   border: 1px solid var(--tc-border-default);
   border-radius: var(--tc-radius-control);
   background: var(--tc-bg-surface);
   color: var(--tc-text-primary);
   text-align: left;
   cursor: pointer;
+}
+
+/* The catalog preview shows the Widget's arrangement rather than a generic icon. It is
+   decorative relative to the button's own label, so it never grows past the card. */
+.widget-thumbnail {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-bottom: var(--tc-space-1);
+  border-radius: var(--tc-radius-control);
+  color: var(--tc-text-secondary);
 }
 
 .source-provider-grid > button:hover {
@@ -4158,6 +4170,17 @@ tbody tr:hover {
   border: 1px solid var(--tc-border-default);
   border-radius: var(--tc-radius-sm);
   background: #000;
+}
+
+/* Holds the Widget being captured for the library so it can be rendered at full snapshot width
+   without appearing on the page. It is positioned away rather than hidden: a capture reads real
+   geometry, so `display: none`, `visibility: hidden`, or a zero-size box would produce nothing. */
+.widget-snapshot-backfill {
+  position: fixed;
+  top: 0;
+  left: -20000px;
+  width: 960px;
+  pointer-events: none;
 }
 
 .declarative-widget-preview {

@@ -81,6 +81,9 @@ export type PlaylistItem = {
   assetDurationSeconds?: number;
   thumbnailUrl: string;
   variantId?: string;
+  availableFrom?: string;
+  expiresAt?: string;
+  dynamic?: boolean;
 };
 
 export type Playlist = {
@@ -99,6 +102,15 @@ export type Playlist = {
   usage?: {
     screens: { id: string; name: string }[];
     schedules: { id: string; name: string }[];
+  };
+  // Data Sources reached through this playlist's items — those its Widgets read plus those any
+  // embedded Layout depends on. Only IDs; names and refresh status come from the Data Source list.
+  dataSourceIds?: string[];
+  sourceType?: "static" | "tag";
+  tagRule?: {
+    match: "any" | "all";
+    imageDurationMs: number;
+    tags: ContentTag[];
   };
 };
 
@@ -366,6 +378,48 @@ export type ReliabilityStatus = {
   selfTestCompletedAt?: string;
   powerAssist: PowerAssistResults;
 };
+export type UptimeWindow = "24h" | "7d";
+/** A screen spends every measured second in exactly one of these states. */
+export type UptimeState = "up" | "impaired" | "down" | "unknown";
+export type UptimeBucket = {
+  start: string;
+  upPercent: number;
+  impairedPercent: number;
+  downPercent: number;
+  unknownPercent: number;
+  uptimePercent: number | null;
+  screensDown: number;
+};
+export type UptimeScreen = {
+  screenId: string;
+  screenName: string;
+  uptimePercent: number | null;
+  trackedSeconds: number;
+  upSeconds: number;
+  impairedSeconds: number;
+  downSeconds: number;
+  buckets: UptimeState[];
+};
+export type UptimeReport = {
+  range: { from: string; to: string };
+  window: UptimeWindow;
+  windowLabel: string;
+  bucketSeconds: number;
+  screensTracked: number;
+  screensWithDowntime: number;
+  /** Screens with no recorded state in the window, excluded from the percent. */
+  screensUnmeasured: number;
+  trackedSeconds: number;
+  upSeconds: number;
+  impairedSeconds: number;
+  downSeconds: number;
+  /** Null until at least one screen has recorded state in the window. */
+  uptimePercent: number | null;
+  previousUptimePercent: number | null;
+  buckets: UptimeBucket[];
+  screens: UptimeScreen[];
+};
+
 export type PowerAssistResults = {
   deviceSleep: string;
   tvStandby: string;
@@ -743,6 +797,8 @@ export type Asset = {
   creator?: { id: string; name: string };
   createdAt: string;
   updatedAt: string;
+  availableFrom?: string;
+  expiresAt?: string;
   variants: AssetVariant[];
   thumbnailUrl?: string;
   website?: WebsiteConfig;
@@ -1218,6 +1274,11 @@ export type WidgetDefinition = {
   description: string;
   category: string;
   icon: string;
+  /**
+   * Names the catalog preview drawn for this Widget. Unknown and missing names fall back
+   * to a generic preview, so a new definition never breaks the gallery.
+   */
+  thumbnail?: string;
   runtime: "native" | "web";
   configurationSchema: { fields: ContentDefinitionField[] };
   defaultConfiguration: Record<string, unknown>;

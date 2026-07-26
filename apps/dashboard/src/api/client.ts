@@ -55,6 +55,8 @@ import type {
   GitHubDeviceStart,
   GitHubDevicePoll,
   UpdateDeployment,
+  UptimeReport,
+  UptimeWindow,
   ReliabilityStatus,
   PowerAssistResults,
   CalendarConfig,
@@ -314,6 +316,19 @@ function formRecordQuery(params: FormRecordListParams = {}): string {
   return encoded ? `?${encoded}` : "";
 }
 
+const playerReleaseContentTypes: Record<string, string> = {
+  "tilecast-player.apk": "application/vnd.android.package-archive",
+  "tilecast-player-update.json": "application/json",
+  "tilecast-player-update.json.sig": "text/plain",
+  "tilecast-player.AppImage": "application/octet-stream",
+  "tilecast-player-update-linux.json": "application/json",
+  "tilecast-player-update-linux.json.sig": "text/plain",
+};
+
+export function playerReleaseContentType(name: string): string {
+  return playerReleaseContentTypes[name] ?? "application/octet-stream";
+}
+
 export const api = {
   providerCatalog: async () =>
     normalizeProviderCatalog(
@@ -491,16 +506,11 @@ export const api = {
     onProgress: (percent: number) => void,
   ) =>
     new Promise<PlayerReleaseImport>((resolve, reject) => {
-      const contentTypes: Record<string, string> = {
-        "tilecast-player.apk": "application/vnd.android.package-archive",
-        "tilecast-player-update.json": "application/json",
-        "tilecast-player-update.json.sig": "text/plain",
-      };
       const form = new FormData();
       for (const file of files)
         form.append(
           "files",
-          new Blob([file], { type: contentTypes[file.name] }),
+          new Blob([file], { type: playerReleaseContentType(file.name) }),
           file.name,
         );
       const xhr = new XMLHttpRequest();
@@ -719,6 +729,8 @@ export const api = {
     normalizeScreen(await request<Screen | null>(`/screens/${id}`)),
   screenReliability: (id: string) =>
     request<ReliabilityStatus>(`/screens/${id}/reliability`),
+  fleetUptime: (window: UptimeWindow) =>
+    request<UptimeReport>(`/activity/uptime?window=${window}`),
   confirmPowerAssist: (
     id: string,
     results: PowerAssistResults,
@@ -925,11 +937,32 @@ export const api = {
     `/api/v1/assets/${encodeURIComponent(id)}/preview`,
   updateAsset: (
     id: string,
-    input: { name?: string; description?: string },
+    input: {
+      name?: string;
+      description?: string;
+      availabilitySet?: boolean;
+      availableFrom?: string;
+      expiresAt?: string;
+    },
     csrfToken: string,
   ) =>
     request<Asset>(`/assets/${id}`, {
       method: "PATCH",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  setPlaylistTagRule: (
+    id: string,
+    input: {
+      enabled: boolean;
+      match: "any" | "all";
+      imageDurationMs: number;
+      tagIds: string[];
+    },
+    csrfToken: string,
+  ) =>
+    request<Playlist>(`/playlists/${id}/tag-rule`, {
+      method: "PUT",
       headers: { "X-CSRF-Token": csrfToken },
       body: JSON.stringify(input),
     }),
@@ -1303,7 +1336,11 @@ export const api = {
   },
   playlist: (id: string) => requestPlaylist(`/playlists/${id}`),
   createPlaylist: (
-    input: { name: string; description: string },
+    input: {
+      name: string;
+      description: string;
+      sourceType: "static" | "tag";
+    },
     csrfToken: string,
   ) =>
     requestPlaylist("/playlists", {

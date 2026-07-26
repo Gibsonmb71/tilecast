@@ -7,6 +7,7 @@ import {
   normalizePlaylistAssignment,
   normalizeProviderCatalog,
   normalizeScreen,
+  playerReleaseContentType,
 } from "./client";
 import type { AuthStatus, Layout, Screen } from "./types";
 
@@ -21,6 +22,20 @@ describe("authentication contract", () => {
     };
     expect(setup.setupRequired).toBe(true);
     expect(signedOut.setupRequired).toBe(false);
+  });
+});
+
+describe("Player release upload contract", () => {
+  it("uses server-accepted media types for the Linux release files", () => {
+    expect(playerReleaseContentType("tilecast-player.AppImage")).toBe(
+      "application/octet-stream",
+    );
+    expect(playerReleaseContentType("tilecast-player-update-linux.json")).toBe(
+      "application/json",
+    );
+    expect(
+      playerReleaseContentType("tilecast-player-update-linux.json.sig"),
+    ).toBe("text/plain");
   });
 });
 
@@ -164,6 +179,41 @@ describe("mixed-version collection compatibility", () => {
       backgroundColor: "#123456",
       safeAreaPercent: 5,
     });
+  });
+});
+
+describe("playlist creation contract", () => {
+  it("sends the selected playlist type", async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: () =>
+        Promise.resolve({
+          data: { id: "playlist-1", sourceType: "tag" },
+        }),
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    await api.createPlaylist(
+      { name: "Tagged media", description: "", sourceType: "tag" },
+      "csrf-token",
+    );
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/v1/playlists",
+      expect.objectContaining({
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": "csrf-token",
+        },
+        body: JSON.stringify({
+          name: "Tagged media",
+          description: "",
+          sourceType: "tag",
+        }),
+      }),
+    );
   });
 });
 

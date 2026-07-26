@@ -25,6 +25,7 @@ import {
 } from "../content/SourceEditors";
 import { GenericWidgetEditor } from "../content/GenericDefinitionEditors";
 import { UsedByPanel } from "../content/UsedByPanel";
+import { WidgetSnapshotBackfill } from "../content/WidgetSnapshotBackfill";
 import { inAppPath } from "../navigation/returnPaths";
 import { WorkspaceTabs, contentTabs } from "../navigation/WorkspaceTabs";
 import {
@@ -137,16 +138,24 @@ export function WidgetsPage() {
           }
         />
       ) : (
-        <AssetCollection
-          items={widgets.data?.items ?? []}
-          view={view}
-          onSelect={(widget) => void navigate(`/widgets/${widget.id}`)}
-          canManage={canManage}
-          onDuplicate={(widget) => duplicate.mutate(widget.id)}
-          onDelete={(widget) => {
-            if (confirm(`Delete ${widget.name}?`)) remove.mutate(widget.id);
-          }}
-        />
+        <>
+          <AssetCollection
+            items={widgets.data?.items ?? []}
+            view={view}
+            onSelect={(widget) => void navigate(`/widgets/${widget.id}`)}
+            canManage={canManage}
+            onDuplicate={(widget) => duplicate.mutate(widget.id)}
+            onDelete={(widget) => {
+              if (confirm(`Delete ${widget.name}?`)) remove.mutate(widget.id);
+            }}
+          />
+          {/* Storing a capture is an editor-or-above action, so viewers browse the library without
+              it and simply see the unavailable state until someone who can manage content visits. */}
+          <WidgetSnapshotBackfill
+            assets={widgets.data?.items ?? []}
+            enabled={canManage}
+          />
+        </>
       )}
     </section>
   );

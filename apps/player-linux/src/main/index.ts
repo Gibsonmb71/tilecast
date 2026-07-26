@@ -344,6 +344,11 @@ async function startRuntime(serverUrl: string): Promise<void> {
         app.relaunch();
         app.exit(0);
       },
+      exitForUpdate: () => {
+        log.info("exiting after AppImage update for systemd restart");
+        quitting = true;
+        app.exit(0);
+      },
       clearWebsiteData: async () => {
         await session
           .fromPartition("persist:websites")

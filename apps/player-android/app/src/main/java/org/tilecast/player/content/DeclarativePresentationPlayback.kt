@@ -141,7 +141,7 @@ private fun PresentationNodeView(node: PresentationNode, context: PresentationCo
                 ) { items(node.children.size) { index -> PresentationNodeView(node.children[index], context) } }
                 return
             }
-            val records = repeated.repeat?.let { selectedRecords(context.datasets[it.dataset], context.now).take(it.limit) }.orEmpty()
+            val records = repeated.repeat?.let { selectedRecords(context.datasets[it.dataset], context.now).drop(it.offset).take(it.limit) }.orEmpty()
             val template = repeated.children.firstOrNull()
             LazyVerticalGrid(
                 columns = GridCells.Fixed(node.int("columns", 1).coerceIn(1, 4)),
@@ -156,7 +156,7 @@ private fun PresentationNodeView(node: PresentationNode, context: PresentationCo
         "divider" -> HorizontalDivider(color = node.color("color", Color.White.copy(alpha = .18f)))
         "repeat" -> {
             val repeat = node.repeat ?: return
-            val records = selectedRecords(context.datasets[repeat.dataset], context.now).take(repeat.limit)
+            val records = selectedRecords(context.datasets[repeat.dataset], context.now).drop(repeat.offset).take(repeat.limit)
             if (records.isEmpty()) {
                 Text(node.string("emptyState", "No information available"), color = Color.White)
             }

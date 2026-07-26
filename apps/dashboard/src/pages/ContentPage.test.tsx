@@ -109,7 +109,7 @@ describe("content library", () => {
     );
     expect(screen.getByText("Ready")).toBeInTheDocument();
     expect(screen.getByText("1920 × 1080")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Welcome/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit Welcome" }));
     expect(select).toHaveBeenCalledWith(asset);
     rerender(<AssetCollection items={[asset]} view="list" onSelect={select} />);
     expect(
@@ -195,6 +195,99 @@ describe("content library", () => {
     );
     expect(screen.getByText("Campus A")).toBeInTheDocument();
     expect(screen.getByText("Lobby")).toBeInTheDocument();
+  });
+
+  it("opens card actions from a right-click and runs the chosen action", () => {
+    const remove = vi.fn();
+    const toggle = vi.fn();
+    render(
+      <AssetCollection
+        items={[asset]}
+        view="grid"
+        onSelect={vi.fn()}
+        canManage
+        onDelete={remove}
+        onToggle={toggle}
+      />,
+    );
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    fireEvent.contextMenu(document.querySelector(".asset-card")!);
+    const menu = screen.getByRole("menu", { name: "Actions for Welcome" });
+    expect(menu).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Select" }));
+    expect(toggle).toHaveBeenCalledWith("asset-1");
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Actions for Welcome" }),
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
+    expect(remove).toHaveBeenCalledWith(asset);
+  });
+
+  it("limits card actions to what the viewer is allowed to do", () => {
+    render(
+      <AssetCollection
+        items={[asset]}
+        view="grid"
+        onSelect={vi.fn()}
+        canManage={false}
+        onDelete={vi.fn()}
+        onDuplicate={vi.fn()}
+      />,
+    );
+    fireEvent.contextMenu(document.querySelector(".asset-card")!);
+    expect(
+      screen.getAllByRole("menuitem").map((item) => item.textContent),
+    ).toEqual(["Open"]);
+  });
+
+  it("offers duplication only for Widgets, which are the only copyable assets", () => {
+    const widget: Asset = { ...asset, id: "widget-3", type: "widget" };
+    const duplicate = vi.fn();
+    const { rerender } = render(
+      <AssetCollection
+        items={[widget]}
+        view="grid"
+        onSelect={vi.fn()}
+        canManage
+        onDuplicate={duplicate}
+      />,
+    );
+    // The Widget footer already spells these actions out, so it carries no extra trigger.
+    expect(
+      screen.queryByRole("button", { name: /^Actions for/ }),
+    ).not.toBeInTheDocument();
+    fireEvent.contextMenu(document.querySelector(".asset-card")!);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Duplicate" }));
+    expect(duplicate).toHaveBeenCalledWith(widget);
+    rerender(
+      <AssetCollection
+        items={[asset]}
+        view="grid"
+        onSelect={vi.fn()}
+        canManage
+        onDuplicate={duplicate}
+      />,
+    );
+    fireEvent.contextMenu(document.querySelector(".asset-card")!);
+    expect(
+      screen.queryByRole("menuitem", { name: "Duplicate" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("closes card actions on Escape", () => {
+    render(
+      <AssetCollection
+        items={[asset]}
+        view="grid"
+        onSelect={vi.fn()}
+        canManage
+        onDelete={vi.fn()}
+      />,
+    );
+    fireEvent.contextMenu(document.querySelector(".asset-card")!);
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 
   it("offers web, universal-information, and preset Widget entries", () => {

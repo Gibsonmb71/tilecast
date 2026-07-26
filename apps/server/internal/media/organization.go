@@ -96,7 +96,10 @@ func (s *Service) DeleteFolder(ctx context.Context, id, userID uuid.UUID) error 
 	if err != nil {
 		return err
 	}
-	return tx.Commit(ctx)
+	if err = tx.Commit(ctx); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *Service) ListCollections(ctx context.Context) ([]ContentCollection, error) {
@@ -208,6 +211,23 @@ func (s *Service) UpdateTag(ctx context.Context, id uuid.UUID, name, color strin
 }
 
 func (s *Service) DeleteTag(ctx context.Context, id uuid.UUID) error {
+	rows, err := s.db.Query(ctx, `SELECT p.name FROM playlist_tags pt JOIN playlists p ON p.id=pt.playlist_id WHERE pt.tag_id=$1 AND p.deleted_at IS NULL ORDER BY p.name LIMIT 10`, id)
+	if err != nil {
+		return err
+	}
+	usedBy := []string{}
+	for rows.Next() {
+		var name string
+		if err = rows.Scan(&name); err != nil {
+			rows.Close()
+			return err
+		}
+		usedBy = append(usedBy, "playlist "+name)
+	}
+	rows.Close()
+	if len(usedBy) > 0 {
+		return &DependencyError{Resource: "Tag", UsedBy: usedBy}
+	}
 	tag, err := s.db.Exec(ctx, `DELETE FROM content_tags WHERE id=$1`, id)
 	if err == nil && tag.RowsAffected() == 0 {
 		return ErrNotFound
@@ -284,7 +304,13 @@ func (s *Service) BulkOrganize(ctx context.Context, userID uuid.UUID, in BulkOrg
 	if err != nil {
 		return err
 	}
-	return tx.Commit(ctx)
+	if err = tx.Commit(ctx); err != nil {
+		return err
+	}
+	if s.invalidator != nil && (len(in.AddTagIDs) > 0 || len(in.RemoveTagIDs) > 0) {
+		_ = s.invalidator.TagAssignmentsChanged(ctx, append(append([]uuid.UUID{}, in.AddTagIDs...), in.RemoveTagIDs...), "media.tags_updated")
+	}
+	return nil
 }
 
 func validateOrganizationIDs(ctx context.Context, tx pgx.Tx, table string, ids []uuid.UUID) error {

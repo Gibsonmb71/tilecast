@@ -85,6 +85,8 @@ export const Textarea = forwardRef<
 });
 
 export { Select } from "./SignalSelect";
+export { ContextMenu, useContextMenu } from "./ContextMenu";
+export type { ContextMenuItem } from "./ContextMenu";
 
 export function Field({
   label,

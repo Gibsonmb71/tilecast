@@ -1,30 +1,41 @@
 import {
   Button,
+  ContextMenu,
   EmptyState,
   Notice,
   PageHeader,
   Select,
   ViewToggle,
+  useContextMenu,
+  type ContextMenuItem,
 } from "../components/ui";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   Braces,
   CalendarDays,
   ClipboardList,
+  Copy,
+  EllipsisVertical,
   FileSpreadsheet,
   CloudSun,
+  SquarePen,
   TableProperties,
   Check,
   Lightbulb,
   Plus,
   Rss,
+  Trash2,
   X,
 } from "lucide-react";
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { api, ApiError } from "../api/client";
-import type { DataSourceDefinition, DataSourceProvider } from "../api/types";
+import type {
+  DataSource,
+  DataSourceDefinition,
+  DataSourceProvider,
+} from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import {
   DashboardListToolbar,
@@ -259,6 +270,8 @@ function DataSourceProviderGallery({
 export function DataSourcesPage() {
   const auth = useAuth();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const csrf = auth.status?.csrfToken ?? "";
   const canManage = canManageContent(auth.status?.user);
   const [search, setSearch] = useState("");
   const [provider, setProvider] = useState("");
@@ -277,6 +290,49 @@ export function DataSourcesPage() {
   const definitionsByProvider = new Map<string, DataSourceDefinition>(
     (definitions.data?.dataSources ?? []).map((item) => [item.id, item]),
   );
+  const duplicate = useMutation({
+    mutationFn: (id: string) => api.duplicateDataSource(id, csrf),
+    onSuccess: (created) => {
+      void queryClient.invalidateQueries({ queryKey: ["data-sources"] });
+      void navigate(`/data-sources/${created.id}`);
+    },
+  });
+  const remove = useMutation({
+    mutationFn: (id: string) => api.deleteDataSource(id, csrf),
+    onSuccess: () =>
+      void queryClient.invalidateQueries({ queryKey: ["data-sources"] }),
+  });
+  const menu = useContextMenu<DataSource>();
+  const actionsFor = (source: DataSource): ContextMenuItem[] => {
+    const actions: ContextMenuItem[] = [
+      {
+        label: canManage ? "Edit" : "Open",
+        icon: <SquarePen size={14} />,
+        onSelect: () => void navigate(`/data-sources/${source.id}`),
+      },
+    ];
+    if (canManage)
+      actions.push(
+        {
+          label: "Duplicate",
+          icon: <Copy size={14} />,
+          disabled: duplicate.isPending,
+          onSelect: () => duplicate.mutate(source.id),
+        },
+        {
+          label: "Delete",
+          icon: <Trash2 size={14} />,
+          danger: true,
+          separated: true,
+          disabled: remove.isPending,
+          onSelect: () => {
+            if (confirm(`Delete ${source.name}?`)) remove.mutate(source.id);
+          },
+        },
+      );
+    return actions;
+  };
+  const actionError = duplicate.error ?? remove.error;
 
   return (
     <section className="content-page apps-page">
@@ -324,6 +380,13 @@ export function DataSourcesPage() {
             : "Data Sources could not be loaded."}
         </Notice>
       )}
+      {actionError && (
+        <Notice variant="danger">
+          {actionError instanceof ApiError
+            ? actionError.message
+            : "The Data Source action could not be completed."}
+        </Notice>
+      )}
       {dataSources.isLoading ? (
         <div className="table-loading">Loading Data Sources...</div>
       ) : dataSources.data?.items?.length === 0 ? (
@@ -346,7 +409,21 @@ export function DataSourcesPage() {
       ) : (
         <div className={`asset-collection asset-collection--${view}`}>
           {dataSources.data?.items?.map((source) => (
-            <article className="asset-card" key={source.id}>
+            <article
+              className="asset-card asset-card--has-menu"
+              key={source.id}
+              onContextMenu={(event) => menu.open(event, source)}
+            >
+              <button
+                type="button"
+                className="asset-card__menu"
+                aria-haspopup="menu"
+                aria-expanded={menu.anchor?.target.id === source.id}
+                aria-label={`Actions for ${source.name}`}
+                onClick={(event) => menu.open(event, source)}
+              >
+                <EllipsisVertical size={15} aria-hidden="true" />
+              </button>
               <button
                 className="asset-card__open"
                 onClick={() => void navigate(`/data-sources/${source.id}`)}
@@ -374,6 +451,15 @@ export function DataSourcesPage() {
               </button>
             </article>
           ))}
+          {menu.anchor && (
+            <ContextMenu
+              x={menu.anchor.x}
+              y={menu.anchor.y}
+              label={`Actions for ${menu.anchor.target.name}`}
+              items={actionsFor(menu.anchor.target)}
+              onClose={menu.close}
+            />
+          )}
         </div>
       )}
     </section>

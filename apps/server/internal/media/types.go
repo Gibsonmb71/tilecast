@@ -96,6 +96,8 @@ type Asset struct {
 	Creator            *Creator       `json:"creator,omitempty"`
 	CreatedAt          time.Time      `json:"createdAt"`
 	UpdatedAt          time.Time      `json:"updatedAt"`
+	AvailableFrom      *time.Time     `json:"availableFrom,omitempty"`
+	ExpiresAt          *time.Time     `json:"expiresAt,omitempty"`
 	Variants           []Variant      `json:"variants"`
 	ThumbnailURL       *string        `json:"thumbnailUrl,omitempty"`
 	Website            *WebsiteConfig `json:"website,omitempty"`
@@ -811,6 +813,7 @@ type WebsiteReportingScreen struct {
 
 type AssetInvalidator interface {
 	AssetChanged(context.Context, uuid.UUID, string) error
+	TagAssignmentsChanged(context.Context, []uuid.UUID, string) error
 	DataSourceChanged(context.Context, uuid.UUID, string) error
 }
 
@@ -861,10 +864,18 @@ type DataSourceListOptions struct {
 }
 
 type DataSourceListResult struct {
-	Items    []DataSource `json:"items"`
-	Total    int          `json:"total"`
-	Page     int          `json:"page"`
-	PageSize int          `json:"pageSize"`
+	Items    []DataSourceListItem `json:"items"`
+	Total    int                  `json:"total"`
+	Page     int                  `json:"page"`
+	PageSize int                  `json:"pageSize"`
+}
+
+// DataSourceListItem includes the refresh summary Studio needs to present and
+// select a source without fetching every source's detail separately.
+type DataSourceListItem struct {
+	DataSource
+	Status        string `json:"status"`
+	CachedRecords int    `json:"cachedRecordCount"`
 }
 type ListResult struct {
 	Items    []Asset `json:"items"`

@@ -4,6 +4,8 @@ import type { ScreenPreview } from "../api/previews";
 export type LivePreviewState =
   "loading" | "live" | "offline" | "stale" | "unavailable" | "capture-error";
 
+export type PreviewAgeTone = "fresh" | "aging" | "old";
+
 const offlineStatuses = new Set<ScreenStatus>([
   "offline",
   "disabled",
@@ -28,6 +30,32 @@ export function livePreviewState(
   )
     return "stale";
   return "live";
+}
+
+export function previewAge(
+  capturedAt: string,
+  now = Date.now(),
+): { label: string; tone: PreviewAgeTone } | null {
+  const capturedAtMillis = new Date(capturedAt).getTime();
+  if (!Number.isFinite(capturedAtMillis)) return null;
+
+  const ageMillis = Math.max(0, now - capturedAtMillis);
+  const ageSeconds = Math.floor(ageMillis / 1_000);
+  let label: string;
+
+  if (ageSeconds < 60) {
+    label = `${ageSeconds}s ago`;
+  } else if (ageSeconds < 3_600) {
+    label = `${Math.floor(ageSeconds / 60)}m ago`;
+  } else if (ageSeconds < 86_400) {
+    label = `${Math.floor(ageSeconds / 3_600)}h ago`;
+  } else {
+    label = `${Math.floor(ageSeconds / 86_400)}d ago`;
+  }
+
+  const tone: PreviewAgeTone =
+    ageMillis <= 45_000 ? "fresh" : ageMillis <= 120_000 ? "aging" : "old";
+  return { label, tone };
 }
 
 export function previewUnavailableMessage(failureStatus?: string) {

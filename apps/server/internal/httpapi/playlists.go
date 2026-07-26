@@ -18,6 +18,12 @@ type playlistDetailsRequest struct {
 	Description string `json:"description"`
 }
 
+type playlistCreateRequest struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	SourceType  string `json:"sourceType"`
+}
+
 func (s *server) listPlaylists(w http.ResponseWriter, r *http.Request) {
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	pageSize, _ := strconv.Atoi(r.URL.Query().Get("pageSize"))
@@ -29,13 +35,13 @@ func (s *server) listPlaylists(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 func (s *server) createPlaylist(w http.ResponseWriter, r *http.Request) {
-	var body playlistDetailsRequest
+	var body playlistCreateRequest
 	if err := decodeJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
 	user := r.Context().Value(sessionContextKey).(auth.Session).User
-	result, err := s.playlists.Create(r.Context(), user.ID, body.Name, body.Description)
+	result, err := s.playlists.Create(r.Context(), user.ID, body.Name, body.Description, body.SourceType)
 	if err != nil {
 		s.writePlaylistError(w, r, err)
 		return
@@ -178,6 +184,25 @@ func (s *server) reorderPlaylistItems(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
+func (s *server) setPlaylistTagRule(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	var body playlists.TagRuleInput
+	if err := decodeJSON(w, r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	user := r.Context().Value(sessionContextKey).(auth.Session).User
+	result, err := s.playlists.SetTagRule(r.Context(), id, user.ID, body)
+	if err != nil {
+		s.writePlaylistError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": result})
+}
+
 func (s *server) getPlaylistAssignment(w http.ResponseWriter, r *http.Request) {
 	id, ok := urlUUID(w, r, "id")
 	if !ok {
@@ -247,6 +272,8 @@ func (s *server) writePlaylistError(w http.ResponseWriter, r *http.Request, err 
 		writeError(w, http.StatusNotFound, "playlist_not_found", "The requested playlist was not found.")
 	case errors.Is(err, playlists.ErrInvalidAsset):
 		writeError(w, http.StatusUnprocessableEntity, "asset_not_ready", "Only ready assets with a playable variant may be added.")
+	case errors.Is(err, playlists.ErrInvalidItem):
+		writeError(w, http.StatusUnprocessableEntity, "playlist_validation_failed", "The playlist rule or item references unavailable content.")
 	case errors.Is(err, playlists.ErrConflict):
 		writeError(w, http.StatusConflict, "playlist_conflict", strings.TrimPrefix(err.Error(), playlists.ErrConflict.Error()+": "))
 	case strings.Contains(err.Error(), "must be") || strings.Contains(err.Error(), "duration") || strings.Contains(err.Error(), "offset") || strings.Contains(err.Error(), "order") || strings.Contains(err.Error(), "in use") || strings.Contains(err.Error(), "cannot be added"):

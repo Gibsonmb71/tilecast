@@ -204,7 +204,7 @@ func TestWidgetUsingV13SourceRejectedOnLegacyScreen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create banner widget: %v", err)
 	}
-	playlist, err := f.service.Create(f.ctx, f.user, "Status rotation", "")
+	playlist, err := f.service.Create(f.ctx, f.user, "Status rotation", "", "static")
 	if err != nil {
 		t.Fatal(err)
 	}

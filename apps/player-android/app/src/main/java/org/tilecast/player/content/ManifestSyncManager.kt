@@ -262,6 +262,9 @@ class ManifestSyncManager(
 				else -> require(item.variantId != null && assets[item.variantId]?.assetId == item.assetId) { "Manifest item references an unavailable variant" }
 			}
 			require(item.fitMode in listOf("contain", "cover", "stretch") && item.transition in (if (manifest.schemaVersion >= 14) listOf("none", "fade", "crossfade") else listOf("none", "fade")) && item.deliveryPolicy in listOf("download", "stream", "automatic") && item.volume in 0f..1f) { "Manifest item settings are invalid" }
+			val availableFrom = item.availableFrom?.let(Instant::parse)
+			val expiresAt = item.expiresAt?.let(Instant::parse)
+			require(availableFrom == null || expiresAt == null || availableFrom.isBefore(expiresAt)) { "Manifest item availability is invalid" }
 			if (item.variantId?.let { assets[it]?.mimeType?.startsWith("image/") } == true) require((item.durationMs ?: 0) > 0) { "Image duration is invalid" }
 			if (item.videoEndOffsetMs != null) require(item.videoEndOffsetMs > (item.videoStartOffsetMs ?: 0)) { "Video offsets are invalid" }
 		}
@@ -357,7 +360,7 @@ class ManifestSyncManager(
 					require(condition.op in setOf("equals","not_equals","empty","not_empty","greater_than","greater_or_equal","less_than","less_or_equal","before","after"))
 				}
 				if(value.type=="marquee")animations++
-				value.repeat?.let{repeat->require(repeat.limit in 1..200&&repeat.dataset.substringBefore(':') in dataSources)}
+				value.repeat?.let{repeat->require(repeat.limit in 1..200&&repeat.offset in 0..2000&&repeat.dataset.substringBefore(':') in dataSources)}
 				value.children.forEach{visit(it,depth+1)}
 			}
 			visit(root,0);require(animations<=4)

@@ -2,9 +2,13 @@ import { describe, expect, it, vi } from "vitest";
 import {
   SelfUpdater,
   parseVersionCode,
+  promoteAppImage,
   type SelfUpdateDeps,
 } from "./self-update";
 import type { PlayerCommand, UpdateMetadata } from "./types";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 const RELEASE_ID = "11111111-1111-1111-1111-111111111111";
 const DEPLOYMENT_ID = "22222222-2222-2222-2222-222222222222";
@@ -82,6 +86,26 @@ describe("parseVersionCode", () => {
   it("returns 0 for unparseable versions", () => {
     expect(parseVersionCode("")).toBe(0);
     expect(parseVersionCode("dev")).toBe(0);
+  });
+});
+
+describe("promoteAppImage", () => {
+  it("atomically replaces the AppImage with executable permissions", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "tilecast-appimage-"));
+    const staged = path.join(root, "player-update.AppImage");
+    const installed = path.join(root, "tilecast-player.AppImage");
+    try {
+      await writeFile(staged, "new-appimage", { mode: 0o600 });
+      await writeFile(installed, "old-appimage", { mode: 0o755 });
+
+      await promoteAppImage(staged, installed);
+
+      expect(await readFile(installed, "utf8")).toBe("new-appimage");
+      expect((await stat(installed)).mode & 0o777).toBe(0o755);
+      await expect(stat(staged)).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });
 

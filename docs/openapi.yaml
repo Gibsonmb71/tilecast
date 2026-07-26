@@ -372,6 +372,18 @@ paths:
     patch:
       operationId: updateAsset
       parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                name: { type: string, minLength: 1, maxLength: 180 }
+                description: { type: string, maxLength: 2000 }
+                availabilitySet: { type: boolean }
+                availableFrom: { type: string, format: date-time }
+                expiresAt: { type: string, format: date-time }
       responses:
         {
           "200": { description: Asset metadata updated },
@@ -464,6 +476,22 @@ paths:
     post:
       operationId: createPlaylist
       parameters: [{ $ref: "#/components/parameters/CSRFToken" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, description, sourceType]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 180 }
+                description: { type: string, maxLength: 2000 }
+                sourceType:
+                  {
+                    type: string,
+                    enum: [static, tag],
+                    description: static creates a manually ordered timeline; tag creates an initially empty tag-driven playlist,
+                  }
       responses:
         {
           "201": { description: Playlist created },
@@ -515,6 +543,22 @@ paths:
         - $ref: "#/components/parameters/CSRFToken"
       responses:
         { "200": { description: Complete item order replaced transactionally } }
+  /api/v1/playlists/{id}/tag-rule:
+    put:
+      operationId: setPlaylistTagRule
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - $ref: "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PlaylistTagRuleInput" }
+      responses:
+        {
+          "200": { description: Playlist source and tag rule updated },
+          "422": { description: Invalid tag rule },
+        }
   /api/v1/playlists/{id}/items/{itemId}:
     parameters:
       - $ref: "#/components/parameters/ResourceID"
@@ -1622,6 +1666,19 @@ components:
       scheme: bearer
       bearerFormat: Tilecast device credential
   schemas:
+    PlaylistTagRuleInput:
+      type: object
+      additionalProperties: false
+      required: [enabled, match, imageDurationMs, tagIds]
+      properties:
+        enabled: { type: boolean }
+        match: { type: string, enum: [any, all] }
+        imageDurationMs: { type: integer, minimum: 1000, maximum: 86400000 }
+        tagIds:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          items: { type: string, format: uuid }
     PlaylistItemInput:
       type: object
       additionalProperties: false
@@ -1925,6 +1982,8 @@ components:
         thumbnailUrl: { type: string }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+        availableFrom: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
         variants:
           type: array
           items: { $ref: "#/components/schemas/AssetVariant" }

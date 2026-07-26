@@ -166,6 +166,20 @@ func (s *Service) Heartbeat(ctx context.Context, principal DevicePrincipal, hear
 	return nil
 }
 
+// MarkHeartbeatContact records authenticated socket liveness without accepting
+// optional status metadata. A malformed or newly introduced metadata field must
+// not make an otherwise active player look silent.
+func (s *Service) MarkHeartbeatContact(ctx context.Context, screenID uuid.UUID, address string) error {
+	command, err := s.db.Exec(ctx, `UPDATE screens SET last_heartbeat_at=now(),last_known_ip=$2,updated_at=now() WHERE id=$1`, screenID, addressString(remoteAddress(address)))
+	if err != nil {
+		return fmt.Errorf("record heartbeat contact: %w", err)
+	}
+	if command.RowsAffected() != 1 {
+		return errors.New("record heartbeat contact: screen was not found")
+	}
+	return nil
+}
+
 func (s *Service) MarkConnected(ctx context.Context, screenID uuid.UUID, address string) error {
 	_, err := s.db.Exec(ctx, `UPDATE screens SET last_connected_at=now(),last_known_ip=$2,updated_at=now() WHERE id=$1`, screenID, addressString(remoteAddress(address)))
 	return err

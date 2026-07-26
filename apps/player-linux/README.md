@@ -118,11 +118,12 @@ same network needs no typing.
 
 - **Self-update** replaces the running AppImage rather than installing an APK.
   On an `install_player_update` deployment the player downloads and verifies the
-  signed AppImage (SHA-256 + size), atomically swaps it over
-  `$APPIMAGE`, and relaunches so the systemd unit restarts into the new version;
-  progress is reported to the update-deployment status endpoint. When the player
-  is not running as a managed AppImage (e.g. a dev run), the deployment is
-  reported as failed instead. `power_assist_sleep/wake` still report
+  signed AppImage (SHA-256 + size), marks the staged file executable, atomically
+  swaps it over `$APPIMAGE`, and exits so the systemd unit starts the new
+  version; progress is reported to the update-deployment status endpoint. The
+  AppImage and its parent directory must be writable by the kiosk user. When the
+  player is not running as a managed AppImage (e.g. a dev run), the deployment
+  is reported as failed instead. `power_assist_sleep/wake` still report
   `unsupported_command`. `restart_activity` maps onto a process relaunch (the
   same rung as `restart_player_process`).
 - **Kiosk lockdown** is provided by the desktop/Wayland kiosk compositor and the

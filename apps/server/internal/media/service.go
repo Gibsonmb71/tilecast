@@ -400,7 +400,7 @@ func (s *Service) getAsset(ctx context.Context, id uuid.UUID, allowFormAttachmen
 	return asset, nil
 }
 
-const assetSelect = `SELECT a.id,a.name,a.description,a.type,a.original_filename,a.declared_mime_type,a.detected_mime_type,encode(a.sha256,'hex'),a.original_size,a.width,a.height,a.duration_seconds,a.frame_rate,a.video_codec,a.audio_codec,a.audio_channels,a.metadata,a.processing_status,a.processing_progress,a.error_code,a.error_message,u.id,u.name,a.created_at,a.updated_at,(EXISTS(SELECT 1 FROM asset_variants preview WHERE preview.asset_id=a.id AND preview.deleted_at IS NULL AND preview.kind IN ('thumbnail','poster')) OR EXISTS(SELECT 1 FROM widgets widget_preview WHERE widget_preview.asset_id=a.id AND widget_preview.preview_image IS NOT NULL)) FROM assets a LEFT JOIN users u ON u.id=a.created_by`
+const assetSelect = `SELECT a.id,a.name,a.description,a.type,a.original_filename,a.declared_mime_type,a.detected_mime_type,encode(a.sha256,'hex'),a.original_size,a.width,a.height,a.duration_seconds,a.frame_rate,a.video_codec,a.audio_codec,a.audio_channels,a.metadata,a.processing_status,a.processing_progress,a.error_code,a.error_message,u.id,u.name,a.created_at,a.updated_at,a.available_from,a.expires_at,(EXISTS(SELECT 1 FROM asset_variants preview WHERE preview.asset_id=a.id AND preview.deleted_at IS NULL AND preview.kind IN ('thumbnail','poster')) OR EXISTS(SELECT 1 FROM widgets widget_preview WHERE widget_preview.asset_id=a.id AND widget_preview.preview_image IS NOT NULL)) FROM assets a LEFT JOIN users u ON u.id=a.created_by`
 
 type rowScanner interface{ Scan(...any) error }
 
@@ -410,7 +410,7 @@ func scanAsset(row rowScanner) (Asset, error) {
 	var creatorID *uuid.UUID
 	var creatorName *string
 	var hasPreview bool
-	err := row.Scan(&a.ID, &a.Name, &a.Description, &a.Type, &a.OriginalFilename, &a.DeclaredMIMEType, &a.DetectedMIMEType, &a.SHA256, &a.OriginalSize, &a.Width, &a.Height, &a.Duration, &a.FrameRate, &a.VideoCodec, &a.AudioCodec, &a.AudioChannels, &metadata, &a.ProcessingStatus, &a.ProcessingProgress, &a.ErrorCode, &a.ErrorMessage, &creatorID, &creatorName, &a.CreatedAt, &a.UpdatedAt, &hasPreview)
+	err := row.Scan(&a.ID, &a.Name, &a.Description, &a.Type, &a.OriginalFilename, &a.DeclaredMIMEType, &a.DetectedMIMEType, &a.SHA256, &a.OriginalSize, &a.Width, &a.Height, &a.Duration, &a.FrameRate, &a.VideoCodec, &a.AudioCodec, &a.AudioChannels, &metadata, &a.ProcessingStatus, &a.ProcessingProgress, &a.ErrorCode, &a.ErrorMessage, &creatorID, &creatorName, &a.CreatedAt, &a.UpdatedAt, &a.AvailableFrom, &a.ExpiresAt, &hasPreview)
 	if err != nil {
 		return Asset{}, err
 	}
@@ -578,6 +578,14 @@ func (s *Service) ListAssets(ctx context.Context, o ListOptions) (ListResult, er
 }
 
 func (s *Service) UpdateAsset(ctx context.Context, id, userID uuid.UUID, name, description *string) (Asset, error) {
+	return s.updateAsset(ctx, id, userID, name, description, false, nil, nil)
+}
+
+func (s *Service) UpdateAssetAvailability(ctx context.Context, id, userID uuid.UUID, name, description *string, availableFrom, expiresAt *time.Time) (Asset, error) {
+	return s.updateAsset(ctx, id, userID, name, description, true, availableFrom, expiresAt)
+}
+
+func (s *Service) updateAsset(ctx context.Context, id, userID uuid.UUID, name, description *string, availabilitySet bool, availableFrom, expiresAt *time.Time) (Asset, error) {
 	// Form attachments are not editable through the generic Media surface.
 	if origin, err := s.assetOrigin(ctx, id); err != nil {
 		return Asset{}, err
@@ -594,7 +602,10 @@ func (s *Service) UpdateAsset(ctx context.Context, id, userID uuid.UUID, name, d
 	if description != nil && len(*description) > 2000 {
 		return Asset{}, errors.New("description must be at most 2000 characters")
 	}
-	tag, err := s.db.Exec(ctx, `UPDATE assets SET name=COALESCE($2,name),description=COALESCE($3,description),updated_at=now() WHERE id=$1 AND deleted_at IS NULL`, id, name, description)
+	if availabilitySet && availableFrom != nil && expiresAt != nil && !availableFrom.Before(*expiresAt) {
+		return Asset{}, errors.New("availableFrom must be before expiresAt")
+	}
+	tag, err := s.db.Exec(ctx, `UPDATE assets SET name=COALESCE($2,name),description=COALESCE($3,description),available_from=CASE WHEN $4 THEN $5 ELSE available_from END,expires_at=CASE WHEN $4 THEN $6 ELSE expires_at END,updated_at=now() WHERE id=$1 AND deleted_at IS NULL`, id, name, description, availabilitySet, availableFrom, expiresAt)
 	if err != nil {
 		return Asset{}, err
 	}
@@ -606,6 +617,9 @@ func (s *Service) UpdateAsset(ctx context.Context, id, userID uuid.UUID, name, d
 		action = "media.asset_renamed"
 	}
 	_, _ = s.db.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)VALUES($1,$2,$3,'asset',$4)`, uuid.New(), userID, action, id.String())
+	if availabilitySet && s.invalidator != nil {
+		_ = s.invalidator.AssetChanged(ctx, id, "media.availability_updated")
+	}
 	return s.GetAsset(ctx, id)
 }
 

@@ -1,0 +1,243 @@
+{
+  "widgets": [],
+  "dataSources": [
+    {
+      "id": "google-sheet",
+      "version": 1,
+      "name": "Google Sheet",
+      "description": "Read a published Google Sheet without pasting a URL or mapping columns.",
+      "category": "Structured",
+      "icon": "spreadsheet",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "publishId",
+            "label": "Published document ID",
+            "description": "From File, Share, Publish to the web. Copy the long id between /d/e/ and /pub in the address it gives you.",
+            "control": "text",
+            "required": true,
+            "minLength": 20,
+            "maxLength": 200,
+            "default": "2PACX-000000000000000000"
+          },
+          {
+            "key": "sheetNumber",
+            "label": "Sheet number",
+            "description": "1 is the first tab in the published document.",
+            "control": "integer",
+            "required": true,
+            "default": 0,
+            "minimum": 0,
+            "maximum": 20
+          }
+        ]
+      },
+      "defaultConfiguration": {
+        "publishId": "2PACX-000000000000000000",
+        "sheetNumber": 0
+      },
+      "outputSchema": {
+        "kind": "records",
+        "fields": [
+          {
+            "key": "title",
+            "label": "Title",
+            "type": "text",
+            "required": true
+          },
+          { "key": "detail", "label": "Detail", "type": "text" },
+          { "key": "category", "label": "Category", "type": "text" },
+          { "key": "value", "label": "Value", "type": "text" },
+          { "key": "date", "label": "Date", "type": "date" }
+        ]
+      },
+      "fetch": {
+        "urlTemplate": "https://docs.google.com/spreadsheets/d/e/{publishId}/pub?gid={sheetNumber}&single=true&output=csv",
+        "format": "csv",
+        "accept": "text/csv",
+        "mapping": {
+          "title": "title",
+          "detail": "detail",
+          "category": "category",
+          "value": "value",
+          "date": "date"
+        },
+        "maximumRecords": 200,
+        "refreshSeconds": 900
+      },
+      "adapterId": "http_records",
+      "refreshBehavior": "interval",
+      "attribution": "Published Google Sheet",
+      "requiresManifestV13": true,
+      "setup": {
+        "eyebrow": "Guided public feed",
+        "tip": "Name your columns title, detail, category, value, and date. Only those columns are read; anything else in the sheet is ignored.",
+        "steps": [
+          "In Google Sheets choose File, Share, Publish to the web, and publish the tab as CSV.",
+          "Paste the published document ID here.",
+          "Name your header row title, detail, category, value, and date."
+        ]
+      },
+      "deprecation": {}
+    },
+    {
+      "id": "weather-alerts-us",
+      "version": 1,
+      "name": "US Weather Alerts",
+      "description": "Show active National Weather Service alerts for one state or territory.",
+      "category": "Live Information",
+      "icon": "alert",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "area",
+            "label": "State or territory",
+            "description": "The two-letter code the National Weather Service uses, such as OH or PR.",
+            "control": "text",
+            "required": true,
+            "minLength": 2,
+            "maxLength": 2,
+            "default": "OH"
+          },
+          {
+            "key": "severity",
+            "label": "Minimum severity",
+            "control": "select",
+            "required": true,
+            "default": "Severe",
+            "options": [
+              { "value": "Minor", "label": "Minor and above" },
+              { "value": "Moderate", "label": "Moderate and above" },
+              { "value": "Severe", "label": "Severe and above" },
+              { "value": "Extreme", "label": "Extreme only" }
+            ]
+          }
+        ]
+      },
+      "defaultConfiguration": {
+        "area": "OH",
+        "severity": "Severe"
+      },
+      "outputSchema": {
+        "kind": "records",
+        "fields": [
+          {
+            "key": "title",
+            "label": "Event",
+            "type": "text",
+            "required": true
+          },
+          { "key": "headline", "label": "Headline", "type": "text" },
+          { "key": "severity", "label": "Severity", "type": "text" },
+          { "key": "area", "label": "Area", "type": "text" },
+          { "key": "start", "label": "Effective", "type": "datetime" },
+          { "key": "end", "label": "Expires", "type": "datetime" }
+        ]
+      },
+      "fetch": {
+        "urlTemplate": "https://api.weather.gov/alerts/active?area={area}&severity={severity}&status=actual&message_type=alert",
+        "format": "json",
+        "accept": "application/geo+json",
+        "recordsPath": "features",
+        "mapping": {
+          "title": "properties.event",
+          "headline": "properties.headline",
+          "severity": "properties.severity",
+          "area": "properties.areaDesc",
+          "start": "properties.effective",
+          "end": "properties.expires"
+        },
+        "maximumRecords": 25,
+        "refreshSeconds": 300
+      },
+      "adapterId": "http_records",
+      "refreshBehavior": "interval",
+      "attribution": "NOAA National Weather Service",
+      "requiresManifestV13": true,
+      "setup": {
+        "eyebrow": "Guided public feed",
+        "tip": "This covers a whole state. For a smaller area, or for a country outside the United States, use the CAP Alerts Data Source with a local feed.",
+        "steps": [
+          "Enter your two-letter state or territory code.",
+          "Choose the lowest severity worth putting on a screen.",
+          "Select it from a List, Ticker, or Table Widget."
+        ]
+      },
+      "deprecation": {}
+    },
+    {
+      "id": "public-holidays",
+      "version": 1,
+      "name": "Public Holidays",
+      "description": "List a country's public holidays for a given year.",
+      "category": "Live Information",
+      "icon": "calendar",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "year",
+            "label": "Year",
+            "control": "integer",
+            "required": true,
+            "default": 2026,
+            "minimum": 2000,
+            "maximum": 2100
+          },
+          {
+            "key": "countryCode",
+            "label": "Country code",
+            "description": "The two-letter ISO country code, such as US, GB, or CA.",
+            "control": "text",
+            "required": true,
+            "minLength": 2,
+            "maxLength": 2,
+            "default": "US"
+          }
+        ]
+      },
+      "defaultConfiguration": {
+        "year": 2026,
+        "countryCode": "US"
+      },
+      "outputSchema": {
+        "kind": "records",
+        "fields": [
+          {
+            "key": "title",
+            "label": "Holiday",
+            "type": "text",
+            "required": true
+          },
+          { "key": "localName", "label": "Local name", "type": "text" },
+          { "key": "date", "label": "Date", "type": "date" }
+        ]
+      },
+      "fetch": {
+        "urlTemplate": "https://date.nager.at/api/v3/PublicHolidays/{year}/{countryCode}",
+        "format": "json",
+        "accept": "application/json",
+        "mapping": {
+          "title": "name",
+          "localName": "localName",
+          "date": "date"
+        },
+        "maximumRecords": 60,
+        "refreshSeconds": 86400
+      },
+      "adapterId": "http_records",
+      "refreshBehavior": "interval",
+      "attribution": "Nager.Date",
+      "requiresManifestV13": true,
+      "setup": {
+        "eyebrow": "Guided public feed",
+        "tip": "Set the Data Source date selection to Next available so a Widget shows the next holiday rather than the whole year.",
+        "steps": [
+          "Enter the year and your two-letter country code.",
+          "Select it from an Agenda, List, or Now and Next Widget.",
+          "Update the year each January, or keep one Data Source per year."
+        ]
+      },
+      "deprecation": {}
+    }
+  ]
+}

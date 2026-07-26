@@ -15,6 +15,7 @@ import { useAuth } from "../auth/AuthProvider";
 import { Button } from "./ui";
 import {
   livePreviewState,
+  previewAge,
   previewUnavailableMessage,
 } from "./livePreviewState";
 import "./LivePreviewPanel.css";
@@ -25,6 +26,7 @@ const METADATA_REFRESH_MILLIS = 5_000;
 export function LivePreviewPanel({ screenId }: { screenId: string }) {
   const auth = useAuth();
   const [renewalError, setRenewalError] = useState<string | null>(null);
+  const [now, setNow] = useState(Date.now);
   const screen = useQuery({
     queryKey: ["screens", screenId],
     queryFn: () => api.screen(screenId),
@@ -82,6 +84,15 @@ export function LivePreviewPanel({ screenId }: { screenId: string }) {
   const capturedAt = preview.data?.capturedAt
     ? new Date(preview.data.capturedAt)
     : null;
+  const captureAge = preview.data?.capturedAt
+    ? previewAge(preview.data.capturedAt, now)
+    : null;
+
+  useEffect(() => {
+    if (!preview.data?.capturedAt) return;
+    const interval = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(interval);
+  }, [preview.data?.capturedAt]);
 
   return (
     <aside className="live-preview-panel" aria-label="Live preview">
@@ -113,8 +124,15 @@ export function LivePreviewPanel({ screenId }: { screenId: string }) {
             failureStatus={preview.data?.captureFailureStatus}
           />
         )}
-        {state === "stale" && imageUrl && (
-          <span className="live-preview-frame__banner">Preview is stale</span>
+        {imageUrl && captureAge && (
+          <span
+            className={`live-preview-frame__banner live-preview-frame__banner--${captureAge.tone}`}
+            title={
+              capturedAt ? `Captured ${capturedAt.toLocaleString()}` : undefined
+            }
+          >
+            {captureAge.label}
+          </span>
         )}
       </div>
 

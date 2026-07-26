@@ -140,7 +140,21 @@ const MINE_PAGE_SIZE = 20;
 
 export function FormPortalDetailPage() {
   const { id } = useParams();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [page, setPage] = useState(1);
+  // A completed submission returns here carrying router state, so the submitter gets explicit
+  // confirmation it landed instead of a silent bounce back to the list. The flag is copied into local
+  // state and stripped from history immediately so a reload does not re-announce it.
+  const [justSubmitted] = useState(
+    () =>
+      (location.state as { submitted?: boolean } | null)?.submitted === true,
+  );
+  useEffect(() => {
+    if (justSubmitted) {
+      void navigate(location.pathname, { replace: true, state: null });
+    }
+  }, [justSubmitted, navigate, location.pathname]);
   const form = useQuery({
     queryKey: ["form-data-source", id],
     queryFn: () => api.getForm(id!),
@@ -192,6 +206,13 @@ export function FormPortalDetailPage() {
           ) : undefined
         }
       />
+
+      {justSubmitted && (
+        <Notice variant="success" title="Submission sent">
+          Your submission is now with the reviewers. You can follow its status
+          below.
+        </Notice>
+      )}
 
       {!published && (
         <Notice variant="info" title="Not open for submissions yet">
@@ -338,7 +359,9 @@ export function FormPortalSubmissionPage() {
         form={form.data}
         initialDetail={recordId ? record.data : undefined}
         csrf={csrf}
-        onCompleted={() => void navigate(`/forms/${id}`)}
+        onCompleted={() =>
+          void navigate(`/forms/${id}`, { state: { submitted: true } })
+        }
       />
     </div>
   );

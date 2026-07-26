@@ -5,6 +5,9 @@
   --tc-status-warning-border: var(--tc-orange-300);
   --tc-status-danger: var(--tc-red-700);
   --tc-status-danger-border: var(--tc-red-300);
+  /* Solid danger fill that carries white text; stays dark in both themes,
+     unlike --tc-status-danger which lightens for dark-mode legibility. */
+  --tc-status-danger-solid: var(--tc-red-700);
   --tc-status-info: var(--tc-info-700);
   --tc-status-info-border: var(--tc-info-300);
   --tc-status-neutral: var(--tc-neutral-500);
@@ -107,6 +110,8 @@ html[data-theme="dark"] {
   --tc-status-success-bg: #16372f;
   --tc-status-warning-bg: #3a2916;
   --tc-status-danger-bg: #3b2025;
+  /* red-700 only reaches 3.5:1 on the dark canvas; lift danger text to red-400. */
+  --tc-status-danger: var(--tc-red-400);
   --tc-status-info-bg: #192f4f;
   --tc-status-neutral-bg: var(--tc-neutral-800);
   --tc-overlay-scrim: rgb(0 0 0 / 66%);
@@ -162,6 +167,7 @@ html[data-theme="dark"] {
     --tc-status-success-bg: #16372f;
     --tc-status-warning-bg: #3a2916;
     --tc-status-danger-bg: #3b2025;
+    --tc-status-danger: var(--tc-red-400);
     --tc-status-info-bg: #192f4f;
     --tc-status-neutral-bg: var(--tc-neutral-800);
   }

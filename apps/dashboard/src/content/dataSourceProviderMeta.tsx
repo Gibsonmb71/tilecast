@@ -18,7 +18,8 @@ import {
 } from "lucide-react";
 import type { DataSourceDefinition, DataSourceProvider } from "../api/types";
 
-export function providerLabel(provider: DataSourceProvider) {
+export function providerLabel(provider: DataSourceProvider | null | undefined) {
+  if (!provider) return "Data Source";
   return (
     (
       {

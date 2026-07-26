@@ -1,21 +1,6 @@
 import { Select } from "../components/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  CalendarDays,
-  CloudSun,
-  Clock3,
-  Gauge,
-  LayoutGrid,
-  QrCode,
-  TextQuote,
-  Globe2,
-  ListTree,
-  Table2,
-  Utensils,
-  Timer,
-  X,
-  Youtube,
-} from "lucide-react";
+import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { api } from "../api/client";
@@ -48,6 +33,7 @@ import type {
   PresentationNode,
 } from "../api/types";
 import { DataSourcePicker } from "./DataSourcePicker";
+import { WidgetThumbnail } from "./WidgetThumbnail";
 import { previewRecordMaps, type PreviewDatasets } from "./previewRecords";
 import { captureWidgetPreview } from "./widgetPreviewCapture";
 
@@ -60,13 +46,6 @@ export function WidgetProviderGallery({
   onClose: () => void;
   page?: boolean;
 }) {
-  const catalog = useQuery({
-    queryKey: ["provider-catalog"],
-    queryFn: api.providerCatalog,
-    staleTime: 5 * 60_000,
-  });
-  const widgetProviders =
-    catalog.data?.providers?.filter((entry) => entry.role === "widget") ?? [];
   const definitions = useQuery({
     queryKey: ["content-definitions"],
     queryFn: api.contentDefinitions,
@@ -98,10 +77,8 @@ export function WidgetProviderGallery({
           <div>
             <h2 id="source-gallery-title">Create Widget</h2>
             <p>
-              Choose a Tilecast provider compiled to the declarative runtime.
-              {widgetProviders.length > 0
-                ? ` ${widgetProviders.filter((entry) => entry.presentationKind === "native").length} native and ${widgetProviders.filter((entry) => entry.presentationKind === "web").length} sandboxed web providers are available.`
-                : ""}
+              Choose what you want to show. If a Widget needs connected data,
+              you can choose or create it in the next step.
             </p>
           </div>
           <button className="icon-button" aria-label="Close" onClick={onClose}>
@@ -111,7 +88,12 @@ export function WidgetProviderGallery({
         <div className="source-provider-groups">
           {releaseDefined.length > 0 && (
             <section className="source-provider-group">
-              <h3>Release-defined</h3>
+              <header className="source-provider-group__heading">
+                <h3>Included with this release</h3>
+                <p>
+                  Additional Widget types provided by this Tilecast release.
+                </p>
+              </header>
               <div className="source-provider-grid">
                 {releaseDefined.map((definition) => (
                   <button
@@ -119,7 +101,10 @@ export function WidgetProviderGallery({
                     key={definition.id}
                     onClick={() => onChoose(definition.id)}
                   >
-                    <LayoutGrid size={26} />
+                    <WidgetThumbnail
+                      name={definition.thumbnail ?? definition.id}
+                      label={definition.name}
+                    />
                     <strong>{definition.name}</strong>
                     <span>{definition.description}</span>
                   </button>
@@ -128,15 +113,18 @@ export function WidgetProviderGallery({
             </section>
           )}
           <section className="source-provider-group">
-            <h3>Web and video</h3>
+            <header className="source-provider-group__heading">
+              <h3>Web and video</h3>
+              <p>Show a webpage or play YouTube content.</p>
+            </header>
             <div className="source-provider-grid">
               <button type="button" onClick={() => onChoose("website")}>
-                <Globe2 size={26} />
+                <WidgetThumbnail name="website" label="Website" />
                 <strong>Website</strong>
                 <span>Display an approved webpage.</span>
               </button>
               <button type="button" onClick={() => onChoose("youtube")}>
-                <Youtube size={26} />
+                <WidgetThumbnail name="youtube" label="YouTube" />
                 <strong>YouTube</strong>
                 <span>
                   Play a YouTube video or playlist without an API key.
@@ -145,25 +133,28 @@ export function WidgetProviderGallery({
             </div>
           </section>
           <section className="source-provider-group">
-            <h3>Essentials</h3>
+            <header className="source-provider-group__heading">
+              <h3>Essentials</h3>
+              <p>Simple Widgets that do not need a Data Source.</p>
+            </header>
             <div className="source-provider-grid">
               <button type="button" onClick={() => onChoose("clock")}>
-                <Clock3 size={26} />
+                <WidgetThumbnail name="clock" label="Clock" />
                 <strong>Clock</strong>
                 <span>Show live local time in a configured timezone.</span>
               </button>
               <button type="button" onClick={() => onChoose("date")}>
-                <CalendarDays size={26} />
+                <WidgetThumbnail name="date" label="Date" />
                 <strong>Date</strong>
                 <span>Show a live localized calendar date.</span>
               </button>
               <button type="button" onClick={() => onChoose("qrcode")}>
-                <QrCode size={26} />
+                <WidgetThumbnail name="qrcode" label="QR Code" />
                 <strong>QR Code</strong>
                 <span>Display text or a URL as a scannable code.</span>
               </button>
               <button type="button" onClick={() => onChoose("countdown")}>
-                <Timer size={26} />
+                <WidgetThumbnail name="countdown" label="Countdown" />
                 <strong>Countdown</strong>
                 <span>
                   Count down to or up from a configured date and time.
@@ -172,87 +163,98 @@ export function WidgetProviderGallery({
             </div>
           </section>
           <section className="source-provider-group">
-            <h3>Data Display</h3>
+            <header className="source-provider-group__heading">
+              <h3>Display connected data</h3>
+              <p>
+                Choose how records should look. You can connect the data next.
+              </p>
+            </header>
             <div className="source-provider-grid">
               <button type="button" onClick={() => onChoose("ticker")}>
-                <TextQuote size={26} />
+                <WidgetThumbnail name="ticker" label="Ticker" />
                 <strong>Ticker</strong>
                 <span>Scroll a selected field from a Data Source.</span>
               </button>
               <button type="button" onClick={() => onChoose("menu")}>
-                <Utensils size={26} />
+                <WidgetThumbnail name="menu" label="Menu" />
                 <strong>Menu</strong>
                 <span>Format selected fields as a signage menu.</span>
               </button>
               <button type="button" onClick={() => onChoose("list")}>
-                <ListTree size={26} />
+                <WidgetThumbnail name="list" label="List" />
                 <strong>List</strong>
                 <span>Present records from a reusable Data Source.</span>
               </button>
               <button type="button" onClick={() => onChoose("table")}>
-                <Table2 size={26} />
+                <WidgetThumbnail name="table" label="Table" />
                 <strong>Table</strong>
                 <span>Show selected fields in structured columns.</span>
               </button>
               <button type="button" onClick={() => onChoose("agenda")}>
-                <CalendarDays size={26} />
+                <WidgetThumbnail name="agenda" label="Agenda" />
                 <strong>Agenda</strong>
                 <span>Display dated records in agenda form.</span>
               </button>
               <button type="button" onClick={() => onChoose("metric")}>
-                <Gauge size={26} />
+                <WidgetThumbnail name="metric" label="Metric" />
                 <strong>Metric</strong>
                 <span>Highlight a numeric value from a Data Source.</span>
               </button>
               <button type="button" onClick={() => onChoose("cards")}>
-                <LayoutGrid size={26} />
+                <WidgetThumbnail name="cards" label="Cards" />
                 <strong>Cards</strong>
                 <span>Arrange reusable records in a responsive card grid.</span>
               </button>
               <button type="button" onClick={() => onChoose("weather")}>
-                <CloudSun size={26} />
+                <WidgetThumbnail name="weather" label="Weather" />
                 <strong>Weather</strong>
                 <span>Show current conditions and a daily forecast.</span>
               </button>
               <button type="button" onClick={() => onChoose("spotlight")}>
-                <TextQuote size={26} />
+                <WidgetThumbnail name="spotlight" label="Spotlight" />
                 <strong>Spotlight</strong>
                 <span>Feature one record with optional uploaded artwork.</span>
               </button>
               <button type="button" onClick={() => onChoose("stat_grid")}>
-                <LayoutGrid size={26} />
+                <WidgetThumbnail name="stat_grid" label="Stat Grid" />
                 <strong>Stat Grid</strong>
                 <span>Arrange numeric values in a responsive grid.</span>
               </button>
               <button type="button" onClick={() => onChoose("chart")}>
-                <Gauge size={26} />
+                <WidgetThumbnail name="chart" label="Chart" />
                 <strong>Chart</strong>
                 <span>Plot up to four numeric series.</span>
               </button>
               <button type="button" onClick={() => onChoose("progress")}>
-                <Gauge size={26} />
+                <WidgetThumbnail name="progress" label="Progress" />
                 <strong>Progress</strong>
                 <span>Show progress toward a numeric target.</span>
               </button>
             </div>
           </section>
           <section className="source-provider-group">
-            <h3>Schedules</h3>
+            <header className="source-provider-group__heading">
+              <h3>Schedules and time</h3>
+              <p>Show milestones or time across multiple locations.</p>
+            </header>
             <div className="source-provider-grid">
               <button type="button" onClick={() => onChoose("timeline")}>
-                <ListTree size={26} />
+                <WidgetThumbnail name="timeline" label="Timeline" />
                 <strong>Timeline</strong>
                 <span>Show dated milestones and their current status.</span>
               </button>
               <button type="button" onClick={() => onChoose("world_clock")}>
-                <Clock3 size={26} />
+                <WidgetThumbnail name="world_clock" label="World Clock" />
                 <strong>World Clock</strong>
                 <span>Show live time across multiple locations.</span>
               </button>
             </div>
           </section>
           <section className="source-provider-group">
-            <h3>Presets</h3>
+            <header className="source-provider-group__heading">
+              <h3>Common starting points</h3>
+              <p>Start with familiar signage patterns and customize them.</p>
+            </header>
             <div className="source-provider-grid">
               {[
                 [
@@ -302,10 +304,9 @@ export function WidgetProviderGallery({
                     )
                   }
                 >
-                  <LayoutGrid size={26} />
+                  <WidgetThumbnail name={underlying} label={label!} />
                   <strong>{label}</strong>
                   <span>{description}</span>
-                  <small>Guided preset</small>
                 </button>
               ))}
             </div>
@@ -504,6 +505,58 @@ const nativeDefault = (provider: NativeProvider): NativeConfig => {
   };
 };
 
+function nativeWidgetGuidance(provider: NativeProvider) {
+  if (
+    [
+      "ticker",
+      "menu",
+      "list",
+      "table",
+      "agenda",
+      "metric",
+      "cards",
+      "weather",
+      "spotlight",
+      "stat_grid",
+      "chart",
+      "progress",
+      "timeline",
+    ].includes(provider)
+  )
+    return "Connect the information to show, choose how it is presented, and check the live preview.";
+  return "Configure what appears on screen and check the live preview as you work.";
+}
+
+function nativeWidgetContentGuidance(provider: NativeProvider) {
+  if (
+    [
+      "ticker",
+      "menu",
+      "list",
+      "table",
+      "agenda",
+      "metric",
+      "cards",
+      "weather",
+      "spotlight",
+      "stat_grid",
+      "chart",
+      "progress",
+      "timeline",
+    ].includes(provider)
+  )
+    return "Start by choosing the data this Widget should use, then map and format the fields that appear.";
+  if (provider === "countdown")
+    return "Set the target time, decide what happens when it is reached, and choose which time units appear.";
+  if (provider === "qrcode")
+    return "Enter the destination people should open after scanning, then add an optional on-screen label.";
+  if (provider === "world_clock")
+    return "Add each location and its IANA timezone, such as America/New_York or Europe/London.";
+  if (provider === "clock" || provider === "date")
+    return "Choose the timezone and format that should appear on the screen.";
+  return "Enter the content people should see and choose how it behaves on screen.";
+}
+
 export function NativeAppEditor({
   provider,
   asset,
@@ -525,11 +578,6 @@ export function NativeAppEditor({
 }) {
   const queryClient = useQueryClient();
   const previewRef = useRef<HTMLDivElement>(null);
-  const catalog = useQuery({
-    queryKey: ["provider-catalog"],
-    queryFn: api.providerCatalog,
-    staleTime: 5 * 60_000,
-  });
   // Data Source definitions back the picker's Connect flow, which needs each provider's name,
   // description, and icon to offer a choice.
   const contentDefinitions = useQuery({
@@ -537,9 +585,6 @@ export function NativeAppEditor({
     queryFn: api.contentDefinitions,
   });
   const sourceDefinitions = contentDefinitions.data?.dataSources ?? [];
-  const providerRuntime = catalog.data?.providers?.find(
-    (entry) => entry.role === "widget" && entry.id === provider,
-  );
   const [name, setName] = useState(asset?.name ?? "");
   const [description, setDescription] = useState(asset?.description ?? "");
   const [configuration, setConfiguration] = useState<NativeConfig>(
@@ -710,7 +755,7 @@ export function NativeAppEditor({
   return (
     <div className="details-backdrop" role={page ? undefined : "presentation"}>
       <section
-        className="asset-details source-editor"
+        className="asset-details source-editor widget-editor"
         role={page ? undefined : "dialog"}
         aria-modal={page ? undefined : true}
         aria-labelledby="native-app-title"
@@ -724,11 +769,7 @@ export function NativeAppEditor({
                 : provider[0]!.toUpperCase() + provider.slice(1)}{" "}
               Widget
             </h2>
-            <p>
-              Reusable Widget configuration. Runtime:{" "}
-              <strong>{providerRuntime?.presentationKind ?? "native"}</strong>.
-              The Player interprets its compiled presentation document.
-            </p>
+            <p>{nativeWidgetGuidance(provider)}</p>
           </div>
           <button className="icon-button" aria-label="Close" onClick={onClose}>
             <X size={18} />
@@ -742,1905 +783,2093 @@ export function NativeAppEditor({
               playback does not depend on the preset.
             </div>
           )}
-          <label className="field">
-            <span className="field__label">Name</span>
-            <input
-              value={name}
-              disabled={readOnly}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </label>
-          <label className="field">
-            <span className="field__label">Description</span>
-            <input
-              value={description}
-              disabled={readOnly}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </label>
-          {(provider === "clock" || provider === "date") && (
-            <label className="field">
-              <span className="field__label">Timezone</span>
-              <input
-                value={
-                  (configuration as ClockWidgetConfig | DateWidgetConfig)
-                    .timezone
-                }
-                disabled={readOnly}
-                onChange={(e) =>
-                  setConfiguration((current) => ({
-                    ...current,
-                    timezone: e.target.value,
-                  }))
-                }
-              />
-            </label>
-          )}
-          {provider === "clock" && (
-            <div className="form-grid form-grid--2">
+          <section className="widget-editor__section">
+            <header>
+              <h3>Widget details</h3>
+              <p>Name this Widget so it is easy to recognize later.</p>
+            </header>
+            <div className="widget-editor__section-body">
               <label className="field">
-                <span className="field__label">Time format</span>
-                <Select
-                  value={(configuration as ClockWidgetConfig).format}
-                  disabled={readOnly}
-                  onChange={(e) =>
-                    setConfiguration((current) => ({
-                      ...(current as ClockWidgetConfig),
-                      format: e.target.value as "12" | "24",
-                    }))
-                  }
-                >
-                  <option value="12">12-hour</option>
-                  <option value="24">24-hour</option>
-                </Select>
-              </label>
-              <label className="switch-row">
+                <span className="field__label">Widget name</span>
                 <input
-                  type="checkbox"
-                  checked={(configuration as ClockWidgetConfig).showSeconds}
+                  value={name}
                   disabled={readOnly}
-                  onChange={(e) =>
-                    setConfiguration((current) => ({
-                      ...current,
-                      showSeconds: e.target.checked,
-                    }))
-                  }
+                  onChange={(e) => setName(e.target.value)}
                 />
-                <span>Show seconds</span>
+                <small>
+                  Used to find this Widget in Content and playlists.
+                </small>
+              </label>
+              <label className="field">
+                <span className="field__label">Description</span>
+                <input
+                  value={description}
+                  disabled={readOnly}
+                  onChange={(e) => setDescription(e.target.value)}
+                />
+                <small>
+                  Optional notes for other people managing this installation.
+                </small>
               </label>
             </div>
-          )}
-          {provider === "date" && (
-            <label className="field">
-              <span className="field__label">Date format</span>
-              <Select
-                value={(configuration as DateWidgetConfig).format}
-                disabled={readOnly}
-                onChange={(e) =>
-                  setConfiguration((current) => ({
-                    ...(current as DateWidgetConfig),
-                    format: e.target.value as DateWidgetConfig["format"],
-                  }))
-                }
-              >
-                <option value="full">Full</option>
-                <option value="long">Long</option>
-                <option value="medium">Medium</option>
-                <option value="short">Short</option>
-              </Select>
-            </label>
-          )}
-          {provider === "countdown" && (
-            <>
-              <div className="form-grid form-grid--2">
-                <label className="field">
-                  <span className="field__label">Target date and time</span>
-                  <input
-                    type="datetime-local"
-                    value={(configuration as CountdownWidgetConfig).target}
-                    disabled={readOnly}
-                    onChange={(event) =>
-                      setConfiguration((current) => ({
-                        ...current,
-                        target: event.target.value,
-                      }))
-                    }
-                  />
-                </label>
+          </section>
+          <section className="widget-editor__section">
+            <header>
+              <h3>Content and behavior</h3>
+              <p>{nativeWidgetContentGuidance(provider)}</p>
+            </header>
+            <div className="widget-editor__section-body">
+              {(provider === "clock" || provider === "date") && (
                 <label className="field">
                   <span className="field__label">Timezone</span>
                   <input
-                    value={(configuration as CountdownWidgetConfig).timezone}
+                    value={
+                      (configuration as ClockWidgetConfig | DateWidgetConfig)
+                        .timezone
+                    }
                     disabled={readOnly}
-                    onChange={(event) =>
+                    onChange={(e) =>
                       setConfiguration((current) => ({
                         ...current,
-                        timezone: event.target.value,
+                        timezone: e.target.value,
                       }))
                     }
                   />
+                  <small>
+                    Use an IANA timezone such as America/New_York. Use UTC for
+                    universal time.
+                  </small>
                 </label>
+              )}
+              {provider === "clock" && (
+                <div className="form-grid form-grid--2">
+                  <label className="field">
+                    <span className="field__label">Time format</span>
+                    <Select
+                      value={(configuration as ClockWidgetConfig).format}
+                      disabled={readOnly}
+                      onChange={(e) =>
+                        setConfiguration((current) => ({
+                          ...(current as ClockWidgetConfig),
+                          format: e.target.value as "12" | "24",
+                        }))
+                      }
+                    >
+                      <option value="12">12-hour</option>
+                      <option value="24">24-hour</option>
+                    </Select>
+                  </label>
+                  <label className="switch-row">
+                    <input
+                      type="checkbox"
+                      checked={(configuration as ClockWidgetConfig).showSeconds}
+                      disabled={readOnly}
+                      onChange={(e) =>
+                        setConfiguration((current) => ({
+                          ...current,
+                          showSeconds: e.target.checked,
+                        }))
+                      }
+                    />
+                    <span>Show seconds</span>
+                  </label>
+                </div>
+              )}
+              {provider === "date" && (
                 <label className="field">
-                  <span className="field__label">Mode</span>
+                  <span className="field__label">Date format</span>
                   <Select
-                    value={(configuration as CountdownWidgetConfig).mode}
+                    value={(configuration as DateWidgetConfig).format}
                     disabled={readOnly}
-                    onChange={(event) =>
+                    onChange={(e) =>
                       setConfiguration((current) => ({
-                        ...(current as CountdownWidgetConfig),
-                        mode: event.target
-                          .value as CountdownWidgetConfig["mode"],
-                        recurrence:
-                          event.target.value === "count_up"
-                            ? "none"
-                            : ((current as CountdownWidgetConfig).recurrence ??
-                              "none"),
+                        ...(current as DateWidgetConfig),
+                        format: e.target.value as DateWidgetConfig["format"],
                       }))
                     }
                   >
-                    <option value="countdown">Count down</option>
-                    <option value="count_up">Count up</option>
+                    <option value="full">Full</option>
+                    <option value="long">Long</option>
+                    <option value="medium">Medium</option>
+                    <option value="short">Short</option>
                   </Select>
                 </label>
-                <label className="field">
-                  <span className="field__label">Repeat</span>
-                  <Select
-                    value={
-                      (configuration as CountdownWidgetConfig).recurrence ??
-                      "none"
-                    }
-                    disabled={
-                      readOnly ||
-                      (configuration as CountdownWidgetConfig).mode ===
-                        "count_up"
-                    }
-                    onChange={(event) =>
-                      setConfiguration((current) => ({
-                        ...(current as CountdownWidgetConfig),
-                        recurrence: event.target
-                          .value as CountdownWidgetConfig["recurrence"],
-                      }))
-                    }
-                  >
-                    <option value="none">Does not repeat</option>
-                    <option value="daily">Daily</option>
-                    <option value="weekly">Weekly</option>
-                    <option value="monthly">Monthly</option>
-                    <option value="yearly">Yearly</option>
-                  </Select>
-                </label>
-                <label className="field">
-                  <span className="field__label">Layout</span>
-                  <Select
-                    value={
-                      (configuration as CountdownWidgetConfig).layout ??
-                      "stacked"
-                    }
+              )}
+              {provider === "countdown" && (
+                <>
+                  <div className="form-grid form-grid--2">
+                    <label className="field">
+                      <span className="field__label">Target date and time</span>
+                      <input
+                        type="datetime-local"
+                        value={(configuration as CountdownWidgetConfig).target}
+                        disabled={readOnly}
+                        onChange={(event) =>
+                          setConfiguration((current) => ({
+                            ...current,
+                            target: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span className="field__label">Timezone</span>
+                      <input
+                        value={
+                          (configuration as CountdownWidgetConfig).timezone
+                        }
+                        disabled={readOnly}
+                        onChange={(event) =>
+                          setConfiguration((current) => ({
+                            ...current,
+                            timezone: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span className="field__label">Mode</span>
+                      <Select
+                        value={(configuration as CountdownWidgetConfig).mode}
+                        disabled={readOnly}
+                        onChange={(event) =>
+                          setConfiguration((current) => ({
+                            ...(current as CountdownWidgetConfig),
+                            mode: event.target
+                              .value as CountdownWidgetConfig["mode"],
+                            recurrence:
+                              event.target.value === "count_up"
+                                ? "none"
+                                : ((current as CountdownWidgetConfig)
+                                    .recurrence ?? "none"),
+                          }))
+                        }
+                      >
+                        <option value="countdown">Count down</option>
+                        <option value="count_up">Count up</option>
+                      </Select>
+                    </label>
+                    <label className="field">
+                      <span className="field__label">Repeat</span>
+                      <Select
+                        value={
+                          (configuration as CountdownWidgetConfig).recurrence ??
+                          "none"
+                        }
+                        disabled={
+                          readOnly ||
+                          (configuration as CountdownWidgetConfig).mode ===
+                            "count_up"
+                        }
+                        onChange={(event) =>
+                          setConfiguration((current) => ({
+                            ...(current as CountdownWidgetConfig),
+                            recurrence: event.target
+                              .value as CountdownWidgetConfig["recurrence"],
+                          }))
+                        }
+                      >
+                        <option value="none">Does not repeat</option>
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly">Monthly</option>
+                        <option value="yearly">Yearly</option>
+                      </Select>
+                    </label>
+                    <label className="field">
+                      <span className="field__label">Layout</span>
+                      <Select
+                        value={
+                          (configuration as CountdownWidgetConfig).layout ??
+                          "stacked"
+                        }
+                        disabled={readOnly}
+                        onChange={(event) =>
+                          setConfiguration((current) => ({
+                            ...(current as CountdownWidgetConfig),
+                            layout: event.target
+                              .value as CountdownWidgetConfig["layout"],
+                          }))
+                        }
+                      >
+                        <option value="stacked">Title above countdown</option>
+                        <option value="horizontal">
+                          Title beside countdown
+                        </option>
+                        <option value="countdown_only">Countdown only</option>
+                      </Select>
+                    </label>
+                    <label className="field">
+                      <span className="field__label">Completion behavior</span>
+                      <Select
+                        value={
+                          (configuration as CountdownWidgetConfig)
+                            .completionAction
+                        }
+                        disabled={
+                          readOnly ||
+                          ((configuration as CountdownWidgetConfig)
+                            .recurrence ?? "none") !== "none"
+                        }
+                        onChange={(event) =>
+                          setConfiguration((current) => ({
+                            ...current,
+                            completionAction: event.target
+                              .value as CountdownWidgetConfig["completionAction"],
+                          }))
+                        }
+                      >
+                        <option value="completed_text">
+                          Show completion text
+                        </option>
+                        <option value="hide">Hide</option>
+                        <option value="count_up">Continue counting up</option>
+                      </Select>
+                    </label>
+                  </div>
+                  <div className="form-grid form-grid--2">
+                    <label className="field">
+                      <span className="field__label">Title</span>
+                      <input
+                        value={
+                          (configuration as CountdownWidgetConfig).label ?? ""
+                        }
+                        disabled={
+                          readOnly ||
+                          ((configuration as CountdownWidgetConfig).layout ??
+                            "stacked") === "countdown_only"
+                        }
+                        onChange={(event) =>
+                          setConfiguration((current) => ({
+                            ...current,
+                            label: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span className="field__label">Completion text</span>
+                      <input
+                        value={
+                          (configuration as CountdownWidgetConfig)
+                            .completionText ?? ""
+                        }
+                        disabled={
+                          readOnly ||
+                          ((configuration as CountdownWidgetConfig)
+                            .recurrence ?? "none") !== "none"
+                        }
+                        onChange={(event) =>
+                          setConfiguration((current) => ({
+                            ...current,
+                            completionText: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                  </div>
+                  <fieldset>
+                    <legend>Visible units</legend>
+                    <div className="checkbox-grid">
+                      {(["Days", "Hours", "Minutes", "Seconds"] as const).map(
+                        (unit) => {
+                          const key =
+                            `show${unit}` as keyof CountdownWidgetConfig;
+                          return (
+                            <label key={unit}>
+                              <input
+                                type="checkbox"
+                                checked={Boolean(
+                                  (configuration as CountdownWidgetConfig)[key],
+                                )}
+                                disabled={readOnly}
+                                onChange={(event) =>
+                                  setConfiguration((current) => ({
+                                    ...current,
+                                    [key]: event.target.checked,
+                                  }))
+                                }
+                              />
+                              <span>{unit}</span>
+                            </label>
+                          );
+                        },
+                      )}
+                    </div>
+                  </fieldset>
+                </>
+              )}
+              {provider === "qrcode" && (
+                <>
+                  <label className="field">
+                    <span className="field__label">Text or URL</span>
+                    <textarea
+                      value={(configuration as QRCodeWidgetConfig).value}
+                      maxLength={2048}
+                      disabled={readOnly}
+                      onChange={(e) =>
+                        setConfiguration((current) => ({
+                          ...current,
+                          value: e.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <div className="form-grid form-grid--2">
+                    <label className="field">
+                      <span className="field__label">Label</span>
+                      <input
+                        value={
+                          (configuration as QRCodeWidgetConfig).label ?? ""
+                        }
+                        disabled={readOnly}
+                        onChange={(e) =>
+                          setConfiguration((current) => ({
+                            ...current,
+                            label: e.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span className="field__label">Error correction</span>
+                      <Select
+                        value={
+                          (configuration as QRCodeWidgetConfig).errorCorrection
+                        }
+                        disabled={readOnly}
+                        onChange={(e) =>
+                          setConfiguration((current) => ({
+                            ...current,
+                            errorCorrection: e.target
+                              .value as QRCodeWidgetConfig["errorCorrection"],
+                          }))
+                        }
+                      >
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="quartile">Quartile</option>
+                        <option value="high">High</option>
+                      </Select>
+                      <small>
+                        Higher correction is easier to scan if the code is
+                        damaged, but makes the pattern denser.
+                      </small>
+                    </label>
+                  </div>
+                  <div className="form-grid form-grid--2">
+                    <label className="field">
+                      <span className="field__label">Speed</span>
+                      <Select
+                        value={(configuration as TickerWidgetConfig).speed}
+                        disabled={readOnly}
+                        onChange={(event) =>
+                          setConfiguration((current) => ({
+                            ...current,
+                            speed: event.target
+                              .value as TickerWidgetConfig["speed"],
+                          }))
+                        }
+                      >
+                        <option value="slow">Slow</option>
+                        <option value="normal">Normal</option>
+                        <option value="fast">Fast</option>
+                      </Select>
+                    </label>
+                    <label className="field">
+                      <span className="field__label">Direction</span>
+                      <Select
+                        value={(configuration as TickerWidgetConfig).direction}
+                        disabled={readOnly}
+                        onChange={(event) =>
+                          setConfiguration((current) => ({
+                            ...current,
+                            direction: event.target
+                              .value as TickerWidgetConfig["direction"],
+                          }))
+                        }
+                      >
+                        <option value="left">Left</option>
+                        <option value="right">Right</option>
+                      </Select>
+                    </label>
+                  </div>
+                  {(configuration as QRCodeWidgetConfig).value.length > 500 && (
+                    <div className="notice notice--warning">
+                      Dense QR Code. Test scanning at the intended display
+                      distance.
+                    </div>
+                  )}
+                </>
+              )}
+              {provider === "ticker" && (
+                <>
+                  <DataSourceSelect
+                    value={(configuration as TickerWidgetConfig).dataSourceId}
+                    sources={compatibleDataSources}
+                    definitions={sourceDefinitions}
+                    createProviders={acceptedCreateProviders}
+                    csrf={csrf}
                     disabled={readOnly}
-                    onChange={(event) =>
-                      setConfiguration((current) => ({
-                        ...(current as CountdownWidgetConfig),
-                        layout: event.target
-                          .value as CountdownWidgetConfig["layout"],
-                      }))
-                    }
-                  >
-                    <option value="stacked">Title above countdown</option>
-                    <option value="horizontal">Title beside countdown</option>
-                    <option value="countdown_only">Countdown only</option>
-                  </Select>
-                </label>
-                <label className="field">
-                  <span className="field__label">Completion behavior</span>
-                  <Select
-                    value={
-                      (configuration as CountdownWidgetConfig).completionAction
-                    }
-                    disabled={
-                      readOnly ||
-                      ((configuration as CountdownWidgetConfig).recurrence ??
-                        "none") !== "none"
-                    }
-                    onChange={(event) =>
+                    onChange={(dataSourceId) =>
                       setConfiguration((current) => ({
                         ...current,
-                        completionAction: event.target
-                          .value as CountdownWidgetConfig["completionAction"],
-                      }))
-                    }
-                  >
-                    <option value="completed_text">Show completion text</option>
-                    <option value="hide">Hide</option>
-                    <option value="count_up">Continue counting up</option>
-                  </Select>
-                </label>
-              </div>
-              <div className="form-grid form-grid--2">
-                <label className="field">
-                  <span className="field__label">Title</span>
-                  <input
-                    value={(configuration as CountdownWidgetConfig).label ?? ""}
-                    disabled={
-                      readOnly ||
-                      ((configuration as CountdownWidgetConfig).layout ??
-                        "stacked") === "countdown_only"
-                    }
-                    onChange={(event) =>
-                      setConfiguration((current) => ({
-                        ...current,
-                        label: event.target.value,
+                        dataSourceId,
                       }))
                     }
                   />
-                </label>
-                <label className="field">
-                  <span className="field__label">Completion text</span>
-                  <input
-                    value={
-                      (configuration as CountdownWidgetConfig).completionText ??
-                      ""
-                    }
-                    disabled={
-                      readOnly ||
-                      ((configuration as CountdownWidgetConfig).recurrence ??
-                        "none") !== "none"
-                    }
-                    onChange={(event) =>
+                  <div className="form-grid form-grid--2">
+                    <fieldset>
+                      <legend>Fields (up to three)</legend>
+                      <div className="checkbox-grid">
+                        {availableFields.map((field) => {
+                          const config = configuration as TickerWidgetConfig;
+                          const selected = (
+                            config.fields ?? [config.field]
+                          ).includes(field.key);
+                          return (
+                            <label key={field.key}>
+                              <input
+                                type="checkbox"
+                                checked={selected}
+                                disabled={
+                                  readOnly ||
+                                  (!selected &&
+                                    (config.fields ?? [config.field]).filter(
+                                      Boolean,
+                                    ).length >= 3)
+                                }
+                                onChange={(event) =>
+                                  setConfiguration((current) => {
+                                    const ticker =
+                                      current as TickerWidgetConfig;
+                                    const fields = (
+                                      ticker.fields ?? [ticker.field]
+                                    ).filter(Boolean);
+                                    const next = event.target.checked
+                                      ? [...fields, field.key]
+                                      : fields.filter(
+                                          (item) => item !== field.key,
+                                        );
+                                    return {
+                                      ...ticker,
+                                      fields: next,
+                                      field: next[0] ?? "",
+                                    };
+                                  })
+                                }
+                              />
+                              <span>{field.label}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </fieldset>
+                    <label className="field">
+                      <span className="field__label">Separator</span>
+                      <input
+                        value={(configuration as TickerWidgetConfig).separator}
+                        disabled={readOnly}
+                        onChange={(e) =>
+                          setConfiguration((current) => ({
+                            ...current,
+                            separator: e.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span className="field__label">Field separator</span>
+                      <input
+                        value={
+                          (configuration as TickerWidgetConfig)
+                            .fieldSeparator ?? " — "
+                        }
+                        disabled={readOnly}
+                        onChange={(event) =>
+                          setConfiguration((current) => ({
+                            ...current,
+                            fieldSeparator: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                  </div>
+                </>
+              )}
+              {["menu", "list", "table", "agenda"].includes(provider) && (
+                <>
+                  <DataSourceSelect
+                    value={(configuration as DisplayWidgetConfig).dataSourceId}
+                    sources={compatibleDataSources}
+                    definitions={sourceDefinitions}
+                    createProviders={acceptedCreateProviders}
+                    csrf={csrf}
+                    disabled={readOnly}
+                    onChange={(dataSourceId) =>
                       setConfiguration((current) => ({
                         ...current,
-                        completionText: event.target.value,
+                        dataSourceId,
                       }))
                     }
                   />
-                </label>
-              </div>
-              <fieldset>
-                <legend>Visible units</legend>
-                <div className="checkbox-grid">
-                  {(["Days", "Hours", "Minutes", "Seconds"] as const).map(
-                    (unit) => {
-                      const key = `show${unit}` as keyof CountdownWidgetConfig;
-                      return (
-                        <label key={unit}>
+                  <fieldset>
+                    <legend>Displayed fields</legend>
+                    {!availableFields.length ? (
+                      <small>Select a Data Source to choose its fields.</small>
+                    ) : (
+                      <div className="checkbox-grid">
+                        {availableFields.map((field) => {
+                          const selected = (
+                            configuration as DisplayWidgetConfig
+                          ).fields.includes(field.key);
+                          return (
+                            <label key={field.key}>
+                              <input
+                                type="checkbox"
+                                checked={selected}
+                                disabled={readOnly}
+                                onChange={(event) =>
+                                  setConfiguration((current) => {
+                                    const config =
+                                      current as DisplayWidgetConfig;
+                                    const fields = event.target.checked
+                                      ? [
+                                          ...config.fields.filter(
+                                            (item) => item !== field.key,
+                                          ),
+                                          field.key,
+                                        ]
+                                      : config.fields.filter(
+                                          (item) => item !== field.key,
+                                        );
+                                    return { ...config, fields };
+                                  })
+                                }
+                              />
+                              <span>{field.label}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </fieldset>
+                  {provider === "list" && (
+                    <div className="form-grid form-grid--2">
+                      {(
+                        [
+                          ["primaryField", "Primary field"],
+                          ["secondaryField", "Secondary field"],
+                          ["leadingField", "Leading field"],
+                          ["trailingField", "Trailing field"],
+                        ] as const
+                      ).map(([key, label]) => (
+                        <FieldSelect
+                          key={key}
+                          label={label}
+                          value={
+                            (configuration as DisplayWidgetConfig)[key] ?? ""
+                          }
+                          fields={availableFields}
+                          allowEmpty={key !== "primaryField"}
+                          disabled={readOnly}
+                          onChange={(value) =>
+                            setConfiguration((current) => ({
+                              ...current,
+                              [key]: value,
+                            }))
+                          }
+                        />
+                      ))}
+                      <label className="switch-row">
+                        <input
+                          type="checkbox"
+                          checked={
+                            (configuration as DisplayWidgetConfig)
+                              .showDividers ?? false
+                          }
+                          disabled={readOnly}
+                          onChange={(event) =>
+                            setConfiguration((current) => ({
+                              ...current,
+                              showDividers: event.target.checked,
+                            }))
+                          }
+                        />
+                        <span>Show row dividers</span>
+                      </label>
+                    </div>
+                  )}
+                  {provider === "menu" && (
+                    <div className="form-grid form-grid--2">
+                      <label className="field">
+                        <span className="field__label">Presentation</span>
+                        <Select
+                          value={
+                            (configuration as DisplayWidgetConfig).mode ??
+                            "single_record"
+                          }
+                          disabled={readOnly}
+                          onChange={(event) =>
+                            setConfiguration((current) => ({
+                              ...(current as DisplayWidgetConfig),
+                              mode: event.target
+                                .value as DisplayWidgetConfig["mode"],
+                            }))
+                          }
+                        >
+                          <option value="single_record">
+                            Fields from one record
+                          </option>
+                          <option value="records">Label and value rows</option>
+                        </Select>
+                      </label>
+                      {(configuration as DisplayWidgetConfig).mode ===
+                        "records" && (
+                        <>
+                          <FieldSelect
+                            label="Label field"
+                            value={
+                              (configuration as DisplayWidgetConfig)
+                                .labelField ?? ""
+                            }
+                            fields={availableFields}
+                            disabled={readOnly}
+                            onChange={(labelField) =>
+                              setConfiguration((current) => ({
+                                ...current,
+                                labelField,
+                              }))
+                            }
+                          />
+                          <FieldSelect
+                            label="Value field"
+                            value={
+                              (configuration as DisplayWidgetConfig)
+                                .valueField ?? ""
+                            }
+                            fields={availableFields}
+                            disabled={readOnly}
+                            onChange={(valueField) =>
+                              setConfiguration((current) => ({
+                                ...current,
+                                valueField,
+                              }))
+                            }
+                          />
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {provider === "table" && (
+                    <>
+                      <div className="checkbox-grid">
+                        <label>
                           <input
                             type="checkbox"
-                            checked={Boolean(
-                              (configuration as CountdownWidgetConfig)[key],
-                            )}
+                            checked={
+                              (configuration as DisplayWidgetConfig)
+                                .showHeader ?? false
+                            }
                             disabled={readOnly}
                             onChange={(event) =>
                               setConfiguration((current) => ({
                                 ...current,
-                                [key]: event.target.checked,
+                                showHeader: event.target.checked,
                               }))
                             }
                           />
-                          <span>{unit}</span>
+                          <span>Show column headers</span>
                         </label>
-                      );
-                    },
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={
+                              (configuration as DisplayWidgetConfig)
+                                .alternatingRows ?? false
+                            }
+                            disabled={readOnly}
+                            onChange={(event) =>
+                              setConfiguration((current) => ({
+                                ...current,
+                                alternatingRows: event.target.checked,
+                              }))
+                            }
+                          />
+                          <span>Alternate row backgrounds</span>
+                        </label>
+                      </div>
+                      <fieldset>
+                        <legend>Column presentation</legend>
+                        {(configuration as DisplayWidgetConfig).fields.map(
+                          (fieldKey) => {
+                            const config = configuration as DisplayWidgetConfig;
+                            const existing = config.columns?.find(
+                              (column) => column.field === fieldKey,
+                            ) ?? {
+                              field: fieldKey,
+                              label:
+                                availableFields.find(
+                                  (field) => field.key === fieldKey,
+                                )?.label ?? fieldKey,
+                              format: "text" as const,
+                              alignment: "left" as const,
+                              width: 0,
+                            };
+                            const updateColumn = (
+                              patch: Partial<FieldFormat>,
+                            ) =>
+                              setConfiguration((current) => {
+                                const table = current as DisplayWidgetConfig;
+                                const columns = table.fields.map((key) => {
+                                  const column = table.columns?.find(
+                                    (item) => item.field === key,
+                                  ) ?? { field: key };
+                                  return key === fieldKey
+                                    ? { ...column, ...existing, ...patch }
+                                    : column;
+                                });
+                                return { ...table, columns };
+                              });
+                            return (
+                              <div
+                                className="form-grid form-grid--4"
+                                key={fieldKey}
+                              >
+                                <label className="field">
+                                  <span className="field__label">Label</span>
+                                  <input
+                                    value={existing.label ?? ""}
+                                    disabled={readOnly}
+                                    onChange={(event) =>
+                                      updateColumn({
+                                        label: event.target.value,
+                                      })
+                                    }
+                                  />
+                                </label>
+                                <label className="field">
+                                  <span className="field__label">Format</span>
+                                  <Select
+                                    value={existing.format ?? "text"}
+                                    disabled={readOnly}
+                                    onChange={(event) =>
+                                      updateColumn({
+                                        format: event.target
+                                          .value as FieldFormat["format"],
+                                      })
+                                    }
+                                  >
+                                    <option value="text">Text</option>
+                                    <option value="number">Number</option>
+                                    <option value="integer">Integer</option>
+                                    <option value="percent">Percent</option>
+                                    <option value="currency">Currency</option>
+                                    <option value="date-short">
+                                      Short date
+                                    </option>
+                                    <option value="date-long">Long date</option>
+                                  </Select>
+                                </label>
+                                <label className="field">
+                                  <span className="field__label">
+                                    Alignment
+                                  </span>
+                                  <Select
+                                    value={existing.alignment ?? "left"}
+                                    disabled={readOnly}
+                                    onChange={(event) =>
+                                      updateColumn({
+                                        alignment: event.target
+                                          .value as FieldFormat["alignment"],
+                                      })
+                                    }
+                                  >
+                                    <option value="left">Left</option>
+                                    <option value="center">Center</option>
+                                    <option value="right">Right</option>
+                                  </Select>
+                                </label>
+                                <label className="field">
+                                  <span className="field__label">Width %</span>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={100}
+                                    value={existing.width ?? 0}
+                                    disabled={readOnly}
+                                    onChange={(event) =>
+                                      updateColumn({
+                                        width: Number(event.target.value),
+                                      })
+                                    }
+                                  />
+                                </label>
+                              </div>
+                            );
+                          },
+                        )}
+                      </fieldset>
+                    </>
                   )}
-                </div>
-              </fieldset>
-            </>
-          )}
-          {provider === "qrcode" && (
-            <>
-              <label className="field">
-                <span className="field__label">Text or URL</span>
-                <textarea
-                  value={(configuration as QRCodeWidgetConfig).value}
-                  maxLength={2048}
-                  disabled={readOnly}
-                  onChange={(e) =>
-                    setConfiguration((current) => ({
-                      ...current,
-                      value: e.target.value,
-                    }))
-                  }
-                />
-              </label>
-              <div className="form-grid form-grid--2">
-                <label className="field">
-                  <span className="field__label">Label</span>
-                  <input
-                    value={(configuration as QRCodeWidgetConfig).label ?? ""}
+                  {provider === "agenda" && (
+                    <div className="form-grid form-grid--2">
+                      {(
+                        [
+                          ["dateField", "Date field"],
+                          ["timeField", "Time field"],
+                          ["titleField", "Title field"],
+                          ["locationField", "Location field"],
+                          ["descriptionField", "Description field"],
+                        ] as const
+                      ).map(([key, label]) => (
+                        <FieldSelect
+                          key={key}
+                          label={label}
+                          value={
+                            (configuration as DisplayWidgetConfig)[key] ?? ""
+                          }
+                          fields={availableFields}
+                          allowEmpty={key !== "titleField"}
+                          disabled={readOnly}
+                          onChange={(value) =>
+                            setConfiguration((current) => ({
+                              ...current,
+                              [key]: value,
+                            }))
+                          }
+                        />
+                      ))}
+                    </div>
+                  )}
+                  <label className="field">
+                    <span className="field__label">Maximum items</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={
+                        (configuration as DisplayWidgetConfig).maximumItems
+                      }
+                      disabled={readOnly}
+                      onChange={(event) =>
+                        setConfiguration((current) => ({
+                          ...current,
+                          maximumItems: Number(event.target.value),
+                        }))
+                      }
+                    />
+                    <small>
+                      Limits how many rows or events can appear at once.
+                    </small>
+                  </label>
+                  <label className="field">
+                    <span className="field__label">
+                      Message when there is no data
+                    </span>
+                    <input
+                      value={
+                        (configuration as DisplayWidgetConfig).emptyState ?? ""
+                      }
+                      disabled={readOnly}
+                      onChange={(event) =>
+                        setConfiguration((current) => ({
+                          ...current,
+                          emptyState: event.target.value,
+                        }))
+                      }
+                    />
+                    <small>
+                      Shown on screen when the source returns no usable records.
+                    </small>
+                  </label>
+                </>
+              )}
+              {provider === "metric" && (
+                <>
+                  <DataSourceSelect
+                    value={(configuration as MetricWidgetConfig).dataSourceId}
+                    sources={compatibleDataSources}
+                    definitions={sourceDefinitions}
+                    createProviders={acceptedCreateProviders}
+                    csrf={csrf}
                     disabled={readOnly}
-                    onChange={(e) =>
+                    onChange={(dataSourceId) =>
                       setConfiguration((current) => ({
                         ...current,
-                        label: e.target.value,
+                        dataSourceId,
                       }))
                     }
                   />
-                </label>
-                <label className="field">
-                  <span className="field__label">Error correction</span>
-                  <Select
-                    value={
-                      (configuration as QRCodeWidgetConfig).errorCorrection
-                    }
-                    disabled={readOnly}
-                    onChange={(e) =>
-                      setConfiguration((current) => ({
-                        ...current,
-                        errorCorrection: e.target
-                          .value as QRCodeWidgetConfig["errorCorrection"],
-                      }))
-                    }
-                  >
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="quartile">Quartile</option>
-                    <option value="high">High</option>
-                  </Select>
-                </label>
-              </div>
-              <div className="form-grid form-grid--2">
-                <label className="field">
-                  <span className="field__label">Speed</span>
-                  <Select
-                    value={(configuration as TickerWidgetConfig).speed}
-                    disabled={readOnly}
-                    onChange={(event) =>
-                      setConfiguration((current) => ({
-                        ...current,
-                        speed: event.target
-                          .value as TickerWidgetConfig["speed"],
-                      }))
-                    }
-                  >
-                    <option value="slow">Slow</option>
-                    <option value="normal">Normal</option>
-                    <option value="fast">Fast</option>
-                  </Select>
-                </label>
-                <label className="field">
-                  <span className="field__label">Direction</span>
-                  <Select
-                    value={(configuration as TickerWidgetConfig).direction}
-                    disabled={readOnly}
-                    onChange={(event) =>
-                      setConfiguration((current) => ({
-                        ...current,
-                        direction: event.target
-                          .value as TickerWidgetConfig["direction"],
-                      }))
-                    }
-                  >
-                    <option value="left">Left</option>
-                    <option value="right">Right</option>
-                  </Select>
-                </label>
-              </div>
-              {(configuration as QRCodeWidgetConfig).value.length > 500 && (
-                <div className="notice notice--warning">
-                  Dense QR Code. Test scanning at the intended display distance.
-                </div>
+                  <div className="form-grid form-grid--2">
+                    <FieldSelect
+                      label="Value field"
+                      value={(configuration as MetricWidgetConfig).valueField}
+                      fields={availableFields.filter((field) =>
+                        ["number", "integer", "percent", "currency"].includes(
+                          field.type,
+                        ),
+                      )}
+                      disabled={readOnly}
+                      onChange={(valueField) =>
+                        setConfiguration((current) => ({
+                          ...current,
+                          valueField,
+                        }))
+                      }
+                    />
+                    <label className="field">
+                      <span className="field__label">Static label</span>
+                      <input
+                        value={
+                          (configuration as MetricWidgetConfig).label ?? ""
+                        }
+                        disabled={readOnly}
+                        onChange={(event) =>
+                          setConfiguration((current) => ({
+                            ...current,
+                            label: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    <FieldSelect
+                      label="Label field"
+                      value={
+                        (configuration as MetricWidgetConfig).labelField ?? ""
+                      }
+                      fields={availableFields}
+                      allowEmpty
+                      disabled={readOnly}
+                      onChange={(labelField) =>
+                        setConfiguration((current) => ({
+                          ...current,
+                          labelField,
+                        }))
+                      }
+                    />
+                    <FieldSelect
+                      label="Secondary field"
+                      value={
+                        (configuration as MetricWidgetConfig).secondaryField ??
+                        ""
+                      }
+                      fields={availableFields}
+                      allowEmpty
+                      disabled={readOnly}
+                      onChange={(secondaryField) =>
+                        setConfiguration((current) => ({
+                          ...current,
+                          secondaryField,
+                        }))
+                      }
+                    />
+                    <label className="field">
+                      <span className="field__label">Format</span>
+                      <Select
+                        value={(configuration as MetricWidgetConfig).format}
+                        disabled={readOnly}
+                        onChange={(event) =>
+                          setConfiguration((current) => ({
+                            ...(current as MetricWidgetConfig),
+                            format: event.target
+                              .value as MetricWidgetConfig["format"],
+                          }))
+                        }
+                      >
+                        <option value="number">Number</option>
+                        <option value="integer">Integer</option>
+                        <option value="percent">Percent</option>
+                        <option value="currency">Currency</option>
+                      </Select>
+                    </label>
+                    <label className="field">
+                      <span className="field__label">Decimal places</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={6}
+                        value={(configuration as MetricWidgetConfig).precision}
+                        disabled={readOnly}
+                        onChange={(event) =>
+                          setConfiguration((current) => ({
+                            ...current,
+                            precision: Number(event.target.value),
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span className="field__label">Prefix</span>
+                      <input
+                        value={
+                          (configuration as MetricWidgetConfig).prefix ?? ""
+                        }
+                        disabled={readOnly}
+                        onChange={(event) =>
+                          setConfiguration((current) => ({
+                            ...current,
+                            prefix: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span className="field__label">Suffix</span>
+                      <input
+                        value={
+                          (configuration as MetricWidgetConfig).suffix ?? ""
+                        }
+                        disabled={readOnly}
+                        onChange={(event) =>
+                          setConfiguration((current) => ({
+                            ...current,
+                            suffix: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span className="field__label">Alignment</span>
+                      <Select
+                        value={(configuration as MetricWidgetConfig).alignment}
+                        disabled={readOnly}
+                        onChange={(event) =>
+                          setConfiguration((current) => ({
+                            ...current,
+                            alignment: event.target
+                              .value as MetricWidgetConfig["alignment"],
+                          }))
+                        }
+                      >
+                        <option value="left">Left</option>
+                        <option value="center">Center</option>
+                        <option value="right">Right</option>
+                      </Select>
+                    </label>
+                  </div>
+                  <label className="field">
+                    <span className="field__label">Empty state</span>
+                    <input
+                      value={
+                        (configuration as TickerWidgetConfig).emptyState ?? ""
+                      }
+                      disabled={readOnly}
+                      onChange={(event) =>
+                        setConfiguration((current) => ({
+                          ...current,
+                          emptyState: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                </>
               )}
-            </>
-          )}
-          {provider === "ticker" && (
-            <>
-              <DataSourceSelect
-                value={(configuration as TickerWidgetConfig).dataSourceId}
-                sources={compatibleDataSources}
-                definitions={sourceDefinitions}
-                createProviders={acceptedCreateProviders}
-                csrf={csrf}
-                disabled={readOnly}
-                onChange={(dataSourceId) =>
-                  setConfiguration((current) => ({
-                    ...current,
-                    dataSourceId,
-                  }))
-                }
-              />
-              <div className="form-grid form-grid--2">
-                <fieldset>
-                  <legend>Fields (up to three)</legend>
+              {provider === "cards" && (
+                <>
+                  <DataSourceSelect
+                    value={(configuration as CardsWidgetConfig).dataSourceId}
+                    sources={compatibleDataSources}
+                    definitions={sourceDefinitions}
+                    createProviders={acceptedCreateProviders}
+                    csrf={csrf}
+                    disabled={readOnly}
+                    onChange={(dataSourceId) =>
+                      setConfiguration((current) => ({
+                        ...current,
+                        dataSourceId,
+                      }))
+                    }
+                  />
+                  <div className="form-grid form-grid--2">
+                    <FieldSelect
+                      label="Title field"
+                      value={(configuration as CardsWidgetConfig).titleField}
+                      fields={availableFields}
+                      disabled={readOnly}
+                      onChange={(titleField) =>
+                        setConfiguration((current) => ({
+                          ...current,
+                          titleField,
+                        }))
+                      }
+                    />
+                    {(
+                      ["subtitleField", "bodyField", "badgeField"] as const
+                    ).map((key) => (
+                      <FieldSelect
+                        key={key}
+                        label={key.replace("Field", "")}
+                        value={(configuration as CardsWidgetConfig)[key] ?? ""}
+                        fields={availableFields}
+                        allowEmpty
+                        disabled={readOnly}
+                        onChange={(value) =>
+                          setConfiguration((current) => ({
+                            ...current,
+                            [key]: value,
+                          }))
+                        }
+                      />
+                    ))}
+                    <label className="field">
+                      <span className="field__label">Columns</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={4}
+                        value={(configuration as CardsWidgetConfig).columns}
+                        disabled={readOnly}
+                        onChange={(event) =>
+                          setConfiguration((current) => ({
+                            ...(current as CardsWidgetConfig),
+                            columns: Number(event.target.value),
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span className="field__label">Maximum items</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={12}
+                        value={
+                          (configuration as CardsWidgetConfig).maximumItems
+                        }
+                        disabled={readOnly}
+                        onChange={(event) =>
+                          setConfiguration((current) => ({
+                            ...current,
+                            maximumItems: Number(event.target.value),
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span className="field__label">Density</span>
+                      <Select
+                        value={(configuration as CardsWidgetConfig).density}
+                        disabled={readOnly}
+                        onChange={(event) =>
+                          setConfiguration((current) => ({
+                            ...current,
+                            density: event.target
+                              .value as CardsWidgetConfig["density"],
+                          }))
+                        }
+                      >
+                        <option value="comfortable">Comfortable</option>
+                        <option value="compact">Compact</option>
+                      </Select>
+                    </label>
+                  </div>
+                </>
+              )}
+              {provider === "weather" && (
+                <>
+                  <DataSourceSelect
+                    value={(configuration as WeatherWidgetConfig).dataSourceId}
+                    sources={compatibleDataSources}
+                    definitions={sourceDefinitions}
+                    createProviders={acceptedCreateProviders}
+                    csrf={csrf}
+                    disabled={readOnly}
+                    onChange={(dataSourceId) =>
+                      setConfiguration((current) => ({
+                        ...current,
+                        dataSourceId,
+                      }))
+                    }
+                  />
                   <div className="checkbox-grid">
-                    {availableFields.map((field) => {
-                      const config = configuration as TickerWidgetConfig;
-                      const selected = (
-                        config.fields ?? [config.field]
-                      ).includes(field.key);
-                      return (
-                        <label key={field.key}>
-                          <input
-                            type="checkbox"
-                            checked={selected}
-                            disabled={
-                              readOnly ||
-                              (!selected &&
-                                (config.fields ?? [config.field]).filter(
-                                  Boolean,
-                                ).length >= 3)
-                            }
-                            onChange={(event) =>
+                    {[
+                      ["showLocation", "Location"],
+                      ["showCurrent", "Current conditions"],
+                      ["showHumidity", "Humidity"],
+                      ["showWind", "Wind"],
+                      ["showPrecipitation", "Precipitation"],
+                    ].map(([key, label]) => (
+                      <label key={key}>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(
+                            (
+                              configuration as unknown as Record<
+                                string,
+                                unknown
+                              >
+                            )[key!],
+                          )}
+                          disabled={readOnly}
+                          onChange={(event) =>
+                            setConfiguration((current) => ({
+                              ...current,
+                              [key!]: event.target.checked,
+                            }))
+                          }
+                        />
+                        <span>{label}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <label className="field">
+                    <span className="field__label">Forecast days</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={7}
+                      value={
+                        (configuration as WeatherWidgetConfig).forecastDays
+                      }
+                      disabled={readOnly}
+                      onChange={(event) =>
+                        setConfiguration((current) => ({
+                          ...current,
+                          forecastDays: Number(event.target.value),
+                        }))
+                      }
+                    />
+                  </label>
+                </>
+              )}
+              {provider === "spotlight" && (
+                <>
+                  <DataSourceSelect
+                    value={
+                      (configuration as SpotlightWidgetConfig).dataSourceId
+                    }
+                    sources={compatibleDataSources}
+                    definitions={sourceDefinitions}
+                    createProviders={acceptedCreateProviders}
+                    csrf={csrf}
+                    disabled={readOnly}
+                    onChange={(dataSourceId) =>
+                      setConfiguration((current) => ({
+                        ...current,
+                        dataSourceId,
+                      }))
+                    }
+                  />
+                  <div className="form-grid form-grid--2">
+                    {(
+                      [
+                        ["titleField", "Title field", false],
+                        ["subtitleField", "Subtitle field", true],
+                        ["bodyField", "Body field", true],
+                        ["badgeField", "Badge field", true],
+                        ["dateField", "Date field", true],
+                      ] as const
+                    ).map(([key, label, allowEmpty]) => (
+                      <FieldSelect
+                        key={key}
+                        label={label}
+                        value={
+                          (configuration as SpotlightWidgetConfig)[key] ?? ""
+                        }
+                        fields={availableFields}
+                        allowEmpty={allowEmpty}
+                        disabled={readOnly}
+                        onChange={(value) =>
+                          setConfiguration((current) => ({
+                            ...current,
+                            [key]: value,
+                          }))
+                        }
+                      />
+                    ))}
+                    <label className="field">
+                      <span className="field__label">Uploaded image</span>
+                      <Select
+                        value={
+                          (configuration as SpotlightWidgetConfig)
+                            .imageAssetId ?? ""
+                        }
+                        disabled={readOnly}
+                        onChange={(event) =>
+                          setConfiguration((current) => ({
+                            ...current,
+                            imageAssetId: event.target.value || undefined,
+                          }))
+                        }
+                      >
+                        <option value="">No image</option>
+                        {(imageAssets.data?.items ?? []).map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.name}
+                          </option>
+                        ))}
+                      </Select>
+                    </label>
+                  </div>
+                </>
+              )}
+              {provider === "stat_grid" && (
+                <>
+                  <DataSourceSelect
+                    value={(configuration as StatGridWidgetConfig).dataSourceId}
+                    sources={compatibleDataSources}
+                    definitions={sourceDefinitions}
+                    createProviders={acceptedCreateProviders}
+                    csrf={csrf}
+                    disabled={readOnly}
+                    onChange={(dataSourceId) =>
+                      setConfiguration((current) => ({
+                        ...current,
+                        dataSourceId,
+                      }))
+                    }
+                  />
+                  <label className="field">
+                    <span className="field__label">Columns</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={4}
+                      value={(configuration as StatGridWidgetConfig).columns}
+                      disabled={readOnly}
+                      onChange={(event) =>
+                        setConfiguration((current) => ({
+                          ...(current as StatGridWidgetConfig),
+                          columns: Number(event.target.value),
+                        }))
+                      }
+                    />
+                  </label>
+                  <fieldset>
+                    <legend>Metrics</legend>
+                    {(configuration as StatGridWidgetConfig).metrics.map(
+                      (metric, index) => (
+                        <div className="form-grid form-grid--4" key={index}>
+                          <label className="field">
+                            <span className="field__label">Label</span>
+                            <input
+                              value={metric.label ?? ""}
+                              disabled={readOnly}
+                              onChange={(event) =>
+                                setConfiguration((current) => {
+                                  const config =
+                                    current as StatGridWidgetConfig;
+                                  return {
+                                    ...config,
+                                    metrics: config.metrics.map(
+                                      (item, itemIndex) =>
+                                        itemIndex === index
+                                          ? {
+                                              ...item,
+                                              label: event.target.value,
+                                            }
+                                          : item,
+                                    ),
+                                  };
+                                })
+                              }
+                            />
+                          </label>
+                          <FieldSelect
+                            label="Value field"
+                            value={metric.valueField}
+                            fields={availableFields.filter((field) =>
+                              [
+                                "number",
+                                "integer",
+                                "percent",
+                                "currency",
+                              ].includes(field.type),
+                            )}
+                            disabled={readOnly}
+                            onChange={(valueField) =>
                               setConfiguration((current) => {
-                                const ticker = current as TickerWidgetConfig;
-                                const fields = (
-                                  ticker.fields ?? [ticker.field]
-                                ).filter(Boolean);
-                                const next = event.target.checked
-                                  ? [...fields, field.key]
-                                  : fields.filter((item) => item !== field.key);
+                                const config = current as StatGridWidgetConfig;
                                 return {
-                                  ...ticker,
-                                  fields: next,
-                                  field: next[0] ?? "",
+                                  ...config,
+                                  metrics: config.metrics.map(
+                                    (item, itemIndex) =>
+                                      itemIndex === index
+                                        ? { ...item, valueField }
+                                        : item,
+                                  ),
                                 };
                               })
                             }
                           />
-                          <span>{field.label}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </fieldset>
-                <label className="field">
-                  <span className="field__label">Separator</span>
-                  <input
-                    value={(configuration as TickerWidgetConfig).separator}
-                    disabled={readOnly}
-                    onChange={(e) =>
-                      setConfiguration((current) => ({
-                        ...current,
-                        separator: e.target.value,
-                      }))
-                    }
-                  />
-                </label>
-                <label className="field">
-                  <span className="field__label">Field separator</span>
-                  <input
-                    value={
-                      (configuration as TickerWidgetConfig).fieldSeparator ??
-                      " — "
-                    }
-                    disabled={readOnly}
-                    onChange={(event) =>
-                      setConfiguration((current) => ({
-                        ...current,
-                        fieldSeparator: event.target.value,
-                      }))
-                    }
-                  />
-                </label>
-              </div>
-            </>
-          )}
-          {["menu", "list", "table", "agenda"].includes(provider) && (
-            <>
-              <DataSourceSelect
-                value={(configuration as DisplayWidgetConfig).dataSourceId}
-                sources={compatibleDataSources}
-                definitions={sourceDefinitions}
-                createProviders={acceptedCreateProviders}
-                csrf={csrf}
-                disabled={readOnly}
-                onChange={(dataSourceId) =>
-                  setConfiguration((current) => ({
-                    ...current,
-                    dataSourceId,
-                  }))
-                }
-              />
-              <fieldset>
-                <legend>Displayed fields</legend>
-                {!availableFields.length ? (
-                  <small>Select a Data Source to choose its fields.</small>
-                ) : (
-                  <div className="checkbox-grid">
-                    {availableFields.map((field) => {
-                      const selected = (
-                        configuration as DisplayWidgetConfig
-                      ).fields.includes(field.key);
-                      return (
-                        <label key={field.key}>
-                          <input
-                            type="checkbox"
-                            checked={selected}
-                            disabled={readOnly}
-                            onChange={(event) =>
-                              setConfiguration((current) => {
-                                const config = current as DisplayWidgetConfig;
-                                const fields = event.target.checked
-                                  ? [
-                                      ...config.fields.filter(
-                                        (item) => item !== field.key,
-                                      ),
-                                      field.key,
-                                    ]
-                                  : config.fields.filter(
-                                      (item) => item !== field.key,
-                                    );
-                                return { ...config, fields };
-                              })
+                          <label className="field">
+                            <span className="field__label">Format</span>
+                            <Select
+                              value={metric.format ?? "number"}
+                              disabled={readOnly}
+                              onChange={(event) =>
+                                setConfiguration((current) => {
+                                  const config =
+                                    current as StatGridWidgetConfig;
+                                  return {
+                                    ...config,
+                                    metrics: config.metrics.map(
+                                      (item, itemIndex) =>
+                                        itemIndex === index
+                                          ? {
+                                              ...item,
+                                              format: event.target
+                                                .value as typeof metric.format,
+                                            }
+                                          : item,
+                                    ),
+                                  };
+                                })
+                              }
+                            >
+                              <option value="number">Number</option>
+                              <option value="integer">Integer</option>
+                              <option value="percent">Percent</option>
+                              <option value="currency">Currency</option>
+                            </Select>
+                          </label>
+                          <button
+                            type="button"
+                            className="button"
+                            disabled={
+                              readOnly ||
+                              (configuration as StatGridWidgetConfig).metrics
+                                .length === 1
                             }
-                          />
-                          <span>{field.label}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                )}
-              </fieldset>
-              {provider === "list" && (
-                <div className="form-grid form-grid--2">
-                  {(
-                    [
-                      ["primaryField", "Primary field"],
-                      ["secondaryField", "Secondary field"],
-                      ["leadingField", "Leading field"],
-                      ["trailingField", "Trailing field"],
-                    ] as const
-                  ).map(([key, label]) => (
-                    <FieldSelect
-                      key={key}
-                      label={label}
-                      value={(configuration as DisplayWidgetConfig)[key] ?? ""}
-                      fields={availableFields}
-                      allowEmpty={key !== "primaryField"}
-                      disabled={readOnly}
-                      onChange={(value) =>
+                            onClick={() =>
+                              setConfiguration((current) => ({
+                                ...current,
+                                metrics: (
+                                  current as StatGridWidgetConfig
+                                ).metrics.filter(
+                                  (_, itemIndex) => itemIndex !== index,
+                                ),
+                              }))
+                            }
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ),
+                    )}
+                    <button
+                      type="button"
+                      className="button"
+                      disabled={
+                        readOnly ||
+                        (configuration as StatGridWidgetConfig).metrics
+                          .length >= 12
+                      }
+                      onClick={() =>
                         setConfiguration((current) => ({
                           ...current,
-                          [key]: value,
-                        }))
-                      }
-                    />
-                  ))}
-                  <label className="switch-row">
-                    <input
-                      type="checkbox"
-                      checked={
-                        (configuration as DisplayWidgetConfig).showDividers ??
-                        false
-                      }
-                      disabled={readOnly}
-                      onChange={(event) =>
-                        setConfiguration((current) => ({
-                          ...current,
-                          showDividers: event.target.checked,
-                        }))
-                      }
-                    />
-                    <span>Show row dividers</span>
-                  </label>
-                </div>
-              )}
-              {provider === "menu" && (
-                <div className="form-grid form-grid--2">
-                  <label className="field">
-                    <span className="field__label">Presentation</span>
-                    <Select
-                      value={
-                        (configuration as DisplayWidgetConfig).mode ??
-                        "single_record"
-                      }
-                      disabled={readOnly}
-                      onChange={(event) =>
-                        setConfiguration((current) => ({
-                          ...(current as DisplayWidgetConfig),
-                          mode: event.target
-                            .value as DisplayWidgetConfig["mode"],
+                          metrics: [
+                            ...(current as StatGridWidgetConfig).metrics,
+                            {
+                              label: "Value",
+                              valueField: "",
+                              format: "number",
+                            },
+                          ],
                         }))
                       }
                     >
-                      <option value="single_record">
-                        Fields from one record
-                      </option>
-                      <option value="records">Label and value rows</option>
-                    </Select>
-                  </label>
-                  {(configuration as DisplayWidgetConfig).mode ===
-                    "records" && (
-                    <>
-                      <FieldSelect
-                        label="Label field"
-                        value={
-                          (configuration as DisplayWidgetConfig).labelField ??
-                          ""
-                        }
-                        fields={availableFields}
-                        disabled={readOnly}
-                        onChange={(labelField) =>
-                          setConfiguration((current) => ({
-                            ...current,
-                            labelField,
-                          }))
-                        }
-                      />
-                      <FieldSelect
-                        label="Value field"
-                        value={
-                          (configuration as DisplayWidgetConfig).valueField ??
-                          ""
-                        }
-                        fields={availableFields}
-                        disabled={readOnly}
-                        onChange={(valueField) =>
-                          setConfiguration((current) => ({
-                            ...current,
-                            valueField,
-                          }))
-                        }
-                      />
-                    </>
-                  )}
-                </div>
-              )}
-              {provider === "table" && (
-                <>
-                  <div className="checkbox-grid">
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={
-                          (configuration as DisplayWidgetConfig).showHeader ??
-                          false
-                        }
-                        disabled={readOnly}
-                        onChange={(event) =>
-                          setConfiguration((current) => ({
-                            ...current,
-                            showHeader: event.target.checked,
-                          }))
-                        }
-                      />
-                      <span>Show column headers</span>
-                    </label>
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={
-                          (configuration as DisplayWidgetConfig)
-                            .alternatingRows ?? false
-                        }
-                        disabled={readOnly}
-                        onChange={(event) =>
-                          setConfiguration((current) => ({
-                            ...current,
-                            alternatingRows: event.target.checked,
-                          }))
-                        }
-                      />
-                      <span>Alternate row backgrounds</span>
-                    </label>
-                  </div>
-                  <fieldset>
-                    <legend>Column presentation</legend>
-                    {(configuration as DisplayWidgetConfig).fields.map(
-                      (fieldKey) => {
-                        const config = configuration as DisplayWidgetConfig;
-                        const existing = config.columns?.find(
-                          (column) => column.field === fieldKey,
-                        ) ?? {
-                          field: fieldKey,
-                          label:
-                            availableFields.find(
-                              (field) => field.key === fieldKey,
-                            )?.label ?? fieldKey,
-                          format: "text" as const,
-                          alignment: "left" as const,
-                          width: 0,
-                        };
-                        const updateColumn = (patch: Partial<FieldFormat>) =>
-                          setConfiguration((current) => {
-                            const table = current as DisplayWidgetConfig;
-                            const columns = table.fields.map((key) => {
-                              const column = table.columns?.find(
-                                (item) => item.field === key,
-                              ) ?? { field: key };
-                              return key === fieldKey
-                                ? { ...column, ...existing, ...patch }
-                                : column;
-                            });
-                            return { ...table, columns };
-                          });
-                        return (
-                          <div
-                            className="form-grid form-grid--4"
-                            key={fieldKey}
-                          >
-                            <label className="field">
-                              <span className="field__label">Label</span>
-                              <input
-                                value={existing.label ?? ""}
-                                disabled={readOnly}
-                                onChange={(event) =>
-                                  updateColumn({ label: event.target.value })
-                                }
-                              />
-                            </label>
-                            <label className="field">
-                              <span className="field__label">Format</span>
-                              <Select
-                                value={existing.format ?? "text"}
-                                disabled={readOnly}
-                                onChange={(event) =>
-                                  updateColumn({
-                                    format: event.target
-                                      .value as FieldFormat["format"],
-                                  })
-                                }
-                              >
-                                <option value="text">Text</option>
-                                <option value="number">Number</option>
-                                <option value="integer">Integer</option>
-                                <option value="percent">Percent</option>
-                                <option value="currency">Currency</option>
-                                <option value="date-short">Short date</option>
-                                <option value="date-long">Long date</option>
-                              </Select>
-                            </label>
-                            <label className="field">
-                              <span className="field__label">Alignment</span>
-                              <Select
-                                value={existing.alignment ?? "left"}
-                                disabled={readOnly}
-                                onChange={(event) =>
-                                  updateColumn({
-                                    alignment: event.target
-                                      .value as FieldFormat["alignment"],
-                                  })
-                                }
-                              >
-                                <option value="left">Left</option>
-                                <option value="center">Center</option>
-                                <option value="right">Right</option>
-                              </Select>
-                            </label>
-                            <label className="field">
-                              <span className="field__label">Width %</span>
-                              <input
-                                type="number"
-                                min={0}
-                                max={100}
-                                value={existing.width ?? 0}
-                                disabled={readOnly}
-                                onChange={(event) =>
-                                  updateColumn({
-                                    width: Number(event.target.value),
-                                  })
-                                }
-                              />
-                            </label>
-                          </div>
-                        );
-                      },
-                    )}
+                      Add metric
+                    </button>
                   </fieldset>
                 </>
               )}
-              {provider === "agenda" && (
-                <div className="form-grid form-grid--2">
-                  {(
-                    [
-                      ["dateField", "Date field"],
-                      ["timeField", "Time field"],
-                      ["titleField", "Title field"],
-                      ["locationField", "Location field"],
-                      ["descriptionField", "Description field"],
-                    ] as const
-                  ).map(([key, label]) => (
-                    <FieldSelect
-                      key={key}
-                      label={label}
-                      value={(configuration as DisplayWidgetConfig)[key] ?? ""}
-                      fields={availableFields}
-                      allowEmpty={key !== "titleField"}
-                      disabled={readOnly}
-                      onChange={(value) =>
+              {provider === "chart" && (
+                <>
+                  <DataSourceSelect
+                    value={(configuration as ChartWidgetConfig).dataSourceId}
+                    sources={compatibleDataSources}
+                    definitions={sourceDefinitions}
+                    createProviders={acceptedCreateProviders}
+                    csrf={csrf}
+                    disabled={readOnly}
+                    onChange={(dataSourceId) =>
+                      setConfiguration((current) => ({
+                        ...current,
+                        dataSourceId,
+                      }))
+                    }
+                  />
+                  <div className="form-grid form-grid--2">
+                    <label className="field">
+                      <span className="field__label">Chart type</span>
+                      <Select
+                        value={(configuration as ChartWidgetConfig).chartType}
+                        disabled={readOnly}
+                        onChange={(event) =>
+                          setConfiguration((current) => ({
+                            ...current,
+                            chartType: event.target
+                              .value as ChartWidgetConfig["chartType"],
+                          }))
+                        }
+                      >
+                        <option value="line">Line</option>
+                        <option value="bar">Bar</option>
+                        <option value="donut">Donut</option>
+                      </Select>
+                    </label>
+                    <label className="field">
+                      <span className="field__label">Dataset</span>
+                      <input
+                        value={
+                          (configuration as ChartWidgetConfig).dataset ?? ""
+                        }
+                        disabled={readOnly}
+                        onChange={(event) =>
+                          setConfiguration((current) => ({
+                            ...current,
+                            dataset: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                  </div>
+                  <fieldset>
+                    <legend>Series</legend>
+                    {(configuration as ChartWidgetConfig).series.map(
+                      (series, index) => (
+                        <div className="form-grid form-grid--4" key={index}>
+                          <FieldSelect
+                            label="Numeric field"
+                            value={series.field}
+                            fields={availableFields.filter((field) =>
+                              [
+                                "number",
+                                "integer",
+                                "percent",
+                                "currency",
+                              ].includes(field.type),
+                            )}
+                            disabled={readOnly}
+                            onChange={(field) =>
+                              setConfiguration((current) => {
+                                const config = current as ChartWidgetConfig;
+                                return {
+                                  ...config,
+                                  series: config.series.map(
+                                    (item, itemIndex) =>
+                                      itemIndex === index
+                                        ? { ...item, field }
+                                        : item,
+                                  ),
+                                };
+                              })
+                            }
+                          />
+                          <label className="field">
+                            <span className="field__label">Label</span>
+                            <input
+                              value={series.label ?? ""}
+                              disabled={readOnly}
+                              onChange={(event) =>
+                                setConfiguration((current) => {
+                                  const config = current as ChartWidgetConfig;
+                                  return {
+                                    ...config,
+                                    series: config.series.map(
+                                      (item, itemIndex) =>
+                                        itemIndex === index
+                                          ? {
+                                              ...item,
+                                              label: event.target.value,
+                                            }
+                                          : item,
+                                    ),
+                                  };
+                                })
+                              }
+                            />
+                          </label>
+                          <label className="field">
+                            <span className="field__label">Color</span>
+                            <input
+                              type="color"
+                              value={series.color ?? "#4DB6FF"}
+                              disabled={readOnly}
+                              onChange={(event) =>
+                                setConfiguration((current) => {
+                                  const config = current as ChartWidgetConfig;
+                                  return {
+                                    ...config,
+                                    series: config.series.map(
+                                      (item, itemIndex) =>
+                                        itemIndex === index
+                                          ? {
+                                              ...item,
+                                              color: event.target.value,
+                                            }
+                                          : item,
+                                    ),
+                                  };
+                                })
+                              }
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            className="button"
+                            disabled={
+                              readOnly ||
+                              (configuration as ChartWidgetConfig).series
+                                .length === 1
+                            }
+                            onClick={() =>
+                              setConfiguration((current) => ({
+                                ...current,
+                                series: (
+                                  current as ChartWidgetConfig
+                                ).series.filter(
+                                  (_, itemIndex) => itemIndex !== index,
+                                ),
+                              }))
+                            }
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ),
+                    )}
+                    <button
+                      type="button"
+                      className="button"
+                      disabled={
+                        readOnly ||
+                        (configuration as ChartWidgetConfig).series.length >= 4
+                      }
+                      onClick={() =>
                         setConfiguration((current) => ({
                           ...current,
-                          [key]: value,
+                          series: [
+                            ...(current as ChartWidgetConfig).series,
+                            {
+                              field: "",
+                              label: "Series",
+                              color: "#FFB547",
+                            },
+                          ],
+                        }))
+                      }
+                    >
+                      Add series
+                    </button>
+                  </fieldset>
+                </>
+              )}
+              {provider === "progress" && (
+                <>
+                  <DataSourceSelect
+                    value={(configuration as ProgressWidgetConfig).dataSourceId}
+                    sources={compatibleDataSources}
+                    definitions={sourceDefinitions}
+                    createProviders={acceptedCreateProviders}
+                    csrf={csrf}
+                    disabled={readOnly}
+                    onChange={(dataSourceId) =>
+                      setConfiguration((current) => ({
+                        ...current,
+                        dataSourceId,
+                      }))
+                    }
+                  />
+                  <div className="form-grid form-grid--2">
+                    <FieldSelect
+                      label="Value field"
+                      value={(configuration as ProgressWidgetConfig).valueField}
+                      fields={availableFields.filter((field) =>
+                        ["number", "integer", "percent", "currency"].includes(
+                          field.type,
+                        ),
+                      )}
+                      disabled={readOnly}
+                      onChange={(valueField) =>
+                        setConfiguration((current) => ({
+                          ...current,
+                          valueField,
                         }))
                       }
                     />
-                  ))}
-                </div>
-              )}
-              <label className="field">
-                <span className="field__label">Maximum items</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={100}
-                  value={(configuration as DisplayWidgetConfig).maximumItems}
-                  disabled={readOnly}
-                  onChange={(event) =>
-                    setConfiguration((current) => ({
-                      ...current,
-                      maximumItems: Number(event.target.value),
-                    }))
-                  }
-                />
-              </label>
-              <label className="field">
-                <span className="field__label">Empty state</span>
-                <input
-                  value={
-                    (configuration as DisplayWidgetConfig).emptyState ?? ""
-                  }
-                  disabled={readOnly}
-                  onChange={(event) =>
-                    setConfiguration((current) => ({
-                      ...current,
-                      emptyState: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-            </>
-          )}
-          {provider === "metric" && (
-            <>
-              <DataSourceSelect
-                value={(configuration as MetricWidgetConfig).dataSourceId}
-                sources={compatibleDataSources}
-                definitions={sourceDefinitions}
-                createProviders={acceptedCreateProviders}
-                csrf={csrf}
-                disabled={readOnly}
-                onChange={(dataSourceId) =>
-                  setConfiguration((current) => ({
-                    ...current,
-                    dataSourceId,
-                  }))
-                }
-              />
-              <div className="form-grid form-grid--2">
-                <FieldSelect
-                  label="Value field"
-                  value={(configuration as MetricWidgetConfig).valueField}
-                  fields={availableFields.filter((field) =>
-                    ["number", "integer", "percent", "currency"].includes(
-                      field.type,
-                    ),
-                  )}
-                  disabled={readOnly}
-                  onChange={(valueField) =>
-                    setConfiguration((current) => ({
-                      ...current,
-                      valueField,
-                    }))
-                  }
-                />
-                <label className="field">
-                  <span className="field__label">Static label</span>
-                  <input
-                    value={(configuration as MetricWidgetConfig).label ?? ""}
-                    disabled={readOnly}
-                    onChange={(event) =>
-                      setConfiguration((current) => ({
-                        ...current,
-                        label: event.target.value,
-                      }))
-                    }
-                  />
-                </label>
-                <FieldSelect
-                  label="Label field"
-                  value={(configuration as MetricWidgetConfig).labelField ?? ""}
-                  fields={availableFields}
-                  allowEmpty
-                  disabled={readOnly}
-                  onChange={(labelField) =>
-                    setConfiguration((current) => ({
-                      ...current,
-                      labelField,
-                    }))
-                  }
-                />
-                <FieldSelect
-                  label="Secondary field"
-                  value={
-                    (configuration as MetricWidgetConfig).secondaryField ?? ""
-                  }
-                  fields={availableFields}
-                  allowEmpty
-                  disabled={readOnly}
-                  onChange={(secondaryField) =>
-                    setConfiguration((current) => ({
-                      ...current,
-                      secondaryField,
-                    }))
-                  }
-                />
-                <label className="field">
-                  <span className="field__label">Format</span>
-                  <Select
-                    value={(configuration as MetricWidgetConfig).format}
-                    disabled={readOnly}
-                    onChange={(event) =>
-                      setConfiguration((current) => ({
-                        ...(current as MetricWidgetConfig),
-                        format: event.target
-                          .value as MetricWidgetConfig["format"],
-                      }))
-                    }
-                  >
-                    <option value="number">Number</option>
-                    <option value="integer">Integer</option>
-                    <option value="percent">Percent</option>
-                    <option value="currency">Currency</option>
-                  </Select>
-                </label>
-                <label className="field">
-                  <span className="field__label">Decimal places</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={6}
-                    value={(configuration as MetricWidgetConfig).precision}
-                    disabled={readOnly}
-                    onChange={(event) =>
-                      setConfiguration((current) => ({
-                        ...current,
-                        precision: Number(event.target.value),
-                      }))
-                    }
-                  />
-                </label>
-                <label className="field">
-                  <span className="field__label">Prefix</span>
-                  <input
-                    value={(configuration as MetricWidgetConfig).prefix ?? ""}
-                    disabled={readOnly}
-                    onChange={(event) =>
-                      setConfiguration((current) => ({
-                        ...current,
-                        prefix: event.target.value,
-                      }))
-                    }
-                  />
-                </label>
-                <label className="field">
-                  <span className="field__label">Suffix</span>
-                  <input
-                    value={(configuration as MetricWidgetConfig).suffix ?? ""}
-                    disabled={readOnly}
-                    onChange={(event) =>
-                      setConfiguration((current) => ({
-                        ...current,
-                        suffix: event.target.value,
-                      }))
-                    }
-                  />
-                </label>
-                <label className="field">
-                  <span className="field__label">Alignment</span>
-                  <Select
-                    value={(configuration as MetricWidgetConfig).alignment}
-                    disabled={readOnly}
-                    onChange={(event) =>
-                      setConfiguration((current) => ({
-                        ...current,
-                        alignment: event.target
-                          .value as MetricWidgetConfig["alignment"],
-                      }))
-                    }
-                  >
-                    <option value="left">Left</option>
-                    <option value="center">Center</option>
-                    <option value="right">Right</option>
-                  </Select>
-                </label>
-              </div>
-              <label className="field">
-                <span className="field__label">Empty state</span>
-                <input
-                  value={(configuration as TickerWidgetConfig).emptyState ?? ""}
-                  disabled={readOnly}
-                  onChange={(event) =>
-                    setConfiguration((current) => ({
-                      ...current,
-                      emptyState: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-            </>
-          )}
-          {provider === "cards" && (
-            <>
-              <DataSourceSelect
-                value={(configuration as CardsWidgetConfig).dataSourceId}
-                sources={compatibleDataSources}
-                definitions={sourceDefinitions}
-                createProviders={acceptedCreateProviders}
-                csrf={csrf}
-                disabled={readOnly}
-                onChange={(dataSourceId) =>
-                  setConfiguration((current) => ({
-                    ...current,
-                    dataSourceId,
-                  }))
-                }
-              />
-              <div className="form-grid form-grid--2">
-                <FieldSelect
-                  label="Title field"
-                  value={(configuration as CardsWidgetConfig).titleField}
-                  fields={availableFields}
-                  disabled={readOnly}
-                  onChange={(titleField) =>
-                    setConfiguration((current) => ({
-                      ...current,
-                      titleField,
-                    }))
-                  }
-                />
-                {(["subtitleField", "bodyField", "badgeField"] as const).map(
-                  (key) => (
                     <FieldSelect
-                      key={key}
-                      label={key.replace("Field", "")}
-                      value={(configuration as CardsWidgetConfig)[key] ?? ""}
-                      fields={availableFields}
+                      label="Target field"
+                      value={
+                        (configuration as ProgressWidgetConfig).targetField ??
+                        ""
+                      }
+                      fields={availableFields.filter((field) =>
+                        ["number", "integer", "percent", "currency"].includes(
+                          field.type,
+                        ),
+                      )}
                       allowEmpty
                       disabled={readOnly}
-                      onChange={(value) =>
+                      onChange={(targetField) =>
                         setConfiguration((current) => ({
                           ...current,
-                          [key]: value,
+                          targetField,
                         }))
                       }
                     />
-                  ),
-                )}
-                <label className="field">
-                  <span className="field__label">Columns</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={4}
-                    value={(configuration as CardsWidgetConfig).columns}
+                    <label className="field">
+                      <span className="field__label">Static target</span>
+                      <input
+                        type="number"
+                        value={
+                          (configuration as ProgressWidgetConfig)
+                            .staticTarget ?? 100
+                        }
+                        disabled={
+                          readOnly ||
+                          Boolean(
+                            (configuration as ProgressWidgetConfig).targetField,
+                          )
+                        }
+                        onChange={(event) =>
+                          setConfiguration((current) => ({
+                            ...current,
+                            staticTarget: Number(event.target.value),
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span className="field__label">Label</span>
+                      <input
+                        value={
+                          (configuration as ProgressWidgetConfig).label ?? ""
+                        }
+                        disabled={readOnly}
+                        onChange={(event) =>
+                          setConfiguration((current) => ({
+                            ...current,
+                            label: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                  </div>
+                </>
+              )}
+              {provider === "timeline" && (
+                <>
+                  <DataSourceSelect
+                    value={(configuration as TimelineWidgetConfig).dataSourceId}
+                    sources={compatibleDataSources}
+                    definitions={sourceDefinitions}
+                    createProviders={acceptedCreateProviders}
+                    csrf={csrf}
                     disabled={readOnly}
-                    onChange={(event) =>
+                    onChange={(dataSourceId) =>
                       setConfiguration((current) => ({
-                        ...(current as CardsWidgetConfig),
-                        columns: Number(event.target.value),
+                        ...current,
+                        dataSourceId,
                       }))
                     }
                   />
-                </label>
-                <label className="field">
-                  <span className="field__label">Maximum items</span>
+                  <div className="form-grid form-grid--2">
+                    {(
+                      [
+                        ["dateField", "Date field", false],
+                        ["titleField", "Title field", false],
+                        ["bodyField", "Body field", true],
+                        ["statusField", "Status field", true],
+                      ] as const
+                    ).map(([key, label, allowEmpty]) => (
+                      <FieldSelect
+                        key={key}
+                        label={label}
+                        value={
+                          (configuration as TimelineWidgetConfig)[key] ?? ""
+                        }
+                        fields={availableFields}
+                        allowEmpty={allowEmpty}
+                        disabled={readOnly}
+                        onChange={(value) =>
+                          setConfiguration((current) => ({
+                            ...current,
+                            [key]: value,
+                          }))
+                        }
+                      />
+                    ))}
+                    <label className="field">
+                      <span className="field__label">Orientation</span>
+                      <Select
+                        value={
+                          (configuration as TimelineWidgetConfig).orientation
+                        }
+                        disabled={readOnly}
+                        onChange={(event) =>
+                          setConfiguration((current) => ({
+                            ...current,
+                            orientation: event.target
+                              .value as TimelineWidgetConfig["orientation"],
+                          }))
+                        }
+                      >
+                        <option value="vertical">Vertical</option>
+                        <option value="horizontal">Horizontal</option>
+                      </Select>
+                    </label>
+                  </div>
+                </>
+              )}
+              {provider === "world_clock" && (
+                <>
+                  <div className="form-grid form-grid--2">
+                    <label className="field">
+                      <span className="field__label">Time format</span>
+                      <Select
+                        value={(configuration as WorldClockWidgetConfig).format}
+                        disabled={readOnly}
+                        onChange={(event) =>
+                          setConfiguration((current) => ({
+                            ...(current as WorldClockWidgetConfig),
+                            format: event.target
+                              .value as WorldClockWidgetConfig["format"],
+                          }))
+                        }
+                      >
+                        <option value="12">12-hour</option>
+                        <option value="24">24-hour</option>
+                      </Select>
+                    </label>
+                    <label className="field">
+                      <span className="field__label">Columns</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={4}
+                        value={
+                          (configuration as WorldClockWidgetConfig).columns
+                        }
+                        disabled={readOnly}
+                        onChange={(event) =>
+                          setConfiguration((current) => ({
+                            ...(current as WorldClockWidgetConfig),
+                            columns: Number(event.target.value),
+                          }))
+                        }
+                      />
+                    </label>
+                  </div>
+                  <fieldset>
+                    <legend>Locations</legend>
+                    {(configuration as WorldClockWidgetConfig).zones.map(
+                      (zone, index) => (
+                        <div className="form-grid form-grid--2" key={index}>
+                          <label className="field">
+                            <span className="field__label">Label</span>
+                            <input
+                              value={zone.label}
+                              disabled={readOnly}
+                              onChange={(event) =>
+                                setConfiguration((current) => {
+                                  const config =
+                                    current as WorldClockWidgetConfig;
+                                  return {
+                                    ...config,
+                                    zones: config.zones.map(
+                                      (item, itemIndex) =>
+                                        itemIndex === index
+                                          ? {
+                                              ...item,
+                                              label: event.target.value,
+                                            }
+                                          : item,
+                                    ),
+                                  };
+                                })
+                              }
+                            />
+                          </label>
+                          <label className="field">
+                            <span className="field__label">IANA timezone</span>
+                            <input
+                              value={zone.timezone}
+                              disabled={readOnly}
+                              onChange={(event) =>
+                                setConfiguration((current) => {
+                                  const config =
+                                    current as WorldClockWidgetConfig;
+                                  return {
+                                    ...config,
+                                    zones: config.zones.map(
+                                      (item, itemIndex) =>
+                                        itemIndex === index
+                                          ? {
+                                              ...item,
+                                              timezone: event.target.value,
+                                            }
+                                          : item,
+                                    ),
+                                  };
+                                })
+                              }
+                            />
+                          </label>
+                        </div>
+                      ),
+                    )}
+                    <button
+                      type="button"
+                      className="button"
+                      disabled={
+                        readOnly ||
+                        (configuration as WorldClockWidgetConfig).zones
+                          .length >= 8
+                      }
+                      onClick={() =>
+                        setConfiguration((current) => ({
+                          ...current,
+                          zones: [
+                            ...(current as WorldClockWidgetConfig).zones,
+                            { label: "Location", timezone: "UTC" },
+                          ],
+                        }))
+                      }
+                    >
+                      Add location
+                    </button>
+                  </fieldset>
+                </>
+              )}
+            </div>
+          </section>
+          <section className="widget-editor__section">
+            <header>
+              <h3>Appearance</h3>
+              <p>
+                Adjust spacing, scale, and colors after the content looks right.
+              </p>
+            </header>
+            <div className="widget-editor__section-body">
+              <div className="widget-editor__subsection">
+                <header>
+                  <strong>Size and spacing</strong>
+                  <p>Control how much of the Widget the content occupies.</p>
+                </header>
+                <label className="switch-row">
                   <input
-                    type="number"
-                    min={1}
-                    max={12}
-                    value={(configuration as CardsWidgetConfig).maximumItems}
+                    type="checkbox"
+                    checked={configuration.textScale !== undefined}
                     disabled={readOnly}
                     onChange={(event) =>
-                      setConfiguration((current) => ({
-                        ...current,
-                        maximumItems: Number(event.target.value),
-                      }))
+                      setConfiguration((current) => {
+                        if (event.target.checked)
+                          return { ...current, textScale: 100 };
+                        const automatic = { ...current };
+                        delete automatic.textScale;
+                        return automatic;
+                      })
                     }
                   />
+                  <span>Use a custom scale</span>
                 </label>
-                <label className="field">
-                  <span className="field__label">Density</span>
-                  <Select
-                    value={(configuration as CardsWidgetConfig).density}
-                    disabled={readOnly}
-                    onChange={(event) =>
-                      setConfiguration((current) => ({
-                        ...current,
-                        density: event.target
-                          .value as CardsWidgetConfig["density"],
-                      }))
-                    }
-                  >
-                    <option value="comfortable">Comfortable</option>
-                    <option value="compact">Compact</option>
-                  </Select>
-                </label>
-              </div>
-            </>
-          )}
-          {provider === "weather" && (
-            <>
-              <DataSourceSelect
-                value={(configuration as WeatherWidgetConfig).dataSourceId}
-                sources={compatibleDataSources}
-                definitions={sourceDefinitions}
-                createProviders={acceptedCreateProviders}
-                csrf={csrf}
-                disabled={readOnly}
-                onChange={(dataSourceId) =>
-                  setConfiguration((current) => ({
-                    ...current,
-                    dataSourceId,
-                  }))
-                }
-              />
-              <div className="checkbox-grid">
-                {[
-                  ["showLocation", "Location"],
-                  ["showCurrent", "Current conditions"],
-                  ["showHumidity", "Humidity"],
-                  ["showWind", "Wind"],
-                  ["showPrecipitation", "Precipitation"],
-                ].map(([key, label]) => (
-                  <label key={key}>
+                {configuration.textScale !== undefined && (
+                  <label className="field">
+                    <span className="field__label">
+                      Scale ({configuration.textScale}%)
+                    </span>
                     <input
-                      type="checkbox"
-                      checked={Boolean(
-                        (configuration as unknown as Record<string, unknown>)[
-                          key!
-                        ],
-                      )}
+                      type="range"
+                      min={25}
+                      max={500}
+                      step={25}
+                      value={configuration.textScale}
                       disabled={readOnly}
                       onChange={(event) =>
                         setConfiguration((current) => ({
                           ...current,
-                          [key!]: event.target.checked,
+                          textScale: Number(event.target.value),
                         }))
                       }
                     />
-                    <span>{label}</span>
                   </label>
-                ))}
-              </div>
-              <label className="field">
-                <span className="field__label">Forecast days</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={7}
-                  value={(configuration as WeatherWidgetConfig).forecastDays}
-                  disabled={readOnly}
-                  onChange={(event) =>
-                    setConfiguration((current) => ({
-                      ...current,
-                      forecastDays: Number(event.target.value),
-                    }))
-                  }
-                />
-              </label>
-            </>
-          )}
-          {provider === "spotlight" && (
-            <>
-              <DataSourceSelect
-                value={(configuration as SpotlightWidgetConfig).dataSourceId}
-                sources={compatibleDataSources}
-                definitions={sourceDefinitions}
-                createProviders={acceptedCreateProviders}
-                csrf={csrf}
-                disabled={readOnly}
-                onChange={(dataSourceId) =>
-                  setConfiguration((current) => ({ ...current, dataSourceId }))
-                }
-              />
-              <div className="form-grid form-grid--2">
-                {(
-                  [
-                    ["titleField", "Title field", false],
-                    ["subtitleField", "Subtitle field", true],
-                    ["bodyField", "Body field", true],
-                    ["badgeField", "Badge field", true],
-                    ["dateField", "Date field", true],
-                  ] as const
-                ).map(([key, label, allowEmpty]) => (
-                  <FieldSelect
-                    key={key}
-                    label={label}
-                    value={(configuration as SpotlightWidgetConfig)[key] ?? ""}
-                    fields={availableFields}
-                    allowEmpty={allowEmpty}
-                    disabled={readOnly}
-                    onChange={(value) =>
-                      setConfiguration((current) => ({
-                        ...current,
-                        [key]: value,
-                      }))
-                    }
-                  />
-                ))}
-                <label className="field">
-                  <span className="field__label">Uploaded image</span>
-                  <Select
-                    value={
-                      (configuration as SpotlightWidgetConfig).imageAssetId ??
-                      ""
-                    }
-                    disabled={readOnly}
-                    onChange={(event) =>
-                      setConfiguration((current) => ({
-                        ...current,
-                        imageAssetId: event.target.value || undefined,
-                      }))
-                    }
-                  >
-                    <option value="">No image</option>
-                    {(imageAssets.data?.items ?? []).map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.name}
-                      </option>
-                    ))}
-                  </Select>
-                </label>
-              </div>
-            </>
-          )}
-          {provider === "stat_grid" && (
-            <>
-              <DataSourceSelect
-                value={(configuration as StatGridWidgetConfig).dataSourceId}
-                sources={compatibleDataSources}
-                definitions={sourceDefinitions}
-                createProviders={acceptedCreateProviders}
-                csrf={csrf}
-                disabled={readOnly}
-                onChange={(dataSourceId) =>
-                  setConfiguration((current) => ({ ...current, dataSourceId }))
-                }
-              />
-              <label className="field">
-                <span className="field__label">Columns</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={4}
-                  value={(configuration as StatGridWidgetConfig).columns}
-                  disabled={readOnly}
-                  onChange={(event) =>
-                    setConfiguration((current) => ({
-                      ...(current as StatGridWidgetConfig),
-                      columns: Number(event.target.value),
-                    }))
-                  }
-                />
-              </label>
-              <fieldset>
-                <legend>Metrics</legend>
-                {(configuration as StatGridWidgetConfig).metrics.map(
-                  (metric, index) => (
-                    <div className="form-grid form-grid--4" key={index}>
-                      <label className="field">
-                        <span className="field__label">Label</span>
-                        <input
-                          value={metric.label ?? ""}
-                          disabled={readOnly}
-                          onChange={(event) =>
-                            setConfiguration((current) => {
-                              const config = current as StatGridWidgetConfig;
-                              return {
-                                ...config,
-                                metrics: config.metrics.map(
-                                  (item, itemIndex) =>
-                                    itemIndex === index
-                                      ? { ...item, label: event.target.value }
-                                      : item,
-                                ),
-                              };
-                            })
-                          }
-                        />
-                      </label>
-                      <FieldSelect
-                        label="Value field"
-                        value={metric.valueField}
-                        fields={availableFields.filter((field) =>
-                          ["number", "integer", "percent", "currency"].includes(
-                            field.type,
-                          ),
-                        )}
-                        disabled={readOnly}
-                        onChange={(valueField) =>
-                          setConfiguration((current) => {
-                            const config = current as StatGridWidgetConfig;
-                            return {
-                              ...config,
-                              metrics: config.metrics.map((item, itemIndex) =>
-                                itemIndex === index
-                                  ? { ...item, valueField }
-                                  : item,
-                              ),
-                            };
-                          })
-                        }
-                      />
-                      <label className="field">
-                        <span className="field__label">Format</span>
-                        <Select
-                          value={metric.format ?? "number"}
-                          disabled={readOnly}
-                          onChange={(event) =>
-                            setConfiguration((current) => {
-                              const config = current as StatGridWidgetConfig;
-                              return {
-                                ...config,
-                                metrics: config.metrics.map(
-                                  (item, itemIndex) =>
-                                    itemIndex === index
-                                      ? {
-                                          ...item,
-                                          format: event.target
-                                            .value as typeof metric.format,
-                                        }
-                                      : item,
-                                ),
-                              };
-                            })
-                          }
-                        >
-                          <option value="number">Number</option>
-                          <option value="integer">Integer</option>
-                          <option value="percent">Percent</option>
-                          <option value="currency">Currency</option>
-                        </Select>
-                      </label>
-                      <button
-                        type="button"
-                        className="button"
-                        disabled={
-                          readOnly ||
-                          (configuration as StatGridWidgetConfig).metrics
-                            .length === 1
-                        }
-                        onClick={() =>
-                          setConfiguration((current) => ({
-                            ...current,
-                            metrics: (
-                              current as StatGridWidgetConfig
-                            ).metrics.filter(
-                              (_, itemIndex) => itemIndex !== index,
-                            ),
-                          }))
-                        }
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ),
                 )}
-                <button
-                  type="button"
-                  className="button"
-                  disabled={
-                    readOnly ||
-                    (configuration as StatGridWidgetConfig).metrics.length >= 12
-                  }
-                  onClick={() =>
-                    setConfiguration((current) => ({
-                      ...current,
-                      metrics: [
-                        ...(current as StatGridWidgetConfig).metrics,
-                        { label: "Value", valueField: "", format: "number" },
-                      ],
-                    }))
-                  }
-                >
-                  Add metric
-                </button>
-              </fieldset>
-            </>
-          )}
-          {provider === "chart" && (
-            <>
-              <DataSourceSelect
-                value={(configuration as ChartWidgetConfig).dataSourceId}
-                sources={compatibleDataSources}
-                definitions={sourceDefinitions}
-                createProviders={acceptedCreateProviders}
-                csrf={csrf}
-                disabled={readOnly}
-                onChange={(dataSourceId) =>
-                  setConfiguration((current) => ({ ...current, dataSourceId }))
-                }
-              />
-              <div className="form-grid form-grid--2">
                 <label className="field">
-                  <span className="field__label">Chart type</span>
-                  <Select
-                    value={(configuration as ChartWidgetConfig).chartType}
-                    disabled={readOnly}
-                    onChange={(event) =>
-                      setConfiguration((current) => ({
-                        ...current,
-                        chartType: event.target
-                          .value as ChartWidgetConfig["chartType"],
-                      }))
-                    }
-                  >
-                    <option value="line">Line</option>
-                    <option value="bar">Bar</option>
-                    <option value="donut">Donut</option>
-                  </Select>
-                </label>
-                <label className="field">
-                  <span className="field__label">Dataset</span>
+                  <span className="field__label">
+                    Padding ({configuration.contentPadding ?? 10}%)
+                  </span>
                   <input
-                    value={(configuration as ChartWidgetConfig).dataset ?? ""}
+                    type="range"
+                    min={0}
+                    max={40}
+                    step={1}
+                    value={configuration.contentPadding ?? 10}
                     disabled={readOnly}
                     onChange={(event) =>
                       setConfiguration((current) => ({
                         ...current,
-                        dataset: event.target.value,
+                        contentPadding: Number(event.target.value),
                       }))
                     }
                   />
                 </label>
+                <small>
+                  By default, content uses the center 80% of the Widget. Reduce
+                  padding to let it fill more space; custom scale ranges up to
+                  500% and still fits long text within the available area.
+                </small>
               </div>
-              <fieldset>
-                <legend>Series</legend>
-                {(configuration as ChartWidgetConfig).series.map(
-                  (series, index) => (
-                    <div className="form-grid form-grid--4" key={index}>
-                      <FieldSelect
-                        label="Numeric field"
-                        value={series.field}
-                        fields={availableFields.filter((field) =>
-                          ["number", "integer", "percent", "currency"].includes(
-                            field.type,
-                          ),
-                        )}
-                        disabled={readOnly}
-                        onChange={(field) =>
-                          setConfiguration((current) => {
-                            const config = current as ChartWidgetConfig;
-                            return {
-                              ...config,
-                              series: config.series.map((item, itemIndex) =>
-                                itemIndex === index ? { ...item, field } : item,
-                              ),
-                            };
-                          })
-                        }
-                      />
-                      <label className="field">
-                        <span className="field__label">Label</span>
-                        <input
-                          value={series.label ?? ""}
-                          disabled={readOnly}
-                          onChange={(event) =>
-                            setConfiguration((current) => {
-                              const config = current as ChartWidgetConfig;
-                              return {
-                                ...config,
-                                series: config.series.map((item, itemIndex) =>
-                                  itemIndex === index
-                                    ? { ...item, label: event.target.value }
-                                    : item,
-                                ),
-                              };
-                            })
-                          }
-                        />
-                      </label>
-                      <label className="field">
-                        <span className="field__label">Color</span>
-                        <input
-                          type="color"
-                          value={series.color ?? "#4DB6FF"}
-                          disabled={readOnly}
-                          onChange={(event) =>
-                            setConfiguration((current) => {
-                              const config = current as ChartWidgetConfig;
-                              return {
-                                ...config,
-                                series: config.series.map((item, itemIndex) =>
-                                  itemIndex === index
-                                    ? { ...item, color: event.target.value }
-                                    : item,
-                                ),
-                              };
-                            })
-                          }
-                        />
-                      </label>
-                      <button
-                        type="button"
-                        className="button"
-                        disabled={
-                          readOnly ||
-                          (configuration as ChartWidgetConfig).series.length ===
-                            1
-                        }
-                        onClick={() =>
-                          setConfiguration((current) => ({
-                            ...current,
-                            series: (
-                              current as ChartWidgetConfig
-                            ).series.filter(
-                              (_, itemIndex) => itemIndex !== index,
-                            ),
-                          }))
-                        }
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ),
-                )}
-                <button
-                  type="button"
-                  className="button"
-                  disabled={
-                    readOnly ||
-                    (configuration as ChartWidgetConfig).series.length >= 4
-                  }
-                  onClick={() =>
-                    setConfiguration((current) => ({
-                      ...current,
-                      series: [
-                        ...(current as ChartWidgetConfig).series,
-                        { field: "", label: "Series", color: "#FFB547" },
-                      ],
-                    }))
-                  }
-                >
-                  Add series
-                </button>
-              </fieldset>
-            </>
-          )}
-          {provider === "progress" && (
-            <>
-              <DataSourceSelect
-                value={(configuration as ProgressWidgetConfig).dataSourceId}
-                sources={compatibleDataSources}
-                definitions={sourceDefinitions}
-                createProviders={acceptedCreateProviders}
-                csrf={csrf}
-                disabled={readOnly}
-                onChange={(dataSourceId) =>
-                  setConfiguration((current) => ({ ...current, dataSourceId }))
-                }
-              />
-              <div className="form-grid form-grid--2">
-                <FieldSelect
-                  label="Value field"
-                  value={(configuration as ProgressWidgetConfig).valueField}
-                  fields={availableFields.filter((field) =>
-                    ["number", "integer", "percent", "currency"].includes(
-                      field.type,
-                    ),
-                  )}
-                  disabled={readOnly}
-                  onChange={(valueField) =>
-                    setConfiguration((current) => ({ ...current, valueField }))
+              <div className="widget-editor__subsection">
+                <header>
+                  <strong>Colors</strong>
+                  <p>Set the foreground and background used on screen.</p>
+                </header>
+                <div className="form-grid form-grid--2">
+                  <label className="field">
+                    <span className="field__label">Text and accent color</span>
+                    <input
+                      type="color"
+                      value={configuration.foregroundColor}
+                      disabled={readOnly}
+                      onChange={(e) =>
+                        updateColors("foregroundColor", e.target.value)
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    <span className="field__label">Background color</span>
+                    <input
+                      type="color"
+                      value={configuration.backgroundColor}
+                      disabled={readOnly}
+                      onChange={(e) =>
+                        updateColors("backgroundColor", e.target.value)
+                      }
+                    />
+                  </label>
+                </div>
+              </div>
+            </div>
+          </section>
+          <aside className="widget-editor__preview" aria-label="Live preview">
+            <header>
+              <strong>Live preview</strong>
+              <span>Updates as you make changes.</span>
+            </header>
+            <div
+              ref={previewRef}
+              className="native-app-preview declarative-widget-preview"
+            >
+              {compiledPreview.data ? (
+                <DeclarativePresentationPreview
+                  presentation={compiledPreview.data}
+                  source={sourcePreview.data}
+                  assetImageUrl={
+                    previewImageAssetId
+                      ? api.assetPreviewUrl(previewImageAssetId)
+                      : undefined
                   }
                 />
-                <FieldSelect
-                  label="Target field"
-                  value={
-                    (configuration as ProgressWidgetConfig).targetField ?? ""
-                  }
-                  fields={availableFields.filter((field) =>
-                    ["number", "integer", "percent", "currency"].includes(
-                      field.type,
-                    ),
-                  )}
-                  allowEmpty
-                  disabled={readOnly}
-                  onChange={(targetField) =>
-                    setConfiguration((current) => ({
-                      ...current,
-                      targetField,
-                    }))
-                  }
-                />
-                <label className="field">
-                  <span className="field__label">Static target</span>
-                  <input
-                    type="number"
-                    value={
-                      (configuration as ProgressWidgetConfig).staticTarget ??
-                      100
-                    }
-                    disabled={
-                      readOnly ||
-                      Boolean(
-                        (configuration as ProgressWidgetConfig).targetField,
-                      )
-                    }
-                    onChange={(event) =>
-                      setConfiguration((current) => ({
-                        ...current,
-                        staticTarget: Number(event.target.value),
-                      }))
-                    }
-                  />
-                </label>
-                <label className="field">
-                  <span className="field__label">Label</span>
-                  <input
-                    value={(configuration as ProgressWidgetConfig).label ?? ""}
-                    disabled={readOnly}
-                    onChange={(event) =>
-                      setConfiguration((current) => ({
-                        ...current,
-                        label: event.target.value,
-                      }))
-                    }
-                  />
-                </label>
-              </div>
-            </>
-          )}
-          {provider === "timeline" && (
-            <>
-              <DataSourceSelect
-                value={(configuration as TimelineWidgetConfig).dataSourceId}
-                sources={compatibleDataSources}
-                definitions={sourceDefinitions}
-                createProviders={acceptedCreateProviders}
-                csrf={csrf}
-                disabled={readOnly}
-                onChange={(dataSourceId) =>
-                  setConfiguration((current) => ({ ...current, dataSourceId }))
-                }
-              />
-              <div className="form-grid form-grid--2">
-                {(
-                  [
-                    ["dateField", "Date field", false],
-                    ["titleField", "Title field", false],
-                    ["bodyField", "Body field", true],
-                    ["statusField", "Status field", true],
-                  ] as const
-                ).map(([key, label, allowEmpty]) => (
-                  <FieldSelect
-                    key={key}
-                    label={label}
-                    value={(configuration as TimelineWidgetConfig)[key] ?? ""}
-                    fields={availableFields}
-                    allowEmpty={allowEmpty}
-                    disabled={readOnly}
-                    onChange={(value) =>
-                      setConfiguration((current) => ({
-                        ...current,
-                        [key]: value,
-                      }))
-                    }
-                  />
-                ))}
-                <label className="field">
-                  <span className="field__label">Orientation</span>
-                  <Select
-                    value={(configuration as TimelineWidgetConfig).orientation}
-                    disabled={readOnly}
-                    onChange={(event) =>
-                      setConfiguration((current) => ({
-                        ...current,
-                        orientation: event.target
-                          .value as TimelineWidgetConfig["orientation"],
-                      }))
-                    }
-                  >
-                    <option value="vertical">Vertical</option>
-                    <option value="horizontal">Horizontal</option>
-                  </Select>
-                </label>
-              </div>
-            </>
-          )}
-          {provider === "world_clock" && (
-            <>
-              <div className="form-grid form-grid--2">
-                <label className="field">
-                  <span className="field__label">Time format</span>
-                  <Select
-                    value={(configuration as WorldClockWidgetConfig).format}
-                    disabled={readOnly}
-                    onChange={(event) =>
-                      setConfiguration((current) => ({
-                        ...(current as WorldClockWidgetConfig),
-                        format: event.target
-                          .value as WorldClockWidgetConfig["format"],
-                      }))
-                    }
-                  >
-                    <option value="12">12-hour</option>
-                    <option value="24">24-hour</option>
-                  </Select>
-                </label>
-                <label className="field">
-                  <span className="field__label">Columns</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={4}
-                    value={(configuration as WorldClockWidgetConfig).columns}
-                    disabled={readOnly}
-                    onChange={(event) =>
-                      setConfiguration((current) => ({
-                        ...(current as WorldClockWidgetConfig),
-                        columns: Number(event.target.value),
-                      }))
-                    }
-                  />
-                </label>
-              </div>
-              <fieldset>
-                <legend>Locations</legend>
-                {(configuration as WorldClockWidgetConfig).zones.map(
-                  (zone, index) => (
-                    <div className="form-grid form-grid--2" key={index}>
-                      <label className="field">
-                        <span className="field__label">Label</span>
-                        <input
-                          value={zone.label}
-                          disabled={readOnly}
-                          onChange={(event) =>
-                            setConfiguration((current) => {
-                              const config = current as WorldClockWidgetConfig;
-                              return {
-                                ...config,
-                                zones: config.zones.map((item, itemIndex) =>
-                                  itemIndex === index
-                                    ? { ...item, label: event.target.value }
-                                    : item,
-                                ),
-                              };
-                            })
-                          }
-                        />
-                      </label>
-                      <label className="field">
-                        <span className="field__label">IANA timezone</span>
-                        <input
-                          value={zone.timezone}
-                          disabled={readOnly}
-                          onChange={(event) =>
-                            setConfiguration((current) => {
-                              const config = current as WorldClockWidgetConfig;
-                              return {
-                                ...config,
-                                zones: config.zones.map((item, itemIndex) =>
-                                  itemIndex === index
-                                    ? { ...item, timezone: event.target.value }
-                                    : item,
-                                ),
-                              };
-                            })
-                          }
-                        />
-                      </label>
-                    </div>
-                  ),
-                )}
-                <button
-                  type="button"
-                  className="button"
-                  disabled={
-                    readOnly ||
-                    (configuration as WorldClockWidgetConfig).zones.length >= 8
-                  }
-                  onClick={() =>
-                    setConfiguration((current) => ({
-                      ...current,
-                      zones: [
-                        ...(current as WorldClockWidgetConfig).zones,
-                        { label: "Location", timezone: "UTC" },
-                      ],
-                    }))
-                  }
-                >
-                  Add location
-                </button>
-              </fieldset>
-            </>
-          )}
-          <fieldset>
-            <legend>Content sizing</legend>
-            <label className="switch-row">
-              <input
-                type="checkbox"
-                checked={configuration.textScale !== undefined}
-                disabled={readOnly}
-                onChange={(event) =>
-                  setConfiguration((current) => {
-                    if (event.target.checked)
-                      return { ...current, textScale: 100 };
-                    const automatic = { ...current };
-                    delete automatic.textScale;
-                    return automatic;
-                  })
-                }
-              />
-              <span>Use a custom scale</span>
-            </label>
-            {configuration.textScale !== undefined && (
-              <label className="field">
-                <span className="field__label">
-                  Scale ({configuration.textScale}%)
-                </span>
-                <input
-                  type="range"
-                  min={25}
-                  max={500}
-                  step={25}
-                  value={configuration.textScale}
-                  disabled={readOnly}
-                  onChange={(event) =>
-                    setConfiguration((current) => ({
-                      ...current,
-                      textScale: Number(event.target.value),
-                    }))
-                  }
-                />
-              </label>
-            )}
-            <label className="field">
-              <span className="field__label">
-                Padding ({configuration.contentPadding ?? 10}%)
-              </span>
-              <input
-                type="range"
-                min={0}
-                max={40}
-                step={1}
-                value={configuration.contentPadding ?? 10}
-                disabled={readOnly}
-                onChange={(event) =>
-                  setConfiguration((current) => ({
-                    ...current,
-                    contentPadding: Number(event.target.value),
-                  }))
-                }
-              />
-            </label>
-            <small>
-              By default, content uses the center 80% of the Widget. Reduce
-              padding to let it fill more space; custom scale ranges up to 500%
-              and still fits long text within the available area.
-            </small>
-          </fieldset>
-          <div className="form-grid form-grid--2">
-            <label className="field">
-              <span className="field__label">Foreground</span>
-              <input
-                type="color"
-                value={configuration.foregroundColor}
-                disabled={readOnly}
-                onChange={(e) =>
-                  updateColors("foregroundColor", e.target.value)
-                }
-              />
-            </label>
-            <label className="field">
-              <span className="field__label">Background</span>
-              <input
-                type="color"
-                value={configuration.backgroundColor}
-                disabled={readOnly}
-                onChange={(e) =>
-                  updateColors("backgroundColor", e.target.value)
-                }
-              />
-            </label>
-          </div>
-          <div
-            ref={previewRef}
-            className="native-app-preview declarative-widget-preview"
-          >
-            {compiledPreview.data ? (
-              <DeclarativePresentationPreview
-                presentation={compiledPreview.data}
-                source={sourcePreview.data}
-                assetImageUrl={
-                  previewImageAssetId
-                    ? api.assetPreviewUrl(previewImageAssetId)
-                    : undefined
-                }
-              />
-            ) : compiledPreview.isLoading || sourcePreview.isLoading ? (
-              "Compiling presentation preview…"
-            ) : (
-              "The current configuration cannot be compiled yet."
-            )}
-          </div>
+              ) : compiledPreview.isLoading || sourcePreview.isLoading ? (
+                "Preparing preview…"
+              ) : (
+                "Complete the required fields to see a preview."
+              )}
+            </div>
+          </aside>
           {save.error && <p className="form-error">{save.error.message}</p>}
         </div>
         <footer>
@@ -3207,6 +3436,7 @@ function DataSourceSelect({
   return (
     <DataSourcePicker
       value={value}
+      description="Choose the information this Widget should display. You can connect a new source without leaving the editor."
       sources={sources}
       definitions={definitions}
       createProviders={createProviders}
@@ -3249,6 +3479,9 @@ function FieldSelect({
           </option>
         ))}
       </Select>
+      <small>
+        Choose which field from the connected data supplies this value.
+      </small>
     </label>
   );
 }

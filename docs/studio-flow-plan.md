@@ -202,7 +202,7 @@ Three notes:
   read. A playlist links its Widgets instead of resolving their sources, because that is one detail
   request per item on a page that should stay cheap. Closing that leg properly wants a server-side
   resolved-chain read rather than client fan-out, which is more than the two reverse edges this
-  phase budgeted.
+  phase budgeted. **Resolved:** the playlist detail read now reports the Data Sources reachable through its items, so both legs resolve the whole way for one query instead of a detail request per item.
 
 Also folded in, as planned: **"Edit shared Widget" now opens the Widget** with a `returnTo` path
 back to the Layout, replacing a confirmation dialog that navigated to the Widget _list_ and lost the

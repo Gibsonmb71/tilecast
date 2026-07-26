@@ -79,7 +79,14 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 	}
 	notifier := &testNotifier{}
 	service := NewService(pool, notifier)
-	playlist, err := service.Create(ctx, owner.User.ID, "Morning announcements", "")
+	tagPlaylist, err := service.Create(ctx, owner.User.ID, "Tagged announcements", "", "tag")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tagPlaylist.SourceType != "tag" || tagPlaylist.TagRule == nil || len(tagPlaylist.TagRule.Tags) != 0 {
+		t.Fatalf("new tag playlist=%#v", tagPlaylist)
+	}
+	playlist, err := service.Create(ctx, owner.User.ID, "Morning announcements", "", "static")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,6 +123,33 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 	}
 	if manifest.SchemaVersion != 11 || manifest.DirectFallbackPlaylist == nil || len(manifest.DirectFallbackPlaylist.Items) != 2 || len(manifest.Assets) != 2 {
 		t.Fatalf("manifest=%#v", manifest)
+	}
+	tagID := uuid.New()
+	availableFrom := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
+	expiresAt := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
+	if _, err = pool.Exec(ctx, `INSERT INTO content_tags(id,organization_id,name,color,created_by) VALUES($1,$2,'Lobby','#2563eb',$3)`, tagID, org, owner.User.ID); err == nil {
+		_, err = pool.Exec(ctx, `INSERT INTO content_asset_tags(asset_id,tag_id) VALUES($1,$2)`, imageID, tagID)
+	}
+	if err == nil {
+		_, err = pool.Exec(ctx, `UPDATE assets SET available_from=$2,expires_at=$3 WHERE id=$1`, imageID, availableFrom, expiresAt)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	playlist, err = service.SetTagRule(ctx, playlist.ID, owner.User.ID, TagRuleInput{Enabled: true, Match: "any", ImageDurationMS: 15000, TagIDs: []uuid.UUID{tagID}})
+	if err != nil || playlist.SourceType != "tag" || playlist.TagRule == nil || len(playlist.Items) != 1 || !playlist.Items[0].Dynamic || *playlist.Items[0].DurationMS != 15000 {
+		t.Fatalf("tag playlist=%#v err=%v", playlist, err)
+	}
+	tagManifest, _, err := service.BuildManifest(ctx, screenID)
+	if err != nil || tagManifest.DirectFallbackPlaylist == nil || len(tagManifest.DirectFallbackPlaylist.Items) != 1 || tagManifest.DirectFallbackPlaylist.Items[0].AvailableFrom == nil || tagManifest.DirectFallbackPlaylist.Items[0].ExpiresAt == nil {
+		t.Fatalf("tag manifest=%#v err=%v", tagManifest, err)
+	}
+	if _, err = service.AddItem(ctx, playlist.ID, owner.User.ID, ItemInput{AssetID: imageID, DurationMS: &duration}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("tag playlist accepted a manual item: %v", err)
+	}
+	playlist, err = service.SetTagRule(ctx, playlist.ID, owner.User.ID, TagRuleInput{Enabled: false, Match: "any", ImageDurationMS: 10000})
+	if err != nil || playlist.SourceType != "static" || len(playlist.Items) != 2 {
+		t.Fatalf("manual playlist was not restored: %#v err=%v", playlist, err)
 	}
 	playlist, err = service.UpdateItem(ctx, playlist.ID, playlist.Items[0].ID, owner.User.ID, ItemInput{AssetID: videoID, Transition: "crossfade"})
 	if err != nil {
@@ -231,7 +265,7 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	webPlaylist, err := service.Create(ctx, owner.User.ID, "Web status", "")
+	webPlaylist, err := service.Create(ctx, owner.User.ID, "Web status", "", "static")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,7 +299,7 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	calendarPlaylist, err := service.Create(ctx, owner.User.ID, "Calendar rotation", "")
+	calendarPlaylist, err := service.Create(ctx, owner.User.ID, "Calendar rotation", "", "static")
 	if err != nil {
 		t.Fatal(err)
 	}
