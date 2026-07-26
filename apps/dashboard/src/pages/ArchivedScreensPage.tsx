@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Archive, MonitorOff } from "lucide-react";
 import { Link } from "react-router";
-import { api } from "../api/client";
+import { archivedScreens } from "../api/archivedScreens";
 import { PageHeader } from "../components/ui";
 
 const formatDate = (value?: string) =>
@@ -15,7 +15,7 @@ const formatDate = (value?: string) =>
 export function ArchivedScreensPage() {
   const archived = useQuery({
     queryKey: ["screens", "archive"],
-    queryFn: api.archivedScreens,
+    queryFn: archivedScreens,
   });
 
   const screens = archived.data?.items ?? [];
@@ -84,7 +84,8 @@ export function ArchivedScreensPage() {
                       </span>
                     </td>
                     <td>
-                      {screen.deviceManufacturer || screen.platform} {screen.deviceModel}
+                      {screen.deviceManufacturer || screen.platform}{" "}
+                      {screen.deviceModel}
                     </td>
                     <td>{formatDate(screen.archivedAt)}</td>
                     <td>{screen.archivedReason || "Pairing revoked"}</td>
