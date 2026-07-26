@@ -83,10 +83,23 @@
   bottom: var(--tc-space-2);
   padding: 4px 8px;
   border-radius: var(--tc-radius-pill);
-  color: var(--tc-status-warning);
-  background: var(--tc-status-warning-bg);
   font-size: 12px;
   font-weight: 650;
+}
+
+.live-preview-frame__banner--fresh {
+  color: var(--tc-status-success);
+  background: var(--tc-status-success-bg);
+}
+
+.live-preview-frame__banner--aging {
+  color: var(--tc-status-warning);
+  background: var(--tc-status-warning-bg);
+}
+
+.live-preview-frame__banner--old {
+  color: var(--tc-status-danger);
+  background: var(--tc-status-danger-bg);
 }
 
 .live-preview-panel__status {
