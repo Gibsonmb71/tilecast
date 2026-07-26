@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Screen } from "../api/types";
 import type { ScreenPreview } from "../api/previews";
-import { livePreviewState } from "./livePreviewState";
+import { livePreviewState, previewAge } from "./livePreviewState";
 
 const screen = { status: "online" } as Screen;
 const preview = {
@@ -31,5 +31,44 @@ describe("livePreviewState", () => {
     expect(
       livePreviewState(screen, { ...preview, status: "capture_error" }),
     ).toBe("capture-error");
+  });
+});
+
+describe("previewAge", () => {
+  const capturedAt = "2026-07-13T20:00:00Z";
+
+  it("formats seconds, minutes, hours, and days", () => {
+    expect(
+      previewAge(capturedAt, Date.parse("2026-07-13T20:00:50Z"))?.label,
+    ).toBe("50s ago");
+    expect(
+      previewAge(capturedAt, Date.parse("2026-07-13T20:03:00Z"))?.label,
+    ).toBe("3m ago");
+    expect(
+      previewAge(capturedAt, Date.parse("2026-07-13T22:00:00Z"))?.label,
+    ).toBe("2h ago");
+    expect(
+      previewAge(capturedAt, Date.parse("2026-07-15T20:00:00Z"))?.label,
+    ).toBe("2d ago");
+  });
+
+  it("changes tone as the capture ages", () => {
+    expect(
+      previewAge(capturedAt, Date.parse("2026-07-13T20:00:30Z"))?.tone,
+    ).toBe("fresh");
+    expect(
+      previewAge(capturedAt, Date.parse("2026-07-13T20:00:50Z"))?.tone,
+    ).toBe("aging");
+    expect(
+      previewAge(capturedAt, Date.parse("2026-07-13T20:03:00Z"))?.tone,
+    ).toBe("old");
+  });
+
+  it("handles future and invalid timestamps safely", () => {
+    expect(previewAge(capturedAt, Date.parse("2026-07-13T19:59:50Z"))).toEqual({
+      label: "0s ago",
+      tone: "fresh",
+    });
+    expect(previewAge("not-a-date")).toBeNull();
   });
 });
