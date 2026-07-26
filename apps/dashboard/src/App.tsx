@@ -7,6 +7,7 @@ import { AuthPage } from "./pages/AuthPage";
 import { DashboardShell, FoundationPage } from "./pages/Dashboard";
 import { PairScreenPage, ScreensPage } from "./pages/ScreensPage";
 import { ScreenDetailWithPreviewPage } from "./pages/ScreenDetailWithPreviewPage";
+import { ArchivedScreensPage } from "./pages/ArchivedScreensPage";
 import { ContentPage } from "./pages/ContentPage";
 import { PlaylistEditorPage } from "./pages/PlaylistsPage";
 import { PlaylistLibraryPage } from "./pages/PlaylistLibraryPage";
@@ -87,6 +88,19 @@ export const studioRoutes: RouteObject[] = [
             path: "pair/request/:requestId",
             element: <PairScreenPage />,
             handle: { breadcrumb: "Pair screen" },
+          },
+          {
+            path: "archive",
+            element: <ArchivedScreensPage />,
+            handle: {
+              breadcrumb: "Archive",
+              search: search(
+                "Screen archive",
+                "Review players whose pairings were revoked",
+                "/screens/archive",
+                ["revoked", "archived", "players", "devices"],
+              ),
+            },
           },
           {
             path: ":id",
