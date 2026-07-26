@@ -81,7 +81,57 @@ func (s *server) playerHeartbeatWithActivity(w http.ResponseWriter, r *http.Requ
 	}
 
 	s.recordHeartbeatStateTransitions(r, tx, principal.ScreenID, before, after, now)
+	s.anchorHeartbeatStateInterval(r, tx, principal.ScreenID, after, now)
 	_ = tx.Commit(activityContextWithoutCancel(r.Context()))
+}
+
+// anchorHeartbeatStateInterval keeps the screen state timeline usable for every
+// player, whatever activity events it reports. Players do not share one event
+// vocabulary: the Linux player reports content and connection events, while the
+// interval derivation recognises the Android player's presentation events. The
+// heartbeat is the one signal every player sends, so each accepted heartbeat
+// opens an up-state interval when none is open, and replaces a stale impaired
+// interval once the heartbeat itself shows the player is playing again.
+// Without this a player that never emits a recognised event is never measured,
+// and one renderer failure would leave a screen impaired forever.
+func (s *server) anchorHeartbeatStateInterval(r *http.Request, tx pgx.Tx, screenID uuid.UUID, status heartbeatActivityState, now time.Time) {
+	ctx := activityContextWithoutCancel(r.Context())
+	state := "online"
+	if heartbeatConfirmsHealthy(status) {
+		state = "healthy"
+	}
+	var open string
+	switch err := tx.QueryRow(ctx, `SELECT state FROM screen_state_intervals WHERE screen_id=$1 AND ended_at IS NULL ORDER BY started_at DESC LIMIT 1`, screenID).Scan(&open); {
+	case err == nil:
+		// An up interval already covers this heartbeat, and an interval we
+		// cannot contradict is left for the event derivation to close.
+		if open == "online" || open == "healthy" || state != "healthy" {
+			return
+		}
+		if _, err := tx.Exec(ctx, `UPDATE screen_state_intervals SET ended_at=$2 WHERE screen_id=$1 AND ended_at IS NULL`, screenID, now); err != nil {
+			return
+		}
+	case errors.Is(err, pgx.ErrNoRows):
+	default:
+		return
+	}
+	_, _ = tx.Exec(ctx, `
+		INSERT INTO screen_state_intervals(id,screen_id,state,started_at,metadata)
+		SELECT $1,$2,$3,$4,'{"source":"heartbeat"}'::jsonb
+		WHERE NOT EXISTS(SELECT 1 FROM screen_state_intervals WHERE screen_id=$2 AND ended_at IS NULL)
+		ON CONFLICT DO NOTHING`, uuid.New(), screenID, state, now)
+}
+
+// heartbeatConfirmsHealthy reports whether the heartbeat itself is evidence the
+// player is playing correctly, using only the fields the status authority keeps.
+func heartbeatConfirmsHealthy(status heartbeatActivityState) bool {
+	if status.PlaybackState != "playing" || status.PlaybackError != "" || status.SafeMode {
+		return false
+	}
+	if status.ForegroundState != "" && status.ForegroundState != "foreground" {
+		return false
+	}
+	return !storagePressure(status)
 }
 
 func (s *server) readHeartbeatActivityState(ctx context.Context, screenID uuid.UUID) (heartbeatActivityState, error) {

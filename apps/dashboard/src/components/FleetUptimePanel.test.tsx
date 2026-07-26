@@ -34,6 +34,7 @@ const report = (overrides: Partial<UptimeReport> = {}): UptimeReport => ({
   bucketSeconds: 3600,
   screensTracked: 2,
   screensWithDowntime: 1,
+  screensUnmeasured: 0,
   trackedSeconds: 14_400,
   upSeconds: 11_700,
   impairedSeconds: 900,
@@ -104,6 +105,20 @@ describe("FleetUptimePanel", () => {
     expect(links).toEqual(["Library", "Cafeteria"]);
     expect(screen.getByText("30m down")).toBeTruthy();
     expect(screen.getByText("No interruptions")).toBeTruthy();
+  });
+
+  it("keeps the per-screen strips collapsed so the overview stays short", async () => {
+    vi.spyOn(api, "fleetUptime").mockResolvedValue(
+      report({ screensTracked: 3, screensUnmeasured: 1 }),
+    );
+    renderPanel();
+
+    const disclosure = await screen.findByText(/^Per screen · /);
+    expect(disclosure.closest("details")?.hasAttribute("open")).toBe(false);
+    // A player that has not reported state yet is counted, not hidden.
+    expect(disclosure.textContent).toBe(
+      "Per screen · 3 screens · 1 with downtime · 1 not measured yet",
+    );
   });
 
   it("requests the seven day window when the operator switches range", async () => {

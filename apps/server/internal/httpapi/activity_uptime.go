@@ -16,7 +16,7 @@ import (
 // down instead of extending its last healthy interval forever.
 const (
 	uptimeHeartbeatGrace  = 3 * time.Minute
-	uptimeScreenListLimit = 25
+	uptimeScreenListLimit = 100
 )
 
 type uptimeWindowSpec struct {
@@ -47,9 +47,13 @@ const uptimeRowsSQL = `
 WITH bounds AS (
 	SELECT $1::timestamptz AS from_ts, $2::timestamptz AS to_ts, $3::float8 AS bucket_seconds
 ), tracked AS (
+	-- The same population the Screens list shows: uptime must not report on
+	-- disabled screens or on screens whose pairing was revoked or removed,
+	-- because their downtime is administrative rather than a fault.
 	SELECT s.id, s.name, s.last_heartbeat_at
 	FROM screens s
 	WHERE s.enabled = TRUE AND s.deleted_at IS NULL
+	  AND EXISTS (SELECT 1 FROM device_credentials c WHERE c.screen_id = s.id AND c.revoked_at IS NULL)
 ), buckets AS (
 	SELECT b.from_ts + make_interval(secs => b.bucket_seconds * (n - 1)) AS bucket_start,
 	       LEAST(b.from_ts + make_interval(secs => b.bucket_seconds * n), b.to_ts) AS bucket_end
@@ -220,6 +224,9 @@ func buildUptimeReport(rows []uptimeRow, spec uptimeWindowSpec, from, to time.Ti
 		screen.UptimePercent = uptimeRatio(float64(screen.UpSeconds), float64(screen.UpSeconds+screen.ImpairedSeconds+screen.DownSeconds))
 		if screen.DownSeconds > 0 {
 			report.ScreensWithDowntime++
+		}
+		if screen.UptimePercent == nil {
+			report.ScreensUnmeasured++
 		}
 		report.Screens = append(report.Screens, *screen)
 	}

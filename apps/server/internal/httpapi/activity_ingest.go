@@ -350,7 +350,8 @@ func isPlaybackEnd(eventType string) bool {
 
 func screenStateForEvent(event playerActivityEventInput) (string, bool) {
 	switch event.EventType {
-	case "player.connected", "connection.restored":
+	// connection.recovered is the Linux player's name for connection.restored.
+	case "player.connected", "connection.restored", "connection.recovered":
 		return "online", true
 	case "player.disconnected":
 		return "offline", true
