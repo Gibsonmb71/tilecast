@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -67,9 +67,11 @@ const savedLayout = layout({
 beforeEach(() => {
   HTMLDialogElement.prototype.showModal = function showModal() {
     this.open = true;
+    this.setAttribute("open", "");
   };
   HTMLDialogElement.prototype.close = function close() {
     this.open = false;
+    this.removeAttribute("open");
     this.dispatchEvent(new Event("close"));
   };
   vi.mocked(api.layouts).mockResolvedValue({
@@ -117,10 +119,13 @@ describe("layout library page", () => {
       await screen.findByRole("button", { name: "Actions for Lobby" }),
     );
     await user.click(screen.getByRole("menuitem", { name: "Rename" }));
-    const input = screen.getByLabelText("Name");
+    const renameDialog = await screen.findByRole("dialog", {
+      name: "Rename layout",
+    });
+    const input = within(renameDialog).getByLabelText("Name");
     await user.clear(input);
     await user.type(input, "Main Lobby");
-    await user.click(screen.getByRole("button", { name: "Save name" }));
+    await user.click(within(renameDialog).getByRole("button", { name: "Save name" }));
 
     expect(api.updateLayout).toHaveBeenCalledWith(
       "layout-1",
