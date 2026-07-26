@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api } from "../api/client";
@@ -77,8 +83,9 @@ function catalog(dataSources: DataSourceDefinition[]) {
   } as ContentDefinitionCatalog;
 }
 
-// The shared Select primitive renders a visually hidden native <select> behind a trigger button,
-// so option text is read from that native element rather than through the option role.
+// Field pickers use the shared Select primitive, which renders a visually hidden native <select>
+// behind a trigger button, so option text is read from that native element rather than through the
+// option role. The Data Source control is a chooser dialog and is driven directly.
 function optionsFor(labelText: string | RegExp) {
   const field = screen.getByText(labelText).closest("label");
   const select = field?.querySelector("select");
@@ -235,11 +242,18 @@ describe("DefinitionForm data source controls", () => {
       },
     ]);
 
-    await userEvent.click(
-      await screen.findByRole("button", { name: "Data: Choose data" }),
+    // The Data Source control is a chooser rather than a dropdown, so compatibility is read from
+    // what the chooser dialog offers. The field pickers below are still selects.
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /^Data: / })).toHaveTextContent(
+        "1 compatible source",
+      ),
     );
-    expect(screen.getByRole("button", { name: /Campus weather/ })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /Lunch rows/ })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: /^Data: / }));
+
+    const chooser = await screen.findByRole("dialog", { name: "Choose data" });
+    expect(within(chooser).getByText("Campus weather")).toBeTruthy();
+    expect(within(chooser).queryByText("Lunch rows")).toBeNull();
   });
 
   it("explains the empty state and offers to connect data instead of disabling the control", async () => {
