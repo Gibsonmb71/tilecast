@@ -2,8 +2,10 @@ import {
   Button,
   ContextMenu,
   Dialog,
+  Notice,
   PageHeader,
   Select,
+  ToggleGroup,
   ViewTabs,
   useContextMenu,
   type ContextMenuItem,
@@ -12,13 +14,11 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CircleAlert,
-  CircleCheck,
   ChevronDown,
   ChevronRight,
   Grid2X2,
   Link2,
   List,
-  MapPin,
   MoreHorizontal,
   Monitor,
   Pencil,
@@ -30,6 +30,7 @@ import {
   TriangleAlert,
   Wifi,
   WifiOff,
+  X,
 } from "lucide-react";
 import {
   useEffect,
@@ -223,7 +224,9 @@ export function ScreensPage() {
           )
         }
       />
-      <nav className="screen-primary-tabs" aria-label="Screen management">
+      {/* .view-tabs is the shared tab strip; these are links rather than buttons,
+          which it already styles. */}
+      <nav className="view-tabs" aria-label="Screen management">
         <Link to="/screens" aria-current="page">
           Screens
         </Link>
@@ -284,40 +287,38 @@ function ActiveEmergencyBanners({ canManage }: { canManage: boolean }) {
   return (
     <div className="emergency-banners">
       {active.map((item) => (
-        <section className="emergency-banner" role="status" key={item.id}>
-          <span className="emergency-banner__icon" aria-hidden="true">
-            <ShieldAlert size={18} />
-          </span>
-          <div className="emergency-banner__copy">
-            <strong>Emergency takeover active — {item.name}</strong>
-            <p>
-              {item.playlistName} is overriding scheduled and fallback content
-              until {new Date(item.expiresAt).toLocaleString()}.
-            </p>
-            <ul className="emergency-banner__counts">
-              <li>{item.activeCount} playing</li>
-              <li>{item.preparingCount} preparing</li>
-              <li>{item.failedCount} failed</li>
-              <li>{item.affectedCount} targeted</li>
-            </ul>
-          </div>
-          {canManage && (
-            <button
-              className="button button--danger"
-              type="button"
-              onClick={() => {
-                if (
-                  confirm(
-                    "Cancel this takeover and restore current scheduled or fallback playback?",
+        <Notice
+          key={item.id}
+          variant="danger"
+          title={`Emergency takeover active — ${item.name}`}
+          action={
+            canManage ? (
+              <button
+                className="button button--danger"
+                type="button"
+                onClick={() => {
+                  if (
+                    confirm(
+                      "Cancel this takeover and restore current scheduled or fallback playback?",
+                    )
                   )
-                )
-                  cancel.mutate(item.id);
-              }}
-            >
-              End takeover
-            </button>
-          )}
-        </section>
+                    cancel.mutate(item.id);
+                }}
+              >
+                End takeover
+              </button>
+            ) : undefined
+          }
+        >
+          {item.playlistName} is overriding scheduled and fallback content until{" "}
+          {new Date(item.expiresAt).toLocaleString()}.
+          <ul className="emergency-banner__counts">
+            <li>{item.activeCount} playing</li>
+            <li>{item.preparingCount} preparing</li>
+            <li>{item.failedCount} failed</li>
+            <li>{item.affectedCount} targeted</li>
+          </ul>
+        </Notice>
       ))}
     </div>
   );
@@ -380,7 +381,7 @@ function EmergencyTakeoverAction({ screens }: { screens: Screen[] }) {
   return (
     <>
       <button
-        className="button button--quiet emergency-trigger"
+        className="button button--danger-quiet emergency-trigger"
         type="button"
         aria-haspopup="dialog"
         onClick={() => setOpen(true)}
@@ -612,6 +613,32 @@ export function ScreenListContent({
   );
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkLocation, setBulkLocation] = useState("");
+  const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
+  const moreFiltersRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!moreFiltersOpen) return;
+    const closeOutside = (event: PointerEvent) => {
+      const target = event.target as Node;
+      // Select menus portal to <body>, so a click on one of their options is
+      // outside this panel in the DOM. Closing there would unmount the select
+      // before its own click landed.
+      if (
+        target instanceof Element &&
+        target.closest(".signal-select__menu, .signal-select__trigger")
+      )
+        return;
+      if (!moreFiltersRef.current?.contains(target)) setMoreFiltersOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMoreFiltersOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [moreFiltersOpen]);
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return screens.filter((screen) => {
@@ -924,8 +951,16 @@ export function ScreenListContent({
             <option value="playlist">Playlist</option>
             <option value="nothing">Nothing assigned</option>
           </FilterSelect>
-          <details className="screen-more-filters">
-            <summary>
+          {/* Button plus aria-expanded, matching every other popover in Studio.
+              A <details> element cannot close on an outside click. */}
+          <div className="screen-more-filters" ref={moreFiltersRef}>
+            <button
+              type="button"
+              className="screen-more-filters__trigger"
+              aria-expanded={moreFiltersOpen}
+              aria-haspopup="true"
+              onClick={() => setMoreFiltersOpen((open) => !open)}
+            >
               <SlidersHorizontal size={15} aria-hidden="true" />
               More filters
               {advancedFilterCount > 0 && (
@@ -933,52 +968,54 @@ export function ScreenListContent({
                   {advancedFilterCount}
                 </span>
               )}
-            </summary>
-            <div>
-              <FilterSelect
-                label="Sync group"
-                value={syncGroup}
-                onChange={setSyncGroup}
-                block
-              >
-                <option value="">All screens</option>
-                <option value="any">In any sync group</option>
-                <option value="none">Not in a sync group</option>
-                {[
-                  ...new Map(
-                    screens
-                      .filter((item) => item.syncGroupId)
-                      .map((item) => [item.syncGroupId, item.syncGroupName]),
-                  ).entries(),
-                ].map(([id, name]) => (
-                  <option value={id} key={id}>
-                    {name}
-                  </option>
-                ))}
-              </FilterSelect>
-              <FilterSelect
-                label="Orientation"
-                value={orientation}
-                onChange={setOrientation}
-                block
-              >
-                <option value="">Any orientation</option>
-                <option value="landscape">Landscape</option>
-                <option value="portrait">Portrait</option>
-              </FilterSelect>
-              <FilterSelect
-                label="Software update"
-                value={update}
-                onChange={setUpdate}
-                block
-              >
-                <option value="">Any update status</option>
-                <option value="current">Current</option>
-                <option value="downloading">Downloading</option>
-                <option value="attention">Needs attention</option>
-              </FilterSelect>
-            </div>
-          </details>
+            </button>
+            {moreFiltersOpen && (
+              <div className="screen-more-filters__panel">
+                <FilterSelect
+                  label="Sync group"
+                  value={syncGroup}
+                  onChange={setSyncGroup}
+                  block
+                >
+                  <option value="">All screens</option>
+                  <option value="any">In any sync group</option>
+                  <option value="none">Not in a sync group</option>
+                  {[
+                    ...new Map(
+                      screens
+                        .filter((item) => item.syncGroupId)
+                        .map((item) => [item.syncGroupId, item.syncGroupName]),
+                    ).entries(),
+                  ].map(([id, name]) => (
+                    <option value={id} key={id}>
+                      {name}
+                    </option>
+                  ))}
+                </FilterSelect>
+                <FilterSelect
+                  label="Orientation"
+                  value={orientation}
+                  onChange={setOrientation}
+                  block
+                >
+                  <option value="">Any orientation</option>
+                  <option value="landscape">Landscape</option>
+                  <option value="portrait">Portrait</option>
+                </FilterSelect>
+                <FilterSelect
+                  label="Software update"
+                  value={update}
+                  onChange={setUpdate}
+                  block
+                >
+                  <option value="">Any update status</option>
+                  <option value="current">Current</option>
+                  <option value="downloading">Downloading</option>
+                  <option value="attention">Needs attention</option>
+                </FilterSelect>
+              </div>
+            )}
+          </div>
         </div>
         {activeFilters.length > 0 && (
           <div className="screen-filter-chips">
@@ -988,21 +1025,17 @@ export function ScreenListContent({
               {screens.length} screens
             </span>
             {activeFilters.map((filter) => (
-              <button
-                type="button"
-                onClick={filter.remove}
-                key={filter.facet}
-                title={`Remove the ${filter.facet} filter`}
-              >
-                <span className="screen-filter-chips__facet">
-                  {filter.facet}
-                </span>
-                {filter.value}
-                <span aria-hidden="true">×</span>
-                <span className="visually-hidden">
-                  Remove {filter.facet} filter
-                </span>
-              </button>
+              <span className="filter-chip" key={filter.facet}>
+                <span className="filter-chip__facet">{filter.facet}</span>
+                <span className="filter-chip__value">{filter.value}</span>
+                <button
+                  type="button"
+                  aria-label={`Remove ${filter.facet} filter`}
+                  onClick={filter.remove}
+                >
+                  <X size={14} aria-hidden="true" />
+                </button>
+              </span>
             ))}
             <button
               type="button"
@@ -1034,26 +1067,29 @@ export function ScreenListContent({
             <option value="added-desc">Date added · newest</option>
             <option value="platform-asc">Platform</option>
           </FilterSelect>
-          <div
-            className="screen-view-switch"
-            role="group"
-            aria-label="Screen view"
-          >
-            <button
-              type="button"
-              aria-pressed={view === "table"}
-              onClick={() => setView("table")}
-            >
-              <List size={16} aria-hidden="true" /> Table
-            </button>
-            <button
-              type="button"
-              aria-pressed={view === "grid"}
-              onClick={() => setView("grid")}
-            >
-              <Grid2X2 size={16} aria-hidden="true" /> Previews
-            </button>
-          </div>
+          <ToggleGroup
+            label="Screen view"
+            value={view}
+            onValueChange={setView}
+            items={[
+              {
+                value: "table",
+                label: (
+                  <>
+                    <List size={16} aria-hidden="true" /> Table
+                  </>
+                ),
+              },
+              {
+                value: "grid",
+                label: (
+                  <>
+                    <Grid2X2 size={16} aria-hidden="true" /> Previews
+                  </>
+                ),
+              },
+            ]}
+          />
         </div>
       </div>
       {view === "grid" && (
@@ -1323,50 +1359,40 @@ function ScreenSummary({
   const locations = new Set(
     screens.map((item) => item.locationId).filter(Boolean),
   ).size;
+  // .summary-bar is the shared segmented metric readout. In a tile the count reads
+  // as a measure rather than the sentence "0 need attention" ever did.
   return (
-    <div className="screen-summary" role="group" aria-label="Fleet summary">
-      <span className="screen-stat">
-        <Monitor size={15} aria-hidden="true" />
-        <strong>{screens.length}</strong>
-        <span>Screens</span>
-      </span>
+    <div
+      className="summary-bar screen-summary"
+      role="group"
+      aria-label="Fleet summary"
+    >
+      <div className="summary-bar__item">
+        <strong>{screens.length}</strong> <span>Screens</span>
+      </div>
       <button
-        className="screen-stat screen-stat--online"
+        className="summary-bar__item"
         type="button"
         aria-pressed={status === "online"}
         onClick={() => onStatus(status === "online" ? "" : "online")}
       >
-        <Wifi size={15} aria-hidden="true" />
-        <strong>{online}</strong>
-        <span>Online</span>
+        <strong>{online}</strong> <span>Online</span>
       </button>
       <button
-        className={`screen-stat screen-stat--${attention > 0 ? "attention" : "healthy"}`}
+        className={`summary-bar__item${attention > 0 ? " summary-bar__item--urgent" : ""}`}
         type="button"
         aria-pressed={status === "attention"}
         onClick={() => onStatus(status === "attention" ? "" : "attention")}
       >
-        {attention > 0 ? (
-          <>
-            <CircleAlert size={15} aria-hidden="true" />
-            <strong>{attention}</strong>
-            <span>{attention === 1 ? "needs" : "need"} attention</span>
-          </>
-        ) : (
-          <>
-            <CircleCheck size={15} aria-hidden="true" />
-            <span>No issues</span>
-          </>
-        )}
+        <strong>{attention}</strong> <span>Needs attention</span>
       </button>
       <button
-        className="screen-stat"
+        className="summary-bar__item"
         type="button"
         aria-pressed={groupBy === "location"}
         onClick={onGroupByLocation}
       >
-        <MapPin size={15} aria-hidden="true" />
-        <strong>{locations}</strong>
+        <strong>{locations}</strong>{" "}
         <span>Location{locations === 1 ? "" : "s"}</span>
       </button>
     </div>
@@ -3294,10 +3320,12 @@ export function StatusLabel({ status }: { status: ScreenStatus }) {
     label: "Unknown",
     Icon: CircleAlert,
   };
+  // Every ScreenStatus has a matching tone group on the shared .status-chip, so no
+  // page-local status styling is needed.
   const statusClass = statusContent[status] ? status : "unknown";
   return (
-    <span className={`screen-status screen-status--${statusClass}`}>
-      <Icon size={14} />
+    <span className={`status-chip status-chip--${statusClass}`}>
+      <Icon size={13} aria-hidden="true" />
       {label}
     </span>
   );

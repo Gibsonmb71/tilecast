@@ -45,7 +45,7 @@ html[data-theme="system"] {
   --tc-bg-subtle: var(--tc-neutral-50);
   --tc-bg-elevated: var(--tc-neutral-0);
   --tc-text-primary: #17212b;
-  --tc-text-secondary: var(--tc-neutral-500);
+  --tc-text-secondary: var(--tc-neutral-600);
   --tc-text-disabled: var(--tc-neutral-400);
   --tc-text-inverse: var(--tc-neutral-0);
   --tc-border-default: var(--divider);
