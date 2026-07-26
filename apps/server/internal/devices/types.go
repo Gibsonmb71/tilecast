@@ -118,6 +118,8 @@ type Screen struct {
 	LastContactAt             *time.Time `json:"lastContactAt,omitempty"`
 	Status                    Status     `json:"status"`
 	HasActiveCredential       bool       `json:"hasActiveCredential"`
+	ArchivedAt                *time.Time `json:"archivedAt,omitempty"`
+	ArchivedReason            string     `json:"archivedReason,omitempty"`
 	CreatedAt                 time.Time  `json:"createdAt"`
 	UpdatedAt                 time.Time  `json:"updatedAt"`
 }
