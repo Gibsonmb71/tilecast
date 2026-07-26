@@ -508,7 +508,9 @@ func (s *Service) PlayerTypedDataSourceConfiguration(ctx context.Context, id uui
 		}
 		return json.Marshal(manualPlayerData(config))
 	}
-	if definition, ok := s.definitions.DataSource(provider); ok && definition.AdapterID == "manual_object" {
+	if definition, ok := s.definitions.DataSource(provider); ok && (definition.AdapterID == "manual_object" || definition.AdapterID == "manual_records") {
+		// Both adapters cache a complete typed payload at save time, and manual_records is
+		// re-projected by the refresh worker at each publish-window boundary.
 		var payload json.RawMessage
 		if err := s.db.QueryRow(ctx, `SELECT cached_payload FROM data_source_refresh_states WHERE data_source_id=$1`, id).Scan(&payload); err != nil {
 			return nil, err
@@ -536,7 +538,8 @@ func (s *Service) PlayerTypedDataSourceConfiguration(ctx context.Context, id uui
 	if err != nil {
 		return nil, err
 	}
-	if provider == "transit" || provider == "cap_alerts" || provider == "air_quality" {
+	_, fetchesRecords := s.httpRecordsSpec(provider)
+	if provider == "transit" || provider == "cap_alerts" || provider == "air_quality" || fetchesRecords {
 		data := TypedDatasetPayload{Datasets: []TypedDataset{}}
 		if expires != nil && expires.After(time.Now()) {
 			if err := json.Unmarshal(payload, &data); err != nil {

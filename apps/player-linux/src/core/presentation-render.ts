@@ -124,6 +124,12 @@ function resolveDatasetPath(
     index = Number(parts[0]);
     field = parts[1]!;
   }
+  // Object Data Sources expose one value map instead of records. It takes precedence so
+  // an object binding resolves even when the same source also carries records.
+  const objectValue = source.objectValues[field];
+  if (objectValue !== undefined && objectValue !== "") {
+    return objectValue;
+  }
   const record = source.records[index];
   if (!record) {
     return "";
@@ -207,9 +213,10 @@ export function renderPresentation(
     // Repeat expansion: emit one subtree per record.
     if (node.repeat) {
       const source = local.datasets.get(datasetId(node.repeat.dataset));
+      const offset = Math.max(0, node.repeat.offset ?? 0);
       const records = (source?.records ?? []).slice(
-        0,
-        Math.max(1, node.repeat.limit),
+        offset,
+        offset + Math.max(1, node.repeat.limit),
       );
       const out: RenderNode[] = [];
       records.forEach((record, i) => {

@@ -1,0 +1,574 @@
+{
+  "widgets": [],
+  "dataSources": [
+    {
+      "id": "announcements",
+      "version": 1,
+      "name": "Announcements",
+      "description": "Maintain a list of announcements that publish and expire on their own.",
+      "category": "Structured",
+      "icon": "megaphone",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "records",
+            "label": "Announcements",
+            "description": "Rows appear only inside their publish window. Higher priority sorts first.",
+            "control": "repeating_group",
+            "maximumItems": 60,
+            "itemFields": [
+              {
+                "key": "title",
+                "label": "Title",
+                "control": "text",
+                "required": true,
+                "minLength": 1,
+                "maxLength": 160,
+                "default": "Announcement"
+              },
+              {
+                "key": "body",
+                "label": "Details",
+                "control": "multiline_text",
+                "default": "",
+                "maxLength": 1000
+              },
+              {
+                "key": "category",
+                "label": "Category",
+                "control": "text",
+                "default": "",
+                "maxLength": 60
+              },
+              {
+                "key": "priority",
+                "label": "Priority",
+                "control": "integer",
+                "required": true,
+                "default": 0,
+                "minimum": 0,
+                "maximum": 100
+              },
+              {
+                "key": "publishAt",
+                "label": "Publish at",
+                "control": "datetime"
+              },
+              {
+                "key": "expiresAt",
+                "label": "Expires at",
+                "control": "datetime"
+              }
+            ]
+          }
+        ]
+      },
+      "defaultConfiguration": { "records": [] },
+      "outputSchema": {
+        "kind": "records",
+        "fields": [
+          {
+            "key": "title",
+            "label": "Title",
+            "type": "text",
+            "required": true
+          },
+          { "key": "body", "label": "Details", "type": "text" },
+          { "key": "category", "label": "Category", "type": "text" },
+          { "key": "priority", "label": "Priority", "type": "integer" },
+          { "key": "publishAt", "label": "Publish at", "type": "datetime" },
+          { "key": "expiresAt", "label": "Expires at", "type": "datetime" }
+        ]
+      },
+      "adapterId": "manual_records",
+      "refreshBehavior": "manual",
+      "requiresManifestV13": true,
+      "setup": {
+        "eyebrow": "Maintained in Studio",
+        "tip": "Set an expiry when you add the row. Expired announcements disappear from every screen on their own, with no cleanup pass.",
+        "steps": [
+          "Add a row for each announcement.",
+          "Set a publish time for anything that should wait, and an expiry for anything time-limited.",
+          "Select it from a List, Ticker, Cards, or Now and Next Widget."
+        ]
+      },
+      "deprecation": {}
+    },
+    {
+      "id": "events",
+      "version": 1,
+      "name": "Events",
+      "description": "Maintain a short list of upcoming events without a calendar feed.",
+      "category": "Structured",
+      "icon": "calendar",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "records",
+            "label": "Events",
+            "control": "repeating_group",
+            "maximumItems": 60,
+            "itemFields": [
+              {
+                "key": "title",
+                "label": "Event",
+                "control": "text",
+                "required": true,
+                "minLength": 1,
+                "maxLength": 160,
+                "default": "Event"
+              },
+              {
+                "key": "start",
+                "label": "Starts",
+                "control": "datetime"
+              },
+              {
+                "key": "location",
+                "label": "Location",
+                "control": "text",
+                "default": "",
+                "maxLength": 120
+              },
+              {
+                "key": "description",
+                "label": "Details",
+                "control": "multiline_text",
+                "default": "",
+                "maxLength": 600
+              },
+              {
+                "key": "expiresAt",
+                "label": "Remove after",
+                "control": "datetime"
+              }
+            ]
+          }
+        ]
+      },
+      "defaultConfiguration": { "records": [] },
+      "outputSchema": {
+        "kind": "records",
+        "fields": [
+          {
+            "key": "title",
+            "label": "Event",
+            "type": "text",
+            "required": true
+          },
+          { "key": "start", "label": "Starts", "type": "datetime" },
+          { "key": "location", "label": "Location", "type": "text" },
+          { "key": "description", "label": "Details", "type": "text" },
+          { "key": "expiresAt", "label": "Remove after", "type": "datetime" }
+        ]
+      },
+      "adapterId": "manual_records",
+      "refreshBehavior": "manual",
+      "requiresManifestV13": true,
+      "setup": {
+        "eyebrow": "Maintained in Studio",
+        "tip": "Events sort by start time, so a Now and Next Widget features the next one automatically.",
+        "steps": [
+          "Add a row for each event with its start time.",
+          "Set Remove after so it clears itself once it is over.",
+          "Select it from an Agenda, Now and Next, or Cards Widget."
+        ]
+      },
+      "deprecation": {}
+    },
+    {
+      "id": "closures",
+      "version": 1,
+      "name": "Closures and Delays",
+      "description": "Publish closures, delays, and cancellations for a set window.",
+      "category": "Structured",
+      "icon": "alert",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "records",
+            "label": "Closures",
+            "control": "repeating_group",
+            "maximumItems": 60,
+            "itemFields": [
+              {
+                "key": "title",
+                "label": "What is affected",
+                "control": "text",
+                "required": true,
+                "minLength": 1,
+                "maxLength": 160,
+                "default": "Closure"
+              },
+              {
+                "key": "status",
+                "label": "Status",
+                "control": "select",
+                "required": true,
+                "default": "closed",
+                "options": [
+                  { "value": "closed", "label": "Closed" },
+                  { "value": "delayed", "label": "Delayed" },
+                  { "value": "cancelled", "label": "Cancelled" },
+                  { "value": "relocated", "label": "Relocated" }
+                ]
+              },
+              {
+                "key": "body",
+                "label": "Details",
+                "control": "multiline_text",
+                "default": "",
+                "maxLength": 600
+              },
+              {
+                "key": "priority",
+                "label": "Priority",
+                "control": "integer",
+                "required": true,
+                "default": 0,
+                "minimum": 0,
+                "maximum": 100
+              },
+              {
+                "key": "publishAt",
+                "label": "Publish at",
+                "control": "datetime"
+              },
+              {
+                "key": "expiresAt",
+                "label": "Expires at",
+                "control": "datetime"
+              }
+            ]
+          }
+        ]
+      },
+      "defaultConfiguration": { "records": [] },
+      "outputSchema": {
+        "kind": "records",
+        "fields": [
+          {
+            "key": "title",
+            "label": "What is affected",
+            "type": "text",
+            "required": true
+          },
+          {
+            "key": "status",
+            "label": "Status",
+            "type": "text",
+            "required": true
+          },
+          { "key": "body", "label": "Details", "type": "text" },
+          { "key": "priority", "label": "Priority", "type": "integer" },
+          { "key": "publishAt", "label": "Publish at", "type": "datetime" },
+          { "key": "expiresAt", "label": "Expires at", "type": "datetime" }
+        ]
+      },
+      "adapterId": "manual_records",
+      "refreshBehavior": "manual",
+      "requiresManifestV13": true,
+      "setup": {
+        "eyebrow": "Maintained in Studio",
+        "tip": "Enter tomorrow's closures the night before with a publish time. They appear on their own in the morning.",
+        "steps": [
+          "Add a row for each closure, delay, or cancellation.",
+          "Set the window it should be visible for.",
+          "Select it from a List, Table, or Ticker Widget."
+        ]
+      },
+      "deprecation": {}
+    },
+    {
+      "id": "directory-entries",
+      "version": 1,
+      "name": "Directory",
+      "description": "Maintain a directory of people, rooms, or departments.",
+      "category": "Structured",
+      "icon": "table",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "records",
+            "label": "Entries",
+            "control": "repeating_group",
+            "maximumItems": 100,
+            "itemFields": [
+              {
+                "key": "title",
+                "label": "Name",
+                "control": "text",
+                "required": true,
+                "minLength": 1,
+                "maxLength": 160,
+                "default": "Name"
+              },
+              {
+                "key": "detail",
+                "label": "Role or department",
+                "control": "text",
+                "default": "",
+                "maxLength": 160
+              },
+              {
+                "key": "location",
+                "label": "Room or location",
+                "control": "text",
+                "default": "",
+                "maxLength": 120
+              },
+              {
+                "key": "contact",
+                "label": "Contact",
+                "control": "text",
+                "default": "",
+                "maxLength": 160
+              },
+              {
+                "key": "priority",
+                "label": "Sort priority",
+                "control": "integer",
+                "required": true,
+                "default": 0,
+                "minimum": 0,
+                "maximum": 100
+              }
+            ]
+          }
+        ]
+      },
+      "defaultConfiguration": { "records": [] },
+      "outputSchema": {
+        "kind": "records",
+        "fields": [
+          {
+            "key": "title",
+            "label": "Name",
+            "type": "text",
+            "required": true
+          },
+          { "key": "detail", "label": "Role or department", "type": "text" },
+          { "key": "location", "label": "Room or location", "type": "text" },
+          { "key": "contact", "label": "Contact", "type": "text" },
+          { "key": "priority", "label": "Sort priority", "type": "integer" }
+        ]
+      },
+      "adapterId": "manual_records",
+      "refreshBehavior": "manual",
+      "requiresManifestV13": true,
+      "setup": {
+        "eyebrow": "Maintained in Studio",
+        "tip": "Priority sorts the list, so pin reception or the main office above everything else.",
+        "steps": [
+          "Add a row for each person, room, or department.",
+          "Give the entries you want at the top a higher priority.",
+          "Select it from a Table, List, or Cards Widget."
+        ]
+      },
+      "deprecation": {}
+    },
+    {
+      "id": "menu-items",
+      "version": 1,
+      "name": "Menu Items",
+      "description": "Maintain menu or price-board rows with optional daily windows.",
+      "category": "Structured",
+      "icon": "menu",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "records",
+            "label": "Items",
+            "control": "repeating_group",
+            "maximumItems": 100,
+            "itemFields": [
+              {
+                "key": "title",
+                "label": "Item",
+                "control": "text",
+                "required": true,
+                "minLength": 1,
+                "maxLength": 160,
+                "default": "Item"
+              },
+              {
+                "key": "detail",
+                "label": "Description",
+                "control": "text",
+                "default": "",
+                "maxLength": 240
+              },
+              {
+                "key": "price",
+                "label": "Price",
+                "control": "number",
+                "required": true,
+                "default": 0,
+                "minimum": 0,
+                "maximum": 100000
+              },
+              {
+                "key": "category",
+                "label": "Section",
+                "control": "text",
+                "default": "",
+                "maxLength": 60
+              },
+              {
+                "key": "priority",
+                "label": "Sort priority",
+                "control": "integer",
+                "required": true,
+                "default": 0,
+                "minimum": 0,
+                "maximum": 100
+              },
+              {
+                "key": "publishAt",
+                "label": "Available from",
+                "control": "datetime"
+              },
+              {
+                "key": "expiresAt",
+                "label": "Available until",
+                "control": "datetime"
+              }
+            ]
+          }
+        ]
+      },
+      "defaultConfiguration": { "records": [] },
+      "outputSchema": {
+        "kind": "records",
+        "fields": [
+          {
+            "key": "title",
+            "label": "Item",
+            "type": "text",
+            "required": true
+          },
+          { "key": "detail", "label": "Description", "type": "text" },
+          {
+            "key": "price",
+            "label": "Price",
+            "type": "currency",
+            "required": true
+          },
+          { "key": "category", "label": "Section", "type": "text" },
+          { "key": "priority", "label": "Sort priority", "type": "integer" },
+          { "key": "publishAt", "label": "Available from", "type": "datetime" },
+          {
+            "key": "expiresAt",
+            "label": "Available until",
+            "type": "datetime"
+          }
+        ]
+      },
+      "adapterId": "manual_records",
+      "refreshBehavior": "manual",
+      "requiresManifestV13": true,
+      "setup": {
+        "eyebrow": "Maintained in Studio",
+        "tip": "Price is typed as currency, so a Menu or Table Widget formats it without extra configuration.",
+        "steps": [
+          "Add a row for each item and its price.",
+          "Use the availability window for specials that should come and go on their own.",
+          "Select it from a Menu, Table, or Cards Widget."
+        ]
+      },
+      "deprecation": {}
+    },
+    {
+      "id": "shout-outs",
+      "version": 1,
+      "name": "Shout-outs",
+      "description": "Maintain recognition entries that retire themselves after a while.",
+      "category": "Structured",
+      "icon": "award",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "records",
+            "label": "Entries",
+            "control": "repeating_group",
+            "maximumItems": 60,
+            "itemFields": [
+              {
+                "key": "title",
+                "label": "Name",
+                "control": "text",
+                "required": true,
+                "minLength": 1,
+                "maxLength": 160,
+                "default": "Name"
+              },
+              {
+                "key": "description",
+                "label": "Note",
+                "control": "multiline_text",
+                "default": "",
+                "maxLength": 600
+              },
+              {
+                "key": "category",
+                "label": "Group or team",
+                "control": "text",
+                "default": "",
+                "maxLength": 80
+              },
+              {
+                "key": "priority",
+                "label": "Sort priority",
+                "control": "integer",
+                "required": true,
+                "default": 0,
+                "minimum": 0,
+                "maximum": 100
+              },
+              {
+                "key": "publishAt",
+                "label": "Publish at",
+                "control": "datetime"
+              },
+              {
+                "key": "expiresAt",
+                "label": "Retire after",
+                "control": "datetime"
+              }
+            ]
+          }
+        ]
+      },
+      "defaultConfiguration": { "records": [] },
+      "outputSchema": {
+        "kind": "records",
+        "fields": [
+          {
+            "key": "title",
+            "label": "Name",
+            "type": "text",
+            "required": true
+          },
+          { "key": "description", "label": "Note", "type": "text" },
+          { "key": "category", "label": "Group or team", "type": "text" },
+          { "key": "priority", "label": "Sort priority", "type": "integer" },
+          { "key": "publishAt", "label": "Publish at", "type": "datetime" },
+          { "key": "expiresAt", "label": "Retire after", "type": "datetime" }
+        ]
+      },
+      "adapterId": "manual_records",
+      "refreshBehavior": "manual",
+      "requiresManifestV13": true,
+      "setup": {
+        "eyebrow": "Maintained in Studio",
+        "tip": "Give every entry a retire-after date so the board stays current without anyone pruning it.",
+        "steps": [
+          "Add a row for each person or team you want to recognize.",
+          "Set a retire-after date a few weeks out.",
+          "Select it from a Recognition Board or Cards Widget."
+        ]
+      },
+      "deprecation": {}
+    }
+  ]
+}

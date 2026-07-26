@@ -12,6 +12,16 @@ All providers support bounded item counts, keyword filtering, source/title/date 
 
 Manual Table supports up to twelve typed columns and two hundred rows. Supported types are text, number, integer, percent, currency, boolean, date, datetime, and URL. Manual data is immediately ready after saving and does not run through the background refresh worker.
 
+## Release-defined structured Sources
+
+Beyond the providers above, a Tilecast release can ship a structured Data Source as a catalog definition bound to one of three generic adapters. They accept no new code from an operator and are validated at server startup.
+
+- `manual_object` maintains a single typed object (School Status, Emergency Message, Fundraising Goal, Occupancy Count, Today's Hours). Values come from the definition's configuration schema and are projected into the declared output fields; `updatedAt` is generated.
+- `manual_records` maintains a bounded table whose rows publish and expire on their own (Announcements, Events, Closures and Delays, Directory, Menu Items, Shout-outs). See "Time-windowed record tables" in `widgets-and-layouts.md` for the `publishAt`, `expiresAt`, and `priority` conventions and the boundary-scheduled refresh.
+- `http_records` fetches an endpoint pinned by the definition and maps the response with a fixed set of dot paths or column names (Google Sheet, US Weather Alerts, Public Holidays).
+
+The first two never contact the network. `http_records` uses the same fetch policy described below; in addition, the definition — not the operator — owns the scheme and host, an operator only fills declared placeholders, and every substituted value is percent-encoded so it cannot add a path segment, add a query parameter, or reach another host. A definition that placed a placeholder in its scheme or host, mapped an output field it does not declare, or carried credentials in its template is rejected before the server accepts traffic.
+
 ## Security
 
 Dynamic Sources use the same dedicated fetch policy as Calendar Sources. Public URLs require HTTPS and standard ports. Private, loopback, link-local, multicast, and non-global destinations are blocked during validation, redirects, DNS resolution, and connection unless `TILECAST_SOURCE_ALLOW_PRIVATE_NETWORKS=true` is explicitly set. The client does not use environment proxies and enforces total/request-header timeouts, redirect limits, response-size limits, and provider-specific content types.

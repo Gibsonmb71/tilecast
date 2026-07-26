@@ -1,0 +1,214 @@
+package playlists
+
+import (
+	"encoding/json"
+	"testing"
+
+	"github.com/tilecast/tilecast/apps/server/internal/contentdefs"
+)
+
+// TestEveryReleaseWidgetCompilesFromItsDefaults compiles every release-defined Widget in
+// the embedded catalog using nothing but its own declared default configuration. It is the
+// standing guard for declarative Widgets: a template that references a configuration key
+// the schema does not supply a value for, uses a node the definition forgot to declare, or
+// resolves to nothing at all fails here rather than at manifest generation on a screen.
+func TestEveryReleaseWidgetCompilesFromItsDefaults(t *testing.T) {
+	catalog := contentdefs.MustLoad()
+	declarative := 0
+	for _, definition := range catalog.Widgets {
+		if definition.LegacyEditor {
+			continue
+		}
+		declarative++
+		t.Run(definition.ID, func(t *testing.T) {
+			raw, err := json.Marshal(definition.DefaultConfiguration)
+			if err != nil {
+				t.Fatal(err)
+			}
+			presentation, err := compileDefinitionPresentation(definition, raw)
+			if err != nil {
+				t.Fatalf("compile from defaults: %v", err)
+			}
+			if presentation.Kind != "native" || presentation.Native == nil {
+				t.Fatalf("expected a native presentation, got %#v", presentation)
+			}
+			if presentation.Native.Root.Type == "" {
+				t.Fatal("compiled presentation has no root node type")
+			}
+			// The Player rejects a presentation requiring a capability it does not declare,
+			// so every node the compiled tree actually contains must be covered.
+			used := map[string]bool{}
+			collectNodeTypes(&presentation.Native.Root, used)
+			for nodeType := range used {
+				capability := presentationNodeCapability(nodeType)
+				if capability == "" {
+					continue
+				}
+				if _, declared := presentation.RequiredCapabilities[capability]; !declared {
+					t.Fatalf("compiled tree uses node %q without declaring capability %q", nodeType, capability)
+				}
+			}
+		})
+	}
+	if declarative == 0 {
+		t.Fatal("expected the embedded catalog to contain release-defined Widgets")
+	}
+}
+
+// TestStandaloneReleaseWidgetCompilesWithoutADataSource proves the declarative path does
+// not require a data_source control: a Widget whose bindings are entirely literal compiles
+// to a complete tree. Studio's Essentials definitions depend on this.
+func TestStandaloneReleaseWidgetCompilesWithoutADataSource(t *testing.T) {
+	catalog := contentdefs.MustLoad()
+	definition, ok := catalog.Widget("text-notice")
+	if !ok {
+		t.Fatal("text-notice definition is missing from the embedded catalog")
+	}
+	for _, field := range definition.ConfigurationSchema.Fields {
+		if field.Control == "data_source" || field.Control == "data_source_field" {
+			t.Fatalf("text-notice is expected to be standalone but declares %q", field.Control)
+		}
+	}
+	raw, err := json.Marshal(map[string]any{
+		"heading": "Early dismissal", "showHeading": true,
+		"body": "Buses depart at 1:15 PM.", "align": "center", "bodyLines": 4,
+		"foregroundColor": "#ffffff", "backgroundColor": "#12253a",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	presentation, err := compileDefinitionPresentation(definition, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	texts := map[string]bool{}
+	collectLiteralValues(&presentation.Native.Root, texts)
+	if !texts["Early dismissal"] || !texts["Buses depart at 1:15 PM."] {
+		t.Fatalf("literal bindings did not reach the compiled tree: %v", texts)
+	}
+}
+
+// TestReleaseWidgetOmitsHiddenBranch confirms $ifConfig removes a branch rather than
+// emitting an empty node, so turning a heading off actually removes it from the Player tree.
+func TestReleaseWidgetOmitsHiddenBranch(t *testing.T) {
+	definition, ok := contentdefs.MustLoad().Widget("text-notice")
+	if !ok {
+		t.Fatal("text-notice definition is missing")
+	}
+	raw, err := json.Marshal(map[string]any{
+		"heading": "Hidden", "showHeading": false,
+		"body": "Body only.", "align": "left", "bodyLines": 3,
+		"foregroundColor": "#ffffff", "backgroundColor": "#12253a",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	presentation, err := compileDefinitionPresentation(definition, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	texts := map[string]bool{}
+	collectLiteralValues(&presentation.Native.Root, texts)
+	if texts["Hidden"] {
+		t.Fatal("heading branch was compiled even though showHeading is false")
+	}
+	if !texts["Body only."] {
+		t.Fatal("body branch was dropped")
+	}
+}
+
+// TestImageWidgetCompilesWithoutAProjectedVariant covers the derived-key contract: a Widget
+// referencing a Server-derived configuration key still compiles before manifest projection
+// has supplied one, so previewing an Image Notice does not fail.
+func TestImageWidgetCompilesWithoutAProjectedVariant(t *testing.T) {
+	definition, ok := contentdefs.MustLoad().Widget("image-notice")
+	if !ok {
+		t.Fatal("image-notice definition is missing")
+	}
+	raw, err := json.Marshal(map[string]any{
+		"fit": "contain", "caption": "Library hours", "showCaption": true,
+		"foregroundColor": "#ffffff", "backgroundColor": "#000000",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	presentation, err := compileDefinitionPresentation(definition, raw)
+	if err != nil {
+		t.Fatalf("compile without a projected variant: %v", err)
+	}
+	used := map[string]bool{}
+	collectNodeTypes(&presentation.Native.Root, used)
+	if !used["asset_image"] {
+		t.Fatal("expected the compiled tree to retain its asset_image node")
+	}
+}
+
+// TestNowAndNextSkipsTheFeaturedRecord checks that the upcoming list is compiled with a
+// repeat offset, so the record featured above it is not repeated below.
+func TestNowAndNextSkipsTheFeaturedRecord(t *testing.T) {
+	definition, ok := contentdefs.MustLoad().Widget("now-and-next")
+	if !ok {
+		t.Fatal("now-and-next definition is missing")
+	}
+	raw, err := json.Marshal(definition.DefaultConfiguration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	presentation, err := compileDefinitionPresentation(definition, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repeat := findRepeat(&presentation.Native.Root)
+	if repeat == nil {
+		t.Fatal("expected a repeat node")
+	}
+	if repeat.Offset != 1 {
+		t.Fatalf("expected the upcoming list to skip the featured record, got offset %d", repeat.Offset)
+	}
+	if repeat.Limit != 3 {
+		t.Fatalf("expected the configured row count to reach the repeat, got limit %d", repeat.Limit)
+	}
+}
+
+func collectNodeTypes(node *PresentationNode, into map[string]bool) {
+	into[node.Type] = true
+	for index := range node.Children {
+		collectNodeTypes(&node.Children[index], into)
+	}
+}
+
+func collectLiteralValues(node *PresentationNode, into map[string]bool) {
+	if node.Binding != nil && node.Binding.Source == "literal" {
+		into[node.Binding.Value] = true
+	}
+	for index := range node.Children {
+		collectLiteralValues(&node.Children[index], into)
+	}
+}
+
+func findRepeat(node *PresentationNode) *PresentationRepeat {
+	if node.Repeat != nil {
+		return node.Repeat
+	}
+	for index := range node.Children {
+		if found := findRepeat(&node.Children[index]); found != nil {
+			return found
+		}
+	}
+	return nil
+}
+
+// presentationNodeCapability mirrors the definition compiler's node-to-capability mapping.
+func presentationNodeCapability(nodeType string) string {
+	switch nodeType {
+	case "surface", "box", "row", "column", "stack", "grid", "spacer", "divider":
+		return "layout." + nodeType
+	case "repeat", "conditional", "grouped_sections":
+		return "collection." + nodeType
+	case "text", "icon", "asset_image", "badge", "progress", "qr_code", "marquee",
+		"line_chart", "bar_chart", "donut_chart":
+		return "content." + nodeType
+	default:
+		return ""
+	}
+}

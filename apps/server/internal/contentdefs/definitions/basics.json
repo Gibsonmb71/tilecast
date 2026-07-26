@@ -1,0 +1,406 @@
+{
+  "widgets": [
+    {
+      "id": "text-notice",
+      "version": 1,
+      "name": "Text Notice",
+      "description": "Show a heading and message without connecting a Data Source.",
+      "category": "Essentials",
+      "icon": "text",
+      "thumbnail": "text-notice",
+      "runtime": "native",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "heading",
+            "label": "Heading",
+            "control": "text",
+            "default": "",
+            "maxLength": 120
+          },
+          {
+            "key": "showHeading",
+            "label": "Show heading",
+            "control": "boolean",
+            "default": true
+          },
+          {
+            "key": "body",
+            "label": "Message",
+            "control": "multiline_text",
+            "required": true,
+            "minLength": 1,
+            "maxLength": 1000,
+            "default": "Write your announcement here."
+          },
+          {
+            "key": "align",
+            "label": "Alignment",
+            "control": "select",
+            "required": true,
+            "default": "center",
+            "options": [
+              { "value": "left", "label": "Left" },
+              { "value": "center", "label": "Center" }
+            ]
+          },
+          {
+            "key": "bodyLines",
+            "label": "Maximum message lines",
+            "control": "integer",
+            "required": true,
+            "default": 6,
+            "minimum": 1,
+            "maximum": 12
+          },
+          {
+            "key": "foregroundColor",
+            "label": "Text color",
+            "control": "color",
+            "required": true,
+            "default": "#ffffff"
+          },
+          {
+            "key": "backgroundColor",
+            "label": "Background color",
+            "control": "color",
+            "required": true,
+            "default": "#12253a"
+          }
+        ]
+      },
+      "defaultConfiguration": {
+        "heading": "",
+        "showHeading": true,
+        "body": "Write your announcement here.",
+        "align": "center",
+        "bodyLines": 6,
+        "foregroundColor": "#ffffff",
+        "backgroundColor": "#12253a"
+      },
+      "presentationSchemaVersion": 1,
+      "presentationTemplate": {
+        "type": "surface",
+        "props": {
+          "backgroundColor": { "$config": "backgroundColor" },
+          "padding": 16
+        },
+        "children": [
+          {
+            "type": "column",
+            "props": {
+              "align": { "$config": "align" },
+              "gap": 12
+            },
+            "children": [
+              {
+                "$ifConfig": "showHeading",
+                "type": "text",
+                "props": {
+                  "role": "title",
+                  "color": { "$config": "foregroundColor" },
+                  "align": { "$config": "align" }
+                },
+                "binding": {
+                  "source": "literal",
+                  "value": { "$config": "heading" }
+                }
+              },
+              {
+                "type": "text",
+                "props": {
+                  "role": "body",
+                  "color": { "$config": "foregroundColor" },
+                  "align": { "$config": "align" },
+                  "maxLines": { "$config": "bodyLines" }
+                },
+                "binding": {
+                  "source": "literal",
+                  "value": { "$config": "body" }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "requiredCapabilities": {
+        "layout.surface": 1,
+        "layout.column": 1,
+        "content.text": 1,
+        "binding.core": 2
+      },
+      "emptyStateBehavior": "text",
+      "requiresManifestV13": true,
+      "setup": {
+        "eyebrow": "No Data Source needed",
+        "tip": "Use a Layout if you want this beside a clock or image rather than fullscreen.",
+        "steps": [
+          "Write the message you want on screen.",
+          "Optionally add a heading and choose colors.",
+          "Save and add it to a playlist, Layout, or screen."
+        ]
+      },
+      "deprecation": {}
+    },
+    {
+      "id": "image-notice",
+      "version": 1,
+      "name": "Image Notice",
+      "description": "Show one uploaded image with an optional caption.",
+      "category": "Essentials",
+      "icon": "image",
+      "thumbnail": "image-notice",
+      "runtime": "native",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "imageAssetId",
+            "label": "Image",
+            "description": "An uploaded image from the Media library.",
+            "control": "media_asset",
+            "required": true,
+            "mediaTypes": ["image"]
+          },
+          {
+            "key": "fit",
+            "label": "Image fit",
+            "control": "select",
+            "required": true,
+            "default": "contain",
+            "options": [
+              { "value": "contain", "label": "Fit inside" },
+              { "value": "cover", "label": "Fill and crop" },
+              { "value": "stretch", "label": "Stretch" }
+            ]
+          },
+          {
+            "key": "caption",
+            "label": "Caption",
+            "control": "text",
+            "default": "",
+            "maxLength": 200
+          },
+          {
+            "key": "showCaption",
+            "label": "Show caption",
+            "control": "boolean",
+            "default": true
+          },
+          {
+            "key": "foregroundColor",
+            "label": "Caption color",
+            "control": "color",
+            "required": true,
+            "default": "#ffffff"
+          },
+          {
+            "key": "backgroundColor",
+            "label": "Background color",
+            "control": "color",
+            "required": true,
+            "default": "#000000"
+          }
+        ]
+      },
+      "defaultConfiguration": {
+        "fit": "contain",
+        "caption": "",
+        "showCaption": true,
+        "foregroundColor": "#ffffff",
+        "backgroundColor": "#000000"
+      },
+      "presentationSchemaVersion": 1,
+      "presentationTemplate": {
+        "type": "surface",
+        "props": {
+          "backgroundColor": { "$config": "backgroundColor" },
+          "padding": 0
+        },
+        "children": [
+          {
+            "type": "column",
+            "props": { "align": "center", "gap": 8 },
+            "children": [
+              {
+                "type": "asset_image",
+                "props": {
+                  "variantId": { "$config": "imageVariantId" },
+                  "fit": { "$config": "fit" },
+                  "fallbackColor": { "$config": "backgroundColor" },
+                  "contentDescription": { "$config": "caption" }
+                }
+              },
+              {
+                "$ifConfig": "showCaption",
+                "type": "text",
+                "props": {
+                  "role": "label",
+                  "align": "center",
+                  "color": { "$config": "foregroundColor" }
+                },
+                "binding": {
+                  "source": "literal",
+                  "value": { "$config": "caption" }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "requiredCapabilities": {
+        "layout.surface": 1,
+        "layout.column": 1,
+        "content.asset_image": 2,
+        "content.text": 1,
+        "binding.core": 2
+      },
+      "emptyStateBehavior": "text",
+      "requiresManifestV13": true,
+      "setup": {
+        "eyebrow": "No Data Source needed",
+        "tip": "The image is downloaded to the Player, so it keeps showing while the network is down.",
+        "steps": [
+          "Upload the image to the Media library first.",
+          "Select it here and choose how it should fit the screen.",
+          "Optionally add a caption below the image."
+        ]
+      },
+      "deprecation": {}
+    },
+    {
+      "id": "qr-call-to-action",
+      "version": 1,
+      "name": "QR Call to Action",
+      "description": "Pair a scannable code with a heading and short instruction.",
+      "category": "Essentials",
+      "icon": "qr",
+      "thumbnail": "qr-call-to-action",
+      "runtime": "native",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "heading",
+            "label": "Heading",
+            "control": "text",
+            "required": true,
+            "minLength": 1,
+            "maxLength": 120,
+            "default": "Scan to learn more"
+          },
+          {
+            "key": "body",
+            "label": "Instruction",
+            "control": "multiline_text",
+            "default": "",
+            "maxLength": 300
+          },
+          {
+            "key": "showBody",
+            "label": "Show instruction",
+            "control": "boolean",
+            "default": true
+          },
+          {
+            "key": "url",
+            "label": "Link",
+            "description": "The address the code opens when scanned.",
+            "control": "url",
+            "required": true,
+            "default": "https://example.org"
+          },
+          {
+            "key": "foregroundColor",
+            "label": "Text color",
+            "control": "color",
+            "required": true,
+            "default": "#ffffff"
+          },
+          {
+            "key": "backgroundColor",
+            "label": "Background color",
+            "control": "color",
+            "required": true,
+            "default": "#12253a"
+          }
+        ]
+      },
+      "defaultConfiguration": {
+        "heading": "Scan to learn more",
+        "body": "",
+        "showBody": true,
+        "url": "https://example.org",
+        "foregroundColor": "#ffffff",
+        "backgroundColor": "#12253a"
+      },
+      "presentationSchemaVersion": 1,
+      "presentationTemplate": {
+        "type": "surface",
+        "props": {
+          "backgroundColor": { "$config": "backgroundColor" },
+          "padding": 16
+        },
+        "children": [
+          {
+            "type": "column",
+            "props": { "align": "center", "gap": 14 },
+            "children": [
+              {
+                "type": "text",
+                "props": {
+                  "role": "title",
+                  "align": "center",
+                  "color": { "$config": "foregroundColor" }
+                },
+                "binding": {
+                  "source": "literal",
+                  "value": { "$config": "heading" }
+                }
+              },
+              {
+                "type": "qr_code",
+                "binding": {
+                  "source": "literal",
+                  "value": { "$config": "url" }
+                }
+              },
+              {
+                "$ifConfig": "showBody",
+                "type": "text",
+                "props": {
+                  "role": "body",
+                  "align": "center",
+                  "maxLines": 3,
+                  "color": { "$config": "foregroundColor" }
+                },
+                "binding": {
+                  "source": "literal",
+                  "value": { "$config": "body" }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "requiredCapabilities": {
+        "layout.surface": 1,
+        "layout.column": 1,
+        "content.text": 1,
+        "content.qr_code": 1,
+        "binding.core": 2
+      },
+      "emptyStateBehavior": "text",
+      "requiresManifestV13": true,
+      "setup": {
+        "eyebrow": "No Data Source needed",
+        "tip": "Keep the link short so the code stays readable from a distance.",
+        "steps": [
+          "Enter the address the code should open.",
+          "Write a heading that tells viewers why to scan.",
+          "Preview from the distance viewers will actually stand at."
+        ]
+      },
+      "deprecation": {}
+    }
+  ],
+  "dataSources": []
+}

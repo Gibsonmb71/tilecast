@@ -1,0 +1,1203 @@
+{
+  "widgets": [
+    {
+      "id": "alert-banner",
+      "version": 1,
+      "name": "Alert Banner",
+      "description": "Show a severity badge and scrolling message from a status Data Source.",
+      "category": "Information",
+      "icon": "alert",
+      "thumbnail": "alert-banner",
+      "runtime": "native",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "dataSourceId",
+            "label": "Data Source",
+            "control": "data_source",
+            "required": true,
+            "acceptedDataSourceKinds": ["object"],
+            "requiredFields": {
+              "message": "text",
+              "severity": "text"
+            }
+          },
+          {
+            "key": "messageField",
+            "label": "Message field",
+            "control": "data_source_field",
+            "required": true,
+            "dataSourceFieldTypes": ["text"],
+            "default": "message"
+          },
+          {
+            "key": "severityField",
+            "label": "Severity field",
+            "control": "data_source_field",
+            "required": true,
+            "dataSourceFieldTypes": ["text"],
+            "default": "severity"
+          },
+          {
+            "key": "speed",
+            "label": "Scroll speed",
+            "control": "select",
+            "required": true,
+            "default": "normal",
+            "options": [
+              { "value": "slow", "label": "Slow" },
+              { "value": "normal", "label": "Normal" },
+              { "value": "fast", "label": "Fast" }
+            ]
+          },
+          {
+            "key": "showSeverity",
+            "label": "Show severity badge",
+            "control": "boolean",
+            "default": true
+          },
+          {
+            "key": "foregroundColor",
+            "label": "Text color",
+            "control": "color",
+            "required": true,
+            "default": "#ffffff"
+          },
+          {
+            "key": "backgroundColor",
+            "label": "Background color",
+            "control": "color",
+            "required": true,
+            "default": "#7a1f1f"
+          },
+          {
+            "key": "emptyState",
+            "label": "Empty-state text",
+            "control": "multiline_text",
+            "required": true,
+            "maxLength": 300,
+            "default": "No active alerts"
+          }
+        ]
+      },
+      "defaultConfiguration": {
+        "dataSourceId": "",
+        "messageField": "message",
+        "severityField": "severity",
+        "speed": "normal",
+        "showSeverity": true,
+        "foregroundColor": "#ffffff",
+        "backgroundColor": "#7a1f1f",
+        "emptyState": "No active alerts"
+      },
+      "acceptedDataSourceKinds": ["object"],
+      "requiredFieldTypes": {
+        "message": "text",
+        "severity": "text"
+      },
+      "presentationSchemaVersion": 1,
+      "presentationTemplate": {
+        "type": "surface",
+        "props": {
+          "backgroundColor": { "$config": "backgroundColor" },
+          "padding": 10
+        },
+        "children": [
+          {
+            "type": "row",
+            "props": { "gap": 14 },
+            "children": [
+              {
+                "$ifConfig": "showSeverity",
+                "type": "badge",
+                "props": {
+                  "role": "label",
+                  "color": { "$config": "foregroundColor" }
+                },
+                "binding": {
+                  "source": "dataset",
+                  "dataset": {
+                    "$config": "dataSourceId",
+                    "suffix": ":object"
+                  },
+                  "path": { "$config": "severityField" },
+                  "fallback": "notice"
+                }
+              },
+              {
+                "type": "marquee",
+                "props": {
+                  "speed": { "$config": "speed" },
+                  "color": { "$config": "foregroundColor" }
+                },
+                "binding": {
+                  "source": "dataset",
+                  "dataset": {
+                    "$config": "dataSourceId",
+                    "suffix": ":object"
+                  },
+                  "path": { "$config": "messageField" },
+                  "fallback": { "$config": "emptyState" }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "requiredCapabilities": {
+        "layout.surface": 1,
+        "layout.row": 1,
+        "content.badge": 1,
+        "content.marquee": 1,
+        "binding.core": 2
+      },
+      "emptyStateBehavior": "configured_text",
+      "requiresManifestV13": true,
+      "setup": {
+        "eyebrow": "Needs a status Data Source",
+        "tip": "Place this in a Layout strip along the top or bottom so the rest of the screen keeps its normal content.",
+        "steps": [
+          "Choose or create an Emergency Message or School Status Data Source.",
+          "Confirm which fields hold the message and severity.",
+          "Add the Widget to a Layout band rather than fullscreen."
+        ]
+      },
+      "deprecation": {}
+    },
+    {
+      "id": "fundraising-thermometer",
+      "version": 1,
+      "name": "Fundraising Thermometer",
+      "description": "Show progress toward a fundraising or campaign goal.",
+      "category": "Information",
+      "icon": "target",
+      "thumbnail": "fundraising-thermometer",
+      "runtime": "native",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "dataSourceId",
+            "label": "Data Source",
+            "control": "data_source",
+            "required": true,
+            "acceptedDataSourceKinds": ["object"],
+            "requiredFields": {
+              "current": "number",
+              "target": "number"
+            }
+          },
+          {
+            "key": "currentField",
+            "label": "Raised-so-far field",
+            "control": "data_source_field",
+            "required": true,
+            "dataSourceFieldTypes": ["number", "integer", "currency"],
+            "default": "current"
+          },
+          {
+            "key": "targetField",
+            "label": "Goal field",
+            "control": "data_source_field",
+            "required": true,
+            "dataSourceFieldTypes": ["number", "integer", "currency"],
+            "default": "target"
+          },
+          {
+            "key": "heading",
+            "label": "Heading",
+            "control": "text",
+            "required": true,
+            "minLength": 1,
+            "maxLength": 120,
+            "default": "Our goal"
+          },
+          {
+            "key": "valueFormat",
+            "label": "Value format",
+            "control": "select",
+            "required": true,
+            "default": "currency",
+            "options": [
+              { "value": "currency", "label": "Currency" },
+              { "value": "number", "label": "Number" },
+              { "value": "integer", "label": "Whole number" }
+            ]
+          },
+          {
+            "key": "showPercent",
+            "label": "Show percentage",
+            "control": "boolean",
+            "default": true
+          },
+          {
+            "key": "completionText",
+            "label": "Completion text",
+            "control": "text",
+            "required": true,
+            "maxLength": 120,
+            "default": "Goal reached. Thank you!"
+          },
+          {
+            "key": "foregroundColor",
+            "label": "Text color",
+            "control": "color",
+            "required": true,
+            "default": "#ffffff"
+          },
+          {
+            "key": "backgroundColor",
+            "label": "Background color",
+            "control": "color",
+            "required": true,
+            "default": "#123b2c"
+          }
+        ]
+      },
+      "defaultConfiguration": {
+        "dataSourceId": "",
+        "currentField": "current",
+        "targetField": "target",
+        "heading": "Our goal",
+        "valueFormat": "currency",
+        "showPercent": true,
+        "completionText": "Goal reached. Thank you!",
+        "foregroundColor": "#ffffff",
+        "backgroundColor": "#123b2c"
+      },
+      "acceptedDataSourceKinds": ["object"],
+      "requiredFieldTypes": {
+        "current": "number",
+        "target": "number"
+      },
+      "presentationSchemaVersion": 1,
+      "presentationTemplate": {
+        "type": "surface",
+        "props": {
+          "backgroundColor": { "$config": "backgroundColor" },
+          "padding": 16
+        },
+        "children": [
+          {
+            "type": "column",
+            "props": { "align": "center", "gap": 14 },
+            "children": [
+              {
+                "type": "text",
+                "props": {
+                  "role": "title",
+                  "align": "center",
+                  "color": { "$config": "foregroundColor" }
+                },
+                "binding": {
+                  "source": "literal",
+                  "value": { "$config": "heading" }
+                }
+              },
+              {
+                "type": "text",
+                "props": {
+                  "role": "metric",
+                  "align": "center",
+                  "color": { "$config": "foregroundColor" }
+                },
+                "binding": {
+                  "source": "dataset",
+                  "dataset": {
+                    "$config": "dataSourceId",
+                    "suffix": ":object"
+                  },
+                  "path": { "$config": "currentField" },
+                  "format": { "$config": "valueFormat" },
+                  "fallback": "0"
+                }
+              },
+              {
+                "type": "progress",
+                "props": {
+                  "targetIsField": true,
+                  "target": { "$config": "targetField" },
+                  "showPercent": { "$config": "showPercent" },
+                  "completionText": { "$config": "completionText" },
+                  "color": { "$config": "foregroundColor" }
+                },
+                "binding": {
+                  "source": "dataset",
+                  "dataset": {
+                    "$config": "dataSourceId",
+                    "suffix": ":object"
+                  },
+                  "path": { "$config": "currentField" },
+                  "fallback": "0"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "requiredCapabilities": {
+        "layout.surface": 1,
+        "layout.column": 1,
+        "content.text": 1,
+        "content.progress": 2,
+        "binding.core": 2,
+        "format.typed": 1
+      },
+      "emptyStateBehavior": "configured_text",
+      "requiresManifestV13": true,
+      "setup": {
+        "eyebrow": "Needs a goal Data Source",
+        "tip": "Update the raised-so-far number in the Data Source; every screen using this Widget follows within one refresh.",
+        "steps": [
+          "Create a Fundraising Goal Data Source with your target.",
+          "Select it here and confirm the two numeric fields.",
+          "Update the raised amount as the campaign progresses."
+        ]
+      },
+      "deprecation": {}
+    },
+    {
+      "id": "now-and-next",
+      "version": 1,
+      "name": "Now and Next",
+      "description": "Feature the current record and list the ones that follow it.",
+      "category": "Schedules",
+      "icon": "schedule",
+      "thumbnail": "now-and-next",
+      "runtime": "native",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "dataSourceId",
+            "label": "Data Source",
+            "control": "data_source",
+            "required": true,
+            "acceptedDataSourceKinds": ["records"]
+          },
+          {
+            "key": "titleField",
+            "label": "Title field",
+            "control": "data_source_field",
+            "required": true,
+            "dataSourceFieldTypes": ["text"],
+            "default": "title"
+          },
+          {
+            "key": "detailField",
+            "label": "Detail field",
+            "control": "data_source_field",
+            "required": true,
+            "dataSourceFieldTypes": ["text", "date", "datetime"],
+            "default": "start"
+          },
+          {
+            "key": "nowLabel",
+            "label": "Current label",
+            "control": "text",
+            "required": true,
+            "minLength": 1,
+            "maxLength": 40,
+            "default": "Now"
+          },
+          {
+            "key": "nextLabel",
+            "label": "Upcoming label",
+            "control": "text",
+            "required": true,
+            "minLength": 1,
+            "maxLength": 40,
+            "default": "Next"
+          },
+          {
+            "key": "upcomingCount",
+            "label": "Upcoming rows",
+            "control": "integer",
+            "required": true,
+            "default": 3,
+            "minimum": 1,
+            "maximum": 8
+          },
+          {
+            "key": "foregroundColor",
+            "label": "Text color",
+            "control": "color",
+            "required": true,
+            "default": "#ffffff"
+          },
+          {
+            "key": "backgroundColor",
+            "label": "Background color",
+            "control": "color",
+            "required": true,
+            "default": "#101f33"
+          },
+          {
+            "key": "emptyState",
+            "label": "Empty-state text",
+            "control": "multiline_text",
+            "required": true,
+            "maxLength": 300,
+            "default": "Nothing scheduled"
+          }
+        ]
+      },
+      "defaultConfiguration": {
+        "dataSourceId": "",
+        "titleField": "title",
+        "detailField": "start",
+        "nowLabel": "Now",
+        "nextLabel": "Next",
+        "upcomingCount": 3,
+        "foregroundColor": "#ffffff",
+        "backgroundColor": "#101f33",
+        "emptyState": "Nothing scheduled"
+      },
+      "acceptedDataSourceKinds": ["records"],
+      "presentationSchemaVersion": 1,
+      "presentationTemplate": {
+        "type": "surface",
+        "props": {
+          "backgroundColor": { "$config": "backgroundColor" },
+          "padding": 16
+        },
+        "children": [
+          {
+            "type": "column",
+            "props": { "gap": 10 },
+            "children": [
+              {
+                "type": "text",
+                "props": {
+                  "role": "label",
+                  "color": { "$config": "foregroundColor" }
+                },
+                "binding": {
+                  "source": "literal",
+                  "value": { "$config": "nowLabel" }
+                }
+              },
+              {
+                "type": "text",
+                "props": {
+                  "role": "metric",
+                  "color": { "$config": "foregroundColor" }
+                },
+                "binding": {
+                  "source": "dataset",
+                  "dataset": {
+                    "$config": "dataSourceId",
+                    "suffix": ":records"
+                  },
+                  "path": { "$config": "titleField" },
+                  "fallback": { "$config": "emptyState" }
+                }
+              },
+              {
+                "type": "text",
+                "props": {
+                  "role": "body",
+                  "maxLines": 1,
+                  "color": { "$config": "foregroundColor" }
+                },
+                "binding": {
+                  "source": "dataset",
+                  "dataset": {
+                    "$config": "dataSourceId",
+                    "suffix": ":records"
+                  },
+                  "path": { "$config": "detailField" },
+                  "fallback": ""
+                }
+              },
+              { "type": "divider" },
+              {
+                "type": "text",
+                "props": {
+                  "role": "label",
+                  "color": { "$config": "foregroundColor" }
+                },
+                "binding": {
+                  "source": "literal",
+                  "value": { "$config": "nextLabel" }
+                }
+              },
+              {
+                "type": "repeat",
+                "props": { "emptyState": { "$config": "emptyState" } },
+                "repeat": {
+                  "dataset": {
+                    "$config": "dataSourceId",
+                    "suffix": ":records"
+                  },
+                  "limit": { "$config": "upcomingCount" },
+                  "offset": 1
+                },
+                "children": [
+                  {
+                    "type": "row",
+                    "props": { "gap": 12 },
+                    "children": [
+                      {
+                        "type": "text",
+                        "props": {
+                          "role": "body",
+                          "maxLines": 1,
+                          "color": { "$config": "foregroundColor" }
+                        },
+                        "binding": {
+                          "source": "repeat",
+                          "path": { "$config": "detailField" }
+                        }
+                      },
+                      {
+                        "type": "text",
+                        "props": {
+                          "role": "body",
+                          "maxLines": 1,
+                          "color": { "$config": "foregroundColor" }
+                        },
+                        "binding": {
+                          "source": "repeat",
+                          "path": { "$config": "titleField" }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "requiredCapabilities": {
+        "layout.surface": 1,
+        "layout.column": 1,
+        "layout.row": 1,
+        "layout.divider": 1,
+        "content.text": 1,
+        "collection.repeat": 2,
+        "binding.core": 2
+      },
+      "emptyStateBehavior": "configured_text",
+      "requiresManifestV13": true,
+      "setup": {
+        "eyebrow": "Needs a record Data Source",
+        "tip": "Set the Data Source date selection to Next available so the current record is genuinely the current one.",
+        "steps": [
+          "Choose a Calendar, Events, or other record Data Source.",
+          "Pick the title and detail fields to show.",
+          "Choose how many upcoming rows fit your screen."
+        ]
+      },
+      "deprecation": {}
+    },
+    {
+      "id": "recognition-board",
+      "version": 1,
+      "name": "Recognition Board",
+      "description": "Display names and short notes in a card grid.",
+      "category": "Information",
+      "icon": "award",
+      "thumbnail": "recognition-board",
+      "runtime": "native",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "dataSourceId",
+            "label": "Data Source",
+            "control": "data_source",
+            "required": true,
+            "acceptedDataSourceKinds": ["records"]
+          },
+          {
+            "key": "nameField",
+            "label": "Name field",
+            "control": "data_source_field",
+            "required": true,
+            "dataSourceFieldTypes": ["text"],
+            "default": "title"
+          },
+          {
+            "key": "noteField",
+            "label": "Note field",
+            "control": "data_source_field",
+            "required": true,
+            "dataSourceFieldTypes": ["text"],
+            "default": "description"
+          },
+          {
+            "key": "heading",
+            "label": "Heading",
+            "control": "text",
+            "required": true,
+            "minLength": 1,
+            "maxLength": 120,
+            "default": "Recognition"
+          },
+          {
+            "key": "columns",
+            "label": "Columns",
+            "control": "integer",
+            "required": true,
+            "default": 2,
+            "minimum": 1,
+            "maximum": 4
+          },
+          {
+            "key": "maxItems",
+            "label": "Maximum cards",
+            "control": "integer",
+            "required": true,
+            "default": 8,
+            "minimum": 1,
+            "maximum": 24
+          },
+          {
+            "key": "foregroundColor",
+            "label": "Text color",
+            "control": "color",
+            "required": true,
+            "default": "#ffffff"
+          },
+          {
+            "key": "backgroundColor",
+            "label": "Background color",
+            "control": "color",
+            "required": true,
+            "default": "#1b1733"
+          },
+          {
+            "key": "emptyState",
+            "label": "Empty-state text",
+            "control": "multiline_text",
+            "required": true,
+            "maxLength": 300,
+            "default": "No entries yet"
+          }
+        ]
+      },
+      "defaultConfiguration": {
+        "dataSourceId": "",
+        "nameField": "title",
+        "noteField": "description",
+        "heading": "Recognition",
+        "columns": 2,
+        "maxItems": 8,
+        "foregroundColor": "#ffffff",
+        "backgroundColor": "#1b1733",
+        "emptyState": "No entries yet"
+      },
+      "acceptedDataSourceKinds": ["records"],
+      "presentationSchemaVersion": 1,
+      "presentationTemplate": {
+        "type": "surface",
+        "props": {
+          "backgroundColor": { "$config": "backgroundColor" },
+          "padding": 16
+        },
+        "children": [
+          {
+            "type": "column",
+            "props": { "gap": 12 },
+            "children": [
+              {
+                "type": "text",
+                "props": {
+                  "role": "title",
+                  "color": { "$config": "foregroundColor" }
+                },
+                "binding": {
+                  "source": "literal",
+                  "value": { "$config": "heading" }
+                }
+              },
+              {
+                "type": "grid",
+                "props": {
+                  "columns": { "$config": "columns" },
+                  "gap": 12
+                },
+                "children": [
+                  {
+                    "type": "repeat",
+                    "props": { "emptyState": { "$config": "emptyState" } },
+                    "repeat": {
+                      "dataset": {
+                        "$config": "dataSourceId",
+                        "suffix": ":records"
+                      },
+                      "limit": { "$config": "maxItems" }
+                    },
+                    "children": [
+                      {
+                        "type": "column",
+                        "props": { "fill": false, "gap": 4 },
+                        "children": [
+                          {
+                            "type": "text",
+                            "props": {
+                              "role": "title",
+                              "maxLines": 1,
+                              "color": { "$config": "foregroundColor" }
+                            },
+                            "binding": {
+                              "source": "repeat",
+                              "path": { "$config": "nameField" }
+                            }
+                          },
+                          {
+                            "type": "text",
+                            "props": {
+                              "role": "body",
+                              "maxLines": 3,
+                              "color": { "$config": "foregroundColor" }
+                            },
+                            "binding": {
+                              "source": "repeat",
+                              "path": { "$config": "noteField" }
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "requiredCapabilities": {
+        "layout.surface": 1,
+        "layout.column": 1,
+        "layout.grid": 1,
+        "content.text": 1,
+        "collection.repeat": 2,
+        "binding.core": 2
+      },
+      "emptyStateBehavior": "configured_text",
+      "requiresManifestV13": true,
+      "setup": {
+        "eyebrow": "Needs a record Data Source",
+        "tip": "Two columns stay readable from across a room; four suits a large display viewed up close.",
+        "steps": [
+          "Choose a Shout-outs, Manual Table, or other record Data Source.",
+          "Map the name and note fields.",
+          "Pick a column count that matches your screen size."
+        ]
+      },
+      "deprecation": {}
+    }
+  ],
+  "dataSources": [
+    {
+      "id": "emergency-message",
+      "version": 1,
+      "name": "Emergency Message",
+      "description": "Maintain one current alert message, severity, and instructions.",
+      "category": "Information",
+      "icon": "alert",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "message",
+            "label": "Message",
+            "control": "multiline_text",
+            "required": true,
+            "minLength": 1,
+            "maxLength": 1000,
+            "default": "No active alerts."
+          },
+          {
+            "key": "severity",
+            "label": "Severity",
+            "control": "select",
+            "required": true,
+            "default": "normal",
+            "options": [
+              { "value": "normal", "label": "Normal" },
+              { "value": "notice", "label": "Notice" },
+              { "value": "warning", "label": "Warning" },
+              { "value": "critical", "label": "Critical" }
+            ]
+          },
+          {
+            "key": "instructions",
+            "label": "Instructions",
+            "control": "multiline_text",
+            "default": "",
+            "maxLength": 1000
+          },
+          {
+            "key": "contact",
+            "label": "Contact",
+            "control": "text",
+            "default": "",
+            "maxLength": 200
+          },
+          {
+            "key": "expiresAt",
+            "label": "Expiration time",
+            "control": "datetime"
+          }
+        ]
+      },
+      "defaultConfiguration": {
+        "message": "No active alerts.",
+        "severity": "normal",
+        "instructions": "",
+        "contact": "",
+        "expiresAt": ""
+      },
+      "outputSchema": {
+        "kind": "object",
+        "fields": [
+          {
+            "key": "message",
+            "label": "Message",
+            "type": "text",
+            "required": true
+          },
+          {
+            "key": "severity",
+            "label": "Severity",
+            "type": "text",
+            "required": true
+          },
+          { "key": "instructions", "label": "Instructions", "type": "text" },
+          { "key": "contact", "label": "Contact", "type": "text" },
+          {
+            "key": "expiresAt",
+            "label": "Expiration time",
+            "type": "datetime"
+          },
+          {
+            "key": "updatedAt",
+            "label": "Updated time",
+            "type": "datetime",
+            "required": true
+          }
+        ]
+      },
+      "adapterId": "manual_object",
+      "refreshBehavior": "manual",
+      "requiresManifestV13": true,
+      "setup": {
+        "eyebrow": "Release-defined information",
+        "tip": "Keep this Data Source in place year-round and edit the message when something happens, so screens never need re-authoring during an incident.",
+        "steps": [
+          "Write the message and choose a severity.",
+          "Add instructions and a contact if people need to act.",
+          "Select it from an Alert Banner or School Status Banner Widget."
+        ]
+      },
+      "deprecation": {}
+    },
+    {
+      "id": "fundraising-goal",
+      "version": 1,
+      "name": "Fundraising Goal",
+      "description": "Track an amount raised against a campaign target.",
+      "category": "Information",
+      "icon": "target",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "label",
+            "label": "Campaign name",
+            "control": "text",
+            "required": true,
+            "minLength": 1,
+            "maxLength": 120,
+            "default": "Annual Fund"
+          },
+          {
+            "key": "current",
+            "label": "Raised so far",
+            "control": "number",
+            "required": true,
+            "default": 0,
+            "minimum": 0,
+            "maximum": 1000000000
+          },
+          {
+            "key": "target",
+            "label": "Goal",
+            "control": "number",
+            "required": true,
+            "default": 10000,
+            "minimum": 1,
+            "maximum": 1000000000
+          },
+          {
+            "key": "note",
+            "label": "Note",
+            "control": "text",
+            "default": "",
+            "maxLength": 200
+          },
+          {
+            "key": "deadline",
+            "label": "Deadline",
+            "control": "date"
+          }
+        ]
+      },
+      "defaultConfiguration": {
+        "label": "Annual Fund",
+        "current": 0,
+        "target": 10000,
+        "note": "",
+        "deadline": ""
+      },
+      "outputSchema": {
+        "kind": "object",
+        "fields": [
+          {
+            "key": "label",
+            "label": "Campaign name",
+            "type": "text",
+            "required": true
+          },
+          {
+            "key": "current",
+            "label": "Raised so far",
+            "type": "number",
+            "required": true
+          },
+          {
+            "key": "target",
+            "label": "Goal",
+            "type": "number",
+            "required": true
+          },
+          { "key": "note", "label": "Note", "type": "text" },
+          { "key": "deadline", "label": "Deadline", "type": "date" },
+          {
+            "key": "updatedAt",
+            "label": "Updated time",
+            "type": "datetime",
+            "required": true
+          }
+        ]
+      },
+      "adapterId": "manual_object",
+      "refreshBehavior": "manual",
+      "requiresManifestV13": true,
+      "setup": {
+        "eyebrow": "Release-defined information",
+        "tip": "One Data Source can feed a thermometer on every screen, so you update the total in one place.",
+        "steps": [
+          "Enter the campaign name and goal.",
+          "Update the raised amount as often as you like.",
+          "Select it from a Fundraising Thermometer or Progress Widget."
+        ]
+      },
+      "deprecation": {}
+    },
+    {
+      "id": "occupancy-count",
+      "version": 1,
+      "name": "Occupancy Count",
+      "description": "Publish a current count against a capacity.",
+      "category": "Information",
+      "icon": "gauge",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "label",
+            "label": "Space name",
+            "control": "text",
+            "required": true,
+            "minLength": 1,
+            "maxLength": 120,
+            "default": "Main Hall"
+          },
+          {
+            "key": "current",
+            "label": "Current count",
+            "control": "integer",
+            "required": true,
+            "default": 0,
+            "minimum": 0,
+            "maximum": 1000000
+          },
+          {
+            "key": "target",
+            "label": "Capacity",
+            "control": "integer",
+            "required": true,
+            "default": 100,
+            "minimum": 1,
+            "maximum": 1000000
+          },
+          {
+            "key": "note",
+            "label": "Note",
+            "control": "text",
+            "default": "",
+            "maxLength": 200
+          }
+        ]
+      },
+      "defaultConfiguration": {
+        "label": "Main Hall",
+        "current": 0,
+        "target": 100,
+        "note": ""
+      },
+      "outputSchema": {
+        "kind": "object",
+        "fields": [
+          {
+            "key": "label",
+            "label": "Space name",
+            "type": "text",
+            "required": true
+          },
+          {
+            "key": "current",
+            "label": "Current count",
+            "type": "number",
+            "required": true
+          },
+          {
+            "key": "target",
+            "label": "Capacity",
+            "type": "number",
+            "required": true
+          },
+          { "key": "note", "label": "Note", "type": "text" },
+          {
+            "key": "updatedAt",
+            "label": "Updated time",
+            "type": "datetime",
+            "required": true
+          }
+        ]
+      },
+      "adapterId": "manual_object",
+      "refreshBehavior": "manual",
+      "requiresManifestV13": true,
+      "setup": {
+        "eyebrow": "Release-defined information",
+        "tip": "The current and capacity fields are numeric, so a Metric, Progress, or Fundraising Thermometer Widget can all read this.",
+        "steps": [
+          "Name the space and set its capacity.",
+          "Update the current count when it changes.",
+          "Select it from a numeric Widget."
+        ]
+      },
+      "deprecation": {}
+    },
+    {
+      "id": "todays-hours",
+      "version": 1,
+      "name": "Today's Hours",
+      "description": "Publish whether you are open today and until when.",
+      "category": "Information",
+      "icon": "clock",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "status",
+            "label": "Status",
+            "control": "select",
+            "required": true,
+            "default": "open",
+            "options": [
+              { "value": "open", "label": "Open" },
+              { "value": "limited", "label": "Limited hours" },
+              { "value": "closed", "label": "Closed" }
+            ]
+          },
+          {
+            "key": "opensAt",
+            "label": "Opens at",
+            "control": "text",
+            "default": "",
+            "maxLength": 40
+          },
+          {
+            "key": "closesAt",
+            "label": "Closes at",
+            "control": "text",
+            "default": "",
+            "maxLength": 40
+          },
+          {
+            "key": "message",
+            "label": "Message",
+            "control": "multiline_text",
+            "required": true,
+            "minLength": 1,
+            "maxLength": 500,
+            "default": "Open regular hours today."
+          },
+          {
+            "key": "severity",
+            "label": "Emphasis",
+            "control": "select",
+            "required": true,
+            "default": "normal",
+            "options": [
+              { "value": "normal", "label": "Normal" },
+              { "value": "notice", "label": "Notice" },
+              { "value": "warning", "label": "Warning" }
+            ]
+          }
+        ]
+      },
+      "defaultConfiguration": {
+        "status": "open",
+        "opensAt": "",
+        "closesAt": "",
+        "message": "Open regular hours today.",
+        "severity": "normal"
+      },
+      "outputSchema": {
+        "kind": "object",
+        "fields": [
+          {
+            "key": "status",
+            "label": "Status",
+            "type": "text",
+            "required": true
+          },
+          { "key": "opensAt", "label": "Opens at", "type": "text" },
+          { "key": "closesAt", "label": "Closes at", "type": "text" },
+          {
+            "key": "message",
+            "label": "Message",
+            "type": "text",
+            "required": true
+          },
+          {
+            "key": "severity",
+            "label": "Emphasis",
+            "type": "text",
+            "required": true
+          },
+          {
+            "key": "updatedAt",
+            "label": "Updated time",
+            "type": "datetime",
+            "required": true
+          }
+        ]
+      },
+      "adapterId": "manual_object",
+      "refreshBehavior": "manual",
+      "requiresManifestV13": true,
+      "setup": {
+        "eyebrow": "Release-defined information",
+        "tip": "This exposes message and severity, so an Alert Banner can read it on days you close early.",
+        "steps": [
+          "Choose today's status and write the message.",
+          "Add opening and closing times if you show them.",
+          "Select it from a School Status Banner or Alert Banner Widget."
+        ]
+      },
+      "deprecation": {}
+    }
+  ]
+}
