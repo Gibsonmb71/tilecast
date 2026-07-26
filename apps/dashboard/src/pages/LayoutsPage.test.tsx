@@ -122,10 +122,12 @@ describe("layout library page", () => {
     const renameDialog = await screen.findByRole("dialog", {
       name: "Rename layout",
     });
-    const input = within(renameDialog).getByLabelText("Name");
+    const input = within(renameDialog).getByRole("textbox");
     await user.clear(input);
     await user.type(input, "Main Lobby");
-    await user.click(within(renameDialog).getByRole("button", { name: "Save name" }));
+    await user.click(
+      within(renameDialog).getByRole("button", { name: "Save name" }),
+    );
 
     expect(api.updateLayout).toHaveBeenCalledWith(
       "layout-1",
