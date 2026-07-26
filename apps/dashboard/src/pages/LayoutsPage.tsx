@@ -1,13 +1,28 @@
 import {
   Button,
+  ContextMenu,
+  Dialog,
   EmptyState,
+  Field,
   Notice,
   PageHeader,
   Select,
+  ViewToggle,
+  useContextMenu,
+  type ContextMenuItem,
 } from "../components/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, LayoutTemplate, Pencil, Plus, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import {
+  ChevronRight,
+  Copy,
+  EllipsisVertical,
+  LayoutTemplate,
+  Pencil,
+  Plus,
+  SquarePen,
+  Trash2,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { api } from "../api/client";
 import type { LayoutOrientation, LayoutSummary } from "../api/types";
@@ -17,6 +32,7 @@ import {
   DashboardSearch,
 } from "../components/DashboardListToolbar";
 import { WorkspaceTabs, presentationTabs } from "../navigation/WorkspaceTabs";
+import "./LayoutLibraryPage.css";
 
 const presets = [
   {
@@ -45,32 +61,172 @@ const presets = [
   },
 ];
 
+export type LayoutLibraryOrientationFilter = "all" | LayoutOrientation;
+export type LayoutLibraryPublicationFilter =
+  "all" | "published" | "changes" | "draft";
+export type LayoutLibrarySort = "updated" | "name" | "created" | "published";
+export type LayoutPublicationState = Exclude<
+  LayoutLibraryPublicationFilter,
+  "all"
+>;
+
+const layoutViewStorageKey = "tilecast.layout-library.view";
+const layoutNameCollator = new Intl.Collator(undefined, {
+  numeric: true,
+  sensitivity: "base",
+});
+
+function storedLayoutView(): "grid" | "list" {
+  if (typeof window === "undefined") return "grid";
+  try {
+    return window.localStorage.getItem(layoutViewStorageKey) === "list"
+      ? "list"
+      : "grid";
+  } catch {
+    return "grid";
+  }
+}
+
+function timestamp(value?: string): number {
+  const parsed = Date.parse(value ?? "");
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function orientationLabel(value: LayoutOrientation): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+export function layoutPublicationState(
+  layout: LayoutSummary,
+): LayoutPublicationState {
+  if (!layout.publishedRevision) return "draft";
+  if (layout.draftRevision > layout.publishedRevision) return "changes";
+  return "published";
+}
+
+export function layoutPublicationLabel(layout: LayoutSummary): string {
+  const state = layoutPublicationState(layout);
+  if (state === "draft") return "Draft only";
+  if (state === "changes") return "Unpublished changes";
+  return `Published r${layout.publishedRevision}`;
+}
+
+export function filterAndSortLayouts(
+  layouts: LayoutSummary[],
+  search: string,
+  orientation: LayoutLibraryOrientationFilter,
+  publication: LayoutLibraryPublicationFilter,
+  sort: LayoutLibrarySort,
+): LayoutSummary[] {
+  const normalizedSearch = search.trim().toLocaleLowerCase();
+  const filtered = layouts.filter((layout) => {
+    const state = layoutPublicationState(layout);
+    if (orientation !== "all" && layout.orientation !== orientation)
+      return false;
+    if (publication !== "all" && state !== publication) return false;
+    if (!normalizedSearch) return true;
+    const searchable = [
+      layout.name,
+      layout.description,
+      layout.orientation,
+      orientationLabel(layout.orientation),
+      `${layout.canvasWidth}x${layout.canvasHeight}`,
+      `${layout.canvasWidth} × ${layout.canvasHeight}`,
+      layoutPublicationLabel(layout),
+    ]
+      .join(" ")
+      .toLocaleLowerCase();
+    return searchable.includes(normalizedSearch);
+  });
+
+  return [...filtered].sort((left, right) => {
+    if (sort === "name")
+      return layoutNameCollator.compare(left.name, right.name);
+    if (sort === "created") {
+      return (
+        timestamp(right.createdAt) - timestamp(left.createdAt) ||
+        layoutNameCollator.compare(left.name, right.name)
+      );
+    }
+    if (sort === "published") {
+      return (
+        timestamp(right.publishedAt) - timestamp(left.publishedAt) ||
+        timestamp(right.updatedAt) - timestamp(left.updatedAt) ||
+        layoutNameCollator.compare(left.name, right.name)
+      );
+    }
+    return (
+      timestamp(right.updatedAt) - timestamp(left.updatedAt) ||
+      layoutNameCollator.compare(left.name, right.name)
+    );
+  });
+}
+
+export function formatLayoutUpdatedAt(value: string, now = Date.now()): string {
+  const valueTimestamp = Date.parse(value);
+  if (!Number.isFinite(valueTimestamp)) return "Update time unavailable";
+  const elapsed = Math.max(0, now - valueTimestamp);
+  if (elapsed < 60_000) return "Updated just now";
+  if (elapsed < 3_600_000) {
+    const minutes = Math.max(1, Math.floor(elapsed / 60_000));
+    return `Updated ${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+  }
+  if (elapsed < 86_400_000) {
+    const hours = Math.max(1, Math.floor(elapsed / 3_600_000));
+    return `Updated ${hours} hour${hours === 1 ? "" : "s"} ago`;
+  }
+  if (elapsed < 604_800_000) {
+    const days = Math.max(1, Math.floor(elapsed / 86_400_000));
+    return `Updated ${days} day${days === 1 ? "" : "s"} ago`;
+  }
+  const options: Intl.DateTimeFormatOptions = {
+    month: "short",
+    day: "numeric",
+  };
+  if (new Date(valueTimestamp).getFullYear() !== new Date(now).getFullYear()) {
+    options.year = "numeric";
+  }
+  return `Updated ${new Intl.DateTimeFormat(undefined, options).format(valueTimestamp)}`;
+}
+
 export function LayoutsPage() {
   const auth = useAuth();
   const csrf = auth.status?.csrfToken ?? "";
+  const canManage = auth.status?.user?.role !== "viewer";
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
+  const [orientation, setOrientation] =
+    useState<LayoutLibraryOrientationFilter>("all");
+  const [publication, setPublication] =
+    useState<LayoutLibraryPublicationFilter>("all");
+  const [sort, setSort] = useState<LayoutLibrarySort>("updated");
+  const [view, setView] = useState<"grid" | "list">(storedLayoutView);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [preset, setPreset] = useState(0);
   const [template, setTemplate] = useState<"blank" | "announcement">("blank");
   const [actionError, setActionError] = useState("");
+  const [renaming, setRenaming] = useState<LayoutSummary>();
+  const [renameName, setRenameName] = useState("");
+  const menu = useContextMenu<LayoutSummary>();
+
   const layouts = useQuery({
-    queryKey: ["layouts", search],
-    queryFn: () => api.layouts(search),
+    queryKey: ["layouts", "library"],
+    queryFn: () => api.layouts(""),
   });
   const create = useMutation({
     mutationFn: async () => {
+      const selectedPreset = presets[preset]!;
       const created = await api.createLayout(
         {
-          name,
-          description,
-          orientation: presets[preset]!.orientation,
-          canvasWidth: presets[preset]!.width,
-          canvasHeight: presets[preset]!.height,
+          name: name.trim(),
+          description: description.trim(),
+          orientation: selectedPreset.orientation,
+          canvasWidth: selectedPreset.width,
+          canvasHeight: selectedPreset.height,
         },
         csrf,
       );
@@ -142,24 +298,33 @@ export function LayoutsPage() {
       setActionError(
         error instanceof Error
           ? error.message
-          : "The Layout could not be duplicated.",
+          : "The layout could not be duplicated.",
       ),
   });
   const rename = useMutation({
-    mutationFn: ({ layout, name }: { layout: LayoutSummary; name: string }) =>
+    mutationFn: ({
+      layout,
+      nextName,
+    }: {
+      layout: LayoutSummary;
+      nextName: string;
+    }) =>
       api.updateLayout(
         layout.id,
-        { name, description: layout.description },
+        { name: nextName, description: layout.description },
         csrf,
       ),
     onMutate: () => setActionError(""),
-    onSuccess: () =>
-      void queryClient.invalidateQueries({ queryKey: ["layouts"] }),
+    onSuccess: () => {
+      setRenaming(undefined);
+      setRenameName("");
+      void queryClient.invalidateQueries({ queryKey: ["layouts"] });
+    },
     onError: (error) =>
       setActionError(
         error instanceof Error
           ? error.message
-          : "The Layout could not be renamed.",
+          : "The layout could not be renamed.",
       ),
   });
   const remove = useMutation({
@@ -171,200 +336,433 @@ export function LayoutsPage() {
       setActionError(
         error instanceof Error
           ? error.message
-          : "The Layout could not be deleted because it is still in use.",
+          : "The layout could not be deleted because it is still in use.",
       ),
   });
+
   useEffect(() => {
-    if (searchParams.get("create") === "1") setCreating(true);
-  }, [searchParams]);
+    if (canManage && searchParams.get("create") === "1") setCreating(true);
+  }, [canManage, searchParams]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(layoutViewStorageKey, view);
+    } catch {
+      // The view preference is optional; the library remains usable without storage.
+    }
+  }, [view]);
+
+  const allLayouts = useMemo(
+    () => layouts.data?.items ?? [],
+    [layouts.data?.items],
+  );
+  const visibleLayouts = useMemo(
+    () =>
+      filterAndSortLayouts(allLayouts, search, orientation, publication, sort),
+    [allLayouts, orientation, publication, search, sort],
+  );
+
   const closeCreate = () => {
     setCreating(false);
+    setName("");
+    setDescription("");
+    setPreset(0);
+    setTemplate("blank");
+    create.reset();
     if (searchParams.has("create")) {
       const next = new URLSearchParams(searchParams);
       next.delete("create");
       setSearchParams(next, { replace: true });
     }
   };
+  const openRename = (layout: LayoutSummary) => {
+    setActionError("");
+    setRenaming(layout);
+    setRenameName(layout.name);
+  };
+  const closeRename = () => {
+    setRenaming(undefined);
+    setRenameName("");
+    rename.reset();
+  };
+  const clearLibraryFilters = () => {
+    setSearch("");
+    setOrientation("all");
+    setPublication("all");
+  };
+  const actionsFor = (layout: LayoutSummary): ContextMenuItem[] => {
+    const actions: ContextMenuItem[] = [
+      {
+        label: canManage ? "Edit" : "Open",
+        icon: <SquarePen size={14} />,
+        onSelect: () => void navigate(`/layouts/${layout.id}`),
+      },
+    ];
+    if (canManage) {
+      actions.push(
+        {
+          label: "Rename",
+          icon: <Pencil size={14} />,
+          disabled: rename.isPending,
+          onSelect: () => openRename(layout),
+        },
+        {
+          label: "Duplicate",
+          icon: <Copy size={14} />,
+          disabled: duplicate.isPending,
+          onSelect: () => duplicate.mutate(layout.id),
+        },
+        {
+          label: "Delete",
+          icon: <Trash2 size={14} />,
+          danger: true,
+          separated: true,
+          disabled: remove.isPending,
+          onSelect: () => {
+            if (window.confirm(`Delete ${layout.name}?`))
+              remove.mutate(layout.id);
+          },
+        },
+      );
+    }
+    return actions;
+  };
+
   return (
-    <section className="layouts-page">
+    <section className="layout-library-page">
       <WorkspaceTabs label="Presentations" tabs={presentationTabs} />
       <PageHeader
         title="Layouts"
-        description="Compose complete screen presentations from native primitives and reusable Content."
+        description="Design reusable screen compositions and find the right canvas at a glance."
         actions={
-          <Button variant="primary" onClick={() => setCreating(true)}>
-            <Plus size={17} aria-hidden="true" />
-            New Layout
-          </Button>
+          canManage ? (
+            <Button variant="primary" onClick={() => setCreating(true)}>
+              <Plus size={16} aria-hidden="true" />
+              Create layout
+            </Button>
+          ) : undefined
         }
       />
-      <DashboardListToolbar>
+      <DashboardListToolbar className="layout-library-toolbar">
         <DashboardSearch
           value={search}
           onValueChange={setSearch}
-          label="Search Layouts"
-          placeholder="Search Layouts"
+          label="Search layouts"
+          placeholder="Search names, descriptions, or dimensions"
         />
+        <Select
+          className="dashboard-list-toolbar__filter"
+          aria-label="Filter layouts by orientation"
+          value={orientation}
+          onChange={(event) =>
+            setOrientation(event.target.value as LayoutLibraryOrientationFilter)
+          }
+        >
+          <option value="all">All orientations</option>
+          <option value="landscape">Landscape</option>
+          <option value="portrait">Portrait</option>
+          <option value="custom">Custom</option>
+        </Select>
+        <Select
+          className="dashboard-list-toolbar__filter"
+          aria-label="Filter layouts by publication status"
+          value={publication}
+          onChange={(event) =>
+            setPublication(event.target.value as LayoutLibraryPublicationFilter)
+          }
+        >
+          <option value="all">All statuses</option>
+          <option value="published">Published</option>
+          <option value="changes">Unpublished changes</option>
+          <option value="draft">Draft only</option>
+        </Select>
+        <Select
+          className="dashboard-list-toolbar__filter"
+          aria-label="Sort layouts"
+          value={sort}
+          onChange={(event) => setSort(event.target.value as LayoutLibrarySort)}
+        >
+          <option value="updated">Recently updated</option>
+          <option value="name">Name</option>
+          <option value="created">Recently created</option>
+          <option value="published">Recently published</option>
+        </Select>
+        <ViewToggle value={view} onValueChange={setView} label="Layout view" />
       </DashboardListToolbar>
-      {actionError && <Notice variant="danger">{actionError}</Notice>}
-      {layouts.isLoading ? (
-        <p className="status-copy">Loading Layouts…</p>
-      ) : layouts.data?.items?.length ? (
-        <div className="layout-library">
-          {layouts.data.items.map((layout) => (
-            <article className="layout-library-item" key={layout.id}>
-              <button
-                className="layout-library-item__preview"
-                onClick={() => void navigate(`/layouts/${layout.id}`)}
-                style={{
-                  aspectRatio: `${layout.canvasWidth}/${layout.canvasHeight}`,
-                }}
-                aria-label={`Edit ${layout.name}`}
-              >
-                <FrozenLayoutPreview layout={layout} />
-                <span className="layout-library-item__dimensions">
-                  {layout.canvasWidth} × {layout.canvasHeight}
-                </span>
-              </button>
-              <div className="layout-library-item__copy">
-                <strong title={layout.name}>{layout.name}</strong>
-                <span>
-                  {layout.orientation} ·{" "}
-                  {layout.publishedRevision
-                    ? `Published r${layout.publishedRevision}`
-                    : "Draft only"}
-                </span>
-              </div>
-              <div className="layout-library-item__actions">
-                <button
-                  className="icon-button"
-                  title="Rename"
-                  aria-label={`Rename ${layout.name}`}
-                  onClick={() => {
-                    const next = window.prompt("Layout name", layout.name);
-                    if (next?.trim() && next.trim() !== layout.name)
-                      rename.mutate({ layout, name: next.trim() });
-                  }}
-                  disabled={rename.isPending}
-                >
-                  <Pencil size={16} />
-                </button>
-                <button
-                  className="icon-button"
-                  title="Duplicate"
-                  aria-label={`Duplicate ${layout.name}`}
-                  onClick={() => duplicate.mutate(layout.id)}
-                >
-                  <Copy size={16} />
-                </button>
-                <button
-                  className="icon-button"
-                  title="Delete"
-                  aria-label={`Delete ${layout.name}`}
-                  onClick={() => {
-                    if (window.confirm(`Delete ${layout.name}?`))
-                      remove.mutate(layout.id);
-                  }}
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            </article>
-          ))}
+
+      {!layouts.isLoading && allLayouts.length > 0 && (
+        <div className="layout-library-summary" aria-live="polite">
+          Showing {visibleLayouts.length} of {allLayouts.length} layouts
         </div>
-      ) : (
+      )}
+
+      {layouts.isError && (
+        <Notice variant="danger">
+          {layouts.error instanceof Error
+            ? layouts.error.message
+            : "Layouts could not be loaded."}
+        </Notice>
+      )}
+      {actionError && <Notice variant="danger">{actionError}</Notice>}
+
+      {layouts.isLoading ? (
+        <div className="table-loading">Loading layouts…</div>
+      ) : allLayouts.length === 0 ? (
         <EmptyState
+          className="content-empty"
           icon={<LayoutTemplate size={24} aria-hidden="true" />}
-          title="No Layouts yet"
-          message="Create a landscape or portrait canvas and build the presentation directly."
+          title="No layouts yet"
+          message={
+            canManage
+              ? "Create a landscape or portrait canvas, then arrange reusable content on it."
+              : "An Owner, Administrator, or Editor can create layouts."
+          }
           action={
-            <Button variant="primary" onClick={() => setCreating(true)}>
-              Create Layout
+            canManage ? (
+              <Button variant="primary" onClick={() => setCreating(true)}>
+                Create layout
+              </Button>
+            ) : undefined
+          }
+        />
+      ) : visibleLayouts.length === 0 ? (
+        <EmptyState
+          className="content-empty"
+          icon={<LayoutTemplate size={24} aria-hidden="true" />}
+          title="No matching layouts"
+          message="Try a different search or clear the layout filters."
+          action={
+            <Button variant="secondary" onClick={clearLibraryFilters}>
+              Clear filters
             </Button>
           }
         />
-      )}
-      {creating && (
-        <div className="details-backdrop" role="presentation">
-          <section
-            className="asset-details layout-create-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="create-layout-title"
-          >
-            <header>
-              <div>
-                <h2 id="create-layout-title">Create Layout</h2>
-                <p>
-                  Choose a canvas preset. Dimensions remain editable in the
-                  editor.
-                </p>
-              </div>
-            </header>
-            <div className="source-editor__body">
-              <label className="field">
-                <span className="field__label">Name</span>
-                <input
-                  autoFocus
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                />
-              </label>
-              <label className="field">
-                <span className="field__label">Description</span>
-                <textarea
-                  value={description}
-                  onChange={(event) => setDescription(event.target.value)}
-                />
-              </label>
-              <div className="layout-preset-grid">
-                {presets.map((item, index) => (
-                  <button
-                    className={preset === index ? "is-selected" : ""}
-                    key={item.label}
-                    onClick={() => setPreset(index)}
-                  >
+      ) : (
+        <div className={`layout-library-grid layout-library-grid--${view}`}>
+          {visibleLayouts.map((layout) => {
+            const publicationState = layoutPublicationState(layout);
+            return (
+              <article
+                className="layout-library-card"
+                data-orientation={layout.orientation}
+                data-publication={publicationState}
+                key={layout.id}
+                onContextMenu={(event) => menu.open(event, layout)}
+              >
+                <button
+                  type="button"
+                  className="layout-library-card__menu"
+                  aria-haspopup="menu"
+                  aria-expanded={menu.anchor?.target.id === layout.id}
+                  aria-label={`Actions for ${layout.name}`}
+                  onClick={(event) => menu.open(event, layout)}
+                >
+                  <EllipsisVertical size={16} aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  className="layout-library-card__open"
+                  aria-label={`${canManage ? "Edit" : "Open"} ${layout.name}`}
+                  onClick={() => void navigate(`/layouts/${layout.id}`)}
+                >
+                  <span className="layout-library-card__preview">
+                    <FrozenLayoutPreview layout={layout} />
+                    <span className="layout-library-card__status">
+                      {layoutPublicationLabel(layout)}
+                    </span>
+                    <span className="layout-library-card__dimensions">
+                      {layout.canvasWidth} × {layout.canvasHeight}
+                    </span>
+                  </span>
+                  <span className="layout-library-card__body">
+                    <span className="layout-library-card__heading">
+                      <strong title={layout.name}>{layout.name}</strong>
+                      <ChevronRight size={17} aria-hidden="true" />
+                    </span>
                     <span
-                      className={`layout-preset-shape layout-preset-shape--${item.orientation}`}
-                    />
+                      className={`layout-library-card__description${layout.description ? "" : " is-empty"}`}
+                    >
+                      {layout.description || "No description"}
+                    </span>
+                    <span className="layout-library-card__metadata">
+                      <span>{orientationLabel(layout.orientation)}</span>
+                      <span>Draft r{layout.draftRevision}</span>
+                      {layout.publishedRevision && (
+                        <span>Published r{layout.publishedRevision}</span>
+                      )}
+                    </span>
+                    <small>{formatLayoutUpdatedAt(layout.updatedAt)}</small>
+                  </span>
+                </button>
+              </article>
+            );
+          })}
+          {menu.anchor && (
+            <ContextMenu
+              x={menu.anchor.x}
+              y={menu.anchor.y}
+              label={`Actions for ${menu.anchor.target.name}`}
+              items={actionsFor(menu.anchor.target)}
+              onClose={menu.close}
+            />
+          )}
+        </div>
+      )}
+
+      <Dialog
+        open={creating}
+        title="Create layout"
+        onClose={closeCreate}
+        className="layout-library-dialog"
+      >
+        <div className="layout-library-dialog__body">
+          <Field label="Name" required>
+            <input
+              autoFocus
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </Field>
+          <Field
+            label="Description"
+            description="Optional context that makes the layout easier to find later."
+          >
+            <textarea
+              rows={3}
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+            />
+          </Field>
+          <fieldset className="layout-library-presets">
+            <legend>Canvas size</legend>
+            <div className="layout-library-presets__grid">
+              {presets.map((item, index) => (
+                <button
+                  type="button"
+                  aria-pressed={preset === index}
+                  key={item.label}
+                  onClick={() => setPreset(index)}
+                >
+                  <span
+                    className={`layout-library-preset-shape layout-library-preset-shape--${item.orientation}`}
+                    aria-hidden="true"
+                  />
+                  <span>
                     <strong>{item.label}</strong>
                     <small>
                       {item.width} × {item.height}
                     </small>
-                  </button>
-                ))}
-              </div>
-              <label className="field">
-                <span className="field__label">Starting point</span>
-                <Select
-                  value={template}
-                  onChange={(event) =>
-                    setTemplate(event.target.value as "blank" | "announcement")
-                  }
-                >
-                  <option value="blank">Blank canvas</option>
-                  <option value="announcement">Announcement</option>
-                </Select>
-              </label>
+                  </span>
+                </button>
+              ))}
             </div>
-            <footer>
-              <button
-                className="button button--secondary"
-                onClick={closeCreate}
-              >
-                Cancel
-              </button>
-              <button
-                className="button button--primary"
-                disabled={!name.trim() || create.isPending}
-                onClick={() => create.mutate()}
-              >
-                {create.isPending ? "Creating…" : "Create Layout"}
-              </button>
-            </footer>
-          </section>
+          </fieldset>
+          <fieldset className="layout-library-starting-point">
+            <legend>Starting point</legend>
+            <button
+              type="button"
+              aria-pressed={template === "blank"}
+              onClick={() => setTemplate("blank")}
+            >
+              <LayoutTemplate size={20} aria-hidden="true" />
+              <span>
+                <strong>Blank canvas</strong>
+                <small>Start with an empty layout.</small>
+              </span>
+            </button>
+            <button
+              type="button"
+              aria-pressed={template === "announcement"}
+              onClick={() => setTemplate("announcement")}
+            >
+              <SquarePen size={20} aria-hidden="true" />
+              <span>
+                <strong>Announcement</strong>
+                <small>Begin with an accent bar and headline.</small>
+              </span>
+            </button>
+          </fieldset>
+          {create.error && (
+            <Notice variant="danger">
+              {create.error instanceof Error
+                ? create.error.message
+                : "The layout could not be created."}
+            </Notice>
+          )}
         </div>
-      )}
+        <div className="form-actions">
+          <Button variant="quiet" onClick={closeCreate}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            disabled={!name.trim()}
+            loading={create.isPending}
+            onClick={() => create.mutate()}
+          >
+            Create layout
+          </Button>
+        </div>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(renaming)}
+        title="Rename layout"
+        onClose={closeRename}
+        className="layout-library-rename-dialog"
+      >
+        <Field label="Name" required>
+          <input
+            autoFocus
+            value={renameName}
+            onChange={(event) => setRenameName(event.target.value)}
+            onKeyDown={(event) => {
+              if (
+                event.key === "Enter" &&
+                !rename.isPending &&
+                renaming &&
+                renameName.trim() &&
+                renameName.trim() !== renaming.name
+              ) {
+                rename.mutate({
+                  layout: renaming,
+                  nextName: renameName.trim(),
+                });
+              }
+            }}
+          />
+        </Field>
+        {rename.error && (
+          <Notice variant="danger">
+            {rename.error instanceof Error
+              ? rename.error.message
+              : "The layout could not be renamed."}
+          </Notice>
+        )}
+        <div className="form-actions">
+          <Button variant="quiet" onClick={closeRename}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            disabled={
+              !renaming ||
+              !renameName.trim() ||
+              renameName.trim() === renaming.name
+            }
+            loading={rename.isPending}
+            onClick={() => {
+              if (!renaming) return;
+              rename.mutate({
+                layout: renaming,
+                nextName: renameName.trim(),
+              });
+            }}
+          >
+            Save name
+          </Button>
+        </div>
+      </Dialog>
     </section>
   );
 }
@@ -372,20 +770,21 @@ export function LayoutsPage() {
 function FrozenLayoutPreview({ layout }: { layout: LayoutSummary }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [layout.previewImageUrl]);
-  if (!layout.previewImageUrl || failed)
+  if (!layout.previewImageUrl || failed) {
     return (
-      <span
-        className="layout-thumbnail layout-thumbnail--loading"
-        aria-hidden="true"
-      >
-        <span>Preview unavailable</span>
+      <span className="layout-library-preview-fallback" aria-hidden="true">
+        <LayoutTemplate size={30} />
+        <strong>Preview unavailable</strong>
+        <small>Open the layout to continue editing.</small>
       </span>
     );
+  }
   return (
     <img
-      className="layout-thumbnail"
+      className="layout-library-thumbnail"
       src={layout.previewImageUrl}
-      alt={`Preview of ${layout.name}`}
+      alt=""
+      loading="lazy"
       onError={() => setFailed(true)}
     />
   );
