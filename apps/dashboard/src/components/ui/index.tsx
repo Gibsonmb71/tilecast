@@ -21,6 +21,7 @@ import {
   type ReactNode,
   type TextareaHTMLAttributes,
 } from "react";
+import { createPortal } from "react-dom";
 
 type ButtonVariant = "primary" | "secondary" | "quiet" | "danger";
 
@@ -572,7 +573,7 @@ export function Drawer({
     }
   }
 
-  return (
+  return createPortal(
     <div className="drawer-layer">
       <button
         type="button"
@@ -600,7 +601,8 @@ export function Drawer({
         <div className="drawer__body">{children}</div>
         {footer && <footer className="drawer__footer">{footer}</footer>}
       </aside>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

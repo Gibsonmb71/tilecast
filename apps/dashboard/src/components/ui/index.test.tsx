@@ -60,6 +60,10 @@ describe("Signal UI primitives", () => {
       </Drawer>,
     );
 
+    expect(screen.getByRole("dialog").parentElement?.parentElement).toBe(
+      document.body,
+    );
+
     await user.keyboard("{Escape}");
     expect(close).toHaveBeenCalledOnce();
     unmount();
