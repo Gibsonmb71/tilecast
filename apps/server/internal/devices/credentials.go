@@ -54,6 +54,9 @@ func (s *Service) Enroll(ctx context.Context, sessionID uuid.UUID, enrollmentTok
 			}
 		}
 	}
+	if _, err := tx.Exec(ctx, `UPDATE screens SET archived_at=NULL,archived_reason='',enabled=TRUE,paired_at=now(),updated_at=now() WHERE id=$1`, screenID); err != nil {
+		return EnrollmentResult{}, fmt.Errorf("restore archived screen: %w", err)
+	}
 	if _, err := tx.Exec(ctx, `UPDATE device_pairing_sessions SET enrolled_at=now(),enrollment_token_hash=NULL WHERE id=$1`, sessionID); err != nil {
 		return EnrollmentResult{}, fmt.Errorf("complete enrollment: %w", err)
 	}
