@@ -61,6 +61,7 @@ const playlistNameCollator = new Intl.Collator(undefined, {
 });
 
 function storedPlaylistView(): "grid" | "list" {
+  if (typeof window === "undefined") return "grid";
   try {
     return window.localStorage.getItem(playlistViewStorageKey) === "list"
       ? "list"
@@ -92,8 +93,9 @@ export function filterAndSortPlaylists(
     return searchable.includes(normalizedSearch);
   });
 
-  return filtered.toSorted((left, right) => {
-    if (sort === "name") return playlistNameCollator.compare(left.name, right.name);
+  return [...filtered].sort((left, right) => {
+    if (sort === "name")
+      return playlistNameCollator.compare(left.name, right.name);
     if (sort === "items") {
       return (
         right.itemCount - left.itemCount ||
@@ -130,13 +132,14 @@ export function formatPlaylistUpdatedAt(value: string, now = Date.now()): string
     const days = Math.max(1, Math.floor(elapsed / 86_400_000));
     return `Updated ${days} day${days === 1 ? "" : "s"} ago`;
   }
-  return `Updated ${new Intl.DateTimeFormat(undefined, {
+  const options: Intl.DateTimeFormatOptions = {
     month: "short",
     day: "numeric",
-    year: new Date(timestamp).getFullYear() === new Date(now).getFullYear()
-      ? undefined
-      : "numeric",
-  }).format(timestamp)}`;
+  };
+  if (new Date(timestamp).getFullYear() !== new Date(now).getFullYear()) {
+    options.year = "numeric";
+  }
+  return `Updated ${new Intl.DateTimeFormat(undefined, options).format(timestamp)}`;
 }
 
 function playlistStatus(playlist: PlaylistLibraryItem): string {
@@ -183,7 +186,10 @@ export function PlaylistLibraryPage() {
     }
   }, [view]);
 
-  const allPlaylists = (query.data?.items ?? []) as PlaylistLibraryItem[];
+  const allPlaylists = useMemo(
+    () => (query.data?.items ?? []) as PlaylistLibraryItem[],
+    [query.data?.items],
+  );
   const visiblePlaylists = useMemo(
     () => filterAndSortPlaylists(allPlaylists, search, filter, sort),
     [allPlaylists, filter, search, sort],
@@ -299,7 +305,10 @@ export function PlaylistLibraryPage() {
               data-empty={playlist.itemCount === 0 || undefined}
               key={playlist.id}
             >
-              <Link to={`/playlists/${playlist.id}`} title={`Open ${playlist.name}`}>
+              <Link
+                to={`/playlists/${playlist.id}`}
+                title={`Open ${playlist.name}`}
+              >
                 <div className="playlist-library-card__preview">
                   <PlaylistPreview playlist={playlist} />
                   <span className="playlist-library-card__status">
