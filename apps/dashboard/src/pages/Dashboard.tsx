@@ -121,7 +121,7 @@ function SidebarWorkspace({
         className="sidebar__submenu"
         id={submenuId}
         aria-label={`${label} submenu`}
-        hidden={!expanded}
+        aria-hidden={!expanded}
       >
         {tabs.map((tab) => {
           const Icon = tab.icon;
@@ -133,6 +133,7 @@ function SidebarWorkspace({
               aria-current={isCurrent ? "page" : undefined}
               className={isCurrent ? "active" : ""}
               title={tab.label}
+              tabIndex={expanded ? undefined : -1}
             >
               <Icon size={20} strokeWidth={1.8} aria-hidden="true" />
               <span>{tab.label}</span>
