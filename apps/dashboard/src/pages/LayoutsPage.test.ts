@@ -10,18 +10,21 @@ import {
 
 const layout = (
   values: Partial<LayoutSummary> & Pick<LayoutSummary, "id" | "name">,
-): LayoutSummary => ({
-  id: values.id,
-  name: values.name,
-  description: "",
-  orientation: "landscape",
-  canvasWidth: 1920,
-  canvasHeight: 1080,
-  draftRevision: 1,
-  createdAt: "2026-07-01T12:00:00Z",
-  updatedAt: "2026-07-01T12:00:00Z",
-  ...values,
-});
+): LayoutSummary => {
+  const { id, name, ...overrides } = values;
+  return {
+    id,
+    name,
+    description: "",
+    orientation: "landscape",
+    canvasWidth: 1920,
+    canvasHeight: 1080,
+    draftRevision: 1,
+    createdAt: "2026-07-01T12:00:00Z",
+    updatedAt: "2026-07-01T12:00:00Z",
+    ...overrides,
+  };
+};
 
 describe("layout library", () => {
   it("searches names, descriptions, dimensions, and status", () => {
