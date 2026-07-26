@@ -1,7 +1,12 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
-import { CircleAlert, TrendingDown, TrendingUp } from "lucide-react";
+import {
+  ChevronRight,
+  CircleAlert,
+  TrendingDown,
+  TrendingUp,
+} from "lucide-react";
 import { api } from "../api/client";
 import type {
   UptimeBucket,
@@ -38,10 +43,7 @@ export function FleetUptimePanel() {
       <header>
         <div>
           <h3 id="uptime-heading">Uptime</h3>
-          <p>
-            Share of measured player time spent connected and playing, from
-            recorded screen state.
-          </p>
+          <p>Measured player time spent connected and playing.</p>
         </div>
         <div className="uptime-window" role="group" aria-label="Uptime window">
           {windows.map((option) => (
@@ -151,25 +153,30 @@ function UptimeBody({ report }: { report: UptimeReport }) {
         </div>
       </div>
 
-      <ul className="uptime-legend">
-        {(Object.keys(stateLabels) as UptimeState[]).map((state) => (
-          <li key={state}>
-            <span
-              className={`uptime-swatch uptime-swatch--${state}`}
+      {/* The per-screen strips are the tallest part of the panel, so the
+          overview keeps them one click away rather than always on screen. */}
+      <details className="uptime-screens">
+        <summary>
+          <span className="uptime-screens__summary">
+            <ChevronRight
+              className="uptime-screens__chevron"
+              size={14}
               aria-hidden="true"
             />
-            {stateLabels[state]}
-          </li>
-        ))}
-      </ul>
-
-      <div className="uptime-screens">
-        <h4>
-          Per screen
-          {report.screens.length < report.screensTracked
-            ? ` · lowest ${report.screens.length} of ${report.screensTracked}`
-            : ""}
-        </h4>
+            Per screen · {screenBreakdown(report)}
+          </span>
+          <ul className="uptime-legend">
+            {(Object.keys(stateLabels) as UptimeState[]).map((state) => (
+              <li key={state}>
+                <span
+                  className={`uptime-swatch uptime-swatch--${state}`}
+                  aria-hidden="true"
+                />
+                {stateLabels[state]}
+              </li>
+            ))}
+          </ul>
+        </summary>
         <div className="uptime-screens__list">
           {report.screens.map((screen) => (
             <ScreenRow
@@ -180,9 +187,30 @@ function UptimeBody({ report }: { report: UptimeReport }) {
             />
           ))}
         </div>
-      </div>
+        {report.screens.length < report.screensTracked && (
+          <p className="uptime-screens__note">
+            Showing the lowest {report.screens.length} of{" "}
+            {report.screensTracked} screens.
+          </p>
+        )}
+      </details>
     </>
   );
+}
+
+// Unmeasured screens are named rather than hidden: a player that has not
+// reported state yet is a real gap in the graph, not a healthy screen.
+function screenBreakdown(report: UptimeReport) {
+  const parts = [`${report.screensTracked} screens`];
+  parts.push(
+    report.screensWithDowntime > 0
+      ? `${report.screensWithDowntime} with downtime`
+      : "none with downtime",
+  );
+  if (report.screensUnmeasured > 0) {
+    parts.push(`${report.screensUnmeasured} not measured yet`);
+  }
+  return parts.join(" · ");
 }
 
 function ScreenRow({

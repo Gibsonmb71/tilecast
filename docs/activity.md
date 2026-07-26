@@ -32,7 +32,9 @@ Date-aware Widgets report the selected cached record by Source ID, placement or 
 
 ## Uptime derivation
 
-The System overview uptime graphs read `screen_state_intervals`; the schema keeps no heartbeat history, so uptime is measured from recorded state transitions only. Enabled, non-deleted screens are measured over 24 one-hour buckets or 28 six-hour buckets aligned to the bucket size, so the newest bucket is the partial one.
+The System overview uptime graphs read `screen_state_intervals`; the schema keeps no heartbeat history, so uptime is measured from recorded state transitions only. Uptime covers the same population the Screens list shows — enabled, non-deleted screens that still hold an unrevoked device credential — because downtime on a disabled or revoked screen is administrative rather than a fault. Screens are measured over 24 one-hour buckets or 28 six-hour buckets aligned to the bucket size, so the newest bucket is the partial one.
+
+Players do not share one activity event vocabulary: the Linux player reports `content.*` and `connection.lost`/`connection.recovered`, while the interval derivation recognises the Android player's `presentation.*` and `manifest.activated`. The heartbeat is the one signal every player sends, so each accepted heartbeat anchors an up-state interval when none is open, and replaces a stale impaired interval once the heartbeat itself confirms the player is playing with no playback error, no safe mode, no lost foreground, and no cache pressure. Heartbeat-anchored intervals record `{"source":"heartbeat"}` and stay bounded at one row per continuous up-stretch. Without this, a player that never emits a recognised event would never be measured, and a single renderer failure would leave a screen impaired indefinitely.
 
 Each measured second falls into one class:
 

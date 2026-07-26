@@ -132,6 +132,7 @@ type uptimeReport struct {
 	BucketSeconds         int64                `json:"bucketSeconds"`
 	ScreensTracked        int                  `json:"screensTracked"`
 	ScreensWithDowntime   int                  `json:"screensWithDowntime"`
+	ScreensUnmeasured     int                  `json:"screensUnmeasured"`
 	TrackedSeconds        int64                `json:"trackedSeconds"`
 	UpSeconds             int64                `json:"upSeconds"`
 	ImpairedSeconds       int64                `json:"impairedSeconds"`

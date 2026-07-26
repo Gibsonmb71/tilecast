@@ -407,6 +407,8 @@ export type UptimeReport = {
   bucketSeconds: number;
   screensTracked: number;
   screensWithDowntime: number;
+  /** Screens with no recorded state in the window, excluded from the percent. */
+  screensUnmeasured: number;
   trackedSeconds: number;
   upSeconds: number;
   impairedSeconds: number;

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestBuildUptimeReportSeparatesHealthyImpairedAndDownTime(t *testing.T) {
@@ -88,10 +89,24 @@ func TestClampUptimeSegmentsKeepsBucketsWithinTheirSpan(t *testing.T) {
 	}
 }
 
+// Uptime measures actively paired screens, so a test screen needs the device
+// credential that pairing would have created.
+func pairUptimeScreen(t *testing.T, pool *pgxpool.Pool, screenID uuid.UUID, revoked bool) {
+	t.Helper()
+	revokedAt := "NULL"
+	if revoked {
+		revokedAt = "now()"
+	}
+	if _, err := pool.Exec(context.Background(), `INSERT INTO device_credentials(id,screen_id,public_id,secret_hash,revoked_at) VALUES($1,$2,$3,'\x00'::bytea,`+revokedAt+`)`, uuid.New(), screenID, uuid.NewString()); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestUptimeCountsSilentPlayerAsDownRatherThanStillHealthy(t *testing.T) {
 	withActivityDatabase(t, func(env activityTestEnvironment) {
 		ctx := context.Background()
 		now := time.Now().UTC()
+		pairUptimeScreen(t, env.pool, env.screenID, false)
 		// The player reported healthy six hours ago and stopped heartbeating two
 		// hours ago without ever sending a disconnect event.
 		if _, err := env.pool.Exec(ctx, `UPDATE screens SET last_heartbeat_at=$2 WHERE id=$1`, env.screenID, now.Add(-2*time.Hour)); err != nil {
@@ -147,6 +162,7 @@ func TestUptimeSeparatesHeartbeatGapsFromContentFailures(t *testing.T) {
 	withActivityDatabase(t, func(env activityTestEnvironment) {
 		ctx := context.Background()
 		now := time.Now().UTC()
+		pairUptimeScreen(t, env.pool, env.screenID, false)
 		insert := func(state, reason string, start, end time.Time) {
 			if _, err := env.pool.Exec(ctx, `INSERT INTO screen_state_intervals(id,screen_id,state,started_at,ended_at,reason_code) VALUES($1,$2,$3,$4,$5,NULLIF($6,''))`, uuid.New(), env.screenID, state, start, end, reason); err != nil {
 				t.Fatal(err)
@@ -186,6 +202,155 @@ func TestUptimeSeparatesHeartbeatGapsFromContentFailures(t *testing.T) {
 		}
 		if report.UptimePercent == nil || *report.UptimePercent > 26 || *report.UptimePercent < 24 {
 			t.Fatalf("expected a quarter of measured time healthy, got %v", report.UptimePercent)
+		}
+	})
+}
+
+func TestHeartbeatConfirmsHealthyOnlyWithCleanPlayback(t *testing.T) {
+	playing := heartbeatActivityState{PlaybackState: "playing"}
+	if !heartbeatConfirmsHealthy(playing) {
+		t.Fatal("a clean playing heartbeat should confirm health")
+	}
+	limit, used := int64(100), int64(95)
+	for name, status := range map[string]heartbeatActivityState{
+		"not playing":     {PlaybackState: "idle"},
+		"playback error":  {PlaybackState: "playing", PlaybackError: "decoder gave up"},
+		"safe mode":       {PlaybackState: "playing", SafeMode: true},
+		"lost foreground": {PlaybackState: "playing", ForegroundState: "background"},
+		"cache pressure":  {PlaybackState: "playing", CacheLimitBytes: &limit, CacheUsedBytes: &used},
+	} {
+		if heartbeatConfirmsHealthy(status) {
+			t.Fatalf("%s must not confirm health", name)
+		}
+	}
+}
+
+func TestHeartbeatAnchorsAnUpIntervalAndClearsStaleImpairment(t *testing.T) {
+	withActivityDatabase(t, func(env activityTestEnvironment) {
+		ctx := context.Background()
+		request := httptest.NewRequest(http.MethodPost, "/api/v1/player/heartbeat", nil)
+		healthy := heartbeatActivityState{PlaybackState: "playing"}
+		anchor := func(status heartbeatActivityState, when time.Time) {
+			tx, err := env.pool.Begin(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			env.server.anchorHeartbeatStateInterval(request, tx, env.screenID, status, when)
+			if err := tx.Commit(ctx); err != nil {
+				t.Fatal(err)
+			}
+		}
+		openInterval := func() (string, int) {
+			var state string
+			var total int
+			if err := env.pool.QueryRow(ctx, `SELECT COALESCE(max(state) FILTER (WHERE ended_at IS NULL),''),count(*) FROM screen_state_intervals WHERE screen_id=$1`, env.screenID).Scan(&state, &total); err != nil {
+				t.Fatal(err)
+			}
+			return state, total
+		}
+
+		// A player that has never emitted a recognised activity event still gets
+		// measured from its heartbeats.
+		now := time.Now().UTC()
+		anchor(healthy, now.Add(-time.Hour))
+		if state, total := openInterval(); state != "healthy" || total != 1 {
+			t.Fatalf("expected one open healthy interval, got %q and %d rows", state, total)
+		}
+
+		// Later heartbeats extend that interval rather than adding rows.
+		anchor(healthy, now.Add(-30*time.Minute))
+		if _, total := openInterval(); total != 1 {
+			t.Fatalf("expected heartbeats to extend the open interval, got %d rows", total)
+		}
+
+		// A heartbeat that cannot confirm health leaves the timeline alone.
+		anchor(heartbeatActivityState{PlaybackState: "starting"}, now.Add(-20*time.Minute))
+		if state, total := openInterval(); state != "healthy" || total != 1 {
+			t.Fatalf("expected the open interval untouched, got %q and %d rows", state, total)
+		}
+
+		// A renderer failure leaves an impaired interval that the Linux player
+		// never clears with an event; the next clean heartbeat replaces it.
+		if _, err := env.pool.Exec(ctx, `UPDATE screen_state_intervals SET ended_at=$2 WHERE screen_id=$1 AND ended_at IS NULL`, env.screenID, now.Add(-15*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := env.pool.Exec(ctx, `INSERT INTO screen_state_intervals(id,screen_id,state,started_at,reason_code) VALUES($1,$2,'degraded',$3,'playback_error')`, uuid.New(), env.screenID, now.Add(-15*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		anchor(healthy, now.Add(-5*time.Minute))
+		state, total := openInterval()
+		if state != "healthy" || total != 3 {
+			t.Fatalf("expected a fresh healthy interval after the impaired one, got %q and %d rows", state, total)
+		}
+		var impairedEnd *time.Time
+		if err := env.pool.QueryRow(ctx, `SELECT ended_at FROM screen_state_intervals WHERE screen_id=$1 AND state='degraded'`, env.screenID).Scan(&impairedEnd); err != nil {
+			t.Fatal(err)
+		}
+		if impairedEnd == nil {
+			t.Fatal("expected the impaired interval to be closed")
+		}
+	})
+}
+
+func TestUptimeExcludesDisabledRevokedAndRemovedScreens(t *testing.T) {
+	withActivityDatabase(t, func(env activityTestEnvironment) {
+		ctx := context.Background()
+		now := time.Now().UTC()
+		var organizationID uuid.UUID
+		if err := env.pool.QueryRow(ctx, `SELECT organization_id FROM screens WHERE id=$1`, env.screenID).Scan(&organizationID); err != nil {
+			t.Fatal(err)
+		}
+		add := func(name string) uuid.UUID {
+			id := uuid.New()
+			if _, err := env.pool.Exec(ctx, `INSERT INTO screens(id,organization_id,player_installation_id,name,platform,device_manufacturer,device_model,android_version,player_version,screen_width,screen_height,density,locale,timezone,last_heartbeat_at) VALUES($1,$2,$3,$4,'linux','Test','PC','n/a','1.0',1920,1080,1,'en-US','America/New_York',$5)`, id, organizationID, uuid.NewString(), name, now); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := env.pool.Exec(ctx, `INSERT INTO screen_state_intervals(id,screen_id,state,started_at) VALUES($1,$2,'healthy',$3)`, uuid.New(), id, now.Add(-2*time.Hour)); err != nil {
+				t.Fatal(err)
+			}
+			return id
+		}
+		credential := func(screenID uuid.UUID, revoked bool) {
+			pairUptimeScreen(t, env.pool, screenID, revoked)
+		}
+		// The paired screen from the fixture plus one of each excluded state.
+		credential(env.screenID, false)
+		if _, err := env.pool.Exec(ctx, `UPDATE screens SET last_heartbeat_at=$2 WHERE id=$1`, env.screenID, now); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := env.pool.Exec(ctx, `INSERT INTO screen_state_intervals(id,screen_id,state,started_at) VALUES($1,$2,'healthy',$3)`, uuid.New(), env.screenID, now.Add(-2*time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		credential(add("Revoked Player"), true)
+		disabled := add("Disabled Player")
+		credential(disabled, false)
+		if _, err := env.pool.Exec(ctx, `UPDATE screens SET enabled=FALSE WHERE id=$1`, disabled); err != nil {
+			t.Fatal(err)
+		}
+		removed := add("Removed Player")
+		credential(removed, false)
+		if _, err := env.pool.Exec(ctx, `UPDATE screens SET deleted_at=now() WHERE id=$1`, removed); err != nil {
+			t.Fatal(err)
+		}
+
+		request := httptest.NewRequest(http.MethodGet, "/api/v1/activity/uptime?window=24h", nil)
+		request = request.WithContext(context.WithValue(request.Context(), sessionContextKey, env.owner))
+		response := httptest.NewRecorder()
+		env.server.activityUptime(response, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("unexpected status %d: %s", response.Code, response.Body.String())
+		}
+		var payload struct {
+			Data uptimeReport `json:"data"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload.Data.ScreensTracked != 1 {
+			t.Fatalf("expected only the actively paired screen, got %d", payload.Data.ScreensTracked)
+		}
+		if len(payload.Data.Screens) != 1 || payload.Data.Screens[0].ScreenID != env.screenID {
+			t.Fatalf("unexpected screen rows: %+v", payload.Data.Screens)
 		}
 	})
 }
