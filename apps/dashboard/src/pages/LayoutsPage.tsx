@@ -364,6 +364,10 @@ export function LayoutsPage() {
 
   const closeCreate = () => {
     setCreating(false);
+    setName("");
+    setDescription("");
+    setPreset(0);
+    setTemplate("blank");
     create.reset();
     if (searchParams.has("create")) {
       const next = new URLSearchParams(searchParams);
@@ -715,6 +719,7 @@ export function LayoutsPage() {
             onKeyDown={(event) => {
               if (
                 event.key === "Enter" &&
+                !rename.isPending &&
                 renaming &&
                 renameName.trim() &&
                 renameName.trim() !== renaming.name

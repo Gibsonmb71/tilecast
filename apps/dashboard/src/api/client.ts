@@ -373,10 +373,30 @@ export const api = {
     }
   },
   layouts: async (search = "") => {
-    const result = await request<LayoutList | null>(
-      `/layouts?${new URLSearchParams({ search, page: "1", pageSize: "100" })}`,
+    const pageSize = 100;
+    const result = normalizeLayoutList(
+      await request<LayoutList | null>(
+        `/layouts?${new URLSearchParams({ search, page: "1", pageSize: String(pageSize) })}`,
+      ),
     );
-    return normalizeLayoutList(result);
+    const pageCount = Math.ceil(result.total / pageSize);
+    if (pageCount <= 1) return result;
+
+    const remainingPages = await Promise.all(
+      Array.from({ length: pageCount - 1 }, (_, index) =>
+        request<LayoutList | null>(
+          `/layouts?${new URLSearchParams({
+            search,
+            page: String(index + 2),
+            pageSize: String(pageSize),
+          })}`,
+        ).then(normalizeLayoutList),
+      ),
+    );
+    return {
+      ...result,
+      items: [result, ...remainingPages].flatMap((page) => page.items),
+    };
   },
   layout: (id: string) => requestLayout(`/layouts/${id}`),
   uploadLayoutPreview: async (

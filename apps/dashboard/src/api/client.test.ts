@@ -25,6 +25,50 @@ describe("authentication contract", () => {
   });
 });
 
+describe("layout library contract", () => {
+  it("loads every page for client-side library filtering", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve({
+            data: {
+              items: [{ id: "layout-1" }],
+              total: 101,
+              page: 1,
+              pageSize: 100,
+            },
+          }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve({
+            data: {
+              items: [{ id: "layout-101" }],
+              total: 101,
+              page: 2,
+              pageSize: 100,
+            },
+          }),
+      });
+    vi.stubGlobal("fetch", fetch);
+
+    await expect(api.layouts("lobby")).resolves.toMatchObject({
+      items: [{ id: "layout-1" }, { id: "layout-101" }],
+      total: 101,
+    });
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      "/api/v1/layouts?search=lobby&page=2&pageSize=100",
+      expect.any(Object),
+    );
+  });
+});
+
 describe("Player release upload contract", () => {
   it("uses server-accepted media types for the Linux release files", () => {
     expect(playerReleaseContentType("tilecast-player.AppImage")).toBe(

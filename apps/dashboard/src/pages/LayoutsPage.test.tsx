@@ -260,6 +260,12 @@ describe("layout library helpers", () => {
     expect(formatLayoutUpdatedAt("2026-07-26T14:00:00Z", now)).toBe(
       "Updated 2 hours ago",
     );
+    expect(formatLayoutUpdatedAt("2026-07-23T16:00:00Z", now)).toBe(
+      "Updated 3 days ago",
+    );
+    expect(formatLayoutUpdatedAt("2025-12-01T16:00:00Z", now)).toContain(
+      "2025",
+    );
     expect(formatLayoutUpdatedAt("not-a-date", now)).toBe(
       "Update time unavailable",
     );
