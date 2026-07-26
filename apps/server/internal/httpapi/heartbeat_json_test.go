@@ -1,7 +1,9 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -25,5 +27,13 @@ func TestPlayerHeartbeatAcceptsEmergencyAndCommandStatus(t *testing.T) {
 	}
 	if heartbeat.PlaybackDisabled == nil || *heartbeat.PlaybackDisabled || heartbeat.LastCommandID == nil || *heartbeat.LastCommandID != commandID || heartbeat.LastCommandState != "succeeded" || heartbeat.LastCommandResult != "playback_reloaded" || heartbeat.LastCommandCompletedAt == nil || !heartbeat.LastCommandCompletedAt.Equal(completedAt) {
 		t.Fatalf("command status did not decode: %#v", heartbeat)
+	}
+}
+
+func TestHeartbeatPayloadInvalidFieldsNamesOnlyMalformedFields(t *testing.T) {
+	payload := json.RawMessage(`{"screenWidth":1920,"screenHeight":1080,"playerVersion":"0.2.2","currentItemId":"layout:item","lastCommandCompletedAt":"not-a-time"}`)
+	fields := heartbeatPayloadInvalidFields(payload)
+	if !slices.Equal(fields, []string{"currentItemId", "lastCommandCompletedAt"}) {
+		t.Fatalf("invalid fields = %v", fields)
 	}
 }

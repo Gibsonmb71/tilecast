@@ -26,7 +26,7 @@ func NewService(db *pgxpool.Pool, presence *PresenceHub, publicURL string) *Serv
 	return &Service{db: db, presence: presence, publicURL: strings.TrimRight(publicURL, "/"), now: time.Now}
 }
 
-func (s *Service) RegisterPresenceWithNotifier(screenID uuid.UUID, closeConnection func(), notify func(map[string]any) error) func() {
+func (s *Service) RegisterPresenceWithNotifier(screenID uuid.UUID, closeConnection func(), notify func(map[string]any) error) func() bool {
 	return s.presence.ConnectWithNotifier(screenID, closeConnection, notify)
 }
 

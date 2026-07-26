@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"sort"
 	"sync"
 	"time"
 
@@ -19,6 +20,29 @@ type socketMessage struct {
 	PlayerVersion   string          `json:"playerVersion,omitempty"`
 	Timestamp       string          `json:"timestamp,omitempty"`
 	Payload         json.RawMessage `json:"payload,omitempty"`
+}
+
+func heartbeatPayloadInvalidFields(payload json.RawMessage) []string {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &fields); err != nil {
+		return nil
+	}
+	invalid := make([]string, 0, 1)
+	for name, value := range fields {
+		single, err := json.Marshal(map[string]json.RawMessage{name: value})
+		if err != nil {
+			continue
+		}
+		var heartbeat devices.Heartbeat
+		if err := json.Unmarshal(single, &heartbeat); err != nil {
+			invalid = append(invalid, name)
+		}
+	}
+	sort.Strings(invalid)
+	if len(invalid) > 8 {
+		invalid = invalid[:8]
+	}
+	return invalid
 }
 
 func (s *server) playerSocket(w http.ResponseWriter, r *http.Request) {
@@ -41,11 +65,14 @@ func (s *server) playerSocket(w http.ResponseWriter, r *http.Request) {
 		cancel()
 		_ = connection.Close(websocket.StatusPolicyViolation, "credential revoked or screen disabled")
 	}, func(message map[string]any) error { return send(message) })
-	defer unregister()
+	defer func() {
+		if unregister() {
+			s.devices.MarkDisconnected(context.Background(), principal.ScreenID)
+		}
+	}()
 	if err := s.devices.MarkConnected(r.Context(), principal.ScreenID, r.RemoteAddr); err != nil {
 		return
 	}
-	defer s.devices.MarkDisconnected(context.Background(), principal.ScreenID)
 
 	if err := send(map[string]any{"type": "server.hello", "protocolVersion": 1, "screenId": principal.ScreenID, "screenName": principal.ScreenName}); err != nil {
 		return
@@ -106,23 +133,7 @@ func (s *server) playerSocket(w http.ResponseWriter, r *http.Request) {
 				cancel()
 			}
 		case "player.status":
-			var heartbeat devices.Heartbeat
-			if err := json.Unmarshal(message.Payload, &heartbeat); err == nil {
-				// A rejected heartbeat leaves last_heartbeat_at stale while the
-				// socket keeps the screen "online"; log the reason instead of
-				// silently discarding it so the mismatch is diagnosable.
-				if err := s.devices.Heartbeat(ctx, principal, heartbeat, r.RemoteAddr); err != nil {
-					s.logger.Warn("player heartbeat rejected over socket",
-						"error", err, "screen_id", principal.ScreenID)
-				}
-				s.advanceCanaryDeploymentsForScreen(ctx, principal.ScreenID)
-			}
-			if s.playlists != nil {
-				var status playlists.PlayerStatus
-				if err := json.Unmarshal(message.Payload, &status); err == nil {
-					_ = s.playlists.ReportStatus(ctx, principal.ScreenID, status)
-				}
-			}
+			s.handleSocketStatus(r, ctx, principal, message.Payload)
 		case "player.pong":
 			// The open socket itself is the presence signal; pong confirms the peer is processing messages.
 		default:
@@ -132,4 +143,47 @@ func (s *server) playerSocket(w http.ResponseWriter, r *http.Request) {
 	}
 	cancel()
 	<-pingDone
+}
+
+func (s *server) handleSocketStatus(r *http.Request, ctx context.Context, principal devices.DevicePrincipal, payload json.RawMessage) {
+	snapshot := s.captureHeartbeatActivity(ctx, principal.ScreenID)
+	contactRecorded := false
+
+	var heartbeat devices.Heartbeat
+	if err := json.Unmarshal(payload, &heartbeat); err != nil {
+		s.logger.Warn("player heartbeat payload rejected over socket",
+			"error", "heartbeat payload contains invalid field values",
+			"invalid_fields", heartbeatPayloadInvalidFields(payload),
+			"screen_id", principal.ScreenID)
+		if err := s.devices.MarkHeartbeatContact(ctx, principal.ScreenID, r.RemoteAddr); err != nil {
+			s.logger.Warn("player heartbeat contact could not be recorded",
+				"error", err, "screen_id", principal.ScreenID)
+		} else {
+			contactRecorded = true
+		}
+	} else if err := s.devices.Heartbeat(ctx, principal, heartbeat, r.RemoteAddr); err != nil {
+		// Optional metadata validation must remain visible, but the authenticated
+		// status message still proves that the connected player is alive.
+		s.logger.Warn("player heartbeat rejected over socket",
+			"error", err, "screen_id", principal.ScreenID)
+		if contactErr := s.devices.MarkHeartbeatContact(ctx, principal.ScreenID, r.RemoteAddr); contactErr != nil {
+			s.logger.Warn("player heartbeat contact could not be recorded",
+				"error", contactErr, "screen_id", principal.ScreenID)
+		} else {
+			contactRecorded = true
+		}
+	} else {
+		contactRecorded = true
+		s.advanceCanaryDeploymentsForScreen(ctx, principal.ScreenID)
+	}
+
+	if s.playlists != nil {
+		var status playlists.PlayerStatus
+		if err := json.Unmarshal(payload, &status); err == nil {
+			_ = s.playlists.ReportStatus(ctx, principal.ScreenID, status)
+		}
+	}
+	if contactRecorded {
+		s.recordHeartbeatActivity(r, principal.ScreenID, snapshot, time.Now().UTC())
+	}
 }

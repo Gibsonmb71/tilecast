@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
+	"github.com/coder/websocket/wsjson"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/tilecast/tilecast/apps/server/internal/auth"
@@ -69,8 +71,119 @@ func withActivityDatabase(t *testing.T, run func(activityTestEnvironment)) {
 	if _, err = pool.Exec(ctx, `INSERT INTO screens(id,organization_id,player_installation_id,name,platform,device_manufacturer,device_model,android_version,player_version,screen_width,screen_height,density,locale,timezone) VALUES($1,$2,$3,'Cafeteria TV','android-tv','Test','TV','14','1.0',1920,1080,1,'en-US','America/New_York')`, screenID, organizationID, uuid.NewString()); err != nil {
 		t.Fatal(err)
 	}
-	s := &server{db: pool, logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	deviceService := devices.NewService(pool, devices.NewPresenceHub(), "")
+	s := &server{db: pool, devices: deviceService, logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	run(activityTestEnvironment{server: s, pool: pool, screenID: screenID, owner: auth.Session{User: auth.User{ID: ownerID, Name: "Activity Owner", Username: "activity-owner", Role: "owner", Active: true}}})
+}
+
+func TestSocketHeartbeatRecordsLivenessAndUptimeWhenMetadataCannotDecode(t *testing.T) {
+	withActivityDatabase(t, func(env activityTestEnvironment) {
+		principal := devices.DevicePrincipal{ScreenID: env.screenID, ScreenName: "Cafeteria TV", Enabled: true}
+		socketServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			env.server.playerSocket(w, r.WithContext(context.WithValue(r.Context(), deviceContextKey, principal)))
+		}))
+		defer socketServer.Close()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		connection, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(socketServer.URL, "http"), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer connection.CloseNow() //nolint:errcheck
+
+		var hello socketMessage
+		if err = wsjson.Read(ctx, connection, &hello); err != nil {
+			t.Fatal(err)
+		}
+		if hello.Type != "server.hello" {
+			t.Fatalf("first socket message type = %q", hello.Type)
+		}
+		if err = wsjson.Write(ctx, connection, map[string]any{
+			"type": "player.status",
+			"payload": map[string]any{
+				"screenWidth":   1920,
+				"screenHeight":  1080,
+				"playerVersion": "0.2.2",
+				"currentItemId": "layout:item",
+				"playbackState": "playing",
+			},
+		}); err != nil {
+			t.Fatal(err)
+		}
+
+		deadline := time.Now().Add(3 * time.Second)
+		for {
+			var lastHeartbeat *time.Time
+			var openIntervals int
+			_ = env.pool.QueryRow(ctx, `SELECT last_heartbeat_at FROM screens WHERE id=$1`, env.screenID).Scan(&lastHeartbeat)
+			_ = env.pool.QueryRow(ctx, `SELECT count(*) FROM screen_state_intervals WHERE screen_id=$1 AND ended_at IS NULL AND state='online'`, env.screenID).Scan(&openIntervals)
+			if lastHeartbeat != nil && openIntervals == 1 {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("socket contact was not recorded: lastHeartbeat=%v openIntervals=%d", lastHeartbeat, openIntervals)
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	})
+}
+
+func TestReplacedSocketCannotMarkActiveReplacementDisconnected(t *testing.T) {
+	withActivityDatabase(t, func(env activityTestEnvironment) {
+		principal := devices.DevicePrincipal{ScreenID: env.screenID, ScreenName: "Cafeteria TV", Enabled: true}
+		socketServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			env.server.playerSocket(w, r.WithContext(context.WithValue(r.Context(), deviceContextKey, principal)))
+		}))
+		defer socketServer.Close()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		socketURL := "ws" + strings.TrimPrefix(socketServer.URL, "http")
+		first, _, err := websocket.Dial(ctx, socketURL, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer first.CloseNow() //nolint:errcheck
+		var hello socketMessage
+		if err = wsjson.Read(ctx, first, &hello); err != nil {
+			t.Fatal(err)
+		}
+		first.CloseRead(ctx)
+
+		second, _, err := websocket.Dial(ctx, socketURL, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer second.CloseNow() //nolint:errcheck
+		if err = wsjson.Read(ctx, second, &hello); err != nil {
+			t.Fatal(err)
+		}
+
+		// Give the replaced handler enough time to run all of its defers. Its
+		// token no longer owns presence, so it must not write a disconnect.
+		time.Sleep(100 * time.Millisecond)
+		var disconnectedAt *time.Time
+		if err = env.pool.QueryRow(ctx, `SELECT last_disconnected_at FROM screens WHERE id=$1`, env.screenID).Scan(&disconnectedAt); err != nil {
+			t.Fatal(err)
+		}
+		if disconnectedAt != nil {
+			t.Fatalf("replaced socket marked the active replacement disconnected at %v", disconnectedAt)
+		}
+
+		_ = second.Close(websocket.StatusNormalClosure, "test complete")
+		deadline := time.Now().Add(3 * time.Second)
+		for {
+			_ = env.pool.QueryRow(ctx, `SELECT last_disconnected_at FROM screens WHERE id=$1`, env.screenID).Scan(&disconnectedAt)
+			if disconnectedAt != nil {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("active socket cleanup did not record a disconnect")
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	})
 }
 
 func TestPlayerActivityDeduplicatesOrdersAndDerivesSessions(t *testing.T) {
