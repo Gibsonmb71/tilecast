@@ -323,11 +323,25 @@ export class ApiClient {
           signal: controller.signal,
         },
       );
-      if (response.status === 401 || response.status === 403) {
+      if (!response.ok) {
         const text = await response.text().catch(() => "");
-        const code =
-          /"code"\s*:\s*"([^"]+)"/.exec(text)?.[1] ?? `http_${response.status}`;
-        throw new ApiError(response.status, code, "preview upload rejected");
+        let error: { code?: string; message?: string } | undefined;
+        if (text.length > 0) {
+          try {
+            const body = JSON.parse(text) as {
+              error?: { code?: string; message?: string };
+            };
+            error = body.error;
+          } catch {
+            // Preserve the HTTP status when an intermediary returns non-JSON.
+          }
+        }
+        throw new ApiError(
+          response.status,
+          error?.code ?? `http_${response.status}`,
+          error?.message ??
+            `preview upload failed with status ${response.status}`,
+        );
       }
     } catch (err) {
       if (err instanceof ApiError) {
