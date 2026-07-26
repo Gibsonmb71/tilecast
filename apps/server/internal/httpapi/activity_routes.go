@@ -28,6 +28,8 @@ func (s *server) activityRoutes(next http.Handler) http.Handler {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/activity/overview":
 			handler = http.HandlerFunc(s.activityOverview)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/activity/uptime":
+			handler = http.HandlerFunc(s.activityUptime)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/activity/proof-of-play":
 			handler = http.HandlerFunc(s.listProofOfPlay)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/activity/proof-of-play/summary":

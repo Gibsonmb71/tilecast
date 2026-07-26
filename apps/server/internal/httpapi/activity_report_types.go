@@ -122,6 +122,47 @@ type activityTimelineItem struct {
 	ResourceID  string     `json:"resourceId,omitempty"`
 }
 
+type uptimeReport struct {
+	Range struct {
+		From time.Time `json:"from"`
+		To   time.Time `json:"to"`
+	} `json:"range"`
+	Window                string               `json:"window"`
+	WindowLabel           string               `json:"windowLabel"`
+	BucketSeconds         int64                `json:"bucketSeconds"`
+	ScreensTracked        int                  `json:"screensTracked"`
+	ScreensWithDowntime   int                  `json:"screensWithDowntime"`
+	TrackedSeconds        int64                `json:"trackedSeconds"`
+	UpSeconds             int64                `json:"upSeconds"`
+	ImpairedSeconds       int64                `json:"impairedSeconds"`
+	DownSeconds           int64                `json:"downSeconds"`
+	UptimePercent         *float64             `json:"uptimePercent"`
+	PreviousUptimePercent *float64             `json:"previousUptimePercent"`
+	Buckets               []uptimeBucket       `json:"buckets"`
+	Screens               []uptimeScreenUptime `json:"screens"`
+}
+
+type uptimeBucket struct {
+	Start           time.Time `json:"start"`
+	UpPercent       float64   `json:"upPercent"`
+	ImpairedPercent float64   `json:"impairedPercent"`
+	DownPercent     float64   `json:"downPercent"`
+	UnknownPercent  float64   `json:"unknownPercent"`
+	UptimePercent   *float64  `json:"uptimePercent"`
+	ScreensDown     int       `json:"screensDown"`
+}
+
+type uptimeScreenUptime struct {
+	ScreenID        uuid.UUID `json:"screenId"`
+	ScreenName      string    `json:"screenName"`
+	UptimePercent   *float64  `json:"uptimePercent"`
+	TrackedSeconds  int64     `json:"trackedSeconds"`
+	UpSeconds       int64     `json:"upSeconds"`
+	ImpairedSeconds int64     `json:"impairedSeconds"`
+	DownSeconds     int64     `json:"downSeconds"`
+	Buckets         []string  `json:"buckets"`
+}
+
 type screenActivityData struct {
 	ScreenID                         uuid.UUID              `json:"screenId"`
 	CurrentPresentation              *proofOfPlayRecord     `json:"currentPresentation,omitempty"`

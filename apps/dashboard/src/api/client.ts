@@ -55,6 +55,8 @@ import type {
   GitHubDeviceStart,
   GitHubDevicePoll,
   UpdateDeployment,
+  UptimeReport,
+  UptimeWindow,
   ReliabilityStatus,
   PowerAssistResults,
   CalendarConfig,
@@ -719,6 +721,8 @@ export const api = {
     normalizeScreen(await request<Screen | null>(`/screens/${id}`)),
   screenReliability: (id: string) =>
     request<ReliabilityStatus>(`/screens/${id}/reliability`),
+  fleetUptime: (window: UptimeWindow) =>
+    request<UptimeReport>(`/activity/uptime?window=${window}`),
   confirmPowerAssist: (
     id: string,
     results: PowerAssistResults,

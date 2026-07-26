@@ -9,6 +9,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { api } from "../api/client";
 import type { Schedule, ScreenStatus } from "../api/types";
+import { FleetUptimePanel } from "../components/FleetUptimePanel";
 import { PageHeader } from "../components/ui";
 import "./OperationsDashboard.css";
 
@@ -109,6 +110,8 @@ export function OperationsDashboard() {
           </div>
         </section>
       )}
+
+      <FleetUptimePanel />
 
       <div className="ops-grid">
         <section
