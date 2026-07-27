@@ -25,6 +25,22 @@ import { randomUUID } from "crypto";
 import { promises as fs } from "fs";
 import { ApiClient, ApiError, NetworkError } from "./api";
 import { ActivityReporter } from "./activity";
+import {
+  PlaybackSessionTracker,
+  type TerminalReason,
+} from "./activity-sessions";
+import { TelemetryReporter } from "./telemetry";
+import {
+  assessRenderProgress,
+  initialRenderProgressState,
+  onItemPresented,
+  onPlaybackIdle,
+  onRenderProgress,
+  recordAssessment,
+  type ContentExpectation,
+  type ProgressSignal,
+  type RenderProgressState,
+} from "./render-progress";
 import { ReconnectBackoff } from "./backoff";
 import { CommandCoordinator } from "./commands";
 import { ConfigSync } from "./config";
@@ -190,6 +206,19 @@ export class PlayerRuntime {
   private commands: CommandCoordinator | null = null;
   private selfUpdater: SelfUpdater | null = null;
   private activity: ActivityReporter | null = null;
+  private sessions: PlaybackSessionTracker | null = null;
+  /** What the renderer is currently showing, so a child session can name it. */
+  private presentedItems: PresentationItem[] = [];
+  /**
+   * Meaningful-progress tracking. The supervisor is fed from this rather than
+   * from raw signals, so a legitimately motionless still image never looks
+   * like a freeze.
+   */
+  private renderProgress: RenderProgressState = initialRenderProgressState(
+    Date.now(),
+  );
+  private telemetry: TelemetryReporter | null = null;
+  private lastTelemetryTickMs = Date.now();
   private preview: LivePreview | null = null;
   private socket: PlayerSocket | null = null;
   private readonly backoff = new ReconnectBackoff({
@@ -300,6 +329,12 @@ export class PlayerRuntime {
     this.socket?.close();
     this.manifestSync.stop();
     this.commands?.stop();
+    // Close open sessions before stopping the reporter, so playback that was
+    // on screen at shutdown is reported with a real reason instead of being
+    // left for the server's bounded timeout to guess at.
+    this.telemetry?.stop();
+    this.sessions?.shutdown("process_exit");
+    void this.activity?.flush();
     this.activity?.stop();
     this.preview?.stop();
   }
@@ -452,6 +487,23 @@ export class PlayerRuntime {
       Intl.DateTimeFormat().resolvedOptions().timeZone,
     );
     await this.activity.start();
+    // Contract v2: this player must open real playback sessions, not only
+    // report terminal events the server cannot match to a start.
+    // Bounded telemetry: gauges are read at flush time and counters are
+    // accumulated by the tick below, so nothing high-frequency is uploaded.
+    this.telemetry = new TelemetryReporter(
+      this.client,
+      () => this.telemetryGauges(),
+      () => Date.now(),
+    );
+    this.telemetry.start();
+    this.timers.push(setInterval(() => this.accumulateTelemetry(), 10_000));
+
+    this.sessions = new PlaybackSessionTracker(
+      (event) => void this.activity?.record(event),
+      () => Date.now(),
+      () => randomUUID(),
+    );
 
     this.preview = new LivePreview(
       this.client,
@@ -494,7 +546,7 @@ export class PlayerRuntime {
           log.info("connected");
           if (wasDown) {
             void this.activity?.record({
-              eventType: "connection.recovered",
+              eventType: "connection.restored",
               category: "connectivity",
               result: "recovered",
             });
@@ -621,39 +673,179 @@ export class PlayerRuntime {
   }
 
   /** Renderer progress: item transitions, video advancement, image shown. */
-  onPlaybackProgress(itemId: string | null, kind: string): void {
-    this.currentItemId = itemId;
-    this.supervisorState = onProgress(
-      this.supervisorState,
-      Date.now(),
-      DEFAULT_SUPERVISOR_CONFIG,
-    );
-    if (kind === "item-transition") {
-      void this.activity?.record({
-        eventType: "content.completed",
-        category: "playback",
-        result: "completed",
-        contentId: itemId ?? undefined,
-        playlistItemId: itemId ?? undefined,
-        trigger: this.selection?.source,
-        scheduleId: this.selection?.scheduleId ?? undefined,
-        emergencyId: this.selection?.emergencyId ?? undefined,
-        manifestVersion: this.activeManifest?.manifestVersion,
+  onPlaybackProgress(
+    itemId: string | null,
+    kind: string,
+    zoneId?: string,
+  ): void {
+    const now = Date.now();
+    const signal = progressSignalFor(kind);
+    if (kind === "item-started" && itemId) {
+      const item = this.presentedItems.find(
+        (candidate) => candidate.id === itemId,
+      );
+      const zones = layoutZoneExpectations(item);
+      this.renderProgress = onItemPresented(this.renderProgress, now, {
+        itemId,
+        expectation: contentExpectationFor(item?.kind),
+        expectedDurationMs: item?.durationMs ?? null,
+        zoneIds: zones.zoneIds,
+        recurringZoneIds: zones.recurringZoneIds,
       });
+    } else if (signal) {
+      this.renderProgress = onRenderProgress(this.renderProgress, now, {
+        signal,
+        itemId,
+        zoneId,
+      });
+    }
+    // The supervisor only sees progress the content was actually expected to
+    // produce; feeding it every raw signal is how a frozen screen keeps a
+    // player looking healthy.
+    if (assessRenderProgress(this.renderProgress, now).progressing) {
+      this.supervisorState = onProgress(
+        this.supervisorState,
+        now,
+        DEFAULT_SUPERVISOR_CONFIG,
+      );
+    }
+    if (kind === "item-started") {
+      // The renderer reports the item it is about to show, which is what opens
+      // the child session. Without this the server would only ever see a
+      // terminal event and could not derive a real playback interval.
+      this.currentItemId = itemId;
+      if (itemId) this.sessions?.startContent(this.contentContextFor(itemId));
+      return;
+    }
+    this.currentItemId = itemId;
+    if (kind === "item-transition") {
+      this.sessions?.finishContent("completed", "expected_item_boundary");
       this.onItemBoundary();
     }
+  }
+
+  /**
+   * The latest value of each telemetry gauge. Read at flush time so the
+   * snapshot is genuinely current rather than whatever was last pushed.
+   */
+  private telemetryGauges() {
+    const assessment = this.renderProgressStatus();
+    const progress = this.renderProgress;
+    return {
+      currentItemId: this.currentItemId ?? undefined,
+      itemStartedAt:
+        progress.itemStartedAtMs == null
+          ? undefined
+          : new Date(progress.itemStartedAtMs).toISOString(),
+      lastMeaningfulProgressAt:
+        assessment.lastMeaningfulProgressAt == null
+          ? undefined
+          : new Date(assessment.lastMeaningfulProgressAt).toISOString(),
+      playbackStallDurationMs: assessment.stallDurationMs,
+      stallReason: assessment.stallReason ?? undefined,
+      rendererState: this.playbackState,
+      rendererResponding: assessment.rendererResponding,
+      expectedMotion: assessment.expectedMotion,
+      // Download and cache gauges are omitted rather than guessed: this
+      // player does not yet expose them, and a fabricated zero would read as
+      // an empty cache.
+      processUptimeSeconds: Math.floor((Date.now() - this.startedAt) / 1_000),
+    };
+  }
+
+  /**
+   * Accumulates the counters the server rolls up. Runs on a short tick and
+   * adds elapsed seconds, so a sample is always a delta over a known span
+   * rather than an instantaneous reading.
+   */
+  private accumulateTelemetry(): void {
+    if (!this.telemetry) return;
+    const now = Date.now();
+    const seconds = Math.max(
+      0,
+      Math.round((now - this.lastTelemetryTickMs) / 1_000),
+    );
+    this.lastTelemetryTickMs = now;
+    if (seconds === 0) return;
+
+    this.telemetry.addSeconds(
+      this.socketOpen ? "connectedSeconds" : "disconnectedSeconds",
+      seconds,
+    );
+    const assessment = assessRenderProgress(this.renderProgress, now);
+    // Healthy and stalled seconds come from meaningful progress, not from
+    // whether a renderer object exists.
+    this.telemetry.addSeconds(
+      assessment.progressing
+        ? "healthyPlaybackSeconds"
+        : "stalledPlaybackSeconds",
+      seconds,
+    );
+  }
+
+  /** The current render-progress assessment, for the heartbeat and telemetry. */
+  renderProgressStatus() {
+    const assessment = assessRenderProgress(this.renderProgress, Date.now());
+    this.renderProgress = recordAssessment(this.renderProgress, assessment);
+    return assessment;
+  }
+
+  /**
+   * The render-progress fields the server records. Reported every heartbeat so
+   * "the process is answering" and "the screen is actually working" stay
+   * visibly different facts.
+   */
+  private renderProgressHeartbeatFields() {
+    const assessment = this.renderProgressStatus();
+    return {
+      lastMeaningfulProgressAt:
+        assessment.lastMeaningfulProgressAt == null
+          ? undefined
+          : new Date(assessment.lastMeaningfulProgressAt).toISOString(),
+      stallStartedAt:
+        assessment.stallStartedAt == null
+          ? undefined
+          : new Date(assessment.stallStartedAt).toISOString(),
+      stallDurationMs: assessment.stallDurationMs,
+      stallReason: assessment.stallReason ?? undefined,
+      expectedMotion: assessment.expectedMotion,
+      rendererResponding: assessment.rendererResponding,
+      currentItemStartedAt:
+        this.renderProgress.itemStartedAtMs == null
+          ? undefined
+          : new Date(this.renderProgress.itemStartedAtMs).toISOString(),
+    };
+  }
+
+  /** Describes the item now rendering, so its session carries its identity. */
+  private contentContextFor(itemId: string) {
+    const item = this.presentedItems.find(
+      (candidate) => candidate.id === itemId,
+    );
+    return {
+      contentId: itemId,
+      contentType: item?.kind ?? "media",
+      playlistItemId: itemId,
+      expectedDurationMs: item?.durationMs ?? undefined,
+    };
   }
 
   onPlaybackError(itemId: string | null, message: string): void {
     this.lastPlaybackError = message.slice(0, 240);
     log.warn("playback error reported", { itemId, message });
+    // A failure must be visible even when no child session is open, so the
+    // tracker's close is followed by an unconditional renderer failure event.
+    this.sessions?.finishContent("failed", "renderer_failure", {
+      code: "renderer_failure",
+      message,
+    });
     void this.activity?.record({
-      eventType: "content.failed",
+      eventType: "renderer.failure",
       category: "playback",
       severity: "error",
       result: "failed",
       contentId: itemId ?? undefined,
-      playlistItemId: itemId ?? undefined,
+      failureCode: "renderer_failure",
       failureMessage: message,
       manifestVersion: this.activeManifest?.manifestVersion,
     });
@@ -677,11 +869,53 @@ export class PlayerRuntime {
     if (next.state === "playing") {
       this.generation += 1;
       this.playbackState = "playing";
+      this.presentedItems = next.items;
+      this.openPresentationSession(next);
       this.host.present({ ...next, generation: this.generation });
     } else {
       this.playbackState = next.state;
+      this.presentedItems = [];
+      this.renderProgress = onPlaybackIdle(this.renderProgress, Date.now());
+      // Nothing is playing any more, so the root session ends here rather than
+      // being left open for the server's bounded timeout to guess at.
+      this.sessions?.stopPresentation(
+        next.state === "safe-mode" ? "recovery_action" : "schedule_transition",
+        next.state === "safe-mode" ? "failed" : "partial",
+      );
       this.host.present(next);
     }
+  }
+
+  /**
+   * Opens the root session for what is now on screen. The presentation
+   * identity, not the generation counter, decides whether this is new content:
+   * a re-evaluation resolving to the same playlist must not restart the session
+   * and truncate its measured duration.
+   */
+  private openPresentationSession(next: Presentation & { state: "playing" }) {
+    const selection = this.selection;
+    const presentationId =
+      selection?.layoutId ?? selection?.playlistId ?? next.items[0]?.id ?? "";
+    this.sessions?.startPresentation(
+      {
+        key: `${selection?.source ?? ""}:${presentationId}:${this.activeManifest?.manifestVersion ?? ""}`,
+        presentationType: selection?.layoutId ? "layout" : "playlist",
+        presentationId,
+        trigger: selection?.source,
+        scheduleId: selection?.scheduleId ?? undefined,
+        emergencyId: selection?.emergencyId ?? undefined,
+        manifestVersion: this.activeManifest?.manifestVersion,
+      },
+      this.replacementReason(),
+    );
+  }
+
+  /** Why the outgoing presentation is being replaced, from what selected it. */
+  private replacementReason(): TerminalReason {
+    if (this.selection?.emergencyId) return "emergency_takeover";
+    if (this.selection?.scheduleId) return "schedule_transition";
+    if (this.selection?.source === "direct") return "direct_assignment_change";
+    return "manifest_replacement";
   }
   private lastPresentedKey = "";
 
@@ -1100,8 +1334,8 @@ export class PlayerRuntime {
       void this.activity?.record({
         eventType:
           decision.action === "enter_safe_mode"
-            ? "reliability.safe_mode"
-            : "reliability.self_heal",
+            ? "safe_mode.entered"
+            : "self_heal.attempted",
         category: "reliability",
         severity:
           decision.action === "enter_safe_mode" ? "critical" : "warning",
@@ -1168,6 +1402,7 @@ export class PlayerRuntime {
       recoveryLevel: this.supervisorState.escalationStep,
       recoveryCount: this.supervisorState.ladderRunsAtMs.length,
       websiteRendererRecoveryCount: this.websiteRecoveryCount,
+      ...this.renderProgressHeartbeatFields(),
     };
     if (this.lastHealthyPlaybackAt) {
       heartbeat.lastHealthyPlaybackAt = this.lastHealthyPlaybackAt;
@@ -1368,4 +1603,90 @@ export class PlayerRuntime {
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
+}
+
+/**
+ * What progress looks like for each kind of item. Getting this wrong in either
+ * direction is costly: too strict calls a valid still image frozen, too loose
+ * lets a genuinely frozen video pass.
+ */
+export function contentExpectationFor(
+  kind: string | undefined,
+): ContentExpectation {
+  switch (kind) {
+    case "video":
+      return "video";
+    case "image":
+      return "still";
+    case "website":
+    case "youtube":
+      return "website";
+    case "layout":
+      return "layout";
+    case "widget":
+      // A widget renders once and may then sit still, like a website.
+      return "website";
+    default:
+      return "indefinite";
+  }
+}
+
+/**
+ * Maps the renderer's own progress vocabulary onto contract progress signals.
+ *
+ * The `*-alive` kinds are liveness pings, not evidence that anything is
+ * happening on screen, so they map to a renderer health confirmation rather
+ * than to progress. Treating them as progress is exactly how a player keeps
+ * reporting healthy over a frozen display.
+ */
+function progressSignalFor(kind: string): ProgressSignal | null {
+  switch (kind) {
+    case "item-transition":
+      return "item_transition";
+    case "video-progress":
+      return "video_position_advanced";
+    case "image-shown":
+      return "image_displayed";
+    case "website-loaded":
+    case "widget-shown":
+    case "layout-shown":
+      return "website_first_render";
+    case "layout-zone-rendered":
+      return "layout_child_rendered";
+    case "frame-changed":
+      return "frame_fingerprint_changed";
+    case "website-alive":
+    case "widget-alive":
+    case "layout-alive":
+      return "renderer_health_confirmed";
+    default:
+      return null;
+  }
+}
+
+/**
+ * The zones a layout owes render evidence for, split by what each one can be
+ * held to. Every zone owes a first render; only a rotating playlist zone owes
+ * continuing evidence, because a static widget or image zone renders once and
+ * legitimately holds — the same reasoning that protects a still image.
+ */
+export function layoutZoneExpectations(item: PresentationItem | undefined): {
+  zoneIds: string[];
+  recurringZoneIds: string[];
+} {
+  if (!item || item.kind !== "layout" || !item.layout) {
+    return { zoneIds: [], recurringZoneIds: [] };
+  }
+  const zoneIds: string[] = [];
+  const recurringZoneIds: string[] = [];
+  for (const zone of item.layout.zones) {
+    if (!zone.id) continue;
+    zoneIds.push(zone.id);
+    if (zone.playlistItems && zone.playlistItems.length > 1) {
+      // A single-item zone loops in place and does not advance, so it is not
+      // owed continuing evidence either.
+      recurringZoneIds.push(zone.id);
+    }
+  }
+  return { zoneIds, recurringZoneIds };
 }

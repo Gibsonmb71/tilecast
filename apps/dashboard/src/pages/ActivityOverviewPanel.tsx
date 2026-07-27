@@ -1,7 +1,12 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router";
-import { MonitorCheck, TriangleAlert } from "lucide-react";
+import {
+  CircleHelp,
+  MonitorCheck,
+  MonitorX,
+  Radio,
+  TriangleAlert,
+} from "lucide-react";
 import {
   MetricTile,
   ToggleGroup,
@@ -19,71 +24,145 @@ import {
   formatWhen,
   humanize,
   Loading,
-  ResultBadge,
 } from "./ActivityShared";
 import type { Overview } from "./ActivityShared";
-
-/** Most urgent first, so the worst problem is never below the fold. */
-const severityRank: Record<string, number> = {
-  critical: 0,
-  error: 1,
-  warning: 2,
-};
+import { useActivityLinkBuilder, type ActivityTabName } from "./activityLinks";
+import {
+  IncidentAnalyticsPanel,
+  NeedsAttentionPanel,
+} from "./ActivityIncidents";
+import { CompliancePanel } from "./ActivityCompliance";
 
 type MetricSpec = {
   key: keyof Overview["cards"];
   label: string;
   direction: MetricDirection;
-  /** Where the records behind the number live. */
-  to: string;
+  /**
+   * The records behind the number, as a destination tab and the filters that
+   * select exactly the rows the metric counted. The date range is added by the
+   * link builder from the range the reader currently has selected.
+   */
+  destination: { tab: ActivityTabName; filters?: Record<string, string> };
   hint?: string;
   format?: (value: number) => string;
 };
 
 const primaryMetrics: MetricSpec[] = [
   {
-    key: "confirmedPlaybackDurationMs",
-    label: "Confirmed playback",
+    key: "confirmedScreenPlaybackMs",
+    label: "Confirmed screen playback",
     direction: "up-is-good",
-    to: "/activity?tab=proof",
+    hint: "Wall clock; overlapping zones merged",
+    destination: { tab: "proof", filters: { sessionType: "presentation" } },
+    format: formatDuration,
+  },
+  {
+    key: "contentExposureMs",
+    label: "Content exposure",
+    direction: "up-is-good",
+    hint: "Sums content playing at the same time",
+    destination: { tab: "proof", filters: { sessionType: "content" } },
     format: formatDuration,
   },
   {
     key: "playbackFailures",
     label: "Playback failures",
     direction: "up-is-bad",
-    to: "/activity?tab=proof&result=failed",
+    destination: { tab: "proof", filters: { result: "failed" } },
   },
   {
     key: "interruptedPlays",
     label: "Interrupted plays",
     direction: "up-is-bad",
-    to: "/activity?tab=proof&result=partial",
-  },
-  {
-    key: "emergencyActivations",
-    label: "Emergency activations",
-    direction: "neutral",
-    to: "/activity?tab=events&category=emergencies",
+    // Only unexpected endings. A scheduled changeover also ends playback early
+    // and is exactly what was asked for, so result=partial would over-report.
+    hint: "Ended unexpectedly, not by a schedule change",
+    destination: { tab: "proof", filters: { terminalReason: "unexpected" } },
   },
 ];
 
 const secondaryMetrics: MetricSpec[] = [
   {
+    key: "emergencyActivations",
+    label: "Emergency activations",
+    direction: "neutral",
+    destination: { tab: "events", filters: { category: "emergencies" } },
+  },
+  {
+    key: "screensWithReportingGaps",
+    label: "Screens with reporting gaps",
+    direction: "up-is-bad",
+    // Heartbeat gaps are warning-level connectivity events, so filtering to
+    // errors would open a report that excludes most of what was counted.
+    destination: { tab: "events", filters: { category: "connectivity" } },
+  },
+  {
     key: "failedPlayerUpdates",
     label: "Failed Player updates",
     direction: "up-is-bad",
-    to: "/activity?tab=events&category=updates&result=failed",
+    destination: {
+      tab: "events",
+      filters: { category: "updates", result: "failed" },
+    },
   },
   {
     key: "recentAdministrativeChanges",
     label: "Administrative changes",
     direction: "neutral",
-    to: "/activity?tab=audit&result=success",
+    destination: { tab: "audit", filters: { result: "success" } },
+  },
+];
+
+type FleetSpec = {
+  key: keyof Overview["fleet"];
+  label: string;
+  hint: string;
+  icon: typeof MonitorCheck;
+  destination?: { tab: ActivityTabName; filters?: Record<string, string> };
+};
+
+/**
+ * Online is listed first and apart from the rest: it is reachability only, and
+ * conflating it with health is exactly what the old single count did. The four
+ * states below it partition the measured fleet.
+ */
+const fleetStates: FleetSpec[] = [
+  {
+    key: "online",
+    label: "Online",
+    hint: "Reporting within the heartbeat grace period",
+    icon: Radio,
+  },
+  {
+    key: "healthy",
+    label: "Healthy",
+    hint: "Confirmed playing, no current fault",
+    icon: MonitorCheck,
+  },
+  {
+    key: "impaired",
+    label: "Impaired",
+    hint: "Reporting, but playback or the player is faulty",
+    icon: TriangleAlert,
+    destination: { tab: "events", filters: { category: "reliability" } },
+  },
+  {
+    key: "offline",
+    label: "Offline",
+    hint: "Expected to report and has not",
+    icon: MonitorX,
+    destination: { tab: "events", filters: { category: "connectivity" } },
+  },
+  {
+    key: "unmeasured",
+    label: "Unmeasured",
+    hint: "Not enough evidence to classify yet",
+    icon: CircleHelp,
   },
 ];
 
 export function OverviewTab({ range }: { range: ResolvedTimeRange }) {
+  const activityLink = useActivityLinkBuilder();
   const query = useQuery({
     queryKey: ["activity", "overview", range.from, range.to],
     queryFn: () =>
@@ -113,11 +192,6 @@ export function OverviewTab({ range }: { range: ResolvedTimeRange }) {
   const data = query.data;
   if (!data) return null;
   // Older servers marshal empty Go slices as null.
-  const needsAttention = [...(data.needsAttention ?? [])].sort(
-    (a, b) =>
-      (severityRank[a.severity] ?? 3) - (severityRank[b.severity] ?? 3) ||
-      b.occurredAt.localeCompare(a.occurredAt),
-  );
   const timeline = data.timeline ?? [];
 
   function deltaFor(spec: MetricSpec): MetricDelta | undefined {
@@ -139,66 +213,54 @@ export function OverviewTab({ range }: { range: ResolvedTimeRange }) {
         key={spec.key}
         label={spec.label}
         value={spec.format ? spec.format(raw) : raw}
-        hint={spec.hint}
-        to={spec.to}
+        hint={spec.hint ?? `During ${range.label}`}
+        to={activityLink(spec.destination.tab, spec.destination.filters)}
         delta={deltaFor(spec)}
       />
     );
   }
 
+  // Older servers predate fleet health; showing zeroes would assert an all-down
+  // fleet, so the section is omitted until the server reports it.
+  const fleet = data.fleet;
+
   return (
     <div className="activity-overview">
-      <section className="activity-health" aria-label="Fleet health">
-        <MetricTile
-          icon={MonitorCheck}
-          label="Screens reporting normally"
-          value={data.cards.screensReportingNormally}
-          hint="Right now, not over the selected range"
-          to="/screens"
-        />
-        <MetricTile
-          icon={TriangleAlert}
-          label="Screens with playback gaps"
-          value={data.cards.screensWithPlaybackGaps}
-          hint={`Seen during ${range.label}`}
-          to="/activity?tab=events&severity=error"
-        />
-      </section>
-
-      <section className="activity-panel">
-        <header>
-          <div>
-            <h3>
-              Needs attention
-              {needsAttention.length > 0 && (
-                <span className="activity-attention-count">
-                  {needsAttention.length}
-                </span>
-              )}
-            </h3>
-            <p>Current unresolved operational issues, most urgent first.</p>
-          </div>
-        </header>
-        {needsAttention.length === 0 ? (
-          <EmptyState message="No unresolved Activity issues in this range." />
-        ) : (
-          <div className="activity-attention-list">
-            {needsAttention.map((item) => (
-              <Link
-                key={`${item.screenId}-${item.kind}`}
-                to={`/screens/${item.screenId}?tab=activity`}
-              >
-                <ResultBadge value={item.severity} />
-                <span>
-                  <strong>{item.screenName}</strong>
-                  <small>{item.description}</small>
-                </span>
-                <time>{formatWhen(item.occurredAt)}</time>
-              </Link>
+      {fleet && (
+        <section
+          className="activity-panel activity-health"
+          aria-label="Fleet health"
+        >
+          <header>
+            <div>
+              <h3>Fleet health</h3>
+              <p>
+                {fleet.measured} enabled, paired screens measured right now, not
+                over {range.label}. A screen is healthy only when it is
+                reporting and confirmed to be playing what it should be.
+              </p>
+            </div>
+          </header>
+          <div className="activity-health__states">
+            {fleetStates.map((state) => (
+              <MetricTile
+                key={state.key}
+                className={`activity-health__state activity-health__state--${state.key}`}
+                icon={state.icon}
+                label={state.label}
+                value={fleet[state.key]}
+                hint={state.hint}
+                to={
+                  state.destination &&
+                  activityLink(state.destination.tab, state.destination.filters)
+                }
+              />
             ))}
           </div>
-        )}
-      </section>
+        </section>
+      )}
+
+      <NeedsAttentionPanel />
 
       <FleetUptimePanel description="Measured player time spent connected and playing, over its own fixed window rather than the range selected above." />
 
@@ -210,6 +272,10 @@ export function OverviewTab({ range }: { range: ResolvedTimeRange }) {
           {secondaryMetrics.map(tile)}
         </div>
       </section>
+
+      <CompliancePanel range={range} />
+
+      <IncidentAnalyticsPanel range={range} />
 
       <ImportantTimeline items={timeline} />
     </div>

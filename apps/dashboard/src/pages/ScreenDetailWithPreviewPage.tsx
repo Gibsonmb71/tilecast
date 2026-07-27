@@ -20,18 +20,12 @@ export function ScreenDetailWithPreviewPage() {
       </div>
     );
   }
-  if (tab === "activity") {
-    return (
-      <div className="screen-activity-route">
-        <ScreenDetailPage />
-        <ScreenActivityPanel screenId={id} />
-      </div>
-    );
-  }
-
+  // The detail page renders only the selected tab's panel, so each extra panel
+  // simply follows it. No wrapper hides Overview any more.
   return (
     <>
       <ScreenDetailPage />
+      {tab === "activity" && <ScreenActivityPanel screenId={id} />}
       {tab === "reliability" && <FireTvAccessibilityAdbPanel screenId={id} />}
     </>
   );

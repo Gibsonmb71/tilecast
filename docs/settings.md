@@ -27,4 +27,6 @@ Players preserve the current and previous valid configuration in Room, validate 
 
 Owner exports contain schema version, timestamp, Tilecast version, organization settings, and group policy metadata. They exclude passwords, sessions, device credentials, connection strings, signing keys, website state, media files, and user preferences. Import requires validation, preview, confirmation, revision checking, and audit.
 
-Retention values are typed and bounded. Maintenance routes are fixed actions; they cannot execute shell commands, SQL supplied by users, restart services, or install software.
+Retention values are typed and bounded, and cover raw Player events, proof-of-play sessions, screen-state intervals, audit logs, detailed diagnostic metadata, and telemetry rollups. Telemetry rollups are the only telemetry dataset that accumulates — the snapshot is one row per screen updated in place and raw samples are never stored — so they are the only one with a retention bound. See [Activity retention](activity.md#retention) for defaults and hard limits.
+
+Maintenance routes are fixed actions; they cannot execute shell commands, SQL supplied by users, restart services, or install software.

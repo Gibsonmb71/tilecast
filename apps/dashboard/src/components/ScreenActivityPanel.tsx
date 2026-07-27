@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useSearchParams } from "react-router";
+import { Link } from "react-router";
 import { AlertTriangle, Clock3, MonitorCheck } from "lucide-react";
+import { buildActivityLink } from "../pages/activityLinks";
+import { ScreenTimeline } from "./ScreenTimeline";
 import "./ScreenActivityPanel.css";
 
 type ScreenActivity = {
@@ -55,167 +55,138 @@ async function loadScreenActivity(id: string): Promise<ScreenActivity> {
   return body.data;
 }
 
+/**
+ * The Activity panel body only. The screen-detail page owns the Activity tab
+ * itself through the shared ViewTabs component, so this renders no tab control
+ * and never reaches outside its own subtree.
+ */
 export function ScreenActivityPanel({ screenId }: { screenId: string }) {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [tabTarget, setTabTarget] = useState<HTMLElement | null>(null);
   const query = useQuery({
     queryKey: ["activity", "screen", screenId],
     queryFn: () => loadScreenActivity(screenId),
     refetchInterval: 20_000,
   });
 
-  useEffect(() => {
-    const find = () => {
-      const target = document.querySelector<HTMLElement>(".screen-detail-tabs");
-      if (target) {
-        target
-          .querySelectorAll("button[aria-current]")
-          .forEach((button) => button.removeAttribute("aria-current"));
-      }
-      setTabTarget(target);
-    };
-    find();
-    const observer = new MutationObserver(find);
-    observer.observe(document.body, { childList: true, subtree: true });
-    return () => observer.disconnect();
-  }, []);
-
   const data = query.data;
   return (
-    <>
-      {tabTarget &&
-        createPortal(
-          <button
-            type="button"
-            aria-current="page"
-            onClick={() => {
-              const next = new URLSearchParams(searchParams);
-              next.set("tab", "activity");
-              setSearchParams(next);
-            }}
-          >
-            Activity
-          </button>,
-          tabTarget,
-        )}
-      <section
-        className="screen-activity-panel"
-        aria-labelledby="screen-activity-title"
-      >
-        <header>
-          <div>
-            <h3 id="screen-activity-title">Activity</h3>
-            <p>Recent Player-confirmed playback and technical screen events.</p>
+    <section
+      className="screen-activity-panel"
+      aria-labelledby="screen-activity-title"
+    >
+      <header>
+        <div>
+          <h3 id="screen-activity-title">Activity</h3>
+          <p>Recent Player-confirmed playback and technical screen events.</p>
+        </div>
+        <Link
+          className="button button--secondary"
+          to={buildActivityLink("proof", { screen: screenId })}
+        >
+          Open filtered Activity
+        </Link>
+      </header>
+      {query.isLoading && (
+        <div className="table-loading">Loading screen Activity…</div>
+      )}
+      {query.error && (
+        <div className="notice notice--error">{query.error.message}</div>
+      )}
+      {data && (
+        <>
+          <div className="screen-activity-cards">
+            <article>
+              <MonitorCheck size={18} />
+              <span>Current presentation</span>
+              <strong>
+                {data.currentPresentation?.presentationName ||
+                  data.currentPresentation?.presentationId ||
+                  "Not reported"}
+              </strong>
+            </article>
+            <article>
+              <Clock3 size={18} />
+              <span>Last healthy playback</span>
+              <strong>{formatDate(data.lastHealthyPlayback)}</strong>
+            </article>
+            <article>
+              <MonitorCheck size={18} />
+              <span>Last manifest activation</span>
+              <strong>
+                {formatDate(data.lastSuccessfulManifestActivation)}
+              </strong>
+            </article>
+            <article>
+              <AlertTriangle size={18} />
+              <span>Playback gaps</span>
+              <strong>{data.playbackGaps}</strong>
+            </article>
           </div>
-          <Link
-            className="button button--secondary"
-            to={`/activity?tab=proof&screen=${screenId}`}
-          >
-            Open filtered Activity
-          </Link>
-        </header>
-        {query.isLoading && (
-          <div className="table-loading">Loading screen Activity…</div>
-        )}
-        {query.error && (
-          <div className="notice notice--error">{query.error.message}</div>
-        )}
-        {data && (
-          <>
-            <div className="screen-activity-cards">
-              <article>
-                <MonitorCheck size={18} />
-                <span>Current presentation</span>
-                <strong>
-                  {data.currentPresentation?.presentationName ||
-                    data.currentPresentation?.presentationId ||
-                    "Not reported"}
-                </strong>
-              </article>
-              <article>
-                <Clock3 size={18} />
-                <span>Last healthy playback</span>
-                <strong>{formatDate(data.lastHealthyPlayback)}</strong>
-              </article>
-              <article>
-                <MonitorCheck size={18} />
-                <span>Last manifest activation</span>
-                <strong>
-                  {formatDate(data.lastSuccessfulManifestActivation)}
-                </strong>
-              </article>
-              <article>
-                <AlertTriangle size={18} />
-                <span>Playback gaps</span>
-                <strong>{data.playbackGaps}</strong>
-              </article>
+          {data.currentIssue && (
+            <div className="notice notice--warning screen-activity-issue">
+              <strong>{humanize(data.currentIssue.kind)}</strong>
+              <p>{data.currentIssue.description}</p>
             </div>
-            {data.currentIssue && (
-              <div className="notice notice--warning screen-activity-issue">
-                <strong>{humanize(data.currentIssue.kind)}</strong>
-                <p>{data.currentIssue.description}</p>
-              </div>
-            )}
-            <div className="screen-activity-columns">
-              <section>
-                <header>
-                  <h4>Recent proof of play</h4>
-                </header>
-                {data.recentProofOfPlay.length ? (
-                  data.recentProofOfPlay.map((item) => (
-                    <div className="screen-activity-row" key={item.id}>
-                      <span>
-                        <strong>
-                          {item.contentName ||
-                            item.contentId ||
-                            item.presentationName ||
-                            item.presentationId ||
-                            "Presentation"}
-                        </strong>
-                        <small>{formatDate(item.startedAt)}</small>
-                      </span>
-                      <span
-                        className={`activity-badge activity-badge--${item.result}`}
-                      >
-                        {humanize(item.result)}
-                      </span>
-                    </div>
-                  ))
-                ) : (
-                  <p className="screen-activity-empty">
-                    No proof of play has been reported.
-                  </p>
-                )}
-              </section>
-              <section>
-                <header>
-                  <h4>Recent technical events</h4>
-                </header>
-                {data.recentEvents.length ? (
-                  data.recentEvents.map((item) => (
-                    <div className="screen-activity-row" key={item.id}>
-                      <span>
-                        <strong>{humanize(item.eventType)}</strong>
-                        <small>{formatDate(item.timestamp)}</small>
-                      </span>
-                      <span
-                        className={`activity-badge activity-badge--${item.severity}`}
-                      >
-                        {humanize(item.severity)}
-                      </span>
-                    </div>
-                  ))
-                ) : (
-                  <p className="screen-activity-empty">
-                    No technical events have been reported.
-                  </p>
-                )}
-              </section>
-            </div>
-          </>
-        )}
-      </section>
-    </>
+          )}
+          <ScreenTimeline screenId={screenId} />
+          <div className="screen-activity-columns">
+            <section>
+              <header>
+                <h4>Recent proof of play</h4>
+              </header>
+              {data.recentProofOfPlay.length ? (
+                data.recentProofOfPlay.map((item) => (
+                  <div className="screen-activity-row" key={item.id}>
+                    <span>
+                      <strong>
+                        {item.contentName ||
+                          item.contentId ||
+                          item.presentationName ||
+                          item.presentationId ||
+                          "Presentation"}
+                      </strong>
+                      <small>{formatDate(item.startedAt)}</small>
+                    </span>
+                    <span
+                      className={`activity-badge activity-badge--${item.result}`}
+                    >
+                      {humanize(item.result)}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <p className="screen-activity-empty">
+                  No proof of play has been reported.
+                </p>
+              )}
+            </section>
+            <section>
+              <header>
+                <h4>Recent technical events</h4>
+              </header>
+              {data.recentEvents.length ? (
+                data.recentEvents.map((item) => (
+                  <div className="screen-activity-row" key={item.id}>
+                    <span>
+                      <strong>{humanize(item.eventType)}</strong>
+                      <small>{formatDate(item.timestamp)}</small>
+                    </span>
+                    <span
+                      className={`activity-badge activity-badge--${item.severity}`}
+                    >
+                      {humanize(item.severity)}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <p className="screen-activity-empty">
+                  No technical events have been reported.
+                </p>
+              )}
+            </section>
+          </div>
+        </>
+      )}
+    </section>
   );
 }
 

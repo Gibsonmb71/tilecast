@@ -34,37 +34,41 @@ type screenEventPage struct {
 }
 
 type proofOfPlayRecord struct {
-	ID                   uuid.UUID      `json:"id"`
-	StartedAt            time.Time      `json:"startedAt"`
-	EndedAt              *time.Time     `json:"endedAt,omitempty"`
-	ScreenID             uuid.UUID      `json:"screenId"`
-	ScreenName           string         `json:"screenName"`
-	GroupID              *uuid.UUID     `json:"groupId,omitempty"`
-	GroupName            string         `json:"groupName,omitempty"`
-	PresentationType     string         `json:"presentationType,omitempty"`
-	PresentationID       string         `json:"presentationId,omitempty"`
-	PresentationRevision string         `json:"presentationRevision,omitempty"`
-	PresentationName     string         `json:"presentationName,omitempty"`
-	ContentType          string         `json:"contentType,omitempty"`
-	ContentID            string         `json:"contentId,omitempty"`
-	ContentName          string         `json:"contentName,omitempty"`
-	PlaylistItemID       string         `json:"playlistItemId,omitempty"`
-	LayoutPlacementID    string         `json:"layoutPlacementId,omitempty"`
-	ActualDurationMS     *int64         `json:"actualDurationMs,omitempty"`
-	ExpectedDurationMS   *int64         `json:"expectedDurationMs,omitempty"`
-	Result               string         `json:"result"`
-	Trigger              string         `json:"trigger,omitempty"`
-	ScheduleID           string         `json:"scheduleId,omitempty"`
-	EmergencyID          string         `json:"emergencyId,omitempty"`
-	ManifestVersion      *int64         `json:"manifestVersion,omitempty"`
-	FailureCode          string         `json:"failureCode,omitempty"`
-	SourceID             string         `json:"sourceId,omitempty"`
-	SelectedRecordID     string         `json:"selectedRecordId,omitempty"`
-	SelectionDate        *time.Time     `json:"selectionDate,omitempty"`
-	SourceCachedAt       *time.Time     `json:"sourceCachedAt,omitempty"`
-	SourceRevision       string         `json:"sourceRevision,omitempty"`
-	SnapshotHash         string         `json:"snapshotHash,omitempty"`
-	Details              map[string]any `json:"details"`
+	ID                   uuid.UUID  `json:"id"`
+	StartedAt            time.Time  `json:"startedAt"`
+	EndedAt              *time.Time `json:"endedAt,omitempty"`
+	ScreenID             uuid.UUID  `json:"screenId"`
+	ScreenName           string     `json:"screenName"`
+	GroupID              *uuid.UUID `json:"groupId,omitempty"`
+	GroupName            string     `json:"groupName,omitempty"`
+	PresentationType     string     `json:"presentationType,omitempty"`
+	PresentationID       string     `json:"presentationId,omitempty"`
+	PresentationRevision string     `json:"presentationRevision,omitempty"`
+	PresentationName     string     `json:"presentationName,omitempty"`
+	ContentType          string     `json:"contentType,omitempty"`
+	ContentID            string     `json:"contentId,omitempty"`
+	ContentName          string     `json:"contentName,omitempty"`
+	PlaylistItemID       string     `json:"playlistItemId,omitempty"`
+	LayoutPlacementID    string     `json:"layoutPlacementId,omitempty"`
+	ActualDurationMS     *int64     `json:"actualDurationMs,omitempty"`
+	ExpectedDurationMS   *int64     `json:"expectedDurationMs,omitempty"`
+	Result               string     `json:"result"`
+	Trigger              string     `json:"trigger,omitempty"`
+	ScheduleID           string     `json:"scheduleId,omitempty"`
+	EmergencyID          string     `json:"emergencyId,omitempty"`
+	ManifestVersion      *int64     `json:"manifestVersion,omitempty"`
+	FailureCode          string     `json:"failureCode,omitempty"`
+	SourceID             string     `json:"sourceId,omitempty"`
+	SelectedRecordID     string     `json:"selectedRecordId,omitempty"`
+	SelectionDate        *time.Time `json:"selectionDate,omitempty"`
+	SourceCachedAt       *time.Time `json:"sourceCachedAt,omitempty"`
+	SourceRevision       string     `json:"sourceRevision,omitempty"`
+	SnapshotHash         string     `json:"snapshotHash,omitempty"`
+	// Whether this row is the screen's root presentation interval or the
+	// content shown inside it. Only root rows are screen wall-clock time.
+	SessionType    string         `json:"sessionType"`
+	TerminalReason string         `json:"terminalReason,omitempty"`
+	Details        map[string]any `json:"details"`
 }
 
 type proofOfPlayPage struct {
@@ -73,15 +77,22 @@ type proofOfPlayPage struct {
 }
 
 type proofSummaryItem struct {
-	Key                 string  `json:"key"`
-	Label               string  `json:"label"`
-	ConfirmedDurationMS int64   `json:"confirmedDurationMs"`
-	Records             int64   `json:"records"`
-	Completed           int64   `json:"completed"`
-	Failures            int64   `json:"failures"`
-	Partial             int64   `json:"partial"`
-	Unknown             int64   `json:"unknown"`
-	CoveragePercent     float64 `json:"coveragePercent"`
+	Key   string `json:"key"`
+	Label string `json:"label"`
+	// Wall-clock screen time for this group: the union of its root
+	// presentation intervals, so overlapping zones are not double-counted.
+	ConfirmedScreenPlaybackMS int64 `json:"confirmedScreenPlaybackMs"`
+	ContentExposureMS         int64 `json:"contentExposureMs"`
+	Records                   int64 `json:"records"`
+	Completed                 int64 `json:"completed"`
+	Failures                  int64 `json:"failures"`
+	Partial                   int64 `json:"partial"`
+	Unknown                   int64 `json:"unknown"`
+	Interrupted               int64 `json:"interrupted"`
+	// The share of sessions that completed or ran partially. This is a session
+	// outcome rate, not scheduled-playback coverage: nothing here compares
+	// actual playback against what was supposed to play.
+	SessionCompletionPercent float64 `json:"sessionCompletionPercent"`
 }
 
 type activityOverviewData struct {
@@ -90,17 +101,26 @@ type activityOverviewData struct {
 		To   time.Time `json:"to"`
 	} `json:"range"`
 	Cards struct {
-		ScreensReportingNormally int64 `json:"screensReportingNormally"`
-		ScreensWithPlaybackGaps  int64 `json:"screensWithPlaybackGaps"`
-		ConfirmedDurationMS      int64 `json:"confirmedPlaybackDurationMs"`
-		PlaybackFailures         int64 `json:"playbackFailures"`
-		InterruptedPlays         int64 `json:"interruptedPlays"`
-		EmergencyActivations     int64 `json:"emergencyActivations"`
-		FailedPlayerUpdates      int64 `json:"failedPlayerUpdates"`
-		RecentAdminChanges       int64 `json:"recentAdministrativeChanges"`
+		ScreensWithReportingGaps int64 `json:"screensWithReportingGaps"`
+		// Wall-clock screen time: the union of root presentation intervals.
+		ConfirmedScreenPlaybackMS int64 `json:"confirmedScreenPlaybackMs"`
+		// Sum of child content intervals, which may exceed wall clock when
+		// several layout zones play at once.
+		ContentExposureMS int64 `json:"contentExposureMs"`
+		PlaybackFailures  int64 `json:"playbackFailures"`
+		// Only sessions that ended for an unexpected reason. A schedule change
+		// or a normal item boundary is not an interruption.
+		InterruptedPlays     int64 `json:"interruptedPlays"`
+		EmergencyActivations int64 `json:"emergencyActivations"`
+		FailedPlayerUpdates  int64 `json:"failedPlayerUpdates"`
+		RecentAdminChanges   int64 `json:"recentAdministrativeChanges"`
 	} `json:"cards"`
-	NeedsAttention []activityAttentionItem `json:"needsAttention"`
-	Timeline       []activityTimelineItem  `json:"timeline"`
+	// Fleet health is measured now, not over the selected range, because it
+	// answers what is on screen at this moment.
+	Fleet *activityFleetHealth `json:"fleet,omitempty"`
+	// Unresolved problems live in the incident model, not in a list rebuilt
+	// from whichever bad event happened to be latest.
+	Timeline []activityTimelineItem `json:"timeline"`
 }
 
 type activityAttentionItem struct {

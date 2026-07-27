@@ -98,7 +98,8 @@ interface TilecastBridge {
   ): void;
   onRetryItem(callback: () => void): void;
   onSkipItem(callback: () => void): void;
-  reportProgress(itemId: string | null, kind: string): void;
+  /** `zoneId` identifies which layout zone produced the evidence. */
+  reportProgress(itemId: string | null, kind: string, zoneId?: string): void;
   reportPlaybackError(itemId: string | null, message: string): void;
   reportWebsiteRecovered(): void;
   submitServerUrl(url: string): Promise<{ ok: boolean; error?: string }>;
@@ -806,6 +807,9 @@ async function renderItem(
   }
   clearTimers();
   currentItem = item;
+  // The main process opens a child playback session on this signal; without it
+  // an item could only ever be reported as having finished.
+  tilecast.reportProgress(item.id, "item-started");
   const fit = FIT_MODES[item.fitMode] ?? "contain";
 
   if (item.kind === "image") {
@@ -885,21 +889,45 @@ function renderLayoutItem(item: RendererItem, myGeneration: number): void {
     el.style.opacity = String(zone.opacity ?? 1);
     el.style.overflow = "hidden";
     if (zone.radius) el.style.borderRadius = `${zone.radius}px`;
+    // Each zone reports its own render evidence, so a layout whose zones have
+    // silently died is distinguishable from one that is working. Reporting
+    // only for the layout as a whole would hide exactly that.
     if (zone.render) {
-      el.appendChild(buildRenderNode(zone.render));
+      const node = buildRenderNode(zone.render);
+      el.appendChild(node);
+      // A render node is only evidence once its first frame has painted.
+      requestAnimationFrame(() => {
+        if (myGeneration === generation && node.isConnected) {
+          tilecast.reportProgress(item.id, "layout-zone-rendered", zone.id);
+        }
+      });
     } else if (zone.image) {
       const img = document.createElement("img");
       img.src = zone.image.src;
       img.style.width = "100%";
       img.style.height = "100%";
       img.style.objectFit = FIT_MODES[zone.image.fit] ?? "contain";
+      // On load, not on append: an image element that never decodes is not
+      // evidence that anything appeared in the zone.
+      img.onload = () => {
+        if (myGeneration === generation) {
+          tilecast.reportProgress(item.id, "layout-zone-rendered", zone.id);
+        }
+      };
       el.appendChild(img);
     } else if (zone.playlistItems && zone.playlistItems.length > 0) {
       startZonePlaylist(
         el,
         zone.playlistItems,
         () => generation === myGeneration,
+        // A rotating zone reports every time it advances, so it can be held
+        // to a continuing expectation rather than only an initial one.
+        () => tilecast.reportProgress(item.id, "layout-zone-rendered", zone.id),
       );
+    } else {
+      // An empty zone owes nothing; reporting for it keeps the pending set
+      // honest rather than leaving a zone permanently outstanding.
+      tilecast.reportProgress(item.id, "layout-zone-rendered", zone.id);
     }
     canvas.appendChild(el);
   }
@@ -922,6 +950,7 @@ function startZonePlaylist(
   container: HTMLElement,
   items: LayoutZonePayload["playlistItems"],
   alive: () => boolean,
+  onAdvance?: () => void,
 ): void {
   const list = items ?? [];
   let zoneIndex = 0;
@@ -931,6 +960,8 @@ function startZonePlaylist(
     }
     const zi = list[zoneIndex % list.length]!;
     zoneIndex += 1;
+    // Every advance is fresh evidence that this zone is still alive.
+    onAdvance?.();
     if (zi.kind === "video") {
       const video = document.createElement("video");
       video.src = zi.src;

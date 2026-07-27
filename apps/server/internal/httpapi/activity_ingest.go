@@ -38,6 +38,9 @@ type playerActivityEventInput struct {
 	PlaylistItemID     string         `json:"playlistItemId,omitempty"`
 	LayoutPlacementID  string         `json:"layoutPlacementId,omitempty"`
 	ActivitySessionID  string         `json:"activitySessionId,omitempty"`
+	ParentSessionID    string         `json:"parentActivitySessionId,omitempty"`
+	SessionType        string         `json:"sessionType,omitempty"`
+	TerminalReason     string         `json:"terminalReason,omitempty"`
 	Result             string         `json:"result,omitempty"`
 	DurationMS         *int64         `json:"durationMs,omitempty"`
 	ExpectedDurationMS *int64         `json:"expectedDurationMs,omitempty"`
@@ -169,6 +172,15 @@ func normalizePlayerActivity(event *playerActivityEventInput, now time.Time) err
 	event.PlaylistItemID = safeActivityText(event.PlaylistItemID, 128)
 	event.LayoutPlacementID = safeActivityText(event.LayoutPlacementID, 128)
 	event.ActivitySessionID = safeActivityText(event.ActivitySessionID, 160)
+	event.ParentSessionID = safeActivityText(event.ParentSessionID, 160)
+	event.SessionType = strings.ToLower(strings.TrimSpace(event.SessionType))
+	if event.SessionType != "" && !isActivitySessionType(event.SessionType) {
+		return errors.New("sessionType is invalid")
+	}
+	event.TerminalReason = strings.ToLower(strings.TrimSpace(event.TerminalReason))
+	if event.TerminalReason != "" && !isActivityTerminalReason(event.TerminalReason) {
+		return errors.New("terminalReason is invalid")
+	}
 	event.FailureCode = safeActivityText(event.FailureCode, 96)
 	event.FailureMessage = safeActivityText(event.FailureMessage, 240)
 	event.TriggerContext = safeActivityText(event.TriggerContext, 96)
@@ -202,16 +214,18 @@ func (s *server) insertPlayerActivityEvent(r *http.Request, tx pgx.Tx, screenID 
 			manifest_version,presentation_type,presentation_id,presentation_revision,content_type,content_id,
 			playlist_item_id,layout_placement_id,activity_session_id,result,duration_ms,expected_duration_ms,
 			failure_code,failure_message,trigger_context,schedule_id,emergency_id,source_id,selected_record_id,
-			selection_date,source_cached_at,source_revision,snapshot_hash,metadata,priority)
+			selection_date,source_cached_at,source_revision,snapshot_hash,metadata,priority,session_type,terminal_reason)
 		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NULLIF($11,''),NULLIF($12,''),NULLIF($13,''),NULLIF($14,''),NULLIF($15,''),
 		       NULLIF($16,''),NULLIF($17,''),NULLIF($18,''),$19,$20,$21,NULLIF($22,''),NULLIF($23,''),NULLIF($24,''),
-		       NULLIF($25,''),NULLIF($26,''),NULLIF($27,''),NULLIF($28,''),$29,$30,NULLIF($31,''),NULLIF($32,''),$33::jsonb,$34)
+		       NULLIF($25,''),NULLIF($26,''),NULLIF($27,''),NULLIF($28,''),$29,$30,NULLIF($31,''),NULLIF($32,''),$33::jsonb,$34,
+		       NULLIF($35,''),NULLIF($36,''))
 		ON CONFLICT DO NOTHING RETURNING id`,
 		event.ID, screenID, event.Sequence, event.EventType, event.Category, event.Severity, event.OccurredAt, event.ElapsedRealtimeMS, event.PlayerTimezone,
 		event.ManifestVersion, event.PresentationType, event.PresentationID, event.PresentationRev, event.ContentType, event.ContentID,
 		event.PlaylistItemID, event.LayoutPlacementID, event.ActivitySessionID, event.Result, event.DurationMS, event.ExpectedDurationMS,
 		event.FailureCode, event.FailureMessage, event.TriggerContext, event.ScheduleID, event.EmergencyID, event.SourceID, event.SelectedRecordID,
-		selectionDate, event.SourceCachedAt, event.SourceRevision, event.SnapshotHash, string(metadata), event.Priority).Scan(&inserted)
+		selectionDate, event.SourceCachedAt, event.SourceRevision, event.SnapshotHash, string(metadata), event.Priority,
+		event.SessionType, event.TerminalReason).Scan(&inserted)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
@@ -224,9 +238,14 @@ func (s *server) derivePlayerActivity(r *http.Request, tx pgx.Tx, screenID uuid.
 			return err
 		}
 	}
-	if event.EventType == "heartbeat.gap_detected" {
+	// In the same transaction as the event, so an incident can never be opened
+	// for an event that was rolled back.
+	if err := s.deriveIncident(r, tx, screenID, event); err != nil {
+		return err
+	}
+	if canonicalActivityEventType(event.EventType) == "heartbeat.gap_detected" {
 		if _, err := tx.Exec(r.Context(), `
-			UPDATE playback_sessions SET ended_at=$2,result='unknown',
+			UPDATE playback_sessions SET ended_at=$2,result='unknown',terminal_reason='heartbeat_gap',
 				actual_duration_ms=GREATEST(0,EXTRACT(EPOCH FROM ($2-started_at))*1000)::bigint,
 				metadata=metadata||'{"closedReason":"heartbeat_gap"}'::jsonb,updated_at=now()
 			WHERE screen_id=$1 AND ended_at IS NULL`, screenID, event.OccurredAt); err != nil {
@@ -247,11 +266,15 @@ func startPlaybackSession(r *http.Request, tx pgx.Tx, screenID uuid.UUID, event 
 	if sessionID == "" {
 		sessionID = event.ID.String()
 	}
-	if event.EventType == "presentation.started" || event.EventType == "presentation.activated" || event.EventType == "layout.activated" || event.EventType == "playlist.started" {
+	if canonicalActivityEventType(event.EventType) == "presentation.started" {
+		// A new root presentation replaces whatever was on screen. That is an
+		// expected replacement, not a fault, so it is recorded as such.
 		_, err := tx.Exec(r.Context(), `
-			UPDATE playback_sessions SET ended_at=$2,result='partial',actual_duration_ms=GREATEST(0,EXTRACT(EPOCH FROM ($2-started_at))*1000)::bigint,
+			UPDATE playback_sessions SET ended_at=$2,result='partial',terminal_reason=$4,
+			actual_duration_ms=GREATEST(0,EXTRACT(EPOCH FROM ($2-started_at))*1000)::bigint,
 			metadata=metadata||'{"closedReason":"incompatible_start"}'::jsonb,updated_at=now()
-			WHERE screen_id=$1 AND ended_at IS NULL AND activity_session_id<>$3`, screenID, event.OccurredAt, sessionID)
+			WHERE screen_id=$1 AND ended_at IS NULL AND activity_session_id<>$3`,
+			screenID, event.OccurredAt, sessionID, replacementTerminalReason(event))
 		if err != nil {
 			return err
 		}
@@ -259,8 +282,19 @@ func startPlaybackSession(r *http.Request, tx pgx.Tx, screenID uuid.UUID, event 
 	var groupID *uuid.UUID
 	_ = tx.QueryRow(r.Context(), `SELECT screen_group_id FROM screen_group_memberships WHERE screen_id=$1 ORDER BY screen_group_id LIMIT 1`, screenID).Scan(&groupID)
 	var parentID *uuid.UUID
-	if parentKey, ok := event.Metadata["parentActivitySessionId"].(string); ok && parentKey != "" {
+	parentKey := event.ParentSessionID
+	if parentKey == "" {
+		// v1 players carried the parent in metadata rather than as a field.
+		parentKey, _ = event.Metadata["parentActivitySessionId"].(string)
+	}
+	if parentKey != "" {
 		_ = tx.QueryRow(r.Context(), `SELECT id FROM playback_sessions WHERE screen_id=$1 AND activity_session_id=$2`, screenID, parentKey).Scan(&parentID)
+	}
+	sessionType := contractSessionType(event)
+	if parentID == nil && sessionType != sessionTypePresentation {
+		// A child session whose parent was never reported still belongs to the
+		// open root, which is what the player had on screen at the time.
+		_ = tx.QueryRow(r.Context(), `SELECT id FROM playback_sessions WHERE screen_id=$1 AND session_type='presentation' AND ended_at IS NULL ORDER BY started_at DESC LIMIT 1`, screenID).Scan(&parentID)
 	}
 	metadata, _ := json.Marshal(event.Metadata)
 	presentationName, _ := event.Metadata["presentationName"].(string)
@@ -270,17 +304,34 @@ func startPlaybackSession(r *http.Request, tx pgx.Tx, screenID uuid.UUID, event 
 			id,screen_id,group_id,parent_session_id,activity_session_id,start_event_id,started_at,presentation_type,
 			presentation_id,presentation_revision,presentation_name,content_type,content_id,content_name,playlist_item_id,
 			layout_placement_id,expected_duration_ms,result,trigger_context,schedule_id,emergency_id,manifest_version,
-			source_id,selected_record_id,selection_date,source_cached_at,source_revision,snapshot_hash,metadata)
+			source_id,selected_record_id,selection_date,source_cached_at,source_revision,snapshot_hash,metadata,session_type)
 		VALUES($1,$2,$3,$4,$5,$6,$7,NULLIF($8,''),NULLIF($9,''),NULLIF($10,''),NULLIF($11,''),NULLIF($12,''),NULLIF($13,''),
 		       NULLIF($14,''),NULLIF($15,''),NULLIF($16,''),$17,'playing',NULLIF($18,''),NULLIF($19,''),NULLIF($20,''),$21,
-		       NULLIF($22,''),NULLIF($23,''),NULLIF($24,'')::date,$25,NULLIF($26,''),NULLIF($27,''),$28::jsonb)
+		       NULLIF($22,''),NULLIF($23,''),NULLIF($24,'')::date,$25,NULLIF($26,''),NULLIF($27,''),$28::jsonb,$29)
 		ON CONFLICT(screen_id,activity_session_id) DO NOTHING`,
 		uuid.New(), screenID, groupID, parentID, sessionID, event.ID, event.OccurredAt, event.PresentationType,
 		event.PresentationID, event.PresentationRev, safeActivityText(presentationName, 240), event.ContentType, event.ContentID,
 		safeActivityText(contentName, 240), event.PlaylistItemID, event.LayoutPlacementID, event.ExpectedDurationMS, event.TriggerContext,
 		event.ScheduleID, event.EmergencyID, event.ManifestVersion, event.SourceID, event.SelectedRecordID, event.SelectionDate,
-		event.SourceCachedAt, event.SourceRevision, event.SnapshotHash, string(metadata))
+		event.SourceCachedAt, event.SourceRevision, event.SnapshotHash, string(metadata), sessionType)
 	return err
+}
+
+// replacementTerminalReason names why the open session is being replaced, using
+// only what the incoming start event actually establishes.
+func replacementTerminalReason(event playerActivityEventInput) string {
+	switch {
+	case event.EmergencyID != "":
+		return terminalEmergencyTakeover
+	case event.TriggerContext == "schedule" || event.ScheduleID != "":
+		return terminalScheduleTransition
+	case event.TriggerContext == "direct" || event.TriggerContext == "direct_assignment":
+		return terminalDirectAssignment
+	case event.ManifestVersion != nil:
+		return terminalManifestReplacement
+	default:
+		return terminalUnknown
+	}
 }
 
 func endPlaybackSession(r *http.Request, tx pgx.Tx, screenID uuid.UUID, event playerActivityEventInput) error {
@@ -295,25 +346,52 @@ func endPlaybackSession(r *http.Request, tx pgx.Tx, screenID uuid.UUID, event pl
 		result = "unknown"
 	}
 	metadata, _ := json.Marshal(event.Metadata)
+	terminalReason := contractTerminalReason(event)
 	tag, err := tx.Exec(r.Context(), `
 		UPDATE playback_sessions SET end_event_id=$3,ended_at=$4,
 			actual_duration_ms=COALESCE($5,GREATEST(0,EXTRACT(EPOCH FROM ($4-started_at))*1000)::bigint),
-			result=$6,failure_code=NULLIF($7,''),metadata=metadata||$8::jsonb,updated_at=now()
+			result=$6,failure_code=NULLIF($7,''),terminal_reason=$9,metadata=metadata||$8::jsonb,updated_at=now()
 		WHERE screen_id=$1 AND activity_session_id=$2 AND ended_at IS NULL`,
-		screenID, event.ActivitySessionID, event.ID, event.OccurredAt, event.DurationMS, result, event.FailureCode, string(metadata))
+		screenID, event.ActivitySessionID, event.ID, event.OccurredAt, event.DurationMS, result, event.FailureCode, string(metadata), terminalReason)
 	if err != nil {
 		return err
 	}
-	if tag.RowsAffected() == 0 && (event.EventType == "presentation.failed" || event.EventType == "widget.failed" || event.EventType == "playlist_item.failed") {
+	// A terminal event with no matching start is the shape a v1 Linux player
+	// produced. Synthesising the session from the reported duration is the only
+	// way that playback appears in Proof of Play at all, so it is kept for the
+	// transition period; contract v2 players always send the start event.
+	if tag.RowsAffected() == 0 && synthesizesMissingStart(event) {
 		fallback := event
 		fallback.Result = result
-		fallback.ActivitySessionID = event.ActivitySessionID
 		if err := startPlaybackSession(r, tx, screenID, fallback); err != nil {
 			return err
 		}
-		_, err = tx.Exec(r.Context(), `UPDATE playback_sessions SET end_event_id=$3,ended_at=$4,actual_duration_ms=COALESCE($5,0),result=$6,failure_code=NULLIF($7,''),updated_at=now() WHERE screen_id=$1 AND activity_session_id=$2`, screenID, event.ActivitySessionID, event.ID, event.OccurredAt, event.DurationMS, result, event.FailureCode)
+		started := event.OccurredAt
+		if event.DurationMS != nil && *event.DurationMS > 0 {
+			started = event.OccurredAt.Add(-time.Duration(*event.DurationMS) * time.Millisecond)
+		}
+		_, err = tx.Exec(r.Context(), `
+			UPDATE playback_sessions SET end_event_id=$3,started_at=LEAST(started_at,$8),ended_at=$4,
+				actual_duration_ms=COALESCE($5,0),result=$6,failure_code=NULLIF($7,''),terminal_reason=$9,
+				metadata=metadata||'{"synthesizedStart":true}'::jsonb,updated_at=now()
+			WHERE screen_id=$1 AND activity_session_id=$2 AND ended_at IS NULL`,
+			screenID, event.ActivitySessionID, event.ID, event.OccurredAt, event.DurationMS, result, event.FailureCode, started, terminalReason)
 	}
 	return err
+}
+
+// synthesizesMissingStart reports whether a terminal event carries enough to
+// stand in for the session it closes. A failure must always be visible; a
+// completion needs a reported duration, or the session would have no length.
+func synthesizesMissingStart(event playerActivityEventInput) bool {
+	switch canonicalActivityEventType(event.EventType) {
+	case "presentation.failed", "content.failed":
+		return true
+	case "content.completed", "content.skipped":
+		return event.DurationMS != nil && *event.DurationMS > 0
+	default:
+		return false
+	}
 }
 
 func updateScreenStateInterval(r *http.Request, tx pgx.Tx, screenID uuid.UUID, event playerActivityEventInput, state string) error {
@@ -328,7 +406,7 @@ func updateScreenStateInterval(r *http.Request, tx pgx.Tx, screenID uuid.UUID, e
 
 func closeExpiredPlaybackSessions(r *http.Request, tx pgx.Tx, screenID uuid.UUID, now time.Time) error {
 	_, err := tx.Exec(r.Context(), `
-		UPDATE playback_sessions SET ended_at=LEAST($2::timestamptz,started_at+interval '6 hours'),result='unknown',
+		UPDATE playback_sessions SET ended_at=LEAST($2::timestamptz,started_at+interval '6 hours'),result='unknown',terminal_reason='bounded_timeout',
 			actual_duration_ms=GREATEST(0,EXTRACT(EPOCH FROM (LEAST($2::timestamptz,started_at+interval '6 hours')-started_at))*1000)::bigint,
 			metadata=metadata||'{"closedReason":"bounded_timeout"}'::jsonb,updated_at=now()
 		WHERE screen_id=$1 AND ended_at IS NULL AND started_at < $2::timestamptz-interval '6 hours'`, screenID, now)
@@ -336,8 +414,8 @@ func closeExpiredPlaybackSessions(r *http.Request, tx pgx.Tx, screenID uuid.UUID
 }
 
 func isPlaybackStart(eventType string) bool {
-	switch eventType {
-	case "presentation.started", "presentation.activated", "playlist.started", "layout.activated", "playlist_item.started", "media.started", "widget.started", "layout_zone_item.started", "data_widget.activated":
+	switch canonicalActivityEventType(eventType) {
+	case "presentation.started", "content.started":
 		return true
 	default:
 		return false
@@ -345,21 +423,25 @@ func isPlaybackStart(eventType string) bool {
 }
 
 func isPlaybackEnd(eventType string) bool {
-	return strings.HasSuffix(eventType, ".completed") || strings.HasSuffix(eventType, ".stopped") || strings.HasSuffix(eventType, ".failed") || strings.HasSuffix(eventType, ".skipped") || eventType == "presentation.recovered"
+	canonical := canonicalActivityEventType(eventType)
+	return strings.HasSuffix(canonical, ".completed") || strings.HasSuffix(canonical, ".stopped") ||
+		strings.HasSuffix(canonical, ".failed") || strings.HasSuffix(canonical, ".skipped") ||
+		canonical == "presentation.recovered"
 }
 
 func screenStateForEvent(event playerActivityEventInput) (string, bool) {
-	switch event.EventType {
-	// connection.recovered is the Linux player's name for connection.restored.
-	case "player.connected", "connection.restored", "connection.recovered":
+	// Both players' vocabularies resolve to the contract name first, so an
+	// identical condition derives an identical interval on either platform.
+	switch canonicalActivityEventType(event.EventType) {
+	case "player.connected", "connection.restored":
 		return "online", true
-	case "player.disconnected":
+	case "player.disconnected", "connection.lost":
 		return "offline", true
 	case "heartbeat.gap_detected", "renderer.failure", "decoder.failure", "storage.pressure":
 		return "degraded", true
 	case "safe_mode.entered":
 		return "safe_mode", true
-	case "safe_mode.exited", "manifest.activated", "presentation.started", "presentation.activated":
+	case "safe_mode.exited", "manifest.activated", "presentation.started":
 		return "healthy", true
 	default:
 		return "", false
@@ -367,19 +449,19 @@ func screenStateForEvent(event playerActivityEventInput) (string, bool) {
 }
 
 func activityCategory(eventType string) string {
-	prefix := strings.SplitN(eventType, ".", 2)[0]
+	prefix := strings.SplitN(canonicalActivityEventType(eventType), ".", 2)[0]
 	switch prefix {
 	case "player", "connection", "heartbeat":
 		return "connectivity"
 	case "manifest", "dependencies", "presentation":
 		return "manifest"
-	case "playlist", "playlist_item", "widget", "layout", "layout_zone_item", "media", "renderer", "decoder", "fallback", "playback", "data_widget":
+	case "playlist", "playlist_item", "widget", "layout", "layout_zone_item", "media", "renderer", "decoder", "fallback", "playback", "data_widget", "content":
 		return "playback"
 	case "schedule", "assignment":
 		return "scheduling"
 	case "command":
 		return "commands"
-	case "safe_mode", "watchdog", "boot", "storage", "sleep", "wake", "foreground":
+	case "safe_mode", "watchdog", "boot", "storage", "sleep", "wake", "foreground", "self_heal":
 		return "reliability"
 	case "update":
 		return "updates"
@@ -391,6 +473,7 @@ func activityCategory(eventType string) string {
 }
 
 func activitySeverity(eventType string) string {
+	eventType = canonicalActivityEventType(eventType)
 	if strings.Contains(eventType, "failed") || strings.Contains(eventType, "failure") {
 		return "error"
 	}
@@ -401,6 +484,7 @@ func activitySeverity(eventType string) string {
 }
 
 func activityResultForEvent(eventType string) string {
+	eventType = canonicalActivityEventType(eventType)
 	switch {
 	case strings.HasSuffix(eventType, ".started"), strings.HasSuffix(eventType, ".activated"):
 		return "playing"

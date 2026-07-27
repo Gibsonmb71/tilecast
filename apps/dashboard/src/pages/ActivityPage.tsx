@@ -17,65 +17,39 @@ import { api } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
 import { OverviewTab } from "./ActivityOverviewPanel";
 import { AuditTab, EventsTab, ProofTab } from "./ActivityReportTabs";
+import { IncidentsTab } from "./ActivityIncidentsTab";
 import { activityParams } from "./ActivityShared";
+import {
+  advancedProofFilterKeys,
+  allActivityFilterKeys,
+  auditResultOptions,
+  categoryOptions,
+  incidentDateBasisOptions,
+  incidentStatusOptions,
+  incidentTypeOptions,
+  proofResultOptions as resultOptions,
+  sessionTypeOptions,
+  severityOptions,
+  terminalReasonOptions,
+  type ActivityTabName,
+} from "./activityLinks";
 import "./ActivityPage.css";
 
-type ActivityTab = "overview" | "proof" | "events" | "audit";
-
-const resultOptions = [
-  "playing",
-  "completed",
-  "partial",
-  "skipped",
-  "failed",
-  "unknown",
-  "recovered",
-];
-const auditResultOptions = ["success", "failure", "denied", "partial"];
-const categoryOptions = [
-  "connectivity",
-  "manifest",
-  "playback",
-  "scheduling",
-  "commands",
-  "reliability",
-  "updates",
-  "emergencies",
-];
-const severityOptions = ["info", "warning", "error", "critical"];
+type ActivityTab = ActivityTabName;
 
 /** Exact-identifier filters, kept behind a disclosure but still chipped. */
-const advancedProofFilters: FilterDefinition[] = [
-  "Media",
-  "Widget",
-  "Playlist",
-  "Layout",
-  "Schedule",
-  "Emergency",
-].map((label) => ({
-  key: label.toLowerCase(),
-  kind: "text",
-  label,
-  placeholder: `${label} ID`,
-  hidden: true,
-}));
-
-/**
- * Every filter key any tab owns. Switching tabs drops the ones the new tab
- * cannot apply, so a stale parameter never silently narrows a report.
- */
-const allFilterKeys = [
-  "search",
-  "screen",
-  "group",
-  "result",
-  "category",
-  "severity",
-  "action",
-  "resourceType",
-  "actor",
-  ...advancedProofFilters.map((filter) => filter.key),
-];
+const advancedProofFilters: FilterDefinition[] = advancedProofFilterKeys.map(
+  (key) => {
+    const label = key.charAt(0).toUpperCase() + key.slice(1);
+    return {
+      key,
+      kind: "text",
+      label,
+      placeholder: `${label} ID`,
+      hidden: true,
+    };
+  },
+);
 
 function optionsFrom(items: { id: string; name: string }[] | undefined) {
   return (items ?? []).map((item) => ({ value: item.id, label: item.name }));
@@ -86,6 +60,14 @@ function plainOptions(values: string[]): FilterOption[] {
     value,
     label: value.charAt(0).toUpperCase() + value.slice(1),
   }));
+}
+
+/** Turns snake_case contract values into readable option labels. */
+function labelledOptions(values: string[]): FilterOption[] {
+  return values.map((value) => {
+    const words = value.replaceAll("_", " ");
+    return { value, label: words.charAt(0).toUpperCase() + words.slice(1) };
+  });
 }
 
 export function ActivityPage() {
@@ -116,6 +98,11 @@ export function ActivityPage() {
     queryKey: ["activity", "users"],
     queryFn: api.users,
     enabled: privileged,
+  });
+  const locations = useQuery({
+    queryKey: ["activity", "locations"],
+    queryFn: api.locations,
+    enabled: tab === "incidents",
   });
 
   const definitions = useMemo<FilterDefinition[]>(() => {
@@ -158,7 +145,85 @@ export function ActivityPage() {
           allLabel: "All results",
           options: plainOptions(resultOptions),
         },
+        {
+          key: "sessionType",
+          kind: "select",
+          label: "Session type",
+          allLabel: "All session types",
+          options: labelledOptions(sessionTypeOptions),
+        },
+        {
+          key: "terminalReason",
+          kind: "select",
+          label: "Ended because",
+          allLabel: "Any reason",
+          options: [
+            { value: "unexpected", label: "Ended unexpectedly" },
+            ...labelledOptions(
+              terminalReasonOptions.filter((value) => value !== "unexpected"),
+            ),
+          ],
+        },
         ...advancedProofFilters,
+      ];
+    if (tab === "incidents")
+      return [
+        {
+          ...search,
+          label: "Search incidents",
+          placeholder: "Search incidents…",
+        },
+        {
+          key: "status",
+          kind: "select",
+          label: "Status",
+          allLabel: "Active",
+          options: labelledOptions(incidentStatusOptions),
+        },
+        {
+          key: "severity",
+          kind: "select",
+          label: "Severity",
+          allLabel: "All severities",
+          options: plainOptions(severityOptions),
+        },
+        {
+          key: "type",
+          kind: "select",
+          label: "Category",
+          allLabel: "All categories",
+          options: labelledOptions(incidentTypeOptions),
+        },
+        ...byScreen,
+        {
+          key: "location",
+          kind: "select",
+          label: "Location",
+          allLabel: "All locations",
+          options: optionsFrom(locations.data?.items),
+        },
+        {
+          key: "assignee",
+          kind: "select",
+          label: "Assigned to",
+          allLabel: "Anyone",
+          options: optionsFrom(users.data?.items),
+        },
+        {
+          key: "failureCode",
+          kind: "text",
+          label: "Failure code",
+          placeholder: "Failure code",
+        },
+        {
+          // Which timestamp the date range applies to. Without this the range
+          // is not applied at all, rather than being guessed.
+          key: "dateBasis",
+          kind: "select",
+          label: "Date basis",
+          allLabel: "Ignore date range",
+          options: labelledOptions(incidentDateBasisOptions),
+        },
       ];
     if (tab === "events")
       return [
@@ -214,7 +279,7 @@ export function ActivityPage() {
         options: plainOptions(auditResultOptions),
       },
     ];
-  }, [groups.data, screens.data, tab, users.data]);
+  }, [groups.data, locations.data, screens.data, tab, users.data]);
 
   const { values, set, clear } = useUrlFilters(definitions);
   const activeAdvanced = advancedProofFilters.filter(
@@ -232,6 +297,9 @@ export function ActivityPage() {
   const activityTabs = [
     { value: "overview" as const, label: "Overview" },
     { value: "proof" as const, label: "Proof of Play" },
+    // Incidents is the grouped operational view; Screen Events stays the raw
+    // diagnostic stream behind it, with its existing privileged access.
+    { value: "incidents" as const, label: "Incidents" },
     ...(privileged
       ? [
           { value: "events" as const, label: "Screen Events" },
@@ -248,7 +316,7 @@ export function ActivityPage() {
     else next.set("tab", value);
     // Filters are per tab; carrying one across would narrow the next report
     // with a control the reader can no longer see.
-    for (const key of allFilterKeys) next.delete(key);
+    for (const key of allActivityFilterKeys) next.delete(key);
     setSearchParams(next);
   }
 
@@ -372,6 +440,14 @@ export function ActivityPage() {
           onViewScreenEvents={() => selectTab("events")}
         />
       )}
+      {tab === "incidents" && (
+        <IncidentsTab
+          range={range}
+          filters={values}
+          hasActiveFilters={hasActiveFilters}
+          onClearFilters={clear}
+        />
+      )}
       {tab === "events" && <EventsTab range={range} filters={values} />}
       {tab === "audit" && <AuditTab range={range} filters={values} />}
     </section>
@@ -379,7 +455,10 @@ export function ActivityPage() {
 }
 
 function normalizeTab(value: string | null): ActivityTab {
-  return value === "proof" || value === "events" || value === "audit"
+  return value === "proof" ||
+    value === "incidents" ||
+    value === "events" ||
+    value === "audit"
     ? value
     : "overview";
 }
