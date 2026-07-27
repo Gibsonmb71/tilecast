@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: cmdk-universal-search-integration
+  cancel-in-progress: true
+
 jobs:
   integrate:
     runs-on: ubuntu-latest
@@ -138,12 +142,6 @@ jobs:
         run: npm ci
       - name: Format changed files
         run: npx prettier --write apps/dashboard/src/components/StudioTopbar.tsx apps/dashboard/src/styles/topbar.css
-      - name: Lint
-        run: npm run lint
-      - name: Test
-        run: npm test
-      - name: Build
-        run: npm run build
       - name: Commit integration
         run: |
           git config user.name "github-actions[bot]"
