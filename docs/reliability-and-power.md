@@ -1,4 +1,6 @@
-# Android reliability, kiosk, accessibility, and power
+# Player reliability, kiosk, accessibility, and power
+
+Most of this page is Android-specific. The [meaningful render progress](#meaningful-render-progress) section applies to both players and is the shared definition of what "the screen is working" means.
 
 Tilecast Player has two reliability modes. **Standard Reliability** works with a normally installed APK and provides cached startup, boot recovery, immersive fullscreen, keep-awake behavior, bounded playback recovery, safe mode, and locally approved Accessibility Control Assist. Android can still let a user leave the app. **Managed Kiosk** is effective only when Android confirms device-owner/device-policy provisioning and active lock task. Requesting it in policy is not proof that it is active.
 
@@ -26,19 +28,63 @@ Control Assist is requested by the hardened default but remains disabled at the 
 
 Tilecast, Android Settings, package installers, permission controllers, captive portals, setup/system components, and configured maintenance apps are excluded. Automatic returns pause during player updates and maintenance. Attempts are bounded in a time window; exhausting the bound stops the loop until the window clears.
 
+## Meaningful render progress
+
+Three things get routinely confused, and conflating them is what lets a player report itself healthy over a blank screen:
+
+1. **the process is alive** — it answers heartbeats;
+2. **the renderer object is alive** — a view exists and responds to probes;
+3. **playback is actually progressing** — something is happening on the display.
+
+Only the third is health. The supervisor is fed from the third, never the first two.
+
+Progress is recognised from real signals: video position advancing, an item transition, an image successfully displayed, a website's first meaningful render, a layout zone rendering, and a frame fingerprint changing _where change was expected_. Renderer liveness probes are recorded separately and are **not** progress, with one exception: indefinite content, where a probe is the only evidence available.
+
+### Content-aware expectations
+
+Silence means different things depending on what is on screen, so each kind of content is judged on its own terms. Getting this wrong in either direction is costly: too strict calls a valid still image frozen, too loose lets a genuinely frozen video pass.
+
+| Content           | Progress is                                              | Silence is                                        | Tolerance                                            |
+| ----------------- | -------------------------------------------------------- | ------------------------------------------------- | ---------------------------------------------------- |
+| Still image       | Displayed successfully                                   | Correct, until it outstays its duration           | Its own duration + 60s, or 30 minutes when unbounded |
+| Video             | The position advancing                                   | A stall                                           | 20 seconds                                           |
+| Website or widget | A first meaningful render                                | Correct once rendered; frame changes are optional | 90 seconds to first render                           |
+| Layout            | Every zone rendering, then every rotating zone advancing | A blank zone, or a rotation that stopped          | 5 minutes per zone                                   |
+| Indefinite        | A periodic renderer health confirmation                  | A stall                                           | 10 minutes                                           |
+
+**A valid long-lived still image is never called frozen for having identical pixels.** That is the case this design exists to protect. For the same reason a fingerprint change _under_ a still image is treated as noise rather than evidence — accepting it would let compression artefacts mask a real overrun.
+
+Layouts are judged per zone, because a whole-layout signal hides the case that matters: one zone dying while its neighbours keep the presentation looking alive. Every zone owes a first render; only a rotating playlist zone owes continuing evidence, since a static widget or image zone renders once and legitimately holds. A single-item zone loops in place rather than advancing, so it is not held to a cadence either.
+
+### What the player reports
+
+Every heartbeat carries `lastMeaningfulProgressAt`, `stallStartedAt`, `stallDurationMs`, `stallReason`, `expectedMotion` and `rendererResponding`. The stall is measured from when progress was last _seen_, not from when it was noticed, so the duration reflects how long the screen has actually been wrong rather than the poll interval.
+
+`stallReason` names the content failure where the content is the evidence — a frozen video reports `video_position_frozen`, not `renderer_not_responding`, because the player has no evidence the renderer died. Blaming the renderer is reserved for indefinite content, where the probe genuinely is the only signal.
+
 ## Recovery and safe mode
 
 The local supervisor persists failure and healthy-playback history across activity and process restarts. It executes retry, item skip, renderer recreation, playback-session recreation, activity restart, and a bounded number of process recoveries. Failure history clears only after a meaningful healthy-playback period. Repeated failure enters safe mode instead of looping. Safe mode keeps pairing, networking, health reporting, commands, local maintenance, cache validation, and manual retry available; it does not delete content or credentials. Owners and Administrators can issue typed commands for each recovery rung, resynchronize manifest and configuration, run a self-test, retry recovery, or exit safe mode.
 
 Boot recovery registers both normal and locked boot completion. It requests an immediate foreground launch and retries after bounded 15, 60, and 180 second delays, stopping after a healthy foreground is confirmed. Firmware may block background activity launch; that limitation is reported to Studio rather than hidden.
 
-Network, heartbeat, command, manifest, and configuration failures do not clear cached playback. Reconnection uses bounded exponential backoff with jitter while the active manifest and local schedules continue; the backoff resets once a connection has stayed healthy long enough, so a brief blip after a stable session reconnects quickly instead of resuming near the cap. A prolonged loss of server contact escalates only when the screen is also no longer rendering. Health is judged by real playback progress — advancing video, item transitions, or a re-shown image — not by whether a playback session object exists, because a session can remain while the screen is blank or frozen. While offline and stalled, the Player first re-activates cached content locally (no server contact), and only if progress still does not resume does it restart the activity and, as a last resort, the process. Because disruptive restarts require several minutes with no progress, a valid long-lived still image is not mistaken for a freeze, and a screen that is offline but still advancing is never disrupted. The escalation state is persisted, so a relaunched process knows it already restarted during this outage and will not restart-loop; it clears as soon as progress resumes or the server is reachable again. Self-heal actions are reported as attempts; confirmed recovery is a separate event emitted when the connection actually reopens. Connection loss, recovery, and self-heal attempts are reliability activity events (connectivity and reliability categories) so Studio can see them per screen. Complete hardware failure, power that is not restored, changed Wi-Fi credentials, and Android prompts that require approval remain outside zero-touch recovery.
+Network, heartbeat, command, manifest, and configuration failures do not clear cached playback. Reconnection uses bounded exponential backoff with jitter while the active manifest and local schedules continue; the backoff resets once a connection has stayed healthy long enough, so a brief blip after a stable session reconnects quickly instead of resuming near the cap. A prolonged loss of server contact escalates only when the screen is also no longer rendering. Health is judged by real playback progress (see [meaningful render progress](#meaningful-render-progress)), not by whether a playback session object exists, because a session can remain while the screen is blank or frozen. While offline and stalled, the Player first re-activates cached content locally (no server contact), and only if progress still does not resume does it restart the activity and, as a last resort, the process. Because disruptive restarts require several minutes with no progress, a valid long-lived still image is not mistaken for a freeze, and a screen that is offline but still advancing is never disrupted. The escalation state is persisted, so a relaunched process knows it already restarted during this outage and will not restart-loop; it clears as soon as progress resumes or the server is reachable again. Self-heal actions are reported as attempts; confirmed recovery is a separate event emitted when the connection actually reopens. Connection loss, recovery, and self-heal attempts are reliability activity events (connectivity and reliability categories) so Studio can see them per screen. Complete hardware failure, power that is not restored, changed Wi-Fi credentials, and Android prompts that require approval remain outside zero-touch recovery.
 
 ## Local maintenance and Managed Kiosk
 
 The default hidden sequence is Back, Back, Up, Down, Select. The first use creates a 4–12 digit local PIN; only a salted PBKDF2-SHA256 hash is stored. Incorrect attempts are rate-limited and temporarily locked. A maintenance session is time bounded and exposes only fixed actions: Android network/settings pages, Accessibility Settings, unknown-app permission, safe-mode recovery, Tilecast restart, and return to playback. There is no shell or arbitrary app launcher.
 
 Device-owner provisioning can require a factory reset plus ADB, QR, or firmware-specific enrollment during initial setup. Tilecast never attempts to silently convert an existing consumer TV. Installer and Settings access remain allowed only during deliberate update or maintenance flows, and kiosk state is restored afterward when the platform supports it.
+
+## Telemetry
+
+Players report bounded telemetry alongside heartbeats: latest gauge values and counter deltas since the previous sample, on a fixed cadence. Raw high-frequency samples are never uploaded.
+
+Players report **measurements, not conclusions**. A player says its round-trip time was 2400 milliseconds; the server decides whether that is an incident. Thresholds, hysteresis and cooldowns live server-side so a restarted player cannot re-announce every condition it was already in, and so the policy can be corrected without shipping a player release.
+
+A measurement a player cannot take is omitted rather than sent as zero. A player with no luminance sensor reports no luminance, and the black-output condition simply never fires for it — which is honest, but means absence of those events is not evidence the screen is fine.
+
+Telemetry samples are dropped rather than buffered when the server is unreachable. Activity events and proof of play _are_ buffered and retried; telemetry is not, because buffering it would trade a minute of lost detail for unbounded memory on a player that has been offline for hours. See [`activity.md`](activity.md#player-telemetry).
 
 ## Verification limitations
 

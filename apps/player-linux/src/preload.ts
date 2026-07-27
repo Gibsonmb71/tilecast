@@ -116,6 +116,9 @@ function emitExpectedSynchronizedPosition(force: boolean): void {
   );
   lastOccurrence = position.occurrence;
   lastItemId = presentation.items[position.index]?.id ?? null;
+  if (lastItemId !== null) {
+    ipcRenderer.send("progress", { itemId: lastItemId, kind: "item-started" });
+  }
   emitPresentation(projected);
   scheduleBoundary(position);
 }
@@ -195,8 +198,8 @@ contextBridge.exposeInMainWorld("tilecast", {
   onSkipItem(callback: () => void): void {
     ipcRenderer.on("skip-item", () => callback());
   },
-  reportProgress(itemId: string | null, kind: string): void {
-    ipcRenderer.send("progress", { itemId, kind });
+  reportProgress(itemId: string | null, kind: string, zoneId?: string): void {
+    ipcRenderer.send("progress", { itemId, kind, zoneId });
   },
   reportPlaybackError(itemId: string | null, message: string): void {
     ipcRenderer.send("playback-error", { itemId, message });

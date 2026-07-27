@@ -15,11 +15,18 @@ Not currently supported:
 
 The **Layouts** route in Studio is planned, not a completed feature.
 
-## No proof of play
+## What Activity reporting can and cannot tell you
 
-Tilecast has device status, synchronization state, command results, and operational audit records. It does not currently claim proof-of-play reporting.
+Tilecast does report proof of play: a Player confirms what it displayed, and Activity derives playback sessions from those reports. An assignment or a schedule is never treated as proof that anything appeared on a screen.
 
-The **Activity reports** route is planned.
+There are real limits worth knowing before you rely on a figure. The full list is in [the Activity documentation](https://github.com/tilecast/tilecast/blob/main/docs/activity.md#known-limitations); the ones that most often surprise people:
+
+- **Playback compliance is not retroactive.** Expectations are recorded as they happen, so compliance over a period before this feature existed reports little or no expected time. It says "No data" rather than inventing a percentage.
+- **A screen can read healthy seconds after it broke.** Fleet health reflects the last heartbeat and status. Use the per-screen timeline or incidents for what actually happened.
+- **"Interrupted plays" is a floor, not a total.** Sessions recorded by an older Player usually have no recorded reason for ending, and are excluded rather than guessed at.
+- **Some conditions cannot be detected on every device.** A Player that cannot measure screen brightness or frame changes never reports a black or frozen screen. No such event is not proof that the screen is fine.
+- **Cause is often genuinely unknown.** When a screen stops reporting, Tilecast knows that it stopped. It does not know whether the cause was the network, the power, or the device, and it says "Unknown cause" instead of guessing.
+- **Telemetry gaps are not recovered.** Detailed telemetry from a Player that was offline is lost for that period. Proof of play and Activity events are buffered and retried; telemetry is deliberately not, to keep memory bounded on a long outage.
 
 ## No authenticated Website Sources
 

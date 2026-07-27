@@ -300,6 +300,15 @@ export class ApiClient {
     });
   }
 
+  /**
+   * Upload one bounded telemetry sample. Interval counters are deltas since
+   * the previous sample, so the server can roll them up without the player
+   * ever shipping raw high-frequency data.
+   */
+  async postTelemetry(sample: unknown): Promise<void> {
+    await this.request("POST", "/api/v1/player/telemetry", { body: sample });
+  }
+
   /** Poll the live-preview lease. Returns raw session JSON (or null). */
   async previewSession(): Promise<Record<string, unknown> | null> {
     const res = await this.request("GET", "/api/v1/player/preview-session");

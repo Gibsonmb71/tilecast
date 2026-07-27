@@ -11,9 +11,9 @@ func TestPlaylistListWithPreviews(t *testing.T) {
 	playlistID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 	previewID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
 	result := playlists.ListResult{
-		Items: []playlists.Playlist{{ID: playlistID, Name: "Morning"}},
-		Total: 1,
-		Page: 1,
+		Items:    []playlists.Playlist{{ID: playlistID, Name: "Morning"}},
+		Total:    1,
+		Page:     1,
 		PageSize: 100,
 	}
 	response := playlistListWithPreviews(result, map[uuid.UUID][]playlists.ListPreviewItem{

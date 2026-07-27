@@ -71,6 +71,11 @@ func withActivityDatabase(t *testing.T, run func(activityTestEnvironment)) {
 	if _, err = pool.Exec(ctx, `INSERT INTO screens(id,organization_id,player_installation_id,name,platform,device_manufacturer,device_model,android_version,player_version,screen_width,screen_height,density,locale,timezone) VALUES($1,$2,$3,'Cafeteria TV','android-tv','Test','TV','14','1.0',1920,1080,1,'en-US','America/New_York')`, screenID, organizationID, uuid.NewString()); err != nil {
 		t.Fatal(err)
 	}
+	// A live credential is what makes the screen part of the operational fleet;
+	// uptime and fleet health both measure only enrolled, unrevoked screens.
+	if _, err = pool.Exec(ctx, `INSERT INTO device_credentials(id,screen_id,public_id,secret_hash) VALUES($1,$2,$3,'\x00'::bytea)`, uuid.New(), screenID, uuid.NewString()); err != nil {
+		t.Fatal(err)
+	}
 	deviceService := devices.NewService(pool, devices.NewPresenceHub(), "")
 	s := &server{db: pool, devices: deviceService, logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	run(activityTestEnvironment{server: s, pool: pool, screenID: screenID, owner: auth.Session{User: auth.User{ID: ownerID, Name: "Activity Owner", Username: "activity-owner", Role: "owner", Active: true}}})
@@ -307,8 +312,16 @@ func TestPlaybackGapAppearsInOverviewAndClosesProofUnknown(t *testing.T) {
 		if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
 			t.Fatal(err)
 		}
-		if envelope.Data.Cards.ScreensWithPlaybackGaps != 1 {
-			t.Fatalf("playback gaps=%d overview=%s", envelope.Data.Cards.ScreensWithPlaybackGaps, response.Body.String())
+		if envelope.Data.Cards.ScreensWithReportingGaps != 1 {
+			t.Fatalf("reporting gaps=%d overview=%s", envelope.Data.Cards.ScreensWithReportingGaps, response.Body.String())
+		}
+		// Fleet health must count the operational population, not repeat the
+		// heartbeat check the old "reporting normally" card made.
+		if envelope.Data.Fleet.Measured != 1 {
+			t.Fatalf("fleet measured=%d overview=%s", envelope.Data.Fleet.Measured, response.Body.String())
+		}
+		if total := envelope.Data.Fleet.Healthy + envelope.Data.Fleet.Impaired + envelope.Data.Fleet.Offline + envelope.Data.Fleet.Unmeasured; total != envelope.Data.Fleet.Measured {
+			t.Fatalf("fleet states sum to %d, measured %d: %s", total, envelope.Data.Fleet.Measured, response.Body.String())
 		}
 		// The dashboard indexes into these collections directly; empty lists
 		// must marshal as [] rather than null.
@@ -318,7 +331,7 @@ func TestPlaybackGapAppearsInOverviewAndClosesProofUnknown(t *testing.T) {
 		if err := json.Unmarshal(response.Body.Bytes(), &shape); err != nil {
 			t.Fatal(err)
 		}
-		for _, field := range []string{"needsAttention", "timeline"} {
+		for _, field := range []string{"timeline"} {
 			if string(shape.Data[field]) == "null" {
 				t.Fatalf("overview %s marshaled as null: %s", field, response.Body.String())
 			}
@@ -406,6 +419,157 @@ func TestActivityExportsAndRetentionRespectPermissions(t *testing.T) {
 	})
 }
 
+func TestOverlappingZonesDoNotInflateScreenPlaybackTime(t *testing.T) {
+	withActivityDatabase(t, func(env activityTestEnvironment) {
+		ctx := context.Background()
+		start := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
+		insertSession := func(sessionType, key string, offset, length time.Duration, parent string) {
+			t.Helper()
+			var parentID *uuid.UUID
+			if parent != "" {
+				var found uuid.UUID
+				if err := env.pool.QueryRow(ctx, `SELECT id FROM playback_sessions WHERE screen_id=$1 AND activity_session_id=$2`, env.screenID, parent).Scan(&found); err != nil {
+					t.Fatal(err)
+				}
+				parentID = &found
+			}
+			if _, err := env.pool.Exec(ctx, `
+				INSERT INTO playback_sessions(id,screen_id,parent_session_id,activity_session_id,started_at,ended_at,actual_duration_ms,result,session_type,terminal_reason)
+				VALUES($1,$2,$3,$4,$5,$6,$7,'completed',$8,'completed_duration')`,
+				uuid.New(), env.screenID, parentID, key, start.Add(offset), start.Add(offset+length), length.Milliseconds(), sessionType); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		// One ten-minute root presentation with two layout zones playing for its
+		// whole length. Real screen time is ten minutes; exposure is twenty.
+		insertSession("presentation", "root-a", 0, 10*time.Minute, "")
+		insertSession("layout_placement", "zone-1", 0, 10*time.Minute, "root-a")
+		insertSession("layout_placement", "zone-2", 0, 10*time.Minute, "root-a")
+		// A second root that overlaps the first by five minutes, as happens when
+		// a replacement starts before the outgoing session is closed.
+		insertSession("presentation", "root-b", 5*time.Minute, 10*time.Minute, "")
+
+		durations, err := env.server.playbackDurations(ctx, start.Add(-time.Minute), start.Add(time.Hour))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := durations.ConfirmedScreenMS; got != (15 * time.Minute).Milliseconds() {
+			t.Fatalf("confirmed screen playback = %dms, want the 15-minute union of both roots", got)
+		}
+		if got := durations.ContentExposureMS; got != (20 * time.Minute).Milliseconds() {
+			t.Fatalf("content exposure = %dms, want 20 minutes across both zones", got)
+		}
+
+		// Clipping: a window covering only the first five minutes sees only that.
+		clipped, err := env.server.playbackDurations(ctx, start, start.Add(5*time.Minute))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := clipped.ConfirmedScreenMS; got != (5 * time.Minute).Milliseconds() {
+			t.Fatalf("clipped screen playback = %dms, want 5 minutes", got)
+		}
+	})
+}
+
+func TestInterruptedPlaysCountOnlyUnexpectedEndings(t *testing.T) {
+	withActivityDatabase(t, func(env activityTestEnvironment) {
+		ctx := context.Background()
+		start := time.Now().UTC().Add(-time.Hour)
+		for index, reason := range []string{
+			// Expected endings: an operator asked for these, or they are simply
+			// how playback works.
+			"schedule_transition", "expected_item_boundary", "emergency_takeover", "manual_skip",
+			// Unknown is not evidence of an interruption either.
+			"unknown",
+			// Genuine interruptions.
+			"renderer_failure", "heartbeat_gap",
+		} {
+			if _, err := env.pool.Exec(ctx, `
+				INSERT INTO playback_sessions(id,screen_id,activity_session_id,started_at,ended_at,actual_duration_ms,result,session_type,terminal_reason)
+				VALUES($1,$2,$3,$4,$5,1000,'partial','presentation',$6)`,
+				uuid.New(), env.screenID, "session-"+reason, start.Add(time.Duration(index)*time.Minute), start.Add(time.Duration(index)*time.Minute+time.Second), reason); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		var interrupted int64
+		if err := env.pool.QueryRow(ctx, `SELECT count(*) FROM playback_sessions WHERE screen_id=$1 AND terminal_reason = ANY($2)`, env.screenID, interruptedTerminalReasons()).Scan(&interrupted); err != nil {
+			t.Fatal(err)
+		}
+		if interrupted != 2 {
+			t.Fatalf("interrupted plays = %d, want only the renderer failure and the heartbeat gap", interrupted)
+		}
+	})
+}
+
+func TestFleetHealthMeasuresOnlyTheOperationalFleet(t *testing.T) {
+	withActivityDatabase(t, func(env activityTestEnvironment) {
+		ctx := context.Background()
+		now := time.Now().UTC()
+
+		// The fixture screen: reporting and confirmed playing.
+		if _, err := env.pool.Exec(ctx, `UPDATE screens SET last_heartbeat_at=$2 WHERE id=$1`, env.screenID, now.Add(-time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := env.pool.Exec(ctx, `INSERT INTO screen_player_status(screen_id,playback_state,active_manifest_version,foreground_state) VALUES($1,'playing',3,'foreground')`, env.screenID); err != nil {
+			t.Fatal(err)
+		}
+
+		var organizationID uuid.UUID
+		if err := env.pool.QueryRow(ctx, `SELECT organization_id FROM screens WHERE id=$1`, env.screenID).Scan(&organizationID); err != nil {
+			t.Fatal(err)
+		}
+		// Each of these is out of service for an administrative reason, so none
+		// of them may appear in an operational count.
+		excluded := []struct {
+			name  string
+			apply string
+		}{
+			{"disabled", `UPDATE screens SET enabled=FALSE WHERE id=$1`},
+			{"archived", `UPDATE screens SET archived_at=now() WHERE id=$1`},
+			{"deleted", `UPDATE screens SET deleted_at=now() WHERE id=$1`},
+			{"revoked", `UPDATE device_credentials SET revoked_at=now() WHERE screen_id=$1`},
+		}
+		for _, item := range excluded {
+			id := uuid.New()
+			if _, err := env.pool.Exec(ctx, `INSERT INTO screens(id,organization_id,player_installation_id,name,platform,device_manufacturer,device_model,android_version,player_version,screen_width,screen_height,density,locale,timezone,last_heartbeat_at) VALUES($1,$2,$3,$4,'android-tv','Test','TV','14','1.0',1920,1080,1,'en-US','America/New_York',now())`, id, organizationID, uuid.NewString(), item.name); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := env.pool.Exec(ctx, `INSERT INTO device_credentials(id,screen_id,public_id,secret_hash) VALUES($1,$2,$3,'\x00'::bytea)`, uuid.New(), id, uuid.NewString()); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := env.pool.Exec(ctx, item.apply, id); err != nil {
+				t.Fatalf("%s: %v", item.name, err)
+			}
+		}
+
+		health, err := env.server.fleetHealth(ctx, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if health.Measured != 1 || health.Healthy != 1 || health.Online != 1 {
+			t.Fatalf("fleet health = %+v, want one healthy online screen", health)
+		}
+		if health.Impaired != 0 || health.Offline != 0 || health.Unmeasured != 0 {
+			t.Fatalf("out-of-service screens leaked into fleet health: %+v", health)
+		}
+
+		// The same screen in safe mode is impaired, not healthy, even though its
+		// heartbeat has not changed.
+		if _, err := env.pool.Exec(ctx, `UPDATE screen_player_status SET safe_mode=TRUE WHERE screen_id=$1`, env.screenID); err != nil {
+			t.Fatal(err)
+		}
+		health, err = env.server.fleetHealth(ctx, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if health.Healthy != 0 || health.Impaired != 1 || health.Online != 1 {
+			t.Fatalf("safe mode should be impaired but online: %+v", health)
+		}
+	})
+}
+
 func postActivityBatch(t *testing.T, env activityTestEnvironment, input playerActivityBatchInput, expected int) {
 	t.Helper()
 	body, _ := json.Marshal(input)
@@ -420,3 +584,94 @@ func postActivityBatch(t *testing.T, env activityTestEnvironment, input playerAc
 
 func int64Pointer(value int64) *int64        { return &value }
 func timePointer(value time.Time) *time.Time { return &value }
+
+// The per-screen timeline exists so one screen's history is a single ordered
+// stream. Before it, answering "what happened at 09:14" meant reading four
+// lists and lining them up by eye.
+func TestScreenTimelineMergesEverySource(t *testing.T) {
+	withActivityDatabase(t, func(env activityTestEnvironment) {
+		ctx := context.Background()
+		now := time.Now().UTC()
+
+		postActivityBatch(t, env, playerActivityBatchInput{Events: []playerActivityEventInput{
+			{
+				ID: uuid.New(), Sequence: 1, EventType: "presentation.started",
+				OccurredAt: now.Add(-30 * time.Minute), PlayerTimezone: "UTC",
+				ActivitySessionID: "root-timeline", PresentationType: "playlist",
+				PresentationID: "playlist-a", Result: "playing",
+			},
+			{
+				ID: uuid.New(), Sequence: 2, EventType: "renderer.failure",
+				OccurredAt: now.Add(-20 * time.Minute), PlayerTimezone: "UTC",
+				Result: "failed", FailureCode: "renderer_failure",
+			},
+		}}, http.StatusAccepted)
+		if _, err := env.pool.Exec(ctx, `
+			INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,result,summary)
+			VALUES($1,$2,'screen.updated','screen',$3,'success','Renamed the screen')`,
+			uuid.New(), env.owner.User.ID, env.screenID.String()); err != nil {
+			t.Fatal(err)
+		}
+
+		request := httptest.NewRequest(http.MethodGet,
+			"/api/v1/activity/screens/"+env.screenID.String()+"/timeline?range=24h", nil)
+		request = request.WithContext(context.WithValue(request.Context(), sessionContextKey, env.owner))
+		response := httptest.NewRecorder()
+		env.server.screenTimeline(response, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("timeline status=%d body=%s", response.Code, response.Body.String())
+		}
+		var envelope struct {
+			Data screenTimelineResponse `json:"data"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
+			t.Fatal(err)
+		}
+
+		domains := map[string]bool{}
+		for _, entry := range envelope.Data.Entries {
+			domains[entry.Domain] = true
+		}
+		// Events, derived state intervals, playback sessions, incidents and
+		// administrative changes all reach the same stream.
+		for _, domain := range []string{"playback", "state", "incidents", "audit"} {
+			if !domains[domain] {
+				t.Errorf("timeline is missing the %s domain: %+v", domain, domains)
+			}
+		}
+		// Newest first, with no exceptions.
+		for index := 1; index < len(envelope.Data.Entries); index++ {
+			if envelope.Data.Entries[index].Timestamp.After(envelope.Data.Entries[index-1].Timestamp) {
+				t.Fatalf("timeline is out of order at %d", index)
+			}
+		}
+		// The health classification comes from the same classifier the fleet
+		// section uses, so the two pages cannot disagree.
+		if envelope.Data.Status.Health == "" || envelope.Data.Status.HealthReason == "" {
+			t.Fatalf("current status is missing its health classification: %+v", envelope.Data.Status)
+		}
+		if envelope.Data.Status.CurrentIncident == "" {
+			t.Fatal("a renderer failure should leave an open incident on the status header")
+		}
+
+		filtered := httptest.NewRequest(http.MethodGet,
+			"/api/v1/activity/screens/"+env.screenID.String()+"/timeline?range=24h&domain=audit", nil)
+		filtered = filtered.WithContext(context.WithValue(filtered.Context(), sessionContextKey, env.owner))
+		filteredResponse := httptest.NewRecorder()
+		env.server.screenTimeline(filteredResponse, filtered)
+		var filteredEnvelope struct {
+			Data screenTimelineResponse `json:"data"`
+		}
+		if err := json.Unmarshal(filteredResponse.Body.Bytes(), &filteredEnvelope); err != nil {
+			t.Fatal(err)
+		}
+		if len(filteredEnvelope.Data.Entries) == 0 {
+			t.Fatal("filtering to audit returned nothing")
+		}
+		for _, entry := range filteredEnvelope.Data.Entries {
+			if entry.Domain != "audit" {
+				t.Fatalf("domain filter leaked a %s entry", entry.Domain)
+			}
+		}
+	})
+}

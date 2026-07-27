@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -24,14 +30,56 @@ vi.mock("../components/FleetUptimePanel", () => ({
 }));
 
 const cards = {
-  screensReportingNormally: 12,
-  screensWithPlaybackGaps: 2,
-  confirmedPlaybackDurationMs: 7_200_000,
+  screensWithReportingGaps: 2,
+  confirmedScreenPlaybackMs: 7_200_000,
+  contentExposureMs: 14_400_000,
   playbackFailures: 5,
   interruptedPlays: 1,
   emergencyActivations: 0,
   failedPlayerUpdates: 0,
   recentAdministrativeChanges: 4,
+};
+
+const fleet = {
+  measured: 12,
+  online: 10,
+  healthy: 7,
+  impaired: 3,
+  offline: 2,
+  unmeasured: 0,
+};
+
+const incident = {
+  id: "incident-1",
+  incidentType: "connectivity",
+  severity: "critical",
+  status: "open",
+  title: "Screen stopped reporting",
+  description: "Screen is not reporting.",
+  openedAt: "2026-07-26T08:00:00.000Z",
+  lastSeenAt: "2026-07-26T08:30:00.000Z",
+  primaryScreenId: "screen-2",
+  primaryScreenName: "Cafeteria",
+  affectedScreens: 1,
+  occurrenceCount: 2,
+};
+
+const incidentAnalytics = {
+  activeIncidents: 1,
+  incidentsOpened: 1,
+  incidentsResolved: 0,
+  meanTimeToRecoverSeconds: null,
+  medianTimeToRecoverSeconds: null,
+  longestIncidentSeconds: null,
+  automaticRecoveries: 0,
+  manualRecoveries: 0,
+  recurring: [],
+  byScreen: [],
+  byLocation: [],
+  byDeviceModel: [],
+  byPlayerVersion: [],
+  byFailureCode: [],
+  byType: [],
 };
 
 /** The comparison window returns smaller numbers, so deltas are non-zero. */
@@ -45,24 +93,7 @@ function overviewBody(request: string) {
     data: {
       range: { from: "", to: "" },
       cards: isPrevious ? previousCards : cards,
-      needsAttention: [
-        {
-          screenId: "screen-1",
-          screenName: "Lobby north",
-          kind: "not_reporting",
-          severity: "warning",
-          description: "Playback stalled.",
-          occurredAt: "2026-07-26T09:00:00.000Z",
-        },
-        {
-          screenId: "screen-2",
-          screenName: "Cafeteria",
-          kind: "not_reporting",
-          severity: "critical",
-          description: "Screen is not reporting.",
-          occurredAt: "2026-07-26T08:00:00.000Z",
-        },
-      ],
+      fleet,
       timeline: [],
     },
   };
@@ -110,7 +141,11 @@ beforeEach(() => {
       const url = input instanceof Request ? input.url : String(input);
       const body = url.includes("/activity/overview")
         ? overviewBody(url)
-        : { data: { items: [], nextCursor: "" } };
+        : url.includes("/incidents/analytics")
+          ? { data: incidentAnalytics }
+          : url.includes("/incidents")
+            ? { data: { items: [incident] } }
+            : { data: { items: [], nextCursor: "" } };
       return Promise.resolve(
         new Response(JSON.stringify(body), {
           status: 200,
@@ -136,15 +171,18 @@ describe("Activity overview", () => {
     );
   });
 
-  it("orders unresolved issues by severity, most urgent first", async () => {
+  it("builds Needs attention from incidents, not the latest bad event", async () => {
     renderPage();
 
-    await waitFor(() => expect(screen.getByText("Cafeteria")).toBeTruthy());
-    const names = screen
-      .getAllByRole("link")
-      .map((link) => link.textContent ?? "")
-      .filter((text) => text.includes("Cafeteria") || text.includes("Lobby"));
-    expect(names[0]).toContain("Cafeteria");
+    // The section now reads open incidents; ordering and lifecycle behaviour
+    // has its own coverage in ActivityIncidents.test.tsx.
+    const section = await screen.findByRole("region", {
+      name: "Needs attention",
+    });
+    expect(within(section).getByText("Screen stopped reporting")).toBeTruthy();
+    expect(within(section).getByText("Cafeteria")).toBeTruthy();
+    // It is current state, and says so rather than looking range-scoped.
+    expect(section.textContent).toContain("right now");
   });
 
   it("links a metric to the records behind it", async () => {
@@ -156,6 +194,128 @@ describe("Activity overview", () => {
           .getByRole("link", { name: /Playback failures/ })
           .getAttribute("href"),
       ).toBe("/activity?tab=proof&result=failed"),
+    );
+  });
+
+  it("keeps a preset date range when opening the records behind a metric", async () => {
+    renderPage("/activity?range=30d");
+
+    await waitFor(() =>
+      expect(
+        screen
+          .getByRole("link", { name: /Playback failures/ })
+          .getAttribute("href"),
+      ).toBe("/activity?tab=proof&range=30d&result=failed"),
+    );
+  });
+
+  it("keeps both bounds of a custom date range", async () => {
+    renderPage(
+      "/activity?range=custom&from=2026-07-01T00:00&to=2026-07-14T12:30",
+    );
+
+    await waitFor(() =>
+      expect(
+        screen
+          .getByRole("link", { name: /Failed Player updates/ })
+          .getAttribute("href"),
+      ).toBe(
+        "/activity?tab=events&range=custom&from=2026-07-01T00%3A00&to=2026-07-14T12%3A30&category=updates&result=failed",
+      ),
+    );
+  });
+
+  it("does not carry a filter the destination tab cannot apply", async () => {
+    renderPage("/activity?range=7d");
+
+    await waitFor(() =>
+      expect(
+        screen
+          .getByRole("link", { name: /Administrative changes/ })
+          .getAttribute("href"),
+        // The Audit Log has no category control, and its result vocabulary is
+        // its own; only the range and a valid result survive.
+      ).toBe("/activity?tab=audit&range=7d&result=success"),
+    );
+  });
+});
+
+describe("Playback metric semantics", () => {
+  it("reports screen wall clock and content exposure as separate numbers", async () => {
+    renderPage();
+
+    // Two hours of screen time with four hours of content across zones is a
+    // real shape; one must never be summed into the other.
+    const screenTime = await screen.findByRole("link", {
+      name: /Confirmed screen playback/,
+    });
+    expect(screenTime.textContent).toContain("2h 0m");
+    expect(screenTime.getAttribute("href")).toBe(
+      "/activity?tab=proof&sessionType=presentation",
+    );
+    const exposure = screen.getByRole("link", { name: /Content exposure/ });
+    expect(exposure.textContent).toContain("4h 0m");
+  });
+
+  it("does not use the word coverage for a session outcome rate", async () => {
+    renderPage();
+
+    await screen.findByRole("link", { name: /Confirmed screen playback/ });
+    expect(document.body.textContent).not.toMatch(/coverage/i);
+  });
+
+  it("opens interrupted plays on the sessions that ended unexpectedly", async () => {
+    renderPage("/activity?range=7d");
+
+    await waitFor(() =>
+      expect(
+        screen
+          .getByRole("link", { name: /Interrupted plays/ })
+          .getAttribute("href"),
+        // Not result=partial: a scheduled changeover is partial and expected.
+      ).toBe("/activity?tab=proof&range=7d&terminalReason=unexpected"),
+    );
+  });
+});
+
+describe("Fleet health", () => {
+  it("reports all four states plus reachability, distinctly", async () => {
+    renderPage();
+
+    const section = await screen.findByRole("region", { name: "Fleet health" });
+    const expected: [string, string][] = [
+      ["Online", "10"],
+      ["Healthy", "7"],
+      ["Impaired", "3"],
+      ["Offline", "2"],
+      ["Unmeasured", "0"],
+    ];
+    for (const [label, value] of expected) {
+      const tile = within(section).getByText(label).closest("a, article");
+      expect(tile?.textContent).toContain(value);
+    }
+  });
+
+  it("does not present a heartbeat count as healthy playback", async () => {
+    renderPage();
+
+    const section = await screen.findByRole("region", { name: "Fleet health" });
+    expect(section.textContent).not.toContain("reporting normally");
+    // Online and Healthy are separate counts, so one cannot stand in for the other.
+    expect(within(section).getByText("Online")).toBeTruthy();
+    expect(within(section).getByText("Healthy")).toBeTruthy();
+  });
+
+  it("sends a playback-gap drill-down to the events that produced it", async () => {
+    renderPage("/activity?range=30d");
+
+    await waitFor(() =>
+      expect(
+        screen
+          .getByRole("link", { name: /Screens with reporting gaps/ })
+          .getAttribute("href"),
+        // Heartbeat gaps are warning-level, so severity=error would exclude them.
+      ).toBe("/activity?tab=events&range=30d&category=connectivity"),
     );
   });
 });

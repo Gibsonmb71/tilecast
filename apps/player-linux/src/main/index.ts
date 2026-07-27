@@ -459,8 +459,11 @@ app.whenReady().then(async () => {
 
   ipcMain.on(
     "progress",
-    (_event, data: { itemId: string | null; kind: string }) => {
-      runtime?.onPlaybackProgress(data.itemId, data.kind);
+    (
+      _event,
+      data: { itemId: string | null; kind: string; zoneId?: string },
+    ) => {
+      runtime?.onPlaybackProgress(data.itemId, data.kind, data.zoneId);
     },
   );
   ipcMain.on(

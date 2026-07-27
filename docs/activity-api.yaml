@@ -26,12 +26,175 @@ paths:
   /api/v1/activity/overview:
     get:
       summary: Read the derived operational overview
+      description:
+        Range-scoped totals in `cards`, plus a `fleet` object measured as of now
+        rather than over the range. `fleet.online` counts reachability; the
+        healthy, impaired, offline, and unmeasured counts partition the measured
+        fleet, which covers only enabled, paired, non-archived screens holding an
+        unrevoked credential.
       parameters:
         [
           { $ref: "#/components/parameters/From" },
           { $ref: "#/components/parameters/To" },
         ]
       responses: { "200": { description: Activity overview } }
+  /api/v1/activity/incidents:
+    get:
+      summary: List operational incidents
+      description:
+        Grouped operational problems rather than one row per bad event. Reading
+        this endpoint also sweeps current state, so a screen that stopped
+        reporting opens a connectivity incident even though it sends no event.
+      parameters:
+        - name: status
+          in: query
+          description: Defaults to `active` (open, acknowledged, recovered).
+          schema:
+            {
+              type: string,
+              enum:
+                [active, all, open, acknowledged, recovered, resolved, ignored],
+            }
+        - name: type
+          in: query
+          schema:
+            {
+              type: string,
+              enum: [connectivity, playback, storage, safe_mode, update],
+            }
+        - name: screen
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: Incidents, most severe first }
+        "422": { description: Unsupported filter }
+  /api/v1/activity/incidents/analytics:
+    get:
+      summary: Read incident analytics
+      description:
+        Mean and median time to recover are null rather than zero when nothing
+        recovered in the range, because zero would read as instant recovery.
+      parameters:
+        [
+          { $ref: "#/components/parameters/From" },
+          { $ref: "#/components/parameters/To" },
+        ]
+      responses: { "200": { description: Incident totals and breakdowns } }
+  /api/v1/activity/incidents/{incidentId}:
+    get:
+      summary: Read one incident with its evidence and timeline
+      parameters:
+        - name: incidentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: Incident detail }
+        "404": { description: Incident was not found }
+    patch:
+      summary: Acknowledge, assign, note, resolve, ignore, or reopen an incident
+      description:
+        Owner or Administrator, with CSRF protection. Every applied action is
+        appended to the incident timeline and the audit log.
+      parameters:
+        - name: incidentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: The updated incident }
+        "403": { description: Insufficient role }
+        "409": { description: The action does not apply to the current status }
+        "422": { description: Unknown action or invalid assignee }
+  /api/v1/player/telemetry:
+    post:
+      summary: Upload one bounded telemetry sample
+      security: [{ playerCredential: [] }]
+      description:
+        Gauges are latest values; `interval` counters are deltas since the
+        player's previous sample. The server keeps one snapshot row per screen
+        and five-minute rollups. Raw high-frequency samples are never stored.
+        Threshold events are emitted by the server, which owns the hysteresis
+        and cooldowns so a restarted player cannot re-announce conditions it
+        was already in.
+      responses:
+        "202": { description: Sample accepted }
+        "422": { description: observedAt outside the accepted reporting window }
+  /api/v1/activity/screens/{screenId}/telemetry:
+    get:
+      summary: Read a screen's telemetry snapshot, conditions and rollups
+      description:
+        Owner or Administrator. `snapshot` is absent when the player has never
+        reported, which is different from reporting zeroes.
+      parameters:
+        - name: screenId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - { $ref: "#/components/parameters/From" }
+        - { $ref: "#/components/parameters/To" }
+      responses:
+        "200": { description: Snapshot, active conditions and rollups }
+        "403": { description: Insufficient role }
+  /api/v1/activity/compliance:
+    get:
+      summary: Read expected-versus-actual playback compliance
+      description:
+        Measured against expected windows materialized when each selection
+        became effective, not against current configuration. Emergency and
+        cancelled time is excluded from the denominator and reported
+        separately. `compliancePercent` is null when nothing measurable was
+        expected, because zero would claim every expected play was missed.
+      parameters:
+        - { $ref: "#/components/parameters/From" }
+        - { $ref: "#/components/parameters/To" }
+        - name: dimension
+          in: query
+          schema:
+            type: string
+            enum:
+              [screen, location, group, presentation, schedule, date, reason]
+            default: screen
+        - { name: screen, in: query, schema: { type: string, format: uuid } }
+        - { name: schedule, in: query, schema: { type: string } }
+      responses:
+        "200": { description: Compliance totals and the requested breakdown }
+        "422": { description: Unsupported dimension or range }
+  /api/v1/activity/screens/{screenId}/timeline:
+    get:
+      summary: Read one screen's merged diagnostic timeline
+      description:
+        State intervals, playback sessions, reported events, incident lifecycle
+        and administrative changes in one order, plus the screen's current
+        status and health classification.
+      parameters:
+        - name: screenId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - { $ref: "#/components/parameters/From" }
+        - { $ref: "#/components/parameters/To" }
+        - name: domain
+          in: query
+          schema:
+            type: string
+            enum:
+              [
+                playback,
+                connectivity,
+                reliability,
+                scheduling,
+                commands,
+                updates,
+                emergencies,
+                manifest,
+                state,
+                incidents,
+                audit,
+              ]
+      responses:
+        "200": { description: Merged timeline with current status }
+        "422": { description: Unsupported domain or range }
   /api/v1/activity/uptime:
     get:
       summary: Read fleet uptime for the System overview graphs
@@ -55,6 +218,18 @@ paths:
         - { $ref: "#/components/parameters/From" }
         - { $ref: "#/components/parameters/To" }
         - { $ref: "#/components/parameters/Cursor" }
+        - name: sessionType
+          in: query
+          description: Root presentation intervals are screen wall clock; the rest are content exposure.
+          schema:
+            {
+              type: string,
+              enum: [presentation, content, layout_placement, playlist_item],
+            }
+        - name: terminalReason
+          in: query
+          description: A contract terminal reason, or `unexpected` for every reason that is not an expected ending.
+          schema: { type: string }
         - { $ref: "#/components/parameters/Limit" }
         - { name: screen, in: query, schema: { type: string, format: uuid } }
         - { name: group, in: query, schema: { type: string, format: uuid } }
@@ -65,7 +240,11 @@ paths:
   /api/v1/activity/proof-of-play/summary:
     get:
       summary: Summarize proof of play by screen, content, presentation, or schedule
-      responses: { "200": { description: Aggregated proof-of-play coverage } }
+      description:
+        Root and child durations are totalled separately, and the rate reported
+        is session completion, not scheduled-playback coverage.
+      responses:
+        { "200": { description: Aggregated proof-of-play session outcomes } }
   /api/v1/activity/proof-of-play/export.csv:
     get:
       summary: Export proof of play as CSV

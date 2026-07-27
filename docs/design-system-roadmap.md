@@ -253,6 +253,18 @@ behavior.
 | Dependencies               | Tabs/region navigation, split-pane shell, preview panel, validation-summary behavior.                                                                                                    |
 | Completion criteria        | Each target has an explicit wide and narrow task flow; automated tests cover state preservation across layout changes; no essential action or error exists only in a hidden region.      |
 
+### Operational reporting chart
+
+| Field                | Plan                                                                                                                                                                                                                                                                                    |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Status / priority    | **Deferred / P3**                                                                                                                                                                                                                                                                       |
+| Problem              | Activity reporting could plot compliance, uptime and incident rates over time. It currently does not, and no shared chart primitive exists.                                                                                                                                             |
+| Current examples     | Uptime strips are the only chart-like element in Studio, and they are page-specific.                                                                                                                                                                                                    |
+| Why deferred         | Every reporting figure added so far is one an operator needs exactly, not approximately — expected minutes, missed minutes, time to recover. Tiles, tables and timelines answer that better than a plotted series, and building a chart system before a real need would be speculative. |
+| Reconsider when      | A reporting question genuinely needs shape over time rather than a figure, such as compliance trend across a term.                                                                                                                                                                      |
+| Specification needed | Categorical and sequential palettes validated for the existing light and dark themes, axis and legend rules, an accessible non-colour encoding, an empty and a no-data state distinct from zero, and behaviour when a series is truncated by a row limit.                               |
+| Exclusions           | No decorative charts. No chart that displays a figure a reader is expected to read precisely.                                                                                                                                                                                           |
+
 ## Specification gate
 
 A Candidate advances to **Specified** only when its entry or linked design note

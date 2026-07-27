@@ -23,6 +23,12 @@ data class PlayerActivityEvent(
     val playlistItemId: String = "",
     val layoutPlacementId: String = "",
     val activitySessionId: String = "",
+    /** Contract v2: the root session a child plays inside. */
+    val parentActivitySessionId: String = "",
+    /** Contract v2: presentation, content, layout_placement or playlist_item. */
+    val sessionType: String = "",
+    /** Contract v2: why a session ended. Set on every end event. */
+    val terminalReason: String = "",
     val result: String = "unknown",
     val durationMs: Long? = null,
     val expectedDurationMs: Long? = null,

@@ -94,6 +94,10 @@ func (s *server) recordHeartbeatActivity(r *http.Request, screenID uuid.UUID, sn
 
 	s.recordHeartbeatStateTransitions(r, tx, screenID, snapshot.state, after, now)
 	s.anchorHeartbeatStateInterval(r, tx, screenID, after, now)
+	// The expectation is materialized at the moment the selection becomes
+	// effective, so compliance is always measured against the plan that was in
+	// force at the time rather than whatever is configured today.
+	_ = s.syncExpectedWindowFromStatus(r, tx, screenID, after, now)
 	_ = tx.Commit(activityContextWithoutCancel(r.Context()))
 }
 

@@ -333,12 +333,58 @@ does not claim ARIA `tab` or `tabpanel` semantics.
 
 #### Reporting primitives
 
+These primitives exist to keep a number honest, not merely to display it. Each
+rule below is here because a plainer treatment misled.
+
 A `MetricTile` states one figure. Its delta requires a `comparisonLabel`,
 because a change with no stated period is not interpretable, and it takes a
 `direction` so a rise is toned by whether rising is good news rather than by its
 sign. A metric with no better or worse direction reports movement without a
 success or danger tone. Give a tile a `to` when the number has records behind
 it: a count a person cannot open is a dead end.
+
+The `hint` is not decoration — it carries the measurement's scope. A tile
+without one invites the reader to assume the selected date range applies, so say
+"Right now, not over the range" wherever that is true.
+
+**Absent data reads as absent.** A metric with no data shows "No data", never
+zero. Zero is a measurement: a compliance figure of 0% claims every expected
+play was missed, when in fact none was expected. The same applies to a mean time
+to recover with nothing to average.
+
+**Overlapping and partitioning counts are separated visually.** The fleet-health
+row places Online apart from the four states beside it, with a rule between,
+because Online overlaps the others while healthy, impaired, offline and
+unmeasured partition the fleet. Five identical tiles in a row would imply five
+comparable slices.
+
+**A drill-down must select exactly what the number counted.** Build every link
+through the Activity link helper so the reader's date range and applicable
+filters survive, and so a filter the destination cannot apply is dropped rather
+than carried. A link that opens a differently-filtered report is worse than no
+link, because it silently contradicts the figure just read.
+
+**Excluded quantities stay visible.** Where a metric deliberately removes
+something from its denominator — emergency-overridden or intentionally stopped
+playback — list those amounts beside it. Silently improving a percentage makes
+it unexplainable.
+
+**Severity lives on a rail, not only in colour.** Timeline rows carry severity
+as a left border alongside their badge text, so a failure is findable while
+scrolling and legible without colour vision.
+
+**Status language distinguishes ongoing from finished.** An incident still
+failing reads "Ongoing for 40m"; one that recovered reads "Lasted 40m".
+Recovered items are grouped apart from failing ones and never described as
+still failing.
+
+Long-format reporting tables use a header row on the same grid and collapse to
+two columns on narrow viewports. Prefer a table over a chart when the reader
+needs an exact figure, which in operational reporting is most of the time.
+Uptime strips remain the only chart-like primitive in Studio: the reporting
+added since has been built from tiles, tables and timelines rather than plotted
+series, so there is no chart palette to define yet. Specify one here before
+writing it.
 
 A `FilterBar` renders from filter definitions rather than hand-placed controls,
 and reflects every active filter except the search field as a removable chip, so

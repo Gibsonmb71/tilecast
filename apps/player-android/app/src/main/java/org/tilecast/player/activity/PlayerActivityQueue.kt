@@ -150,6 +150,9 @@ class PlayerActivityQueue private constructor(
         playlistItemId: String = "",
         layoutPlacementId: String = "",
         activitySessionId: String = "",
+        parentActivitySessionId: String = "",
+        sessionType: String = "",
+        terminalReason: String = "",
         result: String = "unknown",
         durationMs: Long? = null,
         expectedDurationMs: Long? = null,
@@ -185,6 +188,9 @@ class PlayerActivityQueue private constructor(
             playlistItemId = playlistItemId,
             layoutPlacementId = layoutPlacementId,
             activitySessionId = activitySessionId,
+            parentActivitySessionId = parentActivitySessionId,
+            sessionType = sessionType,
+            terminalReason = terminalReason,
             result = result,
             durationMs = durationMs?.coerceAtLeast(0),
             expectedDurationMs = expectedDurationMs?.coerceAtLeast(0),
@@ -262,12 +268,13 @@ class PlaybackActivityReporter(
     fun presentationStarted() {
         queue.record(
             eventType = "presentation.started",
-            category = "playback",
+            category = "manifest",
             manifestVersion = manifestVersion,
             presentationType = presentationType,
             presentationId = presentationId,
             presentationRevision = presentationRevision,
             activitySessionId = rootSession,
+            sessionType = "presentation",
             result = "playing",
             trigger = trigger,
             scheduleId = scheduleId,
@@ -277,15 +284,25 @@ class PlaybackActivityReporter(
         )
     }
 
-    fun presentationStopped(result: String = "partial") {
+    /**
+     * Ends the root session. The reason defaults to `unknown` because the
+     * teardown itself is not evidence of why playback stopped; callers that
+     * know — a schedule change, an emergency — pass the real reason.
+     */
+    fun presentationStopped(
+        result: String = "partial",
+        terminalReason: String = "unknown",
+    ) {
         queue.record(
             eventType = "presentation.stopped",
-            category = "playback",
+            category = "manifest",
             manifestVersion = manifestVersion,
             presentationType = presentationType,
             presentationId = presentationId,
             presentationRevision = presentationRevision,
             activitySessionId = rootSession,
+            sessionType = "presentation",
+            terminalReason = terminalReason,
             result = result,
             durationMs = SystemClock.elapsedRealtime() - rootStartedElapsed,
             trigger = trigger,
@@ -310,7 +327,7 @@ class PlaybackActivityReporter(
         val id = UUID.randomUUID().toString()
         val started = SystemClock.elapsedRealtime()
         queue.record(
-            eventType = when (contentType) { "widget" -> "widget.started"; "media" -> "media.started"; else -> "playlist_item.started" },
+            eventType = "content.started",
             category = "playback",
             manifestVersion = manifestVersion,
             presentationType = presentationType,
@@ -321,6 +338,8 @@ class PlaybackActivityReporter(
             playlistItemId = playlistItemId,
             layoutPlacementId = layoutPlacementId,
             activitySessionId = id,
+            parentActivitySessionId = rootSession,
+            sessionType = childSessionType(playlistItemId, layoutPlacementId),
             result = "playing",
             expectedDurationMs = expectedDurationMs,
             trigger = trigger,
@@ -332,7 +351,6 @@ class PlaybackActivityReporter(
             sourceCachedAt = sourceCachedAt,
             sourceRevision = sourceRevision,
             snapshotHash = snapshotHash,
-            metadata = buildJsonObject { put("parentActivitySessionId", JsonPrimitive(rootSession)) },
             priority = 6,
         )
         return ChildSession(id, started, contentType, contentId, playlistItemId, layoutPlacementId)
@@ -346,13 +364,17 @@ class PlaybackActivityReporter(
         private val playlistItemId: String,
         private val layoutPlacementId: String,
     ) {
-        fun finish(result: String = "completed", failureCode: String = "", failureMessage: String = "") {
+        fun finish(
+            result: String = "completed",
+            failureCode: String = "",
+            failureMessage: String = "",
+            terminalReason: String = defaultTerminalReason(result),
+        ) {
             queue.record(
-                eventType = when {
-                    result == "failed" && contentType == "widget" -> "widget.failed"
-                    result == "failed" -> "playlist_item.failed"
-                    result == "skipped" -> "playlist_item.skipped"
-                    else -> "playlist_item.completed"
+                eventType = when (result) {
+                    "failed" -> "content.failed"
+                    "skipped" -> "content.skipped"
+                    else -> "content.completed"
                 },
                 category = "playback",
                 severity = if (result == "failed") "error" else "info",
@@ -365,6 +387,8 @@ class PlaybackActivityReporter(
                 playlistItemId = playlistItemId,
                 layoutPlacementId = layoutPlacementId,
                 activitySessionId = id,
+                sessionType = childSessionType(playlistItemId, layoutPlacementId),
+                terminalReason = terminalReason,
                 result = result,
                 durationMs = SystemClock.elapsedRealtime() - startedElapsed,
                 failureCode = failureCode,
@@ -376,4 +400,29 @@ class PlaybackActivityReporter(
             )
         }
     }
+}
+
+// Activity Event Contract v2 helpers. See docs/activity-event-contract.md.
+
+/**
+ * A child session's type comes from the identifiers it carries: a layout zone
+ * and a playlist position are measured differently, and only root presentation
+ * intervals count toward a screen's wall-clock playback time.
+ */
+internal fun childSessionType(playlistItemId: String, layoutPlacementId: String): String = when {
+    layoutPlacementId.isNotEmpty() -> "layout_placement"
+    playlistItemId.isNotEmpty() -> "playlist_item"
+    else -> "content"
+}
+
+/**
+ * The terminal reason implied by an outcome when the caller does not name one.
+ * A completion reached its own end, and a failure on this player is reported by
+ * the renderer. Anything else stays `unknown`: a guessed reason would move the
+ * session in or out of the interruption count on no evidence at all.
+ */
+internal fun defaultTerminalReason(result: String): String = when (result) {
+    "completed" -> "completed_duration"
+    "failed" -> "renderer_failure"
+    else -> "unknown"
 }
