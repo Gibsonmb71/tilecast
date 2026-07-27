@@ -376,7 +376,7 @@
   padding: var(--tc-space-2);
 }
 
-.command-palette__results button {
+.command-palette__result {
   display: grid;
   width: 100%;
   min-height: 54px;
@@ -388,15 +388,16 @@
   background: transparent;
   border: 0;
   border-radius: var(--tc-radius-control);
+  cursor: pointer;
   text-align: left;
 }
 
-.command-palette__results button:hover,
-.command-palette__results button[aria-selected="true"] {
+.command-palette__result:hover,
+.command-palette__result[data-selected="true"] {
   background: var(--tc-bg-subtle);
 }
 
-.command-palette__results button > span {
+.command-palette__result > span {
   display: grid;
   min-width: 0;
   gap: 2px;

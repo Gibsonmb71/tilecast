@@ -18,10 +18,23 @@ import { buildCommandResults, fuzzyScore, StudioTopbar } from "./StudioTopbar";
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
 beforeEach(() => {
+  // cmdk measures and scrolls its result list in browsers. jsdom does not
+  // implement these layout APIs, so provide inert equivalents for interaction tests.
+  class ResizeObserverMock {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  vi.stubGlobal("ResizeObserver", ResizeObserverMock);
+  Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+    configurable: true,
+    value: vi.fn(),
+  });
   HTMLDialogElement.prototype.showModal = function showModal() {
     this.open = true;
   };
@@ -137,6 +150,12 @@ describe("StudioTopbar", () => {
       name: "Search Tilecast",
     });
     fireEvent.change(searchInput, { target: { value: "Amazon" } });
+    const result = await screen.findByRole("option", {
+      name: /Amazon AFTKRT/,
+    });
+    await waitFor(() =>
+      expect(result.getAttribute("aria-selected")).toBe("true"),
+    );
     fireEvent.keyDown(searchInput, { key: "Enter" });
 
     await waitFor(() =>
