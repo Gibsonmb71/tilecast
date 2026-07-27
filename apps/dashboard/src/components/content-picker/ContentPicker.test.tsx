@@ -35,10 +35,9 @@ const asset = (id: string, name: string, type: Asset["type"]): Asset => ({
       : undefined,
 });
 
-const items = [
-  asset("one", "Welcome", "image"),
-  asset("two", "Menu", "widget"),
-];
+const welcome = asset("one", "Welcome", "image");
+const menuApp = asset("two", "Menu", "widget");
+const items = [welcome, menuApp];
 
 function picker(mode: "single" | "multiple", onConfirm = vi.fn()) {
   vi.spyOn(api, "contentFolders").mockResolvedValue([]);
@@ -164,7 +163,7 @@ describe("ContentPicker", () => {
 
   it("scopes the request and the type tabs to what the caller accepts", async () => {
     const assets = vi.spyOn(api, "assets").mockResolvedValue({
-      items: [items[1]],
+      items: [menuApp],
       total: 1,
       page: 1,
       pageSize: 48,
@@ -209,7 +208,7 @@ describe("ContentPicker", () => {
 
   it("asks the server for media only when apps are not allowed", async () => {
     const assets = vi.spyOn(api, "assets").mockResolvedValue({
-      items: [items[0]],
+      items: [welcome],
       total: 1,
       page: 1,
       pageSize: 48,

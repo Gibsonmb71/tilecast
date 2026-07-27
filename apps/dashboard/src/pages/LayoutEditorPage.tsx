@@ -290,24 +290,22 @@ export function arrangePlacements(
     });
     return;
   }
+  const swapPast = (at: number, neighbour: number) => {
+    const item = ordered[at];
+    const other = ordered[neighbour];
+    if (!item || !other) return;
+    if (!isSelected(item) || isSelected(other)) return;
+    ordered[at] = other;
+    ordered[neighbour] = item;
+  };
   // Walk from the end the selection is heading toward so a block of selected items
   // shuffles past its neighbour intact instead of collapsing onto itself.
   if (mode === "forward")
-    for (let index = ordered.length - 2; index >= 0; index -= 1) {
-      if (isSelected(ordered[index]) && !isSelected(ordered[index + 1]))
-        [ordered[index], ordered[index + 1]] = [
-          ordered[index + 1],
-          ordered[index],
-        ];
-    }
+    for (let index = ordered.length - 2; index >= 0; index -= 1)
+      swapPast(index, index + 1);
   else
-    for (let index = 1; index < ordered.length; index += 1) {
-      if (isSelected(ordered[index]) && !isSelected(ordered[index - 1]))
-        [ordered[index], ordered[index - 1]] = [
-          ordered[index - 1],
-          ordered[index],
-        ];
-    }
+    for (let index = 1; index < ordered.length; index += 1)
+      swapPast(index, index - 1);
   ordered.forEach((item, index) => {
     item.layer = index;
   });
@@ -395,9 +393,13 @@ export function distributeOffsets(
   const centerOf = (item: LayoutPlacement) =>
     axis === "horizontal" ? item.x + item.width / 2 : item.y + item.height / 2;
   const sorted = [...items].sort((a, b) => centerOf(a) - centerOf(b));
-  const first = centerOf(sorted[0]);
-  const step =
-    (centerOf(sorted[sorted.length - 1]) - first) / (sorted.length - 1);
+  const head = sorted[0];
+  const tail = sorted[sorted.length - 1];
+  // Fewer than two items have no gap to even out; callers already guard on three.
+  if (!head || !tail || sorted.length < 2)
+    return new Map<string, { dx: number; dy: number }>();
+  const first = centerOf(head);
+  const step = (centerOf(tail) - first) / (sorted.length - 1);
   return new Map(
     sorted.map((item, index) => {
       const delta = first + step * index - centerOf(item);
