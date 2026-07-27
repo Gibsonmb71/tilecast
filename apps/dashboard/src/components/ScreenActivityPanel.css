@@ -1,6 +1,3 @@
-.screen-activity-route .screen-overview {
-  display: none;
-}
 .screen-activity-panel {
   display: grid;
   gap: 16px;
