@@ -24,14 +24,8 @@ import type {
   ScheduleTarget,
 } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
-import {
-  Button,
-  Dialog,
-  Field,
-  Notice,
-  PageHeader,
-  Switch,
-} from "../components/ui";
+import { Button, Field, Notice, PageHeader, Switch } from "../components/ui";
+import { PlaylistPicker } from "../components/content-picker";
 import {
   conflictWinnerReason,
   countTargetScreens,
@@ -432,25 +426,27 @@ export function ScheduleEditorPage() {
           )}
         </footer>
       </form>
-      <PlaylistPicker
-        open={playlistOpen}
-        playlists={playlists.data?.items ?? []}
-        layouts={(layouts.data?.items ?? []).filter(
-          (layout) => layout.publishedRevision,
-        )}
-        selectedId={input.layoutId ?? input.playlistId ?? ""}
-        onClose={() => setPlaylistOpen(false)}
-        onSelect={(playlist) => {
-          set("playlistId", playlist.id);
-          set("layoutId", undefined);
-          setPlaylistOpen(false);
-        }}
-        onSelectLayout={(layout) => {
-          set("playlistId", undefined);
-          set("layoutId", layout.id);
-          setPlaylistOpen(false);
-        }}
-      />
+      {playlistOpen && (
+        <PlaylistPicker
+          open
+          includeLayouts
+          confirmLabel="Use this presentation"
+          selectedId={input.layoutId ?? input.playlistId ?? ""}
+          onClose={() => setPlaylistOpen(false)}
+          onConfirm={(choice) => {
+            // A schedule targets one or the other, so choosing clears the other field.
+            set(
+              "playlistId",
+              choice.kind === "playlist" ? choice.playlist.id : undefined,
+            );
+            set(
+              "layoutId",
+              choice.kind === "layout" ? choice.layout.id : undefined,
+            );
+            setPlaylistOpen(false);
+          }}
+        />
+      )}
     </section>
   );
 }
@@ -530,82 +526,6 @@ function PlaylistSelection({
       )}
       {error && <span className="field__error">{error}</span>}
     </div>
-  );
-}
-
-function PlaylistPicker({
-  open,
-  playlists,
-  layouts,
-  selectedId,
-  onClose,
-  onSelect,
-  onSelectLayout,
-}: {
-  open: boolean;
-  playlists: Playlist[];
-  layouts: LayoutSummary[];
-  selectedId: string;
-  onClose: () => void;
-  onSelect: (playlist: Playlist) => void;
-  onSelectLayout: (layout: LayoutSummary) => void;
-}) {
-  const [search, setSearch] = useState("");
-  const filtered = playlists.filter((playlist) =>
-    playlist.name.toLowerCase().includes(search.toLowerCase()),
-  );
-  return (
-    <Dialog open={open} title="Choose presentation" onClose={onClose}>
-      <div className="schedule-picker-dialog">
-        <label className="schedule-picker-search">
-          <Search size={17} />
-          <input
-            type="search"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search presentations"
-            autoFocus
-          />
-        </label>
-        <div className="schedule-picker-results">
-          {filtered.map((playlist) => (
-            <button
-              type="button"
-              key={playlist.id}
-              className={selectedId === playlist.id ? "selected" : ""}
-              onClick={() => onSelect(playlist)}
-            >
-              <span>
-                <strong>{playlist.name}</strong>
-                <small>
-                  {playlist.itemCount} items · {playlistDuration(playlist)}
-                </small>
-              </span>
-              {selectedId === playlist.id && <Check size={18} />}
-            </button>
-          ))}
-          {layouts
-            .filter((layout) =>
-              layout.name.toLowerCase().includes(search.toLowerCase()),
-            )
-            .map((layout) => (
-              <button
-                type="button"
-                key={layout.id}
-                className={selectedId === layout.id ? "selected" : ""}
-                onClick={() => onSelectLayout(layout)}
-              >
-                <span>
-                  <strong>{layout.name}</strong>
-                  <small>Layout · revision {layout.publishedRevision}</small>
-                </span>
-                {selectedId === layout.id && <Check size={18} />}
-              </button>
-            ))}
-          {!filtered.length && <p>No playlists match this search.</p>}
-        </div>
-      </div>
-    </Dialog>
   );
 }
 
