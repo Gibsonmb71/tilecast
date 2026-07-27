@@ -15,6 +15,7 @@ import {
   activityRequest,
   EmptyState,
   ErrorNotice,
+  formatDay,
   formatDuration,
   formatWhen,
   humanize,
@@ -226,14 +227,19 @@ function ImportantTimeline({ items }: { items: Overview["timeline"] }) {
     () => items.filter((item) => domain === "all" || item.domain === domain),
     [domain, items],
   );
-  // Events arrive newest first, so day groups keep that order.
+  // Events arrive newest first, so day groups keep that order. Grouping keys on
+  // the local calendar date rather than a formatted string, so the split does
+  // not depend on how a locale happens to render a date.
   const days = useMemo(() => {
     const grouped = new Map<string, Overview["timeline"]>();
     for (const item of visible) {
-      const day = new Date(item.timestamp).toDateString();
-      grouped.set(day, [...(grouped.get(day) ?? []), item]);
+      const at = new Date(item.timestamp);
+      const key = `${at.getFullYear()}-${at.getMonth()}-${at.getDate()}`;
+      const bucket = grouped.get(key);
+      if (bucket) bucket.push(item);
+      else grouped.set(key, [item]);
     }
-    return [...grouped.entries()];
+    return [...grouped.values()];
   }, [visible]);
 
   return (
@@ -264,9 +270,9 @@ function ImportantTimeline({ items }: { items: Overview["timeline"] }) {
         <EmptyState message="No high-value events occurred in this range." />
       ) : (
         <div className="activity-timeline-days">
-          {days.map(([day, entries]) => (
-            <section key={day}>
-              <h4>{day}</h4>
+          {days.map((entries) => (
+            <section key={entries[0]!.id}>
+              <h4>{formatDay(entries[0]!.timestamp)}</h4>
               <ol className="activity-timeline">
                 {entries.map((item) => (
                   <li key={`${item.domain}-${item.id}`}>

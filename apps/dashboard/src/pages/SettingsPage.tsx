@@ -44,6 +44,7 @@ export function SettingsPage() {
   const [draft, setDraft] = useState<Record<string, unknown>>({});
   const [revision, setRevision] = useState(0);
   const [saved, setSaved] = useState<string>();
+  const [retentionDirty, setRetentionDirty] = useState(false);
   useEffect(() => {
     if (settings.data && !baseline) {
       const normalized = normalizeSettingValues(
@@ -63,10 +64,14 @@ export function SettingsPage() {
     [organizationDefinitions, baseline, draft],
   );
   const dirty = new Set(organizationDirty);
+  // The Activity retention panel keeps its own draft, so it has to tell
+  // Settings when leaving would discard an edit.
+  if (retentionDirty) dirty.add("retention");
   const currentDefinitions = definitionsFor(active, organizationDefinitions);
   const currentValues = draft;
   const currentBaseline = baseline;
   const currentDirty = dirty.has(active);
+  const organizationDirtyHere = organizationDirty.has(active);
   useNavigationWarning(
     dirty.size > 0,
     "/settings",
@@ -143,9 +148,10 @@ export function SettingsPage() {
           setSaved(undefined);
           setDraft({ ...draft, [key]: value });
         }}
+        onRetentionDirtyChange={setRetentionDirty}
       />
       <SettingsActionBar
-        dirty={currentDirty}
+        dirty={organizationDirtyHere}
         saving={saveOrganization.isPending}
         success={saved}
         error={errorMessage(saveOrganization.error)}
@@ -164,6 +170,7 @@ function Destination({
   definitions,
   values,
   onChange,
+  onRetentionDirtyChange,
 }: {
   active: SettingsSectionId;
   manageable: boolean;
@@ -171,6 +178,7 @@ function Destination({
   definitions: SettingDefinition[];
   values: Record<string, unknown>;
   onChange: (key: string, value: unknown) => void;
+  onRetentionDirtyChange: (dirty: boolean) => void;
 }) {
   if (active === "users") return <UsersPage />;
   if (active === "locations") return <LocationsPanel canManage={manageable} />;
@@ -198,7 +206,10 @@ function Destination({
           editable={manageable}
           onChange={onChange}
         />
-        <ActivityRetentionPanel editable={manageable} />
+        <ActivityRetentionPanel
+          editable={manageable}
+          onDirtyChange={onRetentionDirtyChange}
+        />
       </>
     );
   if (active === "import-export") return <ImportExportPanel owner={owner} />;

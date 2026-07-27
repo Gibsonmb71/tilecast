@@ -5021,7 +5021,10 @@ tbody tr {
   align-items: center;
   gap: var(--tc-space-2);
 }
-.filter-bar__controls > select,
+/* Select renders a .signal-select wrapper around a visually hidden native
+   control, so the width has to land on the wrapper and its visible trigger. */
+.filter-bar__controls > .signal-select,
+.filter-bar__controls > .signal-select > .signal-select__trigger,
 .filter-bar__text {
   min-width: 138px;
 }
