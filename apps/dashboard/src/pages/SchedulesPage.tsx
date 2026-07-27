@@ -236,8 +236,9 @@ export function GroupDetailPage() {
   );
   const available =
     (screens.data?.items ?? [])
-      .filter((screen) =>
-        !(groupData.screens ?? []).some((member) => member.id === screen.id),
+      .filter(
+        (screen) =>
+          !(groupData.screens ?? []).some((member) => member.id === screen.id),
       )
       .filter((screen) => !assignedElsewhere.has(screen.id))
       .filter((screen) =>
@@ -390,7 +391,9 @@ export function GroupDetailPage() {
                 }}
               >
                 <option value="">
-                  {available.length ? "Choose a screen…" : "No matching screens"}
+                  {available.length
+                    ? "Choose a screen…"
+                    : "No matching screens"}
                 </option>
                 {available.map((screen) => (
                   <option value={screen.id} key={screen.id}>
@@ -424,7 +427,9 @@ export function GroupDetailPage() {
           {groupData.screens.length === 0 && (
             <div className="sync-group-members__empty">
               <strong>No screens in this group</strong>
-              <span>Add an available screen above to begin synchronized playback.</span>
+              <span>
+                Add an available screen above to begin synchronized playback.
+              </span>
             </div>
           )}
         </div>
@@ -474,7 +479,9 @@ export function SchedulesPage() {
               <small>{schedule.enabled ? "Enabled" : "Disabled"}</small>
             </span>
             <span>{schedule.playlistName}</span>
-            <span>{schedule.targets.map((target) => target.name).join(", ")}</span>
+            <span>
+              {schedule.targets.map((target) => target.name).join(", ")}
+            </span>
             <span>
               {schedule.type === "weekly"
                 ? `${schedule.dailyStart}–${schedule.dailyEnd} · ${schedule.timezone}`
@@ -487,8 +494,8 @@ export function SchedulesPage() {
           <div className="screen-empty">
             <h3>No schedules yet</h3>
             <p>
-              Direct screen assignments will continue to play until a schedule is
-              created.
+              Direct screen assignments will continue to play until a schedule
+              is created.
             </p>
           </div>
         )}
