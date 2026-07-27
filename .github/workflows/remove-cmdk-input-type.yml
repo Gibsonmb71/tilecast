@@ -1,0 +1,35 @@
+name: Remove unsupported cmdk input type
+
+on:
+  push:
+    branches:
+      - feature/cmdk-universal-search
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feature/cmdk-universal-search
+      - name: Remove unsupported prop
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("apps/dashboard/src/components/StudioTopbar.tsx")
+          source = path.read_text()
+          source = source.replace('            type="search"\n', '')
+          path.write_text(source)
+          PY
+      - name: Commit fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/remove-cmdk-input-type.yml
+          git add apps/dashboard/src/components/StudioTopbar.tsx
+          git commit -m "Remove unsupported cmdk input type"
+          git push
