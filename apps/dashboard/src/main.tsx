@@ -14,6 +14,7 @@ import "./styles/topbar-width-fixes.css";
 // Page-specific refinements intentionally load after shared Signal styles.
 import "./styles/reliability.css";
 import "./styles/screens.css";
+import "./styles/sync-groups.css";
 import "./styles/account-menu.css";
 import "./styles/issue-fixes.css";
 import "./styles/issues-37-45.css";
