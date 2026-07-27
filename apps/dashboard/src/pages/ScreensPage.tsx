@@ -879,15 +879,7 @@ export function ScreenListContent({
     );
   return (
     <section className="screen-workspace" aria-label="Paired screens">
-      <ScreenSummary
-        screens={screens}
-        status={status}
-        groupBy={groupBy}
-        onStatus={setStatus}
-        onGroupByLocation={() =>
-          setGroupBy(groupBy === "location" ? "none" : "location")
-        }
-      />
+      <ScreenSummary screens={screens} status={status} onStatus={setStatus} />
       {/* One controls block, three deliberate bands: filters on the left, presentation
           utilities right-aligned, then the active-filter chips underneath. Filtering and
           presentation used to be interleaved, which is why the row order matters here. */}
@@ -1344,15 +1336,11 @@ function FilterSelect({
 function ScreenSummary({
   screens,
   status,
-  groupBy,
   onStatus,
-  onGroupByLocation,
 }: {
   screens: Screen[];
   status: string;
-  groupBy: string;
   onStatus: (value: string) => void;
-  onGroupByLocation: () => void;
 }) {
   const online = screens.filter((item) => item.status === "online").length;
   const attention = screens.filter(needsAttention).length;
@@ -1386,15 +1374,10 @@ function ScreenSummary({
       >
         <strong>{attention}</strong> <span>Needs attention</span>
       </button>
-      <button
-        className="summary-bar__item"
-        type="button"
-        aria-pressed={groupBy === "location"}
-        onClick={onGroupByLocation}
-      >
+      <div className="summary-bar__item">
         <strong>{locations}</strong>{" "}
         <span>Location{locations === 1 ? "" : "s"}</span>
-      </button>
+      </div>
     </div>
   );
 }
