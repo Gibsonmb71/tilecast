@@ -6,6 +6,7 @@ import "@tilecast/design-tokens/tokens.css";
 import "./theme";
 import { App } from "./App";
 import { AuthProvider } from "./auth/AuthProvider";
+import { installCommandPaletteFocus } from "./commandPaletteFocus";
 import "./styles.css";
 import "./styles/layout-fonts.css";
 import "./styles/signal.css";
@@ -23,6 +24,8 @@ import "./styles/forms.css";
 import "./styles/player-updates.css";
 import "./styles/context-menu.css";
 import "./styles/screens-media-fixes.css";
+
+installCommandPaletteFocus();
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false } },
