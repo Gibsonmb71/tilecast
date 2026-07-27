@@ -29,7 +29,15 @@ const stateLabels: Record<UptimeState, string> = {
   unknown: "No data",
 };
 
-export function FleetUptimePanel() {
+export function FleetUptimePanel({
+  /**
+   * Overrides the standing description. Surfaces that carry their own date
+   * range use it to say that uptime is measured over its own fixed window.
+   */
+  description = "Measured player time spent connected and playing.",
+}: {
+  description?: string;
+} = {}) {
   const [activeWindow, setActiveWindow] = useState<UptimeWindow>("24h");
   const query = useQuery({
     queryKey: ["fleet-uptime", activeWindow],
@@ -43,7 +51,7 @@ export function FleetUptimePanel() {
       <header>
         <div>
           <h3 id="uptime-heading">Uptime</h3>
-          <p>Measured player time spent connected and playing.</p>
+          <p>{description}</p>
         </div>
         <div className="uptime-window" role="group" aria-label="Uptime window">
           {windows.map((option) => (

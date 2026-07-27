@@ -1,15 +1,15 @@
-import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
+import { MonitorCheck, TriangleAlert } from "lucide-react";
 import {
-  AlertTriangle,
-  Clock3,
-  FileCheck2,
-  History,
-  MonitorCheck,
-  ShieldCheck,
-  TriangleAlert,
-} from "lucide-react";
+  MetricTile,
+  ToggleGroup,
+  type MetricDelta,
+  type MetricDirection,
+  type ResolvedTimeRange,
+} from "../components/ui";
+import { FleetUptimePanel } from "../components/FleetUptimePanel";
 import {
   activityParams,
   activityRequest,
@@ -17,226 +17,273 @@ import {
   ErrorNotice,
   formatDuration,
   formatWhen,
+  humanize,
   Loading,
   ResultBadge,
 } from "./ActivityShared";
 import type { Overview } from "./ActivityShared";
 
-export function OverviewTab({
-  range,
-  canManageRetention,
-  csrfToken,
-}: {
-  range: { from: string; to: string };
-  canManageRetention: boolean;
-  csrfToken: string;
-}) {
+/** Most urgent first, so the worst problem is never below the fold. */
+const severityRank: Record<string, number> = {
+  critical: 0,
+  error: 1,
+  warning: 2,
+};
+
+type MetricSpec = {
+  key: keyof Overview["cards"];
+  label: string;
+  direction: MetricDirection;
+  /** Where the records behind the number live. */
+  to: string;
+  hint?: string;
+  format?: (value: number) => string;
+};
+
+const primaryMetrics: MetricSpec[] = [
+  {
+    key: "confirmedPlaybackDurationMs",
+    label: "Confirmed playback",
+    direction: "up-is-good",
+    to: "/activity?tab=proof",
+    format: formatDuration,
+  },
+  {
+    key: "playbackFailures",
+    label: "Playback failures",
+    direction: "up-is-bad",
+    to: "/activity?tab=proof&result=failed",
+  },
+  {
+    key: "interruptedPlays",
+    label: "Interrupted plays",
+    direction: "up-is-bad",
+    to: "/activity?tab=proof&result=partial",
+  },
+  {
+    key: "emergencyActivations",
+    label: "Emergency activations",
+    direction: "neutral",
+    to: "/activity?tab=events&category=emergencies",
+  },
+];
+
+const secondaryMetrics: MetricSpec[] = [
+  {
+    key: "failedPlayerUpdates",
+    label: "Failed Player updates",
+    direction: "up-is-bad",
+    to: "/activity?tab=events&category=updates&result=failed",
+  },
+  {
+    key: "recentAdministrativeChanges",
+    label: "Administrative changes",
+    direction: "neutral",
+    to: "/activity?tab=audit&result=success",
+  },
+];
+
+export function OverviewTab({ range }: { range: ResolvedTimeRange }) {
   const query = useQuery({
-    queryKey: ["activity", "overview", range],
+    queryKey: ["activity", "overview", range.from, range.to],
     queryFn: () =>
       activityRequest<Overview>(
         `/overview?${activityParams(range, {}).toString()}`,
       ),
     refetchInterval: 30_000,
   });
+  // The comparison period is fetched separately so a delta reflects the same
+  // measurement over the window immediately before this one.
+  const previous = useQuery({
+    queryKey: [
+      "activity",
+      "overview",
+      range.previous?.from,
+      range.previous?.to,
+    ],
+    queryFn: () =>
+      activityRequest<Overview>(
+        `/overview?${activityParams(range.previous!, {}).toString()}`,
+      ),
+    enabled: Boolean(range.previous),
+  });
+
   if (query.isLoading) return <Loading />;
   if (query.error) return <ErrorNotice error={query.error} />;
   const data = query.data;
   if (!data) return null;
   // Older servers marshal empty Go slices as null.
-  const needsAttention = data.needsAttention ?? [];
+  const needsAttention = [...(data.needsAttention ?? [])].sort(
+    (a, b) =>
+      (severityRank[a.severity] ?? 3) - (severityRank[b.severity] ?? 3) ||
+      b.occurredAt.localeCompare(a.occurredAt),
+  );
   const timeline = data.timeline ?? [];
-  const cards = [
-    [
-      "Screens reporting normally",
-      data.cards.screensReportingNormally,
-      MonitorCheck,
-    ],
-    [
-      "Screens with playback gaps",
-      data.cards.screensWithPlaybackGaps,
-      TriangleAlert,
-    ],
-    [
-      "Confirmed playback duration",
-      formatDuration(data.cards.confirmedPlaybackDurationMs),
-      Clock3,
-    ],
-    ["Playback failures", data.cards.playbackFailures, AlertTriangle],
-    ["Interrupted plays", data.cards.interruptedPlays, History],
-    ["Emergency activations", data.cards.emergencyActivations, ShieldCheck],
-    ["Failed Player updates", data.cards.failedPlayerUpdates, TriangleAlert],
-    [
-      "Recent administrative changes",
-      data.cards.recentAdministrativeChanges,
-      FileCheck2,
-    ],
-  ] as const;
+
+  function deltaFor(spec: MetricSpec): MetricDelta | undefined {
+    const comparison = range.previous;
+    if (!comparison || !previous.data) return undefined;
+    return {
+      change:
+        Number(data!.cards[spec.key]) - Number(previous.data.cards[spec.key]),
+      comparisonLabel: comparison.label,
+      direction: spec.direction,
+      format: spec.format,
+    };
+  }
+
+  function tile(spec: MetricSpec) {
+    const raw = Number(data!.cards[spec.key]);
+    return (
+      <MetricTile
+        key={spec.key}
+        label={spec.label}
+        value={spec.format ? spec.format(raw) : raw}
+        hint={spec.hint}
+        to={spec.to}
+        delta={deltaFor(spec)}
+      />
+    );
+  }
+
   return (
     <div className="activity-overview">
-      <section className="activity-summary-grid" aria-label="Activity summary">
-        {cards.map(([label, value, Icon]) => (
-          <article key={label}>
-            <Icon size={18} aria-hidden="true" />
-            <strong>{value}</strong>
-            <span>{label}</span>
-          </article>
-        ))}
+      <section className="activity-health" aria-label="Fleet health">
+        <MetricTile
+          icon={MonitorCheck}
+          label="Screens reporting normally"
+          value={data.cards.screensReportingNormally}
+          hint="Right now, not over the selected range"
+          to="/screens"
+        />
+        <MetricTile
+          icon={TriangleAlert}
+          label="Screens with playback gaps"
+          value={data.cards.screensWithPlaybackGaps}
+          hint={`Seen during ${range.label}`}
+          to="/activity?tab=events&severity=error"
+        />
       </section>
-      <div className="activity-overview-columns">
-        <section className="activity-panel">
-          <header>
-            <div>
-              <h3>Needs attention</h3>
-              <p>Current unresolved operational issues.</p>
-            </div>
-          </header>
-          {needsAttention.length === 0 ? (
-            <EmptyState message="No unresolved Activity issues in this range." />
-          ) : (
-            <div className="activity-attention-list">
-              {needsAttention.map((item) => (
-                <Link
-                  key={`${item.screenId}-${item.kind}`}
-                  to={`/screens/${item.screenId}?tab=activity`}
-                >
-                  <ResultBadge value={item.severity} />
-                  <span>
-                    <strong>{item.screenName}</strong>
-                    <small>{item.description}</small>
-                  </span>
-                  <time>{formatWhen(item.occurredAt)}</time>
-                </Link>
-              ))}
-            </div>
-          )}
-        </section>
-        <section className="activity-panel">
-          <header>
-            <div>
-              <h3>Important timeline</h3>
-              <p>
-                High-value playback, recovery, emergency, and administrative
-                events.
-              </p>
-            </div>
-          </header>
-          {timeline.length === 0 ? (
-            <EmptyState message="No high-value events occurred in this range." />
-          ) : (
-            <ol className="activity-timeline">
-              {timeline.map((item) => (
-                <li key={`${item.domain}-${item.id}`}>
-                  <time>{formatWhen(item.timestamp)}</time>
-                  <span
-                    className={`activity-domain activity-domain--${item.domain}`}
-                  >
-                    {item.domain}
-                  </span>
-                  <p>{item.description}</p>
-                </li>
-              ))}
-            </ol>
-          )}
-        </section>
-      </div>
-      {canManageRetention && <RetentionSettings csrfToken={csrfToken} />}
+
+      <section className="activity-panel">
+        <header>
+          <div>
+            <h3>
+              Needs attention
+              {needsAttention.length > 0 && (
+                <span className="activity-attention-count">
+                  {needsAttention.length}
+                </span>
+              )}
+            </h3>
+            <p>Current unresolved operational issues, most urgent first.</p>
+          </div>
+        </header>
+        {needsAttention.length === 0 ? (
+          <EmptyState message="No unresolved Activity issues in this range." />
+        ) : (
+          <div className="activity-attention-list">
+            {needsAttention.map((item) => (
+              <Link
+                key={`${item.screenId}-${item.kind}`}
+                to={`/screens/${item.screenId}?tab=activity`}
+              >
+                <ResultBadge value={item.severity} />
+                <span>
+                  <strong>{item.screenName}</strong>
+                  <small>{item.description}</small>
+                </span>
+                <time>{formatWhen(item.occurredAt)}</time>
+              </Link>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <FleetUptimePanel description="Measured player time spent connected and playing, over its own fixed window rather than the range selected above." />
+
+      <section className="activity-metrics" aria-label="Activity totals">
+        <div className="activity-metrics__primary">
+          {primaryMetrics.map(tile)}
+        </div>
+        <div className="activity-metrics__secondary">
+          {secondaryMetrics.map(tile)}
+        </div>
+      </section>
+
+      <ImportantTimeline items={timeline} />
     </div>
   );
 }
 
-function RetentionSettings({ csrfToken }: { csrfToken: string }) {
-  type Retention = {
-    rawEventDays: number;
-    playbackSessionDays: number;
-    screenStateDays: number;
-    auditLogDays: number;
-    diagnosticMetadataDays: number;
-    updatedAt: string;
-  };
-  const queryClient = useQueryClient();
-  const query = useQuery({
-    queryKey: ["activity", "retention"],
-    queryFn: () => activityRequest<Retention>("/retention"),
-  });
-  const [draft, setDraft] = useState<Retention | null>(null);
-  const value = draft ?? query.data ?? null;
-  const save = useMutation({
-    mutationFn: async (input: Retention) => {
-      const response = await fetch("/api/v1/activity/retention", {
-        method: "PATCH",
-        credentials: "same-origin",
-        headers: {
-          "Content-Type": "application/json",
-          "X-CSRF-Token": csrfToken,
-        },
-        body: JSON.stringify(input),
-      });
-      const body = (await response.json().catch(() => ({}))) as {
-        data?: Retention;
-        error?: { message?: string };
-      };
-      if (!response.ok || !body.data)
-        throw new Error(
-          body.error?.message ?? "Retention settings could not be saved.",
-        );
-      return body.data;
-    },
-    onSuccess: (next) => {
-      setDraft(null);
-      queryClient.setQueryData(["activity", "retention"], next);
-    },
-  });
-  if (!value) return null;
-  type RetentionNumberKey = Exclude<keyof Retention, "updatedAt">;
-  const fields: [RetentionNumberKey, string, number, number][] = [
-    ["rawEventDays", "Raw Player activity events", 7, 365],
-    ["playbackSessionDays", "Proof-of-play sessions", 30, 2555],
-    ["screenStateDays", "Screen state intervals", 30, 2555],
-    ["auditLogDays", "Audit logs", 90, 3650],
-    ["diagnosticMetadataDays", "Detailed diagnostic metadata", 7, 180],
-  ];
+function ImportantTimeline({ items }: { items: Overview["timeline"] }) {
+  const [domain, setDomain] = useState("all");
+  const domains = useMemo(
+    () => [...new Set(items.map((item) => item.domain))].sort(),
+    [items],
+  );
+  const visible = useMemo(
+    () => items.filter((item) => domain === "all" || item.domain === domain),
+    [domain, items],
+  );
+  // Events arrive newest first, so day groups keep that order.
+  const days = useMemo(() => {
+    const grouped = new Map<string, Overview["timeline"]>();
+    for (const item of visible) {
+      const day = new Date(item.timestamp).toDateString();
+      grouped.set(day, [...(grouped.get(day) ?? []), item]);
+    }
+    return [...grouped.entries()];
+  }, [visible]);
+
   return (
-    <section className="activity-panel activity-retention">
+    <section className="activity-panel">
       <header>
         <div>
-          <h3>Activity retention</h3>
+          <h3>Important timeline</h3>
           <p>
-            Cleanup runs in bounded background batches and respects deployment
-            hard limits.
+            High-value playback, recovery, emergency, and administrative events.
           </p>
         </div>
-        <button
-          className="button button--primary"
-          type="button"
-          disabled={save.isPending || !draft}
-          onClick={() => draft && save.mutate(draft)}
-        >
-          {save.isPending ? "Saving…" : "Save retention"}
-        </button>
+        {domains.length > 1 && (
+          <ToggleGroup
+            label="Filter the timeline by domain"
+            value={domain}
+            onValueChange={setDomain}
+            items={[
+              { value: "all", label: "All" },
+              ...domains.map((value) => ({
+                value,
+                label: humanize(value),
+              })),
+            ]}
+          />
+        )}
       </header>
-      {save.error && (
-        <div className="notice notice--error">{save.error.message}</div>
+      {visible.length === 0 ? (
+        <EmptyState message="No high-value events occurred in this range." />
+      ) : (
+        <div className="activity-timeline-days">
+          {days.map(([day, entries]) => (
+            <section key={day}>
+              <h4>{day}</h4>
+              <ol className="activity-timeline">
+                {entries.map((item) => (
+                  <li key={`${item.domain}-${item.id}`}>
+                    <time>{formatWhen(item.timestamp)}</time>
+                    <span
+                      className={`activity-domain activity-domain--${item.domain}`}
+                    >
+                      {item.domain}
+                    </span>
+                    <p>{item.description}</p>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          ))}
+        </div>
       )}
-      <div className="activity-retention-grid">
-        {fields.map(([key, label, min, max]) => (
-          <label key={key}>
-            <span>{label}</span>
-            <input
-              type="number"
-              min={min}
-              max={max}
-              value={Number(value[key])}
-              onChange={(event) =>
-                setDraft({ ...value, [key]: Number(event.target.value) })
-              }
-            />
-            <small>
-              {min}–{max} days
-            </small>
-          </label>
-        ))}
-      </div>
     </section>
   );
 }

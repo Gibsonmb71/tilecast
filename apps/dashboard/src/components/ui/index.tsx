@@ -87,6 +87,12 @@ export const Textarea = forwardRef<
 export { Select } from "./SignalSelect";
 export { ContextMenu, useContextMenu } from "./ContextMenu";
 export type { ContextMenuItem } from "./ContextMenu";
+export { MetricTile } from "./MetricTile";
+export type { MetricDelta, MetricDirection } from "./MetricTile";
+export { FilterBar, FilterChips, useUrlFilters } from "./FilterBar";
+export type { FilterDefinition, FilterOption, FilterValues } from "./FilterBar";
+export { TimeRangePicker, resolveTimeRange } from "./TimeRangePicker";
+export type { ResolvedTimeRange, TimeRangePreset } from "./TimeRangePicker";
 
 export function Field({
   label,

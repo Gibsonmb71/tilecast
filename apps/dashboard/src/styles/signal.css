@@ -4946,6 +4946,153 @@ tbody tr {
   }
 }
 
+/* Metric tiles, filter bars, and the time range picker: shared primitives for
+   reporting surfaces. See docs/design-system.md. */
+.metric-tile {
+  display: grid;
+  min-height: 106px;
+  align-content: start;
+  gap: var(--tc-space-1);
+  padding: var(--tc-space-4);
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-panel);
+  background: var(--tc-bg-surface);
+  color: inherit;
+  text-decoration: none;
+}
+.metric-tile--with-icon {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+.metric-tile--with-icon > :not(.metric-tile__icon) {
+  grid-column: 2;
+}
+.metric-tile__icon {
+  display: grid;
+  grid-row: 1 / span 2;
+  align-self: start;
+  margin-right: var(--tc-space-2);
+  color: var(--tc-action-primary);
+}
+.metric-tile__value {
+  font: var(--tc-text-metric-value);
+  font-variant-numeric: tabular-nums;
+}
+.metric-tile__label {
+  color: var(--tc-text-secondary);
+  font: var(--tc-text-metric-label);
+}
+.metric-tile__hint {
+  color: var(--tc-text-secondary);
+  font: var(--tc-text-supporting);
+}
+.metric-tile__delta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tc-space-1);
+  margin-top: var(--tc-space-1);
+  font: var(--tc-text-metric-delta);
+  font-variant-numeric: tabular-nums;
+}
+.metric-tile__delta--good {
+  color: var(--tc-status-success);
+}
+.metric-tile__delta--bad {
+  color: var(--tc-status-danger);
+}
+.metric-tile__delta--flat {
+  color: var(--tc-text-secondary);
+}
+.metric-tile--link:hover {
+  border-color: var(--tc-border-strong);
+  background: var(--tc-bg-subtle);
+}
+.metric-tile--link:focus-visible {
+  outline: 2px solid var(--tc-focus-ring);
+  outline-offset: 2px;
+}
+
+.filter-bar {
+  display: grid;
+  gap: var(--tc-space-2);
+}
+.filter-bar__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--tc-space-2);
+}
+.filter-bar__controls > select,
+.filter-bar__text {
+  min-width: 138px;
+}
+.filter-bar__text {
+  min-height: var(--tc-control-height);
+  padding: 0 10px;
+  border: 1px solid var(--tc-input-border);
+  border-radius: var(--tc-radius-control);
+  background: var(--tc-input-bg);
+  color: var(--tc-input-text);
+}
+
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--tc-space-2);
+}
+.filter-chip {
+  display: inline-flex;
+  max-width: 280px;
+  min-height: 28px;
+  align-items: center;
+  gap: 5px;
+  padding: 0 var(--tc-space-2);
+  border: 1px solid var(--tc-chip-border);
+  border-radius: var(--tc-radius-chip);
+  background: var(--tc-chip-bg);
+  color: var(--tc-chip-text);
+  cursor: pointer;
+  font: var(--tc-text-supporting);
+}
+.filter-chip strong {
+  color: var(--tc-text-primary);
+}
+.filter-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.filter-chips__clear {
+  padding: 3px 6px;
+  border: 0;
+  background: transparent;
+  color: var(--tc-action-primary);
+  cursor: pointer;
+  font: var(--tc-text-label);
+}
+
+.time-range {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: var(--tc-space-2);
+}
+.time-range__field {
+  display: grid;
+  gap: var(--tc-space-1);
+  color: var(--tc-text-secondary);
+  font: var(--tc-text-supporting);
+}
+.time-range__field input {
+  min-height: var(--tc-control-height);
+  padding: 0 10px;
+  border: 1px solid var(--tc-input-border);
+  border-radius: var(--tc-radius-control);
+  background: var(--tc-input-bg);
+  color: var(--tc-input-text);
+}
+
 /* Shared playlist chooser. Same shell as the other dialogs; the list scrolls on its own
    so the search field and the confirm footer stay put while browsing. */
 .dialog.playlist-picker {

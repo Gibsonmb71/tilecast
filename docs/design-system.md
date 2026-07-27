@@ -151,6 +151,26 @@ Status assignments follow domain meaning. Do not infer a tone from an internal
 enum name, and do not move server-owned screen status thresholds into Studio or
 Player presentation code.
 
+#### Data visualization fills
+
+Status roles are text and background roles. A `--tc-status-*` foreground value
+placed behind a chart segment, bar, or swatch is a role mismatch: it is tuned
+for contrast against a surface at text weight, not for a saturated fill a few
+pixels tall. Measured graphics use the visualization family instead.
+
+| Token               | Meaning                                   |
+| ------------------- | ----------------------------------------- |
+| `--tc-viz-up`       | Connected and playing                     |
+| `--tc-viz-impaired` | Reporting but degraded                    |
+| `--tc-viz-down`     | Not reporting                             |
+| `--tc-viz-unknown`  | Not measured, with no claim either way    |
+| `--tc-viz-track`    | The unfilled remainder of a bar or column |
+
+The family is theme-scoped: dark themes lift the up and impaired fills to the
+400 ramp, because the 700 ramp muddies against the dark canvas at segment size.
+Fills carry no meaning on their own — pair every series with a legend, a label,
+or an accessible name, per principle 5.
+
 ### Typography
 
 Studio uses Inter with system fallbacks. Technical values use the shared
@@ -167,6 +187,14 @@ monospace family. Player uses the platform sans-serif family at TV scale.
 | Label         | `--tc-text-label`         | 13 / 17.55 px, semibold    | Controls and compact headings                      |
 | Supporting    | `--tc-text-supporting`    | 12 / 17.4 px               | Hints, metadata, and secondary context             |
 | Technical     | `--tc-text-technical`     | 13 / 18.85 px, medium mono | IDs, versions, hashes, and machine-oriented values |
+| Metric value  | `--tc-text-metric-value`  | 24 / 26.4 px, semibold     | The single number in a summary tile                |
+| Metric label  | `--tc-text-metric-label`  | 13 / 17.55 px, medium      | What that number counts                            |
+| Metric delta  | `--tc-text-metric-delta`  | 12 / 15.6 px, semibold     | Change against a stated comparison period          |
+
+Metric roles are for a tile whose whole purpose is one figure. They are not a
+license to enlarge arbitrary numbers inside body copy or tables. A delta is only
+honest next to a stated comparison period, so do not render one without saying
+what it is compared against.
 
 Use tabular numerals for counts, timestamps, durations, storage, versions, and
 percentages when values align or update in place. Do not reduce essential
@@ -294,12 +322,33 @@ semantics remain the source of truth.
 | `TableContainer`           | Contained overflow                                               | Responsive data table boundary                     |
 | `Skeleton`                 | Decorative loading placeholder                                   | Preserve approximate layout while loading          |
 | `Spinner`                  | Labeled status                                                   | Indeterminate work                                 |
+| `MetricTile`               | Value, label, optional icon, hint, delta, and drill-through link | One measured figure in a summary row               |
+| `FilterBar`, `FilterChips` | Declarative filter definitions with removable active chips       | Narrowing a reported collection                    |
+| `TimeRangePicker`          | Presets, custom bounds, and a resolved comparison window         | Choosing the period a report covers                |
 
-Popovers, ARIA tab panels, filter menus and chips, drop zones, inspectors,
-timelines, and editor shells currently have page-specific implementations.
-Their proposed shared forms are Planned, not Implemented. `ViewTabs` is
-navigation between page-owned views; it does not claim ARIA `tab` or `tabpanel`
-semantics.
+Popovers, ARIA tab panels, drop zones, inspectors, timelines, and editor shells
+currently have page-specific implementations. Their proposed shared forms are
+Planned, not Implemented. `ViewTabs` is navigation between page-owned views; it
+does not claim ARIA `tab` or `tabpanel` semantics.
+
+#### Reporting primitives
+
+A `MetricTile` states one figure. Its delta requires a `comparisonLabel`,
+because a change with no stated period is not interpretable, and it takes a
+`direction` so a rise is toned by whether rising is good news rather than by its
+sign. A metric with no better or worse direction reports movement without a
+success or danger tone. Give a tile a `to` when the number has records behind
+it: a count a person cannot open is a dead end.
+
+A `FilterBar` renders from filter definitions rather than hand-placed controls,
+and reflects every active filter except the search field as a removable chip, so
+a narrowed result set never reads as an empty one. Filter state belongs in the
+URL through `useUrlFilters`, which leaves parameters it does not own untouched;
+a filtered report that cannot be reloaded or shared is not finished.
+
+`resolveTimeRange` returns the selected bounds together with the equally long
+window immediately before them. It returns no comparison window for a custom
+range missing a bound, where the length to step back by would be arbitrary.
 
 ### Primary navigation
 
@@ -415,6 +464,13 @@ Tables have no vertical rules, use a subtle header, keep rows approximately
 soft action color. Row actions remain visually secondary and keyboard
 accessible. A table must retain meaningful headers and must not become an
 unlabeled grid of values on narrow screens.
+
+Borders have three weights and they are not interchangeable. `--tc-border-default`
+outlines a panel, a control, or a table against the page. `--tc-border-subtle`
+divides rows and regions _inside_ a container that already carries a default
+border, so a list does not read as a stack of boxes. `--tc-border-strong` marks
+a deliberate emphasis such as a selected boundary. Because the subtle weight is
+derived from the theme's own border and surface, it needs no per-theme copy.
 
 Dialogs are for bounded tasks that require attention before returning to the
 page. Give each dialog a specific title, a visible close action, Escape/cancel

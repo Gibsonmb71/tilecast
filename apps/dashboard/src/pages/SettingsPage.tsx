@@ -23,6 +23,7 @@ import {
 import { UsersPage } from "./UsersPage";
 import { BackupPanel } from "../settings/BackupPanel";
 import { LocationsPanel } from "../settings/LocationsPanel";
+import { ActivityRetentionPanel } from "../settings/ActivityRetentionPanel";
 
 export { PlayerPolicyEditor } from "../settings/PlayerPolicyEditor";
 export {
@@ -185,6 +186,19 @@ function Destination({
           editable={owner}
           onChange={onChange}
         />
+      </>
+    );
+  if (active === "retention")
+    return (
+      <>
+        <SettingsSection
+          section={active}
+          definitions={definitions}
+          values={values}
+          editable={manageable}
+          onChange={onChange}
+        />
+        <ActivityRetentionPanel editable={manageable} />
       </>
     );
   if (active === "import-export") return <ImportExportPanel owner={owner} />;

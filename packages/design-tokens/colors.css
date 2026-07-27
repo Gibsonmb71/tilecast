@@ -7,10 +7,6 @@
   --tc-neutral-300: #b7c3cc;
   --tc-neutral-400: #98a5af;
   --tc-neutral-500: #667582;
-  /* Light-mode secondary ink. 500 on white is 4.99:1, which only just clears the
-     AA floor and reads washed out at the 12px supporting size; 600 is 6.2:1 and
-     still separates clearly from primary ink. */
-  --tc-neutral-600: #52616f;
   --tc-neutral-700: #445668;
   --tc-neutral-800: #202c38;
   --tc-neutral-850: #1b2632;
@@ -30,9 +26,11 @@
 
   --tc-green-50: #e6f4ef;
   --tc-green-300: #a9d8c8;
+  --tc-green-400: #35a37e;
   --tc-green-700: #1d7f62;
   --tc-orange-50: #fff3dd;
   --tc-orange-300: #e8c68a;
+  --tc-orange-400: #d38a2b;
   --tc-orange-700: #a45d0a;
   --tc-red-50: #fcebed;
   --tc-red-300: #e8b1b7;
