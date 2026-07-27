@@ -96,6 +96,8 @@ Studio distinguishes:
 
 `WaitingForPermission` and `WaitingForUser` are expected states, not automatic failures.
 
+A screen reaches success once it heartbeats at or above the expected version with healthy playback after installation, no update failure, and no safe mode. Repeated heartbeats do not re-count it. If a screen is heartbeating healthily at the new version but its target is still shown as reconnecting, opening the deployment list or a deployment's detail reconciles it — there is no permanent reconnecting state to wait out.
+
 ## Canary rollout
 
 A deployment can begin with a deterministic canary cohort.

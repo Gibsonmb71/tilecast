@@ -308,7 +308,14 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, target any) error {
 
 func decodeJSONLimit(w http.ResponseWriter, r *http.Request, target any, maximumBytes int64) error {
 	r.Body = http.MaxBytesReader(w, r.Body, maximumBytes)
-	decoder := json.NewDecoder(r.Body)
+	return decodeJSONReader(r, r.Body, target)
+}
+
+// decodeJSONReader applies the strict request contract (one JSON object, no
+// unknown fields) to an already-bounded body. Handlers that need the raw bytes
+// as well read them first and pass a reader over them.
+func decodeJSONReader(r *http.Request, body io.Reader, target any) error {
+	decoder := json.NewDecoder(body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
 		category := "malformed"

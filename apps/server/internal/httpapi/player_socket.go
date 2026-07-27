@@ -149,8 +149,14 @@ func (s *server) handleSocketStatus(r *http.Request, ctx context.Context, princi
 	snapshot := s.captureHeartbeatActivity(ctx, principal.ScreenID)
 	contactRecorded := false
 
-	var heartbeat devices.Heartbeat
-	if err := json.Unmarshal(payload, &heartbeat); err != nil {
+	heartbeat, dropped, err := decodeHeartbeatTolerantly(payload)
+	if len(dropped) > 0 {
+		// One malformed optional identifier must not cost the lifecycle fields in
+		// the same message; the field is discarded, not coerced, and named here.
+		s.logger.Warn("player heartbeat optional identifiers dropped over socket",
+			"invalid_fields", dropped, "screen_id", principal.ScreenID)
+	}
+	if err != nil {
 		s.logger.Warn("player heartbeat payload rejected over socket",
 			"error", "heartbeat payload contains invalid field values",
 			"invalid_fields", heartbeatPayloadInvalidFields(payload),
@@ -178,8 +184,16 @@ func (s *server) handleSocketStatus(r *http.Request, ctx context.Context, princi
 	}
 
 	if s.playlists != nil {
+		statusPayload := []byte(payload)
+		if len(dropped) > 0 {
+			// Same payload, same dropped identifiers: the remaining playback status
+			// is still worth recording.
+			if reduced, _, ok := salvageHeartbeatPayload(payload); ok {
+				statusPayload = reduced
+			}
+		}
 		var status playlists.PlayerStatus
-		if err := json.Unmarshal(payload, &status); err == nil {
+		if err := json.Unmarshal(statusPayload, &status); err == nil {
 			_ = s.playlists.ReportStatus(ctx, principal.ScreenID, status)
 		}
 	}

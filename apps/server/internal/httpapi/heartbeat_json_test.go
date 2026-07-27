@@ -30,6 +30,40 @@ func TestPlayerHeartbeatAcceptsEmergencyAndCommandStatus(t *testing.T) {
 	}
 }
 
+func TestDecodeHeartbeatTolerantlyKeepsLifecycleFieldsWhenAnItemIdentifierIsSynthetic(t *testing.T) {
+	payload := []byte(`{"screenWidth":1920,"screenHeight":1080,"playerVersion":"0.2.6","playerVersionCode":2006,"lastHealthyPlaybackAt":"2026-07-27T12:00:00Z","playbackState":"playing","safeMode":false,"currentItemId":"layout-6ba7b810-9dad-11d1-80b4-00c04fd430c8"}`)
+	heartbeat, dropped, err := decodeHeartbeatTolerantly(payload)
+	if err != nil {
+		t.Fatalf("heartbeat rejected: %v", err)
+	}
+	if !slices.Equal(dropped, []string{"currentItemId"}) {
+		t.Fatalf("dropped = %v", dropped)
+	}
+	if heartbeat.CurrentItemID != nil {
+		t.Fatalf("malformed identifier was not dropped: %v", heartbeat.CurrentItemID)
+	}
+	if heartbeat.PlayerVersionCode == nil || *heartbeat.PlayerVersionCode != 2006 {
+		t.Fatalf("player version code lost: %#v", heartbeat.PlayerVersionCode)
+	}
+	if heartbeat.LastHealthyPlaybackAt == nil || heartbeat.PlaybackState != "playing" || heartbeat.SafeMode == nil || *heartbeat.SafeMode {
+		t.Fatalf("lifecycle fields lost: %#v", heartbeat)
+	}
+}
+
+func TestDecodeHeartbeatTolerantlyRejectsMalformedDeploymentIdentifier(t *testing.T) {
+	payload := []byte(`{"screenWidth":1920,"screenHeight":1080,"playerVersionCode":2006,"currentUpdateDeploymentId":"deployment-1"}`)
+	if _, dropped, err := decodeHeartbeatTolerantly(payload); err == nil || dropped != nil {
+		t.Fatalf("deployment identifier was salvaged: dropped=%v err=%v", dropped, err)
+	}
+}
+
+func TestDecodeHeartbeatTolerantlyRejectsMalformedTimestamp(t *testing.T) {
+	payload := []byte(`{"screenWidth":1920,"lastCommandCompletedAt":"not-a-time"}`)
+	if _, _, err := decodeHeartbeatTolerantly(payload); err == nil {
+		t.Fatal("malformed timestamp was accepted")
+	}
+}
+
 func TestHeartbeatPayloadInvalidFieldsNamesOnlyMalformedFields(t *testing.T) {
 	payload := json.RawMessage(`{"screenWidth":1920,"screenHeight":1080,"playerVersion":"0.2.2","currentItemId":"layout:item","lastCommandCompletedAt":"not-a-time"}`)
 	fields := heartbeatPayloadInvalidFields(payload)

@@ -416,8 +416,28 @@ func normalizedCanarySize(requested, targetCount int) int {
 	return requested
 }
 
+// reconcileUpdateDeployments settles what the live heartbeat path should already
+// have settled. It exists because a target stuck in `reconnecting` while its
+// screen is demonstrably healthy at the expected version is a reporting bug, not
+// an operational state, and Studio must not show it as progress forever.
+//
+// Bounded on purpose: three fixed statements, no per-row work, no retries. The
+// order matters — settle first, so a canary that did reconnect healthily is not
+// then paused for failing to.
+func (s *server) reconcileUpdateDeployments(ctx context.Context) {
+	// A screen counts as reconnected when it is currently heartbeating, reports a
+	// version code at or above the expected one, is not in safe mode, reports no
+	// update failure, and has healthy playback after the installation began.
+	_, _ = s.db.Exec(ctx, `UPDATE screen_update_states st SET state='succeeded',reconnect_at=COALESCE(st.reconnect_at,now()),completed_at=now(),updated_at=now() WHERE st.state='reconnecting' AND EXISTS(SELECT 1 FROM screens sc JOIN screen_player_status ps ON ps.screen_id=sc.id WHERE sc.id=st.screen_id AND sc.last_heartbeat_at>now()-interval '5 minutes' AND ps.player_version_code>=st.expected_version_code AND NOT ps.safe_mode AND ps.last_healthy_playback_at IS NOT NULL AND (st.install_started_at IS NULL OR ps.last_healthy_playback_at>st.install_started_at) AND (ps.update_error IS NULL OR ps.update_error=''))`)
+	_, _ = s.db.Exec(ctx, `UPDATE update_deployments d SET status='paused',rollout_phase='paused',paused_at=now(),pause_reason='A canary did not reconnect within ten minutes.' WHERE d.status='active' AND d.rollout_phase='canary' AND EXISTS(SELECT 1 FROM screen_update_states st WHERE st.deployment_id=d.id AND st.is_canary AND st.state='reconnecting' AND st.updated_at<now()-interval '10 minutes')`)
+	// The aggregate follows the targets: an active deployment with no unfinished
+	// target is finished, whichever path finished the last one. Idempotent, so a
+	// deployment that is already completed keeps its original completion time.
+	_, _ = s.db.Exec(ctx, `UPDATE update_deployments d SET status='completed',completed_at=COALESCE(d.completed_at,now()) WHERE d.status='active' AND EXISTS(SELECT 1 FROM screen_update_states st WHERE st.deployment_id=d.id) AND NOT EXISTS(SELECT 1 FROM screen_update_states st WHERE st.deployment_id=d.id AND st.state NOT IN('succeeded','failed','cancelled','incompatible','already_current'))`)
+}
+
 func (s *server) listUpdateDeployments(w http.ResponseWriter, r *http.Request) {
-	_, _ = s.db.Exec(r.Context(), `UPDATE update_deployments d SET status='paused',rollout_phase='paused',paused_at=now(),pause_reason='A canary did not reconnect within ten minutes.' WHERE d.status='active' AND d.rollout_phase='canary' AND EXISTS(SELECT 1 FROM screen_update_states st WHERE st.deployment_id=d.id AND st.is_canary AND st.state='reconnecting' AND st.updated_at<now()-interval '10 minutes')`)
+	s.reconcileUpdateDeployments(r.Context())
 	rows, err := s.db.Query(r.Context(), `SELECT d.id,d.name,d.mode,d.status,d.created_at,r.platform,r.version_code,r.version_name,count(st.screen_id),count(*) FILTER(WHERE st.state='succeeded'),count(*) FILTER(WHERE st.state='failed'),count(*) FILTER(WHERE st.state IN ('waiting_for_permission','waiting_for_user')),d.rollout_mode,d.rollout_phase,d.canary_size,d.pause_reason,max(st.safe_error) FILTER(WHERE st.state='failed') FROM update_deployments d JOIN player_releases r ON r.id=d.release_id LEFT JOIN screen_update_states st ON st.deployment_id=d.id GROUP BY d.id,r.id ORDER BY d.created_at DESC LIMIT 100`)
 	if err != nil {
 		s.internalError(w, r, err)
@@ -451,6 +471,7 @@ func (s *server) getUpdateDeployment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	s.reconcileUpdateDeployments(r.Context())
 	rows, err := s.db.Query(r.Context(), `SELECT st.screen_id,sc.name,st.previous_version_code,st.expected_version_code,st.downloaded_bytes,st.permission_status,st.installer_status,st.state,st.safe_error,st.updated_at FROM screen_update_states st JOIN screens sc ON sc.id=st.screen_id WHERE st.deployment_id=$1 ORDER BY sc.name,sc.id`, id)
 	if err != nil {
 		s.internalError(w, r, err)
