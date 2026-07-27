@@ -1,16 +1,74 @@
-import { Button, PageHeader, Select } from "../components/ui";
+import {
+  Button,
+  EmptyState,
+  Field,
+  PageHeader,
+  Panel,
+  SectionHeader,
+  Select,
+  StatusBadge,
+} from "../components/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { api } from "../api/client";
+import type { ScreenGroup } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { PlayerPolicyEditor } from "../settings/PlayerPolicyEditor";
+
 const canManage = (role?: string) =>
   role === "owner" || role === "administrator";
+
+function ScreenManagementTabs() {
+  return (
+    <nav className="view-tabs sync-groups-tabs" aria-label="Screen management">
+      <Link to="/screens">Screens</Link>
+      <Link to="/groups" aria-current="page">
+        Sync groups
+      </Link>
+    </nav>
+  );
+}
+
+function groupFallbackName(
+  group: Pick<ScreenGroup, "layoutName" | "playlistName">,
+) {
+  return group.layoutName ?? group.playlistName ?? "No fallback content";
+}
+
+function groupFallbackType(
+  group: Pick<ScreenGroup, "layoutName" | "playlistName">,
+) {
+  if (group.layoutName) return "Layout";
+  if (group.playlistName) return "Playlist";
+  return "Unassigned";
+}
+
+function groupMemberSummary(group: ScreenGroup) {
+  const screens = group.screens ?? [];
+  if (group.membershipCount === 0) return "No screens assigned";
+  if (screens.length === 0)
+    return `${group.membershipCount} screen${group.membershipCount === 1 ? "" : "s"} assigned`;
+  const visible = screens.slice(0, 3).map((screen) => screen.name);
+  const remaining = Math.max(0, group.membershipCount - visible.length);
+  return `${visible.join(", ")}${remaining ? ` +${remaining} more` : ""}`;
+}
+
+function formatGroupDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Unknown";
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 export function GroupsPage() {
   const auth = useAuth(),
     csrf = auth.status?.csrfToken ?? "",
     client = useQueryClient();
+  const manageable = canManage(auth.status?.user?.role);
   const q = useQuery({
     queryKey: ["screen-groups"],
     queryFn: () => api.screenGroups(),
@@ -20,57 +78,93 @@ export function GroupsPage() {
       api.createScreenGroup({ name, description: "" }, csrf),
     onSuccess: () => client.invalidateQueries({ queryKey: ["screen-groups"] }),
   });
+  const createGroup = () => {
+    const name = prompt("Group name");
+    if (name) create.mutate(name);
+  };
+
   return (
-    <section>
+    <section className="sync-groups-page">
       <PageHeader
         title="Sync groups"
         description="Keep a set of screens on the same content, schedule, and playback position."
         actions={
-          canManage(auth.status?.user?.role) ? (
-            <Button
-              variant="primary"
-              onClick={() => {
-                const name = prompt("Group name");
-                if (name) create.mutate(name);
-              }}
-            >
+          manageable ? (
+            <Button variant="primary" onClick={createGroup}>
               Create sync group
             </Button>
           ) : undefined
         }
       />
-      <nav className="screen-primary-tabs" aria-label="Screen management">
-        <Link to="/screens">Screens</Link>
-        <Link to="/groups" aria-current="page">
-          Sync groups
-        </Link>
-      </nav>
-      <div className="schedule-list">
-        {q.data?.items?.map((g) => (
-          <Link className="schedule-card" to={`/groups/${g.id}`} key={g.id}>
-            <strong>{g.name}</strong>
-            <span>
-              {g.membershipCount} screen{g.membershipCount === 1 ? "" : "s"}
-            </span>
-            <small>{g.description || "No description"}</small>
+      <ScreenManagementTabs />
+      {q.isError && (
+        <div className="notice notice--error" role="alert">
+          Sync groups could not be loaded. Try refreshing the page.
+        </div>
+      )}
+      {q.isLoading && <div className="table-loading">Loading sync groups…</div>}
+      <div className="sync-group-grid">
+        {q.data?.items?.map((group) => (
+          <Link
+            className="sync-group-card"
+            to={`/groups/${group.id}`}
+            key={group.id}
+          >
+            <header className="sync-group-card__header">
+              <span className="sync-group-card__title">
+                <strong>{group.name}</strong>
+                <small>{group.description || "No description"}</small>
+              </span>
+              <StatusBadge
+                label={`${group.membershipCount} screen${group.membershipCount === 1 ? "" : "s"}`}
+                tone={group.membershipCount > 0 ? "info" : "neutral"}
+              />
+            </header>
+            <dl className="sync-group-card__details">
+              <div>
+                <dt>Fallback</dt>
+                <dd>
+                  <span>{groupFallbackType(group)}</span>
+                  <strong>{groupFallbackName(group)}</strong>
+                </dd>
+              </div>
+              <div>
+                <dt>Updated</dt>
+                <dd>{formatGroupDate(group.updatedAt)}</dd>
+              </div>
+            </dl>
+            <p className="sync-group-card__members">
+              {groupMemberSummary(group)}
+            </p>
+            <span className="sync-group-card__open">View group</span>
           </Link>
         ))}
-        {q.data?.items?.length === 0 && (
-          <div className="screen-empty">
-            <h3>No sync groups yet</h3>
-            <p>Group screens that should always play in sync.</p>
-          </div>
-        )}
       </div>
+      {q.data?.items?.length === 0 && (
+        <EmptyState
+          className="sync-groups-empty"
+          title="No sync groups yet"
+          message="Create a group for screens that should always share content, schedules, and playback position."
+          action={
+            manageable ? (
+              <Button variant="primary" onClick={createGroup}>
+                Create sync group
+              </Button>
+            ) : undefined
+          }
+        />
+      )}
     </section>
   );
 }
+
 export function GroupDetailPage() {
   const { id = "" } = useParams(),
     navigate = useNavigate(),
     auth = useAuth(),
     csrf = auth.status?.csrfToken ?? "",
     client = useQueryClient();
+  const manageable = canManage(auth.status?.user?.role);
   const [screenSearch, setScreenSearch] = useState("");
   const [selectedPresentation, setSelectedPresentation] = useState("");
   const group = useQuery({
@@ -142,20 +236,31 @@ export function GroupDetailPage() {
   );
   const available =
     (screens.data?.items ?? [])
-      .filter((s) => !(groupData.screens ?? []).some((m) => m.id === s.id))
-      .filter((s) => !assignedElsewhere.has(s.id))
-      .filter((s) =>
-        `${s.name} ${s.location}`
+      .filter((screen) =>
+        !(groupData.screens ?? []).some((member) => member.id === screen.id),
+      )
+      .filter((screen) => !assignedElsewhere.has(screen.id))
+      .filter((screen) =>
+        `${screen.name} ${screen.location}`
           .toLowerCase()
           .includes(screenSearch.toLowerCase()),
       ) ?? [];
+  const savedPresentation = groupData.layoutId
+    ? `layout:${groupData.layoutId}`
+    : groupData.playlistId
+      ? `playlist:${groupData.playlistId}`
+      : "";
+
   return (
-    <section>
+    <section className="sync-group-detail">
       <PageHeader
         title={groupData.name}
-        description={groupData.description || "No description"}
+        description={
+          groupData.description ||
+          "Screens in this group share fallback content, schedules, and playback position."
+        }
         actions={
-          canManage(auth.status?.user?.role) ? (
+          manageable ? (
             <>
               <Button
                 variant="quiet"
@@ -189,16 +294,37 @@ export function GroupDetailPage() {
           ) : undefined
         }
       />
-      <section className="detail-card assignment-card">
-        <h3>Synchronized content</h3>
-        <p>
-          Every screen in this sync group uses this fallback content and the
-          group&apos;s schedules.
-        </p>
-        {canManage(auth.status?.user?.role) ? (
-          <div className="assignment-controls">
+      <ScreenManagementTabs />
+
+      <Panel className="sync-group-overview">
+        <dl>
+          <div>
+            <dt>Screens</dt>
+            <dd>{groupData.membershipCount}</dd>
+          </div>
+          <div>
+            <dt>Fallback content</dt>
+            <dd>
+              <span>{groupFallbackType(groupData)}</span>
+              <strong>{groupFallbackName(groupData)}</strong>
+            </dd>
+          </div>
+          <div>
+            <dt>Last updated</dt>
+            <dd>{formatGroupDate(groupData.updatedAt)}</dd>
+          </div>
+        </dl>
+      </Panel>
+
+      <Panel className="sync-group-panel">
+        <SectionHeader
+          title="Synchronized content"
+          description="Every screen in this group uses this fallback content whenever no higher-priority schedule or emergency takeover is active."
+        />
+        {manageable ? (
+          <div className="sync-group-content-controls">
             <Select
-              aria-label="Sync group content"
+              aria-label="Sync group fallback content"
               value={selectedPresentation}
               onChange={(event) => setSelectedPresentation(event.target.value)}
             >
@@ -210,7 +336,7 @@ export function GroupDetailPage() {
                   </option>
                 ))}
               </optgroup>
-              <optgroup label="Published Layouts">
+              <optgroup label="Published layouts">
                 {layouts.data?.items
                   .filter((layout) => layout.publishedRevision)
                   .map((layout) => (
@@ -220,75 +346,95 @@ export function GroupDetailPage() {
                   ))}
               </optgroup>
             </Select>
-            <button
-              className="button button--primary"
-              disabled={
-                assignContent.isPending ||
-                selectedPresentation ===
-                  (groupData.layoutId
-                    ? `layout:${groupData.layoutId}`
-                    : groupData.playlistId
-                      ? `playlist:${groupData.playlistId}`
-                      : "")
-              }
+            <Button
+              variant="primary"
+              loading={assignContent.isPending}
+              disabled={selectedPresentation === savedPresentation}
               onClick={() => assignContent.mutate(selectedPresentation)}
             >
-              {assignContent.isPending ? "Applying…" : "Apply to sync group"}
-            </button>
+              Apply to sync group
+            </Button>
           </div>
         ) : (
-          <strong>
-            {groupData.layoutName ??
-              groupData.playlistName ??
-              "No fallback presentation"}
-          </strong>
-        )}
-      </section>
-      {canManage(auth.status?.user?.role) && (
-        <label className="form-field">
-          <span>Add ungrouped screen</span>
-          <input
-            type="search"
-            placeholder="Search screens"
-            value={screenSearch}
-            onChange={(e) => setScreenSearch(e.target.value)}
-          />
-          {/* This label already names the search input beside it — a label names only its first
-              labelable descendant — so the select states its own name. */}
-          <Select
-            aria-label="Add ungrouped screen"
-            value=""
-            onChange={(e) => add.mutate(e.target.value)}
-          >
-            <option value="">Choose a screen…</option>
-            {available.map((s) => (
-              <option value={s.id} key={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </Select>
-        </label>
-      )}
-      <div className="schedule-list">
-        {(groupData.screens ?? []).map((s) => (
-          <div className="schedule-card" key={s.id}>
-            <strong>{s.name}</strong>
-            <span>{s.location || "No location"}</span>
-            {canManage(auth.status?.user?.role) && (
-              <button
-                className="button button--quiet"
-                onClick={() => remove.mutate(s.id)}
-              >
-                Remove
-              </button>
-            )}
+          <div className="sync-group-current-content">
+            <span>{groupFallbackType(groupData)}</span>
+            <strong>{groupFallbackName(groupData)}</strong>
           </div>
-        ))}
-      </div>
+        )}
+      </Panel>
+
+      <Panel className="sync-group-panel sync-group-screens-panel">
+        <SectionHeader
+          title="Screens"
+          description={`${groupData.membershipCount} screen${groupData.membershipCount === 1 ? "" : "s"} currently share this group's playback state.`}
+        />
+        {manageable && (
+          <div className="sync-group-add-controls">
+            <Field
+              label="Search available screens"
+              description="Screens already assigned to another sync group are excluded."
+            >
+              <input
+                type="search"
+                placeholder="Name or location"
+                value={screenSearch}
+                onChange={(event) => setScreenSearch(event.target.value)}
+              />
+            </Field>
+            <Field label="Add screen">
+              <Select
+                value=""
+                disabled={available.length === 0 || add.isPending}
+                onChange={(event) => {
+                  if (event.target.value) add.mutate(event.target.value);
+                }}
+              >
+                <option value="">
+                  {available.length ? "Choose a screen…" : "No matching screens"}
+                </option>
+                {available.map((screen) => (
+                  <option value={screen.id} key={screen.id}>
+                    {screen.name}
+                    {screen.location ? ` — ${screen.location}` : ""}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+        )}
+        <div className="sync-group-members">
+          {(groupData.screens ?? []).map((screen) => (
+            <div className="sync-group-member" key={screen.id}>
+              <span>
+                <strong>{screen.name}</strong>
+                <small>{screen.location || "No location assigned"}</small>
+              </span>
+              {manageable && (
+                <Button
+                  variant="quiet"
+                  compact
+                  disabled={remove.isPending}
+                  onClick={() => remove.mutate(screen.id)}
+                >
+                  Remove
+                </Button>
+              )}
+            </div>
+          ))}
+          {groupData.screens.length === 0 && (
+            <div className="sync-group-members__empty">
+              <strong>No screens in this group</strong>
+              <span>Add an available screen above to begin synchronized playback.</span>
+            </div>
+          )}
+        </div>
+      </Panel>
+
       <PlayerPolicyEditor target="group" id={id} />
     </section>
   );
 }
+
 export function SchedulesPage() {
   const auth = useAuth();
   const q = useQuery({
@@ -311,38 +457,38 @@ export function SchedulesPage() {
       <div className="schedule-today">
         <h3>Schedule timeline</h3>
         <p>
-          {(q.data?.items ?? []).filter((s) => s.enabled).length} enabled ·
-          times evaluate in each schedule’s IANA timezone · overnight windows
-          continue into the next day
+          {(q.data?.items ?? []).filter((schedule) => schedule.enabled).length}{" "}
+          enabled · times evaluate in each schedule’s IANA timezone · overnight
+          windows continue into the next day
         </p>
       </div>
       <div className="schedule-list">
-        {q.data?.items?.map((s) => (
+        {q.data?.items?.map((schedule) => (
           <Link
-            className={`schedule-card ${s.enabled ? "" : "schedule-card--disabled"}`}
-            to={`/schedules/${s.id}`}
-            key={s.id}
+            className={`schedule-card ${schedule.enabled ? "" : "schedule-card--disabled"}`}
+            to={`/schedules/${schedule.id}`}
+            key={schedule.id}
           >
             <span>
-              <strong>{s.name}</strong>
-              <small>{s.enabled ? "Enabled" : "Disabled"}</small>
+              <strong>{schedule.name}</strong>
+              <small>{schedule.enabled ? "Enabled" : "Disabled"}</small>
             </span>
-            <span>{s.playlistName}</span>
-            <span>{s.targets.map((t) => t.name).join(", ")}</span>
+            <span>{schedule.playlistName}</span>
+            <span>{schedule.targets.map((target) => target.name).join(", ")}</span>
             <span>
-              {s.type === "weekly"
-                ? `${s.dailyStart}–${s.dailyEnd} · ${s.timezone}`
-                : `${new Date(s.oneTimeStart!).toLocaleString()}–${new Date(s.oneTimeEnd!).toLocaleString()}`}
+              {schedule.type === "weekly"
+                ? `${schedule.dailyStart}–${schedule.dailyEnd} · ${schedule.timezone}`
+                : `${new Date(schedule.oneTimeStart!).toLocaleString()}–${new Date(schedule.oneTimeEnd!).toLocaleString()}`}
             </span>
-            <b>Priority {s.priority}</b>
+            <b>Priority {schedule.priority}</b>
           </Link>
         ))}
         {q.data?.items?.length === 0 && (
           <div className="screen-empty">
             <h3>No schedules yet</h3>
             <p>
-              Direct screen assignments will continue to play until a schedule
-              is created.
+              Direct screen assignments will continue to play until a schedule is
+              created.
             </p>
           </div>
         )}
@@ -350,4 +496,5 @@ export function SchedulesPage() {
     </section>
   );
 }
+
 export { ScheduleEditorPage } from "../schedules/ScheduleBuilder";
