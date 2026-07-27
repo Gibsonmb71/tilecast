@@ -743,7 +743,11 @@
 .screen-card:hover,
 .screen-card:focus-visible {
   border-color: var(--tc-border-strong);
+}
+
+.screen-card:focus-visible {
   outline: 2px solid transparent;
+  box-shadow: 0 0 0 3px var(--tc-focus-ring-soft);
 }
 
 .screen-card--attention {
@@ -917,7 +921,7 @@
 }
 
 @media (max-width: 720px) {
-  .screen-primary-tabs {
+  .screens-page > .view-tabs {
     position: sticky;
     top: 0;
     z-index: 5;
