@@ -308,7 +308,11 @@ components:
       required: [action]
       additionalProperties: false
       properties:
-        action: { type: string, enum: [acknowledge, assign, note, resolve, ignore, reopen] }
+        action:
+          {
+            type: string,
+            enum: [acknowledge, assign, note, resolve, ignore, reopen],
+          }
         assigneeId: { type: string, format: uuid }
         reason: { type: string, maxLength: 240 }
         notes: { type: string, maxLength: 4000 }

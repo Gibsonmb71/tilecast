@@ -26,6 +26,54 @@ export type SynchronizedPlayingPresentation = PlayingPresentation & {
   synchronizedPlayback: SynchronizedPlaybackMetadata;
 };
 
+/**
+ * A presentation handed to the renderer, told explicitly whether a shared
+ * timeline owns its occurrence changes. The renderer must not have to infer
+ * that from the presence of metadata it otherwise ignores.
+ */
+export type ProjectedSynchronizedPresentation =
+  SynchronizedPlayingPresentation & {
+    synchronized: true;
+  };
+
+/**
+ * Where a synchronized presentation was in wall-clock and monotonic time when
+ * it was activated.
+ *
+ * The shared anchor arrives from the server as wall-clock, so the wall clock is
+ * needed once, to work out the initial position within the shared cycle. After
+ * that, progression must come from a monotonic source: NTP steps, a manual
+ * clock correction, or a suspend/resume would otherwise jump the timeline and
+ * rewind or fast-forward whatever is on screen.
+ */
+export interface SynchronizedClockActivation {
+  wallMs: number;
+  monotonicMs: number;
+}
+
+/** Monotonic milliseconds; unaffected by wall-clock corrections. */
+export function monotonicNowMs(): number {
+  return performance.now();
+}
+
+export function activateSynchronizedClock(
+  wallMs = Date.now(),
+  monotonicMs = monotonicNowMs(),
+): SynchronizedClockActivation {
+  return { wallMs, monotonicMs };
+}
+
+/**
+ * The wall-clock instant the shared timeline should be evaluated at, advanced
+ * monotonically from activation rather than re-read from the wall clock.
+ */
+export function synchronizedNowMs(
+  activation: SynchronizedClockActivation,
+  monotonicMs = monotonicNowMs(),
+): number {
+  return activation.wallMs + Math.max(0, monotonicMs - activation.monotonicMs);
+}
+
 function positiveDuration(value: number | null | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) && value > 0
     ? Math.max(1, Math.round(value))
@@ -108,10 +156,10 @@ export function projectSynchronizedPresentation(
   presentation: SynchronizedPlayingPresentation,
   position: SynchronizedPlaybackPosition,
   generation: number,
-): SynchronizedPlayingPresentation {
+): ProjectedSynchronizedPresentation {
   const items = presentation.items;
   if (items.length === 0) {
-    return { ...presentation, generation };
+    return { ...presentation, generation, synchronized: true };
   }
 
   const index = Math.min(Math.max(position.index, 0), items.length - 1);
@@ -131,6 +179,8 @@ export function projectSynchronizedPresentation(
     ...presentation,
     items: rotated,
     generation,
+    // The renderer suppresses its own advancement on this flag alone.
+    synchronized: true,
   };
 }
 
