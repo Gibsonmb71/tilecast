@@ -1,0 +1,15 @@
+/* Keep the centered search from colliding with fixed-width utilities when the
+   workspace is narrowed by the sidebar but the viewport is still desktop-sized. */
+@media (min-width: 901px) {
+  .topbar {
+    grid-template-columns: minmax(0, 1fr) minmax(12rem, 25rem) minmax(0, 1fr);
+  }
+
+  .topbar__left {
+    min-width: 0;
+  }
+
+  .topbar__utilities {
+    min-width: max-content;
+  }
+}
