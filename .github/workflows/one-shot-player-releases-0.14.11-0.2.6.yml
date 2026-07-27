@@ -28,6 +28,7 @@ jobs:
       - name: Bump Android and Linux player versions
         run: |
           python3 <<'PY'
+          import json
           from pathlib import Path
 
           gradle_path = Path("apps/player-android/app/build.gradle.kts")
@@ -47,16 +48,12 @@ jobs:
           package_path.write_text(package.replace(old_package, new_package))
 
           lock_path = Path("package-lock.json")
-          lock = lock_path.read_text()
-          old_lock = '''    "apps/player-linux": {
-              "name": "@gibsonmb71/tilecast-player-linux",
-              "version": "0.2.5",'''.replace("              ", "      ")
-          new_lock = '''    "apps/player-linux": {
-              "name": "@gibsonmb71/tilecast-player-linux",
-              "version": "0.2.6",'''.replace("              ", "      ")
-          if lock.count(old_lock) != 1:
-              raise SystemExit("Expected Linux lockfile version 0.2.5 exactly once")
-          lock_path.write_text(lock.replace(old_lock, new_lock))
+          lock_data = json.loads(lock_path.read_text())
+          linux_package = lock_data.get("packages", {}).get("apps/player-linux")
+          if not isinstance(linux_package, dict) or linux_package.get("version") != "0.2.5":
+              raise SystemExit("Expected Linux lockfile package version 0.2.5")
+          linux_package["version"] = "0.2.6"
+          lock_path.write_text(json.dumps(lock_data, indent=2) + "\n")
           PY
 
       - name: Commit version bumps
