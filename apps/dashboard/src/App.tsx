@@ -111,7 +111,15 @@ export const studioRoutes: RouteObject[] = [
       },
       {
         path: "groups",
-        handle: { breadcrumb: "Sync groups" },
+        handle: {
+          breadcrumb: "Sync groups",
+          search: search(
+            "Sync groups",
+            "Keep multiple screens playing in lockstep",
+            "/groups",
+            ["screen groups", "synchronized playback"],
+          ),
+        },
         children: [
           { index: true, element: <GroupsPage /> },
           {

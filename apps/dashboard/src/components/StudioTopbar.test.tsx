@@ -165,6 +165,46 @@ describe("StudioTopbar", () => {
     );
   });
 
+  it("groups useful actions and destinations in the command menu", async () => {
+    renderTopbar();
+    await waitFor(() => expect(api.screens).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole("button", { name: "Search Tilecast" }));
+
+    expect(
+      await screen.findByText("Quick actions", {
+        selector: "[cmdk-group-heading]",
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Screens", { selector: "[cmdk-group-heading]" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("option", { name: /Create playlist/ }),
+    ).toBeTruthy();
+  });
+
+  it("finds sync groups and opens upload from a command action", async () => {
+    renderTopbar();
+    await waitFor(() => expect(api.screens).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole("button", { name: "Search Tilecast" }));
+    const searchInput = await screen.findByRole("combobox", {
+      name: "Search Tilecast",
+    });
+    fireEvent.change(searchInput, { target: { value: "sync" } });
+
+    expect(
+      await screen.findByRole("option", { name: /Sync groups/ }),
+    ).toBeTruthy();
+
+    fireEvent.change(searchInput, { target: { value: "upload" } });
+    fireEvent.click(
+      await screen.findByRole("option", { name: /Upload media/ }),
+    );
+    expect(screen.getByRole("dialog", { name: "Upload media" })).toBeTruthy();
+  });
+
   it("shows active alerts and keeps global actions in the utility region", async () => {
     renderTopbar();
 
