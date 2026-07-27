@@ -1001,6 +1001,9 @@ function renderVideo(
   video.muted = !item.audioEnabled;
   video.volume = Math.min(Math.max(item.volume, 0), 1);
   video.playsInline = true;
+  // A group timeline may update while the previous layer is fading out. The
+  // correction code uses this to avoid seeking that outgoing video.
+  video.dataset.tilecastItemId = item.id;
 
   const startS = (item.videoStartOffsetMs ?? 0) / 1_000;
   const endS =

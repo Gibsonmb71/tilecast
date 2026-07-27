@@ -29,6 +29,11 @@
     if (!video || video.readyState < HTMLMediaElement.HAVE_METADATA) {
       return;
     }
+    // The previous item remains visible during the crossfade. It must never
+    // receive the next item's synchronized timeline position.
+    if (video.dataset.tilecastItemId !== position.itemId || video.seeking) {
+      return;
+    }
 
     const expectedMs = position.videoStartOffsetMs + position.offsetMs;
     const actualMs = video.currentTime * 1_000;
