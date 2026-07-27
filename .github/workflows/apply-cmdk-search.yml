@@ -1,0 +1,154 @@
+name: Apply cmdk universal search
+
+on:
+  push:
+    branches:
+      - feature/cmdk-universal-search
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feature/cmdk-universal-search
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Integrate cmdk
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          topbar = Path("apps/dashboard/src/components/StudioTopbar.tsx")
+          source = topbar.read_text()
+          source = source.replace(
+              'import { useQuery, useQueryClient } from "@tanstack/react-query";\n',
+              'import { useQuery, useQueryClient } from "@tanstack/react-query";\nimport { Command } from "cmdk";\n',
+          )
+          source = source.replace("  useMemo,\n", "")
+          start = source.index("function CommandPalette({")
+          end = source.index("\n\nexport function StudioTopbar", start)
+          replacement = '''function CommandPalette({
+            open,
+            onClose,
+            routes,
+            screens,
+          }: {
+            open: boolean;
+            onClose: () => void;
+            routes: readonly RouteObject[];
+            screens: Screen[];
+          }) {
+            const navigate = useNavigate();
+            const [query, setQuery] = useState("");
+            const results = buildCommandResults(routes, screens, query);
+
+            useEffect(() => {
+              if (open) setQuery("");
+            }, [open]);
+
+            const select = (result: CommandResult) => {
+              onClose();
+              void navigate(result.to);
+            };
+
+            return (
+              <Dialog
+                open={open}
+                title="Search Tilecast"
+                className="command-palette-dialog"
+                onClose={onClose}
+              >
+                <Command
+                  className="command-palette"
+                  label="Search Tilecast"
+                  loop
+                  shouldFilter={false}
+                >
+                  <label className="command-palette__input">
+                    <Search size={18} aria-hidden="true" />
+                    <Command.Input
+                      autoFocus
+                      type="search"
+                      value={query}
+                      onValueChange={setQuery}
+                      placeholder="Search screens, media, playlists…"
+                      aria-label="Search Tilecast"
+                    />
+                    <kbd>{platformShortcut()}</kbd>
+                  </label>
+                  <Command.List className="command-palette__results">
+                    <Command.Empty className="command-palette__empty">
+                      No matching destinations.
+                    </Command.Empty>
+                    {results.map((result) => (
+                      <Command.Item
+                        className="command-palette__result"
+                        key={result.id}
+                        value={result.id}
+                        onSelect={() => select(result)}
+                      >
+                        <result.Icon size={18} aria-hidden="true" />
+                        <span>
+                          <strong>{result.label}</strong>
+                          <small>{result.description}</small>
+                        </span>
+                        <em>{result.category}</em>
+                        <ChevronRight size={16} aria-hidden="true" />
+                      </Command.Item>
+                    ))}
+                  </Command.List>
+                  <footer className="command-palette__footer">
+                    <span>↑↓ Move</span>
+                    <span>Enter Open</span>
+                    <span>Esc Close</span>
+                  </footer>
+                </Command>
+              </Dialog>
+            );
+          }'''
+          topbar.write_text(source[:start] + replacement + source[end:])
+
+          stylesheet = Path("apps/dashboard/src/styles/topbar.css")
+          css = stylesheet.read_text()
+          css = css.replace(
+              ".command-palette__results button {",
+              ".command-palette__result {",
+          )
+          css = css.replace(
+              ".command-palette__results button:hover,\n.command-palette__results button[aria-selected=\"true\"] {",
+              ".command-palette__result:hover,\n.command-palette__result[data-selected=\"true\"] {",
+          )
+          css = css.replace(
+              ".command-palette__results button > span {",
+              ".command-palette__result > span {",
+          )
+          css = css.replace(
+              "  border-radius: var(--tc-radius-control);\n  text-align: left;\n}\n\n.command-palette__result:hover,",
+              "  border-radius: var(--tc-radius-control);\n  cursor: pointer;\n  text-align: left;\n}\n\n.command-palette__result:hover,",
+          )
+          stylesheet.write_text(css)
+          PY
+      - name: Install dependencies
+        run: npm ci
+      - name: Format changed files
+        run: npx prettier --write apps/dashboard/src/components/StudioTopbar.tsx apps/dashboard/src/styles/topbar.css
+      - name: Lint
+        run: npm run lint
+      - name: Test
+        run: npm test
+      - name: Build
+        run: npm run build
+      - name: Commit integration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/apply-cmdk-search.yml
+          git add apps/dashboard/src/components/StudioTopbar.tsx apps/dashboard/src/styles/topbar.css
+          git commit -m "Use cmdk for universal search"
+          git push
