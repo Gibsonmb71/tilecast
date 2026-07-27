@@ -1,4 +1,11 @@
-import { useCallback, useMemo, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useSearchParams } from "react-router";
 import { X } from "lucide-react";
 import { Select } from "./SignalSelect";
@@ -6,26 +13,26 @@ import { DashboardSearch } from "../DashboardListToolbar";
 
 export type FilterOption = { value: string; label: string };
 
-type FilterBase = {
-  key: string;
-  label: string;
-  /**
-   * Keeps the control out of the bar while still chipping the value. Use for
-   * filters presented elsewhere, such as inside an advanced disclosure, so an
-   * active filter is never invisible just because its control is put away.
-   */
-  hidden?: boolean;
-};
+type FilterBase = { key: string; label: string };
+
+/**
+ * Keeps the control out of the bar while still chipping the value. Use for
+ * filters presented elsewhere, such as inside an advanced disclosure, so an
+ * active filter is never invisible just because its control is put away. Not
+ * offered for search, which is never chipped and so would vanish entirely.
+ */
+type Hideable = { hidden?: boolean };
 
 export type FilterDefinition =
   | (FilterBase & { kind: "search"; placeholder: string })
-  | (FilterBase & {
-      kind: "select";
-      options: readonly FilterOption[];
-      /** Text for the empty value, such as "All screens". */
-      allLabel: string;
-    })
-  | (FilterBase & { kind: "text"; placeholder: string });
+  | (FilterBase &
+      Hideable & {
+        kind: "select";
+        options: readonly FilterOption[];
+        /** Text for the empty value, such as "All screens". */
+        allLabel: string;
+      })
+  | (FilterBase & Hideable & { kind: "text"; placeholder: string });
 
 export type FilterValues = Record<string, string>;
 
@@ -101,7 +108,9 @@ export function FilterBar({
     <div className={`filter-bar ${className}`.trim()}>
       <div className="filter-bar__controls" role="group" aria-label={label}>
         {definitions
-          .filter((definition) => !definition.hidden)
+          .filter(
+            (definition) => definition.kind === "search" || !definition.hidden,
+          )
           .map((definition) => (
             <FilterControl
               key={definition.key}
@@ -122,6 +131,53 @@ export function FilterBar({
   );
 }
 
+/** Milliseconds of stillness before a typed filter reaches the URL. */
+export const filterTypingDelay = 300;
+
+/**
+ * Keeps a typed field responsive while the committed value — which drives the
+ * URL and every query keyed on it — waits for a pause in typing. Leaving the
+ * field commits immediately, so a value is never stranded locally.
+ */
+export function useTypedFilter(
+  value: string,
+  onChange: (value: string) => void,
+) {
+  const [local, setLocal] = useState(value);
+  const committed = useRef(value);
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  // Adopt values that changed elsewhere, such as a cleared chip, without
+  // discarding what is currently being typed.
+  useEffect(() => {
+    if (value === committed.current) return;
+    committed.current = value;
+    setLocal(value);
+  }, [value]);
+
+  useEffect(() => () => clearTimeout(timer.current), []);
+
+  const commit = useCallback(
+    (next: string) => {
+      clearTimeout(timer.current);
+      if (next === committed.current) return;
+      committed.current = next;
+      onChange(next);
+    },
+    [onChange],
+  );
+
+  return {
+    value: local,
+    onChange: (next: string) => {
+      setLocal(next);
+      clearTimeout(timer.current);
+      timer.current = setTimeout(() => commit(next), filterTypingDelay);
+    },
+    onBlur: () => commit(local),
+  };
+}
+
 function FilterControl({
   definition,
   value,
@@ -131,24 +187,28 @@ function FilterControl({
   value: string;
   onChange: (value: string) => void;
 }) {
+  const typed = useTypedFilter(value, onChange);
   if (definition.kind === "search") {
     return (
-      <DashboardSearch
-        value={value}
-        onValueChange={onChange}
-        label={definition.label}
-        placeholder={definition.placeholder}
-      />
+      <span onBlur={typed.onBlur}>
+        <DashboardSearch
+          value={typed.value}
+          onValueChange={typed.onChange}
+          label={definition.label}
+          placeholder={definition.placeholder}
+        />
+      </span>
     );
   }
   if (definition.kind === "text") {
     return (
       <input
         className="filter-bar__text"
-        value={value}
+        value={typed.value}
         aria-label={definition.label}
         placeholder={definition.placeholder}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={(event) => typed.onChange(event.target.value)}
+        onBlur={typed.onBlur}
       />
     );
   }

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, describe, expect, it } from "vitest";
@@ -210,5 +210,50 @@ describe("resolveTimeRange", () => {
     const range = resolveTimeRange("custom", "2026-07-20T00:00", "", now);
 
     expect(range.previous).toBeUndefined();
+  });
+
+  it("falls back to a usable range when a bound cannot be parsed", () => {
+    // Bounds come from the URL, so they can be anything.
+    const range = resolveTimeRange("custom", "not-a-date", "also-bad", now);
+
+    expect(() => new Date(range.from).toISOString()).not.toThrow();
+    expect(range.to).toBe(now.toISOString());
+    expect(range.previous).toBeUndefined();
+  });
+
+  it("orders reversed custom bounds rather than reporting a negative span", () => {
+    const range = resolveTimeRange(
+      "custom",
+      "2026-07-24T00:00",
+      "2026-07-20T00:00",
+      now,
+    );
+
+    expect(new Date(range.from) < new Date(range.to)).toBe(true);
+    expect(new Date(range.previous!.from) < new Date(range.previous!.to)).toBe(
+      true,
+    );
+  });
+});
+
+describe("typed filters", () => {
+  it("waits for a pause before writing to the URL, and commits on blur", async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={["/activity"]}>
+        <Routes>
+          <Route path="/activity" element={<FilterHarness />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await user.type(screen.getByRole("searchbox"), "lob");
+    // Still mid-typing: the URL has not been touched.
+    expect(screen.getByRole("status").textContent).not.toContain("search=");
+
+    await user.tab();
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toContain("search=lob"),
+    );
   });
 });

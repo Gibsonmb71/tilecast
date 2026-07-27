@@ -215,9 +215,11 @@
   vertical-align: middle;
 }
 
+/* Not sticky: .activity-panel sets overflow: hidden to clip its rounded
+   corners, which makes it the scroll container for anything sticky inside it.
+   That container never scrolls, so a sticky heading would simply sit still
+   while the page moved past it. */
 .activity-timeline-days > section > h4 {
-  position: sticky;
-  top: 0;
   margin: 0;
   padding: 9px 16px;
   border-bottom: 1px solid var(--tc-border-subtle);
@@ -729,7 +731,7 @@
     justify-content: center;
   }
 
-  .filter-bar__controls > select,
+  .filter-bar__controls > .signal-select,
   .activity-more-filters,
   .activity-more-filters > summary {
     flex: 1 1 140px;

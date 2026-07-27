@@ -314,6 +314,15 @@ export function formatWhen(value: string) {
     minute: "2-digit",
   });
 }
+/** A whole day, spelled out for a group heading in the reader's locale. */
+export function formatDay(value: string) {
+  return new Date(value).toLocaleDateString([], {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
 export function formatDuration(milliseconds: number) {
   const seconds = Math.max(0, Math.round(milliseconds / 1000));
   const hours = Math.floor(seconds / 3600);

@@ -28,6 +28,13 @@ const presetLabels: Record<TimeRangePreset, string> = {
   custom: "the selected range",
 };
 
+/** A bound is usable only if it is present and parses to a real instant. */
+function parseBound(value: string) {
+  if (!value) return undefined;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
 /**
  * Turns the picker's state into absolute bounds plus the preceding window of
  * the same length. Accepts `now` so callers and tests can pin the clock.
@@ -39,21 +46,29 @@ export function resolveTimeRange(
   now: Date = new Date(),
 ): ResolvedTimeRange {
   const custom = preset === "custom";
-  const to = custom && customTo ? new Date(customTo) : now;
+  // Bounds arrive from the URL, so they can be absent, unparseable, or
+  // reversed. An unusable bound falls back to the preset behaviour rather than
+  // producing an Invalid Date, whose toISOString() would throw and blank the
+  // page.
+  let parsedFrom = custom ? parseBound(customFrom) : undefined;
+  let parsedTo = custom ? parseBound(customTo) : undefined;
+  // Both bounds are real but the wrong way round: honour the pair a person
+  // supplied rather than reporting on a negative span.
+  if (parsedFrom && parsedTo && parsedFrom > parsedTo)
+    [parsedFrom, parsedTo] = [parsedTo, parsedFrom];
+  const to = parsedTo ?? now;
   const from =
-    custom && customFrom
-      ? new Date(customFrom)
-      : new Date(
-          to.getTime() - presetDays[custom ? "24h" : preset] * 86_400_000,
-        );
+    parsedFrom ??
+    new Date(to.getTime() - presetDays[custom ? "24h" : preset] * 86_400_000);
   const span = to.getTime() - from.getTime();
   const range: ResolvedTimeRange = {
     from: from.toISOString(),
     to: to.toISOString(),
     label: presetLabels[preset],
   };
-  // A custom range missing a bound has no defensible length to step back by.
-  if (custom && !(customFrom && customTo)) return range;
+  // A custom range missing a bound has no defensible length to step back by,
+  // and a reversed one would place the comparison window after the range.
+  if (custom && (!parsedFrom || !parsedTo || span <= 0)) return range;
   return {
     ...range,
     previous: {
