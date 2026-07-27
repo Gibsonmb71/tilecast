@@ -35,10 +35,9 @@ const asset = (id: string, name: string, type: Asset["type"]): Asset => ({
       : undefined,
 });
 
-const items = [
-  asset("one", "Welcome", "image"),
-  asset("two", "Menu", "widget"),
-];
+const welcome = asset("one", "Welcome", "image");
+const menuApp = asset("two", "Menu", "widget");
+const items = [welcome, menuApp];
 
 function picker(mode: "single" | "multiple", onConfirm = vi.fn()) {
   vi.spyOn(api, "contentFolders").mockResolvedValue([]);
@@ -160,5 +159,85 @@ describe("ContentPicker", () => {
       expect(assets.mock.lastCall?.[0].get("folderId")).toBe("folder-1"),
     );
     expect(assets.mock.lastCall?.[0].get("tagId")).toBe("tag-1");
+  });
+
+  it("scopes the request and the type tabs to what the caller accepts", async () => {
+    const assets = vi.spyOn(api, "assets").mockResolvedValue({
+      items: [menuApp],
+      total: 1,
+      page: 1,
+      pageSize: 48,
+    });
+    vi.spyOn(api, "contentFolders").mockResolvedValue([]);
+    vi.spyOn(api, "contentCollections").mockResolvedValue([]);
+    vi.spyOn(api, "contentTags").mockResolvedValue([]);
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <ContentPicker
+          open
+          mode="multiple"
+          csrf="csrf"
+          allowedTypes={["widget"]}
+          title="Choose apps"
+          onConfirm={vi.fn()}
+          onClose={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+
+    // Without the server-side scope an "All" page of mixed content is filtered down
+    // client-side and a widgets-only picker looks empty.
+    await waitFor(() =>
+      expect(assets.mock.lastCall?.[0].get("type")).toBe("widget"),
+    );
+    expect(screen.getByText("Choose apps")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Images" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Websites" }),
+    ).toBeInTheDocument();
+    // Apps are not uploaded, so the media upload action is not offered here.
+    expect(
+      screen.queryByRole("button", { name: /Upload media/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("asks the server for media only when apps are not allowed", async () => {
+    const assets = vi.spyOn(api, "assets").mockResolvedValue({
+      items: [welcome],
+      total: 1,
+      page: 1,
+      pageSize: 48,
+    });
+    vi.spyOn(api, "contentFolders").mockResolvedValue([]);
+    vi.spyOn(api, "contentCollections").mockResolvedValue([]);
+    vi.spyOn(api, "contentTags").mockResolvedValue([]);
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <ContentPicker
+          open
+          mode="multiple"
+          csrf="csrf"
+          allowedTypes={["image", "video"]}
+          onConfirm={vi.fn()}
+          onClose={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() =>
+      expect(assets.mock.lastCall?.[0].get("type")).toBe("media"),
+    );
+    expect(
+      screen.queryByRole("button", { name: "Websites" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Images" })).toBeInTheDocument();
   });
 });

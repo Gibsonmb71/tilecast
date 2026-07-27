@@ -5,20 +5,26 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
+  type RefObject,
 } from "react";
 import { createPortal } from "react-dom";
+import { ChevronRight } from "lucide-react";
 
 export type ContextMenuItem = {
   label: string;
-  onSelect: () => void;
+  /** Omitted for rows that only open a submenu. */
+  onSelect?: () => void;
   icon?: ReactNode;
   danger?: boolean;
   disabled?: boolean;
   /** Draws a separator above this item. */
   separated?: boolean;
+  /** Related commands folded into a flyout so long menus stay scannable. */
+  submenu?: ContextMenuItem[];
 };
 
 export type ContextMenuAnchor<Target> = {
@@ -51,6 +57,226 @@ export function useContextMenu<Target>() {
     [],
   );
   return { anchor, open, close };
+}
+
+/** Which submenu of a single list is showing, and whether it was opened from the keyboard. */
+type OpenSubmenu = { label: string; focus: boolean };
+
+function MenuRow({
+  item,
+  expanded,
+  onOpenSubmenu,
+  onCloseSubmenu,
+  onClose,
+  autoFocusSubmenu,
+}: {
+  item: ContextMenuItem;
+  expanded: boolean;
+  onOpenSubmenu: (focus: boolean) => void;
+  onCloseSubmenu: () => void;
+  onClose: () => void;
+  autoFocusSubmenu: boolean;
+}) {
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const submenu = item.submenu?.length ? item.submenu : undefined;
+  const dismissSubmenu = () => {
+    onCloseSubmenu();
+    buttonRef.current?.focus();
+  };
+
+  const button = (
+    <button
+      ref={buttonRef}
+      type="button"
+      role="menuitem"
+      aria-haspopup={submenu ? "menu" : undefined}
+      aria-expanded={submenu ? expanded : undefined}
+      className={`context-menu__item${item.danger ? " context-menu__item--danger" : ""}`}
+      disabled={item.disabled}
+      onMouseEnter={() => (submenu ? onOpenSubmenu(false) : onCloseSubmenu())}
+      onClick={(event) => {
+        if (submenu) {
+          // Enter/Space on the row reports no pointer position, so only that route
+          // pulls focus into the flyout; hovering leaves focus where it was.
+          onOpenSubmenu(event.detail === 0);
+          return;
+        }
+        onClose();
+        item.onSelect?.();
+      }}
+      onKeyDown={(event) => {
+        if (!submenu || event.key !== "ArrowRight") return;
+        event.preventDefault();
+        event.stopPropagation();
+        onOpenSubmenu(true);
+      }}
+    >
+      {item.icon && (
+        <span className="context-menu__icon" aria-hidden="true">
+          {item.icon}
+        </span>
+      )}
+      <span>{item.label}</span>
+      {submenu && (
+        <ChevronRight
+          className="context-menu__chevron"
+          size={14}
+          aria-hidden="true"
+        />
+      )}
+    </button>
+  );
+
+  if (!submenu) return button;
+  return (
+    <div className="context-menu__host">
+      {button}
+      {expanded && (
+        <MenuList
+          items={submenu}
+          label={item.label}
+          nested
+          autoFocus={autoFocusSubmenu}
+          onClose={onClose}
+          onDismiss={dismissSubmenu}
+        />
+      )}
+    </div>
+  );
+}
+
+function MenuList({
+  items,
+  label,
+  onClose,
+  menuRef,
+  style,
+  nested = false,
+  autoFocus = false,
+  onDismiss,
+}: {
+  items: ContextMenuItem[];
+  label: string;
+  onClose: () => void;
+  menuRef?: RefObject<HTMLDivElement | null>;
+  style?: CSSProperties;
+  nested?: boolean;
+  autoFocus?: boolean;
+  onDismiss?: () => void;
+}) {
+  const fallbackRef = useRef<HTMLDivElement>(null);
+  const ref = menuRef ?? fallbackRef;
+  const [open, setOpen] = useState<OpenSubmenu>();
+  // A flyout that would hang off the right edge opens to the left instead, and one
+  // that would run past the bottom slides up by the overflow.
+  const [adjust, setAdjust] = useState({ flip: false, shift: 0 });
+
+  useLayoutEffect(() => {
+    if (!nested) return;
+    const node = ref.current;
+    if (!node) return;
+    const rect = node.getBoundingClientRect();
+    const gap = 8;
+    const overflow = rect.bottom - (window.innerHeight - gap);
+    setAdjust({
+      flip: rect.right > window.innerWidth - gap,
+      shift: overflow > 0 ? -overflow : 0,
+    });
+  }, [nested, ref]);
+
+  const ownButtons = useCallback(
+    () =>
+      Array.from(
+        ref.current?.querySelectorAll<HTMLButtonElement>(
+          "button:not(:disabled)",
+        ) ?? [],
+      ).filter((button) => button.closest(".context-menu") === ref.current),
+    [ref],
+  );
+
+  useEffect(() => {
+    if (nested && autoFocus) ownButtons()[0]?.focus();
+    // Focusing once on open is the whole point; re-running would fight the user.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const moveFocus = (delta: number, absolute?: "first" | "last") => {
+    const buttons = ownButtons();
+    if (!buttons.length) return;
+    if (absolute) {
+      (absolute === "first"
+        ? buttons[0]
+        : buttons[buttons.length - 1]
+      )?.focus();
+      return;
+    }
+    const current = buttons.indexOf(
+      document.activeElement as HTMLButtonElement,
+    );
+    buttons[(current + delta + buttons.length) % buttons.length]?.focus();
+  };
+
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      if (nested && onDismiss) onDismiss();
+      else onClose();
+    } else if (event.key === "Tab") {
+      event.preventDefault();
+      onClose();
+    } else if (event.key === "ArrowLeft" && nested && onDismiss) {
+      event.preventDefault();
+      event.stopPropagation();
+      onDismiss();
+    } else if (event.key === "ArrowDown") {
+      event.preventDefault();
+      event.stopPropagation();
+      moveFocus(1);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      event.stopPropagation();
+      moveFocus(-1);
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      event.stopPropagation();
+      moveFocus(0, "first");
+    } else if (event.key === "End") {
+      event.preventDefault();
+      event.stopPropagation();
+      moveFocus(0, "last");
+    }
+  };
+
+  return (
+    <div
+      ref={ref}
+      className={`context-menu${nested ? " context-menu--nested" : ""}`}
+      role="menu"
+      aria-label={label}
+      data-flip={nested && adjust.flip ? "true" : undefined}
+      style={
+        nested
+          ? { transform: `translateY(${adjust.shift}px)`, ...style }
+          : style
+      }
+      onKeyDown={handleKeyDown}
+    >
+      {items.map((item) => (
+        <Fragment key={item.label}>
+          {item.separated && <hr className="context-menu__separator" />}
+          <MenuRow
+            item={item}
+            expanded={open?.label === item.label}
+            autoFocusSubmenu={open?.label === item.label && open.focus}
+            onOpenSubmenu={(focus) => setOpen({ label: item.label, focus })}
+            onCloseSubmenu={() => setOpen(undefined)}
+            onClose={onClose}
+          />
+        </Fragment>
+      ))}
+    </div>
+  );
 }
 
 export function ContextMenu({
@@ -102,45 +328,6 @@ export function ContextMenu({
     };
   }, [onClose]);
 
-  const moveFocus = (delta: number, absolute?: "first" | "last") => {
-    const buttons = Array.from(
-      ref.current?.querySelectorAll<HTMLButtonElement>(
-        "button:not(:disabled)",
-      ) ?? [],
-    );
-    if (!buttons.length) return;
-    if (absolute) {
-      (absolute === "first"
-        ? buttons[0]
-        : buttons[buttons.length - 1]
-      )?.focus();
-      return;
-    }
-    const current = buttons.indexOf(
-      document.activeElement as HTMLButtonElement,
-    );
-    buttons[(current + delta + buttons.length) % buttons.length]?.focus();
-  };
-
-  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (event.key === "Escape" || event.key === "Tab") {
-      event.preventDefault();
-      onClose();
-    } else if (event.key === "ArrowDown") {
-      event.preventDefault();
-      moveFocus(1);
-    } else if (event.key === "ArrowUp") {
-      event.preventDefault();
-      moveFocus(-1);
-    } else if (event.key === "Home") {
-      event.preventDefault();
-      moveFocus(0, "first");
-    } else if (event.key === "End") {
-      event.preventDefault();
-      moveFocus(0, "last");
-    }
-  };
-
   return createPortal(
     <div className="context-menu-layer">
       <div
@@ -152,41 +339,17 @@ export function ContextMenu({
           onClose();
         }}
       />
-      <div
-        ref={ref}
-        className="context-menu"
-        role="menu"
-        aria-label={label}
+      <MenuList
+        menuRef={ref}
+        items={items}
+        label={label}
+        onClose={onClose}
         style={{
           left: placement.left,
           top: placement.top,
           visibility: placement.ready ? undefined : "hidden",
         }}
-        onKeyDown={handleKeyDown}
-      >
-        {items.map((item) => (
-          <Fragment key={item.label}>
-            {item.separated && <hr className="context-menu__separator" />}
-            <button
-              type="button"
-              role="menuitem"
-              className={`context-menu__item${item.danger ? " context-menu__item--danger" : ""}`}
-              disabled={item.disabled}
-              onClick={() => {
-                onClose();
-                item.onSelect();
-              }}
-            >
-              {item.icon && (
-                <span className="context-menu__icon" aria-hidden="true">
-                  {item.icon}
-                </span>
-              )}
-              <span>{item.label}</span>
-            </button>
-          </Fragment>
-        ))}
-      </div>
+      />
     </div>,
     document.body,
   );

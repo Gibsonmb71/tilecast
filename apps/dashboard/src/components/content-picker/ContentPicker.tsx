@@ -28,6 +28,9 @@ export type ContentPickerProps = {
   disabledItemIds?: string[];
   selectedIds?: string[];
   confirmLabel?: string;
+  /** Overrides the dialog heading so a scoped picker can say what it is scoped to. */
+  title?: string;
+  description?: string;
   onConfirm: (items: Asset[]) => Promise<void | ContentPickerResult> | void;
   onClose: () => void;
 };
@@ -41,6 +44,8 @@ export function ContentPicker({
   disabledItemIds = [],
   selectedIds = [],
   confirmLabel = "Add content",
+  title = "Choose content",
+  description = "Select existing content or upload media. Apps are managed in their own library.",
   onConfirm,
   onClose,
 }: ContentPickerProps) {
@@ -75,7 +80,21 @@ export function ContentPicker({
     queryFn: api.contentTags,
     enabled: open,
   });
-  const paramsKey = `${search}|${filter}|${folderFilter}|${collectionFilter}|${tagFilter}|${sort}`;
+  // Narrow the request to what the caller accepts. Without this an "All" page of 48
+  // mixed items can be filtered down to a handful client-side, so a widgets-only picker
+  // looks nearly empty while the library scrolls on.
+  const scopeType = [...allowedTypes].sort().join(",");
+  const defaultType =
+    scopeType === "widget"
+      ? "widget"
+      : scopeType === "image"
+        ? "image"
+        : scopeType === "video"
+          ? "video"
+          : scopeType === "image,video"
+            ? "media"
+            : "";
+  const paramsKey = `${search}|${filter}|${folderFilter}|${collectionFilter}|${tagFilter}|${sort}|${scopeType}`;
   const library = useInfiniteQuery({
     queryKey: ["assets", "content-picker", paramsKey],
     initialPageParam: 1,
@@ -86,6 +105,7 @@ export function ContentPicker({
         sort,
       });
       if (search) params.set("search", search);
+      if (filter === "all" && defaultType) params.set("type", defaultType);
       if (["image", "video", "widget"].includes(filter))
         params.set("type", filter);
       if (filter === "website" || filter === "youtube") {
@@ -248,22 +268,23 @@ export function ContentPicker({
       >
         <header className="content-picker__header">
           <div>
-            <h2 id="content-picker-title">Choose content</h2>
-            <p>
-              Select existing content or upload media. Apps are managed in their
-              own library.
-            </p>
+            <h2 id="content-picker-title">{title}</h2>
+            <p>{description}</p>
           </div>
           <div className="content-picker__primary-actions">
-            <button
-              className="button button--secondary"
-              onClick={() => setChild("upload")}
-            >
-              <Upload size={16} /> Upload media
-            </button>
-            <a className="button button--secondary" href="/apps/new">
-              <Globe2 size={16} /> Create App
-            </a>
+            {(allowed.has("image") || allowed.has("video")) && (
+              <button
+                className="button button--secondary"
+                onClick={() => setChild("upload")}
+              >
+                <Upload size={16} /> Upload media
+              </button>
+            )}
+            {allowed.has("widget") && (
+              <a className="button button--secondary" href="/apps/new">
+                <Globe2 size={16} /> Create App
+              </a>
+            )}
             <button
               className="icon-button"
               aria-label="Close content picker"
@@ -276,6 +297,7 @@ export function ContentPicker({
         <ContentPickerToolbar
           search={search}
           filter={filter}
+          allowedTypes={allowedTypes}
           sort={sort}
           view={view}
           folders={folders.data ?? []}
