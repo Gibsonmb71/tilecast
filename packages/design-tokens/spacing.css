@@ -19,6 +19,7 @@
   --tc-control-height-sm: var(--control-height-sm);
   --tc-control-height-lg: var(--control-height-lg);
   --tc-radius-panel: 9px;
+  --tc-radius-card: var(--tc-radius-panel);
   --tc-radius-overlay: 12px;
   --tc-radius-pill: 999px;
   --tc-motion-fast: 120ms;

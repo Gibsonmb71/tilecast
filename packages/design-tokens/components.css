@@ -54,5 +54,6 @@
   --tc-focus: var(--tc-focus-ring);
   --tc-radius-sm: var(--tc-radius-control);
   --tc-radius-md: var(--tc-radius-panel);
+  --tc-shadow-xs: none;
   --tc-shadow-sm: none;
 }
