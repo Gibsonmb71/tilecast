@@ -83,6 +83,12 @@ async function captureRenderPreview(
   const bounds = element.getBoundingClientRect();
   if (bounds.width < 1 || bounds.height < 1)
     throw new Error("Preview is not ready yet.");
+  // Chrome clips foreignObject content to whole user units, so a fractional
+  // on-screen size leaves the last row/column of the raster transparent and the
+  // canvas fill bleeds through as a border along the right and bottom edges.
+  const frameWidth = Math.ceil(bounds.width);
+  const frameHeight = Math.ceil(bounds.height);
+  const background = getComputedStyle(element).backgroundColor;
   const clone = element.cloneNode(true) as HTMLElement;
   inlineComputedStyles(element, clone);
   await inlineImages(element, clone);
@@ -93,12 +99,15 @@ async function captureRenderPreview(
     .querySelectorAll(".is-selected")
     .forEach((child) => child.classList.remove("is-selected"));
   clone.setAttribute("xmlns", "http://www.w3.org/1999/xhtml");
-  clone.style.width = `${bounds.width}px`;
-  clone.style.height = `${bounds.height}px`;
+  clone.style.width = `${frameWidth}px`;
+  clone.style.height = `${frameHeight}px`;
   clone.style.border = "0";
   clone.style.borderRadius = "0";
   const markup = new XMLSerializer().serializeToString(clone);
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${snapshotWidth}" height="${snapshotHeight}" viewBox="0 0 ${bounds.width} ${bounds.height}"><foreignObject width="100%" height="100%">${markup}</foreignObject></svg>`;
+  // `preserveAspectRatio="none"` keeps the frame mapped edge to edge onto the
+  // snapshot. Rounding up above shifts the aspect ratio by well under a pixel,
+  // so nothing visibly stretches, but letterbox bars can no longer appear.
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${snapshotWidth}" height="${snapshotHeight}" viewBox="0 0 ${frameWidth} ${frameHeight}" preserveAspectRatio="none"><foreignObject width="${frameWidth}" height="${frameHeight}">${markup}</foreignObject></svg>`;
   // Dashboard CSP intentionally excludes blob: images. An encoded data URL is
   // already permitted and keeps this temporary SVG local to the browser.
   const image = await loadImage(
@@ -109,7 +118,7 @@ async function captureRenderPreview(
   canvas.height = snapshotHeight;
   const context = canvas.getContext("2d");
   if (!context) throw new Error("Preview canvas is unavailable.");
-  context.fillStyle = "#000";
+  context.fillStyle = background || "#000";
   context.fillRect(0, 0, snapshotWidth, snapshotHeight);
   context.drawImage(image, 0, 0, snapshotWidth, snapshotHeight);
   for (const quality of [0.82, 0.68, 0.52]) {
