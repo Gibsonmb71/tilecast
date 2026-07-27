@@ -73,22 +73,6 @@
   flex: 0 0 auto;
 }
 
-/* Location is a fleet metric, not a second grouping control. Grouping remains in
-   the dedicated Group by select below the filters. */
-.screen-summary > :last-child {
-  pointer-events: none;
-  cursor: default;
-  -webkit-user-focus: ignore;
-}
-
-.screen-summary > :last-child[aria-pressed="true"] {
-  background: var(--tc-bg-surface);
-}
-
-.screen-summary > :last-child[aria-pressed="true"] strong {
-  color: var(--tc-text-primary);
-}
-
 /* Individual screen chips already communicate sync-group membership. */
 .screen-group-health:has(.lucide-link-2) {
   display: none;
