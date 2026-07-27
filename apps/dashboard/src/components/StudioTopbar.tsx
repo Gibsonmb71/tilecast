@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Command } from "cmdk";
 import {
   Bell,
   Blocks,
@@ -17,13 +18,7 @@ import {
   Settings,
   Upload,
 } from "lucide-react";
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ComponentType,
-} from "react";
+import { useEffect, useRef, useState, type ComponentType } from "react";
 import {
   Link,
   matchRoutes,
@@ -308,24 +303,14 @@ function CommandPalette({
   screens: Screen[];
 }) {
   const navigate = useNavigate();
-  const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
-  const [activeIndex, setActiveIndex] = useState(0);
-  const results = useMemo(
-    () => buildCommandResults(routes, screens, query),
-    [query, routes, screens],
-  );
+  const results = buildCommandResults(routes, screens, query);
 
   useEffect(() => {
-    if (!open) return;
-    setQuery("");
-    setActiveIndex(0);
-    window.requestAnimationFrame(() => inputRef.current?.focus());
+    if (open) setQuery("");
   }, [open]);
-  useEffect(() => setActiveIndex(0), [query]);
 
-  const select = (result?: CommandResult) => {
-    if (!result) return;
+  const select = (result: CommandResult) => {
     onClose();
     void navigate(result.to);
   };
@@ -337,82 +322,51 @@ function CommandPalette({
       className="command-palette-dialog"
       onClose={onClose}
     >
-      <div className="command-palette">
+      <Command
+        className="command-palette"
+        label="Search Tilecast"
+        loop
+        shouldFilter={false}
+      >
         <label className="command-palette__input">
           <Search size={18} aria-hidden="true" />
-          <input
-            ref={inputRef}
+          <Command.Input
+            autoFocus
             type="search"
             value={query}
+            onValueChange={setQuery}
             placeholder="Search screens, media, playlists…"
             aria-label="Search Tilecast"
-            role="combobox"
-            aria-expanded="true"
-            aria-controls="command-palette-results"
-            aria-activedescendant={
-              results[activeIndex] ? `command-result-${activeIndex}` : undefined
-            }
-            onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "ArrowDown") {
-                event.preventDefault();
-                setActiveIndex((current) =>
-                  results.length ? (current + 1) % results.length : 0,
-                );
-              } else if (event.key === "ArrowUp") {
-                event.preventDefault();
-                setActiveIndex((current) =>
-                  results.length
-                    ? (current - 1 + results.length) % results.length
-                    : 0,
-                );
-              } else if (event.key === "Enter") {
-                event.preventDefault();
-                select(results[activeIndex]);
-              } else if (event.key === "Escape") {
-                event.preventDefault();
-                onClose();
-              }
-            }}
           />
           <kbd>{platformShortcut()}</kbd>
         </label>
-        <div
-          className="command-palette__results"
-          id="command-palette-results"
-          role="listbox"
-          aria-label="Search results"
-        >
-          {results.length ? (
-            results.map((result, index) => (
-              <button
-                type="button"
-                role="option"
-                aria-selected={index === activeIndex}
-                id={`command-result-${index}`}
-                key={result.id}
-                onMouseEnter={() => setActiveIndex(index)}
-                onClick={() => select(result)}
-              >
-                <result.Icon size={18} aria-hidden="true" />
-                <span>
-                  <strong>{result.label}</strong>
-                  <small>{result.description}</small>
-                </span>
-                <em>{result.category}</em>
-                <ChevronRight size={16} aria-hidden="true" />
-              </button>
-            ))
-          ) : (
-            <p className="command-palette__empty">No matching destinations.</p>
-          )}
-        </div>
+        <Command.List className="command-palette__results">
+          <Command.Empty className="command-palette__empty">
+            No matching destinations.
+          </Command.Empty>
+          {results.map((result) => (
+            <Command.Item
+              className="command-palette__result"
+              key={result.id}
+              value={result.id}
+              onSelect={() => select(result)}
+            >
+              <result.Icon size={18} aria-hidden="true" />
+              <span>
+                <strong>{result.label}</strong>
+                <small>{result.description}</small>
+              </span>
+              <em>{result.category}</em>
+              <ChevronRight size={16} aria-hidden="true" />
+            </Command.Item>
+          ))}
+        </Command.List>
         <footer className="command-palette__footer">
           <span>↑↓ Move</span>
           <span>Enter Open</span>
           <span>Esc Close</span>
         </footer>
-      </div>
+      </Command>
     </Dialog>
   );
 }
