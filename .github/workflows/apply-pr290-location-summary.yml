@@ -1,3 +1,4 @@
+# One-use workflow on an isolated branch; it does not enter PR #290.
 name: Apply PR 290 location summary fix
 
 on:
