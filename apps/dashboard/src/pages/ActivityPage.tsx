@@ -1,11 +1,20 @@
-import { PageHeader, Select, ViewTabs } from "../components/ui";
+import {
+  FilterBar,
+  PageHeader,
+  TimeRangePicker,
+  ViewTabs,
+  resolveTimeRange,
+  useUrlFilters,
+  type FilterDefinition,
+  type FilterOption,
+  type TimeRangePreset,
+} from "../components/ui";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router";
-import { Download, SlidersHorizontal, X } from "lucide-react";
+import { Download, SlidersHorizontal } from "lucide-react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
-import { DashboardSearch } from "../components/DashboardListToolbar";
 import { OverviewTab } from "./ActivityOverviewPanel";
 import { AuditTab, EventsTab, ProofTab } from "./ActivityReportTabs";
 import { activityParams } from "./ActivityShared";
@@ -13,36 +22,88 @@ import "./ActivityPage.css";
 
 type ActivityTab = "overview" | "proof" | "events" | "audit";
 
+const resultOptions = [
+  "playing",
+  "completed",
+  "partial",
+  "skipped",
+  "failed",
+  "unknown",
+  "recovered",
+];
+const auditResultOptions = ["success", "failure", "denied", "partial"];
+const categoryOptions = [
+  "connectivity",
+  "manifest",
+  "playback",
+  "scheduling",
+  "commands",
+  "reliability",
+  "updates",
+  "emergencies",
+];
+const severityOptions = ["info", "warning", "error", "critical"];
+
+/** Exact-identifier filters, kept behind a disclosure but still chipped. */
+const advancedProofFilters: FilterDefinition[] = [
+  "Media",
+  "Widget",
+  "Playlist",
+  "Layout",
+  "Schedule",
+  "Emergency",
+].map((label) => ({
+  key: label.toLowerCase(),
+  kind: "text",
+  label,
+  placeholder: `${label} ID`,
+  hidden: true,
+}));
+
+/**
+ * Every filter key any tab owns. Switching tabs drops the ones the new tab
+ * cannot apply, so a stale parameter never silently narrows a report.
+ */
+const allFilterKeys = [
+  "search",
+  "screen",
+  "group",
+  "result",
+  "category",
+  "severity",
+  "action",
+  "resourceType",
+  "actor",
+  ...advancedProofFilters.map((filter) => filter.key),
+];
+
+function optionsFrom(items: { id: string; name: string }[] | undefined) {
+  return (items ?? []).map((item) => ({ value: item.id, label: item.name }));
+}
+
+function plainOptions(values: string[]): FilterOption[] {
+  return values.map((value) => ({
+    value,
+    label: value.charAt(0).toUpperCase() + value.slice(1),
+  }));
+}
+
 export function ActivityPage() {
   const auth = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = normalizeTab(searchParams.get("tab"));
-  const [preset, setPreset] = useState("24h");
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo] = useState("");
-  const [search, setSearch] = useState("");
-  const [screen, setScreen] = useState(() => searchParams.get("screen") ?? "");
-  const [group, setGroup] = useState("");
-  const [result, setResult] = useState("");
-  const [category, setCategory] = useState("");
-  const [severity, setSeverity] = useState("");
-  const [resourceType, setResourceType] = useState("");
-  const [action, setAction] = useState("");
-  const [actor, setActor] = useState("");
-  const [media, setMedia] = useState("");
-  const [widget, setWidget] = useState("");
-  const [playlist, setPlaylist] = useState("");
-  const [layout, setLayout] = useState("");
-  const [schedule, setSchedule] = useState("");
-  const [emergency, setEmergency] = useState("");
-  const [summaryDimension, setSummaryDimension] = useState("screen");
+  const role = auth.status?.user?.role ?? "";
+  const privileged = ["owner", "administrator"].includes(role);
+
+  const preset = normalizePreset(searchParams.get("range"));
+  const customFrom = searchParams.get("from") ?? "";
+  const customTo = searchParams.get("to") ?? "";
   const range = useMemo(
-    () => dateRange(preset, customFrom, customTo),
+    () => resolveTimeRange(preset, customFrom, customTo),
     [customFrom, customTo, preset],
   );
-  const canExport = ["owner", "administrator"].includes(
-    auth.status?.user?.role ?? "",
-  );
+  const [summaryDimension, setSummaryDimension] = useState("screen");
+
   const screens = useQuery({
     queryKey: ["activity", "screens"],
     queryFn: api.screens,
@@ -54,61 +115,129 @@ export function ActivityPage() {
   const users = useQuery({
     queryKey: ["activity", "users"],
     queryFn: api.users,
-    enabled: ["owner", "administrator"].includes(auth.status?.user?.role ?? ""),
+    enabled: privileged,
   });
-  const filters = { search, screen, group, result };
-  const proofFilters = {
-    ...filters,
-    media,
-    widget,
-    playlist,
-    layout,
-    schedule,
-    emergency,
-  };
-  const auditFilters = { search, result, action, resourceType, actor };
-  const advancedProofFilters = [
-    { key: "media", label: "Media", value: media, setValue: setMedia },
-    { key: "widget", label: "Widget", value: widget, setValue: setWidget },
-    {
-      key: "playlist",
-      label: "Playlist",
-      value: playlist,
-      setValue: setPlaylist,
-    },
-    { key: "layout", label: "Layout", value: layout, setValue: setLayout },
-    {
-      key: "schedule",
-      label: "Schedule",
-      value: schedule,
-      setValue: setSchedule,
-    },
-    {
-      key: "emergency",
-      label: "Emergency",
-      value: emergency,
-      setValue: setEmergency,
-    },
-  ];
-  const activeAdvancedFilters = advancedProofFilters.filter(
-    (filter) => filter.value,
+
+  const definitions = useMemo<FilterDefinition[]>(() => {
+    if (tab === "overview") return [];
+    const search: FilterDefinition = {
+      key: "search",
+      kind: "search",
+      label: "Search activity",
+      placeholder:
+        tab === "proof"
+          ? "Search proof of play…"
+          : tab === "events"
+            ? "Search screen events…"
+            : "Search audit log…",
+    };
+    const byScreen: FilterDefinition[] = [
+      {
+        key: "screen",
+        kind: "select",
+        label: "Screen",
+        allLabel: "All screens",
+        options: optionsFrom(screens.data?.items),
+      },
+      {
+        key: "group",
+        kind: "select",
+        label: "Group",
+        allLabel: "All groups",
+        options: optionsFrom(groups.data?.items),
+      },
+    ];
+    if (tab === "proof")
+      return [
+        search,
+        ...byScreen,
+        {
+          key: "result",
+          kind: "select",
+          label: "Result",
+          allLabel: "All results",
+          options: plainOptions(resultOptions),
+        },
+        ...advancedProofFilters,
+      ];
+    if (tab === "events")
+      return [
+        search,
+        ...byScreen,
+        {
+          key: "category",
+          kind: "select",
+          label: "Category",
+          allLabel: "All categories",
+          options: plainOptions(categoryOptions),
+        },
+        {
+          key: "severity",
+          kind: "select",
+          label: "Severity",
+          allLabel: "All severities",
+          options: plainOptions(severityOptions),
+        },
+        {
+          key: "result",
+          kind: "select",
+          label: "Result",
+          allLabel: "All results",
+          options: plainOptions(resultOptions),
+        },
+      ];
+    return [
+      search,
+      ...(users.data
+        ? [
+            {
+              key: "actor",
+              kind: "select" as const,
+              label: "Actor",
+              allLabel: "All actors",
+              options: optionsFrom(users.data.items),
+            },
+          ]
+        : []),
+      { key: "action", kind: "text", label: "Action", placeholder: "Action" },
+      {
+        key: "resourceType",
+        kind: "text",
+        label: "Resource type",
+        placeholder: "Resource type",
+      },
+      {
+        key: "result",
+        kind: "select",
+        label: "Result",
+        allLabel: "All results",
+        options: plainOptions(auditResultOptions),
+      },
+    ];
+  }, [groups.data, screens.data, tab, users.data]);
+
+  const { values, set, clear } = useUrlFilters(definitions);
+  const activeAdvanced = advancedProofFilters.filter(
+    (filter) => values[filter.key],
   );
-  const hasActiveProofFilters = Object.values(proofFilters).some(Boolean);
+  const hasActiveFilters = Object.values(values).some(Boolean);
+
   const exportHref =
-    canExport && tab === "proof"
-      ? `/api/v1/activity/proof-of-play/export.csv?${activityParams(range, proofFilters)}`
-      : canExport && tab === "audit"
-        ? `/api/v1/activity/audit/export.csv?${activityParams(range, auditFilters)}`
+    privileged && tab === "proof"
+      ? `/api/v1/activity/proof-of-play/export.csv?${activityParams(range, values)}`
+      : privileged && tab === "audit"
+        ? `/api/v1/activity/audit/export.csv?${activityParams(range, values)}`
         : undefined;
+
   const activityTabs = [
     { value: "overview" as const, label: "Overview" },
     { value: "proof" as const, label: "Proof of Play" },
-    ...(["owner", "administrator"].includes(auth.status?.user?.role ?? "")
+    ...(privileged
       ? [
           { value: "events" as const, label: "Screen Events" },
           { value: "audit" as const, label: "Audit Log" },
         ]
-      : auth.status?.user?.role === "editor"
+      : role === "editor"
         ? [{ value: "audit" as const, label: "Audit Log" }]
         : []),
   ];
@@ -117,24 +246,21 @@ export function ActivityPage() {
     const next = new URLSearchParams(searchParams);
     if (value === "overview") next.delete("tab");
     else next.set("tab", value);
+    // Filters are per tab; carrying one across would narrow the next report
+    // with a control the reader can no longer see.
+    for (const key of allFilterKeys) next.delete(key);
     setSearchParams(next);
   }
 
-  function clearAdvancedProofFilters() {
-    setMedia("");
-    setWidget("");
-    setPlaylist("");
-    setLayout("");
-    setSchedule("");
-    setEmergency("");
-  }
-
-  function clearProofFilters() {
-    setSearch("");
-    setScreen("");
-    setGroup("");
-    setResult("");
-    clearAdvancedProofFilters();
+  function setRange(key: "range" | "from" | "to", value: string) {
+    const next = new URLSearchParams(searchParams);
+    if (value) next.set(key, value);
+    else next.delete(key);
+    if (key === "range" && value !== "custom") {
+      next.delete("from");
+      next.delete("to");
+    }
+    setSearchParams(next, { replace: true });
   }
 
   return (
@@ -145,40 +271,14 @@ export function ActivityPage() {
         description="Operational reporting, Player-confirmed proof of play, technical screen events, and administrator history."
         actions={
           <div className="activity-heading-actions">
-            <div className="activity-range">
-              <label>
-                <span>Date range</span>
-                <Select
-                  value={preset}
-                  onChange={(e) => setPreset(e.target.value)}
-                >
-                  <option value="24h">Last 24 hours</option>
-                  <option value="7d">Last 7 days</option>
-                  <option value="30d">Last 30 days</option>
-                  <option value="custom">Custom range</option>
-                </Select>
-              </label>
-              {preset === "custom" && (
-                <>
-                  <label>
-                    <span>From</span>
-                    <input
-                      type="datetime-local"
-                      value={customFrom}
-                      onChange={(e) => setCustomFrom(e.target.value)}
-                    />
-                  </label>
-                  <label>
-                    <span>To</span>
-                    <input
-                      type="datetime-local"
-                      value={customTo}
-                      onChange={(e) => setCustomTo(e.target.value)}
-                    />
-                  </label>
-                </>
-              )}
-            </div>
+            <TimeRangePicker
+              preset={preset}
+              onPresetChange={(value) => setRange("range", value)}
+              customFrom={customFrom}
+              customTo={customTo}
+              onCustomFromChange={(value) => setRange("from", value)}
+              onCustomToChange={(value) => setRange("to", value)}
+            />
             {exportHref && (
               <a
                 className="button button--secondary activity-export"
@@ -201,250 +301,80 @@ export function ActivityPage() {
       />
 
       {tab !== "overview" && (
-        <div className="activity-filter-area">
-          <div className="activity-filters">
-            <DashboardSearch
-              value={search}
-              onValueChange={setSearch}
-              label="Search activity"
-              placeholder={
-                tab === "proof"
-                  ? "Search proof of play…"
-                  : tab === "events"
-                    ? "Search screen events…"
-                    : "Search audit log…"
-              }
-            />
-            {(tab === "proof" || tab === "events") && (
-              <>
-                <Select
-                  aria-label="Filter by screen"
-                  value={screen}
-                  onChange={(e) => setScreen(e.target.value)}
-                >
-                  <option value="">All screens</option>
-                  {screens.data?.items?.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name}
-                    </option>
-                  ))}
-                </Select>
-                <Select
-                  aria-label="Filter by group"
-                  value={group}
-                  onChange={(e) => setGroup(e.target.value)}
-                >
-                  <option value="">All groups</option>
-                  {groups.data?.items?.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name}
-                    </option>
-                  ))}
-                </Select>
-              </>
-            )}
-            {tab === "proof" && (
-              <>
-                <ResultFilter value={result} onChange={setResult} />
-                <details className="activity-more-filters">
-                  <summary>
-                    <SlidersHorizontal size={15} />
-                    <span>More filters</span>
-                    {activeAdvancedFilters.length > 0 && (
-                      <span className="activity-filter-count">
-                        {activeAdvancedFilters.length}
-                      </span>
-                    )}
-                  </summary>
-                  <div className="activity-more-filters-panel">
-                    <header>
-                      <span>
-                        <strong>Advanced filters</strong>
-                        <small>Filter by an exact resource ID.</small>
-                      </span>
-                      {activeAdvancedFilters.length > 0 && (
-                        <button
-                          type="button"
-                          className="button button--quiet button--compact"
-                          onClick={clearAdvancedProofFilters}
-                        >
-                          Clear
-                        </button>
-                      )}
-                    </header>
-                    <div className="activity-advanced-filter-grid">
-                      {advancedProofFilters.map((filter) => (
-                        <label key={filter.key}>
-                          <span>{filter.label} ID</span>
-                          <input
-                            value={filter.value}
-                            onChange={(e) => filter.setValue(e.target.value)}
-                            placeholder={`${filter.label} ID`}
-                          />
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                </details>
-              </>
-            )}
-            {tab === "events" && (
-              <>
-                <Select
-                  aria-label="Filter by category"
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                >
-                  <option value="">All categories</option>
-                  {[
-                    "connectivity",
-                    "manifest",
-                    "playback",
-                    "scheduling",
-                    "commands",
-                    "reliability",
-                    "updates",
-                    "emergencies",
-                  ].map((value) => (
-                    <option key={value}>{value}</option>
-                  ))}
-                </Select>
-                <Select
-                  aria-label="Filter by severity"
-                  value={severity}
-                  onChange={(e) => setSeverity(e.target.value)}
-                >
-                  <option value="">All severities</option>
-                  {["info", "warning", "error", "critical"].map((value) => (
-                    <option key={value}>{value}</option>
-                  ))}
-                </Select>
-                <ResultFilter value={result} onChange={setResult} />
-              </>
-            )}
-            {tab === "audit" && (
-              <>
-                {users.data && (
-                  <Select
-                    value={actor}
-                    onChange={(e) => setActor(e.target.value)}
-                    aria-label="Filter by actor"
-                  >
-                    <option value="">All actors</option>
-                    {users.data.items.map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {user.name}
-                      </option>
-                    ))}
-                  </Select>
+        <FilterBar
+          definitions={definitions}
+          values={values}
+          onChange={set}
+          onClear={clear}
+          label={`${activityTabs.find((item) => item.value === tab)?.label} filters`}
+        >
+          {tab === "proof" && (
+            <details className="activity-more-filters">
+              <summary>
+                <SlidersHorizontal size={15} />
+                <span>More filters</span>
+                {activeAdvanced.length > 0 && (
+                  <span className="activity-filter-count">
+                    {activeAdvanced.length}
+                  </span>
                 )}
-                <input
-                  value={action}
-                  onChange={(e) => setAction(e.target.value)}
-                  placeholder="Action"
-                  aria-label="Filter by action"
-                />
-                <input
-                  value={resourceType}
-                  onChange={(e) => setResourceType(e.target.value)}
-                  placeholder="Resource type"
-                  aria-label="Filter by resource type"
-                />
-                <Select
-                  aria-label="Filter by result"
-                  value={result}
-                  onChange={(e) => setResult(e.target.value)}
-                >
-                  <option value="">All results</option>
-                  {["success", "failure", "denied", "partial"].map((value) => (
-                    <option key={value}>{value}</option>
+              </summary>
+              <div className="activity-more-filters-panel">
+                <header>
+                  <span>
+                    <strong>Advanced filters</strong>
+                    <small>Filter by an exact resource ID.</small>
+                  </span>
+                  {activeAdvanced.length > 0 && (
+                    <button
+                      type="button"
+                      className="button button--quiet button--compact"
+                      onClick={() => {
+                        for (const filter of advancedProofFilters)
+                          set(filter.key, "");
+                      }}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </header>
+                <div className="activity-advanced-filter-grid">
+                  {advancedProofFilters.map((filter) => (
+                    <label key={filter.key}>
+                      <span>{filter.label} ID</span>
+                      <input
+                        value={values[filter.key] ?? ""}
+                        onChange={(event) =>
+                          set(filter.key, event.target.value)
+                        }
+                        placeholder={`${filter.label} ID`}
+                      />
+                    </label>
                   ))}
-                </Select>
-              </>
-            )}
-          </div>
-          {tab === "proof" && activeAdvancedFilters.length > 0 && (
-            <div className="activity-filter-chips" aria-label="Active filters">
-              {activeAdvancedFilters.map((filter) => (
-                <button
-                  key={filter.key}
-                  type="button"
-                  onClick={() => filter.setValue("")}
-                  title={`Remove ${filter.label} filter`}
-                >
-                  <strong>{filter.label}:</strong>
-                  <span>{filter.value}</span>
-                  <X size={13} aria-hidden="true" />
-                </button>
-              ))}
-              <button
-                type="button"
-                className="activity-clear-filters"
-                onClick={clearAdvancedProofFilters}
-              >
-                Clear all
-              </button>
-            </div>
+                </div>
+              </div>
+            </details>
           )}
-        </div>
+        </FilterBar>
       )}
 
-      {tab === "overview" && (
-        <OverviewTab
-          range={range}
-          canManageRetention={["owner", "administrator"].includes(
-            auth.status?.user?.role ?? "",
-          )}
-          csrfToken={auth.status?.csrfToken ?? ""}
-        />
-      )}
+      {tab === "overview" && <OverviewTab range={range} />}
       {tab === "proof" && (
         <ProofTab
           range={range}
-          filters={proofFilters}
+          filters={values}
           dimension={summaryDimension}
           setDimension={setSummaryDimension}
-          hasActiveFilters={hasActiveProofFilters}
+          hasActiveFilters={hasActiveFilters}
           canExtendRange={preset === "24h"}
-          onClearFilters={clearProofFilters}
-          onExtendRange={() => setPreset("7d")}
+          onClearFilters={clear}
+          onExtendRange={() => setRange("range", "7d")}
           onViewScreenEvents={() => selectTab("events")}
         />
       )}
-      {tab === "events" && (
-        <EventsTab range={range} filters={{ ...filters, category, severity }} />
-      )}
-      {tab === "audit" && <AuditTab range={range} filters={auditFilters} />}
+      {tab === "events" && <EventsTab range={range} filters={values} />}
+      {tab === "audit" && <AuditTab range={range} filters={values} />}
     </section>
-  );
-}
-
-function ResultFilter({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <Select
-      aria-label="Filter by result"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-    >
-      <option value="">All results</option>
-      {[
-        "playing",
-        "completed",
-        "partial",
-        "skipped",
-        "failed",
-        "unknown",
-        "recovered",
-      ].map((option) => (
-        <option key={option}>{option}</option>
-      ))}
-    </Select>
   );
 }
 
@@ -454,14 +384,8 @@ function normalizeTab(value: string | null): ActivityTab {
     : "overview";
 }
 
-function dateRange(preset: string, customFrom: string, customTo: string) {
-  const to = preset === "custom" && customTo ? new Date(customTo) : new Date();
-  const from =
-    preset === "custom" && customFrom
-      ? new Date(customFrom)
-      : new Date(
-          to.getTime() -
-            (preset === "30d" ? 30 : preset === "7d" ? 7 : 1) * 86_400_000,
-        );
-  return { from: from.toISOString(), to: to.toISOString() };
+function normalizePreset(value: string | null): TimeRangePreset {
+  return value === "7d" || value === "30d" || value === "custom"
+    ? value
+    : "24h";
 }

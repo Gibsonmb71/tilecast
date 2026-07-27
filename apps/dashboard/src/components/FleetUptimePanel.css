@@ -125,7 +125,7 @@
   justify-content: flex-end;
   min-width: 0;
   height: 54px;
-  background: var(--tc-bg-subtle);
+  background: var(--tc-viz-track);
   border-radius: 2px;
   overflow: hidden;
 }
@@ -135,16 +135,16 @@
   min-height: 2px;
 }
 .uptime-chart__segment--up {
-  background: var(--tc-status-success);
+  background: var(--tc-viz-up);
 }
 .uptime-chart__segment--impaired {
-  background: var(--tc-status-warning);
+  background: var(--tc-viz-impaired);
 }
 .uptime-chart__segment--down {
-  background: var(--tc-status-danger);
+  background: var(--tc-viz-down);
 }
 .uptime-chart__segment--unknown {
-  background: var(--tc-status-neutral-bg);
+  background: var(--tc-viz-unknown);
   border-bottom: 1px solid var(--tc-border-default);
 }
 .uptime-chart__axis {
@@ -180,16 +180,16 @@
   border-radius: 2px;
 }
 .uptime-swatch--up {
-  background: var(--tc-status-success);
+  background: var(--tc-viz-up);
 }
 .uptime-swatch--impaired {
-  background: var(--tc-status-warning);
+  background: var(--tc-viz-impaired);
 }
 .uptime-swatch--down {
-  background: var(--tc-status-danger);
+  background: var(--tc-viz-down);
 }
 .uptime-swatch--unknown {
-  background: var(--tc-status-neutral-bg);
+  background: var(--tc-viz-unknown);
   border: 1px solid var(--tc-border-default);
 }
 

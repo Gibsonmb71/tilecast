@@ -12,6 +12,14 @@
   --tc-status-info-border: var(--tc-info-300);
   --tc-status-neutral: var(--tc-neutral-500);
   --tc-status-neutral-border: #cdd6dc;
+  /* Divider inside a panel that already has a --tc-border-default outline.
+     Derived from the theme's own border and surface, so it needs one
+     declaration rather than a per-theme copy. */
+  --tc-border-subtle: color-mix(
+    in srgb,
+    var(--tc-border-default) 58%,
+    var(--tc-bg-surface)
+  );
 }
 
 :root:not([data-theme]),
@@ -45,7 +53,7 @@ html[data-theme="system"] {
   --tc-bg-subtle: var(--tc-neutral-50);
   --tc-bg-elevated: var(--tc-neutral-0);
   --tc-text-primary: #17212b;
-  --tc-text-secondary: var(--tc-neutral-600);
+  --tc-text-secondary: var(--tc-neutral-500);
   --tc-text-disabled: var(--tc-neutral-400);
   --tc-text-inverse: var(--tc-neutral-0);
   --tc-border-default: var(--divider);
@@ -62,6 +70,11 @@ html[data-theme="system"] {
   --tc-status-danger-bg: var(--tc-red-50);
   --tc-status-info-bg: var(--tc-info-50);
   --tc-status-neutral-bg: var(--tc-neutral-50);
+  --tc-viz-up: var(--tc-green-700);
+  --tc-viz-impaired: var(--tc-orange-700);
+  --tc-viz-down: var(--tc-red-700);
+  --tc-viz-unknown: var(--tc-neutral-200);
+  --tc-viz-track: var(--tc-neutral-50);
   --tc-overlay-scrim: rgb(14 20 27 / 58%);
   --tc-shadow-overlay: 0 18px 50px rgb(14 20 27 / 20%);
 }
@@ -114,6 +127,13 @@ html[data-theme="dark"] {
   --tc-status-danger: var(--tc-red-400);
   --tc-status-info-bg: #192f4f;
   --tc-status-neutral-bg: var(--tc-neutral-800);
+  /* Fills, not text: the 700 ramp muddies against the dark canvas at
+     chart-segment size, so the up and impaired fills lift to the 400 ramp. */
+  --tc-viz-up: var(--tc-green-400);
+  --tc-viz-impaired: var(--tc-orange-400);
+  --tc-viz-down: var(--tc-red-400);
+  --tc-viz-unknown: var(--tc-neutral-700);
+  --tc-viz-track: var(--tc-neutral-800);
   --tc-overlay-scrim: rgb(0 0 0 / 66%);
   --tc-shadow-overlay: 0 18px 55px rgb(0 0 0 / 44%);
 }
@@ -170,5 +190,14 @@ html[data-theme="dark"] {
     --tc-status-danger: var(--tc-red-400);
     --tc-status-info-bg: #192f4f;
     --tc-status-neutral-bg: var(--tc-neutral-800);
+    --tc-viz-up: var(--tc-green-400);
+    --tc-viz-impaired: var(--tc-orange-400);
+    --tc-viz-down: var(--tc-red-400);
+    --tc-viz-unknown: var(--tc-neutral-700);
+    --tc-viz-track: var(--tc-neutral-800);
+    /* The light block matches data-theme="system" too, so the overlay values
+       have to be restated here or menus keep the light scrim and shadow. */
+    --tc-overlay-scrim: rgb(0 0 0 / 66%);
+    --tc-shadow-overlay: 0 18px 55px rgb(0 0 0 / 44%);
   }
 }
