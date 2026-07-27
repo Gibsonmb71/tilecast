@@ -332,7 +332,6 @@ function CommandPalette({
           <Search size={18} aria-hidden="true" />
           <Command.Input
             autoFocus
-            type="search"
             value={query}
             onValueChange={setQuery}
             placeholder="Search screens, media, playlists…"
