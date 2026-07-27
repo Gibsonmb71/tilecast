@@ -1,0 +1,85 @@
+name: Fix cmdk validation compatibility
+
+on:
+  push:
+    branches:
+      - feature/cmdk-universal-search
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cmdk-validation-fix
+  cancel-in-progress: true
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feature/cmdk-universal-search
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Apply compatibility fixes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          topbar = Path("apps/dashboard/src/components/StudioTopbar.tsx")
+          source = topbar.read_text()
+          source = source.replace(
+              '''            autoFocus
+              type="search"
+              value={query}''',
+              '''            autoFocus
+              value={query}''',
+          )
+          topbar.write_text(source)
+
+          test = Path("apps/dashboard/src/components/StudioTopbar.test.tsx")
+          source = test.read_text()
+          source = source.replace(
+              '''beforeEach(() => {
+            HTMLDialogElement.prototype.showModal = function showModal() {''',
+              '''beforeEach(() => {
+            class ResizeObserverMock {
+              observe() {}
+              unobserve() {}
+              disconnect() {}
+            }
+            vi.stubGlobal("ResizeObserver", ResizeObserverMock);
+            Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+              configurable: true,
+              value: vi.fn(),
+            });
+            HTMLDialogElement.prototype.showModal = function showModal() {''',
+          )
+          source = source.replace(
+              '''    fireEvent.change(searchInput, { target: { value: "Amazon" } });
+            fireEvent.keyDown(searchInput, { key: "Enter" });''',
+              '''    fireEvent.change(searchInput, { target: { value: "Amazon" } });
+            const result = await screen.findByRole("option", {
+              name: /Amazon AFTKRT/,
+            });
+            await waitFor(() =>
+              expect(result.getAttribute("aria-selected")).toBe("true"),
+            );
+            fireEvent.keyDown(searchInput, { key: "Enter" });''',
+          )
+          test.write_text(source)
+          PY
+      - name: Install dependencies
+        run: npm ci
+      - name: Format changed files
+        run: npx prettier --write apps/dashboard/src/components/StudioTopbar.tsx apps/dashboard/src/components/StudioTopbar.test.tsx
+      - name: Commit fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/fix-cmdk-validation.yml
+          git add apps/dashboard/src/components/StudioTopbar.tsx apps/dashboard/src/components/StudioTopbar.test.tsx
+          git commit -m "Fix cmdk build and test compatibility"
+          git push
