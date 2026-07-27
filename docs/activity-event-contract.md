@@ -123,7 +123,7 @@ A terminal event with no matching start is still accepted, and the server synthe
 
 ## Versioning and compatibility
 
-The contract version is a property of this document, not a field on the wire. Version 1 events remain acceptable: unknown fields are ignored, absent `sessionType` and `terminalReason` are derived from the event name and identifiers, and every version 1 name in the table above resolves to its version 2 equivalent before derivation.
+The contract version is a property of this document, not a field on the wire. Version 1 events remain acceptable when they use the enumerated legacy fields: unrelated unknown fields are rejected by strict JSON decoding, absent `sessionType` and `terminalReason` are derived from the event name and identifiers, and every version 1 name in the table above resolves to its version 2 equivalent before derivation.
 
 Two consequences follow, and both are deliberate:
 

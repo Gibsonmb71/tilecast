@@ -18,7 +18,7 @@ type screenTimelineEntry struct {
 	// The filter domain, matching the Screen Events categories plus the
 	// derived sources that have no event of their own.
 	Domain      string `json:"domain"`
-	Kind        string `json:"kind"`
+	Kind        string `json:"kind"` // interval, session, or point
 	Severity    string `json:"severity"`
 	Title       string `json:"title"`
 	Description string `json:"description,omitempty"`

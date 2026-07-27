@@ -164,7 +164,8 @@ export function ScreenTimeline({ screenId }: { screenId: string }) {
                     )}
                     {/* An interval with no end is still running, which is a
                         different statement from one that ended. */}
-                    {entry.endedAt === undefined &&
+                    {(entry.kind === "interval" || entry.kind === "session") &&
+                      entry.endedAt === undefined &&
                       entry.durationMs == null && <span>Still open</span>}
                     {entry.result && <span>{humanize(entry.result)}</span>}
                     {entry.linkType === "incident" ? (

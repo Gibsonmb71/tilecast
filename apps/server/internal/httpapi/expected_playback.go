@@ -132,16 +132,25 @@ func (s *server) evaluateExpectedWindows(ctx context.Context, screenID *uuid.UUI
 	windows := []pending{}
 	for rows.Next() {
 		var item pending
-		if rows.Scan(&item.ID, &item.ScreenID, &item.Start, &item.End, &item.Reason,
-			&item.EmergencyID, &item.Trigger) == nil {
-			windows = append(windows, item)
+		if err := rows.Scan(&item.ID, &item.ScreenID, &item.Start, &item.End, &item.Reason,
+			&item.EmergencyID, &item.Trigger); err != nil {
+			rows.Close()
+			return err
 		}
+		windows = append(windows, item)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
 	}
 	rows.Close()
 
 	for _, window := range windows {
-		status, confirmed, actualStart, actualEnd, sessionID := s.matchExpectedWindow(ctx, window.ScreenID,
+		status, confirmed, actualStart, actualEnd, sessionID, err := s.matchExpectedWindow(ctx, window.ScreenID,
 			window.Start, window.End, window.Reason, window.EmergencyID)
+		if err != nil {
+			return err
+		}
 		if _, err := s.db.Exec(ctx, `
 			UPDATE expected_playback_windows
 			SET match_status=$2,confirmed_duration_ms=$3,actual_start=$4,actual_end=$5,
@@ -158,17 +167,17 @@ func (s *server) evaluateExpectedWindows(ctx context.Context, screenID *uuid.UUI
 func (s *server) matchExpectedWindow(
 	ctx context.Context, screenID uuid.UUID, start, end time.Time,
 	reason *string, emergencyID *uuid.UUID,
-) (string, int64, *time.Time, *time.Time, *uuid.UUID) {
+) (string, int64, *time.Time, *time.Time, *uuid.UUID, error) {
 	// An emergency replaced normal playback on purpose; that time is not a
 	// missed normal play and is excluded from the compliance denominator.
 	if emergencyID != nil {
-		return matchEmergencyOverride, 0, nil, nil, nil
+		return matchEmergencyOverride, 0, nil, nil, nil, nil
 	}
 	if reason != nil && expectedCancellingReasons[*reason] {
-		return matchCancelled, 0, nil, nil, nil
+		return matchCancelled, 0, nil, nil, nil, nil
 	}
 	if end.Sub(start) < expectedMinimumMeasurable {
-		return matchNotMeasurable, 0, nil, nil, nil
+		return matchNotMeasurable, 0, nil, nil, nil, nil
 	}
 
 	var confirmed int64
@@ -177,7 +186,7 @@ func (s *server) matchExpectedWindow(
 	var failed bool
 	// Root sessions only: child content is exposure inside the presentation,
 	// not the screen's wall clock, so counting it would inflate compliance.
-	_ = s.db.QueryRow(ctx, `
+	if err := s.db.QueryRow(ctx, `
 		SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (LEAST(COALESCE(p.ended_at,$3),$3) - GREATEST(p.started_at,$2))))*1000,0)::bigint,
 		       MIN(GREATEST(p.started_at,$2)),MAX(LEAST(COALESCE(p.ended_at,$3),$3)),
 		       (array_agg(p.id ORDER BY p.started_at))[1],
@@ -186,16 +195,22 @@ func (s *server) matchExpectedWindow(
 		WHERE p.screen_id=$1 AND p.session_type='presentation'
 		  AND p.started_at<$3 AND COALESCE(p.ended_at,$3)>$2
 		  AND p.result IN('playing','completed','recovered','partial','failed')`,
-		screenID, start, end).Scan(&confirmed, &actualStart, &actualEnd, &sessionID, &failed)
+		screenID, start, end).Scan(&confirmed, &actualStart, &actualEnd, &sessionID, &failed); err != nil {
+		return "", 0, nil, nil, nil, err
+	}
 
 	if confirmed <= 0 {
 		// Nothing played. Whether that is the screen's fault depends on
 		// whether it was reachable, which is a different operational problem
 		// from a player that was up and showing nothing.
-		if s.screenWasOffline(ctx, screenID, start, end) {
-			return matchScreenOffline, 0, nil, nil, nil
+		offline, err := s.screenWasOffline(ctx, screenID, start, end)
+		if err != nil {
+			return "", 0, nil, nil, nil, err
 		}
-		return matchNeverStarted, 0, nil, nil, nil
+		if offline {
+			return matchScreenOffline, 0, nil, nil, nil, nil
+		}
+		return matchNeverStarted, 0, nil, nil, nil, nil
 	}
 
 	expected := end.Sub(start).Milliseconds()
@@ -203,33 +218,35 @@ func (s *server) matchExpectedWindow(
 	early := actualEnd != nil && end.Sub(*actualEnd) > expectedEndGrace
 	switch {
 	case failed:
-		return matchFailed, confirmed, actualStart, actualEnd, sessionID
+		return matchFailed, confirmed, actualStart, actualEnd, sessionID, nil
 	case late && early:
 		// Both ends missing is not a late start or an early end; it is a
 		// window that was only partly covered.
-		return matchPartial, confirmed, actualStart, actualEnd, sessionID
+		return matchPartial, confirmed, actualStart, actualEnd, sessionID, nil
 	case late:
-		return matchStartedLate, confirmed, actualStart, actualEnd, sessionID
+		return matchStartedLate, confirmed, actualStart, actualEnd, sessionID, nil
 	case early:
-		return matchEndedEarly, confirmed, actualStart, actualEnd, sessionID
+		return matchEndedEarly, confirmed, actualStart, actualEnd, sessionID, nil
 	case confirmed*100 < expected*95:
 		// Covered at both ends but with a hole in the middle.
-		return matchPartial, confirmed, actualStart, actualEnd, sessionID
+		return matchPartial, confirmed, actualStart, actualEnd, sessionID, nil
 	default:
-		return matchConfirmed, confirmed, actualStart, actualEnd, sessionID
+		return matchConfirmed, confirmed, actualStart, actualEnd, sessionID, nil
 	}
 }
 
 // screenWasOffline reports whether the screen was unreachable for most of the
 // window, which distinguishes an outage from a player that was up and idle.
-func (s *server) screenWasOffline(ctx context.Context, screenID uuid.UUID, start, end time.Time) bool {
+func (s *server) screenWasOffline(ctx context.Context, screenID uuid.UUID, start, end time.Time) (bool, error) {
 	var offlineSeconds float64
-	_ = s.db.QueryRow(ctx, `
+	if err := s.db.QueryRow(ctx, `
 		SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (LEAST(COALESCE(i.ended_at,$3),$3) - GREATEST(i.started_at,$2)))),0)::float8
 		FROM screen_state_intervals i
 		WHERE i.screen_id=$1 AND i.state IN('offline','unknown')
-		  AND i.started_at<$3 AND COALESCE(i.ended_at,$3)>$2`, screenID, start, end).Scan(&offlineSeconds)
-	return offlineSeconds >= end.Sub(start).Seconds()/2
+		  AND i.started_at<$3 AND COALESCE(i.ended_at,$3)>$2`, screenID, start, end).Scan(&offlineSeconds); err != nil {
+		return false, err
+	}
+	return offlineSeconds >= end.Sub(start).Seconds()/2, nil
 }
 
 // syncExpectedWindowsFromStatus keeps the expected model in step with what the

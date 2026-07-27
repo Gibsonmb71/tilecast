@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type complianceReport struct {
@@ -106,13 +108,18 @@ func (s *server) playbackCompliance(w http.ResponseWriter, r *http.Request) {
 
 	clauses := []string{"w.expected_start < $2", "COALESCE(w.expected_end,$2) > $1"}
 	args := []any{window.From, window.To}
-	for key, expression := range map[string]string{
-		"screen": "w.screen_id = $%d", "schedule": "w.schedule_id = $%d",
-	} {
-		if value := queryValue(r, key); value != "" {
-			args = append(args, value)
-			clauses = append(clauses, strings.Replace(expression, "$%d", "$"+strconv.Itoa(len(args)), 1))
+	if value := queryValue(r, "screen"); value != "" {
+		id, err := uuid.Parse(value)
+		if err != nil {
+			writeError(w, http.StatusUnprocessableEntity, "screen_invalid", "Screen must be a UUID.")
+			return
 		}
+		args = append(args, id)
+		clauses = append(clauses, "w.screen_id = $"+strconv.Itoa(len(args)))
+	}
+	if value := queryValue(r, "schedule"); value != "" {
+		args = append(args, value)
+		clauses = append(clauses, "w.schedule_id = $"+strconv.Itoa(len(args)))
 	}
 	where := strings.Join(clauses, " AND ")
 
@@ -124,7 +131,7 @@ func (s *server) playbackCompliance(w http.ResponseWriter, r *http.Request) {
 	if err := s.db.QueryRow(r.Context(), `
 		SELECT
 			COALESCE(SUM(`+expectedClippedMS+`) FILTER (WHERE `+measurableFilter+`),0),
-			COALESCE(SUM(w.confirmed_duration_ms),0),
+			COALESCE(SUM(w.confirmed_duration_ms) FILTER (WHERE `+measurableFilter+`),0),
 			COALESCE(SUM(`+expectedClippedMS+`) FILTER (WHERE w.match_status='overridden_by_emergency'),0),
 			COALESCE(SUM(`+expectedClippedMS+`) FILTER (WHERE w.match_status='cancelled'),0),
 			COALESCE(SUM(`+expectedClippedMS+`) FILTER (WHERE w.match_status='not_measurable'),0),
@@ -147,10 +154,16 @@ func (s *server) playbackCompliance(w http.ResponseWriter, r *http.Request) {
 	report.MissedMS = max(0, report.MeasurableExpectedMS-report.ConfirmedMS)
 	report.CompliancePercent = compliancePercent(report.ConfirmedMS, report.MeasurableExpectedMS)
 
+	joins := `LEFT JOIN screens s ON s.id=w.screen_id
+		LEFT JOIN locations l ON l.id=s.location_id`
+	if dimension == "group" {
+		joins += ` LEFT JOIN screen_group_memberships m ON m.screen_id=w.screen_id
+			LEFT JOIN screen_groups g ON g.id=m.screen_group_id`
+	}
 	rows, err := s.db.Query(r.Context(), `
 		SELECT `+expressions[0]+`,`+expressions[1]+`,
 			COALESCE(SUM(`+expectedClippedMS+`) FILTER (WHERE `+measurableFilter+`),0),
-			COALESCE(SUM(w.confirmed_duration_ms),0),
+			COALESCE(SUM(w.confirmed_duration_ms) FILTER (WHERE `+measurableFilter+`),0),
 			count(*),
 			count(*) FILTER (WHERE w.match_status='started_late'),
 			count(*) FILTER (WHERE w.match_status='ended_early'),
@@ -159,10 +172,7 @@ func (s *server) playbackCompliance(w http.ResponseWriter, r *http.Request) {
 			COALESCE((array_agg(w.match_status ORDER BY `+expectedClippedMS+` DESC)
 			          FILTER (WHERE w.match_status IN('never_started','screen_offline','failed','partial','started_late','ended_early')))[1],'')
 		FROM expected_playback_windows w
-		LEFT JOIN screens s ON s.id=w.screen_id
-		LEFT JOIN locations l ON l.id=s.location_id
-		LEFT JOIN screen_group_memberships m ON m.screen_id=w.screen_id
-		LEFT JOIN screen_groups g ON g.id=m.screen_group_id
+		`+joins+`
 		WHERE `+where+`
 		GROUP BY 1,2 ORDER BY 3 DESC,2 LIMIT 200`, args...)
 	if err != nil {
@@ -172,14 +182,19 @@ func (s *server) playbackCompliance(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	for rows.Next() {
 		var item complianceBreakdown
-		if rows.Scan(&item.Key, &item.Label, &item.MeasurableExpectedMS, &item.ConfirmedMS,
+		if err := rows.Scan(&item.Key, &item.Label, &item.MeasurableExpectedMS, &item.ConfirmedMS,
 			&item.Windows, &item.LateStarts, &item.EarlyEndings, &item.NeverStarted,
-			&item.OfflineMisses, &item.TopFailureReason) != nil {
-			continue
+			&item.OfflineMisses, &item.TopFailureReason); err != nil {
+			s.internalError(w, r, err)
+			return
 		}
 		item.MissedMS = max(0, item.MeasurableExpectedMS-item.ConfirmedMS)
 		item.CompliancePercent = compliancePercent(item.ConfirmedMS, item.MeasurableExpectedMS)
 		report.Breakdown = append(report.Breakdown, item)
+	}
+	if err := rows.Err(); err != nil {
+		s.internalError(w, r, err)
+		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": report})
 }

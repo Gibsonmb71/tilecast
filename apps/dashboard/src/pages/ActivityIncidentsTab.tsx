@@ -3,7 +3,6 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { Drawer, type ResolvedTimeRange } from "../components/ui";
 import {
-  ActivityPagination,
   activityParams,
   activityRequest,
   EmptyState,
@@ -15,7 +14,6 @@ import {
   ResourceLink,
   ResultBadge,
   TechnicalDetails,
-  useActivityCursor,
 } from "./ActivityShared";
 import type { AuditRecord, ProofRecord, ScreenEvent } from "./ActivityShared";
 import {
@@ -75,8 +73,6 @@ export function IncidentsTab({
         Object.entries(filters).filter(([, value]) => Boolean(value)),
       );
   const paramsKey = params.toString();
-  const pagination = useActivityCursor(paramsKey);
-
   const query = useQuery({
     queryKey: ["activity", "incidents", "tab", paramsKey],
     queryFn: () =>
@@ -131,7 +127,6 @@ export function IncidentsTab({
             </button>
           </div>
         )}
-        <ActivityPagination pagination={pagination} />
       </section>
 
       {selected && (

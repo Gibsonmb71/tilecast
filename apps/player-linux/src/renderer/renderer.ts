@@ -893,8 +893,14 @@ function renderLayoutItem(item: RendererItem, myGeneration: number): void {
     // silently died is distinguishable from one that is working. Reporting
     // only for the layout as a whole would hide exactly that.
     if (zone.render) {
-      el.appendChild(buildRenderNode(zone.render));
-      tilecast.reportProgress(item.id, "layout-zone-rendered", zone.id);
+      const node = buildRenderNode(zone.render);
+      el.appendChild(node);
+      // A render node is only evidence once its first frame has painted.
+      requestAnimationFrame(() => {
+        if (myGeneration === generation && node.isConnected) {
+          tilecast.reportProgress(item.id, "layout-zone-rendered", zone.id);
+        }
+      });
     } else if (zone.image) {
       const img = document.createElement("img");
       img.src = zone.image.src;

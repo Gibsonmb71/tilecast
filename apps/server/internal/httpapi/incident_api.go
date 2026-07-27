@@ -327,8 +327,7 @@ func (s *server) updateIncident(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusUnprocessableEntity, "incident_note_required", "A note requires text.")
 			return
 		}
-		statement = `UPDATE incidents SET resolution_notes=$2,updated_at=now() WHERE id=$1`
-		args = append(args, input.Notes)
+		statement = `UPDATE incidents SET updated_at=now() WHERE id=$1`
 		summary = input.Notes
 	case "resolve":
 		// A person closing the matter is a manual recovery, and stays distinct
@@ -361,7 +360,13 @@ func (s *server) updateIncident(w http.ResponseWriter, r *http.Request) {
 		summary += ": " + input.Reason
 	}
 
-	tag, err := s.db.Exec(r.Context(), statement, args...)
+	tx, err := s.db.Begin(r.Context())
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	defer tx.Rollback(r.Context()) //nolint:errcheck
+	tag, err := tx.Exec(r.Context(), statement, args...)
 	if err != nil {
 		s.internalError(w, r, err)
 		return
@@ -370,7 +375,7 @@ func (s *server) updateIncident(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "incident_action_not_applicable", "That action does not apply to this incident's current status.")
 		return
 	}
-	if _, err := s.db.Exec(r.Context(), `
+	if _, err := tx.Exec(r.Context(), `
 		INSERT INTO incident_events(id,incident_id,role,occurred_at,actor_id,summary)
 		VALUES($1,$2,'action',now(),$3,$4)`,
 		uuid.New(), id, actor.ID, safeActivityText(summary, 240)); err != nil {
@@ -379,13 +384,20 @@ func (s *server) updateIncident(w http.ResponseWriter, r *http.Request) {
 	}
 	// Operator actions on an incident are administrator history, so they land
 	// in the audit log alongside every other change.
-	_, _ = s.db.Exec(r.Context(), `
+	if _, err := tx.Exec(r.Context(), `
 		INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,result,request_id,summary)
 		VALUES($1,$2,$3,'incident',$4,'success',$5,$6)`,
 		uuid.New(), actor.ID, "incident."+input.Action, id.String(),
-		middleware.GetReqID(r.Context()), safeActivityText(summary, 240))
-	record, err := scanIncident(s.db.QueryRow(r.Context(), incidentSelectSQL+` WHERE i.id=$1`, id).Scan)
+		middleware.GetReqID(r.Context()), safeActivityText(summary, 240)); err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	record, err := scanIncident(tx.QueryRow(r.Context(), incidentSelectSQL+` WHERE i.id=$1`, id).Scan)
 	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
 		s.internalError(w, r, err)
 		return
 	}

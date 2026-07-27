@@ -2,9 +2,9 @@
 
 Tilecast reports platform limits instead of presenting them as completed capabilities.
 
-## One fullscreen zone
+## Layout capabilities
 
-Playback currently uses one fullscreen zone.
+Playback supports published multi-zone Layouts as well as fullscreen playlists. A Layout remains limited to one active video-capable zone and one audio-emitting zone; arbitrary simultaneous-video compositions are not supported.
 
 Not currently supported:
 
@@ -13,7 +13,7 @@ Not currently supported:
 - simultaneous independent videos
 - arbitrary HTML layout builders
 
-The **Layouts** route in Studio is planned, not a completed feature.
+The **Layouts** route in Studio is available for creating and publishing supported Layouts.
 
 ## What Activity reporting can and cannot tell you
 

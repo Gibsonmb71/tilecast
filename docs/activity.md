@@ -60,7 +60,7 @@ Date-aware Widgets report the selected cached record by Source ID, placement or 
 
 ## Fleet health
 
-The Activity Overview reports fleet health as of now, not over the selected date range, because it answers what is on screen at this moment. It covers the same population as uptime — enabled, non-archived, non-deleted screens holding an unrevoked device credential — so a screen taken out of service on purpose never reads as a fault.
+The Activity Overview reports fleet health as of now, not over the selected date range, because it answers what is on screen at this moment. It covers enabled, non-archived, non-deleted screens holding an unrevoked device credential; uptime has its own historical population and gap rules. A screen taken out of service deliberately never reads as a fleet-health fault.
 
 A recent heartbeat is reachability, not health, and is reported separately as **Online**. Every measured screen also lands in exactly one of four states, so the four counts sum to the measured fleet:
 

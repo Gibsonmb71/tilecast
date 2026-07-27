@@ -21,7 +21,12 @@ func (s *server) activityOverview(w http.ResponseWriter, r *http.Request) {
 	// Marshal empty lists as [] rather than null; the dashboard indexes into
 	// these collections directly.
 	data.Timeline = []activityTimelineItem{}
-	data.Fleet, _ = s.fleetHealth(r.Context(), time.Now().UTC())
+	if fleet, err := s.fleetHealth(r.Context(), time.Now().UTC()); err != nil {
+		s.logger.Error("activity fleet health query failed", "error", err)
+		data.Fleet = nil
+	} else {
+		data.Fleet = &fleet
+	}
 	// Counted as reporting gaps rather than playback gaps, and narrowed to the
 	// states a connectivity gap actually produces. The previous count also
 	// included renderer and storage impairment, which the drill-down could not

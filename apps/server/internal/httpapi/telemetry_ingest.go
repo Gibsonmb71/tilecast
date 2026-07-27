@@ -90,7 +90,11 @@ func (s *server) ingestTelemetry(w http.ResponseWriter, r *http.Request) {
 	}
 	// An interval longer than a bucket would let one sample dominate a rollup,
 	// so it is clamped rather than trusted.
-	if input.Interval.Seconds < 0 || input.Interval.Seconds > int32(telemetryBucket.Seconds()) {
+	if input.Interval.Seconds < 0 {
+		writeError(w, http.StatusUnprocessableEntity, "telemetry_interval_invalid", "Interval seconds cannot be negative.")
+		return
+	}
+	if input.Interval.Seconds > int32(telemetryBucket.Seconds()) {
 		input.Interval.Seconds = int32(telemetryBucket.Seconds())
 	}
 	sanitizeTelemetryText(&input)
@@ -221,7 +225,10 @@ func writeTelemetryRollup(r *http.Request, tx pgx.Tx, screenID uuid.UUID, input 
 				ELSE (screen_telemetry_rollups.average_cpu_percent * screen_telemetry_rollups.samples
 				      + EXCLUDED.average_cpu_percent) / (screen_telemetry_rollups.samples + 1)
 			END,
-			thermal_distribution=screen_telemetry_rollups.thermal_distribution || EXCLUDED.thermal_distribution,
+			thermal_distribution=(
+				SELECT jsonb_object_agg(key, to_jsonb(COALESCE((screen_telemetry_rollups.thermal_distribution->>key)::numeric,0) + COALESCE((EXCLUDED.thermal_distribution->>key)::numeric,0)))
+				FROM (SELECT key FROM jsonb_object_keys(screen_telemetry_rollups.thermal_distribution) UNION SELECT key FROM jsonb_object_keys(EXCLUDED.thermal_distribution)) keys
+			),
 			-- Percentiles cannot be merged without the samples, so the bucket
 			-- keeps the worst reported figure rather than inventing a blend.
 			sync_drift_p50_ms=GREATEST(COALESCE(screen_telemetry_rollups.sync_drift_p50_ms,0),COALESCE(EXCLUDED.sync_drift_p50_ms,0)),

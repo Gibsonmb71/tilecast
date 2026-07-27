@@ -56,7 +56,7 @@ CREATE TABLE expected_playback_windows (
     match_evaluated_at TIMESTAMPTZ,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
 
-    CHECK (expected_end IS NULL OR expected_end > expected_start)
+    CHECK (expected_end IS NULL OR expected_end >= expected_start)
 );
 
 CREATE INDEX expected_playback_screen_time_idx

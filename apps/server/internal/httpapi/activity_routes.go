@@ -48,10 +48,10 @@ func (s *server) activityRoutes(next http.Handler) http.Handler {
 			handler = s.requireRoles("owner", "administrator")(http.HandlerFunc(s.exportAuditActivity))
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/timeline") && strings.HasPrefix(r.URL.Path, "/api/v1/activity/screens/"):
 			handler = http.HandlerFunc(s.screenTimeline)
-		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/activity/screens/"):
-			handler = http.HandlerFunc(s.screenActivity)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/telemetry") && strings.HasPrefix(r.URL.Path, "/api/v1/activity/screens/"):
 			handler = s.requireRoles("owner", "administrator")(http.HandlerFunc(s.screenTelemetry))
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/activity/screens/"):
+			handler = http.HandlerFunc(s.screenActivity)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/activity/compliance":
 			handler = http.HandlerFunc(s.playbackCompliance)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/activity/incidents":

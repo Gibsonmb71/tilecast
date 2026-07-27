@@ -101,6 +101,11 @@ paths:
           in: path
           required: true
           schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/IncidentAction" }
       responses:
         "200": { description: The updated incident }
         "403": { description: Insufficient role }
@@ -117,6 +122,11 @@ paths:
         Threshold events are emitted by the server, which owns the hysteresis
         and cooldowns so a restarted player cannot re-announce conditions it
         was already in.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TelemetrySample" }
       responses:
         "202": { description: Sample accepted }
         "422": { description: observedAt outside the accepted reporting window }
@@ -293,6 +303,43 @@ components:
         schema: { type: integer, minimum: 1, maximum: 250, default: 50 },
       }
   schemas:
+    IncidentAction:
+      type: object
+      required: [action]
+      additionalProperties: false
+      properties:
+        action: { type: string, enum: [acknowledge, assign, note, resolve, ignore, reopen] }
+        assigneeId: { type: string, format: uuid }
+        reason: { type: string, maxLength: 240 }
+        notes: { type: string, maxLength: 4000 }
+    TelemetrySample:
+      type: object
+      required: [observedAt, interval]
+      additionalProperties: false
+      properties:
+        observedAt: { type: string, format: date-time }
+        currentItemId: { type: string }
+        lastMeaningfulProgressAt: { type: string, format: date-time }
+        serverRoundTripMs: { type: integer, minimum: 0 }
+        rendererState: { type: string }
+        interval:
+          type: object
+          additionalProperties: false
+          properties:
+            seconds: { type: integer, minimum: 0, maximum: 300 }
+            connectedSeconds: { type: integer, minimum: 0 }
+            disconnectedSeconds: { type: integer, minimum: 0 }
+            healthyPlaybackSeconds: { type: integer, minimum: 0 }
+            stalledPlaybackSeconds: { type: integer, minimum: 0 }
+            blackOutputSeconds: { type: integer, minimum: 0 }
+            droppedFrames: { type: integer, minimum: 0 }
+            frameChangeCount: { type: integer, minimum: 0 }
+            downloadedBytes: { type: integer, minimum: 0 }
+            cacheHits: { type: integer, minimum: 0 }
+            cacheMisses: { type: integer, minimum: 0 }
+            thermalSeconds:
+              type: object
+              additionalProperties: { type: number, minimum: 0 }
     PlayerActivityEvent:
       type: object
       required: [id, sequence, eventType, occurredAt]

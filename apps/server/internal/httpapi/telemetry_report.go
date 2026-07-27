@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 type telemetrySnapshot struct {
@@ -118,20 +119,31 @@ func (s *server) screenTelemetry(w http.ResponseWriter, r *http.Request) {
 		&snapshot.FrameFingerprint, &snapshot.AverageLuminance, &snapshot.ThermalState,
 		&snapshot.MemoryPressureState); err == nil {
 		response.Snapshot = &snapshot
+	} else if err != pgx.ErrNoRows {
+		s.internalError(w, r, err)
+		return
 	}
 
 	conditionRows, err := s.db.Query(r.Context(), `
 		SELECT condition,active,entered_at,exited_at,occurrence_count
 		FROM screen_telemetry_conditions WHERE screen_id=$1 ORDER BY active DESC,condition`, screenID)
-	if err == nil {
-		defer conditionRows.Close()
-		for conditionRows.Next() {
-			var item telemetryCondition
-			if conditionRows.Scan(&item.Condition, &item.Active, &item.EnteredAt,
-				&item.ExitedAt, &item.OccurrenceCount) == nil {
-				response.Conditions = append(response.Conditions, item)
-			}
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	defer conditionRows.Close()
+	for conditionRows.Next() {
+		var item telemetryCondition
+		if err := conditionRows.Scan(&item.Condition, &item.Active, &item.EnteredAt,
+			&item.ExitedAt, &item.OccurrenceCount); err != nil {
+			s.internalError(w, r, err)
+			return
 		}
+		response.Conditions = append(response.Conditions, item)
+	}
+	if err := conditionRows.Err(); err != nil {
+		s.internalError(w, r, err)
+		return
 	}
 
 	rollupRows, err := s.db.Query(r.Context(), `
@@ -151,17 +163,22 @@ func (s *server) screenTelemetry(w http.ResponseWriter, r *http.Request) {
 	for rollupRows.Next() {
 		var item telemetryRollup
 		var thermal []byte
-		if rollupRows.Scan(&item.BucketStart, &item.Samples, &item.AverageRoundTripMS, &item.MaxRoundTripMS,
+		if err := rollupRows.Scan(&item.BucketStart, &item.Samples, &item.AverageRoundTripMS, &item.MaxRoundTripMS,
 			&item.ConnectedSeconds, &item.DisconnectedSeconds, &item.HealthyPlaybackSeconds,
 			&item.StalledPlaybackSeconds, &item.BlackOutputSeconds, &item.DroppedFrames,
 			&item.FrameChangeCount, &item.DownloadedBytes, &item.CacheHits, &item.CacheMisses,
 			&item.AverageMemoryBytes, &item.PeakMemoryBytes, &item.AverageCPUPercent, &thermal,
-			&item.SyncDriftP50MS, &item.SyncDriftP95MS, &item.SyncDriftMaxMS) != nil {
-			continue
+			&item.SyncDriftP50MS, &item.SyncDriftP95MS, &item.SyncDriftMaxMS); err != nil {
+			s.internalError(w, r, err)
+			return
 		}
 		item.ThermalDistribution = map[string]float64{}
 		_ = json.Unmarshal(thermal, &item.ThermalDistribution)
 		response.Rollups = append(response.Rollups, item)
+	}
+	if err := rollupRows.Err(); err != nil {
+		s.internalError(w, r, err)
+		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": response})
 }

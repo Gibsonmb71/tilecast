@@ -117,7 +117,7 @@ type activityOverviewData struct {
 	} `json:"cards"`
 	// Fleet health is measured now, not over the selected range, because it
 	// answers what is on screen at this moment.
-	Fleet activityFleetHealth `json:"fleet"`
+	Fleet *activityFleetHealth `json:"fleet,omitempty"`
 	// Unresolved problems live in the incident model, not in a list rebuilt
 	// from whichever bad event happened to be latest.
 	Timeline []activityTimelineItem `json:"timeline"`

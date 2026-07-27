@@ -206,7 +206,7 @@ All controls must work with D-pad focus and remote activation. Normal player UI 
 
 ### Milestone 8 Android boundary
 
-Milestone 8 remains one fullscreen zone. Effective configuration is versioned separately from content, validated centrally, stored with a previous valid revision, and applied by category. Playlist-item values continue to override player defaults. Multi-zone rendering, layouts, compositions, authenticated sites, proof-of-play, arbitrary configuration, and simultaneous videos remain out of scope.
+Milestone 8 itself was constrained to one fullscreen zone. Effective configuration is versioned separately from content, validated centrally, stored with a previous valid revision, and applied by category. Playlist-item values continue to override player defaults. Its original multi-zone and proof-of-play exclusions no longer describe the current product; retain the remaining boundaries on compositions, authenticated sites, arbitrary configuration, and simultaneous videos.
 
 ## LAN discovery and deployment
 

@@ -374,7 +374,7 @@ func endPlaybackSession(r *http.Request, tx pgx.Tx, screenID uuid.UUID, event pl
 			UPDATE playback_sessions SET end_event_id=$3,started_at=LEAST(started_at,$8),ended_at=$4,
 				actual_duration_ms=COALESCE($5,0),result=$6,failure_code=NULLIF($7,''),terminal_reason=$9,
 				metadata=metadata||'{"synthesizedStart":true}'::jsonb,updated_at=now()
-			WHERE screen_id=$1 AND activity_session_id=$2`,
+			WHERE screen_id=$1 AND activity_session_id=$2 AND ended_at IS NULL`,
 			screenID, event.ActivitySessionID, event.ID, event.OccurredAt, event.DurationMS, result, event.FailureCode, started, terminalReason)
 	}
 	return err

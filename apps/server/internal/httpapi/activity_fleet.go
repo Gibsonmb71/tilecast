@@ -175,7 +175,7 @@ func (s *server) fleetHealth(ctx context.Context, now time.Time) (activityFleetH
 			&signals.ForegroundState, &signals.CacheUsedBytes, &signals.CacheLimitBytes,
 			&signals.ActiveManifest, &signals.SyncError,
 		); err != nil {
-			continue
+			return health, err
 		}
 		health.Measured++
 		state, _ := classifyFleetScreen(now, signals)
@@ -194,6 +194,9 @@ func (s *server) fleetHealth(ctx context.Context, now time.Time) (activityFleetH
 			// other states precisely so it is not mistaken for health.
 			health.Online++
 		}
+	}
+	if err := rows.Err(); err != nil {
+		return health, err
 	}
 	return health, rows.Err()
 }
