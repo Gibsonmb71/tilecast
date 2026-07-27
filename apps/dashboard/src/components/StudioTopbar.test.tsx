@@ -22,6 +22,16 @@ afterEach(() => {
 });
 
 beforeEach(() => {
+  class ResizeObserverMock {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  vi.stubGlobal("ResizeObserver", ResizeObserverMock);
+  Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+    configurable: true,
+    value: vi.fn(),
+  });
   HTMLDialogElement.prototype.showModal = function showModal() {
     this.open = true;
   };
