@@ -10,6 +10,7 @@ import "./styles.css";
 import "./styles/layout-fonts.css";
 import "./styles/signal.css";
 import "./styles/topbar.css";
+import "./styles/topbar-width-fixes.css";
 // Page-specific refinements intentionally load after shared Signal styles.
 import "./styles/reliability.css";
 import "./styles/screens.css";
