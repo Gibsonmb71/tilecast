@@ -256,7 +256,6 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: var(--tc-space-1);
 }
 
 .layout-library-card__metadata > span {
@@ -316,7 +315,6 @@
   align-self: center;
   justify-content: flex-end;
   max-width: 320px;
-  margin: 0;
 }
 
 .layout-library-grid--list .layout-library-card__body > small {

@@ -19,6 +19,32 @@
   box-shadow: var(--tc-shadow-overlay, var(--tc-shadow-sm));
 }
 
+/* Flyout for grouped commands (Arrange, Align …). Positioned against its row rather
+   than the viewport, so it tracks the parent menu wherever that landed. */
+.context-menu__host {
+  position: relative;
+}
+
+.context-menu--nested {
+  position: absolute;
+  top: -5px;
+  left: 100%;
+  margin-left: 3px;
+}
+
+.context-menu--nested[data-flip="true"] {
+  right: 100%;
+  left: auto;
+  margin-right: 3px;
+  margin-left: 0;
+}
+
+.context-menu__chevron {
+  flex: none;
+  margin-left: auto;
+  color: var(--tc-text-secondary);
+}
+
 .context-menu__item {
   display: flex;
   width: 100%;
@@ -37,6 +63,7 @@
 }
 
 .context-menu__item:hover:not(:disabled),
+.context-menu__item[aria-expanded="true"],
 .context-menu__item:focus-visible {
   background: var(--tc-button-secondary-hover-bg);
   outline: none;

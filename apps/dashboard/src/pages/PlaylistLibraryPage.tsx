@@ -324,7 +324,17 @@ export function PlaylistLibraryPage() {
                 </div>
                 <div className="playlist-library-card__body">
                   <div className="playlist-library-card__heading">
-                    <strong>{playlist.name}</strong>
+                    <span className="playlist-library-card__title">
+                      {playlist.sourceType === "tag" && (
+                        <Tags
+                          className="playlist-library-card__tag"
+                          size={15}
+                          role="img"
+                          aria-label="Tag-driven playlist"
+                        />
+                      )}
+                      <strong>{playlist.name}</strong>
+                    </span>
                     <ChevronRight size={17} aria-hidden="true" />
                   </div>
                   {playlist.description && (

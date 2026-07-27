@@ -1,28 +1,49 @@
-import { Select } from "../components/ui";
+import { ContextMenu, Select, useContextMenu } from "../components/ui";
+import type { ContextMenuItem } from "../components/ui";
+import { ContentPicker, PlaylistPicker } from "../components/content-picker";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlignCenter,
+  AlignCenterHorizontal,
+  AlignCenterVertical,
+  AlignEndHorizontal,
+  AlignEndVertical,
+  AlignHorizontalDistributeCenter,
+  AlignStartHorizontal,
+  AlignStartVertical,
+  AlignVerticalDistributeCenter,
   AppWindow,
   ArrowDown,
+  ArrowDownToLine,
   ArrowUp,
+  ArrowUpToLine,
   BoxSelect,
   Circle,
+  ClipboardPaste,
   Copy,
+  CopyPlus,
   Eye,
   EyeOff,
   Group,
   History,
   Image as ImageIcon,
+  Layers,
   Lock,
   LockOpen,
   ListVideo,
+  Magnet,
+  Maximize2,
   Minus,
+  MousePointerClick,
   Pencil,
+  Plus,
   Redo2,
   RectangleHorizontal,
   Save,
   Scan,
+  Search,
   Settings,
+  Trash2,
   Type,
   Undo2,
   Ungroup,
@@ -31,6 +52,7 @@ import {
 } from "lucide-react";
 import {
   type DragEvent as ReactDragEvent,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
@@ -154,6 +176,241 @@ export async function flushLatestLayoutDraft(
 const selectedPlacements = (document: LayoutDocument, selection: Set<string>) =>
   document.placements.filter((item) => selection.has(item.id));
 
+/**
+ * Default geometry for anything dropped in from the library: 40% of the canvas, centred
+ * on the pointer when there is one, otherwise parked in the upper left.
+ */
+function placementBox(
+  canvas: LayoutDocument["canvas"],
+  position?: { x: number; y: number },
+) {
+  const width = canvas.width * 0.4;
+  const height = canvas.height * 0.4;
+  return {
+    width,
+    height,
+    x: position
+      ? Math.max(0, Math.min(canvas.width - width, position.x - width / 2))
+      : canvas.width * 0.2,
+    y: position
+      ? Math.max(0, Math.min(canvas.height - height, position.y - height / 2))
+      : canvas.height * 0.2,
+  };
+}
+
+/** `layer` is left at 0; callers stack it against the document they are pushing into. */
+export function createContentPlacement(
+  asset: Asset,
+  canvas: LayoutDocument["canvas"],
+  position?: { x: number; y: number },
+): LayoutPlacement {
+  const isApp = asset.type === "widget";
+  return {
+    id: crypto.randomUUID(),
+    type: isApp ? "widget" : "asset",
+    name: asset.name,
+    ...placementBox(canvas, position),
+    layer: 0,
+    opacity: 1,
+    visible: true,
+    locked: false,
+    widgetId: isApp ? asset.id : undefined,
+    assetId: isApp ? undefined : asset.id,
+    overrides: isApp
+      ? {
+          fit: "contain",
+          alignment: "center",
+          fallbackVisibility: "show",
+          muted: true,
+        }
+      : undefined,
+    playback: !isApp
+      ? {
+          fit: "contain",
+          muted: true,
+          loop: true,
+          fallback: "hide",
+          cornerRadius: 0,
+        }
+      : undefined,
+  };
+}
+
+export function createPlaylistZonePlacement(
+  playlist: Playlist,
+  canvas: LayoutDocument["canvas"],
+  position?: { x: number; y: number },
+): LayoutPlacement {
+  return {
+    id: crypto.randomUUID(),
+    type: "playlistZone",
+    name: playlist.name,
+    ...placementBox(canvas, position),
+    layer: 0,
+    opacity: 1,
+    visible: true,
+    locked: false,
+    playlistId: playlist.id,
+    playback: {
+      fit: "contain",
+      muted: true,
+      loop: true,
+      fallback: "background",
+      cornerRadius: 0,
+    },
+  };
+}
+
+/** Where a right-click landed: on a placement, or on the empty canvas behind them. */
+type LayoutMenuTarget =
+  { kind: "placement"; item: LayoutPlacement } | { kind: "canvas" };
+
+export type LayoutArrangeMode = "front" | "forward" | "backward" | "back";
+export type LayoutAlignMode =
+  "left" | "hcenter" | "right" | "top" | "vmiddle" | "bottom";
+
+/**
+ * Restacks the document so `layer` is a dense 0..n-1 sequence with the selection moved
+ * as one block. Renumbering rather than adding/subtracting keeps repeated "bring
+ * forward" presses meaningful even when a document arrives with duplicate layers.
+ */
+export function arrangePlacements(
+  placements: LayoutPlacement[],
+  selection: Set<string>,
+  mode: LayoutArrangeMode,
+) {
+  const ordered = [...placements].sort((a, b) => a.layer - b.layer);
+  const isSelected = (item: LayoutPlacement) => selection.has(item.id);
+  if (mode === "front" || mode === "back") {
+    const moving = ordered.filter(isSelected);
+    const rest = ordered.filter((item) => !isSelected(item));
+    const next = mode === "front" ? [...rest, ...moving] : [...moving, ...rest];
+    next.forEach((item, index) => {
+      item.layer = index;
+    });
+    return;
+  }
+  const swapPast = (at: number, neighbour: number) => {
+    const item = ordered[at];
+    const other = ordered[neighbour];
+    if (!item || !other) return;
+    if (!isSelected(item) || isSelected(other)) return;
+    ordered[at] = other;
+    ordered[neighbour] = item;
+  };
+  // Walk from the end the selection is heading toward so a block of selected items
+  // shuffles past its neighbour intact instead of collapsing onto itself.
+  if (mode === "forward")
+    for (let index = ordered.length - 2; index >= 0; index -= 1)
+      swapPast(index, index + 1);
+  else
+    for (let index = 1; index < ordered.length; index += 1)
+      swapPast(index, index - 1);
+  ordered.forEach((item, index) => {
+    item.layer = index;
+  });
+}
+
+/**
+ * Moves the named placements by the given offsets, clamped to the canvas, carrying the
+ * children of any group by whatever offset its box actually took.
+ */
+export function offsetPlacements(
+  document: LayoutDocument,
+  moves: Map<string, { dx: number; dy: number }>,
+) {
+  const byID = new Map(document.placements.map((item) => [item.id, item]));
+  moves.forEach(({ dx, dy }, id) => {
+    const item = byID.get(id);
+    if (!item) return;
+    const x = Math.max(
+      0,
+      Math.min(document.canvas.width - item.width, item.x + dx),
+    );
+    const y = Math.max(
+      0,
+      Math.min(document.canvas.height - item.height, item.y + dy),
+    );
+    const appliedX = x - item.x;
+    const appliedY = y - item.y;
+    item.x = x;
+    item.y = y;
+    if (!appliedX && !appliedY) return;
+    document.placements.forEach((child) => {
+      if (child.groupId !== id) return;
+      child.x = Math.max(
+        0,
+        Math.min(document.canvas.width - child.width, child.x + appliedX),
+      );
+      child.y = Math.max(
+        0,
+        Math.min(document.canvas.height - child.height, child.y + appliedY),
+      );
+    });
+  });
+}
+
+/**
+ * Offsets that align every item to a shared edge or centre line. `box` is the selection's
+ * own bounds when several items are selected, or the canvas when only one is.
+ */
+export function alignOffsets(
+  items: LayoutPlacement[],
+  box: { left: number; top: number; right: number; bottom: number },
+  mode: LayoutAlignMode,
+) {
+  return new Map(
+    items.map((item) => {
+      const target =
+        mode === "left"
+          ? box.left
+          : mode === "hcenter"
+            ? box.left + (box.right - box.left - item.width) / 2
+            : mode === "right"
+              ? box.right - item.width
+              : mode === "top"
+                ? box.top
+                : mode === "vmiddle"
+                  ? box.top + (box.bottom - box.top - item.height) / 2
+                  : box.bottom - item.height;
+      const horizontal =
+        mode === "left" || mode === "hcenter" || mode === "right";
+      return [
+        item.id,
+        horizontal
+          ? { dx: target - item.x, dy: 0 }
+          : { dx: 0, dy: target - item.y },
+      ] as const;
+    }),
+  );
+}
+
+/** Offsets that spread the middle items so every centre-to-centre gap is equal. */
+export function distributeOffsets(
+  items: LayoutPlacement[],
+  axis: "horizontal" | "vertical",
+) {
+  const centerOf = (item: LayoutPlacement) =>
+    axis === "horizontal" ? item.x + item.width / 2 : item.y + item.height / 2;
+  const sorted = [...items].sort((a, b) => centerOf(a) - centerOf(b));
+  const head = sorted[0];
+  const tail = sorted[sorted.length - 1];
+  // Fewer than two items have no gap to even out; callers already guard on three.
+  if (!head || !tail || sorted.length < 2)
+    return new Map<string, { dx: number; dy: number }>();
+  const first = centerOf(head);
+  const step = (centerOf(tail) - first) / (sorted.length - 1);
+  return new Map(
+    sorted.map((item, index) => {
+      const delta = first + step * index - centerOf(item);
+      return [
+        item.id,
+        axis === "horizontal" ? { dx: delta, dy: 0 } : { dx: 0, dy: delta },
+      ] as const;
+    }),
+  );
+}
+
 export function createPrimitivePlacement(
   kind: LayoutPrimitive["kind"],
   canvas: LayoutDocument["canvas"],
@@ -269,6 +526,11 @@ export function LayoutEditorPage() {
   const [previewScale, setPreviewScale] = useState(0);
   const previewFrameRef = useRef<HTMLDivElement>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [picker, setPicker] = useState<"media" | "widgets" | "playlists">();
+  // Anything chosen through a picker can live outside the shelf query's first page, so
+  // it is cached here and merged into the lookups the canvas renders from.
+  const [pickedAssets, setPickedAssets] = useState<Asset[]>([]);
+  const [pickedPlaylists, setPickedPlaylists] = useState<Playlist[]>([]);
   const [guides, setGuides] = useState<{ x?: number; y?: number }>({});
   const canvasRef = useRef<HTMLDivElement>(null);
   const clipboard = useRef<LayoutPlacement[]>([]);
@@ -532,99 +794,67 @@ export function LayoutEditorPage() {
     });
     setSelection(new Set([item.id]));
   };
+  const rememberAssets = (assets: Asset[]) =>
+    setPickedAssets((current) => [
+      ...current.filter(
+        (item) => !assets.some((asset) => asset.id === item.id),
+      ),
+      ...assets,
+    ]);
+  const rememberPlaylists = (playlists: Playlist[]) =>
+    setPickedPlaylists((current) => [
+      ...current.filter(
+        (item) => !playlists.some((playlist) => playlist.id === item.id),
+      ),
+      ...playlists,
+    ]);
+  const stack = (item: LayoutPlacement) =>
+    update((draft) => {
+      item.layer = Math.max(0, ...draft.placements.map((x) => x.layer)) + 1;
+      draft.placements.push(item);
+    });
   const addContent = (asset: Asset, position?: { x: number; y: number }) => {
     if (!document) return;
-    const isApp = asset.type === "widget";
-    const width = document.canvas.width * 0.4;
-    const height = document.canvas.height * 0.4;
-    const item: LayoutPlacement = {
-      id: crypto.randomUUID(),
-      type: isApp ? "widget" : "asset",
-      name: asset.name,
-      x: position
-        ? Math.max(
-            0,
-            Math.min(document.canvas.width - width, position.x - width / 2),
-          )
-        : document.canvas.width * 0.2,
-      y: position
-        ? Math.max(
-            0,
-            Math.min(document.canvas.height - height, position.y - height / 2),
-          )
-        : document.canvas.height * 0.2,
-      width,
-      height,
-      layer:
-        Math.max(
-          0,
-          ...document.placements.map((placement) => placement.layer),
-        ) + 1,
-      opacity: 1,
-      visible: true,
-      locked: false,
-      widgetId: isApp ? asset.id : undefined,
-      assetId: isApp ? undefined : asset.id,
-      overrides: isApp
-        ? {
-            fit: "contain",
-            alignment: "center",
-            fallbackVisibility: "show",
-            muted: true,
-          }
-        : undefined,
-      playback: !isApp
-        ? {
-            fit: "contain",
-            muted: true,
-            loop: true,
-            fallback: "hide",
-            cornerRadius: 0,
-          }
-        : undefined,
-    };
-    update((draft) => draft.placements.push(item));
+    rememberAssets([asset]);
+    const item = createContentPlacement(asset, document.canvas, position);
+    stack(item);
     setSelection(new Set([item.id]));
+  };
+  /** Adds everything chosen in one trip through the picker, cascaded so nothing hides. */
+  const addContentBatch = (assets: Asset[]) => {
+    const current = documentRef.current;
+    if (!current || !assets.length) return;
+    rememberAssets(assets);
+    const created = assets.map((asset, index) => {
+      const item = createContentPlacement(asset, current.canvas);
+      item.x = Math.min(current.canvas.width - item.width, item.x + index * 24);
+      item.y = Math.min(
+        current.canvas.height - item.height,
+        item.y + index * 24,
+      );
+      return item;
+    });
+    update((draft) => {
+      const base = Math.max(0, ...draft.placements.map((x) => x.layer)) + 1;
+      created.forEach((item, index) => {
+        item.layer = base + index;
+      });
+      draft.placements.push(...created);
+    });
+    setSelection(new Set(created.map((item) => item.id)));
   };
   const addPlaylistZone = (
     playlist: Playlist,
     position?: { x: number; y: number },
   ) => {
     if (!document) return;
-    const width = document.canvas.width * 0.4;
-    const height = document.canvas.height * 0.4;
-    const item: LayoutPlacement = {
-      id: crypto.randomUUID(),
-      type: "playlistZone",
-      name: playlist.name,
-      x: position
-        ? Math.max(
-            0,
-            Math.min(document.canvas.width - width, position.x - width / 2),
-          )
-        : document.canvas.width * 0.2,
-      y: position
-        ? Math.max(
-            0,
-            Math.min(document.canvas.height - height, position.y - height / 2),
-          )
-        : document.canvas.height * 0.2,
-      width,
-      height,
-      layer: Math.max(0, ...document.placements.map((p) => p.layer)) + 1,
-      opacity: 1,
-      visible: true,
-      locked: false,
-      playlistId: playlist.id,
-      playback: {
-        fit: "contain",
-        muted: true,
-        loop: true,
-        fallback: "background",
-        cornerRadius: 0,
-      },
-    };
-    update((draft) => draft.placements.push(item));
+    rememberPlaylists([playlist]);
+    const item = createPlaylistZonePlacement(
+      playlist,
+      document.canvas,
+      position,
+    );
+    stack(item);
     setSelection(new Set([item.id]));
   };
   // Resolve the same date-selected records/events the Player receives so previews
@@ -838,12 +1068,386 @@ export function LayoutEditorPage() {
     });
     setSelection(new Set());
   }, [selected, update]);
+  const deleteSelection = useCallback(() => {
+    if (!selection.size) return;
+    update((draft) => {
+      draft.placements = draft.placements.filter(
+        (item) => !selection.has(item.id),
+      );
+      draft.placements.forEach((item) => {
+        if (item.groupId && selection.has(item.groupId)) delete item.groupId;
+      });
+    });
+    setSelection(new Set());
+  }, [selection, update]);
+  const copySelection = useCallback(() => {
+    if (selected.length) clipboard.current = clone(selected);
+  }, [selected]);
+  const pasteClipboard = useCallback(() => {
+    const current = documentRef.current;
+    if (!current || !clipboard.current.length) return;
+    const pasted = clipboard.current.map((item) => ({
+      ...clone(item),
+      id: crypto.randomUUID(),
+      x: Math.max(0, Math.min(item.x + 20, current.canvas.width - item.width)),
+      y: Math.max(
+        0,
+        Math.min(item.y + 20, current.canvas.height - item.height),
+      ),
+      groupId: undefined,
+    }));
+    update((draft) => draft.placements.push(...pasted));
+    setSelection(new Set(pasted.map((item) => item.id)));
+  }, [update]);
+  const selectAll = useCallback(() => {
+    const current = documentRef.current;
+    if (current)
+      setSelection(new Set(current.placements.map((item) => item.id)));
+  }, []);
+  const arrangeSelection = useCallback(
+    (mode: LayoutArrangeMode) => {
+      if (!selection.size) return;
+      update((draft) => arrangePlacements(draft.placements, selection, mode));
+    },
+    [selection, update],
+  );
+  // A group box already carries its children, so a selected child of a selected group
+  // would otherwise be moved twice.
+  const movablePlacements = useCallback(() => {
+    const current = documentRef.current;
+    if (!current) return [];
+    return selectedPlacements(current, selection).filter(
+      (item) => !item.locked && !(item.groupId && selection.has(item.groupId)),
+    );
+  }, [selection]);
+  const alignSelection = useCallback(
+    (mode: LayoutAlignMode) => {
+      const current = documentRef.current;
+      const items = movablePlacements();
+      if (!current || !items.length) return;
+      // One item aligns against the canvas; several align against their shared bounds.
+      const box =
+        items.length > 1
+          ? {
+              left: Math.min(...items.map((item) => item.x)),
+              top: Math.min(...items.map((item) => item.y)),
+              right: Math.max(...items.map((item) => item.x + item.width)),
+              bottom: Math.max(...items.map((item) => item.y + item.height)),
+            }
+          : {
+              left: 0,
+              top: 0,
+              right: current.canvas.width,
+              bottom: current.canvas.height,
+            };
+      const moves = alignOffsets(items, box, mode);
+      update((draft) => offsetPlacements(draft, moves));
+    },
+    [movablePlacements, update],
+  );
+  const distributeSelection = useCallback(
+    (axis: "horizontal" | "vertical") => {
+      const items = movablePlacements();
+      if (items.length < 3) return;
+      const moves = distributeOffsets(items, axis);
+      update((draft) => offsetPlacements(draft, moves));
+    },
+    [movablePlacements, update],
+  );
+  const fillCanvas = useCallback(() => {
+    update((draft) =>
+      draft.placements.forEach((item) => {
+        // Groups are skipped: resizing the box here would strand its children.
+        if (
+          !selection.has(item.id) ||
+          item.locked ||
+          item.primitive?.kind === "group"
+        )
+          return;
+        item.x = 0;
+        item.y = 0;
+        item.width = draft.canvas.width;
+        item.height = draft.canvas.height;
+      }),
+    );
+  }, [selection, update]);
+  const renamePlacement = useCallback(
+    (target: LayoutPlacement) => {
+      const answer = window.prompt("Layer name", target.name);
+      if (answer === null) return;
+      const name = answer.trim();
+      if (!name || name === target.name) return;
+      update((draft) => {
+        const item = draft.placements.find((one) => one.id === target.id);
+        if (item) item.name = name;
+      });
+    },
+    [update],
+  );
+  // One switch for the whole selection rather than a per-item toggle, so a mixed
+  // selection resolves to a single predictable state.
+  const toggleSelectionFlag = useCallback(
+    (flag: "locked" | "visible") => {
+      const current = documentRef.current;
+      if (!current) return;
+      const items = selectedPlacements(current, selection);
+      if (!items.length) return;
+      const next =
+        flag === "locked"
+          ? !items.some((item) => item.locked)
+          : !items.every((item) => item.visible);
+      update((draft) =>
+        draft.placements.forEach((item) => {
+          if (selection.has(item.id)) item[flag] = next;
+        }),
+      );
+    },
+    [selection, update],
+  );
+  const menu = useContextMenu<LayoutMenuTarget>();
+  const openPlacementMenu = (
+    event: ReactMouseEvent<HTMLElement>,
+    item: LayoutPlacement,
+  ) => {
+    // Right-clicking outside the current selection retargets it, so the commands in the
+    // menu always act on what the user just pointed at.
+    if (!selection.has(item.id)) setSelection(new Set([item.id]));
+    menu.open(event, { kind: "placement", item });
+  };
+  const placementMenuItems = (target: LayoutPlacement): ContextMenuItem[] => {
+    const scope = selection.has(target.id) ? selected : [target];
+    const many = scope.length > 1;
+    const locked = scope.some((item) => item.locked);
+    const hidden = scope.some((item) => !item.visible);
+    const alignable = scope.filter(
+      (item) => !item.locked && !(item.groupId && selection.has(item.groupId)),
+    ).length;
+    return [
+      {
+        label: "Rename…",
+        icon: <Pencil size={14} />,
+        disabled: many,
+        onSelect: () => renamePlacement(target),
+      },
+      { label: "Copy", icon: <Copy size={14} />, onSelect: copySelection },
+      {
+        label: "Paste",
+        icon: <ClipboardPaste size={14} />,
+        disabled: !clipboard.current.length,
+        onSelect: pasteClipboard,
+      },
+      {
+        label: "Duplicate",
+        icon: <CopyPlus size={14} />,
+        onSelect: duplicateSelection,
+      },
+      {
+        label: "Arrange",
+        icon: <Layers size={14} />,
+        separated: true,
+        submenu: [
+          {
+            label: "Bring to front",
+            icon: <ArrowUpToLine size={14} />,
+            onSelect: () => arrangeSelection("front"),
+          },
+          {
+            label: "Bring forward",
+            icon: <ArrowUp size={14} />,
+            onSelect: () => arrangeSelection("forward"),
+          },
+          {
+            label: "Send backward",
+            icon: <ArrowDown size={14} />,
+            onSelect: () => arrangeSelection("backward"),
+          },
+          {
+            label: "Send to back",
+            icon: <ArrowDownToLine size={14} />,
+            onSelect: () => arrangeSelection("back"),
+          },
+        ],
+      },
+      {
+        label: many ? "Align" : "Align to canvas",
+        icon: <AlignCenterHorizontal size={14} />,
+        disabled: !alignable,
+        submenu: [
+          {
+            label: "Left",
+            icon: <AlignStartVertical size={14} />,
+            onSelect: () => alignSelection("left"),
+          },
+          {
+            label: "Horizontal centres",
+            icon: <AlignCenterVertical size={14} />,
+            onSelect: () => alignSelection("hcenter"),
+          },
+          {
+            label: "Right",
+            icon: <AlignEndVertical size={14} />,
+            onSelect: () => alignSelection("right"),
+          },
+          {
+            label: "Top",
+            icon: <AlignStartHorizontal size={14} />,
+            separated: true,
+            onSelect: () => alignSelection("top"),
+          },
+          {
+            label: "Vertical centres",
+            icon: <AlignCenterHorizontal size={14} />,
+            onSelect: () => alignSelection("vmiddle"),
+          },
+          {
+            label: "Bottom",
+            icon: <AlignEndHorizontal size={14} />,
+            onSelect: () => alignSelection("bottom"),
+          },
+          {
+            label: "Distribute horizontally",
+            icon: <AlignHorizontalDistributeCenter size={14} />,
+            separated: true,
+            disabled: alignable < 3,
+            onSelect: () => distributeSelection("horizontal"),
+          },
+          {
+            label: "Distribute vertically",
+            icon: <AlignVerticalDistributeCenter size={14} />,
+            disabled: alignable < 3,
+            onSelect: () => distributeSelection("vertical"),
+          },
+          {
+            label: "Fill canvas",
+            icon: <Maximize2 size={14} />,
+            separated: true,
+            onSelect: fillCanvas,
+          },
+        ],
+      },
+      {
+        label: "Group selection",
+        icon: <Group size={14} />,
+        disabled: selection.size < 2,
+        onSelect: groupSelection,
+      },
+      {
+        label: "Ungroup",
+        icon: <Ungroup size={14} />,
+        disabled: !scope.some((item) => item.primitive?.kind === "group"),
+        onSelect: ungroupSelection,
+      },
+      {
+        label: locked ? "Unlock" : "Lock",
+        icon: locked ? <LockOpen size={14} /> : <Lock size={14} />,
+        separated: true,
+        onSelect: () => toggleSelectionFlag("locked"),
+      },
+      {
+        label: hidden ? "Show" : "Hide",
+        icon: hidden ? <Eye size={14} /> : <EyeOff size={14} />,
+        onSelect: () => toggleSelectionFlag("visible"),
+      },
+      {
+        label: "Layer settings",
+        icon: <Settings size={14} />,
+        onSelect: () => setSidebarSection("layers"),
+      },
+      {
+        label: many ? `Delete ${scope.length} layers` : "Delete",
+        icon: <Trash2 size={14} />,
+        separated: true,
+        danger: true,
+        onSelect: deleteSelection,
+      },
+    ];
+  };
+  const canvasMenuItems = (): ContextMenuItem[] => [
+    {
+      label: "Add element",
+      icon: <Plus size={14} />,
+      submenu: [
+        {
+          label: "Text",
+          icon: <Type size={14} />,
+          onSelect: () => addPrimitive("text"),
+        },
+        {
+          label: "Rectangle",
+          icon: <RectangleHorizontal size={14} />,
+          onSelect: () => addPrimitive("rectangle"),
+        },
+        {
+          label: "Circle",
+          icon: <Circle size={14} />,
+          onSelect: () => addPrimitive("circle"),
+        },
+        {
+          label: "Line",
+          icon: <Minus size={14} />,
+          onSelect: () => addPrimitive("line"),
+        },
+      ],
+    },
+    {
+      label: "Paste",
+      icon: <ClipboardPaste size={14} />,
+      disabled: !clipboard.current.length,
+      onSelect: pasteClipboard,
+    },
+    {
+      label: "Select all",
+      icon: <BoxSelect size={14} />,
+      separated: true,
+      disabled: !document?.placements.length,
+      onSelect: selectAll,
+    },
+    {
+      label: "Deselect",
+      icon: <MousePointerClick size={14} />,
+      disabled: !selection.size,
+      onSelect: () => setSelection(new Set()),
+    },
+    {
+      label: "Undo",
+      icon: <Undo2 size={14} />,
+      separated: true,
+      disabled: !past.length,
+      onSelect: undo,
+    },
+    {
+      label: "Redo",
+      icon: <Redo2 size={14} />,
+      disabled: !future.length,
+      onSelect: redo,
+    },
+    {
+      label: snap ? "Turn off snapping" : "Snap to grid",
+      icon: <Magnet size={14} />,
+      separated: true,
+      onSelect: () => setSnap((value) => !value),
+    },
+    {
+      label: safeArea ? "Hide safe area" : "Show safe area",
+      icon: <Scan size={14} />,
+      onSelect: () => setSafeArea((value) => !value),
+    },
+    {
+      label: "Layout settings",
+      icon: <Settings size={14} />,
+      separated: true,
+      onSelect: () => setSidebarSection("settings"),
+    },
+  ];
   const beginMove = (
     event: ReactPointerEvent,
     item: LayoutPlacement,
     resize = false,
   ) => {
     event.stopPropagation();
+    // Right- and middle-clicks must not start a drag: their pointerup would otherwise
+    // push an undo entry and mark the layout dirty without anything having moved.
+    if (event.button !== 0) return;
     if (item.locked) return;
     const sourceDocument = documentRef.current;
     if (!sourceDocument || !canvasRef.current) return;
@@ -940,6 +1544,9 @@ export function LayoutEditorPage() {
     const key = (event: KeyboardEvent) => {
       if ((event.target as HTMLElement).matches("input,textarea,select"))
         return;
+      // While a context menu is up its own keys own the keyboard, so arrowing through
+      // the items does not also nudge or delete the selection behind it.
+      if (window.document.querySelector(".context-menu-layer")) return;
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
         event.preventDefault();
         if (event.shiftKey) redo();
@@ -957,21 +1564,16 @@ export function LayoutEditorPage() {
         return;
       }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c") {
-        clipboard.current = clone(selected);
+        copySelection();
         return;
       }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v") {
-        const pasted = clipboard.current.map((item) => ({
-          ...clone(item),
-          id: crypto.randomUUID(),
-          x: item.x + 20,
-          y: item.y + 20,
-          groupId: undefined,
-        }));
-        if (pasted.length) {
-          update((d) => d.placements.push(...pasted));
-          setSelection(new Set(pasted.map((i) => i.id)));
-        }
+        pasteClipboard();
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") {
+        event.preventDefault();
+        selectAll();
         return;
       }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "g") {
@@ -980,14 +1582,27 @@ export function LayoutEditorPage() {
         else groupSelection();
         return;
       }
+      // The bracket shortcuts mirror the Arrange submenu, with Shift for the extremes.
+      // Shift rewrites the key on most layouts, so both faces of the bracket count.
+      if (event.ctrlKey || event.metaKey) {
+        const forward = event.key === "]" || event.key === "}";
+        const backward = event.key === "[" || event.key === "{";
+        if (forward || backward) {
+          event.preventDefault();
+          arrangeSelection(
+            event.shiftKey
+              ? forward
+                ? "front"
+                : "back"
+              : forward
+                ? "forward"
+                : "backward",
+          );
+          return;
+        }
+      }
       if (event.key === "Delete" || event.key === "Backspace") {
-        update((d) => {
-          d.placements = d.placements.filter((i) => !selection.has(i.id));
-          d.placements.forEach((i) => {
-            if (i.groupId && selection.has(i.groupId)) delete i.groupId;
-          });
-        });
-        setSelection(new Set());
+        deleteSelection();
         return;
       }
       const delta = event.shiftKey ? 10 : 1;
@@ -1017,15 +1632,17 @@ export function LayoutEditorPage() {
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, [
+    arrangeSelection,
+    copySelection,
+    deleteSelection,
     duplicateSelection,
     groupSelection,
     mutateSelected,
+    pasteClipboard,
     redo,
-    selected,
-    selection,
+    selectAll,
     undo,
     ungroupSelection,
-    update,
   ]);
   if (layoutQuery.isError)
     return (
@@ -1038,24 +1655,25 @@ export function LayoutEditorPage() {
     );
   if (layoutQuery.isLoading || !document)
     return <p className="status-copy">Loading Layout editor…</p>;
+  const libraryAssets = [...(contentQuery.data?.items ?? []), ...pickedAssets];
+  const libraryPlaylists = [
+    ...(playlistsQuery.data?.items ?? []),
+    ...pickedPlaylists,
+  ];
   const contentByID = new Map(
-    (contentQuery.data?.items ?? []).map((asset) => [asset.id, asset]),
+    libraryAssets.map((asset) => [asset.id, asset] as const),
   );
   const playlistByID = new Map(
-    (playlistsQuery.data?.items ?? []).map((playlist) => [
-      playlist.id,
-      playlist,
-    ]),
+    libraryPlaylists.map((playlist) => [playlist.id, playlist] as const),
   );
   const previewContentByID = new Map(
-    [...(contentQuery.data?.items ?? []), ...previewAssets].map((asset) => [
-      asset.id,
-      asset,
-    ]),
+    [...libraryAssets, ...previewAssets].map(
+      (asset) => [asset.id, asset] as const,
+    ),
   );
   const previewPlaylistByID = new Map(
-    [...(playlistsQuery.data?.items ?? []), ...previewPlaylists].map(
-      (playlist) => [playlist.id, playlist],
+    [...libraryPlaylists, ...previewPlaylists].map(
+      (playlist) => [playlist.id, playlist] as const,
     ),
   );
   const dataSources = dataSourcesQuery.data?.items ?? [];
@@ -1210,6 +1828,23 @@ export function LayoutEditorPage() {
                     }[sidebarSection]
                   }
                 </strong>
+              </div>
+              <button
+                type="button"
+                className="button button--primary layout-library-browse"
+                onClick={() => setPicker(sidebarSection)}
+              >
+                <Search size={16} />
+                {
+                  {
+                    media: "Browse media library",
+                    widgets: "Browse apps",
+                    playlists: "Browse playlists",
+                  }[sidebarSection]
+                }
+              </button>
+              <div className="layout-panel-heading layout-panel-heading--sub">
+                <strong>Recent</strong>
                 <span>Drag to canvas</span>
               </div>
               <div className="layout-content-shelf">
@@ -1259,7 +1894,8 @@ export function LayoutEditorPage() {
                 })}
                 {!recentLibraryItems.length && (
                   <p className="layout-content-shelf__empty">
-                    No recently created {sidebarSection}.
+                    No recently created {sidebarSection}. Use the browse button
+                    above to search the whole library.
                   </p>
                 )}
               </div>
@@ -1312,6 +1948,7 @@ export function LayoutEditorPage() {
                           ),
                         )
                       }
+                      onContextMenu={(event) => openPlacementMenu(event, item)}
                     >
                       <span className="layout-layer-icon">
                         {item.primitive?.kind === "text" ? (
@@ -1462,7 +2099,10 @@ export function LayoutEditorPage() {
         </div>
         <div
           className="layout-stage-scroll"
-          onPointerDown={() => setSelection(new Set())}
+          onPointerDown={(event) => {
+            if (event.button === 0) setSelection(new Set());
+          }}
+          onContextMenu={(event) => menu.open(event, { kind: "canvas" })}
         >
           <div
             ref={canvasRef}
@@ -1534,11 +2174,63 @@ export function LayoutEditorPage() {
                   selected={selection.has(item.id)}
                   onPointerDown={(event) => beginMove(event, item)}
                   onResize={(event) => beginMove(event, item, true)}
+                  onContextMenu={(event) => openPlacementMenu(event, item)}
                 />
               ))}
           </div>
         </div>
       </main>
+      {/* Mounted on demand, like the playlist editor: the picker keeps its search and
+          selection in local state, so a fresh mount is the reset. */}
+      {(picker === "media" || picker === "widgets") && (
+        <ContentPicker
+          open
+          mode="multiple"
+          csrf={csrf}
+          allowedTypes={picker === "widgets" ? ["widget"] : ["image", "video"]}
+          title={picker === "widgets" ? "Choose apps" : "Choose media"}
+          description={
+            picker === "widgets"
+              ? "Add an app to the canvas. Apps keep rendering live once the Layout is published."
+              : "Add images or video to the canvas. Anything you upload here lands in your library too."
+          }
+          confirmLabel="Add to canvas"
+          onConfirm={(assets) => {
+            addContentBatch(assets);
+            setPicker(undefined);
+          }}
+          onClose={() => setPicker(undefined)}
+        />
+      )}
+      {picker === "playlists" && (
+        <PlaylistPicker
+          open
+          description="Add a playlist zone that loops independently inside this Layout."
+          confirmLabel="Add to canvas"
+          onConfirm={(choice) => {
+            if (choice.kind === "playlist") addPlaylistZone(choice.playlist);
+            setPicker(undefined);
+          }}
+          onClose={() => setPicker(undefined)}
+        />
+      )}
+      {menu.anchor && (
+        <ContextMenu
+          x={menu.anchor.x}
+          y={menu.anchor.y}
+          label={
+            menu.anchor.target.kind === "placement"
+              ? `Actions for ${menu.anchor.target.item.name}`
+              : "Canvas actions"
+          }
+          items={
+            menu.anchor.target.kind === "placement"
+              ? placementMenuItems(menu.anchor.target.item)
+              : canvasMenuItems()
+          }
+          onClose={menu.close}
+        />
+      )}
       {preview && (
         <div className="layout-preview-overlay" role="dialog" aria-modal="true">
           <div className="layout-preview-toolbar">
@@ -1684,6 +2376,7 @@ function PlacementView({
   selected = false,
   onPointerDown,
   onResize,
+  onContextMenu,
 }: {
   item: LayoutPlacement;
   canvas: LayoutDocument["canvas"];
@@ -1697,6 +2390,7 @@ function PlacementView({
   selected?: boolean;
   onPointerDown?: (event: ReactPointerEvent) => void;
   onResize?: (event: ReactPointerEvent) => void;
+  onContextMenu?: (event: ReactMouseEvent<HTMLElement>) => void;
 }) {
   if (!item.visible) return null;
   const primitive = item.primitive;
@@ -1713,6 +2407,7 @@ function PlacementView({
       className={`layout-placement ${selected ? "is-selected" : ""} ${item.locked ? "is-locked" : ""}`}
       style={style}
       onPointerDown={onPointerDown}
+      onContextMenu={onContextMenu}
     >
       {item.type === "playlistZone" ? (
         playbackPreview && playlist?.items?.length ? (

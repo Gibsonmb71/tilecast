@@ -569,6 +569,26 @@ code,
   font: var(--tc-text-caption);
 }
 
+/* The shelf below only ever shows recents, so browsing the full library is the primary
+   action in each of the media / widget / playlist sections. */
+.layout-library-browse {
+  width: calc(100% - var(--tc-space-3) * 2);
+  margin: var(--tc-space-3) var(--tc-space-3) 0;
+  justify-content: center;
+}
+
+.layout-panel-heading--sub {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.layout-panel-heading--sub strong {
+  color: var(--tc-text-secondary);
+  font: var(--tc-text-caption);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 .layout-add-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -3309,8 +3329,7 @@ tbody tr {
   background: transparent;
 }
 
-.schedule-target-results,
-.schedule-picker-results {
+.schedule-target-results {
   display: grid;
   max-height: 260px;
   overflow: auto;
@@ -3318,8 +3337,7 @@ tbody tr {
   border-radius: var(--tc-radius-control);
 }
 
-.schedule-target-results > button,
-.schedule-picker-results > button {
+.schedule-target-results > button {
   display: flex;
   min-height: 54px;
   align-items: center;
@@ -3333,14 +3351,11 @@ tbody tr {
   text-align: left;
 }
 
-.schedule-target-results > button:last-child,
-.schedule-picker-results > button:last-child {
+.schedule-target-results > button:last-child {
   border-bottom: 0;
 }
 
-.schedule-target-results > button:hover,
-.schedule-picker-results > button:hover,
-.schedule-picker-results > button.selected {
+.schedule-target-results > button:hover {
   background: var(--tc-table-row-hover);
 }
 
@@ -3349,14 +3364,12 @@ tbody tr {
   background: var(--tc-bg-subtle);
 }
 
-.schedule-target-results > button > span:first-child,
-.schedule-picker-results > button > span:first-child {
+.schedule-target-results > button > span:first-child {
   display: grid;
   gap: 2px;
 }
 
-.schedule-target-results small,
-.schedule-picker-results small {
+.schedule-target-results small {
   color: var(--tc-text-secondary);
 }
 
@@ -3458,12 +3471,6 @@ tbody tr {
   color: var(--tc-text-secondary);
 }
 
-.schedule-picker-dialog {
-  display: grid;
-  gap: var(--tc-space-3);
-  width: min(620px, 80vw);
-}
-
 @media (max-width: 1080px) {
   .schedule-builder {
     grid-template-columns: minmax(0, 1fr) 300px;
@@ -3542,10 +3549,6 @@ tbody tr {
 
   .schedule-builder__actions > span:first-child {
     width: 100%;
-  }
-
-  .schedule-picker-dialog {
-    width: calc(100vw - 48px);
   }
 }
 
@@ -5088,4 +5091,89 @@ tbody tr {
   border-radius: var(--tc-radius-control);
   background: var(--tc-input-bg);
   color: var(--tc-input-text);
+}
+
+/* Shared playlist chooser. Same shell as the other dialogs; the list scrolls on its own
+   so the search field and the confirm footer stay put while browsing. */
+.dialog.playlist-picker {
+  display: flex;
+  width: min(560px, calc(100vw - 32px));
+  flex-direction: column;
+  gap: var(--tc-space-3);
+  overflow: hidden;
+}
+
+.playlist-picker__description {
+  margin: 0;
+  color: var(--tc-text-secondary);
+  font: var(--tc-text-supporting);
+}
+
+.playlist-picker__results {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  min-height: 200px;
+  max-height: min(46vh, 360px);
+  overflow: auto;
+}
+
+.playlist-picker__results > button {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  gap: var(--tc-space-2);
+  align-items: center;
+  min-height: 48px;
+  padding: 6px 8px;
+  color: var(--tc-text-primary);
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--tc-radius-control);
+  cursor: pointer;
+}
+
+.playlist-picker__results > button:hover {
+  background: var(--tc-bg-subtle);
+  border-color: var(--tc-border-default);
+}
+
+.playlist-picker__results > button.is-selected {
+  background: var(--tc-brand-soft);
+  border-color: var(--tc-brand);
+}
+
+.playlist-picker__icon {
+  display: grid;
+  place-items: center;
+  color: var(--tc-text-secondary);
+}
+
+.playlist-picker__results > button.is-selected .playlist-picker__icon {
+  color: var(--tc-brand);
+}
+
+.playlist-picker__label {
+  display: grid;
+  min-width: 0;
+}
+
+.playlist-picker__label strong,
+.playlist-picker__label small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.playlist-picker__label small {
+  color: var(--tc-text-secondary);
+  font: var(--tc-text-caption);
+}
+
+.playlist-picker__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--tc-space-2);
+  padding-top: var(--tc-space-3);
+  border-top: 1px solid var(--tc-border-default);
 }

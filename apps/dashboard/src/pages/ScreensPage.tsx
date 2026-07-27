@@ -2274,6 +2274,7 @@ export function ScreenDetailPage() {
   const tab = [
     "overview",
     "content",
+    "activity",
     "player-settings",
     "reliability",
     "commands",
@@ -2407,6 +2408,7 @@ export function ScreenDetailPage() {
         items={[
           { value: "overview", label: "Overview" },
           { value: "content", label: "Content" },
+          { value: "activity", label: "Activity" },
           {
             value: "player-settings",
             label: "Player settings",

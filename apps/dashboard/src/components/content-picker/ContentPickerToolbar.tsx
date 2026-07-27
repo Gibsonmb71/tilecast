@@ -12,6 +12,7 @@ export type ContentPickerFilter =
 export function ContentPickerToolbar({
   search,
   filter,
+  allowedTypes = ["image", "video", "widget"],
   sort,
   view,
   folders = [],
@@ -30,6 +31,7 @@ export function ContentPickerToolbar({
 }: {
   search: string;
   filter: ContentPickerFilter;
+  allowedTypes?: Array<"image" | "video" | "widget">;
   sort: string;
   view: "grid" | "list";
   folders?: ContentFolder[];
@@ -46,14 +48,21 @@ export function ContentPickerToolbar({
   onSort: (value: string) => void;
   onView: (value: "grid" | "list") => void;
 }) {
-  const filters: [ContentPickerFilter, string][] = [
-    ["all", "All"],
-    ["image", "Images"],
-    ["video", "Videos"],
-    ["source", "Sources"],
-    ["website", "Websites"],
-    ["youtube", "YouTube"],
-    ["calendar", "Calendars"],
+  // A caller that only accepts media should not be offered app tabs that can never
+  // match, and vice versa. "All" stays only when there is more than one thing to pick.
+  const allowed = new Set(allowedTypes);
+  const filters: {
+    value: ContentPickerFilter;
+    label: string;
+    type?: "image" | "video" | "widget";
+  }[] = [
+    { value: "all", label: "All" },
+    { value: "image", label: "Images", type: "image" },
+    { value: "video", label: "Videos", type: "video" },
+    { value: "source", label: "Sources", type: "widget" },
+    { value: "website", label: "Websites", type: "widget" },
+    { value: "youtube", label: "YouTube", type: "widget" },
+    { value: "calendar", label: "Calendars", type: "widget" },
   ];
   return (
     <div className="content-picker-toolbar">
@@ -69,7 +78,9 @@ export function ContentPickerToolbar({
         label="Content type"
         value={filter}
         onValueChange={onFilter}
-        items={filters.map(([value, label]) => ({ value, label }))}
+        items={filters
+          .filter(({ type }) => !type || allowed.has(type))
+          .map(({ value, label }) => ({ value, label }))}
       />
       {folders.length > 0 && onFolderFilter && (
         <Select

@@ -58,50 +58,18 @@
   border-top: 1px solid var(--tc-border-default);
 }
 
-/* #38: constrain the presentation chooser to the dialog viewport. */
-.dialog:has(.schedule-picker-dialog) {
-  width: min(640px, calc(100vw - 32px));
-  max-width: calc(100vw - 32px);
-  overflow: hidden;
-}
-
-.schedule-picker-dialog,
-.schedule-picker-search,
-.schedule-picker-results,
-.schedule-picker-results button,
-.schedule-picker-results button > span {
+/* #38: keep the target search field inside its panel. The presentation chooser this
+   also covered now uses the shared PlaylistPicker. */
+.schedule-picker-search {
+  display: flex;
   width: 100%;
   min-width: 0;
   max-width: 100%;
 }
 
-.schedule-picker-dialog {
-  overflow: hidden;
-}
-
-.schedule-picker-search {
-  display: flex;
-}
-
 .schedule-picker-search input {
   min-width: 0;
   flex: 1;
-}
-
-.schedule-picker-results {
-  overflow-x: hidden;
-}
-
-.schedule-picker-results button {
-  grid-template-columns: minmax(0, 1fr) auto;
-}
-
-.schedule-picker-results strong,
-.schedule-picker-results small {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* #39 and #40: show visual Layout thumbnails and keep search on one line. */
