@@ -1,3 +1,10 @@
+/**
+ * Holds the on-screen video on the group's shared timeline.
+ *
+ * The correction policy lives in `playback-policy.ts` (loaded first, as a plain
+ * global script). This file is only the DOM half: find the video that the
+ * shared position actually refers to, measure it, apply the decision.
+ */
 (() => {
   interface SyncPositionEvent {
     itemId: string;
@@ -14,11 +21,14 @@
   }
 
   const bridge = (window as unknown as { tilecast: SyncBridge }).tilecast;
-  let lastOccurrence = -1;
+  // Correction state belongs to the element, not to the occurrence: a new
+  // occurrence is normally the same shared timeline continuing, and a new
+  // element starts with a clean slate.
+  let trackedVideo: HTMLVideoElement | null = null;
+  let syncState = newVideoSyncState();
 
   bridge.onSyncPosition((position) => {
     if (!position || position.kind !== "video") {
-      lastOccurrence = -1;
       return;
     }
 
@@ -34,25 +44,28 @@
     if (video.dataset.tilecastItemId !== position.itemId || video.seeking) {
       return;
     }
-
-    const expectedMs = position.videoStartOffsetMs + position.offsetMs;
-    const actualMs = video.currentTime * 1_000;
-    const driftMs = expectedMs - actualMs;
-    const absoluteDrift = Math.abs(driftMs);
-
-    if (position.occurrence !== lastOccurrence || absoluteDrift > 250) {
-      video.playbackRate = 1;
-      try {
-        video.currentTime = Math.max(0, expectedMs / 1_000);
-      } catch {
-        // Metadata may still be settling; the next 250 ms correction retries.
-      }
-    } else if (absoluteDrift > 80) {
-      video.playbackRate = driftMs > 0 ? 1.02 : 0.98;
-    } else {
-      video.playbackRate = 1;
+    if (video !== trackedVideo) {
+      trackedVideo = video;
+      syncState = newVideoSyncState();
     }
 
-    lastOccurrence = position.occurrence;
+    const nowMs = performance.now();
+    const correction = videoSyncCorrection({
+      expectedMs: position.videoStartOffsetMs + position.offsetMs,
+      actualMs: video.currentTime * 1_000,
+      nowMs,
+      state: syncState,
+    });
+
+    video.playbackRate = correction.playbackRate;
+    if (correction.action !== "seek" || correction.seekToMs === null) {
+      return;
+    }
+    try {
+      video.currentTime = correction.seekToMs / 1_000;
+      recordVideoSyncSeek(syncState, nowMs);
+    } catch {
+      // Metadata may still be settling; the next 250 ms correction retries.
+    }
   });
 })();

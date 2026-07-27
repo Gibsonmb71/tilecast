@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { StoredManifest } from "./manifest";
 import type { Presentation, PresentationItem } from "./player";
 import {
+  activateSynchronizedClock,
   effectiveDurationMs,
   enrichSynchronizedPresentation,
   projectSynchronizedPresentation,
   schedulePlaybackAnchorMs,
+  synchronizedNowMs,
   synchronizedPlaybackPosition,
   type SynchronizedPlayingPresentation,
 } from "./synchronized-playback";
@@ -246,5 +248,79 @@ describe("effectiveDurationMs", () => {
         undefined,
       ),
     ).toBe(20_000);
+  });
+});
+
+describe("synchronized playback clock", () => {
+  it("marks a projected presentation as shared-timeline driven", () => {
+    const base = {
+      state: "playing",
+      items: [image("image-1", 10_000), image("image-2", 10_000)],
+      emergency: false,
+      generation: 2,
+      synchronizedPlayback: {
+        groupId: "group-1",
+        anchorMs: 0,
+        durationsMs: [10_000, 10_000],
+      },
+    } satisfies SynchronizedPlayingPresentation;
+    // The renderer suppresses its own advancement on this flag alone rather
+    // than inferring synchronization from metadata it otherwise ignores.
+    expect(
+      projectSynchronizedPresentation(
+        base,
+        { index: 0, offsetMs: 0, remainingMs: 10_000, occurrence: 0 },
+        7,
+      ).synchronized,
+    ).toBe(true);
+    expect(
+      projectSynchronizedPresentation(
+        { ...base, items: [] },
+        { index: 0, offsetMs: 0, remainingMs: 1, occurrence: 0 },
+        7,
+      ).synchronized,
+    ).toBe(true);
+  });
+
+  it("derives the initial position from the wall clock", () => {
+    // The shared anchor is wall-clock, so a late joiner must still land at the
+    // right point in the cycle when it activates.
+    const activation = activateSynchronizedClock(1_700_000_000_000, 500);
+    expect(synchronizedNowMs(activation, 500)).toBe(1_700_000_000_000);
+  });
+
+  it("advances the timeline monotonically after activation", () => {
+    const activation = activateSynchronizedClock(1_700_000_000_000, 500);
+    expect(synchronizedNowMs(activation, 3_500)).toBe(1_700_000_003_000);
+  });
+
+  it("does not move the timeline when the wall clock is corrected backward", () => {
+    // NTP stepping the clock back an hour, a manual correction, or a
+    // suspend/resume must not rewind or fast-forward what is on screen: the
+    // monotonic source is the only thing consulted after activation.
+    const activation = activateSynchronizedClock(1_700_000_000_000, 500);
+    const before = synchronizedNowMs(activation, 10_500);
+    expect(before).toBe(1_700_000_010_000);
+
+    const wallClockAfterCorrection = 1_700_000_000_000 - 3_600_000;
+    expect(wallClockAfterCorrection).toBeLessThan(before);
+    // Same activation, monotonic clock has moved on by another second.
+    const after = synchronizedNowMs(activation, 11_500);
+    expect(after).toBe(1_700_000_011_000);
+    expect(after).toBeGreaterThan(before);
+  });
+
+  it("never runs the timeline backward if the monotonic source repeats", () => {
+    const activation = activateSynchronizedClock(1_700_000_000_000, 5_000);
+    expect(synchronizedNowMs(activation, 4_000)).toBe(1_700_000_000_000);
+  });
+
+  it("recalculates the initial position on reactivation", () => {
+    const first = activateSynchronizedClock(1_700_000_000_000, 500);
+    const second = activateSynchronizedClock(1_700_000_060_000, 60_500);
+    expect(synchronizedNowMs(second, 60_500)).toBe(1_700_000_060_000);
+    expect(synchronizedNowMs(second, 60_500)).toBeGreaterThan(
+      synchronizedNowMs(first, 500),
+    );
   });
 });
