@@ -109,69 +109,65 @@ jobs:
           path = Path("apps/dashboard/src/pages/ScreensPage.tsx")
           source = path.read_text()
 
-          replacements = [
-              (
-                  '''      <ScreenSummary
-                  screens={screens}
-                  status={status}
-                  groupBy={groupBy}
-                  onStatus={setStatus}
-                  onGroupByLocation={() =>
-                    setGroupBy(groupBy === "location" ? "none" : "location")
-                  }
-                />''',
-                  '''      <ScreenSummary
-                  screens={screens}
-                  status={status}
-                  onStatus={setStatus}
-                />''',
-              ),
-              (
-                  '''function ScreenSummary({
-                  screens,
-                  status,
-                  groupBy,
-                  onStatus,
-                  onGroupByLocation,
-                }: {
-                  screens: Screen[];
-                  status: string;
-                  groupBy: string;
-                  onStatus: (value: string) => void;
-                  onGroupByLocation: () => void;
-                }) {''',
-                  '''function ScreenSummary({
-                  screens,
-                  status,
-                  onStatus,
-                }: {
-                  screens: Screen[];
-                  status: string;
-                  onStatus: (value: string) => void;
-                }) {''',
-              ),
-              (
-                  '''      <button
-                  className="summary-bar__item"
-                  type="button"
-                  aria-pressed={groupBy === "location"}
-                  onClick={onGroupByLocation}
-                >
-                  <strong>{locations}</strong>{" "}
-                  <span>Location{locations === 1 ? "" : "s"}</span>
-                </button>''',
-                  '''      <div className="summary-bar__item">
-                  <strong>{locations}</strong>{" "}
-                  <span>Location{locations === 1 ? "" : "s"}</span>
-                </div>''',
-              ),
-          ]
+          call_anchor = "      <ScreenSummary\n"
+          if source.count(call_anchor) != 1:
+              raise SystemExit("Expected exactly one ScreenSummary call")
+          call_start = source.index(call_anchor)
+          call_end = source.index("      />", call_start) + len("      />")
+          call = source[call_start:call_end]
+          for marker in ("groupBy={groupBy}", "onGroupByLocation", "setGroupBy("):
+              if marker not in call:
+                  raise SystemExit(f"ScreenSummary call is missing {marker}")
+          source = (
+              source[:call_start]
+              + '''      <ScreenSummary
+                screens={screens}
+                status={status}
+                onStatus={setStatus}
+              />'''
+              + source[call_end:]
+          )
 
-          for old, new in replacements:
-              count = source.count(old)
-              if count != 1:
-                  raise SystemExit(f"Expected one exact match, found {count}: {old[:60]!r}")
-              source = source.replace(old, new)
+          signature_anchor = "function ScreenSummary({"
+          if source.count(signature_anchor) != 1:
+              raise SystemExit("Expected exactly one ScreenSummary declaration")
+          signature_start = source.index(signature_anchor)
+          signature_end = source.index("}) {", signature_start) + len("}) {")
+          signature = source[signature_start:signature_end]
+          for marker in ("groupBy", "onGroupByLocation"):
+              if marker not in signature:
+                  raise SystemExit(f"ScreenSummary signature is missing {marker}")
+          source = (
+              source[:signature_start]
+              + '''function ScreenSummary({
+                screens,
+                status,
+                onStatus,
+              }: {
+                screens: Screen[];
+                status: string;
+                onStatus: (value: string) => void;
+              }) {'''
+              + source[signature_end:]
+          )
+
+          pressed_anchor = 'aria-pressed={groupBy === "location"}'
+          if source.count(pressed_anchor) != 1:
+              raise SystemExit("Expected exactly one interactive Location summary")
+          pressed = source.index(pressed_anchor)
+          metric_start = source.rfind("      <button", 0, pressed)
+          metric_end = source.index("      </button>", pressed) + len("      </button>")
+          metric = source[metric_start:metric_end]
+          if "onClick={onGroupByLocation}" not in metric or "{locations}" not in metric:
+              raise SystemExit("Location summary button boundaries were not verified")
+          source = (
+              source[:metric_start]
+              + '''      <div className="summary-bar__item">
+                <strong>{locations}</strong>{" "}
+                <span>Location{locations === 1 ? "" : "s"}</span>
+              </div>'''
+              + source[metric_end:]
+          )
 
           path.write_text(source)
           PY
