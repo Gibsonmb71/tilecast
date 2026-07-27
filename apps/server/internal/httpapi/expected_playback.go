@@ -190,7 +190,9 @@ func (s *server) matchExpectedWindow(
 		SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (LEAST(COALESCE(p.ended_at,$3),$3) - GREATEST(p.started_at,$2))))*1000,0)::bigint,
 		       MIN(GREATEST(p.started_at,$2)),MAX(LEAST(COALESCE(p.ended_at,$3),$3)),
 		       (array_agg(p.id ORDER BY p.started_at))[1],
-		       bool_or(p.result='failed')
+		       -- No matching session means nothing was observed to fail; the
+		       -- aggregate is NULL there and must not be read as a failure.
+		       COALESCE(bool_or(p.result='failed'),FALSE)
 		FROM playback_sessions p
 		WHERE p.screen_id=$1 AND p.session_type='presentation'
 		  AND p.started_at<$3 AND COALESCE(p.ended_at,$3)>$2

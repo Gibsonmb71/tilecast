@@ -42,6 +42,11 @@ import {
   type RenderProgressState,
 } from "./render-progress";
 import { ReconnectBackoff } from "./backoff";
+import {
+  heartbeatItemId,
+  layoutItemKey,
+  uuidHeartbeatField,
+} from "./identifiers";
 import { CommandCoordinator } from "./commands";
 import { ConfigSync } from "./config";
 import { downloadVerified } from "./download";
@@ -985,7 +990,7 @@ export class PlayerRuntime {
     // fullscreen presentation item.
     if (this.selection.layoutId && !this.selection.playlistId) {
       const layoutItem = this.buildItem(manifest, {
-        id: `layout-${this.selection.layoutId}`,
+        id: layoutItemKey(this.selection.layoutId),
         assetId: "",
         layoutId: this.selection.layoutId,
         assetType: "layout",
@@ -1413,19 +1418,39 @@ export class PlayerRuntime {
     if (this.pendingManifest) {
       heartbeat.pendingManifestVersion = this.pendingManifest.manifestVersion;
     }
-    if (this.currentItemId) {
-      heartbeat.currentItemId = this.currentItemId;
+    // Every UUID-typed field below is validated before it is set: the server
+    // rejects an entire heartbeat over one malformed identifier, and the
+    // lifecycle fields in this same message are what settle a self-update.
+    const itemId = heartbeatItemId(this.currentItemId);
+    if (itemId) {
+      heartbeat.currentItemId = itemId;
     }
     if (this.selection) {
       heartbeat.selectionSource = this.selection.source;
-      if (this.selection.scheduleId) {
-        heartbeat.currentScheduleId = this.selection.scheduleId;
+      const scheduleId = uuidHeartbeatField(
+        "currentScheduleId",
+        this.selection.scheduleId,
+      );
+      if (scheduleId) {
+        heartbeat.currentScheduleId = scheduleId;
       }
-      if (this.selection.playlistId) {
-        heartbeat.currentPlaylistId = this.selection.playlistId;
+      const playlistId = uuidHeartbeatField(
+        "currentPlaylistId",
+        this.selection.playlistId,
+      );
+      if (playlistId) {
+        heartbeat.currentPlaylistId = playlistId;
       }
       if (this.selection.emergencyId) {
-        heartbeat.activeEmergencyId = this.selection.emergencyId;
+        // The emergency is genuinely active even if its identifier is unusable,
+        // so the state is still reported; only the UUID field is withheld.
+        const emergencyId = uuidHeartbeatField(
+          "activeEmergencyId",
+          this.selection.emergencyId,
+        );
+        if (emergencyId) {
+          heartbeat.activeEmergencyId = emergencyId;
+        }
         heartbeat.emergencyState = "active";
       }
       if (this.selection.nextTransitionAt) {
@@ -1443,7 +1468,13 @@ export class PlayerRuntime {
       heartbeat.lastPlaybackError = this.lastPlaybackError;
     }
     if (this.lastCommand) {
-      heartbeat.lastCommandId = this.lastCommand.id;
+      const commandId = uuidHeartbeatField(
+        "lastCommandId",
+        this.lastCommand.id,
+      );
+      if (commandId) {
+        heartbeat.lastCommandId = commandId;
+      }
       heartbeat.lastCommandState = this.lastCommand.state;
       heartbeat.lastCommandResult = this.lastCommand.result;
       heartbeat.lastCommandCompletedAt = this.lastCommand.completedAt;

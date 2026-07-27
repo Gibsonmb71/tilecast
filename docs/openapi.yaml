@@ -155,7 +155,11 @@ paths:
       operationId: playerHeartbeat
       security: [{ deviceBearer: [] }]
       responses:
-        "200": { description: Heartbeat accepted }
+        "200":
+          description:
+            Heartbeat accepted. `data.ignoredFields` names optional playback
+            identifiers that were malformed and therefore dropped.
+        "400": { description: Heartbeat body rejected }
         "401": { description: Credential invalid or revoked }
         "403": { description: Screen disabled }
   /api/v1/player/socket:

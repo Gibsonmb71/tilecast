@@ -225,10 +225,13 @@ func writeTelemetryRollup(r *http.Request, tx pgx.Tx, screenID uuid.UUID, input 
 				ELSE (screen_telemetry_rollups.average_cpu_percent * screen_telemetry_rollups.samples
 				      + EXCLUDED.average_cpu_percent) / (screen_telemetry_rollups.samples + 1)
 			END,
-			thermal_distribution=(
-				SELECT jsonb_object_agg(key, to_jsonb(COALESCE((screen_telemetry_rollups.thermal_distribution->>key)::numeric,0) + COALESCE((EXCLUDED.thermal_distribution->>key)::numeric,0)))
-				FROM (SELECT key FROM jsonb_object_keys(screen_telemetry_rollups.thermal_distribution) UNION SELECT key FROM jsonb_object_keys(EXCLUDED.thermal_distribution)) keys
-			),
+			-- The set-returning function names its column after itself, so the
+			-- union is aliased explicitly; and an aggregate over no keys is NULL,
+			-- which this NOT NULL column reads as an empty distribution.
+			thermal_distribution=COALESCE((
+				SELECT jsonb_object_agg(keys.key, to_jsonb(COALESCE((screen_telemetry_rollups.thermal_distribution->>keys.key)::numeric,0) + COALESCE((EXCLUDED.thermal_distribution->>keys.key)::numeric,0)))
+				FROM (SELECT jsonb_object_keys(screen_telemetry_rollups.thermal_distribution) UNION SELECT jsonb_object_keys(EXCLUDED.thermal_distribution)) AS keys(key)
+			),'{}'::jsonb),
 			-- Percentiles cannot be merged without the samples, so the bucket
 			-- keeps the worst reported figure rather than inventing a blend.
 			sync_drift_p50_ms=GREATEST(COALESCE(screen_telemetry_rollups.sync_drift_p50_ms,0),COALESCE(EXCLUDED.sync_drift_p50_ms,0)),
