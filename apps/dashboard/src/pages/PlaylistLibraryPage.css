@@ -170,30 +170,24 @@
   padding: var(--tc-space-4);
 }
 
-.playlist-library:not(.playlist-library--list) .playlist-library-card__body {
+.playlist-library--grid .playlist-library-card__body {
   grid-template-rows:
-    auto minmax(calc(var(--tc-space-5) * 2), auto) auto
-    auto;
+    auto minmax(calc(var(--tc-space-5) * 2), auto) auto auto;
 }
 
-.playlist-library:not(.playlist-library--list)
-  .playlist-library-card__heading {
+.playlist-library--grid .playlist-library-card__heading {
   grid-row: 1;
 }
 
-.playlist-library:not(.playlist-library--list)
-  .playlist-library-card__description {
+.playlist-library--grid .playlist-library-card__description {
   grid-row: 2;
 }
 
-.playlist-library:not(.playlist-library--list)
-  .playlist-library-card__metadata {
+.playlist-library--grid .playlist-library-card__metadata {
   grid-row: 3;
 }
 
-.playlist-library:not(.playlist-library--list)
-  .playlist-library-card__body
-  > small {
+.playlist-library--grid .playlist-library-card__body > small {
   grid-row: 4;
 }
 
