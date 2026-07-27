@@ -16,7 +16,7 @@
     "player:linux:test": "npm test --workspace @gibsonmb71/tilecast-player-linux",
     "player:linux:dist": "npm run dist --workspace @gibsonmb71/tilecast-player-linux",
     "format": "prettier --write .",
-    "format:check": "python scripts/apply_cmdk_search_groups.py && prettier --write apps/dashboard/src/components/StudioTopbar.tsx apps/dashboard/src/components/StudioTopbar.test.tsx apps/dashboard/src/styles/topbar.css apps/dashboard/src/App.tsx && python scripts/emit_cmdk_search_archive.py && prettier --check .",
+    "format:check": "prettier --check .",
     "lint": "npm run lint --workspace @tilecast/dashboard",
     "test": "npm run test --workspace @tilecast/dashboard"
   },

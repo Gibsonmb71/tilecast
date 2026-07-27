@@ -40,14 +40,31 @@ import {
 import { UploadContentDialog } from "./content-picker/UploadContentDialog";
 import { Button, Dialog, IconButton } from "./ui";
 
+type CommandGroupName =
+  | "Quick actions"
+  | "Screens"
+  | "Content"
+  | "Presentations"
+  | "Scheduling"
+  | "Administration"
+  | "Navigation";
+
+type CommandAction = "upload-media";
+
 type CommandResult = {
   id: string;
   label: string;
   description: string;
-  to: string;
-  category: "Screens" | "Studio";
+  to?: string;
+  action?: CommandAction;
+  category: CommandGroupName;
   Icon: ComponentType<{ size?: number; "aria-hidden"?: boolean | "true" }>;
   score: number;
+};
+
+type CommandPermissions = {
+  canCreate: boolean;
+  canPair: boolean;
 };
 
 type Breadcrumb = { label: string; to: string };
@@ -71,6 +88,25 @@ const notificationGroups: { priority: NotificationPriority; label: string }[] =
     { priority: "warning", label: "Needs attention" },
     { priority: "info", label: "Info" },
   ];
+
+const commandGroupOrder: CommandGroupName[] = [
+  "Quick actions",
+  "Screens",
+  "Content",
+  "Presentations",
+  "Scheduling",
+  "Administration",
+  "Navigation",
+];
+
+const defaultRouteIds = new Set([
+  "route:/",
+  "route:/screens",
+  "route:/assets",
+  "route:/playlists",
+  "route:/layouts",
+  "route:/schedules",
+]);
 
 function platformShortcut() {
   if (typeof navigator === "undefined") return "⌘K";
@@ -97,17 +133,40 @@ export function fuzzyScore(query: string, candidate: string) {
 }
 
 function resultIcon(to: string) {
-  if (to.startsWith("/screens")) return Monitor;
+  if (to.startsWith("/screens") || to.startsWith("/groups")) return Monitor;
   if (to.startsWith("/assets")) return Image;
   if (to.startsWith("/playlists")) return ListVideo;
   if (to.startsWith("/layouts")) return Layers3;
   if (to.startsWith("/schedules")) return CalendarClock;
-  if (to.startsWith("/settings")) return Settings;
+  if (to.startsWith("/settings") || to.startsWith("/preferences"))
+    return Settings;
   return FileSliders;
 }
 
+function routeGroup(to: string): CommandGroupName {
+  if (to.startsWith("/screens") || to.startsWith("/groups")) return "Screens";
+  if (
+    to.startsWith("/assets") ||
+    to.startsWith("/widgets") ||
+    to.startsWith("/data-sources")
+  )
+    return "Content";
+  if (to.startsWith("/playlists") || to.startsWith("/layouts"))
+    return "Presentations";
+  if (to.startsWith("/schedules")) return "Scheduling";
+  if (
+    to.startsWith("/settings") ||
+    to.startsWith("/preferences") ||
+    to.startsWith("/approvals") ||
+    to.startsWith("/activity")
+  )
+    return "Administration";
+  return "Navigation";
+}
+
 function collectRouteResults(routes: readonly RouteObject[]) {
-  const results: Omit<CommandResult, "score">[] = [];
+  const results: (Omit<CommandResult, "score"> & { keywords?: string[] })[] =
+    [];
   const seen = new Set<string>();
   const visit = (route: RouteObject) => {
     const item = studioRouteHandle(route).search;
@@ -118,23 +177,82 @@ function collectRouteResults(routes: readonly RouteObject[]) {
         label: item.label,
         description: item.description,
         to: item.to,
-        category: "Studio",
+        category: routeGroup(item.to),
         Icon: resultIcon(item.to),
         keywords: item.keywords,
-      } as Omit<CommandResult, "score"> & { keywords?: string[] });
+      });
     }
     route.children?.forEach(visit);
   };
   routes.forEach(visit);
-  return results as (Omit<CommandResult, "score"> & { keywords?: string[] })[];
+  return results;
+}
+
+function collectActionResults(permissions: CommandPermissions) {
+  const results: (Omit<CommandResult, "score"> & { keywords?: string[] })[] =
+    [];
+  if (permissions.canPair) {
+    results.push({
+      id: "action:pair-screen",
+      label: "Pair a screen",
+      description: "Connect a new signage player",
+      to: "/screens/pair",
+      category: "Quick actions",
+      Icon: MonitorCheck,
+      keywords: ["add screen", "new device", "player"],
+    });
+  }
+  if (permissions.canCreate) {
+    results.push(
+      {
+        id: "action:upload-media",
+        label: "Upload media",
+        description: "Add images, videos, or documents",
+        action: "upload-media",
+        category: "Quick actions",
+        Icon: Upload,
+        keywords: ["content", "asset", "file"],
+      },
+      {
+        id: "action:create-playlist",
+        label: "Create playlist",
+        description: "Build a new fullscreen presentation",
+        to: "/playlists?create=1",
+        category: "Quick actions",
+        Icon: ListVideo,
+        keywords: ["new presentation"],
+      },
+      {
+        id: "action:create-layout",
+        label: "Create layout",
+        description: "Arrange content on a presentation canvas",
+        to: "/layouts?create=1",
+        category: "Quick actions",
+        Icon: Layers3,
+        keywords: ["new presentation", "canvas"],
+      },
+      {
+        id: "action:create-schedule",
+        label: "Create schedule",
+        description: "Plan where and when content plays",
+        to: "/schedules/new",
+        category: "Quick actions",
+        Icon: CalendarClock,
+        keywords: ["new deployment", "publish"],
+      },
+    );
+  }
+  return results;
 }
 
 export function buildCommandResults(
   routes: readonly RouteObject[],
   screens: Screen[],
   query: string,
+  permissions: CommandPermissions = { canCreate: true, canPair: true },
 ) {
   const providers: CommandProvider[] = [
+    { id: "actions", results: () => collectActionResults(permissions) },
     { id: "routes", results: () => collectRouteResults(routes) },
     {
       id: "screens",
@@ -156,20 +274,43 @@ export function buildCommandResults(
     },
   ];
 
-  return providers
+  const normalizedQuery = query.trim();
+  const results = providers
     .flatMap((provider) => provider.results())
     .map((result) => ({
       ...result,
       score: fuzzyScore(
-        query,
+        normalizedQuery,
         [result.label, result.description, ...(result.keywords ?? [])].join(
           " ",
         ),
       ),
     }))
     .filter((result) => result.score >= 0)
-    .sort((left, right) => right.score - left.score)
-    .slice(0, 12) as CommandResult[];
+    .sort(
+      (left, right) =>
+        right.score - left.score ||
+        commandGroupOrder.indexOf(left.category) -
+          commandGroupOrder.indexOf(right.category),
+    ) as CommandResult[];
+
+  if (!normalizedQuery) {
+    return results.filter(
+      (result) =>
+        result.category === "Quick actions" || defaultRouteIds.has(result.id),
+    );
+  }
+
+  return results.slice(0, 20);
+}
+
+function groupCommandResults(results: CommandResult[]) {
+  return commandGroupOrder
+    .map((name) => ({
+      name,
+      results: results.filter((result) => result.category === name),
+    }))
+    .filter((group) => group.results.length > 0);
 }
 
 function breadcrumbQueryKey(resource?: BreadcrumbResource, id?: string) {
@@ -294,17 +435,27 @@ function isModalTextInput(target: EventTarget | null) {
 function CommandPalette({
   open,
   onClose,
+  onUpload,
   routes,
   screens,
+  canCreate,
+  canPair,
 }: {
   open: boolean;
   onClose: () => void;
+  onUpload: () => void;
   routes: readonly RouteObject[];
   screens: Screen[];
+  canCreate: boolean;
+  canPair: boolean;
 }) {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
-  const results = buildCommandResults(routes, screens, query);
+  const results = buildCommandResults(routes, screens, query, {
+    canCreate,
+    canPair,
+  });
+  const groups = groupCommandResults(results);
 
   useEffect(() => {
     if (open) setQuery("");
@@ -312,7 +463,11 @@ function CommandPalette({
 
   const select = (result: CommandResult) => {
     onClose();
-    void navigate(result.to);
+    if (result.action === "upload-media") {
+      onUpload();
+      return;
+    }
+    if (result.to) void navigate(result.to);
   };
 
   return (
@@ -339,25 +494,37 @@ function CommandPalette({
           />
           <kbd>{platformShortcut()}</kbd>
         </label>
-        <Command.List className="command-palette__results">
+        <Command.List
+          className="command-palette__results"
+          label="Search results"
+        >
           <Command.Empty className="command-palette__empty">
-            No matching destinations.
+            {query.trim()
+              ? `No results for “${query.trim()}”.`
+              : "No destinations available."}
           </Command.Empty>
-          {results.map((result) => (
-            <Command.Item
-              className="command-palette__result"
-              key={result.id}
-              value={result.id}
-              onSelect={() => select(result)}
+          {groups.map((group) => (
+            <Command.Group
+              className="command-palette__group"
+              heading={group.name}
+              key={group.name}
             >
-              <result.Icon size={18} aria-hidden="true" />
-              <span>
-                <strong>{result.label}</strong>
-                <small>{result.description}</small>
-              </span>
-              <em>{result.category}</em>
-              <ChevronRight size={16} aria-hidden="true" />
-            </Command.Item>
+              {group.results.map((result) => (
+                <Command.Item
+                  className="command-palette__result"
+                  key={result.id}
+                  value={result.id}
+                  onSelect={() => select(result)}
+                >
+                  <result.Icon size={18} aria-hidden="true" />
+                  <span>
+                    <strong>{result.label}</strong>
+                    <small>{result.description}</small>
+                  </span>
+                  <ChevronRight size={16} aria-hidden="true" />
+                </Command.Item>
+              ))}
+            </Command.Group>
           ))}
         </Command.List>
         <footer className="command-palette__footer">
@@ -599,8 +766,11 @@ export function StudioTopbar({
       <CommandPalette
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
+        onUpload={() => setUploadOpen(true)}
         routes={routes}
         screens={screens.data?.items ?? []}
+        canCreate={canCreate}
+        canPair={canPair}
       />
       {uploadOpen && (
         <UploadContentDialog

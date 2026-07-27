@@ -201,12 +201,10 @@ jobs:
     if: needs.changes.outputs.dashboard == 'true'
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
       checks: write
     steps:
       - uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event.pull_request.head.ref }}
       - uses: actions/setup-node@v7
         with:
           node-version: 22
@@ -228,24 +226,6 @@ jobs:
           reporter: java-junit
           fail-on-empty: false
       - run: npm run build
-      - name: Commit validated grouped search source
-        if: github.event.pull_request.head.ref == 'improve/cmdk-search-groups'
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin main
-          git checkout origin/main -- package.json .github/workflows/pr-validation.yml
-          git rm scripts/apply_cmdk_search_groups.py scripts/emit_cmdk_search_archive.py
-          git add \
-            apps/dashboard/src/components/StudioTopbar.tsx \
-            apps/dashboard/src/components/StudioTopbar.test.tsx \
-            apps/dashboard/src/styles/topbar.css \
-            apps/dashboard/src/App.tsx \
-            package.json \
-            .github/workflows/pr-validation.yml
-          git commit -m "Group and improve universal search"
-          git push origin HEAD:${{ github.event.pull_request.head.ref }}
 
   container_ci:
     name: Server container
