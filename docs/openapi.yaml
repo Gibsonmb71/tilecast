@@ -47,6 +47,12 @@ paths:
     post:
       operationId: verifyMultiFactor
       description: Completes a pending sign-in with an authenticator or recovery code.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MultiFactorVerifyRequest"
       responses:
         "200": { description: Signed in }
         "401": { description: Incorrect code or expired challenge }
@@ -55,6 +61,12 @@ paths:
     post:
       operationId: multiFactorPasskeyOptions
       description: Exchanges a pending challenge for a WebAuthn assertion request.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChallengeTokenRequest"
       responses:
         "200":
           { description: Assertion options and a replacement challenge token }
@@ -79,6 +91,12 @@ paths:
           name: X-MFA-Challenge
           required: true
           schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebAuthnAssertion"
       responses:
         "200": { description: Signed in }
         "401": { description: The passkey could not be verified }
@@ -86,7 +104,7 @@ paths:
     get:
       operationId: securityStatus
       responses:
-        "200": { description: Enrolled factors, passkeys, and policy state }
+        "200": { description: "Enrolled factors, passkeys, and policy state" }
         "401": { description: Authentication required }
   /api/v1/me/security/totp:
     post:
@@ -107,6 +125,12 @@ paths:
           name: X-CSRF-Token
           required: true
           schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthenticatorCodeRequest"
       responses:
         "200": { description: Updated security state }
         "401": { description: Incorrect code }
@@ -120,6 +144,12 @@ paths:
           name: X-CSRF-Token
           required: true
           schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordConfirmation"
       responses:
         "204": { description: Authenticator removed }
         "403": { description: The password was not correct }
@@ -135,6 +165,12 @@ paths:
           name: X-CSRF-Token
           required: true
           schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordConfirmation"
       responses:
         "201": { description: Ten new recovery codes }
         "403": { description: The password was not correct }
@@ -164,6 +200,12 @@ paths:
           name: X-MFA-Challenge
           required: true
           schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebAuthnCredential"
       responses:
         "201": { description: Passkey enrolled }
         "401": { description: The passkey could not be verified }
@@ -179,6 +221,12 @@ paths:
           name: X-CSRF-Token
           required: true
           schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasskeyRenameRequest"
       responses:
         "204": { description: Passkey renamed }
         "404": { description: Passkey not found }
@@ -195,6 +243,12 @@ paths:
           name: X-CSRF-Token
           required: true
           schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordConfirmation"
       responses:
         "204": { description: Passkey removed }
         "403": { description: The password was not correct }
@@ -382,7 +436,7 @@ paths:
       operationId: resolvePairingCode
       responses:
         "200": { description: Pending player metadata }
-        "404": { description: Code invalid, missing, or expired }
+        "404": { description: "Code invalid, missing, or expired" }
   /api/v1/screens/pairing/{id}/approve:
     post:
       operationId: approvePairing
@@ -681,7 +735,9 @@ paths:
       responses:
         {
           "200":
-            { description: ETag, Content-Length, MIME type, and Accept-Ranges },
+            {
+              description: "ETag, Content-Length, MIME type, and Accept-Ranges",
+            },
         }
   /api/v1/playlists:
     get:
@@ -859,7 +915,7 @@ paths:
       responses:
         {
           "200":
-            { description: Paginated sync groups, assignments, and members },
+            { description: "Paginated sync groups, assignments, and members" },
         }
     post:
       operationId: createScreenGroup
@@ -1192,7 +1248,7 @@ paths:
           {
             description: Form Data Source created with its first published revision,
           }
-        "422": { description: Name, description, or schema rejected }
+        "422": { description: "Name, description, or schema rejected" }
   /api/v1/data-sources/{id}/form:
     get:
       operationId: getForm
@@ -1281,7 +1337,9 @@ paths:
         - { name: pageSize, in: query, schema: { type: integer } }
       responses:
         "200":
-          { description: Paginated record page (items, total, page, pageSize) }
+          {
+            description: "Paginated record page (items, total, page, pageSize)",
+          }
         "403": { description: No visibility into this form's records }
     post:
       operationId: createFormRecord
@@ -1348,7 +1406,7 @@ paths:
           { description: Updated record detail after the attachment change }
         "403": { description: Not permitted to edit this record }
         "409": { description: Record version conflict }
-        "422": { description: Not an image, unsupported type, or too large }
+        "422": { description: "Not an image, unsupported type, or too large" }
   /api/v1/data-sources/{id}/records/{recordId}/attachments/{attachmentId}:
     delete:
       operationId: removeFormRecordAttachment
@@ -1473,7 +1531,9 @@ paths:
       operationId: getLayout
       responses:
         "200":
-          { description: Layout metadata, editable draft, and published state }
+          {
+            description: "Layout metadata, editable draft, and published state",
+          }
         "404": { description: Layout not found }
     patch:
       operationId: updateLayout
@@ -1543,7 +1603,7 @@ paths:
       summary: Activate an emergency takeover
       responses:
         "201": { description: Emergency activated }
-        "422": { description: Invalid targets, playlist, or expiration }
+        "422": { description: "Invalid targets, playlist, or expiration" }
   /api/v1/emergencies/{id}:
     get:
       summary: Read emergency and per-screen state
@@ -1608,7 +1668,7 @@ paths:
           {
             "200": { description: Updated settings },
             "409": { description: Settings revision conflict },
-            "422": { description: Unknown, invalid, or hard-limit setting },
+            "422": { description: "Unknown, invalid, or hard-limit setting" },
           },
       }
   /api/v1/me/preferences:
@@ -1769,7 +1829,7 @@ paths:
     post:
       summary: Poll an active GitHub OAuth device flow
       responses:
-        "200": { description: Pending, connected, denied, or expired state }
+        "200": { description: "Pending, connected, denied, or expired state" }
         "410": { description: Device flow expired or was not found }
         "502": { description: GitHub authorization failure }
   /api/v1/player-releases/github:
@@ -1889,6 +1949,87 @@ components:
       scheme: bearer
       bearerFormat: Tilecast device credential
   schemas:
+    MultiFactorVerifyRequest:
+      type: object
+      additionalProperties: false
+      required: [challengeToken, code]
+      properties:
+        challengeToken: { type: string }
+        code:
+          type: string
+          description: >-
+            An authenticator code or a recovery code. The server decides which
+            by shape; six digits are never matched against recovery codes.
+    ChallengeTokenRequest:
+      type: object
+      additionalProperties: false
+      required: [challengeToken]
+      properties:
+        challengeToken: { type: string }
+    AuthenticatorCodeRequest:
+      type: object
+      additionalProperties: false
+      required: [code]
+      properties:
+        code: { type: string, description: The six-digit authenticator code. }
+    PasswordConfirmation:
+      type: object
+      additionalProperties: false
+      required: [password]
+      properties:
+        password:
+          type: string
+          description: >-
+            The account password, reverified so a borrowed session cannot
+            weaken sign-in security on its own.
+    PasskeyRenameRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: { type: string, maxLength: 60 }
+    WebAuthnCredential:
+      type: object
+      description: >-
+        A PublicKeyCredential from navigator.credentials.create(), serialized
+        with base64url binary fields. Parsed by the WebAuthn library rather
+        than field by field.
+      required: [id, rawId, type, response]
+      properties:
+        id: { type: string }
+        rawId: { type: string, description: base64url }
+        type: { type: string, enum: [public-key] }
+        authenticatorAttachment:
+          { type: string, enum: [platform, cross-platform] }
+        clientExtensionResults: { type: object }
+        response:
+          type: object
+          required: [clientDataJSON, attestationObject]
+          properties:
+            clientDataJSON: { type: string, description: base64url }
+            attestationObject: { type: string, description: base64url }
+            transports: { type: array, items: { type: string } }
+    WebAuthnAssertion:
+      type: object
+      description: >-
+        A PublicKeyCredential from navigator.credentials.get(), serialized with
+        base64url binary fields.
+      required: [id, rawId, type, response]
+      properties:
+        id: { type: string }
+        rawId: { type: string, description: base64url }
+        type: { type: string, enum: [public-key] }
+        authenticatorAttachment:
+          { type: string, enum: [platform, cross-platform] }
+        clientExtensionResults: { type: object }
+        response:
+          type: object
+          required: [clientDataJSON, authenticatorData, signature]
+          properties:
+            clientDataJSON: { type: string, description: base64url }
+            authenticatorData: { type: string, description: base64url }
+            signature: { type: string, description: base64url }
+            userHandle: { type: string, description: base64url }
     PlaylistTagRuleInput:
       type: object
       additionalProperties: false
