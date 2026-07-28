@@ -40,6 +40,9 @@ func (s *server) screenReliability(w http.ResponseWriter, r *http.Request) {
 		'bootAttemptCount',ps.boot_attempt_count,'bootLastAttemptAt',ps.boot_last_attempt_at,
 		'bootLaunchVerified',ps.boot_launch_verified,'updateReadiness',ps.update_readiness,
 		'selfTestResult',ps.self_test_result,'selfTestCompletedAt',ps.self_test_completed_at,
+		'autostartState',ps.autostart_state,'autostartTarget',ps.autostart_target,
+		'autostartSupervised',ps.autostart_supervised,'autostartLingerEnabled',ps.autostart_linger_enabled,
+		'autostartError',ps.autostart_error,
 		'powerAssist',jsonb_build_object('deviceSleep',COALESCE(pa.device_sleep,'untested'),'tvStandby',COALESCE(pa.tv_standby,'untested'),'deviceWake',COALESCE(pa.device_wake,'untested'),'tvWake',COALESCE(pa.tv_wake,'untested'),'inputSelection',COALESCE(pa.input_selection,'untested'),'tilecastStartup',COALESCE(pa.tilecast_startup,'untested'),'lastTestedAt',pa.last_tested_at)
 	) FROM screens sc LEFT JOIN screen_player_status ps ON ps.screen_id=sc.id LEFT JOIN screen_power_assist_results pa ON pa.screen_id=sc.id WHERE sc.id=$1`, id, detailedDiagnostics(r)).Scan(&raw)
 	if errors.Is(err, pgx.ErrNoRows) {

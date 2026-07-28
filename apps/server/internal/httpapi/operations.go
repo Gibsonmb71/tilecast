@@ -27,6 +27,8 @@ var commandTypes = map[string]bool{
 	"recreate_renderer": true, "recreate_playback_session": true,
 	"restart_activity": true, "restart_player_process": true,
 	"resynchronize_player": true, "run_player_self_test": true,
+	// Linux (systemd) autostart. Android players answer unsupported_command.
+	"install_autostart": true, "remove_autostart": true,
 }
 
 type takeoverInput struct {

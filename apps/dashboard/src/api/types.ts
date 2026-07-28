@@ -481,6 +481,12 @@ export type ReliabilityStatus = {
   updateReadiness?: string;
   selfTestResult?: string;
   selfTestCompletedAt?: string;
+  /** Linux systemd autostart; absent on Android players. */
+  autostartState?: string;
+  autostartTarget?: string;
+  autostartSupervised?: boolean;
+  autostartLingerEnabled?: boolean;
+  autostartError?: string;
   powerAssist: PowerAssistResults;
 };
 export type UptimeWindow = "24h" | "7d";

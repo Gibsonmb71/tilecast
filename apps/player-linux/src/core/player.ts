@@ -51,6 +51,13 @@ import { CommandCoordinator } from "./commands";
 import { ConfigSync } from "./config";
 import { downloadVerified } from "./download";
 import { SelfUpdater, parseVersionCode, promoteAppImage } from "./self-update";
+import {
+  AutostartInstaller,
+  coldBootLaunchVerified,
+  parseProcUptime,
+  systemAutostartDeps,
+  type AutostartStatus,
+} from "./autostart";
 import { LivePreview, type PreviewHost } from "./preview";
 import { logger } from "./log";
 import { ManifestSync } from "./manifest";
@@ -212,6 +219,15 @@ export class PlayerRuntime {
   private configSync: ConfigSync;
   private commands: CommandCoordinator | null = null;
   private selfUpdater: SelfUpdater | null = null;
+  private autostart: AutostartInstaller | null = null;
+  /**
+   * Cached autostart facts. Autostart only changes through the two commands
+   * below, so this is refreshed at startup and after each of them rather than
+   * running subprocesses on every heartbeat.
+   */
+  private autostartStatus: AutostartStatus | null = null;
+  /** System uptime when this process started; the boot-launch evidence. */
+  private systemUptimeAtStartSeconds: number | null = null;
   private activity: ActivityReporter | null = null;
   private sessions: PlaybackSessionTracker | null = null;
   /** What the renderer is currently showing, so a child session can name it. */
@@ -294,6 +310,9 @@ export class PlayerRuntime {
 
   async start(): Promise<void> {
     await this.store.init();
+    // Read before anything slow: how long the system had been up when this
+    // process started is only meaningful if it is sampled at start.
+    this.systemUptimeAtStartSeconds = await this.readSystemUptimeSeconds();
     this.installationId = await loadOrCreateInstallationId(this.store);
     this.supervisorState =
       (await this.store.readJson<SupervisorState>(SUPERVISOR_FILE)) ??
@@ -453,6 +472,11 @@ export class PlayerRuntime {
       restart: () => this.host.exitForUpdate(),
       now: () => Date.now(),
     });
+
+    this.autostart = new AutostartInstaller(systemAutostartDeps());
+    // Probed once here so the first heartbeat already carries autostart state;
+    // Studio's Linux boot row is otherwise blank until an operator acts.
+    void this.refreshAutostartStatus();
 
     this.commands = new CommandCoordinator(
       this.store,
@@ -1389,6 +1413,54 @@ export class PlayerRuntime {
       : DEFAULT_STATUS_INTERVAL_S;
   }
 
+  private async readSystemUptimeSeconds(): Promise<number | null> {
+    try {
+      return parseProcUptime(await fs.readFile("/proc/uptime", "utf8"));
+    } catch {
+      // No procfs (a non-Linux dev host): no boot evidence, reported as such.
+      return null;
+    }
+  }
+
+  private async refreshAutostartStatus(): Promise<void> {
+    if (!this.autostart) {
+      return;
+    }
+    this.autostartStatus = await this.autostart.probe();
+  }
+
+  /**
+   * Autostart facts for the heartbeat, including the Linux equivalent of the
+   * Android boot receiver's verification. `bootLaunchVerified` is reported only
+   * on real evidence — systemd started us, close to boot — so Studio's "Launch
+   * after boot" row means the same thing on both platforms.
+   */
+  private autostartHeartbeatFields(): Partial<Heartbeat> {
+    const status = this.autostartStatus;
+    if (!status) {
+      return {};
+    }
+    const fields: Partial<Heartbeat> = {
+      autostartState: status.state,
+      autostartSupervised: status.supervised,
+      autostartLingerEnabled: status.lingerEnabled,
+      bootLaunchVerified: coldBootLaunchVerified({
+        supervised: status.supervised,
+        systemUptimeSecondsAtStart: this.systemUptimeAtStartSeconds,
+      }),
+    };
+    if (status.target) {
+      fields.autostartTarget = status.target;
+    }
+    if (status.detail) {
+      fields.autostartError = status.detail.slice(0, 240);
+    }
+    if (fields.bootLaunchVerified) {
+      fields.lastSuccessfulColdBootAt = new Date(this.startedAt).toISOString();
+    }
+    return fields;
+  }
+
   private async buildHeartbeat(): Promise<Heartbeat> {
     const size = this.host.screenSize();
     const manifest = this.activeManifest;
@@ -1411,6 +1483,7 @@ export class PlayerRuntime {
       recoveryCount: this.supervisorState.ladderRunsAtMs.length,
       websiteRendererRecoveryCount: this.websiteRecoveryCount,
       ...this.renderProgressHeartbeatFields(),
+      ...this.autostartHeartbeatFields(),
     };
     if (this.lastHealthyPlaybackAt) {
       heartbeat.lastHealthyPlaybackAt = this.lastHealthyPlaybackAt;
@@ -1612,10 +1685,36 @@ export class PlayerRuntime {
       this.evaluatePresentation(true);
       return ok("safe_mode_cleared");
     });
+    // Autostart is the Linux answer to the Android boot receiver: the player
+    // installs and enables its own systemd user unit instead of an operator
+    // hand-writing one on the device. Neither command is disruptive — install
+    // deliberately does not start the unit, and remove deliberately does not
+    // stop it, because this process is the one the unit supervises.
+    handlers.set("install_autostart", async () => {
+      const result = (await this.autostart?.install()) ?? {
+        success: false,
+        code: "autostart_unsupported",
+        message: "Autostart is unavailable before pairing completes.",
+      };
+      await this.refreshAutostartStatus();
+      void this.reportStatus();
+      return result;
+    });
+    handlers.set("remove_autostart", async () => {
+      const result = (await this.autostart?.remove()) ?? {
+        success: false,
+        code: "autostart_unsupported",
+        message: "Autostart is unavailable before pairing completes.",
+      };
+      await this.refreshAutostartStatus();
+      void this.reportStatus();
+      return result;
+    });
     handlers.set("run_player_self_test", async () => {
       const results: string[] = [];
       results.push(this.activeManifest ? "manifest:ok" : "manifest:none");
       results.push(this.socketOpen ? "socket:open" : "socket:closed");
+      results.push(`autostart:${this.autostartStatus?.state ?? "unknown"}`);
       try {
         await this.store.writeJson("self-test.json", { at: Date.now() });
         await this.store.delete("self-test.json");

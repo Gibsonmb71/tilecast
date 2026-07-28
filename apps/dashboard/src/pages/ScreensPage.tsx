@@ -85,6 +85,57 @@ export const formatReportedStatus = (
     : fallback;
 const formatReportedCount = (value: unknown, fallback = 0) =>
   typeof value === "number" && Number.isFinite(value) ? value : fallback;
+/**
+ * Whether this screen reports Linux systemd autostart at all. Android players
+ * and Linux players older than autostart support both report nothing, and the
+ * Linux-specific controls stay hidden for them.
+ */
+export const reportsAutostart = (status?: ReliabilityStatus) =>
+  typeof status?.autostartState === "string" && status.autostartState !== "";
+
+/**
+ * One-line autostart summary. Keeps "installed" and "verified at boot"
+ * separate on purpose: an enabled unit is a promise about the next boot, while
+ * a cold-boot launch is evidence that the promise held.
+ */
+export const autostartSummary = (status?: ReliabilityStatus): string => {
+  const target = status?.autostartTarget ? ` · ${status.autostartTarget}` : "";
+  switch (status?.autostartState) {
+    case "installed":
+      return status?.bootLaunchVerified
+        ? `Installed${target} · verified at boot`
+        : `Installed${target} · not yet seen at boot`;
+    case "not_installed":
+      return "Not installed";
+    case "needs_attention":
+      return `Needs attention${status?.autostartError ? ` · ${status.autostartError}` : ""}`;
+    case "unsupported":
+      return `Unsupported${status?.autostartError ? ` · ${status.autostartError}` : ""}`;
+    default:
+      return "Not reported";
+  }
+};
+
+/**
+ * What still stands between this screen and an unattended boot. The player
+ * owns its own service; it cannot create the graphical session that service
+ * renders into, so those gaps are named rather than implied.
+ */
+export const autostartWarning = (status?: ReliabilityStatus) => {
+  if (!reportsAutostart(status)) return undefined;
+  if (status?.autostartState === "not_installed")
+    return "Autostart is not installed; this screen will not return on its own after a reboot or a player update.";
+  if (status?.autostartState === "needs_attention")
+    return "A service unit is present but systemd does not report it as enabled.";
+  if (
+    status?.autostartState === "installed" &&
+    status.autostartTarget === "default.target" &&
+    status.autostartLingerEnabled === false
+  )
+    return "Autostart is enabled against default.target without lingering; run `loginctl enable-linger` on the device as root so the service survives logout.";
+  return undefined;
+};
+
 export const reliabilityCapabilityWarning = (status?: ReliabilityStatus) => {
   if (
     status?.configuredMode === "managed_kiosk" &&
@@ -2789,9 +2840,19 @@ export function ScreenDetailPage() {
                 <dd>
                   {reliability.data?.bootLaunchVerified
                     ? "Verified"
-                    : `${formatReportedCount(reliability.data?.bootAttemptCount)} attempts · not verified`}
+                    : reportsAutostart(reliability.data)
+                      ? // Linux has no boot-attempt counter; the autostart row
+                        // below carries the detail.
+                        "Not yet verified"
+                      : `${formatReportedCount(reliability.data?.bootAttemptCount)} attempts · not verified`}
                 </dd>
               </div>
+              {reportsAutostart(reliability.data) && (
+                <div>
+                  <dt>Autostart (systemd)</dt>
+                  <dd>{autostartSummary(reliability.data)}</dd>
+                </div>
+              )}
               <div>
                 <dt>Cached fallback</dt>
                 <dd>
@@ -2913,6 +2974,11 @@ export function ScreenDetailPage() {
               {reliabilityCapabilityWarning(reliability.data)}
             </div>
           )}
+          {autostartWarning(reliability.data) && (
+            <div className="notice notice--warning">
+              {autostartWarning(reliability.data)}
+            </div>
+          )}
           {canManageScreens(auth.status?.user) && (
             <>
               <section
@@ -3000,6 +3066,49 @@ export function ScreenDetailPage() {
                       </button>
                     </div>
                   </div>
+                  {reportsAutostart(reliability.data) && (
+                    <div className="reliability-control-group">
+                      <div>
+                        <h5>Linux autostart</h5>
+                        <p>
+                          Installs the player's own systemd user service so it
+                          starts with the graphical session and restarts after
+                          any exit. Setting up is safe while the player is
+                          running: the service takes effect at the next start,
+                          neither action interrupts what is on screen, and a
+                          service file you wrote yourself is never overwritten.
+                          A graphical session that begins at boot (auto-login or
+                          a kiosk compositor) remains operating-system setup.
+                        </p>
+                      </div>
+                      <div className="reliability-button-grid">
+                        <button
+                          className="button button--secondary"
+                          disabled={command.isPending}
+                          onClick={() =>
+                            command.mutate({
+                              type: "install_autostart",
+                              payload: {},
+                            })
+                          }
+                        >
+                          Set up autostart
+                        </button>
+                        <button
+                          className="button button--secondary"
+                          disabled={command.isPending}
+                          onClick={() =>
+                            command.mutate({
+                              type: "remove_autostart",
+                              payload: {},
+                            })
+                          }
+                        >
+                          Remove autostart
+                        </button>
+                      </div>
+                    </div>
+                  )}
                   <div className="reliability-control-group reliability-control-group--wide">
                     <div>
                       <h5>Playback and player</h5>

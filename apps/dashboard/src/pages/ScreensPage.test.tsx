@@ -14,8 +14,11 @@ import { previewApi } from "../api/previews";
 import type { Screen, User } from "../api/types";
 import type { PairingRequest } from "../api/types";
 import {
+  autostartSummary,
+  autostartWarning,
   canManageScreens,
   formatReportedStatus,
+  reportsAutostart,
   reliabilityCapabilityWarning,
   pairingApprovalLabel,
   pairingApprovalPayload,
@@ -337,6 +340,97 @@ describe("screen management", () => {
         powerAssist,
       }),
     ).toBe("Ready");
+  });
+
+  it("separates an installed autostart unit from one verified at boot", () => {
+    const powerAssist = {
+      deviceSleep: "untested",
+      tvStandby: "untested",
+      deviceWake: "untested",
+      tvWake: "untested",
+      inputSelection: "untested",
+      tilecastStartup: "untested",
+    };
+    expect(
+      autostartSummary({
+        autostartState: "installed",
+        autostartTarget: "graphical-session.target",
+        bootLaunchVerified: false,
+        powerAssist,
+      }),
+    ).toBe("Installed · graphical-session.target · not yet seen at boot");
+    expect(
+      autostartSummary({
+        autostartState: "installed",
+        autostartTarget: "graphical-session.target",
+        bootLaunchVerified: true,
+        powerAssist,
+      }),
+    ).toContain("verified at boot");
+    expect(
+      autostartSummary({ autostartState: "not_installed", powerAssist }),
+    ).toBe("Not installed");
+    expect(
+      autostartSummary({
+        autostartState: "unsupported",
+        autostartError: "player is not running as a managed AppImage",
+        powerAssist,
+      }),
+    ).toContain("managed AppImage");
+  });
+
+  it("hides Linux autostart controls for players that do not report it", () => {
+    const powerAssist = {
+      deviceSleep: "untested",
+      tvStandby: "untested",
+      deviceWake: "untested",
+      tvWake: "untested",
+      inputSelection: "untested",
+      tilecastStartup: "untested",
+    };
+    // Android, and Linux players predating autostart support.
+    expect(
+      reportsAutostart({ commissioningState: "complete", powerAssist }),
+    ).toBe(false);
+    expect(
+      reportsAutostart({ autostartState: "not_installed", powerAssist }),
+    ).toBe(true);
+  });
+
+  it("warns about the gaps the player cannot close by itself", () => {
+    const powerAssist = {
+      deviceSleep: "untested",
+      tvStandby: "untested",
+      deviceWake: "untested",
+      tvWake: "untested",
+      inputSelection: "untested",
+      tilecastStartup: "untested",
+    };
+    expect(
+      autostartWarning({ autostartState: "not_installed", powerAssist }),
+    ).toContain("will not return on its own");
+    // default.target without lingering does not survive logout, and enabling
+    // lingering needs root — so it has to be said, not silently tolerated.
+    expect(
+      autostartWarning({
+        autostartState: "installed",
+        autostartTarget: "default.target",
+        autostartLingerEnabled: false,
+        powerAssist,
+      }),
+    ).toContain("enable-linger");
+    expect(
+      autostartWarning({
+        autostartState: "installed",
+        autostartTarget: "graphical-session.target",
+        autostartLingerEnabled: false,
+        powerAssist,
+      }),
+    ).toBeUndefined();
+    // Android screens never see an autostart warning.
+    expect(
+      autostartWarning({ commissioningState: "complete", powerAssist }),
+    ).toBe(undefined);
   });
 
   it("uses an explicit credential-replacement payload for known players", () => {

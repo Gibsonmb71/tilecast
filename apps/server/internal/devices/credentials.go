@@ -122,6 +122,12 @@ func (s *Service) Heartbeat(ctx context.Context, principal DevicePrincipal, hear
 	}
 	_, _ = s.db.Exec(ctx, `INSERT INTO screen_player_status(screen_id) VALUES($1) ON CONFLICT DO NOTHING`, principal.ScreenID)
 	_, _ = s.db.Exec(ctx, `UPDATE screen_player_status SET player_version_code=$2,android_sdk=$3,installer_source=NULLIF($4,''),install_permission_status=NULLIF($5,''),current_update_deployment_id=$6,update_state=NULLIF($7,''),update_downloaded_bytes=$8,update_expected_bytes=$9,update_error=NULLIF($10,'') WHERE screen_id=$1`, principal.ScreenID, heartbeat.PlayerVersionCode, heartbeat.AndroidSDK, heartbeat.InstallerSource, heartbeat.InstallPermissionStatus, heartbeat.CurrentUpdateDeploymentID, heartbeat.UpdateState, heartbeat.UpdateDownloadedBytes, heartbeat.UpdateExpectedBytes, heartbeat.UpdateError)
+	// Linux autostart. Recorded outside the reliability block below because it
+	// is reported on its own cadence (at startup and after each autostart
+	// command) rather than alongside the Android reliability fields.
+	if heartbeat.AutostartState != "" {
+		_, _ = s.db.Exec(ctx, `UPDATE screen_player_status SET autostart_state=NULLIF($2,''),autostart_target=NULLIF($3,''),autostart_supervised=$4,autostart_linger_enabled=$5,autostart_error=NULLIF($6,'') WHERE screen_id=$1`, principal.ScreenID, heartbeat.AutostartState, heartbeat.AutostartTarget, heartbeat.AutostartSupervised, heartbeat.AutostartLingerEnabled, heartbeat.AutostartError)
+	}
 	_, _ = s.db.Exec(ctx, `UPDATE screen_player_status SET presentation_schema_versions=$2,native_presentation_capabilities=$3,web_runtime_version=$4,web_bundle_limit_bytes=$5 WHERE screen_id=$1`, principal.ScreenID, heartbeat.PresentationSchemaVersions, heartbeat.NativePresentationCapabilities, heartbeat.WebRuntimeVersion, heartbeat.WebBundleLimitBytes)
 	if heartbeat.ConfiguredReliabilityMode != "" || heartbeat.SafeMode != nil {
 		var previousSafeMode bool

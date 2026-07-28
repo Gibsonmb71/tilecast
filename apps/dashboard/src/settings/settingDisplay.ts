@@ -117,7 +117,7 @@ export const subsectionOrder: Record<
     {
       title: "Linux kiosk",
       description:
-        "Linux window and desktop-session behavior. Starting at boot and restarting after process exit are configured by the systemd service on the player.",
+        "Linux window and desktop-session behavior. Starting at boot and restarting after process exit come from the player's systemd service, which is set up per screen from the screen's Reliability tab rather than here.",
       prefix: ["linux_kiosk."],
     },
   ],
