@@ -5,7 +5,7 @@
 
 .security-status {
   margin: 0;
-  color: var(--tc-text-muted);
+  color: var(--tc-text-secondary);
   font-size: 0.88rem;
 }
 
@@ -33,7 +33,7 @@
 
 .security-list__meta {
   grid-column: 1;
-  color: var(--tc-text-muted);
+  color: var(--tc-text-secondary);
   font-size: 0.8rem;
 }
 
@@ -71,7 +71,7 @@
 .security-enroll__secret {
   display: grid;
   gap: 0.3rem;
-  color: var(--tc-text-muted);
+  color: var(--tc-text-secondary);
 }
 
 .security-enroll__secret code {

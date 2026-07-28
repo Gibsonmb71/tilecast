@@ -118,6 +118,29 @@ func TestMultiFactorLifecycle(t *testing.T) {
 		t.Fatalf("expected a spent challenge to be refused, got %v", err)
 	}
 
+	// An account whose only usable factor cannot run on this installation must
+	// be told so, not handed a challenge with no method it can present.
+	if _, err := pool.Exec(ctx, `DELETE FROM user_totp_factors WHERE user_id=$1`, owner.ID); err != nil {
+		t.Fatalf("clear authenticator: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO user_passkeys (id,user_id,credential_id,credential,name) VALUES (gen_random_uuid(),$1,'\x01','{}'::jsonb,'Test key')`, owner.ID); err != nil {
+		t.Fatalf("insert passkey: %v", err)
+	}
+	if _, err := service.Login(ctx, auth.LoginInput{Username: owner.Username, Password: password}, auth.MFAPolicyNone); !errors.Is(err, auth.ErrNoUsableFactor) {
+		t.Fatalf("expected a dead-end challenge to be refused, got %v", err)
+	}
+	if _, err := pool.Exec(ctx, `DELETE FROM user_passkeys WHERE user_id=$1`, owner.ID); err != nil {
+		t.Fatalf("clear passkey: %v", err)
+	}
+	// Re-enrolling mints a fresh secret, so the rest of the test uses that one.
+	_, secret, err = service.BeginTOTPEnrollment(ctx, owner.ID, "Integration Library", owner.Username)
+	if err != nil {
+		t.Fatalf("re-enroll authenticator: %v", err)
+	}
+	if err := service.ConfirmTOTPEnrollment(ctx, owner.ID, auth.TestingTOTPCode(t, secret, time.Now())); err != nil {
+		t.Fatalf("re-confirm authenticator: %v", err)
+	}
+
 	codes, err := service.GenerateRecoveryCodes(ctx, owner.ID)
 	if err != nil {
 		t.Fatalf("generate recovery codes: %v", err)

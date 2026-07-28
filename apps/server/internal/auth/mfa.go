@@ -22,6 +22,9 @@ var (
 	ErrFactorExists       = errors.New("a factor of this type is already enrolled")
 	ErrLastFactor         = errors.New("multi-factor authentication is required for this account")
 	ErrChallengeExhausted = errors.New("too many incorrect codes")
+	// ErrNoUsableFactor means the account is enrolled, but none of its factors
+	// can be presented on this installation.
+	ErrNoUsableFactor = errors.New("no enrolled factor can be used here")
 )
 
 const (
