@@ -27,13 +27,17 @@ import java.time.LocalDate
 private val activityFlushScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
 @Composable
-internal fun rememberPlaybackActivityReporter(session: PlaybackSession): PlaybackActivityReporter {
+internal fun rememberPlaybackActivityReporter(
+    session: PlaybackSession,
+    takeoverDecision: TakeoverDecision,
+): PlaybackActivityReporter {
     val context = LocalContext.current
     val manifest = session.content.manifest
     val presentationType = if (manifest.layout != null) "layout" else "playlist"
     val presentationId = manifest.layout?.id ?: manifest.playlist?.id.orEmpty()
     val presentationRevision = manifest.layout?.revision?.toString() ?: manifest.playlist?.revision?.toString().orEmpty()
-    val reporter = remember(manifest.manifestVersion, presentationId, presentationRevision) {
+    val activeTakeover = manifest.effectiveTakeover.takeIf { takeoverDecision.active }
+    val reporter = remember(manifest.manifestVersion, presentationId, presentationRevision, activeTakeover?.id) {
         PlaybackActivityReporter(
             queue = PlayerActivityQueue.get(context),
             manifestVersion = manifest.manifestVersion,
@@ -41,12 +45,12 @@ internal fun rememberPlaybackActivityReporter(session: PlaybackSession): Playbac
             presentationId = presentationId,
             presentationRevision = presentationRevision,
             trigger = when {
-                manifest.emergency != null -> "emergency"
+                activeTakeover != null -> "takeover"
                 manifest.schedules.isNotEmpty() -> "schedule"
                 else -> "direct_assignment"
             },
             scheduleId = manifest.schedules.firstOrNull()?.id.orEmpty(),
-            emergencyId = manifest.emergency?.id.orEmpty(),
+            takeoverId = activeTakeover?.id.orEmpty(),
         )
     }
     LaunchedEffect(reporter) {

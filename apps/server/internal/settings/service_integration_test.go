@@ -61,7 +61,7 @@ func TestSettingsPolicyInheritanceAndRevision(t *testing.T) {
 		t.Fatal(err)
 	}
 	notifier := &testNotifier{}
-	service := NewService(pool, notifier, HardLimits{MaxUploadBytes: 20 << 30, MaxEmergencyMinutes: 1440, MaxWebsiteTimeout: 120, MaxPrefetchDays: 365})
+	service := NewService(pool, notifier, HardLimits{MaxUploadBytes: 20 << 30, MaxTakeoverMinutes: 1440, MaxWebsiteTimeout: 120, MaxPrefetchDays: 365})
 	var initialization sync.WaitGroup
 	initializationErrors := make(chan error, 16)
 	for i := 0; i < 8; i++ {

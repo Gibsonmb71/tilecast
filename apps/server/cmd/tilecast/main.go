@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/tilecast/tilecast/apps/server/internal/alerts"
 	"github.com/tilecast/tilecast/apps/server/internal/auth"
 	"github.com/tilecast/tilecast/apps/server/internal/backup"
 	"github.com/tilecast/tilecast/apps/server/internal/config"
@@ -119,7 +120,8 @@ func serve() {
 	formService.SetAssetInvalidator(playlistService)
 	schedulingService := scheduling.NewService(db, deviceService, scheduling.Limits{MaxSchedules: cfg.Scheduling.MaxSchedules, MaxTargetsPerSchedule: cfg.Scheduling.MaxTargetsPerSchedule, MaxGroupsPerScreen: cfg.Scheduling.MaxGroupsPerScreen, PrefetchDays: cfg.Scheduling.PrefetchDays, ActivationGraceSeconds: cfg.Scheduling.ActivationGraceSeconds, ClockSkewWarningSeconds: cfg.Scheduling.ClockSkewWarningSeconds})
 	playlistService.SetScheduling(schedulingService)
-	settingsService := settings.NewService(db, deviceService, settings.HardLimits{MaxUploadBytes: cfg.Media.MaxUploadBytes, MaxEmergencyMinutes: cfg.Operations.MaxEmergencyDurationHours * 60, MaxWebsiteTimeout: cfg.Website.MaxTimeoutSeconds, MaxPrefetchDays: cfg.Scheduling.PrefetchDays, PrivateHTTPAllowed: cfg.Website.AllowPrivateHTTP})
+	settingsService := settings.NewService(db, deviceService, settings.HardLimits{MaxUploadBytes: cfg.Media.MaxUploadBytes, MaxTakeoverMinutes: cfg.Operations.MaxTakeoverDurationHours * 60, MaxWebsiteTimeout: cfg.Website.MaxTimeoutSeconds, MaxPrefetchDays: cfg.Scheduling.PrefetchDays, PrivateHTTPAllowed: cfg.Website.AllowPrivateHTTP})
+	alertService := alerts.NewService(db, deviceService, playlistService, logger, cfg.PublicURL, time.Duration(cfg.Operations.MaxTakeoverDurationHours)*time.Hour)
 	updateService, updateErr := updates.NewService(db, updates.NewGitHubProvider(cfg.Updates.GitHubToken), updates.Config{Root: cfg.Updates.Root, TrustedPublicKey: cfg.Updates.TrustedPublicKey, MaxAPKBytes: cfg.Updates.MaxAPKBytes, GitHubClientID: cfg.Updates.GitHubClientID, GitHubTokenConfigured: strings.TrimSpace(cfg.Updates.GitHubToken) != ""})
 	if updateErr != nil {
 		fail("initialize player update service", updateErr)
@@ -166,6 +168,9 @@ func serve() {
 	formWorker.SetGate(backupGuard.BackgroundJobsAllowed)
 	formWorker.Start(ctx)
 	defer formWorker.Stop()
+	alertService.SetGate(backupGuard.BackgroundJobsAllowed)
+	alertService.Start(ctx)
+	defer alertService.Stop()
 	if cfg.MDNSEnabled {
 		identity, identityErr := deviceService.Identity(ctx)
 		if identityErr != nil {
@@ -193,6 +198,7 @@ func serve() {
 		Scheduling:          schedulingService,
 		Settings:            settingsService,
 		Updates:             updateService,
+		Alerts:              alertService,
 		DB:                  db,
 		Logger:              logger,
 		CookieName:          cfg.CookieName,
@@ -202,8 +208,8 @@ func serve() {
 		BackupWorker:        backupWorker,
 		BackupLimits:        backup.Limits{MaxFiles: cfg.Backup.MaxArchiveFiles, MaxExpandedBytes: cfg.Backup.MaxArchiveBytes},
 		Operations: httpapi.OperationsConfig{
-			MaxEmergencyDurationHours:   cfg.Operations.MaxEmergencyDurationHours,
-			MaxEmergencyTargets:         cfg.Operations.MaxEmergencyTargets,
+			MaxTakeoverDurationHours:    cfg.Operations.MaxTakeoverDurationHours,
+			MaxTakeoverTargets:          cfg.Operations.MaxTakeoverTargets,
 			MaxPendingCommands:          cfg.Operations.MaxPendingCommands,
 			DefaultCommandExpiryMinutes: cfg.Operations.DefaultCommandExpiryMinutes,
 			MaxIdentifySeconds:          cfg.Operations.MaxIdentifySeconds,
@@ -234,13 +240,13 @@ func serve() {
 				_, _ = db.Exec(shutdownCtx, `UPDATE player_commands SET state='expired',completed_at=now(),updated_at=now() WHERE state IN ('pending','delivered','acknowledged','running') AND expires_at<=now()`)
 				_, _ = db.Exec(shutdownCtx, `DELETE FROM player_commands WHERE completed_at<now()-make_interval(days=>COALESCE((SELECT (settings->>'retention.command_history_days')::int FROM organization_runtime_settings),$1))`, cfg.Operations.CommandRetentionDays)
 				_, _ = db.Exec(shutdownCtx, `DELETE FROM audit_logs WHERE created_at<now()-make_interval(days=>COALESCE((SELECT (settings->>'retention.audit_days')::int FROM organization_runtime_settings),365))`)
-				rows, err := db.Query(shutdownCtx, `WITH expired AS (UPDATE emergency_takeovers SET status='expired',updated_at=now() WHERE status='active' AND expires_at<=now() RETURNING id), affected AS (UPDATE emergency_screen_states SET state='expired',restored_at=now(),last_updated_at=now() WHERE emergency_id IN(SELECT id FROM expired) RETURNING screen_id), bumped AS (UPDATE screen_manifest_state SET manifest_version=manifest_version+1,changed_at=now(),change_reason='emergency.expired' WHERE screen_id IN(SELECT DISTINCT screen_id FROM affected) RETURNING screen_id,manifest_version) SELECT screen_id,manifest_version FROM bumped`)
+				rows, err := db.Query(shutdownCtx, `WITH expired AS (UPDATE takeovers SET status='expired',updated_at=now() WHERE status='active' AND expires_at<=now() RETURNING id), affected AS (UPDATE takeover_screen_states SET state='expired',restored_at=now(),last_updated_at=now() WHERE takeover_id IN(SELECT id FROM expired) RETURNING screen_id), bumped AS (UPDATE screen_manifest_state SET manifest_version=manifest_version+1,changed_at=now(),change_reason='takeover.expired' WHERE screen_id IN(SELECT DISTINCT screen_id FROM affected) RETURNING screen_id,manifest_version) SELECT screen_id,manifest_version FROM bumped`)
 				if err == nil {
 					for rows.Next() {
 						var screen uuid.UUID
 						var version int64
 						if rows.Scan(&screen, &version) == nil {
-							deviceService.Notify(screen, map[string]any{"type": "emergency.changed", "manifestVersion": version})
+							deviceService.Notify(screen, map[string]any{"type": "takeover.changed", "manifestVersion": version})
 							deviceService.Notify(screen, map[string]any{"type": "manifest.changed", "manifestVersion": version})
 						}
 					}

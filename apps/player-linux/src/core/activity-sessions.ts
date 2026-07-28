@@ -22,7 +22,7 @@ export type TerminalReason =
   | "schedule_transition"
   | "manifest_replacement"
   | "direct_assignment_change"
-  | "emergency_takeover"
+  | "takeover"
   | "player_restart"
   | "process_exit"
   | "heartbeat_gap"
@@ -41,7 +41,7 @@ export interface PresentationContext {
   presentationRevision?: string;
   trigger?: string;
   scheduleId?: string;
-  emergencyId?: string;
+  takeoverId?: string;
   manifestVersion?: number;
 }
 
@@ -105,7 +105,7 @@ export class PlaybackSessionTracker {
       presentationRevision: context.presentationRevision,
       trigger: context.trigger,
       scheduleId: context.scheduleId,
-      emergencyId: context.emergencyId,
+      takeoverId: context.takeoverId,
       manifestVersion: context.manifestVersion,
     });
   }
@@ -137,7 +137,7 @@ export class PlaybackSessionTracker {
       presentationRevision: session.context.presentationRevision,
       trigger: session.context.trigger,
       scheduleId: session.context.scheduleId,
-      emergencyId: session.context.emergencyId,
+      takeoverId: session.context.takeoverId,
       manifestVersion: session.context.manifestVersion,
     });
   }
@@ -172,7 +172,7 @@ export class PlaybackSessionTracker {
       presentationId: this.root?.context.presentationId,
       trigger: this.root?.context.trigger,
       scheduleId: this.root?.context.scheduleId,
-      emergencyId: this.root?.context.emergencyId,
+      takeoverId: this.root?.context.takeoverId,
       manifestVersion: this.root?.context.manifestVersion,
     });
   }

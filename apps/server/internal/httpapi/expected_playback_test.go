@@ -22,10 +22,10 @@ func insertWindow(t *testing.T, env activityTestEnvironment, start, end time.Tim
 	if _, err := env.pool.Exec(context.Background(), `
 		INSERT INTO expected_playback_windows(
 			id,screen_id,presentation_type,presentation_id,schedule_id,trigger_source,
-			expected_start,expected_end,superseded_at,superseded_reason,overridden_by_emergency_id,timezone)
+			expected_start,expected_end,superseded_at,superseded_reason,overridden_by_takeover_id,timezone)
 		VALUES($1,$2,'playlist','playlist-a',$3,$4,$5,$6,$6,$7,$8,'UTC')`,
 		row.ID, env.screenID, row.ScheduleID, row.Trigger, start, end,
-		nullableString(row.SupersededReason), row.EmergencyID); err != nil {
+		nullableString(row.SupersededReason), row.TakeoverID); err != nil {
 		t.Fatal(err)
 	}
 	return row.ID
@@ -36,7 +36,7 @@ type expectedWindowRow struct {
 	ScheduleID       string
 	Trigger          string
 	SupersededReason string
-	EmergencyID      *uuid.UUID
+	TakeoverID       *uuid.UUID
 }
 
 func nullableString(value string) any {
@@ -76,7 +76,7 @@ func TestExpectedWindowMatchStatuses(t *testing.T) {
 		base := time.Now().UTC().Add(-40 * time.Hour).Truncate(time.Second)
 		hour := time.Hour
 
-		emergencyID := createEmergencyFixture(t, env)
+		takeoverID := createTakeoverFixture(t, env)
 
 		cases := []struct {
 			name    string
@@ -133,10 +133,10 @@ func TestExpectedWindowMatchStatuses(t *testing.T) {
 				want: matchScreenOffline,
 			},
 			{
-				name: "an emergency replaced normal playback", offset: 14 * hour,
+				name: "a takeover replaced normal playback", offset: 14 * hour,
 				prepare: func(start, end time.Time) {},
-				window:  func(row *expectedWindowRow) { row.EmergencyID = &emergencyID },
-				want:    matchEmergencyOverride,
+				window:  func(row *expectedWindowRow) { row.TakeoverID = &takeoverID },
+				want:    matchTakeoverOverride,
 			},
 			{
 				name: "playback was intentionally stopped", offset: 16 * hour,
@@ -230,11 +230,16 @@ func TestComplianceExcludesIntentionalNonPlayback(t *testing.T) {
 		missed := base.Add(2 * hour)
 		insertWindow(t, env, missed, missed.Add(hour), nil)
 
-		// One hour deliberately stopped, and one hour taken by an emergency.
+		// One hour deliberately stopped, and one hour taken by a takeover.
 		// Neither is playback that went missing.
 		cancelled := base.Add(4 * hour)
 		insertWindow(t, env, cancelled, cancelled.Add(hour), func(row *expectedWindowRow) {
 			row.SupersededReason = "active_hours_changed"
+		})
+		takeoverID := createTakeoverFixture(t, env)
+		overridden := base.Add(6 * hour)
+		insertWindow(t, env, overridden, overridden.Add(hour), func(row *expectedWindowRow) {
+			row.TakeoverID = &takeoverID
 		})
 
 		report := readCompliance(t, env, "?range=30d")
@@ -253,6 +258,9 @@ func TestComplianceExcludesIntentionalNonPlayback(t *testing.T) {
 		// The excluded time is reported rather than silently improving the score.
 		if report.CancelledMS != hour.Milliseconds() {
 			t.Fatalf("cancelled = %dms, want the excluded hour to be visible", report.CancelledMS)
+		}
+		if report.TakeoverOverriddenMS != hour.Milliseconds() {
+			t.Fatalf("takeover overridden = %dms, want the excluded hour to be visible", report.TakeoverOverriddenMS)
 		}
 		if report.NeverStarted != 1 {
 			t.Fatalf("never started = %d, want 1", report.NeverStarted)
@@ -344,9 +352,9 @@ func TestExpectationsSurviveALaterConfigurationChange(t *testing.T) {
 	})
 }
 
-// createEmergencyFixture writes the minimum an emergency needs so the override
+// createTakeoverFixture writes the minimum a takeover needs so the override
 // branch can be exercised end to end rather than only in isolation.
-func createEmergencyFixture(t *testing.T, env activityTestEnvironment) uuid.UUID {
+func createTakeoverFixture(t *testing.T, env activityTestEnvironment) uuid.UUID {
 	t.Helper()
 	ctx := context.Background()
 	var organizationID uuid.UUID
@@ -355,16 +363,16 @@ func createEmergencyFixture(t *testing.T, env activityTestEnvironment) uuid.UUID
 	}
 	playlistID := uuid.New()
 	if _, err := env.pool.Exec(ctx,
-		`INSERT INTO playlists(id,organization_id,name) VALUES($1,$2,'Emergency playlist')`,
+		`INSERT INTO playlists(id,organization_id,name) VALUES($1,$2,'Takeover playlist')`,
 		playlistID, organizationID); err != nil {
 		t.Fatal(err)
 	}
-	emergencyID := uuid.New()
+	takeoverID := uuid.New()
 	if _, err := env.pool.Exec(ctx, `
-		INSERT INTO emergency_takeovers(id,organization_id,name,playlist_id,status,expires_at)
+		INSERT INTO takeovers(id,organization_id,name,playlist_id,status,expires_at)
 		VALUES($1,$2,'Fire drill',$3,'active',now()+interval '1 hour')`,
-		emergencyID, organizationID, playlistID); err != nil {
+		takeoverID, organizationID, playlistID); err != nil {
 		t.Fatal(err)
 	}
-	return emergencyID
+	return takeoverID
 }

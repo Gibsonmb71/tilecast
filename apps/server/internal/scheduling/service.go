@@ -239,6 +239,9 @@ func (s *Service) DeleteGroup(ctx context.Context, id, user uuid.UUID) error {
 	if _, err = tx.Exec(ctx, `DELETE FROM screen_group_playlist_assignments WHERE screen_group_id=$1`, id); err != nil {
 		return err
 	}
+	if _, err = tx.Exec(ctx, `DELETE FROM alert_rule_targets WHERE target_type='group' AND screen_group_id=$1`, id); err != nil {
+		return err
+	}
 	configRevisions := map[uuid.UUID]int64{}
 	for _, note := range notes {
 		_, _ = tx.Exec(ctx, `INSERT INTO screen_config_state(screen_id)VALUES($1)ON CONFLICT DO NOTHING`, note.id)

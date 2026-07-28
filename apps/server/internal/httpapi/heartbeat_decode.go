@@ -25,7 +25,7 @@ var salvageableHeartbeatFields = map[string]bool{
 	"currentScheduleId":     true,
 	"currentWebsiteAssetId": true,
 	"currentWidgetId":       true,
-	"activeEmergencyId":     true,
+	"activeTakeoverId":      true,
 	"assignedPlaylistId":    true,
 }
 

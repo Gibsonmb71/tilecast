@@ -204,7 +204,7 @@ describe("screen timeline", () => {
       "Scheduling",
       "Commands",
       "Updates",
-      "Emergencies",
+      "Takeovers",
       "Administrative",
     ]) {
       expect(labels).toContain(domain);

@@ -1,4 +1,9 @@
-import { emergencyActive, findPlaylist, resolveSelection } from "./schedule";
+import {
+  takeoverActive,
+  findPlaylist,
+  manifestTakeover,
+  resolveSelection,
+} from "./schedule";
 import type { StoredManifest } from "./manifest";
 import type { Presentation, PresentationItem } from "./player";
 import type {
@@ -359,12 +364,14 @@ export function enrichSynchronizedPresentation(
 
   let anchorMs = epoch;
   if (
-    selection.source === "emergency" &&
-    emergencyActive(manifest, new Date(nowMs))
+    selection.source === "takeover" &&
+    takeoverActive(manifest, new Date(nowMs))
   ) {
-    const emergencyAnchor = Date.parse(manifest.emergency?.activatedAt ?? "");
-    if (Number.isFinite(emergencyAnchor)) {
-      anchorMs = emergencyAnchor;
+    const takeoverAnchor = Date.parse(
+      manifestTakeover(manifest)?.activatedAt ?? "",
+    );
+    if (Number.isFinite(takeoverAnchor)) {
+      anchorMs = takeoverAnchor;
     }
   } else if (selection.source === "schedule" && selection.scheduleId) {
     const schedule = manifest.schedules.find(

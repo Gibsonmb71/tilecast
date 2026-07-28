@@ -58,7 +58,7 @@ export function ArchivedScreensPage() {
               <h3>Revoked pairings</h3>
               <p>
                 These records do not count toward locations, groups, schedules,
-                assignments, emergencies, or update deployments.
+                assignments, takeovers, or update deployments.
               </p>
             </div>
             <span>{screens.length} archived</span>

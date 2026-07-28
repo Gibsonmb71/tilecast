@@ -10,7 +10,7 @@ export const advancedProofFilterKeys = [
   "playlist",
   "layout",
   "schedule",
-  "emergency",
+  "takeover",
 ] as const;
 
 export const proofResultOptions = [
@@ -31,7 +31,7 @@ export const categoryOptions = [
   "commands",
   "reliability",
   "updates",
-  "emergencies",
+  "takeovers",
 ];
 export const severityOptions = ["info", "warning", "error", "critical"];
 
@@ -75,7 +75,7 @@ export const terminalReasonOptions = [
   "schedule_transition",
   "manifest_replacement",
   "direct_assignment_change",
-  "emergency_takeover",
+  "takeover",
   "player_restart",
   "process_exit",
   "heartbeat_gap",

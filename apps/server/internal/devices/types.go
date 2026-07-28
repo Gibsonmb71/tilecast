@@ -189,9 +189,9 @@ type Heartbeat struct {
 	WidgetProvider                 string         `json:"widgetProvider,omitempty"`
 	WidgetState                    string         `json:"widgetState,omitempty"`
 	WidgetError                    string         `json:"widgetError,omitempty"`
-	ActiveEmergencyID              *uuid.UUID     `json:"activeEmergencyId,omitempty"`
-	EmergencyState                 string         `json:"emergencyState,omitempty"`
-	EmergencyPreparationProgress   *int           `json:"emergencyPreparationProgress,omitempty"`
+	ActiveTakeoverID               *uuid.UUID     `json:"activeTakeoverId,omitempty"`
+	TakeoverState                  string         `json:"takeoverState,omitempty"`
+	TakeoverPreparationProgress    *int           `json:"takeoverPreparationProgress,omitempty"`
 	PlaybackDisabled               *bool          `json:"playbackDisabled,omitempty"`
 	LastCommandID                  *uuid.UUID     `json:"lastCommandId,omitempty"`
 	LastCommandState               string         `json:"lastCommandState,omitempty"`

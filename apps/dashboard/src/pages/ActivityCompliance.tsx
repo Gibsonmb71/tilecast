@@ -31,7 +31,7 @@ type ComplianceReport = {
   confirmedMs: number;
   missedMs: number;
   compliancePercent: number | null;
-  emergencyOverriddenMs: number;
+  takeoverOverriddenMs: number;
   cancelledMs: number;
   notMeasurableMs: number;
   windows: number;
@@ -66,7 +66,7 @@ const emptyReport: ComplianceReport = {
   confirmedMs: 0,
   missedMs: 0,
   compliancePercent: null,
-  emergencyOverriddenMs: 0,
+  takeoverOverriddenMs: 0,
   cancelledMs: 0,
   notMeasurableMs: 0,
   windows: 0,
@@ -88,7 +88,7 @@ function formatMinutes(milliseconds: number) {
  * Expected versus actual playback.
  *
  * Compliance is confirmed screen-time over *measurable* expected screen-time.
- * Time an operator deliberately stopped, and time an emergency took over, are
+ * Time an operator deliberately stopped, and time a takeover took over, are
  * excluded from the denominator and reported separately — neither is playback
  * that went missing.
  */
@@ -122,7 +122,7 @@ export function CompliancePanel({ range }: { range: ResolvedTimeRange }) {
           <h3>Expected versus actual playback</h3>
           <p>
             Measured over {range.label} against what was expected at the time,
-            not against the current configuration. Emergency and intentionally
+            not against the current configuration. Takeover and intentionally
             stopped time is excluded from the percentage and shown separately.
           </p>
         </div>
@@ -178,8 +178,8 @@ export function CompliancePanel({ range }: { range: ResolvedTimeRange }) {
         <h4>Excluded from the percentage</h4>
         <ul>
           <li>
-            <span>Emergency overrode normal playback</span>
-            <span>{formatMinutes(data.emergencyOverriddenMs)}</span>
+            <span>Takeover overrode normal playback</span>
+            <span>{formatMinutes(data.takeoverOverriddenMs)}</span>
           </li>
           <li>
             <span>Playback intentionally stopped</span>

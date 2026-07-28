@@ -34,13 +34,13 @@ These fields are what turn an event stream into proof of play. A start event ope
 | `terminalReason`                                                                                    | end                | See below. Required on end events in version 2.                                                |
 | `expectedDurationMs`                                                                                | start, when known  | What the item was supposed to run for.                                                         |
 | `durationMs`                                                                                        | end                | Measured from the monotonic clock.                                                             |
-| `trigger`                                                                                           | start              | `schedule`, `direct`, `emergency`, `manual`.                                                   |
+| `trigger`                                                                                           | start              | `schedule`, `direct`, `takeover`, `manual`.                                                    |
 | `presentationId` / `presentationType` / `presentationRevision`                                      | both               | Identifies the playlist or layout.                                                             |
 | `contentId` / `contentType`                                                                         | child              | Identifies the media, Widget, or website.                                                      |
 | `playlistItemId`                                                                                    | child              | Position within a playlist.                                                                    |
 | `layoutPlacementId`                                                                                 | child              | Zone within a layout.                                                                          |
 | `scheduleId`                                                                                        | both               | The schedule that selected this presentation.                                                  |
-| `emergencyId`                                                                                       | both               | The emergency takeover in force.                                                               |
+| `takeoverId`                                                                                        | both               | The Takeover in force.                                                                         |
 | `manifestVersion`                                                                                   | both               | The manifest the Player was running.                                                           |
 | `sourceId`, `selectedRecordId`, `selectionDate`, `sourceCachedAt`, `sourceRevision`, `snapshotHash` | date-aware Widgets | Data-source attribution. Raw field values and private payloads are never copied into Activity. |
 
@@ -62,7 +62,7 @@ Child intervals are summed into content exposure, which may legitimately exceed 
 | `schedule_transition`      | yes             | A schedule became active or ended.                            |
 | `manifest_replacement`     | yes             | New content was published and activated.                      |
 | `direct_assignment_change` | yes             | An operator changed the direct assignment.                    |
-| `emergency_takeover`       | yes             | An emergency replaced normal playback.                        |
+| `takeover`                 | yes             | A Takeover replaced normal playback.                          |
 | `manual_skip`              | yes             | An operator or command skipped the item.                      |
 | `player_restart`           | no              | The Player process restarted.                                 |
 | `process_exit`             | no              | The process exited without a restart.                         |
@@ -73,7 +73,7 @@ Child intervals are summed into content exposure, which may legitimately exceed 
 | `bounded_timeout`          | no              | The server closed a session left open past its bound.         |
 | `unknown`                  | neither         | No evidence. Not counted as an interruption.                  |
 
-"Interrupted plays" counts sessions whose terminal reason is in the _no_ column. A scheduled changeover, an emergency, and a normal item boundary all end playback early and are exactly what was asked for, so they are excluded. `unknown` is excluded too: absence of evidence is not evidence of an interruption, and counting it would classify every pre-version-2 record as a fault.
+"Interrupted plays" counts sessions whose terminal reason is in the _no_ column. A scheduled changeover, a Takeover, and a normal item boundary all end playback early and are exactly what was asked for, so they are excluded. `unknown` is excluded too: absence of evidence is not evidence of an interruption, and counting it would classify every pre-version-2 record as a fault.
 
 ## Event vocabulary
 
@@ -103,8 +103,8 @@ Both players emit the version 2 name. The version 1 column is what the server st
 | `manifest.activated`     | `manifest`     | info             | success        | —                     | —                                                                                                               |
 | `schedule.became_active` | `scheduling`   | info             | success        | —                     | —                                                                                                               |
 | `schedule.ended`         | `scheduling`   | info             | success        | —                     | —                                                                                                               |
-| `emergency.active`       | `emergencies`  | critical         | playing        | —                     | —                                                                                                               |
-| `emergency.restored`     | `emergencies`  | info             | recovered      | —                     | —                                                                                                               |
+| `takeover.active`        | `takeovers`    | critical         | playing        | —                     | `emergency.active`                                                                                              |
+| `takeover.restored`      | `takeovers`    | info             | recovered      | —                     | `emergency.restored`                                                                                            |
 | `update.*`               | `updates`      | varies           | varies         | —                     | —                                                                                                               |
 | `command.*`              | `commands`     | varies           | varies         | —                     | —                                                                                                               |
 

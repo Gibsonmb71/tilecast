@@ -1,0 +1,147 @@
+package alerts
+
+import (
+	"context"
+	"errors"
+	"os"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/tilecast/tilecast/apps/server/internal/database"
+	"github.com/tilecast/tilecast/apps/server/internal/devices"
+	"github.com/tilecast/tilecast/apps/server/internal/playlists"
+)
+
+func TestAlertTakeoverLifecycle(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	lockPool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lockPool.Close()
+	lock, err := lockPool.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Release()
+	if _, err = lock.Exec(ctx, `SELECT pg_advisory_lock(7421999)`); err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Exec(ctx, `SELECT pg_advisory_unlock(7421999)`) //nolint:errcheck
+	if err = database.Migrate(ctx, databaseURL); err != nil {
+		t.Fatal(err)
+	}
+	pool, err := database.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if _, err = pool.Exec(ctx, `TRUNCATE organization_settings,users CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+
+	organizationID, userID := uuid.New(), uuid.New()
+	screenID, playlistID, assetID, ruleID := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	if _, err = pool.Exec(ctx, `INSERT INTO organization_settings(singleton,organization_name,id) VALUES(TRUE,'Alert Test',$1)`, organizationID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO users(id,name,username,password_hash,role,active) VALUES($1,'Owner','alert-owner','unused-test-hash','owner',TRUE)`, userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO screens(id,organization_id,player_installation_id,name,platform,device_manufacturer,device_model,android_version,player_version,screen_width,screen_height,density,locale,timezone) VALUES($1,$2,$3,'Lobby','android-tv','Test','TV','14','1.0',1920,1080,1,'en-US','UTC')`, screenID, organizationID, uuid.NewString()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO screen_manifest_state(screen_id) VALUES($1)`, screenID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO assets(id,organization_id,name,type,original_filename,detected_mime_type,sha256,original_size,width,height,processing_status,created_by) VALUES($1,$2,'Alert image','image','alert.png','image/png',$3,100,1920,1080,'ready',$4)`, assetID, organizationID, make([]byte, 32), userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO playlists(id,organization_id,name,created_by) VALUES($1,$2,'Alert playlist',$3)`, playlistID, organizationID, userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO playlist_items(id,playlist_id,asset_id,position,duration_ms) VALUES($1,$2,$3,0,10000)`, uuid.New(), playlistID, assetID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO alert_rules(id,organization_id,name,event_names,minimum_severity,minimum_urgency,playlist_id,created_by) VALUES($1,$2,'Tornado rule','{Tornado Warning}','Severe','Expected',$3,$4)`, ruleID, organizationID, playlistID, userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO alert_rule_targets(rule_id,target_type,screen_id) VALUES($1,'screen',$2)`, ruleID, screenID); err != nil {
+		t.Fatal(err)
+	}
+
+	deviceService := devices.NewService(pool, devices.NewPresenceHub(), "")
+	service := &Service{
+		db: pool, devices: deviceService, playlists: playlists.NewService(pool, nil),
+		maxDuration: 24 * time.Hour,
+	}
+	rule := Rule{
+		ID: ruleID, PlaylistID: &playlistID, ScreenIDs: []uuid.UUID{screenID},
+		MaximumDurationMinutes: 360,
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	alert := nwsProperties{
+		Event: "Tornado Warning", Headline: "Take shelter now",
+		Severity: "Extreme", Urgency: "Immediate",
+	}
+	if err = service.applyAlert(ctx, "alert-1", rule, alert, now); err != nil {
+		t.Fatal(err)
+	}
+	if err = service.applyAlert(ctx, "alert-1", rule, alert, now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+
+	var takeoverID uuid.UUID
+	var takeoverCount, targetCount, stateCount, activationCount int
+	if err = pool.QueryRow(ctx, `SELECT takeover_id FROM alert_activations WHERE alert_id='alert-1' AND rule_id=$1 AND cleared_at IS NULL`, ruleID).Scan(&takeoverID); err != nil {
+		t.Fatal(err)
+	}
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM takeovers WHERE id=$1 AND status='active'`, takeoverID).Scan(&takeoverCount); err != nil {
+		t.Fatal(err)
+	}
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM takeover_targets WHERE takeover_id=$1 AND screen_id=$2`, takeoverID, screenID).Scan(&targetCount); err != nil {
+		t.Fatal(err)
+	}
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM takeover_screen_states WHERE takeover_id=$1 AND screen_id=$2 AND state='pending'`, takeoverID, screenID).Scan(&stateCount); err != nil {
+		t.Fatal(err)
+	}
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM alert_activations WHERE alert_id='alert-1' AND rule_id=$1`, ruleID).Scan(&activationCount); err != nil {
+		t.Fatal(err)
+	}
+	if takeoverCount != 1 || targetCount != 1 || stateCount != 1 || activationCount != 1 {
+		t.Fatalf("activation rows takeover=%d target=%d state=%d activation=%d", takeoverCount, targetCount, stateCount, activationCount)
+	}
+	if _, err = service.SaveRule(ctx, uuid.New(), RuleInput{
+		Name: "Unknown rule", Enabled: true, EventNames: []string{"Tornado Warning"},
+		MinimumSeverity: "Severe", MinimumUrgency: "Expected",
+		PlaylistID: &playlistID, MaximumDurationMinutes: 360,
+		ScreenIDs: []uuid.UUID{screenID},
+	}, userID); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("updating an unknown rule returned %v, want not found", err)
+	}
+
+	unrelatedID := uuid.New()
+	if _, err = pool.Exec(ctx, `INSERT INTO takeovers(id,organization_id,name,playlist_id,status,activated_at,expires_at) VALUES($1,$2,'Manual takeover',$3,'active',$4,$5)`, unrelatedID, organizationID, playlistID, now, now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err = service.clearMissing(ctx, map[string]bool{}, now.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	var createdStatus, unrelatedStatus string
+	if err = pool.QueryRow(ctx, `SELECT status FROM takeovers WHERE id=$1`, takeoverID).Scan(&createdStatus); err != nil {
+		t.Fatal(err)
+	}
+	if err = pool.QueryRow(ctx, `SELECT status FROM takeovers WHERE id=$1`, unrelatedID).Scan(&unrelatedStatus); err != nil {
+		t.Fatal(err)
+	}
+	if createdStatus != "cancelled" || unrelatedStatus != "active" {
+		t.Fatalf("clearMissing statuses created=%q unrelated=%q", createdStatus, unrelatedStatus)
+	}
+}

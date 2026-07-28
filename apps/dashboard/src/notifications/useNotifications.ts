@@ -80,9 +80,9 @@ export function useNotifications(user?: User): NotificationFeed {
     refetchInterval: 60_000,
     enabled: canManageSystem,
   });
-  const emergencies = useQuery({
-    queryKey: ["emergencies"],
-    queryFn: api.emergencies,
+  const takeovers = useQuery({
+    queryKey: ["takeovers"],
+    queryFn: api.takeovers,
     refetchInterval: 30_000,
     enabled: canOperate,
   });
@@ -155,25 +155,25 @@ export function useNotifications(user?: User): NotificationFeed {
       });
     }
 
-    for (const takeover of emergencies.data?.items ?? []) {
+    for (const takeover of takeovers.data?.items ?? []) {
       const active =
         !takeover.cancelledAt && new Date(takeover.expiresAt).getTime() > now;
       if (!active) continue;
       if (takeover.failedCount > 0) {
         collected.push({
-          id: `emergency-failed:${takeover.id}`,
+          id: `takeover-failed:${takeover.id}`,
           priority: "critical",
           title: takeover.name,
-          detail: `${plural(takeover.failedCount, "screen")} failed to switch to emergency content`,
-          to: "/settings/operations/emergency",
+          detail: `${plural(takeover.failedCount, "screen")} failed to switch to takeover content`,
+          to: "/settings/operations/takeover",
         });
       } else {
         collected.push({
-          id: `emergency:${takeover.id}`,
+          id: `takeover:${takeover.id}`,
           priority: "warning",
           title: takeover.name,
-          detail: `Emergency active on ${plural(takeover.affectedCount, "screen")}`,
-          to: "/settings/operations/emergency",
+          detail: `Takeover active on ${plural(takeover.affectedCount, "screen")}`,
+          to: "/settings/operations/takeover",
         });
       }
     }
@@ -211,7 +211,7 @@ export function useNotifications(user?: User): NotificationFeed {
     screens.data,
     deployments.data,
     backups.data,
-    emergencies.data,
+    takeovers.data,
     failedAssets.data,
     pairings.data,
   ]);

@@ -36,7 +36,7 @@ describe("schedule delivery reliability", () => {
     const base: Presentation = {
       state: "playing",
       items: [],
-      emergency: false,
+      takeover: false,
       generation: 1,
     };
     expect(presentationIdentity(base)).toBe(

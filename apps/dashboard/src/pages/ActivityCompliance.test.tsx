@@ -28,7 +28,7 @@ const report = {
   confirmedMs: hour,
   missedMs: hour,
   compliancePercent: 50,
-  emergencyOverriddenMs: hour,
+  takeoverOverriddenMs: hour,
   cancelledMs: 30 * 60_000,
   notMeasurableMs: 0,
   windows: 4,
@@ -108,10 +108,10 @@ describe("Playback compliance", () => {
 
     const excluded = (await screen.findByText("Excluded from the percentage"))
       .parentElement!;
-    // An emergency and an operator's own stop are not missed playback, but
+    // A takeover and an operator's own stop are not missed playback, but
     // dropping them silently would make the percentage unexplainable.
     expect(
-      within(excluded).getByText("Emergency overrode normal playback")
+      within(excluded).getByText("Takeover overrode normal playback")
         .parentElement?.textContent,
     ).toContain("60 min");
     expect(

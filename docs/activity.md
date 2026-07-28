@@ -45,7 +45,7 @@ Sessions carry a `session_type`: `presentation` for the root interval, and `cont
 
 The proof-of-play summary reports a **session completion rate**, not coverage. It is the share of sessions that completed or ran partially. Nothing in Tilecast yet compares actual playback against what was scheduled to play, so calling it coverage would claim a measurement that does not exist.
 
-Every ended session records a `terminal_reason` (see [the event contract](activity-event-contract.md)). **Interrupted plays** counts only sessions whose reason was unexpected. A schedule transition, an emergency takeover, and a normal item boundary all end playback early and are exactly what was asked for. `unknown` is excluded too: absence of evidence is not evidence of an interruption, which also means records predating the contract are not retroactively counted as faults.
+Every ended session records a `terminal_reason` (see [the event contract](activity-event-contract.md)). **Interrupted plays** counts only sessions whose reason was unexpected. A schedule transition, a Takeover, and a normal item boundary all end playback early and are exactly what was asked for. `unknown` is excluded too: absence of evidence is not evidence of an interruption, which also means records predating the contract are not retroactively counted as faults.
 
 The server derives `playback_sessions` from matching start and terminal events. A session is not considered completed until the Player reports a completion. Missing terminal events become:
 
@@ -75,13 +75,13 @@ The two players spell the same conditions differently — `safe_mode` against `s
 
 Compliance cannot be computed from current schedules and assignments: both change after the fact, so reconstructing last month's expectation from today's configuration would report against a plan that never existed at the time. Expected playback windows are therefore **materialized when a selection becomes effective** and are immutable once written — a change supersedes a window rather than editing it.
 
-Windows are superseded when the assignment changes, a schedule begins or ends, the manifest revision changes, an emergency begins or ends, the screen is disabled, active hours change, or a deployment intentionally prevents playback. The reason is recorded, because it is what decides whether the unplayed time was a miss.
+Windows are superseded when the assignment changes, a schedule begins or ends, the manifest revision changes, a Takeover begins or ends, the screen is disabled, active hours change, or a deployment intentionally prevents playback. The reason is recorded, because it is what decides whether the unplayed time was a miss.
 
-Root playback sessions are then matched against each closed window. An open window is never judged: it has not finished, and judging it early would report playback that is still running as missed. Match statuses are `confirmed`, `started_late`, `ended_early`, `partial`, `failed`, `never_started`, `screen_offline`, `overridden_by_emergency`, `cancelled`, and `not_measurable`. A ninety-second grace applies at each edge so compliance does not become a measure of clock skew.
+Root playback sessions are then matched against each closed window. An open window is never judged: it has not finished, and judging it early would report playback that is still running as missed. Match statuses are `confirmed`, `started_late`, `ended_early`, `partial`, `failed`, `never_started`, `screen_offline`, `overridden_by_takeover`, `cancelled`, and `not_measurable`. A ninety-second grace applies at each edge so compliance does not become a measure of clock skew.
 
-**Playback compliance = confirmed expected screen-time ÷ measurable expected screen-time.** Emergency-overridden and intentionally cancelled time is excluded from the denominator — neither is playback that went missing — and both are reported separately so the exclusion is visible rather than silently improving the percentage. When nothing measurable was expected the percentage is null, not zero: zero would claim every expected play was missed.
+**Playback compliance = confirmed expected screen-time ÷ measurable expected screen-time.** Takeover-overridden and intentionally cancelled time is excluded from the denominator — neither is playback that went missing — and both are reported separately so the exclusion is visible rather than silently improving the percentage. When nothing measurable was expected the percentage is null, not zero: zero would claim every expected play was missed.
 
-The report shows expected, confirmed and missed screen-minutes, the compliance percentage, late starts, early endings, never-started windows, offline-caused misses and emergency-overridden time, with drill-downs by screen, location, group, presentation, schedule, date, and failure reason.
+The report shows expected, confirmed and missed screen-minutes, the compliance percentage, late starts, early endings, never-started windows, offline-caused misses and Takeover-overridden time, with drill-downs by screen, location, group, presentation, schedule, date, and failure reason.
 
 ## Per-screen timeline
 
@@ -169,16 +169,16 @@ Healthy + impaired + offline + unmeasured = measured fleet, exactly. Online is s
 
 ### Playback compliance
 
-| Metric                      | Exact definition                                                                                                                                              |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Expected screen-minutes     | Sum of expected-window duration clipped to the range, for windows whose `match_status` is **not** `cancelled`, `overridden_by_emergency` or `not_measurable`. |
-| Confirmed screen-minutes    | Sum of `confirmed_duration_ms` across those windows — root presentation time actually observed inside each window.                                            |
-| Missed screen-minutes       | `max(0, expected − confirmed)`.                                                                                                                               |
-| Playback compliance         | `confirmed ÷ expected`, capped at 100%. **Null** when expected is zero.                                                                                       |
-| Late starts / early endings | Count of windows with `match_status` `started_late` / `ended_early`. The grace at each edge is 90 seconds.                                                    |
-| Never started               | Windows with no root playback at all where the screen was reachable.                                                                                          |
-| Offline-caused misses       | Windows with no playback where the screen was offline or unknown for at least half the window.                                                                |
-| Emergency-overridden time   | Expected duration of windows an emergency replaced. Excluded from the denominator and reported separately.                                                    |
+| Metric                      | Exact definition                                                                                                                                             |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Expected screen-minutes     | Sum of expected-window duration clipped to the range, for windows whose `match_status` is **not** `cancelled`, `overridden_by_takeover` or `not_measurable`. |
+| Confirmed screen-minutes    | Sum of `confirmed_duration_ms` across those windows — root presentation time actually observed inside each window.                                           |
+| Missed screen-minutes       | `max(0, expected − confirmed)`.                                                                                                                              |
+| Playback compliance         | `confirmed ÷ expected`, capped at 100%. **Null** when expected is zero.                                                                                      |
+| Late starts / early endings | Count of windows with `match_status` `started_late` / `ended_early`. The grace at each edge is 90 seconds.                                                   |
+| Never started               | Windows with no root playback at all where the screen was reachable.                                                                                         |
+| Offline-caused misses       | Windows with no playback where the screen was offline or unknown for at least half the window.                                                               |
+| Takeover-overridden time    | Expected duration of windows a Takeover replaced. Excluded from the denominator and reported separately.                                                     |
 
 ### Incidents
 
@@ -214,7 +214,7 @@ Uptime is derived from `screen_state_intervals`, not from these metrics, and use
 
 **Session completion rate** — the share of playback sessions that completed or ran partially. A session outcome rate. It is _not_ coverage, and it does not tell you whether the right content played at the right time.
 
-**Playback compliance** — confirmed screen-time divided by measurable expected screen-time, measured against expectations recorded when each selection became effective. This is the metric that answers "did the right content play when it was supposed to". Time an operator deliberately stopped, and time an emergency took over, are excluded from the denominator.
+**Playback compliance** — confirmed screen-time divided by measurable expected screen-time, measured against expectations recorded when each selection became effective. This is the metric that answers "did the right content play when it was supposed to". Time an operator deliberately stopped, and time a Takeover replaced normal playback, are excluded from the denominator.
 
 **Incident** — a persistent record of one operational condition, opened once and updated on repeat. Five renderer failures on one screen are one incident with five occurrences, not five problems.
 

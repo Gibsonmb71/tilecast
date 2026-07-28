@@ -1594,19 +1594,19 @@ paths:
       responses:
         "200": { description: Revision copied into a new draft revision }
         "409": { description: Draft revision conflict }
-  /api/v1/emergencies:
+  /api/v1/takeovers:
     get:
-      summary: List emergency takeovers
+      summary: List Takeovers
       responses:
-        "200": { description: Emergency list }
+        "200": { description: Takeover list }
     post:
-      summary: Activate an emergency takeover
+      summary: Activate a Takeover
       responses:
-        "201": { description: Emergency activated }
+        "201": { description: Takeover activated }
         "422": { description: "Invalid targets, playlist, or expiration" }
-  /api/v1/emergencies/{id}:
+  /api/v1/takeovers/{id}:
     get:
-      summary: Read emergency and per-screen state
+      summary: Read Takeover and per-screen state
       parameters:
         - {
             in: path,
@@ -1615,10 +1615,10 @@ paths:
             schema: { type: string, format: uuid },
           }
       responses:
-        "200": { description: Emergency detail }
-  /api/v1/emergencies/{id}/cancel:
+        "200": { description: Takeover detail }
+  /api/v1/takeovers/{id}/cancel:
     post:
-      summary: Cancel an active emergency
+      summary: Cancel an active Takeover
       parameters:
         - {
             in: path,
@@ -1627,8 +1627,46 @@ paths:
             schema: { type: string, format: uuid },
           }
       responses:
-        "200": { description: Emergency cancelled }
-        "409": { description: Emergency already ended }
+        "200": { description: Takeover cancelled }
+        "409": { description: Takeover already ended }
+  /api/v1/alerts/nws:
+    get:
+      summary: Read the NWS monitor, rules, active matches, and poll health
+      responses:
+        "200": { description: NWS alert settings }
+  /api/v1/alerts/nws/monitor:
+    put:
+      summary: Configure NWS area and zone monitoring
+      responses:
+        "200": { description: Monitor updated }
+        "422": { description: Invalid area, zone, or interval }
+  /api/v1/alerts/nws/poll:
+    post:
+      summary: Retrieve and apply active NWS alerts now
+      responses:
+        "200": { description: Poll completed }
+        "502": { description: NWS retrieval failed }
+  /api/v1/alerts/nws/rules:
+    post:
+      summary: Create an automatic NWS Takeover rule
+      responses:
+        "201": { description: Rule created }
+  /api/v1/alerts/nws/rules/{id}:
+    parameters:
+      - {
+          in: path,
+          name: id,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
+    put:
+      summary: Replace an automatic NWS Takeover rule
+      responses:
+        "200": { description: Rule updated }
+    delete:
+      summary: Delete a rule and end Takeovers it raised
+      responses:
+        "200": { description: Rule deleted }
   /api/v1/screens/{id}/commands:
     get:
       summary: List recent screen commands

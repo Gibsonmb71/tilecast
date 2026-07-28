@@ -1,14 +1,17 @@
-/** Offline, timezone-aware schedule and emergency resolution. */
+/** Offline, timezone-aware schedule and takeover resolution. */
 
 import type { Manifest, ManifestSchedule } from "./types";
+
+export const manifestTakeover = (manifest: Manifest) =>
+  manifest.takeover ?? manifest.emergency ?? null;
 
 export interface Selection {
   playlistId: string | null;
   layoutId: string | null;
   scheduleId: string | null;
-  emergencyId: string | null;
+  takeoverId: string | null;
   source: string;
-  /** Exact next schedule/emergency boundary, for prompt unattended changes. */
+  /** Exact next schedule/takeover boundary, for prompt unattended changes. */
   nextTransitionAt: string | null;
   /** Start of the winning window, used as a synchronized-playback anchor. */
   playbackAnchor: string | null;
@@ -260,11 +263,11 @@ export function scheduleApplies(schedule: ManifestSchedule, at: Date): boolean {
   );
 }
 
-export function emergencyActive(manifest: Manifest, at: Date): boolean {
-  const emergency = manifest.emergency;
-  if (!emergency) return false;
-  const start = Date.parse(emergency.activatedAt);
-  const end = Date.parse(emergency.expiresAt);
+export function takeoverActive(manifest: Manifest, at: Date): boolean {
+  const takeover = manifestTakeover(manifest);
+  if (!takeover) return false;
+  const start = Date.parse(takeover.activatedAt);
+  const end = Date.parse(takeover.expiresAt);
   const now = at.getTime();
   return (
     Number.isFinite(start) && Number.isFinite(end) && now >= start && now < end
@@ -273,25 +276,30 @@ export function emergencyActive(manifest: Manifest, at: Date): boolean {
 
 export function resolveSelection(manifest: Manifest, at: Date): Selection {
   const now = at.getTime();
+  const takeover = manifestTakeover(manifest);
   const allWindows = (manifest.schedules ?? []).flatMap((schedule) =>
     schedule.playlistId || schedule.layoutId ? windows(schedule, at) : [],
   );
   const futureTransitions = allWindows
     .flatMap((window) => [window.start, window.end])
     .filter((transition) => transition > now);
+  if (takeover) {
+    const starts = Date.parse(takeover.activatedAt);
+    if (Number.isFinite(starts) && starts > now) futureTransitions.push(starts);
+  }
 
-  if (emergencyActive(manifest, at)) {
-    const expires = Date.parse(manifest.emergency!.expiresAt);
+  if (takeover && takeoverActive(manifest, at)) {
+    const expires = Date.parse(takeover.expiresAt);
     if (Number.isFinite(expires) && expires > now)
       futureTransitions.push(expires);
     return {
-      playlistId: manifest.emergency!.playlistId,
+      playlistId: takeover.playlistId,
       layoutId: null,
       scheduleId: null,
-      emergencyId: manifest.emergency!.id,
-      source: "emergency",
+      takeoverId: takeover.id,
+      source: "takeover",
       nextTransitionAt: nextTransition(futureTransitions),
-      playbackAnchor: manifest.emergency!.activatedAt,
+      playbackAnchor: takeover.activatedAt,
     };
   }
 
@@ -310,7 +318,7 @@ export function resolveSelection(manifest: Manifest, at: Date): Selection {
       playlistId: winner.schedule.playlistId ?? null,
       layoutId: winner.schedule.layoutId ?? null,
       scheduleId: winner.schedule.id,
-      emergencyId: null,
+      takeoverId: null,
       source: "schedule",
       nextTransitionAt: transition,
       playbackAnchor: new Date(winner.start).toISOString(),
@@ -323,7 +331,7 @@ export function resolveSelection(manifest: Manifest, at: Date): Selection {
       playlistId: directPlaylist.id,
       layoutId: null,
       scheduleId: null,
-      emergencyId: null,
+      takeoverId: null,
       source: "direct",
       nextTransitionAt: transition,
       playbackAnchor: null,
@@ -336,7 +344,7 @@ export function resolveSelection(manifest: Manifest, at: Date): Selection {
       playlistId: null,
       layoutId: directLayout.id,
       scheduleId: null,
-      emergencyId: null,
+      takeoverId: null,
       source: "direct",
       nextTransitionAt: transition,
       playbackAnchor: null,
@@ -346,7 +354,7 @@ export function resolveSelection(manifest: Manifest, at: Date): Selection {
     playlistId: null,
     layoutId: null,
     scheduleId: null,
-    emergencyId: null,
+    takeoverId: null,
     source: "none",
     nextTransitionAt: transition,
     playbackAnchor: null,

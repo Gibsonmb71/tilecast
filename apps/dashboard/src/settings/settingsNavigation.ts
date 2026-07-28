@@ -33,7 +33,7 @@ export type SettingsSectionId =
   | "power"
   | "accessibility"
   | "player-updates"
-  | "emergency"
+  | "takeover"
   | "retention"
   | "backups"
   | "system"
@@ -90,9 +90,9 @@ export const settingsNavigation: SettingsNavigationGroup[] = [
     label: "Operations",
     items: [
       {
-        id: "emergency",
-        label: "Emergency and commands",
-        path: "operations/emergency",
+        id: "takeover",
+        label: "Takeover and commands",
+        path: "operations/takeover",
       },
       {
         id: "retention",
@@ -198,11 +198,10 @@ export const sectionDetails: Record<
     title: "Player updates",
     description: "Verified Tilecast Player releases and update deployments.",
   },
-  emergency: {
+  takeover: {
     icon: Siren,
-    title: "Emergency and commands",
-    description:
-      "Defaults for emergency takeover and persistent player operations.",
+    title: "Takeover and commands",
+    description: "Defaults for takeover and persistent player operations.",
   },
   retention: {
     icon: Archive,

@@ -247,9 +247,11 @@ Content responses include `layoutUsage` with stable Layout IDs, names, and publi
 
 Manifest v10 adds root and scheduled Layout presentations. A Layout entry includes its published revision, document SHA-256, validated document, and materialized dependencies. Layout deletion is blocked while assigned or scheduled; dependency deletion is blocked while referenced by a draft or published revision.
 
-## Emergency takeover and commands
+## Takeover, NWS alerts, and commands
 
-Dashboard routes include `GET/POST /emergencies`, `GET /emergencies/{id}`, `POST /emergencies/{id}/cancel`, `GET/POST /screens/{id}/commands`, and command cancellation. Device-authenticated players use `GET /player/commands`, `POST /player/commands/{id}/acknowledge`, and `POST /player/commands/{id}/result`. Commands are typed, bounded, expiring, and scoped to the authenticated screen. The former one-off website clearing route is replaced by `clear_website_data`.
+Dashboard routes include `GET/POST /takeovers`, `GET /takeovers/{id}`, `POST /takeovers/{id}/cancel`, `GET/POST /screens/{id}/commands`, and command cancellation. Device-authenticated players use `GET /player/commands`, `POST /player/commands/{id}/acknowledge`, and `POST /player/commands/{id}/result`. Commands are typed, bounded, expiring, and scoped to the authenticated screen. The former one-off website clearing route is replaced by `clear_website_data`.
+
+`GET /alerts/nws` returns the NWS monitor, automatic Takeover rules, poll health, and active matches. Owners and Administrators manage scope with `PUT /alerts/nws/monitor`, test retrieval with `POST /alerts/nws/poll`, and create, replace, or delete rules beneath `/alerts/nws/rules`. State/territory area codes and county/forecast-zone codes are fetched from the official `api.weather.gov/alerts/active` service. Rules use closed severity and urgency thresholds, a ready playlist, bounded duration, and explicit screen/group targets. A matching alert raises one idempotent Takeover per rule; when it disappears from the active feed, Tilecast ends that Takeover and restores current playback.
 
 ## Settings and configuration
 

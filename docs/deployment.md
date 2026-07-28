@@ -48,7 +48,9 @@ Transit accepts public GTFS Static ZIP and GTFS Realtime protobuf feeds. Static 
 Weather Data Sources are optional and make outbound HTTPS requests from Tilecast Server to MET Norway. Each Weather source stores a contact email or HTTPS URL for the required identifying User-Agent, uses conditional cache headers, keeps last-known-good prepared records, and projects “Data from MET Norway” attribution. Coordinates and contact details never enter Player manifests. Weather does not become a required Tilecast cloud dependency.
 
 Deploy the v13-capable Player before the declarative server/dashboard release. The server remains in dual-projection mode: capability-reporting Players receive v13 while older Players continue receiving v11/v12. Presentation compiler catalog changes invalidate manifests automatically and do not install code on Players.
-Emergency and command limits use `TILECAST_MAX_EMERGENCY_DURATION_HOURS`, `TILECAST_MAX_EMERGENCY_TARGETS`, `TILECAST_MAX_PENDING_COMMANDS_PER_SCREEN`, `TILECAST_DEFAULT_COMMAND_EXPIRY_MINUTES`, `TILECAST_IDENTIFY_SCREEN_MAX_SECONDS`, and `TILECAST_COMMAND_RETENTION_DAYS`.
+Takeover and command limits use `TILECAST_MAX_TAKEOVER_DURATION_HOURS`, `TILECAST_MAX_TAKEOVER_TARGETS`, `TILECAST_MAX_PENDING_COMMANDS_PER_SCREEN`, `TILECAST_DEFAULT_COMMAND_EXPIRY_MINUTES`, `TILECAST_IDENTIFY_SCREEN_MAX_SECONDS`, and `TILECAST_COMMAND_RETENTION_DAYS`.
+
+Automated NWS monitoring is configured in Studio under Settings → Takeover. The server needs outbound HTTPS access to `api.weather.gov`. Monitoring is disabled by default, identifies the installation in its User-Agent, polls no more frequently than once per minute, records upstream health without response bodies or secrets, and is not a replacement for local life-safety systems.
 
 Database URLs, bind addresses, storage roots, executable paths, worker limits, logging, tunnel tokens, signing keys, and hard security limits remain deployment configuration. Studio shows only safe configured/healthy status and cannot read or edit secret values. Runtime settings may narrow but never exceed these hard limits.
 

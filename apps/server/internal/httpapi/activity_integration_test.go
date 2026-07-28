@@ -479,7 +479,7 @@ func TestInterruptedPlaysCountOnlyUnexpectedEndings(t *testing.T) {
 		for index, reason := range []string{
 			// Expected endings: an operator asked for these, or they are simply
 			// how playback works.
-			"schedule_transition", "expected_item_boundary", "emergency_takeover", "manual_skip",
+			"schedule_transition", "expected_item_boundary", "takeover", "manual_skip",
 			// Unknown is not evidence of an interruption either.
 			"unknown",
 			// Genuine interruptions.

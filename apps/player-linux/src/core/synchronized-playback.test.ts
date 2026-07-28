@@ -99,7 +99,7 @@ function manifest(epoch: string): Manifest {
     prefetchHorizonDays: 7,
     activationGraceSeconds: 0,
     websites: [],
-    emergency: null,
+    takeover: null,
     syncGroup: { id: "group-1", playbackEpoch: epoch },
   };
 }
@@ -136,7 +136,7 @@ describe("projectSynchronizedPresentation", () => {
     const base = {
       state: "playing",
       items: [image("image-1", 10_000), video("video-1")],
-      emergency: false,
+      takeover: false,
       generation: 2,
       synchronizedPlayback: {
         groupId: "group-1",
@@ -172,7 +172,7 @@ describe("enrichSynchronizedPresentation", () => {
     const presentation: Presentation = {
       state: "playing",
       items: [image("image-1", 10_000), video("video-1")],
-      emergency: false,
+      takeover: false,
       generation: 1,
     };
     const enriched = enrichSynchronizedPresentation(
@@ -194,7 +194,7 @@ describe("enrichSynchronizedPresentation", () => {
     const presentation: Presentation = {
       state: "playing",
       items: [image("image-1", 10_000)],
-      emergency: false,
+      takeover: false,
       generation: 1,
     };
     expect(
@@ -256,7 +256,7 @@ describe("synchronized playback clock", () => {
     const base = {
       state: "playing",
       items: [image("image-1", 10_000), image("image-2", 10_000)],
-      emergency: false,
+      takeover: false,
       generation: 2,
       synchronizedPlayback: {
         groupId: "group-1",

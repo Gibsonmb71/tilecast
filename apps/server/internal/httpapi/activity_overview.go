@@ -45,7 +45,7 @@ func (s *server) activityOverview(w http.ResponseWriter, r *http.Request) {
 		       count(*) FILTER(WHERE terminal_reason = ANY($3))
 		FROM playback_sessions WHERE started_at>=$1 AND started_at<$2`,
 		window.From, window.To, interruptedTerminalReasons()).Scan(&data.Cards.PlaybackFailures, &data.Cards.InterruptedPlays)
-	_ = s.db.QueryRow(r.Context(), `SELECT count(*) FROM player_activity_events WHERE occurred_at>=$1 AND occurred_at<$2 AND event_type='emergency.active'`, window.From, window.To).Scan(&data.Cards.EmergencyActivations)
+	_ = s.db.QueryRow(r.Context(), `SELECT count(*) FROM player_activity_events WHERE occurred_at>=$1 AND occurred_at<$2 AND event_type='takeover.active'`, window.From, window.To).Scan(&data.Cards.TakeoverActivations)
 	_ = s.db.QueryRow(r.Context(), `SELECT count(*) FROM player_activity_events WHERE occurred_at>=$1 AND occurred_at<$2 AND category='updates' AND result='failed'`, window.From, window.To).Scan(&data.Cards.FailedPlayerUpdates)
 	_ = s.db.QueryRow(r.Context(), `SELECT count(*) FROM audit_logs WHERE created_at>=$1 AND created_at<$2 AND result='success'`, window.From, window.To).Scan(&data.Cards.RecentAdminChanges)
 
@@ -54,7 +54,7 @@ func (s *server) activityOverview(w http.ResponseWriter, r *http.Request) {
 		       CASE WHEN content_id IS NOT NULL THEN replace(event_type,'.',' ')||' · '||content_id ELSE replace(event_type,'.',' ') END,
 		       screen_id,presentation_id
 		FROM player_activity_events
-		WHERE occurred_at>=$1 AND occurred_at<$2 AND (severity IN('warning','error','critical') OR event_type IN('presentation.started','presentation.recovered','schedule.became_active','emergency.active','update.installation_failed'))
+		WHERE occurred_at>=$1 AND occurred_at<$2 AND (severity IN('warning','error','critical') OR event_type IN('presentation.started','presentation.recovered','schedule.became_active','takeover.active','update.installation_failed'))
 		UNION ALL
 		SELECT id::text,created_at,'audit',CASE WHEN result='failure' THEN 'error' ELSE 'info' END,
 		       COALESCE(NULLIF(summary,''),replace(action,'.',' ')),NULL,resource_id

@@ -165,9 +165,9 @@ type Assignment struct {
 	WebsiteCurrentHost            *string              `json:"websiteCurrentHost,omitempty"`
 	WebsiteFallbackShown          *bool                `json:"websiteFallbackShown,omitempty"`
 	WebsiteRendererRecoveryCount  *int                 `json:"websiteRendererRecoveryCount,omitempty"`
-	ActiveEmergencyID             *uuid.UUID           `json:"activeEmergencyId,omitempty"`
-	EmergencyState                *string              `json:"emergencyState,omitempty"`
-	EmergencyPreparationProgress  *int                 `json:"emergencyPreparationProgress,omitempty"`
+	ActiveTakeoverID              *uuid.UUID           `json:"activeTakeoverId,omitempty"`
+	TakeoverState                 *string              `json:"takeoverState,omitempty"`
+	TakeoverPreparationProgress   *int                 `json:"takeoverPreparationProgress,omitempty"`
 	PlaybackDisabled              bool                 `json:"playbackDisabled"`
 	LastCommandID                 *uuid.UUID           `json:"lastCommandId,omitempty"`
 	LastCommandState              *string              `json:"lastCommandState,omitempty"`
@@ -206,11 +206,17 @@ type Manifest struct {
 	Websites               []ManifestWebsite    `json:"websites"`
 	Widgets                []ManifestWidget     `json:"widgets"`
 	DataSources            []ManifestDataSource `json:"dataSources"`
-	Emergency              *ManifestEmergency   `json:"emergency,omitempty"`
-	SyncGroup              *ManifestSyncGroup   `json:"syncGroup,omitempty"`
-	Layout                 *ManifestLayout      `json:"layout,omitempty"`
-	DirectFallbackLayout   *ManifestLayout      `json:"directFallbackLayout,omitempty"`
-	Layouts                []ManifestLayout     `json:"layouts"`
+	Takeover               *ManifestTakeover    `json:"takeover,omitempty"`
+	// LegacyTakeover mirrors Takeover under the pre-rename `emergency` key. A
+	// Player built before the takeover rename looks only for that key, and an
+	// override it cannot see is the one failure this feature must not have, so
+	// the alias is emitted unconditionally rather than negotiated by version.
+	// Remove it once no fielded Player predates the rename.
+	LegacyTakeover       *ManifestTakeover  `json:"emergency,omitempty"`
+	SyncGroup            *ManifestSyncGroup `json:"syncGroup,omitempty"`
+	Layout               *ManifestLayout    `json:"layout,omitempty"`
+	DirectFallbackLayout *ManifestLayout    `json:"directFallbackLayout,omitempty"`
+	Layouts              []ManifestLayout   `json:"layouts"`
 }
 type ManifestLayout struct {
 	ID             uuid.UUID        `json:"id"`
@@ -248,7 +254,7 @@ type ManifestDataSource struct {
 	Configuration json.RawMessage `json:"configuration,omitempty"`
 	DataDocument  *DataDocument   `json:"dataDocument,omitempty"`
 }
-type ManifestEmergency struct {
+type ManifestTakeover struct {
 	ID          uuid.UUID `json:"id"`
 	PlaylistID  uuid.UUID `json:"playlistId"`
 	ActivatedAt time.Time `json:"activatedAt"`
@@ -359,9 +365,9 @@ type PlayerStatus struct {
 	WidgetProvider                string     `json:"widgetProvider,omitempty"`
 	WidgetState                   string     `json:"widgetState,omitempty"`
 	WidgetError                   string     `json:"widgetError,omitempty"`
-	ActiveEmergencyID             *uuid.UUID `json:"activeEmergencyId,omitempty"`
-	EmergencyState                string     `json:"emergencyState,omitempty"`
-	EmergencyPreparationProgress  *int       `json:"emergencyPreparationProgress,omitempty"`
+	ActiveTakeoverID              *uuid.UUID `json:"activeTakeoverId,omitempty"`
+	TakeoverState                 string     `json:"takeoverState,omitempty"`
+	TakeoverPreparationProgress   *int       `json:"takeoverPreparationProgress,omitempty"`
 	PlaybackDisabled              *bool      `json:"playbackDisabled,omitempty"`
 	LastCommandID                 *uuid.UUID `json:"lastCommandId,omitempty"`
 	LastCommandState              string     `json:"lastCommandState,omitempty"`

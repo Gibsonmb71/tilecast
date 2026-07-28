@@ -2,7 +2,7 @@
  * Identifier hygiene for anything the player reports upward.
  *
  * The server models playback identifiers (`currentItemId`, `currentPlaylistId`,
- * `currentScheduleId`, `activeEmergencyId`, ...) as UUIDs, and its heartbeat
+ * `currentScheduleId`, `activeTakeoverId`, ...) as UUIDs, and its heartbeat
  * decoder rejects the whole payload when one of them is not a UUID. A single
  * synthetic renderer key used to cost the player every lifecycle field in the
  * same message — including `playerVersionCode` and `lastHealthyPlaybackAt`,

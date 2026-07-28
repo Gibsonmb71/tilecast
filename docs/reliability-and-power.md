@@ -12,7 +12,7 @@ New effective defaults request launch after boot, keep-awake, immersive presenta
 
 ## Active hours
 
-Active hours use explicit IANA timezones, ISO weekdays (Monday 1 through Sunday 7), and half-open `[start,end)` windows. An end at or before the start is overnight and belongs to the selected start day. Calendar calculations use timezone rules rather than fixed durations. In a DST gap, a boundary advances to the first valid local time; in an overlap, starts choose the earlier occurrence and ends the later occurrence. Emergency takeover overrides off-hours sleep and black-screen behavior. APK installation and required verification are never interrupted.
+Active hours use explicit IANA timezones, ISO weekdays (Monday 1 through Sunday 7), and half-open `[start,end)` windows. An end at or before the start is overnight and belongs to the selected start day. Calendar calculations use timezone rules rather than fixed durations. In a DST gap, a boundary advances to the first valid local time; in an overlap, starts choose the earlier occurrence and ends the later occurrence. Takeover overrides off-hours sleep and black-screen behavior. APK installation and required verification are never interrupted.
 
 Outside active hours the player saves state, stops media decoding, releases keep-screen-on, pauses ordinary presentation, and uses a true-black fallback when Android sleep is unavailable. Cached configuration and manifests are used immediately after boot without waiting for the network.
 

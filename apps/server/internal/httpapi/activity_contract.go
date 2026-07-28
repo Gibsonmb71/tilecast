@@ -22,7 +22,7 @@ const (
 	terminalScheduleTransition   = "schedule_transition"
 	terminalManifestReplacement  = "manifest_replacement"
 	terminalDirectAssignment     = "direct_assignment_change"
-	terminalEmergencyTakeover    = "emergency_takeover"
+	terminalTakeover             = "takeover"
 	terminalPlayerRestart        = "player_restart"
 	terminalProcessExit          = "process_exit"
 	terminalHeartbeatGap         = "heartbeat_gap"
@@ -36,7 +36,7 @@ const (
 
 var activityTerminalReasons = []string{
 	terminalExpectedItemBoundary, terminalCompletedDuration, terminalScheduleTransition,
-	terminalManifestReplacement, terminalDirectAssignment, terminalEmergencyTakeover,
+	terminalManifestReplacement, terminalDirectAssignment, terminalTakeover,
 	terminalPlayerRestart, terminalProcessExit, terminalHeartbeatGap, terminalRendererFailure,
 	terminalDecoderFailure, terminalManualSkip, terminalRecoveryAction, terminalBoundedTimeout,
 	terminalUnknown,
@@ -51,7 +51,7 @@ var expectedTerminalReasons = map[string]bool{
 	terminalScheduleTransition:   true,
 	terminalManifestReplacement:  true,
 	terminalDirectAssignment:     true,
-	terminalEmergencyTakeover:    true,
+	terminalTakeover:             true,
 	terminalManualSkip:           true,
 }
 
@@ -69,9 +69,25 @@ func interruptedTerminalReasons() []string {
 	return reasons
 }
 
+// activityTerminalReasonAliases maps the pre-rename spelling to the canonical
+// one. A Player built before "emergency takeover" became "takeover" still ends
+// sessions with the old reason, and rejecting it would drop those sessions into
+// `unknown` — which is deliberately excluded from the interruption metric, so
+// the loss would be silent rather than visible.
+var activityTerminalReasonAliases = map[string]string{
+	"emergency_takeover": terminalTakeover,
+}
+
+func canonicalActivityTerminalReason(value string) string {
+	if canonical, ok := activityTerminalReasonAliases[value]; ok {
+		return canonical
+	}
+	return value
+}
+
 func isActivityTerminalReason(value string) bool {
 	for _, reason := range activityTerminalReasons {
-		if value == reason {
+		if canonicalActivityTerminalReason(value) == reason {
 			return true
 		}
 	}
@@ -156,7 +172,7 @@ func contractSessionType(event playerActivityEventInput) string {
 // where it says nothing the reason stays unknown rather than being guessed.
 func contractTerminalReason(event playerActivityEventInput) string {
 	if isActivityTerminalReason(event.TerminalReason) {
-		return event.TerminalReason
+		return canonicalActivityTerminalReason(event.TerminalReason)
 	}
 	switch canonicalActivityEventType(event.EventType) {
 	case "content.completed":

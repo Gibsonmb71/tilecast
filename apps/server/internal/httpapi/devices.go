@@ -142,7 +142,7 @@ func (s *server) playerHeartbeat(w http.ResponseWriter, r *http.Request) {
 			CurrentScheduleID: body.CurrentScheduleID, CurrentPlaylistID: body.CurrentPlaylistID, SelectionSource: body.SelectionSource, NextTransitionAt: body.NextTransitionAt, DeviceClockOffsetSeconds: body.DeviceClockOffsetSeconds, ScheduleEvaluationError: body.ScheduleEvaluationError, ScheduleManifestVersion: body.ScheduleManifestVersion,
 			CurrentWebsiteAssetID: body.CurrentWebsiteAssetID, WebsiteState: body.WebsiteState, WebsiteLoadStartedAt: body.WebsiteLoadStartedAt, WebsiteLoadCompletedAt: body.WebsiteLoadCompletedAt, WebsiteFailureCategory: body.WebsiteFailureCategory, WebsiteBlockedNavigationCount: body.WebsiteBlockedNavigationCount, WebsiteCurrentHost: body.WebsiteCurrentHost, WebsiteFallbackShown: body.WebsiteFallbackShown, WebsiteRendererRecoveryCount: body.WebsiteRendererRecoveryCount,
 			CurrentWidgetID: body.CurrentWidgetID, WidgetProvider: body.WidgetProvider, WidgetState: body.WidgetState, WidgetError: body.WidgetError,
-			ActiveEmergencyID: body.ActiveEmergencyID, EmergencyState: body.EmergencyState, EmergencyPreparationProgress: body.EmergencyPreparationProgress,
+			ActiveTakeoverID: body.ActiveTakeoverID, TakeoverState: body.TakeoverState, TakeoverPreparationProgress: body.TakeoverPreparationProgress,
 			PlaybackDisabled: body.PlaybackDisabled, LastCommandID: body.LastCommandID, LastCommandState: body.LastCommandState, LastCommandResult: body.LastCommandResult, LastCommandCompletedAt: body.LastCommandCompletedAt,
 			ActiveConfigRevision: body.ActiveConfigRevision, ConfigurationError: body.ConfigurationError,
 		})

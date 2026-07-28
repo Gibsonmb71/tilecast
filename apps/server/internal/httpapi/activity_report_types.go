@@ -55,7 +55,7 @@ type proofOfPlayRecord struct {
 	Result               string     `json:"result"`
 	Trigger              string     `json:"trigger,omitempty"`
 	ScheduleID           string     `json:"scheduleId,omitempty"`
-	EmergencyID          string     `json:"emergencyId,omitempty"`
+	TakeoverID           string     `json:"takeoverId,omitempty"`
 	ManifestVersion      *int64     `json:"manifestVersion,omitempty"`
 	FailureCode          string     `json:"failureCode,omitempty"`
 	SourceID             string     `json:"sourceId,omitempty"`
@@ -110,10 +110,10 @@ type activityOverviewData struct {
 		PlaybackFailures  int64 `json:"playbackFailures"`
 		// Only sessions that ended for an unexpected reason. A schedule change
 		// or a normal item boundary is not an interruption.
-		InterruptedPlays     int64 `json:"interruptedPlays"`
-		EmergencyActivations int64 `json:"emergencyActivations"`
-		FailedPlayerUpdates  int64 `json:"failedPlayerUpdates"`
-		RecentAdminChanges   int64 `json:"recentAdministrativeChanges"`
+		InterruptedPlays    int64 `json:"interruptedPlays"`
+		TakeoverActivations int64 `json:"takeoverActivations"`
+		FailedPlayerUpdates int64 `json:"failedPlayerUpdates"`
+		RecentAdminChanges  int64 `json:"recentAdministrativeChanges"`
 	} `json:"cards"`
 	// Fleet health is measured now, not over the selected range, because it
 	// answers what is on screen at this moment.

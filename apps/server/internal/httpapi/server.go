@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/tilecast/tilecast/apps/server/internal/alerts"
 	"github.com/tilecast/tilecast/apps/server/internal/auth"
 	"github.com/tilecast/tilecast/apps/server/internal/backup"
 	"github.com/tilecast/tilecast/apps/server/internal/devices"
@@ -36,6 +37,7 @@ type Dependencies struct {
 	Scheduling          *scheduling.Service
 	Settings            *settings.Service
 	Updates             *updates.Service
+	Alerts              *alerts.Service
 	DB                  *pgxpool.Pool
 	Logger              *slog.Logger
 	CookieName          string
@@ -48,8 +50,8 @@ type Dependencies struct {
 }
 
 type OperationsConfig struct {
-	MaxEmergencyDurationHours   int
-	MaxEmergencyTargets         int
+	MaxTakeoverDurationHours    int
+	MaxTakeoverTargets          int
 	MaxPendingCommands          int
 	DefaultCommandExpiryMinutes int
 	MaxIdentifySeconds          int
@@ -75,6 +77,7 @@ type server struct {
 	operations                    OperationsConfig
 	settings                      *settings.Service
 	updates                       *updates.Service
+	alerts                        *alerts.Service
 	releasePublishTokenHash       [32]byte
 	releasePublishTokenConfigured bool
 	startedAt                     time.Time
@@ -107,6 +110,7 @@ func New(deps Dependencies) http.Handler {
 		operations:        deps.Operations,
 		settings:          deps.Settings,
 		updates:           deps.Updates,
+		alerts:            deps.Alerts,
 		startedAt:         time.Now(),
 		backups:           deps.Backups,
 		backupWorker:      deps.BackupWorker,
@@ -116,7 +120,7 @@ func New(deps Dependencies) http.Handler {
 		s.releasePublishTokenHash = sha256.Sum256([]byte(deps.ReleasePublishToken))
 		s.releasePublishTokenConfigured = true
 	}
-	if s.operations.MaxEmergencyDurationHours == 0 {
+	if s.operations.MaxTakeoverDurationHours == 0 {
 		s.operations = OperationsConfig{24, 250, 50, 10, 120, 30}
 	}
 	return s.routes()

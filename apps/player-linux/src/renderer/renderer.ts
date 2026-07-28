@@ -88,7 +88,7 @@ interface RendererPresentation {
    * playlist itself.
    */
   synchronized?: boolean;
-  emergency?: boolean;
+  takeover?: boolean;
   code?: string;
   approvalUrl?: string;
   organizationName?: string;

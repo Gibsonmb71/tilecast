@@ -174,22 +174,25 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 	if _, err = pool.Exec(ctx, `UPDATE screen_player_status SET player_version_code=NULL,presentation_schema_versions='{}',native_presentation_capabilities='{}',web_runtime_version=0,web_bundle_limit_bytes=0 WHERE screen_id=$1`, screenID); err != nil {
 		t.Fatal(err)
 	}
-	emergencyID := uuid.New()
-	_, err = pool.Exec(ctx, `INSERT INTO emergency_takeovers(id,organization_id,name,playlist_id,status,activated_by,activated_at,expires_at)VALUES($1,$2,'Test emergency',$3,'active',$4,now(),now()+interval '1 hour')`, emergencyID, org, playlist.ID, owner.User.ID)
+	takeoverID := uuid.New()
+	_, err = pool.Exec(ctx, `INSERT INTO takeovers(id,organization_id,name,playlist_id,status,activated_by,activated_at,expires_at)VALUES($1,$2,'Test takeover',$3,'active',$4,now(),now()+interval '1 hour')`, takeoverID, org, playlist.ID, owner.User.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = pool.Exec(ctx, `INSERT INTO emergency_targets(emergency_id,target_type,screen_id)VALUES($1,'screen',$2)`, emergencyID, screenID); err != nil {
+	if _, err = pool.Exec(ctx, `INSERT INTO takeover_targets(takeover_id,target_type,screen_id)VALUES($1,'screen',$2)`, takeoverID, screenID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = pool.Exec(ctx, `INSERT INTO emergency_screen_states(emergency_id,screen_id,manifest_version,state)VALUES($1,$2,$3,'pending')`, emergencyID, screenID, manifest.ManifestVersion); err != nil {
+	if _, err = pool.Exec(ctx, `INSERT INTO takeover_screen_states(takeover_id,screen_id,manifest_version,state)VALUES($1,$2,$3,'pending')`, takeoverID, screenID, manifest.ManifestVersion); err != nil {
 		t.Fatal(err)
 	}
-	emergencyManifest, _, err := service.BuildManifest(ctx, screenID)
-	if err != nil || emergencyManifest.Emergency == nil || emergencyManifest.Emergency.ID != emergencyID || emergencyManifest.Emergency.PlaylistID != playlist.ID {
-		t.Fatalf("emergency manifest=%#v err=%v", emergencyManifest.Emergency, err)
+	takeoverManifest, _, err := service.BuildManifest(ctx, screenID)
+	if err != nil || takeoverManifest.Takeover == nil || takeoverManifest.Takeover.ID != takeoverID || takeoverManifest.Takeover.PlaylistID != playlist.ID {
+		t.Fatalf("takeover manifest=%#v err=%v", takeoverManifest.Takeover, err)
 	}
-	if _, err = pool.Exec(ctx, `DELETE FROM emergency_takeovers WHERE id=$1`, emergencyID); err != nil {
+	if takeoverManifest.LegacyTakeover == nil || takeoverManifest.LegacyTakeover.ID != takeoverID || takeoverManifest.LegacyTakeover.PlaylistID != playlist.ID {
+		t.Fatalf("legacy takeover manifest=%#v", takeoverManifest.LegacyTakeover)
+	}
+	if _, err = pool.Exec(ctx, `DELETE FROM takeovers WHERE id=$1`, takeoverID); err != nil {
 		t.Fatal(err)
 	}
 	scheduler := scheduling.NewService(pool, notifier, scheduling.Limits{MaxSchedules: 1000, MaxTargetsPerSchedule: 250, MaxGroupsPerScreen: 50, PrefetchDays: 14, ActivationGraceSeconds: 30, ClockSkewWarningSeconds: 300})

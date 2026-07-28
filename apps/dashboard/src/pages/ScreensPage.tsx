@@ -219,9 +219,7 @@ export function ScreensPage() {
         title="Screens"
         description="Pair and monitor the players driving every screen in this installation."
         actions={
-          manageable && (
-            <EmergencyTakeoverAction screens={screens.data?.items ?? []} />
-          )
+          manageable && <TakeoverAction screens={screens.data?.items ?? []} />
         }
       />
       {/* .view-tabs is the shared tab strip; these are links rather than buttons,
@@ -232,7 +230,7 @@ export function ScreensPage() {
         </Link>
         <Link to="/groups">Sync groups</Link>
       </nav>
-      <ActiveEmergencyBanners canManage={manageable} />
+      <ActiveTakeoverBanners canManage={manageable} />
       {screens.isError && (
         <div className="notice notice--error">{screens.error.message}</div>
       )}
@@ -255,42 +253,37 @@ export function ScreensPage() {
   );
 }
 
-const useEmergencies = () =>
+const useTakeovers = () =>
   useQuery({
-    queryKey: ["emergencies"],
-    queryFn: api.emergencies,
+    queryKey: ["takeovers"],
+    queryFn: api.takeovers,
     refetchInterval: 10_000,
   });
 
-/* An emergency takeover is rare, high-impact, and irreversible from the player's
+/* A takeover is rare, high-impact, and irreversible from the player's
    point of view, so it stays a quiet header action until one is actually running.
    While a takeover is active the banner below becomes the loudest thing on the
    page, which is the only time the danger treatment is truthful. */
-function ActiveEmergencyBanners({ canManage }: { canManage: boolean }) {
+function ActiveTakeoverBanners({ canManage }: { canManage: boolean }) {
   const auth = useAuth();
   const queryClient = useQueryClient();
-  const emergencies = useEmergencies();
+  const takeovers = useTakeovers();
   const cancel = useMutation({
-    mutationFn: (id: string) =>
-      api.cancelEmergency(
-        id,
-        prompt("Optional cancellation reason") ?? "",
-        auth.status?.csrfToken ?? "",
-      ),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ["emergencies"] }),
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      api.cancelTakeover(id, reason, auth.status?.csrfToken ?? ""),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["takeovers"] }),
   });
-  const active = (emergencies.data?.items ?? []).filter(
+  const active = (takeovers.data?.items ?? []).filter(
     (item) => item.status === "active",
   );
   if (active.length === 0) return null;
   return (
-    <div className="emergency-banners">
+    <div className="takeover-banners">
       {active.map((item) => (
         <Notice
           key={item.id}
           variant="danger"
-          title={`Emergency takeover active — ${item.name}`}
+          title={`Takeover active — ${item.name}`}
           action={
             canManage ? (
               <button
@@ -298,11 +291,13 @@ function ActiveEmergencyBanners({ canManage }: { canManage: boolean }) {
                 type="button"
                 onClick={() => {
                   if (
-                    confirm(
+                    !confirm(
                       "Cancel this takeover and restore current scheduled or fallback playback?",
                     )
                   )
-                    cancel.mutate(item.id);
+                    return;
+                  const reason = prompt("Optional cancellation reason") ?? "";
+                  cancel.mutate({ id: item.id, reason });
                 }}
               >
                 End takeover
@@ -312,7 +307,7 @@ function ActiveEmergencyBanners({ canManage }: { canManage: boolean }) {
         >
           {item.playlistName} is overriding scheduled and fallback content until{" "}
           {new Date(item.expiresAt).toLocaleString()}.
-          <ul className="emergency-banner__counts">
+          <ul className="takeover-banner__counts">
             <li>{item.activeCount} playing</li>
             <li>{item.preparingCount} preparing</li>
             <li>{item.failedCount} failed</li>
@@ -324,7 +319,7 @@ function ActiveEmergencyBanners({ canManage }: { canManage: boolean }) {
   );
 }
 
-function EmergencyTakeoverAction({ screens }: { screens: Screen[] }) {
+function TakeoverAction({ screens }: { screens: Screen[] }) {
   const auth = useAuth();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -333,28 +328,28 @@ function EmergencyTakeoverAction({ screens }: { screens: Screen[] }) {
   const [screenIds, setScreenIds] = useState<string[]>([]);
   const [groupIds, setGroupIds] = useState<string[]>([]);
   const [minutes, setMinutes] = useState(60);
-  const emergencies = useEmergencies();
-  const activeCount = (emergencies.data?.items ?? []).filter(
+  const takeovers = useTakeovers();
+  const activeCount = (takeovers.data?.items ?? []).filter(
     (item) => item.status === "active",
   ).length;
   const playlists = useQuery({
-    queryKey: ["playlists", "emergency"],
+    queryKey: ["playlists", "takeover"],
     queryFn: () => api.playlists(),
     enabled: open,
   });
   const groups = useQuery({
-    queryKey: ["screen-groups", "emergency"],
+    queryKey: ["screen-groups", "takeover"],
     queryFn: () => api.screenGroups(),
     enabled: open,
   });
   const runtimeSettings = useQuery({
-    queryKey: ["settings", "emergency-defaults"],
+    queryKey: ["settings", "takeover-defaults"],
     queryFn: api.settings,
     enabled: open,
   });
   const activate = useMutation({
     mutationFn: (password: string) =>
-      api.activateEmergency(
+      api.activateTakeover(
         {
           name,
           description: "",
@@ -372,7 +367,7 @@ function EmergencyTakeoverAction({ screens }: { screens: Screen[] }) {
       setPlaylistId("");
       setScreenIds([]);
       setGroupIds([]);
-      await queryClient.invalidateQueries({ queryKey: ["emergencies"] });
+      await queryClient.invalidateQueries({ queryKey: ["takeovers"] });
     },
   });
   const offlineSelected = screens.filter(
@@ -381,28 +376,28 @@ function EmergencyTakeoverAction({ screens }: { screens: Screen[] }) {
   return (
     <>
       <button
-        className="button button--danger-quiet emergency-trigger"
+        className="button button--danger-quiet takeover-trigger"
         type="button"
         aria-haspopup="dialog"
         onClick={() => setOpen(true)}
       >
         <ShieldAlert size={16} aria-hidden="true" />
-        Emergency takeover
+        Takeover
         {activeCount > 0 && (
-          <span className="emergency-trigger__count">{activeCount} active</span>
+          <span className="takeover-trigger__count">{activeCount} active</span>
         )}
       </button>
       <Dialog
         open={open}
-        title="Emergency takeover"
-        className="emergency-dialog"
+        title="Takeover"
+        className="takeover-dialog"
         onClose={() => setOpen(false)}
       >
-        <p className="emergency-dialog__lede">
+        <p className="takeover-dialog__lede">
           Temporarily override schedules and fallback content on the selected
           screens. Existing overlapping takeovers are replaced.
         </p>
-        <div className="emergency-form">
+        <div className="takeover-form">
           <label className="field">
             <span className="field__label">Takeover name</span>
             <input
@@ -437,7 +432,7 @@ function EmergencyTakeoverAction({ screens }: { screens: Screen[] }) {
               <option value={1440}>24 hours</option>
             </Select>
           </label>
-          <fieldset className="emergency-form__targets">
+          <fieldset className="takeover-form__targets">
             <legend>Target screens</legend>
             <div>
               {screens.map((item) => (
@@ -461,7 +456,7 @@ function EmergencyTakeoverAction({ screens }: { screens: Screen[] }) {
               ))}
             </div>
           </fieldset>
-          <fieldset className="emergency-form__targets">
+          <fieldset className="takeover-form__targets">
             <legend>Target sync groups</legend>
             <div>
               {groups.data?.items?.map((group) => (
@@ -486,7 +481,7 @@ function EmergencyTakeoverAction({ screens }: { screens: Screen[] }) {
             </div>
           </fieldset>
         </div>
-        <footer className="emergency-dialog__footer">
+        <footer className="takeover-dialog__footer">
           <p>
             {screenIds.length} screen{screenIds.length === 1 ? "" : "s"} and{" "}
             {groupIds.length} sync group{groupIds.length === 1 ? "" : "s"}{" "}
@@ -496,7 +491,7 @@ function EmergencyTakeoverAction({ screens }: { screens: Screen[] }) {
               : ""}
             .
           </p>
-          <div className="emergency-dialog__actions">
+          <div className="takeover-dialog__actions">
             <button
               className="button button--quiet"
               type="button"
@@ -516,7 +511,7 @@ function EmergencyTakeoverAction({ screens }: { screens: Screen[] }) {
               onClick={() => {
                 const requiresPassword = Boolean(
                   runtimeSettings.data?.values[
-                    "emergency.reauthentication_required"
+                    "takeover.reauthentication_required"
                   ],
                 );
                 const password = requiresPassword
@@ -525,7 +520,7 @@ function EmergencyTakeoverAction({ screens }: { screens: Screen[] }) {
                 if (requiresPassword && !password) return;
                 if (
                   confirm(
-                    "Activate the selected playlist for these targets? Existing overlapping emergencies will be replaced.",
+                    "Activate the selected playlist for these targets? Existing overlapping takeovers will be replaced.",
                   )
                 )
                   activate.mutate(password);
@@ -2534,8 +2529,8 @@ export function ScreenDetailPage() {
             <div>
               <dt>Current selection</dt>
               <dd>
-                {assignment.data?.selectionSource === "emergency"
-                  ? "Emergency takeover"
+                {assignment.data?.selectionSource === "takeover"
+                  ? "Takeover"
                   : assignment.data?.selectionSource === "schedule"
                     ? `Scheduled${assignment.data.currentScheduleId ? ` · ${(assignment.data.relevantSchedules ?? []).find((s) => s.id === assignment.data?.currentScheduleId)?.name ?? "schedule"}` : ""}`
                     : assignment.data?.selectionSource === "direct_fallback"
@@ -2630,11 +2625,11 @@ export function ScreenDetailPage() {
               <dd>{assignment.data?.playbackState ?? "Not reported"}</dd>
             </div>
             <div>
-              <dt>Emergency</dt>
+              <dt>Takeover</dt>
               <dd>
-                {assignment.data?.activeEmergencyId
-                  ? `${assignment.data.emergencyState ?? "pending"} · ${assignment.data.emergencyPreparationProgress ?? 0}% prepared`
-                  : "No active emergency"}
+                {assignment.data?.activeTakeoverId
+                  ? `${assignment.data.takeoverState ?? "pending"} · ${assignment.data.takeoverPreparationProgress ?? 0}% prepared`
+                  : "No active takeover"}
               </dd>
             </div>
             <div>
