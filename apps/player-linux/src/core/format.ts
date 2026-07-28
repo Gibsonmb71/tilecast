@@ -16,6 +16,7 @@ export type ValueFormat =
   | "boolean"
   | "date"
   | "datetime"
+  | "time"
   | "date-short"
   | "date-long"
   | "url"
@@ -40,7 +41,7 @@ function formatNumber(n: number, precision: number): string {
 function formatDateValue(
   value: string,
   timezone: string,
-  style: "short" | "long" | "datetime",
+  style: "short" | "long" | "datetime" | "time",
 ): string {
   const parsed = Date.parse(value);
   if (!Number.isFinite(parsed)) {
@@ -58,19 +59,21 @@ function formatDateValue(
 function formatInstant(
   date: Date,
   timezone: string,
-  style: "short" | "long" | "datetime",
+  style: "short" | "long" | "datetime" | "time",
 ): string {
   const opts: Intl.DateTimeFormatOptions =
     style === "short"
       ? { month: "short", day: "numeric" }
       : style === "long"
         ? { weekday: "long", month: "long", day: "numeric", year: "numeric" }
-        : {
-            month: "short",
-            day: "numeric",
-            hour: "numeric",
-            minute: "2-digit",
-          };
+        : style === "time"
+          ? { hour: "numeric", minute: "2-digit" }
+          : {
+              month: "short",
+              day: "numeric",
+              hour: "numeric",
+              minute: "2-digit",
+            };
   try {
     return new Intl.DateTimeFormat("en-US", {
       ...opts,
@@ -143,6 +146,9 @@ export function formatValue(
       break;
     case "datetime":
       body = raw ? formatDateValue(String(raw), timezone, "datetime") : "";
+      break;
+    case "time":
+      body = raw ? formatDateValue(String(raw), timezone, "time") : "";
       break;
     case "duration": {
       const secs = toNumber(raw as string);

@@ -32,6 +32,146 @@ function typedSource(id: string): ManifestDataSource {
   };
 }
 
+function scheduleSource(): ManifestDataSource {
+  const event = (id: string, title: string, start: string, end: string) => ({
+    id,
+    values: {
+      title: { kind: "text", text: title },
+      start: { kind: "datetime", datetime: start },
+      end: { kind: "datetime", datetime: end },
+    },
+  });
+  return {
+    id: "calendar",
+    name: "Calendar",
+    provider: "calendar",
+    configVersion: 13,
+    configuration: {},
+    dataDocument: {
+      schemaVersion: 1,
+      datasets: [
+        {
+          id: "records",
+          kind: "records",
+          fields: [
+            { key: "title", label: "Title", type: "text" },
+            { key: "start", label: "Start", type: "datetime" },
+            { key: "end", label: "End", type: "datetime" },
+          ],
+          records: [
+            event(
+              "algebra",
+              "Algebra",
+              "2026-07-15T15:30:00Z",
+              "2026-07-15T16:30:00Z",
+            ),
+            event(
+              "science",
+              "Science",
+              "2026-07-15T17:00:00Z",
+              "2026-07-15T18:00:00Z",
+            ),
+            event("art", "Art", "2026-07-15T19:00:00Z", "2026-07-15T20:00:00Z"),
+          ],
+        },
+      ],
+    },
+  };
+}
+
+function schedulePresentation(): PresentationNode {
+  const temporalBinding = (
+    selector: "current" | "next",
+    path: "title" | "start" | "end",
+  ) => ({
+    source: "dataset",
+    dataset: "calendar:records",
+    path,
+    selector,
+    startField: "start",
+    endField: "end",
+  });
+  const currentCondition = (op: "empty" | "not_empty") => ({
+    binding: temporalBinding("current", "title"),
+    op,
+  });
+  const upcomingCards = (offset: number): PresentationNode => ({
+    type: "repeat",
+    repeat: {
+      dataset: "calendar:records",
+      selector: "upcoming",
+      startField: "start",
+      endField: "end",
+      offset,
+      limit: 4,
+    },
+    children: [
+      {
+        type: "column",
+        props: { background: "#18212B", padding: 14, radius: 10 },
+        children: [
+          {
+            type: "text",
+            binding: { source: "repeat", path: "title" },
+          },
+          {
+            type: "text",
+            binding: { source: "repeat", path: "start", format: "time" },
+          },
+        ],
+      },
+    ],
+  });
+  return {
+    type: "column",
+    children: [
+      {
+        type: "conditional",
+        condition: currentCondition("not_empty"),
+        children: [
+          {
+            type: "text",
+            binding: temporalBinding("current", "title"),
+          },
+          {
+            type: "text",
+            binding: {
+              ...temporalBinding("current", "end"),
+              format: "relative-countdown",
+              prefix: "Ends in ",
+            },
+          },
+        ],
+      },
+      {
+        type: "conditional",
+        condition: currentCondition("empty"),
+        children: [
+          { type: "text", binding: temporalBinding("next", "title") },
+          {
+            type: "text",
+            binding: {
+              ...temporalBinding("next", "start"),
+              format: "relative-countdown",
+              prefix: "Starts in ",
+            },
+          },
+        ],
+      },
+      {
+        type: "conditional",
+        condition: currentCondition("not_empty"),
+        children: [upcomingCards(0)],
+      },
+      {
+        type: "conditional",
+        condition: currentCondition("empty"),
+        children: [upcomingCards(1)],
+      },
+    ],
+  };
+}
+
 describe("normalizeSource", () => {
   it("flattens typed records into display strings", () => {
     const norm = normalizeSource(typedSource("s1"), at);
@@ -396,6 +536,43 @@ describe("renderPresentation (v13 declarative)", () => {
         at: new Date("2026-07-15T19:00:00Z"),
       })!.autoSkip,
     ).toBe(true);
+  });
+
+  it("renders the current card and all upcoming cards with a live countdown", () => {
+    const datasets = new Map([
+      ["calendar", normalizeSource(scheduleSource(), at)],
+    ]);
+    const tree = renderPresentation(schedulePresentation(), { datasets, at });
+    const json = JSON.stringify(tree);
+
+    expect(json).toContain('"value":"Algebra"');
+    expect(json).toContain('"value":"Science"');
+    expect(json).toContain('"value":"Art"');
+    expect(json).toContain('"background":"#18212B"');
+    expect(json).toContain('"radius":10');
+    expect(json).not.toContain('"value":"2026-07-15T17:00:00Z"');
+    expect(json).toMatch(/"value":"\d{1,2}:00 [AP]M"/);
+    expect(json).toContain('"target":"2026-07-15T16:30:00Z","timezone":"UTC"');
+    expect(json).toContain('"compact":true,"prefix":"Ends in "');
+    expect(json).toContain('"showSeconds":true');
+  });
+
+  it("features the next card between events without repeating it as upcoming", () => {
+    const betweenEvents = new Date("2026-07-15T16:45:00Z");
+    const datasets = new Map([
+      ["calendar", normalizeSource(scheduleSource(), betweenEvents)],
+    ]);
+    const tree = renderPresentation(schedulePresentation(), {
+      datasets,
+      at: betweenEvents,
+    });
+    const json = JSON.stringify(tree);
+
+    expect(json.match(/"value":"Science"/g)).toHaveLength(1);
+    expect(json).toContain('"value":"Art"');
+    expect(json).not.toContain('"value":"Algebra"');
+    expect(json).toContain('"target":"2026-07-15T17:00:00Z","timezone":"UTC"');
+    expect(json).toContain('"compact":true,"prefix":"Starts in "');
   });
 
   it("applies the surface's content margins and author scale", () => {
