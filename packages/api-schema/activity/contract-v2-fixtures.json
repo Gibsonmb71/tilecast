@@ -50,6 +50,9 @@
     "manual_skip": {
       "expected": true
     },
+    "empty_content": {
+      "expected": true
+    },
     "player_restart": {
       "expected": false
     },

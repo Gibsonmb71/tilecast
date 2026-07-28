@@ -97,6 +97,13 @@
             "required": true,
             "maxLength": 240,
             "default": "No more events scheduled"
+          },
+          {
+            "key": "autoSkipWhenEmpty",
+            "label": "Skip when no events remain",
+            "description": "When this Widget is a playlist item, advance immediately if there is no current or upcoming event.",
+            "control": "boolean",
+            "default": false
           }
         ]
       },
@@ -111,7 +118,8 @@
         "foregroundColor": "#ffffff",
         "backgroundColor": "#101f33",
         "accentColor": "#5dd6c0",
-        "emptyState": "No more events scheduled"
+        "emptyState": "No more events scheduled",
+        "autoSkipWhenEmpty": false
       },
       "acceptedDataSourceKinds": ["records"],
       "presentationSchemaVersion": 1,
@@ -119,7 +127,22 @@
         "type": "surface",
         "props": {
           "backgroundColor": { "$config": "backgroundColor" },
-          "padding": 24
+          "padding": 24,
+          "autoSkipWhenEmpty": { "$config": "autoSkipWhenEmpty" },
+          "emptyCondition": {
+            "binding": {
+              "source": "dataset",
+              "dataset": {
+                "$config": "dataSourceId",
+                "suffix": ":records"
+              },
+              "path": { "$config": "titleField" },
+              "selector": "current_or_next",
+              "startField": { "$config": "startField" },
+              "endField": { "$config": "endField" }
+            },
+            "op": "empty"
+          }
         },
         "children": [
           {

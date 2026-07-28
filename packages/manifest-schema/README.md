@@ -13,3 +13,5 @@ The v13 native presentation contract also supports Player-local temporal record 
 Manifest v14 adds the optional `crossfade` playlist transition. Capable Players composite overlapping images, videos, websites, Widgets, and Layouts during the visual transition. The server projects `crossfade` as `fade` for older Players, and v1-v13 remain unchanged.
 
 Time-series points may carry one `value` or a bounded `values` object for multi-series charts. Capability revision 2 covers native charts, asset images, target progress, repeat indexes, and richer conditions without changing the presentation schema version.
+
+Native presentation schema v1 may also use the capability-gated `playback.auto_skip@1` behavior. Eligible definitions place `autoSkipWhenEmpty` and a bounded presentation condition in the root node properties. Players that report the capability evaluate that condition locally and may advance an unsynchronized fullscreen playlist item; other placements retain the normal empty-state render.

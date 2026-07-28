@@ -128,7 +128,7 @@ export function resolveBinding(
     }
     case "dataset": {
       const source = ctx.datasets.get(datasetId(binding.dataset ?? ""));
-      raw = resolveDatasetPath(source, binding);
+      raw = resolveDatasetPath(source, binding, ctx.at);
       break;
     }
     default:
@@ -151,6 +151,7 @@ function datasetId(ref: string): string {
 function resolveDatasetPath(
   source: NormalizedSource | undefined,
   binding: PresentationBinding,
+  at: Date,
 ): string {
   if (!source) {
     return "";
@@ -170,7 +171,7 @@ function resolveDatasetPath(
   if (objectValue !== undefined && objectValue !== "") {
     return objectValue;
   }
-  const record = source.records[index];
+  const record = temporalRecords(source.records, binding, at)[index];
   if (!record) {
     return "";
   }
@@ -181,6 +182,47 @@ function resolveDatasetPath(
       .join(binding.separator || " ");
   }
   return record.fields[field] ?? "";
+}
+
+function temporalRecords(
+  records: NormalizedSource["records"],
+  selection: Pick<PresentationBinding, "selector" | "startField" | "endField">,
+  at: Date,
+): NormalizedSource["records"] {
+  const selector = selection.selector ?? "all";
+  if (selector === "all") return records;
+  const startField = selection.startField ?? "";
+  if (!startField) return [];
+  const now = at.getTime();
+  const timed = records
+    .map((record) => {
+      const start = Date.parse(record.fields[startField] ?? "");
+      const end = Date.parse(record.fields[selection.endField ?? ""] ?? "");
+      return { record, start, end };
+    })
+    .filter((entry) => Number.isFinite(entry.start))
+    .sort((left, right) => left.start - right.start);
+  const current = timed
+    .filter(
+      (entry) =>
+        entry.start <= now && Number.isFinite(entry.end) && entry.end > now,
+    )
+    .map((entry) => entry.record);
+  const upcoming = timed
+    .filter((entry) => entry.start > now)
+    .map((entry) => entry.record);
+  switch (selector) {
+    case "current":
+      return current;
+    case "next":
+      return upcoming.slice(0, 1);
+    case "upcoming":
+      return upcoming;
+    case "current_or_next":
+      return current.length > 0 ? current : upcoming.slice(0, 1);
+    default:
+      return [];
+  }
 }
 
 function resolveEnvironment(path: string, at: Date): string {
@@ -288,6 +330,23 @@ function evaluateCondition(
   }
 }
 
+/** Evaluate the optional root-level empty signal used by fullscreen autoskip. */
+export function presentationSignalsEmpty(
+  root: PresentationNode,
+  ctx: PresentationContext,
+): boolean {
+  if (root.props?.["autoSkipWhenEmpty"] !== true) return false;
+  const candidate = root.props["emptyCondition"];
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate))
+    return false;
+  const condition = candidate as unknown as PresentationCondition;
+  return (
+    typeof condition.op === "string" &&
+    !!condition.binding &&
+    evaluateCondition(condition, ctx)
+  );
+}
+
 const MAX_NODES = 500;
 
 /** Project a presentation node tree into a render tree. */
@@ -314,10 +373,11 @@ export function renderPresentation(
     if (node.repeat) {
       const source = local.datasets.get(datasetId(node.repeat.dataset));
       const offset = Math.max(0, node.repeat.offset ?? 0);
-      const records = (source?.records ?? []).slice(
-        offset,
-        offset + Math.max(1, node.repeat.limit),
-      );
+      const records = temporalRecords(
+        source?.records ?? [],
+        node.repeat,
+        local.at,
+      ).slice(offset, offset + Math.max(1, node.repeat.limit));
       const out: RenderNode[] = [];
       records.forEach((record, i) => {
         const child = projectSelf(node, {

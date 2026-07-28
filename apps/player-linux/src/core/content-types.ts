@@ -159,6 +159,9 @@ export interface PresentationBinding {
   source: string; // literal|dataset|repeat|repeat_index|environment
   dataset?: string;
   path?: string;
+  selector?: "all" | "current" | "next" | "upcoming" | "current_or_next";
+  startField?: string;
+  endField?: string;
   value?: string;
   fields?: string[];
   format?: string;
@@ -174,6 +177,9 @@ export interface PresentationRepeat {
   limit: number;
   /** Leading records to skip, so a second region can list what follows the current one. */
   offset?: number;
+  selector?: "all" | "current" | "next" | "upcoming" | "current_or_next";
+  startField?: string;
+  endField?: string;
 }
 
 export interface PresentationCondition {

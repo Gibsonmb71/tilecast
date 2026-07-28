@@ -66,8 +66,10 @@ import java.nio.charset.StandardCharsets
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import kotlinx.coroutines.delay
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import org.tilecast.player.network.DocumentDataset
@@ -89,7 +91,7 @@ data class PresentationContext(
 )
 
 @Composable
-fun DeclarativeWidgetItem(item:ManifestItem,widget: ManifestWidget, session: PlaybackSession,onDone:()->Unit,onFailure: (String) -> Unit,onStatus:(WidgetPlaybackStatus)->Unit,startOffsetMs:Long=0) {
+fun DeclarativeWidgetItem(item:ManifestItem,widget: ManifestWidget, session: PlaybackSession,onDone:()->Unit,onSkip:()->Unit,onFailure: (String) -> Unit,onStatus:(WidgetPlaybackStatus)->Unit,startOffsetMs:Long=0,allowAutoSkip:Boolean=true) {
     DisposableEffect(widget.assetId) {
         onStatus(WidgetPlaybackStatus(widget.assetId, widget.provider.ifBlank { "declarative" }, "ready"))
         onDispose { onStatus(WidgetPlaybackStatus()) }
@@ -111,7 +113,25 @@ fun DeclarativeWidgetItem(item:ManifestItem,widget: ManifestWidget, session: Pla
             }
         }
     }
-    PresentationNodeView(native.root, PresentationContext(datasets, session.content.localFiles, now = now))
+    val context = PresentationContext(datasets, session.content.localFiles, now = now)
+    val shouldSkip = allowAutoSkip && presentationSignalsEmpty(native.root, context)
+    if (shouldSkip) {
+        LaunchedEffect(item.id, shouldSkip) {
+            onStatus(WidgetPlaybackStatus(widget.assetId, widget.provider.ifBlank { "declarative" }, "empty"))
+            onSkip()
+        }
+        return
+    }
+    PresentationNodeView(native.root, context)
+}
+
+internal fun presentationSignalsEmpty(root: PresentationNode, context: PresentationContext): Boolean {
+    if (root.props["autoSkipWhenEmpty"]?.jsonPrimitive?.booleanOrNull != true) return false
+    val conditionElement = root.props["emptyCondition"] ?: return false
+    val condition = runCatching {
+        Json.decodeFromJsonElement<org.tilecast.player.network.PresentationCondition>(conditionElement)
+    }.getOrNull() ?: return false
+    return conditionMatches(root.copy(condition = condition), context)
 }
 
 @Composable

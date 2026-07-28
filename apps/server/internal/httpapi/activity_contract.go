@@ -29,6 +29,7 @@ const (
 	terminalRendererFailure      = "renderer_failure"
 	terminalDecoderFailure       = "decoder_failure"
 	terminalManualSkip           = "manual_skip"
+	terminalEmptyContent         = "empty_content"
 	terminalRecoveryAction       = "recovery_action"
 	terminalBoundedTimeout       = "bounded_timeout"
 	terminalUnknown              = "unknown"
@@ -38,7 +39,7 @@ var activityTerminalReasons = []string{
 	terminalExpectedItemBoundary, terminalCompletedDuration, terminalScheduleTransition,
 	terminalManifestReplacement, terminalDirectAssignment, terminalTakeover,
 	terminalPlayerRestart, terminalProcessExit, terminalHeartbeatGap, terminalRendererFailure,
-	terminalDecoderFailure, terminalManualSkip, terminalRecoveryAction, terminalBoundedTimeout,
+	terminalDecoderFailure, terminalManualSkip, terminalEmptyContent, terminalRecoveryAction, terminalBoundedTimeout,
 	terminalUnknown,
 }
 
@@ -53,6 +54,7 @@ var expectedTerminalReasons = map[string]bool{
 	terminalDirectAssignment:     true,
 	terminalTakeover:             true,
 	terminalManualSkip:           true,
+	terminalEmptyContent:         true,
 }
 
 // interruptedTerminalReasons is the complement, minus `unknown`. An unknown

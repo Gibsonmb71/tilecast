@@ -114,6 +114,7 @@ fun FullscreenPlayback(
     var cursor by remember(session.content.manifest.manifestVersion) { mutableStateOf(session.initialCursor) }
     var synchronizedOffsetMs by remember(session.content.manifest.manifestVersion) { mutableStateOf(session.initialOffsetMs) }
     var consecutiveFailures by remember { mutableIntStateOf(0) }
+    var consecutiveEmptySkips by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(synchronizedTimeline) {
         val timeline = synchronizedTimeline ?: return@LaunchedEffect
@@ -135,8 +136,9 @@ fun FullscreenPlayback(
     // boundaries, which activates pending manifests and feeds the stall watchdog.
     LaunchedEffect(item.id, cursor.cycle) { onBoundary(item.id, item.assetId) }
 
-    fun advance(failed: Boolean = false) {
+    fun advance(failed: Boolean = false, empty: Boolean = false) {
         consecutiveFailures = if (failed) consecutiveFailures + 1 else 0
+        consecutiveEmptySkips = if (empty) consecutiveEmptySkips + 1 else 0
         if (synchronizedTimeline == null) cursor = nextPlaybackCursor(cursor, playlist.items.size)
     }
 
@@ -153,6 +155,14 @@ fun FullscreenPlayback(
         LaunchedEffect(consecutiveFailures) {
             delay(5_000)
             consecutiveFailures = 0
+        }
+        return
+    }
+    if (synchronizedTimeline == null && consecutiveEmptySkips >= playlist.items.size) {
+        EmptyPlayback("No playlist items currently have content")
+        LaunchedEffect(consecutiveEmptySkips) {
+            delay(30_000)
+            consecutiveEmptySkips = 0
         }
         return
     }
@@ -192,6 +202,7 @@ fun FullscreenPlayback(
                 isActive = isActive.value,
                 onFirstFrame = onFirstFrame,
                 useCompositableVideo = requiresCompositableVideo(playlist, entryCursor.index),
+                onSkip = { if (isActive.value) advance(empty = true) },
             )
         }
     }
@@ -216,9 +227,11 @@ internal fun RenderedItem(
     isActive: Boolean = true,
     onFirstFrame: () -> Unit = {},
     useCompositableVideo: Boolean = false,
+    onSkip: () -> Unit = onDone,
 ) {
     val tracker = rememberActivityChild(activityReporter, item, widget, layoutPlacementId, session.content.manifest.dataSources)
     val done = { tracker?.complete(); onDone() }
+    val skipped = { tracker?.skip(); onSkip() }
     val failed: (String) -> Unit = { message -> tracker?.fail(message); onFailure(message) }
     val layout = item.layoutId?.let { id -> session.content.manifest.layouts.firstOrNull { it.id == id } }
     // Images, videos, and WebView-backed items report their first visible frame
@@ -235,7 +248,17 @@ internal fun RenderedItem(
         FullscreenLayoutPlayback(session, layout, failed, onWebsiteStatus, onWidgetStatus, onProgress, activityReporter, onFirstFrame, useCompositableVideo)
         LaunchedEffect(item.id) { delay(((item.durationMs ?: 30_000) - startOffsetMs).coerceAtLeast(1)); done() }
     } else if (session.content.manifest.schemaVersion >= 13 && widget?.presentation?.kind == "native") {
-        DeclarativeWidgetItem(item, widget, session, done, failed, onWidgetStatus, startOffsetMs)
+        DeclarativeWidgetItem(
+            item,
+            widget,
+            session,
+            done,
+            skipped,
+            failed,
+            onWidgetStatus,
+            startOffsetMs,
+            allowAutoSkip = layoutPlacementId.isEmpty() && synchronizedPositionMs == null,
+        )
     } else if (session.content.manifest.schemaVersion >= 13 && widget?.presentation?.kind == "web") {
         val descriptor = widget.presentation.web
         if (descriptor == null || descriptor.mode != "remote") {
