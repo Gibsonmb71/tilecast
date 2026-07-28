@@ -379,6 +379,47 @@ function applyTextStyle(el: HTMLElement, style: Record<string, unknown>): void {
   const va = style["verticalAlign"];
   if (va === "top") s.alignSelf = "flex-start";
   else if (va === "bottom") s.alignSelf = "flex-end";
+  if (style["autoFit"]) {
+    el.dataset["autofitMin"] = String(
+      typeof style["minFontSize"] === "number" ? style["minFontSize"] : 8,
+    );
+    el.dataset["autofitBase"] = String(
+      typeof style["fontSize"] === "number" ? style["fontSize"] : 16,
+    );
+    s.maxWidth = "100%";
+  }
+}
+
+/**
+ * Shrink one auto-fit text node until it sits inside its parent box, starting
+ * over from the authored size so a value that got shorter can grow back. The
+ * author's scale sets that starting size; this is the fit-to-bounds guard that
+ * keeps an enlarged or unusually long value from spilling past the margins.
+ */
+function fitTextElement(el: HTMLElement): void {
+  const parent = el.parentElement;
+  const base = Number(el.dataset["autofitBase"]);
+  if (!parent || !Number.isFinite(base)) return;
+  const minimum = Number(el.dataset["autofitMin"]) || 8;
+  let size = base;
+  el.style.fontSize = `${size}px`;
+  let guard = 0;
+  while (
+    guard++ < 80 &&
+    size > minimum &&
+    (el.scrollWidth > parent.clientWidth + 1 ||
+      el.scrollHeight > parent.clientHeight + 1)
+  ) {
+    size = Math.max(minimum, size * 0.92);
+    el.style.fontSize = `${size}px`;
+  }
+}
+
+/** Fit every auto-fit node in a mounted subtree. Needs real measurements. */
+function applyAutoFit(container: HTMLElement): void {
+  container
+    .querySelectorAll<HTMLElement>("[data-autofit-base]")
+    .forEach(fitTextElement);
 }
 
 function formatClock(node: AnyNode): string {
@@ -744,7 +785,10 @@ function buildRenderNode(node: AnyNode): HTMLElement {
     case "clock": {
       const el = document.createElement("div");
       applyTextStyle(el, (node["style"] as Record<string, unknown>) ?? {});
-      const tick = () => (el.textContent = formatClock(node));
+      const tick = () => {
+        el.textContent = formatClock(node);
+        if (el.isConnected) fitTextElement(el);
+      };
       tick();
       nodeTimers.push(
         window.setInterval(tick, node["showSeconds"] ? 1_000 : 15_000),
@@ -754,7 +798,10 @@ function buildRenderNode(node: AnyNode): HTMLElement {
     case "countdown": {
       const el = document.createElement("div");
       applyTextStyle(el, (node["style"] as Record<string, unknown>) ?? {});
-      const tick = () => (el.textContent = formatCountdown(node));
+      const tick = () => {
+        el.textContent = formatCountdown(node);
+        if (el.isConnected) fitTextElement(el);
+      };
       tick();
       nodeTimers.push(
         window.setInterval(tick, node["showSeconds"] ? 1_000 : 30_000),
@@ -987,6 +1034,8 @@ function renderWidgetItem(item: RendererItem, myGeneration: number): void {
   container.appendChild(buildRenderNode(payload.root));
   fillBackLayer(container);
   swapLayers();
+  // Only measurable once the layers have swapped and the container has a size.
+  applyAutoFit(container);
   consecutiveFailures = 0;
   tilecast.reportProgress(item.id, "widget-shown");
   // A widget is healthy content; keep the progress heartbeat alive and, for
@@ -1080,6 +1129,7 @@ function renderLayoutItem(item: RendererItem, myGeneration: number): void {
   }
   fillBackLayer(canvas);
   swapLayers();
+  applyAutoFit(canvas);
   consecutiveFailures = 0;
   tilecast.reportProgress(item.id, "layout-shown");
   stillImageTicker = window.setInterval(() => {

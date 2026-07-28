@@ -81,9 +81,14 @@ describe("renderWidget", () => {
       },
     };
     const payload = renderWidget(widget, ctx([]))!;
+    // The root is the full-bleed surface; the inset box inside it holds the
+    // content area (the center 80 percent by default) and the layout direction.
     expect(payload.root).toMatchObject({
       t: "box",
-      style: { direction: "row" },
+      style: { width: 100, height: 100 },
+      children: [
+        { t: "box", style: { width: 80, height: 80, direction: "row" } },
+      ],
     });
     expect(JSON.stringify(payload.root)).toContain('"recurrence":"daily"');
     expect(JSON.stringify(payload.root)).toContain("Doors open");
@@ -104,6 +109,45 @@ describe("renderWidget", () => {
     };
     const payload = renderWidget(widget, ctx([]))!;
     expect(JSON.stringify(payload.root)).not.toContain("Hidden title");
+  });
+
+  it("reads the countdown's textScale and contentPadding as percentages", () => {
+    const countdown = (configuration: Record<string, unknown>) => {
+      const payload = renderWidget(
+        {
+          assetId: "countdown-sizing",
+          name: "Countdown",
+          provider: "countdown",
+          configVersion: 13,
+          configuration: {
+            target: "2026-07-22T09:00:00Z",
+            layout: "countdown_only",
+            ...configuration,
+          },
+        },
+        ctx([]),
+      )!;
+      const content = (payload.root as { children: unknown[] }).children[0] as {
+        style: { width: number };
+        children: { style: { fontSize: number } }[];
+      };
+      return {
+        inset: content.style.width,
+        fontSize: content.children[0]!.style.fontSize,
+      };
+    };
+
+    // Default: the center 80 percent of the Widget at the designed 88px type.
+    expect(countdown({})).toEqual({ inset: 80, fontSize: 88 });
+    // A scale is a percentage, so 50 halves the type rather than multiplying it.
+    expect(countdown({ textScale: 50, contentPadding: 0 })).toEqual({
+      inset: 100,
+      fontSize: 44,
+    });
+    expect(countdown({ textScale: 500, contentPadding: 40 })).toEqual({
+      inset: 20,
+      fontSize: 440,
+    });
   });
 
   it("renders a metric from a typed source with currency formatting", () => {
@@ -231,6 +275,44 @@ describe("renderPresentation (v13 declarative)", () => {
     const json = JSON.stringify(tree);
     expect(json).toContain("shown");
     expect(json).not.toContain("hidden");
+  });
+
+  it("applies the surface's content margins and author scale", () => {
+    const surface = (props: Record<string, unknown>): PresentationNode => ({
+      type: "surface",
+      props: { backgroundColor: "#000000", ...props },
+      children: [
+        {
+          type: "text",
+          props: { role: "metric", color: "#ffffff" },
+          binding: { source: "literal", value: "5d 3h" },
+        },
+      ],
+    });
+    const inset = (node: PresentationNode) => {
+      const tree = renderPresentation(node, { datasets: new Map(), at }) as {
+        children: {
+          style: { width: number };
+          children: { style: { fontSize: number } }[];
+        }[];
+      };
+      return tree.children[0]!;
+    };
+
+    // Default padding leaves the content the center 80 percent at 1x type.
+    const automatic = inset(surface({ paddingPercent: 10, textScale: 100 }));
+    expect(automatic.style.width).toBe(80);
+    const baseSize = automatic.children[0]!.style.fontSize;
+
+    // Zero padding fills the Widget; the scale multiplies the type.
+    const enlarged = inset(surface({ paddingPercent: 0, textScale: 250 }));
+    expect(enlarged.style.width).toBe(100);
+    expect(enlarged.children[0]!.style.fontSize).toBeCloseTo(baseSize * 2.5);
+
+    // Out-of-range values clamp to the supported 25–500 / 0–40 percent range.
+    const clamped = inset(surface({ paddingPercent: 90, textScale: 5_000 }));
+    expect(clamped.style.width).toBe(20);
+    expect(clamped.children[0]!.style.fontSize).toBeCloseTo(baseSize * 5);
   });
 });
 

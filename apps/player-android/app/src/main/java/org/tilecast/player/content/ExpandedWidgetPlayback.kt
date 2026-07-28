@@ -29,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -63,17 +64,61 @@ internal fun ExpandedCountdownWidget(config: CountdownWidgetConfig) {
     }
     val units = listOf(config.showDays, config.showHours, config.showMinutes, config.showSeconds).joinToString("") { if (it) "1" else "0" }
     val text = formatCountdown(config.target, config.timezone, config.mode, config.recurrence, config.completionAction, config.completionText, units, now) ?: return
-    Box(Modifier.fillMaxSize().background(parseExpandedColor(config.backgroundColor)).padding((config.contentPadding ?: 10).dp), contentAlignment = Alignment.Center) {
+    // contentPadding is a percentage of each edge, not dp, and the typography
+    // follows the Widget's bounds so an author scale of 25–500 percent stays
+    // inside the content area instead of clipping.
+    BoxWithConstraints(Modifier.fillMaxSize().background(parseExpandedColor(config.backgroundColor)), contentAlignment = Alignment.Center) {
+        val inset = widgetPaddingFraction(config.contentPadding)
+        val areaWidth = maxWidth.value * (1f - 2f * inset)
+        val areaHeight = maxHeight.value * (1f - 2f * inset)
+        val fontScale = LocalDensity.current.fontScale
+        val stacked = config.layout == "stacked" && config.label.isNotBlank()
+        val metricHeight = if (stacked) areaHeight * 0.7f else areaHeight
+        val estimatedMetricSize = scaledFittedFontSizeSp(
+            textLength = text.length,
+            widthDp = if (config.layout == "horizontal") areaWidth * 0.65f else areaWidth,
+            heightDp = metricHeight,
+            fontScale = fontScale,
+            textScale = config.textScale,
+        )
+        // Fit-to-bounds is the final guard: the estimate above may overshoot
+        // for an enlarged scale, so shrink on measured overflow rather than clip.
+        var metricSize by remember(text, maxWidth, maxHeight, fontScale, config.textScale, config.contentPadding, config.layout) {
+            mutableStateOf(estimatedMetricSize)
+        }
+        val labelSize = scaledFittedFontSizeSp(
+            textLength = config.label.length.coerceAtLeast(1),
+            widthDp = if (config.layout == "horizontal") areaWidth * 0.35f else areaWidth,
+            heightDp = if (stacked) areaHeight * 0.3f else areaHeight * 0.25f,
+            fontScale = fontScale,
+            textScale = config.textScale,
+        ).coerceAtMost(metricSize * 0.45f)
         val label: @Composable () -> Unit = {
-            if (config.label.isNotBlank()) Text(config.label, color = parseExpandedColor(config.foregroundColor).copy(alpha=.75f), fontSize = (22f*widgetAuthorScale(config.textScale)).sp)
+            if (config.label.isNotBlank()) Text(config.label, color = parseExpandedColor(config.foregroundColor).copy(alpha=.75f), fontSize = labelSize.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         val metric: @Composable () -> Unit = {
-            Text(text, color = parseExpandedColor(config.foregroundColor), fontSize = (56f*widgetAuthorScale(config.textScale)).sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+            Text(
+                text,
+                color = parseExpandedColor(config.foregroundColor),
+                fontSize = metricSize.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Clip,
+                onTextLayout = { result ->
+                    if ((result.didOverflowWidth || result.didOverflowHeight) && metricSize > 8f) {
+                        metricSize = (metricSize * 0.9f).coerceAtLeast(8f)
+                    }
+                },
+            )
         }
-        when (config.layout) {
-            "countdown_only" -> metric()
-            "horizontal" -> Row(horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) { label(); metric() }
-            else -> Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) { label(); metric() }
+        Box(Modifier.fillMaxSize().padding(horizontal = (maxWidth.value * inset).dp, vertical = (maxHeight.value * inset).dp), contentAlignment = Alignment.Center) {
+            when (config.layout) {
+                "countdown_only" -> metric()
+                "horizontal" -> Row(horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) { label(); metric() }
+                else -> Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) { label(); metric() }
+            }
         }
     }
 }

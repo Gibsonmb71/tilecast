@@ -56,9 +56,22 @@ function bool(
   return typeof v === "boolean" ? v : fallback;
 }
 
+/** textScale is an author percentage (25–500), not a raw multiplier. */
 function scale(base: number, config: Record<string, unknown>): number {
   const textScale = Number(config["textScale"]);
-  return Number.isFinite(textScale) && textScale > 0 ? base * textScale : base;
+  if (!Number.isFinite(textScale) || textScale <= 0) {
+    return base;
+  }
+  return (base * Math.min(500, Math.max(25, textScale))) / 100;
+}
+
+/**
+ * contentPadding is an author percentage of each edge (10 gives the content
+ * the center 80 percent), so it becomes a percentage-sized inset rather than
+ * pixels. Returns the inset box's width/height as a percentage of the widget.
+ */
+function contentInset(config: Record<string, unknown>): number {
+  return 100 - 2 * Math.min(40, Math.max(0, num(config, "contentPadding", 10)));
 }
 
 /** Resolve one widget into a render payload, or null if it cannot render. */
@@ -83,6 +96,8 @@ export function renderWidget(
   const fg = safeColor(str(config, "foregroundColor"), DEFAULT_FG);
   const bg = safeColor(str(config, "backgroundColor"), DEFAULT_BG);
 
+  const inset = contentInset(config);
+
   const centered = (root: RenderNode): WidgetRenderPayload => ({
     background: bg,
     root: {
@@ -93,12 +108,24 @@ export function renderWidget(
         direction: "column",
         justify: "center",
         align: "center",
-        padding: num(config, "contentPadding", 24),
         background: bg,
         color: fg,
-        gap: 12,
       },
-      children: [root],
+      children: [
+        {
+          t: "box",
+          style: {
+            width: inset,
+            height: inset,
+            direction: "column",
+            justify: "center",
+            align: "center",
+            color: fg,
+            gap: 12,
+          },
+          children: [root],
+        },
+      ],
     },
   });
 
@@ -182,6 +209,8 @@ export function renderWidget(
           fontSize: scale(88, config),
           fontWeight: 700,
           align: "center",
+          autoFit: true,
+          minFontSize: 8,
         },
       };
       return {
@@ -191,15 +220,27 @@ export function renderWidget(
           style: {
             width: 100,
             height: 100,
-            direction: layout === "horizontal" ? "row" : "column",
+            direction: "column",
             justify: "center",
             align: "center",
-            gap: 12,
-            padding: num(config, "contentPadding", 24),
             background: bg,
             color: fg,
           },
-          children: [...label, countdown],
+          children: [
+            {
+              t: "box",
+              style: {
+                width: inset,
+                height: inset,
+                direction: layout === "horizontal" ? "row" : "column",
+                justify: "center",
+                align: "center",
+                gap: 12,
+                color: fg,
+              },
+              children: [...label, countdown],
+            },
+          ],
         },
       };
     }
@@ -232,7 +273,11 @@ function dateFormatFor(format: string): ValueFormat {
 }
 
 function textNode(value: string, color: string, fontSize: number): RenderNode {
-  return { t: "text", value, style: { color, fontSize, align: "center" } };
+  return {
+    t: "text",
+    value,
+    style: { color, fontSize, align: "center", autoFit: true, minFontSize: 8 },
+  };
 }
 
 function emptyNode(message: string): RenderNode {
@@ -337,22 +382,35 @@ function renderMetric(
         direction: "column",
         justify: "center",
         align: "center",
-        gap: 8,
         background: bg,
-        padding: num(config, "contentPadding", 24),
       },
       children: [
         {
-          t: "text",
-          value,
+          t: "box",
           style: {
-            color: fg,
-            fontSize: scale(120, config),
-            fontWeight: 800,
+            width: contentInset(config),
+            height: contentInset(config),
+            direction: "column",
+            justify: "center",
             align: "center",
+            gap: 8,
           },
+          children: [
+            {
+              t: "text",
+              value,
+              style: {
+                color: fg,
+                fontSize: scale(120, config),
+                fontWeight: 800,
+                align: "center",
+                autoFit: true,
+                minFontSize: 8,
+              },
+            },
+            ...(label ? [textNode(label, fg, scale(40, config))] : []),
+          ],
         },
-        ...(label ? [textNode(label, fg, scale(40, config))] : []),
       ],
     },
   };

@@ -48,12 +48,45 @@ function styleFromProps(props: Record<string, unknown>): BoxStyle {
   return style;
 }
 
-function textStyleFromProps(props: Record<string, unknown>): TextStyle {
+/**
+ * Base typography per text role, in px against the widget's own box. The
+ * author's `textScale` multiplies these and `autoFit` shrinks whatever still
+ * overflows, so the content always lands inside the surface's margins.
+ */
+const ROLE_FONT_PX: Record<string, number> = {
+  metric: 88,
+  title: 44,
+  subtitle: 30,
+  label: 30,
+  body: 24,
+  caption: 20,
+};
+
+function clampNumber(value: number, low: number, high: number): number {
+  return Number.isFinite(value) ? Math.min(high, Math.max(low, value)) : low;
+}
+
+function textStyleFromProps(
+  props: Record<string, unknown>,
+  textScale = 1,
+): TextStyle {
   const style: TextStyle = {};
   if (typeof props["color"] === "string")
     style.color = safeColor(props["color"], "#F5F7FA");
-  if (Number.isFinite(Number(props["fontSize"])))
-    style.fontSize = Number(props["fontSize"]);
+  const role = typeof props["role"] === "string" ? props["role"] : "body";
+  const base = Number.isFinite(Number(props["fontSize"]))
+    ? Number(props["fontSize"])
+    : (ROLE_FONT_PX[role] ?? ROLE_FONT_PX["body"]!);
+  style.fontSize = base * textScale;
+  // Fit-to-bounds is the final guard: an enlarged scale may overflow the
+  // content area, and the renderer shrinks it back rather than clipping.
+  style.autoFit = true;
+  style.minFontSize = 8;
+  if (
+    props["fontWeight"] === undefined &&
+    (role === "metric" || role === "title")
+  )
+    style.fontWeight = 700;
   if (Number.isFinite(Number(props["fontWeight"])))
     style.fontWeight = Number(props["fontWeight"]);
   const align = props["align"] ?? props["textAlign"];
@@ -199,6 +232,9 @@ export function renderPresentation(
   ctx: PresentationContext,
 ): RenderNode | null {
   let budget = MAX_NODES;
+  // The surface carries the author's sizing for the whole widget; text nodes
+  // below it multiply their role typography by this.
+  let textScale = 1;
   const project = (
     node: PresentationNode,
     local: PresentationContext,
@@ -240,10 +276,56 @@ export function renderPresentation(
     local: PresentationContext,
   ): RenderNode | null => {
     const props = node.props ?? {};
+    if (node.type === "surface") {
+      // contentPadding/textScale reach the player as author percentages. The
+      // padding is a fraction of each edge — 10 gives the content the center
+      // 80 percent — so it becomes an inset child box rather than pixels.
+      const padding = clampNumber(
+        Number(props["paddingPercent"] ?? props["padding"] ?? 10),
+        0,
+        40,
+      );
+      textScale = clampNumber(Number(props["textScale"] ?? 100), 25, 500) / 100;
+      const inset = 100 - padding * 2;
+      const surfaceStyle = styleFromProps(props);
+      delete surfaceStyle.padding;
+      // The compiler names the surface colour "backgroundColor"; styleFromProps
+      // only knows the generic "background" key, so it would otherwise be lost.
+      if (typeof props["backgroundColor"] === "string")
+        surfaceStyle.background = safeColor(
+          props["backgroundColor"],
+          "#0E141B",
+        );
+      const content = (node.children ?? []).flatMap((c) => project(c, local));
+      return {
+        t: "box",
+        style: {
+          ...surfaceStyle,
+          width: 100,
+          height: 100,
+          direction: "column",
+          justify: "center",
+          align: "center",
+        },
+        children: [
+          {
+            t: "box",
+            style: {
+              width: inset,
+              height: inset,
+              direction: "column",
+              justify: "center",
+              align: "center",
+              gap: surfaceStyle.gap,
+            },
+            children: content,
+          },
+        ],
+      };
+    }
     const children = (node.children ?? []).flatMap((c) => project(c, local));
 
     switch (node.type) {
-      case "surface":
       case "box":
       case "stack":
         return { t: "box", style: styleFromProps(props), children };
@@ -302,19 +384,23 @@ export function renderPresentation(
             showSeconds: countdown.visibleUnits[3] === "1",
             completionText: countdown.completionText,
             completionAction: countdown.completionAction,
-            style: textStyleFromProps(props),
+            style: textStyleFromProps(props, textScale),
           };
         }
         const value = node.binding
           ? resolveBinding(node.binding, local)
           : String(props["text"] ?? "");
-        return { t: "text", value, style: textStyleFromProps(props) };
+        return {
+          t: "text",
+          value,
+          style: textStyleFromProps(props, textScale),
+        };
       }
       case "icon":
         return {
           t: "text",
           value: String(props["glyph"] ?? "•"),
-          style: textStyleFromProps(props),
+          style: textStyleFromProps(props, textScale),
         };
       case "asset_image": {
         const assetId = node.binding
@@ -361,7 +447,7 @@ export function renderPresentation(
           text: value,
           durationMs: Number(props["durationMs"]) || 18_000,
           direction: props["direction"] === "right" ? "right" : "left",
-          style: textStyleFromProps(props),
+          style: textStyleFromProps(props, textScale),
         };
       }
       case "line_chart":

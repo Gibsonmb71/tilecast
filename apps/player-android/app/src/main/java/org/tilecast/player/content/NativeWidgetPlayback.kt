@@ -435,7 +435,11 @@ internal fun scaledFittedFontSizeSp(
         Float.MAX_VALUE,
         maxLines,
     )
-    return (fitted * widgetAuthorScale(textScale)).coerceAtMost(fitted)
+    // The fitted size is a width-estimate, not a hard bound: capping the result
+    // at it would make every scale above 100 percent a no-op. Enlarging is
+    // allowed and the caller's measured-overflow guard is what actually keeps
+    // the text inside the content area.
+    return fitted * widgetAuthorScale(textScale)
 }
 
 internal fun fittedFontSizeSp(

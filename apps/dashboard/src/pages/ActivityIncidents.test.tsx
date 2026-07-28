@@ -203,6 +203,45 @@ describe("Needs attention", () => {
     expect(heading.textContent).toContain("1");
   });
 
+  it("previews only the worst incidents and links to the rest", async () => {
+    // A bad day on a large fleet must not push the rest of the Overview off
+    // the page, so the preview stops well short of the full list.
+    incidents = Array.from({ length: 12 }, (_, index) => ({
+      ...openIncident,
+      id: `incident-${index}`,
+      title: `Failure ${index}`,
+    }));
+    renderPanel();
+
+    const section = await screen.findByRole("region", {
+      name: "Needs attention",
+    });
+    expect(within(section).getAllByRole("listitem")).toHaveLength(5);
+    expect(within(section).getByText("Failure 0")).toBeTruthy();
+    expect(within(section).queryByText("Failure 5")).toBeNull();
+    // The count of what is actually wrong stays the true total, and the
+    // remainder is named rather than silently dropped.
+    const heading = within(section).getByRole("heading", {
+      name: /Needs attention/,
+    });
+    expect(heading.textContent).toContain("12");
+    expect(
+      within(section).getByRole("link", { name: "7 more still failing" }),
+    ).toBeTruthy();
+  });
+
+  it("shows every incident when the list already fits", async () => {
+    renderPanel();
+
+    const section = await screen.findByRole("region", {
+      name: "Needs attention",
+    });
+    expect(within(section).queryByText(/more still failing/)).toBeNull();
+    expect(
+      within(section).queryByText(/more awaiting acknowledgement/),
+    ).toBeNull();
+  });
+
   it("labels the list as current state, not the selected range", async () => {
     renderPanel();
 

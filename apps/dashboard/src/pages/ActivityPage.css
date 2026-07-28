@@ -1013,6 +1013,24 @@
   font-size: 12px;
 }
 
+/* The "N more" line closing a truncated preview list. */
+.activity-incidents__more {
+  margin: 0;
+  padding: 8px 16px 0;
+  font-size: 12px;
+}
+
+.activity-incidents__more > a {
+  color: var(--tc-text-secondary);
+  text-decoration: none;
+}
+
+.activity-incidents__more > a:hover,
+.activity-incidents__more > a:focus-visible {
+  color: var(--tc-text-primary);
+  text-decoration: underline;
+}
+
 .activity-incident__recovered {
   color: var(--tc-status-success, var(--tc-text-secondary));
 }

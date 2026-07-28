@@ -59,6 +59,16 @@ function formatSeconds(value: number | null) {
 }
 
 /**
+ * How many incidents the Overview preview shows before deferring to the
+ * Incidents tab. The panel is one section of a long page, so a bad day on a
+ * large fleet must not push everything below it off the screen. The server
+ * orders incidents worst-first, so a truncated preview still leads with what
+ * matters most, and the counts beside each heading stay the true totals.
+ */
+const PREVIEW_FAILING = 5;
+const PREVIEW_AWAITING = 3;
+
+/**
  * The Activity Overview's "Needs attention" section.
  *
  * It reads currently open and acknowledged incidents rather than whichever
@@ -128,15 +138,22 @@ export function NeedsAttentionPanel() {
       {failing.length === 0 ? (
         <EmptyState message="Nothing is currently failing." />
       ) : (
-        <ul className="activity-incident-list">
-          {failing.map((incident) => (
-            <IncidentRow
-              key={incident.id}
-              incident={incident}
-              actions={actions(incident)}
-            />
-          ))}
-        </ul>
+        <>
+          <ul className="activity-incident-list">
+            {failing.slice(0, PREVIEW_FAILING).map((incident) => (
+              <IncidentRow
+                key={incident.id}
+                incident={incident}
+                actions={actions(incident)}
+              />
+            ))}
+          </ul>
+          <TruncationNotice
+            shown={PREVIEW_FAILING}
+            total={failing.length}
+            noun="still failing"
+          />
+        </>
       )}
 
       {awaiting.length > 0 && (
@@ -150,7 +167,7 @@ export function NeedsAttentionPanel() {
             them so the follow-up is not lost.
           </p>
           <ul className="activity-incident-list">
-            {awaiting.map((incident) => (
+            {awaiting.slice(0, PREVIEW_AWAITING).map((incident) => (
               <IncidentRow
                 key={incident.id}
                 incident={incident}
@@ -158,9 +175,39 @@ export function NeedsAttentionPanel() {
               />
             ))}
           </ul>
+          <TruncationNotice
+            shown={PREVIEW_AWAITING}
+            total={awaiting.length}
+            noun="awaiting acknowledgement"
+          />
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * Says what the preview left out and where the rest lives. Silence would read
+ * as "this is all of them", which is the one thing a truncated list of open
+ * problems must never imply.
+ */
+function TruncationNotice({
+  shown,
+  total,
+  noun,
+}: {
+  shown: number;
+  total: number;
+  noun: string;
+}) {
+  const hidden = total - shown;
+  if (hidden <= 0) return null;
+  return (
+    <p className="activity-incidents__more">
+      <Link to={buildActivityLink("incidents")}>
+        {hidden} more {noun}
+      </Link>
+    </p>
   );
 }
 
