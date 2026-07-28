@@ -16,7 +16,6 @@
     "reliability",
     "power",
     "managedKiosk",
-    "linuxKiosk",
     "accessibility"
   ],
   "properties": {
@@ -130,6 +129,7 @@
     },
     "managedKiosk": { "type": "object", "additionalProperties": true },
     "linuxKiosk": {
+      "description": "Optional in schema v1: configurations generated before Linux kiosk policy existed omit this section, and players apply the hardened defaults (both settings enabled) when it is absent.",
       "type": "object",
       "required": ["fullscreenEnabled", "preventDisplaySleep"],
       "properties": {

@@ -268,6 +268,38 @@ describe("dataFormatGuideFor", () => {
       },
     });
   });
+
+  it("merges a required field and a mapped control that describe the same key", () => {
+    const fields: ContentDefinitionField[] = [
+      {
+        key: "dataSourceId",
+        label: "Schedule data",
+        control: "data_source",
+        requiredFields: { start_time: "datetime" },
+      },
+      {
+        key: "startTimeField",
+        label: "Start field",
+        control: "data_source_field",
+        default: "start_time",
+        dataSourceFieldTypes: ["date"],
+      },
+    ];
+
+    const guide = dataFormatGuideFor(fields[0]!, fields);
+
+    expect(guide.fields).toEqual([
+      {
+        key: "start_time",
+        label: "start time",
+        types: ["datetime", "date"],
+        required: true,
+      },
+    ]);
+    expect(guide.example).toEqual({
+      start_time: "2026-08-24T09:03:00-04:00",
+    });
+  });
 });
 
 describe("DefinitionForm data source controls", () => {
