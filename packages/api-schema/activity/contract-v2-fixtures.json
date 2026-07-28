@@ -1,0 +1,370 @@
+{
+  "$comment": "Activity Event Contract v2 fixtures. Consumed by the Go server tests, the Kotlin player tests, and the TypeScript player tests, so one change to the contract fails all three at once. See docs/activity-event-contract.md. Timestamps are relative offsets in seconds from an anchor the consumer supplies, because no test may depend on a wall clock.",
+  "version": 2,
+  "canonicalEventTypes": {
+    "presentation.activated": "presentation.started",
+    "playlist.started": "presentation.started",
+    "layout.activated": "presentation.started",
+    "presentation.completed": "presentation.stopped",
+    "playlist_item.started": "content.started",
+    "media.started": "content.started",
+    "widget.started": "content.started",
+    "layout_zone_item.started": "content.started",
+    "data_widget.activated": "content.started",
+    "playlist_item.completed": "content.completed",
+    "media.completed": "content.completed",
+    "widget.completed": "content.completed",
+    "playlist_item.failed": "content.failed",
+    "media.failed": "content.failed",
+    "widget.failed": "content.failed",
+    "playlist_item.skipped": "content.skipped",
+    "connection.recovered": "connection.restored",
+    "reliability.safe_mode": "safe_mode.entered",
+    "reliability.self_heal": "self_heal.attempted"
+  },
+  "sessionTypes": [
+    "presentation",
+    "content",
+    "layout_placement",
+    "playlist_item"
+  ],
+  "terminalReasons": {
+    "expected_item_boundary": {
+      "expected": true
+    },
+    "completed_duration": {
+      "expected": true
+    },
+    "schedule_transition": {
+      "expected": true
+    },
+    "manifest_replacement": {
+      "expected": true
+    },
+    "direct_assignment_change": {
+      "expected": true
+    },
+    "emergency_takeover": {
+      "expected": true
+    },
+    "manual_skip": {
+      "expected": true
+    },
+    "player_restart": {
+      "expected": false
+    },
+    "process_exit": {
+      "expected": false
+    },
+    "heartbeat_gap": {
+      "expected": false
+    },
+    "renderer_failure": {
+      "expected": false
+    },
+    "decoder_failure": {
+      "expected": false
+    },
+    "recovery_action": {
+      "expected": false
+    },
+    "bounded_timeout": {
+      "expected": false
+    },
+    "unknown": {
+      "expected": null
+    }
+  },
+  "scenarios": [
+    {
+      "name": "one presentation with one completed item",
+      "$comment": "The same playback expressed in each player's vocabulary. Both must derive one root session and one child session with identical durations and results.",
+      "expected": {
+        "sessions": [
+          {
+            "activitySessionId": "root-1",
+            "sessionType": "presentation",
+            "result": "completed",
+            "terminalReason": "schedule_transition",
+            "startOffsetSeconds": 0,
+            "endOffsetSeconds": 60,
+            "parentActivitySessionId": null
+          },
+          {
+            "activitySessionId": "child-1",
+            "sessionType": "content",
+            "result": "completed",
+            "terminalReason": "completed_duration",
+            "startOffsetSeconds": 0,
+            "endOffsetSeconds": 30,
+            "parentActivitySessionId": "root-1"
+          }
+        ],
+        "openStateIntervals": ["healthy"]
+      },
+      "emissions": {
+        "android": [
+          {
+            "offsetSeconds": 0,
+            "eventType": "presentation.started",
+            "activitySessionId": "root-1",
+            "sessionType": "presentation",
+            "presentationType": "playlist",
+            "presentationId": "playlist-a",
+            "result": "playing",
+            "trigger": "schedule",
+            "scheduleId": "schedule-a"
+          },
+          {
+            "offsetSeconds": 0,
+            "eventType": "media.started",
+            "activitySessionId": "child-1",
+            "parentActivitySessionId": "root-1",
+            "sessionType": "content",
+            "contentType": "media",
+            "contentId": "asset-a",
+            "expectedDurationMs": 30000,
+            "result": "playing"
+          },
+          {
+            "offsetSeconds": 30,
+            "eventType": "media.completed",
+            "activitySessionId": "child-1",
+            "contentType": "media",
+            "contentId": "asset-a",
+            "durationMs": 30000,
+            "result": "completed",
+            "terminalReason": "completed_duration"
+          },
+          {
+            "offsetSeconds": 60,
+            "eventType": "presentation.stopped",
+            "activitySessionId": "root-1",
+            "durationMs": 60000,
+            "result": "completed",
+            "terminalReason": "schedule_transition"
+          }
+        ],
+        "linux": [
+          {
+            "offsetSeconds": 0,
+            "eventType": "presentation.started",
+            "activitySessionId": "root-1",
+            "sessionType": "presentation",
+            "presentationType": "playlist",
+            "presentationId": "playlist-a",
+            "result": "playing",
+            "trigger": "schedule",
+            "scheduleId": "schedule-a"
+          },
+          {
+            "offsetSeconds": 0,
+            "eventType": "content.started",
+            "activitySessionId": "child-1",
+            "parentActivitySessionId": "root-1",
+            "sessionType": "content",
+            "contentType": "media",
+            "contentId": "asset-a",
+            "expectedDurationMs": 30000,
+            "result": "playing"
+          },
+          {
+            "offsetSeconds": 30,
+            "eventType": "content.completed",
+            "activitySessionId": "child-1",
+            "contentType": "media",
+            "contentId": "asset-a",
+            "durationMs": 30000,
+            "result": "completed",
+            "terminalReason": "completed_duration"
+          },
+          {
+            "offsetSeconds": 60,
+            "eventType": "presentation.stopped",
+            "activitySessionId": "root-1",
+            "durationMs": 60000,
+            "result": "completed",
+            "terminalReason": "schedule_transition"
+          }
+        ]
+      },
+      "legacyAliasPlayers": ["android"]
+    },
+    {
+      "name": "renderer failure interrupts playback",
+      "$comment": "An unexpected ending. Both players must produce a failed child session with a renderer_failure terminal reason and a degraded screen state.",
+      "expected": {
+        "sessions": [
+          {
+            "activitySessionId": "root-2",
+            "sessionType": "presentation",
+            "result": "playing",
+            "terminalReason": null,
+            "startOffsetSeconds": 0,
+            "endOffsetSeconds": null,
+            "parentActivitySessionId": null
+          },
+          {
+            "activitySessionId": "child-2",
+            "sessionType": "content",
+            "result": "failed",
+            "terminalReason": "renderer_failure",
+            "startOffsetSeconds": 0,
+            "endOffsetSeconds": 12,
+            "parentActivitySessionId": "root-2"
+          }
+        ],
+        "openStateIntervals": ["degraded"]
+      },
+      "emissions": {
+        "android": [
+          {
+            "offsetSeconds": 0,
+            "eventType": "presentation.started",
+            "activitySessionId": "root-2",
+            "sessionType": "presentation",
+            "presentationType": "layout",
+            "presentationId": "layout-a",
+            "result": "playing"
+          },
+          {
+            "offsetSeconds": 0,
+            "eventType": "widget.started",
+            "activitySessionId": "child-2",
+            "parentActivitySessionId": "root-2",
+            "sessionType": "content",
+            "contentType": "widget",
+            "contentId": "widget-a",
+            "result": "playing"
+          },
+          {
+            "offsetSeconds": 12,
+            "eventType": "widget.failed",
+            "activitySessionId": "child-2",
+            "contentType": "widget",
+            "contentId": "widget-a",
+            "durationMs": 12000,
+            "result": "failed",
+            "failureCode": "renderer_failure",
+            "terminalReason": "renderer_failure"
+          },
+          {
+            "offsetSeconds": 12,
+            "eventType": "renderer.failure",
+            "result": "failed",
+            "failureCode": "renderer_failure"
+          }
+        ],
+        "linux": [
+          {
+            "offsetSeconds": 0,
+            "eventType": "presentation.started",
+            "activitySessionId": "root-2",
+            "sessionType": "presentation",
+            "presentationType": "layout",
+            "presentationId": "layout-a",
+            "result": "playing"
+          },
+          {
+            "offsetSeconds": 0,
+            "eventType": "content.started",
+            "activitySessionId": "child-2",
+            "parentActivitySessionId": "root-2",
+            "sessionType": "content",
+            "contentType": "widget",
+            "contentId": "widget-a",
+            "result": "playing"
+          },
+          {
+            "offsetSeconds": 12,
+            "eventType": "content.failed",
+            "activitySessionId": "child-2",
+            "contentType": "widget",
+            "contentId": "widget-a",
+            "durationMs": 12000,
+            "result": "failed",
+            "failureCode": "renderer_failure",
+            "terminalReason": "renderer_failure"
+          },
+          {
+            "offsetSeconds": 12,
+            "eventType": "renderer.failure",
+            "result": "failed",
+            "failureCode": "renderer_failure"
+          }
+        ]
+      },
+      "legacyAliasPlayers": ["android"]
+    },
+    {
+      "name": "connection lost then restored",
+      "$comment": "The v1 names differ per player; the derived state timeline must not.",
+      "expected": {
+        "sessions": [],
+        "openStateIntervals": ["online"]
+      },
+      "emissions": {
+        "android": [
+          {
+            "offsetSeconds": 0,
+            "eventType": "player.disconnected",
+            "result": "unknown"
+          },
+          {
+            "offsetSeconds": 30,
+            "eventType": "connection.restored",
+            "result": "recovered"
+          }
+        ],
+        "linux": [
+          {
+            "offsetSeconds": 0,
+            "eventType": "connection.lost",
+            "result": "unknown"
+          },
+          {
+            "offsetSeconds": 30,
+            "eventType": "connection.recovered",
+            "result": "recovered"
+          }
+        ]
+      },
+      "legacyAliasPlayers": ["linux"]
+    },
+    {
+      "name": "safe mode entered and exited",
+      "expected": {
+        "sessions": [],
+        "openStateIntervals": ["healthy"]
+      },
+      "emissions": {
+        "android": [
+          {
+            "offsetSeconds": 0,
+            "eventType": "safe_mode.entered",
+            "result": "failed"
+          },
+          {
+            "offsetSeconds": 60,
+            "eventType": "safe_mode.exited",
+            "result": "recovered"
+          }
+        ],
+        "linux": [
+          {
+            "offsetSeconds": 0,
+            "eventType": "reliability.safe_mode",
+            "result": "failed"
+          },
+          {
+            "offsetSeconds": 60,
+            "eventType": "safe_mode.exited",
+            "result": "recovered"
+          }
+        ]
+      },
+      "legacyAliasPlayers": ["linux"]
+    }
+  ],
+  "$legacyAliasesComment": "legacyAliasPlayers lists the player columns that deliberately emit v1 names, proving the server still maps them onto v2 during the transition. A player's own conformance test skips the scenarios where it is listed, because a current player must emit the canonical name."
+}

@@ -140,7 +140,7 @@
 
 .activity-proof-metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .activity-overview {
@@ -148,11 +148,35 @@
   gap: 16px;
 }
 
-/* Fleet health leads the page: two tiles at full weight, ahead of the totals. */
-.activity-health {
+/* Fleet health leads the page, ahead of the range-scoped totals. */
+.activity-health__states {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
+  padding: 16px;
+}
+
+/* Online is reachability, not health, so a rule separates it from the four
+   states that partition the fleet. */
+.activity-health__state--online {
+  border-right: 1px solid var(--tc-border-default);
+  padding-right: 12px;
+}
+
+.activity-health__state--healthy .metric-tile__icon {
+  color: var(--tc-status-success, var(--tc-action-primary));
+}
+
+.activity-health__state--impaired .metric-tile__icon {
+  color: var(--tc-status-warning, var(--tc-action-primary));
+}
+
+.activity-health__state--offline .metric-tile__icon {
+  color: var(--tc-status-danger, var(--tc-action-primary));
+}
+
+.activity-health__state--unmeasured .metric-tile__icon {
+  color: var(--tc-text-secondary);
 }
 
 .activity-metrics {
@@ -169,7 +193,7 @@
 /* Supporting counts stay available without competing with the primary row. */
 .activity-metrics__secondary {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -191,9 +215,11 @@
   vertical-align: middle;
 }
 
+/* Not sticky: .activity-panel sets overflow: hidden to clip its rounded
+   corners, which makes it the scroll container for anything sticky inside it.
+   That container never scrolls, so a sticky heading would simply sit still
+   while the page moved past it. */
 .activity-timeline-days > section > h4 {
-  position: sticky;
-  top: 0;
   margin: 0;
   padding: 9px 16px;
   border-bottom: 1px solid var(--tc-border-subtle);
@@ -662,6 +688,14 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .activity-health__states {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .activity-health__state--online {
+    border-right: 0;
+  }
+
   .activity-proof-metrics article:nth-child(2) {
     border-right: 0;
   }
@@ -697,7 +731,7 @@
     justify-content: center;
   }
 
-  .filter-bar__controls > select,
+  .filter-bar__controls > .signal-select,
   .activity-more-filters,
   .activity-more-filters > summary {
     flex: 1 1 140px;
@@ -718,11 +752,18 @@
   }
 
   .activity-advanced-filter-grid,
-  .activity-health,
+  .activity-health__states,
   .activity-metrics__primary,
   .activity-metrics__secondary,
   .activity-proof-metrics {
     grid-template-columns: 1fr;
+  }
+
+  .activity-health__state--online {
+    border-right: 0;
+    border-bottom: 1px solid var(--tc-border-default);
+    padding-right: 0;
+    padding-bottom: 12px;
   }
 
   .activity-proof-metrics article,
@@ -750,4 +791,343 @@
 }
 
 @media (max-width: 560px) {
+}
+
+/* Incidents: one row per operational problem, with its evidence behind a
+   disclosure so the list stays scannable at a glance. */
+.activity-incidents__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--tc-text-secondary);
+  font: var(--tc-text-supporting);
+  white-space: nowrap;
+}
+
+.activity-incident-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.activity-incident-list > li {
+  border-bottom: 1px solid var(--tc-border-subtle);
+}
+
+.activity-incident {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  padding: 13px 16px;
+}
+
+.activity-incident__body {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.activity-incident__body small {
+  color: var(--tc-text-secondary);
+  font-size: 12px;
+}
+
+.activity-incident__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px 10px;
+  margin-top: 3px;
+  color: var(--tc-text-secondary);
+  font-size: 12px;
+}
+
+.activity-incident__status {
+  padding: 1px 7px;
+  border-radius: var(--tc-radius-pill);
+  background: var(--tc-bg-subtle);
+  font-weight: 650;
+}
+
+/* Open and acknowledged are still live problems; recovered is not, and the
+   difference has to be visible without reading the label. */
+.activity-incident__status--open,
+.activity-incident__status--acknowledged {
+  background: var(--tc-status-danger-bg);
+  color: var(--tc-status-danger);
+}
+
+.activity-incident__status--recovered {
+  background: var(--tc-status-success-bg, var(--tc-bg-subtle));
+  color: var(--tc-status-success, var(--tc-text-secondary));
+}
+
+.activity-incident__side {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+  color: var(--tc-text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.activity-incident__detail {
+  display: grid;
+  gap: 12px;
+  padding: 0 16px 14px 52px;
+}
+
+.activity-incident__detail dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px 16px;
+  margin: 0;
+}
+
+.activity-incident__detail dt {
+  color: var(--tc-text-secondary);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.activity-incident__detail dd {
+  margin: 2px 0 0;
+  font-size: 13px;
+}
+
+.activity-incident__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.activity-incident-analytics {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+  border-top: 1px solid var(--tc-border-default);
+}
+
+.activity-incident-analytics__tiles {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.activity-incident-analytics__tiles .metric-tile {
+  min-height: 0;
+}
+
+.activity-incident-recurring ul,
+.activity-incident-breakdowns ul {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.activity-incident-recurring li,
+.activity-incident-breakdowns li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.activity-incident-recurring li > span:first-child {
+  display: grid;
+}
+
+.activity-incident-recurring small {
+  color: var(--tc-text-secondary);
+  font-size: 12px;
+}
+
+.activity-incident-recurring h4,
+.activity-incident-breakdowns h4 {
+  margin: 0;
+  color: var(--tc-text-secondary);
+  font: var(--tc-text-label);
+}
+
+.activity-incident-breakdowns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+@media (max-width: 1100px) {
+  .activity-incident-analytics__tiles {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .activity-incident-analytics__tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .activity-incident__detail {
+    padding-left: 16px;
+  }
+}
+
+/* Recovered incidents are grouped apart from the still-failing ones so a list
+   of ended conditions is never read as an ongoing outage. */
+.activity-incidents__awaiting {
+  border-top: 1px solid var(--tc-border-default);
+  padding-top: 12px;
+}
+
+.activity-incidents__awaiting > h4 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0 16px;
+  color: var(--tc-text-secondary);
+  font: var(--tc-text-label);
+}
+
+.activity-incidents__awaiting > h4 > span {
+  display: inline-grid;
+  min-width: 20px;
+  min-height: 20px;
+  place-items: center;
+  padding: 0 6px;
+  border-radius: var(--tc-radius-pill);
+  background: var(--tc-bg-subtle);
+  color: var(--tc-text-secondary);
+  font: var(--tc-text-metric-delta);
+}
+
+.activity-incidents__awaiting > p {
+  margin: 3px 0 4px;
+  padding: 0 16px;
+  color: var(--tc-text-secondary);
+  font-size: 12px;
+}
+
+.activity-incident__recovered {
+  color: var(--tc-status-success, var(--tc-text-secondary));
+}
+
+.activity-incident-drawer__summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.activity-incident-drawer__section {
+  display: grid;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--tc-border-subtle);
+}
+
+.activity-incident-drawer__section h4 {
+  margin: 0;
+  color: var(--tc-text-secondary);
+  font: var(--tc-text-label);
+}
+
+.activity-incident-timeline__entry {
+  display: grid;
+  grid-template-columns: 96px 84px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 4px 10px;
+  font-size: 13px;
+}
+
+.activity-incident-timeline__entry > p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.activity-incident-timeline__entry time {
+  color: var(--tc-text-secondary);
+  font-size: 11px;
+}
+
+@media (max-width: 720px) {
+  .activity-incident-timeline__entry {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Expected versus actual playback. */
+.activity-compliance__tiles {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+  padding: 16px;
+}
+.activity-compliance__tiles .metric-tile {
+  min-height: 0;
+}
+/* Excluded time is shown, not hidden: silently dropping it from the
+   denominator would make the percentage unexplainable. */
+.activity-compliance__excluded {
+  padding: 0 16px 14px;
+}
+.activity-compliance__excluded h4 {
+  margin: 0 0 6px;
+  color: var(--tc-text-secondary);
+  font: var(--tc-text-label);
+}
+.activity-compliance__excluded ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.activity-compliance__excluded li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--tc-text-secondary);
+  font-size: 13px;
+}
+.activity-compliance__table {
+  display: grid;
+  border-top: 1px solid var(--tc-border-default);
+}
+.activity-compliance__row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) repeat(4, minmax(0, 1fr)) minmax(
+      0,
+      1.4fr
+    );
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--tc-border-subtle);
+  font-size: 13px;
+}
+.activity-compliance__row:last-child {
+  border-bottom: 0;
+}
+.activity-compliance__row--head {
+  background: var(--tc-bg-subtle);
+  color: var(--tc-text-secondary);
+  font: var(--tc-text-label);
+}
+@media (max-width: 1100px) {
+  .activity-compliance__tiles {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 720px) {
+  .activity-compliance__tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .activity-compliance__row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
 }

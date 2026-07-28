@@ -1,8 +1,10 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 
@@ -99,12 +101,32 @@ func (s *server) requireDevice(next http.Handler) http.Handler {
 }
 
 func (s *server) playerHeartbeat(w http.ResponseWriter, r *http.Request) {
-	var body devices.Heartbeat
-	if err := decodeJSON(w, r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "Request body contains malformed JSON.")
 		return
 	}
 	principal := r.Context().Value(deviceContextKey).(devices.DevicePrincipal)
+	var body devices.Heartbeat
+	var dropped []string
+	if decodeErr := decodeJSONReader(r, bytes.NewReader(raw), &body); decodeErr != nil {
+		// One malformed optional playback identifier must not cost the lifecycle
+		// fields in the same heartbeat. The field is dropped, never coerced, and
+		// named back to the caller and in the log.
+		reduced, salvagedFields, ok := salvageHeartbeatPayload(raw)
+		if !ok {
+			writeError(w, http.StatusBadRequest, "invalid_request", decodeErr.Error())
+			return
+		}
+		body = devices.Heartbeat{}
+		if salvageErr := decodeJSONReader(r, bytes.NewReader(reduced), &body); salvageErr != nil {
+			writeError(w, http.StatusBadRequest, "invalid_request", decodeErr.Error())
+			return
+		}
+		dropped = salvagedFields
+		s.logger.Warn("player heartbeat optional identifiers dropped",
+			"invalid_fields", dropped, "screen_id", principal.ScreenID)
+	}
 	if err := s.devices.Heartbeat(r.Context(), principal, body, r.RemoteAddr); err != nil {
 		s.writeDeviceError(w, r, err)
 		return
@@ -125,7 +147,11 @@ func (s *server) playerHeartbeat(w http.ResponseWriter, r *http.Request) {
 			ActiveConfigRevision: body.ActiveConfigRevision, ConfigurationError: body.ConfigurationError,
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"accepted": true}})
+	data := map[string]any{"accepted": true}
+	if len(dropped) > 0 {
+		data["ignoredFields"] = dropped
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": data})
 }
 
 type pairingCodeRequest struct {

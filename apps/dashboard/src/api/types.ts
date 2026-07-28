@@ -13,6 +13,80 @@ export type AuthStatus = {
   authenticated: boolean;
   user?: User;
   csrfToken?: string;
+  authMethod?: AuthMethod;
+  /** The organization requires a second factor this account has not enrolled. */
+  mfaEnrollmentRequired?: boolean;
+  /**
+   * Passkeys need a secure context and a registrable domain, which a
+   * plain-HTTP LAN installation does not have.
+   */
+  passkeysAvailable?: boolean;
+  passkeysUnavailableReason?: string;
+};
+
+export type AuthMethod = "password" | "totp" | "passkey" | "recovery_code";
+
+export type MFAMethod = "totp" | "passkey" | "recovery_code";
+
+export type MFAPolicy = "none" | "administrators" | "all";
+
+/** A password was accepted but a second factor is still owed. */
+export type MFAChallenge = {
+  mfaRequired: true;
+  challengeToken: string;
+  methods: MFAMethod[];
+};
+
+export type SessionResult = {
+  user: User;
+  csrfToken: string;
+  authMethod?: AuthMethod;
+  mfaEnrollmentRequired?: boolean;
+};
+
+export type LoginResult = MFAChallenge | SessionResult;
+
+export type Passkey = {
+  id: string;
+  /** Derived from the authenticator at enrollment; the user never types one. */
+  name: string;
+  /** Public credential handle, used to signal accepted credentials. */
+  credentialId: string;
+  createdAt: string;
+  lastUsedAt?: string;
+};
+
+export type SecurityStatus = {
+  relyingPartyId: string;
+  /** Empty until the account enrolls its first passkey. */
+  userHandle: string;
+  totpEnrolled: boolean;
+  totpConfirmedAt?: string;
+  passkeys: Passkey[];
+  recoveryCodesRemaining: number;
+  enrolled: boolean;
+  passkeysAvailable: boolean;
+  passkeysUnavailableReason: string;
+  /** This account's role is covered by the organization policy. */
+  required: boolean;
+  policy: MFAPolicy;
+  authMethod: AuthMethod;
+};
+
+export type TOTPEnrollment = {
+  provisioningUri: string;
+  secret: string;
+};
+
+/**
+ * The WebAuthn ceremony options exactly as the server produced them. They are
+ * decoded from base64url into the ArrayBuffers the browser API requires.
+ */
+export type PublicKeyOptions = Record<string, unknown>;
+
+export type PasskeyCeremony = {
+  challengeToken: string;
+  options: PublicKeyOptions;
 };
 
 export type SetupInput = {

@@ -79,7 +79,7 @@ func (s *server) createUser(w http.ResponseWriter, r *http.Request) {
 	}
 	_, err = tx.Exec(r.Context(), `
 		INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,metadata)
-		VALUES($1,$2,'user.created','user',$3,jsonb_build_object('role',$4))`,
+		VALUES($1,$2,'user.created','user',$3,jsonb_build_object('role',$4::text))`,
 		uuid.New(), actor.ID, user.ID.String(), user.Role,
 	)
 	if err != nil {
@@ -188,7 +188,7 @@ func (s *server) updateUser(w http.ResponseWriter, r *http.Request) {
 	}
 	_, err = tx.Exec(r.Context(), `
 		INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,metadata)
-		VALUES($1,$2,'user.updated','user',$3,jsonb_build_object('role',$4,'active',$5,'passwordChanged',$6))`,
+		VALUES($1,$2,'user.updated','user',$3,jsonb_build_object('role',$4::text,'active',$5::boolean,'passwordChanged',$6::boolean))`,
 		uuid.New(), actor.ID, id.String(), updated.Role, updated.Active, passwordHash != nil,
 	)
 	if err != nil {

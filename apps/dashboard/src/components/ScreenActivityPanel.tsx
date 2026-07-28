@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { AlertTriangle, Clock3, MonitorCheck } from "lucide-react";
+import { buildActivityLink } from "../pages/activityLinks";
+import { ScreenTimeline } from "./ScreenTimeline";
 import "./ScreenActivityPanel.css";
 
 type ScreenActivity = {
@@ -53,6 +55,11 @@ async function loadScreenActivity(id: string): Promise<ScreenActivity> {
   return body.data;
 }
 
+/**
+ * The Activity panel body only. The screen-detail page owns the Activity tab
+ * itself through the shared ViewTabs component, so this renders no tab control
+ * and never reaches outside its own subtree.
+ */
 export function ScreenActivityPanel({ screenId }: { screenId: string }) {
   const query = useQuery({
     queryKey: ["activity", "screen", screenId],
@@ -73,7 +80,7 @@ export function ScreenActivityPanel({ screenId }: { screenId: string }) {
         </div>
         <Link
           className="button button--secondary"
-          to={`/activity?tab=proof&screen=${screenId}`}
+          to={buildActivityLink("proof", { screen: screenId })}
         >
           Open filtered Activity
         </Link>
@@ -120,6 +127,7 @@ export function ScreenActivityPanel({ screenId }: { screenId: string }) {
               <p>{data.currentIssue.description}</p>
             </div>
           )}
+          <ScreenTimeline screenId={screenId} />
           <div className="screen-activity-columns">
             <section>
               <header>

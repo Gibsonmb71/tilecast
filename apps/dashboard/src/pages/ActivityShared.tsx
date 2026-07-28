@@ -16,23 +16,30 @@ export type ActivityResult =
 export type Overview = {
   range: { from: string; to: string };
   cards: {
-    screensReportingNormally: number;
-    screensWithPlaybackGaps: number;
-    confirmedPlaybackDurationMs: number;
+    screensWithReportingGaps: number;
+    /** Wall-clock screen time: the union of root presentation intervals. */
+    confirmedScreenPlaybackMs: number;
+    /** Sum of child content intervals; may exceed wall clock across zones. */
+    contentExposureMs: number;
     playbackFailures: number;
     interruptedPlays: number;
     emergencyActivations: number;
     failedPlayerUpdates: number;
     recentAdministrativeChanges: number;
   };
-  needsAttention: {
-    screenId: string;
-    screenName: string;
-    kind: string;
-    severity: string;
-    description: string;
-    occurredAt: string;
-  }[];
+  /**
+   * Measured right now rather than over the selected range. Every measured
+   * screen is in exactly one of the four states, so they sum to `measured`.
+   * `online` counts reachability and deliberately overlaps the others.
+   */
+  fleet: {
+    measured: number;
+    online: number;
+    healthy: number;
+    impaired: number;
+    offline: number;
+    unmeasured: number;
+  };
   timeline: {
     id: string;
     timestamp: string;
@@ -74,6 +81,9 @@ export type ProofRecord = {
   sourceCachedAt?: string;
   sourceRevision?: string;
   snapshotHash?: string;
+  sessionType:
+    "presentation" | "content" | "layout_placement" | "playlist_item";
+  terminalReason?: string;
   details: Record<string, unknown>;
 };
 
@@ -83,13 +93,20 @@ export type ProofSummary = {
   items: {
     key: string;
     label: string;
-    confirmedDurationMs: number;
+    confirmedScreenPlaybackMs: number;
+    contentExposureMs: number;
     records: number;
     completed: number;
     failures: number;
     partial: number;
     unknown: number;
-    coveragePercent: number;
+    interrupted: number;
+    /**
+     * The share of sessions that completed or ran partially. Deliberately not
+     * called coverage: nothing here compares actual playback against what was
+     * scheduled to play.
+     */
+    sessionCompletionPercent: number;
   }[];
 };
 
@@ -295,6 +312,15 @@ export function formatWhen(value: string) {
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
+  });
+}
+/** A whole day, spelled out for a group heading in the reader's locale. */
+export function formatDay(value: string) {
+  return new Date(value).toLocaleDateString([], {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
   });
 }
 export function formatDuration(milliseconds: number) {

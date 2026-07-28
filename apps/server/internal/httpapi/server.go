@@ -170,13 +170,21 @@ func (s *server) authStatus(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
-	result := map[string]any{"setupRequired": required, "authenticated": false}
+	passkeysAvailable, passkeyReason := s.auth.PasskeysAvailable()
+	result := map[string]any{
+		"setupRequired":             required,
+		"authenticated":             false,
+		"passkeysAvailable":         passkeysAvailable,
+		"passkeysUnavailableReason": passkeyReason,
+	}
 	if !required {
 		if cookie, err := r.Cookie(s.cookieName); err == nil {
 			if session, err := s.auth.Authenticate(r.Context(), cookie.Value); err == nil {
 				result["authenticated"] = true
 				result["user"] = session.User
 				result["csrfToken"] = session.CSRFToken
+				result["authMethod"] = session.AuthMethod
+				result["mfaEnrollmentRequired"] = session.EnrollmentPending
 			}
 		}
 	}
@@ -229,7 +237,7 @@ func (s *server) login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	session, err := s.auth.Login(r.Context(), auth.LoginInput{Username: body.Username, Password: body.Password})
+	result, err := s.auth.Login(r.Context(), auth.LoginInput{Username: body.Username, Password: body.Password}, s.mfaPolicy(r))
 	if errors.Is(err, auth.ErrInvalidCredentials) || errors.Is(err, auth.ErrInactive) {
 		writeError(w, http.StatusUnauthorized, "invalid_credentials", "The username or password is incorrect.")
 		return
@@ -238,8 +246,17 @@ func (s *server) login(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
-	s.setSessionCookie(w, session)
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"user": session.User, "csrfToken": session.CSRFToken}})
+	// A correct password on an enrolled account produces a challenge, not a
+	// session. No cookie is set until the second factor is presented.
+	if result.Challenge != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+			"mfaRequired":    true,
+			"challengeToken": result.Challenge.Token,
+			"methods":        result.Challenge.Methods,
+		}})
+		return
+	}
+	s.sessionResponse(w, http.StatusOK, *result.Session)
 }
 
 func (s *server) logout(w http.ResponseWriter, r *http.Request) {
@@ -265,6 +282,20 @@ func (s *server) requireSession(next http.Handler) http.Handler {
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), sessionContextKey, session)))
+	})
+}
+
+// requireEnrollment closes the dashboard to a session that still owes the
+// organization a second factor. The security endpoints are registered outside
+// this group so the user can actually enroll, and the gate is a hard server
+// check rather than a dashboard redirect.
+func (s *server) requireEnrollment(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if session, ok := r.Context().Value(sessionContextKey).(auth.Session); ok && session.EnrollmentPending {
+			writeError(w, http.StatusForbidden, "mfa_enrollment_required", "This organization requires multi-factor authentication. Finish enrollment to continue.")
+			return
+		}
+		next.ServeHTTP(w, r)
 	})
 }
 
@@ -308,7 +339,14 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, target any) error {
 
 func decodeJSONLimit(w http.ResponseWriter, r *http.Request, target any, maximumBytes int64) error {
 	r.Body = http.MaxBytesReader(w, r.Body, maximumBytes)
-	decoder := json.NewDecoder(r.Body)
+	return decodeJSONReader(r, r.Body, target)
+}
+
+// decodeJSONReader applies the strict request contract (one JSON object, no
+// unknown fields) to an already-bounded body. Handlers that need the raw bytes
+// as well read them first and pass a reader over them.
+func decodeJSONReader(r *http.Request, body io.Reader, target any) error {
+	decoder := json.NewDecoder(body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
 		category := "malformed"

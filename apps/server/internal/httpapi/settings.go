@@ -47,7 +47,22 @@ func (s *server) listUsers(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"data": map[string]any{"items": items, "total": len(items)}})
+	enrolled, err := s.auth.EnrolledUserIDs(r.Context())
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	policy := s.mfaPolicy(r)
+	entries := make([]map[string]any, 0, len(items))
+	for _, user := range items {
+		entries = append(entries, map[string]any{
+			"id": user.ID, "name": user.Name, "username": user.Username, "role": user.Role,
+			"active": user.Active, "createdAt": user.CreatedAt, "lastLoginAt": user.LastLoginAt,
+			"mfaEnrolled": enrolled[user.ID],
+			"mfaRequired": policy.AppliesTo(user.Role),
+		})
+	}
+	writeJSON(w, 200, map[string]any{"data": map[string]any{"items": entries, "total": len(entries)}})
 }
 
 func (s *server) getSettings(w http.ResponseWriter, r *http.Request) {
@@ -103,7 +118,7 @@ func (s *server) resetSettings(w http.ResponseWriter, r *http.Request) {
 		s.writeSettingsError(w, r, err)
 		return
 	}
-	_, _ = s.db.Exec(r.Context(), `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,metadata)VALUES($1,$2,'settings.category_reset','organization','singleton',jsonb_build_object('category',$3))`, uuid.New(), user.ID, body.Category)
+	_, _ = s.db.Exec(r.Context(), `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,metadata)VALUES($1,$2,'settings.category_reset','organization','singleton',jsonb_build_object('category',$3::text))`, uuid.New(), user.ID, body.Category)
 	writeJSON(w, 200, map[string]any{"data": updated})
 }
 func (s *server) getPreferences(w http.ResponseWriter, r *http.Request) {

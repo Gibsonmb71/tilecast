@@ -16,6 +16,7 @@ export type SettingsSectionId =
   | "backups"
   | "system"
   | "import-export"
+  | "security"
   | "preferences";
 export type SettingsNavigationItem = {
   id: SettingsSectionId;
@@ -33,6 +34,7 @@ export const settingsNavigation: SettingsNavigationGroup[] = [
       { id: "general", label: "General", path: "general" },
       { id: "branding", label: "Branding", path: "branding" },
       { id: "users", label: "Users", path: "users" },
+      { id: "security", label: "Sign-in security", path: "security" },
       { id: "locations", label: "Locations", path: "locations" },
     ],
   },
@@ -112,6 +114,11 @@ export const sectionDetails: Record<
     title: "Users",
     description:
       "Give each person an individual sign-in and assign only the permissions they need. Appearance and density preferences remain separate for every account.",
+  },
+  security: {
+    title: "Sign-in security",
+    description:
+      "Decide who must use a second factor to sign in. Each person manages their own authenticator, passkeys, and recovery codes from Sign-in security in their account menu.",
   },
   locations: {
     title: "Locations",

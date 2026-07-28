@@ -82,6 +82,12 @@ interface RendererPresentation {
   state: string;
   items?: RendererItem[];
   generation?: number;
+  /**
+   * True when a group's shared timeline owns occurrence changes. The renderer
+   * then reports progress and renders what it is given, but never advances the
+   * playlist itself.
+   */
+  synchronized?: boolean;
   emergency?: boolean;
   code?: string;
   approvalUrl?: string;
@@ -98,7 +104,8 @@ interface TilecastBridge {
   ): void;
   onRetryItem(callback: () => void): void;
   onSkipItem(callback: () => void): void;
-  reportProgress(itemId: string | null, kind: string): void;
+  /** `zoneId` identifies which layout zone produced the evidence. */
+  reportProgress(itemId: string | null, kind: string, zoneId?: string): void;
   reportPlaybackError(itemId: string | null, message: string): void;
   reportWebsiteRecovered(): void;
   submitServerUrl(url: string): Promise<{ ok: boolean; error?: string }>;
@@ -124,8 +131,39 @@ let index = 0;
 let itemTimer: number | null = null;
 let stillImageTicker: number | null = null;
 let websiteRefreshTimer: number | null = null;
+let websiteLoadTimer: number | null = null;
+let advanceTimer: number | null = null;
+let failTimer: number | null = null;
 let currentItem: RendererItem | null = null;
 let consecutiveFailures = 0;
+/** Who may change the current playlist occurrence — see playback-policy.ts. */
+let playbackAuthority: PlaybackAuthority = "local";
+/** Bumped for every mounted item so delayed callbacks can detect staleness. */
+let renderToken = 0;
+let completion = new ItemCompletion("local", false);
+/** Teardowns for independently-rotating layout zones of the current item. */
+let zoneTeardowns: (() => void)[] = [];
+
+/** The fade duration in static/index.html; two decoders overlap for it. */
+const CROSSFADE_MS = 300;
+const LAYER_CLEANUP_MS = 500;
+
+// Each fill of a layer gets a number, so delayed cleanup can tell "the layer I
+// faded out" from "that same layer, since refilled for the next item".
+const layerFills = new WeakMap<HTMLDivElement, number>();
+let fillSequence = 0;
+
+function layerFill(layer: HTMLDivElement): number {
+  return layerFills.get(layer) ?? 0;
+}
+
+function playbackToken(): PlaybackToken {
+  return { generation, render: renderToken };
+}
+
+function stillCurrent(captured: PlaybackToken): boolean {
+  return isCurrentPlayback(captured, playbackToken());
+}
 
 const FIT_MODES: Record<string, string> = {
   contain: "contain",
@@ -148,30 +186,95 @@ function clearTimers(): void {
     window.clearInterval(websiteRefreshTimer);
     websiteRefreshTimer = null;
   }
+  if (websiteLoadTimer !== null) {
+    window.clearTimeout(websiteLoadTimer);
+    websiteLoadTimer = null;
+  }
+  if (advanceTimer !== null) {
+    window.clearTimeout(advanceTimer);
+    advanceTimer = null;
+  }
+  // A failure back-off that has not fired yet belongs to the item that failed;
+  // letting it fire later would advance past whatever is on screen by then.
+  if (failTimer !== null) {
+    window.clearTimeout(failTimer);
+    failTimer = null;
+  }
+  clearZoneTeardowns();
   clearNodeTimers();
 }
 
+function clearZoneTeardowns(): void {
+  const teardowns = zoneTeardowns;
+  zoneTeardowns = [];
+  for (const teardown of teardowns) {
+    teardown();
+  }
+}
+
+/** Stop decoders on a layer that is no longer visible. */
+function pauseLayerVideos(layer: HTMLElement): void {
+  for (const video of Array.from(layer.querySelectorAll("video"))) {
+    video.pause();
+  }
+}
+
+/**
+ * Stage the next item on the hidden layer. Detaching a still-playing <video>
+ * leaves it decoding into a VA-API surface nobody can see, so the layer's
+ * current content is stopped first.
+ */
+function fillBackLayer(node: Node): void {
+  pauseLayerVideos(backLayer);
+  fillSequence += 1;
+  layerFills.set(backLayer, fillSequence);
+  backLayer.replaceChildren(node);
+}
+
 function swapLayers(): void {
-  const previousFront = frontLayer;
+  const outgoing = frontLayer;
   frontLayer = backLayer;
-  backLayer = previousFront;
+  backLayer = outgoing;
   frontLayer.classList.add("visible");
-  backLayer.classList.remove("visible");
+  outgoing.classList.remove("visible");
+
+  // Capture the layer and its fill now. Reading the mutable `backLayer` inside
+  // the delayed callbacks would tear down whatever happened to be in the back
+  // at that moment — including a layer already refilled for the next item.
+  const capturedFill = layerFill(outgoing);
+  const state = () => ({
+    outgoingIsFront: outgoing === frontLayer,
+    capturedFill,
+    currentFill: layerFill(outgoing),
+  });
+
+  // Two fullscreen decoders may overlap for the fade and no longer: on Intel
+  // Gen7 with VA-API and a single-fullscreen overlay, that contention is what
+  // makes a switch stutter or trip out. Pausing only once the incoming layer is
+  // fully opaque means the frame left behind is frozen, never black.
+  window.setTimeout(() => {
+    if (shouldPauseOutgoingLayer(state())) {
+      pauseLayerVideos(outgoing);
+    }
+  }, CROSSFADE_MS + 20);
   // Free decoders/webviews shortly after the fade completes.
   window.setTimeout(() => {
-    if (backLayer !== frontLayer) {
-      backLayer.replaceChildren();
+    if (shouldClearOutgoingLayer(state())) {
+      outgoing.replaceChildren();
     }
-  }, 500);
+  }, LAYER_CLEANUP_MS);
 }
 
 function showMessage(html: string): void {
   clearTimers();
   currentItem = null;
+  playbackAuthority = "local";
   messageEl.innerHTML = html;
   messageEl.classList.add("visible");
   layerA.classList.remove("visible");
   layerB.classList.remove("visible");
+  pauseLayerVideos(layerA);
+  pauseLayerVideos(layerB);
   layerA.replaceChildren();
   layerB.replaceChildren();
 }
@@ -751,6 +854,7 @@ function startPlaying(presentation: RendererPresentation): void {
   hideMessage();
   items = presentation.items ?? [];
   generation = presentation.generation ?? 0;
+  playbackAuthority = playbackAuthorityOf(presentation.synchronized);
   index = 0;
   consecutiveFailures = 0;
   clearTimers();
@@ -764,37 +868,74 @@ function advance(): void {
   if (items.length === 0) {
     return;
   }
-  const myGeneration = generation;
+  const captured = playbackToken();
   tilecast.reportProgress(currentItem?.id ?? null, "item-transition");
+  if (advanceTimer !== null) {
+    window.clearTimeout(advanceTimer);
+  }
   // The main process may activate a pending manifest on that boundary and
   // push a fresh presentation; give that message one macrotask to land so
   // the swap is seamless rather than one item late.
-  window.setTimeout(() => {
-    if (generation !== myGeneration) {
-      return; // a new presentation took over
+  advanceTimer = window.setTimeout(() => {
+    advanceTimer = null;
+    if (!stillCurrent(captured)) {
+      return; // a new presentation or a newer item took over
     }
     index = (index + 1) % items.length;
-    void renderItem(items[index]!, myGeneration);
+    void renderItem(items[index]!, captured.generation);
   }, 0);
 }
 
 function failItem(item: RendererItem, message: string): void {
   tilecast.reportPlaybackError(item.id, message);
   consecutiveFailures += 1;
-  const myGeneration = generation;
+  if (playbackAuthority === "shared") {
+    // The group timeline moves this screen to the next occurrence. Advancing
+    // locally would desync the group until the next shared boundary.
+    return;
+  }
+  const captured = playbackToken();
   // Isolate the failure and keep rotating; pause grows when everything is
   // failing so a fully broken playlist does not spin at 100% CPU.
   const delay = Math.min(
     2_000 * Math.max(consecutiveFailures - items.length, 0) + 1_000,
     30_000,
   );
-  window.setTimeout(() => {
-    if (generation !== myGeneration) {
+  if (failTimer !== null) {
+    window.clearTimeout(failTimer);
+  }
+  failTimer = window.setTimeout(() => {
+    failTimer = null;
+    // The item that failed may long since have been replaced — by a retry
+    // command, a new presentation, or the next item.
+    if (!stillCurrent(captured)) {
       return;
     }
     index = (index + 1) % items.length;
-    void renderItem(items[index]!, myGeneration);
+    void renderItem(items[index]!, captured.generation);
   }, delay);
+}
+
+/**
+ * Advance at a fixed item duration. Under a shared timeline the boundary is the
+ * timeline's to schedule, so no local timer is created at all.
+ */
+function scheduleItemCompletion(item: RendererItem, delayMs: number): void {
+  if (playbackAuthority === "shared") {
+    return;
+  }
+  const arbiter = completion;
+  const captured = playbackToken();
+  itemTimer = window.setTimeout(() => {
+    itemTimer = null;
+    if (!stillCurrent(captured) || currentItem !== item) {
+      return;
+    }
+    if (arbiter.complete("duration-timer") === "ignore") {
+      return;
+    }
+    advance();
+  }, delayMs);
 }
 
 async function renderItem(
@@ -805,7 +946,17 @@ async function renderItem(
     return;
   }
   clearTimers();
+  renderToken += 1;
   currentItem = item;
+  // Exactly one completion may act per occurrence. Only a single-video local
+  // playlist restarts in place; everything else advances.
+  completion = new ItemCompletion(
+    playbackAuthority,
+    items.length === 1 && item.kind === "video",
+  );
+  // The main process opens a child playback session on this signal; without it
+  // an item could only ever be reported as having finished.
+  tilecast.reportProgress(item.id, "item-started");
   const fit = FIT_MODES[item.fitMode] ?? "contain";
 
   if (item.kind === "image") {
@@ -834,7 +985,7 @@ function renderWidgetItem(item: RendererItem, myGeneration: number): void {
   container.style.height = "100%";
   container.style.background = payload.background || "#000";
   container.appendChild(buildRenderNode(payload.root));
-  backLayer.replaceChildren(container);
+  fillBackLayer(container);
   swapLayers();
   consecutiveFailures = 0;
   tilecast.reportProgress(item.id, "widget-shown");
@@ -846,7 +997,7 @@ function renderWidgetItem(item: RendererItem, myGeneration: number): void {
     }
   }, 30_000);
   if (item.durationMs) {
-    itemTimer = window.setTimeout(() => advance(), item.durationMs);
+    scheduleItemCompletion(item, item.durationMs);
   }
 }
 
@@ -885,25 +1036,49 @@ function renderLayoutItem(item: RendererItem, myGeneration: number): void {
     el.style.opacity = String(zone.opacity ?? 1);
     el.style.overflow = "hidden";
     if (zone.radius) el.style.borderRadius = `${zone.radius}px`;
+    // Each zone reports its own render evidence, so a layout whose zones have
+    // silently died is distinguishable from one that is working. Reporting
+    // only for the layout as a whole would hide exactly that.
     if (zone.render) {
-      el.appendChild(buildRenderNode(zone.render));
+      const node = buildRenderNode(zone.render);
+      el.appendChild(node);
+      // A render node is only evidence once its first frame has painted.
+      requestAnimationFrame(() => {
+        if (myGeneration === generation && node.isConnected) {
+          tilecast.reportProgress(item.id, "layout-zone-rendered", zone.id);
+        }
+      });
     } else if (zone.image) {
       const img = document.createElement("img");
       img.src = zone.image.src;
       img.style.width = "100%";
       img.style.height = "100%";
       img.style.objectFit = FIT_MODES[zone.image.fit] ?? "contain";
+      // On load, not on append: an image element that never decodes is not
+      // evidence that anything appeared in the zone.
+      img.onload = () => {
+        if (myGeneration === generation) {
+          tilecast.reportProgress(item.id, "layout-zone-rendered", zone.id);
+        }
+      };
       el.appendChild(img);
     } else if (zone.playlistItems && zone.playlistItems.length > 0) {
       startZonePlaylist(
         el,
         zone.playlistItems,
         () => generation === myGeneration,
+        // A rotating zone reports every time it advances, so it can be held
+        // to a continuing expectation rather than only an initial one.
+        () => tilecast.reportProgress(item.id, "layout-zone-rendered", zone.id),
       );
+    } else {
+      // An empty zone owes nothing; reporting for it keeps the pending set
+      // honest rather than leaving a zone permanently outstanding.
+      tilecast.reportProgress(item.id, "layout-zone-rendered", zone.id);
     }
     canvas.appendChild(el);
   }
-  backLayer.replaceChildren(canvas);
+  fillBackLayer(canvas);
   swapLayers();
   consecutiveFailures = 0;
   tilecast.reportProgress(item.id, "layout-shown");
@@ -913,7 +1088,7 @@ function renderLayoutItem(item: RendererItem, myGeneration: number): void {
     }
   }, 30_000);
   if (item.durationMs) {
-    itemTimer = window.setTimeout(() => advance(), item.durationMs);
+    scheduleItemCompletion(item, item.durationMs);
   }
 }
 
@@ -922,15 +1097,56 @@ function startZonePlaylist(
   container: HTMLElement,
   items: LayoutZonePayload["playlistItems"],
   alive: () => boolean,
+  onAdvance?: () => void,
 ): void {
   const list = items ?? [];
   let zoneIndex = 0;
+  let timer: number | null = null;
+  let zoneVideo: HTMLVideoElement | null = null;
+
+  // A zone outlives nothing: once its layout is no longer the active item its
+  // container is detached, and any timer or media event still pointing at it
+  // must stop rather than keep a decoder warm or drive a dead loop.
+  const stop = () => {
+    if (timer !== null) {
+      window.clearTimeout(timer);
+      timer = null;
+    }
+    if (zoneVideo) {
+      zoneVideo.onended = null;
+      zoneVideo.onerror = null;
+      zoneVideo.pause();
+      zoneVideo = null;
+    }
+  };
+  zoneTeardowns.push(stop);
+
+  let mounted = false;
+  const active = () =>
+    zoneStepAllowed({
+      alive: alive(),
+      mounted,
+      connected: container.isConnected,
+    });
+  const showLater = (delayMs: number) => {
+    if (timer !== null) {
+      window.clearTimeout(timer);
+    }
+    timer = window.setTimeout(() => {
+      timer = null;
+      showNext();
+    }, delayMs);
+  };
+
   const showNext = () => {
-    if (!alive() || list.length === 0) {
+    if (!active() || list.length === 0) {
+      stop();
       return;
     }
     const zi = list[zoneIndex % list.length]!;
     zoneIndex += 1;
+    // Every advance is fresh evidence that this zone is still alive.
+    onAdvance?.();
     if (zi.kind === "video") {
       const video = document.createElement("video");
       video.src = zi.src;
@@ -941,22 +1157,33 @@ function startZonePlaylist(
       video.style.height = "100%";
       video.style.objectFit = FIT_MODES[zi.fit] ?? "contain";
       video.onended = () => {
-        if (!video.loop) showNext();
+        // A detached element from a layout that is no longer active must not
+        // drive its old zone loop.
+        if (!video.loop && video.isConnected && active()) showNext();
       };
-      video.onerror = () => window.setTimeout(showNext, 2_000);
+      video.onerror = () => showLater(2_000);
+      if (zoneVideo) {
+        zoneVideo.pause();
+      }
+      zoneVideo = video;
       container.replaceChildren(video);
-      void video.play().catch(() => window.setTimeout(showNext, 2_000));
+      void video.play().catch(() => showLater(2_000));
     } else {
       const img = document.createElement("img");
       img.src = zi.src;
       img.style.width = "100%";
       img.style.height = "100%";
       img.style.objectFit = FIT_MODES[zi.fit] ?? "contain";
+      if (zoneVideo) {
+        zoneVideo.pause();
+        zoneVideo = null;
+      }
       container.replaceChildren(img);
       if (list.length > 1) {
-        window.setTimeout(showNext, zi.durationMs ?? 10_000);
+        showLater(zi.durationMs ?? 10_000);
       }
     }
+    mounted = true;
   };
   showNext();
 }
@@ -979,14 +1206,14 @@ function renderImage(
     stillImageTicker = window.setInterval(() => {
       tilecast.reportProgress(item.id, "image-shown");
     }, 30_000);
-    itemTimer = window.setTimeout(() => advance(), item.durationMs ?? 10_000);
+    scheduleItemCompletion(item, item.durationMs ?? 10_000);
   };
   img.onerror = () => {
-    if (myGeneration === generation) {
+    if (myGeneration === generation && currentItem === item) {
       failItem(item, "image failed to load");
     }
   };
-  backLayer.replaceChildren(img);
+  fillBackLayer(img);
   img.src = item.src;
 }
 
@@ -1001,22 +1228,40 @@ function renderVideo(
   video.muted = !item.audioEnabled;
   video.volume = Math.min(Math.max(item.volume, 0), 1);
   video.playsInline = true;
+  // A group timeline may update while the previous layer is fading out. The
+  // correction code uses this to avoid seeking that outgoing video.
+  video.dataset.tilecastItemId = item.id;
 
   const startS = (item.videoStartOffsetMs ?? 0) / 1_000;
   const endS =
     item.videoEndOffsetMs !== null ? item.videoEndOffsetMs / 1_000 : null;
   let lastReportedAt = 0;
-  let finished = false;
+  // Captured, so a stale event on this element can never consult (or settle)
+  // the arbiter belonging to a later item.
+  const arbiter = completion;
 
-  const finish = () => {
-    if (finished || myGeneration !== generation || currentItem !== item) {
+  const finish = (source: CompletionSource) => {
+    if (
+      myGeneration !== generation ||
+      currentItem !== item ||
+      !video.isConnected
+    ) {
       return;
     }
-    finished = true;
-    if (items.length === 1) {
+    const outcome = arbiter.complete(source);
+    if (outcome === "ignore") {
+      return;
+    }
+    // One completion path won the occurrence; cancel the competing timer so it
+    // cannot fire into the restart that is about to happen.
+    if (itemTimer !== null) {
+      window.clearTimeout(itemTimer);
+      itemTimer = null;
+    }
+    if (outcome === "restart") {
       // Single-item loop: seamless restart without tearing down the element.
+      // The guard stays closed until playback has genuinely resumed below.
       tilecast.reportProgress(item.id, "item-transition");
-      finished = false;
       video.currentTime = startS;
       void video.play().catch(() => failItem(item, "video restart failed"));
       return;
@@ -1030,13 +1275,15 @@ function renderVideo(
     }
     if (!video.dataset.shown) {
       video.dataset.shown = "1";
+      // Swapping on the first playable frame is what keeps the outgoing layer
+      // alive exactly until the incoming video has something to show.
       swapLayers();
       consecutiveFailures = 0;
       void video.play().catch(() => failItem(item, "video autoplay failed"));
     }
   };
   video.ontimeupdate = () => {
-    if (myGeneration !== generation) {
+    if (myGeneration !== generation || currentItem !== item) {
       return;
     }
     const now = Date.now();
@@ -1044,22 +1291,38 @@ function renderVideo(
       lastReportedAt = now;
       tilecast.reportProgress(item.id, "video-progress");
     }
+    // Evidence that a restarted occurrence is actually running again. Reopening
+    // the completion guard any earlier would let the losing signal through and
+    // restart the video a second time.
+    if (
+      arbiter.settledForOccurrence &&
+      video.currentTime >= startS + 0.15 &&
+      (endS === null || video.currentTime < endS)
+    ) {
+      arbiter.occurrenceStarted();
+    }
     if (endS !== null && video.currentTime >= endS) {
-      finish();
+      finish("end-offset");
     }
   };
-  video.onended = finish;
+  video.onended = () => finish("ended");
   video.onerror = () => {
-    if (myGeneration === generation) {
+    if (myGeneration === generation && currentItem === item) {
       failItem(item, "video failed: " + (video.error?.message ?? "unknown"));
     }
   };
   // A fixed durationMs (rare for video) also bounds the item.
-  if (item.durationMs) {
-    itemTimer = window.setTimeout(finish, item.durationMs);
+  if (item.durationMs && playbackAuthority === "local") {
+    itemTimer = window.setTimeout(
+      () => finish("duration-timer"),
+      item.durationMs,
+    );
   }
+  // The one intentional seek: start at the synchronized (or trimmed) offset.
+  // Drift correction never seeks merely because the occurrence changed, so this
+  // is the only reposition a healthy item performs.
   video.currentTime = startS;
-  backLayer.replaceChildren(video);
+  fillBackLayer(video);
   video.src = item.src;
   if (startS > 0) {
     video.addEventListener(
@@ -1095,7 +1358,9 @@ function renderWebsite(item: RendererItem, myGeneration: number): void {
     if (config.failureBehavior === "skip" || !config.fallbackSrc) {
       // Advance without counting a hard failure spiral; websites fail for
       // reasons that never affect cached media.
-      advance();
+      if (completion.complete("failure") !== "ignore") {
+        advance();
+      }
       return;
     }
     const fallbackImage = document.createElement("img");
@@ -1105,14 +1370,15 @@ function renderWebsite(item: RendererItem, myGeneration: number): void {
       swapLayers();
       tilecast.reportProgress(item.id, "image-shown");
     };
-    backLayer.replaceChildren(fallbackImage);
-    itemTimer = window.setTimeout(() => advance(), item.durationMs ?? 60_000);
+    fillBackLayer(fallbackImage);
+    scheduleItemCompletion(item, item.durationMs ?? 60_000);
   };
 
-  const loadTimeout = window.setTimeout(
+  websiteLoadTimer = window.setTimeout(
     () => showFallback("load timeout"),
     Math.max(config.loadTimeoutSeconds, 5) * 1_000,
   );
+  const loadTimeout = websiteLoadTimer;
 
   webview.addEventListener("did-finish-load", () => {
     if (myGeneration !== generation || currentItem !== item || failed) {
@@ -1168,8 +1434,8 @@ function renderWebsite(item: RendererItem, myGeneration: number): void {
     );
   }
 
-  itemTimer = window.setTimeout(() => advance(), item.durationMs ?? 60_000);
-  backLayer.replaceChildren(webview);
+  scheduleItemCompletion(item, item.durationMs ?? 60_000);
+  fillBackLayer(webview);
   webview.setAttribute("src", item.src);
 }
 
@@ -1299,5 +1565,10 @@ tilecast.onRetryItem(() => {
 });
 
 tilecast.onSkipItem(() => {
+  if (playbackAuthority === "shared") {
+    // A grouped screen cannot skip on its own: the shared timeline would snap
+    // it back within milliseconds, which is the visible glitch being fixed.
+    return;
+  }
   advance();
 });

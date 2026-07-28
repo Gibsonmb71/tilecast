@@ -16,6 +16,10 @@ func (s *server) activityRoutes(next http.Handler) http.Handler {
 			s.requireDevice(http.HandlerFunc(s.playerHeartbeatWithActivity)).ServeHTTP(w, r)
 			return
 		}
+		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/player/telemetry" {
+			s.requireDevice(http.HandlerFunc(s.ingestTelemetry)).ServeHTTP(w, r)
+			return
+		}
 		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/player/activity-events" {
 			s.requireDevice(http.HandlerFunc(s.ingestPlayerActivityWithCleanup)).ServeHTTP(w, r)
 			return
@@ -42,8 +46,24 @@ func (s *server) activityRoutes(next http.Handler) http.Handler {
 			handler = http.HandlerFunc(s.listAuditActivity)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/activity/audit/export.csv":
 			handler = s.requireRoles("owner", "administrator")(http.HandlerFunc(s.exportAuditActivity))
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/timeline") && strings.HasPrefix(r.URL.Path, "/api/v1/activity/screens/"):
+			handler = http.HandlerFunc(s.screenTimeline)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/telemetry") && strings.HasPrefix(r.URL.Path, "/api/v1/activity/screens/"):
+			handler = s.requireRoles("owner", "administrator")(http.HandlerFunc(s.screenTelemetry))
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/activity/screens/"):
 			handler = http.HandlerFunc(s.screenActivity)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/activity/compliance":
+			handler = http.HandlerFunc(s.playbackCompliance)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/activity/incidents":
+			handler = http.HandlerFunc(s.listIncidents)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/activity/incidents/analytics":
+			handler = http.HandlerFunc(s.incidentAnalytics)
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/activity/incidents/"):
+			handler = http.HandlerFunc(s.getIncident)
+		// Acting on an incident changes operational state, so it needs the same
+		// privilege and CSRF protection as every other administrative change.
+		case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/api/v1/activity/incidents/"):
+			handler = s.requireRoles("owner", "administrator")(s.requireCSRF(http.HandlerFunc(s.updateIncident)))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/activity/retention":
 			handler = s.requireRoles("owner", "administrator")(http.HandlerFunc(s.getActivityRetention))
 		case r.Method == http.MethodPatch && r.URL.Path == "/api/v1/activity/retention":

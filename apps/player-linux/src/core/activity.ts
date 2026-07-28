@@ -38,17 +38,29 @@ export type ActivityResult =
   | "recovered"
   | "success";
 
+export type ActivitySessionType =
+  "presentation" | "content" | "layout_placement" | "playlist_item";
+
 export interface ActivityEventInput {
   eventType: string;
   category?: string;
   severity?: ActivitySeverity;
   presentationType?: string;
   presentationId?: string;
+  presentationRevision?: string;
   contentType?: string;
   contentId?: string;
   playlistItemId?: string;
+  layoutPlacementId?: string;
+  /** Stable for the life of one session; the end event repeats the start's. */
+  activitySessionId?: string;
+  parentActivitySessionId?: string;
+  sessionType?: ActivitySessionType;
+  /** Why the session ended. Required on end events under contract v2. */
+  terminalReason?: string;
   result?: ActivityResult;
   durationMs?: number;
+  expectedDurationMs?: number;
   failureCode?: string;
   failureMessage?: string;
   trigger?: string;

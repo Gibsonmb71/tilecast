@@ -35,7 +35,7 @@ import (
 func main() {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
-		case "backup", "restore":
+		case "backup", "restore", "mfa":
 			runCLI(os.Args[1], os.Args[2:])
 			return
 		case "serve":
@@ -79,6 +79,13 @@ func serve() {
 	}
 
 	authService := auth.NewService(db, cfg.SessionTTL)
+	webAuthnConfig, passkeyUnavailable := auth.ResolveWebAuthnConfig("Tilecast", cfg.PublicURL, cfg.WebAuthn.RPID, cfg.WebAuthn.Origins)
+	if err = authService.ConfigurePasskeys(webAuthnConfig, passkeyUnavailable); err != nil {
+		fail("passkey configuration failed", err)
+	}
+	if passkeyUnavailable != "" {
+		logger.Info("passkeys are disabled", "reason", passkeyUnavailable)
+	}
 	presence := devices.NewPresenceHub()
 	deviceService := devices.NewService(db, presence, cfg.PublicURL)
 	mediaStorage, err := media.NewLocalStorage(cfg.Media.Root)

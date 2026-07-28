@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -61,7 +62,7 @@ const proofSelectSQL = `
 	       COALESCE(p.content_type,''),COALESCE(p.content_id,''),COALESCE(NULLIF(p.content_name,''),a.name,''),COALESCE(p.playlist_item_id,''),COALESCE(p.layout_placement_id,''),
 	       p.actual_duration_ms,p.expected_duration_ms,p.result,COALESCE(p.trigger_context,''),COALESCE(p.schedule_id,''),COALESCE(p.emergency_id,''),
 	       p.manifest_version,COALESCE(p.failure_code,''),COALESCE(p.source_id,''),COALESCE(p.selected_record_id,''),p.selection_date,
-	       p.source_cached_at,COALESCE(p.source_revision,''),COALESCE(p.snapshot_hash,''),p.metadata
+	       p.source_cached_at,COALESCE(p.source_revision,''),COALESCE(p.snapshot_hash,''),p.session_type,COALESCE(p.terminal_reason,''),p.metadata
 	FROM playback_sessions p
 	JOIN screens s ON s.id=p.screen_id
 	LEFT JOIN screen_groups g ON g.id=p.group_id
@@ -79,7 +80,7 @@ func scanProof(scan proofScanner, role string) (proofOfPlayRecord, error) {
 		&item.ContentType, &item.ContentID, &item.ContentName, &item.PlaylistItemID, &item.LayoutPlacementID,
 		&item.ActualDurationMS, &item.ExpectedDurationMS, &item.Result, &item.Trigger, &item.ScheduleID, &item.EmergencyID,
 		&item.ManifestVersion, &item.FailureCode, &item.SourceID, &item.SelectedRecordID, &item.SelectionDate,
-		&item.SourceCachedAt, &item.SourceRevision, &item.SnapshotHash, &raw)
+		&item.SourceCachedAt, &item.SourceRevision, &item.SnapshotHash, &item.SessionType, &item.TerminalReason, &raw)
 	if err != nil {
 		return item, err
 	}
@@ -98,6 +99,24 @@ func proofClauses(r *http.Request, window activityWindow) ([]string, []any, erro
 		}
 	}
 	appendActivityFilter(&clauses, &args, "p.result = $%d", queryValue(r, "result"))
+	if value := queryValue(r, "sessionType"); value != "" {
+		if !isActivitySessionType(value) {
+			return clauses, args, errors.New("sessionType is invalid")
+		}
+		appendActivityFilter(&clauses, &args, "p.session_type = $%d", value)
+	}
+	if value := queryValue(r, "terminalReason"); value != "" {
+		// "unexpected" is the set the Interrupted plays metric counts. Without
+		// it the drill-down could only pick one reason and would not match.
+		if value == "unexpected" {
+			args = append(args, interruptedTerminalReasons())
+			clauses = append(clauses, "p.terminal_reason = ANY($"+strconv.Itoa(len(args))+")")
+		} else if !isActivityTerminalReason(value) {
+			return clauses, args, errors.New("terminalReason is invalid")
+		} else {
+			appendActivityFilter(&clauses, &args, "p.terminal_reason = $%d", value)
+		}
+	}
 	appendActivityFilter(&clauses, &args, "p.content_id = $%d", firstQueryValue(r, "media", "widget", "content"))
 	appendActivityFilter(&clauses, &args, "p.presentation_id = $%d AND p.presentation_type='playlist'", queryValue(r, "playlist"))
 	appendActivityFilter(&clauses, &args, "p.presentation_id = $%d AND p.presentation_type='layout'", queryValue(r, "layout"))
@@ -144,15 +163,22 @@ func (s *server) proofOfPlaySummary(w http.ResponseWriter, r *http.Request) {
 		dimension = "screen"
 		keyExpression, labelExpression = "p.screen_id::text", "s.name"
 	}
+	// Root and child durations are totalled separately. Root sessions are the
+	// screen's wall clock; child sessions are exposure and can overlap, so the
+	// two must never be added together into one "confirmed playback" number.
+	interrupted := len(args) + 1
+	args = append(args, interruptedTerminalReasons())
 	rows, err := s.db.Query(r.Context(), `
 		SELECT `+keyExpression+`,`+labelExpression+`,
-		       COALESCE(sum(p.actual_duration_ms) FILTER(WHERE p.result IN('completed','recovered','partial')),0)::bigint,
+		       COALESCE(sum(p.actual_duration_ms) FILTER(WHERE p.session_type='presentation' AND p.result IN('completed','recovered','partial')),0)::bigint,
+		       COALESCE(sum(p.actual_duration_ms) FILTER(WHERE p.session_type<>'presentation' AND p.result IN('completed','recovered','partial')),0)::bigint,
 		       count(*)::bigint,count(*) FILTER(WHERE p.result='completed')::bigint,
 		       count(*) FILTER(WHERE p.result='failed')::bigint,count(*) FILTER(WHERE p.result='partial')::bigint,
-		       count(*) FILTER(WHERE p.result='unknown')::bigint
+		       count(*) FILTER(WHERE p.result='unknown')::bigint,
+		       count(*) FILTER(WHERE p.terminal_reason = ANY($`+strconv.Itoa(interrupted)+`))::bigint
 		FROM playback_sessions p JOIN screens s ON s.id=p.screen_id
 		WHERE `+strings.Join(clauses, " AND ")+`
-		GROUP BY 1,2 ORDER BY 3 DESC,2 LIMIT 250`, args...)
+		GROUP BY 1,2 ORDER BY 3 DESC,4 DESC,2 LIMIT 250`, args...)
 	if err != nil {
 		s.internalError(w, r, err)
 		return
@@ -161,12 +187,11 @@ func (s *server) proofOfPlaySummary(w http.ResponseWriter, r *http.Request) {
 	items := []proofSummaryItem{}
 	for rows.Next() {
 		var item proofSummaryItem
-		if rows.Scan(&item.Key, &item.Label, &item.ConfirmedDurationMS, &item.Records, &item.Completed, &item.Failures, &item.Partial, &item.Unknown) != nil {
+		if rows.Scan(&item.Key, &item.Label, &item.ConfirmedScreenPlaybackMS, &item.ContentExposureMS, &item.Records, &item.Completed, &item.Failures, &item.Partial, &item.Unknown, &item.Interrupted) != nil {
 			continue
 		}
-		confirmed := item.Completed + item.Partial
 		if item.Records > 0 {
-			item.CoveragePercent = float64(confirmed) / float64(item.Records) * 100
+			item.SessionCompletionPercent = float64(item.Completed+item.Partial) / float64(item.Records) * 100
 		}
 		items = append(items, item)
 	}
@@ -197,17 +222,17 @@ func (s *server) exportProofOfPlay(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="tilecast-proof-of-play.csv"`)
 	writer := csv.NewWriter(w)
-	_ = writer.Write([]string{"Started at", "Ended at", "Screen", "Group", "Presentation", "Presentation type", "Revision", "Content", "Content type", "Playlist item ID", "Layout placement ID", "Actual duration ms", "Expected duration ms", "Result", "Trigger", "Schedule ID", "Emergency ID", "Manifest version", "Failure code", "Source ID", "Selected record ID", "Selection date", "Source cached at", "Source revision", "Snapshot hash"})
+	_ = writer.Write([]string{"Started at", "Ended at", "Screen", "Group", "Session type", "Presentation", "Presentation type", "Revision", "Content", "Content type", "Playlist item ID", "Layout placement ID", "Actual duration ms", "Expected duration ms", "Result", "Terminal reason", "Trigger", "Schedule ID", "Emergency ID", "Manifest version", "Failure code", "Source ID", "Selected record ID", "Selection date", "Source cached at", "Source revision", "Snapshot hash"})
 	for rows.Next() {
 		item, err := scanProof(rows.Scan, "owner")
 		if err != nil {
 			continue
 		}
 		_ = writer.Write([]string{
-			item.StartedAt.UTC().Format(time.RFC3339), optionalTime(item.EndedAt), item.ScreenName, item.GroupName,
+			item.StartedAt.UTC().Format(time.RFC3339), optionalTime(item.EndedAt), item.ScreenName, item.GroupName, item.SessionType,
 			firstNonEmpty(item.PresentationName, item.PresentationID), item.PresentationType, item.PresentationRevision,
 			firstNonEmpty(item.ContentName, item.ContentID), item.ContentType, item.PlaylistItemID, item.LayoutPlacementID,
-			optionalInt64(item.ActualDurationMS), optionalInt64(item.ExpectedDurationMS), item.Result, item.Trigger,
+			optionalInt64(item.ActualDurationMS), optionalInt64(item.ExpectedDurationMS), item.Result, item.TerminalReason, item.Trigger,
 			item.ScheduleID, item.EmergencyID, optionalInt64(item.ManifestVersion), item.FailureCode, item.SourceID,
 			item.SelectedRecordID, optionalDate(item.SelectionDate), optionalTime(item.SourceCachedAt), item.SourceRevision, item.SnapshotHash,
 		})

@@ -20,38 +20,34 @@ func (s *server) activityOverview(w http.ResponseWriter, r *http.Request) {
 	data.Range.From, data.Range.To = window.From, window.To
 	// Marshal empty lists as [] rather than null; the dashboard indexes into
 	// these collections directly.
-	data.NeedsAttention = []activityAttentionItem{}
 	data.Timeline = []activityTimelineItem{}
-	_ = s.db.QueryRow(r.Context(), `SELECT count(*) FROM screens WHERE enabled=TRUE AND last_heartbeat_at>now()-interval '5 minutes'`).Scan(&data.Cards.ScreensReportingNormally)
-	_ = s.db.QueryRow(r.Context(), `SELECT count(DISTINCT screen_id) FROM screen_state_intervals WHERE started_at<$2 AND COALESCE(ended_at,$2)>$1 AND state IN('offline','degraded','unknown')`, window.From, window.To).Scan(&data.Cards.ScreensWithPlaybackGaps)
-	_ = s.db.QueryRow(r.Context(), `SELECT COALESCE(sum(actual_duration_ms) FILTER(WHERE result IN('completed','recovered','partial')),0),count(*) FILTER(WHERE result='failed'),count(*) FILTER(WHERE result='partial') FROM playback_sessions WHERE started_at>=$1 AND started_at<$2`, window.From, window.To).Scan(&data.Cards.ConfirmedDurationMS, &data.Cards.PlaybackFailures, &data.Cards.InterruptedPlays)
+	if fleet, err := s.fleetHealth(r.Context(), time.Now().UTC()); err != nil {
+		s.logger.Error("activity fleet health query failed", "error", err)
+		data.Fleet = nil
+	} else {
+		data.Fleet = &fleet
+	}
+	// Counted as reporting gaps rather than playback gaps, and narrowed to the
+	// states a connectivity gap actually produces. The previous count also
+	// included renderer and storage impairment, which the drill-down could not
+	// show and the fleet-health section reports as impaired instead.
+	_ = s.db.QueryRow(r.Context(), `SELECT count(DISTINCT screen_id) FROM screen_state_intervals WHERE started_at<$2 AND COALESCE(ended_at,$2)>$1 AND (state IN('offline','unknown') OR (state='degraded' AND COALESCE(reason_code,'')='heartbeat_gap'))`, window.From, window.To).Scan(&data.Cards.ScreensWithReportingGaps)
+	durations, err := s.playbackDurations(r.Context(), window.From, window.To)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	data.Cards.ConfirmedScreenPlaybackMS, data.Cards.ContentExposureMS = durations.ConfirmedScreenMS, durations.ContentExposureMS
+	// An interruption is an unexpected ending, not merely a partial result. A
+	// scheduled changeover ends playback early and is exactly what was asked for.
+	_ = s.db.QueryRow(r.Context(), `
+		SELECT count(*) FILTER(WHERE result='failed'),
+		       count(*) FILTER(WHERE terminal_reason = ANY($3))
+		FROM playback_sessions WHERE started_at>=$1 AND started_at<$2`,
+		window.From, window.To, interruptedTerminalReasons()).Scan(&data.Cards.PlaybackFailures, &data.Cards.InterruptedPlays)
 	_ = s.db.QueryRow(r.Context(), `SELECT count(*) FROM player_activity_events WHERE occurred_at>=$1 AND occurred_at<$2 AND event_type='emergency.active'`, window.From, window.To).Scan(&data.Cards.EmergencyActivations)
 	_ = s.db.QueryRow(r.Context(), `SELECT count(*) FROM player_activity_events WHERE occurred_at>=$1 AND occurred_at<$2 AND category='updates' AND result='failed'`, window.From, window.To).Scan(&data.Cards.FailedPlayerUpdates)
 	_ = s.db.QueryRow(r.Context(), `SELECT count(*) FROM audit_logs WHERE created_at>=$1 AND created_at<$2 AND result='success'`, window.From, window.To).Scan(&data.Cards.RecentAdminChanges)
-
-	attentionRows, err := s.db.Query(r.Context(), `
-		WITH latest AS (
-			SELECT DISTINCT ON(e.screen_id) e.screen_id,e.event_type,e.severity,e.occurred_at,e.failure_message
-			FROM player_activity_events e WHERE e.severity IN('warning','error','critical')
-			ORDER BY e.screen_id,e.occurred_at DESC,e.sequence DESC
-		)
-		SELECT s.id,s.name,
-		       CASE WHEN s.last_heartbeat_at IS NULL OR s.last_heartbeat_at<now()-interval '5 minutes' THEN 'not_reporting' ELSE COALESCE(l.event_type,'unknown') END,
-		       CASE WHEN s.last_heartbeat_at IS NULL OR s.last_heartbeat_at<now()-interval '5 minutes' THEN 'error' ELSE COALESCE(l.severity,'warning') END,
-		       CASE WHEN s.last_heartbeat_at IS NULL OR s.last_heartbeat_at<now()-interval '5 minutes' THEN 'Screen is not reporting.' ELSE COALESCE(NULLIF(l.failure_message,''),replace(l.event_type,'.',' ')) END,
-		       COALESCE(l.occurred_at,s.last_heartbeat_at,s.created_at)
-		FROM screens s LEFT JOIN latest l ON l.screen_id=s.id
-		WHERE s.enabled=TRUE AND (s.last_heartbeat_at IS NULL OR s.last_heartbeat_at<now()-interval '5 minutes' OR l.occurred_at>now()-interval '24 hours')
-		ORDER BY 6 DESC LIMIT 25`)
-	if err == nil {
-		defer attentionRows.Close()
-		for attentionRows.Next() {
-			var item activityAttentionItem
-			if attentionRows.Scan(&item.ScreenID, &item.ScreenName, &item.Kind, &item.Severity, &item.Description, &item.OccurredAt) == nil {
-				data.NeedsAttention = append(data.NeedsAttention, item)
-			}
-		}
-	}
 
 	timelineRows, err := s.db.Query(r.Context(), `
 		SELECT id::text,occurred_at,'screen',severity,

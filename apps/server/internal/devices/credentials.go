@@ -163,9 +163,20 @@ func (s *Service) Heartbeat(ctx context.Context, principal DevicePrincipal, hear
 			audit("reliability.admin_pin_changed")
 		}
 	}
-	if heartbeat.PlayerVersionCode != nil && heartbeat.LastHealthyPlaybackAt != nil && (heartbeat.SafeMode == nil || !*heartbeat.SafeMode) {
+	// A self-update settles here, on every accepted heartbeat, so a target that
+	// was still `reconnecting` when the first post-install heartbeat arrived
+	// cannot stay there: the conditions are re-evaluated each time. The state
+	// filter excludes terminal states, which makes the transition idempotent —
+	// a repeated heartbeat updates no rows and cannot double-count a target.
+	updateFailureReported := heartbeat.UpdateState == "failed" || heartbeat.UpdateError != ""
+	if heartbeat.PlayerVersionCode != nil && heartbeat.LastHealthyPlaybackAt != nil && !updateFailureReported && (heartbeat.SafeMode == nil || !*heartbeat.SafeMode) {
 		_, _ = s.db.Exec(ctx, `WITH completed AS (UPDATE screen_update_states SET state='succeeded',reconnect_at=now(),completed_at=now(),updated_at=now() WHERE screen_id=$1 AND expected_version_code<=$2 AND state IN('ready','waiting_for_permission','waiting_for_user','installing','reconnecting') AND (install_started_at IS NULL OR $3>install_started_at) RETURNING deployment_id) UPDATE update_deployments d SET status=CASE WHEN NOT EXISTS(SELECT 1 FROM screen_update_states st WHERE st.deployment_id=d.id AND st.state NOT IN('succeeded','failed','cancelled','incompatible','already_current')) THEN 'completed' ELSE d.status END,completed_at=CASE WHEN NOT EXISTS(SELECT 1 FROM screen_update_states st WHERE st.deployment_id=d.id AND st.state NOT IN('succeeded','failed','cancelled','incompatible','already_current')) THEN now() ELSE d.completed_at END WHERE d.id IN(SELECT deployment_id FROM completed)`, principal.ScreenID, *heartbeat.PlayerVersionCode, heartbeat.LastHealthyPlaybackAt)
 	}
+	// Bounded reconciliation: a deployment whose targets are all terminal must not
+	// keep reporting progress just because the transition that finished the last
+	// target happened on a path that did not aggregate it. Scoped to the
+	// deployments that include this screen, so it stays a constant-size check.
+	_, _ = s.db.Exec(ctx, `UPDATE update_deployments d SET status='completed',completed_at=COALESCE(d.completed_at,now()) WHERE d.status='active' AND EXISTS(SELECT 1 FROM screen_update_states st WHERE st.deployment_id=d.id AND st.screen_id=$1) AND NOT EXISTS(SELECT 1 FROM screen_update_states st WHERE st.deployment_id=d.id AND st.state NOT IN('succeeded','failed','cancelled','incompatible','already_current'))`, principal.ScreenID)
 	return nil
 }
 

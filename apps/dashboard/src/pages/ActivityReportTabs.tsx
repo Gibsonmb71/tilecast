@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   ChevronRight,
   Clock3,
+  Layers,
   MonitorCheck,
   PlayCircle,
 } from "lucide-react";
@@ -83,19 +84,30 @@ export function ProofTab({
   });
   const metrics = useMemo(() => {
     const items = screenSummary.data?.items ?? [];
+    // Screen playback and content exposure are kept apart on purpose: adding
+    // them would count one second of wall clock once per layout zone.
     const totals = items.reduce(
       (current, item) => ({
         records: current.records + item.records,
-        duration: current.duration + item.confirmedDurationMs,
-        failures: current.failures + item.failures + item.partial,
-        coverage: current.coverage + item.coveragePercent,
+        screenPlayback: current.screenPlayback + item.confirmedScreenPlaybackMs,
+        exposure: current.exposure + item.contentExposureMs,
+        failures: current.failures + item.failures,
+        interrupted: current.interrupted + item.interrupted,
+        completion: current.completion + item.sessionCompletionPercent,
       }),
-      { records: 0, duration: 0, failures: 0, coverage: 0 },
+      {
+        records: 0,
+        screenPlayback: 0,
+        exposure: 0,
+        failures: 0,
+        interrupted: 0,
+        completion: 0,
+      },
     );
     return {
       ...totals,
       screens: items.length,
-      coverage: items.length ? totals.coverage / items.length : 0,
+      completion: items.length ? totals.completion / items.length : 0,
     };
   }, [screenSummary.data]);
 
@@ -122,7 +134,11 @@ export function ProofTab({
           <header>
             <div>
               <h3>Proof-of-play summary</h3>
-              <p>Only Player-confirmed intervals count toward coverage.</p>
+              <p>
+                Only Player-confirmed intervals are counted. Screen time is the
+                union of root presentations; exposure sums the content inside
+                them and can be larger when zones play at once.
+              </p>
             </div>
             <label className="activity-group-by">
               <span>Group by</span>
@@ -146,14 +162,20 @@ export function ProofTab({
             </article>
             <article>
               <Clock3 size={18} aria-hidden="true" />
-              <strong>{formatDuration(metrics.duration)}</strong>
-              <span>Playback duration</span>
-              <small>Player-confirmed</small>
+              <strong>{formatDuration(metrics.screenPlayback)}</strong>
+              <span>Confirmed screen playback</span>
+              <small>Wall clock, overlaps merged</small>
+            </article>
+            <article>
+              <Layers size={18} aria-hidden="true" />
+              <strong>{formatDuration(metrics.exposure)}</strong>
+              <span>Content exposure</span>
+              <small>Sums simultaneous zones</small>
             </article>
             <article>
               <MonitorCheck size={18} aria-hidden="true" />
-              <strong>{metrics.coverage.toFixed(0)}%</strong>
-              <span>Screen coverage</span>
+              <strong>{metrics.completion.toFixed(0)}%</strong>
+              <span>Session completion rate</span>
               <small>
                 Across {metrics.screens} screen
                 {metrics.screens === 1 ? "" : "s"}
@@ -162,8 +184,10 @@ export function ProofTab({
             <article>
               <AlertTriangle size={18} aria-hidden="true" />
               <strong>{metrics.failures.toLocaleString()}</strong>
-              <span>Failed or partial</span>
-              <small>Needs review</small>
+              <span>Failed sessions</span>
+              <small>
+                {metrics.interrupted.toLocaleString()} ended unexpectedly
+              </small>
             </article>
           </div>
           {(summary.data?.items?.length ?? 0) > 0 && (
@@ -179,8 +203,12 @@ export function ProofTab({
                       <strong>{item.label}</strong>
                       <small>{item.records} confirmed records</small>
                     </span>
-                    <span>{formatDuration(item.confirmedDurationMs)}</span>
-                    <span>{item.coveragePercent.toFixed(0)}% coverage</span>
+                    <span>
+                      {formatDuration(item.confirmedScreenPlaybackMs)}
+                    </span>
+                    <span>
+                      {item.sessionCompletionPercent.toFixed(0)}% completed
+                    </span>
                     <span>{item.failures} failures</span>
                   </div>
                 ))}

@@ -2,9 +2,12 @@ import { contextBridge, ipcRenderer } from "electron";
 import type { StoredManifest } from "./core/manifest";
 import type { Presentation, PresentationItem } from "./core/player";
 import {
+  activateSynchronizedClock,
   enrichSynchronizedPresentation,
   projectSynchronizedPresentation,
+  synchronizedNowMs,
   synchronizedPlaybackPosition,
+  type SynchronizedClockActivation,
   type SynchronizedPlayingPresentation,
   type SynchronizedPlaybackPosition,
 } from "./core/synchronized-playback";
@@ -26,6 +29,14 @@ const presentCallbacks = new Set<PresentCallback>();
 const syncPositionCallbacks = new Set<SyncPositionCallback>();
 
 let activeSynchronized: SynchronizedPlayingPresentation | null = null;
+/**
+ * Wall-clock and monotonic instants captured when the active synchronized
+ * presentation was activated. Progression comes from the monotonic delta so a
+ * clock correction mid-playback cannot rewind or fast-forward the timeline; the
+ * wall-clock value is used only to place the initial position relative to the
+ * server's playback anchor. Reactivating recaptures both.
+ */
+let synchronizedClock: SynchronizedClockActivation | null = null;
 let lastOccurrence: number | null = null;
 let lastItemId: string | null = null;
 let lastPresentation: unknown = null;
@@ -85,6 +96,10 @@ function scheduleBoundary(position: SynchronizedPlaybackPosition): void {
   boundaryTimer.unref?.();
 }
 
+function synchronizedTimelineNowMs(): number {
+  return synchronizedClock ? synchronizedNowMs(synchronizedClock) : Date.now();
+}
+
 function emitExpectedSynchronizedPosition(force: boolean): void {
   const presentation = activeSynchronized;
   if (!presentation) {
@@ -93,7 +108,7 @@ function emitExpectedSynchronizedPosition(force: boolean): void {
 
   const position = synchronizedPlaybackPosition(
     presentation.synchronizedPlayback,
-    Date.now(),
+    synchronizedTimelineNowMs(),
   );
   emitSyncPosition(positionEvent(presentation, position));
 
@@ -116,6 +131,9 @@ function emitExpectedSynchronizedPosition(force: boolean): void {
   );
   lastOccurrence = position.occurrence;
   lastItemId = presentation.items[position.index]?.id ?? null;
+  if (lastItemId !== null) {
+    ipcRenderer.send("progress", { itemId: lastItemId, kind: "item-started" });
+  }
   emitPresentation(projected);
   scheduleBoundary(position);
 }
@@ -129,6 +147,7 @@ function activatePresentation(
     !("synchronizedPlayback" in presentation)
   ) {
     activeSynchronized = null;
+    synchronizedClock = null;
     lastOccurrence = null;
     lastItemId = null;
     emitSyncPosition(null);
@@ -137,6 +156,10 @@ function activatePresentation(
   }
 
   activeSynchronized = presentation;
+  // A fresh activation reads the wall clock once, so a late-joining player (or
+  // one whose schedule/emergency anchor just changed) still lands at the right
+  // point in the shared cycle.
+  synchronizedClock = activateSynchronizedClock();
   lastOccurrence = null;
   lastItemId = null;
   emitExpectedSynchronizedPosition(true);
@@ -147,7 +170,7 @@ function activatePresentation(
     }
     const position = synchronizedPlaybackPosition(
       active.synchronizedPlayback,
-      Date.now(),
+      synchronizedTimelineNowMs(),
     );
     if (position.occurrence !== lastOccurrence) {
       emitExpectedSynchronizedPosition(false);
@@ -195,8 +218,8 @@ contextBridge.exposeInMainWorld("tilecast", {
   onSkipItem(callback: () => void): void {
     ipcRenderer.on("skip-item", () => callback());
   },
-  reportProgress(itemId: string | null, kind: string): void {
-    ipcRenderer.send("progress", { itemId, kind });
+  reportProgress(itemId: string | null, kind: string, zoneId?: string): void {
+    ipcRenderer.send("progress", { itemId, kind, zoneId });
   },
   reportPlaybackError(itemId: string | null, message: string): void {
     ipcRenderer.send("playback-error", { itemId, message });

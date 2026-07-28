@@ -25,6 +25,15 @@ type Config struct {
 	Operations   OperationsConfig
 	Updates      UpdatesConfig
 	Backup       BackupConfig
+	WebAuthn     WebAuthnConfig
+}
+
+// WebAuthnConfig overrides the relying party that is otherwise derived from
+// the public URL. Both values are needed only when the address browsers use
+// differs from TILECAST_PUBLIC_URL, which happens behind some proxies.
+type WebAuthnConfig struct {
+	RPID    string
+	Origins string
 }
 
 type BackupConfig struct {
@@ -98,6 +107,10 @@ func Load() (Config, error) {
 		PublicURL:   get("TILECAST_PUBLIC_URL", "http://localhost:8080"),
 		CookieName:  get("TILECAST_COOKIE_NAME", "tilecast_session"),
 		LogLevel:    get("TILECAST_LOG_LEVEL", "info"),
+		WebAuthn: WebAuthnConfig{
+			RPID:    get("TILECAST_WEBAUTHN_RP_ID", ""),
+			Origins: get("TILECAST_WEBAUTHN_ORIGINS", ""),
+		},
 	}
 
 	if cfg.DatabaseURL == "" {

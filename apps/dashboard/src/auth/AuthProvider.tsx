@@ -1,14 +1,45 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createContext, useContext, type PropsWithChildren } from "react";
-import { api } from "../api/client";
-import type { AuthStatus, LoginInput, SetupInput } from "../api/types";
+import {
+  createContext,
+  useContext,
+  useState,
+  type PropsWithChildren,
+} from "react";
+import { api, ApiError } from "../api/client";
+import type {
+  AuthStatus,
+  LoginInput,
+  MFAChallenge,
+  SessionResult,
+  SetupInput,
+} from "../api/types";
+import {
+  conditionalMediationAvailable,
+  isPasskeyCancellation,
+  serializeAssertion,
+  signalUnknownCredential,
+  toRequestOptions,
+} from "./webauthn";
 
 type AuthContextValue = {
   status?: AuthStatus;
   isLoading: boolean;
   error: Error | null;
+  /** Set when a password was accepted but a second factor is still owed. */
+  challenge?: MFAChallenge;
   setup: (input: SetupInput) => Promise<void>;
   login: (input: LoginInput) => Promise<void>;
+  verifyMfa: (code: string) => Promise<void>;
+  /** Completes a pending challenge with the account's passkey. */
+  verifyMfaPasskey: () => Promise<void>;
+  /** Signs in with a discoverable passkey, with no username or password. */
+  loginWithPasskey: () => Promise<void>;
+  /**
+   * Arms autofill-assisted sign-in: passkeys appear in the browser's own
+   * autofill list on the username field. Returns a cleanup function.
+   */
+  watchForPasskeyAutofill: () => () => void;
+  cancelChallenge: () => void;
   logout: () => Promise<void>;
   isSubmitting: boolean;
 };
@@ -16,19 +47,35 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null);
 const authKey = ["auth", "status"] as const;
 
+/**
+ * Every failure here is already surfaced through `error` on the context, so
+ * the promise these helpers return resolves either way. Rejecting as well
+ * would make each caller repeat the same catch to avoid an unhandled
+ * rejection, and a wrong password is an expected outcome, not a fault.
+ */
+async function settle(work: Promise<unknown>) {
+  await work.catch(() => undefined);
+}
+
+function isChallenge(
+  result: MFAChallenge | SessionResult,
+): result is MFAChallenge {
+  return "mfaRequired" in result && result.mfaRequired;
+}
+
 export function AuthProvider({ children }: PropsWithChildren) {
   const queryClient = useQueryClient();
+  const [challenge, setChallenge] = useState<MFAChallenge | undefined>();
   const query = useQuery({
     queryKey: authKey,
     queryFn: api.authStatus,
     retry: false,
     staleTime: 30_000,
   });
-  const setSession = (result: {
-    user: NonNullable<AuthStatus["user"]>;
-    csrfToken: string;
-  }) => {
+  const setSession = (result: SessionResult) => {
+    setChallenge(undefined);
     queryClient.setQueryData<AuthStatus>(authKey, {
+      ...(query.data ?? { setupRequired: false }),
       setupRequired: false,
       authenticated: true,
       ...result,
@@ -40,31 +87,129 @@ export function AuthProvider({ children }: PropsWithChildren) {
   });
   const loginMutation = useMutation({
     mutationFn: api.login,
+    onSuccess: (result) => {
+      if (isChallenge(result)) setChallenge(result);
+      else setSession(result);
+    },
+  });
+  const verifyMutation = useMutation({
+    mutationFn: (code: string) => {
+      if (!challenge) throw new Error("This sign-in attempt has expired.");
+      return api.verifyMfa(challenge.challengeToken, code);
+    },
     onSuccess: setSession,
   });
-  const logoutMutation = useMutation({
-    mutationFn: async () => api.logout(query.data?.csrfToken ?? ""),
-    onSuccess: () =>
-      queryClient.setQueryData<AuthStatus>(authKey, {
-        setupRequired: false,
-        authenticated: false,
-      }),
+  // The passkey mutations own the whole ceremony: the browser call sits
+  // between two requests, so it cannot be split across React state.
+  const passkeyChallengeMutation = useMutation({
+    mutationFn: async () => {
+      if (!challenge) throw new Error("This sign-in attempt has expired.");
+      const ceremony = await api.mfaPasskeyOptions(challenge.challengeToken);
+      const credential = (await navigator.credentials.get({
+        publicKey: toRequestOptions(ceremony.options),
+      })) as PublicKeyCredential | null;
+      if (!credential) throw new Error("No passkey was provided.");
+      return api.passkeyLogin(
+        ceremony.challengeToken,
+        serializeAssertion(credential),
+      );
+    },
+    onSuccess: setSession,
+  });
+  // One discoverable ceremony, driven two ways: from a button (modal) or from
+  // the browser's autofill list (conditional). A conditional request stays
+  // pending for as long as the page is open, so it deliberately does not run
+  // through a mutation — its "pending" is idle waiting, not work in progress,
+  // and would otherwise disable the sign-in button forever.
+  const runPasskeyCeremony = async (signal?: AbortSignal) => {
+    const ceremony = await api.passkeyLoginOptions();
+    const credential = (await navigator.credentials.get({
+      publicKey: toRequestOptions(ceremony.options),
+      ...(signal ? { mediation: "conditional" as const, signal } : {}),
+    })) as PublicKeyCredential | null;
+    if (!credential) throw new Error("No passkey was provided.");
+    try {
+      return await api.passkeyLogin(
+        ceremony.challengeToken,
+        serializeAssertion(credential),
+      );
+    } catch (error) {
+      // A credential this server no longer holds should stop being offered,
+      // rather than reappearing at every sign-in and failing again.
+      if (error instanceof ApiError && error.code === "passkey_rejected") {
+        const rpId = ceremony.options.rpId;
+        if (typeof rpId === "string")
+          void signalUnknownCredential(rpId, credential.id);
+      }
+      throw error;
+    }
+  };
+
+  const passkeyLoginMutation = useMutation({
+    mutationFn: () => runPasskeyCeremony(),
+    onSuccess: setSession,
   });
 
+  const watchForPasskeyAutofill = () => {
+    const controller = new AbortController();
+    void (async () => {
+      if (!(await conditionalMediationAvailable())) return;
+      if (controller.signal.aborted) return;
+      try {
+        setSession(await runPasskeyCeremony(controller.signal));
+      } catch {
+        // Abandoning or dismissing an autofill request is the normal outcome
+        // and must never surface as a sign-in error.
+      }
+    })();
+    return () => controller.abort();
+  };
+  const logoutMutation = useMutation({
+    mutationFn: async () => api.logout(query.data?.csrfToken ?? ""),
+    onSuccess: () => {
+      setChallenge(undefined);
+      queryClient.setQueryData<AuthStatus>(authKey, {
+        ...(query.data ?? { setupRequired: false }),
+        setupRequired: false,
+        authenticated: false,
+        user: undefined,
+        csrfToken: undefined,
+        mfaEnrollmentRequired: false,
+      });
+    },
+  });
+
+  const passkeyError =
+    passkeyChallengeMutation.error ?? passkeyLoginMutation.error;
   const mutationError =
-    setupMutation.error ?? loginMutation.error ?? logoutMutation.error;
+    setupMutation.error ??
+    loginMutation.error ??
+    verifyMutation.error ??
+    // A dismissed system passkey prompt is a normal outcome, not a failure to
+    // report back to the user.
+    (isPasskeyCancellation(passkeyError) ? null : passkeyError) ??
+    logoutMutation.error;
   return (
     <AuthContext.Provider
       value={{
         status: query.data,
         isLoading: query.isLoading,
         error: query.error ?? mutationError,
-        setup: async (input) => void (await setupMutation.mutateAsync(input)),
-        login: async (input) => void (await loginMutation.mutateAsync(input)),
-        logout: async () => void (await logoutMutation.mutateAsync()),
+        challenge,
+        setup: (input) => settle(setupMutation.mutateAsync(input)),
+        login: (input) => settle(loginMutation.mutateAsync(input)),
+        verifyMfa: (code) => settle(verifyMutation.mutateAsync(code)),
+        verifyMfaPasskey: () => settle(passkeyChallengeMutation.mutateAsync()),
+        loginWithPasskey: () => settle(passkeyLoginMutation.mutateAsync()),
+        watchForPasskeyAutofill,
+        cancelChallenge: () => setChallenge(undefined),
+        logout: () => settle(logoutMutation.mutateAsync()),
         isSubmitting:
           setupMutation.isPending ||
           loginMutation.isPending ||
+          verifyMutation.isPending ||
+          passkeyChallengeMutation.isPending ||
+          passkeyLoginMutation.isPending ||
           logoutMutation.isPending,
       }}
     >
