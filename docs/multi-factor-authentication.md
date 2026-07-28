@@ -32,6 +32,15 @@ To require it, an Owner or Administrator sets **Settings → Sign-in security �
 
 Changing the policy signs nobody out. An account in scope that has not enrolled is admitted at its next sign-in with its session marked as owing a factor: it reaches only the enrollment screen, and the server refuses every other dashboard route with `403 mfa_enrollment_required` until a factor exists. This is deliberate — a policy change should not be able to lock the organization out of its own installation.
 
+### The guided first sign-in
+
+That enrollment screen is a wizard, not the Sign-in security page in a frame. It opens with the person's first name and the two or three steps ahead of them, then does one thing per screen: authenticator app, recovery codes, passkey. Only the steps the account still owes are planned, so somebody who already has an authenticator starts at recovery codes, and the passkey step is left out entirely where the installation cannot run a ceremony.
+
+Two behaviors in it are load-bearing:
+
+- **Confirming the authenticator does not end the wizard.** Both `POST /me/security/totp/confirm` and passkey registration clear the session's enrollment flag server-side, which is what admits the user to the rest of Studio. The wizard therefore refreshes only `/me/security` between steps and re-reads the auth status once, at the end — otherwise the shell would replace the wizard the moment the first factor existed, and recovery codes would never be offered.
+- **Recovery codes still require the password.** Issuing codes re-verifies the account password like every other change to sign-in security, so the step asks for it. It can be skipped; a person who skips it has an authenticator and no way back if they lose it, which is what the copy on the step says.
+
 While a policy covers a role, the last remaining factor on such an account cannot be removed. Add the replacement first.
 
 ## Recovery

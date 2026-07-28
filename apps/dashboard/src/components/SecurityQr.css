@@ -1,0 +1,10 @@
+.security-qr {
+  background: #fff;
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-control);
+}
+
+.security-qr--pending {
+  width: 220px;
+  height: 220px;
+}

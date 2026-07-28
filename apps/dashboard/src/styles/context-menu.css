@@ -1,15 +1,19 @@
 /* Right-click actions for library cards, plus the visible trigger that opens the same menu
    for pointer users who do not think to right-click and for keyboard users. */
 
+/* Above the drawer layer (3000) and the select menu (3200): a context menu is
+   always the frontmost thing on screen while it is open. Inside a modal dialog
+   it is portaled into the dialog instead, where the top layer does the ordering
+   and these values no longer compete with the page. */
 .context-menu__backdrop {
   position: fixed;
-  z-index: 60;
+  z-index: 3300;
   inset: 0;
 }
 
 .context-menu {
   position: fixed;
-  z-index: 61;
+  z-index: 3301;
   min-width: 178px;
   max-width: 260px;
   padding: 4px;

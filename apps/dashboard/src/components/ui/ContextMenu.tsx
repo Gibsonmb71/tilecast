@@ -13,6 +13,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { ChevronRight } from "lucide-react";
+import { fixedPositionOffset, overlayPortalTarget } from "./overlayPortal";
 
 export type ContextMenuItem = {
   label: string;
@@ -294,6 +295,9 @@ export function ContextMenu({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [placement, setPlacement] = useState({ left: x, top: y, ready: false });
+  // Fixed for the life of the menu: changing a portal target remounts its
+  // contents, which would throw away focus mid-interaction.
+  const [host] = useState(overlayPortalTarget);
 
   // Measure after the first paint so a menu opened near an edge folds back on screen
   // rather than being clipped.
@@ -302,12 +306,19 @@ export function ContextMenu({
     if (!node) return;
     const { width, height } = node.getBoundingClientRect();
     const gap = 8;
+    // The menu is portaled into whatever owns the top layer, which may itself
+    // be the containing block for fixed-position children.
+    const offset = fixedPositionOffset(host);
     setPlacement({
-      left: Math.max(gap, Math.min(x, window.innerWidth - width - gap)),
-      top: Math.max(gap, Math.min(y, window.innerHeight - height - gap)),
+      left:
+        Math.max(gap, Math.min(x, window.innerWidth - width - gap)) -
+        offset.left,
+      top:
+        Math.max(gap, Math.min(y, window.innerHeight - height - gap)) -
+        offset.top,
       ready: true,
     });
-  }, [x, y]);
+  }, [host, x, y]);
 
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
@@ -351,6 +362,6 @@ export function ContextMenu({
         }}
       />
     </div>,
-    document.body,
+    host,
   );
 }

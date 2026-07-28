@@ -2251,7 +2251,11 @@ tbody tr {
   overflow: auto;
   padding: var(--tc-space-6);
   border: 1px solid var(--tc-border-default);
-  animation: tc-overlay-rise-in 180ms cubic-bezier(0.2, 0, 0, 1) both;
+  /* "backwards" rather than "both": a forwards fill leaves the transform
+     property animated forever, and its computed value stays an identity matrix
+     rather than "none". That silently makes every dialog a containing block for
+     fixed-position descendants, which put portaled menus 150px off. */
+  animation: tc-overlay-rise-in 180ms cubic-bezier(0.2, 0, 0, 1) backwards;
 }
 
 .dialog > header {

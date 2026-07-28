@@ -84,17 +84,6 @@
   border-radius: var(--tc-radius-control);
 }
 
-.security-qr {
-  background: #fff;
-  border: 1px solid var(--tc-border-default);
-  border-radius: var(--tc-radius-control);
-}
-
-.security-qr--pending {
-  width: 220px;
-  height: 220px;
-}
-
 .security-actions {
   display: flex;
   gap: 0.5rem;
@@ -123,23 +112,6 @@
   background: var(--tc-bg-subtle);
   border: 1px solid var(--tc-border-default);
   border-radius: var(--tc-radius-control);
-}
-
-/* The forced-enrollment screen replaces the whole shell, so it carries its own
-   page frame rather than sitting inside the operator sidebar. */
-.security-gate {
-  display: flex;
-  justify-content: center;
-  min-height: 100svh;
-  padding: clamp(1rem, 5vw, 3rem);
-  background: var(--tc-bg-canvas);
-}
-
-.security-gate__panel {
-  display: grid;
-  gap: var(--tc-space-4, 1rem);
-  width: min(48rem, 100%);
-  align-content: start;
 }
 
 @media (max-width: 620px) {

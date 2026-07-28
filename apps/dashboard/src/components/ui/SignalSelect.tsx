@@ -18,6 +18,7 @@ import {
   type SelectHTMLAttributes,
 } from "react";
 import { createPortal } from "react-dom";
+import { fixedPositionOffset, overlayPortalTarget } from "./overlayPortal";
 
 type SignalOption = {
   value: string;
@@ -113,6 +114,7 @@ export const Select = forwardRef<
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const [menuStyle, setMenuStyle] = useState<CSSProperties>();
+  const [menuHost, setMenuHost] = useState<HTMLElement>();
 
   useImperativeHandle(forwardedRef, () => nativeRef.current!, []);
 
@@ -120,6 +122,13 @@ export const Select = forwardRef<
     const trigger = triggerRef.current;
     if (!trigger) return;
     const bounds = trigger.getBoundingClientRect();
+    // Resolved with the position: a menu that opens inside a modal dialog has
+    // to live in the top layer with it, or it paints behind the dialog and
+    // cannot be clicked. The offset corrects for a host that is itself the
+    // containing block for fixed-position children.
+    const host = overlayPortalTarget(trigger);
+    const offset = fixedPositionOffset(host);
+    setMenuHost(host);
     const viewportGap = 8;
     const availableBelow = window.innerHeight - bounds.bottom - viewportGap;
     const availableAbove = bounds.top - viewportGap;
@@ -135,12 +144,12 @@ export const Select = forwardRef<
     );
     setMenuStyle({
       position: "fixed",
-      left,
+      left: left - offset.left,
       width,
       maxHeight,
       ...(openAbove
-        ? { bottom: window.innerHeight - bounds.top + 4 }
-        : { top: bounds.bottom + 4 }),
+        ? { bottom: window.innerHeight - bounds.top + 4 - offset.bottom }
+        : { top: bounds.bottom + 4 - offset.top }),
     });
   };
 
@@ -290,6 +299,7 @@ export const Select = forwardRef<
       </select>
       {open &&
         menuStyle &&
+        menuHost &&
         createPortal(
           <div
             id={listboxId}
@@ -330,7 +340,7 @@ export const Select = forwardRef<
               );
             })}
           </div>,
-          document.body,
+          menuHost,
         )}
     </span>
   );

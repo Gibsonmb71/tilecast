@@ -524,6 +524,19 @@ behavior, and an unambiguous primary action. Do not layer dialogs. Large detail
 browsing and persistent inspectors remain page-specific patterns until the
 roadmap standardizes them.
 
+A dialog is a native modal `<dialog>`, which the browser paints in the **top
+layer**: above every z-index in the document, with the rest of the page inert.
+Floating content opened from inside one — a `Select` menu, a context menu — must
+therefore portal into the dialog rather than into `<body>`, or it renders behind
+the dialog and cannot be clicked at all. `overlayPortalTarget` in
+`components/ui/overlayPortal.ts` resolves that target, and `fixedPositionOffset`
+beside it corrects `position: fixed` coordinates for a host that is itself the
+containing block for fixed children. Two consequences worth remembering: raising
+a z-index can never lift something above a modal dialog, and an overlay
+animation must not leave a filled `transform` behind (use `backwards`, not
+`both`) — a lingering identity matrix silently makes the element a containing
+block.
+
 ### Icons and logos
 
 Icons clarify familiar actions and states; they do not replace necessary text.
