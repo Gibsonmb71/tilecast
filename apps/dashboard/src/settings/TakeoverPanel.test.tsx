@@ -46,6 +46,7 @@ describe("TakeoverPanel", () => {
       page: 1,
       pageSize: 100,
     });
+    vi.spyOn(api, "nwsZones").mockResolvedValue({ items: [] });
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
@@ -64,7 +65,7 @@ describe("TakeoverPanel", () => {
     ).toBeTruthy();
     expect(
       screen
-        .getByRole("link", { name: "Manage emergency playlists" })
+        .getByRole("link", { name: "Optional: manage custom playlists" })
         .getAttribute("href"),
     ).toBe("/playlists");
     expect(
@@ -72,7 +73,7 @@ describe("TakeoverPanel", () => {
         .getByRole("link", { name: "Start a Takeover now" })
         .getAttribute("href"),
     ).toBe("/screens");
-    expect(await screen.findByDisplayValue("OH")).toBeTruthy();
+    expect(await screen.findByText("Entire Ohio")).toBeTruthy();
     expect(await screen.findByText("Matched rules")).toBeTruthy();
     expect(
       screen.getByText(/best-effort, not a life-safety system/i),
@@ -97,6 +98,7 @@ describe("TakeoverPanel", () => {
           eventNames: ["Tornado Warning"],
           minimumSeverity: "Severe",
           minimumUrgency: "Expected",
+          presentationMode: "playlist",
           playlistId: "22222222-2222-4222-8222-222222222222",
           playlistName: "Emergency",
           maximumDurationMinutes: 360,
@@ -121,6 +123,16 @@ describe("TakeoverPanel", () => {
       page: 1,
       pageSize: 100,
     });
+    vi.spyOn(api, "nwsZones").mockResolvedValue({
+      items: [
+        {
+          id: "OHC049",
+          name: "Franklin",
+          state: "OH",
+          type: "county",
+        },
+      ],
+    });
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
@@ -135,11 +147,11 @@ describe("TakeoverPanel", () => {
     expect(
       await screen.findByLabelText("Automated NWS monitoring"),
     ).toHaveProperty("disabled", true);
-    expect(screen.getByLabelText("States and territories")).toHaveProperty(
+    expect(screen.getByLabelText("State or territory")).toHaveProperty(
       "disabled",
       true,
     );
-    expect(screen.getByLabelText("Counties or forecast zones")).toHaveProperty(
+    expect(screen.getByLabelText("County or forecast zone")).toHaveProperty(
       "disabled",
       true,
     );
@@ -158,7 +170,7 @@ describe("TakeoverPanel", () => {
     expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
   });
 
-  it("normalizes area and zone codes before saving the monitor", async () => {
+  it("selects a state and a saved NWS location without entering codes", async () => {
     vi.spyOn(api, "nwsAlertSettings").mockResolvedValue({
       monitor: {
         enabled: true,
@@ -184,10 +196,20 @@ describe("TakeoverPanel", () => {
       page: 1,
       pageSize: 100,
     });
+    vi.spyOn(api, "nwsZones").mockResolvedValue({
+      items: [
+        {
+          id: "OHC049",
+          name: "Franklin",
+          state: "OH",
+          type: "county",
+        },
+      ],
+    });
     const update = vi.spyOn(api, "updateNWSAlertMonitor").mockResolvedValue({
       enabled: true,
-      areas: ["OH", "PA"],
-      zones: ["OHC049", "PAZ001"],
+      areas: ["OH"],
+      zones: ["OHC049"],
       pollIntervalSeconds: 120,
       lastMatchedCount: 0,
       updatedAt: "2026-07-28T12:00:00Z",
@@ -203,17 +225,25 @@ describe("TakeoverPanel", () => {
       </QueryClientProvider>,
     );
     const user = userEvent.setup();
-    const areas = await screen.findByLabelText("States and territories");
-    const zones = screen.getByLabelText("Counties or forecast zones");
-    await user.type(areas, " oh, PA, ,");
-    await user.type(zones, " ohc049, PAZ001, ");
+    await user.selectOptions(
+      await screen.findByLabelText("State or territory"),
+      "OH",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Monitor entire state" }),
+    );
+    await user.selectOptions(
+      await screen.findByLabelText("County or forecast zone"),
+      "OHC049",
+    );
+    await user.click(screen.getByRole("button", { name: "Add location" }));
     await user.click(screen.getByRole("button", { name: "Save NWS monitor" }));
 
     expect(update).toHaveBeenCalledWith(
       {
         enabled: true,
-        areas: ["OH", "PA"],
-        zones: ["OHC049", "PAZ001"],
+        areas: ["OH"],
+        zones: ["OHC049"],
         pollIntervalSeconds: 120,
       },
       "token",
@@ -290,8 +320,7 @@ describe("TakeoverPanel", () => {
       eventNames: ["Tornado Warning", "Flash Flood Warning"],
       minimumSeverity: "Severe",
       minimumUrgency: "Expected",
-      playlistId: "22222222-2222-4222-8222-222222222222",
-      playlistName: "Weather alert",
+      presentationMode: "builtin",
       maximumDurationMinutes: 360,
       screenIds: ["11111111-1111-4111-8111-111111111111"],
       groupIds: [],
@@ -314,18 +343,14 @@ describe("TakeoverPanel", () => {
     const eventNames = screen.getByLabelText("NWS event names");
     await user.clear(eventNames);
     await user.type(eventNames, "Tornado Warning, Flash Flood Warning");
-    await user.selectOptions(
-      screen.getByRole("combobox", {
-        name: /Pre-made emergency playlist/,
-      }),
-      "22222222-2222-4222-8222-222222222222",
-    );
     await user.click(await screen.findByLabelText("Lobby"));
     await user.click(screen.getByRole("button", { name: "Add rule" }));
 
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
         eventNames: ["Tornado Warning", "Flash Flood Warning"],
+        presentationMode: "builtin",
+        playlistId: undefined,
       }),
       "token",
     );

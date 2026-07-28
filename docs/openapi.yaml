@@ -1692,6 +1692,20 @@ paths:
       summary: Read the NWS monitor, rules, active matches, and poll health
       responses:
         "200": { description: NWS alert settings }
+  /api/v1/alerts/nws/zones:
+    get:
+      summary: List official NWS counties and forecast zones for an area
+      parameters:
+        - {
+            in: query,
+            name: area,
+            required: true,
+            schema: { type: string, minLength: 2, maxLength: 2 },
+          }
+      responses:
+        "200": { description: County and forecast-zone choices }
+        "422": { description: Invalid state or territory }
+        "502": { description: NWS zone catalog unavailable }
   /api/v1/alerts/nws/monitor:
     put:
       summary: Configure NWS area and zone monitoring
@@ -1706,7 +1720,7 @@ paths:
         "502": { description: NWS retrieval failed }
   /api/v1/alerts/nws/rules:
     post:
-      summary: Create an automatic NWS Takeover rule
+      summary: Create an automatic NWS rule with a built-in display or custom playlist
       responses:
         "201": { description: Rule created }
   /api/v1/alerts/nws/rules/{id}:
@@ -1718,7 +1732,7 @@ paths:
           schema: { type: string, format: uuid },
         }
     put:
-      summary: Replace an automatic NWS Takeover rule
+      summary: Replace an automatic NWS rule
       responses:
         "200": { description: Rule updated }
     delete:

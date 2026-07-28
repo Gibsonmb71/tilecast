@@ -104,7 +104,7 @@ func (s *Service) List(ctx context.Context, search string, page, pageSize int) (
 	}
 	search = strings.TrimSpace(search)
 	var total int
-	if err := s.db.QueryRow(ctx, `SELECT count(*) FROM playlists WHERE deleted_at IS NULL AND ($1='' OR name ILIKE '%'||$1||'%')`, search).Scan(&total); err != nil {
+	if err := s.db.QueryRow(ctx, `SELECT count(*) FROM playlists WHERE deleted_at IS NULL AND system_managed=FALSE AND ($1='' OR name ILIKE '%'||$1||'%')`, search).Scan(&total); err != nil {
 		return ListResult{}, err
 	}
 	rows, err := s.db.Query(ctx, `SELECT p.id,p.name,p.description,p.revision,p.created_at,p.updated_at,p.source_type,
@@ -122,7 +122,7 @@ func (s *Service) List(ctx context.Context, search string, page, pageSize int) (
 			  )))
 		) END
 		FROM playlists p LEFT JOIN playlist_items i ON i.playlist_id=p.id
-		WHERE p.deleted_at IS NULL AND ($1='' OR p.name ILIKE '%'||$1||'%')
+		WHERE p.deleted_at IS NULL AND p.system_managed=FALSE AND ($1='' OR p.name ILIKE '%'||$1||'%')
 		GROUP BY p.id ORDER BY p.updated_at DESC,p.id LIMIT $2 OFFSET $3`, search, pageSize, (page-1)*pageSize)
 	if err != nil {
 		return ListResult{}, err

@@ -22,7 +22,10 @@ import (
 	"github.com/tilecast/tilecast/apps/server/internal/playlists"
 )
 
-const nwsAlertsURL = "https://api.weather.gov/alerts/active"
+const (
+	nwsAlertsURL = "https://api.weather.gov/alerts/active"
+	nwsZonesURL  = "https://api.weather.gov/zones"
+)
 
 var ErrValidation = errors.New("alert validation failed")
 
@@ -54,6 +57,7 @@ type Rule struct {
 	EventNames             []string    `json:"eventNames"`
 	MinimumSeverity        string      `json:"minimumSeverity"`
 	MinimumUrgency         string      `json:"minimumUrgency"`
+	PresentationMode       string      `json:"presentationMode"`
 	PlaylistID             *uuid.UUID  `json:"playlistId,omitempty"`
 	PlaylistName           string      `json:"playlistName,omitempty"`
 	MaximumDurationMinutes int         `json:"maximumDurationMinutes"`
@@ -61,6 +65,9 @@ type Rule struct {
 	GroupIDs               []uuid.UUID `json:"groupIds"`
 	CreatedAt              time.Time   `json:"createdAt"`
 	UpdatedAt              time.Time   `json:"updatedAt"`
+	ManagedDataSourceID    *uuid.UUID  `json:"-"`
+	ManagedWidgetID        *uuid.UUID  `json:"-"`
+	ManagedPlaylistID      *uuid.UUID  `json:"-"`
 }
 
 type RuleInput struct {
@@ -69,10 +76,18 @@ type RuleInput struct {
 	EventNames             []string    `json:"eventNames"`
 	MinimumSeverity        string      `json:"minimumSeverity"`
 	MinimumUrgency         string      `json:"minimumUrgency"`
+	PresentationMode       string      `json:"presentationMode"`
 	PlaylistID             *uuid.UUID  `json:"playlistId"`
 	MaximumDurationMinutes int         `json:"maximumDurationMinutes"`
 	ScreenIDs              []uuid.UUID `json:"screenIds"`
 	GroupIDs               []uuid.UUID `json:"groupIds"`
+}
+
+type Zone struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	State string `json:"state"`
+	Type  string `json:"type"`
 }
 
 type Activation struct {
@@ -91,18 +106,19 @@ type Activation struct {
 }
 
 type Service struct {
-	db          *pgxpool.Pool
-	devices     *devices.Service
-	playlists   *playlists.Service
-	client      *http.Client
-	baseURL     string
-	logger      *slog.Logger
-	userAgent   string
-	maxDuration time.Duration
-	gate        func() bool
-	cancel      context.CancelFunc
-	done        chan struct{}
-	mu          sync.Mutex
+	db           *pgxpool.Pool
+	devices      *devices.Service
+	playlists    *playlists.Service
+	client       *http.Client
+	baseURL      string
+	zonesBaseURL string
+	logger       *slog.Logger
+	userAgent    string
+	maxDuration  time.Duration
+	gate         func() bool
+	cancel       context.CancelFunc
+	done         chan struct{}
+	mu           sync.Mutex
 }
 
 func NewService(db *pgxpool.Pool, deviceService *devices.Service, playlistService *playlists.Service, logger *slog.Logger, publicURL string, maxDuration time.Duration) *Service {
@@ -112,12 +128,97 @@ func NewService(db *pgxpool.Pool, deviceService *devices.Service, playlistServic
 	}
 	return &Service{
 		db: db, devices: deviceService, playlists: playlistService, logger: logger,
-		client:      &http.Client{Timeout: 20 * time.Second},
-		baseURL:     nwsAlertsURL,
-		userAgent:   "Tilecast/1.0 (" + contact + ")",
-		maxDuration: maxDuration,
-		done:        make(chan struct{}),
+		client:       &http.Client{Timeout: 20 * time.Second},
+		baseURL:      nwsAlertsURL,
+		zonesBaseURL: nwsZonesURL,
+		userAgent:    "Tilecast/1.0 (" + contact + ")",
+		maxDuration:  maxDuration,
+		done:         make(chan struct{}),
 	}
+}
+
+func (s *Service) Zones(ctx context.Context, area string) ([]Zone, error) {
+	area = strings.ToUpper(strings.TrimSpace(area))
+	if len(area) != 2 || area[0] < 'A' || area[0] > 'Z' || area[1] < 'A' || area[1] > 'Z' {
+		return nil, validationError("select a valid state or territory")
+	}
+	seen := map[string]bool{}
+	result := []Zone{}
+	for _, zoneType := range []string{"county", "forecast"} {
+		items, err := s.fetchZones(ctx, area, zoneType)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range items {
+			if item.ID == "" || seen[item.ID] {
+				continue
+			}
+			seen[item.ID] = true
+			result = append(result, item)
+		}
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Type != result[j].Type {
+			return result[i].Type < result[j].Type
+		}
+		if result[i].Name != result[j].Name {
+			return result[i].Name < result[j].Name
+		}
+		return result[i].ID < result[j].ID
+	})
+	return result, nil
+}
+
+func (s *Service) fetchZones(ctx context.Context, area, zoneType string) ([]Zone, error) {
+	requestURL, err := url.Parse(strings.TrimRight(s.zonesBaseURL, "/") + "/" + zoneType)
+	if err != nil {
+		return nil, err
+	}
+	query := requestURL.Query()
+	query.Set("area", area)
+	query.Set("include_geometry", "false")
+	query.Set("limit", "500")
+	requestURL.RawQuery = query.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/geo+json")
+	req.Header.Set("User-Agent", s.userAgent)
+	response, err := s.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
+		return nil, fmt.Errorf("NWS zones returned HTTP %d", response.StatusCode)
+	}
+	var collection struct {
+		Features []struct {
+			ID         string `json:"id"`
+			Properties Zone   `json:"properties"`
+		} `json:"features"`
+	}
+	if err = json.NewDecoder(io.LimitReader(response.Body, 8<<20)).Decode(&collection); err != nil {
+		return nil, err
+	}
+	items := make([]Zone, 0, len(collection.Features))
+	for _, feature := range collection.Features {
+		item := feature.Properties
+		if item.ID == "" {
+			item.ID = feature.ID
+		}
+		if slash := strings.LastIndex(item.ID, "/"); slash >= 0 {
+			item.ID = item.ID[slash+1:]
+		}
+		item.ID = strings.ToUpper(strings.TrimSpace(item.ID))
+		item.Name = strings.TrimSpace(item.Name)
+		item.State = strings.ToUpper(strings.TrimSpace(item.State))
+		item.Type = zoneType
+		items = append(items, item)
+	}
+	return items, nil
 }
 
 func (s *Service) SetGate(gate func() bool) { s.gate = gate }
@@ -234,7 +335,7 @@ func normalizeCodes(values []string, length int, label string) ([]string, error)
 }
 
 func (s *Service) Rules(ctx context.Context) ([]Rule, error) {
-	rows, err := s.db.Query(ctx, `SELECT r.id,r.name,r.enabled,r.event_names,r.minimum_severity,r.minimum_urgency,r.playlist_id,COALESCE(p.name,''),r.maximum_duration_minutes,r.created_at,r.updated_at,
+	rows, err := s.db.Query(ctx, `SELECT r.id,r.name,r.enabled,r.event_names,r.minimum_severity,r.minimum_urgency,r.presentation_mode,r.playlist_id,COALESCE(p.name,''),r.maximum_duration_minutes,r.created_at,r.updated_at,r.managed_data_source_id,r.managed_widget_id,r.managed_playlist_id,
 		COALESCE(array_agg(t.screen_id) FILTER (WHERE t.screen_id IS NOT NULL),'{}'),COALESCE(array_agg(t.screen_group_id) FILTER (WHERE t.screen_group_id IS NOT NULL),'{}')
 		FROM alert_rules r LEFT JOIN playlists p ON p.id=r.playlist_id LEFT JOIN alert_rule_targets t ON t.rule_id=r.id
 		GROUP BY r.id,p.name ORDER BY r.position,r.name,r.id`)
@@ -245,7 +346,7 @@ func (s *Service) Rules(ctx context.Context) ([]Rule, error) {
 	result := []Rule{}
 	for rows.Next() {
 		var rule Rule
-		if err = rows.Scan(&rule.ID, &rule.Name, &rule.Enabled, &rule.EventNames, &rule.MinimumSeverity, &rule.MinimumUrgency, &rule.PlaylistID, &rule.PlaylistName, &rule.MaximumDurationMinutes, &rule.CreatedAt, &rule.UpdatedAt, &rule.ScreenIDs, &rule.GroupIDs); err != nil {
+		if err = rows.Scan(&rule.ID, &rule.Name, &rule.Enabled, &rule.EventNames, &rule.MinimumSeverity, &rule.MinimumUrgency, &rule.PresentationMode, &rule.PlaylistID, &rule.PlaylistName, &rule.MaximumDurationMinutes, &rule.CreatedAt, &rule.UpdatedAt, &rule.ManagedDataSourceID, &rule.ManagedWidgetID, &rule.ManagedPlaylistID, &rule.ScreenIDs, &rule.GroupIDs); err != nil {
 			return nil, err
 		}
 		result = append(result, rule)
@@ -261,8 +362,18 @@ func (s *Service) SaveRule(ctx context.Context, id uuid.UUID, input RuleInput, u
 	if !rankContains(severityRank, input.MinimumSeverity) || !rankContains(urgencyRank, input.MinimumUrgency) {
 		return Rule{}, validationError("severity or urgency is invalid")
 	}
-	if input.PlaylistID == nil || *input.PlaylistID == uuid.Nil {
-		return Rule{}, validationError("select a takeover playlist")
+	if input.PresentationMode == "" {
+		if input.PlaylistID != nil && *input.PlaylistID != uuid.Nil {
+			input.PresentationMode = "playlist"
+		} else {
+			input.PresentationMode = "builtin"
+		}
+	}
+	if input.PresentationMode != "builtin" && input.PresentationMode != "playlist" {
+		return Rule{}, validationError("presentation mode is invalid")
+	}
+	if input.PresentationMode == "playlist" && (input.PlaylistID == nil || *input.PlaylistID == uuid.Nil) {
+		return Rule{}, validationError("select a ready, non-empty playlist")
 	}
 	if input.MaximumDurationMinutes < 5 || input.MaximumDurationMinutes > int(s.maxDuration/time.Minute) {
 		return Rule{}, validationError("maximum duration must be between 5 and %d minutes", int(s.maxDuration/time.Minute))
@@ -277,24 +388,51 @@ func (s *Service) SaveRule(ctx context.Context, id uuid.UUID, input RuleInput, u
 			events = append(events, event)
 		}
 	}
-	var organizationID uuid.UUID
-	var ready bool
-	err := s.db.QueryRow(ctx, `SELECT organization_id,(deleted_at IS NULL AND EXISTS(SELECT 1 FROM playlist_items WHERE playlist_id=playlists.id)) FROM playlists WHERE id=$1`, *input.PlaylistID).Scan(&organizationID, &ready)
-	if errors.Is(err, pgx.ErrNoRows) || err == nil && !ready {
-		return Rule{}, validationError("select a ready, non-empty playlist")
+	creating := id == uuid.Nil
+	if creating {
+		id = uuid.New()
 	}
-	if err != nil {
-		return Rule{}, err
+	var organizationID uuid.UUID
+	var managedDataSourceID, managedWidgetID, managedPlaylistID *uuid.UUID
+	var err error
+	if !creating {
+		err = s.db.QueryRow(ctx, `SELECT organization_id,managed_data_source_id,managed_widget_id,managed_playlist_id FROM alert_rules WHERE id=$1`,
+			id).Scan(&organizationID, &managedDataSourceID, &managedWidgetID, &managedPlaylistID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Rule{}, pgx.ErrNoRows
+		}
+		if err != nil {
+			return Rule{}, err
+		}
+	}
+	if input.PresentationMode == "builtin" {
+		if organizationID == uuid.Nil {
+			if err = s.db.QueryRow(ctx, `SELECT id FROM organization_settings WHERE singleton`).Scan(&organizationID); err != nil {
+				return Rule{}, err
+			}
+		}
+		managedDataSourceID, managedWidgetID, managedPlaylistID, err = s.ensureBuiltinPresentation(
+			ctx, id, organizationID, userID, managedDataSourceID, managedWidgetID, managedPlaylistID,
+		)
+		if err != nil {
+			return Rule{}, err
+		}
+		input.PlaylistID = managedPlaylistID
+	} else {
+		var ready bool
+		err = s.db.QueryRow(ctx, `SELECT organization_id,(deleted_at IS NULL AND EXISTS(SELECT 1 FROM playlist_items WHERE playlist_id=playlists.id)) FROM playlists WHERE id=$1 AND system_managed=FALSE`, *input.PlaylistID).Scan(&organizationID, &ready)
+		if errors.Is(err, pgx.ErrNoRows) || err == nil && !ready {
+			return Rule{}, validationError("select a ready, non-empty playlist")
+		}
+		if err != nil {
+			return Rule{}, err
+		}
 	}
 	if err = s.playlists.ValidatePresentationTargets(ctx, input.PlaylistID, nil, input.ScreenIDs, input.GroupIDs); err != nil {
 		if errors.Is(err, playlists.ErrConflict) {
 			return Rule{}, validationError("%v", err)
 		}
 		return Rule{}, err
-	}
-	creating := id == uuid.Nil
-	if creating {
-		id = uuid.New()
 	}
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
@@ -303,13 +441,13 @@ func (s *Service) SaveRule(ctx context.Context, id uuid.UUID, input RuleInput, u
 	defer tx.Rollback(ctx)
 	var tag pgconn.CommandTag
 	if creating {
-		tag, err = tx.Exec(ctx, `INSERT INTO alert_rules(id,organization_id,name,enabled,event_names,minimum_severity,minimum_urgency,response_mode,playlist_id,maximum_duration_minutes,created_by)
-			VALUES($1,$2,$3,$4,$5,$6,$7,'takeover',$8,$9,$10)`,
-			id, organizationID, input.Name, input.Enabled, events, input.MinimumSeverity, input.MinimumUrgency, input.PlaylistID, input.MaximumDurationMinutes, userID)
+		tag, err = tx.Exec(ctx, `INSERT INTO alert_rules(id,organization_id,name,enabled,event_names,minimum_severity,minimum_urgency,response_mode,presentation_mode,playlist_id,maximum_duration_minutes,created_by,managed_data_source_id,managed_widget_id,managed_playlist_id)
+			VALUES($1,$2,$3,$4,$5,$6,$7,'takeover',$8,$9,$10,$11,$12,$13,$14)`,
+			id, organizationID, input.Name, input.Enabled, events, input.MinimumSeverity, input.MinimumUrgency, input.PresentationMode, input.PlaylistID, input.MaximumDurationMinutes, userID, managedDataSourceID, managedWidgetID, managedPlaylistID)
 	} else {
-		tag, err = tx.Exec(ctx, `UPDATE alert_rules SET name=$3,enabled=$4,event_names=$5,minimum_severity=$6,minimum_urgency=$7,playlist_id=$8,maximum_duration_minutes=$9,updated_at=now()
+		tag, err = tx.Exec(ctx, `UPDATE alert_rules SET name=$3,enabled=$4,event_names=$5,minimum_severity=$6,minimum_urgency=$7,presentation_mode=$8,playlist_id=$9,maximum_duration_minutes=$10,managed_data_source_id=$11,managed_widget_id=$12,managed_playlist_id=$13,updated_at=now()
 			WHERE id=$1 AND organization_id=$2`,
-			id, organizationID, input.Name, input.Enabled, events, input.MinimumSeverity, input.MinimumUrgency, input.PlaylistID, input.MaximumDurationMinutes)
+			id, organizationID, input.Name, input.Enabled, events, input.MinimumSeverity, input.MinimumUrgency, input.PresentationMode, input.PlaylistID, input.MaximumDurationMinutes, managedDataSourceID, managedWidgetID, managedPlaylistID)
 	}
 	if err != nil {
 		return Rule{}, err
@@ -344,6 +482,68 @@ func (s *Service) SaveRule(ctx context.Context, id uuid.UUID, input RuleInput, u
 		}
 	}
 	return Rule{}, pgx.ErrNoRows
+}
+
+func (s *Service) ensureBuiltinPresentation(
+	ctx context.Context,
+	ruleID, organizationID, userID uuid.UUID,
+	dataSourceID, widgetID, playlistID *uuid.UUID,
+) (*uuid.UUID, *uuid.UUID, *uuid.UUID, error) {
+	if dataSourceID != nil && widgetID != nil && playlistID != nil {
+		var sourceReady, widgetReady, playlistReady bool
+		if err := s.db.QueryRow(ctx, `SELECT
+			EXISTS(SELECT 1 FROM data_sources WHERE id=$1 AND deleted_at IS NULL),
+			EXISTS(SELECT 1 FROM assets WHERE id=$2 AND deleted_at IS NULL),
+			EXISTS(SELECT 1 FROM playlists WHERE id=$3 AND deleted_at IS NULL)`,
+			*dataSourceID, *widgetID, *playlistID).Scan(&sourceReady, &widgetReady, &playlistReady); err == nil && sourceReady && widgetReady && playlistReady {
+			return dataSourceID, widgetID, playlistID, nil
+		}
+	}
+	source, widget, playlist := uuid.New(), uuid.New(), uuid.New()
+	item := uuid.New()
+	name := "NWS emergency presentation"
+	sourceConfiguration, sourcePayload := builtinAlertDocuments(nwsProperties{}, time.Time{}, time.Now().UTC())
+	widgetConfiguration, _ := json.Marshal(map[string]any{
+		"dataSourceId": source.String(), "messageField": "message", "severityField": "severity",
+		"speed": "slow", "showSeverity": true, "foregroundColor": "#ffffff",
+		"backgroundColor": "#7a1f1f", "emptyState": "Waiting for an active NWS alert",
+	})
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	defer tx.Rollback(ctx)
+	if _, err = tx.Exec(ctx, `INSERT INTO data_sources(id,organization_id,name,description,provider,config_version,configuration,created_by,system_managed)
+		VALUES($1,$2,$3,'Tilecast-managed live NWS alert data','emergency-message',1,$4::jsonb,$5,TRUE)`,
+		source, organizationID, name, sourceConfiguration, userID); err != nil {
+		return nil, nil, nil, err
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO data_source_refresh_states(data_source_id,next_refresh_at,last_attempt_at,last_success_at,http_result_category,parse_status,available_item_count,cache_updated_at,cache_expires_at,cached_payload)
+		VALUES($1,now()+interval '100 years',now(),now(),'nws','success',1,now(),now()+interval '100 years',$2::jsonb)`,
+		source, sourcePayload); err != nil {
+		return nil, nil, nil, err
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO assets(id,organization_id,name,description,type,original_filename,detected_mime_type,sha256,original_size,processing_status,created_by,system_managed)
+		VALUES($1,$2,$3,'Tilecast built-in fullscreen NWS alert','widget','','application/vnd.tilecast.widget+json',''::bytea,0,'ready',$4,TRUE)`,
+		widget, organizationID, name, userID); err != nil {
+		return nil, nil, nil, err
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO widgets(asset_id,provider,config_version,configuration) VALUES($1,'alert-banner',1,$2::jsonb)`,
+		widget, string(widgetConfiguration)); err != nil {
+		return nil, nil, nil, err
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO playlists(id,organization_id,name,description,created_by,system_managed)
+		VALUES($1,$2,$3,$4,$5,TRUE)`, playlist, organizationID, name, "Built in for NWS rule "+ruleID.String(), userID); err != nil {
+		return nil, nil, nil, err
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO playlist_items(id,playlist_id,asset_id,position,fit_mode,transition,audio_enabled,volume,delivery_policy)
+		VALUES($1,$2,$3,0,'contain','none',FALSE,0,'stream')`, item, playlist, widget); err != nil {
+		return nil, nil, nil, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return nil, nil, nil, err
+	}
+	return &source, &widget, &playlist, nil
 }
 
 func (s *Service) DeleteRule(ctx context.Context, id, userID uuid.UUID) error {

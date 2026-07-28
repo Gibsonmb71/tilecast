@@ -2,6 +2,7 @@ package alerts
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -26,9 +27,51 @@ func (s *Service) applyAlert(ctx context.Context, alertID string, rule Rule, ale
 	var existing *uuid.UUID
 	err := s.db.QueryRow(ctx, `SELECT takeover_id FROM alert_activations WHERE alert_id=$1 AND rule_id=$2 AND cleared_at IS NULL`, alertID, rule.ID).Scan(&existing)
 	if err == nil {
-		_, err = s.db.Exec(ctx, `UPDATE alert_activations SET event=$3,headline=$4,description=$5,instruction=$6,severity=$7,urgency=$8,certainty=$9,area_description=$10,sender=$11,effective_at=$12,expires_at=$13,last_seen_at=$14
+		tx, beginErr := s.db.Begin(ctx)
+		if beginErr != nil {
+			return beginErr
+		}
+		defer tx.Rollback(ctx)
+		expires := alertExpiry(alert, now, rule.MaximumDurationMinutes)
+		_, err = tx.Exec(ctx, `UPDATE alert_activations SET event=$3,headline=$4,description=$5,instruction=$6,severity=$7,urgency=$8,certainty=$9,area_description=$10,sender=$11,effective_at=$12,expires_at=$13,last_seen_at=$14
 			WHERE alert_id=$1 AND rule_id=$2`, alertID, rule.ID, alert.Event, alert.Headline, alert.Description, alert.Instruction, alert.Severity, alert.Urgency, alert.Certainty, alert.AreaDescription, alert.SenderName, alert.Effective, alertExpiry(alert, now, rule.MaximumDurationMinutes), now)
-		return err
+		if err != nil {
+			return err
+		}
+		changed, updateErr := updateBuiltinAlertData(ctx, tx, rule, alert, expires, now)
+		if updateErr != nil {
+			return updateErr
+		}
+		screenIDs := []uuid.UUID{}
+		if changed && existing != nil {
+			rows, bumpErr := tx.Query(ctx, `WITH bumped AS (
+				UPDATE screen_manifest_state manifest SET manifest_version=manifest_version+1,changed_at=$2,change_reason='nws.alert.updated'
+				WHERE manifest.screen_id IN(SELECT screen_id FROM takeover_screen_states WHERE takeover_id=$1)
+				RETURNING screen_id,manifest_version)
+				UPDATE takeover_screen_states state SET manifest_version=bumped.manifest_version,last_updated_at=$2
+				FROM bumped WHERE state.takeover_id=$1 AND state.screen_id=bumped.screen_id
+				RETURNING state.screen_id`, *existing, now)
+			if bumpErr != nil {
+				return bumpErr
+			}
+			for rows.Next() {
+				var screenID uuid.UUID
+				if rows.Scan(&screenID) == nil {
+					screenIDs = append(screenIDs, screenID)
+				}
+			}
+			rows.Close()
+			if err = rows.Err(); err != nil {
+				return err
+			}
+		}
+		if err = tx.Commit(ctx); err != nil {
+			return err
+		}
+		if len(screenIDs) > 0 {
+			s.notify(ctx, screenIDs)
+		}
+		return nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return err
@@ -42,6 +85,9 @@ func (s *Service) applyAlert(ctx context.Context, alertID string, rule Rule, ale
 		return err
 	}
 	defer tx.Rollback(ctx)
+	if _, err = updateBuiltinAlertData(ctx, tx, rule, alert, expires, now); err != nil {
+		return err
+	}
 	takeoverID, screenIDs, err := s.activate(ctx, tx, rule, alert.Event, alert.Headline, alert.Description, now, expires)
 	if err != nil {
 		return err
@@ -58,6 +104,70 @@ func (s *Service) applyAlert(ctx context.Context, alertID string, rule Rule, ale
 	}
 	s.notify(ctx, screenIDs)
 	return nil
+}
+
+func builtinAlertDocuments(alert nwsProperties, expires, updatedAt time.Time) (string, string) {
+	messageParts := []string{}
+	for _, value := range []string{alert.Event, alert.Headline, alert.AreaDescription, alert.Instruction} {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			messageParts = append(messageParts, value)
+		}
+	}
+	message := strings.Join(messageParts, " — ")
+	if message == "" {
+		message = "Waiting for an active NWS alert"
+	}
+	expiresAt := ""
+	if !expires.IsZero() {
+		expiresAt = expires.UTC().Format(time.RFC3339)
+	}
+	configuration := map[string]any{
+		"message": message, "severity": alert.Severity, "instructions": alert.Instruction,
+		"contact": alert.SenderName, "expiresAt": expiresAt,
+	}
+	configJSON, _ := json.Marshal(configuration)
+	fields := []map[string]string{
+		{"key": "message", "label": "Message", "type": "text"},
+		{"key": "severity", "label": "Severity", "type": "text"},
+		{"key": "instructions", "label": "Instructions", "type": "text"},
+		{"key": "contact", "label": "Contact", "type": "text"},
+		{"key": "expiresAt", "label": "Expiration time", "type": "datetime"},
+		{"key": "updatedAt", "label": "Updated time", "type": "datetime"},
+	}
+	values := map[string]string{
+		"message": message, "severity": alert.Severity, "instructions": alert.Instruction,
+		"contact": alert.SenderName, "expiresAt": expiresAt,
+		"updatedAt": updatedAt.UTC().Format(time.RFC3339),
+	}
+	payload := map[string]any{"datasets": []any{map[string]any{
+		"id": "object", "kind": "object", "fields": fields, "values": values,
+		"cachedAt": updatedAt.UTC(), "staleAt": expires.UTC(),
+	}}}
+	payloadJSON, _ := json.Marshal(payload)
+	return string(configJSON), string(payloadJSON)
+}
+
+func updateBuiltinAlertData(
+	ctx context.Context,
+	tx pgx.Tx,
+	rule Rule,
+	alert nwsProperties,
+	expires, now time.Time,
+) (bool, error) {
+	if rule.PresentationMode != "builtin" || rule.ManagedDataSourceID == nil {
+		return false, nil
+	}
+	configuration, payload := builtinAlertDocuments(alert, expires, now)
+	tag, err := tx.Exec(ctx, `UPDATE data_sources SET configuration=$2::jsonb,updated_at=$3
+		WHERE id=$1 AND system_managed=TRUE AND configuration IS DISTINCT FROM $2::jsonb`,
+		*rule.ManagedDataSourceID, configuration, now)
+	if err != nil || tag.RowsAffected() == 0 {
+		return false, err
+	}
+	_, err = tx.Exec(ctx, `UPDATE data_source_refresh_states SET last_attempt_at=$2,last_success_at=$2,http_result_category='nws',parse_status='success',available_item_count=1,using_cached_data=FALSE,cache_updated_at=$2,cache_expires_at=$3,cached_payload=$4::jsonb,error_code=NULL,updated_at=$2 WHERE data_source_id=$1`,
+		*rule.ManagedDataSourceID, now, expires, payload)
+	return true, err
 }
 
 func bounded(value string, limit int) string {

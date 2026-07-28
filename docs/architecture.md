@@ -93,7 +93,7 @@ Manifest v9 adds native Clock, Date, QR Code, and Ticker Apps plus date-aware st
 
 ## Milestone 7 operations
 
-Takeovers are separate lifecycle records rather than schedules. Manifest v4 references a Takeover playlist and expiration only for affected screens; its released `emergency` JSON key remains a compatibility boundary. Optional NWS rules monitor official active alerts and raise bounded Takeovers without turning alert feeds into assignable content. Persistent typed player commands use PostgreSQL as the delivery source of truth; WebSockets only announce availability. See [takeover-and-operations.md](takeover-and-operations.md).
+Takeovers are separate lifecycle records rather than schedules. Manifest v4 references a Takeover playlist and expiration only for affected screens; its released `emergency` JSON key remains a compatibility boundary. Optional NWS rules monitor official active alerts and raise bounded Takeovers using a hidden Tilecast-managed live alert presentation or an operator-selected playlist. Persistent typed player commands use PostgreSQL as the delivery source of truth; WebSockets only announce availability. See [takeover-and-operations.md](takeover-and-operations.md).
 
 ## Milestone 8 settings architecture
 

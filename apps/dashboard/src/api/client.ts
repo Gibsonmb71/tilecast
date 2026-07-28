@@ -58,6 +58,7 @@ import type {
   NWSAlertRule,
   NWSAlertRuleInput,
   NWSAlertSettings,
+  NWSZone,
   SettingsDocument,
   PolicyDocument,
   EffectivePolicy,
@@ -989,6 +990,10 @@ export const api = {
       body: JSON.stringify({ reason }),
     }),
   nwsAlertSettings: () => request<NWSAlertSettings>("/alerts/nws"),
+  nwsZones: (area: string) =>
+    request<{ items: NWSZone[] }>(
+      `/alerts/nws/zones?area=${encodeURIComponent(area)}`,
+    ),
   updateNWSAlertMonitor: (
     input: {
       enabled: boolean;

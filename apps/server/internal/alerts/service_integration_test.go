@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -59,6 +60,10 @@ func TestAlertTakeoverLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err = pool.Exec(ctx, `INSERT INTO screen_manifest_state(screen_id) VALUES($1)`, screenID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO screen_player_status(screen_id,presentation_schema_versions,native_presentation_capabilities,player_version_code)
+		VALUES($1,'{1}',$2::jsonb,33)`, screenID, `{"layout.surface":1,"layout.row":1,"content.badge":1,"content.marquee":1,"binding.core":2}`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = pool.Exec(ctx, `INSERT INTO assets(id,organization_id,name,type,original_filename,detected_mime_type,sha256,original_size,width,height,processing_status,created_by) VALUES($1,$2,'Alert image','image','alert.png','image/png',$3,100,1920,1080,'ready',$4)`, assetID, organizationID, make([]byte, 32), userID); err != nil {
@@ -125,6 +130,41 @@ func TestAlertTakeoverLifecycle(t *testing.T) {
 		ScreenIDs: []uuid.UUID{screenID},
 	}, userID); !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("updating an unknown rule returned %v, want not found", err)
+	}
+	builtinRule, err := service.SaveRule(ctx, uuid.Nil, RuleInput{
+		Name: "Built-in alert", Enabled: true, EventNames: []string{"Tornado Warning"},
+		MinimumSeverity: "Severe", MinimumUrgency: "Expected", PresentationMode: "builtin",
+		MaximumDurationMinutes: 360, ScreenIDs: []uuid.UUID{screenID},
+	}, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if builtinRule.PresentationMode != "builtin" || builtinRule.PlaylistID == nil ||
+		builtinRule.ManagedDataSourceID == nil || builtinRule.ManagedWidgetID == nil ||
+		builtinRule.ManagedPlaylistID == nil {
+		t.Fatalf("incomplete built-in rule: %#v", builtinRule)
+	}
+	if listed, listErr := service.playlists.List(ctx, "", 1, 100); listErr != nil {
+		t.Fatal(listErr)
+	} else if listed.Total != 1 {
+		t.Fatalf("ordinary playlist list includes generated presentation: total=%d", listed.Total)
+	}
+	builtinAlert := nwsProperties{
+		Event: "Tornado Warning", Headline: "Tornado observed near Columbus",
+		Severity: "Extreme", Urgency: "Immediate", AreaDescription: "Franklin County",
+		Instruction: "Move to an interior room.", SenderName: "NWS Wilmington OH",
+	}
+	if err = service.applyAlert(ctx, "alert-builtin", builtinRule, builtinAlert, now); err != nil {
+		t.Fatal(err)
+	}
+	var cachedPayload string
+	if err = pool.QueryRow(ctx, `SELECT cached_payload::text FROM data_source_refresh_states WHERE data_source_id=$1`, builtinRule.ManagedDataSourceID).Scan(&cachedPayload); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Tornado observed near Columbus", "Franklin County", "Move to an interior room", "NWS Wilmington OH"} {
+		if !strings.Contains(cachedPayload, want) {
+			t.Fatalf("built-in cached payload does not contain %q: %s", want, cachedPayload)
+		}
 	}
 
 	unrelatedID := uuid.New()

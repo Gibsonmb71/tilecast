@@ -1894,6 +1894,39 @@ button.organizer-chip:disabled {
   margin: 4px 0 0;
   font-weight: 650;
 }
+.nws-location-picker {
+  display: grid;
+  gap: 10px;
+}
+.nws-location-picker > label {
+  display: grid;
+  gap: 5px;
+}
+.nws-location-picker__selected {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.nws-location-picker__selected > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border: 1px solid var(--tc-border);
+  background: var(--tc-surface-subtle);
+  font-size: 12px;
+}
+.nws-location-picker__selected > span button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.nws-location-picker__selected > span button:disabled {
+  cursor: default;
+}
 .takeover-rule-list {
   display: grid;
 }
