@@ -836,6 +836,27 @@
   margin: 0;
 }
 
+.widget-editor__section-body > .form-grid {
+  align-items: start;
+}
+
+.definition-switch-field {
+  align-content: start;
+}
+
+.definition-switch-field > .setting-switch {
+  justify-self: stretch;
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 39px;
+}
+
+.definition-switch-field > small {
+  color: var(--tc-text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .widget-editor__section-body fieldset {
   display: grid;
   gap: var(--tc-space-3);

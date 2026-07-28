@@ -3292,17 +3292,32 @@ function PreviewNode({
     );
   }
   if (node.type === "qr_code") return <PresentationQrCode value={resolve()} />;
-  if (["text", "badge", "marquee"].includes(node.type))
+  if (["text", "badge", "marquee"].includes(node.type)) {
+    const fontSize = Number(props.fontSize);
+    const authoredFontSize =
+      Number.isFinite(fontSize) && fontSize > 0 ? fontSize : undefined;
     return (
       <span
         className={`presentation-preview__${node.type}${typeof props.role === "string" ? ` presentation-preview__${node.type}--${props.role}` : ""}`}
+        data-preview-font-size={authoredFontSize}
         style={{
           color: typeof props.color === "string" ? props.color : undefined,
+          fontSize: authoredFontSize ? `${authoredFontSize}px` : undefined,
+          fontWeight: Number.isFinite(Number(props.fontWeight))
+            ? Number(props.fontWeight)
+            : undefined,
+          textAlign:
+            props.align === "left" ||
+            props.align === "center" ||
+            props.align === "right"
+              ? props.align
+              : undefined,
         }}
       >
         {resolve()}
       </span>
     );
+  }
   if (node.type === "progress") {
     const value = Number(resolve());
     const targetProp = props.target;
@@ -3347,6 +3362,12 @@ function PreviewNode({
     ) : null;
   const direction = node.type === "row" ? "row" : "column";
   const columns = Math.max(1, Number(props.columns ?? 1));
+  const background =
+    typeof props.backgroundColor === "string"
+      ? props.backgroundColor
+      : typeof props.background === "string"
+        ? props.background
+        : undefined;
   if (node.type === "surface") {
     // paddingPercent and textScale are author percentages: the padding insets
     // each edge (10 gives the content the center 80 percent) and the scale
@@ -3395,11 +3416,11 @@ function PreviewNode({
             ? `repeat(${columns}, minmax(0, 1fr))`
             : undefined,
         gap: `${Number(props.gap ?? 8)}px`,
-        background:
-          typeof props.backgroundColor === "string"
-            ? props.backgroundColor
-            : undefined,
+        background,
         padding: `${Number(props.padding ?? 0)}px`,
+        borderRadius: Number.isFinite(Number(props.radius))
+          ? `${Number(props.radius)}px`
+          : undefined,
       }}
     >
       {node.children?.map((child, index) => (
@@ -3443,7 +3464,11 @@ function PreviewSurface({
       content.querySelectorAll<HTMLElement>("span, div"),
     )) {
       if (el.firstElementChild) continue;
-      el.style.fontSize = "";
+      const authoredSize = Number(el.dataset.previewFontSize);
+      el.style.fontSize =
+        Number.isFinite(authoredSize) && authoredSize > 0
+          ? `${authoredSize}px`
+          : "";
       let size = parseFloat(window.getComputedStyle(el).fontSize);
       if (!Number.isFinite(size)) continue;
       let guard = 0;

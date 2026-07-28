@@ -346,15 +346,22 @@ function DefinitionControl({
     );
   if (field.control === "boolean")
     return (
-      <label className="setting-switch">
-        <input
-          type="checkbox"
-          checked={Boolean(value)}
+      <div className="field definition-switch-field">
+        {label}
+        <button
+          type="button"
+          role="switch"
+          aria-label={field.label}
+          aria-checked={!!value}
+          className="setting-switch"
           disabled={readOnly}
-          onChange={(event) => setValue(event.target.checked)}
-        />
-        <span>{field.label}</span>
-      </label>
+          onClick={() => setValue(!value)}
+        >
+          <span aria-hidden="true" />
+          <strong>{value ? "On" : "Off"}</strong>
+        </button>
+        {field.description && <small>{field.description}</small>}
+      </div>
     );
   if (field.control === "multiline_text")
     return (
