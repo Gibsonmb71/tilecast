@@ -418,6 +418,49 @@ it("renders shared compiled nodes for data-backed and catalog Widgets", () => {
   ).toHaveLength(1);
 });
 
+it("applies authored typography and card styles in declarative previews", () => {
+  const presentation: WidgetPresentation = {
+    schemaVersion: 1,
+    kind: "native",
+    requiredCapabilities: {},
+    native: {
+      root: {
+        type: "surface",
+        children: [
+          {
+            type: "column",
+            props: {
+              background: "#19324d",
+              padding: 14,
+              radius: 10,
+            },
+            children: [
+              {
+                type: "text",
+                props: { role: "metric", fontSize: 72 },
+                binding: { source: "literal", value: "Period 3" },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  };
+
+  render(
+    <DeclarativePresentationPreview presentation={presentation} source={{}} />,
+  );
+
+  expect(screen.getByText("Period 3")).toHaveStyle({ fontSize: "72px" });
+  expect(
+    document.querySelector<HTMLElement>(".presentation-preview__column"),
+  ).toHaveStyle({
+    background: "#19324d",
+    padding: "14px",
+    borderRadius: "10px",
+  });
+});
+
 it("renders compiled Website and YouTube presentations in a sandboxed frame", () => {
   const ready = vi.fn();
   render(
