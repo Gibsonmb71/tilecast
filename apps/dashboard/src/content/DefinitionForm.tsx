@@ -236,13 +236,22 @@ export function dataFormatGuideFor(
       required: field.required,
     });
   }
-  const deduplicated = requirements.filter(
-    (field, index, all) =>
-      all.findIndex(
-        (candidate) =>
-          candidate.key === field.key && candidate.label === field.label,
-      ) === index,
-  );
+  // One entry per source key: a required field and a mapped control can describe
+  // the same key under different labels, and the example below is keyed by key alone.
+  const deduplicated: DataFormatGuide["fields"] = [];
+  const byKey = new Map<string, DataFormatGuide["fields"][number]>();
+  for (const field of requirements) {
+    const merged = byKey.get(field.key);
+    if (!merged) {
+      const entry = { ...field, types: [...field.types] };
+      byKey.set(field.key, entry);
+      deduplicated.push(entry);
+      continue;
+    }
+    for (const type of field.types)
+      if (!merged.types.includes(type)) merged.types.push(type);
+    merged.required = merged.required || field.required;
+  }
   const kinds = sourceField.acceptedDataSourceKinds?.length
     ? sourceField.acceptedDataSourceKinds
     : ["records"];
