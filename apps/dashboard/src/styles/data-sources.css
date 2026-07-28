@@ -551,7 +551,7 @@
 }
 
 .app-editor-route .source-gallery {
-  width: min(900px, 100%);
+  width: min(1120px, 100%);
   max-width: none;
   margin: 0 auto;
   padding: 0;
@@ -581,15 +581,18 @@
   color: var(--tc-text-secondary);
 }
 
+/* Browsing Widget types is a visual choice, so the catalog reads like a video gallery:
+   a wide preview first, its name and description stacked underneath, and no card chrome
+   competing with the previews. Columns fill to the available width rather than locking to
+   two, so a wide window shows more of the catalog at once. */
 .app-editor-route .source-provider-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--tc-space-3);
+  grid-template-columns: repeat(auto-fill, minmax(216px, 1fr));
+  gap: var(--tc-space-5) var(--tc-space-4);
   padding: 0;
 }
 
 .app-editor-route .source-gallery > .source-provider-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   padding: var(--tc-space-4);
 }
 
@@ -628,44 +631,68 @@
 
 .app-editor-route .source-provider-grid button {
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr);
-  grid-template-rows: auto auto;
-  column-gap: var(--tc-space-3);
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto auto;
   row-gap: 2px;
-  align-items: center;
-  min-height: 92px;
-  padding: var(--tc-space-4);
+  align-content: start;
+  min-height: 0;
+  padding: 0;
   color: var(--tc-text-primary);
   text-align: left;
-  background: var(--tc-bg-surface);
-  border: 1px solid var(--tc-border-default);
-  border-radius: var(--tc-radius-chip);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
   cursor: pointer;
-  transition:
-    background var(--tc-motion-fast),
-    border-color var(--tc-motion-fast);
 }
 
-.app-editor-route .source-provider-grid button:hover {
-  background: var(--tc-action-primary-soft);
-  border-color: var(--tc-action-primary);
+/* The preview is the card here, so hover and focus land on it rather than on a wrapper. */
+.app-editor-route .source-provider-grid button > .widget-thumbnail {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  margin-bottom: var(--tc-space-3);
+  border-radius: var(--tc-radius-control);
+  transition: outline-color var(--tc-motion-fast);
+  outline: 2px solid transparent;
+  outline-offset: -1px;
 }
 
-.app-editor-route .source-provider-grid button > svg {
-  grid-row: 1 / span 2;
+.app-editor-route .source-provider-grid button:hover > .widget-thumbnail {
+  outline-color: var(--tc-action-primary);
+}
+
+.app-editor-route .source-provider-grid button:hover strong {
   color: var(--tc-action-primary);
 }
 
+/* The shared button focus ring is drawn inset against a border this tile does not have, so
+   it needs a ring that follows the whole preview-plus-details stack instead. */
+.app-editor-route .source-provider-grid button:focus-visible {
+  border-radius: var(--tc-radius-control);
+  outline: 3px solid var(--tc-focus-ring-soft);
+  outline-offset: 3px;
+  box-shadow: none;
+}
+
+.app-editor-route
+  .source-provider-grid
+  button:focus-visible
+  > .widget-thumbnail {
+  outline-color: var(--tc-action-primary);
+}
+
 .app-editor-route .source-provider-grid strong {
-  align-self: end;
-  font-size: 15px;
+  align-self: start;
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.35;
 }
 
 .app-editor-route .source-provider-grid span {
   align-self: start;
   color: var(--tc-text-secondary);
   font-size: 12px;
-  line-height: 1.4;
+  line-height: 1.45;
 }
 
 @media (max-width: 900px) {
@@ -676,17 +703,19 @@
   .data-source-create-shell__guide {
     position: static;
   }
-
-  .app-editor-route .source-provider-group .source-provider-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 @media (max-width: 680px) {
-  .app-editor-route .source-provider-grid,
   .data-source-create-shell .source-editor__body > .form-grid,
   .data-source-create-shell .source-editor > .source-editor__columns {
     grid-template-columns: 1fr;
+  }
+
+  /* Two narrower columns beat one full-width preview on a phone: the wireframes stay
+     legible at this size and the whole catalog needs half the scrolling. */
+  .app-editor-route .source-provider-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--tc-space-4) var(--tc-space-3);
   }
 
   .data-source-create-shell .source-editor .source-mapping-row {
