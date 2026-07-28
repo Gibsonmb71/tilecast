@@ -674,7 +674,10 @@
   box-shadow: none;
 }
 
-.app-editor-route .source-provider-grid button:focus-visible > .widget-thumbnail {
+.app-editor-route
+  .source-provider-grid
+  button:focus-visible
+  > .widget-thumbnail {
   outline-color: var(--tc-action-primary);
 }
 
