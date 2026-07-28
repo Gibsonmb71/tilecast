@@ -339,7 +339,8 @@ describe("DefinitionForm data source controls", () => {
       ),
     );
     expect(screen.getByText("Data format")).toBeTruthy();
-    expect(screen.getByText("temperature")).toBeTruthy();
+    // The field appears both as a required role and in the example row beneath it.
+    expect(screen.getAllByText("temperature")).toHaveLength(2);
     await userEvent.click(screen.getByRole("button", { name: /^Data: / }));
 
     const chooser = await screen.findByRole("dialog", { name: "Choose data" });
