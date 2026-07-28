@@ -67,6 +67,11 @@ describe("TakeoverPanel", () => {
         .getByRole("link", { name: "Manage emergency playlists" })
         .getAttribute("href"),
     ).toBe("/playlists");
+    expect(
+      screen
+        .getByRole("link", { name: "Start a Takeover now" })
+        .getAttribute("href"),
+    ).toBe("/screens");
     expect(await screen.findByDisplayValue("OH")).toBeTruthy();
     expect(await screen.findByText("Matched rules")).toBeTruthy();
     expect(

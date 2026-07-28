@@ -139,11 +139,13 @@ export function TakeoverPanel({ editable }: { editable: boolean }) {
     <div className="settings-sections takeover-settings">
       <section className="settings-subsection">
         <header>
-          <h3>Prepare emergency content first</h3>
+          <h3>Prepare automatic emergency content</h3>
           <p>
             Create a separate playlist for each response you may need, such as a
             tornado warning, flash flood, severe weather closure, or evacuation.
             Then connect that pre-made playlist to a weather event rule below.
+            This page configures automatic responses; a manual Takeover is the
+            separate “show this now” action on Screens.
           </p>
         </header>
         <div className="takeover-settings__actions">
@@ -151,7 +153,7 @@ export function TakeoverPanel({ editable }: { editable: boolean }) {
             Manage emergency playlists
           </Link>
           <Link className="button button--quiet" to="/screens">
-            Display an emergency manually
+            Start a Takeover now
           </Link>
         </div>
       </section>
