@@ -176,7 +176,8 @@ describe("DataSourcePicker", () => {
     expect(dialog.closest(".asset-details-drawer")).toBeNull();
     expect(dialog.parentElement?.parentElement).toBe(document.body);
     expect(screen.getByText("CSV")).toBeTruthy();
-    expect(screen.getByText("Ready · 12 records")).toBeTruthy();
+    expect(screen.getByText("Ready")).toBeTruthy();
+    expect(screen.getByText("12 records")).toBeTruthy();
 
     await userEvent.click(screen.getByRole("button", { name: /Lunch rows/ }));
 
@@ -249,7 +250,8 @@ describe("DataSourcePicker", () => {
       </QueryClientProvider>,
     );
 
-    expect(screen.getByText("Ready · 12 records")).toBeTruthy();
+    expect(screen.getByText("Ready")).toBeTruthy();
+    expect(screen.getByText("12 records")).toBeTruthy();
   });
 
   // The trigger must keep a stale reference visible rather than presenting the first compatible
