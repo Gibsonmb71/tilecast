@@ -508,7 +508,7 @@ export function TakeoverPanel({ editable }: { editable: boolean }) {
           <p>Alerts currently matched to a rule and displaying content.</p>
         </header>
         {(settings.data?.activeAlerts.length ?? 0) === 0 ? (
-          <p className="empty-state">No NWS alerts are currently active.</p>
+          <p className="empty-state">No weather emergencies are currently active.</p>
         ) : (
           <div className="takeover-rule-list">
             {settings.data?.activeAlerts.map((item) => (
