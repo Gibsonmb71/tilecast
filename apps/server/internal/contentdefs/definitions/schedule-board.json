@@ -70,6 +70,56 @@
             "default": 2
           },
           {
+            "key": "showCountdown",
+            "label": "Show live countdown",
+            "description": "Show the time until the next event starts or the current event ends.",
+            "control": "boolean",
+            "default": true
+          },
+          {
+            "key": "showUpcomingTimeline",
+            "label": "Show upcoming timeline",
+            "description": "Show upcoming events as a timeline of cards below the featured event.",
+            "control": "boolean",
+            "default": true
+          },
+          {
+            "key": "featuredTextSize",
+            "label": "Featured event size",
+            "control": "integer",
+            "required": true,
+            "minimum": 28,
+            "maximum": 120,
+            "default": 58
+          },
+          {
+            "key": "countdownTextSize",
+            "label": "Countdown size",
+            "control": "integer",
+            "required": true,
+            "minimum": 18,
+            "maximum": 96,
+            "default": 42
+          },
+          {
+            "key": "cardTitleTextSize",
+            "label": "Card title size",
+            "control": "integer",
+            "required": true,
+            "minimum": 14,
+            "maximum": 48,
+            "default": 26
+          },
+          {
+            "key": "cardDetailTextSize",
+            "label": "Card detail size",
+            "control": "integer",
+            "required": true,
+            "minimum": 12,
+            "maximum": 36,
+            "default": 18
+          },
+          {
             "key": "foregroundColor",
             "label": "Text color",
             "control": "color",
@@ -89,6 +139,13 @@
             "control": "color",
             "required": true,
             "default": "#5dd6c0"
+          },
+          {
+            "key": "cardBackgroundColor",
+            "label": "Card background",
+            "control": "color",
+            "required": true,
+            "default": "#19324d"
           },
           {
             "key": "emptyState",
@@ -115,9 +172,16 @@
         "locationField": "",
         "upcomingCount": 4,
         "columns": 2,
+        "showCountdown": true,
+        "showUpcomingTimeline": true,
+        "featuredTextSize": 58,
+        "countdownTextSize": 42,
+        "cardTitleTextSize": 26,
+        "cardDetailTextSize": 18,
         "foregroundColor": "#ffffff",
         "backgroundColor": "#101f33",
         "accentColor": "#5dd6c0",
+        "cardBackgroundColor": "#19324d",
         "emptyState": "No more events scheduled",
         "autoSkipWhenEmpty": false
       },
@@ -185,6 +249,7 @@
                         "type": "text",
                         "props": {
                           "role": "metric",
+                          "fontSize": { "$config": "featuredTextSize" },
                           "color": { "$config": "foregroundColor" }
                         },
                         "binding": {
@@ -200,9 +265,11 @@
                         }
                       },
                       {
+                        "$ifConfig": "showCountdown",
                         "type": "text",
                         "props": {
                           "role": "title",
+                          "fontSize": { "$config": "countdownTextSize" },
                           "color": { "$config": "accentColor" }
                         },
                         "binding": {
@@ -256,6 +323,7 @@
                         "type": "text",
                         "props": {
                           "role": "metric",
+                          "fontSize": { "$config": "featuredTextSize" },
                           "color": { "$config": "foregroundColor" }
                         },
                         "binding": {
@@ -272,9 +340,11 @@
                         }
                       },
                       {
+                        "$ifConfig": "showCountdown",
                         "type": "text",
                         "props": {
                           "role": "title",
+                          "fontSize": { "$config": "countdownTextSize" },
                           "color": { "$config": "accentColor" }
                         },
                         "binding": {
@@ -295,8 +365,12 @@
                   }
                 ]
               },
-              { "type": "divider" },
               {
+                "$ifConfig": "showUpcomingTimeline",
+                "type": "divider"
+              },
+              {
+                "$ifConfig": "showUpcomingTimeline",
                 "type": "text",
                 "props": {
                   "role": "label",
@@ -305,6 +379,7 @@
                 "binding": { "source": "literal", "value": "Coming up" }
               },
               {
+                "$ifConfig": "showUpcomingTimeline",
                 "type": "conditional",
                 "condition": {
                   "binding": {
@@ -345,12 +420,23 @@
                         "children": [
                           {
                             "type": "column",
-                            "props": { "gap": 4 },
+                            "props": {
+                              "fill": false,
+                              "gap": 6,
+                              "background": {
+                                "$config": "cardBackgroundColor"
+                              },
+                              "padding": 14,
+                              "radius": 10
+                            },
                             "children": [
                               {
                                 "type": "text",
                                 "props": {
                                   "role": "title",
+                                  "fontSize": {
+                                    "$config": "cardTitleTextSize"
+                                  },
                                   "maxLines": 1,
                                   "color": { "$config": "foregroundColor" }
                                 },
@@ -363,6 +449,9 @@
                                 "type": "text",
                                 "props": {
                                   "role": "body",
+                                  "fontSize": {
+                                    "$config": "cardDetailTextSize"
+                                  },
                                   "maxLines": 1,
                                   "color": { "$config": "accentColor" }
                                 },
@@ -376,6 +465,9 @@
                                 "type": "text",
                                 "props": {
                                   "role": "body",
+                                  "fontSize": {
+                                    "$config": "cardDetailTextSize"
+                                  },
                                   "maxLines": 1,
                                   "color": { "$config": "foregroundColor" }
                                 },
@@ -402,6 +494,7 @@
                 ]
               },
               {
+                "$ifConfig": "showUpcomingTimeline",
                 "type": "conditional",
                 "condition": {
                   "binding": {
@@ -442,12 +535,23 @@
                         "children": [
                           {
                             "type": "column",
-                            "props": { "gap": 4 },
+                            "props": {
+                              "fill": false,
+                              "gap": 6,
+                              "background": {
+                                "$config": "cardBackgroundColor"
+                              },
+                              "padding": 14,
+                              "radius": 10
+                            },
                             "children": [
                               {
                                 "type": "text",
                                 "props": {
                                   "role": "title",
+                                  "fontSize": {
+                                    "$config": "cardTitleTextSize"
+                                  },
                                   "maxLines": 1,
                                   "color": { "$config": "foregroundColor" }
                                 },
@@ -460,6 +564,9 @@
                                 "type": "text",
                                 "props": {
                                   "role": "body",
+                                  "fontSize": {
+                                    "$config": "cardDetailTextSize"
+                                  },
                                   "maxLines": 1,
                                   "color": { "$config": "accentColor" }
                                 },
@@ -473,6 +580,9 @@
                                 "type": "text",
                                 "props": {
                                   "role": "body",
+                                  "fontSize": {
+                                    "$config": "cardDetailTextSize"
+                                  },
                                   "maxLines": 1,
                                   "color": { "$config": "foregroundColor" }
                                 },

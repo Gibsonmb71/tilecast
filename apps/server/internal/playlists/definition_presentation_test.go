@@ -197,6 +197,45 @@ func TestScheduleBoardCompilesTemporalSelectorsAndCountdown(t *testing.T) {
 	if !formats["relative-countdown"] {
 		t.Fatal("compiled Schedule Board is missing its relative countdown")
 	}
+	fontSizes := map[int]bool{}
+	collectNumericProps(&presentation.Native.Root, "fontSize", fontSizes)
+	for _, size := range []int{18, 26, 42, 58} {
+		if !fontSizes[size] {
+			t.Fatalf("compiled Schedule Board is missing configured text size %d: %#v", size, fontSizes)
+		}
+	}
+}
+
+func TestScheduleBoardCanHideCountdownAndUpcomingTimeline(t *testing.T) {
+	definition, ok := contentdefs.MustLoad().Widget("schedule-board")
+	if !ok {
+		t.Fatal("schedule-board definition is missing")
+	}
+	configuration := make(map[string]any, len(definition.DefaultConfiguration))
+	for key, value := range definition.DefaultConfiguration {
+		configuration[key] = value
+	}
+	configuration["showCountdown"] = false
+	configuration["showUpcomingTimeline"] = false
+	raw, err := json.Marshal(configuration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	presentation, err := compileDefinitionPresentation(definition, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	used := map[string]bool{}
+	collectNodeTypes(&presentation.Native.Root, used)
+	if used["grid"] || used["divider"] {
+		t.Fatalf("hidden upcoming timeline still compiled display nodes: %#v", used)
+	}
+	selectors := map[string]bool{}
+	formats := map[string]bool{}
+	collectTemporalPresentationFeatures(&presentation.Native.Root, selectors, formats)
+	if formats["relative-countdown"] {
+		t.Fatal("hidden countdown still compiled a relative countdown")
+	}
 }
 
 func TestScheduleBoardEnablesAutoskipOnlyWhenConfigured(t *testing.T) {
@@ -250,6 +289,15 @@ func collectTemporalPresentationFeatures(node *PresentationNode, selectors, form
 	}
 	for index := range node.Children {
 		collectTemporalPresentationFeatures(&node.Children[index], selectors, formats)
+	}
+}
+
+func collectNumericProps(node *PresentationNode, key string, into map[int]bool) {
+	if value, ok := node.Props[key].(float64); ok {
+		into[int(value)] = true
+	}
+	for index := range node.Children {
+		collectNumericProps(&node.Children[index], key, into)
 	}
 }
 

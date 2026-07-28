@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
@@ -169,7 +170,12 @@ private fun PresentationNodeView(node: PresentationNode, context: PresentationCo
             verticalAlignment = Alignment.CenterVertically,
         ) { node.children.forEach { PresentationNodeView(it, context) } }
         "column", "grouped_sections" -> Column(
-            if (node.bool("fill", true)) Modifier.fillMaxSize() else Modifier.fillMaxWidth(),
+            (if (node.bool("fill", true)) Modifier.fillMaxSize() else Modifier.fillMaxWidth())
+                .background(
+                    node.color("background", Color.Transparent),
+                    RoundedCornerShape(node.int("radius", 0).dp),
+                )
+                .padding(node.int("padding", 0).dp),
             verticalArrangement = Arrangement.spacedBy(node.int("gap", 10).dp),
             horizontalAlignment = if (node.string("align", "") == "center") Alignment.CenterHorizontally else Alignment.Start,
         ) { node.children.forEach { PresentationNodeView(it, context) } }

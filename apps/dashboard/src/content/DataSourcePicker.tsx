@@ -212,13 +212,17 @@ function statusTone(status: unknown) {
   return "info" as const;
 }
 
-function statusLabel(status: unknown, recordCount: unknown) {
+function statusLabel(status: unknown) {
   if (status === "error") return "Last refresh failed";
   if (typeof status !== "string" || status.length === 0)
     return "Status unavailable";
-  if (status !== "ready") return status.replaceAll("_", " ");
-  if (typeof recordCount !== "number") return "Ready";
-  return `Ready · ${recordCount} record${recordCount === 1 ? "" : "s"}`;
+  if (status === "ready") return "Ready";
+  return status.replaceAll("_", " ");
+}
+
+function recordCountLabel(recordCount: unknown) {
+  if (typeof recordCount !== "number") return undefined;
+  return `${recordCount} record${recordCount === 1 ? "" : "s"}`;
 }
 
 // useConnectDataFlow owns the two-step Connect state. Both the empty state and the picker
@@ -428,10 +432,17 @@ export function DataSourcePicker({
           )}
           {selected && (
             <div className="data-source-picker__detail">
-              <StatusDot
-                tone={statusTone(selected.status)}
-                label={statusLabel(selected.status, selected.cachedRecordCount)}
-              />
+              <div className="data-source-picker__status">
+                <StatusDot
+                  tone={statusTone(selected.status)}
+                  label={statusLabel(selected.status)}
+                />
+                {recordCountLabel(selected.cachedRecordCount) && (
+                  <span className="data-source-picker__record-count">
+                    {recordCountLabel(selected.cachedRecordCount)}
+                  </span>
+                )}
+              </div>
               {samples.length > 0 && (
                 <dl className="data-source-picker__samples">
                   {samples.map(([key, entry]) => (
@@ -538,11 +549,13 @@ function DataSourceSelectionDialog({
                   <span className="data-source-select__status">
                     <StatusDot
                       tone={statusTone(source.status)}
-                      label={statusLabel(
-                        source.status,
-                        source.cachedRecordCount,
-                      )}
+                      label={statusLabel(source.status)}
                     />
+                    {recordCountLabel(source.cachedRecordCount) && (
+                      <small>
+                        {recordCountLabel(source.cachedRecordCount)}
+                      </small>
+                    )}
                   </span>
                   {value === source.id && (
                     <Check size={18} aria-label="Selected" />
