@@ -211,6 +211,35 @@ function statusLabel(status: unknown, recordCount: unknown) {
   return `Ready · ${recordCount} record${recordCount === 1 ? "" : "s"}`;
 }
 
+// useConnectDataFlow owns the two-step Connect state. Both the empty state and the picker
+// itself offer the same action, and duplicating the wiring meant a change to one path
+// silently diverged from the other.
+function useConnectDataFlow(
+  createProviders: DataSourceProvider[] | undefined,
+  csrf: string | undefined,
+  onCreated: (id: string) => void,
+) {
+  const [creating, setCreating] = useState<DataSourceProvider | "choose">();
+  return {
+    open: () => setCreating("choose"),
+    flow: creating ? (
+      <ConnectDataFlow
+        provider={creating === "choose" ? undefined : creating}
+        providers={createProviders}
+        exclude={formExcluded}
+        csrf={csrf ?? ""}
+        onChooseProvider={setCreating}
+        onBack={() => setCreating("choose")}
+        onClose={() => setCreating(undefined)}
+        onCreated={(id) => {
+          setCreating(undefined);
+          onCreated(id);
+        }}
+      />
+    ) : null,
+  };
+}
+
 // ConnectDataNotice is the empty state shown wherever a control needs data that does not exist
 // yet. It replaces disabling the control: the reason is stated and the fix is one click away.
 export function ConnectDataNotice({
@@ -226,7 +255,7 @@ export function ConnectDataNotice({
   disabled?: boolean;
   onCreated: (id: string) => void;
 }) {
-  const [creating, setCreating] = useState<DataSourceProvider | "choose">();
+  const connect = useConnectDataFlow(createProviders, csrf, onCreated);
   const canCreate = !disabled && Boolean(csrf);
   return (
     <div className="data-source-picker__empty">
@@ -247,26 +276,12 @@ export function ConnectDataNotice({
           type="button"
           variant="secondary"
           compact
-          onClick={() => setCreating("choose")}
+          onClick={connect.open}
         >
           <Plus size={15} aria-hidden="true" /> Connect new data
         </Button>
       )}
-      {creating && (
-        <ConnectDataFlow
-          provider={creating === "choose" ? undefined : creating}
-          providers={createProviders}
-          exclude={formExcluded}
-          csrf={csrf ?? ""}
-          onChooseProvider={setCreating}
-          onBack={() => setCreating("choose")}
-          onClose={() => setCreating(undefined)}
-          onCreated={(id) => {
-            setCreating(undefined);
-            onCreated(id);
-          }}
-        />
-      )}
+      {connect.flow}
     </div>
   );
 }
@@ -307,7 +322,7 @@ export function DataSourcePicker({
   formatGuide?: DataFormatGuide;
   onChange: (value: string) => void;
 }) {
-  const [creating, setCreating] = useState<DataSourceProvider | "choose">();
+  const connect = useConnectDataFlow(createProviders, csrf, onChange);
   const [choosing, setChoosing] = useState(false);
   const dialogTitleId = useId();
   const selected = sources.find((source) => source.id === value);
@@ -432,28 +447,14 @@ export function DataSourcePicker({
               }}
               onConnect={() => {
                 setChoosing(false);
-                setCreating("choose");
+                connect.open();
               }}
               onClose={() => setChoosing(false)}
             />
           )}
         </>
       )}
-      {creating && (
-        <ConnectDataFlow
-          provider={creating === "choose" ? undefined : creating}
-          providers={createProviders}
-          exclude={formExcluded}
-          csrf={csrf ?? ""}
-          onChooseProvider={setCreating}
-          onBack={() => setCreating("choose")}
-          onClose={() => setCreating(undefined)}
-          onCreated={(id) => {
-            setCreating(undefined);
-            onChange(id);
-          }}
-        />
-      )}
+      {connect.flow}
     </div>
   );
 }

@@ -8,7 +8,8 @@
 // things about the same task.
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Check, Lightbulb, X } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { api } from "../api/client";
 import type { DataSourceDefinition, DataSourceProvider } from "../api/types";
@@ -60,6 +61,7 @@ export function DataSourceProviderGallery({
   page?: boolean;
 }) {
   const definitions = useDataSourceDefinitions(providers, exclude);
+  const dialogRef = useRef<HTMLElement>(null);
   useEffect(() => {
     if (page) return;
     const escape = (event: KeyboardEvent) => {
@@ -71,13 +73,44 @@ export function DataSourceProviderGallery({
     addEventListener("keydown", escape);
     return () => removeEventListener("keydown", escape);
   }, [page, onClose]);
+  // As a modal, the gallery has to take focus and keep it: opening it from a Widget editor
+  // otherwise leaves the caret behind in the form underneath, where Tab walks controls the
+  // author cannot see. Matches the Drawer primitive's handling.
+  useEffect(() => {
+    if (page) return;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    dialogRef.current
+      ?.querySelector<HTMLElement>("button, [href], input, select, textarea")
+      ?.focus();
+    return () => previousFocus?.focus();
+  }, [page]);
+  const trapTab = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (page || event.key !== "Tab") return;
+    const focusable = Array.from(
+      dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+      ) ?? [],
+    );
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last?.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first?.focus();
+    }
+  };
   return (
     <div className="details-backdrop" role={page ? undefined : "presentation"}>
       <section
+        ref={dialogRef}
         className="source-gallery"
         role={page ? undefined : "dialog"}
         aria-modal={page ? undefined : true}
         aria-labelledby="data-source-gallery-title"
+        onKeyDown={trapTab}
       >
         <header>
           <div>

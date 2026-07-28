@@ -70,8 +70,11 @@ describe("StructuredDataSourceEditor", () => {
       "Event Name,Room,Start Date\nBoard meeting,204,2026-09-01",
     );
 
-    await waitFor(() => expect(inspect).toHaveBeenCalled());
-    await screen.findByText(/3 columns detected in 2 rows/);
+    // Detection waits for the input to settle before it reads the connection.
+    await waitFor(() => expect(inspect).toHaveBeenCalled(), { timeout: 3000 });
+    await screen.findByText(/3 columns detected in 2 rows/, undefined, {
+      timeout: 3000,
+    });
     // The detected columns arrive as the mapping, so the author confirms rather than
     // recalls. Each control also shows a sample value from that column.
     await waitFor(() =>
@@ -122,7 +125,9 @@ describe("StructuredDataSourceEditor", () => {
       "https://example.org/feed.xml",
     );
 
-    await screen.findByText(/2 items read from this feed/);
+    await screen.findByText(/2 items read from this feed/, undefined, {
+      timeout: 3000,
+    });
     expect(screen.getByRole("checkbox", { name: "Title" })).toBeTruthy();
     // Author and description are on by default for a feed, but this feed carries neither,
     // so they are dropped rather than offered as dead controls.

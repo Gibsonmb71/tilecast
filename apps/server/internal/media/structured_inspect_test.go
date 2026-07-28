@@ -25,6 +25,39 @@ func TestInspectCSVDetectsColumnsSamplesAndMapping(t *testing.T) {
 	}
 }
 
+// Sampling reads each row once, so a column whose values start after another column has
+// filled its samples must still be sampled, and every data row must be counted.
+func TestInspectCSVSamplesEveryColumnAndCountsEveryRow(t *testing.T) {
+	body := "title,late\nBoard meeting,\nPTO night,\nOpen house,Gym\n"
+	inspection, err := inspectCSV([]byte(body), StructuredSourceConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inspection.RowCount != 3 || len(inspection.Fields) != 2 {
+		t.Fatalf("inspection=%#v", inspection)
+	}
+	if len(inspection.Fields[0].Samples) != 3 {
+		t.Fatalf("title samples=%#v", inspection.Fields[0].Samples)
+	}
+	if len(inspection.Fields[1].Samples) != 1 || inspection.Fields[1].Samples[0] != "Gym" {
+		t.Fatalf("late samples=%#v", inspection.Fields[1].Samples)
+	}
+}
+
+// A blank header is skipped without shifting the columns reported after it.
+func TestInspectCSVSkipsBlankHeadersWithoutMisalignment(t *testing.T) {
+	inspection, err := inspectCSV([]byte("title,,room\nBoard meeting,ignored,204\n"), StructuredSourceConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inspection.Fields) != 2 || inspection.Fields[1].Key != "room" {
+		t.Fatalf("fields=%#v", inspection.Fields)
+	}
+	if len(inspection.Fields[1].Samples) != 1 || inspection.Fields[1].Samples[0] != "204" {
+		t.Fatalf("room samples=%#v", inspection.Fields[1].Samples)
+	}
+}
+
 func TestInspectCSVRejectsAnEmptyHeaderRow(t *testing.T) {
 	if _, err := inspectCSV([]byte(",,\n1,2,3\n"), StructuredSourceConfig{}); err == nil {
 		t.Fatal("expected an error for a CSV without column names")
@@ -76,6 +109,22 @@ func TestInspectJSONSupportsATopLevelArray(t *testing.T) {
 		t.Fatal(err)
 	}
 	if inspection.Suggested.RootList != "" || inspection.Suggested.Title != "/name" {
+		t.Fatalf("suggested=%#v", inspection.Suggested)
+	}
+}
+
+// An envelope may declare a conventional key that is empty today. Selecting it would
+// report a Source with no fields at all, so the search keeps going and takes the array
+// that actually holds records.
+func TestInspectJSONSkipsAnEmptyArrayForAPopulatedOne(t *testing.T) {
+	inspection, err := inspectJSON([]byte(`{"items":[],"data":[{"name":"Lunch"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inspection.Suggested.RootList != "/data" || inspection.RowCount != 1 {
+		t.Fatalf("inspection=%#v", inspection)
+	}
+	if inspection.Suggested.Title != "/name" {
 		t.Fatalf("suggested=%#v", inspection.Suggested)
 	}
 }

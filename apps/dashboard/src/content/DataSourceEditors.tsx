@@ -126,6 +126,20 @@ const mappingPlaceholders: Record<
   atom: {},
 };
 
+// How long a URL or pasted payload must stay unchanged before it is read.
+const detectionSettleMs = 600;
+
+// useSettledValue returns `value` only once it has stopped changing for `delay`, so a
+// control that reads an upstream source is not driven by every keystroke.
+function useSettledValue<T>(value: T, delay: number) {
+  const [settled, setSettled] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setSettled(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+  return settled;
+}
+
 // The display slots a mapped Source can fill. Author and description exist only on feeds.
 const mappedDisplayFields = [
   "title",
@@ -361,10 +375,20 @@ export function StructuredDataSourceEditor({
 
   // Field detection reads the connected data itself. It is keyed on what identifies the
   // connection so switching file, URL, or delimiter re-detects, and an unchanged
-  // connection is answered from cache rather than refetched on every keystroke.
+  // connection is answered from cache rather than refetched.
   const connection = configuration.uploaded
     ? `upload:${configuration.uploadedContent?.length ?? 0}:${(configuration.uploadedContent ?? "").slice(0, 200)}`
     : `url:${configuration.url ?? ""}`;
+  // A half-typed URL passes the shape test — "https://exa.o" does — so keying the query on
+  // the live value would fetch an unintended host once per keystroke. Detection waits for
+  // the input to settle instead.
+  const settledConnection = useSettledValue(connection, detectionSettleMs);
+  // The query only runs once the live connection matches the settled one, so the latest
+  // configuration is by definition the one that settled.
+  const latestConfiguration = useRef(configuration);
+  useEffect(() => {
+    latestConfiguration.current = configuration;
+  }, [configuration]);
   const detectable =
     Boolean(csrf) &&
     (configuration.uploaded
@@ -379,14 +403,15 @@ export function StructuredDataSourceEditor({
     queryKey: [
       "data-source-inspection",
       provider,
-      savedUpload ? `saved:${dataSource?.id}` : connection,
+      savedUpload ? `saved:${dataSource?.id}` : settledConnection,
       configuration.delimiter ?? "",
     ],
     queryFn: () =>
       savedUpload
         ? api.inspectSavedDataSource(dataSource!.id)
-        : api.inspectDataSource(provider, configuration, csrf),
-    enabled: detectable || savedUpload,
+        : api.inspectDataSource(provider, latestConfiguration.current, csrf),
+    // A saved upload has nothing to type, so it detects immediately.
+    enabled: savedUpload || (detectable && connection === settledConnection),
     retry: false,
     staleTime: 60_000,
   });

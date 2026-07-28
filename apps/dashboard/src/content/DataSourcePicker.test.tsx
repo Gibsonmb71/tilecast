@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DataSource, DataSourceDefinition } from "../api/types";
@@ -135,6 +135,32 @@ describe("DataSourcePicker", () => {
     expect(onChange).toHaveBeenCalledWith("created-source");
     // The flow closes on save and hands control back to the form it was opened from.
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  // As a modal it must take focus, keep Tab inside itself, and hand focus back when it
+  // closes; otherwise the caret stays in the form underneath, on controls now covered.
+  it("holds focus inside the Connect gallery and returns it on close", async () => {
+    picker([]);
+
+    const trigger = screen.getByRole("button", { name: /Connect new data/ });
+    trigger.focus();
+    await userEvent.click(trigger);
+
+    const dialog = screen.getByRole("dialog", { name: "Create Data Source" });
+    await waitFor(() =>
+      expect(dialog.contains(document.activeElement)).toBe(true),
+    );
+
+    // Tab from the last control wraps to the first rather than escaping the dialog.
+    const focusable = Array.from(
+      dialog.querySelectorAll<HTMLElement>("button:not(:disabled)"),
+    );
+    focusable[focusable.length - 1]?.focus();
+    await userEvent.tab();
+    expect(document.activeElement).toBe(focusable[0]);
+
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
   });
 
   it("chooses existing data from a modal with source context", async () => {

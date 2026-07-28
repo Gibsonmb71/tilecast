@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"errors"
+	"io"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -204,40 +205,51 @@ func inspectCSV(body []byte, c StructuredSourceConfig) (StructuredInspection, er
 	reader := csv.NewReader(strings.NewReader(string(body)))
 	reader.FieldsPerRecord = -1
 	reader.Comma = delimiter
-	rows, err := reader.ReadAll()
+	// Rows are read one at a time and sampled in a single pass. Holding the whole file as
+	// parsed rows and then rescanning it once per column costs both memory and time that a
+	// wide export makes noticeable, and neither buys anything: every row is visited once.
+	headers, err := reader.Read()
+	if err == io.EOF {
+		return StructuredInspection{}, errors.New("CSV contains no rows")
+	}
 	if err != nil {
 		return StructuredInspection{}, err
 	}
-	if len(rows) == 0 {
-		return StructuredInspection{}, errors.New("CSV contains no rows")
-	}
-	headers := rows[0]
 	inspection := StructuredInspection{
 		Provider:  "csv",
-		RowCount:  len(rows) - 1,
 		Delimiter: string(delimiter),
 		Available: StructuredFields{Title: true, Subtitle: true, Date: true, Image: true, Link: true},
 	}
 	names := []string{}
+	// columns maps a header's position in the row to its position in the reported fields,
+	// so a blank or over-limit header is skipped without disturbing the others.
+	columns := map[int]int{}
 	for index, header := range headers {
 		name := strings.TrimSpace(header)
 		if name == "" || len(inspection.Fields) >= inspectFieldLimit {
 			continue
 		}
-		field := StructuredField{Key: name, Label: name}
-		for _, row := range rows[1:] {
-			if len(row) > index {
-				appendSample(&field, row[index])
-			}
-			if len(field.Samples) >= inspectSampleLimit {
-				break
-			}
-		}
-		inspection.Fields = append(inspection.Fields, field)
+		columns[index] = len(inspection.Fields)
+		inspection.Fields = append(inspection.Fields, StructuredField{Key: name, Label: name})
 		names = append(names, name)
 	}
 	if len(inspection.Fields) == 0 {
 		return StructuredInspection{}, errors.New("CSV header row contains no column names")
+	}
+	for {
+		row, readErr := reader.Read()
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			return StructuredInspection{}, readErr
+		}
+		inspection.RowCount++
+		for index, position := range columns {
+			if index < len(row) {
+				appendSample(&inspection.Fields[position], row[index])
+			}
+		}
 	}
 	inspection.Suggested = suggestMapping(names)
 	return inspection, nil
@@ -328,7 +340,18 @@ func inspectJSON(body []byte) (StructuredInspection, error) {
 // findRecordList locates the first array of objects in a bounded walk of the document and
 // returns the JSON Pointer that selects it. A top-level array uses the empty pointer,
 // which is what the JSON parser already treats as "the whole document".
+//
+// Arrays holding records are searched for first. An empty array is only accepted once the
+// whole document has been searched, because an envelope may carry an empty `items` beside
+// a populated `data` and choosing the empty one would report a Source with no fields.
 func findRecordList(document any, pointer string) (string, []any, bool) {
+	if found, list, ok := searchRecordList(document, pointer, true); ok {
+		return found, list, ok
+	}
+	return searchRecordList(document, pointer, false)
+}
+
+func searchRecordList(document any, pointer string, requireRecords bool) (string, []any, bool) {
 	switch value := document.(type) {
 	case []any:
 		for _, item := range value {
@@ -336,7 +359,7 @@ func findRecordList(document any, pointer string) (string, []any, bool) {
 				return pointer, value, true
 			}
 		}
-		if len(value) == 0 {
+		if !requireRecords && len(value) == 0 {
 			return pointer, value, true
 		}
 	case map[string]any:
@@ -355,7 +378,7 @@ func findRecordList(document any, pointer string) (string, []any, bool) {
 		keys = append(keys, rest...)
 		for _, key := range keys {
 			child := "/" + strings.ReplaceAll(strings.ReplaceAll(key, "~", "~0"), "/", "~1")
-			if found, list, ok := findRecordList(value[key], pointer+child); ok {
+			if found, list, ok := searchRecordList(value[key], pointer+child, requireRecords); ok {
 				return found, list, ok
 			}
 		}

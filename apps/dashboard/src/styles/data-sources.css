@@ -1268,7 +1268,7 @@
 .data-source-connect-dialog {
   position: relative;
   width: min(1120px, 100%);
-  max-height: calc(100vh - 32px);
+  max-height: calc(100vh - var(--tc-space-4) * 2);
   padding: var(--tc-space-5);
   overflow-y: auto;
   background: var(--tc-bg-surface);
