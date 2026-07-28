@@ -780,7 +780,6 @@ export const api = {
     }),
   registerPasskey: (
     challengeToken: string,
-    name: string,
     credential: unknown,
     csrfToken: string,
   ) =>
@@ -789,8 +788,6 @@ export const api = {
       headers: {
         "X-CSRF-Token": csrfToken,
         "X-MFA-Challenge": challengeToken,
-        // Header values must be ISO-8859-1, and a passkey name is free text.
-        "X-Passkey-Name": encodeURIComponent(name),
       },
       body: JSON.stringify(credential),
     }),

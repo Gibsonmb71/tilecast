@@ -3,7 +3,6 @@ package httpapi
 import (
 	"errors"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -161,7 +160,17 @@ func (s *server) listFactors(w http.ResponseWriter, r *http.Request) {
 	}
 	available, reason := s.auth.PasskeysAvailable()
 	policy := s.mfaPolicy(r)
+	// The relying party and user handle let the dashboard tell the browser's
+	// passkey provider which credentials this server still accepts, so one
+	// removed here stops being offered at sign-in.
+	handle, err := s.auth.WebAuthnHandle(r.Context(), session.User.ID)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"relyingPartyId":            s.auth.RelyingPartyID(),
+		"userHandle":                handle,
 		"totpEnrolled":              summary.TOTPEnrolled,
 		"totpConfirmedAt":           summary.TOTPConfirmedAt,
 		"passkeys":                  summary.Passkeys,
@@ -266,18 +275,12 @@ func (s *server) beginPasskeyRegistration(w http.ResponseWriter, r *http.Request
 func (s *server) finishPasskeyRegistration(w http.ResponseWriter, r *http.Request) {
 	session := r.Context().Value(sessionContextKey).(auth.Session)
 	token := r.Header.Get("X-MFA-Challenge")
-	// A passkey name is free text but a header value is not, so the dashboard
-	// percent-encodes it.
-	name, err := url.QueryUnescape(r.Header.Get("X-Passkey-Name"))
-	if err != nil {
-		name = ""
-	}
 	response, err := protocol.ParseCredentialCreationResponseBody(http.MaxBytesReader(w, r.Body, maxCredentialBytes))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "The passkey response could not be read.")
 		return
 	}
-	summary, err := s.auth.FinishPasskeyRegistration(r.Context(), session.User, token, name, response)
+	summary, err := s.auth.FinishPasskeyRegistration(r.Context(), session.User, token, response)
 	if err != nil {
 		s.writeMFAError(w, r, err)
 		return

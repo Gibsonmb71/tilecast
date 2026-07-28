@@ -50,6 +50,17 @@ Tilecast has no email delivery, so there is no self-service reset link. Three pa
 
 After any reset the account signs in with its password alone and is asked to enroll again if a policy covers it.
 
+## Passkey experience
+
+Tilecast follows the platform guidance for passkeys ([Apple](https://developer.apple.com/documentation/authenticationservices/supporting-passkeys), [passkeys.dev](https://passkeys.dev/docs/use-cases/bootstrapping/)):
+
+- **Autofill-assisted sign-in.** The username field carries `autocomplete="username webauthn"`, and the login page arms a conditional-mediation request as soon as it loads. Passkeys therefore appear in the browser's own autofill list rather than only behind a button. The request is feature-detected with `isConditionalMediationAvailable()` and aborted when the page unmounts; where it is unsupported, the explicit **Sign in with a passkey** button is the fallback.
+- **No naming step.** Passkeys are named from the authenticator's AAGUID — "1Password", "Windows Hello", "Apple Passwords" — using the [community AAGUID list](https://github.com/passkeydeveloper/passkey-authenticator-aaguids). An authenticator that reports a zero AAGUID, which several browsers and iCloud Keychain do deliberately, falls back to "This device" or "Security key" from the attachment and transports. Duplicates from one provider are numbered. Any passkey can be renamed afterwards.
+- **Removed passkeys stop being offered.** After the list changes, Studio calls `signalAllAcceptedCredentials()`, and a rejected credential at sign-in triggers `signalUnknownCredential()`. Providers that support these prune the stale entry instead of offering one that always fails. Browsers without them ignore the call.
+- **A dismissed prompt is not an error.** `NotAllowedError` and `AbortError` end the ceremony quietly.
+
+One deliberate deviation: Apple recommends leaving `userVerification` at its default of `preferred`, to avoid a poor experience on devices without biometrics. Tilecast requests `required`, because a passkey here signs a user in with no password and is credited as multi-factor — user verification is what makes it a second factor rather than possession alone. The cost is that a security key with no PIN configured is refused. Relax this in `ConfigurePasskeys` if an installation would rather have the broader device support.
+
 ## Behavior worth knowing
 
 - **A correct password is not a session.** When an account has a factor, `POST /auth/login` returns a ten-minute single-use challenge and sets no cookie. Five wrong codes destroy the challenge.

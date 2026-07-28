@@ -83,13 +83,13 @@ When `security.mfa_required_scope` covers a user's role and that user has no fac
 
 These endpoints require the session cookie, and mutations require `X-CSRF-Token`. Removing a factor and generating recovery codes additionally require the account password in the body, so a borrowed session cannot weaken sign-in security on its own.
 
-- `GET /api/v1/me/security` — enrollment state, passkey list, remaining recovery codes, and passkey availability.
+- `GET /api/v1/me/security` — enrollment state, passkey list, remaining recovery codes, passkey availability, and the `relyingPartyId` and `userHandle` the browser needs to report accepted credentials back to the user's passkey provider.
 - `POST /api/v1/me/security/totp` — returns a provisioning URI and typed secret for a new, unconfirmed authenticator.
 - `POST /api/v1/me/security/totp/confirm` — activates it with `{ "code": "123456" }`.
 - `POST /api/v1/me/security/totp/remove` — requires `{ "password": "…" }`.
 - `POST /api/v1/me/security/recovery-codes` — replaces every unused code and returns the ten new ones exactly once.
 - `POST /api/v1/me/security/passkeys/options` — begins WebAuthn registration.
-- `POST /api/v1/me/security/passkeys` — posts the raw credential with `X-MFA-Challenge` and a percent-encoded `X-Passkey-Name`.
+- `POST /api/v1/me/security/passkeys` — posts the raw credential with `X-MFA-Challenge`. The passkey is named from the authenticator's AAGUID; no name is accepted.
 - `PATCH /api/v1/me/security/passkeys/{id}` — renames a passkey.
 - `POST /api/v1/me/security/passkeys/{id}/remove` — requires `{ "password": "…" }`.
 

@@ -48,12 +48,18 @@ export type LoginResult = MFAChallenge | SessionResult;
 
 export type Passkey = {
   id: string;
+  /** Derived from the authenticator at enrollment; the user never types one. */
   name: string;
+  /** Public credential handle, used to signal accepted credentials. */
+  credentialId: string;
   createdAt: string;
   lastUsedAt?: string;
 };
 
 export type SecurityStatus = {
+  relyingPartyId: string;
+  /** Empty until the account enrolls its first passkey. */
+  userHandle: string;
   totpEnrolled: boolean;
   totpConfirmedAt?: string;
   passkeys: Passkey[];

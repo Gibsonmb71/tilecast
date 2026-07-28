@@ -137,7 +137,14 @@ function SetupFormView() {
 }
 
 function LoginFormView() {
-  const { login, loginWithPasskey, error, isSubmitting, status } = useAuth();
+  const {
+    login,
+    loginWithPasskey,
+    watchForPasskeyAutofill,
+    error,
+    isSubmitting,
+    status,
+  } = useAuth();
   const form = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
     defaultValues: { username: "", password: "" },
@@ -145,6 +152,18 @@ function LoginFormView() {
   const submit = form.handleSubmit(async (values) => {
     await login(values);
   });
+  const autofillReady = Boolean(status?.passkeysAvailable);
+  // Autofill-assisted sign-in has to be armed early in the page's life, before
+  // the user reaches the username field, or the browser has nothing to offer
+  // when they focus it.
+  useEffect(() => {
+    if (!autofillReady) return;
+    return watchForPasskeyAutofill();
+    // watchForPasskeyAutofill is recreated on every render; re-arming the
+    // ceremony on each one would abort the pending request the user is about
+    // to answer, so this intentionally depends only on availability.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autofillReady]);
   // The passkey button appears only when the installation can actually run a
   // ceremony. A plain-HTTP LAN server cannot, and offering a button that
   // always fails would be worse than not offering one.
