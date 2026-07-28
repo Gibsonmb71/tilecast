@@ -19,6 +19,7 @@ import type {
   ManualSourceConfig,
   StructuredField,
   StructuredInspection,
+  StructuredValueType,
   StructuredPreview,
   StructuredSourceConfig,
   TypedRecordData,
@@ -232,6 +233,18 @@ function StructuredDetectionNotice({
   );
 }
 
+// The Server caps a mapping at a dozen values, keeping both the form and the record it
+// produces readable.
+const maximumValueFields = 12;
+
+const valueTypeOptions: { value: StructuredValueType; label: string }[] = [
+  { value: "text", label: "Text" },
+  { value: "number", label: "Number" },
+  { value: "date", label: "Date" },
+  { value: "datetime", label: "Date & time" },
+  { value: "url", label: "URL" },
+];
+
 const delimiterLabels: Record<string, string> = {
   ",": "comma",
   ";": "semicolon",
@@ -416,6 +429,81 @@ export function StructuredDataSourceEditor({
     staleTime: 60_000,
   });
   const detectedFields = inspection.data?.fields ?? [];
+  // A mapped value is a path and a declared type, so the two maps are always written
+  // together: a rename or a removal that touched only one of them would leave a type
+  // stranded on a value that no longer exists, which the Server rejects on save.
+  const updateValues = (
+    values: Record<string, string>,
+    types: Record<string, StructuredValueType>,
+  ) =>
+    setConfiguration((current) => {
+      const next = {
+        ...(current.mapping ?? emptyMapping),
+        valueFields: values,
+        valueFieldTypes: types,
+      };
+      return {
+        ...current,
+        mapping: next,
+        fields: mapped ? fieldsFromMapping(next) : current.fields,
+      };
+    });
+  const valueMaps = () => ({
+    values: { ...(mapping?.valueFields ?? {}) },
+    types: { ...(mapping?.valueFieldTypes ?? {}) },
+  });
+  // Detection already knows what a field holds, so pointing a value at one types it. An
+  // author who has chosen a type keeps it: the data is evidence, not a correction.
+  const setValueField = (label: string, path: string) => {
+    const { values, types } = valueMaps();
+    values[label] = path;
+    const detected = detectedFields.find((field) => field.key === path);
+    if (detected && !types[label]) types[label] = detected.type;
+    updateValues(values, types);
+  };
+  const setValueFieldType = (label: string, type: StructuredValueType) => {
+    const { values, types } = valueMaps();
+    types[label] = type;
+    updateValues(values, types);
+  };
+  const renameValueField = (label: string, renamed: string) => {
+    const { values, types } = valueMaps();
+    // Rebuilt in order so a rename leaves the row where the author is typing.
+    const nextValues: Record<string, string> = {};
+    const nextTypes: Record<string, StructuredValueType> = {};
+    for (const [key, path] of Object.entries(values)) {
+      const name = key === label ? renamed : key;
+      nextValues[name] = path;
+      const type = types[key];
+      if (type) nextTypes[name] = type;
+    }
+    updateValues(nextValues, nextTypes);
+  };
+  // A Source saved before its times were mapped, or one whose author skipped them, cannot
+  // reach the suggestion: that applies only to a mapping with nothing in it yet. Detection
+  // already knows which fields are timestamps, so it offers them as one deliberate action.
+  const unmappedTimestamps = detectedFields.filter(
+    (field) =>
+      field.type === "datetime" &&
+      !Object.values(mapping?.valueFields ?? {}).includes(field.key) &&
+      field.key !== mapping?.title &&
+      field.key !== mapping?.subtitle,
+  );
+  const addTimestampValues = () => {
+    const { values, types } = valueMaps();
+    for (const field of unmappedTimestamps) {
+      if (Object.keys(values).length >= maximumValueFields) break;
+      values[field.label] = field.key;
+      types[field.label] = "datetime";
+    }
+    updateValues(values, types);
+  };
+  const removeValueField = (label: string) => {
+    const { values, types } = valueMaps();
+    delete values[label];
+    delete types[label];
+    updateValues(values, types);
+  };
   const suggested = inspection.data?.suggested;
   const suggestionKey = `${connection}:${JSON.stringify(suggested ?? null)}`;
   const appliedSuggestion = useRef("");
@@ -427,11 +515,9 @@ export function StructuredDataSourceEditor({
     appliedSuggestion.current = suggestionKey;
     setConfiguration((current) => {
       if (!mappingIsEmpty(current.mapping)) return current;
-      const next = {
-        ...(current.mapping ?? emptyMapping),
-        ...suggested,
-        valueFields: current.mapping?.valueFields,
-      };
+      // The mapping is empty here, so the suggested values (detected timestamps the
+      // display slots cannot carry) replace nothing the author entered.
+      const next = { ...(current.mapping ?? emptyMapping), ...suggested };
       return { ...current, mapping: next, fields: fieldsFromMapping(next) };
     });
   }, [mapped, suggested, suggestionKey]);
@@ -706,6 +792,11 @@ export function StructuredDataSourceEditor({
                 )}
                 <div className="source-mapping-list">
                   <strong>Optional values</strong>
+                  <small>
+                    A Widget offers a value only where its type fits: a start
+                    and end time have to be typed Date &amp; time before a
+                    schedule Widget can select them.
+                  </small>
                   {Object.entries(mapping.valueFields ?? {}).map(
                     ([label, path]) => (
                       <div
@@ -716,33 +807,40 @@ export function StructuredDataSourceEditor({
                           aria-label="Value label"
                           value={label}
                           disabled={readOnly}
-                          onChange={(event) => {
-                            const values = { ...(mapping.valueFields ?? {}) };
-                            delete values[label];
-                            values[event.target.value] = path;
-                            updateMapping("valueFields", values);
-                          }}
+                          onChange={(event) =>
+                            renameValueField(label, event.target.value)
+                          }
                         />
                         <input
                           aria-label="Value path or column"
                           value={path}
                           disabled={readOnly}
                           onChange={(event) =>
-                            updateMapping("valueFields", {
-                              ...(mapping.valueFields ?? {}),
-                              [label]: event.target.value,
-                            })
+                            setValueField(label, event.target.value)
                           }
                         />
+                        <Select
+                          aria-label={`${label} type`}
+                          value={mapping.valueFieldTypes?.[label] ?? "text"}
+                          disabled={readOnly}
+                          onChange={(event) =>
+                            setValueFieldType(
+                              label,
+                              event.target.value as StructuredValueType,
+                            )
+                          }
+                        >
+                          {valueTypeOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </Select>
                         <button
                           className="icon-button"
                           aria-label={`Remove ${label}`}
                           disabled={readOnly}
-                          onClick={() => {
-                            const values = { ...(mapping.valueFields ?? {}) };
-                            delete values[label];
-                            updateMapping("valueFields", values);
-                          }}
+                          onClick={() => removeValueField(label)}
                         >
                           <Trash2 size={15} />
                         </button>
@@ -750,16 +848,30 @@ export function StructuredDataSourceEditor({
                     ),
                   )}
                   {!readOnly &&
-                    Object.keys(mapping.valueFields ?? {}).length < 12 && (
+                    unmappedTimestamps.length > 0 &&
+                    Object.keys(mapping.valueFields ?? {}).length <
+                      maximumValueFields && (
+                      <button
+                        type="button"
+                        className="button button--quiet"
+                        onClick={addTimestampValues}
+                      >
+                        <Plus size={15} /> Add {unmappedTimestamps.length}{" "}
+                        detected time field
+                        {unmappedTimestamps.length === 1 ? "" : "s"}
+                      </button>
+                    )}
+                  {!readOnly &&
+                    Object.keys(mapping.valueFields ?? {}).length <
+                      maximumValueFields && (
                       <button
                         type="button"
                         className="button button--quiet"
                         onClick={() =>
-                          updateMapping("valueFields", {
-                            ...(mapping.valueFields ?? {}),
-                            [`Value ${Object.keys(mapping.valueFields ?? {}).length + 1}`]:
-                              provider === "json" ? "/value" : "value",
-                          })
+                          setValueField(
+                            `Value ${Object.keys(mapping.valueFields ?? {}).length + 1}`,
+                            provider === "json" ? "/value" : "value",
+                          )
                         }
                       >
                         <Plus size={15} /> Add value

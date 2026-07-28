@@ -7,7 +7,9 @@ import (
 	"errors"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -39,6 +41,9 @@ type StructuredField struct {
 	Key     string   `json:"key"`
 	Label   string   `json:"label"`
 	Samples []string `json:"samples"`
+	// Type is what the samples look like: text, number, date, or datetime. Studio stores
+	// it with the mapping so a Widget picker can filter to the type its slot requires.
+	Type string `json:"type"`
 }
 
 // StructuredInspection reports the shape of the connected data before a mapping exists.
@@ -126,6 +131,93 @@ func suggestMapping(names []string) StructuredMapping {
 		ImageURL: chosen["imageUrl"],
 		Link:     chosen["link"],
 	}
+}
+
+// structuredDateTimeLayouts are the timestamp spellings a real feed or export uses. A
+// value that parses under any of them is an instant, whatever punctuation it arrived with.
+var structuredDateTimeLayouts = []string{
+	time.RFC3339Nano,
+	time.RFC3339,
+	"2006-01-02T15:04:05",
+	"2006-01-02T15:04",
+	"2006-01-02 15:04:05",
+	"2006-01-02 15:04",
+}
+
+// parseStructuredDateTime reads one timestamp. A value with no zone is read as UTC, which
+// is the same assumption the manual table editor makes for a typed datetime cell.
+func parseStructuredDateTime(value string) (time.Time, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}, false
+	}
+	for _, layout := range structuredDateTimeLayouts {
+		if parsed, err := time.Parse(layout, value); err == nil {
+			return parsed, true
+		}
+	}
+	return time.Time{}, false
+}
+
+// detectFieldType types a field from its samples. Every sample has to agree: one stray
+// timestamp in a column of free text must not turn that column into a datetime, because a
+// Widget that then binds to it would render blanks for every other row.
+func detectFieldType(samples []string) string {
+	datetime, date, number, seen := true, true, true, false
+	for _, sample := range samples {
+		sample = strings.TrimSpace(sample)
+		if sample == "" {
+			continue
+		}
+		seen = true
+		if _, ok := parseStructuredDateTime(sample); !ok {
+			datetime = false
+		}
+		if _, err := time.Parse("2006-01-02", sample); err != nil {
+			date = false
+		}
+		if _, err := strconv.ParseFloat(sample, 64); err != nil {
+			number = false
+		}
+	}
+	switch {
+	case !seen:
+		return "text"
+	case datetime:
+		return "datetime"
+	case date:
+		return "date"
+	case number:
+		return "number"
+	}
+	return "text"
+}
+
+// suggestValueFields offers every detected timestamp as a mapped value. The display slots
+// carry one date between them, so a schedule that arrives with a start and an end would
+// otherwise land with its times unreachable by any Widget: a start-and-end Widget can only
+// select a field the Source exposes, and only a mapped value becomes one.
+func suggestValueFields(fields []StructuredField, mapping *StructuredMapping) {
+	claimed := map[string]bool{
+		mapping.Title: true, mapping.Subtitle: true,
+		mapping.ImageURL: true, mapping.Link: true,
+	}
+	values, types := map[string]string{}, map[string]string{}
+	for _, field := range fields {
+		if field.Type != "datetime" || claimed[field.Key] || field.Label == "" {
+			continue
+		}
+		if len(values) >= structuredValueFieldLimit {
+			break
+		}
+		values[field.Label] = field.Key
+		types[field.Label] = field.Type
+	}
+	if len(values) == 0 {
+		return
+	}
+	mapping.ValueFields = values
+	mapping.ValueFieldTypes = types
 }
 
 func inspectSample(value string) string {
@@ -251,7 +343,11 @@ func inspectCSV(body []byte, c StructuredSourceConfig) (StructuredInspection, er
 			}
 		}
 	}
+	for index := range inspection.Fields {
+		inspection.Fields[index].Type = detectFieldType(inspection.Fields[index].Samples)
+	}
 	inspection.Suggested = suggestMapping(names)
+	suggestValueFields(inspection.Fields, &inspection.Suggested)
 	return inspection, nil
 }
 
@@ -312,8 +408,10 @@ func inspectJSON(body []byte) (StructuredInspection, error) {
 	}
 	names := []string{}
 	for _, pointer := range order {
-		inspection.Fields = append(inspection.Fields, *byKey[pointer])
-		names = append(names, byKey[pointer].Label)
+		field := *byKey[pointer]
+		field.Type = detectFieldType(field.Samples)
+		inspection.Fields = append(inspection.Fields, field)
+		names = append(names, field.Label)
 	}
 	suggested := suggestMapping(names)
 	// Suggestions are matched on the readable key and returned as JSON Pointers, which is
@@ -334,6 +432,7 @@ func inspectJSON(body []byte) (StructuredInspection, error) {
 	inspection.Suggested.Date = toPointer(suggested.Date)
 	inspection.Suggested.ImageURL = toPointer(suggested.ImageURL)
 	inspection.Suggested.Link = toPointer(suggested.Link)
+	suggestValueFields(inspection.Fields, &inspection.Suggested)
 	return inspection, nil
 }
 
@@ -416,7 +515,9 @@ func inspectFeed(provider string, body []byte) (StructuredInspection, error) {
 		if len(fields[key].Samples) == 0 {
 			continue
 		}
-		inspection.Fields = append(inspection.Fields, *fields[key])
+		field := *fields[key]
+		field.Type = detectFieldType(field.Samples)
+		inspection.Fields = append(inspection.Fields, field)
 	}
 	inspection.Available = StructuredFields{
 		Title:       len(fields["title"].Samples) > 0,

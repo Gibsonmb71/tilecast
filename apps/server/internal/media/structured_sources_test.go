@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/tilecast/tilecast/apps/server/internal/contentdefs"
 )
 
 // TestUploadedCSVContentDrivesRecords documents why saved Data Sources must be
@@ -116,5 +118,69 @@ func TestStructuredSourceParsersAllowDataOnlyMappings(t *testing.T) {
 	}
 	if records[0].Title != "" || records[0].Values["option_1"] != "Chicken tenders" || records[0].Values["option_2"] != "Cheeseburger" {
 		t.Fatalf("unexpected data-only record: %#v", records[0])
+	}
+}
+
+// A typed value is what a Widget binds to, so the fields a Source advertises have to carry
+// the type the author declared. Reported as text, a mapped start time is invisible to
+// every picker that asks for a datetime — the Widget's dropdown is simply empty.
+func TestStructuredValueFieldsAdvertiseTheirDeclaredType(t *testing.T) {
+	config := StructuredSourceConfig{Mapping: &StructuredMapping{
+		Title:           "/title",
+		ValueFields:     map[string]string{"startTime": "/startTime", "endTime": "/endTime", "room": "/room"},
+		ValueFieldTypes: map[string]string{"startTime": "datetime", "endTime": "datetime"},
+	}, Fields: StructuredFields{Title: true}}
+	raw, _ := json.Marshal(config)
+	catalog, err := contentdefs.New(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := &Service{}
+	service.SetContentDefinitions(catalog)
+	fields := service.availableDataSourceFields("json", raw)
+	types := map[string]string{}
+	keys := []string{}
+	for _, field := range fields {
+		types[field.Key] = field.Type
+		keys = append(keys, field.Key)
+	}
+	if types["startTime"] != "datetime" || types["endTime"] != "datetime" || types["room"] != "text" {
+		t.Fatalf("fields=%#v", fields)
+	}
+	// Map iteration is random; a picker whose options reorder between requests is not.
+	if strings.Join(keys, ",") != "title,endTime,room,startTime" {
+		t.Fatalf("field order=%q", strings.Join(keys, ","))
+	}
+}
+
+func TestStructuredMappingRejectsUnusableValueTypes(t *testing.T) {
+	unmapped := StructuredMapping{Title: "title", ValueFieldTypes: map[string]string{"startTime": "datetime"}}
+	if err := validateStructuredMapping(unmapped, "csv"); err == nil {
+		t.Fatal("expected a type naming an unmapped value to be rejected")
+	}
+	unknown := StructuredMapping{Title: "title", ValueFields: map[string]string{"startTime": "startTime"}, ValueFieldTypes: map[string]string{"startTime": "instant"}}
+	if err := validateStructuredMapping(unknown, "csv"); err == nil {
+		t.Fatal("expected an unknown value type to be rejected")
+	}
+}
+
+// A datetime value reaches the Player as an instant whatever spelling the feed used, and a
+// value that cannot be read stays as text rather than failing the whole refresh.
+func TestStructuredDatetimeValuesNormalizeBestEffort(t *testing.T) {
+	mapping := StructuredMapping{
+		Title:           "title",
+		ValueFields:     map[string]string{"startTime": "start", "endTime": "end"},
+		ValueFieldTypes: map[string]string{"startTime": "datetime", "endTime": "datetime"},
+	}
+	config := StructuredSourceConfig{MaxItems: 10, Sort: "source", Mapping: &mapping}
+	records, err := parseCSVRecords([]byte("title,start,end\nPeriod 1,2026-07-30 08:25,first bell\n"), config)
+	if err != nil || len(records) != 1 {
+		t.Fatalf("records=%#v err=%v", records, err)
+	}
+	if records[0].Values["startTime"] != "2026-07-30T08:25:00Z" {
+		t.Fatalf("startTime=%q", records[0].Values["startTime"])
+	}
+	if records[0].Values["endTime"] != "first bell" {
+		t.Fatalf("endTime=%q", records[0].Values["endTime"])
 	}
 }

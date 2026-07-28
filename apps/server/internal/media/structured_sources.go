@@ -22,6 +22,31 @@ import (
 
 const structuredMaxItems = 200
 
+// A mapping stays readable, and the record it produces stays small, at a dozen values.
+const structuredValueFieldLimit = 12
+
+// structuredValueFieldTypes are the types an author may declare for a mapped value. They
+// are the Data Source field types a Widget picker filters on; a type outside this set
+// would hide the field from every picker instead of narrowing it to the right one.
+var structuredValueFieldTypes = map[string]bool{
+	"text": true, "number": true, "date": true, "datetime": true, "url": true,
+}
+
+// structuredValueText renders one mapped value in the shape its declared type promises, so
+// a Widget bound to a datetime always receives an instant it can parse. A remote feed is
+// not under the author's control, so a value that does not parse is passed through as text
+// rather than failing the refresh: a wrong-looking value on screen is easier to diagnose
+// than a Source that quietly stopped updating.
+func structuredValueText(raw, fieldType string) string {
+	text := sanitizeCalendarText(raw, 240)
+	if fieldType == "datetime" {
+		if parsed, ok := parseStructuredDateTime(text); ok {
+			return parsed.UTC().Format(time.RFC3339)
+		}
+	}
+	return text
+}
+
 type structuredSourceProvider struct {
 	service  *Service
 	provider string
@@ -168,8 +193,16 @@ func validateStructuredMapping(m StructuredMapping, provider string) error {
 	if m.Title == "" && m.Subtitle == "" && m.Date == "" && len(m.ValueFields) == 0 {
 		return errors.New("source mapping must include at least one display or value field")
 	}
-	if len(m.ValueFields) > 12 {
+	if len(m.ValueFields) > structuredValueFieldLimit {
 		return errors.New("source value fields are limited to twelve")
+	}
+	for name, fieldType := range m.ValueFieldTypes {
+		if _, ok := m.ValueFields[name]; !ok {
+			return fmt.Errorf("source value field type names %q, which is not mapped", name)
+		}
+		if !structuredValueFieldTypes[fieldType] {
+			return fmt.Errorf("source value field type %q is invalid", fieldType)
+		}
 	}
 	return nil
 }
@@ -311,7 +344,7 @@ func parseJSONRecords(body []byte, c StructuredSourceConfig) ([]StructuredRecord
 		}
 		values := map[string]string{}
 		for name, path := range c.Mapping.ValueFields {
-			values[sanitizeCalendarText(name, 80)] = sanitizeCalendarText(value(path), 240)
+			values[sanitizeCalendarText(name, 80)] = structuredValueText(value(path), c.Mapping.ValueFieldTypes[name])
 		}
 		title := sanitizeCalendarText(value(c.Mapping.Title), 240)
 		subtitle := sanitizeCalendarText(value(c.Mapping.Subtitle), 240)
@@ -393,7 +426,7 @@ func parseCSVRecords(body []byte, c StructuredSourceConfig) ([]StructuredRecord,
 		value := func(name string) string { v, _ := field(row, name); return v }
 		values := map[string]string{}
 		for name, column := range c.Mapping.ValueFields {
-			values[sanitizeCalendarText(name, 80)] = sanitizeCalendarText(value(column), 240)
+			values[sanitizeCalendarText(name, 80)] = structuredValueText(value(column), c.Mapping.ValueFieldTypes[name])
 		}
 		title := sanitizeCalendarText(value(c.Mapping.Title), 240)
 		subtitle := sanitizeCalendarText(value(c.Mapping.Subtitle), 240)

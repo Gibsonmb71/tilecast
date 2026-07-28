@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -651,8 +652,19 @@ func (s *Service) availableDataSourceFields(provider string, raw json.RawMessage
 	add(config.Fields.Image, "imageUrl", "Image", "url")
 	add(config.Fields.Link, "link", "Link", "url")
 	if config.Mapping != nil {
+		// Map iteration order is random, and these become the options in a Widget's field
+		// picker: sorting keeps the list in one order between requests.
+		names := make([]string, 0, len(config.Mapping.ValueFields))
 		for name := range config.Mapping.ValueFields {
-			fields = append(fields, DataSourceField{Key: name, Label: name, Type: "text"})
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			fieldType := config.Mapping.ValueFieldTypes[name]
+			if !structuredValueFieldTypes[fieldType] {
+				fieldType = "text"
+			}
+			fields = append(fields, DataSourceField{Key: name, Label: name, Type: fieldType})
 		}
 	}
 	return fields

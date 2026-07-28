@@ -379,6 +379,11 @@ type StructuredMapping struct {
 	ImageURL    string            `json:"imageUrl"`
 	Link        string            `json:"link"`
 	ValueFields map[string]string `json:"valueFields,omitempty"`
+	// ValueFieldTypes records what each mapped value holds, keyed by the same label as
+	// ValueFields. A Widget field picker only offers fields of the type it needs, so a
+	// column of timestamps reported as text is a column no time-based Widget can use.
+	// An entry with no type stays text, which is what Sources saved before this stored.
+	ValueFieldTypes map[string]string `json:"valueFieldTypes,omitempty"`
 }
 
 type StructuredFilter struct {

@@ -18,9 +18,19 @@ const csvInspection: StructuredInspection = {
   rowCount: 2,
   delimiter: ",",
   fields: [
-    { key: "Event Name", label: "Event Name", samples: ["Board meeting"] },
-    { key: "Room", label: "Room", samples: ["204"] },
-    { key: "Start Date", label: "Start Date", samples: ["2026-09-01"] },
+    {
+      key: "Event Name",
+      label: "Event Name",
+      samples: ["Board meeting"],
+      type: "text",
+    },
+    { key: "Room", label: "Room", samples: ["204"], type: "text" },
+    {
+      key: "Start Date",
+      label: "Start Date",
+      samples: ["2026-09-01"],
+      type: "date",
+    },
   ],
   suggested: {
     rootList: "",
@@ -106,7 +116,9 @@ describe("StructuredDataSourceEditor", () => {
       ...csvInspection,
       provider: "rss",
       delimiter: undefined,
-      fields: [{ key: "title", label: "Title", samples: ["Board news"] }],
+      fields: [
+        { key: "title", label: "Title", samples: ["Board news"], type: "text" },
+      ],
       available: {
         title: true,
         subtitle: false,
@@ -133,5 +145,104 @@ describe("StructuredDataSourceEditor", () => {
     // so they are dropped rather than offered as dead controls.
     expect(screen.queryByRole("checkbox", { name: "Author" })).toBeNull();
     expect(screen.queryByRole("checkbox", { name: "Description" })).toBeNull();
+  });
+
+  // A schedule carries a start and an end, and the display slots hold one date between
+  // them. Detection maps the rest as typed values, which is the only way a Widget that
+  // asks for a datetime has anything to offer in its field picker.
+  it("maps detected timestamps as typed values", async () => {
+    vi.spyOn(api, "inspectDataSource").mockResolvedValue({
+      ...csvInspection,
+      rowCount: 6,
+      fields: [
+        { key: "title", label: "title", samples: ["Period 1"], type: "text" },
+        {
+          key: "startTime",
+          label: "startTime",
+          samples: ["2026-07-30T08:25:00-04:00"],
+          type: "datetime",
+        },
+        {
+          key: "endTime",
+          label: "endTime",
+          samples: ["2026-07-30T09:55:00-04:00"],
+          type: "datetime",
+        },
+      ],
+      suggested: {
+        rootList: "",
+        title: "title",
+        subtitle: "",
+        date: "startTime",
+        imageUrl: "",
+        link: "",
+        valueFields: { startTime: "startTime", endTime: "endTime" },
+        valueFieldTypes: { startTime: "datetime", endTime: "datetime" },
+      },
+    });
+    editor("csv");
+
+    await userEvent.click(screen.getByRole("button", { name: /Paste data/ }));
+    await userEvent.click(screen.getByPlaceholderText(/title,subtitle,date/));
+    await userEvent.paste(
+      "title,startTime,endTime\nPeriod 1,2026-07-30T08:25:00-04:00,2026-07-30T09:55:00-04:00",
+    );
+
+    const startType = await screen.findByRole(
+      "combobox",
+      { name: "startTime type" },
+      { timeout: 3000 },
+    );
+    expect(startType).toHaveTextContent("Date & time");
+    expect(
+      screen.getByRole("combobox", { name: "endTime type" }),
+    ).toHaveTextContent("Date & time");
+
+    // The author remains the authority: a detected type can be corrected.
+    await userEvent.click(startType);
+    await userEvent.click(screen.getByRole("option", { name: "Text" }));
+    expect(startType).toHaveTextContent("Text");
+    // Every timestamp is mapped, so there is nothing left to offer.
+    expect(
+      screen.queryByRole("button", { name: /detected time field/ }),
+    ).toBeNull();
+  });
+
+  // A Source saved before this could type its times keeps its mapping, so the suggestion
+  // never reaches it. Detection offers the fields it found as one deliberate action.
+  it("offers detected timestamps to a Source that already has a mapping", async () => {
+    vi.spyOn(api, "inspectDataSource").mockResolvedValue({
+      ...csvInspection,
+      fields: [
+        ...csvInspection.fields,
+        {
+          key: "Start Time",
+          label: "Start Time",
+          samples: ["2026-09-01T08:25:00-04:00"],
+          type: "datetime",
+        },
+      ],
+    });
+    editor("csv");
+
+    await userEvent.click(screen.getByRole("button", { name: /Paste data/ }));
+    await userEvent.click(screen.getByPlaceholderText(/title,subtitle,date/));
+    await userEvent.paste(
+      "Event Name,Room,Start Date,Start Time\nBoard meeting,204,2026-09-01,2026-09-01T08:25:00-04:00",
+    );
+
+    const add = await screen.findByRole(
+      "button",
+      { name: /Add 1 detected time field/ },
+      { timeout: 3000 },
+    );
+    await userEvent.click(add);
+    expect(
+      screen.getByRole("combobox", { name: "Start Time type" }),
+    ).toHaveTextContent("Date & time");
+    // Offered once: the field is mapped now.
+    expect(
+      screen.queryByRole("button", { name: /detected time field/ }),
+    ).toBeNull();
   });
 });
