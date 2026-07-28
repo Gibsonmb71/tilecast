@@ -152,10 +152,23 @@ func TestMediaUploadProcessingAndDeletionLifecycle(t *testing.T) {
 		_, _ = fmt.Fprintf(w, "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:integration-event\r\nDTSTART:%s\r\nDTEND:%s\r\nSUMMARY:Board meeting\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n", start.Format("20060102T150405Z"), start.Add(time.Hour).Format("20060102T150405Z"))
 	}))
 	defer calendarServer.Close()
-	calendarConfiguration, _ := json.Marshal(CalendarConfig{Calendars: []CalendarFeed{{Name: "District", URL: calendarServer.URL}}, DisplayMode: "upcoming", MaxEvents: 10, Fields: CalendarFields{Title: true, StartTime: true}, Timezone: "UTC", RefreshIntervalSeconds: 300, StalenessLimitHours: 168, EmptyState: "No events"})
+	calendarConfiguration, _ := json.Marshal(CalendarConfig{Calendars: []CalendarFeed{{Name: "District", URL: calendarServer.URL}}, DisplayMode: "upcoming", MaxEvents: 10, Fields: CalendarFields{Title: true, StartTime: true, EndTime: true, Location: true}, Timezone: "UTC", RefreshIntervalSeconds: 300, StalenessLimitHours: 168, EmptyState: "No events"})
 	calendarAsset, err := service.CreateDataSource(ctx, owner.User.ID, DataSourceInput{Provider: "calendar", Name: "District calendar", Configuration: calendarConfiguration})
 	if err != nil {
 		t.Fatal(err)
+	}
+	scheduleBoardConfiguration, _ := json.Marshal(map[string]any{
+		"dataSourceId": calendarAsset.ID.String(), "titleField": "title",
+		"startField": "startTime", "endField": "endTime", "locationField": "location",
+		"upcomingCount": 4, "columns": 2, "foregroundColor": "#ffffff",
+		"backgroundColor": "#101f33", "accentColor": "#5dd6c0",
+		"emptyState": "No more events scheduled",
+	})
+	scheduleBoard, err := service.CreateWidget(ctx, owner.User.ID, WidgetInput{
+		Provider: "schedule-board", Name: "Daily bell schedule", Configuration: scheduleBoardConfiguration,
+	})
+	if err != nil || scheduleBoard.Widget == nil || scheduleBoard.Widget.Provider != "schedule-board" {
+		t.Fatalf("create Calendar-backed Schedule Board: %#v err=%v", scheduleBoard, err)
 	}
 	sourceWorker := NewDataSourceRefreshWorker(service, nil)
 	worked, err := sourceWorker.runOne(ctx)

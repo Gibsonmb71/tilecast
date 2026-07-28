@@ -1,6 +1,8 @@
 # Calendar Sources
 
-A Calendar Data Source turns one to eight public iCalendar feeds into a reusable, non-visual data connection. It owns the ICS URLs, refresh, parsing, timezone handling, bounded cached events, keyword and calendar filters, and typed refresh diagnostics, with live preview. A Calendar Data Source cannot be added directly to a playlist, schedule, or Layout; its events are displayed by an Agenda, List, or Ticker Widget that references it.
+A Calendar Data Source turns one to eight public iCalendar feeds into a reusable, non-visual data connection. It owns the ICS URLs, refresh, parsing, timezone handling, bounded cached events, keyword and calendar filters, and typed refresh diagnostics, with live preview. A Calendar Data Source cannot be added directly to a playlist, schedule, or Layout; its events are displayed by an Agenda, List, Ticker, Now and Next, or School Schedule Widget that references it.
+
+The School Schedule Widget maps the Calendar's title, start, end, and location fields. Tilecast Player selects the event whose start/end window contains its current time, otherwise selects the next future event, and calculates the start or end countdown locally once per second. Upcoming cards are selected from the same bounded dataset. The selection and countdown therefore continue to advance when the Player is offline; they do not depend on a server refresh at each event boundary. A missing or inaccurate Player clock can still make the displayed event wrong, so the existing device-clock warning remains relevant.
 
 The server fetches and parses ICS. It expands RFC 5545 recurrence rules into a bounded 90-day occurrence window using the configured timezone, including all-day events and DST transitions. Titles, locations, and description excerpts are converted to plain bounded text. Raw ICS is not retained or returned by the API.
 

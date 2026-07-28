@@ -8,6 +8,8 @@ Manifest v12 adds a common typed record projection for Calendar, RSS, Atom, JSON
 
 Manifest v13 removes provider enums from Player validation. Data Sources carry version 1 typed data documents and Widgets carry version 1 native presentation trees or constrained web sandbox descriptors. Provider fields are diagnostics metadata only. Capability-reporting Players receive v13; older Players continue receiving v11 or v12 during rollout.
 
+The v13 native presentation contract also supports Player-local temporal record selectors (`current`, `next`, `upcoming`, and `current_or_next`) on dataset bindings and repeat regions. Selectors name typed start/end fields and require `selection.temporal@1`. The `relative-countdown` typed formatter renders a selected datetime against the Player clock, allowing offline-safe schedule boards without embedding a changing countdown value in the manifest.
+
 Manifest v14 adds the optional `crossfade` playlist transition. Capable Players composite overlapping images, videos, websites, Widgets, and Layouts during the visual transition. The server projects `crossfade` as `fade` for older Players, and v1-v13 remain unchanged.
 
 Time-series points may carry one `value` or a bounded `values` object for multi-series charts. Capability revision 2 covers native charts, asset images, target progress, repeat indexes, and richer conditions without changing the presentation schema version.

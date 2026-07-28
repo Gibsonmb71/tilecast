@@ -161,7 +161,10 @@ private fun PresentationNodeView(node: PresentationNode, context: PresentationCo
                 ) { items(node.children.size) { index -> PresentationNodeView(node.children[index], context) } }
                 return
             }
-            val records = repeated.repeat?.let { selectedRecords(context.datasets[it.dataset], context.now).drop(it.offset).take(it.limit) }.orEmpty()
+            val records = repeated.repeat?.let {
+                temporalRecords(context.datasets[it.dataset], context.now, it.selector, it.startField, it.endField)
+                    .drop(it.offset).take(it.limit)
+            }.orEmpty()
             val template = repeated.children.firstOrNull()
             LazyVerticalGrid(
                 columns = GridCells.Fixed(node.int("columns", 1).coerceIn(1, 4)),
@@ -176,7 +179,13 @@ private fun PresentationNodeView(node: PresentationNode, context: PresentationCo
         "divider" -> HorizontalDivider(color = node.color("color", Color.White.copy(alpha = .18f)))
         "repeat" -> {
             val repeat = node.repeat ?: return
-            val records = selectedRecords(context.datasets[repeat.dataset], context.now).drop(repeat.offset).take(repeat.limit)
+            val records = temporalRecords(
+                context.datasets[repeat.dataset],
+                context.now,
+                repeat.selector,
+                repeat.startField,
+                repeat.endField,
+            ).drop(repeat.offset).take(repeat.limit)
             if (records.isEmpty()) {
                 Text(node.string("emptyState", "No information available"), color = Color.White)
             }
@@ -254,11 +263,12 @@ private fun resolve(binding: PresentationBinding?, context: PresentationContext)
         "repeat_index" -> context.repeatIndex.toString()
         "dataset" -> {
             val dataset = context.datasets[binding.dataset] ?: context.datasets.values.firstOrNull()
+            val records = temporalRecords(dataset, context.now, binding.selector, binding.startField, binding.endField)
             if (binding.path.isNotBlank()) {
                 val objectValue = dataset?.value?.objectValue?.get(binding.path)?.display()
-                objectValue ?: selectedRecords(dataset, context.now).firstOrNull()?.values?.get(binding.path)?.display().orEmpty()
+                objectValue ?: records.firstOrNull()?.values?.get(binding.path)?.display().orEmpty()
             } else {
-            selectedRecords(dataset, context.now).mapNotNull { record ->
+            records.mapNotNull { record ->
                 binding.fields.mapNotNull { record.values[it]?.display()?.takeIf(String::isNotBlank) }
                     .joinToString(" ").takeIf(String::isNotBlank)
             }.joinToString(binding.separator)
@@ -267,7 +277,7 @@ private fun resolve(binding: PresentationBinding?, context: PresentationContext)
         "environment" -> formatEnvironment(binding, context.now)
         else -> ""
     }
-    return binding.prefix + formatValue(raw.ifBlank { binding.fallback }, binding.format, binding.precision) + binding.suffix
+    return binding.prefix + formatValue(raw.ifBlank { binding.fallback }, binding.format, binding.precision, context.now) + binding.suffix
 }
 
 private fun formatEnvironment(binding: PresentationBinding, now: Instant): String {
@@ -310,7 +320,22 @@ private fun formatEnvironment(binding: PresentationBinding, now: Instant): Strin
     }
 }
 
-private fun formatValue(value: String, format: String, precision: Int?): String {
+internal fun formatValue(value: String, format: String, precision: Int?, now: Instant = Instant.now()): String {
+    if (format == "relative-countdown") {
+        val target = parseRecordInstant(value) ?: return value
+        val remaining = Duration.between(now, target)
+        if (remaining.isZero || remaining.isNegative) return "Now"
+        return when {
+            remaining.toDays() > 0 -> "${remaining.toDays()}d ${remaining.toHoursPart()}h"
+            remaining.toHours() > 0 -> "${remaining.toHours()}h ${remaining.toMinutesPart()}m"
+            remaining.toMinutes() > 0 -> "${remaining.toMinutes()}m ${remaining.toSecondsPart()}s"
+            else -> "${remaining.seconds}s"
+        }
+    }
+    if (format == "time") {
+        val instant = parseRecordInstant(value) ?: return value
+        return instant.atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT))
+    }
     val number = value.toDoubleOrNull() ?: return value
     val formatter = when (format) {
         "integer" -> NumberFormat.getIntegerInstance()
@@ -350,6 +375,38 @@ private fun selectedRecords(dataset: DocumentDataset?, now: Instant): List<Docum
         return matches.filter { it.first == first }.map { it.second }
     }
     return matches.map { it.second }
+}
+
+private fun parseRecordInstant(value: String): Instant? = runCatching {
+    Instant.parse(value)
+}.recoverCatching {
+    LocalDateTime.parse(value).atZone(ZoneId.systemDefault()).toInstant()
+}.getOrNull()
+
+internal fun temporalRecords(
+    dataset: DocumentDataset?,
+    now: Instant,
+    selector: String,
+    startField: String,
+    endField: String,
+): List<DocumentRecord> {
+    val records = selectedRecords(dataset, now)
+    if (selector.isBlank() || selector == "all") return records
+    if (startField.isBlank()) return emptyList()
+    val timed = records.mapNotNull { record ->
+        parseRecordInstant(record.values[startField]?.display().orEmpty())?.let { Triple(it, record, parseRecordInstant(record.values[endField]?.display().orEmpty())) }
+    }.sortedBy { it.first }
+    val current = timed.filter { (start, _, end) ->
+        !start.isAfter(now) && end?.isAfter(now) == true
+    }.map { it.second }
+    val upcoming = timed.filter { (start, _, _) -> start.isAfter(now) }.map { it.second }
+    return when (selector) {
+        "current" -> current
+        "next" -> upcoming.take(1)
+        "upcoming" -> upcoming
+        "current_or_next" -> current.ifEmpty { upcoming.take(1) }
+        else -> emptyList()
+    }
 }
 
 private fun conditionMatches(node: PresentationNode, context: PresentationContext): Boolean {

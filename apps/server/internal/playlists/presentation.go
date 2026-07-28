@@ -26,6 +26,7 @@ var NativePresentationCapabilities = map[string]int{
 	"content.line_chart": 2, "content.bar_chart": 2, "content.donut_chart": 2,
 	"collection.repeat": 2, "collection.conditional": 2, "collection.grouped_sections": 1,
 	"binding.core": 2, "format.typed": 2, "selection.relative_date": 1,
+	"selection.temporal": 1,
 }
 
 type DataDocument struct {
@@ -125,22 +126,28 @@ type PresentationNode struct {
 }
 
 type PresentationBinding struct {
-	Source    string   `json:"source"`
-	Dataset   string   `json:"dataset,omitempty"`
-	Path      string   `json:"path,omitempty"`
-	Value     string   `json:"value,omitempty"`
-	Fields    []string `json:"fields,omitempty"`
-	Format    string   `json:"format,omitempty"`
-	Precision *int     `json:"precision,omitempty"`
-	Prefix    string   `json:"prefix,omitempty"`
-	Suffix    string   `json:"suffix,omitempty"`
-	Fallback  string   `json:"fallback,omitempty"`
-	Separator string   `json:"separator,omitempty"`
+	Source     string   `json:"source"`
+	Dataset    string   `json:"dataset,omitempty"`
+	Path       string   `json:"path,omitempty"`
+	Selector   string   `json:"selector,omitempty"`
+	StartField string   `json:"startField,omitempty"`
+	EndField   string   `json:"endField,omitempty"`
+	Value      string   `json:"value,omitempty"`
+	Fields     []string `json:"fields,omitempty"`
+	Format     string   `json:"format,omitempty"`
+	Precision  *int     `json:"precision,omitempty"`
+	Prefix     string   `json:"prefix,omitempty"`
+	Suffix     string   `json:"suffix,omitempty"`
+	Fallback   string   `json:"fallback,omitempty"`
+	Separator  string   `json:"separator,omitempty"`
 }
 
 type PresentationRepeat struct {
-	Dataset string `json:"dataset"`
-	Limit   int    `json:"limit"`
+	Dataset    string `json:"dataset"`
+	Limit      int    `json:"limit"`
+	Selector   string `json:"selector,omitempty"`
+	StartField string `json:"startField,omitempty"`
+	EndField   string `json:"endField,omitempty"`
 	// Offset skips leading records, so one Widget can feature the current record and a
 	// second region can list the ones that follow it. Zero keeps the existing behavior.
 	Offset int `json:"offset,omitempty"`

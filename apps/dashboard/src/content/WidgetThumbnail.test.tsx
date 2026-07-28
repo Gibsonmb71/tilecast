@@ -33,6 +33,7 @@ const GALLERY_WIDGETS = [
   "alert-banner",
   "fundraising-thermometer",
   "now-and-next",
+  "schedule-board",
   "recognition-board",
   "school-status-banner",
 ];

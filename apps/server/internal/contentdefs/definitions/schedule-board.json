@@ -1,0 +1,384 @@
+{
+  "widgets": [
+    {
+      "id": "schedule-board",
+      "version": 1,
+      "name": "School Schedule",
+      "description": "Show the current event, a live countdown, and upcoming event cards.",
+      "category": "Schedules",
+      "icon": "schedule",
+      "thumbnail": "schedule-board",
+      "runtime": "native",
+      "configurationSchema": {
+        "fields": [
+          {
+            "key": "dataSourceId",
+            "label": "Schedule Data Source",
+            "description": "Choose a Calendar or another record source with start and end times.",
+            "control": "data_source",
+            "required": true,
+            "acceptedDataSourceKinds": ["records"]
+          },
+          {
+            "key": "titleField",
+            "label": "Event name",
+            "control": "data_source_field",
+            "required": true,
+            "dataSourceFieldTypes": ["text"],
+            "default": "title"
+          },
+          {
+            "key": "startField",
+            "label": "Start time",
+            "control": "data_source_field",
+            "required": true,
+            "dataSourceFieldTypes": ["datetime"],
+            "default": "startTime"
+          },
+          {
+            "key": "endField",
+            "label": "End time",
+            "control": "data_source_field",
+            "required": true,
+            "dataSourceFieldTypes": ["datetime"],
+            "default": "endTime"
+          },
+          {
+            "key": "locationField",
+            "label": "Location or detail",
+            "control": "data_source_field",
+            "required": false,
+            "dataSourceFieldTypes": ["text"],
+            "default": ""
+          },
+          {
+            "key": "upcomingCount",
+            "label": "Upcoming cards",
+            "control": "integer",
+            "required": true,
+            "minimum": 1,
+            "maximum": 8,
+            "default": 4
+          },
+          {
+            "key": "columns",
+            "label": "Card columns",
+            "control": "integer",
+            "required": true,
+            "minimum": 1,
+            "maximum": 4,
+            "default": 2
+          },
+          {
+            "key": "foregroundColor",
+            "label": "Text color",
+            "control": "color",
+            "required": true,
+            "default": "#ffffff"
+          },
+          {
+            "key": "backgroundColor",
+            "label": "Background color",
+            "control": "color",
+            "required": true,
+            "default": "#101f33"
+          },
+          {
+            "key": "accentColor",
+            "label": "Accent color",
+            "control": "color",
+            "required": true,
+            "default": "#5dd6c0"
+          },
+          {
+            "key": "emptyState",
+            "label": "Empty-state text",
+            "control": "multiline_text",
+            "required": true,
+            "maxLength": 240,
+            "default": "No more events scheduled"
+          }
+        ]
+      },
+      "defaultConfiguration": {
+        "dataSourceId": "",
+        "titleField": "title",
+        "startField": "startTime",
+        "endField": "endTime",
+        "locationField": "",
+        "upcomingCount": 4,
+        "columns": 2,
+        "foregroundColor": "#ffffff",
+        "backgroundColor": "#101f33",
+        "accentColor": "#5dd6c0",
+        "emptyState": "No more events scheduled"
+      },
+      "acceptedDataSourceKinds": ["records"],
+      "presentationSchemaVersion": 1,
+      "presentationTemplate": {
+        "type": "surface",
+        "props": {
+          "backgroundColor": { "$config": "backgroundColor" },
+          "padding": 24
+        },
+        "children": [
+          {
+            "type": "column",
+            "props": { "gap": 18 },
+            "children": [
+              {
+                "type": "conditional",
+                "condition": {
+                  "binding": {
+                    "source": "dataset",
+                    "dataset": {
+                      "$config": "dataSourceId",
+                      "suffix": ":records"
+                    },
+                    "path": { "$config": "titleField" },
+                    "selector": "current",
+                    "startField": { "$config": "startField" },
+                    "endField": { "$config": "endField" }
+                  },
+                  "op": "not_empty"
+                },
+                "children": [
+                  {
+                    "type": "column",
+                    "props": { "gap": 8 },
+                    "children": [
+                      {
+                        "type": "text",
+                        "props": {
+                          "role": "label",
+                          "color": { "$config": "accentColor" }
+                        },
+                        "binding": {
+                          "source": "literal",
+                          "value": "Happening now"
+                        }
+                      },
+                      {
+                        "type": "text",
+                        "props": {
+                          "role": "metric",
+                          "color": { "$config": "foregroundColor" }
+                        },
+                        "binding": {
+                          "source": "dataset",
+                          "dataset": {
+                            "$config": "dataSourceId",
+                            "suffix": ":records"
+                          },
+                          "path": { "$config": "titleField" },
+                          "selector": "current",
+                          "startField": { "$config": "startField" },
+                          "endField": { "$config": "endField" }
+                        }
+                      },
+                      {
+                        "type": "text",
+                        "props": {
+                          "role": "title",
+                          "color": { "$config": "accentColor" }
+                        },
+                        "binding": {
+                          "source": "dataset",
+                          "dataset": {
+                            "$config": "dataSourceId",
+                            "suffix": ":records"
+                          },
+                          "path": { "$config": "endField" },
+                          "selector": "current",
+                          "startField": { "$config": "startField" },
+                          "endField": { "$config": "endField" },
+                          "format": "relative-countdown",
+                          "prefix": "Ends in "
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "conditional",
+                "condition": {
+                  "binding": {
+                    "source": "dataset",
+                    "dataset": {
+                      "$config": "dataSourceId",
+                      "suffix": ":records"
+                    },
+                    "path": { "$config": "titleField" },
+                    "selector": "current",
+                    "startField": { "$config": "startField" },
+                    "endField": { "$config": "endField" }
+                  },
+                  "op": "empty"
+                },
+                "children": [
+                  {
+                    "type": "column",
+                    "props": { "gap": 8 },
+                    "children": [
+                      {
+                        "type": "text",
+                        "props": {
+                          "role": "label",
+                          "color": { "$config": "accentColor" }
+                        },
+                        "binding": { "source": "literal", "value": "Next up" }
+                      },
+                      {
+                        "type": "text",
+                        "props": {
+                          "role": "metric",
+                          "color": { "$config": "foregroundColor" }
+                        },
+                        "binding": {
+                          "source": "dataset",
+                          "dataset": {
+                            "$config": "dataSourceId",
+                            "suffix": ":records"
+                          },
+                          "path": { "$config": "titleField" },
+                          "selector": "next",
+                          "startField": { "$config": "startField" },
+                          "endField": { "$config": "endField" },
+                          "fallback": { "$config": "emptyState" }
+                        }
+                      },
+                      {
+                        "type": "text",
+                        "props": {
+                          "role": "title",
+                          "color": { "$config": "accentColor" }
+                        },
+                        "binding": {
+                          "source": "dataset",
+                          "dataset": {
+                            "$config": "dataSourceId",
+                            "suffix": ":records"
+                          },
+                          "path": { "$config": "startField" },
+                          "selector": "next",
+                          "startField": { "$config": "startField" },
+                          "endField": { "$config": "endField" },
+                          "format": "relative-countdown",
+                          "prefix": "Starts in "
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              { "type": "divider" },
+              {
+                "type": "text",
+                "props": {
+                  "role": "label",
+                  "color": { "$config": "foregroundColor" }
+                },
+                "binding": { "source": "literal", "value": "Coming up" }
+              },
+              {
+                "type": "grid",
+                "props": {
+                  "columns": { "$config": "columns" },
+                  "gap": 12
+                },
+                "children": [
+                  {
+                    "type": "repeat",
+                    "props": { "emptyState": { "$config": "emptyState" } },
+                    "repeat": {
+                      "dataset": {
+                        "$config": "dataSourceId",
+                        "suffix": ":records"
+                      },
+                      "limit": { "$config": "upcomingCount" },
+                      "selector": "upcoming",
+                      "startField": { "$config": "startField" },
+                      "endField": { "$config": "endField" }
+                    },
+                    "children": [
+                      {
+                        "type": "column",
+                        "props": { "gap": 4 },
+                        "children": [
+                          {
+                            "type": "text",
+                            "props": {
+                              "role": "title",
+                              "maxLines": 1,
+                              "color": { "$config": "foregroundColor" }
+                            },
+                            "binding": {
+                              "source": "repeat",
+                              "path": { "$config": "titleField" }
+                            }
+                          },
+                          {
+                            "type": "text",
+                            "props": {
+                              "role": "body",
+                              "maxLines": 1,
+                              "color": { "$config": "accentColor" }
+                            },
+                            "binding": {
+                              "source": "repeat",
+                              "path": { "$config": "startField" },
+                              "format": "time"
+                            }
+                          },
+                          {
+                            "type": "text",
+                            "props": {
+                              "role": "body",
+                              "maxLines": 1,
+                              "color": { "$config": "foregroundColor" }
+                            },
+                            "binding": {
+                              "source": "repeat",
+                              "path": { "$config": "locationField" },
+                              "fallback": ""
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "requiredCapabilities": {
+        "layout.surface": 1,
+        "layout.column": 1,
+        "layout.grid": 1,
+        "layout.divider": 1,
+        "content.text": 1,
+        "collection.repeat": 2,
+        "collection.conditional": 2,
+        "binding.core": 2,
+        "format.typed": 2,
+        "selection.temporal": 1
+      },
+      "emptyStateBehavior": "configured_text",
+      "requiresManifestV13": true,
+      "setup": {
+        "eyebrow": "Needs scheduled records",
+        "tip": "Calendar Data Sources expose the start and end fields this Widget needs.",
+        "steps": [
+          "Connect a public Calendar Data Source or choose an existing one.",
+          "Map the event name, start, end, and location fields.",
+          "Choose how many upcoming cards fit the screen."
+        ]
+      },
+      "deprecation": {}
+    }
+  ],
+  "dataSources": []
+}

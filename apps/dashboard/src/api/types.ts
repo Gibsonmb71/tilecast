@@ -1504,6 +1504,9 @@ export type PresentationBinding = {
   source: "literal" | "dataset" | "repeat" | "repeat_index" | "environment";
   dataset?: string;
   path?: string;
+  selector?: "all" | "current" | "next" | "upcoming" | "current_or_next";
+  startField?: string;
+  endField?: string;
   value?: string;
   fields?: string[];
   format?: string;
@@ -1518,7 +1521,29 @@ export type PresentationNode = {
   type: string;
   props?: Record<string, unknown>;
   binding?: PresentationBinding;
-  repeat?: { dataset: string; limit: number };
+  repeat?: {
+    dataset: string;
+    limit: number;
+    offset?: number;
+    selector?: "all" | "current" | "next" | "upcoming" | "current_or_next";
+    startField?: string;
+    endField?: string;
+  };
+  condition?: {
+    binding: PresentationBinding;
+    op:
+      | "equals"
+      | "not_equals"
+      | "empty"
+      | "not_empty"
+      | "greater_than"
+      | "greater_or_equal"
+      | "less_than"
+      | "less_or_equal"
+      | "before"
+      | "after";
+    value?: string;
+  };
   children?: PresentationNode[];
 };
 export type WidgetPresentation = {

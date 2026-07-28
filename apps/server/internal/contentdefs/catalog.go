@@ -58,6 +58,7 @@ var supportedCapabilities = map[string]bool{
 	"content.line_chart": true, "content.bar_chart": true, "content.donut_chart": true,
 	"collection.repeat": true, "collection.conditional": true, "collection.grouped_sections": true,
 	"binding.core": true, "format.typed": true, "selection.relative_date": true,
+	"selection.temporal": true,
 	"environment.time": true, "web.remote": true,
 }
 
