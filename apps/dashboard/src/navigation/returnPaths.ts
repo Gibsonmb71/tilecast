@@ -8,3 +8,13 @@ export function inAppPath(value: string | null | undefined) {
     ? value
     : null;
 }
+
+// Adds a query parameter to an in-app path that may already carry a query string
+// or a hash, so a return path can report what happened while the author was away.
+export function withParam(path: string, key: string, value: string) {
+  const [base, hash] = path.split("#");
+  const [pathname, query] = base.split("?");
+  const params = new URLSearchParams(query);
+  params.set(key, value);
+  return `${pathname}?${params.toString()}${hash ? `#${hash}` : ""}`;
+}

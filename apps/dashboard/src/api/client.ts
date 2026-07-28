@@ -526,6 +526,11 @@ export const api = {
       `/player-releases/${id}/cache`,
       { method: "POST", headers: { "X-CSRF-Token": csrfToken } },
     ),
+  deletePlayerRelease: (id: string, csrfToken: string) =>
+    request<{ id: string; deleted: boolean }>(`/player-releases/${id}`, {
+      method: "DELETE",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
   uploadPlayerRelease: (
     files: File[],
     csrfToken: string,

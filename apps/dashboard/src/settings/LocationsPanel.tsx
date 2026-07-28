@@ -98,30 +98,23 @@ export function LocationsPanel({ canManage }: { canManage: boolean }) {
   };
   return (
     <section className="locations-settings">
-      <header className="settings-section-heading">
-        <div>
-          <h2>Locations</h2>
-          <p>
-            Reuse buildings and campuses across screens while keeping room
-            details on each player.
-          </p>
-        </div>
+      <div className="locations-settings__toolbar">
+        <label className="location-search">
+          <Search size={16} />
+          <span className="visually-hidden">Search locations</span>
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search by name or address"
+          />
+        </label>
         {canManage && (
           <Button variant="primary" onClick={() => open("new")}>
             <Plus size={16} /> Add location
           </Button>
         )}
-      </header>
-      <label className="location-search">
-        <Search size={16} />
-        <span className="visually-hidden">Search locations</span>
-        <input
-          type="search"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search by name or address"
-        />
-      </label>
+      </div>
       {notice && <div className="notice notice--info">{notice}</div>}
       {query.isError && (
         <div className="notice notice--error" role="alert">

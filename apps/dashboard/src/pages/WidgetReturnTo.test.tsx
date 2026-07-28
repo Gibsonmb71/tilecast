@@ -99,6 +99,7 @@ function editorAt(url: string) {
             <Route path="/widgets/:id" element={<WidgetEditorPage />} />
             <Route path="/widgets" element={<div>Widget list</div>} />
             <Route path="/layouts/:id" element={<div>Layout editor</div>} />
+            <Route path="/playlists/:id" element={<div>Playlist editor</div>} />
           </Routes>
         </MemoryRouter>
       </AuthProvider>
@@ -143,6 +144,36 @@ describe("Widget editor returnTo", () => {
     await waitFor(() =>
       expect(screen.getByTestId("path")).toHaveTextContent("/widgets"),
     );
+  });
+
+  // A Widget created from a playlist's content picker has to come back identified,
+  // or the playlist the author started from has no way to add it.
+  it("names a newly created Widget on the way back to the playlist", async () => {
+    editorAt("/widgets/widget-1?returnTo=%2Fplaylists%2Fplaylist-1&created=1");
+
+    const [close] = await screen.findAllByRole("button", { name: /^Close$/ });
+    await userEvent.click(close!);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("path")).toHaveTextContent(
+        "/playlists/playlist-1?newWidget=widget-1",
+      ),
+    );
+  });
+
+  // Opening an existing Widget from a playlist must not re-add it on return.
+  it("does not name a Widget that was only edited", async () => {
+    editorAt("/widgets/widget-1?returnTo=%2Fplaylists%2Fplaylist-1");
+
+    const [close] = await screen.findAllByRole("button", { name: /^Close$/ });
+    await userEvent.click(close!);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("path")).toHaveTextContent(
+        "/playlists/playlist-1",
+      ),
+    );
+    expect(screen.getByTestId("path")).not.toHaveTextContent("newWidget");
   });
 
   it("reports the playlists and Layouts that use the Widget", async () => {

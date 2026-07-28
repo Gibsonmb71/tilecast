@@ -1735,13 +1735,31 @@ button.organizer-chip:disabled {
   padding-bottom: 88px;
 }
 .settings-heading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 12px;
+  align-items: center;
   padding-bottom: 18px;
   border-bottom: 1px solid var(--tc-border);
+}
+.settings-heading__icon {
+  grid-row: 1 / span 2;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--tc-radius-control);
+  color: var(--tc-brand);
+  background: var(--tc-brand-soft);
 }
 .settings-heading h1 {
   margin: 0;
   font-size: 25px;
   line-height: 1.2;
+}
+.settings-heading h1,
+.settings-heading p {
+  grid-column: 2;
 }
 .settings-heading p,
 .settings-subsection header p,
@@ -1776,12 +1794,24 @@ button.organizer-chip:disabled {
   min-height: 36px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 6px;
+  gap: 9px;
   padding: 7px 10px;
   color: var(--tc-ink-muted);
   border-left: 3px solid transparent;
   text-decoration: none;
+}
+/* The icon leads the row and the label claims the remaining width, so the
+   "Unsaved" flag stays pinned to the right edge. */
+.settings-nav-group a > svg {
+  flex: none;
+  color: var(--tc-ink-muted);
+}
+.settings-nav-group a > span {
+  margin-right: auto;
+}
+.settings-nav-group a[aria-current="page"] > svg,
+.settings-nav-group a:hover > svg {
+  color: inherit;
 }
 .settings-nav-group a:hover {
   color: var(--tc-ink);

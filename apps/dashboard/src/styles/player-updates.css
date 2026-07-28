@@ -275,6 +275,14 @@
   white-space: nowrap;
 }
 
+.player-updates__row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .player-updates__history .player-updates-table :is(th, td):nth-child(4) {
   font-variant-numeric: tabular-nums;
 }

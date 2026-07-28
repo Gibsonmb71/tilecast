@@ -18,6 +18,7 @@ import {
   RefreshCw,
   Rocket,
   Search,
+  Trash2,
   Upload,
 } from "lucide-react";
 import { api } from "../api/client";
@@ -330,6 +331,8 @@ export function PlayerUpdatesPanel({
   const [showUpload, setShowUpload] = useState(false);
   const [showAllReleases, setShowAllReleases] = useState(false);
   const [confirmDeploy, setConfirmDeploy] = useState(false);
+  const [purging, setPurging] = useState<PlayerRelease>();
+  const [purgeNotice, setPurgeNotice] = useState("");
   const [deploySuccess, setDeploySuccess] = useState("");
   const [githubFlow, setGitHubFlow] = useState<
     (GitHubDeviceStart & { retryAfterSeconds: number }) | null
@@ -345,6 +348,20 @@ export function PlayerUpdatesPanel({
       api.cachePlayerRelease(id, auth.status?.csrfToken ?? ""),
     onSuccess: () =>
       client.invalidateQueries({ queryKey: ["player-releases"] }),
+  });
+  const purge = useMutation({
+    mutationFn: (release: PlayerRelease) =>
+      api.deletePlayerRelease(release.id, auth.status?.csrfToken ?? ""),
+    onMutate: () => setPurgeNotice(""),
+    onSuccess: async (result) => {
+      setPurging(undefined);
+      setPurgeNotice(
+        result.deleted
+          ? "Release deleted and its cached file freed."
+          : "Cached file freed. The release stays listed for its deployment history.",
+      );
+      await client.invalidateQueries({ queryKey: ["player-releases"] });
+    },
   });
   const startGitHubAuth = useMutation({
     mutationFn: () =>
@@ -672,6 +689,12 @@ export function PlayerUpdatesPanel({
               {mutationError(cache.error)}
             </Notice>
           )}
+          {purge.error && (
+            <Notice variant="danger" title="The release could not be removed.">
+              {mutationError(purge.error)}
+            </Notice>
+          )}
+          {purgeNotice && <Notice variant="success">{purgeNotice}</Notice>}
         </div>
         {releaseItems.length === 0 ? (
           <div className="player-updates__empty">
@@ -736,15 +759,38 @@ export function PlayerUpdatesPanel({
                         </td>
                         {owner && (
                           <td>
-                            {readiness.cacheable && (
-                              <ReleaseCacheButton
-                                downloading={
-                                  cache.isPending &&
-                                  cache.variables === release.id
-                                }
-                                onDownload={() => cache.mutate(release.id)}
-                              />
-                            )}
+                            <div className="player-updates__row-actions">
+                              {readiness.cacheable && (
+                                <ReleaseCacheButton
+                                  downloading={
+                                    cache.isPending &&
+                                    cache.variables === release.id
+                                  }
+                                  onDownload={() => cache.mutate(release.id)}
+                                />
+                              )}
+                              {purgeAction(release) && (
+                                <Button
+                                  variant="quiet"
+                                  compact
+                                  title={
+                                    purgeAction(release) === "delete"
+                                      ? "Delete this release and free its cached file"
+                                      : "Free the cached file and keep the deployment history"
+                                  }
+                                  loading={
+                                    purge.isPending &&
+                                    purge.variables?.id === release.id
+                                  }
+                                  onClick={() => setPurging(release)}
+                                >
+                                  <Trash2 size={15} aria-hidden="true" />
+                                  {purgeAction(release) === "delete"
+                                    ? "Delete"
+                                    : "Free file"}
+                                </Button>
+                              )}
+                            </div>
                           </td>
                         )}
                       </tr>
@@ -774,6 +820,64 @@ export function PlayerUpdatesPanel({
             )}
           </>
         )}
+        <Dialog
+          open={Boolean(purging)}
+          title={
+            purging && purgeAction(purging) === "delete"
+              ? "Delete this release?"
+              : "Free this cached file?"
+          }
+          onClose={() => setPurging(undefined)}
+        >
+          {purging && (
+            <>
+              <p>
+                {purging.versionName} ({purging.versionCode}) frees{" "}
+                {formatBytes(purging.apkSizeBytes)} of server storage.
+              </p>
+              {purgeAction(purging) === "delete" ? (
+                <p>
+                  It has never been deployed, so the release and its cached file
+                  are both removed.
+                </p>
+              ) : (
+                <p>
+                  {purging.deploymentCount}{" "}
+                  {purging.deploymentCount === 1
+                    ? "deployment references"
+                    : "deployments reference"}{" "}
+                  this release, so it stays listed for that history and only the
+                  cached file is removed.
+                </p>
+              )}
+              {purgeAction(purging) === "free" &&
+                purging.source === "upload" && (
+                  <Notice
+                    variant="warning"
+                    title="This release was uploaded directly."
+                  >
+                    Tilecast cannot download it again. Deploying it later
+                    requires uploading the same signed release once more.
+                  </Notice>
+                )}
+              <footer className="player-updates-deploy-dialog__actions">
+                <Button variant="quiet" onClick={() => setPurging(undefined)}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="danger"
+                  disabled={purge.isPending}
+                  onClick={() => purge.mutate(purging)}
+                >
+                  <Trash2 size={16} aria-hidden="true" />
+                  {purgeAction(purging) === "delete"
+                    ? "Delete release"
+                    : "Free cached file"}
+                </Button>
+              </footer>
+            </>
+          )}
+        </Dialog>
       </section>
       {manageable && (
         <section className="settings-subsection player-updates__deployment">
@@ -1082,6 +1186,19 @@ export function PlayerUpdatesPanel({
       </section>
     </div>
   );
+}
+
+// A release that was never deployed can be removed outright. Once deployment
+// history points at it the record has to stay, so the only thing left to
+// reclaim is the cached artifact — and nothing at all once that is gone.
+function purgeAction(release: PlayerRelease): "delete" | "free" | undefined {
+  if (
+    release.activeDeploymentCount > 0 ||
+    release.cacheStatus === "downloading"
+  )
+    return undefined;
+  if (release.deploymentCount === 0) return "delete";
+  return release.cacheStatus === "missing" ? undefined : "free";
 }
 
 function ReleaseCacheButton({

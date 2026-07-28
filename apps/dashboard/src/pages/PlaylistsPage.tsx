@@ -220,6 +220,7 @@ export function PlaylistEditorPage() {
   const canManage = canManagePlaylists(auth.status?.user?.role);
   const navigate = useNavigate();
   const client = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
   const query = useQuery({
     queryKey: ["playlists", id],
     queryFn: () => api.playlist(id),
@@ -330,6 +331,33 @@ export function PlaylistEditorPage() {
     if (failures.length === 0) setPicker(false);
     return { failures };
   };
+  // A Widget created from the content picker returns here carrying its id, so the
+  // playlist the author started from receives it without a second trip through the
+  // library. The parameter is cleared first so a refresh cannot add it twice.
+  const [addFailure, setAddFailure] = useState("");
+  useEffect(() => {
+    const created = searchParams.get("newWidget");
+    if (!created || !canManage) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete("newWidget");
+    setSearchParams(next, { replace: true });
+    void (async () => {
+      try {
+        const asset = await api.asset(created);
+        const result = await add([asset]);
+        setAddFailure(result.failures[0]?.message ?? "");
+      } catch (error) {
+        setAddFailure(
+          error instanceof Error
+            ? error.message
+            : "The new Widget could not be added to this playlist.",
+        );
+      }
+    })();
+    // `add` closes over request state that changes every render; the parameter is
+    // the only trigger that should re-run this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, canManage]);
   const addLayout = async (layoutId: string) => {
     const next = await api.addPlaylistItem(
       id,
@@ -602,6 +630,11 @@ export function PlaylistEditorPage() {
           </div>
         )}
       </div>
+      {addFailure && (
+        <div className="notice notice--error" role="alert">
+          {addFailure}
+        </div>
+      )}
       {(playlist.items?.length ?? 0) === 0 ? (
         <div className="timeline-empty">
           {sourceType === "tag"
@@ -642,6 +675,11 @@ export function PlaylistEditorPage() {
           confirmLabel="Add to playlist"
           onConfirm={add}
           onClose={() => setPicker(false)}
+          onCreateWidget={() =>
+            void navigate(
+              `/widgets/new?returnTo=${encodeURIComponent(`/playlists/${id}`)}`,
+            )
+          }
         />
       )}
       <Dialog

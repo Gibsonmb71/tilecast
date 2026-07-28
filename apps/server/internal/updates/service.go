@@ -512,20 +512,54 @@ func (s *Service) ArtifactPath(ctx context.Context, releaseID uuid.UUID) (string
 	return filepath.Join(s.root, releaseID.String()+artifactSuffix(platform)), size, hash, platform, nil
 }
 
+// Purge frees a release's cached artifacts from disk. The release record itself
+// is deleted only when no deployment references it; deployment history keeps a
+// foreign key on the release, so a deployed release instead drops back to an
+// uncached state that a later download can restore. The returned flag reports
+// whether the record was removed.
+func (s *Service) Purge(ctx context.Context, releaseID uuid.UUID) (bool, error) {
+	var referenced bool
+	if err := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM update_deployments WHERE release_id=$1)`, releaseID).Scan(&referenced); err != nil {
+		return false, err
+	}
+	if referenced {
+		// A cached artifact is what makes verification complete, so a release
+		// that loses its file falls back to the manifest-only verification it
+		// held before the download.
+		if _, err := s.db.Exec(ctx, `UPDATE player_releases SET cache_status='missing',verification_status=CASE WHEN verification_status='verified' THEN 'verified_manifest' ELSE verification_status END,verification_error=NULL,updated_at=now() WHERE id=$1`, releaseID); err != nil {
+			return false, err
+		}
+	} else if _, err := s.db.Exec(ctx, `DELETE FROM player_releases WHERE id=$1`, releaseID); err != nil {
+		return false, err
+	}
+	s.removeArtifacts(releaseID)
+	return !referenced, nil
+}
+
 func (s *Service) Cleanup(ctx context.Context, retentionDays int) {
 	rows, err := s.db.Query(ctx, `DELETE FROM player_releases pr WHERE pr.updated_at<now()-make_interval(days=>$1) AND NOT EXISTS(SELECT 1 FROM update_deployments d WHERE d.release_id=pr.id) RETURNING id`, retentionDays)
 	if err != nil {
 		return
 	}
-	defer rows.Close()
+	purged := []uuid.UUID{}
 	for rows.Next() {
 		var id uuid.UUID
 		if rows.Scan(&id) == nil {
-			_ = os.Remove(filepath.Join(s.root, id.String()+".apk"))
-			_ = os.Remove(filepath.Join(s.root, id.String()+".apk.part"))
-			_ = os.Remove(filepath.Join(s.root, id.String()+".appimage"))
-			_ = os.Remove(filepath.Join(s.root, id.String()+".appimage.part"))
+			purged = append(purged, id)
 		}
+	}
+	rows.Close()
+	for _, id := range purged {
+		s.removeArtifacts(id)
+	}
+}
+
+// removeArtifacts deletes every cached and partial artifact a release can own.
+// The platform is not consulted: the release row may already be gone, and the
+// unused suffixes simply do not exist.
+func (s *Service) removeArtifacts(releaseID uuid.UUID) {
+	for _, suffix := range []string{".apk", ".apk.part", ".appimage", ".appimage.part"} {
+		_ = os.Remove(filepath.Join(s.root, releaseID.String()+suffix))
 	}
 }
 
