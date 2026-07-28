@@ -162,7 +162,15 @@ const fleetStates: FleetSpec[] = [
   },
 ];
 
-export function OverviewTab({ range }: { range: ResolvedTimeRange }) {
+export function OverviewTab({
+  range,
+  canViewScreenEvents,
+  canViewAudit,
+}: {
+  range: ResolvedTimeRange;
+  canViewScreenEvents: boolean;
+  canViewAudit: boolean;
+}) {
   const activityLink = useActivityLinkBuilder();
   const query = useQuery({
     queryKey: ["activity", "overview", range.from, range.to],
@@ -209,13 +217,21 @@ export function OverviewTab({ range }: { range: ResolvedTimeRange }) {
 
   function tile(spec: MetricSpec) {
     const raw = Number(data!.cards[spec.key]);
+    const canOpen =
+      spec.destination.tab !== "events"
+        ? spec.destination.tab !== "audit" || canViewAudit
+        : canViewScreenEvents;
     return (
       <MetricTile
         key={spec.key}
         label={spec.label}
         value={spec.format ? spec.format(raw) : raw}
         hint={spec.hint ?? `During ${range.label}`}
-        to={activityLink(spec.destination.tab, spec.destination.filters)}
+        to={
+          canOpen
+            ? activityLink(spec.destination.tab, spec.destination.filters)
+            : undefined
+        }
         delta={deltaFor(spec)}
       />
     );
@@ -252,8 +268,12 @@ export function OverviewTab({ range }: { range: ResolvedTimeRange }) {
                 value={fleet[state.key]}
                 hint={state.hint}
                 to={
-                  state.destination &&
-                  activityLink(state.destination.tab, state.destination.filters)
+                  state.destination && canViewScreenEvents
+                    ? activityLink(
+                        state.destination.tab,
+                        state.destination.filters,
+                      )
+                    : undefined
                 }
               />
             ))}

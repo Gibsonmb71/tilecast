@@ -52,7 +52,7 @@ export function ProofTab({
   canExtendRange: boolean;
   onClearFilters: () => void;
   onExtendRange: () => void;
-  onViewScreenEvents: () => void;
+  onViewScreenEvents?: () => void;
 }) {
   const [selectedRecord, setSelectedRecord] = useState<ProofRecord | null>(
     null,
@@ -93,7 +93,7 @@ export function ProofTab({
         exposure: current.exposure + item.contentExposureMs,
         failures: current.failures + item.failures,
         interrupted: current.interrupted + item.interrupted,
-        completion: current.completion + item.sessionCompletionPercent,
+        completed: current.completed + item.completed + item.partial,
       }),
       {
         records: 0,
@@ -101,13 +101,18 @@ export function ProofTab({
         exposure: 0,
         failures: 0,
         interrupted: 0,
-        completion: 0,
+        completed: 0,
       },
     );
     return {
       ...totals,
       screens: items.length,
-      completion: items.length ? totals.completion / items.length : 0,
+      // This is the share of sessions with a completed or partial outcome.
+      // Averaging each screen's percentage gives a one-session screen the same
+      // weight as a screen with hundreds of sessions and distorts the result.
+      completion: totals.records
+        ? (totals.completed / totals.records) * 100
+        : 0,
     };
   }, [screenSummary.data]);
 
@@ -361,13 +366,15 @@ export function ProofTab({
                       Last 7 days
                     </button>
                   )}
-                  <button
-                    type="button"
-                    className="button button--quiet"
-                    onClick={onViewScreenEvents}
-                  >
-                    View screen events
-                  </button>
+                  {onViewScreenEvents && (
+                    <button
+                      type="button"
+                      className="button button--quiet"
+                      onClick={onViewScreenEvents}
+                    >
+                      View screen events
+                    </button>
+                  )}
                 </>
               )}
             </div>

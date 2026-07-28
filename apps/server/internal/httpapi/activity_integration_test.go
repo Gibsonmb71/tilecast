@@ -469,6 +469,46 @@ func TestOverlappingZonesDoNotInflateScreenPlaybackTime(t *testing.T) {
 		if got := clipped.ConfirmedScreenMS; got != (5 * time.Minute).Milliseconds() {
 			t.Fatalf("clipped screen playback = %dms, want 5 minutes", got)
 		}
+
+		// This root begins before the summary range and contributes only its
+		// final minute. Interval metrics must clip it rather than omit it.
+		insertSession("presentation", "root-before-range", -6*time.Minute, 6*time.Minute, "")
+
+		// The Proof-of-Play summary promises the same wall-clock semantics as
+		// the Overview. It used to sum actual_duration_ms here, turning the two
+		// overlapping roots into twenty minutes while labelling the result
+		// "overlaps merged".
+		request := httptest.NewRequest(
+			http.MethodGet,
+			"/api/v1/activity/proof-of-play/summary?dimension=screen&from="+
+				start.Add(-time.Minute).Format(time.RFC3339)+"&to="+
+				start.Add(time.Hour).Format(time.RFC3339),
+			nil,
+		)
+		request = request.WithContext(context.WithValue(request.Context(), sessionContextKey, env.owner))
+		response := httptest.NewRecorder()
+		env.server.proofOfPlaySummary(response, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("proof summary status=%d body=%s", response.Code, response.Body.String())
+		}
+		var envelope struct {
+			Data struct {
+				Items []proofSummaryItem `json:"items"`
+			} `json:"data"`
+		}
+		if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil {
+			t.Fatal(err)
+		}
+		if len(envelope.Data.Items) != 1 {
+			t.Fatalf("proof summary items=%d body=%s", len(envelope.Data.Items), response.Body.String())
+		}
+		item := envelope.Data.Items[0]
+		if item.ConfirmedScreenPlaybackMS != (16 * time.Minute).Milliseconds() {
+			t.Fatalf("proof summary screen playback=%dms, want clipped 16-minute union", item.ConfirmedScreenPlaybackMS)
+		}
+		if item.ContentExposureMS != (20 * time.Minute).Milliseconds() {
+			t.Fatalf("proof summary exposure=%dms, want 20 minutes", item.ContentExposureMS)
+		}
 	})
 }
 

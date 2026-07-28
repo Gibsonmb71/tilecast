@@ -89,7 +89,22 @@ func scanProof(scan proofScanner, role string) (proofOfPlayRecord, error) {
 }
 
 func proofClauses(r *http.Request, window activityWindow) ([]string, []any, error) {
+	return proofClausesForWindow(r, window, false)
+}
+
+// Summary durations are interval measures, so they include sessions that
+// overlap the range and clip them at both edges. Record/outcome counts still
+// use sessions that started in the range, matching the list and metric
+// definitions.
+func proofSummaryClauses(r *http.Request, window activityWindow) ([]string, []any, error) {
+	return proofClausesForWindow(r, window, true)
+}
+
+func proofClausesForWindow(r *http.Request, window activityWindow, overlap bool) ([]string, []any, error) {
 	clauses := []string{"p.started_at >= $1", "p.started_at < $2"}
+	if overlap {
+		clauses = []string{"p.started_at < $2", "COALESCE(p.ended_at,$2) > $1"}
+	}
 	args := []any{window.From, window.To}
 	for key, expression := range map[string]string{
 		"screen": "p.screen_id = $%d", "group": "p.group_id = $%d",
@@ -145,7 +160,7 @@ func (s *server) proofOfPlaySummary(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "activity_range_invalid", err.Error())
 		return
 	}
-	clauses, args, err := proofClauses(r, window)
+	clauses, args, err := proofSummaryClauses(r, window)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "proof_filter_invalid", err.Error())
 		return
@@ -169,16 +184,58 @@ func (s *server) proofOfPlaySummary(w http.ResponseWriter, r *http.Request) {
 	interrupted := len(args) + 1
 	args = append(args, interruptedTerminalReasons())
 	rows, err := s.db.Query(r.Context(), `
-		SELECT `+keyExpression+`,`+labelExpression+`,
-		       COALESCE(sum(p.actual_duration_ms) FILTER(WHERE p.session_type='presentation' AND p.result IN('completed','recovered','partial')),0)::bigint,
-		       COALESCE(sum(p.actual_duration_ms) FILTER(WHERE p.session_type<>'presentation' AND p.result IN('completed','recovered','partial')),0)::bigint,
-		       count(*)::bigint,count(*) FILTER(WHERE p.result='completed')::bigint,
-		       count(*) FILTER(WHERE p.result='failed')::bigint,count(*) FILTER(WHERE p.result='partial')::bigint,
-		       count(*) FILTER(WHERE p.result='unknown')::bigint,
-		       count(*) FILTER(WHERE p.terminal_reason = ANY($`+strconv.Itoa(interrupted)+`))::bigint
-		FROM playback_sessions p JOIN screens s ON s.id=p.screen_id
-		WHERE `+strings.Join(clauses, " AND ")+`
-		GROUP BY 1,2 ORDER BY 3 DESC,4 DESC,2 LIMIT 250`, args...)
+		WITH selected AS (
+			SELECT p.*,`+keyExpression+` AS dimension_key,`+labelExpression+` AS dimension_label,
+			       GREATEST(p.started_at,$1::timestamptz) AS clipped_start,
+			       LEAST(COALESCE(p.ended_at,$2::timestamptz),$2::timestamptz) AS clipped_end
+			FROM playback_sessions p JOIN screens s ON s.id=p.screen_id
+			WHERE `+strings.Join(clauses, " AND ")+`
+		), root_ordered AS (
+			SELECT dimension_key,dimension_label,screen_id,clipped_start,clipped_end,
+			       CASE WHEN clipped_start > MAX(clipped_end) OVER (
+			              PARTITION BY dimension_key,dimension_label,screen_id
+			              ORDER BY clipped_start,clipped_end
+			              ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING)
+			            THEN 1 ELSE 0 END AS island_start
+			FROM selected
+			WHERE session_type='presentation'
+			  AND result IN('playing','completed','recovered','partial')
+		), root_islands AS (
+			SELECT dimension_key,dimension_label,screen_id,clipped_start,clipped_end,
+			       SUM(island_start) OVER (
+			         PARTITION BY dimension_key,dimension_label,screen_id
+			         ORDER BY clipped_start,clipped_end) AS island
+			FROM root_ordered
+		), root_totals AS (
+			SELECT dimension_key,dimension_label,
+			       COALESCE(SUM(EXTRACT(EPOCH FROM (ended_at-started_at)))*1000,0)::bigint AS duration_ms
+			FROM (
+				SELECT dimension_key,dimension_label,screen_id,island,
+				       MIN(clipped_start) AS started_at,MAX(clipped_end) AS ended_at
+				FROM root_islands
+				GROUP BY dimension_key,dimension_label,screen_id,island
+			) merged
+			GROUP BY dimension_key,dimension_label
+		), metrics AS (
+			SELECT dimension_key,dimension_label,
+			       COALESCE(SUM(EXTRACT(EPOCH FROM (clipped_end-clipped_start)))
+			         FILTER(WHERE session_type<>'presentation'
+			           AND result IN('playing','completed','recovered','partial'))*1000,0)::bigint AS exposure_ms,
+			       count(*) FILTER(WHERE started_at>=$1 AND started_at<$2)::bigint AS records,
+			       count(*) FILTER(WHERE started_at>=$1 AND started_at<$2 AND result='completed')::bigint AS completed,
+			       count(*) FILTER(WHERE started_at>=$1 AND started_at<$2 AND result='failed')::bigint AS failures,
+			       count(*) FILTER(WHERE started_at>=$1 AND started_at<$2 AND result='partial')::bigint AS partial,
+			       count(*) FILTER(WHERE started_at>=$1 AND started_at<$2 AND result='unknown')::bigint AS unknown,
+			       count(*) FILTER(WHERE started_at>=$1 AND started_at<$2
+			         AND terminal_reason = ANY($`+strconv.Itoa(interrupted)+`))::bigint AS interrupted
+			FROM selected
+			GROUP BY dimension_key,dimension_label
+		)
+		SELECT m.dimension_key,m.dimension_label,COALESCE(r.duration_ms,0),m.exposure_ms,
+		       m.records,m.completed,m.failures,m.partial,m.unknown,m.interrupted
+		FROM metrics m
+		LEFT JOIN root_totals r USING(dimension_key,dimension_label)
+		ORDER BY 3 DESC,4 DESC,2 LIMIT 250`, args...)
 	if err != nil {
 		s.internalError(w, r, err)
 		return
