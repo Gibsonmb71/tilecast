@@ -120,6 +120,7 @@ func (s *server) routes() http.Handler {
 			dashboard.With(s.requireRoles("owner"), s.requireCSRF).Post("/player-releases/github/device/poll", s.pollGitHubDeviceAuthorization)
 			dashboard.With(s.requireRoles("owner"), s.requireCSRF).Delete("/player-releases/github", s.disconnectGitHub)
 			dashboard.With(s.requireRoles("owner"), s.operationsRateLimit, s.requireCSRF, s.blockDuringBackup).Post("/player-releases/{id}/cache", s.cachePlayerRelease)
+			dashboard.With(s.requireRoles("owner"), s.operationsRateLimit, s.requireCSRF, s.blockDuringBackup).Delete("/player-releases/{id}", s.deletePlayerRelease)
 			dashboard.Get("/update-deployments", s.listUpdateDeployments)
 			dashboard.Get("/update-deployments/{id}", s.getUpdateDeployment)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.operationsRateLimit, s.requireCSRF).Post("/update-deployments", s.createUpdateDeployment)

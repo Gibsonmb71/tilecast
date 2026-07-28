@@ -26,7 +26,7 @@ import {
 import { GenericWidgetEditor } from "../content/GenericDefinitionEditors";
 import { UsedByPanel } from "../content/UsedByPanel";
 import { WidgetSnapshotBackfill } from "../content/WidgetSnapshotBackfill";
-import { inAppPath } from "../navigation/returnPaths";
+import { inAppPath, withParam } from "../navigation/returnPaths";
 import { WorkspaceTabs, contentTabs } from "../navigation/WorkspaceTabs";
 import {
   AssetCollection,
@@ -184,11 +184,25 @@ export function WidgetEditorPage() {
   // A Layout links here with returnTo so closing the Widget lands back on the Layout the author
   // was building, rather than on the Widget list.
   const returnTo = inAppPath(search.get("returnTo"));
-  const close = () => void navigate(returnTo ?? "/widgets");
+  // Saving a new Widget replaces the route, so "was this Widget just created here?"
+  // has to live in the URL rather than component state to survive the remount.
+  const createdHere = search.get("created") === "1";
+  const close = () =>
+    void navigate(
+      returnTo
+        ? createdHere && id
+          ? withParam(returnTo, "newWidget", id)
+          : returnTo
+        : "/widgets",
+    );
   const saved = (value: Asset) => {
     // Preserve returnTo across the save so a Widget opened from a Layout still returns there.
-    const query = returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : "";
-    void navigate(`/widgets/${value.id}${query}`, { replace: true });
+    const query = new URLSearchParams();
+    if (returnTo) query.set("returnTo", returnTo);
+    // Editing an existing Widget must not report it as newly created on return.
+    if (createdHere || !id) query.set("created", "1");
+    const suffix = query.size ? `?${query.toString()}` : "";
+    void navigate(`/widgets/${value.id}${suffix}`, { replace: true });
   };
   const definition = definitions.data?.widgets?.find(
     (candidate) => candidate.id === provider,
@@ -200,11 +214,16 @@ export function WidgetEditorPage() {
         <WidgetProviderGallery
           page
           onClose={close}
-          onChoose={(choice, preset) =>
+          onChoose={(choice, preset) => {
+            // Picking a provider is a step inside the create flow, so returnTo has
+            // to survive it or the author never gets back to what they came from.
+            const query = new URLSearchParams();
+            if (preset) query.set("preset", preset);
+            if (returnTo) query.set("returnTo", returnTo);
             void navigate(
-              `/widgets/new/${choice}${preset ? `?preset=${preset}` : ""}`,
-            )
-          }
+              `/widgets/new/${choice}${query.size ? `?${query.toString()}` : ""}`,
+            );
+          }}
         />
       </section>
     );

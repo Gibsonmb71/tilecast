@@ -763,6 +763,10 @@ export type PlayerRelease = {
   cacheStatus: "missing" | "downloading" | "cached" | "failed";
   verificationStatus: "verified_manifest" | "verified" | "failed";
   verificationError?: string;
+  // Deployment history holds a reference to the release, so a release that has
+  // ever been deployed can only give up its cached artifact, never its record.
+  deploymentCount: number;
+  activeDeploymentCount: number;
 };
 export type PlayerReleaseImport = Pick<
   PlayerRelease,

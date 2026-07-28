@@ -2200,6 +2200,11 @@ export function LayoutEditorPage() {
             setPicker(undefined);
           }}
           onClose={() => setPicker(undefined)}
+          onCreateWidget={() =>
+            void navigate(
+              `/widgets/new?returnTo=${encodeURIComponent(location.pathname)}`,
+            )
+          }
         />
       )}
       {picker === "playlists" && (

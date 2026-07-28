@@ -1,3 +1,25 @@
+import type { LucideIcon } from "lucide-react";
+import {
+  Accessibility,
+  Archive,
+  ArrowLeftRight,
+  Building2,
+  CalendarClock,
+  DatabaseBackup,
+  DownloadCloud,
+  Globe,
+  Image,
+  LifeBuoy,
+  MapPin,
+  Palette,
+  Play,
+  Power,
+  ShieldCheck,
+  Siren,
+  SlidersHorizontal,
+  Users,
+  Wrench,
+} from "lucide-react";
 export type SettingsSectionId =
   | "general"
   | "branding"
@@ -98,94 +120,113 @@ export function sectionFromPath(pathname: string): SettingsSectionId {
 }
 export const sectionDetails: Record<
   SettingsSectionId,
-  { title: string; description: string }
+  { title: string; description: string; icon: LucideIcon }
 > = {
   general: {
+    icon: Building2,
     title: "General",
     description:
       "Organization identity, regional formats, and support details.",
   },
   branding: {
+    icon: Palette,
     title: "Branding",
     description:
       "Organization identity and the fallback appearance shown by players.",
   },
   users: {
+    icon: Users,
     title: "Users",
     description:
       "Give each person an individual sign-in and assign only the permissions they need. Appearance and density preferences remain separate for every account.",
   },
   security: {
+    icon: ShieldCheck,
     title: "Sign-in security",
     description:
       "Decide who must use a second factor to sign in. Each person manages their own authenticator, passkeys, and recovery codes from Sign-in security in their account menu.",
   },
   locations: {
+    icon: MapPin,
     title: "Locations",
     description:
-      "Reusable buildings and campuses that can be assigned to multiple screens.",
+      "Reusable buildings and campuses assigned to multiple screens, while room details stay on each player.",
   },
   playback: {
+    icon: Play,
     title: "Playback",
     description:
       "Default playback, storage, delivery, synchronization, and diagnostics.",
   },
   media: {
+    icon: Image,
     title: "Media",
     description:
       "Upload limits, delivery defaults, and future media-processing behavior.",
   },
   websites: {
+    icon: Globe,
     title: "Websites",
     description:
       "Safe defaults for website playback, reloads, cookies, and failures.",
   },
   scheduling: {
+    icon: CalendarClock,
     title: "Scheduling",
     description: "Schedule preparation, timing, and clock-warning defaults.",
   },
   reliability: {
+    icon: LifeBuoy,
     title: "Reliability and kiosk",
     description:
       "Startup behavior, bounded recovery, and capability-gated Managed Kiosk.",
   },
   power: {
+    icon: Power,
     title: "Active hours and power",
     description:
       "Player operating hours and best-effort Android sleep and wake behavior.",
   },
   accessibility: {
+    icon: Accessibility,
     title: "Accessibility control",
     description:
       "Optional foreground-return assistance with explicit safety pauses.",
   },
   "player-updates": {
+    icon: DownloadCloud,
     title: "Player updates",
     description: "Verified Tilecast Player releases and update deployments.",
   },
   emergency: {
+    icon: Siren,
     title: "Emergency and commands",
     description:
       "Defaults for emergency takeover and persistent player operations.",
   },
   retention: {
+    icon: Archive,
     title: "Data retention",
     description: "Bounded history and cleanup periods for operational records.",
   },
   backups: {
+    icon: DatabaseBackup,
     title: "Backup and restore",
     description:
       "Create, verify, download, schedule, and restore full installation backups.",
   },
   system: {
+    icon: Wrench,
     title: "System",
     description: "Safe diagnostics and deliberate maintenance actions.",
   },
   "import-export": {
+    icon: ArrowLeftRight,
     title: "Import and export",
     description: "Portable, non-secret Tilecast configuration.",
   },
   preferences: {
+    icon: SlidersHorizontal,
     title: "My preferences",
     description: "Appearance and workflow preferences for your Studio account.",
   },

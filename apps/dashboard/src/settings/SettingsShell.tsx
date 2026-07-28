@@ -47,24 +47,31 @@ export function SettingsShell({
         {settingsNavigation.map((group) => (
           <div className="settings-nav-group" key={group.label}>
             <h2>{group.label}</h2>
-            {group.items.map((item) => (
-              <Link
-                key={item.id}
-                to={`/settings/${item.path}`}
-                aria-current={active === item.id ? "page" : undefined}
-                onClick={(event) => {
-                  if (!onNavigate(item.id)) event.preventDefault();
-                }}
-              >
-                <span>{item.label}</span>
-                {dirty.has(item.id) && <small>Unsaved</small>}
-              </Link>
-            ))}
+            {group.items.map((item) => {
+              const Icon = sectionDetails[item.id].icon;
+              return (
+                <Link
+                  key={item.id}
+                  to={`/settings/${item.path}`}
+                  aria-current={active === item.id ? "page" : undefined}
+                  onClick={(event) => {
+                    if (!onNavigate(item.id)) event.preventDefault();
+                  }}
+                >
+                  <Icon size={16} aria-hidden="true" />
+                  <span>{item.label}</span>
+                  {dirty.has(item.id) && <small>Unsaved</small>}
+                </Link>
+              );
+            })}
           </div>
         ))}
       </aside>
       <main className="settings-content">
         <header className="settings-heading">
+          <span className="settings-heading__icon">
+            <details.icon size={20} aria-hidden="true" />
+          </span>
           <h1>{details.title}</h1>
           <p>{details.description}</p>
         </header>

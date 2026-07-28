@@ -33,6 +33,12 @@ export type ContentPickerProps = {
   description?: string;
   onConfirm: (items: Asset[]) => Promise<void | ContentPickerResult> | void;
   onClose: () => void;
+  /**
+   * Leaves the picker to build a new Widget. The caller owns the round trip,
+   * because only it knows where the author should land afterwards; the create
+   * action is hidden when no caller provides one.
+   */
+  onCreateWidget?: () => void;
 };
 
 export function ContentPicker({
@@ -48,6 +54,7 @@ export function ContentPicker({
   description = "Select existing content or upload media. Apps are managed in their own library.",
   onConfirm,
   onClose,
+  onCreateWidget,
 }: ContentPickerProps) {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
@@ -280,10 +287,13 @@ export function ContentPicker({
                 <Upload size={16} /> Upload media
               </button>
             )}
-            {allowed.has("widget") && (
-              <a className="button button--secondary" href="/apps/new">
-                <Globe2 size={16} /> Create App
-              </a>
+            {allowed.has("widget") && onCreateWidget && (
+              <button
+                className="button button--secondary"
+                onClick={onCreateWidget}
+              >
+                <Globe2 size={16} /> Create widget
+              </button>
             )}
             <button
               className="icon-button"

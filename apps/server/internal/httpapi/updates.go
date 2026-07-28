@@ -33,7 +33,10 @@ func (s *server) listPlayerReleases(w http.ResponseWriter, r *http.Request) {
 		_ = s.db.QueryRow(r.Context(), `SELECT last_checked_at,safe_error FROM update_provider_state WHERE provider='github'`).Scan(&checked, &providerError)
 	}
 
-	rows, err := s.db.Query(r.Context(), `SELECT id,COALESCE(github_tag,''),platform,source,channel,version_code,version_name,minimum_sdk,release_notes,published_at,apk_size,apk_sha256,signing_certificate_sha256,manifest_signature,cache_status,verification_status,verification_error FROM player_releases ORDER BY platform,version_code DESC`)
+	rows, err := s.db.Query(r.Context(), `SELECT id,COALESCE(github_tag,''),platform,source,channel,version_code,version_name,minimum_sdk,release_notes,published_at,apk_size,apk_sha256,signing_certificate_sha256,manifest_signature,cache_status,verification_status,verification_error,
+		(SELECT count(*) FROM update_deployments d WHERE d.release_id=player_releases.id),
+		(SELECT count(*) FROM update_deployments d WHERE d.release_id=player_releases.id AND d.status IN('pending','active'))
+		FROM player_releases ORDER BY platform,version_code DESC`)
 	if err != nil {
 		s.internalError(w, r, err)
 		return
@@ -44,11 +47,12 @@ func (s *server) listPlayerReleases(w http.ResponseWriter, r *http.Request) {
 		var id uuid.UUID
 		var tag, platform, source, channel, name, notes, hash, cert, signature, cache, verification string
 		var code, size int64
+		var deploymentCount, activeDeploymentCount int
 		var sdk *int
 		var published time.Time
 		var verificationError *string
-		if rows.Scan(&id, &tag, &platform, &source, &channel, &code, &name, &sdk, &notes, &published, &size, &hash, &cert, &signature, &cache, &verification, &verificationError) == nil {
-			items = append(items, map[string]any{"id": id, "tag": tag, "platform": platform, "source": source, "channel": channel, "versionCode": code, "versionName": name, "minimumSdk": sdk, "releaseNotes": notes, "publishedAt": published, "apkSizeBytes": size, "apkSha256": hash, "signingCertificateSha256": cert, "manifestSignature": signature, "cacheStatus": cache, "verificationStatus": verification, "verificationError": verificationError})
+		if rows.Scan(&id, &tag, &platform, &source, &channel, &code, &name, &sdk, &notes, &published, &size, &hash, &cert, &signature, &cache, &verification, &verificationError, &deploymentCount, &activeDeploymentCount) == nil {
+			items = append(items, map[string]any{"id": id, "tag": tag, "platform": platform, "source": source, "channel": channel, "versionCode": code, "versionName": name, "minimumSdk": sdk, "releaseNotes": notes, "publishedAt": published, "apkSizeBytes": size, "apkSha256": hash, "signingCertificateSha256": cert, "manifestSignature": signature, "cacheStatus": cache, "verificationStatus": verification, "verificationError": verificationError, "deploymentCount": deploymentCount, "activeDeploymentCount": activeDeploymentCount})
 		}
 	}
 	writeJSON(w, 200, map[string]any{"data": map[string]any{"repository": "Gibsonmb71/tilecast", "lastCheckedAt": checked, "providerError": providerError, "manifestKeyConfigured": s.updates.ManifestKeyConfigured(), "githubAuth": s.updates.GitHubAuthStatus(), "items": items}})
@@ -259,6 +263,43 @@ func (s *server) cachePlayerRelease(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 	writeJSON(w, 202, map[string]any{"data": map[string]any{"id": id, "cacheStatus": status}})
+}
+
+// deletePlayerRelease frees the disk a release occupies. Releases that were
+// never deployed disappear entirely; the rest keep their record so deployment
+// history stays intact and only lose the cached artifact.
+func (s *server) deletePlayerRelease(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	var cacheStatus string
+	if err := s.db.QueryRow(r.Context(), `SELECT cache_status FROM player_releases WHERE id=$1`, id).Scan(&cacheStatus); err != nil {
+		writeError(w, http.StatusNotFound, "player_release_not_found", "Release was not found.")
+		return
+	}
+	if cacheStatus == "downloading" {
+		writeError(w, http.StatusConflict, "player_release_busy", "This release is downloading. Wait for the download to finish before removing it.")
+		return
+	}
+	var active int
+	_ = s.db.QueryRow(r.Context(), `SELECT count(*) FROM update_deployments WHERE release_id=$1 AND status IN('pending','active')`, id).Scan(&active)
+	if active > 0 {
+		writeError(w, http.StatusConflict, "player_release_in_use", "A deployment of this release is still running. Cancel or finish it before removing the release.")
+		return
+	}
+	deleted, err := s.updates.Purge(r.Context(), id)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	user := r.Context().Value(sessionContextKey).(auth.Session).User
+	action := "player_updates.release_cache_freed"
+	if deleted {
+		action = "player_updates.release_deleted"
+	}
+	_, _ = s.db.Exec(r.Context(), `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)VALUES($1,$2,$3,'player_release',$4)`, uuid.New(), user.ID, action, id.String())
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": id, "deleted": deleted}})
 }
 
 type deploymentInput struct {
