@@ -89,7 +89,11 @@ export function renderWidget(
       datasets,
       at: ctx.at,
     });
-    return { background: DEFAULT_BG, root: root ?? emptyNode("") };
+    // The surface carries the author's background, so the payload reports it rather than
+    // letting the default show through wherever the payload background is used.
+    const background =
+      (root?.t === "box" ? root.style.background : undefined) ?? DEFAULT_BG;
+    return { background, root: root ?? emptyNode("") };
   }
 
   const config = widget.configuration ?? {};

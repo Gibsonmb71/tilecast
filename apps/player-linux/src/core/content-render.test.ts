@@ -247,6 +247,48 @@ describe("renderPresentation (v13 declarative)", () => {
     expect(json).toContain("Tea");
   });
 
+  // The Server compiles Clock, Date, and World Clock to a text node bound to environment
+  // "currentTime" with the whole spec in the format string. Resolving the path alone yields
+  // nothing, so missing these renders an empty string — a blank screen, not a broken one.
+  it("projects a compiled clock binding as a self-updating clock node", () => {
+    const tree = renderPresentation(
+      {
+        type: "text",
+        props: { role: "metric", color: "#FFFFFF" },
+        binding: {
+          source: "environment",
+          path: "currentTime",
+          format: "time:24:true:America/New_York",
+        },
+      },
+      { datasets: new Map(), at },
+    );
+    expect(tree).toMatchObject({
+      t: "clock",
+      timezone: "America/New_York",
+      hour12: false,
+      showSeconds: true,
+    });
+  });
+
+  it("resolves a compiled date binding to the formatted date", () => {
+    const tree = renderPresentation(
+      {
+        type: "text",
+        binding: {
+          source: "environment",
+          path: "currentTime",
+          format: "date:full:America/New_York",
+        },
+      },
+      { datasets: new Map(), at },
+    );
+    expect(tree).toMatchObject({
+      t: "text",
+      value: "Wednesday, July 15, 2026",
+    });
+  });
+
   it("drops nodes failing a condition", () => {
     const root: PresentationNode = {
       type: "column",
