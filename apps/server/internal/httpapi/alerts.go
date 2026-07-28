@@ -3,12 +3,26 @@ package httpapi
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/tilecast/tilecast/apps/server/internal/alerts"
 	"github.com/tilecast/tilecast/apps/server/internal/auth"
 )
+
+func (s *server) alertZones(w http.ResponseWriter, r *http.Request) {
+	area := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("area")))
+	zones, err := s.alerts.Zones(r.Context(), area)
+	if errors.Is(err, alerts.ErrValidation) {
+		writeError(w, http.StatusUnprocessableEntity, "alert_area_invalid", err.Error())
+		return
+	} else if err != nil {
+		writeError(w, http.StatusBadGateway, "nws_zones_unavailable", "Tilecast could not retrieve NWS counties and forecast zones.")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"items": zones}})
+}
 
 func (s *server) alertSettings(w http.ResponseWriter, r *http.Request) {
 	if s.alerts == nil {

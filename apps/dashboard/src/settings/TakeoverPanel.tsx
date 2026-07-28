@@ -14,6 +14,7 @@ const emptyRule: NWSAlertRuleInput = {
   eventNames: ["Tornado Warning"],
   minimumSeverity: "Severe",
   minimumUrgency: "Expected",
+  presentationMode: "builtin",
   playlistId: undefined,
   maximumDurationMinutes: 360,
   screenIds: [],
@@ -27,13 +28,14 @@ const ruleSchema = z
     eventNames: z.array(z.string()),
     minimumSeverity: z.enum(["Minor", "Moderate", "Severe", "Extreme"]),
     minimumUrgency: z.enum(["Unknown", "Future", "Expected", "Immediate"]),
+    presentationMode: z.enum(["builtin", "playlist"]),
     playlistId: z.string().optional(),
     maximumDurationMinutes: z.number(),
     screenIds: z.array(z.string()),
     groupIds: z.array(z.string()),
   })
   .superRefine((value, context) => {
-    if (!value.playlistId) {
+    if (value.presentationMode === "playlist" && !value.playlistId) {
       context.addIssue({
         code: "custom",
         path: ["playlistId"],
@@ -48,6 +50,65 @@ const ruleSchema = z
       });
     }
   });
+
+const nwsAreas = [
+  ["AL", "Alabama"],
+  ["AK", "Alaska"],
+  ["AZ", "Arizona"],
+  ["AR", "Arkansas"],
+  ["CA", "California"],
+  ["CO", "Colorado"],
+  ["CT", "Connecticut"],
+  ["DE", "Delaware"],
+  ["DC", "District of Columbia"],
+  ["FL", "Florida"],
+  ["GA", "Georgia"],
+  ["HI", "Hawaii"],
+  ["ID", "Idaho"],
+  ["IL", "Illinois"],
+  ["IN", "Indiana"],
+  ["IA", "Iowa"],
+  ["KS", "Kansas"],
+  ["KY", "Kentucky"],
+  ["LA", "Louisiana"],
+  ["ME", "Maine"],
+  ["MD", "Maryland"],
+  ["MA", "Massachusetts"],
+  ["MI", "Michigan"],
+  ["MN", "Minnesota"],
+  ["MS", "Mississippi"],
+  ["MO", "Missouri"],
+  ["MT", "Montana"],
+  ["NE", "Nebraska"],
+  ["NV", "Nevada"],
+  ["NH", "New Hampshire"],
+  ["NJ", "New Jersey"],
+  ["NM", "New Mexico"],
+  ["NY", "New York"],
+  ["NC", "North Carolina"],
+  ["ND", "North Dakota"],
+  ["OH", "Ohio"],
+  ["OK", "Oklahoma"],
+  ["OR", "Oregon"],
+  ["PA", "Pennsylvania"],
+  ["RI", "Rhode Island"],
+  ["SC", "South Carolina"],
+  ["SD", "South Dakota"],
+  ["TN", "Tennessee"],
+  ["TX", "Texas"],
+  ["UT", "Utah"],
+  ["VT", "Vermont"],
+  ["VA", "Virginia"],
+  ["WA", "Washington"],
+  ["WV", "West Virginia"],
+  ["WI", "Wisconsin"],
+  ["WY", "Wyoming"],
+  ["AS", "American Samoa"],
+  ["GU", "Guam"],
+  ["MP", "Northern Mariana Islands"],
+  ["PR", "Puerto Rico"],
+  ["VI", "U.S. Virgin Islands"],
+] as const;
 
 export function TakeoverPanel({ editable }: { editable: boolean }) {
   const auth = useAuth();
@@ -67,8 +128,16 @@ export function TakeoverPanel({ editable }: { editable: boolean }) {
     queryFn: () => api.playlists(),
   });
   const [enabled, setEnabled] = useState(false);
-  const [areas, setAreas] = useState("");
-  const [zones, setZones] = useState("");
+  const [areas, setAreas] = useState<string[]>([]);
+  const [zones, setZones] = useState<string[]>([]);
+  const [selectedArea, setSelectedArea] = useState("");
+  const [selectedZone, setSelectedZone] = useState("");
+  const zoneOptions = useQuery({
+    queryKey: ["nws-zones", selectedArea],
+    queryFn: () => api.nwsZones(selectedArea),
+    enabled: selectedArea !== "",
+    staleTime: 24 * 60 * 60_000,
+  });
   const [pollInterval, setPollInterval] = useState(120);
   const [monitorInitialized, setMonitorInitialized] = useState(false);
   const [editing, setEditing] = useState<string>();
@@ -90,8 +159,13 @@ export function TakeoverPanel({ editable }: { editable: boolean }) {
   useEffect(() => {
     if (!settings.data || monitorInitialized) return;
     setEnabled(settings.data.monitor.enabled);
-    setAreas(settings.data.monitor.areas.join(", "));
-    setZones(settings.data.monitor.zones.join(", "));
+    setAreas(settings.data.monitor.areas);
+    setZones(settings.data.monitor.zones);
+    setSelectedArea(
+      settings.data.monitor.areas[0] ??
+        settings.data.monitor.zones[0]?.slice(0, 2) ??
+        "",
+    );
     setPollInterval(settings.data.monitor.pollIntervalSeconds);
     setMonitorInitialized(true);
   }, [settings.data, monitorInitialized]);
@@ -102,8 +176,8 @@ export function TakeoverPanel({ editable }: { editable: boolean }) {
       api.updateNWSAlertMonitor(
         {
           enabled,
-          areas: codes(areas),
-          zones: codes(zones),
+          areas,
+          zones,
           pollIntervalSeconds: pollInterval,
         },
         auth.status?.csrfToken ?? "",
@@ -141,16 +215,16 @@ export function TakeoverPanel({ editable }: { editable: boolean }) {
         <header>
           <h3>Prepare automatic emergency content</h3>
           <p>
-            Create a separate playlist for each response you may need, such as a
-            tornado warning, flash flood, severe weather closure, or evacuation.
-            Then connect that pre-made playlist to a weather event rule below.
-            This page configures automatic responses; a manual Takeover is the
-            separate “show this now” action on Screens.
+            Tilecast can generate a fullscreen alert directly from live NWS
+            data. A custom playlist remains optional for organizations with
+            their own response content. This page configures automatic
+            responses; a manual Takeover is the separate “show this now” action
+            on Screens.
           </p>
         </header>
         <div className="takeover-settings__actions">
-          <Link className="button button--primary" to="/playlists">
-            Manage emergency playlists
+          <Link className="button button--quiet" to="/playlists">
+            Optional: manage custom playlists
           </Link>
           <Link className="button button--quiet" to="/screens">
             Start a Takeover now
@@ -163,9 +237,9 @@ export function TakeoverPanel({ editable }: { editable: boolean }) {
           <h3>Automated weather alerts</h3>
           <p>
             Monitor official active alerts for US states, territories, counties,
-            and forecast zones. Matching rules display the pre-made emergency
-            playlist you choose and restore normal playback when the alert
-            clears.
+            and forecast zones. Matching rules display live alert details or an
+            optional custom playlist, then restore normal playback when the
+            alert clears.
           </p>
         </header>
         <div className="notice notice--info">
@@ -193,34 +267,117 @@ export function TakeoverPanel({ editable }: { editable: boolean }) {
             />
           </div>
         </div>
-        <div className="setting-row">
+        <div className="setting-row setting-row--location-picker">
           <div className="setting-copy">
-            <label htmlFor="nws-areas">States and territories</label>
-            <p>Comma-separated two-letter NWS area codes, such as OH, PA.</p>
+            <label htmlFor="nws-state">Alert coverage</label>
+            <p>
+              Choose a state or territory by name, then monitor the whole state
+              or add specific counties and NWS forecast zones.
+            </p>
           </div>
-          <div className="setting-control">
-            <input
-              id="nws-areas"
-              value={areas}
-              disabled={!editable}
-              onChange={(event) => setAreas(event.target.value)}
-              placeholder="OH, PA"
-            />
-          </div>
-        </div>
-        <div className="setting-row">
-          <div className="setting-copy">
-            <label htmlFor="nws-zones">Counties or forecast zones</label>
-            <p>Comma-separated six-character NWS zone codes, such as OHC049.</p>
-          </div>
-          <div className="setting-control">
-            <input
-              id="nws-zones"
-              value={zones}
-              disabled={!editable}
-              onChange={(event) => setZones(event.target.value)}
-              placeholder="OHC049"
-            />
+          <div className="setting-control nws-location-picker">
+            <label>
+              State or territory
+              <select
+                id="nws-state"
+                value={selectedArea}
+                disabled={!editable}
+                onChange={(event) => {
+                  setSelectedArea(event.target.value);
+                  setSelectedZone("");
+                }}
+              >
+                <option value="">Select a state</option>
+                {nwsAreas.map(([code, name]) => (
+                  <option key={code} value={code}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className="button button--quiet"
+              disabled={
+                !editable || !selectedArea || areas.includes(selectedArea)
+              }
+              onClick={() => setAreas(addUnique(areas, selectedArea))}
+            >
+              Monitor entire state
+            </button>
+            <label>
+              County or forecast zone
+              <select
+                value={selectedZone}
+                disabled={!editable || !selectedArea || zoneOptions.isLoading}
+                onChange={(event) => setSelectedZone(event.target.value)}
+              >
+                <option value="">
+                  {zoneOptions.isLoading
+                    ? "Loading locations…"
+                    : "Select a location"}
+                </option>
+                {zoneOptions.data?.items.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name} (
+                    {item.type === "county" ? "County" : "Forecast zone"})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className="button button--quiet"
+              disabled={
+                !editable || !selectedZone || zones.includes(selectedZone)
+              }
+              onClick={() => {
+                setZones(addUnique(zones, selectedZone));
+                setSelectedZone("");
+              }}
+            >
+              Add location
+            </button>
+            {zoneOptions.isError && (
+              <small className="form-error" role="alert">
+                Counties and forecast zones could not be loaded from NWS.
+              </small>
+            )}
+            <div className="nws-location-picker__selected">
+              {areas.map((area) => (
+                <span key={area}>
+                  Entire {areaName(area)}
+                  <button
+                    type="button"
+                    aria-label={`Remove entire ${areaName(area)}`}
+                    disabled={!editable}
+                    onClick={() =>
+                      setAreas(areas.filter((item) => item !== area))
+                    }
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+              {zones.map((zone) => (
+                <span key={zone}>
+                  {zoneLabel(zone, zoneOptions.data?.items ?? [])}
+                  <button
+                    type="button"
+                    aria-label={`Remove ${zone}`}
+                    disabled={!editable}
+                    onClick={() =>
+                      setZones(zones.filter((item) => item !== zone))
+                    }
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+              {areas.length + zones.length === 0 && (
+                <small>No locations selected.</small>
+              )}
+            </div>
           </div>
         </div>
         <div className="setting-row">
@@ -293,7 +450,7 @@ export function TakeoverPanel({ editable }: { editable: boolean }) {
           <p>
             Event names match NWS wording exactly. Leave the field empty to
             match every event at or above the selected severity and urgency.
-            Each rule can display a different custom playlist.
+            Tilecast's live fullscreen alert is the default.
           </p>
         </header>
         <div className="takeover-rule-list">
@@ -303,7 +460,10 @@ export function TakeoverPanel({ editable }: { editable: boolean }) {
                 <strong>{item.name}</strong>
                 <p>
                   {item.eventNames.join(", ") || "All event types"} ·{" "}
-                  {item.minimumSeverity}+ · {item.playlistName || "No playlist"}
+                  {item.minimumSeverity}+ ·{" "}
+                  {item.presentationMode === "builtin"
+                    ? "Tilecast live NWS alert"
+                    : item.playlistName || "No playlist"}
                 </p>
               </div>
               <div>
@@ -381,29 +541,53 @@ export function TakeoverPanel({ editable }: { editable: boolean }) {
                 </select>
               </label>
               <label>
-                Pre-made emergency playlist
-                <select {...register("playlistId")}>
-                  <option value="">Select a playlist</option>
-                  {playlists.data?.items.map((item) => (
-                    <option
-                      key={item.id}
-                      value={item.id}
-                      disabled={item.itemCount === 0}
-                    >
-                      {emergencyPlaylistLabel(item)}
-                    </option>
-                  ))}
+                Emergency display
+                <select
+                  {...register("presentationMode", {
+                    onChange: () =>
+                      setValue("playlistId", undefined, {
+                        shouldDirty: true,
+                        shouldValidate: true,
+                      }),
+                  })}
+                >
+                  <option value="builtin">
+                    Tilecast live NWS alert — fullscreen
+                  </option>
+                  <option value="playlist">Use a custom playlist</option>
                 </select>
                 <small>
-                  Only non-empty playlists can be activated.{" "}
-                  <Link to="/playlists">Create or edit playlists</Link>
+                  The built-in display automatically shows the exact NWS event,
+                  headline, severity, affected area, instructions, sender, and
+                  expiration.
                 </small>
-                {ruleErrors.playlistId && (
-                  <span className="form-error" role="alert">
-                    {ruleErrors.playlistId.message}
-                  </span>
-                )}
               </label>
+              {rule.presentationMode === "playlist" && (
+                <label>
+                  Custom emergency playlist
+                  <select {...register("playlistId")}>
+                    <option value="">Select a playlist</option>
+                    {playlists.data?.items.map((item) => (
+                      <option
+                        key={item.id}
+                        value={item.id}
+                        disabled={item.itemCount === 0}
+                      >
+                        {emergencyPlaylistLabel(item)}
+                      </option>
+                    ))}
+                  </select>
+                  <small>
+                    Only non-empty playlists can be activated.{" "}
+                    <Link to="/playlists">Create or edit playlists</Link>
+                  </small>
+                  {ruleErrors.playlistId && (
+                    <span className="form-error" role="alert">
+                      {ruleErrors.playlistId.message}
+                    </span>
+                  )}
+                </label>
+              )}
               <label>
                 Maximum duration
                 <select
@@ -527,11 +711,19 @@ export function TakeoverPanel({ editable }: { editable: boolean }) {
   );
 }
 
-const codes = (value: string) =>
-  value
-    .split(",")
-    .map((item) => item.trim().toUpperCase())
-    .filter(Boolean);
+const addUnique = (items: string[], value: string) =>
+  value && !items.includes(value) ? [...items, value] : items;
+const areaName = (code: string) =>
+  nwsAreas.find(([area]) => area === code)?.[1] ?? code;
+const zoneLabel = (
+  id: string,
+  items: Array<{ id: string; name: string; type: string }>,
+) => {
+  const zone = items.find((item) => item.id === id);
+  return zone
+    ? `${zone.name} (${zone.type === "county" ? "County" : "Forecast zone"})`
+    : id;
+};
 const labels = (value: string) =>
   value
     .split(",")
@@ -561,6 +753,7 @@ const toInput = (rule: NWSAlertRule): NWSAlertRuleInput => ({
   eventNames: rule.eventNames,
   minimumSeverity: rule.minimumSeverity,
   minimumUrgency: rule.minimumUrgency,
+  presentationMode: rule.presentationMode,
   playlistId: rule.playlistId,
   maximumDurationMinutes: rule.maximumDurationMinutes,
   screenIds: rule.screenIds,

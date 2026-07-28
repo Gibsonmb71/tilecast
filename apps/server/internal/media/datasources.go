@@ -400,7 +400,7 @@ func (s *Service) ListDataSources(ctx context.Context, o DataSourceListOptions) 
 	case "name":
 		sortSQL = "lower(d.name) ASC,d.id ASC"
 	}
-	where := []string{"d.deleted_at IS NULL"}
+	where := []string{"d.deleted_at IS NULL", "d.system_managed=FALSE"}
 	args := []any{}
 	add := func(query string, value any) {
 		args = append(args, value)

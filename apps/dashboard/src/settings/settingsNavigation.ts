@@ -202,7 +202,7 @@ export const sectionDetails: Record<
     icon: Siren,
     title: "Emergency management",
     description:
-      "Prepare event-specific playlists and automate emergency playback from official weather alerts.",
+      "Choose weather coverage and automate a live NWS alert display or custom emergency playlist.",
   },
   retention: {
     icon: Archive,

@@ -577,6 +577,7 @@ export type NWSAlertRule = {
   eventNames: string[];
   minimumSeverity: "Minor" | "Moderate" | "Severe" | "Extreme";
   minimumUrgency: "Unknown" | "Future" | "Expected" | "Immediate";
+  presentationMode: "builtin" | "playlist";
   playlistId?: string;
   playlistName?: string;
   maximumDurationMinutes: number;
@@ -584,6 +585,13 @@ export type NWSAlertRule = {
   groupIds: string[];
   createdAt: string;
   updatedAt: string;
+};
+
+export type NWSZone = {
+  id: string;
+  name: string;
+  state: string;
+  type: "county" | "forecast";
 };
 
 export type NWSAlertRuleInput = Omit<

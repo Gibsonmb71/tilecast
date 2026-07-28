@@ -504,7 +504,11 @@ func (s *Service) ListAssets(ctx context.Context, o ListOptions) (ListResult, er
 	}
 	// Form submission attachments (origin='form_attachment') are managed through their Form Data
 	// Source and must never appear in the public Media library or its pickers.
-	where := []string{"a.deleted_at IS NULL", "a.origin='library'"}
+	where := []string{
+		"a.deleted_at IS NULL",
+		"a.origin='library'",
+		"a.system_managed=FALSE",
+	}
 	args := []any{}
 	add := func(query string, value any) {
 		args = append(args, value)

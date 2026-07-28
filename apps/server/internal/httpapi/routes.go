@@ -116,6 +116,7 @@ func (s *server) routes() http.Handler {
 			dashboard.Get("/takeovers", s.listTakeovers)
 			if s.alerts != nil {
 				dashboard.Get("/alerts/nws", s.alertSettings)
+				dashboard.Get("/alerts/nws/zones", s.alertZones)
 				dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Put("/alerts/nws/monitor", s.updateAlertMonitor)
 				dashboard.With(s.requireRoles("owner", "administrator"), s.operationsRateLimit, s.requireCSRF).Post("/alerts/nws/poll", s.pollAlerts)
 				dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/alerts/nws/rules", s.createAlertRule)

@@ -2,6 +2,7 @@ package alerts
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -10,6 +11,80 @@ import (
 	"time"
 	"unicode/utf8"
 )
+
+func TestZonesLoadsCountiesAndForecastZonesForAState(t *testing.T) {
+	var requests int
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.URL.Query().Get("area") != "OH" || r.URL.Query().Get("include_geometry") != "false" {
+			t.Fatalf("unexpected zone query: %s", r.URL.RawQuery)
+		}
+		w.Header().Set("Content-Type", "application/geo+json")
+		switch r.URL.Path {
+		case "/zones/county":
+			_, _ = w.Write([]byte(`{"features":[{"id":"https://api.weather.gov/zones/county/OHC049","properties":{"name":"Franklin","state":"OH"}}]}`))
+		case "/zones/forecast":
+			_, _ = w.Write([]byte(`{"features":[{"properties":{"id":"OHZ055","name":"Franklin","state":"OH"}}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+	service := &Service{
+		client:       upstream.Client(),
+		zonesBaseURL: upstream.URL + "/zones",
+		userAgent:    "Tilecast/1.0 (test)",
+	}
+	zones, err := service.Zones(context.Background(), "oh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requests != 2 {
+		t.Fatalf("requests = %d, want 2", requests)
+	}
+	want := []Zone{
+		{ID: "OHC049", Name: "Franklin", State: "OH", Type: "county"},
+		{ID: "OHZ055", Name: "Franklin", State: "OH", Type: "forecast"},
+	}
+	if !reflect.DeepEqual(zones, want) {
+		t.Fatalf("Zones() = %#v, want %#v", zones, want)
+	}
+}
+
+func TestBuiltinAlertDocumentsContainLiveNWSDetails(t *testing.T) {
+	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
+	expires := now.Add(time.Hour)
+	configurationJSON, payloadJSON := builtinAlertDocuments(nwsProperties{
+		Event:           "Tornado Warning",
+		Headline:        "Tornado observed near Columbus",
+		Severity:        "Extreme",
+		AreaDescription: "Franklin County",
+		Instruction:     "Move to an interior room.",
+		SenderName:      "NWS Wilmington OH",
+	}, expires, now)
+	var configuration map[string]any
+	if err := json.Unmarshal([]byte(configurationJSON), &configuration); err != nil {
+		t.Fatal(err)
+	}
+	message, _ := configuration["message"].(string)
+	for _, want := range []string{"Tornado Warning", "Tornado observed", "Franklin County", "interior room"} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("built-in message %q does not contain %q", message, want)
+		}
+	}
+	if configuration["severity"] != "Extreme" ||
+		configuration["contact"] != "NWS Wilmington OH" ||
+		configuration["expiresAt"] != expires.Format(time.RFC3339) {
+		t.Fatalf("unexpected built-in configuration: %#v", configuration)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(payloadJSON), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload["datasets"].([]any)) != 1 {
+		t.Fatalf("unexpected built-in payload: %#v", payload)
+	}
+}
 
 func TestNormalizeCodes(t *testing.T) {
 	got, err := normalizeCodes([]string{" oh ", "PA", "OH"}, 2, "area")
