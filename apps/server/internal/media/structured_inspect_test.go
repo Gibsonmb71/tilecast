@@ -154,3 +154,63 @@ func TestInspectFeedReportsOnlyFieldsTheFeedCarries(t *testing.T) {
 		t.Fatalf("rowCount=%d", inspection.RowCount)
 	}
 }
+
+func TestDetectFieldTypeRequiresEverySampleToAgree(t *testing.T) {
+	for _, testCase := range []struct {
+		name    string
+		samples []string
+		want    string
+	}{
+		{"offset timestamps", []string{"2026-07-30T08:25:00-04:00", "2026-07-30T10:00:00-04:00"}, "datetime"},
+		{"space separated", []string{"2026-07-30 08:25", "2026-07-30 10:00:00"}, "datetime"},
+		{"plain dates", []string{"2026-07-30", "2026-08-01"}, "date"},
+		{"numbers", []string{"3", "5.25"}, "number"},
+		{"one stray timestamp", []string{"2026-07-30T08:25:00Z", "Period 1"}, "text"},
+		{"no samples", nil, "text"},
+	} {
+		if got := detectFieldType(testCase.samples); got != testCase.want {
+			t.Fatalf("%s: type=%q want %q", testCase.name, got, testCase.want)
+		}
+	}
+}
+
+// A schedule arrives with a start and an end, and the display slots carry one date between
+// them. Detection offers both as typed values so a start-and-end Widget can select them;
+// without this the Widget's pickers have nothing to show.
+func TestInspectJSONSuggestsTimestampsAsTypedValues(t *testing.T) {
+	body := `[{"title":"Period 1","startTime":"2026-07-30T08:25:00-04:00","endTime":"2026-07-30T09:55:00-04:00","location":"Regular schedule"},` +
+		`{"title":"Period 2","startTime":"2026-07-30T10:00:00-04:00","endTime":"2026-07-30T11:30:00-04:00","location":"Regular schedule"}]`
+	inspection, err := inspectJSON([]byte(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	suggested := inspection.Suggested
+	if suggested.ValueFields["startTime"] != "/startTime" || suggested.ValueFields["endTime"] != "/endTime" {
+		t.Fatalf("valueFields=%#v", suggested.ValueFields)
+	}
+	if suggested.ValueFieldTypes["startTime"] != "datetime" || suggested.ValueFieldTypes["endTime"] != "datetime" {
+		t.Fatalf("valueFieldTypes=%#v", suggested.ValueFieldTypes)
+	}
+	// The text fields belong to display slots, not to the value list.
+	if len(suggested.ValueFields) != 2 {
+		t.Fatalf("valueFields=%#v", suggested.ValueFields)
+	}
+	if err := validateStructuredMapping(suggested, "json"); err != nil {
+		t.Fatalf("suggested mapping must be savable: %v", err)
+	}
+}
+
+// A field already carrying a display slot is not offered again as a value: the same text
+// twice in one record is noise in every picker that lists it.
+func TestSuggestValueFieldsSkipsClaimedFields(t *testing.T) {
+	fields := []StructuredField{
+		{Key: "/link", Label: "link", Type: "datetime"},
+		{Key: "/startTime", Label: "startTime", Type: "datetime"},
+		{Key: "/title", Label: "title", Type: "text"},
+	}
+	mapping := StructuredMapping{Title: "/title", Link: "/link"}
+	suggestValueFields(fields, &mapping)
+	if len(mapping.ValueFields) != 1 || mapping.ValueFields["startTime"] != "/startTime" {
+		t.Fatalf("valueFields=%#v", mapping.ValueFields)
+	}
+}

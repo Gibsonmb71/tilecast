@@ -12,11 +12,13 @@ Tilecast provides native RSS, Atom, JSON, CSV, and Manual Table **Data Sources**
 
 RSS, Atom, JSON, and CSV Sources are inspected before they are mapped. Studio reads the connected data through `POST /api/v1/data-sources/{provider}/inspect` and offers what it found: CSV column names, JSON Pointer paths for the scalar fields of the detected record array, or the record fields a feed actually publishes — each with a few sanitized sample values. A mapping is suggested from those names and applied only while the author has not mapped anything themselves.
 
+Each detected field is also typed from its samples — text, number, date, or datetime — and every sample has to agree, so one timestamp in a column of free text does not mistype the column. Detected timestamps are suggested as mapped values with their type, because the display slots carry one date between them and a Widget that asks for a start and an end can only select fields the Source exposes. A Source whose mapping predates its times offers the fields detection found as a single action instead.
+
 Two consequences are deliberate. A mapped Source (JSON, CSV) has no separate displayed-field list: it displays what it maps, so the mapping is the single place that decision is made, and Author and Description — which only feeds produce — are never offered. A feed offers only the fields that feed carries, so an RSS connection without authors does not present an Author toggle that would render nothing.
 
 Detection uses the same fetch policy, parser, and delimiter detection as a refresh, so what it reports is what playback will use.
 
-All providers support bounded item counts, keyword filtering, source/title/date sorting, list/agenda/card/ticker presentation, refresh and staleness limits, an empty state, preview, typed diagnostics, and last-known-good playback. CSV and mapped data also support up to eight equality or contains filters and twelve optional value fields.
+All providers support bounded item counts, keyword filtering, source/title/date sorting, list/agenda/card/ticker presentation, refresh and staleness limits, an empty state, preview, typed diagnostics, and last-known-good playback. CSV and mapped data also support up to eight equality or contains filters and twelve optional value fields, each declaring a type — text, number, date, datetime, or URL — that Widget field pickers filter on. A datetime value is stored as an RFC 3339 instant when it can be read; a value that cannot be parsed passes through as text rather than failing the refresh.
 
 Manual Table supports up to twelve typed columns and two hundred rows. Supported types are text, number, integer, percent, currency, boolean, date, datetime, and URL. Manual data is immediately ready after saving and does not run through the background refresh worker.
 

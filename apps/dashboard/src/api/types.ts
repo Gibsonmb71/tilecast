@@ -1718,6 +1718,10 @@ export type StructuredSourceConfig = {
     imageUrl: string;
     link: string;
     valueFields?: Record<string, string>;
+    // The type of each mapped value, keyed by its label. A Widget field picker offers a
+    // field only where its type fits the slot, so a mapped timestamp left as text is a
+    // field no time-based Widget can select.
+    valueFieldTypes?: Record<string, StructuredValueType>;
   };
   delimiter?: "" | "," | ";" | "\t" | "|";
   filters?: { field: string; operator: "equals" | "contains"; value: string }[];
@@ -1726,12 +1730,16 @@ export type StructuredSourceConfig = {
   emptyState: string;
   dateSelection: DateSelection;
 };
-// The fields a connected RSS, Atom, JSON, or CSV Source was found to contain. Studio maps
-// display slots to these instead of asking an author to recall column names or pointers.
+export type StructuredValueType =
+  "text" | "number" | "date" | "datetime" | "url";
+// The fields a connected RSS, Atom, JSON, or CSV Source was found to contain, and what
+// each holds. Studio maps display slots to these instead of asking an author to recall
+// column names or pointers, and stores the type so a Widget picker can filter on it.
 export type StructuredField = {
   key: string;
   label: string;
   samples: string[];
+  type: StructuredValueType;
 };
 export type StructuredInspection = {
   provider: DataSourceProvider;
