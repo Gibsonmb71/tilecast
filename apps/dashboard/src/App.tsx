@@ -20,6 +20,7 @@ import {
 } from "./pages/SchedulesPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { PreferencesPage } from "./pages/PreferencesPage";
+import { SecurityPage } from "./pages/SecurityPage";
 import { LayoutsPage } from "./pages/LayoutsPage";
 import { LayoutEditorPage } from "./pages/LayoutEditorPage";
 import { WidgetEditorPage, WidgetsPage } from "./pages/WidgetsPage";
@@ -308,6 +309,19 @@ export const studioRoutes: RouteObject[] = [
             "Appearance and workflow preferences for your Studio account",
             "/preferences",
             ["settings", "theme", "appearance", "density"],
+          ),
+        },
+      },
+      {
+        path: "security",
+        element: <SecurityPage />,
+        handle: {
+          breadcrumb: "Sign-in security",
+          search: search(
+            "Sign-in security",
+            "Two-step verification, passkeys, and recovery codes for your account",
+            "/security",
+            ["mfa", "2fa", "passkey", "authenticator", "recovery"],
           ),
         },
       },

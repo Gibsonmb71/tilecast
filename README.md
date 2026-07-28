@@ -27,6 +27,8 @@ Tilecast Player includes hardened first-run commissioning, cached boot recovery,
 
 Player `0.10.1` includes a pairing-recovery hotfix for upgraded devices that retain their stable player installation ID but lose access to the Android Keystore credential. Studio can explicitly repair the existing screen without deleting assignments; the previous credential is revoked only after successful replacement enrollment.
 
+Studio accounts can add two-step verification: an authenticator app, WebAuthn passkeys, and single-use recovery codes. A passkey signs a user in with no username or password and counts as multi-factor on its own. An Owner or Administrator can require enrollment for administrators or for everyone, and can clear a locked-out account's factors; a `tilecast mfa reset` command covers the case where the only Owner is locked out. Passkeys need HTTPS and a hostname, so they are unavailable on a plain-HTTP LAN installation, where authenticator apps and recovery codes still work. See [Multi-factor authentication and passkeys](docs/multi-factor-authentication.md).
+
 Tilecast Studio and Tilecast Player use the [Tilecast Signal design system](docs/design-system.md) for shared color, typography, spacing, status, focus, and accessibility behavior.
 
 ## Quick start with Docker Compose

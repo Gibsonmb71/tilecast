@@ -38,8 +38,188 @@ paths:
     post:
       operationId: login
       responses:
-        "200": { description: Signed in }
+        "200":
+          description: >-
+            Signed in, or a multi-factor challenge when the account has a
+            confirmed second factor. A challenge sets no session cookie.
         "401": { description: Invalid credentials }
+  /api/v1/auth/mfa/verify:
+    post:
+      operationId: verifyMultiFactor
+      description: Completes a pending sign-in with an authenticator or recovery code.
+      responses:
+        "200": { description: Signed in }
+        "401": { description: Incorrect code or expired challenge }
+        "429": { description: Too many incorrect codes }
+  /api/v1/auth/mfa/passkey/options:
+    post:
+      operationId: multiFactorPasskeyOptions
+      description: Exchanges a pending challenge for a WebAuthn assertion request.
+      responses:
+        "200":
+          { description: Assertion options and a replacement challenge token }
+        "401": { description: Expired challenge }
+        "404": { description: No passkey is enrolled }
+        "409": { description: Passkeys are unavailable on this installation }
+  /api/v1/auth/passkey/login/options:
+    post:
+      operationId: passkeyLoginOptions
+      description: Starts a discoverable, username-free WebAuthn ceremony.
+      responses:
+        "200": { description: Assertion options and a challenge token }
+        "409": { description: Passkeys are unavailable on this installation }
+  /api/v1/auth/passkey/login:
+    post:
+      operationId: passkeyLogin
+      description: >-
+        Posts the raw WebAuthn assertion. A verified passkey satisfies
+        multi-factor authentication on its own.
+      parameters:
+        - in: header
+          name: X-MFA-Challenge
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Signed in }
+        "401": { description: The passkey could not be verified }
+  /api/v1/me/security:
+    get:
+      operationId: securityStatus
+      responses:
+        "200": { description: Enrolled factors, passkeys, and policy state }
+        "401": { description: Authentication required }
+  /api/v1/me/security/totp:
+    post:
+      operationId: beginAuthenticatorEnrollment
+      parameters:
+        - in: header
+          name: X-CSRF-Token
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Provisioning URI and typed secret }
+        "409": { description: An authenticator is already enrolled }
+  /api/v1/me/security/totp/confirm:
+    post:
+      operationId: confirmAuthenticatorEnrollment
+      parameters:
+        - in: header
+          name: X-CSRF-Token
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Updated security state }
+        "401": { description: Incorrect code }
+        "404": { description: No pending enrollment }
+  /api/v1/me/security/totp/remove:
+    post:
+      operationId: removeAuthenticator
+      description: Requires the account password in the body.
+      parameters:
+        - in: header
+          name: X-CSRF-Token
+          required: true
+          schema: { type: string }
+      responses:
+        "204": { description: Authenticator removed }
+        "403": { description: The password was not correct }
+        "409": { description: Policy requires a remaining factor }
+  /api/v1/me/security/recovery-codes:
+    post:
+      operationId: generateRecoveryCodes
+      description: >-
+        Replaces every unused code. Requires the account password. The plain
+        codes are returned exactly once.
+      parameters:
+        - in: header
+          name: X-CSRF-Token
+          required: true
+          schema: { type: string }
+      responses:
+        "201": { description: Ten new recovery codes }
+        "403": { description: The password was not correct }
+  /api/v1/me/security/passkeys/options:
+    post:
+      operationId: passkeyRegistrationOptions
+      parameters:
+        - in: header
+          name: X-CSRF-Token
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Creation options and a challenge token }
+        "409": { description: Passkeys are unavailable on this installation }
+  /api/v1/me/security/passkeys:
+    post:
+      operationId: registerPasskey
+      parameters:
+        - in: header
+          name: X-CSRF-Token
+          required: true
+          schema: { type: string }
+        - in: header
+          name: X-MFA-Challenge
+          required: true
+          schema: { type: string }
+        - in: header
+          name: X-Passkey-Name
+          description: Percent-encoded display name.
+          required: false
+          schema: { type: string }
+      responses:
+        "201": { description: Passkey enrolled }
+        "401": { description: The passkey could not be verified }
+  /api/v1/me/security/passkeys/{id}:
+    patch:
+      operationId: renamePasskey
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+        - in: header
+          name: X-CSRF-Token
+          required: true
+          schema: { type: string }
+      responses:
+        "204": { description: Passkey renamed }
+        "404": { description: Passkey not found }
+  /api/v1/me/security/passkeys/{id}/remove:
+    post:
+      operationId: removePasskey
+      description: Requires the account password in the body.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+        - in: header
+          name: X-CSRF-Token
+          required: true
+          schema: { type: string }
+      responses:
+        "204": { description: Passkey removed }
+        "403": { description: The password was not correct }
+        "409": { description: Policy requires a remaining factor }
+  /api/v1/users/{id}/security/reset:
+    post:
+      operationId: resetUserSecurity
+      description: >-
+        Owner/Administrator recovery path. Clears every factor, revokes the
+        account's sessions, and records an audit entry.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+        - in: header
+          name: X-CSRF-Token
+          required: true
+          schema: { type: string }
+      responses:
+        "204": { description: Factors cleared }
+        "403": { description: Insufficient role }
+        "404": { description: User not found }
   /api/v1/auth/logout:
     post:
       operationId: logout

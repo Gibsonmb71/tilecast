@@ -24,6 +24,25 @@ func (s *server) routes() http.Handler {
 		api.With(s.authRateLimit).Post("/auth/setup", s.setup)
 		api.With(s.authRateLimit).Post("/auth/login", s.login)
 		api.With(s.requireSession, s.requireCSRF).Post("/auth/logout", s.logout)
+		api.With(s.authRateLimit).Post("/auth/mfa/verify", s.verifyMFA)
+		api.With(s.authRateLimit).Post("/auth/mfa/passkey/options", s.beginMFAPasskey)
+		api.With(s.authRateLimit).Post("/auth/passkey/login/options", s.beginPasskeyLogin)
+		api.With(s.authRateLimit).Post("/auth/passkey/login", s.finishPasskeyLogin)
+
+		// Security self-service sits outside the dashboard group because a
+		// session waiting on enrollment must still be able to enroll.
+		api.Group(func(security chi.Router) {
+			security.Use(s.requireSession)
+			security.Get("/me/security", s.listFactors)
+			security.With(s.requireCSRF).Post("/me/security/totp", s.beginTOTPEnrollment)
+			security.With(s.requireCSRF).Post("/me/security/totp/confirm", s.confirmTOTPEnrollment)
+			security.With(s.requireCSRF).Post("/me/security/totp/remove", s.disableTOTP)
+			security.With(s.requireCSRF).Post("/me/security/recovery-codes", s.regenerateRecoveryCodes)
+			security.With(s.requireCSRF).Post("/me/security/passkeys/options", s.beginPasskeyRegistration)
+			security.With(s.requireCSRF).Post("/me/security/passkeys", s.finishPasskeyRegistration)
+			security.With(s.requireCSRF).Patch("/me/security/passkeys/{id}", s.renamePasskey)
+			security.With(s.requireCSRF).Post("/me/security/passkeys/{id}/remove", s.deletePasskey)
+		})
 
 		api.With(s.pairingRateLimit).Post("/player/pairing-sessions", s.createPairingSession)
 		api.Get("/player/pairing-sessions/{id}", s.pollPairingSession)
@@ -47,6 +66,7 @@ func (s *server) routes() http.Handler {
 
 		api.Group(func(dashboard chi.Router) {
 			dashboard.Use(s.requireSession)
+			dashboard.Use(s.requireEnrollment)
 			dashboard.Get("/screens", s.listScreens)
 			dashboard.Get("/screens/archive", s.listArchivedScreens)
 			dashboard.Get("/screens/{id}", s.getScreen)
@@ -64,6 +84,7 @@ func (s *server) routes() http.Handler {
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/users", s.createUser)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Patch("/users/{id}", s.updateUser)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Delete("/users/{id}", s.deleteUser)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/users/{id}/security/reset", s.resetUserFactors)
 			dashboard.Get("/me/preferences", s.getPreferences)
 			dashboard.With(s.requireCSRF).Patch("/me/preferences", s.updatePreferences)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Patch("/settings", s.updateSettings)

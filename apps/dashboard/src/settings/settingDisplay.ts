@@ -306,6 +306,12 @@ export const subsectionOrder: Record<
     },
   ],
   users: [],
+  security: [
+    {
+      title: "Multi-factor authentication",
+      keys: ["security.mfa_required_scope"],
+    },
+  ],
   locations: [],
   "player-updates": [],
   system: [],

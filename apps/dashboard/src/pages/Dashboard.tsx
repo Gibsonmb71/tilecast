@@ -13,6 +13,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Settings,
+  ShieldCheck,
   SlidersHorizontal,
   type LucideIcon,
 } from "lucide-react";
@@ -31,6 +32,7 @@ import { StudioTopbar } from "../components/StudioTopbar";
 import { api } from "../api/client";
 import { canReviewForm } from "../forms/capabilities";
 import { OperationsDashboard } from "./OperationsDashboard";
+import { EnrollmentGate } from "./SecurityPage";
 
 // A nav item may own several routes: Content covers Media, Widgets, and Data, and Presentations
 // covers Playlists and Layouts. `owns` lists those extra paths so the entry stays highlighted while
@@ -265,6 +267,10 @@ export function DashboardShell() {
     };
   }, [accountMenuOpen]);
   if (auth.isLoading || !auth.status?.authenticated) return null;
+  // The server refuses every dashboard route until the required factor
+  // exists, so the shell gives way to enrollment rather than rendering a page
+  // whose data will not load.
+  if (auth.status.mfaEnrollmentRequired) return <EnrollmentGate />;
   return (
     <div
       className={`app-shell${sidebarCompact ? " app-shell--sidebar-compact" : ""}`}
@@ -338,6 +344,14 @@ export function DashboardShell() {
                 >
                   <SlidersHorizontal size={16} aria-hidden="true" />
                   My preferences
+                </Link>
+                <Link
+                  to="/security"
+                  role="menuitem"
+                  onClick={() => setAccountMenuOpen(false)}
+                >
+                  <ShieldCheck size={16} aria-hidden="true" />
+                  Sign-in security
                 </Link>
                 <button
                   type="button"

@@ -7,7 +7,7 @@ Tilecast begins as a modular monolith. The server compiles into one Go binary, s
 - `cmd/tilecast` owns process startup and graceful shutdown.
 - `internal/config` validates environment configuration.
 - `internal/database` owns the connection pool and Goose migrations.
-- `internal/auth` owns password hashing, first-owner setup, users, and opaque sessions.
+- `internal/auth` owns password hashing, first-owner setup, users, opaque sessions, and multi-factor authentication.
 - `internal/httpapi` translates versioned HTTP contracts to application operations. Database rows are not serialized directly.
 - `internal/media` owns resumable upload state, generated storage keys, local storage, trusted inspection, compatibility decisions, persistent jobs, and delivery metadata.
 - `internal/playlists` owns ordered playlists, direct assignments, per-screen manifest versions, manifest contracts, and summarized synchronization status.
@@ -20,6 +20,8 @@ Tilecast begins as a modular monolith. The server compiles into one Go binary, s
 The first successful setup request acquires a PostgreSQL advisory transaction lock, creates the single organization and owner, records an audit event, and issues a session atomically. Passwords use Argon2id with a unique random salt. The browser receives a random opaque session token in an HttpOnly, SameSite=Strict cookie; PostgreSQL stores only its SHA-256 hash. Authenticated state-changing requests also require a session-specific CSRF token.
 
 Sessions are revocable database records rather than self-contained tokens. This is intentionally compatible with later user deactivation and administrative session revocation. OIDC may be added behind the authentication boundary without changing resource APIs.
+
+An account may carry a second factor: an authenticator app, one or more WebAuthn passkeys, or single-use recovery codes. A correct password on an enrolled account produces a short-lived single-use challenge rather than a session, and the cookie is issued only once the factor is verified. A passkey is both first and second factor, so a discoverable ceremony signs the user in with no username at all. Because WebAuthn requires a secure context and a registrable domain, passkeys are unavailable on the plain-HTTP LAN installations Tilecast also has to support; the server resolves this at startup and reports the reason rather than offering a control that cannot work. The organization-wide enrollment requirement is a session flag rather than a login refusal, so tightening policy can never lock an installation out of itself. See [multi-factor-authentication.md](multi-factor-authentication.md).
 
 ## Database evolution
 

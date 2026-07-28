@@ -67,3 +67,43 @@ from Studio: the staged download loses its executable bit before restart. Instal
 `~/tilecast/tilecast-player.AppImage` is executable and owned by the kiosk user,
 then later Studio deployments can atomically replace the AppImage and let the
 user systemd unit start the verified update.
+
+## Nobody can sign in with a passkey
+
+Passkeys need a secure browser context and a registrable domain. A plain-HTTP
+LAN installation, or one reached at an IP address, cannot run a WebAuthn
+ceremony at all; Studio hides the passkey controls and states the reason on
+Settings → Sign-in security. Serve Tilecast over HTTPS at a hostname and point
+`TILECAST_PUBLIC_URL` at that address. When a proxy's external hostname differs
+from the one the server sees, set `TILECAST_WEBAUTHN_RP_ID` and
+`TILECAST_WEBAUTHN_ORIGINS` together and restart. The server logs the reason
+passkeys are disabled at startup.
+
+An existing passkey that stops working after the relying party changes cannot be
+repaired: a credential is bound to the domain it was created for. Remove it and
+enroll again from the new address.
+
+## Someone is locked out of Studio
+
+Have them use a recovery code first. Otherwise an Owner or Administrator opens
+Settings → Users, edits the account, and chooses **Reset** under Two-step
+verification; this clears every factor, signs that account out everywhere, and
+is audit-logged. Only an Owner may reset an Owner or Administrator.
+
+When the only Owner is locked out, run on the server host:
+
+```sh
+tilecast mfa reset owner@example.org
+```
+
+It reads the same `TILECAST_*` variables as the server and asks for
+confirmation. See
+[multi-factor authentication](multi-factor-authentication.md).
+
+## Authenticator codes are always rejected
+
+Tilecast accepts a code from the current thirty-second step and one step either
+side. A device whose clock is off by more than about a minute will fail every
+time; correct the clock on the phone, not on the server. A code that was just
+used cannot be used again, so re-entering the same digits after a failed
+attempt will not work — wait for the next code.
