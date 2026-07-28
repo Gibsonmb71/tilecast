@@ -71,6 +71,7 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonPrimitive
 import org.tilecast.player.network.DocumentDataset
 import org.tilecast.player.network.DocumentRecord
@@ -126,7 +127,8 @@ fun DeclarativeWidgetItem(item:ManifestItem,widget: ManifestWidget, session: Pla
 }
 
 internal fun presentationSignalsEmpty(root: PresentationNode, context: PresentationContext): Boolean {
-    if (root.props["autoSkipWhenEmpty"]?.jsonPrimitive?.booleanOrNull != true) return false
+    // A non-primitive or malformed flag keeps the widget on screen with its empty state.
+    if ((root.props["autoSkipWhenEmpty"] as? JsonPrimitive)?.booleanOrNull != true) return false
     val conditionElement = root.props["emptyCondition"] ?: return false
     val condition = runCatching {
         Json.decodeFromJsonElement<org.tilecast.player.network.PresentationCondition>(conditionElement)
