@@ -128,6 +128,7 @@ function LocationProbe() {
 }
 
 beforeEach(() => {
+  authStatus.user.role = "owner";
   vi.spyOn(api, "screens").mockResolvedValue({
     items: [{ id: "screen-1", name: "Lobby north" }],
   } as never);
@@ -274,6 +275,91 @@ describe("Playback metric semantics", () => {
           .getAttribute("href"),
         // Not result=partial: a scheduled changeover is partial and expected.
       ).toBe("/activity?tab=proof&range=7d&terminalReason=unexpected"),
+    );
+  });
+
+  it("weights the completion rate by sessions rather than by screens", async () => {
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL) => {
+      const url = input instanceof Request ? input.url : String(input);
+      const body = url.includes("/proof-of-play/summary")
+        ? {
+            data: {
+              dimension: "screen",
+              items: [
+                {
+                  key: "screen-1",
+                  label: "One session",
+                  confirmedScreenPlaybackMs: 1_000,
+                  contentExposureMs: 0,
+                  records: 1,
+                  completed: 1,
+                  failures: 0,
+                  partial: 0,
+                  unknown: 0,
+                  interrupted: 0,
+                  sessionCompletionPercent: 100,
+                },
+                {
+                  key: "screen-2",
+                  label: "Ninety-nine sessions",
+                  confirmedScreenPlaybackMs: 99_000,
+                  contentExposureMs: 0,
+                  records: 99,
+                  completed: 0,
+                  failures: 99,
+                  partial: 0,
+                  unknown: 0,
+                  interrupted: 0,
+                  sessionCompletionPercent: 0,
+                },
+              ],
+            },
+          }
+        : { data: { items: [], nextCursor: "" } };
+      return Promise.resolve(
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    });
+    renderPage("/activity?tab=proof");
+
+    const label = await screen.findByText("Session completion rate");
+    expect(label.closest("article")?.textContent).toContain("1%");
+    expect(label.closest("article")?.textContent).not.toContain("50%");
+  });
+});
+
+describe("Activity permissions", () => {
+  it("does not link viewers into privileged reports", async () => {
+    authStatus.user.role = "viewer";
+    renderPage();
+
+    const updates = await screen.findByText("Failed Player updates");
+    expect(updates.closest("a")).toBeNull();
+    const changes = screen.getByText("Administrative changes");
+    expect(changes.closest("a")).toBeNull();
+  });
+
+  it("does not offer Screen Events as a viewer empty-state action", async () => {
+    authStatus.user.role = "viewer";
+    renderPage("/activity?tab=proof");
+
+    await screen.findByText("No confirmed playback found");
+    expect(
+      screen.queryByRole("button", { name: "View screen events" }),
+    ).toBeNull();
+  });
+
+  it("does not render a privileged tab from a direct viewer URL", async () => {
+    authStatus.user.role = "viewer";
+    renderPage("/activity?tab=events");
+
+    await screen.findByRole("region", { name: "Fleet health" });
+    expect(screen.queryByRole("tab", { name: "Screen Events" })).toBeNull();
+    expect(document.body.textContent).not.toContain(
+      "Significant diagnostic activity",
     );
   });
 });

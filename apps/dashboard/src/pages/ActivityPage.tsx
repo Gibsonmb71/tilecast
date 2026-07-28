@@ -73,9 +73,9 @@ function labelledOptions(values: string[]): FilterOption[] {
 export function ActivityPage() {
   const auth = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
-  const tab = normalizeTab(searchParams.get("tab"));
   const role = auth.status?.user?.role ?? "";
   const privileged = ["owner", "administrator"].includes(role);
+  const tab = normalizeTab(searchParams.get("tab"), role);
 
   const preset = normalizePreset(searchParams.get("range"));
   const customFrom = searchParams.get("from") ?? "";
@@ -426,7 +426,13 @@ export function ActivityPage() {
         </FilterBar>
       )}
 
-      {tab === "overview" && <OverviewTab range={range} />}
+      {tab === "overview" && (
+        <OverviewTab
+          range={range}
+          canViewScreenEvents={privileged}
+          canViewAudit={privileged || role === "editor"}
+        />
+      )}
       {tab === "proof" && (
         <ProofTab
           range={range}
@@ -437,7 +443,9 @@ export function ActivityPage() {
           canExtendRange={preset === "24h"}
           onClearFilters={clear}
           onExtendRange={() => setRange("range", "7d")}
-          onViewScreenEvents={() => selectTab("events")}
+          onViewScreenEvents={
+            privileged ? () => selectTab("events") : undefined
+          }
         />
       )}
       {tab === "incidents" && (
@@ -454,13 +462,18 @@ export function ActivityPage() {
   );
 }
 
-function normalizeTab(value: string | null): ActivityTab {
-  return value === "proof" ||
-    value === "incidents" ||
-    value === "events" ||
-    value === "audit"
-    ? value
-    : "overview";
+function normalizeTab(value: string | null, role: string): ActivityTab {
+  if (value === "proof" || value === "incidents") return value;
+  if (value === "events" && ["owner", "administrator"].includes(role)) {
+    return value;
+  }
+  if (
+    value === "audit" &&
+    ["owner", "administrator", "editor"].includes(role)
+  ) {
+    return value;
+  }
+  return "overview";
 }
 
 function normalizePreset(value: string | null): TimeRangePreset {
