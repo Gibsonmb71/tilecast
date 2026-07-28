@@ -282,67 +282,192 @@
                 "binding": { "source": "literal", "value": "Coming up" }
               },
               {
-                "type": "grid",
-                "props": {
-                  "columns": { "$config": "columns" },
-                  "gap": 12
+                "type": "conditional",
+                "condition": {
+                  "binding": {
+                    "source": "dataset",
+                    "dataset": {
+                      "$config": "dataSourceId",
+                      "suffix": ":records"
+                    },
+                    "path": { "$config": "titleField" },
+                    "selector": "current",
+                    "startField": { "$config": "startField" },
+                    "endField": { "$config": "endField" }
+                  },
+                  "op": "not_empty"
                 },
                 "children": [
                   {
-                    "type": "repeat",
-                    "props": { "emptyState": { "$config": "emptyState" } },
-                    "repeat": {
-                      "dataset": {
-                        "$config": "dataSourceId",
-                        "suffix": ":records"
-                      },
-                      "limit": { "$config": "upcomingCount" },
-                      "selector": "upcoming",
-                      "startField": { "$config": "startField" },
-                      "endField": { "$config": "endField" }
+                    "type": "grid",
+                    "props": {
+                      "columns": { "$config": "columns" },
+                      "gap": 12
                     },
                     "children": [
                       {
-                        "type": "column",
-                        "props": { "gap": 4 },
+                        "type": "repeat",
+                        "props": { "emptyState": { "$config": "emptyState" } },
+                        "repeat": {
+                          "dataset": {
+                            "$config": "dataSourceId",
+                            "suffix": ":records"
+                          },
+                          "limit": { "$config": "upcomingCount" },
+                          "offset": 0,
+                          "selector": "upcoming",
+                          "startField": { "$config": "startField" },
+                          "endField": { "$config": "endField" }
+                        },
                         "children": [
                           {
-                            "type": "text",
-                            "props": {
-                              "role": "title",
-                              "maxLines": 1,
-                              "color": { "$config": "foregroundColor" }
-                            },
-                            "binding": {
-                              "source": "repeat",
-                              "path": { "$config": "titleField" }
-                            }
+                            "type": "column",
+                            "props": { "gap": 4 },
+                            "children": [
+                              {
+                                "type": "text",
+                                "props": {
+                                  "role": "title",
+                                  "maxLines": 1,
+                                  "color": { "$config": "foregroundColor" }
+                                },
+                                "binding": {
+                                  "source": "repeat",
+                                  "path": { "$config": "titleField" }
+                                }
+                              },
+                              {
+                                "type": "text",
+                                "props": {
+                                  "role": "body",
+                                  "maxLines": 1,
+                                  "color": { "$config": "accentColor" }
+                                },
+                                "binding": {
+                                  "source": "repeat",
+                                  "path": { "$config": "startField" },
+                                  "format": "time"
+                                }
+                              },
+                              {
+                                "type": "text",
+                                "props": {
+                                  "role": "body",
+                                  "maxLines": 1,
+                                  "color": { "$config": "foregroundColor" }
+                                },
+                                "binding": {
+                                  "source": "repeat",
+                                  "path": { "$config": "locationField" },
+                                  "fallback": ""
+                                },
+                                "condition": {
+                                  "binding": {
+                                    "source": "repeat",
+                                    "path": { "$config": "locationField" },
+                                    "fallback": ""
+                                  },
+                                  "op": "not_empty"
+                                }
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "conditional",
+                "condition": {
+                  "binding": {
+                    "source": "dataset",
+                    "dataset": {
+                      "$config": "dataSourceId",
+                      "suffix": ":records"
+                    },
+                    "path": { "$config": "titleField" },
+                    "selector": "current",
+                    "startField": { "$config": "startField" },
+                    "endField": { "$config": "endField" }
+                  },
+                  "op": "empty"
+                },
+                "children": [
+                  {
+                    "type": "grid",
+                    "props": {
+                      "columns": { "$config": "columns" },
+                      "gap": 12
+                    },
+                    "children": [
+                      {
+                        "type": "repeat",
+                        "props": { "emptyState": { "$config": "emptyState" } },
+                        "repeat": {
+                          "dataset": {
+                            "$config": "dataSourceId",
+                            "suffix": ":records"
                           },
+                          "limit": { "$config": "upcomingCount" },
+                          "offset": 1,
+                          "selector": "upcoming",
+                          "startField": { "$config": "startField" },
+                          "endField": { "$config": "endField" }
+                        },
+                        "children": [
                           {
-                            "type": "text",
-                            "props": {
-                              "role": "body",
-                              "maxLines": 1,
-                              "color": { "$config": "accentColor" }
-                            },
-                            "binding": {
-                              "source": "repeat",
-                              "path": { "$config": "startField" },
-                              "format": "time"
-                            }
-                          },
-                          {
-                            "type": "text",
-                            "props": {
-                              "role": "body",
-                              "maxLines": 1,
-                              "color": { "$config": "foregroundColor" }
-                            },
-                            "binding": {
-                              "source": "repeat",
-                              "path": { "$config": "locationField" },
-                              "fallback": ""
-                            }
+                            "type": "column",
+                            "props": { "gap": 4 },
+                            "children": [
+                              {
+                                "type": "text",
+                                "props": {
+                                  "role": "title",
+                                  "maxLines": 1,
+                                  "color": { "$config": "foregroundColor" }
+                                },
+                                "binding": {
+                                  "source": "repeat",
+                                  "path": { "$config": "titleField" }
+                                }
+                              },
+                              {
+                                "type": "text",
+                                "props": {
+                                  "role": "body",
+                                  "maxLines": 1,
+                                  "color": { "$config": "accentColor" }
+                                },
+                                "binding": {
+                                  "source": "repeat",
+                                  "path": { "$config": "startField" },
+                                  "format": "time"
+                                }
+                              },
+                              {
+                                "type": "text",
+                                "props": {
+                                  "role": "body",
+                                  "maxLines": 1,
+                                  "color": { "$config": "foregroundColor" }
+                                },
+                                "binding": {
+                                  "source": "repeat",
+                                  "path": { "$config": "locationField" },
+                                  "fallback": ""
+                                },
+                                "condition": {
+                                  "binding": {
+                                    "source": "repeat",
+                                    "path": { "$config": "locationField" },
+                                    "fallback": ""
+                                  },
+                                  "op": "not_empty"
+                                }
+                              }
+                            ]
                           }
                         ]
                       }

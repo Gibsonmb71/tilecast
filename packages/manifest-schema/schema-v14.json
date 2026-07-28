@@ -422,7 +422,8 @@
         "suffix": { "type": "string", "maxLength": 40 },
         "fallback": { "type": "string", "maxLength": 240 },
         "separator": { "type": "string", "maxLength": 40 }
-      }
+      },
+      "allOf": [{ "$ref": "#/$defs/temporalSelectorFields" }]
     },
     "repeat": {
       "type": "object",
@@ -437,7 +438,28 @@
         },
         "startField": { "type": "string", "maxLength": 80 },
         "endField": { "type": "string", "maxLength": 80 }
-      }
+      },
+      "allOf": [{ "$ref": "#/$defs/temporalSelectorFields" }]
+    },
+    "temporalSelectorFields": {
+      "allOf": [
+        {
+          "if": {
+            "required": ["selector"],
+            "properties": { "selector": { "enum": ["next", "upcoming"] } }
+          },
+          "then": { "required": ["startField"] }
+        },
+        {
+          "if": {
+            "required": ["selector"],
+            "properties": {
+              "selector": { "enum": ["current", "current_or_next"] }
+            }
+          },
+          "then": { "required": ["startField", "endField"] }
+        }
+      ]
     },
     "condition": {
       "type": "object",

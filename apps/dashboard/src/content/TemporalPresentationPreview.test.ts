@@ -42,6 +42,46 @@ describe("temporal presentation preview", () => {
     ).toEqual(["science", "art"]);
   });
 
+  it("falls back to the next record when nothing is current", () => {
+    const later = new Date("2026-08-24T14:05:00Z");
+    expect(
+      selectTemporalRecords(records, later, "current", "start", "end"),
+    ).toEqual([]);
+    expect(
+      selectTemporalRecords(
+        records,
+        later,
+        "current_or_next",
+        "start",
+        "end",
+      ).map((record) => record.id),
+    ).toEqual(["science"]);
+    expect(
+      selectTemporalRecords(
+        records,
+        now,
+        "current_or_next",
+        "start",
+        "end",
+      ).map((record) => record.id),
+    ).toEqual(["algebra"]);
+  });
+
+  it("excludes records without a valid end instant from current only", () => {
+    const openEnded = [
+      { id: "assembly", start: "2026-08-24T13:00:00Z", end: "" },
+      { id: "practice", start: "2026-08-24T16:30:00Z", end: "not-a-date" },
+    ];
+    expect(
+      selectTemporalRecords(openEnded, now, "current", "start", "end"),
+    ).toEqual([]);
+    expect(
+      selectTemporalRecords(openEnded, now, "upcoming", "start", "end").map(
+        (record) => record.id,
+      ),
+    ).toEqual(["practice"]);
+  });
+
   it("uses the same compact countdown wording as the Player", () => {
     expect(
       formatPresentationValue(
@@ -50,5 +90,38 @@ describe("temporal presentation preview", () => {
         now,
       ),
     ).toBe("40m 0s");
+    expect(
+      formatPresentationValue(
+        "2026-08-24T13:00:00Z",
+        { source: "repeat", format: "relative-countdown" },
+        now,
+      ),
+    ).toBe("Now");
+  });
+
+  it("formats numeric values the way the Player does", () => {
+    expect(
+      formatPresentationValue(
+        "42.5",
+        { source: "repeat", format: "percent", precision: 1 },
+        now,
+      ),
+    ).toBe("42.5%");
+    expect(
+      formatPresentationValue(
+        "1200",
+        { source: "repeat", format: "currency", precision: 2 },
+        now,
+        "USD",
+      ),
+    ).toBe("$1,200.00");
+    // No currency metadata reaches the preview, so the value stays a plain number.
+    expect(
+      formatPresentationValue(
+        "1200",
+        { source: "repeat", format: "currency", precision: 2 },
+        now,
+      ),
+    ).toBe("1,200.00");
   });
 });
