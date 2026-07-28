@@ -437,6 +437,13 @@
             "required": true,
             "maxLength": 300,
             "default": "Nothing scheduled"
+          },
+          {
+            "key": "autoSkipWhenEmpty",
+            "label": "Skip when nothing is scheduled",
+            "description": "When this Widget is a playlist item, advance immediately if the selected record set is empty.",
+            "control": "boolean",
+            "default": false
           }
         ]
       },
@@ -449,7 +456,8 @@
         "upcomingCount": 3,
         "foregroundColor": "#ffffff",
         "backgroundColor": "#101f33",
-        "emptyState": "Nothing scheduled"
+        "emptyState": "Nothing scheduled",
+        "autoSkipWhenEmpty": false
       },
       "acceptedDataSourceKinds": ["records"],
       "presentationSchemaVersion": 1,
@@ -457,7 +465,19 @@
         "type": "surface",
         "props": {
           "backgroundColor": { "$config": "backgroundColor" },
-          "padding": 16
+          "padding": 16,
+          "autoSkipWhenEmpty": { "$config": "autoSkipWhenEmpty" },
+          "emptyCondition": {
+            "binding": {
+              "source": "dataset",
+              "dataset": {
+                "$config": "dataSourceId",
+                "suffix": ":records"
+              },
+              "path": { "$config": "titleField" }
+            },
+            "op": "empty"
+          }
         },
         "children": [
           {
@@ -672,6 +692,13 @@
             "required": true,
             "maxLength": 300,
             "default": "No entries yet"
+          },
+          {
+            "key": "autoSkipWhenEmpty",
+            "label": "Skip when there are no entries",
+            "description": "When this Widget is a playlist item, advance immediately if the selected record set is empty.",
+            "control": "boolean",
+            "default": false
           }
         ]
       },
@@ -684,7 +711,8 @@
         "maxItems": 8,
         "foregroundColor": "#ffffff",
         "backgroundColor": "#1b1733",
-        "emptyState": "No entries yet"
+        "emptyState": "No entries yet",
+        "autoSkipWhenEmpty": false
       },
       "acceptedDataSourceKinds": ["records"],
       "presentationSchemaVersion": 1,
@@ -692,7 +720,19 @@
         "type": "surface",
         "props": {
           "backgroundColor": { "$config": "backgroundColor" },
-          "padding": 16
+          "padding": 16,
+          "autoSkipWhenEmpty": { "$config": "autoSkipWhenEmpty" },
+          "emptyCondition": {
+            "binding": {
+              "source": "dataset",
+              "dataset": {
+                "$config": "dataSourceId",
+                "suffix": ":records"
+              },
+              "path": { "$config": "nameField" }
+            },
+            "op": "empty"
+          }
         },
         "children": [
           {

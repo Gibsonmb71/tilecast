@@ -15,7 +15,10 @@ import { formatValue, safeColor, type ValueFormat } from "./format";
 import type { CountdownRecurrence } from "./countdown";
 import { normalizeSource, type NormalizedSource } from "./datasource";
 import { qrDataUri } from "./qr";
-import { renderPresentation } from "./presentation-render";
+import {
+  presentationSignalsEmpty,
+  renderPresentation,
+} from "./presentation-render";
 import type { ManifestDataSource, ManifestWidget } from "./content-types";
 import type { RenderNode, WidgetRenderPayload } from "./render-tree";
 
@@ -93,7 +96,11 @@ export function renderWidget(
     // letting the default show through wherever the payload background is used.
     const background =
       (root?.t === "box" ? root.style.background : undefined) ?? DEFAULT_BG;
-    return { background, root: root ?? emptyNode("") };
+    const autoSkip = presentationSignalsEmpty(widget.presentation.native.root, {
+      datasets,
+      at: ctx.at,
+    });
+    return { background, root: root ?? emptyNode(""), autoSkip };
   }
 
   const config = widget.configuration ?? {};

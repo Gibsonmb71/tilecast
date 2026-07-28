@@ -124,13 +124,14 @@ internal class ActivityChildTracker(
     private val startedElapsed = SystemClock.elapsedRealtime()
 
     fun complete() = finishIfNeeded("completed")
-    fun skip() = finishIfNeeded("skipped")
+    fun skip() = finishIfNeeded("skipped", terminalReason = "empty_content")
     fun fail(message: String) = finishIfNeeded("failed", "renderer_failure", message)
 
-    fun finishIfNeeded(result: String, code: String = "", message: String = "") {
+    fun finishIfNeeded(result: String, code: String = "", message: String = "", terminalReason: String = "") {
         if (finished) return
         finished = true
-        session.finish(result, code, message)
+        if (terminalReason.isEmpty()) session.finish(result, code, message)
+        else session.finish(result, code, message, terminalReason)
     }
 
     fun elapsedMs(): Long = SystemClock.elapsedRealtime() - startedElapsed

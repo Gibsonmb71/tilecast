@@ -27,6 +27,7 @@ var NativePresentationCapabilities = map[string]int{
 	"collection.repeat": 2, "collection.conditional": 2, "collection.grouped_sections": 1,
 	"binding.core": 2, "format.typed": 2, "selection.relative_date": 1,
 	"selection.temporal": 1,
+	"playback.auto_skip": 1,
 }
 
 type DataDocument struct {
@@ -413,10 +414,29 @@ func compileDefinitionPresentation(definition contentdefs.WidgetDefinition, raw 
 	if root.Type == "" {
 		return nil, errors.New("resolved presentation has no root node")
 	}
+	capabilities := make(map[string]int, len(definition.RequiredCapabilities)+1)
+	for capability, version := range definition.RequiredCapabilities {
+		capabilities[capability] = version
+	}
+	if enabled, _ := root.Props["autoSkipWhenEmpty"].(bool); enabled {
+		conditionValue, ok := root.Props["emptyCondition"].(map[string]any)
+		if !ok {
+			return nil, errors.New("auto-skip presentation is missing its empty condition")
+		}
+		conditionJSON, marshalErr := json.Marshal(conditionValue)
+		if marshalErr != nil {
+			return nil, errors.New("auto-skip presentation has an invalid empty condition")
+		}
+		var condition PresentationCondition
+		if json.Unmarshal(conditionJSON, &condition) != nil || condition.Op != "empty" || condition.Binding.Source == "" {
+			return nil, errors.New("auto-skip presentation has an invalid empty condition")
+		}
+		capabilities["playback.auto_skip"] = 1
+	}
 	return &WidgetPresentation{
 		SchemaVersion:        definition.PresentationSchemaVersion,
 		Kind:                 "native",
-		RequiredCapabilities: definition.RequiredCapabilities,
+		RequiredCapabilities: capabilities,
 		Native:               &NativePresentation{Root: root},
 	}, nil
 }

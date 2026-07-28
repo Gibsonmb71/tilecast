@@ -59,7 +59,8 @@ var supportedCapabilities = map[string]bool{
 	"collection.repeat": true, "collection.conditional": true, "collection.grouped_sections": true,
 	"binding.core": true, "format.typed": true, "selection.relative_date": true,
 	"selection.temporal": true,
-	"environment.time": true, "web.remote": true,
+	"playback.auto_skip": true,
+	"environment.time":   true, "web.remote": true,
 }
 
 // supportedBindingSources and supportedConditionOperators mirror the vocabularies the

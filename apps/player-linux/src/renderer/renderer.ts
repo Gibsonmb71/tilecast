@@ -23,6 +23,7 @@ interface AnyNode {
 interface WidgetPayload {
   background: string;
   root: AnyNode;
+  autoSkip?: boolean;
 }
 
 interface LayoutZonePayload {
@@ -136,6 +137,7 @@ let advanceTimer: number | null = null;
 let failTimer: number | null = null;
 let currentItem: RendererItem | null = null;
 let consecutiveFailures = 0;
+let consecutiveEmptySkips = 0;
 /** Who may change the current playlist occurrence — see playback-policy.ts. */
 let playbackAuthority: PlaybackAuthority = "local";
 /** Bumped for every mounted item so delayed callbacks can detect staleness. */
@@ -904,6 +906,7 @@ function startPlaying(presentation: RendererPresentation): void {
   playbackAuthority = playbackAuthorityOf(presentation.synchronized);
   index = 0;
   consecutiveFailures = 0;
+  consecutiveEmptySkips = 0;
   clearTimers();
   if (items.length === 0) {
     return;
@@ -1004,6 +1007,13 @@ async function renderItem(
   // The main process opens a child playback session on this signal; without it
   // an item could only ever be reported as having finished.
   tilecast.reportProgress(item.id, "item-started");
+  if (!(
+    item.kind === "widget" &&
+    item.widget?.autoSkip &&
+    playbackAuthority === "local"
+  )) {
+    consecutiveEmptySkips = 0;
+  }
   const fit = FIT_MODES[item.fitMode] ?? "contain";
 
   if (item.kind === "image") {
@@ -1027,6 +1037,21 @@ function renderWidgetItem(item: RendererItem, myGeneration: number): void {
     return;
   }
   clearNodeTimers();
+  if (payload.autoSkip && playbackAuthority === "local") {
+    consecutiveEmptySkips += 1;
+    tilecast.reportProgress(item.id, "widget-empty");
+    const exhausted = consecutiveEmptySkips >= items.length;
+    const delayMs = exhausted ? 30_000 : 0;
+    const captured = playbackToken();
+    advanceTimer = window.setTimeout(() => {
+      advanceTimer = null;
+      if (stillCurrent(captured)) {
+        if (exhausted) consecutiveEmptySkips = 0;
+        advance();
+      }
+    }, delayMs);
+    return;
+  }
   const container = document.createElement("div");
   container.style.width = "100%";
   container.style.height = "100%";

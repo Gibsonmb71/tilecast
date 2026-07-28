@@ -232,6 +232,10 @@ export interface Heartbeat {
   screenWidth: number;
   screenHeight: number;
   playerVersion: string;
+  presentationSchemaVersions?: number[];
+  nativePresentationCapabilities?: Record<string, number>;
+  webRuntimeVersion?: number;
+  webBundleLimitBytes?: number;
   /**
    * Render-progress facts. Deliberately separate from `playbackState`: a
    * player can be running, with a live renderer, over a frozen screen.

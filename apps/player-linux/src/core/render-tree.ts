@@ -116,6 +116,8 @@ export interface ShapeStyle {
 export interface WidgetRenderPayload {
   background: string;
   root: RenderNode;
+  /** True only when an eligible fullscreen Widget explicitly reports no content. */
+  autoSkip?: boolean;
 }
 
 /** A multi-zone layout resolved to positioned placements. */

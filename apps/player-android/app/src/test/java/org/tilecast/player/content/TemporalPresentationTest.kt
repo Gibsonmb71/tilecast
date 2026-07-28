@@ -1,6 +1,8 @@
 package org.tilecast.player.content
 
 import java.time.Instant
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.tilecast.player.network.DocumentDataset
@@ -44,6 +46,40 @@ class TemporalPresentationTest {
         assertEquals(
             "Now",
             formatValue("2026-08-24T13:29:59Z", "relative-countdown", null, now),
+        )
+    }
+
+    @Test
+    fun signalsAutoskipOnlyWhenNoCurrentOrUpcomingRecordRemains() {
+        val root = org.tilecast.player.network.PresentationNode(
+            type = "surface",
+            props = buildJsonObject {
+                put("autoSkipWhenEmpty", true)
+                put("emptyCondition", buildJsonObject {
+                    put("op", "empty")
+                    put("binding", buildJsonObject {
+                        put("source", "dataset")
+                        put("dataset", "calendar:records")
+                        put("path", "title")
+                        put("selector", "current_or_next")
+                        put("startField", "start")
+                        put("endField", "end")
+                    })
+                })
+            },
+        )
+        val records = dataset.copy(records = dataset.records.map {
+            it.copy(values = it.values + ("title" to DocumentValue(kind = "text", text = it.id)))
+        })
+        val context = PresentationContext(
+            datasets = mapOf("calendar:records" to records),
+            localFiles = emptyMap(),
+            now = now,
+        )
+        assertEquals(false, presentationSignalsEmpty(root, context))
+        assertEquals(
+            true,
+            presentationSignalsEmpty(root, context.copy(now = Instant.parse("2026-08-24T17:00:00Z"))),
         )
     }
 

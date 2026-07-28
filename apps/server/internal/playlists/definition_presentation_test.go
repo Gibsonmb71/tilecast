@@ -199,6 +199,36 @@ func TestScheduleBoardCompilesTemporalSelectorsAndCountdown(t *testing.T) {
 	}
 }
 
+func TestScheduleBoardEnablesAutoskipOnlyWhenConfigured(t *testing.T) {
+	definition, ok := contentdefs.MustLoad().Widget("schedule-board")
+	if !ok {
+		t.Fatal("schedule-board definition is missing")
+	}
+	configuration := make(map[string]any, len(definition.DefaultConfiguration))
+	for key, value := range definition.DefaultConfiguration {
+		configuration[key] = value
+	}
+	configuration["autoSkipWhenEmpty"] = true
+	raw, err := json.Marshal(configuration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	presentation, err := compileDefinitionPresentation(definition, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if presentation.RequiredCapabilities["playback.auto_skip"] != 1 {
+		t.Fatalf("expected autoskip capability, got %#v", presentation.RequiredCapabilities)
+	}
+	if enabled, _ := presentation.Native.Root.Props["autoSkipWhenEmpty"].(bool); !enabled {
+		t.Fatal("compiled presentation did not enable autoskip")
+	}
+	condition, ok := presentation.Native.Root.Props["emptyCondition"].(map[string]any)
+	if !ok || condition["op"] != "empty" {
+		t.Fatalf("compiled presentation has no empty condition: %#v", condition)
+	}
+}
+
 func collectNodeTypes(node *PresentationNode, into map[string]bool) {
 	into[node.Type] = true
 	for index := range node.Children {

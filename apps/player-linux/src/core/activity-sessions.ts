@@ -29,6 +29,7 @@ export type TerminalReason =
   | "renderer_failure"
   | "decoder_failure"
   | "manual_skip"
+  | "empty_content"
   | "recovery_action"
   | "bounded_timeout"
   | "unknown";

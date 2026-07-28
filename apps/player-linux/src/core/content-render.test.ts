@@ -319,6 +319,85 @@ describe("renderPresentation (v13 declarative)", () => {
     expect(json).not.toContain("hidden");
   });
 
+  it("signals autoskip only after the last current or upcoming event", () => {
+    const source: ManifestDataSource = {
+      id: "calendar",
+      name: "Calendar",
+      provider: "calendar",
+      configVersion: 1,
+      configuration: {},
+      dataDocument: {
+        schemaVersion: 1,
+        datasets: [
+          {
+            id: "records",
+            kind: "records",
+            fields: [
+              { key: "title", label: "Title", type: "text" },
+              { key: "start", label: "Start", type: "datetime" },
+              { key: "end", label: "End", type: "datetime" },
+            ],
+            records: [
+              {
+                id: "future",
+                values: {
+                  title: { kind: "text", text: "Assembly" },
+                  start: {
+                    kind: "datetime",
+                    datetime: "2026-07-15T17:00:00Z",
+                  },
+                  end: {
+                    kind: "datetime",
+                    datetime: "2026-07-15T18:00:00Z",
+                  },
+                },
+              },
+            ],
+            cache: { usingCachedData: false, unavailable: false },
+          },
+        ],
+      },
+    };
+    const widget: ManifestWidget = {
+      assetId: "schedule",
+      name: "School Schedule",
+      provider: "schedule-board",
+      configVersion: 1,
+      configuration: {},
+      presentation: {
+        schemaVersion: 1,
+        kind: "native",
+        native: {
+          root: {
+            type: "surface",
+            props: {
+              autoSkipWhenEmpty: true,
+              emptyCondition: {
+                binding: {
+                  source: "dataset",
+                  dataset: "calendar:records",
+                  path: "title",
+                  selector: "current_or_next",
+                  startField: "start",
+                  endField: "end",
+                },
+                op: "empty",
+              },
+            },
+          },
+        },
+      },
+    };
+    const dataSources = new Map([["calendar", source]]);
+    expect(renderWidget(widget, { dataSources, at })!.autoSkip).toBe(false);
+    expect(
+      renderWidget(widget, {
+        dataSources,
+        at: new Date("2026-07-15T19:00:00Z"),
+      })!.autoSkip,
+    ).toBe(true);
+  });
+
   it("applies the surface's content margins and author scale", () => {
     const surface = (props: Record<string, unknown>): PresentationNode => ({
       type: "surface",

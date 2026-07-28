@@ -64,6 +64,7 @@ Child intervals are summed into content exposure, which may legitimately exceed 
 | `direct_assignment_change` | yes             | An operator changed the direct assignment.                    |
 | `takeover`                 | yes             | A Takeover replaced normal playback.                          |
 | `manual_skip`              | yes             | An operator or command skipped the item.                      |
+| `empty_content`            | yes             | An eligible Widget reported that it had nothing to display.   |
 | `player_restart`           | no              | The Player process restarted.                                 |
 | `process_exit`             | no              | The process exited without a restart.                         |
 | `heartbeat_gap`            | no              | The Player stopped reporting.                                 |
