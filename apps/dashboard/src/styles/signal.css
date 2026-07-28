@@ -1937,49 +1937,6 @@ button.summary-bar__item[aria-pressed="true"] strong {
   color: var(--tc-action-primary);
 }
 
-/* Removable chip describing one active selection, shared with the schedule target
-   chips below. */
-.filter-chip {
-  display: inline-flex;
-  min-height: 32px;
-  max-width: 100%;
-  align-items: center;
-  gap: var(--tc-space-1);
-  padding-left: var(--tc-space-3);
-  border: 1px solid var(--tc-action-primary);
-  border-radius: var(--tc-radius-pill);
-  color: var(--tc-action-primary);
-  background: var(--tc-action-primary-soft);
-  font: var(--tc-text-supporting);
-}
-
-.filter-chip__facet {
-  font-weight: 650;
-}
-
-.filter-chip__value {
-  overflow: hidden;
-  color: var(--tc-text-primary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.filter-chip > button {
-  display: grid;
-  width: 32px;
-  height: 30px;
-  place-items: center;
-  border: 0;
-  border-radius: 50%;
-  color: inherit;
-  background: transparent;
-  cursor: pointer;
-}
-
-.filter-chip > button:hover {
-  background: var(--tc-bg-surface);
-}
-
 .toggle-group {
   display: inline-flex;
   flex: 0 0 auto;

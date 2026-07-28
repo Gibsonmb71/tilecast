@@ -704,62 +704,40 @@ export function ScreenListContent({
     () => buildScreenGroups(filtered, groupBy, sort),
     [filtered, groupBy, sort],
   );
-  // Chips name their facet as well as their value so a lone "Landscape" or a bare
-  // search term never leaves the reader guessing which control produced it.
-  const activeFilters: { facet: string; value: string; remove: () => void }[] =
+  // Only the filters put away inside "More filters" are chipped. Search, status,
+  // location, platform, and now playing each show their own value in the toolbar
+  // directly above, so chipping them restated the whole row back to the reader.
+  const chippedFilters: { facet: string; value: string; remove: () => void }[] =
     [];
-  if (search)
-    activeFilters.push({
-      facet: "Search",
-      value: `“${search.trim()}”`,
-      remove: () => setSearch(""),
-    });
-  if (status)
-    activeFilters.push({
-      facet: "Status",
-      value: statusLabel(status),
-      remove: () => setStatus(""),
-    });
-  if (location)
-    activeFilters.push({
-      facet: "Location",
-      value:
-        locationItems.find((item) => item.id === location)?.name ?? "Selected",
-      remove: () => setLocation(""),
-    });
-  if (platform)
-    activeFilters.push({
-      facet: "Platform",
-      value: platformLabel(platform),
-      remove: () => setPlatform(""),
-    });
-  if (playing)
-    activeFilters.push({
-      facet: "Now playing",
-      value: nowPlayingLabel(playing),
-      remove: () => setPlaying(""),
-    });
   if (syncGroup)
-    activeFilters.push({
+    chippedFilters.push({
       facet: "Sync group",
       value: syncGroupFilterLabel(syncGroup, screens),
       remove: () => setSyncGroup(""),
     });
   if (orientation)
-    activeFilters.push({
+    chippedFilters.push({
       facet: "Orientation",
       value: orientation === "portrait" ? "Portrait" : "Landscape",
       remove: () => setOrientation(""),
     });
   if (update)
-    activeFilters.push({
+    chippedFilters.push({
       facet: "Software update",
       value: updateLabel(update),
       remove: () => setUpdate(""),
     });
-  const advancedFilterCount = [syncGroup, orientation, update].filter(
-    Boolean,
-  ).length;
+  const advancedFilterCount = chippedFilters.length;
+  const anyFilterActive = Boolean(
+    search ||
+    status ||
+    location ||
+    platform ||
+    playing ||
+    syncGroup ||
+    orientation ||
+    update,
+  );
   const clearFilters = () => {
     setSearch("");
     setStatus("");
@@ -1009,25 +987,23 @@ export function ScreenListContent({
             )}
           </div>
         </div>
-        {activeFilters.length > 0 && (
+        {anyFilterActive && (
           <div className="screen-filter-chips">
             <span className="screen-filter-chips__label">
-              {activeFilters.length} filter
-              {activeFilters.length === 1 ? "" : "s"} · {filtered.length} of{" "}
-              {screens.length} screens
+              {filtered.length} of {screens.length} screens
             </span>
-            {activeFilters.map((filter) => (
-              <span className="filter-chip" key={filter.facet}>
-                <span className="filter-chip__facet">{filter.facet}</span>
-                <span className="filter-chip__value">{filter.value}</span>
-                <button
-                  type="button"
-                  aria-label={`Remove ${filter.facet} filter`}
-                  onClick={filter.remove}
-                >
-                  <X size={14} aria-hidden="true" />
-                </button>
-              </span>
+            {chippedFilters.map((filter) => (
+              <button
+                type="button"
+                className="filter-chip"
+                key={filter.facet}
+                aria-label={`Remove filter ${filter.facet}: ${filter.value}`}
+                onClick={filter.remove}
+              >
+                <strong>{filter.facet}:</strong>
+                <span>{filter.value}</span>
+                <X size={13} aria-hidden="true" />
+              </button>
             ))}
             <button
               type="button"
@@ -1409,13 +1385,6 @@ function GroupHealth({ screens }: { screens: Screen[] }) {
       )}
     </span>
   );
-}
-
-function nowPlayingLabel(value: string) {
-  if (value === "nothing") return "Nothing assigned";
-  if (value === "playlist") return "Playlist";
-  if (value === "presentation") return "Presentation";
-  return value;
 }
 
 function syncGroupFilterLabel(value: string, screens: Screen[]) {
