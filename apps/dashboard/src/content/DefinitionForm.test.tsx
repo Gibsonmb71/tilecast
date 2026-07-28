@@ -513,4 +513,28 @@ describe("DefinitionForm data source controls", () => {
       ]),
     );
   });
+
+  it("renders boolean fields as aligned labeled switches", async () => {
+    vi.spyOn(api, "contentDefinitions").mockResolvedValue(catalog([]));
+    const { onChange } = form(
+      [
+        {
+          key: "showCountdown",
+          label: "Show live countdown",
+          description: "Show the current event countdown.",
+          control: "boolean",
+        },
+      ],
+      { showCountdown: true },
+    );
+
+    const toggle = screen.getByRole("switch", {
+      name: "Show live countdown",
+    });
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByText("Show the current event countdown.")).toBeVisible();
+
+    await userEvent.click(toggle);
+    expect(onChange).toHaveBeenCalledWith({ showCountdown: false });
+  });
 });
