@@ -336,7 +336,6 @@ function DefinitionControl({
         description={field.description}
         value={fieldText(value)}
         sources={compatibleSources(field, dataSources, dataSourceDefinitions)}
-        definitions={dataSourceDefinitions}
         createProviders={creatableProviders(field, dataSourceDefinitions)}
         formatGuide={dataFormatGuideFor(field, fields)}
         csrf={csrf}

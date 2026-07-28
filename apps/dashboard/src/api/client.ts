@@ -81,6 +81,7 @@ import type {
   BulkOrganizeInput,
   StructuredSourceConfig,
   StructuredPreview,
+  StructuredInspection,
   ManualSourceConfig,
   WeatherSourceConfig,
   TypedRecordData,
@@ -1435,6 +1436,22 @@ export const api = {
       headers: { "X-CSRF-Token": csrfToken },
       body: JSON.stringify({ configuration, previewDate }),
     }),
+  // Report the fields a candidate RSS, Atom, JSON, or CSV connection contains, before a
+  // mapping exists, so Studio can offer detected fields rather than typed guesses.
+  inspectDataSource: (
+    provider: DataSourceProvider,
+    configuration: StructuredSourceConfig,
+    csrfToken: string,
+  ) =>
+    request<StructuredInspection>(`/data-sources/${provider}/inspect`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ configuration }),
+    }),
+  // Detect fields for a saved Source. A saved CSV upload's bytes stay on the server, so the
+  // editor cannot send a configuration back for detection.
+  inspectSavedDataSource: (id: string) =>
+    request<StructuredInspection>(`/data-sources/${id}/inspect`),
   // Preview a saved Data Source by id using its full stored configuration
   // (including uploaded CSV content the detail response strips).
   previewSavedDataSource: (id: string, previewDate?: string) => {

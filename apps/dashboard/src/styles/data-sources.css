@@ -261,6 +261,23 @@
   min-height: 40px;
 }
 
+/* Field detection status for mapped Data Sources. It reports whether Studio has read the
+   connected data, so an empty field list is never ambiguous. */
+.source-detection {
+  margin: 0 0 var(--tc-space-3);
+  color: var(--tc-text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.source-detection--ready {
+  color: var(--tc-status-success);
+}
+
+.source-detection--error {
+  color: var(--tc-status-danger);
+}
+
 .csv-source-input {
   display: grid;
   gap: var(--tc-space-3);
@@ -1235,6 +1252,40 @@
 .data-source-picker__empty .button {
   grid-column: 2;
   justify-self: start;
+}
+
+/* Connecting new data from a Widget or Layout runs the page's guided create flow inside a
+   dialog, so the same gallery and the same setup guidance appear on both surfaces. */
+.data-source-connect-backdrop {
+  align-items: flex-start;
+  justify-content: center;
+  padding: var(--tc-space-4);
+  overflow-y: auto;
+  background: var(--tc-overlay-scrim);
+  backdrop-filter: blur(2px);
+}
+
+.data-source-connect-dialog {
+  position: relative;
+  width: min(1120px, 100%);
+  max-height: calc(100vh - var(--tc-space-4) * 2);
+  padding: var(--tc-space-5);
+  overflow-y: auto;
+  background: var(--tc-bg-surface);
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-panel);
+  box-shadow: 0 18px 48px rgb(15 24 21 / 24%);
+}
+
+.data-source-connect-dialog__close {
+  position: absolute;
+  top: var(--tc-space-4);
+  right: var(--tc-space-4);
+}
+
+/* The guidance column scrolls with the dialog rather than sticking to the viewport. */
+.data-source-connect-dialog .data-source-create-shell__guide {
+  position: static;
 }
 
 /* Existing sources are selected in a modal so their type, health, and record count remain visible. */

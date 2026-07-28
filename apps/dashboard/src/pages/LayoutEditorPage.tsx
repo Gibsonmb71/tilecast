@@ -3476,13 +3476,6 @@ function PlacementInspector({
   const location = useLocation();
   const auth = useAuth();
   const queryClient = useQueryClient();
-  // Definitions back the picker's Connect flow; connecting refreshes the Layout's source list so
-  // the new source is immediately bindable without leaving the editor.
-  const contentDefinitions = useQuery({
-    queryKey: ["content-definitions"],
-    queryFn: api.contentDefinitions,
-  });
-  const sourceDefinitions = contentDefinitions.data?.dataSources ?? [];
   const csrf = auth.status?.csrfToken ?? "";
   // Connecting data from the empty state must also apply the binding, matching what selecting an
   // existing source does. The refreshed list is awaited so the new source's own first field is
@@ -3915,7 +3908,6 @@ function PlacementInspector({
           {!primitive.binding && dataSources.length === 0 ? (
             <ConnectDataNotice
               message="Connect data to hide this group when a field is empty."
-              definitions={sourceDefinitions}
               csrf={csrf}
               onCreated={(dataSourceId) =>
                 void bindNewDataSource(dataSourceId, (binding) =>
@@ -3959,7 +3951,6 @@ function PlacementInspector({
               <DataSourcePicker
                 value={primitive.binding.dataSourceId}
                 sources={dataSources}
-                definitions={sourceDefinitions}
                 csrf={csrf}
                 allowEmpty={false}
                 onChange={(dataSourceId) =>
@@ -4000,7 +3991,6 @@ function PlacementInspector({
           {!primitive.binding && dataSources.length === 0 ? (
             <ConnectDataNotice
               message="Connect data to bind this text to a live field."
-              definitions={sourceDefinitions}
               csrf={csrf}
               onCreated={(dataSourceId) =>
                 void bindNewDataSource(dataSourceId, (binding) =>
@@ -4044,7 +4034,6 @@ function PlacementInspector({
               <DataSourcePicker
                 value={primitive.binding.dataSourceId}
                 sources={dataSources}
-                definitions={sourceDefinitions}
                 csrf={csrf}
                 allowEmpty={false}
                 onChange={(dataSourceId) =>

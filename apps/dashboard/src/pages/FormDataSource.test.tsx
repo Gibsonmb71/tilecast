@@ -125,9 +125,19 @@ describe("Form Data Source Studio", () => {
     vi.spyOn(api, "providerCatalog").mockResolvedValue({
       providers: [],
     } as never);
+    // The gallery is catalog-driven, so Form appears because the server ships its
+    // definition — not because the page hardcodes a card for it.
     vi.spyOn(api, "contentDefinitions").mockResolvedValue({
       widgets: [],
-      dataSources: [],
+      dataSources: [
+        {
+          id: "form",
+          name: "Form",
+          description: "Collect submissions from staff.",
+          icon: "form_input",
+          legacyEditor: true,
+        },
+      ],
     } as never);
     const user = userEvent.setup();
     renderAt("/data-sources/new");

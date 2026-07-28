@@ -387,9 +387,9 @@ describe("DefinitionForm data source controls", () => {
     });
     await userEvent.click(connect);
 
-    expect(await screen.findByRole("dialog")).toHaveAttribute(
-      "aria-label",
-      "Connect new data",
+    // Connecting from a Widget runs the same provider gallery as the Data Sources page.
+    expect(await screen.findByRole("dialog")).toHaveAccessibleName(
+      "Create Data Source",
     );
     expect(screen.getByRole("button", { name: /csv source/ })).toBeTruthy();
     // Form Data Sources are authored in the Forms portal, never through this editor.

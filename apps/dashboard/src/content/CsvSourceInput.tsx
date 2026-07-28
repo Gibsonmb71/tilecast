@@ -86,16 +86,16 @@ function formatBytes(bytes: number) {
   return `${(bytes / 1024).toFixed(bytes < 1024 * 100 ? 1 : 0)} KB`;
 }
 
+// The local inspection here summarizes the chosen file immediately. The mapping itself is
+// filled from the Server's detection, which parses exactly as a refresh will.
 export function CsvSourceInput({
   configuration,
   readOnly,
   onChange,
-  onColumnsDetected,
 }: {
   configuration: StructuredSourceConfig;
   readOnly: boolean;
   onChange: (patch: Partial<StructuredSourceConfig>) => void;
-  onColumnsDetected: (inspection: CsvInspection) => void;
 }) {
   const inputId = useId();
   const fileInput = useRef<HTMLInputElement>(null);
@@ -126,7 +126,6 @@ export function CsvSourceInput({
     setError("");
     setInspection(inspection);
     onChange({ url: "", uploadedContent: content, uploaded: true });
-    onColumnsDetected(inspection);
   };
 
   const readFile = async (file?: File) => {

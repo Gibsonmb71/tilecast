@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DataSource, DataSourceDefinition } from "../api/types";
@@ -10,6 +10,26 @@ import { DataSourcePicker } from "./DataSourcePicker";
 // The real Data Source editors are large provider-specific forms with their own network
 // behavior. This suite is about the picker's contract with them: the editor is rendered in
 // place, and whatever it saves becomes the picker's selection.
+vi.mock("../api/client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../api/client")>();
+  return {
+    ...actual,
+    api: {
+      ...actual.api,
+      // The Connect flow reads the provider catalog, exactly as the Data Sources page does.
+      contentDefinitions: () =>
+        Promise.resolve({
+          revision: "test",
+          compilerVersion: "test",
+          fingerprint: "test",
+          widgets: [],
+          dataSources: catalogDefinitions,
+        }),
+      previewSavedDataSource: () => Promise.resolve({}),
+    },
+  };
+});
+
 vi.mock("./DataSourceEditors", () => ({
   DataSourceEditor: ({
     provider,
@@ -43,7 +63,21 @@ const csvDefinition: DataSourceDefinition = {
   outputSchema: { kind: "records", fields: [] },
   adapterId: "csv_adapter",
   refreshBehavior: "interval",
+  // CSV ships as a legacy-editor provider, so its Studio copy comes from the provider
+  // metadata rather than the definition's own setup block.
+  legacyEditor: true,
 };
+
+const weatherDefinition: DataSourceDefinition = {
+  ...csvDefinition,
+  id: "weather",
+  name: "Weather",
+  description: "Cache a forecast.",
+};
+
+// Every suite renders against the same catalog; a test narrows what is offered through the
+// picker's accepted-provider list, which is what a Widget does.
+const catalogDefinitions = [csvDefinition, weatherDefinition];
 
 const existing: DataSource = {
   id: "existing",
@@ -69,7 +103,6 @@ function picker(sources: DataSource[]) {
         <DataSourcePicker
           value=""
           sources={sources}
-          definitions={[csvDefinition]}
           csrf="csrf-token"
           onChange={onChange}
         />
@@ -86,15 +119,48 @@ describe("DataSourcePicker", () => {
     await userEvent.click(
       screen.getByRole("button", { name: /Connect new data/ }),
     );
+    // The in-editor path runs the same gallery the Data Sources page runs.
     expect(
-      screen.getByRole("dialog", { name: "Connect new data" }),
-    ).toHaveClass("asset-details", "data-source-connect");
+      screen.getByRole("dialog", { name: "Create Data Source" }),
+    ).toHaveClass("source-gallery");
     await userEvent.click(screen.getByRole("button", { name: /CSV/ }));
+    // The chosen provider opens with the same setup guidance the page shows, not a bare
+    // editor.
+    expect(screen.getByText("Setup checklist")).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "Create CSV Data Source" }),
+    ).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "Save csv" }));
 
     expect(onChange).toHaveBeenCalledWith("created-source");
     // The flow closes on save and hands control back to the form it was opened from.
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  // As a modal it must take focus, keep Tab inside itself, and hand focus back when it
+  // closes; otherwise the caret stays in the form underneath, on controls now covered.
+  it("holds focus inside the Connect gallery and returns it on close", async () => {
+    picker([]);
+
+    const trigger = screen.getByRole("button", { name: /Connect new data/ });
+    trigger.focus();
+    await userEvent.click(trigger);
+
+    const dialog = screen.getByRole("dialog", { name: "Create Data Source" });
+    await waitFor(() =>
+      expect(dialog.contains(document.activeElement)).toBe(true),
+    );
+
+    // Tab from the last control wraps to the first rather than escaping the dialog.
+    const focusable = Array.from(
+      dialog.querySelectorAll<HTMLElement>("button:not(:disabled)"),
+    );
+    focusable[focusable.length - 1]?.focus();
+    await userEvent.tab();
+    expect(document.activeElement).toBe(focusable[0]);
+
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
   });
 
   it("chooses existing data from a modal with source context", async () => {
@@ -155,7 +221,6 @@ describe("DataSourcePicker", () => {
         <DataSourcePicker
           value="existing"
           sources={[existing]}
-          definitions={[csvDefinition]}
           csrf="csrf-token"
           allowEmpty={false}
           onChange={vi.fn()}
@@ -178,7 +243,6 @@ describe("DataSourcePicker", () => {
         <DataSourcePicker
           value="existing"
           sources={[existing]}
-          definitions={[csvDefinition]}
           csrf="csrf-token"
           onChange={vi.fn()}
         />
@@ -199,7 +263,6 @@ describe("DataSourcePicker", () => {
         <DataSourcePicker
           value="deleted-source"
           sources={[existing]}
-          definitions={[csvDefinition]}
           csrf="csrf-token"
           allowEmpty={false}
           onChange={vi.fn()}
@@ -233,7 +296,6 @@ describe("DataSourcePicker", () => {
         <DataSourcePicker
           value="deleted-source"
           sources={[]}
-          definitions={[csvDefinition]}
           csrf="csrf-token"
           onChange={vi.fn()}
         />
@@ -254,12 +316,6 @@ describe("DataSourcePicker", () => {
   });
 
   it("offers only providers the consumer accepts when connecting new data", async () => {
-    const weatherDefinition: DataSourceDefinition = {
-      ...csvDefinition,
-      id: "weather",
-      name: "Weather",
-      description: "Cache a forecast.",
-    };
     const onChange = vi.fn();
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
@@ -269,7 +325,6 @@ describe("DataSourcePicker", () => {
         <DataSourcePicker
           value=""
           sources={[]}
-          definitions={[csvDefinition, weatherDefinition]}
           createProviders={["csv"]}
           csrf="csrf-token"
           onChange={onChange}
@@ -294,7 +349,6 @@ describe("DataSourcePicker", () => {
         <DataSourcePicker
           value=""
           sources={[]}
-          definitions={[csvDefinition]}
           createProviders={["csv", "json", "manual", "weather"]}
           csrf="csrf-token"
           onChange={vi.fn()}
@@ -314,12 +368,7 @@ describe("DataSourcePicker", () => {
     });
     render(
       <QueryClientProvider client={client}>
-        <DataSourcePicker
-          value=""
-          sources={[]}
-          definitions={[csvDefinition]}
-          onChange={vi.fn()}
-        />
+        <DataSourcePicker value="" sources={[]} onChange={vi.fn()} />
       </QueryClientProvider>,
     );
 

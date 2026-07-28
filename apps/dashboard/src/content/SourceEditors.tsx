@@ -8,7 +8,6 @@ import { api } from "../api/client";
 import type {
   Asset,
   DataSource,
-  DataSourceDefinition,
   DataSourceField,
   DataSourceProvider,
   WidgetProvider,
@@ -580,13 +579,6 @@ export function NativeAppEditor({
 }) {
   const queryClient = useQueryClient();
   const previewRef = useRef<HTMLDivElement>(null);
-  // Data Source definitions back the picker's Connect flow, which needs each provider's name,
-  // description, and icon to offer a choice.
-  const contentDefinitions = useQuery({
-    queryKey: ["content-definitions"],
-    queryFn: api.contentDefinitions,
-  });
-  const sourceDefinitions = contentDefinitions.data?.dataSources ?? [];
   const [name, setName] = useState(asset?.name ?? "");
   const [description, setDescription] = useState(asset?.description ?? "");
   const [configuration, setConfiguration] = useState<NativeConfig>(
@@ -1209,7 +1201,6 @@ export function NativeAppEditor({
                   <DataSourceSelect
                     value={(configuration as TickerWidgetConfig).dataSourceId}
                     sources={compatibleDataSources}
-                    definitions={sourceDefinitions}
                     createProviders={acceptedCreateProviders}
                     csrf={csrf}
                     disabled={readOnly}
@@ -1304,7 +1295,6 @@ export function NativeAppEditor({
                   <DataSourceSelect
                     value={(configuration as DisplayWidgetConfig).dataSourceId}
                     sources={compatibleDataSources}
-                    definitions={sourceDefinitions}
                     createProviders={acceptedCreateProviders}
                     csrf={csrf}
                     disabled={readOnly}
@@ -1692,7 +1682,6 @@ export function NativeAppEditor({
                   <DataSourceSelect
                     value={(configuration as MetricWidgetConfig).dataSourceId}
                     sources={compatibleDataSources}
-                    definitions={sourceDefinitions}
                     createProviders={acceptedCreateProviders}
                     csrf={csrf}
                     disabled={readOnly}
@@ -1872,7 +1861,6 @@ export function NativeAppEditor({
                   <DataSourceSelect
                     value={(configuration as CardsWidgetConfig).dataSourceId}
                     sources={compatibleDataSources}
-                    definitions={sourceDefinitions}
                     createProviders={acceptedCreateProviders}
                     csrf={csrf}
                     disabled={readOnly}
@@ -1973,7 +1961,6 @@ export function NativeAppEditor({
                   <DataSourceSelect
                     value={(configuration as WeatherWidgetConfig).dataSourceId}
                     sources={compatibleDataSources}
-                    definitions={sourceDefinitions}
                     createProviders={acceptedCreateProviders}
                     csrf={csrf}
                     disabled={readOnly}
@@ -2042,7 +2029,6 @@ export function NativeAppEditor({
                       (configuration as SpotlightWidgetConfig).dataSourceId
                     }
                     sources={compatibleDataSources}
-                    definitions={sourceDefinitions}
                     createProviders={acceptedCreateProviders}
                     csrf={csrf}
                     disabled={readOnly}
@@ -2111,7 +2097,6 @@ export function NativeAppEditor({
                   <DataSourceSelect
                     value={(configuration as StatGridWidgetConfig).dataSourceId}
                     sources={compatibleDataSources}
-                    definitions={sourceDefinitions}
                     createProviders={acceptedCreateProviders}
                     csrf={csrf}
                     disabled={readOnly}
@@ -2282,7 +2267,6 @@ export function NativeAppEditor({
                   <DataSourceSelect
                     value={(configuration as ChartWidgetConfig).dataSourceId}
                     sources={compatibleDataSources}
-                    definitions={sourceDefinitions}
                     createProviders={acceptedCreateProviders}
                     csrf={csrf}
                     disabled={readOnly}
@@ -2464,7 +2448,6 @@ export function NativeAppEditor({
                   <DataSourceSelect
                     value={(configuration as ProgressWidgetConfig).dataSourceId}
                     sources={compatibleDataSources}
-                    definitions={sourceDefinitions}
                     createProviders={acceptedCreateProviders}
                     csrf={csrf}
                     disabled={readOnly}
@@ -2557,7 +2540,6 @@ export function NativeAppEditor({
                   <DataSourceSelect
                     value={(configuration as TimelineWidgetConfig).dataSourceId}
                     sources={compatibleDataSources}
-                    definitions={sourceDefinitions}
                     createProviders={acceptedCreateProviders}
                     csrf={csrf}
                     disabled={readOnly}
@@ -3638,7 +3620,6 @@ function PresentationQrCode({ value }: { value: string }) {
 function DataSourceSelect({
   value,
   sources,
-  definitions,
   createProviders,
   csrf,
   disabled,
@@ -3646,7 +3627,6 @@ function DataSourceSelect({
 }: {
   value: string;
   sources: DataSource[];
-  definitions?: DataSourceDefinition[];
   // Providers this Widget accepts, so the Connect flow cannot create a source it would reject.
   createProviders?: DataSourceProvider[];
   csrf?: string;
@@ -3658,7 +3638,6 @@ function DataSourceSelect({
       value={value}
       description="Choose the information this Widget should display. You can connect a new source without leaving the editor."
       sources={sources}
-      definitions={definitions}
       createProviders={createProviders}
       csrf={csrf}
       disabled={disabled}

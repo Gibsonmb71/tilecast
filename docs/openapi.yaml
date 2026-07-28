@@ -1245,6 +1245,42 @@ paths:
           { description: Sanitized real-data preview and typed diagnostics }
         "404": { description: Data Source provider not found }
         "422": { description: Validation or safe fetch failed }
+  /api/v1/data-sources/{id}/inspect:
+    get:
+      operationId: inspectSavedDataSource
+      description: Detects fields for a saved RSS, Atom, JSON, or CSV Source using its stored configuration, including uploaded CSV bytes that detail responses strip. Same response shape as the provider inspect route.
+      responses:
+        "200": { description: Detected fields for the saved Data Source }
+        "404": { description: Data Source not found }
+        "422":
+          {
+            description: "Provider does not support field detection, or the fetch failed",
+          }
+  /api/v1/data-sources/{provider}/inspect:
+    post:
+      operationId: inspectDataSource
+      description: Reports the fields a candidate RSS, Atom, JSON, or CSV connection contains, with a few sample values per field, a suggested field mapping, and which record fields the Source can fill. Runs under the same safe fetch policy as preview and deliberately does not require a mapping, because the mapping is what it exists to produce.
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema: { enum: [rss, atom, json, csv] }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [configuration]
+              properties:
+                configuration: { type: object }
+      responses:
+        "200":
+          {
+            description: "Detected fields, sample values, suggested mapping, and available record fields",
+          }
+        "404": { description: Provider does not support field detection }
+        "422": { description: Validation or safe fetch failed }
   /api/v1/forms:
     get:
       operationId: listForms

@@ -8,6 +8,14 @@ Tilecast provides native RSS, Atom, JSON, CSV, and Manual Table **Data Sources**
 - JSON selects a root array and scalar fields with RFC 6901 JSON Pointer. JavaScript, JMESPath functions, templates, expressions, and server-side scripts are not supported.
 - CSV accepts a public URL or an uploaded UTF-8 file. The parser detects comma, semicolon, tab, or pipe delimiters unless one is selected, requires a header row, validates every row width, and maps columns by exact header name.
 
+## Field detection
+
+RSS, Atom, JSON, and CSV Sources are inspected before they are mapped. Studio reads the connected data through `POST /api/v1/data-sources/{provider}/inspect` and offers what it found: CSV column names, JSON Pointer paths for the scalar fields of the detected record array, or the record fields a feed actually publishes — each with a few sanitized sample values. A mapping is suggested from those names and applied only while the author has not mapped anything themselves.
+
+Two consequences are deliberate. A mapped Source (JSON, CSV) has no separate displayed-field list: it displays what it maps, so the mapping is the single place that decision is made, and Author and Description — which only feeds produce — are never offered. A feed offers only the fields that feed carries, so an RSS connection without authors does not present an Author toggle that would render nothing.
+
+Detection uses the same fetch policy, parser, and delimiter detection as a refresh, so what it reports is what playback will use.
+
 All providers support bounded item counts, keyword filtering, source/title/date sorting, list/agenda/card/ticker presentation, refresh and staleness limits, an empty state, preview, typed diagnostics, and last-known-good playback. CSV and mapped data also support up to eight equality or contains filters and twelve optional value fields.
 
 Manual Table supports up to twelve typed columns and two hundred rows. Supported types are text, number, integer, percent, currency, boolean, date, datetime, and URL. Manual data is immediately ready after saving and does not run through the background refresh worker.

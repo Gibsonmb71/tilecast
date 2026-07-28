@@ -553,6 +553,46 @@ func (s *server) previewDataSource(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": preview})
 }
 
+// inspectDataSource reports the fields a candidate RSS, Atom, JSON, or CSV connection
+// contains, so Studio can offer detected fields instead of asking an author to type column
+// names or JSON Pointer paths from memory. It runs before a mapping exists and therefore
+// does not require one.
+func (s *server) inspectDataSource(w http.ResponseWriter, r *http.Request) {
+	provider := chi.URLParam(r, "provider")
+	if provider != "rss" && provider != "atom" && provider != "json" && provider != "csv" {
+		writeError(w, http.StatusNotFound, "data_source_provider_not_found", "This Data Source provider does not support field detection.")
+		return
+	}
+	var body struct {
+		Configuration json.RawMessage `json:"configuration"`
+	}
+	if err := s.decodeDataSourceJSON(w, r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	inspection, err := s.media.InspectStructured(r.Context(), provider, body.Configuration)
+	if err != nil {
+		s.writeMediaError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": inspection})
+}
+
+// inspectSavedDataSource detects fields for an already-saved Source. A saved CSV upload's
+// bytes never leave the Server, so the editor cannot send them back for detection.
+func (s *server) inspectSavedDataSource(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	inspection, err := s.media.InspectStructuredByID(r.Context(), id)
+	if err != nil {
+		s.writeMediaError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": inspection})
+}
+
 type updateAssetRequest struct {
 	Name            *string    `json:"name"`
 	Description     *string    `json:"description"`

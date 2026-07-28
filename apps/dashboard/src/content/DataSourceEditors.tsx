@@ -1,7 +1,12 @@
 import { Select } from "../components/ui";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type UseQueryResult,
+} from "@tanstack/react-query";
 import { Plus, Trash2, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { api } from "../api/client";
 import type {
@@ -12,6 +17,8 @@ import type {
   DateSelection,
   ManualColumn,
   ManualSourceConfig,
+  StructuredField,
+  StructuredInspection,
   StructuredPreview,
   StructuredSourceConfig,
   TypedRecordData,
@@ -21,10 +28,23 @@ import type {
   AirQualitySourceConfig,
   TypedDatasetPayload,
 } from "../api/types";
-import { CsvSourceInput, type CsvInspection } from "./CsvSourceInput";
+import { CsvSourceInput } from "./CsvSourceInput";
 import { GenericDataSourceEditor } from "./GenericDefinitionEditors";
 
 export type StructuredProvider = "rss" | "atom" | "json" | "csv";
+
+// A mapped provider starts with an empty mapping on purpose. Guessing "title" or "/title"
+// before the data has been read produces a mapping that looks configured, silently misses
+// the real columns, and leaves the author to discover it in the preview. Detection fills
+// these in from the connected data instead.
+const emptyMapping = {
+  rootList: "",
+  title: "",
+  subtitle: "",
+  date: "",
+  imageUrl: "",
+  link: "",
+};
 
 const defaultStructured = (
   provider: StructuredProvider,
@@ -36,37 +56,18 @@ const defaultStructured = (
     title: true,
     subtitle: true,
     date: true,
-    author: true,
-    description: true,
+    // Only feeds publish an author and a description; a mapped Source fills its display
+    // slots from the mapping alone.
+    author: provider === "rss" || provider === "atom",
+    description: provider === "rss" || provider === "atom",
     image: false,
     link: false,
   },
   filterKeyword: "",
   sort: "newest",
-  ...(provider === "json"
-    ? {
-        mapping: {
-          rootList: "/items",
-          title: "/title",
-          subtitle: "/subtitle",
-          date: "/date",
-          imageUrl: "/image",
-          link: "/link",
-        },
-      }
-    : {}),
+  ...(provider === "json" ? { mapping: { ...emptyMapping } } : {}),
   ...(provider === "csv"
-    ? {
-        mapping: {
-          rootList: "",
-          title: "title",
-          subtitle: "subtitle",
-          date: "date",
-          imageUrl: "image",
-          link: "link",
-        },
-        delimiter: "" as const,
-      }
+    ? { mapping: { ...emptyMapping }, delimiter: "" as const }
     : {}),
   filters: [],
   refreshIntervalSeconds: 900,
@@ -125,6 +126,172 @@ const mappingPlaceholders: Record<
   atom: {},
 };
 
+// How long a URL or pasted payload must stay unchanged before it is read.
+const detectionSettleMs = 600;
+
+// useSettledValue returns `value` only once it has stopped changing for `delay`, so a
+// control that reads an upstream source is not driven by every keystroke.
+function useSettledValue<T>(value: T, delay: number) {
+  const [settled, setSettled] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setSettled(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+  return settled;
+}
+
+// The display slots a mapped Source can fill. Author and description exist only on feeds.
+const mappedDisplayFields = [
+  "title",
+  "subtitle",
+  "date",
+  "image",
+  "link",
+] as const;
+
+const mappingSlotForField: Record<string, keyof typeof emptyMapping> = {
+  title: "title",
+  subtitle: "subtitle",
+  date: "date",
+  image: "imageUrl",
+  link: "link",
+};
+
+function mappingIsEmpty(mapping: StructuredSourceConfig["mapping"]) {
+  if (!mapping) return true;
+  return (
+    !mapping.title &&
+    !mapping.subtitle &&
+    !mapping.date &&
+    !mapping.imageUrl &&
+    !mapping.link &&
+    Object.keys(mapping.valueFields ?? {}).length === 0
+  );
+}
+
+// A mapped Source displays exactly what it maps, so the displayed-field set is derived
+// rather than being a second place to configure the same decision.
+function fieldsFromMapping(
+  mapping: NonNullable<StructuredSourceConfig["mapping"]>,
+): StructuredSourceConfig["fields"] {
+  return {
+    title: Boolean(mapping.title),
+    subtitle: Boolean(mapping.subtitle),
+    date: Boolean(mapping.date),
+    author: false,
+    description: false,
+    image: Boolean(mapping.imageUrl),
+    link: Boolean(mapping.link),
+  };
+}
+
+// StructuredDetectionNotice reports what detection found, or why it has not run. Mapping
+// without it is guesswork, so its state is stated rather than left to be inferred from
+// empty dropdowns.
+function StructuredDetectionNotice({
+  provider,
+  detectable,
+  inspection,
+}: {
+  provider: StructuredProvider;
+  detectable: boolean;
+  inspection: UseQueryResult<StructuredInspection>;
+}) {
+  const unit = provider === "csv" ? "column" : "field";
+  if (!detectable)
+    return (
+      <p className="source-detection source-detection--pending">
+        {provider === "csv"
+          ? "Upload a CSV or enter a hosted CSV URL and Tilecast will read its columns."
+          : "Enter the endpoint URL and Tilecast will read the fields it returns."}
+      </p>
+    );
+  if (inspection.isPending)
+    return <p className="source-detection">Reading the connected data…</p>;
+  if (inspection.isError)
+    return (
+      <p className="source-detection source-detection--error" role="alert">
+        {inspection.error instanceof Error
+          ? inspection.error.message
+          : "The connected data could not be read."}{" "}
+        Map the fields by name below, or fix the connection and try again.
+      </p>
+    );
+  if (!inspection.data) return null;
+  const detected = inspection.data;
+  return (
+    <p className="source-detection source-detection--ready">
+      {detected.fields.length} {unit}
+      {detected.fields.length === 1 ? "" : "s"} detected in {detected.rowCount}{" "}
+      row{detected.rowCount === 1 ? "" : "s"}
+      {detected.delimiter
+        ? ` · ${delimiterLabels[detected.delimiter] ?? "detected"}-delimited`
+        : ""}
+      .
+    </p>
+  );
+}
+
+const delimiterLabels: Record<string, string> = {
+  ",": "comma",
+  ";": "semicolon",
+  "\t": "tab",
+  "|": "pipe",
+};
+
+// MappingSelect offers the detected fields, keeps a value the data no longer contains
+// visible rather than silently dropping it, and falls back to free entry when nothing has
+// been detected yet.
+function MappingSelect({
+  label,
+  value,
+  fields,
+  placeholder,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  fields: StructuredField[];
+  placeholder?: string;
+  disabled?: boolean;
+  onChange: (value: string) => void;
+}) {
+  const known = fields.some((field) => field.key === value);
+  if (fields.length === 0)
+    return (
+      <label className="field">
+        <span className="field__label">{label}</span>
+        <input
+          value={value}
+          placeholder={placeholder}
+          disabled={disabled}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      </label>
+    );
+  return (
+    <label className="field">
+      <span className="field__label">{label}</span>
+      <Select
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        <option value="">Not used</option>
+        {fields.map((field) => (
+          <option key={field.key} value={field.key}>
+            {field.samples.length > 0
+              ? `${field.label} — ${field.samples[0]}`
+              : field.label}
+          </option>
+        ))}
+        {value && !known && <option value={value}>{value} (not found)</option>}
+      </Select>
+    </label>
+  );
+}
+
 export function StructuredDataSourceEditor({
   provider,
   dataSource,
@@ -157,7 +324,6 @@ export function StructuredDataSourceEditor({
     },
   });
   const [preview, setPreview] = useState<StructuredPreview>();
-  const [csvColumns, setCsvColumns] = useState<string[]>([]);
   const [previewDate, setPreviewDate] = useState(
     new Date().toISOString().slice(0, 10),
   );
@@ -189,55 +355,109 @@ export function StructuredDataSourceEditor({
     onSuccess: setPreview,
   });
   const mapping = configuration.mapping;
+  const mapped = provider === "json" || provider === "csv";
   const updateConfiguration = (patch: Partial<StructuredSourceConfig>) =>
     setConfiguration((current) => ({ ...current, ...patch }));
-  const applyCsvInspection = (inspection: CsvInspection) => {
-    setCsvColumns(inspection.columns);
-    setConfiguration((current) => {
-      const currentMapping = current.mapping!;
-      const findColumn = (...names: string[]) =>
-        inspection.columns.find((column) =>
-          names.includes(column.trim().toLowerCase()),
-        ) ?? "";
-      const title = findColumn("title", "name", "item", "event");
-      return {
-        ...current,
-        delimiter: inspection.delimiter,
-        mapping: {
-          ...currentMapping,
-          title: title || currentMapping.title,
-          subtitle:
-            findColumn("subtitle", "description", "room", "location") ||
-            currentMapping.subtitle,
-          date:
-            findColumn("date", "start date", "start_date", "datetime") ||
-            currentMapping.date,
-          imageUrl:
-            findColumn("image", "image url", "image_url", "photo") ||
-            currentMapping.imageUrl,
-          link: findColumn("link", "url", "website") || currentMapping.link,
-        },
-      };
-    });
-  };
   const updateMapping = (
     key: keyof NonNullable<StructuredSourceConfig["mapping"]>,
     value: string | Record<string, string>,
   ) =>
+    setConfiguration((current) => {
+      const next = { ...(current.mapping ?? emptyMapping), [key]: value };
+      return {
+        ...current,
+        mapping: next,
+        // A mapped Source shows what it maps, so the two stay in agreement without a
+        // second control asking the author the same question again.
+        fields: mapped ? fieldsFromMapping(next) : current.fields,
+      };
+    });
+
+  // Field detection reads the connected data itself. It is keyed on what identifies the
+  // connection so switching file, URL, or delimiter re-detects, and an unchanged
+  // connection is answered from cache rather than refetched.
+  const connection = configuration.uploaded
+    ? `upload:${configuration.uploadedContent?.length ?? 0}:${(configuration.uploadedContent ?? "").slice(0, 200)}`
+    : `url:${configuration.url ?? ""}`;
+  // A half-typed URL passes the shape test — "https://exa.o" does — so keying the query on
+  // the live value would fetch an unintended host once per keystroke. Detection waits for
+  // the input to settle instead.
+  const settledConnection = useSettledValue(connection, detectionSettleMs);
+  // The query only runs once the live connection matches the settled one, so the latest
+  // configuration is by definition the one that settled.
+  const latestConfiguration = useRef(configuration);
+  useEffect(() => {
+    latestConfiguration.current = configuration;
+  }, [configuration]);
+  const detectable =
+    Boolean(csrf) &&
+    (configuration.uploaded
+      ? Boolean(configuration.uploadedContent)
+      : /^https:\/\/.+\..+/.test((configuration.url ?? "").trim()));
+  // A saved CSV upload keeps its bytes on the Server, so reopening that Source detects by
+  // id rather than sending a configuration that no longer carries the data.
+  const savedUpload = Boolean(
+    dataSource && configuration.uploaded && !configuration.uploadedContent,
+  );
+  const inspection = useQuery({
+    queryKey: [
+      "data-source-inspection",
+      provider,
+      savedUpload ? `saved:${dataSource?.id}` : settledConnection,
+      configuration.delimiter ?? "",
+    ],
+    queryFn: () =>
+      savedUpload
+        ? api.inspectSavedDataSource(dataSource!.id)
+        : api.inspectDataSource(provider, latestConfiguration.current, csrf),
+    // A saved upload has nothing to type, so it detects immediately.
+    enabled: savedUpload || (detectable && connection === settledConnection),
+    retry: false,
+    staleTime: 60_000,
+  });
+  const detectedFields = inspection.data?.fields ?? [];
+  const suggested = inspection.data?.suggested;
+  const suggestionKey = `${connection}:${JSON.stringify(suggested ?? null)}`;
+  const appliedSuggestion = useRef("");
+  useEffect(() => {
+    // The suggestion is a starting point, never an override: it is applied only while the
+    // mapping is still empty, and only once per detection result.
+    if (!mapped || !suggested || appliedSuggestion.current === suggestionKey)
+      return;
+    appliedSuggestion.current = suggestionKey;
+    setConfiguration((current) => {
+      if (!mappingIsEmpty(current.mapping)) return current;
+      const next = {
+        ...(current.mapping ?? emptyMapping),
+        ...suggested,
+        valueFields: current.mapping?.valueFields,
+      };
+      return { ...current, mapping: next, fields: fieldsFromMapping(next) };
+    });
+  }, [mapped, suggested, suggestionKey]);
+
+  const available = inspection.data?.available;
+  const availableKey = `${connection}:${JSON.stringify(available ?? null)}`;
+  const appliedAvailable = useRef("");
+  useEffect(() => {
+    // A feed field that this feed does not publish would render as blank space. Turning it
+    // off keeps the stored configuration honest about what the Widget will actually show.
+    if (mapped || !available || appliedAvailable.current === availableKey)
+      return;
+    appliedAvailable.current = availableKey;
     setConfiguration((current) => ({
       ...current,
-      mapping: {
-        ...(current.mapping ?? {
-          rootList: "",
-          title: "",
-          subtitle: "",
-          date: "",
-          imageUrl: "",
-          link: "",
-        }),
-        [key]: value,
+      fields: {
+        title: current.fields.title && available.title,
+        subtitle: current.fields.subtitle && available.subtitle,
+        date: current.fields.date && available.date,
+        author: current.fields.author && available.author,
+        description: current.fields.description && available.description,
+        image: current.fields.image && available.image,
+        link: current.fields.link && available.link,
       },
     }));
+  }, [mapped, available, availableKey]);
   return (
     <div className="details-backdrop" role={page ? undefined : "presentation"}>
       <section
@@ -280,7 +500,6 @@ export function StructuredDataSourceEditor({
               configuration={configuration}
               readOnly={readOnly}
               onChange={updateConfiguration}
-              onColumnsDetected={applyCsvInspection}
             />
           )}
           {provider !== "csv" && (
@@ -345,34 +564,53 @@ export function StructuredDataSourceEditor({
               />
             </label>
           </div>
-          <fieldset>
-            <legend>Displayed fields</legend>
-            <div className="checkbox-grid">
-              {(
-                Object.keys(configuration.fields) as Array<
-                  keyof StructuredSourceConfig["fields"]
-                >
-              ).map((field) => (
-                <label key={field}>
-                  <input
-                    type="checkbox"
-                    checked={configuration.fields[field]}
-                    disabled={readOnly}
-                    onChange={(event) =>
-                      setConfiguration((current) => ({
-                        ...current,
-                        fields: {
-                          ...current.fields,
-                          [field]: event.target.checked,
-                        },
-                      }))
-                    }
-                  />
-                  <span>{structuredFieldLabels[field] ?? field}</span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
+          {/* Feeds publish a fixed record, so the author chooses which parts of it to
+              show — but only from the parts this feed actually carries. Mapped Sources
+              have no such list: what they map is what they display. */}
+          {!mapped && (
+            <fieldset>
+              <legend>Displayed fields</legend>
+              <div className="checkbox-grid">
+                {(
+                  Object.keys(configuration.fields) as Array<
+                    keyof StructuredSourceConfig["fields"]
+                  >
+                )
+                  .filter(
+                    (field) =>
+                      !inspection.data ||
+                      inspection.data.available[field] ||
+                      configuration.fields[field],
+                  )
+                  .map((field) => (
+                    <label key={field}>
+                      <input
+                        type="checkbox"
+                        checked={configuration.fields[field]}
+                        disabled={readOnly}
+                        onChange={(event) =>
+                          setConfiguration((current) => ({
+                            ...current,
+                            fields: {
+                              ...current.fields,
+                              [field]: event.target.checked,
+                            },
+                          }))
+                        }
+                      />
+                      <span>{structuredFieldLabels[field] ?? field}</span>
+                    </label>
+                  ))}
+              </div>
+              {inspection.data && (
+                <small>
+                  {inspection.data.rowCount} item
+                  {inspection.data.rowCount === 1 ? "" : "s"} read from this
+                  feed. Fields it does not publish are not listed.
+                </small>
+              )}
+            </fieldset>
+          )}
           <div className="form-grid form-grid--2">
             <label className="field">
               <span className="field__label">Keyword filter</span>
@@ -407,66 +645,128 @@ export function StructuredDataSourceEditor({
             </label>
           </div>
           {(provider === "json" || provider === "csv") && mapping && (
-            <fieldset>
-              <legend>Field mapping</legend>
-              {provider === "json" && (
-                <label className="field">
-                  <span className="field__label">Root list path</span>
-                  <input
-                    value={mapping.rootList}
-                    placeholder="/items"
-                    disabled={readOnly}
-                    onChange={(e) => updateMapping("rootList", e.target.value)}
-                  />
-                </label>
-              )}
-              <div className="form-grid form-grid--2">
-                {(
-                  ["title", "subtitle", "date", "imageUrl", "link"] as const
-                ).map((key) => (
-                  <label className="field" key={key}>
-                    <span className="field__label">
-                      {mappingFieldLabels[key] ?? key}
-                    </span>
+            <>
+              <fieldset>
+                <legend>Field mapping</legend>
+                <StructuredDetectionNotice
+                  provider={provider}
+                  detectable={detectable}
+                  inspection={inspection}
+                />
+                {provider === "json" && (
+                  <label className="field">
+                    <span className="field__label">Root list path</span>
                     <input
-                      list={provider === "csv" ? "csv-columns" : undefined}
-                      value={mapping[key]}
-                      placeholder={mappingPlaceholders[provider][key]}
+                      value={mapping.rootList}
+                      placeholder="/items"
                       disabled={readOnly}
-                      onChange={(e) => updateMapping(key, e.target.value)}
+                      onChange={(e) =>
+                        updateMapping("rootList", e.target.value)
+                      }
                     />
                   </label>
-                ))}
-              </div>
-              {provider === "csv" && csvColumns.length > 0 && (
-                <datalist id="csv-columns">
-                  {csvColumns.map((column) => (
-                    <option value={column} key={column} />
-                  ))}
-                </datalist>
-              )}
-              {provider === "csv" && (
-                <label className="field">
-                  <span className="field__label">Delimiter</span>
-                  <Select
-                    value={configuration.delimiter ?? ""}
-                    disabled={readOnly}
-                    onChange={(e) =>
-                      setConfiguration((c) => ({
-                        ...c,
-                        delimiter: e.target
-                          .value as StructuredSourceConfig["delimiter"],
-                      }))
-                    }
-                  >
-                    <option value="">Detect</option>
-                    <option value=",">Comma</option>
-                    <option value=";">Semicolon</option>
-                    <option value="\t">Tab</option>
-                    <option value="|">Pipe</option>
-                  </Select>
-                </label>
-              )}
+                )}
+                <div className="form-grid form-grid--2">
+                  {mappedDisplayFields.map((field) => {
+                    const key = mappingSlotForField[field]!;
+                    return (
+                      <MappingSelect
+                        key={key}
+                        label={mappingFieldLabels[key] ?? key}
+                        value={mapping[key]}
+                        fields={detectedFields}
+                        placeholder={mappingPlaceholders[provider][key]}
+                        disabled={readOnly}
+                        onChange={(value) => updateMapping(key, value)}
+                      />
+                    );
+                  })}
+                </div>
+                {provider === "csv" && (
+                  <label className="field">
+                    <span className="field__label">Delimiter</span>
+                    <Select
+                      value={configuration.delimiter ?? ""}
+                      disabled={readOnly}
+                      onChange={(e) =>
+                        setConfiguration((c) => ({
+                          ...c,
+                          delimiter: e.target
+                            .value as StructuredSourceConfig["delimiter"],
+                        }))
+                      }
+                    >
+                      <option value="">Detect</option>
+                      <option value=",">Comma</option>
+                      <option value=";">Semicolon</option>
+                      <option value="\t">Tab</option>
+                      <option value="|">Pipe</option>
+                    </Select>
+                  </label>
+                )}
+                <div className="source-mapping-list">
+                  <strong>Optional values</strong>
+                  {Object.entries(mapping.valueFields ?? {}).map(
+                    ([label, path]) => (
+                      <div
+                        className="source-mapping-row source-mapping-row--value"
+                        key={label}
+                      >
+                        <input
+                          aria-label="Value label"
+                          value={label}
+                          disabled={readOnly}
+                          onChange={(event) => {
+                            const values = { ...(mapping.valueFields ?? {}) };
+                            delete values[label];
+                            values[event.target.value] = path;
+                            updateMapping("valueFields", values);
+                          }}
+                        />
+                        <input
+                          aria-label="Value path or column"
+                          value={path}
+                          disabled={readOnly}
+                          onChange={(event) =>
+                            updateMapping("valueFields", {
+                              ...(mapping.valueFields ?? {}),
+                              [label]: event.target.value,
+                            })
+                          }
+                        />
+                        <button
+                          className="icon-button"
+                          aria-label={`Remove ${label}`}
+                          disabled={readOnly}
+                          onClick={() => {
+                            const values = { ...(mapping.valueFields ?? {}) };
+                            delete values[label];
+                            updateMapping("valueFields", values);
+                          }}
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    ),
+                  )}
+                  {!readOnly &&
+                    Object.keys(mapping.valueFields ?? {}).length < 12 && (
+                      <button
+                        type="button"
+                        className="button button--quiet"
+                        onClick={() =>
+                          updateMapping("valueFields", {
+                            ...(mapping.valueFields ?? {}),
+                            [`Value ${Object.keys(mapping.valueFields ?? {}).length + 1}`]:
+                              provider === "json" ? "/value" : "value",
+                          })
+                        }
+                      >
+                        <Plus size={15} /> Add value
+                      </button>
+                    )}
+                </div>
+              </fieldset>
               <fieldset>
                 <legend>Date-aware selection</legend>
                 <label className="switch-row">
@@ -681,69 +981,7 @@ export function StructuredDataSourceEditor({
                   </>
                 )}
               </fieldset>
-              <div className="source-mapping-list">
-                <strong>Optional values</strong>
-                {Object.entries(mapping.valueFields ?? {}).map(
-                  ([label, path]) => (
-                    <div
-                      className="source-mapping-row source-mapping-row--value"
-                      key={label}
-                    >
-                      <input
-                        aria-label="Value label"
-                        value={label}
-                        disabled={readOnly}
-                        onChange={(event) => {
-                          const values = { ...(mapping.valueFields ?? {}) };
-                          delete values[label];
-                          values[event.target.value] = path;
-                          updateMapping("valueFields", values);
-                        }}
-                      />
-                      <input
-                        aria-label="Value path or column"
-                        value={path}
-                        disabled={readOnly}
-                        onChange={(event) =>
-                          updateMapping("valueFields", {
-                            ...(mapping.valueFields ?? {}),
-                            [label]: event.target.value,
-                          })
-                        }
-                      />
-                      <button
-                        className="icon-button"
-                        aria-label={`Remove ${label}`}
-                        disabled={readOnly}
-                        onClick={() => {
-                          const values = { ...(mapping.valueFields ?? {}) };
-                          delete values[label];
-                          updateMapping("valueFields", values);
-                        }}
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                  ),
-                )}
-                {!readOnly &&
-                  Object.keys(mapping.valueFields ?? {}).length < 12 && (
-                    <button
-                      type="button"
-                      className="button button--quiet"
-                      onClick={() =>
-                        updateMapping("valueFields", {
-                          ...(mapping.valueFields ?? {}),
-                          [`Value ${Object.keys(mapping.valueFields ?? {}).length + 1}`]:
-                            provider === "json" ? "/value" : "value",
-                        })
-                      }
-                    >
-                      <Plus size={15} /> Add value
-                    </button>
-                  )}
-              </div>
-            </fieldset>
+            </>
           )}
           <fieldset>
             <legend>Record filters</legend>

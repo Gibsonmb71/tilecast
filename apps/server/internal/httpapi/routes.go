@@ -212,11 +212,13 @@ func (s *server) routes() http.Handler {
 			dashboard.Get("/data-sources/{id}", s.getDataSource)
 			dashboard.Get("/data-sources/{id}/preview", s.previewSavedDataSource)
 			dashboard.Get("/data-sources/{id}/diagnostics", s.dataSourceDiagnostics)
+			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.operationsRateLimit).Get("/data-sources/{id}/inspect", s.inspectSavedDataSource)
 			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/data-sources", s.createDataSource)
 			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Patch("/data-sources/{id}", s.updateDataSource)
 			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/data-sources/{id}/duplicate", s.duplicateDataSource)
 			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Delete("/data-sources/{id}", s.deleteDataSource)
 			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.operationsRateLimit, s.requireCSRF).Post("/data-sources/{provider}/preview", s.previewDataSource)
+			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.operationsRateLimit, s.requireCSRF).Post("/data-sources/{provider}/inspect", s.inspectDataSource)
 			// Form Data Sources. Reads are session-guarded and further authorized per-form inside
 			// each handler (grants depend on the {id} path param); mutations add CSRF. Creating a
 			// form requires the editor+ global role; the creator becomes its manager.

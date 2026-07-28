@@ -23,18 +23,18 @@ import {
 import { useId, useState } from "react";
 import { createPortal } from "react-dom";
 import { api } from "../api/client";
-import type {
-  DataSource,
-  DataSourceDefinition,
-  DataSourceProvider,
-} from "../api/types";
+import type { DataSource, DataSourceProvider } from "../api/types";
 import { Button, StatusDot } from "../components/ui";
-import { DataSourceEditor } from "./DataSourceEditors";
+import { ConnectDataFlow } from "./DataSourceCreateFlow";
 import { previewRecordMaps } from "./previewRecords";
 import { providerLabel, sourceIcon } from "./dataSourceProviderMeta";
 
 // Studio shows at most this many sample values so a wide source cannot overflow the control.
 const sampleFieldLimit = 4;
+
+// Form Data Sources are authored through the Forms portal, so the Connect flow never
+// offers them here.
+const formExcluded: DataSourceProvider[] = ["form"];
 
 export type DataFormatGuide = {
   shape: string;
@@ -211,24 +211,51 @@ function statusLabel(status: unknown, recordCount: unknown) {
   return `Ready · ${recordCount} record${recordCount === 1 ? "" : "s"}`;
 }
 
+// useConnectDataFlow owns the two-step Connect state. Both the empty state and the picker
+// itself offer the same action, and duplicating the wiring meant a change to one path
+// silently diverged from the other.
+function useConnectDataFlow(
+  createProviders: DataSourceProvider[] | undefined,
+  csrf: string | undefined,
+  onCreated: (id: string) => void,
+) {
+  const [creating, setCreating] = useState<DataSourceProvider | "choose">();
+  return {
+    open: () => setCreating("choose"),
+    flow: creating ? (
+      <ConnectDataFlow
+        provider={creating === "choose" ? undefined : creating}
+        providers={createProviders}
+        exclude={formExcluded}
+        csrf={csrf ?? ""}
+        onChooseProvider={setCreating}
+        onBack={() => setCreating("choose")}
+        onClose={() => setCreating(undefined)}
+        onCreated={(id) => {
+          setCreating(undefined);
+          onCreated(id);
+        }}
+      />
+    ) : null,
+  };
+}
+
 // ConnectDataNotice is the empty state shown wherever a control needs data that does not exist
 // yet. It replaces disabling the control: the reason is stated and the fix is one click away.
 export function ConnectDataNotice({
   message,
-  definitions,
   createProviders,
   csrf,
   disabled = false,
   onCreated,
 }: {
   message?: string;
-  definitions?: DataSourceDefinition[];
   createProviders?: DataSourceProvider[];
   csrf?: string;
   disabled?: boolean;
   onCreated: (id: string) => void;
 }) {
-  const [creating, setCreating] = useState<DataSourceProvider | "choose">();
+  const connect = useConnectDataFlow(createProviders, csrf, onCreated);
   const canCreate = !disabled && Boolean(csrf);
   return (
     <div className="data-source-picker__empty">
@@ -249,25 +276,12 @@ export function ConnectDataNotice({
           type="button"
           variant="secondary"
           compact
-          onClick={() => setCreating("choose")}
+          onClick={connect.open}
         >
           <Plus size={15} aria-hidden="true" /> Connect new data
         </Button>
       )}
-      {creating && (
-        <ConnectDataFlow
-          provider={creating === "choose" ? undefined : creating}
-          definitions={definitions ?? []}
-          createProviders={createProviders}
-          csrf={csrf ?? ""}
-          onChooseProvider={setCreating}
-          onClose={() => setCreating(undefined)}
-          onCreated={(id) => {
-            setCreating(undefined);
-            onCreated(id);
-          }}
-        />
-      )}
+      {connect.flow}
     </div>
   );
 }
@@ -277,7 +291,6 @@ export function DataSourcePicker({
   description,
   value,
   sources,
-  definitions,
   csrf,
   disabled = false,
   required = false,
@@ -293,7 +306,6 @@ export function DataSourcePicker({
   value: string;
   // Sources already narrowed to those compatible with the consuming Widget or binding.
   sources: DataSource[];
-  definitions?: DataSourceDefinition[];
   csrf?: string;
   disabled?: boolean;
   required?: boolean;
@@ -310,7 +322,7 @@ export function DataSourcePicker({
   formatGuide?: DataFormatGuide;
   onChange: (value: string) => void;
 }) {
-  const [creating, setCreating] = useState<DataSourceProvider | "choose">();
+  const connect = useConnectDataFlow(createProviders, csrf, onChange);
   const [choosing, setChoosing] = useState(false);
   const dialogTitleId = useId();
   const selected = sources.find((source) => source.id === value);
@@ -348,7 +360,6 @@ export function DataSourcePicker({
       {sources.length === 0 && !missing ? (
         <ConnectDataNotice
           message={emptyMessage}
-          definitions={definitions}
           createProviders={createProviders}
           csrf={allowCreate ? csrf : undefined}
           disabled={disabled}
@@ -436,27 +447,14 @@ export function DataSourcePicker({
               }}
               onConnect={() => {
                 setChoosing(false);
-                setCreating("choose");
+                connect.open();
               }}
               onClose={() => setChoosing(false)}
             />
           )}
         </>
       )}
-      {creating && (
-        <ConnectDataFlow
-          provider={creating === "choose" ? undefined : creating}
-          definitions={definitions ?? []}
-          createProviders={createProviders}
-          csrf={csrf ?? ""}
-          onChooseProvider={setCreating}
-          onClose={() => setCreating(undefined)}
-          onCreated={(id) => {
-            setCreating(undefined);
-            onChange(id);
-          }}
-        />
-      )}
+      {connect.flow}
     </div>
   );
 }
@@ -550,101 +548,6 @@ function DataSourceSelectionDialog({
               <Plus size={15} aria-hidden /> Connect new data
             </Button>
           )}
-          <Button type="button" variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
-        </footer>
-      </section>
-    </div>,
-    document.body,
-  );
-}
-
-// ConnectDataFlow is the two-step create path: choose a compatible provider, then run the
-// ordinary DataSourceEditor. The editor is rendered without `page`, which is its existing
-// focus-managed modal mode, so no new dialog machinery is introduced here.
-function ConnectDataFlow({
-  provider,
-  definitions,
-  createProviders,
-  csrf,
-  onChooseProvider,
-  onClose,
-  onCreated,
-}: {
-  provider?: DataSourceProvider;
-  definitions: DataSourceDefinition[];
-  createProviders?: DataSourceProvider[];
-  csrf: string;
-  onChooseProvider: (provider: DataSourceProvider) => void;
-  onClose: () => void;
-  onCreated: (id: string) => void;
-}) {
-  // Form Data Sources are authored through the Forms portal, not this editor, so they are
-  // never offered here.
-  const choices = definitions.filter(
-    (definition) =>
-      definition.id !== "form" &&
-      (!createProviders?.length || createProviders.includes(definition.id)),
-  );
-
-  if (provider) {
-    return createPortal(
-      <DataSourceEditor
-        provider={provider}
-        csrf={csrf}
-        onClose={onClose}
-        onSaved={(created) => onCreated(created.id)}
-      />,
-      document.body,
-    );
-  }
-
-  return createPortal(
-    <div
-      className="details-backdrop data-source-connect-backdrop"
-      role="presentation"
-    >
-      <section
-        className="asset-details source-editor data-source-connect"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Connect new data"
-      >
-        <header>
-          <div>
-            <h2>Connect new data</h2>
-            <p>Choose where this Widget&rsquo;s data comes from.</p>
-          </div>
-          <button className="icon-button" aria-label="Close" onClick={onClose}>
-            <X size={18} aria-hidden="true" />
-          </button>
-        </header>
-        <div className="source-editor__body">
-          {choices.length === 0 ? (
-            <p>No Data Source providers are available in this installation.</p>
-          ) : (
-            <ul className="data-source-connect__choices">
-              {choices.map((definition) => (
-                <li key={definition.id}>
-                  <button
-                    type="button"
-                    onClick={() => onChooseProvider(definition.id)}
-                  >
-                    <span aria-hidden="true">
-                      {sourceIcon(definition.id, definition, 22)}
-                    </span>
-                    <span>
-                      <strong>{definition.name}</strong>
-                      <small>{definition.description}</small>
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-        <footer>
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
