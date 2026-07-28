@@ -541,7 +541,8 @@
   font-weight: 650;
 }
 
-/* Provider selection is a page-level choice, not a stack of nested cards. */
+/* Provider selection is a page-level choice presented on the same token-backed
+   surface used by the editors that follow it. */
 .app-editor-route > .details-backdrop:has(.source-gallery) {
   position: static;
   display: block;
@@ -554,11 +555,12 @@
   width: min(1120px, 100%);
   max-width: none;
   margin: 0 auto;
-  padding: 0;
+  padding: var(--tc-space-6);
   overflow: visible;
-  background: transparent;
-  border: 0;
-  border-radius: 0;
+  color: var(--tc-text-primary);
+  background: var(--tc-bg-surface);
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-panel);
   box-shadow: none;
 }
 
@@ -593,7 +595,7 @@
 }
 
 .app-editor-route .source-gallery > .source-provider-grid {
-  padding: var(--tc-space-4);
+  padding: 0;
 }
 
 .app-editor-route .source-provider-groups {

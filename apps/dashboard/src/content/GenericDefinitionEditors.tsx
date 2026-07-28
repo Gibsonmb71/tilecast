@@ -319,7 +319,7 @@ function GenericEditorShell({
             </aside>
           </div>
         ) : (
-          <>
+          <div className="source-editor__body">
             {details}
             {children}
             {error && (
@@ -327,7 +327,7 @@ function GenericEditorShell({
                 {error instanceof ApiError ? error.message : error.message}
               </div>
             )}
-          </>
+          </div>
         )}
         <footer>
           <button className="button button--quiet" onClick={onClose}>
