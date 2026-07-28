@@ -24,6 +24,7 @@ import { promises as fs } from "fs";
 import * as path from "path";
 import { pathToFileURL } from "url";
 import { logger, setLogLevel } from "../core/log";
+import { linuxKioskPolicy, type LinuxKioskPolicy } from "../core/linux-kiosk";
 import {
   loadOutsideActiveHoursPresentation,
   type OutsideActiveHoursPresentation,
@@ -68,6 +69,8 @@ let store: StateStore;
 let discovery: LanDiscovery | null = null;
 let lastPresentation: HostPresentation = { state: "setup" };
 let quitting = false;
+let activeLinuxKioskPolicy = linuxKioskPolicy(null);
+let displaySleepBlockerId: number | null = null;
 
 function argValue(flag: string): string | null {
   const index = process.argv.indexOf(flag);
@@ -96,9 +99,12 @@ async function resolveServerUrl(): Promise<string | null> {
 }
 
 function createWindow(): BrowserWindow {
+  const kiosk =
+    activeLinuxKioskPolicy.fullscreenEnabled &&
+    process.env.TILECAST_WINDOWED !== "1";
   const win = new BrowserWindow({
-    fullscreen: true,
-    kiosk: process.env.TILECAST_WINDOWED !== "1",
+    fullscreen: kiosk,
+    kiosk,
     frame: false,
     autoHideMenuBar: true,
     backgroundColor: "#000000",
@@ -148,6 +154,24 @@ function createWindow(): BrowserWindow {
     }
   });
   return win;
+}
+
+function applyLinuxKioskPolicy(policy: LinuxKioskPolicy): void {
+  activeLinuxKioskPolicy = policy;
+  const kiosk =
+    policy.fullscreenEnabled && process.env.TILECAST_WINDOWED !== "1";
+  if (window && !window.isDestroyed()) {
+    window.setKiosk(kiosk);
+    window.setFullScreen(kiosk);
+  }
+  if (policy.preventDisplaySleep && displaySleepBlockerId === null) {
+    displaySleepBlockerId = powerSaveBlocker.start("prevent-display-sleep");
+  } else if (!policy.preventDisplaySleep && displaySleepBlockerId !== null) {
+    if (powerSaveBlocker.isStarted(displaySleepBlockerId)) {
+      powerSaveBlocker.stop(displaySleepBlockerId);
+    }
+    displaySleepBlockerId = null;
+  }
 }
 
 function recreateWindow(): void {
@@ -327,6 +351,8 @@ async function startRuntime(serverUrl: string): Promise<void> {
     store,
     {
       present,
+      applyPlayerConfiguration: (config) =>
+        applyLinuxKioskPolicy(linuxKioskPolicy(config)),
       identify: (name, durationSeconds) => {
         window?.webContents.send("identify", { name, durationSeconds });
       },
@@ -451,8 +477,9 @@ app.whenReady().then(async () => {
     OUTSIDE_HOURS_REFRESH_MS,
   );
 
-  // The display must never blank while content plays.
-  powerSaveBlocker.start("prevent-display-sleep");
+  // Start with hardened defaults; cached configuration can adjust this as soon
+  // as the runtime loads.
+  applyLinuxKioskPolicy(activeLinuxKioskPolicy);
 
   setupMediaProtocol();
   guardWebContents();

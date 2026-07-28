@@ -62,7 +62,7 @@ export const descriptions: Record<string, string> = {
   "accessibility.allowed_packages":
     "Applications that may remain in front during authorized maintenance.",
   "reliability.mode":
-    "Managed Kiosk requires Android device-owner support and is not guaranteed on consumer TV firmware.",
+    "Standard reliability and recovery apply to Android and Linux. Managed Kiosk is Android-only and requires device-owner support.",
 };
 
 export const subsectionOrder: Record<
@@ -109,10 +109,16 @@ export const subsectionOrder: Record<
       ],
     },
     {
-      title: "Managed Kiosk",
+      title: "Android Managed Kiosk",
       description:
-        "These controls take effect only when Android confirms compatible device-owner capability.",
+        "Android-only controls that take effect when the device confirms compatible device-owner capability.",
       prefix: ["managed_kiosk."],
+    },
+    {
+      title: "Linux kiosk",
+      description:
+        "Linux window and desktop-session behavior. Starting at boot and restarting after process exit are configured by the systemd service on the player.",
+      prefix: ["linux_kiosk."],
     },
   ],
   power: [

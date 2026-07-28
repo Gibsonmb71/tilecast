@@ -110,6 +110,11 @@ Environment:
 | `TILECAST_DISABLE_GPU` | `1` forces full software rendering                               |
 | `TILECAST_MAX_FPS`     | Frame-rate cap (default 30)                                      |
 
+Studio's **Reliability and kiosk** settings include a Linux subsection for
+remotely controlling kiosk fullscreen and the desktop display-sleep blocker.
+The `TILECAST_WINDOWED=1` environment variable always wins over the fullscreen
+policy so a development session cannot be forced into kiosk mode.
+
 On first launch the player also browses the LAN for `_tilecast._tcp` servers
 and offers them as one-tap choices on the setup screen, so a screen on the
 same network needs no typing.

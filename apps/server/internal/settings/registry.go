@@ -113,6 +113,8 @@ var definitions = []Definition{
 	{Key: "managed_kiosk.block_overlays", Category: "reliability", Type: "bool", Default: true, Scope: ScopePolicy, Title: "Block overlays where supported"},
 	{Key: "managed_kiosk.allow_settings_during_admin", Category: "reliability", Type: "bool", Default: true, Scope: ScopePolicy, Title: "Allow Settings during maintenance"},
 	{Key: "managed_kiosk.admin_session_minutes", Category: "reliability", Type: "int", Default: 15.0, Min: number(1), Max: number(120), Scope: ScopePolicy, Title: "Maintenance session duration"},
+	{Key: "linux_kiosk.fullscreen_enabled", Category: "reliability", Type: "bool", Default: true, Scope: ScopePolicy, Title: "Kiosk fullscreen", Description: "Keeps Tilecast in a frameless fullscreen kiosk window on Linux. TILECAST_WINDOWED=1 remains a local development override.", Immediate: true},
+	{Key: "linux_kiosk.prevent_display_sleep", Category: "reliability", Type: "bool", Default: true, Scope: ScopePolicy, Title: "Prevent display sleep", Description: "Asks the Linux desktop session to keep the display awake while Tilecast Player is running.", Immediate: true},
 	{Key: "accessibility.control_assist_enabled", Category: "accessibility", Type: "bool", Default: true, Scope: ScopePolicy, Title: "Accessibility Control Assist", Description: "Hardened players request this behavior by default, but the Android service still requires deliberate local enablement."},
 	{Key: "accessibility.return_delay_seconds", Category: "accessibility", Type: "int", Default: 10.0, Min: number(3), Max: number(300), Scope: ScopePolicy, Title: "Return delay"},
 	{Key: "accessibility.allowed_packages", Category: "accessibility", Type: "package_list", Default: []any{}, Scope: ScopePolicy, Title: "Maintenance applications"},

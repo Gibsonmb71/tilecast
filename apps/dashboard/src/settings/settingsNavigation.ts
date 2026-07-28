@@ -179,7 +179,7 @@ export const sectionDetails: Record<
     icon: LifeBuoy,
     title: "Reliability and kiosk",
     description:
-      "Startup behavior, bounded recovery, and capability-gated Managed Kiosk.",
+      "Shared recovery with platform-specific Android and Linux kiosk controls.",
   },
   power: {
     icon: Power,

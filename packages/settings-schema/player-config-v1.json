@@ -16,6 +16,7 @@
     "reliability",
     "power",
     "managedKiosk",
+    "linuxKiosk",
     "accessibility"
   ],
   "properties": {
@@ -128,6 +129,15 @@
       "additionalProperties": true
     },
     "managedKiosk": { "type": "object", "additionalProperties": true },
+    "linuxKiosk": {
+      "type": "object",
+      "required": ["fullscreenEnabled", "preventDisplaySleep"],
+      "properties": {
+        "fullscreenEnabled": { "type": "boolean" },
+        "preventDisplaySleep": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
     "accessibility": {
       "type": "object",
       "properties": {

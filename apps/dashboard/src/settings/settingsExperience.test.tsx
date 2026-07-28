@@ -246,5 +246,26 @@ describe("settings presentation", () => {
       }),
     ]);
     expect(groups.at(0)?.title).toBe("Storage and delivery");
+
+    const reliabilityGroups = groupsFor("reliability", [
+      definition({
+        key: "managed_kiosk.lock_task_enabled",
+        category: "reliability",
+        type: "bool",
+        title: "Lock task",
+        scope: "policy",
+      }),
+      definition({
+        key: "linux_kiosk.fullscreen_enabled",
+        category: "reliability",
+        type: "bool",
+        title: "Kiosk fullscreen",
+        scope: "policy",
+      }),
+    ]);
+    expect(reliabilityGroups.map((group) => group.title)).toEqual([
+      "Android Managed Kiosk",
+      "Linux kiosk",
+    ]);
   });
 });

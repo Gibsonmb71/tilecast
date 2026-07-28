@@ -168,6 +168,8 @@ export function manifestActivationGraceMilliseconds(
 export interface PlayerHost {
   /** Replace what the renderer is showing. */
   present(presentation: Presentation): void;
+  /** Apply platform-host settings when cached or synchronized config changes. */
+  applyPlayerConfiguration?(config: PlayerConfig): void;
   /** Show a transient identify overlay. */
   identify(name: string, durationSeconds: number): void;
   /** Recreate the renderer view (heal rung / command). */
@@ -282,6 +284,7 @@ export class PlayerRuntime {
     this.configSync = new ConfigSync(this.store, this.client, {
       onConfigApplied: (config) => {
         this.config = config;
+        this.host.applyPlayerConfiguration?.(config);
       },
       onCredentialRejected: () => void this.onCredentialRejected(),
     });
