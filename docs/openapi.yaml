@@ -1252,7 +1252,10 @@ paths:
       responses:
         "200": { description: Detected fields for the saved Data Source }
         "404": { description: Data Source not found }
-        "422": { description: Provider does not support field detection, or the fetch failed }
+        "422":
+          {
+            description: "Provider does not support field detection, or the fetch failed",
+          }
   /api/v1/data-sources/{provider}/inspect:
     post:
       operationId: inspectDataSource
@@ -1274,7 +1277,7 @@ paths:
       responses:
         "200":
           {
-            description: Detected fields, sample values, suggested mapping, and available record fields,
+            description: "Detected fields, sample values, suggested mapping, and available record fields",
           }
         "404": { description: Provider does not support field detection }
         "422": { description: Validation or safe fetch failed }
