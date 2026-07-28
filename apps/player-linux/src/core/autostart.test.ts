@@ -69,6 +69,7 @@ function harness(
       appImagePath:
         options.appImagePath === undefined ? APP_IMAGE : options.appImagePath,
       unitDirectory: UNIT_DIR,
+      userIdentifier: "1000",
       environment: {
         display: ":0",
         waylandDisplay: null,
@@ -100,6 +101,17 @@ describe("unitQuote", () => {
       '"/home/my kiosk/player.AppImage"',
     );
     expect(unitQuote('DISPLAY=:0"x')).toBe('"DISPLAY=:0\\"x"');
+  });
+
+  it("drops control characters, which quoting cannot contain", () => {
+    // A unit file is line-based: a newline ends the directive even inside
+    // quotes, so the tail would be parsed as one of its own.
+    expect(unitQuote("DISPLAY=:0\nExecStartPre=/bin/false")).toBe(
+      "DISPLAY=:0ExecStartPre=/bin/false",
+    );
+    expect(unitQuote("TILECAST_SERVER_URL=https://a\r\nRestart=no")).toBe(
+      "TILECAST_SERVER_URL=https://aRestart=no",
+    );
   });
 });
 
@@ -314,6 +326,14 @@ describe("AutostartInstaller.probe", () => {
     expect((await new AutostartInstaller(h.d).probe()).lingerEnabled).toBe(
       true,
     );
+    // Named explicitly: `show-user` with no user reports the login manager's
+    // own properties, which carry no Linger, so every device would read "no".
+    expect(h.runs.find(([command]) => command === "loginctl")?.[1]).toEqual([
+      "show-user",
+      "1000",
+      "--property=Linger",
+      "--value",
+    ]);
 
     const broken = harness();
     broken.run.mockRejectedValue(new Error("systemctl missing"));

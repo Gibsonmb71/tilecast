@@ -172,7 +172,15 @@ Then enable it:
 
 ```sh
 systemctl --user daemon-reload
-systemctl --user enable --now tilecast-player
+systemctl --user enable tilecast-player
+```
+
+`enable` without `--now` on purpose: if a player is already running on the device, starting the service launches a second copy over the first. The service takes effect at the next boot or session start.
+
+Start it now only when no player is running:
+
+```sh
+pgrep -f tilecast-player.AppImage || systemctl --user start tilecast-player
 ```
 
 Check the service:

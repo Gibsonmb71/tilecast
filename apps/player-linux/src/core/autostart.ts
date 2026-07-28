@@ -90,6 +90,8 @@ export interface AutostartDeps {
   appImagePath: string | null;
   /** Absolute path of `~/.config/systemd/user`. */
   unitDirectory: string;
+  /** UID (or user name) to ask loginctl about; empty when it cannot be read. */
+  userIdentifier: string;
   /**
    * Environment facts captured from the live session. These are what make a
    * generated unit more accurate than a hand-written one.
@@ -117,12 +119,18 @@ export interface AutostartDeps {
  * Quote a systemd unit value when it contains whitespace or quotes. Unquoted
  * values with spaces are split into arguments, which would silently truncate an
  * ExecStart path or an environment value.
+ *
+ * Control characters are dropped rather than quoted. Unit files are line-based:
+ * a newline ends the directive even inside quotes, so a value carrying one would
+ * turn the rest of itself into a new directive. Nothing legitimate here — a
+ * display name, a URL, an AppImage path — contains one.
  */
 export function unitQuote(value: string): string {
-  if (!/[\s"'\\]/.test(value)) {
-    return value;
+  const safe = value.replace(/[\p{Cc}]/gu, "");
+  if (!/[\s"'\\]/.test(safe)) {
+    return safe;
   }
-  return `"${value.replace(/(["\\])/g, "\\$1")}"`;
+  return `"${safe.replace(/(["\\])/g, "\\$1")}"`;
 }
 
 export interface UnitRenderInput {
@@ -226,10 +234,17 @@ export class AutostartInstaller {
   }
 
   private async lingerEnabled(): Promise<boolean> {
+    if (!this.deps.userIdentifier) {
+      return false;
+    }
     try {
       // Read-only; needs no privilege. Root is only required to *change* it.
+      // The user must be named: `show-user` with no argument reports the
+      // login manager's own properties, which have no Linger at all, so an
+      // unnamed call answers "no" for every device.
       const result = await this.deps.run("loginctl", [
         "show-user",
+        this.deps.userIdentifier,
         "--property=Linger",
         "--value",
       ]);
@@ -537,6 +552,7 @@ export function systemAutostartDeps(
   return {
     appImagePath: environment["APPIMAGE"] ?? null,
     unitDirectory: `${environment["HOME"] ?? homedir()}/.config/systemd/user`,
+    userIdentifier: String(process.getuid?.() ?? environment["USER"] ?? ""),
     environment: {
       display: environment["DISPLAY"] ?? null,
       waylandDisplay: environment["WAYLAND_DISPLAY"] ?? null,

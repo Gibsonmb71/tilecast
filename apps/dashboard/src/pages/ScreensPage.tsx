@@ -111,6 +111,10 @@ export const autostartSummary = (status?: ReliabilityStatus): string => {
       return `Needs attention${status?.autostartError ? ` · ${status.autostartError}` : ""}`;
     case "unsupported":
       return `Unsupported${status?.autostartError ? ` · ${status.autostartError}` : ""}`;
+    case "unknown":
+      // The probe itself failed. Distinct from a device that reports nothing:
+      // there is a device, it tried, and it carries the reason.
+      return `Could not determine${status?.autostartError ? ` · ${status.autostartError}` : ""}`;
     default:
       return "Not reported";
   }
@@ -127,6 +131,8 @@ export const autostartWarning = (status?: ReliabilityStatus) => {
     return "Autostart is not installed; this screen will not return on its own after a reboot or a player update.";
   if (status?.autostartState === "needs_attention")
     return "A service unit is present but systemd does not report it as enabled.";
+  if (status?.autostartState === "unknown")
+    return `Autostart state could not be determined on the device${status.autostartError ? `: ${status.autostartError}` : ""}. Treat this screen as not set up until it reports again.`;
   if (
     status?.autostartState === "installed" &&
     status.autostartTarget === "default.target" &&
@@ -3097,12 +3103,17 @@ export function ScreenDetailPage() {
                         <button
                           className="button button--secondary"
                           disabled={command.isPending}
-                          onClick={() =>
-                            command.mutate({
-                              type: "remove_autostart",
-                              payload: {},
-                            })
-                          }
+                          onClick={() => {
+                            if (
+                              confirm(
+                                "Remove the autostart service? This screen will keep playing now, but will not return on its own after a reboot or a player update.",
+                              )
+                            )
+                              command.mutate({
+                                type: "remove_autostart",
+                                payload: {},
+                              });
+                          }}
                         >
                           Remove autostart
                         </button>

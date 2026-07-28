@@ -10,6 +10,18 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// Autostart values the Linux player is defined to report. Anything else is a
+// newer or a misbehaving player, and is not written to the status row.
+var (
+	autostartStates = map[string]bool{
+		"unknown": true, "not_installed": true, "installed": true,
+		"needs_attention": true, "unsupported": true,
+	}
+	autostartTargets = map[string]bool{
+		"graphical-session.target": true, "default.target": true,
+	}
+)
+
 func (s *Service) Enroll(ctx context.Context, sessionID uuid.UUID, enrollmentToken string) (EnrollmentResult, error) {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
@@ -125,8 +137,22 @@ func (s *Service) Heartbeat(ctx context.Context, principal DevicePrincipal, hear
 	// Linux autostart. Recorded outside the reliability block below because it
 	// is reported on its own cadence (at startup and after each autostart
 	// command) rather than alongside the Android reliability fields.
-	if heartbeat.AutostartState != "" {
-		_, _ = s.db.Exec(ctx, `UPDATE screen_player_status SET autostart_state=NULLIF($2,''),autostart_target=NULLIF($3,''),autostart_supervised=$4,autostart_linger_enabled=$5,autostart_error=NULLIF($6,'') WHERE screen_id=$1`, principal.ScreenID, heartbeat.AutostartState, heartbeat.AutostartTarget, heartbeat.AutostartSupervised, heartbeat.AutostartLingerEnabled, heartbeat.AutostartError)
+	// Only protocol-defined values are stored, and the diagnostic is capped at
+	// the length the player already truncates to. An unrecognised value is
+	// dropped rather than rejecting the whole heartbeat: that would take the
+	// screen offline in Studio over a field it does not depend on.
+	if autostartStates[heartbeat.AutostartState] {
+		target := heartbeat.AutostartTarget
+		if !autostartTargets[target] {
+			target = ""
+		}
+		autostartError := heartbeat.AutostartError
+		// By rune: a byte-slice can cut a multi-byte character in half, and
+		// Postgres rejects the invalid UTF-8 that produces.
+		if runes := []rune(autostartError); len(runes) > 240 {
+			autostartError = string(runes[:240])
+		}
+		_, _ = s.db.Exec(ctx, `UPDATE screen_player_status SET autostart_state=NULLIF($2,''),autostart_target=NULLIF($3,''),autostart_supervised=$4,autostart_linger_enabled=$5,autostart_error=NULLIF($6,'') WHERE screen_id=$1`, principal.ScreenID, heartbeat.AutostartState, target, heartbeat.AutostartSupervised, heartbeat.AutostartLingerEnabled, autostartError)
 	}
 	_, _ = s.db.Exec(ctx, `UPDATE screen_player_status SET presentation_schema_versions=$2,native_presentation_capabilities=$3,web_runtime_version=$4,web_bundle_limit_bytes=$5 WHERE screen_id=$1`, principal.ScreenID, heartbeat.PresentationSchemaVersions, heartbeat.NativePresentationCapabilities, heartbeat.WebRuntimeVersion, heartbeat.WebBundleLimitBytes)
 	if heartbeat.ConfiguredReliabilityMode != "" || heartbeat.SafeMode != nil {

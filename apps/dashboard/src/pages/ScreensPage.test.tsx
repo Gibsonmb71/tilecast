@@ -377,6 +377,16 @@ describe("screen management", () => {
         powerAssist,
       }),
     ).toContain("managed AppImage");
+    // A device whose probe failed is not the same as a device that reports
+    // nothing, and the difference is what the operator has to act on.
+    expect(
+      autostartSummary({
+        autostartState: "unknown",
+        autostartError: "EACCES /home/kiosk/.config",
+        powerAssist,
+      }),
+    ).toBe("Could not determine · EACCES /home/kiosk/.config");
+    expect(autostartSummary({ powerAssist })).toBe("Not reported");
   });
 
   it("hides Linux autostart controls for players that do not report it", () => {
@@ -419,6 +429,17 @@ describe("screen management", () => {
         powerAssist,
       }),
     ).toContain("enable-linger");
+    expect(
+      autostartWarning({ autostartState: "needs_attention", powerAssist }),
+    ).toContain("not report it as enabled");
+    // A failed probe carries its own reason, and must not read as healthy.
+    expect(
+      autostartWarning({
+        autostartState: "unknown",
+        autostartError: "EACCES /home/kiosk/.config",
+        powerAssist,
+      }),
+    ).toContain("EACCES /home/kiosk/.config");
     expect(
       autostartWarning({
         autostartState: "installed",

@@ -309,10 +309,10 @@ export class PlayerRuntime {
   // -------------------------------------------------------------- lifecycle
 
   async start(): Promise<void> {
-    await this.store.init();
     // Read before anything slow: how long the system had been up when this
     // process started is only meaningful if it is sampled at start.
     this.systemUptimeAtStartSeconds = await this.readSystemUptimeSeconds();
+    await this.store.init();
     this.installationId = await loadOrCreateInstallationId(this.store);
     this.supervisorState =
       (await this.store.readJson<SupervisorState>(SUPERVISOR_FILE)) ??
@@ -475,8 +475,10 @@ export class PlayerRuntime {
 
     this.autostart = new AutostartInstaller(systemAutostartDeps());
     // Probed once here so the first heartbeat already carries autostart state;
-    // Studio's Linux boot row is otherwise blank until an operator acts.
-    void this.refreshAutostartStatus();
+    // Studio's Linux boot row is otherwise blank until an operator acts. Runs
+    // alongside the startup syncs and is awaited before the socket opens, so
+    // the probe's subprocesses never delay startup but always land in time.
+    const autostartProbed = this.refreshAutostartStatus();
 
     this.commands = new CommandCoordinator(
       this.store,
@@ -556,6 +558,7 @@ export class PlayerRuntime {
     await this.configSync.syncNow("startup");
     await this.manifestSync.start();
     await this.commands.start();
+    await autostartProbed;
     this.connectSocket();
   }
 
