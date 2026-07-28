@@ -123,7 +123,7 @@ func TestSettingsPolicyInheritanceAndRevision(t *testing.T) {
 		t.Fatalf("reliability inheritance=%#v", effective.Values)
 	}
 	config, etag, err := service.PlayerConfiguration(ctx, screen)
-	if err != nil || config.Playback["defaultVolume"] != 0.25 || config.Reliability["mode"] != "managed_kiosk" || config.Power["keepScreenOn"] != false || config.Power["outsideActiveHoursDisplay"] != "custom_text" || config.Power["outsideActiveHoursText"] != "School is closed" || config.Power["blackScreenFallback"] != false || etag == "" {
+	if err != nil || config.Playback["defaultVolume"] != 0.25 || config.Reliability["mode"] != "managed_kiosk" || config.Power["keepScreenOn"] != false || config.Power["outsideActiveHoursDisplay"] != "custom_text" || config.Power["outsideActiveHoursText"] != "School is closed" || config.Power["blackScreenFallback"] != false || config.LinuxKiosk["fullscreenEnabled"] != true || config.LinuxKiosk["preventDisplaySleep"] != true || etag == "" {
 		t.Fatalf("config=%#v etag=%q err=%v", config, etag, err)
 	}
 	if notifier.notes < 3 {

@@ -69,6 +69,7 @@ type PlayerConfig struct {
 	Reliability    map[string]any `json:"reliability"`
 	Power          map[string]any `json:"power"`
 	ManagedKiosk   map[string]any `json:"managedKiosk"`
+	LinuxKiosk     map[string]any `json:"linuxKiosk"`
 	Accessibility  map[string]any `json:"accessibility"`
 	Updates        map[string]any `json:"updates"`
 }
@@ -436,6 +437,7 @@ func (s *Service) PlayerConfiguration(ctx context.Context, screen uuid.UUID) (Pl
 		Reliability:   map[string]any{"mode": v("reliability.mode"), "launchAfterBoot": v("reliability.launch_after_boot"), "immersiveMode": v("reliability.immersive_mode"), "foregroundWatchdogEnabled": v("reliability.foreground_watchdog_enabled"), "playbackStallSeconds": v("reliability.playback_stall_seconds"), "webviewStallSeconds": v("reliability.webview_stall_seconds"), "maximumProcessRestarts": v("reliability.maximum_process_restarts"), "restartWindowMinutes": v("reliability.restart_window_minutes"), "safeModeEnabled": v("reliability.safe_mode_enabled")},
 		Power:         map[string]any{"activeHoursEnabled": v("power.active_hours_enabled"), "activeHoursTimezone": v("power.active_hours_timezone"), "activeHoursDays": v("power.active_hours_days"), "activeHoursStart": v("power.active_hours_start"), "activeHoursEnd": v("power.active_hours_end"), "startupGraceSeconds": v("power.startup_grace_seconds"), "shutdownPrepareSeconds": v("power.shutdown_prepare_seconds"), "keepScreenOn": v("power.keep_screen_on"), "cecAssistEnabled": v("power.cec_assist_enabled"), "sleepOutsideActiveHours": v("power.sleep_outside_active_hours"), "outsideActiveHoursDisplay": v("power.outside_active_hours_display"), "outsideActiveHoursText": v("power.outside_active_hours_text"), "blackScreenFallback": v("power.outside_active_hours_display") == "black"},
 		ManagedKiosk:  map[string]any{"lockTaskEnabled": v("managed_kiosk.lock_task_enabled"), "blockOverlays": v("managed_kiosk.block_overlays"), "allowSettingsDuringAdmin": v("managed_kiosk.allow_settings_during_admin"), "adminSessionMinutes": v("managed_kiosk.admin_session_minutes")},
+		LinuxKiosk:    map[string]any{"fullscreenEnabled": v("linux_kiosk.fullscreen_enabled"), "preventDisplaySleep": v("linux_kiosk.prevent_display_sleep")},
 		Accessibility: map[string]any{"controlAssistEnabled": v("accessibility.control_assist_enabled"), "returnDelaySeconds": v("accessibility.return_delay_seconds"), "allowedPackages": v("accessibility.allowed_packages"), "pauseDuringUpdates": v("accessibility.pause_during_updates"), "pauseDuringAdminSession": v("accessibility.pause_during_admin_session"), "reportForegroundPackage": v("accessibility.report_foreground_package"), "maximumReturns": v("accessibility.maximum_returns"), "returnWindowMinutes": v("accessibility.return_window_minutes")},
 		Updates:       map[string]any{"channel": v("player.update.channel")}}
 	return config, fmt.Sprintf(`"config-%s-%d"`, screen, effective.ConfigRevision), nil

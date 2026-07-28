@@ -1,6 +1,12 @@
 # Player reliability, kiosk, accessibility, and power
 
-Most of this page is Android-specific. The [meaningful render progress](#meaningful-render-progress) section applies to both players and is the shared definition of what "the screen is working" means.
+The watchdog, recovery, safe-mode, and [meaningful render progress](#meaningful-render-progress) behavior applies to Android and Linux. Platform-specific controls are identified below.
+
+## Linux kiosk and reliability
+
+Tilecast Studio exposes Linux kiosk fullscreen and display-sleep prevention alongside the shared watchdog and recovery policy. These settings apply immediately when the Linux player receives configuration. `TILECAST_WINDOWED=1` remains a local development override that prevents remote policy from forcing kiosk fullscreen.
+
+Linux boot startup, restart after process exit, and desktop lockdown are operating-system responsibilities provided by the installed systemd unit and kiosk compositor. Studio does not claim those external safeguards are active merely because a policy value is enabled. Android device-owner, lock-task, Accessibility Control Assist, and Power Assist settings do not apply to Linux.
 
 Tilecast Player has two reliability modes. **Standard Reliability** works with a normally installed APK and provides cached startup, boot recovery, immersive fullscreen, keep-awake behavior, bounded playback recovery, safe mode, and locally approved Accessibility Control Assist. Android can still let a user leave the app. **Managed Kiosk** is effective only when Android confirms device-owner/device-policy provisioning and active lock task. Requesting it in policy is not proof that it is active.
 

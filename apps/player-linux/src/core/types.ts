@@ -180,6 +180,7 @@ export interface PlayerConfig {
   reliability: Record<string, unknown>;
   power: Record<string, unknown>;
   managedKiosk: Record<string, unknown>;
+  linuxKiosk: Record<string, unknown>;
   accessibility: Record<string, unknown>;
   updates: Record<string, unknown>;
 }

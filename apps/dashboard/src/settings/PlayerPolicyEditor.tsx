@@ -31,8 +31,9 @@ const policyGroups = [
   },
   {
     title: "Reliability and kiosk",
-    description: "Startup recovery, watchdogs, and managed-device behavior.",
-    prefixes: ["reliability.", "managed_kiosk."],
+    description:
+      "Shared recovery plus platform-specific Android and Linux kiosk behavior.",
+    prefixes: ["reliability.", "managed_kiosk.", "linux_kiosk."],
   },
   {
     title: "Active hours and power",
