@@ -58,6 +58,11 @@ import { FormField } from "../components/FormField";
 import { PlayerPolicyEditor } from "../settings/PlayerPolicyEditor";
 import { formatLocationAddress } from "../settings/LocationsPanel";
 import { previewApi } from "../api/previews";
+import { previewAge } from "../components/livePreviewState";
+
+const GRID_PREVIEW_LEASE_RENEWAL_MILLIS = 30_000;
+const GRID_PREVIEW_METADATA_REFRESH_MILLIS = 10_000;
+const GRID_PREVIEW_AGE_REFRESH_MILLIS = 10_000;
 
 export const canManageScreens = (user?: User) =>
   user?.role === "owner" || user?.role === "administrator";
@@ -1215,6 +1220,7 @@ export function ScreenListContent({
                       <ScreenGridCard
                         key={screen.id}
                         screen={screen}
+                        csrfToken={csrfToken}
                         selected={selected.has(screen.id)}
                         canManage={canManage}
                         showLocation={groupBy !== "location"}
@@ -1608,8 +1614,9 @@ function ScreenTableRow({
   );
 }
 
-function ScreenGridCard({
+export function ScreenGridCard({
   screen,
+  csrfToken,
   selected,
   canManage,
   showLocation,
@@ -1618,6 +1625,7 @@ function ScreenGridCard({
   onMenu,
 }: {
   screen: Screen;
+  csrfToken: string;
   selected: boolean;
   canManage: boolean;
   showLocation: boolean;
@@ -1627,6 +1635,7 @@ function ScreenGridCard({
 }) {
   const ref = useRef<HTMLElement>(null);
   const [visible, setVisible] = useState(false);
+  const [now, setNow] = useState(Date.now);
   useEffect(() => {
     const node = ref.current;
     if (!node) return;
@@ -1637,16 +1646,54 @@ function ScreenGridCard({
     observer.observe(node);
     return () => observer.disconnect();
   }, []);
+  const canRequestPreview =
+    visible &&
+    Boolean(csrfToken) &&
+    screen.status !== "offline" &&
+    screen.status !== "disabled" &&
+    screen.status !== "revoked";
+  useEffect(() => {
+    if (!canRequestPreview) return;
+    let active = true;
+    const renew = async (forceCapture: boolean) => {
+      try {
+        await previewApi.renew(screen.id, csrfToken, forceCapture);
+      } catch {
+        // The metadata query below keeps the card's honest unavailable state.
+        // A transient lease failure is retried at the next renewal.
+      }
+    };
+    void renew(true);
+    const interval = window.setInterval(
+      () => active && void renew(false),
+      GRID_PREVIEW_LEASE_RENEWAL_MILLIS,
+    );
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [canRequestPreview, csrfToken, screen.id]);
   const preview = useQuery({
     queryKey: ["screen-preview-card", screen.id],
     queryFn: () => previewApi.metadata(screen.id),
     enabled: visible,
-    refetchInterval: visible ? 30_000 : false,
+    refetchInterval: visible ? GRID_PREVIEW_METADATA_REFRESH_MILLIS : false,
   });
   const image =
     preview.data?.imageAvailable && preview.data.updatedAt
       ? previewApi.imageUrl(screen.id, preview.data.updatedAt)
       : undefined;
+  const age = preview.data?.capturedAt
+    ? previewAge(preview.data.capturedAt, now)
+    : null;
+  useEffect(() => {
+    if (!visible || !preview.data?.capturedAt) return;
+    const interval = window.setInterval(
+      () => setNow(Date.now()),
+      GRID_PREVIEW_AGE_REFRESH_MILLIS,
+    );
+    return () => window.clearInterval(interval);
+  }, [preview.data?.capturedAt, visible]);
   const portrait = screen.screenHeight > screen.screenWidth;
   return (
     <article
@@ -1675,7 +1722,20 @@ function ScreenGridCard({
             aria-label="Loading preview"
           />
         ) : image ? (
-          <img src={image} alt={`Latest preview from ${screen.name}`} />
+          <>
+            <img src={image} alt={`Latest preview from ${screen.name}`} />
+            {age && (
+              <span
+                className={`screen-card__preview-age screen-card__preview-age--${age.tone}`}
+                aria-label={`Snapshot captured ${age.label}`}
+                title={`Captured ${new Date(
+                  preview.data?.capturedAt ?? "",
+                ).toLocaleString()}`}
+              >
+                {age.label}
+              </span>
+            )}
+          </>
         ) : (
           <span className="screen-preview-empty">
             <Monitor size={24} />
