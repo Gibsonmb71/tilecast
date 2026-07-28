@@ -5,7 +5,7 @@ import {
   useState,
   type PropsWithChildren,
 } from "react";
-import { api } from "../api/client";
+import { api, ApiError } from "../api/client";
 import type {
   AuthStatus,
   LoginInput,
@@ -14,8 +14,10 @@ import type {
   SetupInput,
 } from "../api/types";
 import {
+  conditionalMediationAvailable,
   isPasskeyCancellation,
   serializeAssertion,
+  signalUnknownCredential,
   toRequestOptions,
 } from "./webauthn";
 
@@ -32,6 +34,11 @@ type AuthContextValue = {
   verifyMfaPasskey: () => Promise<void>;
   /** Signs in with a discoverable passkey, with no username or password. */
   loginWithPasskey: () => Promise<void>;
+  /**
+   * Arms autofill-assisted sign-in: passkeys appear in the browser's own
+   * autofill list on the username field. Returns a cleanup function.
+   */
+  watchForPasskeyAutofill: () => () => void;
   cancelChallenge: () => void;
   logout: () => Promise<void>;
   isSubmitting: boolean;
@@ -109,20 +116,54 @@ export function AuthProvider({ children }: PropsWithChildren) {
     },
     onSuccess: setSession,
   });
-  const passkeyLoginMutation = useMutation({
-    mutationFn: async () => {
-      const ceremony = await api.passkeyLoginOptions();
-      const credential = (await navigator.credentials.get({
-        publicKey: toRequestOptions(ceremony.options),
-      })) as PublicKeyCredential | null;
-      if (!credential) throw new Error("No passkey was provided.");
-      return api.passkeyLogin(
+  // One discoverable ceremony, driven two ways: from a button (modal) or from
+  // the browser's autofill list (conditional). A conditional request stays
+  // pending for as long as the page is open, so it deliberately does not run
+  // through a mutation — its "pending" is idle waiting, not work in progress,
+  // and would otherwise disable the sign-in button forever.
+  const runPasskeyCeremony = async (signal?: AbortSignal) => {
+    const ceremony = await api.passkeyLoginOptions();
+    const credential = (await navigator.credentials.get({
+      publicKey: toRequestOptions(ceremony.options),
+      ...(signal ? { mediation: "conditional" as const, signal } : {}),
+    })) as PublicKeyCredential | null;
+    if (!credential) throw new Error("No passkey was provided.");
+    try {
+      return await api.passkeyLogin(
         ceremony.challengeToken,
         serializeAssertion(credential),
       );
-    },
+    } catch (error) {
+      // A credential this server no longer holds should stop being offered,
+      // rather than reappearing at every sign-in and failing again.
+      if (error instanceof ApiError && error.code === "passkey_rejected") {
+        const rpId = ceremony.options.rpId;
+        if (typeof rpId === "string")
+          void signalUnknownCredential(rpId, credential.id);
+      }
+      throw error;
+    }
+  };
+
+  const passkeyLoginMutation = useMutation({
+    mutationFn: () => runPasskeyCeremony(),
     onSuccess: setSession,
   });
+
+  const watchForPasskeyAutofill = () => {
+    const controller = new AbortController();
+    void (async () => {
+      if (!(await conditionalMediationAvailable())) return;
+      if (controller.signal.aborted) return;
+      try {
+        setSession(await runPasskeyCeremony(controller.signal));
+      } catch {
+        // Abandoning or dismissing an autofill request is the normal outcome
+        // and must never surface as a sign-in error.
+      }
+    })();
+    return () => controller.abort();
+  };
   const logoutMutation = useMutation({
     mutationFn: async () => api.logout(query.data?.csrfToken ?? ""),
     onSuccess: () => {
@@ -160,6 +201,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         verifyMfa: (code) => settle(verifyMutation.mutateAsync(code)),
         verifyMfaPasskey: () => settle(passkeyChallengeMutation.mutateAsync()),
         loginWithPasskey: () => settle(passkeyLoginMutation.mutateAsync()),
+        watchForPasskeyAutofill,
         cancelChallenge: () => setChallenge(undefined),
         logout: () => settle(logoutMutation.mutateAsync()),
         isSubmitting:

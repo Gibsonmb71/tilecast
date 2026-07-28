@@ -152,6 +152,9 @@ paths:
   /api/v1/me/security/passkeys:
     post:
       operationId: registerPasskey
+      description: >-
+        The passkey is named from the authenticator's AAGUID; no name is
+        accepted here. Use the rename endpoint to change it.
       parameters:
         - in: header
           name: X-CSRF-Token
@@ -160,11 +163,6 @@ paths:
         - in: header
           name: X-MFA-Challenge
           required: true
-          schema: { type: string }
-        - in: header
-          name: X-Passkey-Name
-          description: Percent-encoded display name.
-          required: false
           schema: { type: string }
       responses:
         "201": { description: Passkey enrolled }

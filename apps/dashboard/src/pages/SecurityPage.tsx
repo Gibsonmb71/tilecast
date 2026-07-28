@@ -8,6 +8,7 @@ import {
   isPasskeyCancellation,
   passkeysSupported,
   serializeRegistration,
+  signalAcceptedCredentials,
   toCreationOptions,
 } from "../auth/webauthn";
 import { FormField } from "../components/FormField";
@@ -221,12 +222,24 @@ function PasskeyPanel({ status }: { status: SecurityStatus }) {
   const { status: auth } = useAuth();
   const csrfToken = auth?.csrfToken ?? "";
   const refresh = useSecurityRefresh();
+  const [renaming, setRenaming] = useState<Passkey>();
   const [name, setName] = useState("");
-  const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<Passkey>();
   const [password, setPassword] = useState("");
   const supported = passkeysSupported();
 
+  // Once the list settles, tell the user's passkey provider which credentials
+  // are still valid here, so anything removed in Studio stops being offered.
+  useEffect(() => {
+    void signalAcceptedCredentials(
+      status.relyingPartyId,
+      status.userHandle,
+      status.passkeys.map((passkey) => passkey.credentialId),
+    );
+  }, [status.relyingPartyId, status.userHandle, status.passkeys]);
+
+  // No name is asked for. The user already answered a system prompt to get
+  // here; the authenticator tells us what it is, and it can be renamed later.
   const register = useMutation({
     mutationFn: async () => {
       const ceremony = await api.passkeyRegistrationOptions(csrfToken);
@@ -236,13 +249,19 @@ function PasskeyPanel({ status }: { status: SecurityStatus }) {
       if (!credential) throw new Error("No passkey was created.");
       return api.registerPasskey(
         ceremony.challengeToken,
-        name,
         serializeRegistration(credential),
         csrfToken,
       );
     },
+    onSuccess: refresh,
+  });
+  const rename = useMutation({
+    mutationFn: () => {
+      if (!renaming) throw new Error("Select a passkey to rename.");
+      return api.renamePasskey(renaming.id, name, csrfToken);
+    },
     onSuccess: () => {
-      setAdding(false);
+      setRenaming(undefined);
       setName("");
       refresh();
     },
@@ -269,7 +288,8 @@ function PasskeyPanel({ status }: { status: SecurityStatus }) {
           supported && (
             <Button
               variant="primary"
-              onClick={() => setAdding((open) => !open)}
+              loading={register.isPending}
+              onClick={() => register.mutate()}
             >
               Add a passkey
             </Button>
@@ -290,6 +310,7 @@ function PasskeyPanel({ status }: { status: SecurityStatus }) {
       {errorNotice(
         isPasskeyCancellation(register.error) ? null : register.error,
       )}
+      {errorNotice(rename.error)}
       {errorNotice(remove.error)}
 
       {status.passkeys.length === 0 ? (
@@ -305,36 +326,47 @@ function PasskeyPanel({ status }: { status: SecurityStatus }) {
                   ? ` · Last used ${new Date(passkey.lastUsedAt).toLocaleDateString()}`
                   : " · Never used"}
               </span>
-              <Button
-                variant="danger"
-                compact
-                onClick={() => setRemoving(passkey)}
-              >
-                Remove
-              </Button>
+              <span className="security-list__actions">
+                <Button
+                  compact
+                  onClick={() => {
+                    setRenaming(passkey);
+                    setName(passkey.name);
+                  }}
+                >
+                  Rename
+                </Button>
+                <Button
+                  variant="danger"
+                  compact
+                  onClick={() => setRemoving(passkey)}
+                >
+                  Remove
+                </Button>
+              </span>
             </li>
           ))}
         </ul>
       )}
 
-      {adding && (
+      {renaming && (
         <div className="security-enroll security-enroll--stacked">
           <FormField
             id="passkey-name"
-            label="Name this passkey"
-            hint="Something you will recognize later, such as “Work laptop”."
+            label={`Rename “${renaming.name}”`}
+            hint="Tilecast named this from the authenticator that created it."
             value={name}
             onChange={(event) => setName(event.target.value)}
           />
           <div className="security-actions">
             <Button
               variant="primary"
-              loading={register.isPending}
-              onClick={() => register.mutate()}
+              loading={rename.isPending}
+              onClick={() => rename.mutate()}
             >
-              Continue
+              Save
             </Button>
-            <Button variant="quiet" onClick={() => setAdding(false)}>
+            <Button variant="quiet" onClick={() => setRenaming(undefined)}>
               Cancel
             </Button>
           </div>
