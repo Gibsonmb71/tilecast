@@ -22,6 +22,7 @@ import (
 	"github.com/tilecast/tilecast/apps/server/internal/layouts"
 	"github.com/tilecast/tilecast/apps/server/internal/media"
 	"github.com/tilecast/tilecast/apps/server/internal/playlists"
+	"github.com/tilecast/tilecast/apps/server/internal/plugins"
 	"github.com/tilecast/tilecast/apps/server/internal/scheduling"
 	"github.com/tilecast/tilecast/apps/server/internal/settings"
 	"github.com/tilecast/tilecast/apps/server/internal/updates"
@@ -33,6 +34,7 @@ type Dependencies struct {
 	Media               *media.Service
 	Forms               *forms.Service
 	Playlists           *playlists.Service
+	Plugins             *plugins.Service
 	Layouts             *layouts.Service
 	Scheduling          *scheduling.Service
 	Settings            *settings.Service
@@ -64,6 +66,7 @@ type server struct {
 	media                         *media.Service
 	forms                         *forms.Service
 	playlists                     *playlists.Service
+	plugins                       *plugins.Service
 	layouts                       *layouts.Service
 	scheduling                    *scheduling.Service
 	db                            *pgxpool.Pool
@@ -97,6 +100,7 @@ func New(deps Dependencies) http.Handler {
 		media:             deps.Media,
 		forms:             deps.Forms,
 		playlists:         deps.Playlists,
+		plugins:           deps.Plugins,
 		layouts:           deps.Layouts,
 		scheduling:        deps.Scheduling,
 		db:                deps.DB,

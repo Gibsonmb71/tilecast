@@ -101,6 +101,9 @@ import type {
   BackupList,
   BackupJob,
   BackupRestorePlan,
+  PluginSummary,
+  CountdownBar,
+  CountdownBarInput,
 } from "./types";
 
 type DataResponse<T> = { data: T };
@@ -838,6 +841,34 @@ export const api = {
     };
   },
   locations: () => request<{ items: Location[]; total: number }>("/locations"),
+  plugins: () => request<{ items: PluginSummary[] }>("/plugins"),
+  countdownBars: () =>
+    request<{ items: CountdownBar[]; total: number }>(
+      "/plugins/countdown-bar/instances",
+    ),
+  countdownBar: (id: string) =>
+    request<CountdownBar>(`/plugins/countdown-bar/instances/${id}`),
+  createCountdownBar: (input: CountdownBarInput, csrfToken: string) =>
+    request<CountdownBar>("/plugins/countdown-bar/instances", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  updateCountdownBar: (
+    id: string,
+    input: CountdownBarInput,
+    csrfToken: string,
+  ) =>
+    request<CountdownBar>(`/plugins/countdown-bar/instances/${id}`, {
+      method: "PUT",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  deleteCountdownBar: (id: string, csrfToken: string) =>
+    request<void>(`/plugins/countdown-bar/instances/${id}`, {
+      method: "DELETE",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
   createLocation: (input: LocationInput, csrfToken: string) =>
     request<Location>("/locations", {
       method: "POST",

@@ -99,6 +99,7 @@ import type {
   CommandResultReport,
   Heartbeat,
   Manifest,
+  ManifestPlugin,
   ManifestItem,
   ManifestPlaylist,
   PlayerCommand,
@@ -175,6 +176,8 @@ export function manifestActivationGraceMilliseconds(
 export interface PlayerHost {
   /** Replace what the renderer is showing. */
   present(presentation: Presentation): void;
+  /** Update built-in plugin surfaces without touching playlist playback. */
+  presentPlugins?(plugins: ManifestPlugin[], clockOffsetMs: number): void;
   /** Apply platform-host settings when cached or synchronized config changes. */
   applyPlayerConfiguration?(config: PlayerConfig): void;
   /** Show a transient identify overlay. */
@@ -293,7 +296,8 @@ export class PlayerRuntime {
       options.fetchImpl ?? fetch,
     );
     this.manifestSync = new ManifestSync(this.store, this.client, {
-      onManifestPrepared: (manifest) => this.onManifestPrepared(manifest),
+      onManifestPrepared: (manifest, clockOffsetMs) =>
+        this.onManifestPrepared(manifest, clockOffsetMs),
       onCredentialRejected: () => void this.onCredentialRejected(),
       onSyncError: (error) => log.warn("manifest sync error", { error }),
     });
@@ -652,7 +656,12 @@ export class PlayerRuntime {
 
   // ------------------------------------------------------------- activation
 
-  private onManifestPrepared(manifest: Manifest): void {
+  private onManifestPrepared(manifest: Manifest, clockOffsetMs = 0): void {
+    // Plugin state is independent of presentation activation. Sending it on
+    // its own channel makes create/update/hide immediate and guarantees that
+    // the current item, decoder, timeline, and proof-of-play session remain
+    // untouched.
+    this.host.presentPlugins?.(manifest.plugins ?? [], clockOffsetMs);
     const takeoverNow = takeoverActive(manifest, new Date());
     if (
       this.activeManifest === null ||

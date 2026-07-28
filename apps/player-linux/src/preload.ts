@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { StoredManifest } from "./core/manifest";
 import type { Presentation, PresentationItem } from "./core/player";
+import type { ManifestPlugin } from "./core/types";
 import {
   activateSynchronizedClock,
   enrichSynchronizedPresentation,
@@ -23,10 +24,15 @@ interface SyncPositionEvent {
 
 type PresentCallback = (presentation: unknown) => void;
 type SyncPositionCallback = (position: SyncPositionEvent | null) => void;
+type PluginCallback = (payload: {
+  plugins: ManifestPlugin[];
+  clockOffsetMs: number;
+}) => void;
 
 const store = new StateStore(process.env.TILECAST_DATA_DIR ?? defaultDataDir());
 const presentCallbacks = new Set<PresentCallback>();
 const syncPositionCallbacks = new Set<SyncPositionCallback>();
+const pluginCallbacks = new Set<PluginCallback>();
 
 let activeSynchronized: SynchronizedPlayingPresentation | null = null;
 /**
@@ -195,6 +201,13 @@ ipcRenderer.on("present", (_event, presentation: Presentation) => {
   })();
 });
 
+ipcRenderer.on(
+  "plugins",
+  (_event, payload: { plugins: ManifestPlugin[]; clockOffsetMs: number }) => {
+    for (const callback of pluginCallbacks) callback(payload);
+  },
+);
+
 /** Minimal, typed bridge; the renderer has no Node access. */
 contextBridge.exposeInMainWorld("tilecast", {
   onPresent(callback: PresentCallback): void {
@@ -202,6 +215,9 @@ contextBridge.exposeInMainWorld("tilecast", {
     if (lastPresentation !== null) {
       callback(lastPresentation);
     }
+  },
+  onPlugins(callback: PluginCallback): void {
+    pluginCallbacks.add(callback);
   },
   onSyncPosition(callback: SyncPositionCallback): void {
     syncPositionCallbacks.add(callback);

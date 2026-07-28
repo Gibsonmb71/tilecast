@@ -12,6 +12,7 @@ import {
   Monitor,
   PanelLeftClose,
   PanelLeftOpen,
+  Puzzle,
   Settings,
   ShieldCheck,
   SlidersHorizontal,
@@ -58,6 +59,7 @@ const primaryNav = [
     presentationTabs.map((tab) => tab.to),
   ],
   ["Schedules", "/schedules", CalendarDays],
+  ["Plugins", "/plugins", Puzzle],
 ] as const satisfies readonly NavItem[];
 const activityNav = [
   "Activity",

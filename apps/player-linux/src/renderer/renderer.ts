@@ -100,6 +100,12 @@ interface RendererPresentation {
 
 interface TilecastBridge {
   onPresent(callback: (presentation: RendererPresentation) => void): void;
+  onPlugins(
+    callback: (payload: {
+      plugins: RendererPlugin[];
+      clockOffsetMs: number;
+    }) => void,
+  ): void;
   onIdentify(
     callback: (data: { name: string; durationSeconds: number }) => void,
   ): void;
@@ -116,12 +122,41 @@ interface TilecastBridge {
   listDiscoveredServers(): Promise<{ name: string; serverUrl: string }[]>;
 }
 
+interface RendererCountdownBarPlugin {
+  id: string;
+  type: "countdown_bar";
+  version: 1;
+  config: {
+    message: string;
+    scheduleType: "weekly" | "one_time";
+    targetTime?: string | null;
+    daysOfWeek?: number[];
+    oneTimeAt?: string | null;
+    timezone: string;
+    leadTimeSeconds: number;
+    completionText?: string;
+    displayMode: "overlay" | "push";
+    heightPx: number;
+    priority: number;
+  };
+}
+
+type RendererPlugin = RendererCountdownBarPlugin;
+
 declare const tilecast: TilecastBridge;
 
 const layerA = document.getElementById("layer-a") as HTMLDivElement;
 const layerB = document.getElementById("layer-b") as HTMLDivElement;
 const messageEl = document.getElementById("message") as HTMLDivElement;
 const identifyEl = document.getElementById("identify") as HTMLDivElement;
+const contentStage = document.getElementById("content-stage") as HTMLDivElement;
+const countdownBar = document.getElementById("countdown-bar") as HTMLDivElement;
+const countdownMessage = countdownBar.querySelector(
+  ".countdown-message",
+) as HTMLSpanElement;
+const countdownValue = countdownBar.querySelector(
+  ".countdown-value",
+) as HTMLSpanElement;
 
 let frontLayer = layerA;
 let backLayer = layerB;
@@ -289,6 +324,145 @@ function escapeHtml(value: string): string {
   const div = document.createElement("div");
   div.textContent = value;
   return div.innerHTML;
+}
+
+// ------------------------------------------------ built-in plugin surfaces
+//
+// This channel never calls present(), fills a layer, changes generation, or
+// touches playback timers. A bar can therefore appear, tick, change mode, and
+// disappear while the exact same media element or Layout remains mounted.
+let pluginTimer: number | null = null;
+let activePlugins: RendererPlugin[] = [];
+let pluginClockOffsetMs = 0;
+const PLUGIN_COMPLETION_MS = 60_000;
+
+function pluginZonedParts(at: Date, timezone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(at);
+  const part = (name: string) =>
+    Number(parts.find((item) => item.type === name)?.value ?? 0);
+  return {
+    year: part("year"),
+    month: part("month"),
+    day: part("day"),
+    hour: part("hour"),
+    minute: part("minute"),
+    second: part("second"),
+  };
+}
+
+function pluginZonedInstant(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  timezone: string,
+): number {
+  const desired = Date.UTC(year, month - 1, day, hour, minute);
+  let guess = desired;
+  for (let pass = 0; pass < 3; pass += 1) {
+    const actual = pluginZonedParts(new Date(guess), timezone);
+    const represented = Date.UTC(
+      actual.year,
+      actual.month - 1,
+      actual.day,
+      actual.hour,
+      actual.minute,
+      actual.second,
+    );
+    const correction = desired - represented;
+    guess += correction;
+    if (correction === 0) break;
+  }
+  return guess;
+}
+
+function pluginTargets(
+  plugin: RendererCountdownBarPlugin,
+  now: Date,
+): number[] {
+  const config = plugin.config;
+  if (config.scheduleType === "one_time") {
+    const instant = Date.parse(config.oneTimeAt ?? "");
+    return Number.isFinite(instant) ? [instant] : [];
+  }
+  const match = /^(\d{2}):(\d{2})/.exec(config.targetTime ?? "");
+  if (!match) return [];
+  const local = pluginZonedParts(now, config.timezone);
+  const anchor = Date.UTC(local.year, local.month - 1, local.day);
+  const days = new Set(config.daysOfWeek ?? []);
+  const targets: number[] = [];
+  for (let offset = -31; offset <= 31; offset += 1) {
+    const date = new Date(anchor + offset * 86_400_000);
+    if (!days.has(date.getUTCDay())) continue;
+    targets.push(
+      pluginZonedInstant(
+        date.getUTCFullYear(),
+        date.getUTCMonth() + 1,
+        date.getUTCDate(),
+        Number(match[1]),
+        Number(match[2]),
+        config.timezone,
+      ),
+    );
+  }
+  return targets;
+}
+
+function updatePluginSurface(): void {
+  const now = new Date(Date.now() + pluginClockOffsetMs);
+  const candidates: {
+    plugin: RendererCountdownBarPlugin;
+    target: number;
+    remaining: number;
+    completed: boolean;
+  }[] = [];
+  for (const plugin of activePlugins) {
+    if (plugin.type !== "countdown_bar" || plugin.version !== 1) continue;
+    for (const target of pluginTargets(plugin, now)) {
+      const remaining = target - now.getTime();
+      const completed =
+        remaining <= 0 &&
+        remaining >= -PLUGIN_COMPLETION_MS &&
+        Boolean(plugin.config.completionText?.trim());
+      if (
+        remaining <= plugin.config.leadTimeSeconds * 1_000 &&
+        (remaining > 0 || completed)
+      ) {
+        candidates.push({ plugin, target, remaining, completed });
+      }
+    }
+  }
+  candidates.sort(
+    (left, right) =>
+      right.plugin.config.priority - left.plugin.config.priority ||
+      left.target - right.target ||
+      left.plugin.id.localeCompare(right.plugin.id),
+  );
+  const selected = candidates[0];
+  if (!selected) {
+    countdownBar.classList.remove("visible");
+    contentStage.classList.remove("plugin-push");
+    return;
+  }
+  const config = selected.plugin.config;
+  const height = Math.min(Math.max(config.heightPx, 40), 320);
+  document.documentElement.style.setProperty("--plugin-height", `${height}px`);
+  contentStage.classList.toggle("plugin-push", config.displayMode === "push");
+  countdownMessage.textContent = config.message;
+  countdownValue.textContent = selected.completed
+    ? (config.completionText ?? "")
+    : tilecastCountdownDisplay.compact(selected.remaining);
+  countdownBar.classList.add("visible");
 }
 
 // ------------------------------------------------- render-tree interpreter
@@ -1627,6 +1801,15 @@ if (typeof tilecast === "undefined") {
 }
 
 tilecast.onPresent(present);
+tilecast.onPlugins((payload) => {
+  activePlugins = payload.plugins;
+  pluginClockOffsetMs = Number.isFinite(payload.clockOffsetMs)
+    ? payload.clockOffsetMs
+    : 0;
+  updatePluginSurface();
+  if (pluginTimer !== null) window.clearInterval(pluginTimer);
+  pluginTimer = window.setInterval(updatePluginSurface, 1_000);
+});
 
 tilecast.onIdentify(({ name, durationSeconds }) => {
   identifyEl.textContent = name;

@@ -38,7 +38,7 @@ export interface StoredManifest {
 
 export interface ManifestSyncEvents {
   /** A fully verified manifest is ready; playback swaps at item boundary. */
-  onManifestPrepared(manifest: Manifest): void;
+  onManifestPrepared(manifest: Manifest, clockOffsetMs: number): void;
   onCredentialRejected(): void;
   onSyncError(error: string): void;
 }
@@ -171,7 +171,13 @@ export class ManifestSync {
       log.info("activating cached manifest at boot", {
         manifestVersion: this.stored.manifest.manifestVersion,
       });
-      this.events.onManifestPrepared(this.stored.manifest);
+      const storedAt = Date.parse(this.stored.storedAt);
+      const serverTime = Date.parse(this.stored.manifest.serverTime);
+      const clockOffsetMs =
+        Number.isFinite(storedAt) && Number.isFinite(serverTime)
+          ? serverTime - storedAt
+          : 0;
+      this.events.onManifestPrepared(this.stored.manifest, clockOffsetMs);
     }
   }
 
@@ -260,7 +266,11 @@ export class ManifestSync {
     };
     await this.store.writeJson(ACTIVE_FILE, this.stored);
     this.lastSyncError = null;
-    this.events.onManifestPrepared(manifest);
+    const serverTime = Date.parse(manifest.serverTime);
+    this.events.onManifestPrepared(
+      manifest,
+      Number.isFinite(serverTime) ? serverTime - Date.now() : 0,
+    );
     await this.cleanupCache();
   }
 

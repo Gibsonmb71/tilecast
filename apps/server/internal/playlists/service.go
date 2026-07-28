@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/tilecast/tilecast/apps/server/internal/contentdefs"
+	"github.com/tilecast/tilecast/apps/server/internal/plugins"
 	"github.com/tilecast/tilecast/apps/server/internal/scheduling"
 )
 
@@ -23,11 +24,16 @@ type Service struct {
 	scheduling  *scheduling.Service
 	sources     SourceProjector
 	definitions *contentdefs.Catalog
+	plugins     PluginProjector
 }
 
 type SourceProjector interface {
 	PlayerDataSourceConfiguration(context.Context, uuid.UUID, string, json.RawMessage) (json.RawMessage, error)
 	PlayerTypedDataSourceConfiguration(context.Context, uuid.UUID, string, json.RawMessage) (json.RawMessage, error)
+}
+
+type PluginProjector interface {
+	ManifestForScreen(context.Context, uuid.UUID) ([]plugins.ManifestPlugin, error)
 }
 
 func NewService(db *pgxpool.Pool, notifier Notifier) *Service {
@@ -37,6 +43,7 @@ func NewService(db *pgxpool.Pool, notifier Notifier) *Service {
 func (s *Service) SetScheduling(service *scheduling.Service)          { s.scheduling = service }
 func (s *Service) SetSourceProjector(projector SourceProjector)       { s.sources = projector }
 func (s *Service) SetContentDefinitions(catalog *contentdefs.Catalog) { s.definitions = catalog }
+func (s *Service) SetPluginProjector(projector PluginProjector)       { s.plugins = projector }
 
 func (s *Service) Create(ctx context.Context, userID uuid.UUID, name, description, sourceType string) (Playlist, error) {
 	name = strings.TrimSpace(name)
@@ -1261,7 +1268,13 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 	if s.scheduling != nil {
 		prefetch, grace, _ = s.scheduling.Config()
 	}
-	manifest := Manifest{SchemaVersion: 11, ManifestVersion: assignment.ManifestVersion, ScreenID: screenID, GeneratedAt: changed, ServerTime: now, Mode: "presentation", Assets: []ManifestAsset{}, Playlists: []ManifestPlaylist{}, Layouts: []ManifestLayout{}, Schedules: []ManifestSchedule{}, Websites: []ManifestWebsite{}, Widgets: []ManifestWidget{}, DataSources: []ManifestDataSource{}, PrefetchHorizonDays: prefetch, ActivationGraceSeconds: grace}
+	manifest := Manifest{SchemaVersion: 11, ManifestVersion: assignment.ManifestVersion, ScreenID: screenID, GeneratedAt: changed, ServerTime: now, Mode: "presentation", Assets: []ManifestAsset{}, Playlists: []ManifestPlaylist{}, Layouts: []ManifestLayout{}, Schedules: []ManifestSchedule{}, Websites: []ManifestWebsite{}, Widgets: []ManifestWidget{}, DataSources: []ManifestDataSource{}, Plugins: []plugins.ManifestPlugin{}, PrefetchHorizonDays: prefetch, ActivationGraceSeconds: grace}
+	if s.plugins != nil {
+		manifest.Plugins, err = s.plugins.ManifestForScreen(ctx, screenID)
+		if err != nil {
+			return Manifest{}, "", err
+		}
+	}
 	var syncGroup ManifestSyncGroup
 	if groupErr := s.db.QueryRow(ctx, `SELECT g.id,g.playback_epoch FROM screen_group_memberships m JOIN screen_groups g ON g.id=m.screen_group_id WHERE m.screen_id=$1 AND g.deleted_at IS NULL`, screenID).Scan(&syncGroup.ID, &syncGroup.PlaybackEpoch); groupErr == nil {
 		manifest.SyncGroup = &syncGroup

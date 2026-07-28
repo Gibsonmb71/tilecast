@@ -26,6 +26,11 @@ import { LayoutEditorPage } from "./pages/LayoutEditorPage";
 import { WidgetEditorPage, WidgetsPage } from "./pages/WidgetsPage";
 import { DataSourceEditorPage, DataSourcesPage } from "./pages/DataSourcesPage";
 import { ActivityPage } from "./pages/ActivityPage";
+import {
+  CountdownBarEditorPage,
+  CountdownBarsPage,
+  PluginsPage,
+} from "./pages/PluginsPage";
 import { ApprovalsPage } from "./pages/ApprovalsPage";
 import {
   FormsListPage,
@@ -269,6 +274,36 @@ export const studioRoutes: RouteObject[] = [
             path: ":id",
             element: <ScheduleEditorPage />,
             handle: { breadcrumb: "Schedule", resource: "schedule" },
+          },
+        ],
+      },
+      {
+        path: "plugins",
+        handle: {
+          breadcrumb: "Plugins",
+          search: search(
+            "Plugins",
+            "Manage built-in features that operate outside playlists",
+            "/plugins",
+            ["countdown bar", "player features"],
+          ),
+        },
+        children: [
+          { index: true, element: <PluginsPage /> },
+          {
+            path: "countdown-bar",
+            element: <CountdownBarsPage />,
+            handle: { breadcrumb: "Countdown Bar" },
+          },
+          {
+            path: "countdown-bar/new",
+            element: <CountdownBarEditorPage />,
+            handle: { breadcrumb: "New instance" },
+          },
+          {
+            path: "countdown-bar/:id",
+            element: <CountdownBarEditorPage />,
+            handle: { breadcrumb: "Countdown Bar instance" },
           },
         ],
       },

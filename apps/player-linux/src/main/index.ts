@@ -30,6 +30,7 @@ import {
   type OutsideActiveHoursPresentation,
 } from "../core/outside-hours";
 import { PlayerRuntime, type Presentation } from "../core/player";
+import type { ManifestPlugin } from "../core/types";
 import { StateStore, defaultDataDir } from "../core/storage";
 import { normalizeServerUrl } from "../core/server-url";
 import { applyLowEndTuning } from "./hardware";
@@ -68,6 +69,10 @@ let runtime: PlayerRuntime | null = null;
 let store: StateStore;
 let discovery: LanDiscovery | null = null;
 let lastPresentation: HostPresentation = { state: "setup" };
+let lastPlugins: { plugins: ManifestPlugin[]; clockOffsetMs: number } = {
+  plugins: [],
+  clockOffsetMs: 0,
+};
 let quitting = false;
 let activeLinuxKioskPolicy = linuxKioskPolicy(null);
 let displaySleepBlockerId: number | null = null;
@@ -141,6 +146,7 @@ function createWindow(): BrowserWindow {
     // (Re)send state after any load or reload so a recreated renderer
     // resumes exactly where the player left off.
     win.webContents.send("present", lastPresentation);
+    win.webContents.send("plugins", lastPlugins);
   });
   win.on("unresponsive", () => {
     log.error("window unresponsive; recreating");
@@ -220,6 +226,16 @@ function present(presentation: Presentation): void {
   sendPresentation(presentation);
   if (presentation.state === "sleep") {
     void refreshOutsideActiveHoursPresentation();
+  }
+}
+
+function presentPlugins(
+  plugins: ManifestPlugin[],
+  clockOffsetMs: number,
+): void {
+  lastPlugins = { plugins, clockOffsetMs };
+  if (window && !window.isDestroyed()) {
+    window.webContents.send("plugins", lastPlugins);
   }
 }
 
@@ -351,6 +367,7 @@ async function startRuntime(serverUrl: string): Promise<void> {
     store,
     {
       present,
+      presentPlugins,
       applyPlayerConfiguration: (config) =>
         applyLinuxKioskPolicy(linuxKioskPolicy(config)),
       identify: (name, durationSeconds) => {

@@ -27,6 +27,7 @@ import (
 	"github.com/tilecast/tilecast/apps/server/internal/layouts"
 	"github.com/tilecast/tilecast/apps/server/internal/media"
 	"github.com/tilecast/tilecast/apps/server/internal/playlists"
+	"github.com/tilecast/tilecast/apps/server/internal/plugins"
 	"github.com/tilecast/tilecast/apps/server/internal/scheduling"
 	"github.com/tilecast/tilecast/apps/server/internal/settings"
 	"github.com/tilecast/tilecast/apps/server/internal/updates"
@@ -109,6 +110,8 @@ func serve() {
 		AirQualityBaseURL: cfg.Sources.AirQualityBaseURL,
 	})
 	playlistService := playlists.NewService(db, deviceService)
+	pluginService := plugins.NewService(db, deviceService)
+	playlistService.SetPluginProjector(pluginService)
 	mediaService.SetContentDefinitions(contentDefinitions)
 	playlistService.SetContentDefinitions(contentDefinitions)
 	layoutService := layouts.NewService(db)
@@ -194,6 +197,7 @@ func serve() {
 		Media:               mediaService,
 		Forms:               formService,
 		Playlists:           playlistService,
+		Plugins:             pluginService,
 		Layouts:             layoutService,
 		Scheduling:          schedulingService,
 		Settings:            settingsService,
