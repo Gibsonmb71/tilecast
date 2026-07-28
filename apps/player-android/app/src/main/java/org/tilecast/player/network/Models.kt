@@ -19,7 +19,7 @@ object PlayerPresentationSupport {
     val native = mapOf(
         "layout.surface" to 1, "layout.box" to 1, "layout.row" to 1, "layout.column" to 1, "layout.stack" to 1, "layout.grid" to 1, "layout.spacer" to 1, "layout.divider" to 1,
         "content.text" to 1, "content.icon" to 2, "content.asset_image" to 2, "content.badge" to 1, "content.progress" to 2, "content.qr_code" to 1, "content.marquee" to 1, "content.line_chart" to 2, "content.bar_chart" to 2, "content.donut_chart" to 2,
-        "collection.repeat" to 2, "collection.conditional" to 2, "collection.grouped_sections" to 1, "binding.core" to 2, "format.typed" to 2, "selection.relative_date" to 1,
+        "collection.repeat" to 2, "collection.conditional" to 2, "collection.grouped_sections" to 1, "binding.core" to 2, "format.typed" to 2, "selection.relative_date" to 1, "selection.temporal" to 1,
     )
     const val webRuntimeVersion = 1
     const val webBundleLimitBytes = 20L * 1024 * 1024
@@ -63,8 +63,8 @@ object PlayerPresentationSupport {
 @Serializable data class WidgetPresentation(val schemaVersion:Int,val kind:String,val requiredCapabilities:Map<String,Int> = emptyMap(),val native:NativePresentation?=null,val web:WebSandboxPresentation?=null)
 @Serializable data class NativePresentation(val root:PresentationNode)
 @Serializable data class PresentationNode(val id:String="",val type:String,val props:kotlinx.serialization.json.JsonObject=kotlinx.serialization.json.buildJsonObject{},val binding:PresentationBinding?=null,val repeat:PresentationRepeat?=null,val condition:PresentationCondition?=null,val children:List<PresentationNode> = emptyList())
-@Serializable data class PresentationBinding(val source:String,val dataset:String="",val path:String="",val value:String="",val fields:List<String> = emptyList(),val format:String="",val precision:Int?=null,val prefix:String="",val suffix:String="",val fallback:String="",val separator:String="")
-@Serializable data class PresentationRepeat(val dataset:String,val limit:Int,val offset:Int=0)
+@Serializable data class PresentationBinding(val source:String,val dataset:String="",val path:String="",val selector:String="all",val startField:String="",val endField:String="",val value:String="",val fields:List<String> = emptyList(),val format:String="",val precision:Int?=null,val prefix:String="",val suffix:String="",val fallback:String="",val separator:String="")
+@Serializable data class PresentationRepeat(val dataset:String,val limit:Int,val offset:Int=0,val selector:String="all",val startField:String="",val endField:String="")
 @Serializable data class PresentationCondition(val binding:PresentationBinding,val op:String,val value:String="")
 @Serializable data class WebSandboxPresentation(val mode:String,val url:String="",val bundleId:String="",val entryPoint:String="",val integritySha256:String="",val packageSize:Long=0,val downloadPath:String="",val allowedHosts:List<String> = emptyList(),val externalNetworkAccess:Boolean=false,val onlineOnly:Boolean=false,val fallbackBehavior:String="placeholder",val loadTimeoutSeconds:Int=20,val lifecycle:String="destroy_on_hide",val warmSeconds:Int=0)
 @Serializable data class WebsiteSourceConfig(val url:String,val displayUrl:String="",val allowedHosts:List<String>,val javascriptEnabled:Boolean=true,val domStorageEnabled:Boolean=true,val cookiePolicy:String="first_party",val reloadPolicy:String="on_each_activation",val refreshIntervalSeconds:Int?=null,val loadTimeoutSeconds:Int=20,val zoomPercent:Int=100,val scrollX:Int=0,val scrollY:Int=0,val customUserAgent:String="",val backgroundColor:String="#0E141B",val failureBehavior:String="placeholder",val fallbackImageAssetId:String?=null,val fallbackVariantId:String?=null)

@@ -170,10 +170,56 @@ func TestNowAndNextSkipsTheFeaturedRecord(t *testing.T) {
 	}
 }
 
+func TestScheduleBoardCompilesTemporalSelectorsAndCountdown(t *testing.T) {
+	definition, ok := contentdefs.MustLoad().Widget("schedule-board")
+	if !ok {
+		t.Fatal("schedule-board definition is missing")
+	}
+	raw, err := json.Marshal(definition.DefaultConfiguration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	presentation, err := compileDefinitionPresentation(definition, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if presentation.RequiredCapabilities["selection.temporal"] != 1 {
+		t.Fatalf("expected temporal selection capability, got %#v", presentation.RequiredCapabilities)
+	}
+	selectors := map[string]bool{}
+	formats := map[string]bool{}
+	collectTemporalPresentationFeatures(&presentation.Native.Root, selectors, formats)
+	for _, selector := range []string{"current", "next", "upcoming"} {
+		if !selectors[selector] {
+			t.Fatalf("compiled Schedule Board is missing %q selection", selector)
+		}
+	}
+	if !formats["relative-countdown"] {
+		t.Fatal("compiled Schedule Board is missing its relative countdown")
+	}
+}
+
 func collectNodeTypes(node *PresentationNode, into map[string]bool) {
 	into[node.Type] = true
 	for index := range node.Children {
 		collectNodeTypes(&node.Children[index], into)
+	}
+}
+
+func collectTemporalPresentationFeatures(node *PresentationNode, selectors, formats map[string]bool) {
+	if node.Binding != nil {
+		selectors[node.Binding.Selector] = true
+		formats[node.Binding.Format] = true
+	}
+	if node.Repeat != nil {
+		selectors[node.Repeat.Selector] = true
+	}
+	if node.Condition != nil {
+		selectors[node.Condition.Binding.Selector] = true
+		formats[node.Condition.Binding.Format] = true
+	}
+	for index := range node.Children {
+		collectTemporalPresentationFeatures(&node.Children[index], selectors, formats)
 	}
 }
 

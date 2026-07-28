@@ -355,12 +355,18 @@ class ManifestSyncManager(
 				value.binding?.let { binding ->
 					require(binding.source in setOf("literal","dataset","repeat","repeat_index","environment"))
 					require(binding.fields.size <= 16 && binding.value.length <= 4096 && binding.path.length <= 180)
+					require(binding.selector in setOf("all","current","next","upcoming","current_or_next"))
+					require(binding.startField.length <= 80 && binding.endField.length <= 80)
 				}
 				value.condition?.let { condition ->
 					require(condition.op in setOf("equals","not_equals","empty","not_empty","greater_than","greater_or_equal","less_than","less_or_equal","before","after"))
 				}
 				if(value.type=="marquee")animations++
-				value.repeat?.let{repeat->require(repeat.limit in 1..200&&repeat.offset in 0..2000&&repeat.dataset.substringBefore(':') in dataSources)}
+				value.repeat?.let{repeat->
+					require(repeat.limit in 1..200&&repeat.offset in 0..2000&&repeat.dataset.substringBefore(':') in dataSources)
+					require(repeat.selector in setOf("all","current","next","upcoming","current_or_next"))
+					require(repeat.startField.length<=80&&repeat.endField.length<=80)
+				}
 				value.children.forEach{visit(it,depth+1)}
 			}
 			visit(root,0);require(animations<=4)

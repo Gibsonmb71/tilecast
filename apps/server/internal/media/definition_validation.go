@@ -77,15 +77,15 @@ func (normalizer definitionConfigNormalizer) validateDataSourceFieldSelections(c
 		return errors.New("Data Source is invalid")
 	}
 	var provider string
-	if err = normalizer.service.db.QueryRow(ctx, `SELECT provider FROM data_sources WHERE id=$1 AND deleted_at IS NULL`, id).Scan(&provider); err != nil {
+	var configuration json.RawMessage
+	if err = normalizer.service.db.QueryRow(ctx, `SELECT provider,configuration FROM data_sources WHERE id=$1 AND deleted_at IS NULL`, id).Scan(&provider, &configuration); err != nil {
 		return errors.New("Data Source is unavailable")
 	}
-	definition, ok := normalizer.service.definitions.DataSource(provider)
-	if !ok {
+	if _, ok := normalizer.service.definitions.DataSource(provider); !ok {
 		return errors.New("Data Source provider is unknown")
 	}
 	types := map[string]string{}
-	for _, output := range definition.OutputSchema.Fields {
+	for _, output := range normalizer.service.availableDataSourceFields(provider, configuration) {
 		types[output.Key] = output.Type
 	}
 	for _, field := range fields {
@@ -93,6 +93,9 @@ func (normalizer definitionConfigNormalizer) validateDataSourceFieldSelections(c
 			continue
 		}
 		selected, _ := values[field.Key].(string)
+		if selected == "" && !field.Required {
+			continue
+		}
 		selectedType, exists := types[selected]
 		if !exists {
 			return fmt.Errorf("%s references a field the Data Source does not expose", field.Label)

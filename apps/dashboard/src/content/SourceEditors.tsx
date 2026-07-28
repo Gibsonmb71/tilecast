@@ -31,6 +31,7 @@ import type {
   WidgetPreset,
   YouTubeConfig,
   WidgetPresentation,
+  PresentationBinding,
   PresentationNode,
 } from "../api/types";
 import { DataSourcePicker } from "./DataSourcePicker";
@@ -3169,40 +3170,51 @@ function PreviewNode({
   // single-source Widget, and any presentation compiled before datasets were keyed, is unchanged.
   const datasetRecords = (name?: string) =>
     (name && datasets?.[name]) || records;
-  const resolve = () => {
-    if (!binding) return "";
-    if (binding.source === "literal")
-      return formatPresentationValue(binding.value ?? "", binding);
-    if (binding.source === "repeat")
+  const resolveBinding = (candidate: PresentationBinding) => {
+    if (candidate.source === "literal")
+      return formatPresentationValue(candidate.value ?? "", candidate, now);
+    if (candidate.source === "repeat")
       return formatPresentationValue(
-        record?.[binding.path ?? ""] ?? binding.fallback ?? "",
-        binding,
+        record?.[candidate.path ?? ""] ?? candidate.fallback ?? "",
+        candidate,
+        now,
       );
-    if (binding.source === "repeat_index")
-      return formatPresentationValue(String((recordIndex ?? 0) + 1), binding);
-    if (binding.source === "dataset") {
-      const scoped = datasetRecords(binding.dataset);
-      if (binding.path)
+    if (candidate.source === "repeat_index")
+      return formatPresentationValue(
+        String((recordIndex ?? 0) + 1),
+        candidate,
+        now,
+      );
+    if (candidate.source === "dataset") {
+      const scoped = selectTemporalRecords(
+        datasetRecords(candidate.dataset),
+        now,
+        candidate.selector,
+        candidate.startField,
+        candidate.endField,
+      );
+      if (candidate.path)
         return formatPresentationValue(
-          scoped[0]?.[binding.path] ?? binding.fallback ?? "",
-          binding,
+          scoped[0]?.[candidate.path] ?? candidate.fallback ?? "",
+          candidate,
+          now,
         );
       const joined =
         scoped
           .map((item) =>
-            (binding.fields ?? [])
+            (candidate.fields ?? [])
               .map((field) => item[field])
               .filter(Boolean)
               .join(" "),
           )
           .filter(Boolean)
-          .join(binding.separator ?? " ") ||
-        binding.fallback ||
+          .join(candidate.separator ?? " ") ||
+        candidate.fallback ||
         "";
-      return formatPresentationValue(joined, binding);
+      return formatPresentationValue(joined, candidate, now);
     }
-    if (binding.source === "environment") {
-      const format = binding.format?.split(":") ?? [];
+    if (candidate.source === "environment") {
+      const format = candidate.format?.split(":") ?? [];
       const timezone = format.at(-1) || "UTC";
       if (format[0] === "date")
         return new Intl.DateTimeFormat(undefined, {
@@ -3238,10 +3250,36 @@ function PreviewNode({
         return formatCountdownPreview(target, mode, completionText, now);
       }
     }
-    return binding.fallback ?? "";
+    return candidate.fallback ?? "";
   };
+  const resolve = () => (binding ? resolveBinding(binding) : "");
+  if (node.condition) {
+    const actual = resolveBinding(node.condition.binding);
+    const expected = node.condition.value ?? "";
+    const actualNumber = Number(actual);
+    const expectedNumber = Number(expected);
+    const matches = {
+      equals: actual === expected,
+      not_equals: actual !== expected,
+      empty: actual.length === 0,
+      not_empty: actual.length > 0,
+      greater_than: actualNumber > expectedNumber,
+      greater_or_equal: actualNumber >= expectedNumber,
+      less_than: actualNumber < expectedNumber,
+      less_or_equal: actualNumber <= expectedNumber,
+      before: new Date(actual).getTime() < new Date(expected).getTime(),
+      after: new Date(actual).getTime() > new Date(expected).getTime(),
+    }[node.condition.op];
+    if (!matches) return null;
+  }
   if (node.type === "repeat") {
-    const scoped = datasetRecords(node.repeat?.dataset);
+    const scoped = selectTemporalRecords(
+      datasetRecords(node.repeat?.dataset),
+      now,
+      node.repeat?.selector,
+      node.repeat?.startField,
+      node.repeat?.endField,
+    ).slice(node.repeat?.offset ?? 0);
     return (
       <>
         {scoped.slice(0, node.repeat?.limit ?? 20).map((item, index) => (
@@ -3454,32 +3492,97 @@ function PreviewSurface({
   );
 }
 
-function formatPresentationValue(
+export function formatPresentationValue(
   value: string,
   binding: NonNullable<PresentationNode["binding"]>,
+  now: Date,
 ) {
   let result = value;
-  const numeric = Number(value);
-  if (value && Number.isFinite(numeric)) {
-    const precision =
-      binding.precision ?? (binding.format === "integer" ? 0 : 2);
-    if (
-      ["number", "integer", "percent", "currency"].includes(
-        binding.format ?? "",
-      )
-    )
-      result = new Intl.NumberFormat(undefined, {
-        maximumFractionDigits: precision,
-        minimumFractionDigits: binding.format === "integer" ? 0 : undefined,
-      }).format(numeric);
-  } else if (value && binding.format?.startsWith("date")) {
+  if (value && binding.format === "relative-countdown") {
+    const remaining = new Date(value).getTime() - now.getTime();
+    if (Number.isFinite(remaining)) {
+      const seconds = Math.max(0, Math.floor(remaining / 1000));
+      const days = Math.floor(seconds / 86_400);
+      const hours = Math.floor((seconds % 86_400) / 3_600);
+      const minutes = Math.floor((seconds % 3_600) / 60);
+      const trailingSeconds = seconds % 60;
+      result =
+        remaining <= 0
+          ? "Now"
+          : days > 0
+            ? `${days}d ${hours}h`
+            : hours > 0
+              ? `${hours}h ${minutes}m`
+              : minutes > 0
+                ? `${minutes}m ${trailingSeconds}s`
+                : `${trailingSeconds}s`;
+    }
+  } else if (value && binding.format === "time") {
     const parsed = new Date(value);
     if (!Number.isNaN(parsed.getTime()))
       result = new Intl.DateTimeFormat(undefined, {
-        dateStyle: binding.format === "date-long" ? "long" : "short",
+        timeStyle: "short",
       }).format(parsed);
+  } else {
+    const numeric = Number(value);
+    if (value && Number.isFinite(numeric)) {
+      const precision =
+        binding.precision ?? (binding.format === "integer" ? 0 : 2);
+      if (
+        ["number", "integer", "percent", "currency"].includes(
+          binding.format ?? "",
+        )
+      )
+        result = new Intl.NumberFormat(undefined, {
+          maximumFractionDigits: precision,
+          minimumFractionDigits: binding.format === "integer" ? 0 : undefined,
+        }).format(numeric);
+    } else if (value && binding.format?.startsWith("date")) {
+      const parsed = new Date(value);
+      if (!Number.isNaN(parsed.getTime()))
+        result = new Intl.DateTimeFormat(undefined, {
+          dateStyle: binding.format === "date-long" ? "long" : "short",
+        }).format(parsed);
+    }
   }
   return `${binding.prefix ?? ""}${result}${binding.suffix ?? ""}`;
+}
+
+export function selectTemporalRecords(
+  records: Record<string, string>[],
+  now: Date,
+  selector: PresentationBinding["selector"] = "all",
+  startField = "",
+  endField = "",
+) {
+  if (!selector || selector === "all") return records;
+  if (!startField) return [];
+  const timed = records
+    .map((record) => ({
+      record,
+      start: new Date(record[startField] ?? ""),
+      end: endField ? new Date(record[endField] ?? "") : undefined,
+    }))
+    .filter(({ start }) => !Number.isNaN(start.getTime()))
+    .sort((left, right) => left.start.getTime() - right.start.getTime());
+  const current = timed
+    .filter(
+      ({ start, end }) =>
+        start <= now &&
+        end !== undefined &&
+        !Number.isNaN(end.getTime()) &&
+        end > now,
+    )
+    .map(({ record }) => record);
+  const upcoming = timed
+    .filter(({ start }) => start > now)
+    .map(({ record }) => record);
+  if (selector === "current") return current;
+  if (selector === "next") return upcoming.slice(0, 1);
+  if (selector === "upcoming") return upcoming;
+  if (selector === "current_or_next")
+    return current.length ? current : upcoming.slice(0, 1);
+  return [];
 }
 
 function PresentationQrCode({ value }: { value: string }) {
