@@ -187,9 +187,19 @@ function DataFormatGuidePanel({ guide }: { guide: DataFormatGuide }) {
             ))}
           </ul>
         )}
+        {/* One row of real data, as key and value pairs. Pretty-printed JSON put every
+            key on its own line and wrapped long values again, which turned a two-field
+            example into a tall column of punctuation an author has to read past. */}
         <div className="data-format-guide__example">
-          <span>Example</span>
-          <pre>{JSON.stringify(guide.example, null, 2)}</pre>
+          <span>Example row</span>
+          <dl>
+            {Object.entries(guide.example).map(([key, entry]) => (
+              <div key={key}>
+                <dt>{key}</dt>
+                <dd>{String(entry)}</dd>
+              </div>
+            ))}
+          </dl>
         </div>
       </div>
     </details>

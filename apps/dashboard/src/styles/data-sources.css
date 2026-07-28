@@ -980,13 +980,18 @@
 
 /* DataSourcePicker: the shared control for choosing the data behind a Widget or a Layout text
    binding. The empty state carries a Connect action instead of leaving a control disabled. */
+/* The picker is a wide control — format guidance, the chosen source, its status, and
+   sample values — so it takes the whole row of a two-column form instead of being packed
+   into one half while the other half sits empty. */
 .data-source-picker {
   display: grid;
+  grid-column: 1 / -1;
   gap: var(--tc-space-2);
   min-width: 0;
 }
 
 .data-format-guide {
+  container: data-format-guide / inline-size;
   overflow: hidden;
   background: var(--tc-bg-subtle);
   border: 1px solid var(--tc-border-default);
@@ -1055,12 +1060,14 @@
   list-style: none;
 }
 
+/* Name and accepted types are one row of two columns. As a wrapping flex row with
+   space-between, one field kept its chips inline while the next dropped them to their own
+   line, so the list read as if it were misaligned. */
 .data-format-guide__body li {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--tc-space-3);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: var(--tc-space-2) var(--tc-space-3);
 }
 
 .data-format-guide__body li > span:first-child {
@@ -1097,32 +1104,64 @@
   font: var(--tc-text-technical);
 }
 
+/* In a narrow panel the type chips get their own line under the field name instead of
+   being pushed to a right edge that is only a few characters away. */
+@container data-format-guide (max-width: 320px) {
+  .data-format-guide__body li {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .data-format-guide__types {
+    justify-content: flex-start;
+  }
+}
+
+/* The label sits above the example rather than beside it: a side label took width from
+   the values, and in a narrow column that is what forced the example to wrap. */
 .data-format-guide__example {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: start;
-  gap: var(--tc-space-3);
+  gap: var(--tc-space-2);
 }
 
 .data-format-guide__example > span {
-  padding-top: var(--tc-space-2);
   color: var(--tc-text-secondary);
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
-.data-format-guide__example pre {
-  min-width: 0;
+.data-format-guide__example dl {
+  display: grid;
+  gap: 1px;
   margin: 0;
-  padding: var(--tc-space-2) var(--tc-space-3);
-  overflow-x: auto;
-  color: var(--tc-text-primary);
-  background: var(--tc-bg-surface);
+  overflow: hidden;
+  background: var(--tc-border-default);
   border: 1px solid var(--tc-border-default);
   border-radius: var(--tc-radius-control);
+}
+
+.data-format-guide__example dl > div {
+  display: grid;
+  grid-template-columns: minmax(88px, 34%) minmax(0, 1fr);
+  gap: var(--tc-space-3);
+  padding: var(--tc-space-2) var(--tc-space-3);
+  background: var(--tc-bg-surface);
+}
+
+.data-format-guide__example dt,
+.data-format-guide__example dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
   font: var(--tc-text-technical);
-  white-space: pre-wrap;
+}
+
+.data-format-guide__example dt {
+  color: var(--tc-text-secondary);
+}
+
+.data-format-guide__example dd {
+  color: var(--tc-text-primary);
 }
 
 .data-source-picker__trigger {
