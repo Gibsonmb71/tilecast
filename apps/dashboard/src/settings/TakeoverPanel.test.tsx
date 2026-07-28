@@ -3,9 +3,10 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api } from "../api/client";
-import { TakeoverPanel } from "./TakeoverPanel";
+import { emergencyPlaylistLabel, TakeoverPanel } from "./TakeoverPanel";
 
 vi.mock("../auth/AuthProvider", () => ({
   useAuth: () => ({ status: { csrfToken: "token" } }),
@@ -50,15 +51,22 @@ describe("TakeoverPanel", () => {
     });
     render(
       <QueryClientProvider client={client}>
-        <TakeoverPanel editable />
+        <MemoryRouter>
+          <TakeoverPanel editable />
+        </MemoryRouter>
       </QueryClientProvider>,
     );
 
     expect(
       await screen.findByRole("heading", {
-        name: "National Weather Service alerts",
+        name: "Automated weather alerts",
       }),
     ).toBeTruthy();
+    expect(
+      screen
+        .getByRole("link", { name: "Manage emergency playlists" })
+        .getAttribute("href"),
+    ).toBe("/playlists");
     expect(await screen.findByDisplayValue("OH")).toBeTruthy();
     expect(await screen.findByText("Matched rules")).toBeTruthy();
     expect(
@@ -113,7 +121,9 @@ describe("TakeoverPanel", () => {
     });
     render(
       <QueryClientProvider client={client}>
-        <TakeoverPanel editable={false} />
+        <MemoryRouter>
+          <TakeoverPanel editable={false} />
+        </MemoryRouter>
       </QueryClientProvider>,
     );
 
@@ -182,7 +192,9 @@ describe("TakeoverPanel", () => {
     });
     render(
       <QueryClientProvider client={client}>
-        <TakeoverPanel editable />
+        <MemoryRouter>
+          <TakeoverPanel editable />
+        </MemoryRouter>
       </QueryClientProvider>,
     );
     const user = userEvent.setup();
@@ -286,17 +298,21 @@ describe("TakeoverPanel", () => {
     });
     render(
       <QueryClientProvider client={client}>
-        <TakeoverPanel editable />
+        <MemoryRouter>
+          <TakeoverPanel editable />
+        </MemoryRouter>
       </QueryClientProvider>,
     );
     const user = userEvent.setup();
-    await screen.findByRole("heading", { name: "Automatic Takeover rules" });
+    await screen.findByRole("heading", { name: "Weather event rules" });
     await user.type(screen.getByLabelText("Rule name"), "Warnings");
     const eventNames = screen.getByLabelText("NWS event names");
     await user.clear(eventNames);
     await user.type(eventNames, "Tornado Warning, Flash Flood Warning");
     await user.selectOptions(
-      screen.getByLabelText("Takeover playlist"),
+      screen.getByRole("combobox", {
+        name: /Pre-made emergency playlist/,
+      }),
       "22222222-2222-4222-8222-222222222222",
     );
     await user.click(await screen.findByLabelText("Lobby"));
@@ -308,5 +324,14 @@ describe("TakeoverPanel", () => {
       }),
       "token",
     );
+  });
+
+  it("makes playlist readiness visible before a weather rule is saved", () => {
+    expect(emergencyPlaylistLabel({ name: "Tornado", itemCount: 3 })).toBe(
+      "Tornado — 3 items",
+    );
+    expect(
+      emergencyPlaylistLabel({ name: "Closure draft", itemCount: 0 }),
+    ).toBe("Closure draft — empty, add content first");
   });
 });

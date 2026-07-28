@@ -36,6 +36,11 @@ describe("settings presentation", () => {
     ]);
     expect(sectionFromPath("/settings/player/reliability")).toBe("reliability");
     expect(sectionFromPath("/settings")).toBe("general");
+    expect(
+      settingsNavigation
+        .flatMap((group) => group.items)
+        .find((item) => item.id === "takeover")?.label,
+    ).toBe("Emergency management");
   });
 
   it("renders booleans as an accessible switch", () => {

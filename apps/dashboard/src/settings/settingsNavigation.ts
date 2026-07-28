@@ -91,7 +91,7 @@ export const settingsNavigation: SettingsNavigationGroup[] = [
     items: [
       {
         id: "takeover",
-        label: "Takeover and commands",
+        label: "Emergency management",
         path: "operations/takeover",
       },
       {
@@ -200,8 +200,9 @@ export const sectionDetails: Record<
   },
   takeover: {
     icon: Siren,
-    title: "Takeover and commands",
-    description: "Defaults for takeover and persistent player operations.",
+    title: "Emergency management",
+    description:
+      "Prepare event-specific playlists and automate emergency playback from official weather alerts.",
   },
   retention: {
     icon: Archive,

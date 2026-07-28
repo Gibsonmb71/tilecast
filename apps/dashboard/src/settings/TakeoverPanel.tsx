@@ -2,9 +2,10 @@ import { useEffect, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
+import { Link } from "react-router";
 import { z } from "zod";
 import { api, ApiError } from "../api/client";
-import type { NWSAlertRule, NWSAlertRuleInput } from "../api/types";
+import type { NWSAlertRule, NWSAlertRuleInput, Playlist } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 
 const emptyRule: NWSAlertRuleInput = {
@@ -36,7 +37,7 @@ const ruleSchema = z
       context.addIssue({
         code: "custom",
         path: ["playlistId"],
-        message: "Select a Takeover playlist.",
+        message: "Select a pre-made emergency playlist.",
       });
     }
     if (value.screenIds.length + value.groupIds.length === 0) {
@@ -138,11 +139,31 @@ export function TakeoverPanel({ editable }: { editable: boolean }) {
     <div className="settings-sections takeover-settings">
       <section className="settings-subsection">
         <header>
-          <h3>National Weather Service alerts</h3>
+          <h3>Prepare emergency content first</h3>
+          <p>
+            Create a separate playlist for each response you may need, such as a
+            tornado warning, flash flood, severe weather closure, or evacuation.
+            Then connect that pre-made playlist to a weather event rule below.
+          </p>
+        </header>
+        <div className="takeover-settings__actions">
+          <Link className="button button--primary" to="/playlists">
+            Manage emergency playlists
+          </Link>
+          <Link className="button button--quiet" to="/screens">
+            Display an emergency manually
+          </Link>
+        </div>
+      </section>
+
+      <section className="settings-subsection">
+        <header>
+          <h3>Automated weather alerts</h3>
           <p>
             Monitor official active alerts for US states, territories, counties,
-            and forecast zones. Matching rules raise a bounded Takeover and
-            restore normal playback when the alert clears.
+            and forecast zones. Matching rules display the pre-made emergency
+            playlist you choose and restore normal playback when the alert
+            clears.
           </p>
         </header>
         <div className="notice notice--info">
@@ -266,10 +287,11 @@ export function TakeoverPanel({ editable }: { editable: boolean }) {
 
       <section className="settings-subsection">
         <header>
-          <h3>Automatic Takeover rules</h3>
+          <h3>Weather event rules</h3>
           <p>
             Event names match NWS wording exactly. Leave the field empty to
             match every event at or above the selected severity and urgency.
+            Each rule can display a different custom playlist.
           </p>
         </header>
         <div className="takeover-rule-list">
@@ -357,15 +379,23 @@ export function TakeoverPanel({ editable }: { editable: boolean }) {
                 </select>
               </label>
               <label>
-                Takeover playlist
+                Pre-made emergency playlist
                 <select {...register("playlistId")}>
-                  <option value="">Select playlist</option>
+                  <option value="">Select a playlist</option>
                   {playlists.data?.items.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name}
+                    <option
+                      key={item.id}
+                      value={item.id}
+                      disabled={item.itemCount === 0}
+                    >
+                      {emergencyPlaylistLabel(item)}
                     </option>
                   ))}
                 </select>
+                <small>
+                  Only non-empty playlists can be activated.{" "}
+                  <Link to="/playlists">Create or edit playlists</Link>
+                </small>
                 {ruleErrors.playlistId && (
                   <span className="form-error" role="alert">
                     {ruleErrors.playlistId.message}
@@ -472,10 +502,8 @@ export function TakeoverPanel({ editable }: { editable: boolean }) {
 
       <section className="settings-subsection">
         <header>
-          <h3>Active NWS alerts</h3>
-          <p>
-            Alerts currently matched to a rule and their generated Takeover.
-          </p>
+          <h3>Active weather emergencies</h3>
+          <p>Alerts currently matched to a rule and displaying content.</p>
         </header>
         {(settings.data?.activeAlerts.length ?? 0) === 0 ? (
           <p className="empty-state">No NWS alerts are currently active.</p>
@@ -519,6 +547,12 @@ const errorText = (error: unknown) =>
     : error instanceof Error
       ? error.message
       : "";
+export const emergencyPlaylistLabel = (
+  playlist: Pick<Playlist, "name" | "itemCount">,
+) =>
+  playlist.itemCount === 0
+    ? `${playlist.name} — empty, add content first`
+    : `${playlist.name} — ${playlist.itemCount} item${playlist.itemCount === 1 ? "" : "s"}`;
 const toInput = (rule: NWSAlertRule): NWSAlertRuleInput => ({
   name: rule.name,
   enabled: rule.enabled,
