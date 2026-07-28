@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -128,6 +129,28 @@ func (s *Service) PasskeysAvailable() (bool, string) {
 	return s.webauthn != nil, s.passkeyUnavailable
 }
 
+// RelyingPartyID is the domain credentials are scoped to. The dashboard needs
+// it to report accepted credentials back to the user's passkey provider.
+func (s *Service) RelyingPartyID() string {
+	if s.webauthn == nil {
+		return ""
+	}
+	return s.webauthn.Config.RPID
+}
+
+// WebAuthnHandle returns the user's opaque WebAuthn identifier, or an empty
+// string when they have never enrolled a passkey.
+func (s *Service) WebAuthnHandle(ctx context.Context, userID uuid.UUID) (string, error) {
+	var handle []byte
+	if err := s.db.QueryRow(ctx, `SELECT webauthn_handle FROM users WHERE id=$1`, userID).Scan(&handle); err != nil {
+		return "", fmt.Errorf("read user handle: %w", err)
+	}
+	if len(handle) == 0 {
+		return "", nil
+	}
+	return base64.RawURLEncoding.EncodeToString(handle), nil
+}
+
 // webauthnUser adapts a Tilecast account to the library's user interface.
 type webauthnUser struct {
 	user        User
@@ -218,8 +241,11 @@ func (s *Service) BeginPasskeyRegistration(ctx context.Context, user User) (*pro
 	return creation, token, nil
 }
 
-// FinishPasskeyRegistration stores a verified credential under a display name.
-func (s *Service) FinishPasskeyRegistration(ctx context.Context, user User, token, name string, response *protocol.ParsedCredentialCreationData) (PasskeySummary, error) {
+// FinishPasskeyRegistration stores a verified credential. The name is derived
+// from the authenticator rather than asked for: the user already answered a
+// system prompt to get here, and "1Password" or "Windows Hello" identifies the
+// credential better than whatever they would have typed. It stays renameable.
+func (s *Service) FinishPasskeyRegistration(ctx context.Context, user User, token string, response *protocol.ParsedCredentialCreationData) (PasskeySummary, error) {
 	if s.webauthn == nil {
 		return PasskeySummary{}, ErrPasskeysUnavailable
 	}
@@ -251,7 +277,15 @@ func (s *Service) FinishPasskeyRegistration(ctx context.Context, user User, toke
 	if err != nil {
 		return PasskeySummary{}, fmt.Errorf("encode passkey credential: %w", err)
 	}
-	summary := PasskeySummary{ID: uuid.New(), Name: passkeyName(name), CreatedAt: time.Now().UTC()}
+	existing, err := s.Factors(ctx, user.ID)
+	if err != nil {
+		return PasskeySummary{}, err
+	}
+	summary := PasskeySummary{
+		ID:        uuid.New(),
+		Name:      uniquePasskeyName(describePasskey(credential), existing.Passkeys),
+		CreatedAt: time.Now().UTC(),
+	}
 	if _, err := s.db.Exec(ctx, `INSERT INTO user_passkeys (id,user_id,credential_id,credential,name,created_at) VALUES ($1,$2,$3,$4,$5,$6)`,
 		summary.ID, user.ID, credential.ID, encoded, summary.Name, summary.CreatedAt); err != nil {
 		return PasskeySummary{}, fmt.Errorf("store passkey: %w", err)

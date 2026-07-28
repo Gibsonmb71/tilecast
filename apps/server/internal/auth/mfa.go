@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"math/big"
@@ -66,11 +67,15 @@ func (p MFAPolicy) AppliesTo(role string) bool {
 }
 
 // PasskeySummary describes an enrolled passkey without exposing key material.
+// CredentialID is the public credential handle, not a secret; the browser
+// needs it to tell the user's passkey provider which credentials this server
+// still accepts, so a passkey removed here disappears from their list too.
 type PasskeySummary struct {
-	ID         uuid.UUID  `json:"id"`
-	Name       string     `json:"name"`
-	CreatedAt  time.Time  `json:"createdAt"`
-	LastUsedAt *time.Time `json:"lastUsedAt,omitempty"`
+	ID           uuid.UUID  `json:"id"`
+	Name         string     `json:"name"`
+	CredentialID string     `json:"credentialId"`
+	CreatedAt    time.Time  `json:"createdAt"`
+	LastUsedAt   *time.Time `json:"lastUsedAt,omitempty"`
 }
 
 // FactorSummary is the security state shown on a user's own security page.
@@ -101,16 +106,18 @@ func (s *Service) Factors(ctx context.Context, userID uuid.UUID) (FactorSummary,
 		summary.TOTPConfirmedAt = confirmedAt
 	}
 
-	rows, err := s.db.Query(ctx, `SELECT id,name,created_at,last_used_at FROM user_passkeys WHERE user_id=$1 ORDER BY created_at`, userID)
+	rows, err := s.db.Query(ctx, `SELECT id,name,credential_id,created_at,last_used_at FROM user_passkeys WHERE user_id=$1 ORDER BY created_at`, userID)
 	if err != nil {
 		return FactorSummary{}, fmt.Errorf("read passkeys: %w", err)
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var passkey PasskeySummary
-		if err := rows.Scan(&passkey.ID, &passkey.Name, &passkey.CreatedAt, &passkey.LastUsedAt); err != nil {
+		var credentialID []byte
+		if err := rows.Scan(&passkey.ID, &passkey.Name, &credentialID, &passkey.CreatedAt, &passkey.LastUsedAt); err != nil {
 			return FactorSummary{}, fmt.Errorf("scan passkey: %w", err)
 		}
+		passkey.CredentialID = base64.RawURLEncoding.EncodeToString(credentialID)
 		summary.Passkeys = append(summary.Passkeys, passkey)
 	}
 	if err := rows.Err(); err != nil {

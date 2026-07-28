@@ -34,6 +34,79 @@ export function passkeysSupported(): boolean {
   );
 }
 
+type ConditionalCapableCredential = typeof PublicKeyCredential & {
+  isConditionalMediationAvailable?: () => Promise<boolean>;
+};
+
+/**
+ * Autofill-assisted sign-in ("conditional mediation") offers passkeys from the
+ * browser's own autofill UI on the username field instead of behind a button.
+ * It has to be feature-detected: where it is unsupported, passing
+ * `mediation: "conditional"` throws instead of degrading.
+ */
+export async function conditionalMediationAvailable(): Promise<boolean> {
+  if (!passkeysSupported()) return false;
+  const api = window.PublicKeyCredential as ConditionalCapableCredential;
+  if (typeof api.isConditionalMediationAvailable !== "function") return false;
+  try {
+    return await api.isConditionalMediationAvailable();
+  } catch {
+    return false;
+  }
+}
+
+type SignalCapableCredential = typeof PublicKeyCredential & {
+  signalAllAcceptedCredentials?: (options: {
+    rpId: string;
+    userId: string;
+    allAcceptedCredentialIds: string[];
+  }) => Promise<void>;
+  signalUnknownCredential?: (options: {
+    rpId: string;
+    credentialId: string;
+  }) => Promise<void>;
+};
+
+/**
+ * Tells the user's passkey provider which credentials this server still
+ * accepts, so one removed in Studio stops being offered at sign-in instead of
+ * lingering as an entry that always fails. Unsupported browsers simply ignore
+ * it — this is a courtesy signal, never a correctness requirement.
+ */
+export async function signalAcceptedCredentials(
+  rpId: string,
+  userId: string,
+  credentialIds: string[],
+): Promise<void> {
+  if (!passkeysSupported() || !rpId || !userId) return;
+  const api = window.PublicKeyCredential as SignalCapableCredential;
+  if (typeof api.signalAllAcceptedCredentials !== "function") return;
+  try {
+    await api.signalAllAcceptedCredentials({
+      rpId,
+      userId,
+      allAcceptedCredentialIds: credentialIds,
+    });
+  } catch {
+    // A provider that rejects the signal changes nothing about our state.
+  }
+}
+
+/** Reports a credential the server does not recognize, so it stops being offered. */
+export async function signalUnknownCredential(
+  rpId: string,
+  credentialId: string,
+): Promise<void> {
+  if (!passkeysSupported() || !rpId || !credentialId) return;
+  const api = window.PublicKeyCredential as SignalCapableCredential;
+  if (typeof api.signalUnknownCredential !== "function") return;
+  try {
+    await api.signalUnknownCredential({ rpId, credentialId });
+  } catch {
+    // Best effort only.
+  }
+}
+
 /** A passkey ceremony the user dismissed is not an error worth reporting. */
 export function isPasskeyCancellation(error: unknown): boolean {
   return (
