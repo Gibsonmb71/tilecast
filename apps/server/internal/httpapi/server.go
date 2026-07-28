@@ -242,6 +242,10 @@ func (s *server) login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "invalid_credentials", "The username or password is incorrect.")
 		return
 	}
+	if errors.Is(err, auth.ErrNoUsableFactor) {
+		s.writeMFAError(w, r, err)
+		return
+	}
 	if err != nil {
 		s.internalError(w, r, err)
 		return

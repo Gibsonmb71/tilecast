@@ -197,15 +197,31 @@ function AuthenticatorPanel({ status }: { status: SecurityStatus }) {
 
 function EnrollmentQr({ uri }: { uri: string }) {
   const [dataUrl, setDataUrl] = useState<string>();
+  const [failed, setFailed] = useState(false);
   useEffect(() => {
     let active = true;
-    void QRCode.toDataURL(uri, { margin: 1, width: 220 }).then((value) => {
-      if (active) setDataUrl(value);
-    });
+    setFailed(false);
+    void QRCode.toDataURL(uri, { margin: 1, width: 220 }).then(
+      (value) => {
+        if (active) setDataUrl(value);
+      },
+      () => {
+        if (active) setFailed(true);
+      },
+    );
     return () => {
       active = false;
     };
   }, [uri]);
+  // Enrollment does not depend on the QR code: the typed key beside it is the
+  // same secret. A rendering failure should say so rather than leave a
+  // placeholder that never resolves.
+  if (failed)
+    return (
+      <p className="security-status">
+        The QR code could not be displayed. Enter the key below by hand instead.
+      </p>
+    );
   if (!dataUrl) return <div className="security-qr security-qr--pending" />;
   return (
     <img

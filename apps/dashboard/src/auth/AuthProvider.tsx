@@ -73,7 +73,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     staleTime: 30_000,
   });
   const setSession = (result: SessionResult) => {
-    setChallenge(undefined);
+    leaveChallenge();
     queryClient.setQueryData<AuthStatus>(authKey, {
       ...(query.data ?? { setupRequired: false }),
       setupRequired: false,
@@ -88,8 +88,13 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const loginMutation = useMutation({
     mutationFn: api.login,
     onSuccess: (result) => {
-      if (isChallenge(result)) setChallenge(result);
-      else setSession(result);
+      if (isChallenge(result)) {
+        // A fresh challenge must not inherit the error text from a previous
+        // attempt at a different step.
+        verifyMutation.reset();
+        passkeyChallengeMutation.reset();
+        setChallenge(result);
+      } else setSession(result);
     },
   });
   const verifyMutation = useMutation({
@@ -164,10 +169,23 @@ export function AuthProvider({ children }: PropsWithChildren) {
     })();
     return () => controller.abort();
   };
+  /**
+   * Every error here is rendered from mutation state, which outlives the view
+   * that produced it. Leaving the challenge without clearing it puts "That
+   * code is not correct" on the plain sign-in form before the user has typed
+   * anything, so the step-scoped mutations are reset on every transition out.
+   */
+  function leaveChallenge() {
+    setChallenge(undefined);
+    verifyMutation.reset();
+    passkeyChallengeMutation.reset();
+    passkeyLoginMutation.reset();
+  }
+
   const logoutMutation = useMutation({
     mutationFn: async () => api.logout(query.data?.csrfToken ?? ""),
     onSuccess: () => {
-      setChallenge(undefined);
+      leaveChallenge();
       queryClient.setQueryData<AuthStatus>(authKey, {
         ...(query.data ?? { setupRequired: false }),
         setupRequired: false,
@@ -202,7 +220,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         verifyMfaPasskey: () => settle(passkeyChallengeMutation.mutateAsync()),
         loginWithPasskey: () => settle(passkeyLoginMutation.mutateAsync()),
         watchForPasskeyAutofill,
-        cancelChallenge: () => setChallenge(undefined),
+        cancelChallenge: leaveChallenge,
         logout: () => settle(logoutMutation.mutateAsync()),
         isSubmitting:
           setupMutation.isPending ||

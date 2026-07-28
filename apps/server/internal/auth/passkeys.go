@@ -296,13 +296,17 @@ func (s *Service) FinishPasskeyRegistration(ctx context.Context, user User, toke
 	return summary, nil
 }
 
+// passkeyName bounds a user-supplied rename. The limit counts runes, not
+// bytes: slicing a byte index can cut a multi-byte character in half, and
+// PostgreSQL rejects the resulting invalid UTF-8 outright.
 func passkeyName(name string) string {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return "Passkey"
 	}
-	if len(name) > 60 {
-		return name[:60]
+	runes := []rune(name)
+	if len(runes) > 60 {
+		return strings.TrimSpace(string(runes[:60]))
 	}
 	return name
 }
@@ -402,7 +406,7 @@ func (s *Service) FinishPasskeyLogin(ctx context.Context, token string, response
 	return s.completeLogin(ctx, matched, "passkey", policy)
 }
 
-// VerifyPasskeyChallenge completes a password sign-in whose second factor is a
+// BeginPasskeyChallenge continues a password sign-in whose second factor is a
 // passkey rather than a code.
 func (s *Service) BeginPasskeyChallenge(ctx context.Context, token string) (*protocol.CredentialAssertion, string, error) {
 	if s.webauthn == nil {

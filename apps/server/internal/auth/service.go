@@ -179,6 +179,14 @@ func (s *Service) Login(ctx context.Context, input LoginInput, policy MFAPolicy)
 		if factors.RecoveryCodesRemaining > 0 {
 			methods = append(methods, "recovery_code")
 		}
+		// An account whose only factor is a passkey, on an installation where
+		// passkeys cannot run, and with no recovery codes left, has nothing it
+		// can present. Issuing a challenge there would hand the user a screen
+		// with no way forward; say so instead, so they know to ask an
+		// administrator for a reset.
+		if len(methods) == 0 {
+			return LoginResult{}, ErrNoUsableFactor
+		}
 		token, err := s.createChallenge(ctx, &user.ID, "login", nil)
 		if err != nil {
 			return LoginResult{}, err

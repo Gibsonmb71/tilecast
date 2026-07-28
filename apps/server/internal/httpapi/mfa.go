@@ -56,6 +56,8 @@ func (s *server) writeMFAError(w http.ResponseWriter, r *http.Request, err error
 	case errors.Is(err, auth.ErrPasskeysUnavailable):
 		_, reason := s.auth.PasskeysAvailable()
 		writeError(w, http.StatusConflict, "passkeys_unavailable", reason)
+	case errors.Is(err, auth.ErrNoUsableFactor):
+		writeError(w, http.StatusConflict, "no_usable_factor", "Your account's only second factor cannot be used on this installation. Ask an Owner or Administrator to reset your sign-in security.")
 	case errors.Is(err, auth.ErrNoFactor):
 		writeError(w, http.StatusNotFound, "factor_not_found", "That factor is not enrolled.")
 	case errors.Is(err, auth.ErrFactorExists):
