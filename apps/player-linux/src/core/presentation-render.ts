@@ -116,9 +116,16 @@ export function resolveBinding(
     case "repeat_index":
       raw = (ctx.repeatIndex ?? 0) + 1;
       break;
-    case "environment":
+    case "environment": {
+      // A time or date spec lives entirely in the format string, and formatValue knows
+      // nothing about those compound formats, so it is resolved and returned here.
+      const environment = parseEnvironmentFormat(binding.format ?? "");
+      if (environment) {
+        return formatEnvironment(environment, ctx.at);
+      }
       raw = resolveEnvironment(binding.path ?? "", ctx.at);
       break;
+    }
     case "dataset": {
       const source = ctx.datasets.get(datasetId(binding.dataset ?? ""));
       raw = resolveDatasetPath(source, binding);
@@ -182,10 +189,67 @@ function resolveEnvironment(path: string, at: Date): string {
       return at.toISOString().slice(0, 10);
     case "time":
       return at.toISOString().slice(11, 16);
+    // The compiler names the clock "currentTime" and packs the rest of the spec into the
+    // format string; a binding that asks for it without one still gets the instant.
+    case "currentTime":
     case "datetime":
       return at.toISOString();
     default:
       return "";
+  }
+}
+
+/**
+ * The time and date halves of the environment format vocabulary the Server compiles
+ * Clock, Date, and World Clock into: "time:<12|24>:<seconds>:<zone>" and
+ * "date:<short|medium|long|full>:<zone>". Countdown formats are parsed separately, in
+ * countdown.ts, because they project to a self-updating node rather than to a string.
+ */
+type EnvironmentFormat =
+  | { kind: "time"; hour12: boolean; showSeconds: boolean; timezone: string }
+  | { kind: "date"; format: ValueFormat; timezone: string };
+
+export function parseEnvironmentFormat(
+  format: string,
+): EnvironmentFormat | null {
+  const parts = format.split(":");
+  if (parts[0] === "time") {
+    return {
+      kind: "time",
+      hour12: parts[1] !== "24",
+      showSeconds: parts[2] === "true",
+      timezone: parts[3] || "UTC",
+    };
+  }
+  if (parts[0] === "date") {
+    const style = parts[1] ?? "full";
+    return {
+      kind: "date",
+      format:
+        style === "short" || style === "medium" ? "date-short" : "date-long",
+      timezone: parts[2] || "UTC",
+    };
+  }
+  return null;
+}
+
+function formatEnvironment(format: EnvironmentFormat, at: Date): string {
+  if (format.kind === "date") {
+    return formatValue(at.toISOString(), {
+      format: format.format,
+      timezone: format.timezone,
+    });
+  }
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      timeZone: format.timezone,
+      hour: "numeric",
+      minute: "2-digit",
+      second: format.showSeconds ? "2-digit" : undefined,
+      hour12: format.hour12,
+    }).format(at);
+  } catch {
+    return at.toLocaleTimeString("en-US");
   }
 }
 
@@ -384,6 +448,22 @@ export function renderPresentation(
             showSeconds: countdown.visibleUnits[3] === "1",
             completionText: countdown.completionText,
             completionAction: countdown.completionAction,
+            style: textStyleFromProps(props, textScale),
+          };
+        }
+        // A clock has to keep ticking, so it becomes the self-updating clock node rather
+        // than a string frozen at the moment the tree was projected. A date is left as
+        // text: it changes once a day, which the next projection picks up.
+        const environment =
+          node.binding?.source === "environment"
+            ? parseEnvironmentFormat(node.binding.format ?? "")
+            : null;
+        if (environment?.kind === "time") {
+          return {
+            t: "clock",
+            timezone: environment.timezone,
+            hour12: environment.hour12,
+            showSeconds: environment.showSeconds,
             style: textStyleFromProps(props, textScale),
           };
         }
