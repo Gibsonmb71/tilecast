@@ -675,26 +675,42 @@ export function LayoutEditorPage() {
           void queryClient.invalidateQueries({ queryKey: ["layouts"] });
         },
       );
-      const previewVersion = changeVersionRef.current;
-      if (!canvasRef.current || !documentRef.current)
-        throw new Error("The Layout preview is not ready yet.");
-      const previewImage = await captureLayoutPreview(
-        canvasRef.current,
-        documentRef.current.canvas.width,
-        documentRef.current.canvas.height,
-      );
-      if (previewVersion !== changeVersionRef.current) {
-        setSaveState("unsaved");
-        return;
-      }
-      await api.uploadLayoutPreview(
-        id,
-        revisionRef.current,
-        previewImage,
-        csrf,
-      );
-      void queryClient.invalidateQueries({ queryKey: ["layouts"] });
       setSaveState("saved");
+
+      // A preview is useful library artwork, but it is not the draft. Generate it
+      // after releasing the save lock so a slow browser capture cannot strand an
+      // edit made while the thumbnail is rendering.
+      const previewVersion = changeVersionRef.current;
+      const previewRevision = revisionRef.current;
+      const previewDocument = clone(documentRef.current);
+      const canvas = canvasRef.current;
+      if (canvas) {
+        void captureLayoutPreview(
+          canvas,
+          previewDocument.canvas.width,
+          previewDocument.canvas.height,
+        )
+          .then((previewImage) => {
+            if (
+              previewVersion !== changeVersionRef.current ||
+              previewRevision !== revisionRef.current
+            )
+              return;
+            return api.uploadLayoutPreview(
+              id,
+              previewRevision,
+              previewImage,
+              csrf,
+            );
+          })
+          .then(() => {
+            void queryClient.invalidateQueries({ queryKey: ["layouts"] });
+          })
+          // Thumbnail capture can fail because of browser canvas/CORS support. The
+          // server draft is already safely persisted, so do not report this as a
+          // draft-save failure or prevent publishing.
+          .catch(() => undefined);
+      }
     } catch (error) {
       setSaveState(
         error instanceof ApiError && error.code === "layout_revision_conflict"
@@ -710,6 +726,19 @@ export function LayoutEditorPage() {
     const timer = window.setTimeout(() => void save(), 900);
     return () => window.clearTimeout(timer);
   }, [document, save, saveState]);
+  useEffect(() => {
+    const warn = (event: BeforeUnloadEvent) => {
+      if (
+        savedChangeVersionRef.current !== changeVersionRef.current ||
+        savingRef.current
+      ) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, []);
   // Track the rendered size of the preview frame so widgets can convert canvas
   // pixels into screen pixels the same way the Player scales the whole canvas.
   useLayoutEffect(() => {
@@ -1449,15 +1478,13 @@ export function LayoutEditorPage() {
     // push an undo entry and mark the layout dirty without anything having moved.
     if (event.button !== 0) return;
     if (item.locked) return;
+    event.preventDefault();
     const sourceDocument = documentRef.current;
     if (!sourceDocument || !canvasRef.current) return;
-    if (!selection.has(item.id))
-      setSelection(
-        new Set(event.shiftKey ? [...selection, item.id] : [item.id]),
-      );
     const active = selection.has(item.id)
       ? new Set(selection)
-      : new Set([item.id]);
+      : new Set(event.shiftKey ? [...selection, item.id] : [item.id]);
+    if (!selection.has(item.id)) setSelection(active);
     const start = { x: event.clientX, y: event.clientY };
     const initial = new Map(
       sourceDocument.placements
@@ -1466,6 +1493,7 @@ export function LayoutEditorPage() {
     );
     const beforeDocument = clone(sourceDocument);
     const bounds = canvasRef.current.getBoundingClientRect();
+    let changed = false;
     const move = (pointer: PointerEvent) => {
       const current = documentRef.current;
       if (!current) return;
@@ -1473,6 +1501,8 @@ export function LayoutEditorPage() {
           ((pointer.clientX - start.x) * current.canvas.width) / bounds.width,
         dy =
           ((pointer.clientY - start.y) * current.canvas.height) / bounds.height;
+      if (!dx && !dy) return;
+      changed = true;
       const next = clone(current);
       const groupWidth = Math.max(
         20,
@@ -1529,19 +1559,39 @@ export function LayoutEditorPage() {
       documentRef.current = next;
       setDocument(next);
     };
-    const up = () => {
+    const finish = () => {
       window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", cancel);
+      window.removeEventListener("blur", cancel);
       setGuides({});
+      if (!changed) return;
       setPast((items) => [...items.slice(-79), beforeDocument]);
       setFuture([]);
       markUnsaved();
     };
+    const cancel = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", cancel);
+      window.removeEventListener("blur", cancel);
+      setGuides({});
+      if (!changed) return;
+      documentRef.current = beforeDocument;
+      setDocument(beforeDocument);
+    };
     window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", cancel);
+    window.addEventListener("blur", cancel);
   };
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        void save();
+        return;
+      }
       if ((event.target as HTMLElement).matches("input,textarea,select"))
         return;
       // While a context menu is up its own keys own the keyboard, so arrowing through
@@ -1640,6 +1690,7 @@ export function LayoutEditorPage() {
     mutateSelected,
     pasteClipboard,
     redo,
+    save,
     selectAll,
     undo,
     ungroupSelection,
@@ -1769,7 +1820,24 @@ export function LayoutEditorPage() {
           <History size={16} />
           History
         </button>
-        <span className={`layout-save-state layout-save-state--${saveState}`}>
+        <button
+          type="button"
+          className={`layout-save-state layout-save-state--${saveState}`}
+          onClick={() => void save()}
+          disabled={
+            saveState === "saved" ||
+            saveState === "saving" ||
+            saveState === "conflict"
+          }
+          title={
+            saveState === "error"
+              ? "Try saving again"
+              : saveState === "unsaved"
+                ? "Save now (Ctrl/Command + S)"
+                : undefined
+          }
+          aria-live="polite"
+        >
           <Save size={14} />
           {saveState === "saved"
             ? "Saved"
@@ -1778,9 +1846,9 @@ export function LayoutEditorPage() {
               : saveState === "conflict"
                 ? "Reload required"
                 : saveState === "error"
-                  ? "Save failed"
-                  : "Unsaved"}
-        </span>
+                  ? "Retry save"
+                  : "Save now"}
+        </button>
         <button
           className="button button--compact button--primary"
           disabled={saveState !== "saved" || publish.isPending}
@@ -1872,7 +1940,11 @@ export function LayoutEditorPage() {
                     >
                       <span className="layout-content-shelf__preview">
                         {asset?.thumbnailUrl ? (
-                          <img src={asset.thumbnailUrl} alt="" />
+                          <img
+                            src={asset.thumbnailUrl}
+                            alt=""
+                            draggable={false}
+                          />
                         ) : asset?.type === "widget" ? (
                           <AppWindow size={18} />
                         ) : playlist ? (
@@ -2131,6 +2203,7 @@ export function LayoutEditorPage() {
                   className="layout-preview-background"
                   src={api.assetPreviewUrl(document.canvas.backgroundAssetId)}
                   alt=""
+                  draggable={false}
                 />
               )}
             {safeArea && (
@@ -2428,6 +2501,7 @@ function PlacementView({
             className="layout-asset-placement"
             src={playlist.items[0].thumbnailUrl}
             alt=""
+            draggable={false}
             style={assetPreviewStyle(
               item.playback?.fit,
               item.playback?.cornerRadius,
@@ -2448,6 +2522,7 @@ function PlacementView({
             className="layout-asset-placement"
             src={content.thumbnailUrl}
             alt=""
+            draggable={false}
             style={assetPreviewStyle(
               item.playback?.fit,
               item.playback?.cornerRadius,
@@ -2596,7 +2671,7 @@ function AssetPlaybackPreview({
         preload="auto"
       />
     );
-  return <img {...common} alt="" />;
+  return <img {...common} alt="" draggable={false} />;
 }
 
 export function playlistPreviewDuration(item: PlaylistItem) {

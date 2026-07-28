@@ -1,12 +1,19 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../api/client";
 import * as authModule from "../auth/AuthProvider";
-import type { Layout, LayoutDocument } from "../api/types";
+import type { Asset, Layout, LayoutDocument } from "../api/types";
+import * as previewCapture from "../content/widgetPreviewCapture";
 import { createPrimitivePlacement, LayoutEditorPage } from "./LayoutEditorPage";
 
 // These tests exercise the pointer-drag move handler inside LayoutEditorPage,
@@ -62,12 +69,12 @@ function mockAuth() {
   } as unknown as ReturnType<typeof authModule.useAuth>);
 }
 
-function renderLayoutEditor() {
+function renderLayoutEditor(assets: Asset[] = []) {
   const layout = buildLayout();
   vi.spyOn(api, "layout").mockResolvedValue(layout);
   vi.spyOn(api, "assets").mockResolvedValue({
-    items: [],
-    total: 0,
+    items: assets,
+    total: assets.length,
     page: 1,
     pageSize: 100,
   });
@@ -198,5 +205,63 @@ describe("Layout editor drag: snap-then-clamp", () => {
     const style = (placementEl as HTMLElement).style;
     expect(parseFloat(style.left)).toBeCloseTo(pctOfWidth(123), 5);
     expect(parseFloat(style.top)).toBeCloseTo(pctOfHeight(127), 5);
+  });
+
+  it("does not create an unsaved change when a placement is only selected", async () => {
+    mockAuth();
+    renderLayoutEditor();
+    const placement = await screen.findByText("New text");
+    const placementEl = placement.closest(".layout-placement")!;
+
+    fireEvent.pointerDown(placementEl, {
+      clientX: 100,
+      clientY: 100,
+      pointerId: 1,
+    });
+    fireEvent.pointerUp(window, {
+      clientX: 100,
+      clientY: 100,
+      pointerId: 1,
+    });
+
+    expect(screen.getByText("Saved")).toBeInTheDocument();
+    expect(api.saveLayoutDraft).not.toHaveBeenCalled();
+  });
+
+  it("keeps the draft saved when optional thumbnail capture fails", async () => {
+    mockAuth();
+    vi.spyOn(previewCapture, "captureLayoutPreview").mockRejectedValue(
+      new Error("Canvas capture unavailable"),
+    );
+    renderLayoutEditor();
+    const placement = await screen.findByText("New text");
+    const placementEl = placement.closest(".layout-placement")!;
+
+    dragBy(placementEl, 20, 20);
+
+    await waitFor(() => expect(api.saveLayoutDraft).toHaveBeenCalledTimes(1), {
+      timeout: 2_000,
+    });
+    await waitFor(() => expect(screen.getByText("Saved")).toBeInTheDocument());
+    expect(screen.queryByText("Retry save")).not.toBeInTheDocument();
+  });
+
+  it("prevents a shelf thumbnail from taking over the library drag", async () => {
+    mockAuth();
+    renderLayoutEditor([
+      {
+        id: "poster",
+        name: "Poster",
+        type: "image",
+        thumbnailUrl: "/poster.jpg",
+        createdAt: "2026-07-28T12:00:00Z",
+      } as Asset,
+    ]);
+
+    const addButton = await screen.findByTitle("Add Poster");
+    expect(addButton.querySelector("img")).toHaveAttribute(
+      "draggable",
+      "false",
+    );
   });
 });
