@@ -12,7 +12,14 @@
 //   3. Show the data, not just its name. The selected source reports status, cached record
 //      count, and sample values.
 import { useQuery } from "@tanstack/react-query";
-import { Check, ChevronRight, Database, Plus, X } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Database,
+  Plus,
+  X,
+} from "lucide-react";
 import { useId, useState } from "react";
 import { createPortal } from "react-dom";
 import { api } from "../api/client";
@@ -28,6 +35,166 @@ import { providerLabel, sourceIcon } from "./dataSourceProviderMeta";
 
 // Studio shows at most this many sample values so a wide source cannot overflow the control.
 const sampleFieldLimit = 4;
+
+export type DataFormatGuide = {
+  shape: string;
+  summary: string;
+  fields: {
+    key: string;
+    label: string;
+    types: string[];
+    required?: boolean;
+  }[];
+  example: Record<string, string | number | boolean>;
+};
+
+function providerSignature(providers: DataSourceProvider[]) {
+  return [...providers].sort().join(",");
+}
+
+// Legacy Widget definitions predate generated data controls. Their already-closed compatible
+// provider lists still give us enough information to present a useful contract, while
+// definition-driven Widgets pass an exact guide derived from their field schema.
+function inferredFormatGuide(
+  providers?: DataSourceProvider[],
+): DataFormatGuide | undefined {
+  if (!providers?.length) return undefined;
+  const signature = providerSignature(providers);
+  if (signature === "weather")
+    return {
+      shape: "Weather data",
+      summary:
+        "Use a Weather Data Source; Tilecast supplies its typed forecast fields.",
+      fields: [
+        {
+          key: "temperature",
+          label: "Temperature and conditions",
+          types: ["number", "text"],
+        },
+      ],
+      example: { temperature: 72, condition: "Partly cloudy" },
+    };
+  if (signature === "csv,json,manual,weather")
+    return {
+      shape: "Records with a numeric value",
+      summary: "Each row needs the number this Widget should feature.",
+      fields: [
+        {
+          key: "value",
+          label: "Value",
+          types: ["number", "integer"],
+          required: true,
+        },
+      ],
+      example: { label: "Daily attendance", value: 94.6 },
+    };
+  if (signature === "air_quality,csv,json,manual,weather")
+    return {
+      shape: "Numeric records or a time series",
+      summary:
+        "Provide one or more numeric fields that can be mapped in the Widget.",
+      fields: [
+        {
+          key: "value",
+          label: "Measured value",
+          types: ["number", "integer", "percent", "currency"],
+          required: true,
+        },
+      ],
+      example: { label: "Fundraising", value: 7450, target: 10000 },
+    };
+  if (
+    signature === "calendar,csv,json,manual,weather" ||
+    signature === "calendar,cap_alerts,csv,json,manual,transit,weather"
+  )
+    return {
+      shape: "Time-ordered records",
+      summary:
+        "Each row should have a readable title and a date or date-and-time field.",
+      fields: [
+        {
+          key: "title",
+          label: "Title",
+          types: ["text"],
+          required: true,
+        },
+        {
+          key: "start",
+          label: "Date or time",
+          types: ["date", "datetime"],
+          required: true,
+        },
+      ],
+      example: {
+        title: "Period 2",
+        start: "2026-08-24T09:03:00-04:00",
+      },
+    };
+  return {
+    shape: "Record rows",
+    summary:
+      "Use one row per item and map the fields you want the Widget to display.",
+    fields: [
+      {
+        key: "title",
+        label: "Display field",
+        types: ["text", "number", "date", "datetime"],
+        required: true,
+      },
+    ],
+    example: {
+      title: "Today’s announcement",
+      detail: "Library closes at 4 PM",
+    },
+  };
+}
+
+function dataTypeLabel(type: string) {
+  if (type === "datetime") return "date & time";
+  if (type === "integer") return "whole number";
+  return type.replaceAll("_", " ");
+}
+
+function DataFormatGuidePanel({ guide }: { guide: DataFormatGuide }) {
+  return (
+    <details className="data-format-guide" open>
+      <summary>
+        <span className="data-format-guide__icon" aria-hidden>
+          <Database size={18} />
+        </span>
+        <span>
+          <strong>Data format</strong>
+          <small>{guide.shape}</small>
+        </span>
+        <ChevronDown size={16} aria-hidden />
+      </summary>
+      <div className="data-format-guide__body">
+        <p>{guide.summary}</p>
+        {guide.fields.length > 0 && (
+          <ul>
+            {guide.fields.map((field) => (
+              <li key={`${field.key}-${field.label}`}>
+                <span>
+                  <strong>{field.label}</strong>
+                  {field.required && <small>Required</small>}
+                </span>
+                <span className="data-format-guide__types">
+                  {field.types.map((type) => (
+                    <code key={type}>{dataTypeLabel(type)}</code>
+                  ))}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="data-format-guide__example">
+          <span>Example</span>
+          <pre>{JSON.stringify(guide.example, null, 2)}</pre>
+        </div>
+      </div>
+    </details>
+  );
+}
 
 function statusTone(status: unknown) {
   if (status === "ready") return "success" as const;
@@ -118,6 +285,7 @@ export function DataSourcePicker({
   allowEmpty = true,
   emptyMessage,
   createProviders,
+  formatGuide,
   onChange,
 }: {
   label?: string;
@@ -137,6 +305,9 @@ export function DataSourcePicker({
   // Providers offered by the Connect flow. Defaults to every non-Form provider in the catalog,
   // narrowed to what the consumer accepts when it passes a list.
   createProviders?: DataSourceProvider[];
+  // Definition-driven Widgets provide their exact field contract. Legacy Widgets fall back to
+  // guidance inferred from their closed compatible-provider list.
+  formatGuide?: DataFormatGuide;
   onChange: (value: string) => void;
 }) {
   const [creating, setCreating] = useState<DataSourceProvider | "choose">();
@@ -147,6 +318,8 @@ export function DataSourcePicker({
   // this field — must be shown as missing rather than silently resolving to another source.
   const missing = Boolean(value) && !selected;
   const canCreate = allowCreate && !disabled && Boolean(csrf);
+  const resolvedFormatGuide =
+    formatGuide ?? inferredFormatGuide(createProviders);
 
   // Sample values come from the saved-source preview, fetched only for the selected source.
   // The list response carries no records, so previewing every row would be an N+1.
@@ -166,6 +339,9 @@ export function DataSourcePicker({
 
   return (
     <div className="data-source-picker">
+      {resolvedFormatGuide && (
+        <DataFormatGuidePanel guide={resolvedFormatGuide} />
+      )}
       {/* With no compatible sources the empty state is the whole control — unless something is
           still referenced, in which case the picker must stay so the missing reference is visible
           rather than replaced by a "nothing here yet" message. */}

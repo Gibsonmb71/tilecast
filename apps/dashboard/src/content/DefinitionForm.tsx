@@ -8,7 +8,7 @@ import type {
   DataSourceField,
 } from "../api/types";
 import { Select } from "../components/ui";
-import { DataSourcePicker } from "./DataSourcePicker";
+import { DataSourcePicker, type DataFormatGuide } from "./DataSourcePicker";
 
 type Values = Record<string, unknown>;
 
@@ -170,6 +170,111 @@ function creatableProviders(
     .map((definition) => definition.id);
 }
 
+function exampleValue(key: string, type: string) {
+  const normalized = key.toLowerCase();
+  if (type === "datetime")
+    return normalized.includes("end")
+      ? "2026-08-24T09:51:00-04:00"
+      : "2026-08-24T09:03:00-04:00";
+  if (type === "date") return "2026-08-24";
+  if (type === "number" || type === "currency") return 94.6;
+  if (type === "integer") return 42;
+  if (type === "percent") return 85;
+  if (type === "boolean") return true;
+  if (normalized.includes("title") || normalized.includes("name"))
+    return "Period 2";
+  if (normalized.includes("detail") || normalized.includes("description"))
+    return "East wing";
+  return "Example text";
+}
+
+function preferredExampleType(key: string, types: string[]) {
+  const normalized = key.toLowerCase();
+  if (
+    (normalized.includes("date") ||
+      normalized.includes("time") ||
+      normalized.includes("start") ||
+      normalized.includes("end")) &&
+    types.includes("datetime")
+  )
+    return "datetime";
+  return types[0] ?? "text";
+}
+
+export function dataFormatGuideFor(
+  sourceField: ContentDefinitionField,
+  fields: ContentDefinitionField[],
+): DataFormatGuide {
+  const sourceFields = fields.filter(
+    (candidate) => candidate.control === "data_source",
+  );
+  const selectableFields = fields.filter(
+    (candidate) =>
+      candidate.control === "data_source_field" &&
+      (candidate.dataSourceKey === sourceField.key ||
+        (!candidate.dataSourceKey && sourceFields.length === 1)),
+  );
+  const requirements: DataFormatGuide["fields"] = Object.entries(
+    sourceField.requiredFields ?? {},
+  ).map(([key, type]) => ({
+    key,
+    label: key.replaceAll("_", " "),
+    types: [type],
+    required: true,
+  }));
+  for (const field of selectableFields) {
+    const types = field.dataSourceFieldTypes?.length
+      ? field.dataSourceFieldTypes
+      : ["text", "number", "date", "datetime"];
+    requirements.push({
+      key:
+        typeof field.default === "string" && field.default
+          ? field.default
+          : field.key.replace(/Field$/, ""),
+      label: field.label,
+      types,
+      required: field.required,
+    });
+  }
+  const deduplicated = requirements.filter(
+    (field, index, all) =>
+      all.findIndex(
+        (candidate) =>
+          candidate.key === field.key && candidate.label === field.label,
+      ) === index,
+  );
+  const kinds = sourceField.acceptedDataSourceKinds?.length
+    ? sourceField.acceptedDataSourceKinds
+    : ["records"];
+  const shape = kinds
+    .map((kind) =>
+      kind === "records"
+        ? "record rows"
+        : kind === "object"
+          ? "a single object"
+          : kind === "time_series"
+            ? "a time series"
+            : kind.replaceAll("_", " "),
+    )
+    .join(" or ");
+  const example = Object.fromEntries(
+    deduplicated.map((field) => {
+      const type = preferredExampleType(field.key, field.types);
+      return [field.key, exampleValue(field.key, type)];
+    }),
+  );
+  if (Object.keys(example).length === 0) example.title = "Example information";
+  return {
+    shape: shape[0]!.toUpperCase() + shape.slice(1),
+    summary:
+      deduplicated.length > 0
+        ? "Use these field roles and types. Field names can differ because you map them below."
+        : "Use one item per row; after connecting the source, choose which fields appear.",
+    fields: deduplicated,
+    example,
+  };
+}
+
 function DefinitionControl({
   field,
   fields,
@@ -224,6 +329,7 @@ function DefinitionControl({
         sources={compatibleSources(field, dataSources, dataSourceDefinitions)}
         definitions={dataSourceDefinitions}
         createProviders={creatableProviders(field, dataSourceDefinitions)}
+        formatGuide={dataFormatGuideFor(field, fields)}
         csrf={csrf}
         disabled={readOnly}
         required={field.required}

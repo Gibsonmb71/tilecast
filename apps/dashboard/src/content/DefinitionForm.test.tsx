@@ -20,6 +20,7 @@ import type {
 } from "../api/types";
 import {
   DefinitionForm,
+  dataFormatGuideFor,
   dataSourceKeysIn,
   resolveDataSourceKey,
 } from "./DefinitionForm";
@@ -87,7 +88,10 @@ function catalog(dataSources: DataSourceDefinition[]) {
 // behind a trigger button, so option text is read from that native element rather than through the
 // option role. The Data Source control is a chooser dialog and is driven directly.
 function optionsFor(labelText: string | RegExp) {
-  const field = screen.getByText(labelText).closest("label");
+  const field = screen
+    .getAllByText(labelText)
+    .map((match) => match.closest("label"))
+    .find(Boolean);
   const select = field?.querySelector("select");
   return Array.from(select?.options ?? []).map((option) => option.textContent);
 }
@@ -213,6 +217,59 @@ describe("resolveDataSourceKey", () => {
   });
 });
 
+describe("dataFormatGuideFor", () => {
+  it("derives field roles, accepted types, and an example from the Widget definition", () => {
+    const fields: ContentDefinitionField[] = [
+      {
+        key: "dataSourceId",
+        label: "Schedule data",
+        control: "data_source",
+        acceptedDataSourceKinds: ["records"],
+      },
+      {
+        key: "titleField",
+        label: "Title field",
+        control: "data_source_field",
+        required: true,
+        default: "title",
+        dataSourceFieldTypes: ["text"],
+      },
+      {
+        key: "startField",
+        label: "Start field",
+        control: "data_source_field",
+        required: true,
+        default: "start",
+        dataSourceFieldTypes: ["datetime"],
+      },
+    ];
+
+    expect(dataFormatGuideFor(fields[0]!, fields)).toEqual({
+      shape: "Record rows",
+      summary:
+        "Use these field roles and types. Field names can differ because you map them below.",
+      fields: [
+        {
+          key: "title",
+          label: "Title field",
+          types: ["text"],
+          required: true,
+        },
+        {
+          key: "start",
+          label: "Start field",
+          types: ["datetime"],
+          required: true,
+        },
+      ],
+      example: {
+        title: "Period 2",
+        start: "2026-08-24T09:03:00-04:00",
+      },
+    });
+  });
+});
+
 describe("DefinitionForm data source controls", () => {
   it("offers only Data Sources whose output schema the field accepts", async () => {
     vi.spyOn(api, "contentDefinitions").mockResolvedValue(
@@ -249,6 +306,8 @@ describe("DefinitionForm data source controls", () => {
         "1 compatible source",
       ),
     );
+    expect(screen.getByText("Data format")).toBeTruthy();
+    expect(screen.getByText("temperature")).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: /^Data: / }));
 
     const chooser = await screen.findByRole("dialog", { name: "Choose data" });

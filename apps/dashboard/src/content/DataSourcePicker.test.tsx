@@ -285,6 +285,29 @@ describe("DataSourcePicker", () => {
     expect(screen.queryByRole("button", { name: /Weather/ })).toBeNull();
   });
 
+  it("shows an inferred format guide for legacy Widget provider lists", () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <DataSourcePicker
+          value=""
+          sources={[]}
+          definitions={[csvDefinition]}
+          createProviders={["csv", "json", "manual", "weather"]}
+          csrf="csrf-token"
+          onChange={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByText("Data format")).toBeTruthy();
+    expect(screen.getByText("Records with a numeric value")).toBeTruthy();
+    expect(screen.getByText("Value")).toBeTruthy();
+    expect(screen.getByText("number")).toBeTruthy();
+  });
+
   it("does not offer creation to an author without write access", () => {
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
