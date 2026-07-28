@@ -1,5 +1,4 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import QRCode from "qrcode";
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../api/client";
 import type { Passkey, SecurityStatus } from "../api/types";
@@ -12,10 +11,11 @@ import {
   toCreationOptions,
 } from "../auth/webauthn";
 import { FormField } from "../components/FormField";
-import { Button, PageHeader, Panel, SectionHeader } from "../components/ui";
+import { SecurityQr } from "../components/SecurityQr";
+import { Button, Panel, SectionHeader } from "../components/ui";
 import "./SecurityPage.css";
 
-const securityKey = ["me", "security"] as const;
+export const securityKey = ["me", "security"] as const;
 
 export function SecurityPage() {
   const security = useQuery({ queryKey: securityKey, queryFn: api.security });
@@ -28,33 +28,6 @@ export function SecurityPage() {
       </div>
     );
   return <SecurityPanels status={security.data} />;
-}
-
-/**
- * The forced-enrollment variant. A session that owes the organization a factor
- * cannot reach any other page, so this stands alone rather than in the shell.
- */
-export function EnrollmentGate() {
-  const security = useQuery({ queryKey: securityKey, queryFn: api.security });
-  const { logout } = useAuth();
-  return (
-    <main className="security-gate">
-      <section className="security-gate__panel">
-        <PageHeader
-          title="Set up two-step verification"
-          description="This organization requires a second factor for your role. Add an authenticator app or a passkey to continue into Tilecast Studio."
-        />
-        {security.data ? (
-          <SecurityPanels status={security.data} />
-        ) : (
-          <div className="table-loading">Loading…</div>
-        )}
-        <Button variant="quiet" onClick={() => void logout()}>
-          Sign out instead
-        </Button>
-      </section>
-    </main>
-  );
 }
 
 function SecurityPanels({ status }: { status: SecurityStatus }) {
@@ -146,7 +119,7 @@ function AuthenticatorPanel({ status }: { status: SecurityStatus }) {
 
       {enrolling && begin.data && (
         <div className="security-enroll">
-          <EnrollmentQr uri={begin.data.provisioningUri} />
+          <SecurityQr uri={begin.data.provisioningUri} />
           <div className="security-enroll__steps">
             <p>
               Scan the code with your authenticator app, then enter the
@@ -192,45 +165,6 @@ function AuthenticatorPanel({ status }: { status: SecurityStatus }) {
         />
       )}
     </Panel>
-  );
-}
-
-function EnrollmentQr({ uri }: { uri: string }) {
-  const [dataUrl, setDataUrl] = useState<string>();
-  const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    let active = true;
-    setFailed(false);
-    void QRCode.toDataURL(uri, { margin: 1, width: 220 }).then(
-      (value) => {
-        if (active) setDataUrl(value);
-      },
-      () => {
-        if (active) setFailed(true);
-      },
-    );
-    return () => {
-      active = false;
-    };
-  }, [uri]);
-  // Enrollment does not depend on the QR code: the typed key beside it is the
-  // same secret. A rendering failure should say so rather than leave a
-  // placeholder that never resolves.
-  if (failed)
-    return (
-      <p className="security-status">
-        The QR code could not be displayed. Enter the key below by hand instead.
-      </p>
-    );
-  if (!dataUrl) return <div className="security-qr security-qr--pending" />;
-  return (
-    <img
-      className="security-qr"
-      src={dataUrl}
-      alt="Authenticator setup QR code"
-      width={220}
-      height={220}
-    />
   );
 }
 

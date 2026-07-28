@@ -32,7 +32,7 @@ import { StudioTopbar } from "../components/StudioTopbar";
 import { api } from "../api/client";
 import { canReviewForm } from "../forms/capabilities";
 import { OperationsDashboard } from "./OperationsDashboard";
-import { EnrollmentGate } from "./SecurityPage";
+import { EnrollmentWizard } from "./EnrollmentWizard";
 
 // A nav item may own several routes: Content covers Media, Widgets, and Data, and Presentations
 // covers Playlists and Layouts. `owns` lists those extra paths so the entry stays highlighted while
@@ -206,6 +206,11 @@ export function DashboardShell() {
   });
   const accountMenuRef = useRef<HTMLDivElement>(null);
   const accountMenuButtonRef = useRef<HTMLButtonElement>(null);
+  // Enrollment is latched rather than read straight from the session flag on
+  // every render: confirming the first factor clears the flag server-side, and
+  // the wizard still has recovery codes and a passkey to offer after that.
+  const [enrolling, setEnrolling] = useState(false);
+  const enrollmentFinished = useRef(false);
   const preferences = useQuery({
     queryKey: ["preferences"],
     queryFn: api.preferences,
@@ -244,6 +249,10 @@ export function DashboardShell() {
       );
   }, [auth.isLoading, auth.status, navigate, location.pathname]);
   useEffect(() => {
+    if (auth.status?.mfaEnrollmentRequired && !enrollmentFinished.current)
+      setEnrolling(true);
+  }, [auth.status?.mfaEnrollmentRequired]);
+  useEffect(() => {
     if (!accountMenuOpen) return;
 
     const closeOnOutsideClick = (event: PointerEvent) => {
@@ -270,7 +279,15 @@ export function DashboardShell() {
   // The server refuses every dashboard route until the required factor
   // exists, so the shell gives way to enrollment rather than rendering a page
   // whose data will not load.
-  if (auth.status.mfaEnrollmentRequired) return <EnrollmentGate />;
+  if (enrolling)
+    return (
+      <EnrollmentWizard
+        onFinish={() => {
+          enrollmentFinished.current = true;
+          setEnrolling(false);
+        }}
+      />
+    );
   return (
     <div
       className={`app-shell${sidebarCompact ? " app-shell--sidebar-compact" : ""}`}

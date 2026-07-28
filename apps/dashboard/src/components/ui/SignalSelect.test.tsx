@@ -2,7 +2,7 @@
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Field } from ".";
 import { Select } from "./SignalSelect";
@@ -141,4 +141,44 @@ describe("Signal Select accessible name", () => {
 
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
   });
+
+  // A modal <dialog> is painted in the browser's top layer, above every z-index
+  // in the document, and makes the rest of the page inert. A menu portaled to
+  // <body> from inside one is therefore invisible and unclickable, which is
+  // what the role dropdown in the Edit user dialog was doing.
+  it("portals its menu into the modal dialog that owns it", async () => {
+    const user = userEvent.setup();
+    render(
+      <Dialog title="Edit user">
+        <Select aria-label="Role" value="editor" onChange={vi.fn()}>
+          <option value="editor">Editor</option>
+          <option value="viewer">Viewer</option>
+        </Select>
+      </Dialog>,
+    );
+
+    await user.click(screen.getByRole("combobox", { name: "Role" }));
+
+    const menu = screen.getByRole("listbox");
+    expect(menu.closest("dialog")).not.toBeNull();
+    expect(menu.parentElement?.tagName).toBe("DIALOG");
+  });
 });
+
+/** A minimal stand-in for the shared Dialog: what matters is showModal(). */
+function Dialog({ title, children }: { title: string; children: ReactNode }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = ref.current;
+    if (!dialog) return;
+    // jsdom has no top layer and no showModal; the open attribute is what the
+    // portal target reads there.
+    if (typeof dialog.showModal === "function") dialog.showModal();
+    else dialog.setAttribute("open", "");
+  }, []);
+  return (
+    <dialog ref={ref} aria-label={title}>
+      {children}
+    </dialog>
+  );
+}
