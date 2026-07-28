@@ -36,6 +36,8 @@ import type {
 import { DataSourcePicker } from "./DataSourcePicker";
 import { WidgetThumbnail } from "./WidgetThumbnail";
 import { previewRecordMaps, type PreviewDatasets } from "./previewRecords";
+import { PreviewTimeControl } from "./PreviewTimeControl";
+import { initialPreviewTime, resolvePreviewNow } from "./previewTime";
 import { captureWidgetPreview } from "./widgetPreviewCapture";
 
 export function WidgetProviderGallery({
@@ -585,6 +587,7 @@ export function NativeAppEditor({
     (asset?.widget?.configuration as NativeConfig | undefined) ??
       nativeDefault(provider),
   );
+  const [previewTime, setPreviewTime] = useState(initialPreviewTime);
   const dataSources = useQuery({
     queryKey: ["widget-data-sources"],
     queryFn: () =>
@@ -2833,6 +2836,7 @@ export function NativeAppEditor({
               <strong>Live preview</strong>
               <span>Updates as you make changes.</span>
             </header>
+            <PreviewTimeControl value={previewTime} onChange={setPreviewTime} />
             <div
               ref={previewRef}
               className="native-app-preview declarative-widget-preview"
@@ -2841,6 +2845,7 @@ export function NativeAppEditor({
                 <DeclarativePresentationPreview
                   presentation={compiledPreview.data}
                   source={sourcePreview.data}
+                  now={resolvePreviewNow(previewTime)}
                   assetImageUrl={
                     previewImageAssetId
                       ? api.assetPreviewUrl(previewImageAssetId)
@@ -2898,6 +2903,9 @@ export function DeclarativePresentationPreview({
   const [liveNow, setLiveNow] = useState(() => now ?? new Date());
   useEffect(() => {
     if (now || presentation.kind !== "native") return;
+    // Returning from a fixed preview time resumes at the real instant instead of showing the
+    // clock the preview was frozen at until the next tick.
+    setLiveNow(new Date());
     const timer = window.setInterval(() => setLiveNow(new Date()), 1_000);
     return () => window.clearInterval(timer);
   }, [now, presentation.kind]);

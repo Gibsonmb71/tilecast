@@ -15,6 +15,12 @@ import type {
 import { DefinitionForm, dataSourceKeysIn } from "./DefinitionForm";
 import { previewDatasetMaps, type PreviewDatasets } from "./previewRecords";
 import { DeclarativePresentationPreview } from "./SourceEditors";
+import { PreviewTimeControl } from "./PreviewTimeControl";
+import {
+  initialPreviewTime,
+  resolvePreviewNow,
+  type PreviewTime,
+} from "./previewTime";
 import { captureWidgetPreview } from "./widgetPreviewCapture";
 
 export function GenericWidgetEditor({
@@ -41,6 +47,8 @@ export function GenericWidgetEditor({
   const [configuration, setConfiguration] = useState<Record<string, unknown>>(
     asset?.widget?.configuration ?? definition.defaultConfiguration,
   );
+  const [previewTime, setPreviewTime] =
+    useState<PreviewTime>(initialPreviewTime);
   const compiledPreview = useQuery({
     queryKey: ["compiled-widget-preview", definition.id, configuration],
     queryFn: () => api.compileWidgetPreview(definition.id, configuration, csrf),
@@ -114,6 +122,9 @@ export function GenericWidgetEditor({
       onClose={onClose}
       onSave={() => save.mutate()}
       saveLabel="Save Widget"
+      previewControl={
+        <PreviewTimeControl value={previewTime} onChange={setPreviewTime} />
+      }
       preview={
         <div
           ref={previewRef}
@@ -124,6 +135,7 @@ export function GenericWidgetEditor({
               presentation={compiledPreview.data}
               source={primarySourcePreview}
               datasets={previewDatasets}
+              now={resolvePreviewNow(previewTime)}
               assetImageUrl={
                 typeof configuration.imageAssetId === "string" &&
                 configuration.imageAssetId
@@ -230,6 +242,7 @@ function GenericEditorShell({
   onSave,
   saveLabel,
   preview,
+  previewControl,
   children,
 }: {
   title: string;
@@ -246,6 +259,7 @@ function GenericEditorShell({
   onSave: () => void;
   saveLabel: string;
   preview?: ReactNode;
+  previewControl?: ReactNode;
   children: ReactNode;
 }) {
   const subject = preview ? "Widget" : "Data Source";
@@ -315,6 +329,7 @@ function GenericEditorShell({
                 <strong>Live preview</strong>
                 <span>Updates as you make changes.</span>
               </header>
+              {previewControl}
               {preview}
             </aside>
           </div>
