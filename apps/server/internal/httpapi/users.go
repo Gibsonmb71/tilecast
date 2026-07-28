@@ -264,6 +264,64 @@ func (s *server) deleteUser(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (s *server) permanentlyDeleteUser(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	actor := r.Context().Value(sessionContextKey).(auth.Session).User
+	if actor.ID == id {
+		writeError(w, http.StatusConflict, "cannot_delete_self", "You cannot permanently delete your own account.")
+		return
+	}
+	target, err := s.readManagedUser(r, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "user_not_found", "The user account was not found.")
+		return
+	}
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	if !canManageRole(actor.Role, target.Role) {
+		writeError(w, http.StatusForbidden, "insufficient_role", "Only an Owner may manage Owner or Administrator accounts.")
+		return
+	}
+	if target.Active {
+		writeError(w, http.StatusConflict, "deactivate_user_first", "Deactivate the account before permanently deleting it.")
+		return
+	}
+
+	tx, err := s.db.Begin(r.Context())
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	defer tx.Rollback(r.Context()) //nolint:errcheck
+	if _, err = tx.Exec(r.Context(), `
+		INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,metadata)
+		VALUES($1,$2,'user.deleted','user',$3,jsonb_build_object('role',$4::text))`,
+		uuid.New(), actor.ID, id.String(), target.Role,
+	); err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	command, err := tx.Exec(r.Context(), `DELETE FROM users WHERE id=$1 AND active=FALSE`, id)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	if command.RowsAffected() != 1 {
+		writeError(w, http.StatusConflict, "user_state_changed", "The account changed before it could be deleted. Refresh and try again.")
+		return
+	}
+	if err = tx.Commit(r.Context()); err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *server) readManagedUser(r *http.Request, id uuid.UUID) (auth.User, error) {
 	var user auth.User
 	err := s.db.QueryRow(r.Context(), `

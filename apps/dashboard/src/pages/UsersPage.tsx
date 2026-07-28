@@ -7,6 +7,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   ShieldOff,
+  Trash2,
   UserRoundX,
 } from "lucide-react";
 import type { User } from "../api/types";
@@ -311,6 +312,13 @@ function UserEditorDialog({
       userRequest<void>(`/users/${user.id}`, csrf, { method: "DELETE" }),
     onSuccess: onChanged,
   });
+  const permanentlyDelete = useMutation({
+    mutationFn: () =>
+      userRequest<void>(`/users/${user.id}/permanent`, csrf, {
+        method: "DELETE",
+      }),
+    onSuccess: onChanged,
+  });
   // Tilecast has no email delivery, so there is no self-service factor reset.
   // An administrator clearing the factors is the ordinary recovery path.
   const resetSecurity = useMutation({
@@ -408,23 +416,52 @@ function UserEditorDialog({
             {resetSecurity.isPending ? "Resetting…" : "Reset"}
           </button>
         </section>
-        {(update.error || deactivate.error || resetSecurity.error) && (
+        {(update.error ||
+          deactivate.error ||
+          permanentlyDelete.error ||
+          resetSecurity.error) && (
           <div className="notice notice--error" role="alert">
-            {(update.error ?? deactivate.error ?? resetSecurity.error)?.message}
+            {
+              (
+                update.error ??
+                deactivate.error ??
+                permanentlyDelete.error ??
+                resetSecurity.error
+              )?.message
+            }
           </div>
         )}
         <footer className="user-edit-dialog__actions">
-          <button
-            type="button"
-            className="button button--danger-quiet"
-            disabled={isSelf || deactivate.isPending || !user.active}
-            onClick={() => {
-              if (confirm(`Deactivate ${user.name}?`)) deactivate.mutate();
-            }}
-          >
-            <UserRoundX size={15} />
-            {deactivate.isPending ? "Deactivating…" : "Deactivate"}
-          </button>
+          {user.active ? (
+            <button
+              type="button"
+              className="button button--danger-quiet"
+              disabled={isSelf || deactivate.isPending}
+              onClick={() => {
+                if (confirm(`Deactivate ${user.name}?`)) deactivate.mutate();
+              }}
+            >
+              <UserRoundX size={15} />
+              {deactivate.isPending ? "Deactivating…" : "Deactivate"}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="button button--danger-quiet"
+              disabled={isSelf || permanentlyDelete.isPending}
+              onClick={() => {
+                if (
+                  confirm(
+                    `Permanently delete ${user.name}? This removes their login, preferences, and security credentials. This cannot be undone.`,
+                  )
+                )
+                  permanentlyDelete.mutate();
+              }}
+            >
+              <Trash2 size={15} />
+              {permanentlyDelete.isPending ? "Deleting…" : "Delete permanently"}
+            </button>
+          )}
           <span />
           <button
             type="button"

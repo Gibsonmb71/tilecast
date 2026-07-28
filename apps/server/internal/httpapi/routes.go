@@ -84,6 +84,7 @@ func (s *server) routes() http.Handler {
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/users", s.createUser)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Patch("/users/{id}", s.updateUser)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Delete("/users/{id}", s.deleteUser)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Delete("/users/{id}/permanent", s.permanentlyDeleteUser)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/users/{id}/security/reset", s.resetUserFactors)
 			dashboard.Get("/me/preferences", s.getPreferences)
 			dashboard.With(s.requireCSRF).Patch("/me/preferences", s.updatePreferences)
