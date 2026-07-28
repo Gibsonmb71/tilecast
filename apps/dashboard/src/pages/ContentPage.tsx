@@ -220,7 +220,7 @@ export function ContentPage() {
       return;
     }
     let sessionId = resume?.sessionId;
-    let offset = 0;
+    let offset: number;
     const item: QueueItem = resume ?? {
       localId,
       filename: file.name,

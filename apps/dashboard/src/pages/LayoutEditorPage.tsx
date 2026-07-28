@@ -3235,7 +3235,7 @@ function DisplayWidget({
   item: LayoutPlacement;
 }) {
   const max = cfg.maximumItems ?? 20;
-  let rows: string[] = [];
+  let rows: string[];
   if (source?.provider === "calendar") {
     rows = (source.events ?? [])
       .slice(0, max)
