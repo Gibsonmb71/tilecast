@@ -759,6 +759,7 @@
 }
 
 .screen-card__preview {
+  position: relative;
   display: grid;
   place-items: center;
   overflow: hidden;
@@ -777,6 +778,29 @@
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+
+.screen-card__preview-age {
+  position: absolute;
+  right: var(--tc-space-2);
+  bottom: var(--tc-space-2);
+  padding: 2px 6px;
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: var(--tc-radius-control);
+  background: rgb(0 0 0 / 58%);
+  color: rgb(255 255 255 / 78%);
+  font: var(--tc-text-caption);
+  line-height: 1.25;
+  pointer-events: none;
+  backdrop-filter: blur(3px);
+}
+
+.screen-card__preview-age--aging {
+  color: rgb(255 255 255 / 68%);
+}
+
+.screen-card__preview-age--old {
+  color: rgb(255 255 255 / 58%);
 }
 
 .screen-preview-skeleton {

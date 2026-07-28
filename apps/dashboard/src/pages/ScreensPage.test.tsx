@@ -1,8 +1,16 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { previewApi } from "../api/previews";
 import type { Screen, User } from "../api/types";
 import type { PairingRequest } from "../api/types";
 import {
@@ -12,6 +20,7 @@ import {
   pairingApprovalLabel,
   pairingApprovalPayload,
   resolveScreenDetail,
+  ScreenGridCard,
   ScreenListContent,
   StatusLabel,
   zeroTouchReadiness,
@@ -37,7 +46,11 @@ const user = (role: User["role"]): User => ({
   createdAt: new Date().toISOString(),
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe("screen management", () => {
   it("restricts pairing and credential management by role", () => {
@@ -178,6 +191,77 @@ describe("screen management", () => {
     ).toHaveAttribute("aria-pressed", "false");
     expect(
       within(summary).getByRole("button", { name: "1 Online" }),
+    ).toBeInTheDocument();
+  });
+
+  it("requests a fresh preview for a visible grid card and shows its age", async () => {
+    const capturedAt = new Date(Date.now() - 65_000).toISOString();
+    const item = {
+      id: "screen-1",
+      name: "Lobby",
+      location: "Main entrance",
+      screenWidth: 1920,
+      screenHeight: 1080,
+      status: "online",
+      lastContactAt: new Date().toISOString(),
+    } as Screen;
+    const renew = vi.spyOn(previewApi, "renew").mockResolvedValue({
+      active: true,
+      captureIntervalSeconds: 20,
+      captureNow: true,
+    });
+    vi.spyOn(previewApi, "metadata").mockResolvedValue({
+      screenId: item.id,
+      status: "available",
+      capturedAt,
+      imageAvailable: true,
+      updatedAt: capturedAt,
+    });
+    class ImmediateIntersectionObserver {
+      constructor(private readonly callback: IntersectionObserverCallback) {}
+      observe(target: Element) {
+        this.callback(
+          [{ isIntersecting: true, target } as IntersectionObserverEntry],
+          this,
+        );
+      }
+      disconnect() {}
+      unobserve() {}
+      takeRecords() {
+        return [];
+      }
+      readonly root = null;
+      readonly rootMargin = "0px";
+      readonly thresholds = [0];
+    }
+    vi.stubGlobal("IntersectionObserver", ImmediateIntersectionObserver);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ScreenGridCard
+          screen={item}
+          csrfToken="csrf-token"
+          selected={false}
+          canManage={false}
+          showLocation
+          onSelect={vi.fn()}
+          onOpen={vi.fn()}
+          onMenu={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() =>
+      expect(renew).toHaveBeenCalledWith(item.id, "csrf-token", true),
+    );
+    expect(
+      await screen.findByLabelText("Snapshot captured 1m ago"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByAltText("Latest preview from Lobby"),
     ).toBeInTheDocument();
   });
 
