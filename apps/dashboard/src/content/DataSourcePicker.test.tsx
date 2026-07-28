@@ -10,6 +10,26 @@ import { DataSourcePicker } from "./DataSourcePicker";
 // The real Data Source editors are large provider-specific forms with their own network
 // behavior. This suite is about the picker's contract with them: the editor is rendered in
 // place, and whatever it saves becomes the picker's selection.
+vi.mock("../api/client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../api/client")>();
+  return {
+    ...actual,
+    api: {
+      ...actual.api,
+      // The Connect flow reads the provider catalog, exactly as the Data Sources page does.
+      contentDefinitions: () =>
+        Promise.resolve({
+          revision: "test",
+          compilerVersion: "test",
+          fingerprint: "test",
+          widgets: [],
+          dataSources: catalogDefinitions,
+        }),
+      previewSavedDataSource: () => Promise.resolve({}),
+    },
+  };
+});
+
 vi.mock("./DataSourceEditors", () => ({
   DataSourceEditor: ({
     provider,
@@ -43,7 +63,21 @@ const csvDefinition: DataSourceDefinition = {
   outputSchema: { kind: "records", fields: [] },
   adapterId: "csv_adapter",
   refreshBehavior: "interval",
+  // CSV ships as a legacy-editor provider, so its Studio copy comes from the provider
+  // metadata rather than the definition's own setup block.
+  legacyEditor: true,
 };
+
+const weatherDefinition: DataSourceDefinition = {
+  ...csvDefinition,
+  id: "weather",
+  name: "Weather",
+  description: "Cache a forecast.",
+};
+
+// Every suite renders against the same catalog; a test narrows what is offered through the
+// picker's accepted-provider list, which is what a Widget does.
+const catalogDefinitions = [csvDefinition, weatherDefinition];
 
 const existing: DataSource = {
   id: "existing",
@@ -69,7 +103,6 @@ function picker(sources: DataSource[]) {
         <DataSourcePicker
           value=""
           sources={sources}
-          definitions={[csvDefinition]}
           csrf="csrf-token"
           onChange={onChange}
         />
@@ -86,10 +119,17 @@ describe("DataSourcePicker", () => {
     await userEvent.click(
       screen.getByRole("button", { name: /Connect new data/ }),
     );
+    // The in-editor path runs the same gallery the Data Sources page runs.
     expect(
-      screen.getByRole("dialog", { name: "Connect new data" }),
-    ).toHaveClass("asset-details", "data-source-connect");
+      screen.getByRole("dialog", { name: "Create Data Source" }),
+    ).toHaveClass("source-gallery");
     await userEvent.click(screen.getByRole("button", { name: /CSV/ }));
+    // The chosen provider opens with the same setup guidance the page shows, not a bare
+    // editor.
+    expect(screen.getByText("Setup checklist")).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "Create CSV Data Source" }),
+    ).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "Save csv" }));
 
     expect(onChange).toHaveBeenCalledWith("created-source");
@@ -155,7 +195,6 @@ describe("DataSourcePicker", () => {
         <DataSourcePicker
           value="existing"
           sources={[existing]}
-          definitions={[csvDefinition]}
           csrf="csrf-token"
           allowEmpty={false}
           onChange={vi.fn()}
@@ -178,7 +217,6 @@ describe("DataSourcePicker", () => {
         <DataSourcePicker
           value="existing"
           sources={[existing]}
-          definitions={[csvDefinition]}
           csrf="csrf-token"
           onChange={vi.fn()}
         />
@@ -199,7 +237,6 @@ describe("DataSourcePicker", () => {
         <DataSourcePicker
           value="deleted-source"
           sources={[existing]}
-          definitions={[csvDefinition]}
           csrf="csrf-token"
           allowEmpty={false}
           onChange={vi.fn()}
@@ -233,7 +270,6 @@ describe("DataSourcePicker", () => {
         <DataSourcePicker
           value="deleted-source"
           sources={[]}
-          definitions={[csvDefinition]}
           csrf="csrf-token"
           onChange={vi.fn()}
         />
@@ -254,12 +290,6 @@ describe("DataSourcePicker", () => {
   });
 
   it("offers only providers the consumer accepts when connecting new data", async () => {
-    const weatherDefinition: DataSourceDefinition = {
-      ...csvDefinition,
-      id: "weather",
-      name: "Weather",
-      description: "Cache a forecast.",
-    };
     const onChange = vi.fn();
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
@@ -269,7 +299,6 @@ describe("DataSourcePicker", () => {
         <DataSourcePicker
           value=""
           sources={[]}
-          definitions={[csvDefinition, weatherDefinition]}
           createProviders={["csv"]}
           csrf="csrf-token"
           onChange={onChange}
@@ -294,7 +323,6 @@ describe("DataSourcePicker", () => {
         <DataSourcePicker
           value=""
           sources={[]}
-          definitions={[csvDefinition]}
           createProviders={["csv", "json", "manual", "weather"]}
           csrf="csrf-token"
           onChange={vi.fn()}
@@ -314,12 +342,7 @@ describe("DataSourcePicker", () => {
     });
     render(
       <QueryClientProvider client={client}>
-        <DataSourcePicker
-          value=""
-          sources={[]}
-          definitions={[csvDefinition]}
-          onChange={vi.fn()}
-        />
+        <DataSourcePicker value="" sources={[]} onChange={vi.fn()} />
       </QueryClientProvider>,
     );
 

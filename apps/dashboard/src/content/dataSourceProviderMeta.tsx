@@ -59,6 +59,28 @@ export function iconForIdentifier(icon: string | undefined, size = 28) {
   return <Icon size={size} />;
 }
 
+// Gallery copy for the providers that predate release-defined definitions. Their catalog
+// descriptions are written for the definition compiler ("Project a public RSS feed into
+// typed records"); these say the same thing to an author choosing what to connect.
+const galleryCopy: Record<string, string> = {
+  calendar: "Public Google, Microsoft, Apple, or other ICS calendars.",
+  rss: "News, announcements, blog posts, and published updates.",
+  atom: "Atom entries from publishing systems and update feeds.",
+  json: "Public API data mapped with simple JSON Pointer paths.",
+  csv: "Upload a spreadsheet export or connect a hosted CSV URL.",
+  manual: "Maintain a small typed dataset directly in Studio.",
+  weather: "Cached current conditions and daily forecasts.",
+  transit: "Public GTFS departures and service alerts.",
+  cap_alerts: "Active public emergency alerts and instructions.",
+  air_quality: "Current AQI, pollutants, pollen, and hourly forecasts.",
+  form: "Collect submissions, approve them, and publish records to Widgets.",
+};
+
+export function providerGalleryDescription(definition: DataSourceDefinition) {
+  if (!definition.legacyEditor) return definition.description;
+  return galleryCopy[definition.id] ?? definition.description;
+}
+
 export type SetupCopy = {
   eyebrow: string;
   description: string;

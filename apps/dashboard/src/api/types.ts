@@ -1720,6 +1720,21 @@ export type StructuredSourceConfig = {
   emptyState: string;
   dateSelection: DateSelection;
 };
+// The fields a connected RSS, Atom, JSON, or CSV Source was found to contain. Studio maps
+// display slots to these instead of asking an author to recall column names or pointers.
+export type StructuredField = {
+  key: string;
+  label: string;
+  samples: string[];
+};
+export type StructuredInspection = {
+  provider: DataSourceProvider;
+  fields: StructuredField[];
+  rowCount: number;
+  delimiter?: string;
+  suggested: NonNullable<StructuredSourceConfig["mapping"]>;
+  available: StructuredSourceConfig["fields"];
+};
 export type DateSelection = {
   enabled: boolean;
   dateFormat:

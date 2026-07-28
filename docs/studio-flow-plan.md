@@ -114,12 +114,15 @@ flow), `content/dataSourceProviderMeta.tsx` and `content/previewRecords.ts` (bot
 
 Two deviations from the plan as written:
 
-- **The Connect flow offers a compatible-provider list rather than reusing the full provider
-  gallery.** The gallery lives inside `pages/DataSourcesPage.tsx`; importing it from `content/`
+- **The Connect flow offered a compatible-provider list rather than reusing the full provider
+  gallery.** The gallery lived inside `pages/DataSourcesPage.tsx`; importing it from `content/`
   would have created an import cycle, and moving it meant relocating ~420 lines of page code into a
-  feature change. The picker instead renders the catalog's Data Source definitions directly — which
-  is also the better result, because a Widget's accepted provider set is usually far shorter than
-  the full gallery. Form Data Sources are excluded; they are authored through the Forms portal.
+  feature change. **Resolved:** the gallery and the guided create shell now live in
+  `content/DataSourceCreateFlow.tsx`, and the page, the Widget editors, and the Layout editor all
+  run them. Connecting data from a Widget therefore opens the same catalog gallery and the same
+  setup checklist the page opens, in a dialog rather than a route. A Widget's accepted provider
+  list still narrows what the gallery offers, and Form Data Sources are excluded everywhere except
+  the page, because they are authored through the Forms portal.
 - **Multi-source Widgets preview only their first declared source.** All referenced sources are
   fetched and all of them gate saving, so the captured thumbnail is never uploaded with data in
   flight. Rendering several datasets at once would require `DeclarativePresentationPreview` and
