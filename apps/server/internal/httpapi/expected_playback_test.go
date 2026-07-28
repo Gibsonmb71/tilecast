@@ -236,6 +236,11 @@ func TestComplianceExcludesIntentionalNonPlayback(t *testing.T) {
 		insertWindow(t, env, cancelled, cancelled.Add(hour), func(row *expectedWindowRow) {
 			row.SupersededReason = "active_hours_changed"
 		})
+		takeoverID := createTakeoverFixture(t, env)
+		overridden := base.Add(6 * hour)
+		insertWindow(t, env, overridden, overridden.Add(hour), func(row *expectedWindowRow) {
+			row.TakeoverID = &takeoverID
+		})
 
 		report := readCompliance(t, env, "?range=30d")
 		if report.MeasurableExpectedMS != (2 * hour).Milliseconds() {
@@ -253,6 +258,9 @@ func TestComplianceExcludesIntentionalNonPlayback(t *testing.T) {
 		// The excluded time is reported rather than silently improving the score.
 		if report.CancelledMS != hour.Milliseconds() {
 			t.Fatalf("cancelled = %dms, want the excluded hour to be visible", report.CancelledMS)
+		}
+		if report.TakeoverOverriddenMS != hour.Milliseconds() {
+			t.Fatalf("takeover overridden = %dms, want the excluded hour to be visible", report.TakeoverOverriddenMS)
 		}
 		if report.NeverStarted != 1 {
 			t.Fatalf("never started = %d, want 1", report.NeverStarted)

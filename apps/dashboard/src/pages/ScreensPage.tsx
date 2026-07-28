@@ -269,12 +269,8 @@ function ActiveTakeoverBanners({ canManage }: { canManage: boolean }) {
   const queryClient = useQueryClient();
   const takeovers = useTakeovers();
   const cancel = useMutation({
-    mutationFn: (id: string) =>
-      api.cancelTakeover(
-        id,
-        prompt("Optional cancellation reason") ?? "",
-        auth.status?.csrfToken ?? "",
-      ),
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      api.cancelTakeover(id, reason, auth.status?.csrfToken ?? ""),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["takeovers"] }),
   });
   const active = (takeovers.data?.items ?? []).filter(
@@ -295,11 +291,13 @@ function ActiveTakeoverBanners({ canManage }: { canManage: boolean }) {
                 type="button"
                 onClick={() => {
                   if (
-                    confirm(
+                    !confirm(
                       "Cancel this takeover and restore current scheduled or fallback playback?",
                     )
                   )
-                    cancel.mutate(item.id);
+                    return;
+                  const reason = prompt("Optional cancellation reason") ?? "";
+                  cancel.mutate({ id: item.id, reason });
                 }}
               >
                 End takeover

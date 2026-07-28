@@ -283,6 +283,10 @@ export function resolveSelection(manifest: Manifest, at: Date): Selection {
   const futureTransitions = allWindows
     .flatMap((window) => [window.start, window.end])
     .filter((transition) => transition > now);
+  if (takeover) {
+    const starts = Date.parse(takeover.activatedAt);
+    if (Number.isFinite(starts) && starts > now) futureTransitions.push(starts);
+  }
 
   if (takeover && takeoverActive(manifest, at)) {
     const expires = Date.parse(takeover.expiresAt);

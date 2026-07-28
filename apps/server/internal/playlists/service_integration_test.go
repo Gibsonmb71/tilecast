@@ -189,6 +189,9 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 	if err != nil || takeoverManifest.Takeover == nil || takeoverManifest.Takeover.ID != takeoverID || takeoverManifest.Takeover.PlaylistID != playlist.ID {
 		t.Fatalf("takeover manifest=%#v err=%v", takeoverManifest.Takeover, err)
 	}
+	if takeoverManifest.LegacyTakeover == nil || takeoverManifest.LegacyTakeover.ID != takeoverID || takeoverManifest.LegacyTakeover.PlaylistID != playlist.ID {
+		t.Fatalf("legacy takeover manifest=%#v", takeoverManifest.LegacyTakeover)
+	}
 	if _, err = pool.Exec(ctx, `DELETE FROM takeovers WHERE id=$1`, takeoverID); err != nil {
 		t.Fatal(err)
 	}

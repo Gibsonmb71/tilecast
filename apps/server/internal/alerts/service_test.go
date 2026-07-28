@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestNormalizeCodes(t *testing.T) {
@@ -96,4 +97,25 @@ func TestNWSAlertActiveUsesTheAuthoritativeEnd(t *testing.T) {
 	if !nwsAlertActive(nwsProperties{Expires: &future}, now) {
 		t.Fatal("future alert was not treated as active")
 	}
+}
+
+func TestBoundedPreservesUTF8(t *testing.T) {
+	if got := bounded("warning 🌪️", 10); got != "warning " || !utf8.ValidString(got) {
+		t.Fatalf("bounded() = %q, want valid UTF-8 at the byte limit", got)
+	}
+}
+
+func TestServiceLifecycleIsIdempotent(t *testing.T) {
+	service := &Service{}
+	first, cancelFirst := context.WithCancel(context.Background())
+	cancelFirst()
+	service.Start(first)
+	service.Start(first)
+	service.Stop()
+	service.Stop()
+
+	second, cancelSecond := context.WithCancel(context.Background())
+	cancelSecond()
+	service.Start(second)
+	service.Stop()
 }

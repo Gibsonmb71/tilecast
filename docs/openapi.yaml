@@ -1652,6 +1652,13 @@ paths:
       responses:
         "201": { description: Rule created }
   /api/v1/alerts/nws/rules/{id}:
+    parameters:
+      - {
+          in: path,
+          name: id,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
     put:
       summary: Replace an automatic NWS Takeover rule
       responses:

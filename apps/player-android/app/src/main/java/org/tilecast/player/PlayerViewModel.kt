@@ -488,6 +488,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         scheduleContent = null
         scheduleJob?.cancel(); scheduleJob = null
         takeoverJob?.cancel(); takeoverJob = null
+        activeTakeoverId = null
+        takeoverState = null
         playbackRetryJob?.cancel(); playbackRetryJob = null
         activeManifestVersion = null
         currentScheduleId = null

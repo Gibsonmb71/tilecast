@@ -234,6 +234,24 @@ describe("resolveSelection", () => {
     ).toBe("schedule");
   });
 
+  it("schedules the activation of a future takeover", () => {
+    const manifest = baseManifest({
+      takeover: {
+        id: "future-takeover",
+        playlistId: "takeover-pl",
+        activatedAt: "2026-07-17T16:00:00Z",
+        expiresAt: "2026-07-17T17:00:00Z",
+      },
+    });
+    expect(
+      resolveSelection(manifest, new Date("2026-07-17T15:00:00Z")),
+    ).toMatchObject({
+      playlistId: "direct",
+      source: "direct",
+      nextTransitionAt: "2026-07-17T16:00:00.000Z",
+    });
+  });
+
   it("accepts the legacy emergency manifest key during staggered upgrades", () => {
     const manifest = baseManifest({
       emergency: {

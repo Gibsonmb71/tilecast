@@ -46,8 +46,11 @@ func (s *server) updateAlertMonitor(w http.ResponseWriter, r *http.Request) {
 	}
 	user := r.Context().Value(sessionContextKey).(auth.Session).User
 	monitor, err := s.alerts.UpdateMonitor(r.Context(), input.Enabled, input.Areas, input.Zones, input.PollIntervalSeconds, user.ID)
-	if err != nil {
+	if errors.Is(err, alerts.ErrValidation) {
 		writeError(w, http.StatusUnprocessableEntity, "alert_monitor_invalid", err.Error())
+		return
+	} else if err != nil {
+		s.internalError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": monitor})
@@ -81,8 +84,14 @@ func (s *server) saveAlertRule(w http.ResponseWriter, r *http.Request, id uuid.U
 	}
 	user := r.Context().Value(sessionContextKey).(auth.Session).User
 	rule, err := s.alerts.SaveRule(r.Context(), id, input, user.ID)
-	if err != nil {
+	if errors.Is(err, alerts.ErrValidation) {
 		writeError(w, http.StatusUnprocessableEntity, "alert_rule_invalid", err.Error())
+		return
+	} else if errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "alert_rule_not_found", "NWS alert rule was not found.")
+		return
+	} else if err != nil {
+		s.internalError(w, r, err)
 		return
 	}
 	status := http.StatusOK

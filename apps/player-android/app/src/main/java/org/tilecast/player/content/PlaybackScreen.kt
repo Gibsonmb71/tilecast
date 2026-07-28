@@ -76,7 +76,12 @@ fun FullscreenPlayback(
     onWidgetStatus: (WidgetPlaybackStatus) -> Unit = {},
     onProgress: () -> Unit = {},
 ) {
-    val activityReporter = rememberPlaybackActivityReporter(session)
+    val takeoverDecision = TakeoverController.evaluate(
+        Instant.now(),
+        session.content.manifest.effectiveTakeover,
+        true,
+    )
+    val activityReporter = rememberPlaybackActivityReporter(session, takeoverDecision)
     session.content.manifest.layout?.let { layout ->
         FullscreenLayoutPlayback(session, layout, onError, onWebsiteStatus, onWidgetStatus, onProgress, activityReporter)
         return

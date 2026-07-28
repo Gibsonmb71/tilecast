@@ -2,9 +2,11 @@ package alerts
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -24,32 +26,47 @@ func (s *Service) applyAlert(ctx context.Context, alertID string, rule Rule, ale
 	var existing *uuid.UUID
 	err := s.db.QueryRow(ctx, `SELECT takeover_id FROM alert_activations WHERE alert_id=$1 AND rule_id=$2 AND cleared_at IS NULL`, alertID, rule.ID).Scan(&existing)
 	if err == nil {
-		_, err = s.db.Exec(ctx, `UPDATE alert_activations SET headline=$3,description=$4,instruction=$5,severity=$6,urgency=$7,certainty=$8,area_description=$9,sender=$10,effective_at=$11,expires_at=$12,last_seen_at=$13
-			WHERE alert_id=$1 AND rule_id=$2`, alertID, rule.ID, alert.Headline, alert.Description, alert.Instruction, alert.Severity, alert.Urgency, alert.Certainty, alert.AreaDescription, alert.SenderName, alert.Effective, alertExpiry(alert, now, rule.MaximumDurationMinutes), now)
+		_, err = s.db.Exec(ctx, `UPDATE alert_activations SET event=$3,headline=$4,description=$5,instruction=$6,severity=$7,urgency=$8,certainty=$9,area_description=$10,sender=$11,effective_at=$12,expires_at=$13,last_seen_at=$14
+			WHERE alert_id=$1 AND rule_id=$2`, alertID, rule.ID, alert.Event, alert.Headline, alert.Description, alert.Instruction, alert.Severity, alert.Urgency, alert.Certainty, alert.AreaDescription, alert.SenderName, alert.Effective, alertExpiry(alert, now, rule.MaximumDurationMinutes), now)
 		return err
 	}
-	if err != pgx.ErrNoRows {
+	if !errors.Is(err, pgx.ErrNoRows) {
 		return err
 	}
 	if rule.PlaylistID == nil {
 		return nil
 	}
 	expires := alertExpiry(alert, now, rule.MaximumDurationMinutes)
-	takeoverID, err := s.activate(ctx, rule, alert.Event, alert.Headline, alert.Description, now, expires)
+	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec(ctx, `INSERT INTO alert_activations(alert_id,rule_id,event,headline,description,instruction,severity,urgency,certainty,area_description,sender,effective_at,expires_at,response_mode,takeover_id,first_seen_at,last_seen_at)
+	defer tx.Rollback(ctx)
+	takeoverID, screenIDs, err := s.activate(ctx, tx, rule, alert.Event, alert.Headline, alert.Description, now, expires)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO alert_activations(alert_id,rule_id,event,headline,description,instruction,severity,urgency,certainty,area_description,sender,effective_at,expires_at,response_mode,takeover_id,first_seen_at,last_seen_at)
 		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'takeover',$14,$15,$15)
 		ON CONFLICT(alert_id,rule_id) DO UPDATE SET event=EXCLUDED.event,headline=EXCLUDED.headline,description=EXCLUDED.description,instruction=EXCLUDED.instruction,severity=EXCLUDED.severity,urgency=EXCLUDED.urgency,certainty=EXCLUDED.certainty,area_description=EXCLUDED.area_description,sender=EXCLUDED.sender,effective_at=EXCLUDED.effective_at,expires_at=EXCLUDED.expires_at,takeover_id=EXCLUDED.takeover_id,last_seen_at=EXCLUDED.last_seen_at,cleared_at=NULL,clear_reason=NULL`,
 		alertID, rule.ID, alert.Event, alert.Headline, alert.Description, alert.Instruction, alert.Severity, alert.Urgency, alert.Certainty, alert.AreaDescription, alert.SenderName, alert.Effective, expires, takeoverID, now)
-	return err
+	if err != nil {
+		return err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return err
+	}
+	s.notify(ctx, screenIDs)
+	return nil
 }
 
 func bounded(value string, limit int) string {
 	value = strings.TrimSpace(value)
 	if len(value) <= limit {
 		return value
+	}
+	for limit > 0 && !utf8.ValidString(value[:limit]) {
+		limit--
 	}
 	return value[:limit]
 }
@@ -66,21 +83,17 @@ func alertExpiry(alert nwsProperties, now time.Time, maxMinutes int) time.Time {
 	return *candidate
 }
 
-func (s *Service) activate(ctx context.Context, rule Rule, event, headline, description string, now, expires time.Time) (uuid.UUID, error) {
-	tx, err := s.db.Begin(ctx)
-	if err != nil {
-		return uuid.Nil, err
-	}
-	defer tx.Rollback(ctx)
+func (s *Service) activate(ctx context.Context, tx pgx.Tx, rule Rule, event, headline, description string, now, expires time.Time) (uuid.UUID, []uuid.UUID, error) {
+	var err error
 	var organizationID uuid.UUID
 	var ready bool
 	if err = tx.QueryRow(ctx, `SELECT organization_id,(deleted_at IS NULL AND EXISTS(SELECT 1 FROM playlist_items WHERE playlist_id=playlists.id)) FROM playlists WHERE id=$1`, rule.PlaylistID).Scan(&organizationID, &ready); err != nil || !ready {
-		return uuid.Nil, fmt.Errorf("alert rule playlist is not ready")
+		return uuid.Nil, nil, fmt.Errorf("alert rule playlist is not ready")
 	}
 	rows, err := tx.Query(ctx, `SELECT DISTINCT s.id FROM screens s WHERE s.organization_id=$1 AND s.deleted_at IS NULL AND
 		(s.id=ANY($2) OR EXISTS(SELECT 1 FROM screen_group_memberships m WHERE m.screen_id=s.id AND m.screen_group_id=ANY($3)))`, organizationID, rule.ScreenIDs, rule.GroupIDs)
 	if err != nil {
-		return uuid.Nil, err
+		return uuid.Nil, nil, err
 	}
 	screenIDs := []uuid.UUID{}
 	for rows.Next() {
@@ -90,8 +103,11 @@ func (s *Service) activate(ctx context.Context, rule Rule, event, headline, desc
 		}
 	}
 	rows.Close()
+	if err = rows.Err(); err != nil {
+		return uuid.Nil, nil, err
+	}
 	if len(screenIDs) == 0 {
-		return uuid.Nil, fmt.Errorf("alert rule has no eligible screens")
+		return uuid.Nil, nil, fmt.Errorf("alert rule has no eligible screens")
 	}
 	id := uuid.New()
 	name := event
@@ -102,35 +118,37 @@ func (s *Service) activate(ctx context.Context, rule Rule, event, headline, desc
 	if detail == "" {
 		detail = description
 	}
-	if len(detail) > 2000 {
-		detail = detail[:2000]
-	}
+	detail = bounded(detail, 2000)
 	_, err = tx.Exec(ctx, `INSERT INTO takeovers(id,organization_id,name,description,playlist_id,status,activated_at,expires_at) VALUES($1,$2,$3,$4,$5,'active',$6,$7)`, id, organizationID, name, detail, rule.PlaylistID, now, expires)
 	if err != nil {
-		return uuid.Nil, err
+		return uuid.Nil, nil, err
 	}
 	for _, screenID := range uniqueUUIDs(rule.ScreenIDs) {
-		_, _ = tx.Exec(ctx, `INSERT INTO takeover_targets(takeover_id,target_type,screen_id) VALUES($1,'screen',$2)`, id, screenID)
+		if _, err = tx.Exec(ctx, `INSERT INTO takeover_targets(takeover_id,target_type,screen_id) VALUES($1,'screen',$2)`, id, screenID); err != nil {
+			return uuid.Nil, nil, err
+		}
 	}
 	for _, groupID := range uniqueUUIDs(rule.GroupIDs) {
-		_, _ = tx.Exec(ctx, `INSERT INTO takeover_targets(takeover_id,target_type,screen_group_id) VALUES($1,'group',$2)`, id, groupID)
+		if _, err = tx.Exec(ctx, `INSERT INTO takeover_targets(takeover_id,target_type,screen_group_id) VALUES($1,'group',$2)`, id, groupID); err != nil {
+			return uuid.Nil, nil, err
+		}
 	}
 	for _, screenID := range screenIDs {
-		_, _ = tx.Exec(ctx, `UPDATE takeover_screen_states state SET state='restored',restored_at=now(),last_updated_at=now() FROM takeovers takeover WHERE state.takeover_id=takeover.id AND state.screen_id=$1 AND takeover.status='active' AND state.state NOT IN ('restored','cancelled','expired')`, screenID)
+		if _, err = tx.Exec(ctx, `UPDATE takeover_screen_states state SET state='restored',restored_at=now(),last_updated_at=now() FROM takeovers takeover WHERE state.takeover_id=takeover.id AND state.screen_id=$1 AND takeover.status='active' AND state.state NOT IN ('restored','cancelled','expired')`, screenID); err != nil {
+			return uuid.Nil, nil, err
+		}
 		var version int64
 		if err = tx.QueryRow(ctx, `UPDATE screen_manifest_state SET manifest_version=manifest_version+1,changed_at=now(),change_reason='takeover.activated' WHERE screen_id=$1 RETURNING manifest_version`, screenID).Scan(&version); err != nil {
-			return uuid.Nil, err
+			return uuid.Nil, nil, err
 		}
 		if _, err = tx.Exec(ctx, `INSERT INTO takeover_screen_states(takeover_id,screen_id,manifest_version,state) VALUES($1,$2,$3,'pending')`, id, screenID, version); err != nil {
-			return uuid.Nil, err
+			return uuid.Nil, nil, err
 		}
 	}
-	_, _ = tx.Exec(ctx, `INSERT INTO audit_logs(id,action,resource_type,resource_id,metadata) VALUES($1,'takeover.activated_by_nws','takeover',$2,jsonb_build_object('ruleId',$3,'event',$4))`, uuid.New(), id.String(), rule.ID, event)
-	if err = tx.Commit(ctx); err != nil {
-		return uuid.Nil, err
+	if _, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,action,resource_type,resource_id,metadata) VALUES($1,'takeover.activated_by_nws','takeover',$2,jsonb_build_object('ruleId',$3::text,'event',$4::text))`, uuid.New(), id.String(), rule.ID, event); err != nil {
+		return uuid.Nil, nil, err
 	}
-	s.notify(ctx, screenIDs)
-	return id, nil
+	return id, screenIDs, nil
 }
 
 func (s *Service) clearMissing(ctx context.Context, seen map[string]bool, now time.Time) error {
@@ -151,6 +169,9 @@ func (s *Service) clearMissing(ctx context.Context, seen map[string]bool, now ti
 		}
 	}
 	rows.Close()
+	if err = rows.Err(); err != nil {
+		return err
+	}
 	for _, item := range items {
 		if item.takeoverID != nil {
 			if err = s.cancelTakeover(ctx, *item.takeoverID, now); err != nil {

@@ -15,7 +15,8 @@ object TakeoverController {
         if (takeover == null) return TakeoverDecision(false)
         val starts = Instant.parse(takeover.activatedAt)
         val expires = Instant.parse(takeover.expiresAt)
-        if (now.isBefore(starts) || !now.isBefore(expires)) return TakeoverDecision(false)
+        if (now.isBefore(starts)) return TakeoverDecision(false, nextTransition = starts)
+        if (!now.isBefore(expires)) return TakeoverDecision(false)
         return if (assetsReady) TakeoverDecision(true, takeover.playlistId, expires, false)
         else TakeoverDecision(false, nextTransition = expires, continueNormalPlayback = true)
     }

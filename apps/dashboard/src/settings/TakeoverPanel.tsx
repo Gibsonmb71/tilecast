@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
 import { api, ApiError } from "../api/client";
 import type { NWSAlertRule, NWSAlertRuleInput } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
@@ -15,6 +18,35 @@ const emptyRule: NWSAlertRuleInput = {
   screenIds: [],
   groupIds: [],
 };
+
+const ruleSchema = z
+  .object({
+    name: z.string().trim().min(1, "Enter a rule name.").max(180),
+    enabled: z.boolean(),
+    eventNames: z.array(z.string()),
+    minimumSeverity: z.enum(["Minor", "Moderate", "Severe", "Extreme"]),
+    minimumUrgency: z.enum(["Unknown", "Future", "Expected", "Immediate"]),
+    playlistId: z.string().optional(),
+    maximumDurationMinutes: z.number(),
+    screenIds: z.array(z.string()),
+    groupIds: z.array(z.string()),
+  })
+  .superRefine((value, context) => {
+    if (!value.playlistId) {
+      context.addIssue({
+        code: "custom",
+        path: ["playlistId"],
+        message: "Select a Takeover playlist.",
+      });
+    }
+    if (value.screenIds.length + value.groupIds.length === 0) {
+      context.addIssue({
+        code: "custom",
+        path: ["screenIds"],
+        message: "Select at least one screen or group.",
+      });
+    }
+  });
 
 export function TakeoverPanel({ editable }: { editable: boolean }) {
   const auth = useAuth();
@@ -36,16 +68,30 @@ export function TakeoverPanel({ editable }: { editable: boolean }) {
   const [enabled, setEnabled] = useState(false);
   const [areas, setAreas] = useState("");
   const [zones, setZones] = useState("");
-  const [interval, setInterval] = useState(120);
+  const [pollInterval, setPollInterval] = useState(120);
   const [monitorInitialized, setMonitorInitialized] = useState(false);
   const [editing, setEditing] = useState<string>();
-  const [rule, setRule] = useState<NWSAlertRuleInput>(emptyRule);
+  const [eventNamesText, setEventNamesText] = useState(
+    emptyRule.eventNames.join(", "),
+  );
+  const {
+    register,
+    handleSubmit,
+    reset,
+    setValue,
+    watch,
+    formState: { errors: ruleErrors },
+  } = useForm<NWSAlertRuleInput>({
+    resolver: zodResolver(ruleSchema),
+    defaultValues: emptyRule,
+  });
+  const rule = watch();
   useEffect(() => {
     if (!settings.data || monitorInitialized) return;
     setEnabled(settings.data.monitor.enabled);
     setAreas(settings.data.monitor.areas.join(", "));
     setZones(settings.data.monitor.zones.join(", "));
-    setInterval(settings.data.monitor.pollIntervalSeconds);
+    setPollInterval(settings.data.monitor.pollIntervalSeconds);
     setMonitorInitialized(true);
   }, [settings.data, monitorInitialized]);
   const refresh = () =>
@@ -57,7 +103,7 @@ export function TakeoverPanel({ editable }: { editable: boolean }) {
           enabled,
           areas: codes(areas),
           zones: codes(zones),
-          pollIntervalSeconds: interval,
+          pollIntervalSeconds: pollInterval,
         },
         auth.status?.csrfToken ?? "",
       ),
@@ -68,16 +114,20 @@ export function TakeoverPanel({ editable }: { editable: boolean }) {
     onSuccess: refresh,
   });
   const saveRule = useMutation({
-    mutationFn: () =>
+    mutationFn: (input: NWSAlertRuleInput) =>
       editing
-        ? api.updateNWSAlertRule(editing, rule, auth.status?.csrfToken ?? "")
-        : api.createNWSAlertRule(rule, auth.status?.csrfToken ?? ""),
+        ? api.updateNWSAlertRule(editing, input, auth.status?.csrfToken ?? "")
+        : api.createNWSAlertRule(input, auth.status?.csrfToken ?? ""),
     onSuccess: () => {
       setEditing(undefined);
-      setRule(emptyRule);
+      reset(emptyRule);
+      setEventNamesText(emptyRule.eventNames.join(", "));
       void refresh();
     },
   });
+  const submitRule = handleSubmit((input) =>
+    saveRule.mutate({ ...input, eventNames: labels(eventNamesText) }),
+  );
   const removeRule = useMutation({
     mutationFn: (id: string) =>
       api.deleteNWSAlertRule(id, auth.status?.csrfToken ?? ""),
@@ -153,14 +203,14 @@ export function TakeoverPanel({ editable }: { editable: boolean }) {
         <div className="setting-row">
           <div className="setting-copy">
             <label htmlFor="nws-interval">Poll interval</label>
-            <p>NWS recommends no more than one request every 30 seconds.</p>
+            <p>A one- to two-minute interval is recommended for most sites.</p>
           </div>
           <div className="setting-control">
             <select
               id="nws-interval"
-              value={interval}
+              value={pollInterval}
               disabled={!editable}
-              onChange={(event) => setInterval(Number(event.target.value))}
+              onChange={(event) => setPollInterval(Number(event.target.value))}
             >
               <option value={60}>1 minute</option>
               <option value={120}>2 minutes</option>
@@ -241,7 +291,9 @@ export function TakeoverPanel({ editable }: { editable: boolean }) {
                       type="button"
                       onClick={() => {
                         setEditing(item.id);
-                        setRule(toInput(item));
+                        const input = toInput(item);
+                        reset(input);
+                        setEventNamesText(input.eventNames.join(", "));
                       }}
                     >
                       Edit
@@ -263,41 +315,32 @@ export function TakeoverPanel({ editable }: { editable: boolean }) {
           ))}
         </div>
         {editable && (
-          <div className="takeover-rule-editor">
+          <form
+            className="takeover-rule-editor"
+            onSubmit={(event) => void submitRule(event)}
+          >
             <h4>{editing ? "Edit rule" : "Add rule"}</h4>
             <label>
               Rule name
-              <input
-                value={rule.name}
-                maxLength={180}
-                onChange={(event) =>
-                  setRule({ ...rule, name: event.target.value })
-                }
-              />
+              <input maxLength={180} {...register("name")} />
             </label>
+            {ruleErrors.name && (
+              <p className="form-error" role="alert">
+                {ruleErrors.name.message}
+              </p>
+            )}
             <label>
               NWS event names
               <input
-                value={rule.eventNames.join(", ")}
+                value={eventNamesText}
                 placeholder="Tornado Warning, Flash Flood Warning"
-                onChange={(event) =>
-                  setRule({ ...rule, eventNames: labels(event.target.value) })
-                }
+                onChange={(event) => setEventNamesText(event.target.value)}
               />
             </label>
             <div className="takeover-rule-editor__columns">
               <label>
                 Minimum severity
-                <select
-                  value={rule.minimumSeverity}
-                  onChange={(event) =>
-                    setRule({
-                      ...rule,
-                      minimumSeverity: event.target
-                        .value as NWSAlertRuleInput["minimumSeverity"],
-                    })
-                  }
-                >
+                <select {...register("minimumSeverity")}>
                   {["Minor", "Moderate", "Severe", "Extreme"].map((value) => (
                     <option key={value}>{value}</option>
                   ))}
@@ -305,16 +348,7 @@ export function TakeoverPanel({ editable }: { editable: boolean }) {
               </label>
               <label>
                 Minimum urgency
-                <select
-                  value={rule.minimumUrgency}
-                  onChange={(event) =>
-                    setRule({
-                      ...rule,
-                      minimumUrgency: event.target
-                        .value as NWSAlertRuleInput["minimumUrgency"],
-                    })
-                  }
-                >
+                <select {...register("minimumUrgency")}>
                   {["Unknown", "Future", "Expected", "Immediate"].map(
                     (value) => (
                       <option key={value}>{value}</option>
@@ -324,15 +358,7 @@ export function TakeoverPanel({ editable }: { editable: boolean }) {
               </label>
               <label>
                 Takeover playlist
-                <select
-                  value={rule.playlistId ?? ""}
-                  onChange={(event) =>
-                    setRule({
-                      ...rule,
-                      playlistId: event.target.value || undefined,
-                    })
-                  }
-                >
+                <select {...register("playlistId")}>
                   <option value="">Select playlist</option>
                   {playlists.data?.items.map((item) => (
                     <option key={item.id} value={item.id}>
@@ -340,17 +366,18 @@ export function TakeoverPanel({ editable }: { editable: boolean }) {
                     </option>
                   ))}
                 </select>
+                {ruleErrors.playlistId && (
+                  <span className="form-error" role="alert">
+                    {ruleErrors.playlistId.message}
+                  </span>
+                )}
               </label>
               <label>
                 Maximum duration
                 <select
-                  value={rule.maximumDurationMinutes}
-                  onChange={(event) =>
-                    setRule({
-                      ...rule,
-                      maximumDurationMinutes: Number(event.target.value),
-                    })
-                  }
+                  {...register("maximumDurationMinutes", {
+                    valueAsNumber: true,
+                  })}
                 >
                   <option value={60}>1 hour</option>
                   <option value={360}>6 hours</option>
@@ -368,9 +395,9 @@ export function TakeoverPanel({ editable }: { editable: boolean }) {
                       type="checkbox"
                       checked={rule.screenIds.includes(item.id)}
                       onChange={() =>
-                        setRule({
-                          ...rule,
-                          screenIds: toggle(rule.screenIds, item.id),
+                        setValue("screenIds", toggle(rule.screenIds, item.id), {
+                          shouldDirty: true,
+                          shouldValidate: true,
                         })
                       }
                     />
@@ -379,6 +406,11 @@ export function TakeoverPanel({ editable }: { editable: boolean }) {
                 ))}
               </div>
             </fieldset>
+            {ruleErrors.screenIds && (
+              <p className="form-error" role="alert">
+                {ruleErrors.screenIds.message}
+              </p>
+            )}
             <fieldset>
               <legend>Target groups</legend>
               <div className="takeover-rule-editor__targets">
@@ -388,9 +420,9 @@ export function TakeoverPanel({ editable }: { editable: boolean }) {
                       type="checkbox"
                       checked={rule.groupIds.includes(item.id)}
                       onChange={() =>
-                        setRule({
-                          ...rule,
-                          groupIds: toggle(rule.groupIds, item.id),
+                        setValue("groupIds", toggle(rule.groupIds, item.id), {
+                          shouldDirty: true,
+                          shouldValidate: true,
                         })
                       }
                     />
@@ -400,26 +432,14 @@ export function TakeoverPanel({ editable }: { editable: boolean }) {
               </div>
             </fieldset>
             <label className="checkbox-control">
-              <input
-                type="checkbox"
-                checked={rule.enabled}
-                onChange={(event) =>
-                  setRule({ ...rule, enabled: event.target.checked })
-                }
-              />
+              <input type="checkbox" {...register("enabled")} />
               Enable this rule
             </label>
             <div className="takeover-settings__actions">
               <button
                 className="button button--primary"
-                type="button"
-                disabled={
-                  saveRule.isPending ||
-                  !rule.name ||
-                  !rule.playlistId ||
-                  rule.screenIds.length + rule.groupIds.length === 0
-                }
-                onClick={() => saveRule.mutate()}
+                type="submit"
+                disabled={saveRule.isPending}
               >
                 {saveRule.isPending
                   ? "Saving…"
@@ -433,7 +453,8 @@ export function TakeoverPanel({ editable }: { editable: boolean }) {
                   type="button"
                   onClick={() => {
                     setEditing(undefined);
-                    setRule(emptyRule);
+                    reset(emptyRule);
+                    setEventNamesText(emptyRule.eventNames.join(", "));
                   }}
                 >
                   Cancel
@@ -445,7 +466,7 @@ export function TakeoverPanel({ editable }: { editable: boolean }) {
                 {errorText(saveRule.error)}
               </p>
             )}
-          </div>
+          </form>
         )}
       </section>
 

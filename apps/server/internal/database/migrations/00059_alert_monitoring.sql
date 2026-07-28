@@ -27,8 +27,6 @@ CREATE TABLE alert_monitor (
     last_success_at timestamptz,
     last_error_code text,
     last_matched_count integer NOT NULL DEFAULT 0,
-    locked_at timestamptz,
-    locked_by text,
     updated_by uuid REFERENCES users(id) ON DELETE SET NULL,
     updated_at timestamptz NOT NULL DEFAULT now()
 );

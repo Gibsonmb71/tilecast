@@ -201,17 +201,28 @@ func (s *server) activateTakeover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	replacedRows, _ := tx.Query(r.Context(), `SELECT DISTINCT es.takeover_id FROM takeover_screen_states es JOIN takeovers e ON e.id=es.takeover_id WHERE es.screen_id=ANY($1) AND e.status='active' AND e.id<>$2 AND es.state NOT IN ('restored','cancelled','expired')`, screens, id)
+	replacedIDs := []uuid.UUID{}
 	if replacedRows != nil {
 		for replacedRows.Next() {
 			var replaced uuid.UUID
 			if replacedRows.Scan(&replaced) == nil {
-				_, _ = tx.Exec(r.Context(), `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)VALUES($1,$2,'takeover.replaced','takeover',$3)`, uuid.New(), user.ID, replaced.String())
+				replacedIDs = append(replacedIDs, replaced)
+				if _, err = tx.Exec(r.Context(), `UPDATE takeovers SET status='cancelled',cancelled_at=now(),cancellation_reason='Replaced by another Takeover',updated_at=now() WHERE id=$1 AND status='active'`, replaced); err != nil {
+					replacedRows.Close()
+					s.internalError(w, r, err)
+					return
+				}
+				if _, err = tx.Exec(r.Context(), `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)VALUES($1,$2,'takeover.replaced','takeover',$3)`, uuid.New(), user.ID, replaced.String()); err != nil {
+					replacedRows.Close()
+					s.internalError(w, r, err)
+					return
+				}
 			}
 		}
 		replacedRows.Close()
 	}
 	for _, screen := range screens {
-		_, _ = tx.Exec(r.Context(), `UPDATE takeover_screen_states es SET state='restored',restored_at=now(),last_updated_at=now() FROM takeovers e WHERE es.takeover_id=e.id AND es.screen_id=$1 AND e.status='active' AND e.id<>$2 AND es.state NOT IN ('restored','cancelled','expired')`, screen, id)
+		_, _ = tx.Exec(r.Context(), `UPDATE takeover_screen_states SET state='restored',restored_at=now(),last_updated_at=now() WHERE screen_id=$1 AND takeover_id=ANY($2) AND state NOT IN ('restored','cancelled','expired')`, screen, replacedIDs)
 		var version int64
 		if err = tx.QueryRow(r.Context(), `UPDATE screen_manifest_state SET manifest_version=manifest_version+1,changed_at=now(),change_reason='takeover.activated' WHERE screen_id=$1 RETURNING manifest_version`, screen).Scan(&version); err != nil {
 			s.internalError(w, r, err)

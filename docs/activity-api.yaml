@@ -196,7 +196,7 @@ paths:
                 scheduling,
                 commands,
                 updates,
-                emergencies,
+                takeovers,
                 manifest,
                 state,
                 incidents,

@@ -63,7 +63,7 @@ ALTER TABLE playback_sessions ADD CONSTRAINT playback_sessions_terminal_reason_c
     CHECK (terminal_reason IS NULL OR terminal_reason IN (
         'expected_item_boundary','completed_duration','schedule_transition','manifest_replacement',
         'direct_assignment_change','takeover','player_restart','process_exit','heartbeat_gap',
-        'renderer_failure','decoder_failure','manual_skip','recovery_action','bounded_timeout','unknown'));
+        'renderer_failure','decoder_failure','manual_skip','recovery_action','bounded_timeout','unknown')) NOT VALID;
 
 UPDATE player_activity_events SET terminal_reason='takeover' WHERE terminal_reason='emergency_takeover';
 ALTER TABLE player_activity_events DROP CONSTRAINT player_activity_events_terminal_reason_check;
@@ -71,7 +71,7 @@ ALTER TABLE player_activity_events ADD CONSTRAINT player_activity_events_termina
     CHECK (terminal_reason IS NULL OR terminal_reason IN (
         'expected_item_boundary','completed_duration','schedule_transition','manifest_replacement',
         'direct_assignment_change','takeover','player_restart','process_exit','heartbeat_gap',
-        'renderer_failure','decoder_failure','manual_skip','recovery_action','bounded_timeout','unknown'));
+        'renderer_failure','decoder_failure','manual_skip','recovery_action','bounded_timeout','unknown')) NOT VALID;
 
 UPDATE expected_playback_windows SET superseded_reason='takeover_started' WHERE superseded_reason='emergency_started';
 UPDATE expected_playback_windows SET superseded_reason='takeover_ended' WHERE superseded_reason='emergency_ended';
@@ -80,14 +80,19 @@ ALTER TABLE expected_playback_windows ADD CONSTRAINT expected_playback_windows_s
     CHECK (superseded_reason IS NULL OR superseded_reason IN (
         'assignment_changed','schedule_started','schedule_ended','manifest_changed',
         'takeover_started','takeover_ended','screen_disabled','active_hours_changed',
-        'deployment_suppressed_playback','screen_archived'));
+        'deployment_suppressed_playback','screen_archived')) NOT VALID;
 
 UPDATE expected_playback_windows SET match_status='overridden_by_takeover' WHERE match_status='overridden_by_emergency';
 ALTER TABLE expected_playback_windows DROP CONSTRAINT expected_playback_windows_match_status_check;
 ALTER TABLE expected_playback_windows ADD CONSTRAINT expected_playback_windows_match_status_check
     CHECK (match_status IN (
         'confirmed','started_late','ended_early','partial','failed','never_started',
-        'screen_offline','overridden_by_takeover','cancelled','not_measurable'));
+        'screen_offline','overridden_by_takeover','cancelled','not_measurable')) NOT VALID;
+
+ALTER TABLE playback_sessions VALIDATE CONSTRAINT playback_sessions_terminal_reason_check;
+ALTER TABLE player_activity_events VALIDATE CONSTRAINT player_activity_events_terminal_reason_check;
+ALTER TABLE expected_playback_windows VALIDATE CONSTRAINT expected_playback_windows_superseded_reason_check;
+ALTER TABLE expected_playback_windows VALIDATE CONSTRAINT expected_playback_windows_match_status_check;
 
 UPDATE expected_playback_windows SET trigger_source='takeover' WHERE trigger_source='emergency';
 
@@ -148,7 +153,7 @@ ALTER TABLE expected_playback_windows DROP CONSTRAINT expected_playback_windows_
 ALTER TABLE expected_playback_windows ADD CONSTRAINT expected_playback_windows_match_status_check
     CHECK (match_status IN (
         'confirmed','started_late','ended_early','partial','failed','never_started',
-        'screen_offline','overridden_by_emergency','cancelled','not_measurable'));
+        'screen_offline','overridden_by_emergency','cancelled','not_measurable')) NOT VALID;
 
 UPDATE expected_playback_windows SET superseded_reason='emergency_ended' WHERE superseded_reason='takeover_ended';
 UPDATE expected_playback_windows SET superseded_reason='emergency_started' WHERE superseded_reason='takeover_started';
@@ -157,7 +162,7 @@ ALTER TABLE expected_playback_windows ADD CONSTRAINT expected_playback_windows_s
     CHECK (superseded_reason IS NULL OR superseded_reason IN (
         'assignment_changed','schedule_started','schedule_ended','manifest_changed',
         'emergency_started','emergency_ended','screen_disabled','active_hours_changed',
-        'deployment_suppressed_playback','screen_archived'));
+        'deployment_suppressed_playback','screen_archived')) NOT VALID;
 
 UPDATE player_activity_events SET terminal_reason='emergency_takeover' WHERE terminal_reason='takeover';
 ALTER TABLE player_activity_events DROP CONSTRAINT player_activity_events_terminal_reason_check;
@@ -165,7 +170,7 @@ ALTER TABLE player_activity_events ADD CONSTRAINT player_activity_events_termina
     CHECK (terminal_reason IS NULL OR terminal_reason IN (
         'expected_item_boundary','completed_duration','schedule_transition','manifest_replacement',
         'direct_assignment_change','emergency_takeover','player_restart','process_exit','heartbeat_gap',
-        'renderer_failure','decoder_failure','manual_skip','recovery_action','bounded_timeout','unknown'));
+        'renderer_failure','decoder_failure','manual_skip','recovery_action','bounded_timeout','unknown')) NOT VALID;
 
 UPDATE playback_sessions SET terminal_reason='emergency_takeover' WHERE terminal_reason='takeover';
 ALTER TABLE playback_sessions DROP CONSTRAINT playback_sessions_terminal_reason_check;
@@ -173,7 +178,12 @@ ALTER TABLE playback_sessions ADD CONSTRAINT playback_sessions_terminal_reason_c
     CHECK (terminal_reason IS NULL OR terminal_reason IN (
         'expected_item_boundary','completed_duration','schedule_transition','manifest_replacement',
         'direct_assignment_change','emergency_takeover','player_restart','process_exit','heartbeat_gap',
-        'renderer_failure','decoder_failure','manual_skip','recovery_action','bounded_timeout','unknown'));
+        'renderer_failure','decoder_failure','manual_skip','recovery_action','bounded_timeout','unknown')) NOT VALID;
+
+ALTER TABLE expected_playback_windows VALIDATE CONSTRAINT expected_playback_windows_match_status_check;
+ALTER TABLE expected_playback_windows VALIDATE CONSTRAINT expected_playback_windows_superseded_reason_check;
+ALTER TABLE player_activity_events VALIDATE CONSTRAINT player_activity_events_terminal_reason_check;
+ALTER TABLE playback_sessions VALIDATE CONSTRAINT playback_sessions_terminal_reason_check;
 
 ALTER TRIGGER takeover_screen_states_activity_assigned ON takeover_screen_states
     RENAME TO emergency_screen_states_activity_assigned;

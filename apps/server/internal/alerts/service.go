@@ -16,12 +16,24 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/tilecast/tilecast/apps/server/internal/devices"
 	"github.com/tilecast/tilecast/apps/server/internal/playlists"
 )
 
 const nwsAlertsURL = "https://api.weather.gov/alerts/active"
+
+var ErrValidation = errors.New("alert validation failed")
+
+type alertValidationError struct{ message string }
+
+func (e alertValidationError) Error() string { return e.message }
+func (e alertValidationError) Unwrap() error { return ErrValidation }
+
+func validationError(message string, args ...any) error {
+	return alertValidationError{message: fmt.Sprintf(message, args...)}
+}
 
 type Monitor struct {
 	Enabled             bool       `json:"enabled"`
@@ -111,10 +123,25 @@ func NewService(db *pgxpool.Pool, deviceService *devices.Service, playlistServic
 func (s *Service) SetGate(gate func() bool) { s.gate = gate }
 
 func (s *Service) Start(parent context.Context) {
+	s.mu.Lock()
+	if s.cancel != nil {
+		s.mu.Unlock()
+		return
+	}
 	ctx, cancel := context.WithCancel(parent)
 	s.cancel = cancel
+	s.done = make(chan struct{})
+	done := s.done
+	s.mu.Unlock()
 	go func() {
-		defer close(s.done)
+		defer func() {
+			s.mu.Lock()
+			if s.done == done {
+				s.cancel = nil
+			}
+			close(done)
+			s.mu.Unlock()
+		}()
 		timer := time.NewTimer(5 * time.Second)
 		defer timer.Stop()
 		for {
@@ -139,10 +166,15 @@ func (s *Service) Start(parent context.Context) {
 }
 
 func (s *Service) Stop() {
-	if s.cancel != nil {
-		s.cancel()
-		<-s.done
+	s.mu.Lock()
+	cancel := s.cancel
+	done := s.done
+	s.mu.Unlock()
+	if cancel == nil {
+		return
 	}
+	cancel()
+	<-done
 }
 
 func (s *Service) Monitor(ctx context.Context) (Monitor, error) {
@@ -156,17 +188,17 @@ func (s *Service) Monitor(ctx context.Context) (Monitor, error) {
 func (s *Service) UpdateMonitor(ctx context.Context, enabled bool, areas, zones []string, interval int, userID uuid.UUID) (Monitor, error) {
 	areas, err := normalizeCodes(areas, 2, "area")
 	if err != nil {
-		return Monitor{}, err
+		return Monitor{}, validationError("%v", err)
 	}
 	zones, err = normalizeCodes(zones, 6, "zone")
 	if err != nil {
-		return Monitor{}, err
+		return Monitor{}, validationError("%v", err)
 	}
 	if interval < 60 || interval > 3600 {
-		return Monitor{}, errors.New("poll interval must be between 60 and 3600 seconds")
+		return Monitor{}, validationError("poll interval must be between 60 and 3600 seconds")
 	}
 	if enabled && len(areas)+len(zones) == 0 {
-		return Monitor{}, errors.New("select at least one state, territory, county, or forecast zone")
+		return Monitor{}, validationError("select at least one state, territory, county, or forecast zone")
 	}
 	_, err = s.db.Exec(ctx, `UPDATE alert_monitor SET enabled=$1,areas=$2,zones=$3,poll_interval_seconds=$4,updated_by=$5,updated_at=now() WHERE singleton`, enabled, areas, zones, interval, userID)
 	if err != nil {
@@ -224,19 +256,19 @@ func (s *Service) Rules(ctx context.Context) ([]Rule, error) {
 func (s *Service) SaveRule(ctx context.Context, id uuid.UUID, input RuleInput, userID uuid.UUID) (Rule, error) {
 	input.Name = strings.TrimSpace(input.Name)
 	if input.Name == "" || len(input.Name) > 180 {
-		return Rule{}, errors.New("rule name is required and must be at most 180 characters")
+		return Rule{}, validationError("rule name is required and must be at most 180 characters")
 	}
 	if !rankContains(severityRank, input.MinimumSeverity) || !rankContains(urgencyRank, input.MinimumUrgency) {
-		return Rule{}, errors.New("severity or urgency is invalid")
+		return Rule{}, validationError("severity or urgency is invalid")
 	}
 	if input.PlaylistID == nil || *input.PlaylistID == uuid.Nil {
-		return Rule{}, errors.New("select a takeover playlist")
+		return Rule{}, validationError("select a takeover playlist")
 	}
 	if input.MaximumDurationMinutes < 5 || input.MaximumDurationMinutes > int(s.maxDuration/time.Minute) {
-		return Rule{}, fmt.Errorf("maximum duration must be between 5 and %d minutes", int(s.maxDuration/time.Minute))
+		return Rule{}, validationError("maximum duration must be between 5 and %d minutes", int(s.maxDuration/time.Minute))
 	}
 	if len(input.ScreenIDs)+len(input.GroupIDs) == 0 {
-		return Rule{}, errors.New("select at least one screen or group")
+		return Rule{}, validationError("select at least one screen or group")
 	}
 	events := make([]string, 0, len(input.EventNames))
 	for _, event := range input.EventNames {
@@ -248,13 +280,20 @@ func (s *Service) SaveRule(ctx context.Context, id uuid.UUID, input RuleInput, u
 	var organizationID uuid.UUID
 	var ready bool
 	err := s.db.QueryRow(ctx, `SELECT organization_id,(deleted_at IS NULL AND EXISTS(SELECT 1 FROM playlist_items WHERE playlist_id=playlists.id)) FROM playlists WHERE id=$1`, *input.PlaylistID).Scan(&organizationID, &ready)
-	if err != nil || !ready {
-		return Rule{}, errors.New("select a ready, non-empty playlist")
+	if errors.Is(err, pgx.ErrNoRows) || err == nil && !ready {
+		return Rule{}, validationError("select a ready, non-empty playlist")
 	}
-	if err = s.playlists.ValidatePresentationTargets(ctx, input.PlaylistID, nil, input.ScreenIDs, input.GroupIDs); err != nil {
+	if err != nil {
 		return Rule{}, err
 	}
-	if id == uuid.Nil {
+	if err = s.playlists.ValidatePresentationTargets(ctx, input.PlaylistID, nil, input.ScreenIDs, input.GroupIDs); err != nil {
+		if errors.Is(err, playlists.ErrConflict) {
+			return Rule{}, validationError("%v", err)
+		}
+		return Rule{}, err
+	}
+	creating := id == uuid.Nil
+	if creating {
 		id = uuid.New()
 	}
 	tx, err := s.db.Begin(ctx)
@@ -262,13 +301,21 @@ func (s *Service) SaveRule(ctx context.Context, id uuid.UUID, input RuleInput, u
 		return Rule{}, err
 	}
 	defer tx.Rollback(ctx)
-	_, err = tx.Exec(ctx, `INSERT INTO alert_rules(id,organization_id,name,enabled,event_names,minimum_severity,minimum_urgency,response_mode,playlist_id,maximum_duration_minutes,created_by)
-		VALUES($1,$2,$3,$4,$5,$6,$7,'takeover',$8,$9,$10)
-		ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,enabled=EXCLUDED.enabled,event_names=EXCLUDED.event_names,minimum_severity=EXCLUDED.minimum_severity,minimum_urgency=EXCLUDED.minimum_urgency,playlist_id=EXCLUDED.playlist_id,maximum_duration_minutes=EXCLUDED.maximum_duration_minutes,updated_at=now()
-		WHERE alert_rules.organization_id=EXCLUDED.organization_id`,
-		id, organizationID, input.Name, input.Enabled, events, input.MinimumSeverity, input.MinimumUrgency, input.PlaylistID, input.MaximumDurationMinutes, userID)
+	var tag pgconn.CommandTag
+	if creating {
+		tag, err = tx.Exec(ctx, `INSERT INTO alert_rules(id,organization_id,name,enabled,event_names,minimum_severity,minimum_urgency,response_mode,playlist_id,maximum_duration_minutes,created_by)
+			VALUES($1,$2,$3,$4,$5,$6,$7,'takeover',$8,$9,$10)`,
+			id, organizationID, input.Name, input.Enabled, events, input.MinimumSeverity, input.MinimumUrgency, input.PlaylistID, input.MaximumDurationMinutes, userID)
+	} else {
+		tag, err = tx.Exec(ctx, `UPDATE alert_rules SET name=$3,enabled=$4,event_names=$5,minimum_severity=$6,minimum_urgency=$7,playlist_id=$8,maximum_duration_minutes=$9,updated_at=now()
+			WHERE id=$1 AND organization_id=$2`,
+			id, organizationID, input.Name, input.Enabled, events, input.MinimumSeverity, input.MinimumUrgency, input.PlaylistID, input.MaximumDurationMinutes)
+	}
 	if err != nil {
 		return Rule{}, err
+	}
+	if tag.RowsAffected() == 0 {
+		return Rule{}, pgx.ErrNoRows
 	}
 	if _, err = tx.Exec(ctx, `DELETE FROM alert_rule_targets WHERE rule_id=$1`, id); err != nil {
 		return Rule{}, err
@@ -449,11 +496,11 @@ func (s *Service) Poll(ctx context.Context) error {
 	if err = s.clearMissing(ctx, seen, now); err != nil {
 		return err
 	}
-	errorCode := any(nil)
 	if applyErr != nil {
-		errorCode = "alert_apply_failed"
+		_, err = s.db.Exec(ctx, `UPDATE alert_monitor SET last_error_code='alert_apply_failed',last_matched_count=$1 WHERE singleton`, matched)
+	} else {
+		_, err = s.db.Exec(ctx, `UPDATE alert_monitor SET last_success_at=$1,last_error_code=NULL,last_matched_count=$2 WHERE singleton`, now, matched)
 	}
-	_, err = s.db.Exec(ctx, `UPDATE alert_monitor SET last_success_at=$1,last_error_code=$3,last_matched_count=$2 WHERE singleton`, now, matched, errorCode)
 	if err == nil && applyErr != nil {
 		return fmt.Errorf("apply one or more NWS alert rules: %w", applyErr)
 	}
@@ -469,7 +516,10 @@ func nwsAlertActive(alert nwsProperties, now time.Time) bool {
 }
 
 func (s *Service) fetch(ctx context.Context, filter, value string) (nwsCollection, error) {
-	requestURL, _ := url.Parse(s.baseURL)
+	requestURL, err := url.Parse(s.baseURL)
+	if err != nil {
+		return nwsCollection{}, fmt.Errorf("parse NWS base URL: %w", err)
+	}
 	query := requestURL.Query()
 	if filter != "" {
 		query.Set(filter, value)
@@ -477,7 +527,10 @@ func (s *Service) fetch(ctx context.Context, filter, value string) (nwsCollectio
 	query.Set("status", "actual")
 	query.Set("message_type", "alert")
 	requestURL.RawQuery = query.Encode()
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, requestURL.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL.String(), nil)
+	if err != nil {
+		return nwsCollection{}, fmt.Errorf("create NWS request: %w", err)
+	}
 	req.Header.Set("Accept", "application/geo+json")
 	req.Header.Set("User-Agent", s.userAgent)
 	response, err := s.client.Do(req)

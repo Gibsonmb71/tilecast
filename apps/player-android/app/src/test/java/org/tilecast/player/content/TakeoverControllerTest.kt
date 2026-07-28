@@ -16,6 +16,13 @@ class TakeoverControllerTest {
         assertFalse(TakeoverController.evaluate(Instant.parse("2026-07-12T12:30:00Z"),takeover,false).active)
     }
     @Test fun expirationIsHalfOpen(){assertFalse(TakeoverController.evaluate(Instant.parse("2026-07-12T13:00:00Z"),takeover,true).active)}
+    @Test fun futureTakeoverSchedulesActivation() {
+        val starts = Instant.parse("2026-07-12T12:00:00Z")
+        val decision = TakeoverController.evaluate(Instant.parse("2026-07-12T11:30:00Z"), takeover, true)
+        assertFalse(decision.active)
+        assertEquals(starts, decision.nextTransition)
+        assertTrue(decision.continueNormalPlayback)
+    }
     @Test fun legacyManifestKeyRemainsReadableDuringStaggeredUpgrade() {
         val manifest=PlayerManifest(4,1,"screen","2026-07-12T12:00:00Z","playlist",emergency=takeover)
         assertEquals(takeover,manifest.effectiveTakeover)
