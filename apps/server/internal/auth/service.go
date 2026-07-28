@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -40,6 +41,12 @@ type Session struct {
 	Token     string
 	CSRFToken string
 	ExpiresAt time.Time
+	// AuthMethod records the factor that completed the sign-in.
+	AuthMethod string
+	// EnrollmentPending marks a session that satisfied its password but owes
+	// the organization a second factor. Such a session may reach only the
+	// enrollment endpoints.
+	EnrollmentPending bool
 }
 
 type SetupInput struct {
@@ -55,9 +62,11 @@ type LoginInput struct {
 }
 
 type Service struct {
-	db            *pgxpool.Pool
-	sessionTTL    time.Duration
-	dummyPassword string
+	db                 *pgxpool.Pool
+	sessionTTL         time.Duration
+	dummyPassword      string
+	webauthn           *webauthn.WebAuthn
+	passkeyUnavailable string
 }
 
 func NewService(db *pgxpool.Pool, sessionTTL time.Duration) *Service {
@@ -111,7 +120,7 @@ func (s *Service) Setup(ctx context.Context, input SetupInput) (Session, error) 
 	}
 	user.LastLoginAt = &user.CreatedAt
 
-	session, err := s.createSession(ctx, tx, user)
+	session, err := s.createSession(ctx, tx, user, "password", false)
 	if err != nil {
 		return Session{}, err
 	}
@@ -124,7 +133,17 @@ func (s *Service) Setup(ctx context.Context, input SetupInput) (Session, error) 
 	return session, nil
 }
 
-func (s *Service) Login(ctx context.Context, input LoginInput) (Session, error) {
+// LoginResult is either a completed sign-in or a pending second factor.
+// Exactly one field is set.
+type LoginResult struct {
+	Session   *Session
+	Challenge *Challenge
+}
+
+// Login verifies a password. When the account has a confirmed second factor
+// the result is a challenge rather than a session: no cookie is issued until
+// the second factor is presented.
+func (s *Service) Login(ctx context.Context, input LoginInput, policy MFAPolicy) (LoginResult, error) {
 	username := strings.ToLower(strings.TrimSpace(input.Username))
 	var user User
 	var passwordHash string
@@ -133,24 +152,65 @@ func (s *Service) Login(ctx context.Context, input LoginInput) (Session, error) 
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		VerifyPassword(s.dummyPassword, input.Password)
-		return Session{}, ErrInvalidCredentials
+		return LoginResult{}, ErrInvalidCredentials
 	}
 	if err != nil {
-		return Session{}, fmt.Errorf("find user: %w", err)
+		return LoginResult{}, fmt.Errorf("find user: %w", err)
 	}
 	if !VerifyPassword(passwordHash, input.Password) {
-		return Session{}, ErrInvalidCredentials
+		return LoginResult{}, ErrInvalidCredentials
 	}
 	if !user.Active {
-		return Session{}, ErrInactive
+		return LoginResult{}, ErrInactive
 	}
 
+	factors, err := s.Factors(ctx, user.ID)
+	if err != nil {
+		return LoginResult{}, err
+	}
+	if factors.Enrolled {
+		methods := []string{}
+		if factors.TOTPEnrolled {
+			methods = append(methods, "totp")
+		}
+		if len(factors.Passkeys) > 0 && s.webauthn != nil {
+			methods = append(methods, "passkey")
+		}
+		if factors.RecoveryCodesRemaining > 0 {
+			methods = append(methods, "recovery_code")
+		}
+		token, err := s.createChallenge(ctx, &user.ID, "login", nil)
+		if err != nil {
+			return LoginResult{}, err
+		}
+		return LoginResult{Challenge: &Challenge{Token: token, Methods: methods, Expires: time.Now().UTC().Add(challengeTTL)}}, nil
+	}
+
+	session, err := s.completeLogin(ctx, user, "password", policy)
+	if err != nil {
+		return LoginResult{}, err
+	}
+	return LoginResult{Session: &session}, nil
+}
+
+// completeLogin records the sign-in and issues the session. A user the policy
+// covers but who has no factor is admitted with the enrollment gate set, so
+// they can enroll instead of being locked out by a policy change.
+func (s *Service) completeLogin(ctx context.Context, user User, method string, policy MFAPolicy) (Session, error) {
+	pending := false
+	if policy.AppliesTo(user.Role) {
+		factors, err := s.Factors(ctx, user.ID)
+		if err != nil {
+			return Session{}, err
+		}
+		pending = !factors.Enrolled
+	}
 	now := time.Now().UTC()
 	if _, err := s.db.Exec(ctx, `UPDATE users SET last_login_at=$1 WHERE id=$2`, now, user.ID); err != nil {
 		return Session{}, fmt.Errorf("update last login: %w", err)
 	}
 	user.LastLoginAt = &now
-	return s.createSession(ctx, s.db, user)
+	return s.createSession(ctx, s.db, user, method, pending)
 }
 func (s *Service) VerifyCurrentPassword(ctx context.Context, userID uuid.UUID, password string) bool {
 	var hash string
@@ -164,7 +224,7 @@ type querier interface {
 	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
 }
 
-func (s *Service) createSession(ctx context.Context, db querier, user User) (Session, error) {
+func (s *Service) createSession(ctx context.Context, db querier, user User, method string, enrollmentPending bool) (Session, error) {
 	token, err := randomToken(32)
 	if err != nil {
 		return Session{}, err
@@ -175,10 +235,11 @@ func (s *Service) createSession(ctx context.Context, db querier, user User) (Ses
 	}
 	expires := time.Now().UTC().Add(s.sessionTTL)
 	hash := sha256.Sum256([]byte(token))
-	if _, err := db.Exec(ctx, `INSERT INTO sessions (id,user_id,token_hash,csrf_token,expires_at) VALUES ($1,$2,$3,$4,$5)`, uuid.New(), user.ID, hash[:], csrf, expires); err != nil {
+	if _, err := db.Exec(ctx, `INSERT INTO sessions (id,user_id,token_hash,csrf_token,expires_at,auth_method,enrollment_pending) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+		uuid.New(), user.ID, hash[:], csrf, expires, method, enrollmentPending); err != nil {
 		return Session{}, fmt.Errorf("create session: %w", err)
 	}
-	return Session{User: user, Token: token, CSRFToken: csrf, ExpiresAt: expires}, nil
+	return Session{User: user, Token: token, CSRFToken: csrf, ExpiresAt: expires, AuthMethod: method, EnrollmentPending: enrollmentPending}, nil
 }
 
 func (s *Service) Authenticate(ctx context.Context, token string) (Session, error) {
@@ -188,11 +249,12 @@ func (s *Service) Authenticate(ctx context.Context, token string) (Session, erro
 	hash := sha256.Sum256([]byte(token))
 	var session Session
 	err := s.db.QueryRow(ctx, `
-		SELECT u.id,u.name,u.username,u.role,u.active,u.created_at,u.last_login_at,s.csrf_token,s.expires_at
+		SELECT u.id,u.name,u.username,u.role,u.active,u.created_at,u.last_login_at,s.csrf_token,s.expires_at,s.auth_method,s.enrollment_pending
 		FROM sessions s JOIN users u ON u.id=s.user_id
 		WHERE s.token_hash=$1 AND s.expires_at>now()`, hash[:]).Scan(
 		&session.User.ID, &session.User.Name, &session.User.Username, &session.User.Role, &session.User.Active,
 		&session.User.CreatedAt, &session.User.LastLoginAt, &session.CSRFToken, &session.ExpiresAt,
+		&session.AuthMethod, &session.EnrollmentPending,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Session{}, ErrUnauthenticated

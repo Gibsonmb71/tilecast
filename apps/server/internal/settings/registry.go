@@ -57,6 +57,7 @@ var definitions = []Definition{
 	{Key: "organization.support_name", Category: "general", Type: "string", Default: "", Scope: ScopeOrganization, Title: "Support contact"},
 	{Key: "organization.support_email", Category: "general", Type: "email", Default: "", Scope: ScopeOrganization, Title: "Support email"},
 	{Key: "organization.support_message", Category: "general", Type: "string", Default: "", Scope: ScopeOrganization, Title: "Internal support message"},
+	{Key: "security.mfa_required_scope", Category: "security", Type: "enum", Default: "none", Allowed: []string{"none", "administrators", "all"}, Scope: ScopeOrganization, Title: "Require multi-factor authentication", Description: "Accounts in scope must enroll an authenticator app or a passkey before they can use Studio.", Documentation: "docs/multi-factor-authentication.md", Immediate: true},
 	{Key: "branding.logo_asset_id", Category: "branding", Type: "uuid_or_empty", Default: "", Scope: ScopeOrganization, Title: "Logo"},
 	{Key: "branding.icon_asset_id", Category: "branding", Type: "uuid_or_empty", Default: "", Scope: ScopeOrganization, Title: "Square icon"},
 	{Key: "branding.primary_color", Category: "branding", Type: "color", Default: "#78BFA6", Scope: ScopeOrganization, Title: "Primary color", Immediate: true},

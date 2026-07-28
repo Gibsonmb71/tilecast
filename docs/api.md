@@ -17,9 +17,9 @@ Milestone 10 adds `GET /screens/{id}/reliability` for capability-versus-requeste
 
 ## Authentication
 
-- `GET /api/v1/auth/status` — returns `setupRequired`, `authenticated`, and, for a valid session, the user and CSRF token.
+- `GET /api/v1/auth/status` — returns `setupRequired`, `authenticated`, `passkeysAvailable`, `passkeysUnavailableReason`, and, for a valid session, the user, CSRF token, `authMethod`, and `mfaEnrollmentRequired`.
 - `POST /api/v1/auth/setup` — creates the single organization and first owner. Available exactly once.
-- `POST /api/v1/auth/login` — creates an opaque database session.
+- `POST /api/v1/auth/login` — verifies a password. Creates a session, or returns a multi-factor challenge.
 - `POST /api/v1/auth/logout` — revokes the current session. Requires the session cookie and `X-CSRF-Token` header.
 
 Setup body:
@@ -40,6 +40,64 @@ Login body:
 ```
 
 Authentication and setup are rate-limited per directly connected client address. When a reverse proxy is introduced, keep it on a trusted network; configurable trusted-proxy address handling will be added before internet-facing player APIs.
+
+## Multi-factor authentication
+
+A correct password on an account with a confirmed second factor does **not** create a session. The response instead carries a single-use challenge, and no cookie is set until the second factor is presented:
+
+```json
+{
+  "data": {
+    "mfaRequired": true,
+    "challengeToken": "…",
+    "methods": ["totp", "passkey", "recovery_code"]
+  }
+}
+```
+
+Challenges expire after ten minutes, are stored only as a SHA-256 hash, and are destroyed after five incorrect attempts.
+
+- `POST /api/v1/auth/mfa/verify` — completes a challenge with `{ "challengeToken": "…", "code": "…" }`. The code may be an authenticator code or a recovery code; the server decides which.
+- `POST /api/v1/auth/mfa/passkey/options` — exchanges a pending challenge for a WebAuthn assertion request restricted to that account's credentials.
+- `POST /api/v1/auth/passkey/login/options` — starts a discoverable (username-free) WebAuthn ceremony.
+- `POST /api/v1/auth/passkey/login` — posts the raw WebAuthn assertion with the challenge in an `X-MFA-Challenge` header. A verified passkey satisfies multi-factor authentication on its own.
+
+Every path that produces a session returns the same shape:
+
+```json
+{
+  "data": {
+    "user": {},
+    "csrfToken": "…",
+    "authMethod": "totp",
+    "mfaEnrollmentRequired": false
+  }
+}
+```
+
+`authMethod` is one of `password`, `totp`, `passkey`, or `recovery_code`.
+
+When `security.mfa_required_scope` covers a user's role and that user has no factor, the session is issued with `mfaEnrollmentRequired: true`. Such a session reaches only `/auth/*` and `/me/security/*`; every other dashboard route answers `403 mfa_enrollment_required` until a factor is enrolled. The flag clears in place, so enrollment does not require signing in again.
+
+### Managing your own factors
+
+These endpoints require the session cookie, and mutations require `X-CSRF-Token`. Removing a factor and generating recovery codes additionally require the account password in the body, so a borrowed session cannot weaken sign-in security on its own.
+
+- `GET /api/v1/me/security` — enrollment state, passkey list, remaining recovery codes, and passkey availability.
+- `POST /api/v1/me/security/totp` — returns a provisioning URI and typed secret for a new, unconfirmed authenticator.
+- `POST /api/v1/me/security/totp/confirm` — activates it with `{ "code": "123456" }`.
+- `POST /api/v1/me/security/totp/remove` — requires `{ "password": "…" }`.
+- `POST /api/v1/me/security/recovery-codes` — replaces every unused code and returns the ten new ones exactly once.
+- `POST /api/v1/me/security/passkeys/options` — begins WebAuthn registration.
+- `POST /api/v1/me/security/passkeys` — posts the raw credential with `X-MFA-Challenge` and a percent-encoded `X-Passkey-Name`.
+- `PATCH /api/v1/me/security/passkeys/{id}` — renames a passkey.
+- `POST /api/v1/me/security/passkeys/{id}/remove` — requires `{ "password": "…" }`.
+
+### Administrative reset
+
+- `POST /api/v1/users/{id}/security/reset` — Owner/Administrator only, with the same role rules as editing that user. Clears the authenticator, every passkey, and all recovery codes, revokes the account's sessions, and writes an `auth.mfa.reset` audit entry.
+
+Passkeys require a secure browser context and a registrable domain. On a plain-HTTP LAN installation the ceremonies are refused with `409 passkeys_unavailable` and the reason is reported through `passkeysUnavailableReason` so Studio can hide the affordance. Authenticator apps and recovery codes work on every installation. See [multi-factor-authentication.md](multi-factor-authentication.md).
 
 ## Player bootstrap and authentication
 

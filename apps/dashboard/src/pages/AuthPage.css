@@ -28,7 +28,7 @@
   z-index: 1;
   flex: 0 0 auto;
   width: min(27rem, 100%);
-  padding: 2.25rem 2.35rem 1.55rem;
+  padding: 2.25rem 2.35rem;
   background: var(--tc-bg-surface, #fff);
   border: 1px solid var(--tc-border-default, #d0d7de);
   border-radius: var(--tc-radius-overlay);
@@ -118,13 +118,30 @@
   border-radius: 0.5rem;
 }
 
-.auth-panel__footer {
-  margin: 1.45rem 0 0;
+.auth-form__divider {
+  display: flex;
+  gap: 0.7rem;
+  align-items: center;
+  margin: 1.05rem 0 0.9rem;
   color: #91979d;
-  font-size: 0.72rem;
-  letter-spacing: 0.04em;
-  text-align: center;
+  font-size: 0.74rem;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+.auth-form__divider::before,
+.auth-form__divider::after {
+  flex: 1;
+  height: 1px;
+  background: #e2e5e8;
+  content: "";
+}
+
+.auth-form__cancel {
+  width: 100%;
+  min-height: 2.4rem;
+  margin-top: 0.75rem;
+  border-radius: 0.5rem;
 }
 
 .auth-panel .notice {
@@ -150,7 +167,7 @@
   .auth-panel:has(.auth-form--setup) {
     width: 100%;
     max-height: calc(100svh - 1.7rem);
-    padding: 1.75rem 1.35rem 1.2rem;
+    padding: 1.75rem 1.35rem;
     overflow-y: auto;
     border-radius: var(--tc-radius-overlay);
   }

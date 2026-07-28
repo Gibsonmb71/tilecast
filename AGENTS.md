@@ -45,7 +45,7 @@ Multi-zone layouts and proof-of-play were deferred through milestone 9 and have 
 ```text
 apps/server/                 Go application and embedded dashboard host
   cmd/tilecast/              process startup and graceful shutdown
-  internal/auth/             local users, passwords, dashboard sessions
+  internal/auth/             local users, passwords, dashboard sessions, MFA
   internal/config/           validated environment configuration
   internal/database/         pgx pool and embedded Goose migrations
   internal/devices/          identity, pairing, credentials, screens, status
@@ -119,6 +119,16 @@ Dashboard and player authentication are deliberately separate.
 - Pairing poll: `Authorization: Pairing <poll-secret>`; never use the visible six-character code to poll.
 
 Never accept a dashboard session as a player credential or vice versa. Never put a device credential, poll secret, or enrollment token in a URL or log message.
+
+Dashboard accounts may carry a second factor. Preserve these properties:
+
+- A correct password on an enrolled account produces a single-use, ten-minute challenge, not a session. No cookie is set until the factor is verified.
+- Authenticator codes record the accepted time step and refuse anything not strictly newer, so a code cannot be replayed inside its own window.
+- Recovery codes are Argon2id-hashed, consumed by a conditional update, and are never tried for input that looks like an authenticator code.
+- Removing a factor or regenerating recovery codes requires the account password in addition to the session and CSRF token.
+- The organization enrollment requirement is a session flag, never a login refusal, so a policy change cannot lock an installation out of itself. An unreadable policy value means "not required".
+- Passkeys store only a public key, and each successful assertion writes the updated credential record back so sign-count clone detection keeps working.
+- WebAuthn is unavailable on plain-HTTP and IP-address installations. Report the reason; do not present a control that cannot work. See `docs/multi-factor-authentication.md`.
 
 ### Pairing protocol invariants
 
@@ -224,7 +234,9 @@ Do not make Cloudflare mandatory. Do not expose PostgreSQL. Outside a trusted LA
 - no full device credentials in PostgreSQL
 - no secrets in logs, query parameters, audit metadata, screenshots, fixtures, or committed files
 - one-time expiring pairing codes and enrollment
-- rate limiting on login, setup, pairing creation, and code resolution
+- rate limiting on login, setup, multi-factor verification, pairing creation, and code resolution
+- multi-factor challenges stored only as SHA-256 hashes, single use, attempt-capped, and expiring
+- TOTP secrets are the one recoverable credential in the schema; never log or export them, and keep the backup implications documented
 - CSRF protection on dashboard mutations
 - role checks on credential-management operations
 - strict device metadata validation and body limits

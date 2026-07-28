@@ -1,6 +1,14 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Plus, Save, UserRoundX } from "lucide-react";
+import {
+  Pencil,
+  Plus,
+  Save,
+  ShieldAlert,
+  ShieldCheck,
+  ShieldOff,
+  UserRoundX,
+} from "lucide-react";
 import type { User } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { Dialog, Select } from "../components/ui";
@@ -39,8 +47,12 @@ async function userRequest<T>(
   return ((await response.json()) as { data: T }).data;
 }
 
+// The list carries each account's multi-factor state so an administrator can
+// see who is still unenrolled under a policy without opening every account.
+type ManagedUser = User & { mfaEnrolled: boolean; mfaRequired: boolean };
+
 function listUsers() {
-  return userRequest<{ items: User[]; total: number }>("/users", "");
+  return userRequest<{ items: ManagedUser[]; total: number }>("/users", "");
 }
 
 const roleLabels: Record<UserRole, string> = {
@@ -68,7 +80,7 @@ export function UsersPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<UserRole>("viewer");
-  const [editing, setEditing] = useState<User>();
+  const [editing, setEditing] = useState<ManagedUser>();
   const create = useMutation({
     mutationFn: (input: UserInput) =>
       userRequest<User>("/users", csrf, {
@@ -199,6 +211,24 @@ export function UsersPage() {
                       ? ` · Last signed in ${new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(user.lastLoginAt))}`
                       : " · Never signed in"}
                   </small>
+                  <small className="user-list-row__mfa">
+                    {user.mfaEnrolled ? (
+                      <>
+                        <ShieldCheck size={13} aria-hidden="true" /> Two-step
+                        verification on
+                      </>
+                    ) : user.mfaRequired ? (
+                      <>
+                        <ShieldAlert size={13} aria-hidden="true" /> Two-step
+                        verification required, not yet enrolled
+                      </>
+                    ) : (
+                      <>
+                        <ShieldOff size={13} aria-hidden="true" /> No two-step
+                        verification
+                      </>
+                    )}
+                  </small>
                 </div>
                 <button
                   type="button"
@@ -243,7 +273,7 @@ function UserEditorDialog({
   onClose,
   onChanged,
 }: {
-  user: User;
+  user: ManagedUser;
   currentUser: User;
   allowedRoles: UserRole[];
   csrf: string;
@@ -279,6 +309,15 @@ function UserEditorDialog({
   const deactivate = useMutation({
     mutationFn: () =>
       userRequest<void>(`/users/${user.id}`, csrf, { method: "DELETE" }),
+    onSuccess: onChanged,
+  });
+  // Tilecast has no email delivery, so there is no self-service factor reset.
+  // An administrator clearing the factors is the ordinary recovery path.
+  const resetSecurity = useMutation({
+    mutationFn: () =>
+      userRequest<void>(`/users/${user.id}/security/reset`, csrf, {
+        method: "POST",
+      }),
     onSuccess: onChanged,
   });
   const isSelf = user.id === currentUser.id;
@@ -343,9 +382,35 @@ function UserEditorDialog({
             <span>Account active</span>
           </label>
         </div>
-        {(update.error || deactivate.error) && (
+        <section className="user-edit-dialog__security">
+          <div>
+            <strong>Two-step verification</strong>
+            <p>
+              {user.mfaEnrolled
+                ? "This account has an authenticator app or a passkey enrolled."
+                : "This account has no second factor enrolled."}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="button button--danger-quiet"
+            disabled={!user.mfaEnrolled || resetSecurity.isPending}
+            onClick={() => {
+              if (
+                confirm(
+                  `Clear every authenticator, passkey, and recovery code for ${user.name}? They will be signed out everywhere and must enroll again.`,
+                )
+              )
+                resetSecurity.mutate();
+            }}
+          >
+            <ShieldOff size={15} />
+            {resetSecurity.isPending ? "Resetting…" : "Reset"}
+          </button>
+        </section>
+        {(update.error || deactivate.error || resetSecurity.error) && (
           <div className="notice notice--error" role="alert">
-            {(update.error ?? deactivate.error)?.message}
+            {(update.error ?? deactivate.error ?? resetSecurity.error)?.message}
           </div>
         )}
         <footer className="user-edit-dialog__actions">

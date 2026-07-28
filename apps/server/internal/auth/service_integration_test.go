@@ -82,8 +82,11 @@ func TestMigrationsAndAuthenticationLifecycle(t *testing.T) {
 	if _, err := service.Authenticate(ctx, setup.Token); !errors.Is(err, auth.ErrUnauthenticated) {
 		t.Fatalf("expected revoked session to fail, got %v", err)
 	}
-	login, err := service.Login(ctx, auth.LoginInput{Username: "OWNER@example.org", Password: "correct horse battery staple"})
-	if err != nil || login.User.ID != setup.User.ID {
-		t.Fatalf("login after logout failed: session=%#v err=%v", login, err)
+	login, err := service.Login(ctx, auth.LoginInput{Username: "OWNER@example.org", Password: "correct horse battery staple"}, auth.MFAPolicyNone)
+	if err != nil || login.Session == nil || login.Session.User.ID != setup.User.ID {
+		t.Fatalf("login after logout failed: result=%#v err=%v", login, err)
+	}
+	if login.Challenge != nil {
+		t.Fatalf("expected no second factor for an unenrolled account")
 	}
 }

@@ -10,7 +10,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/tilecast/tilecast/apps/server/internal/auth"
 	"github.com/tilecast/tilecast/apps/server/internal/backup"
 	"github.com/tilecast/tilecast/apps/server/internal/config"
 	"github.com/tilecast/tilecast/apps/server/internal/database"
@@ -28,6 +30,7 @@ Usage:
   tilecast backup inspect <file>    Show a backup archive's manifest
   tilecast restore verify <file>    Verify an archive and show the restore plan
   tilecast restore apply <file>     Restore a backup (stop the server first)
+  tilecast mfa reset <username>     Clear a user's multi-factor enrollment
 
 Restore flags (tilecast restore apply):
   --yes                             Skip the interactive confirmation
@@ -35,7 +38,14 @@ Restore flags (tilecast restore apply):
   --skip-pre-restore-backup         Do not create a pre-restore backup first
   --force                           Proceed even if a running server holds the database lock
 
-Backup commands read the same TILECAST_* environment variables as the server.
+Multi-factor reset flags (tilecast mfa reset):
+  --yes                             Skip the interactive confirmation
+
+Use "mfa reset" only when no Owner or Administrator can perform the reset in
+Studio. It clears the account's authenticator, passkeys, and recovery codes,
+signs the account out everywhere, and records an audit entry.
+
+These commands read the same TILECAST_* environment variables as the server.
 `)
 }
 
@@ -55,6 +65,8 @@ func runCLI(command string, args []string) {
 		cliRestoreVerify(ctx, args[1])
 	case command == "restore" && len(args) > 0 && args[0] == "apply":
 		cliRestoreApply(ctx, logger, args[1:])
+	case command == "mfa" && len(args) > 1 && args[0] == "reset":
+		cliMFAReset(ctx, args[1:])
 	default:
 		printUsage()
 		os.Exit(2)
@@ -311,4 +323,55 @@ func cliRestoreApply(ctx context.Context, logger *slog.Logger, args []string) {
 		fmt.Printf("A pre-restore backup was saved as %s in the backup root.\n", result.PreRestoreBackup)
 	}
 	fmt.Println("All browser sessions were signed out. Start the server and check /healthz and /readyz.")
+}
+
+// cliMFAReset is the break-glass path for an installation whose only Owner has
+// lost every factor. It is deliberately a local command: it requires shell
+// access to the server and the database credentials, which is a materially
+// higher bar than a password.
+func cliMFAReset(ctx context.Context, args []string) {
+	flags := flag.NewFlagSet("mfa reset", flag.ExitOnError)
+	yes := flags.Bool("yes", false, "skip the interactive confirmation")
+	if err := flags.Parse(args); err != nil {
+		os.Exit(2)
+	}
+	if flags.NArg() != 1 {
+		fmt.Fprintln(os.Stderr, "usage: tilecast mfa reset [--yes] <username>")
+		os.Exit(2)
+	}
+	username := strings.ToLower(strings.TrimSpace(flags.Arg(0)))
+	cfg := loadCLIConfig()
+
+	db, err := database.Open(ctx, cfg.DatabaseURL)
+	if err != nil {
+		cliFail("database connection failed", err)
+	}
+	defer db.Close()
+
+	var id uuid.UUID
+	var name, role string
+	err = db.QueryRow(ctx, `SELECT id,name,role FROM users WHERE lower(username)=$1`, username).Scan(&id, &name, &role)
+	if errors.Is(err, pgx.ErrNoRows) {
+		cliFail("cannot reset", fmt.Errorf("no account with username %q", username))
+	}
+	if err != nil {
+		cliFail("look up account", err)
+	}
+
+	fmt.Printf("Account: %s (%s, %s)\n", name, username, role)
+	if !*yes {
+		fmt.Print("\nThis removes the authenticator, every passkey, and all recovery codes,\nand signs the account out everywhere.\nType RESET to continue: ")
+		reader := bufio.NewReader(os.Stdin)
+		line, _ := reader.ReadString('\n')
+		if strings.TrimSpace(line) != "RESET" {
+			fmt.Println("Reset cancelled.")
+			os.Exit(1)
+		}
+	}
+
+	service := auth.NewService(db, cfg.SessionTTL)
+	if err := service.ResetFactors(ctx, id, nil); err != nil {
+		cliFail("reset multi-factor enrollment", err)
+	}
+	fmt.Println("Multi-factor enrollment cleared. The account can sign in with its password and enroll again.")
 }

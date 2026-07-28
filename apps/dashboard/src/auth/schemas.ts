@@ -27,5 +27,12 @@ export const loginSchema = z.object({
   password: z.string().min(1, "Enter your password"),
 });
 
+// A recovery code is entered in the same box as an authenticator code, so the
+// field accepts both shapes and the server decides which one it is.
+export const mfaSchema = z.object({
+  code: z.string().trim().min(6, "Enter the code from your authenticator app"),
+});
+
 export type SetupForm = z.infer<typeof setupSchema>;
 export type LoginForm = z.infer<typeof loginSchema>;
+export type MFAForm = z.infer<typeof mfaSchema>;

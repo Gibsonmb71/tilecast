@@ -21,6 +21,12 @@ import type {
   FormDirectoryUser,
   AuthStatus,
   LoginInput,
+  LoginResult,
+  SessionResult,
+  SecurityStatus,
+  TOTPEnrollment,
+  PasskeyCeremony,
+  Passkey,
   PairingRequest,
   Location,
   LocationInput,
@@ -267,8 +273,6 @@ async function apiFailure(response: Response): Promise<never> {
     body.error?.code ?? "unknown_error",
   );
 }
-
-type SessionResult = { user: User; csrfToken: string };
 
 // formRecordBody serializes a record create/update body honoring the server's tri-state contract:
 // a field left `undefined` is omitted (preserve), `null` is sent as null (clear), and any other
@@ -721,9 +725,91 @@ export const api = {
       body: JSON.stringify(input),
     }),
   login: (input: LoginInput) =>
-    request<SessionResult>("/auth/login", {
+    request<LoginResult>("/auth/login", {
       method: "POST",
       body: JSON.stringify(input),
+    }),
+  verifyMfa: (challengeToken: string, code: string) =>
+    request<SessionResult>("/auth/mfa/verify", {
+      method: "POST",
+      body: JSON.stringify({ challengeToken, code }),
+    }),
+  mfaPasskeyOptions: (challengeToken: string) =>
+    request<PasskeyCeremony>("/auth/mfa/passkey/options", {
+      method: "POST",
+      body: JSON.stringify({ challengeToken }),
+    }),
+  passkeyLoginOptions: () =>
+    request<PasskeyCeremony>("/auth/passkey/login/options", {
+      method: "POST",
+    }),
+  passkeyLogin: (challengeToken: string, credential: unknown) =>
+    request<SessionResult>("/auth/passkey/login", {
+      method: "POST",
+      headers: { "X-MFA-Challenge": challengeToken },
+      body: JSON.stringify(credential),
+    }),
+  security: () => request<SecurityStatus>("/me/security"),
+  beginTotpEnrollment: (csrfToken: string) =>
+    request<TOTPEnrollment>("/me/security/totp", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
+  confirmTotpEnrollment: (code: string, csrfToken: string) =>
+    request<SecurityStatus>("/me/security/totp/confirm", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ code }),
+    }),
+  removeTotp: (password: string, csrfToken: string) =>
+    request<void>("/me/security/totp/remove", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ password }),
+    }),
+  regenerateRecoveryCodes: (password: string, csrfToken: string) =>
+    request<{ codes: string[] }>("/me/security/recovery-codes", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ password }),
+    }),
+  passkeyRegistrationOptions: (csrfToken: string) =>
+    request<PasskeyCeremony>("/me/security/passkeys/options", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
+  registerPasskey: (
+    challengeToken: string,
+    name: string,
+    credential: unknown,
+    csrfToken: string,
+  ) =>
+    request<Passkey>("/me/security/passkeys", {
+      method: "POST",
+      headers: {
+        "X-CSRF-Token": csrfToken,
+        "X-MFA-Challenge": challengeToken,
+        // Header values must be ISO-8859-1, and a passkey name is free text.
+        "X-Passkey-Name": encodeURIComponent(name),
+      },
+      body: JSON.stringify(credential),
+    }),
+  renamePasskey: (id: string, name: string, csrfToken: string) =>
+    request<void>(`/me/security/passkeys/${id}`, {
+      method: "PATCH",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ name }),
+    }),
+  removePasskey: (id: string, password: string, csrfToken: string) =>
+    request<void>(`/me/security/passkeys/${id}/remove`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ password }),
+    }),
+  resetUserSecurity: (id: string, csrfToken: string) =>
+    request<void>(`/users/${id}/security/reset`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
     }),
   logout: (csrfToken: string) =>
     request<void>("/auth/logout", {
