@@ -366,21 +366,21 @@
   gap: var(--tc-space-2);
 }
 
+/* The result count is orientation, not a heading: it stays quiet so the chips
+   beside it are the only thing in this row asking to be read. */
 .screen-filter-chips__label {
   color: var(--tc-text-secondary);
   font: var(--tc-text-supporting);
-  font-weight: 600;
 }
 
 .screen-filter-clear {
-  min-height: 32px;
+  min-height: 28px;
   padding: 0 var(--tc-space-2);
   border: 0;
   background: transparent;
   color: var(--tc-action-primary);
   cursor: pointer;
   font: var(--tc-text-supporting);
-  font-weight: 600;
 }
 
 .screen-results-hint {
