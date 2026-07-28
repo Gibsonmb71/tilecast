@@ -1,7 +1,8 @@
 import { Select } from "../components/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import QRCode from "qrcode";
 import { api } from "../api/client";
 import type {
@@ -3318,6 +3319,41 @@ function PreviewNode({
     ) : null;
   const direction = node.type === "row" ? "row" : "column";
   const columns = Math.max(1, Number(props.columns ?? 1));
+  if (node.type === "surface") {
+    // paddingPercent and textScale are author percentages: the padding insets
+    // each edge (10 gives the content the center 80 percent) and the scale
+    // multiplies the preview's typography, with a fit pass as the final guard.
+    const padding = Math.max(
+      0,
+      Math.min(40, Number(props.paddingPercent ?? props.padding ?? 10)),
+    );
+    const scale =
+      Math.max(25, Math.min(500, Number(props.textScale ?? 100))) / 100;
+    return (
+      <PreviewSurface
+        background={
+          typeof props.backgroundColor === "string"
+            ? props.backgroundColor
+            : undefined
+        }
+        inset={100 - padding * 2}
+        textScale={scale}
+      >
+        {node.children?.map((child, index) => (
+          <PreviewNode
+            key={child.id ?? index}
+            node={child}
+            records={records}
+            datasets={datasets}
+            record={record}
+            recordIndex={recordIndex}
+            now={now}
+            assetImageUrl={assetImageUrl}
+          />
+        ))}
+      </PreviewSurface>
+    );
+  }
   return (
     <div
       className={`presentation-preview__${node.type}`}
@@ -3350,6 +3386,70 @@ function PreviewNode({
           assetImageUrl={assetImageUrl}
         />
       ))}
+    </div>
+  );
+}
+
+/**
+ * The Widget surface: a full-bleed background with the content inset by the
+ * author's padding percentage and its typography multiplied by their scale.
+ * After layout, any text that still overflows the content area is shrunk, so
+ * the preview matches the Player's fit-to-bounds guard instead of clipping.
+ */
+function PreviewSurface({
+  background,
+  inset,
+  textScale,
+  children,
+}: {
+  background?: string;
+  inset: number;
+  textScale: number;
+  children: ReactNode;
+}) {
+  const contentRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const content = contentRef.current;
+    if (!content) return;
+    for (const el of Array.from(
+      content.querySelectorAll<HTMLElement>("span, div"),
+    )) {
+      if (el.firstElementChild) continue;
+      el.style.fontSize = "";
+      let size = parseFloat(window.getComputedStyle(el).fontSize);
+      if (!Number.isFinite(size)) continue;
+      let guard = 0;
+      while (
+        guard++ < 60 &&
+        size > 6 &&
+        (el.scrollWidth > content.clientWidth + 1 ||
+          el.scrollHeight > content.clientHeight + 1)
+      ) {
+        size = Math.max(6, size * 0.9);
+        el.style.fontSize = `${size}px`;
+      }
+    }
+  });
+  return (
+    <div
+      className="presentation-preview__surface"
+      style={
+        {
+          background,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          "--widget-text-scale": textScale,
+        } as CSSProperties
+      }
+    >
+      <div
+        ref={contentRef}
+        className="presentation-preview__surface-content"
+        style={{ width: `${inset}%`, height: `${inset}%` }}
+      >
+        {children}
+      </div>
     </div>
   );
 }

@@ -563,7 +563,19 @@ func compileWebPresentation(provider string, c map[string]any) (*WidgetPresentat
 func compileNativeRoot(provider string, c map[string]any) (PresentationNode, map[string]int, error) {
 	background := stringValue(c, "backgroundColor", "#0E141B")
 	foreground := stringValue(c, "foregroundColor", "#F5F7FA")
-	surface := PresentationNode{Type: "surface", Props: map[string]any{"backgroundColor": background, "padding": intValue(c["contentPadding"], 10)}}
+	// contentPadding and textScale are author percentages, not absolute units:
+	// padding is a fraction of each edge (10 gives the content the center 80
+	// percent) and textScale multiplies provider typography. "padding" stays on
+	// the node for players that predate the percentage props; renderers that
+	// understand "paddingPercent"/"textScale" must prefer those.
+	paddingPercent := clampInt(intValue(c["contentPadding"], 10), 0, 40)
+	textScale := clampInt(intValue(c["textScale"], 100), 25, 500)
+	surface := PresentationNode{Type: "surface", Props: map[string]any{
+		"backgroundColor": background,
+		"padding":         paddingPercent,
+		"paddingPercent":  paddingPercent,
+		"textScale":       textScale,
+	}}
 	caps := map[string]int{"layout.surface": 1, "content.text": 1, "binding.core": 1, "format.typed": 1}
 	text := func(binding PresentationBinding, role string) PresentationNode {
 		return PresentationNode{Type: "text", Props: map[string]any{"color": foreground, "role": role}, Binding: &binding}
@@ -799,6 +811,16 @@ func intValue(value any, fallback int) int {
 		return int(number)
 	}
 	return fallback
+}
+
+func clampInt(value, low, high int) int {
+	if value < low {
+		return low
+	}
+	if value > high {
+		return high
+	}
+	return value
 }
 
 func boolValue(value any) bool {

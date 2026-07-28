@@ -4487,6 +4487,21 @@ tbody tr {
   height: 100%;
   justify-content: center;
   overflow: hidden;
+  /* The author's textScale, as a multiplier on every size below. */
+  --widget-text-scale: 1;
+}
+/* The content area left by the author's contentPadding — the center 80 percent
+   by default. Sized inline so both axes inset by the same percentage. */
+.declarative-widget-preview .presentation-preview__surface-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  /* Body typography inherits the scale; metric text scales in its own rule. */
+  font-size: calc(clamp(18px, 3.4cqw, 44px) * var(--widget-text-scale, 1));
 }
 .declarative-widget-preview .presentation-preview__grid,
 .declarative-widget-preview .presentation-preview__column,
@@ -4495,8 +4510,8 @@ tbody tr {
   min-height: 0;
 }
 .declarative-widget-preview .presentation-preview__text--metric,
-.declarative-widget-preview .presentation-preview__surface > span {
-  font-size: clamp(36px, 12cqw, 150px);
+.declarative-widget-preview .presentation-preview__surface-content > span {
+  font-size: calc(clamp(36px, 12cqw, 150px) * var(--widget-text-scale, 1));
   line-height: 1.05;
 }
 .declarative-widget-preview .presentation-preview__progress {

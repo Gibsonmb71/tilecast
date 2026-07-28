@@ -169,6 +169,36 @@ func TestCountdownPresentationCompilesRecurrenceAndLayouts(t *testing.T) {
 	}
 }
 
+// The author's sizing has to survive compilation: without it on the surface a
+// Player has no way to honour a custom scale or the content margins.
+func TestNativeSurfaceCarriesAuthorSizing(t *testing.T) {
+	base := `{"target":"2026-12-01T09:00","timezone":"UTC","mode":"countdown","recurrence":"none","layout":"countdown_only","showDays":true,"showHours":true,"showMinutes":true,"showSeconds":false,"foregroundColor":"#ffffff","backgroundColor":"#000000"`
+	for _, tc := range []struct {
+		name        string
+		sizing      string
+		wantPadding int
+		wantScale   int
+	}{
+		{"defaults", "", 10, 100},
+		{"custom", `,"textScale":250,"contentPadding":0`, 0, 250},
+		{"clamped", `,"textScale":5000,"contentPadding":90`, 40, 500},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			presentation, err := presentationTestService().compileWidgetPresentation("countdown", json.RawMessage(base+tc.sizing+`}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			props := presentation.Native.Root.Props
+			if props["paddingPercent"] != tc.wantPadding {
+				t.Fatalf("paddingPercent = %v, want %d", props["paddingPercent"], tc.wantPadding)
+			}
+			if props["textScale"] != tc.wantScale {
+				t.Fatalf("textScale = %v, want %d", props["textScale"], tc.wantScale)
+			}
+		})
+	}
+}
+
 func TestCompatibilityChecksOnlyPresentationRequirements(t *testing.T) {
 	presentation := &WidgetPresentation{
 		SchemaVersion: 1,

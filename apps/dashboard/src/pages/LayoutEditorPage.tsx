@@ -2998,21 +2998,27 @@ function FittedText({
     const box = boxRef.current;
     const span = spanRef.current;
     if (!box || !span) return;
-    let size = fontPx;
-    span.style.fontSize = `${size}px`;
-    let guard = 0;
-    while (
-      guard++ < 80 &&
-      size > 4 &&
-      (span.scrollWidth > box.clientWidth + 1 ||
-        span.scrollHeight > box.clientHeight + 1)
-    ) {
-      size = Math.max(4, size * 0.9);
+    const shrinkToFit = (from: number) => {
+      let size = from;
       span.style.fontSize = `${size}px`;
-    }
+      let guard = 0;
+      while (
+        guard++ < 80 &&
+        size > 4 &&
+        (span.scrollWidth > box.clientWidth + 1 ||
+          span.scrollHeight > box.clientHeight + 1)
+      ) {
+        size = Math.max(4, size * 0.9);
+        span.style.fontSize = `${size}px`;
+      }
+      return size;
+    };
+    // Automatic sizing is the bounds-first fit. An author scale multiplies that
+    // — previously it was capped at 1, which made every scale above 100 percent
+    // a no-op — and a second fit pass is the final guard against overflow.
+    const automatic = shrinkToFit(fontPx);
     const authorScale = Math.max(25, Math.min(500, textScale)) / 100;
-    size = Math.max(4, size * Math.min(authorScale, 1));
-    span.style.fontSize = `${size}px`;
+    if (authorScale !== 1) shrinkToFit(automatic * authorScale);
   }, [text, fontPx, maxLines, textScale]);
   return (
     <div ref={boxRef} className="wpv-fit-box">

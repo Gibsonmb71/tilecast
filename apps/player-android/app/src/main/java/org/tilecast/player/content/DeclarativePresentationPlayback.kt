@@ -31,6 +31,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -83,6 +84,8 @@ data class PresentationContext(
     val record: DocumentRecord? = null,
     val repeatIndex: Int = 0,
     val now: Instant = Instant.now(),
+    /** The surface's author textScale as a multiplier, applied to role typography. */
+    val textScale: Float = 1f,
 )
 
 @Composable
@@ -115,7 +118,24 @@ fun DeclarativeWidgetItem(item:ManifestItem,widget: ManifestWidget, session: Pla
 private fun PresentationNodeView(node: PresentationNode, context: PresentationContext) {
     if (!conditionMatches(node, context)) return
     when (node.type) {
-        "surface", "box", "stack" -> Box(
+        // A surface carries the author's sizing: paddingPercent is a fraction of
+        // each edge (10 gives the content the center 80 percent) and textScale
+        // multiplies the role typography of every text below it.
+        "surface" -> BoxWithConstraints(
+            Modifier.fillMaxSize().background(node.color("backgroundColor", Color.Transparent)),
+            contentAlignment = Alignment.Center,
+        ) {
+            val inset = widgetPaddingFraction(node.int("paddingPercent", node.int("padding", 10)))
+            val scoped = context.copy(textScale = widgetAuthorScale(node.int("textScale", 100)))
+            Box(
+                Modifier.fillMaxSize().padding(
+                    horizontal = (maxWidth.value * inset).dp,
+                    vertical = (maxHeight.value * inset).dp,
+                ),
+                contentAlignment = Alignment.Center,
+            ) { node.children.forEach { PresentationNodeView(it, scoped) } }
+        }
+        "box", "stack" -> Box(
             Modifier.fillMaxSize()
                 .background(node.color("backgroundColor", Color.Transparent))
                 .padding(node.int("padding", 0).dp),
@@ -167,15 +187,26 @@ private fun PresentationNodeView(node: PresentationNode, context: PresentationCo
         "text", "badge" -> {
             val role = node.string("role", "body")
             val size = when (role) { "metric" -> 58; "title" -> 26; "label" -> 19; else -> 18 }
+            val value = resolve(node.binding, context)
+            // The author's scale sets the starting size; measured overflow below
+            // shrinks it back so an enlarged value stays inside the margins.
+            var fontSize by remember(value, node.int("fontSize", size), context.textScale) {
+                mutableFloatStateOf(node.int("fontSize", size) * context.textScale)
+            }
             Text(
-                resolve(node.binding, context),
+                value,
                 color = node.color("color", Color.White),
-                fontSize = node.int("fontSize", size).sp,
+                fontSize = fontSize.sp,
                 fontWeight = if (role in setOf("metric", "title")) FontWeight.Bold else FontWeight.Normal,
                 textAlign = when (node.string("align", "left")) { "center" -> TextAlign.Center; "right" -> TextAlign.End; else -> TextAlign.Start },
                 maxLines = node.int("maxLines", if (role == "body") 3 else 1),
                 overflow = TextOverflow.Ellipsis,
                 modifier = if (node.type == "badge") Modifier.background(node.color("badgeColor", Color.White.copy(alpha = .12f))).padding(6.dp) else Modifier,
+                onTextLayout = { result ->
+                    if ((result.didOverflowWidth || result.didOverflowHeight) && fontSize > 8f) {
+                        fontSize = (fontSize * 0.9f).coerceAtLeast(8f)
+                    }
+                },
             )
         }
         "marquee" -> MarqueeNode(node, resolve(node.binding, context))

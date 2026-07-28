@@ -56,6 +56,22 @@ class NativeAppSizingTest {
     }
 
     @Test
+    fun customTextScaleCanEnlargeBeyondTheFittedEstimate() {
+        val automatic = scaledFittedFontSizeSp(12, 440f, 230f, 1f)
+        val larger = scaledFittedFontSizeSp(12, 440f, 230f, 1f, textScale = 300)
+
+        assertEquals(automatic * 3f, larger, 0.01f)
+    }
+
+    @Test
+    fun customTextScaleStaysWithinTheSupportedRange() {
+        val clamped = scaledFittedFontSizeSp(12, 440f, 230f, 1f, textScale = 5_000)
+        val ceiling = scaledFittedFontSizeSp(12, 440f, 230f, 1f, textScale = 500)
+
+        assertEquals(ceiling, clamped, 0.01f)
+    }
+
+    @Test
     fun denseMenuContentScalesToAvailableHeight() {
         val roomy = menuContentScale(itemCount = 2, availableHeightDp = 460f)
         val compact = menuContentScale(itemCount = 5, availableHeightDp = 180f)
