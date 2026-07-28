@@ -8,7 +8,8 @@
 #   mkdir -p ~/.config/systemd/user
 #   cp tilecast-player.service ~/.config/systemd/user/
 #   systemctl --user daemon-reload
-#   systemctl --user enable --now tilecast-player
+#   systemctl --user enable tilecast-player   # --now would start a second copy
+#                                             # if a player is already running
 #   sudo loginctl enable-linger <kiosk-user>   # start at boot without login
 #
 # Set the server address once via the on-screen setup, or here:

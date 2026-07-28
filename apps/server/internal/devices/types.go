@@ -244,6 +244,11 @@ type Heartbeat struct {
 	UpdateReadiness                string         `json:"updateReadiness,omitempty"`
 	SelfTestResult                 string         `json:"selfTestResult,omitempty"`
 	SelfTestCompletedAt            *time.Time     `json:"selfTestCompletedAt,omitempty"`
+	AutostartState                 string         `json:"autostartState,omitempty"`
+	AutostartTarget                string         `json:"autostartTarget,omitempty"`
+	AutostartSupervised            *bool          `json:"autostartSupervised,omitempty"`
+	AutostartLingerEnabled         *bool          `json:"autostartLingerEnabled,omitempty"`
+	AutostartError                 string         `json:"autostartError,omitempty"`
 }
 
 func addressString(address netip.Addr) *string {

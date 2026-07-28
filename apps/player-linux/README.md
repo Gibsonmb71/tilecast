@@ -50,8 +50,14 @@ Everything after the initial pairing is remote or automatic:
   process — and repeated exhaustion enters safe mode, which keeps
   networking and Studio commands alive instead of looping. The ladder state
   survives restarts, so a relaunched process will not restart-loop.
-- **systemd as the last rung.** `deploy/tilecast-player.service` restarts the
-  process on any exit, forever, and starts it at boot.
+- **systemd as the last rung.** A systemd user unit restarts the process on any
+  exit, forever, and starts it with the graphical session. The player installs
+  and enables that unit itself on an `install_autostart` command
+  (`src/core/autostart.ts`), reading its own AppImage path, display variables,
+  and data directory out of the live session rather than having an operator
+  guess them; `deploy/tilecast-player.service` remains as the by-hand template.
+  It never starts the unit it just enabled — that process is already running —
+  and never overwrites or deletes a unit file it did not generate.
 - **Rests overnight on its own.** Active-hours configuration darks the screen
   (true black, media torn down, no decoding) outside operating hours and
   wakes it at the next window with no operator action. An emergency always
@@ -133,5 +139,14 @@ same network needs no typing.
   same rung as `restart_player_process`).
 - **Kiosk lockdown** is provided by the desktop/Wayland kiosk compositor and the
   systemd unit rather than Android device-owner/lock-task.
+- **Boot launch** is a systemd user unit rather than a boot receiver, installed
+  remotely with `install_autostart` / `remove_autostart`. The Android-only
+  `reliability.launch_after_boot` policy is ignored here. The player reports
+  `autostartState`, `autostartTarget`, `autostartSupervised`,
+  `autostartLingerEnabled`, and — when systemd started it within
+  `COLD_BOOT_WINDOW_SECONDS` of system boot — the same `bootLaunchVerified` and
+  `lastSuccessfulColdBootAt` the Android player reports. A graphical session at
+  boot (auto-login or a kiosk compositor) is root-owned OS setup and stays out
+  of scope; the player says so rather than reporting a success it cannot see.
 - **Secure web sandboxing** for `web`-kind declarative presentations (remote
   bundles) is not yet implemented; `native`-kind presentations render fully.

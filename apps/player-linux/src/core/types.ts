@@ -286,6 +286,19 @@ export interface Heartbeat {
   websiteFailureCategory?: string;
   websiteFallbackShown?: boolean;
   websiteRendererRecoveryCount?: number;
+  /**
+   * Linux autostart. `bootLaunchVerified` and `lastSuccessfulColdBootAt` are
+   * the same fields the Android player reports from its boot receiver; here
+   * they are derived from systemd supervision plus proximity to boot, so the
+   * Studio row carries one meaning across both platforms.
+   */
+  autostartState?: string;
+  autostartTarget?: string;
+  autostartSupervised?: boolean;
+  autostartLingerEnabled?: boolean;
+  autostartError?: string;
+  bootLaunchVerified?: boolean;
+  lastSuccessfulColdBootAt?: string;
 }
 
 // ---------------------------------------------------------------------------
