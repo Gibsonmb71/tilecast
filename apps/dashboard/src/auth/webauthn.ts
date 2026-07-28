@@ -7,7 +7,7 @@ import type { PublicKeyOptions } from "../api/types";
  * not yet available in every browser Studio supports.
  */
 
-function decode(value: string): Uint8Array {
+function decode(value: string): Uint8Array<ArrayBuffer> {
   const padded = value.replace(/-/g, "+").replace(/_/g, "/");
   const binary = atob(padded.padEnd(Math.ceil(padded.length / 4) * 4, "="));
   const bytes = new Uint8Array(binary.length);
