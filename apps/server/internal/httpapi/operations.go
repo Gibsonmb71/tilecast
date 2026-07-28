@@ -29,7 +29,7 @@ var commandTypes = map[string]bool{
 	"resynchronize_player": true, "run_player_self_test": true,
 }
 
-type emergencyInput struct {
+type takeoverInput struct {
 	Name        string      `json:"name"`
 	Description string      `json:"description"`
 	PlaylistID  uuid.UUID   `json:"playlistId"`
@@ -45,14 +45,14 @@ type commandInput struct {
 	IdempotencyKey *uuid.UUID      `json:"idempotencyKey"`
 }
 
-func (s *server) listEmergencies(w http.ResponseWriter, r *http.Request) {
-	_, _ = s.db.Exec(r.Context(), `UPDATE emergency_takeovers SET status='expired',updated_at=now() WHERE status='active' AND expires_at<=now()`)
+func (s *server) listTakeovers(w http.ResponseWriter, r *http.Request) {
+	_, _ = s.db.Exec(r.Context(), `UPDATE takeovers SET status='expired',updated_at=now() WHERE status='active' AND expires_at<=now()`)
 	rows, err := s.db.Query(r.Context(), `SELECT e.id,e.name,e.description,e.playlist_id,p.name,e.status,e.activated_at,e.expires_at,e.cancelled_at,e.cancellation_reason,
-		(SELECT count(*) FROM emergency_screen_states es WHERE es.emergency_id=e.id),
-		(SELECT count(*) FROM emergency_screen_states es WHERE es.emergency_id=e.id AND es.state='active'),
-		(SELECT count(*) FROM emergency_screen_states es WHERE es.emergency_id=e.id AND es.state IN ('pending','notified','preparing','ready')),
-		(SELECT count(*) FROM emergency_screen_states es WHERE es.emergency_id=e.id AND es.state='failed')
-		FROM emergency_takeovers e JOIN playlists p ON p.id=e.playlist_id ORDER BY e.created_at DESC LIMIT 100`)
+		(SELECT count(*) FROM takeover_screen_states es WHERE es.takeover_id=e.id),
+		(SELECT count(*) FROM takeover_screen_states es WHERE es.takeover_id=e.id AND es.state='active'),
+		(SELECT count(*) FROM takeover_screen_states es WHERE es.takeover_id=e.id AND es.state IN ('pending','notified','preparing','ready')),
+		(SELECT count(*) FROM takeover_screen_states es WHERE es.takeover_id=e.id AND es.state='failed')
+		FROM takeovers e JOIN playlists p ON p.id=e.playlist_id ORDER BY e.created_at DESC LIMIT 100`)
 	if err != nil {
 		s.internalError(w, r, err)
 		return
@@ -74,14 +74,14 @@ func (s *server) listEmergencies(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"items": items, "total": len(items)}})
 }
 
-func (s *server) getEmergency(w http.ResponseWriter, r *http.Request) {
+func (s *server) getTakeover(w http.ResponseWriter, r *http.Request) {
 	id, ok := urlUUID(w, r, "id")
 	if !ok {
 		return
 	}
 	var item map[string]any
 	_ = item
-	rows, err := s.db.Query(r.Context(), `SELECT es.screen_id,sc.name,es.manifest_version,es.state,es.last_updated_at,es.failure_code,es.safe_failure_message,es.prepared_at,es.activated_at,es.restored_at FROM emergency_screen_states es JOIN screens sc ON sc.id=es.screen_id WHERE es.emergency_id=$1 ORDER BY sc.name,sc.id`, id)
+	rows, err := s.db.Query(r.Context(), `SELECT es.screen_id,sc.name,es.manifest_version,es.state,es.last_updated_at,es.failure_code,es.safe_failure_message,es.prepared_at,es.activated_at,es.restored_at FROM takeover_screen_states es JOIN screens sc ON sc.id=es.screen_id WHERE es.takeover_id=$1 ORDER BY sc.name,sc.id`, id)
 	if err != nil {
 		s.internalError(w, r, err)
 		return
@@ -103,8 +103,8 @@ func (s *server) getEmergency(w http.ResponseWriter, r *http.Request) {
 	var playlist uuid.UUID
 	var activated, cancelled *time.Time
 	var expires time.Time
-	if err = s.db.QueryRow(r.Context(), `SELECT e.name,e.description,e.status,e.playlist_id,p.name,e.activated_at,e.expires_at,e.cancelled_at,e.cancellation_reason FROM emergency_takeovers e JOIN playlists p ON p.id=e.playlist_id WHERE e.id=$1`, id).Scan(&name, &description, &status, &playlist, &playlistName, &activated, &expires, &cancelled, &reason); errors.Is(err, pgx.ErrNoRows) {
-		writeError(w, 404, "emergency_not_found", "Emergency takeover was not found.")
+	if err = s.db.QueryRow(r.Context(), `SELECT e.name,e.description,e.status,e.playlist_id,p.name,e.activated_at,e.expires_at,e.cancelled_at,e.cancellation_reason FROM takeovers e JOIN playlists p ON p.id=e.playlist_id WHERE e.id=$1`, id).Scan(&name, &description, &status, &playlist, &playlistName, &activated, &expires, &cancelled, &reason); errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, 404, "takeover_not_found", "Takeover was not found.")
 		return
 	} else if err != nil {
 		s.internalError(w, r, err)
@@ -113,8 +113,8 @@ func (s *server) getEmergency(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"data": map[string]any{"id": id, "name": name, "description": description, "status": status, "playlistId": playlist, "playlistName": playlistName, "activatedAt": activated, "expiresAt": expires, "cancelledAt": cancelled, "cancellationReason": reason, "screens": states}})
 }
 
-func (s *server) activateEmergency(w http.ResponseWriter, r *http.Request) {
-	var input emergencyInput
+func (s *server) activateTakeover(w http.ResponseWriter, r *http.Request) {
+	var input takeoverInput
 	if err := decodeJSON(w, r, &input); err != nil {
 		writeError(w, 400, "invalid_request", err.Error())
 		return
@@ -123,34 +123,34 @@ func (s *server) activateEmergency(w http.ResponseWriter, r *http.Request) {
 	user := r.Context().Value(sessionContextKey).(auth.Session).User
 	if s.settings != nil {
 		document, _ := s.settings.Organization(r.Context())
-		if required, _ := document.Values["emergency.reauthentication_required"].(bool); required && !s.auth.VerifyCurrentPassword(r.Context(), user.ID, input.Password) {
-			writeError(w, 401, "reauthentication_required", "Confirm your current password before activating an emergency.")
+		if required, _ := document.Values["takeover.reauthentication_required"].(bool); required && !s.auth.VerifyCurrentPassword(r.Context(), user.ID, input.Password) {
+			writeError(w, 401, "reauthentication_required", "Confirm your current password before activating a takeover.")
 			return
 		}
 	}
 	input.Name = strings.TrimSpace(input.Name)
 	input.Description = strings.TrimSpace(input.Description)
 	if input.Name == "" || len(input.Name) > 180 || len(input.Description) > 2000 {
-		writeError(w, 422, "validation_failed", "Emergency name or description is invalid.")
+		writeError(w, 422, "validation_failed", "Takeover name or description is invalid.")
 		return
 	}
 	if len(input.ScreenIDs)+len(input.GroupIDs) == 0 {
-		writeError(w, 422, "emergency_target_required", "Select at least one screen or group.")
+		writeError(w, 422, "takeover_target_required", "Select at least one screen or group.")
 		return
 	}
-	if len(input.ScreenIDs)+len(input.GroupIDs) > s.operations.MaxEmergencyTargets {
-		writeError(w, 422, "emergency_target_required", fmt.Sprintf("An emergency may have at most %d targets.", s.operations.MaxEmergencyTargets))
+	if len(input.ScreenIDs)+len(input.GroupIDs) > s.operations.MaxTakeoverTargets {
+		writeError(w, 422, "takeover_target_required", fmt.Sprintf("A takeover may have at most %d targets.", s.operations.MaxTakeoverTargets))
 		return
 	}
-	maxEmergencyMinutes := s.runtimeInt(r, "emergency.maximum_duration_minutes", s.operations.MaxEmergencyDurationHours*60)
-	if !input.ExpiresAt.After(now) || input.ExpiresAt.Sub(now) > time.Duration(maxEmergencyMinutes)*time.Minute {
-		writeError(w, 422, "emergency_duration_exceeded", fmt.Sprintf("Emergency expiration must be within %d minutes.", maxEmergencyMinutes))
+	maxTakeoverMinutes := s.runtimeInt(r, "takeover.maximum_duration_minutes", s.operations.MaxTakeoverDurationHours*60)
+	if !input.ExpiresAt.After(now) || input.ExpiresAt.Sub(now) > time.Duration(maxTakeoverMinutes)*time.Minute {
+		writeError(w, 422, "takeover_duration_exceeded", fmt.Sprintf("Takeover expiration must be within %d minutes.", maxTakeoverMinutes))
 		return
 	}
 	var org uuid.UUID
 	var ready bool
 	if err := s.db.QueryRow(r.Context(), `SELECT p.organization_id,(p.deleted_at IS NULL AND EXISTS(SELECT 1 FROM playlist_items WHERE playlist_id=p.id) AND NOT EXISTS(SELECT 1 FROM playlist_items pi JOIN assets a ON a.id=pi.asset_id WHERE pi.playlist_id=p.id AND (a.deleted_at IS NOT NULL OR a.processing_status<>'ready'))) FROM playlists p WHERE p.id=$1`, input.PlaylistID).Scan(&org, &ready); errors.Is(err, pgx.ErrNoRows) || !ready {
-		writeError(w, 422, "emergency_playlist_not_ready", "Select a ready, non-empty playlist.")
+		writeError(w, 422, "takeover_playlist_not_ready", "Select a ready, non-empty playlist.")
 		return
 	} else if err != nil {
 		s.internalError(w, r, err)
@@ -167,18 +167,18 @@ func (s *server) activateEmergency(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback(r.Context())
 	id := uuid.New()
-	if _, err = tx.Exec(r.Context(), `INSERT INTO emergency_takeovers(id,organization_id,name,description,playlist_id,status,activated_by,activated_at,expires_at)VALUES($1,$2,$3,$4,$5,'active',$6,$7,$8)`, id, org, input.Name, input.Description, input.PlaylistID, user.ID, now, input.ExpiresAt); err != nil {
+	if _, err = tx.Exec(r.Context(), `INSERT INTO takeovers(id,organization_id,name,description,playlist_id,status,activated_by,activated_at,expires_at)VALUES($1,$2,$3,$4,$5,'active',$6,$7,$8)`, id, org, input.Name, input.Description, input.PlaylistID, user.ID, now, input.ExpiresAt); err != nil {
 		s.internalError(w, r, err)
 		return
 	}
 	for _, screen := range uniqueUUIDs(input.ScreenIDs) {
-		if _, err = tx.Exec(r.Context(), `INSERT INTO emergency_targets(emergency_id,target_type,screen_id) SELECT $1,'screen',$2 WHERE EXISTS(SELECT 1 FROM screens WHERE id=$2 AND organization_id=$3)`, id, screen, org); err != nil {
+		if _, err = tx.Exec(r.Context(), `INSERT INTO takeover_targets(takeover_id,target_type,screen_id) SELECT $1,'screen',$2 WHERE EXISTS(SELECT 1 FROM screens WHERE id=$2 AND organization_id=$3)`, id, screen, org); err != nil {
 			s.internalError(w, r, err)
 			return
 		}
 	}
 	for _, group := range uniqueUUIDs(input.GroupIDs) {
-		if _, err = tx.Exec(r.Context(), `INSERT INTO emergency_targets(emergency_id,target_type,screen_group_id) SELECT $1,'group',$2 WHERE EXISTS(SELECT 1 FROM screen_groups WHERE id=$2 AND organization_id=$3 AND deleted_at IS NULL)`, id, group, org); err != nil {
+		if _, err = tx.Exec(r.Context(), `INSERT INTO takeover_targets(takeover_id,target_type,screen_group_id) SELECT $1,'group',$2 WHERE EXISTS(SELECT 1 FROM screen_groups WHERE id=$2 AND organization_id=$3 AND deleted_at IS NULL)`, id, group, org); err != nil {
 			s.internalError(w, r, err)
 			return
 		}
@@ -197,33 +197,33 @@ func (s *server) activateEmergency(w http.ResponseWriter, r *http.Request) {
 	}
 	rows.Close()
 	if len(screens) == 0 {
-		writeError(w, 422, "emergency_target_required", "No eligible screens matched the targets.")
+		writeError(w, 422, "takeover_target_required", "No eligible screens matched the targets.")
 		return
 	}
-	replacedRows, _ := tx.Query(r.Context(), `SELECT DISTINCT es.emergency_id FROM emergency_screen_states es JOIN emergency_takeovers e ON e.id=es.emergency_id WHERE es.screen_id=ANY($1) AND e.status='active' AND e.id<>$2 AND es.state NOT IN ('restored','cancelled','expired')`, screens, id)
+	replacedRows, _ := tx.Query(r.Context(), `SELECT DISTINCT es.takeover_id FROM takeover_screen_states es JOIN takeovers e ON e.id=es.takeover_id WHERE es.screen_id=ANY($1) AND e.status='active' AND e.id<>$2 AND es.state NOT IN ('restored','cancelled','expired')`, screens, id)
 	if replacedRows != nil {
 		for replacedRows.Next() {
 			var replaced uuid.UUID
 			if replacedRows.Scan(&replaced) == nil {
-				_, _ = tx.Exec(r.Context(), `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)VALUES($1,$2,'emergency.replaced','emergency',$3)`, uuid.New(), user.ID, replaced.String())
+				_, _ = tx.Exec(r.Context(), `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)VALUES($1,$2,'takeover.replaced','takeover',$3)`, uuid.New(), user.ID, replaced.String())
 			}
 		}
 		replacedRows.Close()
 	}
 	for _, screen := range screens {
-		_, _ = tx.Exec(r.Context(), `UPDATE emergency_screen_states es SET state='restored',restored_at=now(),last_updated_at=now() FROM emergency_takeovers e WHERE es.emergency_id=e.id AND es.screen_id=$1 AND e.status='active' AND e.id<>$2 AND es.state NOT IN ('restored','cancelled','expired')`, screen, id)
+		_, _ = tx.Exec(r.Context(), `UPDATE takeover_screen_states es SET state='restored',restored_at=now(),last_updated_at=now() FROM takeovers e WHERE es.takeover_id=e.id AND es.screen_id=$1 AND e.status='active' AND e.id<>$2 AND es.state NOT IN ('restored','cancelled','expired')`, screen, id)
 		var version int64
-		if err = tx.QueryRow(r.Context(), `UPDATE screen_manifest_state SET manifest_version=manifest_version+1,changed_at=now(),change_reason='emergency.activated' WHERE screen_id=$1 RETURNING manifest_version`, screen).Scan(&version); err != nil {
+		if err = tx.QueryRow(r.Context(), `UPDATE screen_manifest_state SET manifest_version=manifest_version+1,changed_at=now(),change_reason='takeover.activated' WHERE screen_id=$1 RETURNING manifest_version`, screen).Scan(&version); err != nil {
 			s.internalError(w, r, err)
 			return
 		}
-		_, err = tx.Exec(r.Context(), `INSERT INTO emergency_screen_states(emergency_id,screen_id,manifest_version,state)VALUES($1,$2,$3,'pending')`, id, screen, version)
+		_, err = tx.Exec(r.Context(), `INSERT INTO takeover_screen_states(takeover_id,screen_id,manifest_version,state)VALUES($1,$2,$3,'pending')`, id, screen, version)
 		if err != nil {
 			s.internalError(w, r, err)
 			return
 		}
 	}
-	_, _ = tx.Exec(r.Context(), `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)VALUES($1,$2,'emergency.activated','emergency',$3)`, uuid.New(), user.ID, id.String())
+	_, _ = tx.Exec(r.Context(), `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)VALUES($1,$2,'takeover.activated','takeover',$3)`, uuid.New(), user.ID, id.String())
 	if err = tx.Commit(r.Context()); err != nil {
 		s.internalError(w, r, err)
 		return
@@ -231,13 +231,13 @@ func (s *server) activateEmergency(w http.ResponseWriter, r *http.Request) {
 	for _, screen := range screens {
 		var version int64
 		_ = s.db.QueryRow(r.Context(), `SELECT manifest_version FROM screen_manifest_state WHERE screen_id=$1`, screen).Scan(&version)
-		s.devices.Notify(screen, map[string]any{"type": "emergency.changed", "emergencyId": id, "manifestVersion": version})
+		s.devices.Notify(screen, map[string]any{"type": "takeover.changed", "takeoverId": id, "manifestVersion": version})
 		s.devices.Notify(screen, map[string]any{"type": "manifest.changed", "manifestVersion": version})
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]any{"id": id, "status": "active", "affectedCount": len(screens), "expiresAt": input.ExpiresAt}})
 }
 
-func (s *server) cancelEmergency(w http.ResponseWriter, r *http.Request) {
+func (s *server) cancelTakeover(w http.ResponseWriter, r *http.Request) {
 	id, ok := urlUUID(w, r, "id")
 	if !ok {
 		return
@@ -260,16 +260,16 @@ func (s *server) cancelEmergency(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback(r.Context())
 	user := r.Context().Value(sessionContextKey).(auth.Session).User
-	tag, err := tx.Exec(r.Context(), `UPDATE emergency_takeovers SET status='cancelled',cancelled_by=$2,cancelled_at=now(),cancellation_reason=$3,updated_at=now() WHERE id=$1 AND status='active'`, id, user.ID, strings.TrimSpace(body.Reason))
+	tag, err := tx.Exec(r.Context(), `UPDATE takeovers SET status='cancelled',cancelled_by=$2,cancelled_at=now(),cancellation_reason=$3,updated_at=now() WHERE id=$1 AND status='active'`, id, user.ID, strings.TrimSpace(body.Reason))
 	if err != nil {
 		s.internalError(w, r, err)
 		return
 	}
 	if tag.RowsAffected() == 0 {
-		writeError(w, 409, "emergency_expired", "Emergency is no longer active.")
+		writeError(w, 409, "takeover_expired", "Takeover is no longer active.")
 		return
 	}
-	rows, err := tx.Query(r.Context(), `UPDATE emergency_screen_states SET state='cancelled',restored_at=now(),last_updated_at=now() WHERE emergency_id=$1 RETURNING screen_id`, id)
+	rows, err := tx.Query(r.Context(), `UPDATE takeover_screen_states SET state='cancelled',restored_at=now(),last_updated_at=now() WHERE takeover_id=$1 RETURNING screen_id`, id)
 	if err != nil {
 		s.internalError(w, r, err)
 		return
@@ -283,9 +283,9 @@ func (s *server) cancelEmergency(w http.ResponseWriter, r *http.Request) {
 	}
 	rows.Close()
 	for _, screen := range screens {
-		_, _ = tx.Exec(r.Context(), `UPDATE screen_manifest_state SET manifest_version=manifest_version+1,changed_at=now(),change_reason='emergency.cancelled' WHERE screen_id=$1`, screen)
+		_, _ = tx.Exec(r.Context(), `UPDATE screen_manifest_state SET manifest_version=manifest_version+1,changed_at=now(),change_reason='takeover.cancelled' WHERE screen_id=$1`, screen)
 	}
-	_, _ = tx.Exec(r.Context(), `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)VALUES($1,$2,'emergency.cancelled','emergency',$3)`, uuid.New(), user.ID, id.String())
+	_, _ = tx.Exec(r.Context(), `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)VALUES($1,$2,'takeover.cancelled','takeover',$3)`, uuid.New(), user.ID, id.String())
 	if err = tx.Commit(r.Context()); err != nil {
 		s.internalError(w, r, err)
 		return
@@ -293,7 +293,7 @@ func (s *server) cancelEmergency(w http.ResponseWriter, r *http.Request) {
 	for _, screen := range screens {
 		var version int64
 		_ = s.db.QueryRow(r.Context(), `SELECT manifest_version FROM screen_manifest_state WHERE screen_id=$1`, screen).Scan(&version)
-		s.devices.Notify(screen, map[string]any{"type": "emergency.changed", "emergencyId": id, "manifestVersion": version})
+		s.devices.Notify(screen, map[string]any{"type": "takeover.changed", "takeoverId": id, "manifestVersion": version})
 		s.devices.Notify(screen, map[string]any{"type": "manifest.changed", "manifestVersion": version})
 	}
 	writeJSON(w, 200, map[string]any{"data": map[string]any{"id": id, "status": "cancelled"}})

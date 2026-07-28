@@ -61,7 +61,7 @@ type screenCurrentStatus struct {
 // derived rather than reported, so they are not activity-event categories.
 var screenTimelineDomains = []string{
 	"playback", "connectivity", "reliability", "scheduling",
-	"commands", "updates", "emergencies", "manifest", "state", "incidents", "audit",
+	"commands", "updates", "takeovers", "manifest", "state", "incidents", "audit",
 }
 
 func (s *server) screenTimeline(w http.ResponseWriter, r *http.Request) {

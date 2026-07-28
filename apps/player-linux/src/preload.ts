@@ -157,7 +157,7 @@ function activatePresentation(
 
   activeSynchronized = presentation;
   // A fresh activation reads the wall clock once, so a late-joining player (or
-  // one whose schedule/emergency anchor just changed) still lands at the right
+  // one whose schedule/takeover anchor just changed) still lands at the right
   // point in the shared cycle.
   synchronizedClock = activateSynchronizedClock();
   lastOccurrence = null;

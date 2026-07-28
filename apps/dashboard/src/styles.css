@@ -121,7 +121,7 @@ html[data-reduced-motion="true"] *::after {
     grid-template-columns: 1fr;
   }
 }
-/* Emergency takeover styling lives in styles/screens.css alongside the rest of
+/* Takeover styling lives in styles/screens.css alongside the rest of
    the Screens page. */
 .operations {
   margin-top: 20px;
@@ -1865,6 +1865,87 @@ button.organizer-chip:disabled {
   justify-content: space-between;
   gap: 18px;
 }
+.takeover-settings .notice {
+  margin: 14px 0;
+}
+.takeover-settings__actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 16px 0;
+}
+.takeover-settings__health {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin: 16px 0 4px;
+  background: var(--tc-border);
+  border: 1px solid var(--tc-border);
+}
+.takeover-settings__health > div {
+  padding: 12px;
+  background: var(--tc-surface);
+}
+.takeover-settings__health dt {
+  color: var(--tc-ink-muted);
+  font-size: 12px;
+}
+.takeover-settings__health dd {
+  margin: 4px 0 0;
+  font-weight: 650;
+}
+.takeover-rule-list {
+  display: grid;
+}
+.takeover-rule-list article {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--tc-border);
+}
+.takeover-rule-list article > div:last-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.takeover-rule-list p {
+  margin: 4px 0 0;
+  color: var(--tc-ink-muted);
+  font-size: 13px;
+}
+.takeover-rule-editor {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+  padding: 18px;
+  border: 1px solid var(--tc-border);
+  background: var(--tc-surface-subtle);
+}
+.takeover-rule-editor label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 650;
+}
+.takeover-rule-editor__columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.takeover-rule-editor__targets {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+}
+.takeover-rule-editor__targets label,
+.takeover-rule-editor .checkbox-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+}
 .setting-row {
   display: grid;
   grid-template-columns: minmax(220px, 1fr) minmax(240px, 330px);
@@ -2607,7 +2688,9 @@ button.organizer-chip:disabled {
     gap: 10px;
   }
   .deployment-fields,
-  .branding-workspace {
+  .branding-workspace,
+  .takeover-settings__health,
+  .takeover-rule-editor__columns {
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -2628,8 +2711,13 @@ button.organizer-chip:disabled {
     flex-basis: 100%;
   }
   .target-picker,
-  .system-settings-grid {
+  .system-settings-grid,
+  .takeover-rule-editor__targets {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .takeover-rule-list article {
+    align-items: flex-start;
+    flex-direction: column;
   }
   .settings-table-wrap {
     max-width: calc(100vw - 38px);

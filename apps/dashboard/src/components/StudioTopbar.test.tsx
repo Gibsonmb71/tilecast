@@ -75,7 +75,7 @@ function renderTopbar(
   vi.spyOn(api, "pendingPairings").mockResolvedValue(
     overrides.pairings ?? { items: [], total: 0 },
   );
-  vi.spyOn(api, "emergencies").mockResolvedValue({ items: [], total: 0 });
+  vi.spyOn(api, "takeovers").mockResolvedValue({ items: [], total: 0 });
   vi.spyOn(api, "assets").mockResolvedValue({
     items: [],
     total: 0,

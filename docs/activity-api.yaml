@@ -151,7 +151,7 @@ paths:
       summary: Read expected-versus-actual playback compliance
       description:
         Measured against expected windows materialized when each selection
-        became effective, not against current configuration. Emergency and
+        became effective, not against current configuration. Takeover and
         cancelled time is excluded from the denominator and reported
         separately. `compliancePercent` is null when nothing measurable was
         expected, because zero would claim every expected play was missed.
@@ -387,7 +387,7 @@ components:
         failureMessage: { type: string, maxLength: 240 }
         trigger: { type: string }
         scheduleId: { type: string }
-        emergencyId: { type: string }
+        takeoverId: { type: string }
         sourceId: { type: string }
         selectedRecordId: { type: string }
         selectionDate: { type: string, format: date }

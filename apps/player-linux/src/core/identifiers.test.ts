@@ -45,6 +45,6 @@ describe("identifier hygiene", () => {
       uuidHeartbeatField("currentPlaylistId", "playlist-1"),
     ).toBeUndefined();
     expect(uuidHeartbeatField("currentScheduleId", "")).toBeUndefined();
-    expect(uuidHeartbeatField("activeEmergencyId", undefined)).toBeUndefined();
+    expect(uuidHeartbeatField("activeTakeoverId", undefined)).toBeUndefined();
   });
 });

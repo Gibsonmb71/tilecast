@@ -391,7 +391,7 @@ export type PlaylistAssignment = {
   lastPlaybackError?: string;
   currentScheduleId?: string;
   currentPlaylistId?: string;
-  selectionSource?: "emergency" | "schedule" | "direct_fallback" | "none";
+  selectionSource?: "takeover" | "schedule" | "direct_fallback" | "none";
   nextTransitionAt?: string;
   deviceClockOffsetSeconds?: number;
   scheduleEvaluationError?: string;
@@ -415,9 +415,9 @@ export type PlaylistAssignment = {
   websiteCurrentHost?: string;
   websiteFallbackShown?: boolean;
   websiteRendererRecoveryCount?: number;
-  activeEmergencyId?: string;
-  emergencyState?: string;
-  emergencyPreparationProgress?: number;
+  activeTakeoverId?: string;
+  takeoverState?: string;
+  takeoverPreparationProgress?: number;
   playbackDisabled: boolean;
   lastCommandId?: string;
   lastCommandState?: string;
@@ -535,7 +535,7 @@ export type PowerAssistResults = {
   lastTestedAt?: string;
 };
 
-export type EmergencyTakeover = {
+export type Takeover = {
   id: string;
   name: string;
   description: string;
@@ -550,6 +550,60 @@ export type EmergencyTakeover = {
   activeCount: number;
   preparingCount: number;
   failedCount: number;
+};
+
+export type NWSAlertMonitor = {
+  enabled: boolean;
+  areas: string[];
+  zones: string[];
+  pollIntervalSeconds: number;
+  lastPolledAt?: string;
+  lastSuccessAt?: string;
+  lastErrorCode?: string;
+  lastMatchedCount: number;
+  updatedAt: string;
+};
+
+export type NWSAlertRule = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  eventNames: string[];
+  minimumSeverity: "Minor" | "Moderate" | "Severe" | "Extreme";
+  minimumUrgency: "Unknown" | "Future" | "Expected" | "Immediate";
+  playlistId?: string;
+  playlistName?: string;
+  maximumDurationMinutes: number;
+  screenIds: string[];
+  groupIds: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type NWSAlertRuleInput = Omit<
+  NWSAlertRule,
+  "id" | "playlistName" | "createdAt" | "updatedAt"
+>;
+
+export type NWSAlertActivation = {
+  alertId: string;
+  ruleId: string;
+  ruleName: string;
+  event: string;
+  headline: string;
+  severity: string;
+  urgency: string;
+  areaDescription: string;
+  expiresAt?: string;
+  takeoverId?: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+};
+
+export type NWSAlertSettings = {
+  monitor: NWSAlertMonitor;
+  rules: NWSAlertRule[];
+  activeAlerts: NWSAlertActivation[];
 };
 
 export type SettingDefinition = {

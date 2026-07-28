@@ -84,10 +84,10 @@ const primaryMetrics: MetricSpec[] = [
 
 const secondaryMetrics: MetricSpec[] = [
   {
-    key: "emergencyActivations",
-    label: "Emergency activations",
+    key: "takeoverActivations",
+    label: "Takeover activations",
     direction: "neutral",
-    destination: { tab: "events", filters: { category: "emergencies" } },
+    destination: { tab: "events", filters: { category: "takeovers" } },
   },
   {
     key: "screensWithReportingGaps",
@@ -314,7 +314,7 @@ function ImportantTimeline({ items }: { items: Overview["timeline"] }) {
         <div>
           <h3>Important timeline</h3>
           <p>
-            High-value playback, recovery, emergency, and administrative events.
+            High-value playback, recovery, takeover, and administrative events.
           </p>
         </div>
         {domains.length > 1 && (

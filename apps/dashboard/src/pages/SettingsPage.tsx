@@ -24,6 +24,7 @@ import { UsersPage } from "./UsersPage";
 import { BackupPanel } from "../settings/BackupPanel";
 import { LocationsPanel } from "../settings/LocationsPanel";
 import { ActivityRetentionPanel } from "../settings/ActivityRetentionPanel";
+import { TakeoverPanel } from "../settings/TakeoverPanel";
 
 export { PlayerPolicyEditor } from "../settings/PlayerPolicyEditor";
 export {
@@ -215,6 +216,19 @@ function Destination({
   if (active === "import-export") return <ImportExportPanel owner={owner} />;
   if (active === "player-updates")
     return <PlayerUpdatesPanel owner={owner} manageable={manageable} />;
+  if (active === "takeover")
+    return (
+      <>
+        <TakeoverPanel editable={manageable} />
+        <SettingsSection
+          section={active}
+          definitions={definitions}
+          values={values}
+          editable={manageable}
+          onChange={onChange}
+        />
+      </>
+    );
   let before: React.ReactNode;
   if (active === "branding")
     before = (
@@ -339,8 +353,8 @@ function BrandingPreview({ values }: { values: Record<string, unknown> }) {
         </div>
       </div>
       <p>
-        Emergency takeover keeps Tilecast’s fixed high-contrast treatment
-        regardless of custom branding.
+        Takeover keeps Tilecast’s fixed high-contrast treatment regardless of
+        custom branding.
       </p>
     </div>
   );
@@ -372,7 +386,7 @@ function dirtySections(
     "reliability",
     "power",
     "accessibility",
-    "emergency",
+    "takeover",
     "retention",
     "backups",
     "security",

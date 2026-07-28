@@ -65,7 +65,7 @@ export interface ActivityEventInput {
   failureMessage?: string;
   trigger?: string;
   scheduleId?: string;
-  emergencyId?: string;
+  takeoverId?: string;
   manifestVersion?: number;
   metadata?: Record<string, unknown>;
 }

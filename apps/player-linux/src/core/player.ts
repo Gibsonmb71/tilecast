@@ -3,7 +3,7 @@
  *
  * Owns the full device lifecycle: identity verification, pairing, the
  * socket/reconnect loop, manifest/config/command synchronization, playlist
- * selection, item-boundary manifest activation, emergency takeover, status
+ * selection, item-boundary manifest activation, takeover, status
  * reporting, and the self-heal supervisor. Platform actions (windows,
  * renderer, relaunch) are behind the PlayerHost interface so the runtime
  * logic is independent of Electron.
@@ -16,7 +16,7 @@
  *  - commands poll on a timer independent of socket state
  *  - manifest reconciles on a timer independent of push notifications
  *  - a prepared manifest activates at the next item boundary; an active
- *    emergency interrupts immediately once prepared
+ *    takeover interrupts immediately once prepared
  *  - playback health is judged by renderer-reported progress, with a
  *    persisted escalation ladder and safe mode behind it
  */
@@ -63,7 +63,7 @@ import {
   type CredentialRecord,
 } from "./pairing";
 import {
-  emergencyActive,
+  takeoverActive,
   findPlaylist,
   resolveSelection,
   type Selection,
@@ -147,7 +147,7 @@ export type Presentation =
   | {
       state: "playing";
       items: PresentationItem[];
-      emergency: boolean;
+      takeover: boolean;
       generation: number;
     };
 
@@ -623,13 +623,13 @@ export class PlayerRuntime {
   // ------------------------------------------------------------- activation
 
   private onManifestPrepared(manifest: Manifest): void {
-    const emergencyNow = emergencyActive(manifest, new Date());
+    const takeoverNow = takeoverActive(manifest, new Date());
     if (
       this.activeManifest === null ||
       this.playbackState !== "playing" ||
-      emergencyNow
+      takeoverNow
     ) {
-      // Nothing on screen yet, or an emergency: activate immediately.
+      // Nothing on screen yet, or a takeover: activate immediately.
       if (this.pendingActivationTimer) {
         clearTimeout(this.pendingActivationTimer);
         this.pendingActivationTimer = null;
@@ -908,7 +908,7 @@ export class PlayerRuntime {
         presentationId,
         trigger: selection?.source,
         scheduleId: selection?.scheduleId ?? undefined,
-        emergencyId: selection?.emergencyId ?? undefined,
+        takeoverId: selection?.takeoverId ?? undefined,
         manifestVersion: this.activeManifest?.manifestVersion,
       },
       this.replacementReason(),
@@ -917,7 +917,7 @@ export class PlayerRuntime {
 
   /** Why the outgoing presentation is being replaced, from what selected it. */
   private replacementReason(): TerminalReason {
-    if (this.selection?.emergencyId) return "emergency_takeover";
+    if (this.selection?.takeoverId) return "takeover";
     if (this.selection?.scheduleId) return "schedule_transition";
     if (this.selection?.source === "direct") return "direct_assignment_change";
     return "manifest_replacement";
@@ -956,19 +956,19 @@ export class PlayerRuntime {
 
     const manifest = this.activeManifest;
     const branding = this.config?.branding ?? {};
-    const emergencyNow =
-      manifest !== null && emergencyActive(manifest, new Date());
+    const takeoverNow =
+      manifest !== null && takeoverActive(manifest, new Date());
 
-    // Outside active hours the screen rests (true black), unless an emergency
-    // is active — emergency always overrides off-hours sleep.
-    if (!emergencyNow) {
+    // Outside active hours the screen rests (true black), unless a takeover
+    // is active — takeover always overrides off-hours sleep.
+    if (!takeoverNow) {
       const activeHours = activeHoursFromConfig(this.config?.power);
       if (!evaluateActiveHours(activeHours, new Date()).active) {
         return { state: "sleep" };
       }
     }
 
-    if (this.flags.playbackDisabled && !emergencyNow) {
+    if (this.flags.playbackDisabled && !takeoverNow) {
       return {
         state: "disabled",
         title: String(branding["disabledTitle"] ?? "Screen disabled"),
@@ -1004,7 +1004,7 @@ export class PlayerRuntime {
         return {
           state: "playing",
           items: [layoutItem],
-          emergency: false,
+          takeover: false,
           generation: this.generation,
         };
       }
@@ -1030,7 +1030,7 @@ export class PlayerRuntime {
     return {
       state: "playing",
       items,
-      emergency: this.selection.source === "emergency",
+      takeover: this.selection.source === "takeover",
       generation: this.generation,
     };
   }
@@ -1441,17 +1441,17 @@ export class PlayerRuntime {
       if (playlistId) {
         heartbeat.currentPlaylistId = playlistId;
       }
-      if (this.selection.emergencyId) {
-        // The emergency is genuinely active even if its identifier is unusable,
+      if (this.selection.takeoverId) {
+        // The takeover is genuinely active even if its identifier is unusable,
         // so the state is still reported; only the UUID field is withheld.
-        const emergencyId = uuidHeartbeatField(
-          "activeEmergencyId",
-          this.selection.emergencyId,
+        const takeoverId = uuidHeartbeatField(
+          "activeTakeoverId",
+          this.selection.takeoverId,
         );
-        if (emergencyId) {
-          heartbeat.activeEmergencyId = emergencyId;
+        if (takeoverId) {
+          heartbeat.activeTakeoverId = takeoverId;
         }
-        heartbeat.emergencyState = "active";
+        heartbeat.takeoverState = "active";
       }
       if (this.selection.nextTransitionAt) {
         heartbeat.nextTransitionAt = this.selection.nextTransitionAt;

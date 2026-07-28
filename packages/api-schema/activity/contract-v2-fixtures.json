@@ -44,7 +44,7 @@
     "direct_assignment_change": {
       "expected": true
     },
-    "emergency_takeover": {
+    "takeover": {
       "expected": true
     },
     "manual_skip": {

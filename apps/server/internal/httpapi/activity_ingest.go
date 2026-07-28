@@ -48,7 +48,7 @@ type playerActivityEventInput struct {
 	FailureMessage     string         `json:"failureMessage,omitempty"`
 	TriggerContext     string         `json:"trigger,omitempty"`
 	ScheduleID         string         `json:"scheduleId,omitempty"`
-	EmergencyID        string         `json:"emergencyId,omitempty"`
+	TakeoverID         string         `json:"takeoverId,omitempty"`
 	SourceID           string         `json:"sourceId,omitempty"`
 	SelectedRecordID   string         `json:"selectedRecordId,omitempty"`
 	SelectionDate      string         `json:"selectionDate,omitempty"`
@@ -177,7 +177,7 @@ func normalizePlayerActivity(event *playerActivityEventInput, now time.Time) err
 	if event.SessionType != "" && !isActivitySessionType(event.SessionType) {
 		return errors.New("sessionType is invalid")
 	}
-	event.TerminalReason = strings.ToLower(strings.TrimSpace(event.TerminalReason))
+	event.TerminalReason = canonicalActivityTerminalReason(strings.ToLower(strings.TrimSpace(event.TerminalReason)))
 	if event.TerminalReason != "" && !isActivityTerminalReason(event.TerminalReason) {
 		return errors.New("terminalReason is invalid")
 	}
@@ -185,7 +185,7 @@ func normalizePlayerActivity(event *playerActivityEventInput, now time.Time) err
 	event.FailureMessage = safeActivityText(event.FailureMessage, 240)
 	event.TriggerContext = safeActivityText(event.TriggerContext, 96)
 	event.ScheduleID = safeActivityText(event.ScheduleID, 128)
-	event.EmergencyID = safeActivityText(event.EmergencyID, 128)
+	event.TakeoverID = safeActivityText(event.TakeoverID, 128)
 	event.SourceID = safeActivityText(event.SourceID, 128)
 	event.SelectedRecordID = safeActivityText(event.SelectedRecordID, 160)
 	event.SourceRevision = safeActivityText(event.SourceRevision, 128)
@@ -213,7 +213,7 @@ func (s *server) insertPlayerActivityEvent(r *http.Request, tx pgx.Tx, screenID 
 			id,screen_id,sequence,event_type,category,severity,occurred_at,elapsed_realtime_ms,player_timezone,
 			manifest_version,presentation_type,presentation_id,presentation_revision,content_type,content_id,
 			playlist_item_id,layout_placement_id,activity_session_id,result,duration_ms,expected_duration_ms,
-			failure_code,failure_message,trigger_context,schedule_id,emergency_id,source_id,selected_record_id,
+			failure_code,failure_message,trigger_context,schedule_id,takeover_id,source_id,selected_record_id,
 			selection_date,source_cached_at,source_revision,snapshot_hash,metadata,priority,session_type,terminal_reason)
 		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NULLIF($11,''),NULLIF($12,''),NULLIF($13,''),NULLIF($14,''),NULLIF($15,''),
 		       NULLIF($16,''),NULLIF($17,''),NULLIF($18,''),$19,$20,$21,NULLIF($22,''),NULLIF($23,''),NULLIF($24,''),
@@ -223,7 +223,7 @@ func (s *server) insertPlayerActivityEvent(r *http.Request, tx pgx.Tx, screenID 
 		event.ID, screenID, event.Sequence, event.EventType, event.Category, event.Severity, event.OccurredAt, event.ElapsedRealtimeMS, event.PlayerTimezone,
 		event.ManifestVersion, event.PresentationType, event.PresentationID, event.PresentationRev, event.ContentType, event.ContentID,
 		event.PlaylistItemID, event.LayoutPlacementID, event.ActivitySessionID, event.Result, event.DurationMS, event.ExpectedDurationMS,
-		event.FailureCode, event.FailureMessage, event.TriggerContext, event.ScheduleID, event.EmergencyID, event.SourceID, event.SelectedRecordID,
+		event.FailureCode, event.FailureMessage, event.TriggerContext, event.ScheduleID, event.TakeoverID, event.SourceID, event.SelectedRecordID,
 		selectionDate, event.SourceCachedAt, event.SourceRevision, event.SnapshotHash, string(metadata), event.Priority,
 		event.SessionType, event.TerminalReason).Scan(&inserted)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -303,7 +303,7 @@ func startPlaybackSession(r *http.Request, tx pgx.Tx, screenID uuid.UUID, event 
 		INSERT INTO playback_sessions(
 			id,screen_id,group_id,parent_session_id,activity_session_id,start_event_id,started_at,presentation_type,
 			presentation_id,presentation_revision,presentation_name,content_type,content_id,content_name,playlist_item_id,
-			layout_placement_id,expected_duration_ms,result,trigger_context,schedule_id,emergency_id,manifest_version,
+			layout_placement_id,expected_duration_ms,result,trigger_context,schedule_id,takeover_id,manifest_version,
 			source_id,selected_record_id,selection_date,source_cached_at,source_revision,snapshot_hash,metadata,session_type)
 		VALUES($1,$2,$3,$4,$5,$6,$7,NULLIF($8,''),NULLIF($9,''),NULLIF($10,''),NULLIF($11,''),NULLIF($12,''),NULLIF($13,''),
 		       NULLIF($14,''),NULLIF($15,''),NULLIF($16,''),$17,'playing',NULLIF($18,''),NULLIF($19,''),NULLIF($20,''),$21,
@@ -312,7 +312,7 @@ func startPlaybackSession(r *http.Request, tx pgx.Tx, screenID uuid.UUID, event 
 		uuid.New(), screenID, groupID, parentID, sessionID, event.ID, event.OccurredAt, event.PresentationType,
 		event.PresentationID, event.PresentationRev, safeActivityText(presentationName, 240), event.ContentType, event.ContentID,
 		safeActivityText(contentName, 240), event.PlaylistItemID, event.LayoutPlacementID, event.ExpectedDurationMS, event.TriggerContext,
-		event.ScheduleID, event.EmergencyID, event.ManifestVersion, event.SourceID, event.SelectedRecordID, event.SelectionDate,
+		event.ScheduleID, event.TakeoverID, event.ManifestVersion, event.SourceID, event.SelectedRecordID, event.SelectionDate,
 		event.SourceCachedAt, event.SourceRevision, event.SnapshotHash, string(metadata), sessionType)
 	return err
 }
@@ -321,8 +321,8 @@ func startPlaybackSession(r *http.Request, tx pgx.Tx, screenID uuid.UUID, event 
 // only what the incoming start event actually establishes.
 func replacementTerminalReason(event playerActivityEventInput) string {
 	switch {
-	case event.EmergencyID != "":
-		return terminalEmergencyTakeover
+	case event.TakeoverID != "":
+		return terminalTakeover
 	case event.TriggerContext == "schedule" || event.ScheduleID != "":
 		return terminalScheduleTransition
 	case event.TriggerContext == "direct" || event.TriggerContext == "direct_assignment":
@@ -465,8 +465,8 @@ func activityCategory(eventType string) string {
 		return "reliability"
 	case "update":
 		return "updates"
-	case "emergency":
-		return "emergencies"
+	case "takeover":
+		return "takeovers"
 	default:
 		return "system"
 	}

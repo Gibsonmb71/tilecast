@@ -213,25 +213,41 @@ describe("resolveSelection", () => {
     expect(selection.nextTransitionAt).toBe("2026-07-17T13:00:00.000Z");
   });
 
-  it("an active emergency overrides everything, honoring [start, end)", () => {
+  it("an active takeover overrides everything, honoring [start, end)", () => {
     const manifest = baseManifest({
       schedules: [weekly()],
-      emergency: {
+      takeover: {
         id: "em-1",
-        playlistId: "emergency-pl",
+        playlistId: "takeover-pl",
         activatedAt: "2026-07-17T14:00:00Z",
         expiresAt: "2026-07-17T16:00:00Z",
       },
     });
     expect(resolveSelection(manifest, inWindow)).toMatchObject({
-      playlistId: "emergency-pl",
-      emergencyId: "em-1",
-      source: "emergency",
+      playlistId: "takeover-pl",
+      takeoverId: "em-1",
+      source: "takeover",
     });
     // After expiry the schedule returns.
     expect(
       resolveSelection(manifest, new Date("2026-07-17T16:00:00Z")).source,
     ).toBe("schedule");
+  });
+
+  it("accepts the legacy emergency manifest key during staggered upgrades", () => {
+    const manifest = baseManifest({
+      emergency: {
+        id: "legacy-1",
+        playlistId: "takeover-pl",
+        activatedAt: "2026-07-17T14:00:00Z",
+        expiresAt: "2026-07-17T16:00:00Z",
+      },
+    });
+    expect(resolveSelection(manifest, inWindow)).toMatchObject({
+      playlistId: "takeover-pl",
+      takeoverId: "legacy-1",
+      source: "takeover",
+    });
   });
 
   it("restores the direct assignment when no schedule is active", () => {

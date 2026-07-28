@@ -18,8 +18,8 @@ type heartbeatActivityState struct {
 	SelectionSource    string
 	CommandID          *uuid.UUID
 	CommandState       string
-	EmergencyID        *uuid.UUID
-	EmergencyState     string
+	TakeoverID         *uuid.UUID
+	TakeoverState      string
 	UpdateDeploymentID *uuid.UUID
 	UpdateState        string
 	SafeMode           bool
@@ -154,13 +154,13 @@ func (s *server) readHeartbeatActivityState(ctx context.Context, screenID uuid.U
 	var value heartbeatActivityState
 	err := s.db.QueryRow(ctx, `
 		SELECT active_manifest_version,current_schedule_id,COALESCE(selection_source,''),
-		       last_command_id,COALESCE(last_command_state,''),active_emergency_id,COALESCE(emergency_state,''),
+		       last_command_id,COALESCE(last_command_state,''),active_takeover_id,COALESCE(takeover_state,''),
 		       current_update_deployment_id,COALESCE(update_state,''),safe_mode,COALESCE(last_watchdog_failure,''),last_watchdog_recovery_at,
 		       COALESCE(foreground_state,''),COALESCE(last_sleep_request_result,''),COALESCE(last_wake_result,''),
 		       COALESCE(playback_state,''),current_item_id,current_asset_id,COALESCE(last_playback_error,''),cache_used_bytes,cache_limit_bytes
 		FROM screen_player_status WHERE screen_id=$1`, screenID).Scan(
 		&value.ManifestVersion, &value.ScheduleID, &value.SelectionSource,
-		&value.CommandID, &value.CommandState, &value.EmergencyID, &value.EmergencyState,
+		&value.CommandID, &value.CommandState, &value.TakeoverID, &value.TakeoverState,
 		&value.UpdateDeploymentID, &value.UpdateState, &value.SafeMode, &value.WatchdogFailure, &value.WatchdogRecoveryAt,
 		&value.ForegroundState, &value.SleepResult, &value.WakeResult,
 		&value.PlaybackState, &value.CurrentItemID, &value.CurrentAssetID, &value.PlaybackError, &value.CacheUsedBytes, &value.CacheLimitBytes,
@@ -181,7 +181,7 @@ func (s *server) recordHeartbeatStateTransitions(r *http.Request, tx pgx.Tx, scr
 		}
 		if after.ScheduleID != nil {
 			s.recordServerTransition(r, tx, screenID, playerActivityEventInput{ID: uuid.New(), EventType: "schedule.became_active", Category: "scheduling", Severity: "info", OccurredAt: now, Result: "success", ScheduleID: after.ScheduleID.String(), TriggerContext: "schedule", Priority: 8})
-		} else if before.ScheduleID != nil && after.SelectionSource != "emergency" {
+		} else if before.ScheduleID != nil && after.SelectionSource != "takeover" {
 			s.recordServerTransition(r, tx, screenID, playerActivityEventInput{ID: uuid.New(), EventType: "direct_assignment.resumed", Category: "scheduling", Severity: "info", OccurredAt: now, Result: "recovered", TriggerContext: after.SelectionSource, Priority: 7})
 		}
 	}
@@ -191,12 +191,12 @@ func (s *server) recordHeartbeatStateTransitions(r *http.Request, tx pgx.Tx, scr
 			s.recordServerTransition(r, tx, screenID, playerActivityEventInput{ID: uuid.New(), EventType: eventType, Category: "commands", Severity: severity, OccurredAt: now, Result: result, ContentType: "command", ContentID: after.CommandID.String(), Priority: activityPriority(severity)})
 		}
 	}
-	if !sameUUID(before.EmergencyID, after.EmergencyID) || before.EmergencyState != after.EmergencyState {
-		if after.EmergencyID != nil {
-			eventType, severity, result := emergencyStateActivity(after.EmergencyState)
-			s.recordServerTransition(r, tx, screenID, playerActivityEventInput{ID: uuid.New(), EventType: eventType, Category: "emergencies", Severity: severity, OccurredAt: now, Result: result, EmergencyID: after.EmergencyID.String(), ContentType: "emergency", ContentID: after.EmergencyID.String(), Priority: activityPriority(severity)})
-		} else if before.EmergencyID != nil {
-			s.recordServerTransition(r, tx, screenID, playerActivityEventInput{ID: uuid.New(), EventType: "emergency.restored", Category: "emergencies", Severity: "info", OccurredAt: now, Result: "recovered", EmergencyID: before.EmergencyID.String(), Priority: 9})
+	if !sameUUID(before.TakeoverID, after.TakeoverID) || before.TakeoverState != after.TakeoverState {
+		if after.TakeoverID != nil {
+			eventType, severity, result := takeoverStateActivity(after.TakeoverState)
+			s.recordServerTransition(r, tx, screenID, playerActivityEventInput{ID: uuid.New(), EventType: eventType, Category: "takeovers", Severity: severity, OccurredAt: now, Result: result, TakeoverID: after.TakeoverID.String(), ContentType: "takeover", ContentID: after.TakeoverID.String(), Priority: activityPriority(severity)})
+		} else if before.TakeoverID != nil {
+			s.recordServerTransition(r, tx, screenID, playerActivityEventInput{ID: uuid.New(), EventType: "takeover.restored", Category: "takeovers", Severity: "info", OccurredAt: now, Result: "recovered", TakeoverID: before.TakeoverID.String(), Priority: 9})
 		}
 	}
 	if !sameUUID(before.UpdateDeploymentID, after.UpdateDeploymentID) || before.UpdateState != after.UpdateState {
@@ -247,9 +247,9 @@ func (s *server) recordServerTransition(r *http.Request, tx pgx.Tx, screenID uui
 func (s *server) insertServerActivity(ctx context.Context, tx pgx.Tx, screenID uuid.UUID, event playerActivityEventInput) error {
 	metadata, _ := json.Marshal(sanitizeActivityMap(event.Metadata, true))
 	_, err := tx.Exec(ctx, `
-		INSERT INTO player_activity_events(id,screen_id,sequence,origin,event_type,category,severity,occurred_at,player_timezone,manifest_version,presentation_type,presentation_id,presentation_revision,content_type,content_id,result,duration_ms,failure_code,failure_message,trigger_context,schedule_id,emergency_id,metadata,priority)
+		INSERT INTO player_activity_events(id,screen_id,sequence,origin,event_type,category,severity,occurred_at,player_timezone,manifest_version,presentation_type,presentation_id,presentation_revision,content_type,content_id,result,duration_ms,failure_code,failure_message,trigger_context,schedule_id,takeover_id,metadata,priority)
 		VALUES($1,$2,NULL,'server',$3,$4,$5,$6,'UTC',$7,NULLIF($8,''),NULLIF($9,''),NULLIF($10,''),NULLIF($11,''),NULLIF($12,''),$13,$14,NULLIF($15,''),NULLIF($16,''),NULLIF($17,''),NULLIF($18,''),NULLIF($19,''),$20::jsonb,$21)
-		ON CONFLICT(id) DO NOTHING`, event.ID, screenID, event.EventType, event.Category, event.Severity, event.OccurredAt, event.ManifestVersion, event.PresentationType, event.PresentationID, event.PresentationRev, event.ContentType, event.ContentID, event.Result, event.DurationMS, event.FailureCode, event.FailureMessage, event.TriggerContext, event.ScheduleID, event.EmergencyID, string(metadata), event.Priority)
+		ON CONFLICT(id) DO NOTHING`, event.ID, screenID, event.EventType, event.Category, event.Severity, event.OccurredAt, event.ManifestVersion, event.PresentationType, event.PresentationID, event.PresentationRev, event.ContentType, event.ContentID, event.Result, event.DurationMS, event.FailureCode, event.FailureMessage, event.TriggerContext, event.ScheduleID, event.TakeoverID, string(metadata), event.Priority)
 	return err
 }
 
@@ -287,20 +287,20 @@ func updateStateActivity(state string) (string, string, string) {
 	}
 }
 
-func emergencyStateActivity(state string) (string, string, string) {
+func takeoverStateActivity(state string) (string, string, string) {
 	switch state {
 	case "notified":
-		return "emergency.screen_notified", "warning", "success"
+		return "takeover.screen_notified", "warning", "success"
 	case "preparing", "ready":
-		return "emergency.content_preparing", "warning", "playing"
+		return "takeover.content_preparing", "warning", "playing"
 	case "active":
-		return "emergency.active", "critical", "playing"
+		return "takeover.active", "critical", "playing"
 	case "failed", "offline":
-		return "emergency.activation_failed", "critical", "failed"
+		return "takeover.activation_failed", "critical", "failed"
 	case "restored", "cancelled", "expired":
-		return "emergency.restored", "info", "recovered"
+		return "takeover.restored", "info", "recovered"
 	default:
-		return "emergency.assigned", "warning", "success"
+		return "takeover.assigned", "warning", "success"
 	}
 }
 

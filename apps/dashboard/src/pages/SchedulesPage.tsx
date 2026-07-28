@@ -320,7 +320,7 @@ export function GroupDetailPage() {
       <Panel className="sync-group-panel">
         <SectionHeader
           title="Synchronized content"
-          description="Every screen in this group uses this fallback content whenever no higher-priority schedule or emergency takeover is active."
+          description="Every screen in this group uses this fallback content whenever no higher-priority schedule or takeover is active."
         />
         {manageable ? (
           <div className="sync-group-content-controls">

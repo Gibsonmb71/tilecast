@@ -60,7 +60,7 @@ const domains = [
   { value: "manifest", label: "Manifest" },
   { value: "commands", label: "Commands" },
   { value: "updates", label: "Updates" },
-  { value: "emergencies", label: "Emergencies" },
+  { value: "takeovers", label: "Takeovers" },
   { value: "state", label: "State" },
   { value: "incidents", label: "Incidents" },
   { value: "audit", label: "Administrative" },

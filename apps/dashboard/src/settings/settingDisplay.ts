@@ -250,14 +250,14 @@ export const subsectionOrder: Record<
     { title: "Player overrides", prefix: ["player.website."] },
   ],
   scheduling: [{ title: "Schedule defaults", prefix: ["scheduling."] }],
-  emergency: [
-    { title: "Emergency takeover", prefix: ["emergency."] },
+  takeover: [
+    { title: "Takeover", prefix: ["takeover."] },
     { title: "Player commands", prefix: ["commands."] },
   ],
   retention: [
     {
       title: "Security and operational history",
-      prefix: ["retention.audit", "retention.command", "retention.emergency"],
+      prefix: ["retention.audit", "retention.command", "retention.takeover"],
     },
     {
       title: "Cleanup periods",

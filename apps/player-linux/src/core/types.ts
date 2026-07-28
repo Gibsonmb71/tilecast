@@ -129,7 +129,7 @@ export interface ManifestSchedule {
   daysOfWeek?: number[] | null;
 }
 
-export interface ManifestEmergency {
+export interface ManifestTakeover {
   id: string;
   playlistId: string;
   activatedAt: string;
@@ -151,7 +151,9 @@ export interface Manifest {
   prefetchHorizonDays: number;
   activationGraceSeconds: number;
   websites: ManifestWebsite[];
-  emergency?: ManifestEmergency | null;
+  takeover?: ManifestTakeover | null;
+  /** Pre-rename manifest key accepted during staggered upgrades. */
+  emergency?: ManifestTakeover | null;
   // Layouts, widgets, and data sources are typed in content-types.ts; kept
   // loose here to avoid a manifest↔content type cycle. The runtime narrows
   // them via the content-types interfaces when projecting.
@@ -265,8 +267,8 @@ export interface Heartbeat {
   currentPlaylistId?: string;
   selectionSource?: string;
   nextTransitionAt?: string;
-  activeEmergencyId?: string;
-  emergencyState?: string;
+  activeTakeoverId?: string;
+  takeoverState?: string;
   playbackDisabled?: boolean;
   lastCommandId?: string;
   lastCommandState?: string;

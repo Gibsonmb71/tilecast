@@ -21,9 +21,9 @@ var ErrRevisionConflict = errors.New("settings revision conflict")
 
 type Notifier interface{ ConfigChanged(uuid.UUID, int64) }
 type HardLimits struct {
-	MaxUploadBytes                                          int64
-	MaxEmergencyMinutes, MaxWebsiteTimeout, MaxPrefetchDays int
-	PrivateHTTPAllowed                                      bool
+	MaxUploadBytes                                         int64
+	MaxTakeoverMinutes, MaxWebsiteTimeout, MaxPrefetchDays int
+	PrivateHTTPAllowed                                     bool
 }
 type Service struct {
 	db       *pgxpool.Pool
@@ -512,7 +512,7 @@ func (s *Service) hardLimits(v map[string]any) error {
 	checks := []struct {
 		key string
 		max float64
-	}{{"media.upload.max_bytes", float64(s.limits.MaxUploadBytes)}, {"emergency.maximum_duration_minutes", float64(s.limits.MaxEmergencyMinutes)}, {"website.default_timeout_seconds", float64(s.limits.MaxWebsiteTimeout)}, {"scheduling.prefetch_days", float64(s.limits.MaxPrefetchDays)}}
+	}{{"media.upload.max_bytes", float64(s.limits.MaxUploadBytes)}, {"takeover.maximum_duration_minutes", float64(s.limits.MaxTakeoverMinutes)}, {"website.default_timeout_seconds", float64(s.limits.MaxWebsiteTimeout)}, {"scheduling.prefetch_days", float64(s.limits.MaxPrefetchDays)}}
 	for _, c := range checks {
 		if n, ok := v[c.key].(float64); ok && c.max > 0 && n > c.max {
 			return fmt.Errorf("setting_exceeds_hard_limit: %s", c.key)
@@ -521,9 +521,9 @@ func (s *Service) hardLimits(v map[string]any) error {
 	if enabled, _ := v["website.private_http_enabled"].(bool); enabled && !s.limits.PrivateHTTPAllowed {
 		return errors.New("setting_exceeds_hard_limit: private HTTP is disabled at deployment")
 	}
-	if defaultDuration, ok := v["emergency.default_duration_minutes"].(float64); ok {
-		if maximum, ok := v["emergency.maximum_duration_minutes"].(float64); ok && defaultDuration > maximum {
-			return errors.New("invalid_setting_value: default emergency duration exceeds maximum")
+	if defaultDuration, ok := v["takeover.default_duration_minutes"].(float64); ok {
+		if maximum, ok := v["takeover.maximum_duration_minutes"].(float64); ok && defaultDuration > maximum {
+			return errors.New("invalid_setting_value: default takeover duration exceeds maximum")
 		}
 	}
 	return nil

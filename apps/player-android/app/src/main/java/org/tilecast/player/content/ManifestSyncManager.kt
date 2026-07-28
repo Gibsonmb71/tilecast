@@ -247,7 +247,7 @@ class ManifestSyncManager(
 		val playlists = manifest.playlists + listOfNotNull(manifest.directFallbackPlaylist, manifest.playlist)
 		val playlistIds = playlists.map { it.id }.toSet()
 		val layoutIds = manifest.layouts.map { it.id }.toSet()
-		require(manifest.schedules.all { schedule -> schedule.layoutId?.let(layoutIds::contains) ?: (schedule.playlistId?.let(playlistIds::contains) ?: false) } && manifest.emergency?.playlistId?.let(playlistIds::contains) != false) { "Manifest references an unavailable presentation" }
+		require(manifest.schedules.all { schedule -> schedule.layoutId?.let(layoutIds::contains) ?: (schedule.playlistId?.let(playlistIds::contains) ?: false) } && manifest.effectiveTakeover?.playlistId?.let(playlistIds::contains) != false) { "Manifest references an unavailable presentation" }
 		manifest.layouts.forEach { layout ->
 			LayoutValidator.validate(layout.document)
 			require(layout.document.placements.all { placement -> when (placement.type) { "widget" -> placement.widgetId?.let(widgets::containsKey) == true; "asset" -> manifest.assets.any { it.assetId == placement.assetId }; "playlistZone" -> placement.playlistId?.let(playlistIds::contains) == true; else -> true } }) { "Layout dependency is unavailable" }

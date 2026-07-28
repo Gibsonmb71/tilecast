@@ -213,8 +213,11 @@ func (s *Service) Revoke(ctx context.Context, id, userID uuid.UUID, reason strin
 	if _, err := tx.Exec(ctx, `DELETE FROM schedule_targets WHERE target_type='screen' AND screen_id=$1`, id); err != nil {
 		return fmt.Errorf("remove archived screen schedule targets: %w", err)
 	}
-	if _, err := tx.Exec(ctx, `DELETE FROM emergency_targets WHERE target_type='screen' AND screen_id=$1`, id); err != nil {
-		return fmt.Errorf("remove archived screen emergency targets: %w", err)
+	if _, err := tx.Exec(ctx, `DELETE FROM takeover_targets WHERE target_type='screen' AND screen_id=$1`, id); err != nil {
+		return fmt.Errorf("remove archived screen takeover targets: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM alert_rule_targets WHERE target_type='screen' AND screen_id=$1`, id); err != nil {
+		return fmt.Errorf("remove archived screen NWS alert targets: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM update_deployment_targets WHERE target_type='screen' AND screen_id=$1`, id); err != nil {
 		return fmt.Errorf("remove archived screen update targets: %w", err)
@@ -225,13 +228,13 @@ func (s *Service) Revoke(ctx context.Context, id, userID uuid.UUID, reason strin
 	if _, err := tx.Exec(ctx, `UPDATE player_commands SET state='cancelled',completed_at=COALESCE(completed_at,now()),safe_result_code=COALESCE(safe_result_code,'screen_archived'),safe_result_message=COALESCE(safe_result_message,'The screen pairing was revoked.'),updated_at=now() WHERE screen_id=$1 AND state IN ('pending','delivered','acknowledged','running')`, id); err != nil {
 		return fmt.Errorf("cancel archived screen commands: %w", err)
 	}
-	if _, err := tx.Exec(ctx, `UPDATE emergency_screen_states SET state='cancelled',last_updated_at=now() WHERE screen_id=$1 AND state IN ('pending','notified','preparing','ready','active','offline')`, id); err != nil {
-		return fmt.Errorf("cancel archived screen emergency state: %w", err)
+	if _, err := tx.Exec(ctx, `UPDATE takeover_screen_states SET state='cancelled',last_updated_at=now() WHERE screen_id=$1 AND state IN ('pending','notified','preparing','ready','active','offline')`, id); err != nil {
+		return fmt.Errorf("cancel archived screen takeover state: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `UPDATE screen_update_states SET state='cancelled',completed_at=COALESCE(completed_at,now()),updated_at=now() WHERE screen_id=$1 AND state NOT IN ('succeeded','failed','cancelled','incompatible','already_current')`, id); err != nil {
 		return fmt.Errorf("cancel archived screen update state: %w", err)
 	}
-	if _, err := tx.Exec(ctx, `UPDATE screen_player_status SET assigned_playlist_id=NULL,current_schedule_id=NULL,current_playlist_id=NULL,selection_source=NULL,next_transition_at=NULL,active_emergency_id=NULL,emergency_state=NULL,emergency_preparation_progress=NULL,current_update_deployment_id=NULL,update_state=NULL,update_downloaded_bytes=NULL,update_expected_bytes=NULL,update_error=NULL WHERE screen_id=$1`, id); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE screen_player_status SET assigned_playlist_id=NULL,current_schedule_id=NULL,current_playlist_id=NULL,selection_source=NULL,next_transition_at=NULL,active_takeover_id=NULL,takeover_state=NULL,takeover_preparation_progress=NULL,current_update_deployment_id=NULL,update_state=NULL,update_downloaded_bytes=NULL,update_expected_bytes=NULL,update_error=NULL WHERE screen_id=$1`, id); err != nil {
 		return fmt.Errorf("clear archived screen live status: %w", err)
 	}
 	if err := insertAudit(ctx, tx, userID, "screen.credential.revoked", id); err != nil {

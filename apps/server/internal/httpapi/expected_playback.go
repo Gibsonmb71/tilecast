@@ -16,16 +16,16 @@ import (
 // never existed then.
 
 const (
-	matchConfirmed         = "confirmed"
-	matchStartedLate       = "started_late"
-	matchEndedEarly        = "ended_early"
-	matchPartial           = "partial"
-	matchFailed            = "failed"
-	matchNeverStarted      = "never_started"
-	matchScreenOffline     = "screen_offline"
-	matchEmergencyOverride = "overridden_by_emergency"
-	matchCancelled         = "cancelled"
-	matchNotMeasurable     = "not_measurable"
+	matchConfirmed        = "confirmed"
+	matchStartedLate      = "started_late"
+	matchEndedEarly       = "ended_early"
+	matchPartial          = "partial"
+	matchFailed           = "failed"
+	matchNeverStarted     = "never_started"
+	matchScreenOffline    = "screen_offline"
+	matchTakeoverOverride = "overridden_by_takeover"
+	matchCancelled        = "cancelled"
+	matchNotMeasurable    = "not_measurable"
 )
 
 // Slack on each edge. A player that starts two seconds after the window opens
@@ -58,7 +58,7 @@ type expectedWindowInput struct {
 	ScheduleID       string
 	TriggerSource    string
 	Timezone         string
-	EmergencyID      *uuid.UUID
+	TakeoverID       *uuid.UUID
 	ContentType      string
 	ContentID        string
 }
@@ -80,12 +80,12 @@ func openExpectedWindow(ctx context.Context, tx pgx.Tx, at time.Time, reason str
 	_, err := tx.Exec(ctx, `
 		INSERT INTO expected_playback_windows(
 			id,screen_id,presentation_type,presentation_id,presentation_revision,manifest_version,
-			schedule_id,trigger_source,expected_start,timezone,overridden_by_emergency_id,
+			schedule_id,trigger_source,expected_start,timezone,overridden_by_takeover_id,
 			expected_content_type,expected_content_id)
 		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
 		uuid.New(), input.ScreenID, input.PresentationType, input.PresentationID, input.PresentationRev,
 		input.ManifestVersion, input.ScheduleID, input.TriggerSource, at, input.Timezone,
-		input.EmergencyID, input.ContentType, input.ContentID)
+		input.TakeoverID, input.ContentType, input.ContentID)
 	return err
 }
 
@@ -113,7 +113,7 @@ func (s *server) evaluateExpectedWindows(ctx context.Context, screenID *uuid.UUI
 	}
 	rows, err := s.db.Query(ctx, `
 		SELECT w.id,w.screen_id,w.expected_start,w.expected_end,w.superseded_reason,
-		       w.overridden_by_emergency_id,w.trigger_source
+		       w.overridden_by_takeover_id,w.trigger_source
 		FROM expected_playback_windows w
 		WHERE w.expected_end IS NOT NULL AND w.expected_end <= $1
 		  AND (w.match_evaluated_at IS NULL OR w.match_evaluated_at < w.expected_end)`+clause+`
@@ -122,18 +122,18 @@ func (s *server) evaluateExpectedWindows(ctx context.Context, screenID *uuid.UUI
 		return err
 	}
 	type pending struct {
-		ID          uuid.UUID
-		ScreenID    uuid.UUID
-		Start, End  time.Time
-		Reason      *string
-		EmergencyID *uuid.UUID
-		Trigger     string
+		ID         uuid.UUID
+		ScreenID   uuid.UUID
+		Start, End time.Time
+		Reason     *string
+		TakeoverID *uuid.UUID
+		Trigger    string
 	}
 	windows := []pending{}
 	for rows.Next() {
 		var item pending
 		if err := rows.Scan(&item.ID, &item.ScreenID, &item.Start, &item.End, &item.Reason,
-			&item.EmergencyID, &item.Trigger); err != nil {
+			&item.TakeoverID, &item.Trigger); err != nil {
 			rows.Close()
 			return err
 		}
@@ -147,7 +147,7 @@ func (s *server) evaluateExpectedWindows(ctx context.Context, screenID *uuid.UUI
 
 	for _, window := range windows {
 		status, confirmed, actualStart, actualEnd, sessionID, err := s.matchExpectedWindow(ctx, window.ScreenID,
-			window.Start, window.End, window.Reason, window.EmergencyID)
+			window.Start, window.End, window.Reason, window.TakeoverID)
 		if err != nil {
 			return err
 		}
@@ -166,12 +166,12 @@ func (s *server) evaluateExpectedWindows(ctx context.Context, screenID *uuid.UUI
 // matchExpectedWindow decides what actually happened during one window.
 func (s *server) matchExpectedWindow(
 	ctx context.Context, screenID uuid.UUID, start, end time.Time,
-	reason *string, emergencyID *uuid.UUID,
+	reason *string, takeoverID *uuid.UUID,
 ) (string, int64, *time.Time, *time.Time, *uuid.UUID, error) {
-	// An emergency replaced normal playback on purpose; that time is not a
+	// A takeover replaced normal playback on purpose; that time is not a
 	// missed normal play and is excluded from the compliance denominator.
-	if emergencyID != nil {
-		return matchEmergencyOverride, 0, nil, nil, nil, nil
+	if takeoverID != nil {
+		return matchTakeoverOverride, 0, nil, nil, nil, nil
 	}
 	if reason != nil && expectedCancellingReasons[*reason] {
 		return matchCancelled, 0, nil, nil, nil, nil
@@ -273,18 +273,18 @@ func (s *server) syncExpectedWindowFromStatus(r *http.Request, tx pgx.Tx, screen
 	}
 
 	var open struct {
-		ID          uuid.UUID
-		Schedule    string
-		Manifest    *int64
-		EmergencyID *uuid.UUID
-		Trigger     string
+		ID         uuid.UUID
+		Schedule   string
+		Manifest   *int64
+		TakeoverID *uuid.UUID
+		Trigger    string
 	}
 	err := tx.QueryRow(ctx, `
-		SELECT id,schedule_id,manifest_version,overridden_by_emergency_id,trigger_source
+		SELECT id,schedule_id,manifest_version,overridden_by_takeover_id,trigger_source
 		FROM expected_playback_windows
 		WHERE screen_id=$1 AND superseded_at IS NULL AND expected_end IS NULL
 		ORDER BY expected_start DESC LIMIT 1`, screenID).Scan(
-		&open.ID, &open.Schedule, &open.Manifest, &open.EmergencyID, &open.Trigger)
+		&open.ID, &open.Schedule, &open.Manifest, &open.TakeoverID, &open.Trigger)
 	hasOpen := err == nil
 
 	// Playback that is not supposed to happen closes the window rather than
@@ -303,7 +303,7 @@ func (s *server) syncExpectedWindowFromStatus(r *http.Request, tx pgx.Tx, screen
 	changed := !hasOpen ||
 		open.Schedule != scheduleID ||
 		!sameInt64(open.Manifest, status.ManifestVersion) ||
-		!sameUUID(open.EmergencyID, status.EmergencyID) ||
+		!sameUUID(open.TakeoverID, status.TakeoverID) ||
 		open.Trigger != trigger
 	if !changed {
 		return nil
@@ -315,7 +315,7 @@ func (s *server) syncExpectedWindowFromStatus(r *http.Request, tx pgx.Tx, screen
 		ManifestVersion:  status.ManifestVersion,
 		ScheduleID:       scheduleID,
 		TriggerSource:    trigger,
-		EmergencyID:      status.EmergencyID,
+		TakeoverID:       status.TakeoverID,
 	})
 }
 
@@ -334,8 +334,8 @@ func suppressionReason(status heartbeatActivityState) string {
 
 func expectationChangeReason(previousSchedule, nextSchedule string, status heartbeatActivityState) string {
 	switch {
-	case status.EmergencyID != nil:
-		return "emergency_started"
+	case status.TakeoverID != nil:
+		return "takeover_started"
 	case previousSchedule != "" && nextSchedule == "":
 		return "schedule_ended"
 	case nextSchedule != "" && previousSchedule != nextSchedule:

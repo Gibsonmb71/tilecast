@@ -36,7 +36,7 @@ data class PlayerActivityEvent(
     val failureMessage: String = "",
     val trigger: String = "",
     val scheduleId: String = "",
-    val emergencyId: String = "",
+    val takeoverId: String = "",
     val sourceId: String = "",
     val selectedRecordId: String = "",
     val selectionDate: String = "",

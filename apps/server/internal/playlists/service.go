@@ -1185,7 +1185,7 @@ func (s *Service) Assignment(ctx context.Context, screenID uuid.UUID) (Assignmen
 	if err != nil {
 		return Assignment{}, err
 	}
-	_ = s.db.QueryRow(ctx, `SELECT active_emergency_id,emergency_state,emergency_preparation_progress,playback_disabled,last_command_id,last_command_state,last_command_result,last_command_completed_at FROM screen_player_status WHERE screen_id=$1`, screenID).Scan(&a.ActiveEmergencyID, &a.EmergencyState, &a.EmergencyPreparationProgress, &a.PlaybackDisabled, &a.LastCommandID, &a.LastCommandState, &a.LastCommandResult, &a.LastCommandCompletedAt)
+	_ = s.db.QueryRow(ctx, `SELECT active_takeover_id,takeover_state,takeover_preparation_progress,playback_disabled,last_command_id,last_command_state,last_command_result,last_command_completed_at FROM screen_player_status WHERE screen_id=$1`, screenID).Scan(&a.ActiveTakeoverID, &a.TakeoverState, &a.TakeoverPreparationProgress, &a.PlaybackDisabled, &a.LastCommandID, &a.LastCommandState, &a.LastCommandResult, &a.LastCommandCompletedAt)
 	_ = s.db.QueryRow(ctx, `SELECT active_config_revision,configuration_error FROM screen_player_status WHERE screen_id=$1`, screenID).Scan(&a.ActiveConfigRevision, &a.ConfigurationError)
 	a.Groups = []AssignmentGroup{}
 	groupRows, e := s.db.Query(ctx, `SELECT g.id,g.name FROM screen_group_memberships m JOIN screen_groups g ON g.id=m.screen_group_id WHERE m.screen_id=$1 AND g.deleted_at IS NULL ORDER BY lower(g.name),g.id`, screenID)
@@ -1237,16 +1237,16 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 		return Manifest{}, "", err
 	}
 	// Expiration is persisted during reconciliation so an unchanged ETag can never
-	// hide the removal of an emergency from a player.
+	// hide the removal of a takeover from a player.
 	var expired bool
 	_ = s.db.QueryRow(ctx, `WITH changed AS (
-		UPDATE emergency_takeovers e SET status='expired',updated_at=now()
-		WHERE e.status='active' AND e.expires_at<=now() AND EXISTS(SELECT 1 FROM emergency_screen_states es WHERE es.emergency_id=e.id AND es.screen_id=$1)
+		UPDATE takeovers e SET status='expired',updated_at=now()
+		WHERE e.status='active' AND e.expires_at<=now() AND EXISTS(SELECT 1 FROM takeover_screen_states es WHERE es.takeover_id=e.id AND es.screen_id=$1)
 		RETURNING e.id)
-		UPDATE emergency_screen_states es SET state='expired',restored_at=now(),last_updated_at=now()
-		WHERE es.screen_id=$1 AND es.emergency_id IN(SELECT id FROM changed) RETURNING true`, screenID).Scan(&expired)
+		UPDATE takeover_screen_states es SET state='expired',restored_at=now(),last_updated_at=now()
+		WHERE es.screen_id=$1 AND es.takeover_id IN(SELECT id FROM changed) RETURNING true`, screenID).Scan(&expired)
 	if expired {
-		_, _ = s.db.Exec(ctx, `UPDATE screen_manifest_state SET manifest_version=manifest_version+1,changed_at=now(),change_reason='emergency.expired' WHERE screen_id=$1`, screenID)
+		_, _ = s.db.Exec(ctx, `UPDATE screen_manifest_state SET manifest_version=manifest_version+1,changed_at=now(),change_reason='takeover.expired' WHERE screen_id=$1`, screenID)
 	}
 	assignment, err := s.Assignment(ctx, screenID)
 	if err != nil {
@@ -1276,12 +1276,13 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 	if assignment.LayoutID != nil {
 		layoutIDs = append(layoutIDs, *assignment.LayoutID)
 	}
-	var emergency ManifestEmergency
-	if emergencyErr := s.db.QueryRow(ctx, `SELECT e.id,e.playlist_id,e.activated_at,e.expires_at FROM emergency_takeovers e JOIN emergency_screen_states es ON es.emergency_id=e.id WHERE es.screen_id=$1 AND e.status='active' AND e.expires_at>now() AND es.state NOT IN ('restored','cancelled','expired') ORDER BY e.activated_at DESC,e.id DESC LIMIT 1`, screenID).Scan(&emergency.ID, &emergency.PlaylistID, &emergency.ActivatedAt, &emergency.ExpiresAt); emergencyErr == nil {
-		manifest.Emergency = &emergency
-		playlistIDs = append([]uuid.UUID{emergency.PlaylistID}, playlistIDs...)
-	} else if !errors.Is(emergencyErr, pgx.ErrNoRows) {
-		return Manifest{}, "", emergencyErr
+	var takeover ManifestTakeover
+	if takeoverErr := s.db.QueryRow(ctx, `SELECT e.id,e.playlist_id,e.activated_at,e.expires_at FROM takeovers e JOIN takeover_screen_states es ON es.takeover_id=e.id WHERE es.screen_id=$1 AND e.status='active' AND e.expires_at>now() AND es.state NOT IN ('restored','cancelled','expired') ORDER BY e.activated_at DESC,e.id DESC LIMIT 1`, screenID).Scan(&takeover.ID, &takeover.PlaylistID, &takeover.ActivatedAt, &takeover.ExpiresAt); takeoverErr == nil {
+		manifest.Takeover = &takeover
+		manifest.LegacyTakeover = &takeover
+		playlistIDs = append([]uuid.UUID{takeover.PlaylistID}, playlistIDs...)
+	} else if !errors.Is(takeoverErr, pgx.ErrNoRows) {
+		return Manifest{}, "", takeoverErr
 	}
 	if s.scheduling != nil {
 		records, loadErr := s.scheduling.Relevant(ctx, screenID)
@@ -2040,7 +2041,7 @@ func (s *Service) ReportStatus(ctx context.Context, screenID uuid.UUID, status P
 	if !widgetProviders[status.WidgetProvider] {
 		return errors.New("player widget status is invalid")
 	}
-	if status.SelectionSource != "" && status.SelectionSource != "emergency" && status.SelectionSource != "schedule" && status.SelectionSource != "direct_fallback" && status.SelectionSource != "none" {
+	if status.SelectionSource != "" && status.SelectionSource != "takeover" && status.SelectionSource != "schedule" && status.SelectionSource != "direct_fallback" && status.SelectionSource != "none" {
 		return errors.New("player status is invalid")
 	}
 	websiteStates := map[string]bool{"": true, "idle": true, "loading": true, "loaded": true, "refreshing": true, "failed": true, "timed_out": true, "blocked": true, "showing_fallback": true}
@@ -2059,9 +2060,9 @@ func (s *Service) ReportStatus(ctx context.Context, screenID uuid.UUID, status P
 	if status.DownloadQueueCount != nil && *status.DownloadQueueCount < 0 {
 		return errors.New("player status is invalid")
 	}
-	emergencyStates := map[string]bool{"": true, "pending": true, "notified": true, "preparing": true, "ready": true, "active": true, "failed": true, "offline": true, "restored": true, "expired": true, "cancelled": true}
-	if !emergencyStates[status.EmergencyState] || status.EmergencyPreparationProgress != nil && (*status.EmergencyPreparationProgress < 0 || *status.EmergencyPreparationProgress > 100) {
-		return errors.New("player emergency status is invalid")
+	takeoverStates := map[string]bool{"": true, "pending": true, "notified": true, "preparing": true, "ready": true, "active": true, "failed": true, "offline": true, "restored": true, "expired": true, "cancelled": true}
+	if !takeoverStates[status.TakeoverState] || status.TakeoverPreparationProgress != nil && (*status.TakeoverPreparationProgress < 0 || *status.TakeoverPreparationProgress > 100) {
+		return errors.New("player takeover status is invalid")
 	}
 	for _, value := range []*int{status.WebsiteBlockedNavigationCount, status.WebsiteRendererRecoveryCount} {
 		if value != nil && (*value < 0 || *value > 1000000) {
@@ -2079,10 +2080,10 @@ func (s *Service) ReportStatus(ctx context.Context, screenID uuid.UUID, status P
 		_, err = s.db.Exec(ctx, `UPDATE screen_player_status SET current_widget_id=$2,widget_provider=NULLIF($3,''),widget_state=NULLIF($4,''),widget_error=NULLIF($5,'') WHERE screen_id=$1`, screenID, status.CurrentWidgetID, status.WidgetProvider, status.WidgetState, status.WidgetError)
 	}
 	if err == nil {
-		_, err = s.db.Exec(ctx, `UPDATE screen_player_status SET active_emergency_id=$2,emergency_state=NULLIF($3,''),emergency_preparation_progress=$4,playback_disabled=COALESCE($5,playback_disabled),last_command_id=COALESCE($6,last_command_id),last_command_state=COALESCE(NULLIF($7,''),last_command_state),last_command_result=COALESCE(NULLIF($8,''),last_command_result),last_command_completed_at=COALESCE($9,last_command_completed_at) WHERE screen_id=$1`, screenID, status.ActiveEmergencyID, status.EmergencyState, status.EmergencyPreparationProgress, status.PlaybackDisabled, status.LastCommandID, status.LastCommandState, status.LastCommandResult, status.LastCommandCompletedAt)
+		_, err = s.db.Exec(ctx, `UPDATE screen_player_status SET active_takeover_id=$2,takeover_state=NULLIF($3,''),takeover_preparation_progress=$4,playback_disabled=COALESCE($5,playback_disabled),last_command_id=COALESCE($6,last_command_id),last_command_state=COALESCE(NULLIF($7,''),last_command_state),last_command_result=COALESCE(NULLIF($8,''),last_command_result),last_command_completed_at=COALESCE($9,last_command_completed_at) WHERE screen_id=$1`, screenID, status.ActiveTakeoverID, status.TakeoverState, status.TakeoverPreparationProgress, status.PlaybackDisabled, status.LastCommandID, status.LastCommandState, status.LastCommandResult, status.LastCommandCompletedAt)
 	}
-	if err == nil && status.ActiveEmergencyID != nil && status.EmergencyState != "" {
-		_, _ = s.db.Exec(ctx, `UPDATE emergency_screen_states SET state=$3,last_updated_at=now(),prepared_at=CASE WHEN $3 IN ('ready','active') THEN COALESCE(prepared_at,now()) ELSE prepared_at END,activated_at=CASE WHEN $3='active' THEN COALESCE(activated_at,now()) ELSE activated_at END WHERE emergency_id=$1 AND screen_id=$2`, status.ActiveEmergencyID, screenID, status.EmergencyState)
+	if err == nil && status.ActiveTakeoverID != nil && status.TakeoverState != "" {
+		_, _ = s.db.Exec(ctx, `UPDATE takeover_screen_states SET state=$3,last_updated_at=now(),prepared_at=CASE WHEN $3 IN ('ready','active') THEN COALESCE(prepared_at,now()) ELSE prepared_at END,activated_at=CASE WHEN $3='active' THEN COALESCE(activated_at,now()) ELSE activated_at END WHERE takeover_id=$1 AND screen_id=$2`, status.ActiveTakeoverID, screenID, status.TakeoverState)
 	}
 	if err == nil {
 		_, err = s.db.Exec(ctx, `UPDATE screen_player_status SET active_config_revision=$2,configuration_error=NULLIF($3,'') WHERE screen_id=$1`, screenID, status.ActiveConfigRevision, status.ConfigurationError)

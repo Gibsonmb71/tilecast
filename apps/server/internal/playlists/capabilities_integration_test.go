@@ -155,17 +155,17 @@ func TestSourceOnlyV13ContentRejectedOnLegacyScreen(t *testing.T) {
 	}
 }
 
-// TestScheduleAndEmergencyTargetingIncompatibleScreen proves the shared presentation-target
-// check (used by schedules and emergency presentations) rejects v13-only content on a legacy
+// TestScheduleAndTakeoverTargetingIncompatibleScreen proves the shared presentation-target
+// check (used by schedules and takeover presentations) rejects v13-only content on a legacy
 // screen, both when targeting the screen directly and through a screen group.
-func TestScheduleAndEmergencyTargetingIncompatibleScreen(t *testing.T) {
+func TestScheduleAndTakeoverTargetingIncompatibleScreen(t *testing.T) {
 	f := setupCapabilityFixture(t)
 	sourceID := f.createSchoolStatusSource(t, "District Status")
 	layoutID := f.createLayoutBoundToSource(t, sourceID)
 
-	// Emergency-style: direct screen target.
+	// Takeover-style: direct screen target.
 	if err := f.service.ValidatePresentationTargets(f.ctx, nil, &layoutID, []uuid.UUID{f.screen}, nil); !errors.Is(err, ErrConflict) {
-		t.Fatalf("emergency targeting an incompatible screen was not rejected: %v", err)
+		t.Fatalf("takeover targeting an incompatible screen was not rejected: %v", err)
 	}
 
 	// Schedule/group-style: the screen is reachable through a screen group.

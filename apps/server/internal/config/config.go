@@ -54,8 +54,8 @@ type UpdatesConfig struct {
 }
 
 type OperationsConfig struct {
-	MaxEmergencyDurationHours   int
-	MaxEmergencyTargets         int
+	MaxTakeoverDurationHours    int
+	MaxTakeoverTargets          int
 	MaxPendingCommands          int
 	DefaultCommandExpiryMinutes int
 	MaxIdentifySeconds          int
@@ -188,13 +188,15 @@ func Load() (Config, error) {
 		return Config{}, errors.New("TILECAST_SOURCE_MIN_REFRESH_SECONDS must not exceed TILECAST_SOURCE_MAX_REFRESH_SECONDS")
 	}
 	cfg.Sources.AirQualityBaseURL = get("TILECAST_AIR_QUALITY_BASE_URL", "https://air-quality-api.open-meteo.com")
+	takeoverDurationFallback := get("TILECAST_MAX_EMERGENCY_DURATION_HOURS", "24")
+	takeoverTargetsFallback := get("TILECAST_MAX_EMERGENCY_TARGETS", "250")
 	operationValues := []struct {
 		name, fallback string
 		max            int
 		dest           *int
 	}{
-		{"TILECAST_MAX_EMERGENCY_DURATION_HOURS", "24", 168, &cfg.Operations.MaxEmergencyDurationHours},
-		{"TILECAST_MAX_EMERGENCY_TARGETS", "250", 1000, &cfg.Operations.MaxEmergencyTargets},
+		{"TILECAST_MAX_TAKEOVER_DURATION_HOURS", takeoverDurationFallback, 168, &cfg.Operations.MaxTakeoverDurationHours},
+		{"TILECAST_MAX_TAKEOVER_TARGETS", takeoverTargetsFallback, 1000, &cfg.Operations.MaxTakeoverTargets},
 		{"TILECAST_MAX_PENDING_COMMANDS_PER_SCREEN", "50", 500, &cfg.Operations.MaxPendingCommands},
 		{"TILECAST_DEFAULT_COMMAND_EXPIRY_MINUTES", "10", 1440, &cfg.Operations.DefaultCommandExpiryMinutes},
 		{"TILECAST_IDENTIFY_SCREEN_MAX_SECONDS", "120", 600, &cfg.Operations.MaxIdentifySeconds},

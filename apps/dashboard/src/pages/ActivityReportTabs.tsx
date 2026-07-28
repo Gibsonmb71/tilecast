@@ -492,7 +492,7 @@ function ProofDetailsDrawer({
               }
             />
             <DetailRow label="Schedule ID" value={record.scheduleId || "—"} />
-            <DetailRow label="Emergency ID" value={record.emergencyId || "—"} />
+            <DetailRow label="Takeover ID" value={record.takeoverId || "—"} />
           </dl>
         </section>
 

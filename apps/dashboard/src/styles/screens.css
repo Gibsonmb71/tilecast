@@ -1,6 +1,6 @@
 /* Screens page.
 
-   This file is the single home for the fleet workspace: the emergency takeover
+   This file is the single home for the fleet workspace: the takeover
    surfaces, the pairing queue, the filter toolbar, and both result views. Rules for
    these classes previously lived in two stylesheets that disagreed with each other
    about column counts and breakpoints, which is what knocked rows out of alignment
@@ -26,16 +26,16 @@
   margin-bottom: 0;
 }
 
-/* Emergency takeover ---------------------------------------------------- */
+/* Takeover ---------------------------------------------------- */
 
 /* Quiet until it matters: the trigger is a .button--danger-quiet header utility,
    and the loud treatment is reserved for a takeover that is actually running,
    where it is a plain danger .notice. */
-.emergency-trigger {
+.takeover-trigger {
   gap: var(--tc-space-2);
 }
 
-.emergency-trigger__count {
+.takeover-trigger__count {
   padding: 1px 6px;
   border-radius: var(--tc-radius-chip);
   color: var(--tc-status-danger);
@@ -45,12 +45,12 @@
   font-weight: 600;
 }
 
-.emergency-banners {
+.takeover-banners {
   display: grid;
   gap: var(--tc-space-3);
 }
 
-.emergency-banner__counts {
+.takeover-banner__counts {
   display: flex;
   flex-wrap: wrap;
   gap: var(--tc-space-1) var(--tc-space-4);
@@ -61,30 +61,30 @@
   list-style: none;
 }
 
-.emergency-banners > .notice .button {
+.takeover-banners > .notice .button {
   white-space: nowrap;
 }
 
-.emergency-dialog {
+.takeover-dialog {
   width: min(680px, 100%);
 }
 
-.emergency-dialog__lede {
+.takeover-dialog__lede {
   margin: 0 0 var(--tc-space-4);
   color: var(--tc-text-secondary);
 }
 
-.emergency-form {
+.takeover-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--tc-space-4);
 }
 
-.emergency-form > .field:first-child {
+.takeover-form > .field:first-child {
   grid-column: 1 / -1;
 }
 
-.emergency-form__targets {
+.takeover-form__targets {
   display: grid;
   gap: var(--tc-space-2);
   grid-column: 1 / -1;
@@ -94,31 +94,31 @@
   border-radius: var(--tc-radius-panel);
 }
 
-.emergency-form__targets > legend {
+.takeover-form__targets > legend {
   padding: 0 var(--tc-space-1);
   color: var(--tc-text-secondary);
   font: var(--tc-text-label);
 }
 
-.emergency-form__targets > div {
+.takeover-form__targets > div {
   display: grid;
   gap: var(--tc-space-1);
   max-height: 11rem;
   overflow: auto;
 }
 
-.emergency-form__targets .checkbox-control span {
+.takeover-form__targets .checkbox-control span {
   display: flex;
   gap: var(--tc-space-2);
   align-items: baseline;
 }
 
-.emergency-form__targets small {
+.takeover-form__targets small {
   color: var(--tc-text-secondary);
   font: var(--tc-text-supporting);
 }
 
-.emergency-dialog__footer {
+.takeover-dialog__footer {
   display: grid;
   gap: var(--tc-space-3);
   margin-top: var(--tc-space-5);
@@ -126,13 +126,13 @@
   border-top: 1px solid var(--tc-border-default);
 }
 
-.emergency-dialog__footer p {
+.takeover-dialog__footer p {
   margin: 0;
   color: var(--tc-text-secondary);
   font: var(--tc-text-supporting);
 }
 
-.emergency-dialog__actions {
+.takeover-dialog__actions {
   display: flex;
   justify-content: flex-end;
   gap: var(--tc-space-2);
@@ -989,11 +989,11 @@
     justify-content: flex-start;
   }
 
-  .emergency-form {
+  .takeover-form {
     grid-template-columns: 1fr;
   }
 
-  .emergency-banners > .notice {
+  .takeover-banners > .notice {
     flex-wrap: wrap;
   }
 

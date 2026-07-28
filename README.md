@@ -116,7 +116,7 @@ The APK is written to `apps/player-android/app/build/outputs/apk/debug/app-debug
 
 ## Linux player
 
-The Linux player packages as an AppImage for x86_64 signage computers. It supports the same core pairing, playback, scheduling, layouts, widgets, offline cache, remote commands, live previews, and emergency takeover model as the Android player.
+The Linux player packages as an AppImage for x86_64 signage computers. It supports the same core pairing, playback, scheduling, layouts, widgets, offline cache, remote commands, live previews, and Takeover model as the Android player.
 
 Build and run it from source with:
 

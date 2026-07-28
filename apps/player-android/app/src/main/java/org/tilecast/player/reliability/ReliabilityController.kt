@@ -78,9 +78,9 @@ class ReliabilityController(private val context: Context) {
         activity: Activity,
         config: PlayerConfig,
         activeHours: Boolean,
-        emergency: Boolean = false,
+        takeover: Boolean = false,
     ): ReliabilityStatus {
-        val active = activeHours || emergency
+        val active = activeHours || takeover
         val fireTv = fireTvDevice()
         val keep = shouldKeepScreenAwake(
             active = active,

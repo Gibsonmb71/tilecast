@@ -23,7 +23,7 @@ export type Overview = {
     contentExposureMs: number;
     playbackFailures: number;
     interruptedPlays: number;
-    emergencyActivations: number;
+    takeoverActivations: number;
     failedPlayerUpdates: number;
     recentAdministrativeChanges: number;
   };
@@ -72,7 +72,7 @@ export type ProofRecord = {
   result: ActivityResult;
   trigger?: string;
   scheduleId?: string;
-  emergencyId?: string;
+  takeoverId?: string;
   manifestVersion?: number;
   failureCode?: string;
   sourceId?: string;

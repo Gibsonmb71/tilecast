@@ -12,8 +12,8 @@ data class ActiveHoursRule(val enabled:Boolean,val timezone:String,val days:Set<
 data class ActiveHoursResult(val active:Boolean,val nextTransition:Instant?,val overnight:Boolean)
 
 object ActiveHoursEngine {
-    fun evaluate(now:Instant,rule:ActiveHoursRule,emergencyActive:Boolean=false):ActiveHoursResult {
-        if(emergencyActive)return ActiveHoursResult(true,null,rule.end<=rule.start)
+    fun evaluate(now:Instant,rule:ActiveHoursRule,takeoverActive:Boolean=false):ActiveHoursResult {
+        if(takeoverActive)return ActiveHoursResult(true,null,rule.end<=rule.start)
         if(!rule.enabled)return ActiveHoursResult(true,null,rule.end<=rule.start)
         val zone=ZoneId.of(rule.timezone)
         val local=now.atZone(zone)

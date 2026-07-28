@@ -160,7 +160,7 @@ class PlayerActivityQueue private constructor(
         failureMessage: String = "",
         trigger: String = "",
         scheduleId: String = "",
-        emergencyId: String = "",
+        takeoverId: String = "",
         sourceId: String = "",
         selectedRecordId: String = "",
         selectionDate: String = "",
@@ -198,7 +198,7 @@ class PlayerActivityQueue private constructor(
             failureMessage = failureMessage.take(240),
             trigger = trigger.take(96),
             scheduleId = scheduleId,
-            emergencyId = emergencyId,
+            takeoverId = takeoverId,
             sourceId = sourceId,
             selectedRecordId = selectedRecordId,
             selectionDate = selectionDate,
@@ -260,7 +260,7 @@ class PlaybackActivityReporter(
     private val presentationRevision: String,
     private val trigger: String,
     private val scheduleId: String,
-    private val emergencyId: String,
+    private val takeoverId: String,
 ) {
     private val rootSession = UUID.randomUUID().toString()
     private val rootStartedElapsed = SystemClock.elapsedRealtime()
@@ -278,7 +278,7 @@ class PlaybackActivityReporter(
             result = "playing",
             trigger = trigger,
             scheduleId = scheduleId,
-            emergencyId = emergencyId,
+            takeoverId = takeoverId,
             metadata = buildJsonObject { put("presentationName", JsonPrimitive(presentationId)) },
             priority = 8,
         )
@@ -287,7 +287,7 @@ class PlaybackActivityReporter(
     /**
      * Ends the root session. The reason defaults to `unknown` because the
      * teardown itself is not evidence of why playback stopped; callers that
-     * know — a schedule change, an emergency — pass the real reason.
+     * know — a schedule change, a takeover — pass the real reason.
      */
     fun presentationStopped(
         result: String = "partial",
@@ -307,7 +307,7 @@ class PlaybackActivityReporter(
             durationMs = SystemClock.elapsedRealtime() - rootStartedElapsed,
             trigger = trigger,
             scheduleId = scheduleId,
-            emergencyId = emergencyId,
+            takeoverId = takeoverId,
             priority = 8,
         )
     }
@@ -344,7 +344,7 @@ class PlaybackActivityReporter(
             expectedDurationMs = expectedDurationMs,
             trigger = trigger,
             scheduleId = scheduleId,
-            emergencyId = emergencyId,
+            takeoverId = takeoverId,
             sourceId = sourceId,
             selectedRecordId = selectedRecordId,
             selectionDate = if (selectedRecordId.isNotEmpty()) LocalDate.now().toString() else "",
@@ -395,7 +395,7 @@ class PlaybackActivityReporter(
                 failureMessage = failureMessage,
                 trigger = trigger,
                 scheduleId = scheduleId,
-                emergencyId = emergencyId,
+                takeoverId = takeoverId,
                 priority = if (result == "failed") 9 else 6,
             )
         }

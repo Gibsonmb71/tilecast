@@ -16,7 +16,7 @@ type complianceReport struct {
 	} `json:"range"`
 
 	// Expected screen-time that could be judged. Cancelled and
-	// emergency-overridden time is excluded, because neither is playback that
+	// takeover-overridden time is excluded, because neither is playback that
 	// went missing.
 	MeasurableExpectedMS int64 `json:"measurableExpectedMs"`
 	ConfirmedMS          int64 `json:"confirmedMs"`
@@ -27,9 +27,9 @@ type complianceReport struct {
 
 	// Time deliberately excluded, reported so the exclusion is visible rather
 	// than silently improving the percentage.
-	EmergencyOverriddenMS int64 `json:"emergencyOverriddenMs"`
-	CancelledMS           int64 `json:"cancelledMs"`
-	NotMeasurableMS       int64 `json:"notMeasurableMs"`
+	TakeoverOverriddenMS int64 `json:"takeoverOverriddenMs"`
+	CancelledMS          int64 `json:"cancelledMs"`
+	NotMeasurableMS      int64 `json:"notMeasurableMs"`
 
 	Windows        int64 `json:"windows"`
 	LateStarts     int64 `json:"lateStarts"`
@@ -67,10 +67,10 @@ const expectedClippedMS = `
 		LEAST(COALESCE(w.expected_end, $2::timestamptz), $2::timestamptz)
 		- GREATEST(w.expected_start, $1::timestamptz)))*1000)::bigint`
 
-// Cancelled, emergency-overridden and unmeasurable windows are excluded from
+// Cancelled, takeover-overridden and unmeasurable windows are excluded from
 // the denominator; counting them would report an operator's own decision as a
 // compliance failure.
-const measurableFilter = `w.match_status NOT IN ('cancelled','overridden_by_emergency','not_measurable')`
+const measurableFilter = `w.match_status NOT IN ('cancelled','overridden_by_takeover','not_measurable')`
 
 var complianceDimensions = map[string][2]string{
 	"screen":       {"w.screen_id::text", "COALESCE(s.name,'Unknown screen')"},
@@ -132,7 +132,7 @@ func (s *server) playbackCompliance(w http.ResponseWriter, r *http.Request) {
 		SELECT
 			COALESCE(SUM(`+expectedClippedMS+`) FILTER (WHERE `+measurableFilter+`),0),
 			COALESCE(SUM(w.confirmed_duration_ms) FILTER (WHERE `+measurableFilter+`),0),
-			COALESCE(SUM(`+expectedClippedMS+`) FILTER (WHERE w.match_status='overridden_by_emergency'),0),
+			COALESCE(SUM(`+expectedClippedMS+`) FILTER (WHERE w.match_status='overridden_by_takeover'),0),
 			COALESCE(SUM(`+expectedClippedMS+`) FILTER (WHERE w.match_status='cancelled'),0),
 			COALESCE(SUM(`+expectedClippedMS+`) FILTER (WHERE w.match_status='not_measurable'),0),
 			count(*),
@@ -144,7 +144,7 @@ func (s *server) playbackCompliance(w http.ResponseWriter, r *http.Request) {
 			count(*) FILTER (WHERE w.match_status='partial')
 		FROM expected_playback_windows w WHERE `+where, args...).Scan(
 		&report.MeasurableExpectedMS, &report.ConfirmedMS,
-		&report.EmergencyOverriddenMS, &report.CancelledMS, &report.NotMeasurableMS,
+		&report.TakeoverOverriddenMS, &report.CancelledMS, &report.NotMeasurableMS,
 		&report.Windows, &report.LateStarts, &report.EarlyEndings,
 		&report.NeverStarted, &report.OfflineMisses, &report.FailedWindows, &report.PartialWindows,
 	); err != nil {

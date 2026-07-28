@@ -35,7 +35,7 @@ const cards = {
   contentExposureMs: 14_400_000,
   playbackFailures: 5,
   interruptedPlays: 1,
-  emergencyActivations: 0,
+  takeoverActivations: 0,
   failedPlayerUpdates: 0,
   recentAdministrativeChanges: 4,
 };

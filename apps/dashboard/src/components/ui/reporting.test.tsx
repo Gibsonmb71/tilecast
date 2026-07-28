@@ -64,7 +64,7 @@ describe("MetricTile", () => {
   it("reports no movement without a success or danger tone", () => {
     const { container } = render(
       <MetricTile
-        label="Emergency activations"
+        label="Takeover activations"
         value={0}
         delta={{
           change: 0,

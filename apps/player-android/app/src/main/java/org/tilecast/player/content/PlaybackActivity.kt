@@ -41,12 +41,12 @@ internal fun rememberPlaybackActivityReporter(session: PlaybackSession): Playbac
             presentationId = presentationId,
             presentationRevision = presentationRevision,
             trigger = when {
-                manifest.emergency != null -> "emergency"
+                manifest.effectiveTakeover != null -> "takeover"
                 manifest.schedules.isNotEmpty() -> "schedule"
                 else -> "direct_assignment"
             },
             scheduleId = manifest.schedules.firstOrNull()?.id.orEmpty(),
-            emergencyId = manifest.emergency?.id.orEmpty(),
+            takeoverId = manifest.effectiveTakeover?.id.orEmpty(),
         )
     }
     LaunchedEffect(reporter) {

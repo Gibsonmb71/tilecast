@@ -60,7 +60,7 @@ const proofSelectSQL = `
 	       COALESCE(p.presentation_type,''),COALESCE(p.presentation_id,''),COALESCE(p.presentation_revision,''),
 	       COALESCE(NULLIF(p.presentation_name,''),pl.name,l.name,''),
 	       COALESCE(p.content_type,''),COALESCE(p.content_id,''),COALESCE(NULLIF(p.content_name,''),a.name,''),COALESCE(p.playlist_item_id,''),COALESCE(p.layout_placement_id,''),
-	       p.actual_duration_ms,p.expected_duration_ms,p.result,COALESCE(p.trigger_context,''),COALESCE(p.schedule_id,''),COALESCE(p.emergency_id,''),
+	       p.actual_duration_ms,p.expected_duration_ms,p.result,COALESCE(p.trigger_context,''),COALESCE(p.schedule_id,''),COALESCE(p.takeover_id,''),
 	       p.manifest_version,COALESCE(p.failure_code,''),COALESCE(p.source_id,''),COALESCE(p.selected_record_id,''),p.selection_date,
 	       p.source_cached_at,COALESCE(p.source_revision,''),COALESCE(p.snapshot_hash,''),p.session_type,COALESCE(p.terminal_reason,''),p.metadata
 	FROM playback_sessions p
@@ -78,7 +78,7 @@ func scanProof(scan proofScanner, role string) (proofOfPlayRecord, error) {
 	err := scan(&item.ID, &item.StartedAt, &item.EndedAt, &item.ScreenID, &item.ScreenName, &item.GroupID, &item.GroupName,
 		&item.PresentationType, &item.PresentationID, &item.PresentationRevision, &item.PresentationName,
 		&item.ContentType, &item.ContentID, &item.ContentName, &item.PlaylistItemID, &item.LayoutPlacementID,
-		&item.ActualDurationMS, &item.ExpectedDurationMS, &item.Result, &item.Trigger, &item.ScheduleID, &item.EmergencyID,
+		&item.ActualDurationMS, &item.ExpectedDurationMS, &item.Result, &item.Trigger, &item.ScheduleID, &item.TakeoverID,
 		&item.ManifestVersion, &item.FailureCode, &item.SourceID, &item.SelectedRecordID, &item.SelectionDate,
 		&item.SourceCachedAt, &item.SourceRevision, &item.SnapshotHash, &item.SessionType, &item.TerminalReason, &raw)
 	if err != nil {
@@ -114,14 +114,14 @@ func proofClauses(r *http.Request, window activityWindow) ([]string, []any, erro
 		} else if !isActivityTerminalReason(value) {
 			return clauses, args, errors.New("terminalReason is invalid")
 		} else {
-			appendActivityFilter(&clauses, &args, "p.terminal_reason = $%d", value)
+			appendActivityFilter(&clauses, &args, "p.terminal_reason = $%d", canonicalActivityTerminalReason(value))
 		}
 	}
 	appendActivityFilter(&clauses, &args, "p.content_id = $%d", firstQueryValue(r, "media", "widget", "content"))
 	appendActivityFilter(&clauses, &args, "p.presentation_id = $%d AND p.presentation_type='playlist'", queryValue(r, "playlist"))
 	appendActivityFilter(&clauses, &args, "p.presentation_id = $%d AND p.presentation_type='layout'", queryValue(r, "layout"))
 	appendActivityFilter(&clauses, &args, "p.schedule_id = $%d", queryValue(r, "schedule"))
-	appendActivityFilter(&clauses, &args, "p.emergency_id = $%d", queryValue(r, "emergency"))
+	appendActivityFilter(&clauses, &args, "p.takeover_id = $%d", queryValue(r, "takeover"))
 	if search := queryValue(r, "search"); search != "" {
 		args = append(args, "%"+search+"%")
 		p := len(args)
@@ -222,7 +222,7 @@ func (s *server) exportProofOfPlay(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="tilecast-proof-of-play.csv"`)
 	writer := csv.NewWriter(w)
-	_ = writer.Write([]string{"Started at", "Ended at", "Screen", "Group", "Session type", "Presentation", "Presentation type", "Revision", "Content", "Content type", "Playlist item ID", "Layout placement ID", "Actual duration ms", "Expected duration ms", "Result", "Terminal reason", "Trigger", "Schedule ID", "Emergency ID", "Manifest version", "Failure code", "Source ID", "Selected record ID", "Selection date", "Source cached at", "Source revision", "Snapshot hash"})
+	_ = writer.Write([]string{"Started at", "Ended at", "Screen", "Group", "Session type", "Presentation", "Presentation type", "Revision", "Content", "Content type", "Playlist item ID", "Layout placement ID", "Actual duration ms", "Expected duration ms", "Result", "Terminal reason", "Trigger", "Schedule ID", "Takeover ID", "Manifest version", "Failure code", "Source ID", "Selected record ID", "Selection date", "Source cached at", "Source revision", "Snapshot hash"})
 	for rows.Next() {
 		item, err := scanProof(rows.Scan, "owner")
 		if err != nil {
@@ -233,7 +233,7 @@ func (s *server) exportProofOfPlay(w http.ResponseWriter, r *http.Request) {
 			firstNonEmpty(item.PresentationName, item.PresentationID), item.PresentationType, item.PresentationRevision,
 			firstNonEmpty(item.ContentName, item.ContentID), item.ContentType, item.PlaylistItemID, item.LayoutPlacementID,
 			optionalInt64(item.ActualDurationMS), optionalInt64(item.ExpectedDurationMS), item.Result, item.TerminalReason, item.Trigger,
-			item.ScheduleID, item.EmergencyID, optionalInt64(item.ManifestVersion), item.FailureCode, item.SourceID,
+			item.ScheduleID, item.TakeoverID, optionalInt64(item.ManifestVersion), item.FailureCode, item.SourceID,
 			item.SelectedRecordID, optionalDate(item.SelectionDate), optionalTime(item.SourceCachedAt), item.SourceRevision, item.SnapshotHash,
 		})
 	}
