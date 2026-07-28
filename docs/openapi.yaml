@@ -272,6 +272,28 @@ paths:
         "204": { description: Factors cleared }
         "403": { description: Insufficient role }
         "404": { description: User not found }
+  /api/v1/users/{id}/permanent:
+    delete:
+      operationId: permanentlyDeleteUser
+      description: >-
+        Permanently removes an inactive user account. Account-owned preferences,
+        sessions, grants, and security credentials are removed; retained records
+        keep their history with user attribution cleared.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+        - in: header
+          name: X-CSRF-Token
+          required: true
+          schema: { type: string }
+      responses:
+        "204": { description: User permanently deleted }
+        "403": { description: Insufficient role }
+        "404": { description: User not found }
+        "409":
+          { description: User is active, is the current user, or changed state }
   /api/v1/auth/logout:
     post:
       operationId: logout

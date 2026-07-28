@@ -96,6 +96,7 @@ These endpoints require the session cookie, and mutations require `X-CSRF-Token`
 ### Administrative reset
 
 - `POST /api/v1/users/{id}/security/reset` — Owner/Administrator only, with the same role rules as editing that user. Clears the authenticator, every passkey, and all recovery codes, revokes the account's sessions, and writes an `auth.mfa.reset` audit entry.
+- `DELETE /api/v1/users/{id}` deactivates an account and revokes its sessions. `DELETE /api/v1/users/{id}/permanent` permanently removes an already-inactive account, its account-owned preferences and credentials, and clears its attribution from retained records. Both operations use the normal user-management role hierarchy, require CSRF, forbid deleting the current account, and write audit entries.
 
 Passkeys require a secure browser context and a registrable domain. On a plain-HTTP LAN installation the ceremonies are refused with `409 passkeys_unavailable` and the reason is reported through `passkeysUnavailableReason` so Studio can hide the affordance. Authenticator apps and recovery codes work on every installation. See [multi-factor-authentication.md](multi-factor-authentication.md).
 
