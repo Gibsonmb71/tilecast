@@ -3496,6 +3496,9 @@ export function formatPresentationValue(
   value: string,
   binding: NonNullable<PresentationNode["binding"]>,
   now: Date,
+  // Field metadata carries the ISO currency code. Preview records are flat strings, so the
+  // callers below have none to pass; see the currency fallback in the numeric branch.
+  currency?: string,
 ) {
   let result = value;
   if (value && binding.format === "relative-countdown") {
@@ -3532,11 +3535,25 @@ export function formatPresentationValue(
         ["number", "integer", "percent", "currency"].includes(
           binding.format ?? "",
         )
-      )
+      ) {
+        // Matches DeclarativePresentationPlayback.formatValue: percent records hold whole
+        // percentages, and an explicit precision pins both fraction-digit bounds. Currency
+        // styling needs an ISO code; without one the preview keeps plain-number formatting
+        // rather than guessing a currency the Player would not use.
+        const style =
+          binding.format === "percent"
+            ? "percent"
+            : binding.format === "currency" && currency
+              ? "currency"
+              : "decimal";
         result = new Intl.NumberFormat(undefined, {
+          style,
+          currency: style === "currency" ? currency : undefined,
           maximumFractionDigits: precision,
-          minimumFractionDigits: binding.format === "integer" ? 0 : undefined,
-        }).format(numeric);
+          minimumFractionDigits:
+            binding.precision ?? (binding.format === "integer" ? 0 : undefined),
+        }).format(binding.format === "percent" ? numeric / 100 : numeric);
+      }
     } else if (value && binding.format?.startsWith("date")) {
       const parsed = new Date(value);
       if (!Number.isNaN(parsed.getTime()))

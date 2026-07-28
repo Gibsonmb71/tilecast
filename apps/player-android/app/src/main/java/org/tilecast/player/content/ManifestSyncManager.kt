@@ -357,6 +357,10 @@ class ManifestSyncManager(
 					require(binding.fields.size <= 16 && binding.value.length <= 4096 && binding.path.length <= 180)
 					require(binding.selector in setOf("all","current","next","upcoming","current_or_next"))
 					require(binding.startField.length <= 80 && binding.endField.length <= 80)
+					// A temporal selector without its instants silently selects nothing, so an
+					// incomplete selector is rejected before the manifest activates.
+					require(binding.selector=="all"||binding.startField.isNotBlank())
+					require(binding.selector!="current"||binding.endField.isNotBlank())
 				}
 				value.condition?.let { condition ->
 					require(condition.op in setOf("equals","not_equals","empty","not_empty","greater_than","greater_or_equal","less_than","less_or_equal","before","after"))
@@ -366,6 +370,8 @@ class ManifestSyncManager(
 					require(repeat.limit in 1..200&&repeat.offset in 0..2000&&repeat.dataset.substringBefore(':') in dataSources)
 					require(repeat.selector in setOf("all","current","next","upcoming","current_or_next"))
 					require(repeat.startField.length<=80&&repeat.endField.length<=80)
+					require(repeat.selector=="all"||repeat.startField.isNotBlank())
+					require(repeat.selector!="current"||repeat.endField.isNotBlank())
 				}
 				value.children.forEach{visit(it,depth+1)}
 			}
