@@ -139,7 +139,7 @@ export function resolveBinding(
     precision: binding.precision ?? 0,
     prefix: binding.prefix,
     suffix: binding.suffix,
-    timezone: "UTC",
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   });
   return formatted === "" ? (binding.fallback ?? "") : formatted;
 }
@@ -492,6 +492,41 @@ export function renderPresentation(
         };
       case "text":
       case "badge": {
+        if (node.binding?.format === "relative-countdown") {
+          const target = resolveBinding(
+            {
+              ...node.binding,
+              format: "text",
+              prefix: undefined,
+              suffix: undefined,
+            },
+            local,
+          );
+          if (!target) {
+            return {
+              t: "text",
+              value: node.binding.fallback ?? "",
+              style: textStyleFromProps(props, textScale),
+            };
+          }
+          return {
+            t: "countdown",
+            target,
+            timezone: "UTC",
+            recurrence: "none",
+            countUp: false,
+            showDays: true,
+            showHours: true,
+            showMinutes: true,
+            showSeconds: true,
+            completionText: "Now",
+            completionAction: "completed_text",
+            compact: true,
+            prefix: node.binding.prefix,
+            suffix: node.binding.suffix,
+            style: textStyleFromProps(props, textScale),
+          };
+        }
         const countdown = node.binding
           ? parseCountdownFormat(node.binding.format ?? "")
           : null;

@@ -449,6 +449,10 @@ function formatCountdown(node: AnyNode): string {
     now,
   );
   let remaining = target - now;
+  if (node["compact"] === true) {
+    const body = tilecastCountdownDisplay.compact(remaining);
+    return `${String(node["prefix"] ?? "")}${body}${String(node["suffix"] ?? "")}`;
+  }
   const countUp = node["countUp"] === true;
   if (remaining <= 0 && !countUp && recurrence === "none") {
     const action = String(node["completionAction"] ?? "completed_text");

@@ -102,6 +102,10 @@ export type RenderNode =
       showSeconds: boolean;
       completionText: string;
       completionAction: "completed_text" | "hide" | "count_up";
+      /** Use the compact schedule form: 1h 4m, 4m 12s, or 12s. */
+      compact?: boolean;
+      prefix?: string;
+      suffix?: string;
       style: TextStyle;
     };
 
