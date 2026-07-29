@@ -1,16 +1,54 @@
 import { describe, expect, it } from "vitest";
-import { resolveCountdownBar } from "./countdown-bar";
-import type { ManifestCountdownBarPlugin } from "./types";
+import "./countdown-display";
+import "./countdown-bar-resolver";
+
+interface CountdownBarPlugin {
+  id: string;
+  type: string;
+  version: number;
+  config: {
+    message: string;
+    scheduleType: "weekly" | "one_time";
+    targetTime?: string | null;
+    daysOfWeek?: number[];
+    oneTimeAt?: string | null;
+    timezone: string;
+    leadTimeSeconds: number;
+    completionText?: string;
+    displayMode: "overlay" | "push";
+    heightPx: number;
+    priority: number;
+  };
+}
+
+interface CountdownBarResolver {
+  resolve(
+    plugins: CountdownBarPlugin[] | null | undefined,
+    localNow: Date,
+    clockOffsetMs?: number,
+  ): {
+    id: string;
+    message: string;
+    value: string;
+    displayMode: string;
+    targetAt: string;
+  } | null;
+}
+
+const resolver = (
+  globalThis as typeof globalThis & {
+    tilecastCountdownBar: CountdownBarResolver;
+  }
+).tilecastCountdownBar;
 
 function weekly(
-  overrides: Partial<ManifestCountdownBarPlugin["config"]> = {},
-): ManifestCountdownBarPlugin {
+  overrides: Partial<CountdownBarPlugin["config"]> = {},
+): CountdownBarPlugin {
   return {
     id: "bar-1",
     type: "countdown_bar",
     version: 1,
     config: {
-      name: "Lunch",
       message: "Lunch ends in",
       scheduleType: "weekly",
       targetTime: "12:00",
@@ -26,21 +64,21 @@ function weekly(
   };
 }
 
-describe("resolveCountdownBar", () => {
+describe("countdown bar resolver", () => {
   it("evaluates weekly wall time in the configured timezone", () => {
-    const active = resolveCountdownBar(
+    const active = resolver.resolve(
       [weekly()],
       new Date("2026-07-27T15:50:00Z"),
     );
     expect(active).toMatchObject({
       message: "Lunch ends in",
-      value: "10:00",
+      value: "10m 0s",
       targetAt: "2026-07-27T16:00:00.000Z",
     });
   });
 
   it("shows completion text for one minute and then hides", () => {
-    const plugin: ManifestCountdownBarPlugin = {
+    const plugin: CountdownBarPlugin = {
       ...weekly(),
       config: {
         ...weekly().config,
@@ -51,10 +89,10 @@ describe("resolveCountdownBar", () => {
       },
     };
     expect(
-      resolveCountdownBar([plugin], new Date("2026-07-27T16:00:30Z"))?.value,
+      resolver.resolve([plugin], new Date("2026-07-27T16:00:30Z"))?.value,
     ).toBe("Lunch is over");
     expect(
-      resolveCountdownBar([plugin], new Date("2026-07-27T16:01:01Z")),
+      resolver.resolve([plugin], new Date("2026-07-27T16:01:01Z")),
     ).toBeNull();
   });
 
@@ -65,17 +103,14 @@ describe("resolveCountdownBar", () => {
       id: "bar-2",
     };
     expect(
-      resolveCountdownBar([low, high], new Date("2026-07-27T15:50:00Z")),
+      resolver.resolve([low, high], new Date("2026-07-27T15:50:00Z")),
     ).toMatchObject({ id: "bar-2", message: "High", displayMode: "push" });
   });
 
   it("applies the persisted server clock offset", () => {
     expect(
-      resolveCountdownBar(
-        [weekly()],
-        new Date("2026-07-27T15:45:00Z"),
-        5 * 60_000,
-      )?.value,
-    ).toBe("10:00");
+      resolver.resolve([weekly()], new Date("2026-07-27T15:45:00Z"), 5 * 60_000)
+        ?.value,
+    ).toBe("10m 0s");
   });
 });

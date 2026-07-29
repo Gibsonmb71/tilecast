@@ -35,13 +35,29 @@ const formSchema = z
     targetTime: z.string(),
     daysOfWeek: z.array(z.coerce.number().int().min(0).max(6)),
     oneTimeAt: z.string(),
-    timezone: z.string().trim().min(1).max(100),
-    leadMinutes: z.coerce.number().int().min(1).max(43_200),
+    timezone: z
+      .string({ error: "Enter an IANA timezone such as America/Chicago." })
+      .trim()
+      .min(1, "Enter an IANA timezone such as America/Chicago.")
+      .max(100, "Enter an IANA timezone such as America/Chicago."),
+    leadMinutes: z.coerce
+      .number({ error: "Enter a whole number of minutes." })
+      .int("Enter a whole number of minutes.")
+      .min(1, "Lead time must be between 1 and 43200 minutes.")
+      .max(43_200, "Lead time must be between 1 and 43200 minutes."),
     completionText: z.string().trim().max(280),
     displayMode: z.enum(["overlay", "push"]),
-    heightPx: z.coerce.number().int().min(40).max(320),
+    heightPx: z.coerce
+      .number({ error: "Enter a height between 40 and 320 pixels." })
+      .int("Enter a height between 40 and 320 pixels.")
+      .min(40, "Enter a height between 40 and 320 pixels.")
+      .max(320, "Enter a height between 40 and 320 pixels."),
     enabled: z.boolean(),
-    priority: z.coerce.number().int().min(-1000).max(1000),
+    priority: z.coerce
+      .number({ error: "Enter a priority between -1000 and 1000." })
+      .int("Enter a priority between -1000 and 1000.")
+      .min(-1000, "Enter a priority between -1000 and 1000.")
+      .max(1000, "Enter a priority between -1000 and 1000."),
     targetScope: z.enum(["all", "screens", "sync_groups", "locations"]),
     targetIds: z.array(z.string()),
   })
@@ -95,6 +111,19 @@ const defaultValues: FormValues = {
 
 function canManage(role?: string) {
   return role === "owner" || role === "administrator";
+}
+
+/**
+ * `datetime-local` inputs carry no zone, and the submit path reads them back
+ * with `new Date(value)` — the browser's own zone. Formatting the stored
+ * instant the same way keeps the round trip stable instead of shifting the
+ * target by the browser's UTC offset on every edit.
+ */
+function toLocalInputValue(iso: string) {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return "";
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:${pad(at.getMinutes())}`;
 }
 
 export function PluginsPage() {
@@ -157,6 +186,12 @@ export function CountdownBarsPage() {
     },
   });
   const manageable = canManage(auth.status?.user?.role);
+  // Only a successful, empty list is "nothing configured" — a failed load must
+  // not read as an empty fleet.
+  const showEmptyState =
+    !instances.isError &&
+    !instances.isLoading &&
+    (instances.data?.items.length ?? 0) === 0;
   return (
     <main className="page plugins-page">
       <PageHeader
@@ -183,7 +218,13 @@ export function CountdownBarsPage() {
           Owner or Administrator access is required to make changes.
         </Notice>
       )}
-      {(instances.data?.items.length ?? 0) === 0 && !instances.isLoading ? (
+      {instances.isError && (
+        <Notice variant="danger">Countdown bars could not be loaded.</Notice>
+      )}
+      {remove.isError && (
+        <Notice variant="danger">{remove.error.message}</Notice>
+      )}
+      {showEmptyState ? (
         <EmptyState
           icon={<Clock3 />}
           title="No countdown bars configured"
@@ -273,6 +314,7 @@ export function CountdownBarEditorPage() {
     register,
     handleSubmit,
     reset,
+    setValue,
     watch,
     formState: { errors },
   } = useForm<FormInput, unknown, FormValues>({
@@ -288,9 +330,7 @@ export function CountdownBarEditorPage() {
       scheduleType: value.scheduleType,
       targetTime: value.targetTime ?? "",
       daysOfWeek: value.daysOfWeek,
-      oneTimeAt: value.oneTimeAt
-        ? new Date(value.oneTimeAt).toISOString().slice(0, 16)
-        : "",
+      oneTimeAt: value.oneTimeAt ? toLocalInputValue(value.oneTimeAt) : "",
       timezone: value.timezone,
       leadMinutes: value.leadTimeSeconds / 60,
       completionText: value.completionText,
@@ -315,6 +355,7 @@ export function CountdownBarEditorPage() {
   });
   const scheduleType = watch("scheduleType");
   const targetScope = watch("targetScope");
+  const targetScopeField = register("targetScope");
   const targets =
     targetScope === "screens"
       ? screens.data?.items.map((item) => ({ id: item.id, name: item.name }))
@@ -427,13 +468,28 @@ export function CountdownBarEditorPage() {
             <label>
               Target date and time
               <input type="datetime-local" {...register("oneTimeAt")} />
+              <span className="field-help">
+                Entered in this browser's local time; the Player counts down to
+                the same instant.
+              </span>
               {errors.oneTimeAt && <small>{errors.oneTimeAt.message}</small>}
             </label>
           )}
           <div className="plugin-form__row">
             <label>
               Timezone
-              <input {...register("timezone")} />
+              <input
+                {...register("timezone")}
+                aria-invalid={errors.timezone ? true : undefined}
+                aria-describedby={
+                  errors.timezone ? "countdown-timezone-error" : undefined
+                }
+              />
+              {errors.timezone && (
+                <small id="countdown-timezone-error">
+                  {errors.timezone.message}
+                </small>
+              )}
             </label>
             <label>
               Appear this many minutes before
@@ -442,7 +498,16 @@ export function CountdownBarEditorPage() {
                 min={1}
                 max={43_200}
                 {...register("leadMinutes", { valueAsNumber: true })}
+                aria-invalid={errors.leadMinutes ? true : undefined}
+                aria-describedby={
+                  errors.leadMinutes ? "countdown-lead-error" : undefined
+                }
               />
+              {errors.leadMinutes && (
+                <small id="countdown-lead-error">
+                  {errors.leadMinutes.message}
+                </small>
+              )}
             </label>
           </div>
         </section>
@@ -464,7 +529,16 @@ export function CountdownBarEditorPage() {
                 min={40}
                 max={320}
                 {...register("heightPx", { valueAsNumber: true })}
+                aria-invalid={errors.heightPx ? true : undefined}
+                aria-describedby={
+                  errors.heightPx ? "countdown-height-error" : undefined
+                }
               />
+              {errors.heightPx && (
+                <small id="countdown-height-error">
+                  {errors.heightPx.message}
+                </small>
+              )}
             </label>
             <label>
               Priority
@@ -473,7 +547,16 @@ export function CountdownBarEditorPage() {
                 min={-1000}
                 max={1000}
                 {...register("priority", { valueAsNumber: true })}
+                aria-invalid={errors.priority ? true : undefined}
+                aria-describedby={
+                  errors.priority ? "countdown-priority-error" : undefined
+                }
               />
+              {errors.priority && (
+                <small id="countdown-priority-error">
+                  {errors.priority.message}
+                </small>
+              )}
             </label>
           </div>
           <label className="check-row">
@@ -486,7 +569,15 @@ export function CountdownBarEditorPage() {
           <h2>Targets</h2>
           <label>
             Target type
-            <select {...register("targetScope")}>
+            <select
+              {...targetScopeField}
+              onChange={(event) => {
+                // Ids from the previous scope would otherwise stay registered
+                // and be submitted alongside the new scope's picks.
+                setValue("targetIds", []);
+                void targetScopeField.onChange(event);
+              }}
+            >
               <option value="all">All screens</option>
               <option value="screens">Individual screens</option>
               <option value="sync_groups">Sync groups</option>

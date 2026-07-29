@@ -144,11 +144,18 @@ func scanCountdownBar(row scanner) (CountdownBar, error) {
 	err := row.Scan(&item.ID, &item.Name, &item.Message, &item.ScheduleType, &targetTime, &item.DaysOfWeek,
 		&item.OneTimeAt, &item.Timezone, &item.LeadTimeSeconds, &item.CompletionText, &item.DisplayMode,
 		&item.HeightPX, &item.Enabled, &item.Priority, &item.TargetScope, &item.CreatedAt, &item.UpdatedAt)
-	if targetTime != nil {
-		trimmed := strings.TrimSuffix(strings.TrimSuffix(*targetTime, "00"), ":")
-		item.TargetTime = &trimmed
-	}
+	item.TargetTime = trimTargetTime(targetTime)
 	return item, err
+}
+
+// Postgres renders `time` as HH:MM:SS. Both the API and the Player manifest
+// publish the HH:MM shape the dashboard and validator expect.
+func trimTargetTime(value *string) *string {
+	if value == nil || *value == "" {
+		return value
+	}
+	trimmed := strings.TrimSuffix(strings.TrimSuffix(*value, "00"), ":")
+	return &trimmed
 }
 
 func (s *Service) targetIDs(ctx context.Context, id uuid.UUID) ([]uuid.UUID, error) {
@@ -331,6 +338,13 @@ func validateCountdownBar(input CountdownBarInput) error {
 	} else if len(input.TargetIDs) == 0 || len(input.TargetIDs) > 250 {
 		return fmt.Errorf("%w: targeted instances require between one and 250 targets", ErrInvalid)
 	}
+	seenTarget := map[uuid.UUID]bool{}
+	for _, target := range input.TargetIDs {
+		if seenTarget[target] {
+			return fmt.Errorf("%w: targetIds must be unique", ErrInvalid)
+		}
+		seenTarget[target] = true
+	}
 	return nil
 }
 
@@ -419,6 +433,7 @@ func (s *Service) ManifestForScreen(ctx context.Context, screenID uuid.UUID) ([]
 			&config.CompletionText, &config.DisplayMode, &config.HeightPX, &config.Priority); err != nil {
 			return nil, err
 		}
+		config.TargetTime = trimTargetTime(config.TargetTime)
 		out = append(out, ManifestPlugin{ID: id, Type: "countdown_bar", Version: 1, Config: config})
 	}
 	return out, rows.Err()
