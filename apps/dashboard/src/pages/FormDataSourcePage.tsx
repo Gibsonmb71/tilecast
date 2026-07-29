@@ -119,7 +119,7 @@ export function FormDataSourcePage({
   if (!detail || !id) {
     return (
       <Notice variant="danger" title="Form unavailable">
-        This Form Data Source could not be loaded.
+        This form could not be loaded.
       </Notice>
     );
   }
@@ -137,7 +137,7 @@ export function FormDataSourcePage({
   return (
     <section className="app-editor-route form-page">
       <PageHeader
-        eyebrow="Form Data Source"
+        eyebrow="Forms plugin"
         title={dataSource?.name ?? detail.name}
         description={dataSource?.description ?? detail.description}
       />
@@ -464,7 +464,7 @@ function MetadataEditor({
           {error}
         </Notice>
       )}
-      <Field label="Data Source name" required>
+      <Field label="Form name" required>
         <Input value={name} onChange={(event) => setName(event.target.value)} />
       </Field>
       <Field label="Description">

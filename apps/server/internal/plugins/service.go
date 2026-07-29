@@ -112,6 +112,12 @@ func (s *Service) Catalog(ctx context.Context) (Catalog, error) {
 		(SELECT count(*) FROM alert_rules)`).Scan(&alertsEnabled, &alertRules); err != nil {
 		return Catalog{}, err
 	}
+	var formCount int
+	if err := s.db.QueryRow(ctx,
+		`SELECT count(*) FROM data_sources WHERE provider='form' AND deleted_at IS NULL`).
+		Scan(&formCount); err != nil {
+		return Catalog{}, err
+	}
 	return Catalog{Items: []CatalogPlugin{
 		{
 			ID: "countdown_bar", Name: "Countdown Bar",
@@ -124,6 +130,12 @@ func (s *Service) Catalog(ctx context.Context) (Catalog, error) {
 			Description:   "Watch official NWS weather alerts and take screens over automatically while one is active.",
 			Enabled:       alertsEnabled,
 			InstanceCount: alertRules,
+		},
+		{
+			ID: "forms", Name: "Forms",
+			Description:   "Collect submissions, run approval workflows, and publish approved records to Widgets.",
+			Enabled:       true,
+			InstanceCount: formCount,
 		},
 	}}, nil
 }

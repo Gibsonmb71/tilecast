@@ -128,6 +128,13 @@ beforeEach(() => {
                     enabled: false,
                     instanceCount: 1,
                   },
+                  {
+                    id: "forms",
+                    name: "Forms",
+                    description: "Collect submissions.",
+                    enabled: true,
+                    instanceCount: 2,
+                  },
                 ],
               },
             }),
@@ -173,6 +180,17 @@ describe("Plugins", () => {
     expect(
       within(card).getByRole("link", { name: "Manage plugin" }),
     ).toHaveAttribute("href", "/plugins/emergency-alerts");
+  });
+
+  it("lists Forms as a plugin rather than a Data Source", async () => {
+    renderRoute(<PluginsPage />);
+    const card = (
+      await screen.findByRole("heading", { name: "Forms" })
+    ).closest("article")!;
+    expect(within(card).getByText("2 configured forms")).toBeVisible();
+    expect(
+      within(card).getByRole("link", { name: "Manage plugin" }),
+    ).toHaveAttribute("href", "/plugins/forms");
   });
 
   it("requires a target when a scoped instance is submitted", async () => {

@@ -2,6 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
+  ClipboardList,
   Clock3,
   Plus,
   Puzzle,
@@ -152,6 +153,11 @@ const pluginPresentation: Record<
     icon: Siren,
     path: "/plugins/emergency-alerts",
     instanceNoun: ["alert rule", "alert rules"],
+  },
+  forms: {
+    icon: ClipboardList,
+    path: "/plugins/forms",
+    instanceNoun: ["form", "forms"],
   },
 };
 

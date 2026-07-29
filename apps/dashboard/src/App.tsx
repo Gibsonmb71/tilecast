@@ -39,6 +39,9 @@ import {
   FormPortalDetailPage,
   FormPortalSubmissionPage,
 } from "./pages/FormsPortalPage";
+import { FormsPluginPage } from "./pages/FormsPluginPage";
+import { CreateFormDataSourcePage } from "./pages/CreateFormDataSourcePage";
+import { FormDataSourcePage } from "./pages/FormDataSourcePage";
 
 const search = (
   label: string,
@@ -199,17 +202,17 @@ export const studioRoutes: RouteObject[] = [
           { index: true, element: <DataSourcesPage /> },
           {
             path: "new",
-            element: <DataSourceEditorPage />,
+            element: <DataSourceEditorPage redirectForms />,
             handle: { breadcrumb: "Create data source" },
           },
           {
             path: "new/:provider",
-            element: <DataSourceEditorPage />,
+            element: <DataSourceEditorPage redirectForms />,
             handle: { breadcrumb: "Create data source" },
           },
           {
             path: ":id",
-            element: <DataSourceEditorPage />,
+            element: <DataSourceEditorPage redirectForms />,
             handle: { breadcrumb: "Data source", resource: "data-source" },
           },
         ],
@@ -320,6 +323,29 @@ export const studioRoutes: RouteObject[] = [
                 ["emergency", "weather", "nws", "alerts", "tornado", "warning"],
               ),
             },
+          },
+          {
+            path: "forms",
+            element: <FormsPluginPage />,
+            handle: {
+              breadcrumb: "Forms",
+              search: search(
+                "Forms",
+                "Collect submissions and publish approved records to signage",
+                "/plugins/forms",
+                ["submissions", "workflow", "approvals"],
+              ),
+            },
+          },
+          {
+            path: "forms/new",
+            element: <CreateFormDataSourcePage />,
+            handle: { breadcrumb: "Create form" },
+          },
+          {
+            path: "forms/:id",
+            element: <FormDataSourcePage />,
+            handle: { breadcrumb: "Form", resource: "form" },
           },
         ],
       },

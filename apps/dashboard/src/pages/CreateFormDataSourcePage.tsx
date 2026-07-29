@@ -13,7 +13,7 @@ import {
   Textarea,
 } from "../components/ui";
 
-// CreateFormDataSourcePage collects the Data Source name/description and the initial form
+// CreateFormDataSourcePage collects the form name/description and the initial form
 // title/description, then creates the Form (which the server publishes as its first revision) and
 // navigates to the new form's builder.
 export function CreateFormDataSourcePage() {
@@ -51,8 +51,10 @@ export function CreateFormDataSourcePage() {
       ),
     onMutate: () => setError(""),
     onSuccess: (form) => {
+      void queryClient.invalidateQueries({ queryKey: ["forms"] });
+      void queryClient.invalidateQueries({ queryKey: ["plugins"] });
       void queryClient.invalidateQueries({ queryKey: ["data-sources"] });
-      void navigate(`/data-sources/${form.id}?tab=form`);
+      void navigate(`/plugins/forms/${form.id}?tab=form`);
     },
     onError: (err) =>
       setError(
@@ -76,7 +78,7 @@ export function CreateFormDataSourcePage() {
     return (
       <section className="app-editor-route">
         <Notice variant="warning" title="Insufficient access">
-          You do not have permission to create Data Sources.
+          You do not have permission to create forms.
         </Notice>
       </section>
     );
@@ -85,7 +87,7 @@ export function CreateFormDataSourcePage() {
   return (
     <section className="app-editor-route form-create">
       <PageHeader
-        eyebrow="New Data Source"
+        eyebrow="Forms plugin"
         title="Create a Form"
         description="Collect submissions, approve them, and publish records to Widgets."
       />
@@ -96,8 +98,8 @@ export function CreateFormDataSourcePage() {
           </Notice>
         )}
         <Field
-          label="Data Source name"
-          description="Shown in the Data Source library and Widget pickers."
+          label="Form name"
+          description="Shown in the Forms plugin and when selecting form output in Widgets."
           required
         >
           <Input
@@ -106,7 +108,7 @@ export function CreateFormDataSourcePage() {
             placeholder="Staff Announcements"
           />
         </Field>
-        <Field label="Data Source description">
+        <Field label="Form description">
           <Textarea
             rows={2}
             value={description}
@@ -138,7 +140,7 @@ export function CreateFormDataSourcePage() {
           <Button
             type="button"
             variant="quiet"
-            onClick={() => void navigate("/data-sources/new")}
+            onClick={() => void navigate("/plugins/forms")}
           >
             Back
           </Button>
