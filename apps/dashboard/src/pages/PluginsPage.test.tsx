@@ -208,6 +208,20 @@ describe("Plugins", () => {
     expect(submitted[0]?.targetIds).toEqual(["screen-1"]);
   }, 10_000);
 
+  it("counts the chosen targets and explains an empty scope", async () => {
+    renderRoute(<CountdownBarEditorPage />, "/plugins/countdown-bar/new");
+    await waitFor(() => expect(screen.getByLabelText("Name")).toBeEnabled());
+    chooseOption("Target type", "Individual screens");
+    expect(await screen.findByText("0 of 1 selected")).toBeVisible();
+    fireEvent.click(await screen.findByLabelText("Cafeteria"));
+    expect(screen.getByText("1 of 1 selected")).toBeVisible();
+    // No sync groups exist in this fixture, so the list must say so rather than
+    // render an empty box.
+    chooseOption("Target type", "Sync groups");
+    expect(await screen.findByText("No sync groups exist yet.")).toBeVisible();
+    expect(screen.getByText("0 of 0 selected")).toBeVisible();
+  }, 10_000);
+
   it("keeps the schedule and mode selections across an unrelated edit", async () => {
     renderRoute(<CountdownBarEditorPage />, "/plugins/countdown-bar/new");
     await waitFor(() => expect(screen.getByLabelText("Name")).toBeEnabled());
