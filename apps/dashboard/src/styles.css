@@ -3024,6 +3024,36 @@ button.organizer-chip:disabled {
   background: white;
   border-color: var(--tc-status-danger-border);
 }
+/* Hold-to-confirm button. The button itself is the progress bar: the fill grows
+   from the left edge as the hold counts up, so there is no second element to
+   read and nothing moves once the press ends. */
+.hold-button-wrap {
+  display: grid;
+  gap: 4px;
+  justify-items: end;
+}
+.hold-button {
+  position: relative;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+}
+.hold-button__fill {
+  position: absolute;
+  inset: 0;
+  transform: scaleX(0);
+  transform-origin: left center;
+  background: color-mix(in srgb, currentColor 32%, transparent);
+  pointer-events: none;
+}
+.hold-button__label {
+  position: relative;
+}
+.hold-button__hint {
+  margin: 0;
+  color: var(--tc-ink-muted);
+  font-size: 12px;
+}
 /* Destructive action sits apart from the confirming actions on the right. */
 .form-actions .button--danger-quiet {
   margin-right: auto;

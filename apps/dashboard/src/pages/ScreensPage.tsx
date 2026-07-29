@@ -2,6 +2,7 @@ import {
   Button,
   ContextMenu,
   Dialog,
+  HoldButton,
   Notice,
   PageHeader,
   Select,
@@ -435,6 +436,33 @@ function TakeoverAction({ screens }: { screens: Screen[] }) {
   const offlineSelected = screens.filter(
     (item) => screenIds.includes(item.id) && item.status !== "online",
   ).length;
+  /* Taking over the whole fleet at once is the one shape of this action with no
+     screen left showing normal content, so it is the one that has to be held
+     rather than clicked. Ticking every box by hand counts the same as using the
+     All screens toggle. */
+  const everyScreenSelected =
+    screens.length > 0 && screens.every((item) => screenIds.includes(item.id));
+  const ready = Boolean(
+    name && playlistId && (screenIds.length > 0 || groupIds.length > 0),
+  );
+  const beginActivation = (confirmed: boolean) => {
+    const requiresPassword = Boolean(
+      runtimeSettings.data?.values["takeover.reauthentication_required"],
+    );
+    const password = requiresPassword
+      ? (prompt("Confirm your current password") ?? "")
+      : "";
+    if (requiresPassword && !password) return;
+    // A completed three-second hold already is the confirmation, so it does not
+    // also raise a dialog.
+    if (
+      confirmed ||
+      confirm(
+        "Activate the selected playlist for these targets? Existing overlapping takeovers will be replaced.",
+      )
+    )
+      activate.mutate(password);
+  };
   return (
     <>
       <button
@@ -496,6 +524,25 @@ function TakeoverAction({ screens }: { screens: Screen[] }) {
           </label>
           <fieldset className="takeover-form__targets">
             <legend>Target screens</legend>
+            <div className="takeover-form__targets-actions">
+              <button
+                className="button button--quiet button--compact"
+                type="button"
+                aria-pressed={everyScreenSelected}
+                disabled={screens.length === 0}
+                onClick={() =>
+                  setScreenIds(
+                    everyScreenSelected ? [] : screens.map((item) => item.id),
+                  )
+                }
+              >
+                All screens
+              </button>
+              <span>
+                {screens.length} screen{screens.length === 1 ? "" : "s"} in the
+                fleet
+              </span>
+            </div>
             <div>
               {screens.map((item) => (
                 <label className="checkbox-control" key={item.id}>
@@ -545,9 +592,15 @@ function TakeoverAction({ screens }: { screens: Screen[] }) {
         </div>
         <footer className="takeover-dialog__footer">
           <p>
-            {screenIds.length} screen{screenIds.length === 1 ? "" : "s"} and{" "}
-            {groupIds.length} sync group{groupIds.length === 1 ? "" : "s"}{" "}
-            selected
+            {everyScreenSelected ? (
+              <strong>
+                Every screen in the fleet ({screens.length}) is selected
+              </strong>
+            ) : (
+              `${screenIds.length} screen${screenIds.length === 1 ? "" : "s"} selected`
+            )}{" "}
+            and {groupIds.length} sync group
+            {groupIds.length === 1 ? "" : "s"} selected
             {offlineSelected > 0
               ? ` · ${offlineSelected} selected screen${offlineSelected === 1 ? " is" : "s are"} not online`
               : ""}
@@ -561,35 +614,29 @@ function TakeoverAction({ screens }: { screens: Screen[] }) {
             >
               Cancel
             </button>
-            <button
-              className="button button--danger"
-              type="button"
-              disabled={
-                !name ||
-                !playlistId ||
-                (screenIds.length === 0 && groupIds.length === 0) ||
-                activate.isPending
-              }
-              onClick={() => {
-                const requiresPassword = Boolean(
-                  runtimeSettings.data?.values[
-                    "takeover.reauthentication_required"
-                  ],
-                );
-                const password = requiresPassword
-                  ? (prompt("Confirm your current password") ?? "")
-                  : "";
-                if (requiresPassword && !password) return;
-                if (
-                  confirm(
-                    "Activate the selected playlist for these targets? Existing overlapping takeovers will be replaced.",
-                  )
-                )
-                  activate.mutate(password);
-              }}
-            >
-              {activate.isPending ? "Activating…" : "Activate takeover"}
-            </button>
+            {everyScreenSelected ? (
+              <HoldButton
+                className="button--danger"
+                holdMs={3000}
+                disabled={!ready || activate.isPending}
+                holdingLabel="Keep holding…"
+                hint="Hold for 3 seconds to take over every screen."
+                onHoldComplete={() => beginActivation(true)}
+              >
+                {activate.isPending
+                  ? "Activating…"
+                  : "Hold to activate takeover"}
+              </HoldButton>
+            ) : (
+              <button
+                className="button button--danger"
+                type="button"
+                disabled={!ready || activate.isPending}
+                onClick={() => beginActivation(false)}
+              >
+                {activate.isPending ? "Activating…" : "Activate takeover"}
+              </button>
+            )}
           </div>
         </footer>
       </Dialog>
