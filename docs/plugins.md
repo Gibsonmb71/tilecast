@@ -4,7 +4,7 @@ Plugins are typed Tilecast features that can affect Player behavior outside norm
 
 ## Countdown Bar
 
-Countdown Bar is the first built-in plugin. An installation can create multiple instances, each with its own name, message, schedule, lead time, optional completion text, display mode, height, background countdown, enabled state, priority, and targets.
+Countdown Bar was the first built-in plugin. An installation can create multiple instances, each with its own name, message, schedule, lead time, optional completion text, display mode, height, enabled state, priority, and targets.
 
 Weekly instances use an IANA timezone, a wall-clock target time, and one or more days where Sunday is `0` and Saturday is `6`. One-time instances use an absolute RFC 3339 target. A bar is active from its configured lead time until the target. When completion text is configured, it remains visible for one minute after the target; otherwise the bar hides at zero. If active instances overlap, the Player shows the highest priority instance, then the earliest target, then the stable instance ID.
 
@@ -25,6 +25,14 @@ The fill is a share of the configured lead time, not of a fixed span: a fifteen-
 
 Changing an instance increments the manifest revision for every screen. The next authenticated manifest contains only enabled instances that apply to that screen.
 
+## Emergency Alerts
+
+Emergency Alerts watches official National Weather Service alerts and takes matching screens over automatically while one is active. It is a plugin rather than an organization default: an installation opts into monitoring, and the alert rules are its instances. Settings keeps only the defaults for a Takeover a person starts by hand and for player commands.
+
+Unlike Countdown Bar, it projects nothing into the manifest of its own. A matching alert raises an ordinary Takeover through the existing bounded playback-override machinery, so Player behavior is exactly Takeover behavior. The catalog reports the plugin as enabled when monitoring is on — a monitor switched on with no rule yet is a half-finished setup, not a disabled plugin — and its instance count is the number of alert rules.
+
+Its configuration endpoints predate the plugin catalog and are unchanged, under `/api/v1/alerts/nws/`. See [takeover-and-operations.md](takeover-and-operations.md) for the monitor, rule matching, and poll health.
+
 ## Player behavior
 
 The manifest carries a discriminated `plugins` array. Countdown Bar uses `type: "countdown_bar"` and `version: 1`. The complete timing rule is cached in `manifest-active.json`; recurrence is evaluated locally with the configured timezone, so a temporary server outage does not stop future show or hide transitions.
@@ -41,7 +49,7 @@ The Player estimates server clock offset when a manifest is received. The cached
 
 Dashboard reads require a valid Tilecast session. Mutations additionally require Owner or Administrator, the session CSRF token, strict JSON, and normal request-size limits.
 
-- `GET /api/v1/plugins`
+- `GET /api/v1/plugins` — the catalog, one entry per built-in plugin
 - `GET /api/v1/plugins/countdown-bar/instances`
 - `GET /api/v1/plugins/countdown-bar/instances/{id}`
 - `POST /api/v1/plugins/countdown-bar/instances`

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useLocation } from "react-router";
+import { Link, useLocation } from "react-router";
 import { api, ApiError } from "../api/client";
 import type { SettingDefinition } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
@@ -24,7 +24,6 @@ import { UsersPage } from "./UsersPage";
 import { BackupPanel } from "../settings/BackupPanel";
 import { LocationsPanel } from "../settings/LocationsPanel";
 import { ActivityRetentionPanel } from "../settings/ActivityRetentionPanel";
-import { TakeoverPanel } from "../settings/TakeoverPanel";
 
 export { PlayerPolicyEditor } from "../settings/PlayerPolicyEditor";
 export {
@@ -216,20 +215,21 @@ function Destination({
   if (active === "import-export") return <ImportExportPanel owner={owner} />;
   if (active === "player-updates")
     return <PlayerUpdatesPanel owner={owner} manageable={manageable} />;
-  if (active === "takeover")
-    return (
-      <>
-        <TakeoverPanel editable={manageable} />
-        <SettingsSection
-          section={active}
-          definitions={definitions}
-          values={values}
-          editable={manageable}
-          onChange={onChange}
-        />
-      </>
-    );
   let before: React.ReactNode;
+  // Automatic NWS alert handling is the Emergency Alerts plugin, not a default.
+  // What is left here is the policy for a Takeover a person starts by hand.
+  if (active === "takeover")
+    before = (
+      <div className="notice notice--info">
+        <strong>Automatic weather alerts moved to Plugins.</strong>
+        <p>
+          NWS monitoring, alert rules, and active emergencies are configured in
+          the <Link to="/plugins/emergency-alerts">Emergency Alerts</Link>{" "}
+          plugin. The defaults below apply to a Takeover started by hand and to
+          player commands.
+        </p>
+      </div>
+    );
   if (active === "branding")
     before = (
       <>

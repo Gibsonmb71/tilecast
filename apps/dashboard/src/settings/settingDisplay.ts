@@ -257,7 +257,7 @@ export const subsectionOrder: Record<
   ],
   scheduling: [{ title: "Schedule defaults", prefix: ["scheduling."] }],
   takeover: [
-    { title: "Emergency defaults", prefix: ["takeover."] },
+    { title: "Takeover defaults", prefix: ["takeover."] },
     { title: "Player command defaults", prefix: ["commands."] },
   ],
   retention: [

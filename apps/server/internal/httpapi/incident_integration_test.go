@@ -82,17 +82,26 @@ func TestIncidentRecoversAutomaticallyAndReopensIfTheConditionReturns(t *testing
 			activityEvent(2, "safe_mode.exited", start.Add(10*time.Minute)),
 		}}, http.StatusAccepted)
 
-		recovered := filterIncidents(readIncidents(t, env, ""), incidentSafeMode)
+		recovered := filterIncidents(readIncidents(t, env, "?status=all"), incidentSafeMode)
 		if len(recovered) != 1 || recovered[0].Status != "recovered" {
 			t.Fatalf("safe mode incident = %+v, want one recovered", recovered)
 		}
 		if recovered[0].RecoveryMode != "automatic" {
 			t.Fatalf("recovery mode = %q, want automatic", recovered[0].RecoveryMode)
 		}
-		// Recovered is not resolved: the condition ended, but nobody has said
-		// the matter is closed, so it stays visible.
+		// Recovered is not resolved: the record keeps the condition having ended
+		// by itself distinct from a person having closed the matter, because the
+		// recovery figures are counted from that difference.
 		if recovered[0].ResolvedAt != nil {
 			t.Fatal("an automatic recovery must not resolve the incident on the operator's behalf")
+		}
+		// It is logged, not queued: an incident that ended on its own asks
+		// nothing of an operator and so leaves the active list.
+		if active := filterIncidents(readIncidents(t, env, ""), incidentSafeMode); len(active) != 0 {
+			t.Fatalf("recovered incident still active: %+v", active)
+		}
+		if got := actOnIncident(t, env, recovered[0].ID, incidentActionInput{Action: "acknowledge"}); got.Code != http.StatusConflict {
+			t.Fatalf("acknowledging a recovered incident status=%d, want 409", got.Code)
 		}
 
 		// The condition returns. That is a second outage, not a continuation of
@@ -100,9 +109,14 @@ func TestIncidentRecoversAutomaticallyAndReopensIfTheConditionReturns(t *testing
 		postActivityBatch(t, env, playerActivityBatchInput{Events: []playerActivityEventInput{
 			activityEvent(3, "safe_mode.entered", start.Add(20*time.Minute)),
 		}}, http.StatusAccepted)
-		after := filterIncidents(readIncidents(t, env, ""), incidentSafeMode)
+		after := filterIncidents(readIncidents(t, env, "?status=all"), incidentSafeMode)
 		if len(after) != 2 {
 			t.Fatalf("a returning condition produced %d incidents, want 2", len(after))
+		}
+		// Only the returned condition is a live problem; the first outage stays
+		// in the record as the closed thing it is.
+		if active := filterIncidents(readIncidents(t, env, ""), incidentSafeMode); len(active) != 1 || active[0].Status != "open" {
+			t.Fatalf("active safe mode incidents = %+v, want only the new one", active)
 		}
 	})
 }
@@ -233,9 +247,14 @@ func TestOfflineScreensOpenAndRecoverConnectivityIncidents(t *testing.T) {
 		if _, err := env.pool.Exec(ctx, `UPDATE screens SET last_heartbeat_at=now() WHERE id=$1`, env.screenID); err != nil {
 			t.Fatal(err)
 		}
-		recovered := filterIncidents(readIncidents(t, env, ""), incidentConnectivity)
+		recovered := filterIncidents(readIncidents(t, env, "?status=all"), incidentConnectivity)
 		if len(recovered) != 1 || recovered[0].Status != "recovered" || recovered[0].RecoveryMode != "automatic" {
 			t.Fatalf("reporting screen left %+v, want an automatic recovery", recovered)
+		}
+		// The screen is back, so the outage is history rather than something
+		// still needing attention.
+		if active := filterIncidents(readIncidents(t, env, ""), incidentConnectivity); len(active) != 0 {
+			t.Fatalf("recovered connectivity incident still active: %+v", active)
 		}
 	})
 }
