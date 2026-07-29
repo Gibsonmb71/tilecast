@@ -14,7 +14,6 @@ import {
   ArrowLeft,
   Braces,
   CalendarDays,
-  ClipboardList,
   Copy,
   EllipsisVertical,
   FileSpreadsheet,
@@ -29,7 +28,7 @@ import {
   X,
 } from "lucide-react";
 import { useState } from "react";
-import { useNavigate, useParams } from "react-router";
+import { Navigate, useLocation, useNavigate, useParams } from "react-router";
 import { api, ApiError } from "../api/client";
 import type {
   DataSource,
@@ -156,8 +155,9 @@ function DataSourceProviderGallery({
     staleTime: 5 * 60_000,
   });
   const sourceCount =
-    catalog.data?.providers?.filter((entry) => entry.role === "data_source")
-      .length ?? 0;
+    catalog.data?.providers?.filter(
+      (entry) => entry.role === "data_source" && entry.id !== "form",
+    ).length ?? 0;
   const definitions = useQuery({
     queryKey: ["content-definitions"],
     queryFn: api.contentDefinitions,
@@ -254,13 +254,6 @@ function DataSourceProviderGallery({
             <strong>Air Quality</strong>
             <span>Current AQI, pollutants, pollen, and hourly forecasts.</span>
           </button>
-          <button type="button" onClick={() => onChoose("form")}>
-            <ClipboardList size={30} />
-            <strong>Form</strong>
-            <span>
-              Collect submissions, approve them, and publish records to Widgets.
-            </span>
-          </button>
         </div>
       </section>
     </div>
@@ -288,8 +281,13 @@ export function DataSourcesPage() {
     queryFn: api.contentDefinitions,
   });
   const definitionsByProvider = new Map<string, DataSourceDefinition>(
-    (definitions.data?.dataSources ?? []).map((item) => [item.id, item]),
+    (definitions.data?.dataSources ?? [])
+      .filter((item) => item.id !== "form")
+      .map((item) => [item.id, item]),
   );
+  const visibleDataSources =
+    dataSources.data?.items?.filter((source) => source.provider !== "form") ??
+    [];
   const duplicate = useMutation({
     mutationFn: (id: string) => api.duplicateDataSource(id, csrf),
     onSuccess: (created) => {
@@ -365,11 +363,13 @@ export function DataSourcesPage() {
           onChange={(event) => setProvider(event.target.value)}
         >
           <option value="">All Data Source types</option>
-          {(definitions.data?.dataSources ?? []).map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.name}
-            </option>
-          ))}
+          {(definitions.data?.dataSources ?? [])
+            .filter((item) => item.id !== "form")
+            .map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
         </Select>
         <ViewToggle value={view} onValueChange={setView} />
       </DashboardListToolbar>
@@ -389,7 +389,7 @@ export function DataSourcesPage() {
       )}
       {dataSources.isLoading ? (
         <div className="table-loading">Loading Data Sources...</div>
-      ) : dataSources.data?.items?.length === 0 ? (
+      ) : visibleDataSources.length === 0 ? (
         <EmptyState
           className="content-empty"
           icon={<Plus size={24} aria-hidden="true" />}
@@ -408,7 +408,7 @@ export function DataSourcesPage() {
         />
       ) : (
         <div className={`asset-collection asset-collection--${view}`}>
-          {dataSources.data?.items?.map((source) => (
+          {visibleDataSources.map((source) => (
             <article
               className="asset-card asset-card--has-menu"
               key={source.id}
@@ -466,9 +466,14 @@ export function DataSourcesPage() {
   );
 }
 
-export function DataSourceEditorPage() {
+export function DataSourceEditorPage({
+  redirectForms = false,
+}: {
+  redirectForms?: boolean;
+} = {}) {
   const auth = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const { id, provider: providerParam } = useParams();
   const csrf = auth.status?.csrfToken ?? "";
   const detail = useQuery({
@@ -490,6 +495,9 @@ export function DataSourceEditorPage() {
     (candidate) => candidate.id === provider,
   );
 
+  if (providerParam === "form" && redirectForms) {
+    return <Navigate to="/plugins/forms/new" replace />;
+  }
   if (!id && !providerParam) {
     return (
       <section className="app-editor-route">
@@ -503,10 +511,10 @@ export function DataSourceEditorPage() {
   }
   if (id && detail.isLoading)
     return <div className="table-loading">Loading Data Source...</div>;
-  // Form Data Sources use a dedicated, full-width management page rather than the compact generic
-  // editor shell, and enforce per-form capabilities instead of only global roles.
   if (provider === "form") {
-    return dataSource ? (
+    return redirectForms ? (
+      <Navigate to={`/plugins/forms/${id}${location.search}`} replace />
+    ) : dataSource ? (
       <FormDataSourcePage dataSource={dataSource} />
     ) : (
       <CreateFormDataSourcePage />

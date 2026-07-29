@@ -17,6 +17,8 @@ import type {
   FormCapability,
   FormDataSource,
 } from "../api/types";
+import { CreateFormDataSourcePage } from "./CreateFormDataSourcePage";
+import { FormDataSourcePage } from "./FormDataSourcePage";
 
 // The React Router data router creates a Request with an AbortSignal on navigation. Under jsdom the
 // global AbortSignal is jsdom's, which Node's undici Request rejects. Since these tests never issue
@@ -59,6 +61,8 @@ function renderAt(path: string, extraRoutes: RouteObject[] = []) {
         element: <DataSourceEditorPage />,
       },
       { path: "/data-sources/:id", element: <DataSourceEditorPage /> },
+      { path: "/plugins/forms/new", element: <CreateFormDataSourcePage /> },
+      { path: "/plugins/forms/:id", element: <FormDataSourcePage /> },
       ...extraRoutes,
     ],
     { initialEntries: [path] },
@@ -120,7 +124,7 @@ const formDataSourceDetail = {
 } as unknown as DataSourceDetail;
 
 describe("Form Data Source Studio", () => {
-  it("shows Form in the provider gallery and opens the dedicated create page", async () => {
+  it("does not present Forms as a Data Source provider", async () => {
     mockAuth("owner");
     vi.spyOn(api, "providerCatalog").mockResolvedValue({
       providers: [],
@@ -129,19 +133,12 @@ describe("Form Data Source Studio", () => {
       widgets: [],
       dataSources: [],
     } as never);
-    const user = userEvent.setup();
     renderAt("/data-sources/new");
 
-    const formCard = await screen.findByRole("button", {
-      name: /Collect submissions, approve them/,
-    });
-    expect(formCard).toBeInTheDocument();
-
-    await user.click(formCard);
-    // The dedicated creation page is used, not the generic compact editor.
     expect(
-      await screen.findByRole("heading", { name: "Create a Form" }),
+      await screen.findByRole("heading", { name: "Create Data Source" }),
     ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Form/ })).toBeNull();
   });
 
   it("creates a Form with the seeded Title field and navigates to the builder", async () => {
@@ -152,10 +149,10 @@ describe("Form Data Source Studio", () => {
     vi.spyOn(api, "getDataSource").mockResolvedValue(formDataSourceDetail);
     vi.spyOn(api, "getForm").mockResolvedValue(formDetail(["manage"]));
     const user = userEvent.setup();
-    renderAt("/data-sources/new/form");
+    renderAt("/plugins/forms/new");
 
     await user.type(
-      await screen.findByLabelText(/Data Source name/),
+      await screen.findByLabelText(/Form name/),
       "Staff Announcements",
     );
     await user.click(screen.getByRole("button", { name: "Create form" }));

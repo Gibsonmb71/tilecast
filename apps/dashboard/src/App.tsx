@@ -33,6 +33,9 @@ import {
   FormPortalDetailPage,
   FormPortalSubmissionPage,
 } from "./pages/FormsPortalPage";
+import { FormsPluginPage, PluginsPage } from "./pages/PluginsPage";
+import { CreateFormDataSourcePage } from "./pages/CreateFormDataSourcePage";
+import { FormDataSourcePage } from "./pages/FormDataSourcePage";
 
 const search = (
   label: string,
@@ -193,17 +196,17 @@ export const studioRoutes: RouteObject[] = [
           { index: true, element: <DataSourcesPage /> },
           {
             path: "new",
-            element: <DataSourceEditorPage />,
+            element: <DataSourceEditorPage redirectForms />,
             handle: { breadcrumb: "Create data source" },
           },
           {
             path: "new/:provider",
-            element: <DataSourceEditorPage />,
+            element: <DataSourceEditorPage redirectForms />,
             handle: { breadcrumb: "Create data source" },
           },
           {
             path: ":id",
-            element: <DataSourceEditorPage />,
+            element: <DataSourceEditorPage redirectForms />,
             handle: { breadcrumb: "Data source", resource: "data-source" },
           },
         ],
@@ -269,6 +272,38 @@ export const studioRoutes: RouteObject[] = [
             path: ":id",
             element: <ScheduleEditorPage />,
             handle: { breadcrumb: "Schedule", resource: "schedule" },
+          },
+        ],
+      },
+      {
+        path: "plugins",
+        handle: {
+          breadcrumb: "Plugins",
+          search: search(
+            "Plugins",
+            "Manage tools that extend Tilecast Studio",
+            "/plugins",
+            ["forms", "extensions"],
+          ),
+        },
+        children: [
+          { index: true, element: <PluginsPage /> },
+          {
+            path: "forms",
+            handle: { breadcrumb: "Forms" },
+            children: [
+              { index: true, element: <FormsPluginPage /> },
+              {
+                path: "new",
+                element: <CreateFormDataSourcePage />,
+                handle: { breadcrumb: "Create form" },
+              },
+              {
+                path: ":id",
+                element: <FormDataSourcePage />,
+                handle: { breadcrumb: "Form", resource: "form" },
+              },
+            ],
           },
         ],
       },

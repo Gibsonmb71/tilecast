@@ -1048,3 +1048,115 @@ button.text-link:disabled {
     padding-bottom: 0;
   }
 }
+
+/* Plugin catalog and the operator-facing Forms plugin library. */
+
+.plugins-page {
+  display: grid;
+  gap: var(--tc-space-6);
+}
+
+.plugins-page__back {
+  margin-bottom: calc(var(--tc-space-3) * -1);
+}
+
+.plugins-page__back .text-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tc-space-2);
+}
+
+.plugin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--tc-space-4);
+}
+
+.plugin-card,
+.plugin-form-card {
+  display: flex;
+  align-items: center;
+  gap: var(--tc-space-4);
+  border: 1px solid var(--tc-border-default);
+  background: var(--tc-bg-surface);
+  color: var(--tc-text-primary);
+  text-decoration: none;
+}
+
+.plugin-card {
+  min-height: 132px;
+  padding: var(--tc-space-5);
+}
+
+.plugin-card:hover,
+.plugin-form-card:hover {
+  border-color: var(--tc-border-strong);
+  background: var(--tc-bg-subtle);
+}
+
+.plugin-card:focus-visible,
+.plugin-form-card:focus-visible {
+  outline: 2px solid var(--tc-focus-ring);
+  outline-offset: 2px;
+}
+
+.plugin-card__icon,
+.plugin-form-card__icon {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  color: var(--tc-action-primary);
+}
+
+.plugin-card__icon {
+  width: 48px;
+  height: 48px;
+  background: var(--tc-bg-subtle);
+}
+
+.plugin-card__body,
+.plugin-form-card__body {
+  display: grid;
+  min-width: 0;
+  gap: var(--tc-space-1);
+}
+
+.plugin-card__body > span,
+.plugin-form-card__body > span {
+  color: var(--tc-text-secondary);
+  line-height: 1.45;
+}
+
+.plugin-card__status,
+.plugin-form-card__revision {
+  margin-left: auto;
+  color: var(--tc-text-secondary);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.plugin-form-list {
+  display: grid;
+  gap: var(--tc-space-2);
+}
+
+.plugin-form-card {
+  min-height: 72px;
+  padding: var(--tc-space-3) var(--tc-space-4);
+}
+
+@media (max-width: 640px) {
+  .plugin-card,
+  .plugin-form-card {
+    align-items: flex-start;
+  }
+
+  .plugin-card__status,
+  .plugin-form-card__revision {
+    margin-left: 0;
+  }
+
+  .plugin-form-card {
+    flex-wrap: wrap;
+  }
+}
