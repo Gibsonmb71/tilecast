@@ -177,11 +177,10 @@ jobs:
 
           mkdir -p "$extract_root"
           chmod +x "$output/tilecast-player.AppImage"
-          # Exercise both the static runtime's normal startup and the managed
-          # service's extraction safety net before publishing.
-          "$output/tilecast-player.AppImage" --version >/dev/null
-          "$output/tilecast-player.AppImage" \
-            --appimage-extract-and-run --version >/dev/null
+          # Validate the AppImage runtime without launching the Electron kiosk,
+          # which intentionally keeps running until the service stops it.
+          timeout 30s "$output/tilecast-player.AppImage" \
+            --appimage-version >/dev/null
           (
             cd "$extract_root"
             "$output/tilecast-player.AppImage" --appimage-extract >/dev/null
