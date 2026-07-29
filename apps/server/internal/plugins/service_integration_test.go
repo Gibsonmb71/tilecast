@@ -2,6 +2,7 @@ package plugins
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -129,7 +130,7 @@ func TestCountdownBarLifecycleAndManifestTargeting(t *testing.T) {
 	if err = service.DeleteCountdownBar(ctx, created.ID, userID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = service.GetCountdownBar(ctx, created.ID); err != ErrNotFound {
+	if _, err = service.GetCountdownBar(ctx, created.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected deleted instance to be gone, got %v", err)
 	}
 	var revisions int

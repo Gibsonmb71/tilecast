@@ -2153,6 +2153,7 @@ components:
         targetScope: { enum: [all, screens, sync_groups, locations] }
         targetIds:
           type: array
+          uniqueItems: true
           maxItems: 250
           items: { type: string, format: uuid }
     MultiFactorVerifyRequest:

@@ -46,6 +46,13 @@ func TestValidateCountdownBarRejectsInvalidScheduleAndTargets(t *testing.T) {
 		t.Fatalf("expected empty screen targets to be invalid, got %v", err)
 	}
 	input = validInput()
+	input.TargetScope = "screens"
+	duplicate := uuid.New()
+	input.TargetIDs = []uuid.UUID{duplicate, duplicate}
+	if err := validateCountdownBar(input); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("expected duplicate targets to be invalid, got %v", err)
+	}
+	input = validInput()
 	input.Timezone = "not/a-zone"
 	if err := validateCountdownBar(input); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("expected invalid timezone to be rejected, got %v", err)

@@ -334,134 +334,27 @@ function escapeHtml(value: string): string {
 let pluginTimer: number | null = null;
 let activePlugins: RendererPlugin[] = [];
 let pluginClockOffsetMs = 0;
-const PLUGIN_COMPLETION_MS = 60_000;
-
-function pluginZonedParts(at: Date, timezone: string) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(at);
-  const part = (name: string) =>
-    Number(parts.find((item) => item.type === name)?.value ?? 0);
-  return {
-    year: part("year"),
-    month: part("month"),
-    day: part("day"),
-    hour: part("hour"),
-    minute: part("minute"),
-    second: part("second"),
-  };
-}
-
-function pluginZonedInstant(
-  year: number,
-  month: number,
-  day: number,
-  hour: number,
-  minute: number,
-  timezone: string,
-): number {
-  const desired = Date.UTC(year, month - 1, day, hour, minute);
-  let guess = desired;
-  for (let pass = 0; pass < 3; pass += 1) {
-    const actual = pluginZonedParts(new Date(guess), timezone);
-    const represented = Date.UTC(
-      actual.year,
-      actual.month - 1,
-      actual.day,
-      actual.hour,
-      actual.minute,
-      actual.second,
-    );
-    const correction = desired - represented;
-    guess += correction;
-    if (correction === 0) break;
-  }
-  return guess;
-}
-
-function pluginTargets(
-  plugin: RendererCountdownBarPlugin,
-  now: Date,
-): number[] {
-  const config = plugin.config;
-  if (config.scheduleType === "one_time") {
-    const instant = Date.parse(config.oneTimeAt ?? "");
-    return Number.isFinite(instant) ? [instant] : [];
-  }
-  const match = /^(\d{2}):(\d{2})/.exec(config.targetTime ?? "");
-  if (!match) return [];
-  const local = pluginZonedParts(now, config.timezone);
-  const anchor = Date.UTC(local.year, local.month - 1, local.day);
-  const days = new Set(config.daysOfWeek ?? []);
-  const targets: number[] = [];
-  for (let offset = -31; offset <= 31; offset += 1) {
-    const date = new Date(anchor + offset * 86_400_000);
-    if (!days.has(date.getUTCDay())) continue;
-    targets.push(
-      pluginZonedInstant(
-        date.getUTCFullYear(),
-        date.getUTCMonth() + 1,
-        date.getUTCDate(),
-        Number(match[1]),
-        Number(match[2]),
-        config.timezone,
-      ),
-    );
-  }
-  return targets;
-}
 
 function updatePluginSurface(): void {
-  const now = new Date(Date.now() + pluginClockOffsetMs);
-  const candidates: {
-    plugin: RendererCountdownBarPlugin;
-    target: number;
-    remaining: number;
-    completed: boolean;
-  }[] = [];
-  for (const plugin of activePlugins) {
-    if (plugin.type !== "countdown_bar" || plugin.version !== 1) continue;
-    for (const target of pluginTargets(plugin, now)) {
-      const remaining = target - now.getTime();
-      const completed =
-        remaining <= 0 &&
-        remaining >= -PLUGIN_COMPLETION_MS &&
-        Boolean(plugin.config.completionText?.trim());
-      if (
-        remaining <= plugin.config.leadTimeSeconds * 1_000 &&
-        (remaining > 0 || completed)
-      ) {
-        candidates.push({ plugin, target, remaining, completed });
-      }
-    }
-  }
-  candidates.sort(
-    (left, right) =>
-      right.plugin.config.priority - left.plugin.config.priority ||
-      left.target - right.target ||
-      left.plugin.id.localeCompare(right.plugin.id),
+  // Schedule resolution lives in countdown-bar-resolver so the surface and its
+  // unit tests share one implementation of the timezone and priority rules.
+  const selected = tilecastCountdownBar.resolve(
+    activePlugins,
+    new Date(),
+    pluginClockOffsetMs,
   );
-  const selected = candidates[0];
   if (!selected) {
     countdownBar.classList.remove("visible");
     contentStage.classList.remove("plugin-push");
     return;
   }
-  const config = selected.plugin.config;
-  const height = Math.min(Math.max(config.heightPx, 40), 320);
-  document.documentElement.style.setProperty("--plugin-height", `${height}px`);
-  contentStage.classList.toggle("plugin-push", config.displayMode === "push");
-  countdownMessage.textContent = config.message;
-  countdownValue.textContent = selected.completed
-    ? (config.completionText ?? "")
-    : tilecastCountdownDisplay.compact(selected.remaining);
+  document.documentElement.style.setProperty(
+    "--plugin-height",
+    `${selected.heightPx}px`,
+  );
+  contentStage.classList.toggle("plugin-push", selected.displayMode === "push");
+  countdownMessage.textContent = selected.message;
+  countdownValue.textContent = selected.value;
   countdownBar.classList.add("visible");
 }
 
