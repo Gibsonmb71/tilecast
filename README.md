@@ -31,6 +31,8 @@ Studio accounts can add two-step verification: an authenticator app, WebAuthn pa
 
 Tilecast Studio and Tilecast Player use the [Tilecast Signal design system](docs/design-system.md) for shared color, typography, spacing, status, focus, and accessibility behavior.
 
+Built-in Plugins extend Player behavior outside playlists and Layout zones without loading third-party code. Countdown Bar is the first plugin: it supports recurring or one-time targeted bars, overlay and aspect-preserving push modes, local clock evaluation, and cached offline operation on Linux Player. See [Built-in plugins](docs/plugins.md).
+
 ## Quick start with Docker Compose
 
 Requirements: Docker Engine with Docker Compose v2.

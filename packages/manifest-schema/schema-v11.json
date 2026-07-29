@@ -51,6 +51,10 @@
       "type": "array",
       "items": { "$ref": "#/$defs/dataSource" }
     },
+    "plugins": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/plugin" }
+    },
     "emergency": { "$ref": "schema-v4.json#/$defs/emergency" },
     "syncGroup": { "$ref": "schema-v9.json#/properties/syncGroup" },
     "prefetchHorizonDays": { "type": "integer", "minimum": 1, "maximum": 90 },
@@ -61,6 +65,63 @@
     }
   },
   "$defs": {
+    "plugin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "version", "config"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "type": { "const": "countdown_bar" },
+        "version": { "const": 1 },
+        "config": { "$ref": "#/$defs/countdownBarConfig" }
+      }
+    },
+    "countdownBarConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "message",
+        "scheduleType",
+        "timezone",
+        "leadTimeSeconds",
+        "displayMode",
+        "heightPx",
+        "priority"
+      ],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 180 },
+        "message": { "type": "string", "minLength": 1, "maxLength": 280 },
+        "scheduleType": { "enum": ["weekly", "one_time"] },
+        "targetTime": {
+          "type": "string",
+          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$"
+        },
+        "daysOfWeek": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "integer", "minimum": 0, "maximum": 6 }
+        },
+        "oneTimeAt": { "type": "string", "format": "date-time" },
+        "timezone": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "leadTimeSeconds": {
+          "type": "integer",
+          "minimum": 60,
+          "maximum": 2592000
+        },
+        "completionText": { "type": "string", "maxLength": 280 },
+        "displayMode": { "enum": ["overlay", "push"] },
+        "heightPx": { "type": "integer", "minimum": 40, "maximum": 320 },
+        "priority": { "type": "integer", "minimum": -1000, "maximum": 1000 }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "scheduleType": { "const": "weekly" } } },
+          "then": { "required": ["targetTime", "daysOfWeek"] },
+          "else": { "required": ["oneTimeAt"] }
+        }
+      ]
+    },
     "widget": {
       "type": "object",
       "additionalProperties": false,

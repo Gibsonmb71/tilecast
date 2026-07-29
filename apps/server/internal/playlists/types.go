@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/tilecast/tilecast/apps/server/internal/layouts"
+	"github.com/tilecast/tilecast/apps/server/internal/plugins"
 )
 
 var (
@@ -190,23 +191,24 @@ type AssignmentSchedule struct {
 }
 
 type Manifest struct {
-	SchemaVersion          int                  `json:"schemaVersion"`
-	ManifestVersion        int64                `json:"manifestVersion"`
-	ScreenID               uuid.UUID            `json:"screenId"`
-	GeneratedAt            time.Time            `json:"generatedAt"`
-	Mode                   string               `json:"mode"`
-	Playlist               *ManifestPlaylist    `json:"playlist,omitempty"`
-	DirectFallbackPlaylist *ManifestPlaylist    `json:"directFallbackPlaylist,omitempty"`
-	Playlists              []ManifestPlaylist   `json:"playlists"`
-	Schedules              []ManifestSchedule   `json:"schedules"`
-	Assets                 []ManifestAsset      `json:"assets"`
-	ServerTime             time.Time            `json:"serverTime"`
-	PrefetchHorizonDays    int                  `json:"prefetchHorizonDays"`
-	ActivationGraceSeconds int                  `json:"activationGraceSeconds"`
-	Websites               []ManifestWebsite    `json:"websites"`
-	Widgets                []ManifestWidget     `json:"widgets"`
-	DataSources            []ManifestDataSource `json:"dataSources"`
-	Takeover               *ManifestTakeover    `json:"takeover,omitempty"`
+	SchemaVersion          int                      `json:"schemaVersion"`
+	ManifestVersion        int64                    `json:"manifestVersion"`
+	ScreenID               uuid.UUID                `json:"screenId"`
+	GeneratedAt            time.Time                `json:"generatedAt"`
+	Mode                   string                   `json:"mode"`
+	Playlist               *ManifestPlaylist        `json:"playlist,omitempty"`
+	DirectFallbackPlaylist *ManifestPlaylist        `json:"directFallbackPlaylist,omitempty"`
+	Playlists              []ManifestPlaylist       `json:"playlists"`
+	Schedules              []ManifestSchedule       `json:"schedules"`
+	Assets                 []ManifestAsset          `json:"assets"`
+	ServerTime             time.Time                `json:"serverTime"`
+	PrefetchHorizonDays    int                      `json:"prefetchHorizonDays"`
+	ActivationGraceSeconds int                      `json:"activationGraceSeconds"`
+	Websites               []ManifestWebsite        `json:"websites"`
+	Widgets                []ManifestWidget         `json:"widgets"`
+	DataSources            []ManifestDataSource     `json:"dataSources"`
+	Plugins                []plugins.ManifestPlugin `json:"plugins"`
+	Takeover               *ManifestTakeover        `json:"takeover,omitempty"`
 	// LegacyTakeover mirrors Takeover under the pre-rename `emergency` key. A
 	// Player built before the takeover rename looks only for that key, and an
 	// override it cannot see is the one failure this feature must not have, so

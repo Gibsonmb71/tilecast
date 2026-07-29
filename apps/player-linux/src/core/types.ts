@@ -91,6 +91,30 @@ export interface ManifestAsset {
   downloadPath: string;
 }
 
+export interface ManifestCountdownBarConfig {
+  name: string;
+  message: string;
+  scheduleType: "weekly" | "one_time";
+  targetTime?: string | null;
+  daysOfWeek?: number[];
+  oneTimeAt?: string | null;
+  timezone: string;
+  leadTimeSeconds: number;
+  completionText?: string;
+  displayMode: "overlay" | "push";
+  heightPx: number;
+  priority: number;
+}
+
+export interface ManifestCountdownBarPlugin {
+  id: string;
+  type: "countdown_bar";
+  version: 1;
+  config: ManifestCountdownBarConfig;
+}
+
+export type ManifestPlugin = ManifestCountdownBarPlugin;
+
 export interface ManifestWebsite {
   assetId: string;
   name: string;
@@ -147,6 +171,7 @@ export interface Manifest {
   playlists: ManifestPlaylist[];
   schedules: ManifestSchedule[];
   assets: ManifestAsset[];
+  plugins?: ManifestPlugin[];
   serverTime: string;
   prefetchHorizonDays: number;
   activationGraceSeconds: number;

@@ -1,0 +1,176 @@
+.plugins-page {
+  display: grid;
+  gap: 24px;
+}
+
+.plugin-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 16px;
+}
+
+.plugin-card,
+.plugin-instance,
+.plugin-form__section {
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-raised);
+}
+
+.plugin-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 18px;
+  padding: 22px;
+}
+
+.plugin-card > .button {
+  grid-column: 2;
+  justify-self: start;
+}
+
+.plugin-card__icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  color: var(--text-primary);
+  background: var(--surface-muted);
+  border: 1px solid var(--border-subtle);
+}
+
+.plugin-card__heading,
+.plugin-instance__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.plugin-card h2,
+.plugin-instance h2,
+.plugin-form__section h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.plugin-card p,
+.plugin-instance p {
+  color: var(--text-secondary);
+}
+
+.plugin-card__instances {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.plugin-instance-list {
+  display: grid;
+  gap: 10px;
+}
+
+.plugin-instance {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  padding: 18px 20px;
+}
+
+.plugin-instance__actions,
+.plugin-form__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.plugin-form {
+  display: grid;
+  gap: 16px;
+  max-width: 980px;
+}
+
+.plugin-form__section {
+  display: grid;
+  gap: 16px;
+  padding: 22px;
+}
+
+.plugin-form label,
+.plugin-form fieldset {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.plugin-form input,
+.plugin-form select {
+  min-height: 40px;
+}
+
+.plugin-form small {
+  color: var(--danger-text);
+}
+
+.plugin-form__row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 14px;
+}
+
+.day-picker,
+.target-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.day-picker label,
+.target-picker label,
+.plugin-form .check-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 7px 10px;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-muted);
+}
+
+.day-picker input,
+.target-picker input,
+.plugin-form .check-row input {
+  min-height: auto;
+}
+
+.target-picker {
+  max-height: 260px;
+  overflow: auto;
+}
+
+.field-help {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.plugin-form__actions {
+  justify-content: flex-end;
+}
+
+@media (max-width: 680px) {
+  .plugin-card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .plugin-instance {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

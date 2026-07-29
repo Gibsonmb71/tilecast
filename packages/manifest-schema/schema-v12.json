@@ -57,6 +57,10 @@
       "type": "array",
       "items": { "$ref": "#/$defs/dataSource" }
     },
+    "plugins": {
+      "type": "array",
+      "items": { "$ref": "schema-v11.json#/$defs/plugin" }
+    },
     "emergency": { "$ref": "schema-v4.json#/$defs/emergency" },
     "syncGroup": { "$ref": "schema-v9.json#/properties/syncGroup" },
     "prefetchHorizonDays": { "type": "integer", "minimum": 1, "maximum": 90 },

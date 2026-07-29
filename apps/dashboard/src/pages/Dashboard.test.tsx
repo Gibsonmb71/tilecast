@@ -51,6 +51,7 @@ describe("SidebarNavigation", () => {
         "Content",
         "Presentations",
         "Schedules",
+        "Plugins",
         "Activity",
         "Settings",
       ]);

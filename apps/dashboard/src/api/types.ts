@@ -754,6 +754,38 @@ export type ScreenGroupList = {
   page: number;
   pageSize: number;
 };
+
+export type PluginSummary = {
+  id: "countdown_bar";
+  name: string;
+  description: string;
+  enabled: boolean;
+  instanceCount: number;
+};
+
+export type CountdownBarInput = {
+  name: string;
+  message: string;
+  scheduleType: "weekly" | "one_time";
+  targetTime?: string;
+  daysOfWeek: number[];
+  oneTimeAt?: string;
+  timezone: string;
+  leadTimeSeconds: number;
+  completionText: string;
+  displayMode: "overlay" | "push";
+  heightPx: number;
+  enabled: boolean;
+  priority: number;
+  targetScope: "all" | "screens" | "sync_groups" | "locations";
+  targetIds: string[];
+};
+
+export type CountdownBar = CountdownBarInput & {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+};
 export type ScheduleTarget = {
   type: "screen" | "group";
   id: string;

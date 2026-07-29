@@ -531,6 +531,61 @@ paths:
       responses:
         "204": { description: Location deleted }
         "409": { description: Location still has assigned screens }
+  /api/v1/plugins:
+    get:
+      operationId: listPlugins
+      responses:
+        "200": { description: Closed catalog of built-in Tilecast plugins }
+  /api/v1/plugins/countdown-bar/instances:
+    get:
+      operationId: listCountdownBarInstances
+      responses:
+        "200": { description: Configured Countdown Bar instances }
+    post:
+      operationId: createCountdownBarInstance
+      parameters:
+        - { $ref: "#/components/parameters/CSRFToken" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CountdownBarInput" }
+      responses:
+        "201": { description: Countdown Bar instance created }
+        "400": { description: Typed configuration or targets are invalid }
+        "403": { description: Owner or Administrator required }
+  /api/v1/plugins/countdown-bar/instances/{id}:
+    get:
+      operationId: getCountdownBarInstance
+      parameters:
+        - { $ref: "#/components/parameters/ResourceID" }
+      responses:
+        "200": { description: Countdown Bar instance }
+        "404": { description: Instance not found }
+    put:
+      operationId: updateCountdownBarInstance
+      parameters:
+        - { $ref: "#/components/parameters/ResourceID" }
+        - { $ref: "#/components/parameters/CSRFToken" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CountdownBarInput" }
+      responses:
+        "200": { description: Countdown Bar instance replaced }
+        "400": { description: Typed configuration or targets are invalid }
+        "403": { description: Owner or Administrator required }
+        "404": { description: Instance not found }
+    delete:
+      operationId: deleteCountdownBarInstance
+      parameters:
+        - { $ref: "#/components/parameters/ResourceID" }
+        - { $ref: "#/components/parameters/CSRFToken" }
+      responses:
+        "204": { description: Countdown Bar instance deleted }
+        "403": { description: Owner or Administrator required }
+        "404": { description: Instance not found }
   /api/v1/screens/pairing/{id}/reject:
     post:
       operationId: rejectPairing
@@ -2059,6 +2114,47 @@ components:
       scheme: bearer
       bearerFormat: Tilecast device credential
   schemas:
+    CountdownBarInput:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          name,
+          message,
+          scheduleType,
+          daysOfWeek,
+          timezone,
+          leadTimeSeconds,
+          completionText,
+          displayMode,
+          heightPx,
+          enabled,
+          priority,
+          targetScope,
+          targetIds,
+        ]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 180 }
+        message: { type: string, minLength: 1, maxLength: 280 }
+        scheduleType: { enum: [weekly, one_time] }
+        targetTime: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+        daysOfWeek:
+          type: array
+          uniqueItems: true
+          items: { type: integer, minimum: 0, maximum: 6 }
+        oneTimeAt: { type: string, format: date-time }
+        timezone: { type: string, minLength: 1, maxLength: 100 }
+        leadTimeSeconds: { type: integer, minimum: 60, maximum: 2592000 }
+        completionText: { type: string, maxLength: 280 }
+        displayMode: { enum: [overlay, push] }
+        heightPx: { type: integer, minimum: 40, maximum: 320 }
+        enabled: { type: boolean }
+        priority: { type: integer, minimum: -1000, maximum: 1000 }
+        targetScope: { enum: [all, screens, sync_groups, locations] }
+        targetIds:
+          type: array
+          maxItems: 250
+          items: { type: string, format: uuid }
     MultiFactorVerifyRequest:
       type: object
       additionalProperties: false
