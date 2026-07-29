@@ -1,12 +1,7 @@
 name: Bootstrap Android 0.17.0 and Linux 0.5.0 releases
 
 on:
-  push:
-    branches: [main]
   pull_request:
-    branches: [main]
-    types: [opened, synchronize, reopened]
-  pull_request_target:
     branches: [main]
     types: [opened, synchronize, reopened]
 
@@ -16,9 +11,7 @@ permissions:
 
 jobs:
   release:
-    if: >-
-      (github.event_name == 'push' && contains(github.event.head_commit.message, 'Release Android Player 0.17.0 and Linux Player 0.5.0')) ||
-      ((github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && contains(github.event.pull_request.title, 'Release Android Player 0.17.0 and Linux Player 0.5.0'))
+    if: contains(github.event.pull_request.title, 'Release Android Player 0.17.0 and Linux Player 0.5.0')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -26,35 +19,8 @@ jobs:
           fetch-depth: 0
           ref: main
 
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-
-      - name: Synchronize the Linux workspace lockfile
-        run: |
-          set -euo pipefail
-          node <<'NODE'
-          const fs = require('node:fs');
-          const path = 'package-lock.json';
-          const lock = JSON.parse(fs.readFileSync(path, 'utf8'));
-          const player = lock.packages?.['apps/player-linux'];
-          if (!player) throw new Error('apps/player-linux is missing from package-lock.json');
-          if (player.version !== '0.4.0' && player.version !== '0.5.0') {
-            throw new Error(`Unexpected Linux player lockfile version: ${player.version}`);
-          }
-          player.version = '0.5.0';
-          fs.writeFileSync(path, `${JSON.stringify(lock, null, 2)}\n`);
-          NODE
-
-          if ! git diff --quiet -- package-lock.json; then
-            git config user.name 'github-actions[bot]'
-            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git add package-lock.json
-            git commit -m 'chore: sync Linux Player lockfile for 0.5.0'
-            git push origin HEAD:main
-          fi
-
-          echo "release_sha=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - name: Resolve trusted release commit
+        run: echo "release_sha=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
       - name: Create immutable release tags
         env:
@@ -165,7 +131,7 @@ jobs:
           test -f "$root/android/tilecast-player.apk"
           test -f "$root/android/tilecast-player-update.json"
           test -f "$root/android/tilecast-player-update.json.sig"
-          jq -e '.product == "tilecast-player" and .platform == "android" and .versionName == "0.17.0" and .versionCode == 38 and .channel == "stable"' \
+          jq -e '.product == "tilecast-player" and .applicationId == "org.tilecast.player" and .versionName == "0.17.0" and .versionCode == 38 and .channel == "stable"' \
             "$root/android/tilecast-player-update.json" >/dev/null
 
           gh release download player-linux-v0.5.0 \
@@ -176,33 +142,3 @@ jobs:
           test -f "$root/linux/tilecast-player-update-linux.json.sig"
           jq -e '.product == "tilecast-player" and .platform == "linux" and .versionName == "0.5.0" and .versionCode == 5000 and .channel == "stable"' \
             "$root/linux/tilecast-player-update-linux.json" >/dev/null
-
-      - name: Record successful completion for cleanup verification
-        env:
-          ANDROID_RUN: ${{ steps.dispatch.outputs.android_run }}
-          LINUX_RUN: ${{ steps.dispatch.outputs.linux_run }}
-        run: |
-          set -euo pipefail
-          git pull --rebase origin main
-          mkdir -p .release-status
-          cat > .release-status/player-0.17.0-linux-0.5.0.json <<EOF
-          {
-            "android": {
-              "version": "0.17.0",
-              "tag": "player-v0.17.0",
-              "workflowRunId": $ANDROID_RUN
-            },
-            "linux": {
-              "version": "0.5.0",
-              "tag": "player-linux-v0.5.0",
-              "workflowRunId": $LINUX_RUN
-            },
-            "verified": true,
-            "completedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          }
-          EOF
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .release-status/player-0.17.0-linux-0.5.0.json
-          git commit -m 'chore: record completed player releases 0.17.0 and 0.5.0'
-          git push origin HEAD:main
