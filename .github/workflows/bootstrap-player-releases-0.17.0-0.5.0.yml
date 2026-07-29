@@ -28,8 +28,7 @@ jobs:
         run: |
           set -euo pipefail
           for tag in player-v0.17.0 player-linux-v0.5.0; do
-            existing="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq .object.sha 2>/dev/null || true)"
-            if [ -n "$existing" ]; then
+            if existing="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq .object.sha 2>/dev/null)"; then
               if [ "$existing" != "$release_sha" ]; then
                 echo "$tag already points to $existing instead of $release_sha" >&2
                 exit 1
