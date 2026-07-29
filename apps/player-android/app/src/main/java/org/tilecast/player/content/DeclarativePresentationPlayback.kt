@@ -351,14 +351,8 @@ private fun formatEnvironment(binding: PresentationBinding, now: Instant): Strin
 internal fun formatValue(value: String, format: String, precision: Int?, now: Instant = Instant.now()): String {
     if (format == "relative-countdown") {
         val target = parseRecordInstant(value) ?: return value
-        val remaining = Duration.between(now, target)
-        if (remaining.isZero || remaining.isNegative) return "Now"
-        return when {
-            remaining.toDays() > 0 -> "${remaining.toDays()}d ${remaining.toHoursPart()}h"
-            remaining.toHours() > 0 -> "${remaining.toHours()}h ${remaining.toMinutesPart()}m"
-            remaining.toMinutes() > 0 -> "${remaining.toMinutes()}m ${remaining.toSecondsPart()}s"
-            else -> "${remaining.seconds}s"
-        }
+        // Shared with the Countdown Bar so one vocabulary covers both surfaces.
+        return compactCountdown(Duration.between(now, target).toMillis())
     }
     if (format == "time") {
         val instant = parseRecordInstant(value) ?: return value

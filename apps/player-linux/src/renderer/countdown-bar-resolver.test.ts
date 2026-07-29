@@ -17,6 +17,7 @@ interface CountdownBarPlugin {
     completionText?: string;
     displayMode: "overlay" | "push";
     heightPx: number;
+    progressFill?: "none" | "drain" | null;
     priority: number;
   };
 }
@@ -32,6 +33,7 @@ interface CountdownBarResolver {
     value: string;
     displayMode: string;
     targetAt: string;
+    remainingFraction: number | null;
   } | null;
 }
 
@@ -105,6 +107,41 @@ describe("countdown bar resolver", () => {
     expect(
       resolver.resolve([low, high], new Date("2026-07-27T15:50:00Z")),
     ).toMatchObject({ id: "bar-2", message: "High", displayMode: "push" });
+  });
+
+  it("reports no fill fraction unless the instance opts in", () => {
+    const active = resolver.resolve(
+      [weekly()],
+      new Date("2026-07-27T15:50:00Z"),
+    );
+    expect(active?.remainingFraction).toBeNull();
+  });
+
+  it("drains the fill across the lead window", () => {
+    const plugin = weekly({ progressFill: "drain" });
+    // leadTimeSeconds is 900, so the window opens at 15:45 and ends at 16:00.
+    const at = (iso: string) =>
+      resolver.resolve([plugin], new Date(iso))?.remainingFraction;
+    expect(at("2026-07-27T15:45:00Z")).toBeCloseTo(1);
+    expect(at("2026-07-27T15:50:00Z")).toBeCloseTo(2 / 3);
+    expect(at("2026-07-27T15:52:30Z")).toBeCloseTo(0.5);
+    expect(at("2026-07-27T15:59:59Z")).toBeCloseTo(1 / 900, 3);
+  });
+
+  it("holds the fill at empty while completion text shows", () => {
+    const plugin: CountdownBarPlugin = {
+      ...weekly({ progressFill: "drain" }),
+      config: {
+        ...weekly({ progressFill: "drain" }).config,
+        scheduleType: "one_time",
+        targetTime: null,
+        daysOfWeek: [],
+        oneTimeAt: "2026-07-27T16:00:00Z",
+      },
+    };
+    const active = resolver.resolve([plugin], new Date("2026-07-27T16:00:30Z"));
+    expect(active?.value).toBe("Lunch is over");
+    expect(active?.remainingFraction).toBe(0);
   });
 
   it("applies the persisted server clock offset", () => {

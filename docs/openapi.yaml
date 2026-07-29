@@ -2148,6 +2148,14 @@ components:
         completionText: { type: string, maxLength: 280 }
         displayMode: { enum: [overlay, push] }
         heightPx: { type: integer, minimum: 40, maximum: 320 }
+        progressFill:
+          enum: [none, drain]
+          default: none
+          description: >-
+            Background treatment behind the bar text. "drain" starts the bar
+            fully tinted when the lead window opens and retreats the tint
+            leftward as the target approaches, leaving only the bar background
+            at zero. Omitted means "none".
         enabled: { type: boolean }
         priority: { type: integer, minimum: -1000, maximum: 1000 }
         targetScope: { enum: [all, screens, sync_groups, locations] }

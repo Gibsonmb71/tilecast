@@ -12,7 +12,7 @@ The v13 native presentation contract also supports Player-local temporal record 
 
 Manifest v14 adds the optional `crossfade` playlist transition. Capable Players composite overlapping images, videos, websites, Widgets, and Layouts during the visual transition. The server projects `crossfade` as `fade` for older Players, and v1-v13 remain unchanged.
 
-Manifests v11-v14 may also carry the optional typed `plugins` projection. Built-in plugins are independent of playlist and Layout selection. The first discriminator is `countdown_bar@1`; its recurrence, target, display mode, height, and priority are cached with the rest of the manifest so Players can evaluate it locally while offline.
+Manifests v11-v14 may also carry the optional typed `plugins` projection. Built-in plugins are independent of playlist and Layout selection. The first discriminator is `countdown_bar@1`; its recurrence, target, display mode, height, optional background fill, and priority are cached with the rest of the manifest so Players can evaluate it locally while offline. The optional `progressFill` is additive: a Player that predates it ignores the key and renders the bar exactly as before.
 
 Time-series points may carry one `value` or a bounded `values` object for multi-series charts. Capability revision 2 covers native charts, asset images, target progress, repeat indexes, and richer conditions without changing the presentation schema version.
 

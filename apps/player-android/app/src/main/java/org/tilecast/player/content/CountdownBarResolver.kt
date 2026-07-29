@@ -1,0 +1,152 @@
+package org.tilecast.player.content
+
+import org.tilecast.player.network.ManifestPlugin
+import java.time.DayOfWeek
+import java.time.Duration
+import java.time.Instant
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.OffsetDateTime
+import java.time.ZoneId
+
+/**
+ * Countdown Bar schedule resolution. This mirrors the Linux renderer's
+ * countdown-bar-resolver: the same weekly, one-time, DST, completion, priority,
+ * and fill rules, so a bar targeted at both platforms behaves identically.
+ * Recurrence is evaluated locally from the cached manifest, so an offline player
+ * keeps showing and hiding bars on schedule.
+ */
+internal data class ActiveCountdownBar(
+    val id: String,
+    val message: String,
+    val value: String,
+    val displayMode: String,
+    val heightPx: Int,
+    val priority: Int,
+    val targetAt: Instant,
+    val completed: Boolean,
+    /**
+     * Share of the lead window still to run: 1 when the bar appears, 0 at the
+     * target, and 0 while completion text shows. Null when the instance asked
+     * for no fill.
+     */
+    val remainingFraction: Float?,
+)
+
+private val CompletionDisplay: Duration = Duration.ofMinutes(1)
+
+internal fun resolveCountdownBar(
+    plugins: List<ManifestPlugin>,
+    now: Instant,
+    clockOffsetSeconds: Long? = null,
+): ActiveCountdownBar? {
+    val at = now.plusSeconds(clockOffsetSeconds ?: 0)
+    val active = mutableListOf<ActiveCountdownBar>()
+    for (plugin in plugins) {
+        if (plugin.type != "countdown_bar" || plugin.version != 1) continue
+        val config = plugin.config
+        val leadMs = config.leadTimeSeconds * 1_000L
+        for (target in countdownBarTargets(plugin, at)) {
+            val remainingMs = Duration.between(at, target).toMillis()
+            val completionText = config.completionText.trim()
+            val completed =
+                remainingMs <= 0 &&
+                    remainingMs >= -CompletionDisplay.toMillis() &&
+                    completionText.isNotEmpty()
+            if (remainingMs > leadMs || (remainingMs <= 0 && !completed)) continue
+            val fraction = if (leadMs > 0) (remainingMs.toFloat() / leadMs).coerceIn(0f, 1f) else 0f
+            active +=
+                ActiveCountdownBar(
+                    id = plugin.id,
+                    message = config.message,
+                    value = if (completed) completionText else compactCountdown(remainingMs),
+                    displayMode = config.displayMode,
+                    heightPx = config.heightPx.coerceIn(40, 320),
+                    priority = config.priority,
+                    targetAt = target,
+                    completed = completed,
+                    remainingFraction = if (config.progressFill == "drain") fraction else null,
+                )
+        }
+    }
+    return active
+        .sortedWith(
+            compareByDescending<ActiveCountdownBar> { it.priority }
+                .thenBy { it.targetAt }
+                .thenBy { it.id },
+        )
+        .firstOrNull()
+}
+
+/**
+ * Candidate targets around now. A lead window may open up to 30 days before its
+ * target, and looking backwards as well keeps completion text alive just after
+ * the preceding occurrence.
+ */
+private fun countdownBarTargets(plugin: ManifestPlugin, now: Instant): List<Instant> {
+    val config = plugin.config
+    if (config.scheduleType == "one_time") {
+        val parsed =
+            config.oneTimeAt?.let { value ->
+                runCatching { Instant.parse(value) }.getOrNull()
+                    ?: runCatching { OffsetDateTime.parse(value).toInstant() }.getOrNull()
+            }
+        return listOfNotNull(parsed)
+    }
+    val time = parseTargetTime(config.targetTime) ?: return emptyList()
+    if (config.daysOfWeek.isEmpty()) return emptyList()
+    val zone = runCatching { ZoneId.of(config.timezone) }.getOrDefault(ZoneId.of("UTC"))
+    val days = config.daysOfWeek.mapNotNull(::isoDayOfWeek).toSet()
+    if (days.isEmpty()) return emptyList()
+    val today = now.atZone(zone).toLocalDate()
+    val targets = mutableListOf<Instant>()
+    for (offset in -31L..31L) {
+        val date: LocalDate = today.plusDays(offset)
+        if (date.dayOfWeek !in days) continue
+        // ZonedDateTime resolves a wall time that a DST jump skipped or repeated,
+        // which is what keeps a 12:00 bar at local noon across the boundary.
+        targets += date.atTime(time).atZone(zone).toInstant()
+    }
+    return targets
+}
+
+/** Manifest days are 0=Sunday through 6=Saturday. */
+private fun isoDayOfWeek(day: Int): DayOfWeek? =
+    when (day) {
+        0 -> DayOfWeek.SUNDAY
+        1 -> DayOfWeek.MONDAY
+        2 -> DayOfWeek.TUESDAY
+        3 -> DayOfWeek.WEDNESDAY
+        4 -> DayOfWeek.THURSDAY
+        5 -> DayOfWeek.FRIDAY
+        6 -> DayOfWeek.SATURDAY
+        else -> null
+    }
+
+/** Accepts the HH:MM the API publishes and the HH:MM:SS Postgres can render. */
+private fun parseTargetTime(value: String?): LocalTime? {
+    val match = Regex("^(\\d{2}):(\\d{2})").find(value ?: "") ?: return null
+    val hour = match.groupValues[1].toIntOrNull() ?: return null
+    val minute = match.groupValues[2].toIntOrNull() ?: return null
+    if (hour > 23 || minute > 59) return null
+    return LocalTime.of(hour, minute)
+}
+
+/**
+ * The same compact vocabulary the Linux renderer and Studio use, so one bar does
+ * not read "5m 4s" on one platform and "5:04" on another.
+ */
+internal fun compactCountdown(remainingMilliseconds: Long): String {
+    if (remainingMilliseconds <= 0) return "Now"
+    val totalSeconds = remainingMilliseconds / 1_000
+    val days = totalSeconds / 86_400
+    val hours = (totalSeconds % 86_400) / 3_600
+    val minutes = (totalSeconds % 3_600) / 60
+    val seconds = totalSeconds % 60
+    return when {
+        days > 0 -> "${days}d ${hours}h"
+        hours > 0 -> "${hours}h ${minutes}m"
+        minutes > 0 -> "${minutes}m ${seconds}s"
+        else -> "${seconds}s"
+    }
+}

@@ -52,6 +52,7 @@ const formSchema = z
       .max(43_200, "Lead time must be between 1 and 43200 minutes."),
     completionText: z.string().trim().max(280),
     displayMode: z.enum(["overlay", "push"]),
+    progressFill: z.enum(["none", "drain"]),
     heightPx: z.coerce
       .number({ error: "Enter a height between 40 and 320 pixels." })
       .int("Enter a height between 40 and 320 pixels.")
@@ -107,6 +108,7 @@ const defaultValues: FormValues = {
   leadMinutes: 15,
   completionText: "",
   displayMode: "overlay",
+  progressFill: "none",
   heightPx: 72,
   enabled: true,
   priority: 0,
@@ -372,6 +374,7 @@ export function CountdownBarEditorPage() {
       leadMinutes: value.leadTimeSeconds / 60,
       completionText: value.completionText,
       displayMode: value.displayMode,
+      progressFill: value.progressFill ?? "none",
       heightPx: value.heightPx,
       enabled: value.enabled,
       priority: value.priority,
@@ -393,6 +396,7 @@ export function CountdownBarEditorPage() {
   const scheduleType = watch("scheduleType");
   const targetScope = watch("targetScope");
   const displayMode = watch("displayMode");
+  const progressFill = watch("progressFill");
   // Signal Select owns the ref on its hidden native select, so register()'s ref
   // never lands and react-hook-form drops the field on the next render. The
   // three selects are held explicitly instead.
@@ -402,6 +406,10 @@ export function CountdownBarEditorPage() {
     });
   const setDisplayMode = (value: string) =>
     setValue("displayMode", value as FormValues["displayMode"], {
+      shouldDirty: true,
+    });
+  const setProgressFill = (value: string) =>
+    setValue("progressFill", value as FormValues["progressFill"], {
       shouldDirty: true,
     });
   // Days are held as numbers, so a checkbox group cannot express them: react-hook-form
@@ -459,6 +467,7 @@ export function CountdownBarEditorPage() {
       leadTimeSeconds: values.leadMinutes * 60,
       completionText: values.completionText,
       displayMode: values.displayMode,
+      progressFill: values.progressFill,
       heightPx: values.heightPx,
       enabled: values.enabled,
       priority: values.priority,
@@ -596,6 +605,22 @@ export function CountdownBarEditorPage() {
               >
                 <option value="overlay">Overlay current content</option>
                 <option value="push">Push and shrink current content</option>
+              </Select>
+            </Field>
+            <Field
+              label="Background countdown"
+              description="Drain empties the bar from right to left as the target approaches."
+            >
+              <Select
+                name="progressFill"
+                // The Field description joins the wrapping label's text, so the
+                // control names itself rather than inheriting label + hint.
+                aria-label="Background countdown"
+                value={progressFill}
+                onChange={(event) => setProgressFill(event.target.value)}
+              >
+                <option value="none">Plain background</option>
+                <option value="drain">Drain right to left</option>
               </Select>
             </Field>
             <FormField

@@ -14,7 +14,7 @@ func validInput() CountdownBarInput {
 		Name: "Lunch", Message: "Lunch ends in", ScheduleType: "weekly",
 		TargetTime: &target, DaysOfWeek: []int{1, 2, 3, 4, 5},
 		Timezone: "America/New_York", LeadTimeSeconds: 900,
-		DisplayMode: "overlay", HeightPX: 72, Enabled: true,
+		DisplayMode: "overlay", HeightPX: 72, ProgressFill: "none", Enabled: true,
 		TargetScope: "all", TargetIDs: []uuid.UUID{},
 	}
 }
@@ -22,6 +22,19 @@ func validInput() CountdownBarInput {
 func TestValidateCountdownBar(t *testing.T) {
 	if err := validateCountdownBar(validInput()); err != nil {
 		t.Fatalf("valid weekly input rejected: %v", err)
+	}
+	drain := validInput()
+	drain.ProgressFill = "drain"
+	if err := validateCountdownBar(drain); err != nil {
+		t.Fatalf("draining fill rejected: %v", err)
+	}
+	omitted := validInput()
+	omitted.ProgressFill = ""
+	if err := validateCountdownBar(normalizeCountdownBar(omitted)); err != nil {
+		t.Fatalf("omitted progressFill should default to none, got %v", err)
+	}
+	if got := normalizeCountdownBar(omitted).ProgressFill; got != "none" {
+		t.Fatalf("expected omitted progressFill to normalize to none, got %q", got)
 	}
 	oneTime := validInput()
 	oneTime.ScheduleType = "one_time"
@@ -51,6 +64,11 @@ func TestValidateCountdownBarRejectsInvalidScheduleAndTargets(t *testing.T) {
 	input.TargetIDs = []uuid.UUID{duplicate, duplicate}
 	if err := validateCountdownBar(input); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("expected duplicate targets to be invalid, got %v", err)
+	}
+	input = validInput()
+	input.ProgressFill = "sideways"
+	if err := validateCountdownBar(input); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("expected an unknown progressFill to be rejected, got %v", err)
 	}
 	input = validInput()
 	input.Timezone = "not/a-zone"

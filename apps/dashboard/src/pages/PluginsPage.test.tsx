@@ -72,6 +72,7 @@ const storedInstance = {
   leadTimeSeconds: 900,
   completionText: "",
   displayMode: "overlay",
+  progressFill: "drain",
   heightPx: 72,
   enabled: true,
   priority: 0,
@@ -212,6 +213,7 @@ describe("Plugins", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(submitted).toHaveLength(1));
     expect(submitted[0]?.daysOfWeek).toEqual([1, 3]);
+    expect(submitted[0]?.progressFill).toBe("drain");
   }, 10_000);
 
   it("submits the checkbox groups it renders", async () => {
@@ -241,6 +243,18 @@ describe("Plugins", () => {
     chooseOption("Target type", "Sync groups");
     expect(await screen.findByText("No sync groups exist yet.")).toBeVisible();
     expect(screen.getByText("0 of 0 selected")).toBeVisible();
+  }, 10_000);
+
+  it("submits the background countdown choice and preserves a stored one", async () => {
+    renderRoute(<CountdownBarEditorPage />, "/plugins/countdown-bar/new");
+    await waitFor(() => expect(screen.getByLabelText("Name")).toBeEnabled());
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Lunch" },
+    });
+    chooseOption("Background countdown", "Drain right to left");
+    fireEvent.click(screen.getByRole("button", { name: "Create instance" }));
+    await waitFor(() => expect(submitted).toHaveLength(1));
+    expect(submitted[0]?.progressFill).toBe("drain");
   }, 10_000);
 
   it("keeps the schedule and mode selections across an unrelated edit", async () => {
