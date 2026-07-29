@@ -71,9 +71,36 @@
         visibility: visible;
         transform: translateY(0);
       }
+      #countdown-bar .countdown-message,
+      #countdown-bar .countdown-value {
+        position: relative;
+        z-index: 1;
+      }
       #countdown-bar .countdown-value {
         font-variant-numeric: tabular-nums;
         font-weight: 750;
+      }
+      /* The draining fill sits behind the text and shrinks toward the left, so
+         at zero only the bar background is left. Width is set from the resolved
+         remaining fraction; the transition smooths the once-a-second step
+         without implying a precision the clock does not have. A negative
+         z-index would paint it behind the bar's own background and disappear,
+         so it stays at 0 and the text is lifted above it instead. */
+      #countdown-bar .countdown-fill {
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 0;
+        z-index: 0;
+        background: rgba(255, 255, 255, 0.16);
+        border-right: 2px solid rgba(255, 255, 255, 0.42);
+        transition: width 960ms linear;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #countdown-bar .countdown-fill {
+          transition: none;
+        }
       }
       .layer.visible {
         opacity: 1;
@@ -180,6 +207,7 @@
       <div id="message"></div>
     </div>
     <div id="countdown-bar" role="status" aria-live="polite">
+      <span class="countdown-fill" aria-hidden="true"></span>
       <span class="countdown-message"></span>
       <span class="countdown-value"></span>
     </div>

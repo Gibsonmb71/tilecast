@@ -103,6 +103,8 @@ export interface ManifestCountdownBarConfig {
   completionText?: string;
   displayMode: "overlay" | "push";
   heightPx: number;
+  /** Absent on manifests published before the fill existed. */
+  progressFill?: "none" | "drain" | null;
   priority: number;
 }
 

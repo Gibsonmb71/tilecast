@@ -20,6 +20,7 @@ interface TilecastCountdownBarPlugin {
     completionText?: string;
     displayMode: "overlay" | "push";
     heightPx: number;
+    progressFill?: "none" | "drain" | null;
     priority: number;
   };
 }
@@ -33,6 +34,13 @@ interface TilecastActiveCountdownBar {
   priority: number;
   targetAt: string;
   completed: boolean;
+  /**
+   * Share of the lead window still to run, 1 when the bar first appears and 0 at
+   * the target. Always 0 while completion text shows. `null` when the instance
+   * asks for no fill, so the surface can leave the background alone rather than
+   * paint a full-width tint.
+   */
+  remainingFraction: number | null;
 }
 
 interface TilecastCountdownBarResolver {
@@ -173,6 +181,11 @@ const tilecastCountdownBar: TilecastCountdownBarResolver = (() => {
           ) {
             continue;
           }
+          // A non-positive lead window would divide by zero; treat it as spent
+          // rather than emitting NaN into a CSS width.
+          const leadMs = plugin.config.leadTimeSeconds * 1_000;
+          const fraction =
+            leadMs > 0 ? Math.min(1, Math.max(0, remaining / leadMs)) : 0;
           active.push({
             id: plugin.id,
             message: plugin.config.message,
@@ -184,6 +197,8 @@ const tilecastCountdownBar: TilecastCountdownBarResolver = (() => {
             priority: plugin.config.priority,
             targetAt: new Date(target).toISOString(),
             completed,
+            remainingFraction:
+              plugin.config.progressFill === "drain" ? fraction : null,
           });
         }
       }

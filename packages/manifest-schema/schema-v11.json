@@ -112,6 +112,7 @@
         "completionText": { "type": "string", "maxLength": 280 },
         "displayMode": { "enum": ["overlay", "push"] },
         "heightPx": { "type": "integer", "minimum": 40, "maximum": 320 },
+        "progressFill": { "enum": ["none", "drain"] },
         "priority": { "type": "integer", "minimum": -1000, "maximum": 1000 }
       },
       "allOf": [

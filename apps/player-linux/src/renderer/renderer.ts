@@ -157,6 +157,9 @@ const countdownMessage = countdownBar.querySelector(
 const countdownValue = countdownBar.querySelector(
   ".countdown-value",
 ) as HTMLSpanElement;
+const countdownFill = countdownBar.querySelector(
+  ".countdown-fill",
+) as HTMLSpanElement;
 
 let frontLayer = layerA;
 let backLayer = layerB;
@@ -355,6 +358,12 @@ function updatePluginSurface(): void {
   contentStage.classList.toggle("plugin-push", selected.displayMode === "push");
   countdownMessage.textContent = selected.message;
   countdownValue.textContent = selected.value;
+  // A null fraction means this instance asked for no fill, so the width stays
+  // at zero and the bar keeps its plain background.
+  countdownFill.style.width =
+    selected.remainingFraction === null
+      ? "0"
+      : `${selected.remainingFraction * 100}%`;
   countdownBar.classList.add("visible");
 }
 
