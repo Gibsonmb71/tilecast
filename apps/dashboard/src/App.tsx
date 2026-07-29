@@ -29,6 +29,8 @@ import { WidgetEditorPage, WidgetsPage } from "./pages/WidgetsPage";
 import { DataSourceEditorPage, DataSourcesPage } from "./pages/DataSourcesPage";
 import { ActivityPage } from "./pages/ActivityPage";
 import {
+  BrandBugEditorPage,
+  BrandBugsPage,
   CountdownBarEditorPage,
   CountdownBarsPage,
   PluginsPage,
@@ -317,7 +319,14 @@ export const studioRoutes: RouteObject[] = [
             "Plugins",
             "Manage built-in features that operate outside playlists",
             "/plugins",
-            ["countdown bar", "emergency alerts", "player features"],
+            [
+              "countdown bar",
+              "emergency alerts",
+              "brand bug",
+              "watermark",
+              "logo",
+              "player features",
+            ],
           ),
         },
         children: [
@@ -374,6 +383,21 @@ export const studioRoutes: RouteObject[] = [
             path: "forms/:id",
             element: <FormDataSourcePage />,
             handle: { breadcrumb: "Form", resource: "form" },
+          },
+          {
+            path: "brand-bug",
+            element: <BrandBugsPage />,
+            handle: { breadcrumb: "Brand Bug / Watermark" },
+          },
+          {
+            path: "brand-bug/new",
+            element: <BrandBugEditorPage />,
+            handle: { breadcrumb: "New instance" },
+          },
+          {
+            path: "brand-bug/:id",
+            element: <BrandBugEditorPage />,
+            handle: { breadcrumb: "Brand Bug instance" },
           },
         ],
       },

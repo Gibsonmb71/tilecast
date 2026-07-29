@@ -120,7 +120,32 @@ export interface ManifestCountdownBarPlugin {
   config: ManifestCountdownBarConfig;
 }
 
-export type ManifestPlugin = ManifestCountdownBarPlugin;
+export interface ManifestBrandBugConfig {
+  name: string;
+  corner: "top_left" | "top_right" | "bottom_left" | "bottom_right";
+  imageAssetId?: string | null;
+  imageVariantId?: string | null;
+  text?: string;
+  widthPercent: number;
+  textSizePercent: number;
+  opacityPercent: number;
+  marginPercent: number;
+  textColor: string;
+  backgroundStyle: "none" | "scrim";
+  startsAt?: string | null;
+  endsAt?: string | null;
+  priority: number;
+}
+
+export interface ManifestBrandBugPlugin {
+  id: string;
+  type: "brand_bug";
+  version: 1;
+  config: ManifestBrandBugConfig;
+}
+
+export type ManifestPlugin =
+  ManifestCountdownBarPlugin | ManifestBrandBugPlugin;
 
 export interface ManifestWebsite {
   assetId: string;

@@ -69,9 +69,11 @@ type CountdownBar struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
-// Config is the union of every plugin's configuration rather than one plugin's
+// Config is the discriminated payload selected by Type rather than one plugin's
 // struct: the manifest carries a single `plugins` array, and a screen may be
-// delivered a Countdown Bar and an Emergency Alerts ticker at the same time.
+// delivered a Countdown Bar, an Emergency Alerts ticker, and a Brand Bug at the
+// same time. A later projection stage may fill in values the plugins package
+// cannot resolve on its own, such as the media variant behind a Brand Bug logo.
 type ManifestPlugin struct {
 	ID      uuid.UUID `json:"id"`
 	Type    string    `json:"type"`
@@ -152,6 +154,13 @@ func (s *Service) Catalog(ctx context.Context) (Catalog, error) {
 		Scan(&formCount); err != nil {
 		return Catalog{}, err
 	}
+	var brandBugEnabled bool
+	var brandBugCount int
+	if err := s.db.QueryRow(ctx,
+		`SELECT COALESCE(bool_or(enabled),FALSE),count(*) FROM brand_bug_instances`).
+		Scan(&brandBugEnabled, &brandBugCount); err != nil {
+		return Catalog{}, err
+	}
 	return Catalog{Items: []CatalogPlugin{
 		{
 			ID: "countdown_bar", Name: "Countdown Bar",
@@ -170,6 +179,12 @@ func (s *Service) Catalog(ctx context.Context) (Catalog, error) {
 			Description:   "Collect submissions, run approval workflows, and publish approved records to Widgets.",
 			Enabled:       true,
 			InstanceCount: formCount,
+		},
+		{
+			ID: "brand_bug", Name: "Brand Bug / Watermark",
+			Description:   "Keep a logo, sponsor mark, legal notice, campaign badge, or location label in a corner over all normal content.",
+			Enabled:       brandBugEnabled,
+			InstanceCount: brandBugCount,
 		},
 	}}, nil
 }
@@ -237,7 +252,13 @@ func trimTargetTime(value *string) *string {
 }
 
 func (s *Service) targetIDs(ctx context.Context, id uuid.UUID) ([]uuid.UUID, error) {
-	rows, err := s.db.Query(ctx, `SELECT target_id FROM countdown_bar_targets WHERE instance_id=$1 ORDER BY target_id`, id)
+	return s.targetIDsFrom(ctx, "countdown_bar_targets", id)
+}
+
+// targetIDsFrom reads one instance's targets. `table` is always a literal from
+// this package, never request input.
+func (s *Service) targetIDsFrom(ctx context.Context, table string, id uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := s.db.Query(ctx, `SELECT target_id FROM `+table+` WHERE instance_id=$1 ORDER BY target_id`, id)
 	if err != nil {
 		return nil, err
 	}
@@ -436,17 +457,23 @@ func validateCountdownBar(input CountdownBarInput) error {
 	} else {
 		return fmt.Errorf("%w: scheduleType must be weekly or one_time", ErrInvalid)
 	}
-	if input.TargetScope == "all" {
-		if len(input.TargetIDs) != 0 {
+	return validateTargeting(input.TargetScope, input.TargetIDs)
+}
+
+// validateTargeting is shared by every plugin: the four scopes and their bounds
+// are a property of Tilecast targeting, not of any one plugin.
+func validateTargeting(scope string, ids []uuid.UUID) error {
+	if scope == "all" {
+		if len(ids) != 0 {
 			return fmt.Errorf("%w: all-screen targeting cannot include targetIds", ErrInvalid)
 		}
-	} else if input.TargetScope != "screens" && input.TargetScope != "sync_groups" && input.TargetScope != "locations" {
+	} else if scope != "screens" && scope != "sync_groups" && scope != "locations" {
 		return fmt.Errorf("%w: targetScope is invalid", ErrInvalid)
-	} else if len(input.TargetIDs) == 0 || len(input.TargetIDs) > 250 {
+	} else if len(ids) == 0 || len(ids) > 250 {
 		return fmt.Errorf("%w: targeted instances require between one and 250 targets", ErrInvalid)
 	}
 	seenTarget := map[uuid.UUID]bool{}
-	for _, target := range input.TargetIDs {
+	for _, target := range ids {
 		if seenTarget[target] {
 			return fmt.Errorf("%w: targetIds must be unique", ErrInvalid)
 		}
@@ -511,10 +538,11 @@ func (s *Service) notify(notes []note) {
 	}
 }
 
-// ManifestForScreen publishes every plugin surface this screen should be
-// running. Bars from different plugins travel in one array and carry their own
-// priority, so the player decides what occupies the bar from the manifest alone
-// rather than from the order the server happened to query in.
+// ManifestForScreen projects every enabled instance of every built-in plugin
+// that applies to one screen, in a stable order. Bars from different plugins
+// travel in one array and carry their own priority, so the player decides what
+// occupies the bar from the manifest alone rather than from the order the server
+// happened to query in.
 func (s *Service) ManifestForScreen(ctx context.Context, screenID uuid.UUID) ([]ManifestPlugin, error) {
 	out, err := s.countdownBarsForScreen(ctx, screenID)
 	if err != nil {
@@ -524,7 +552,12 @@ func (s *Service) ManifestForScreen(ctx context.Context, screenID uuid.UUID) ([]
 	if err != nil {
 		return nil, err
 	}
-	return append(out, tickers...), nil
+	out = append(out, tickers...)
+	bugs, err := s.brandBugsForScreen(ctx, screenID)
+	if err != nil {
+		return nil, err
+	}
+	return append(out, bugs...), nil
 }
 
 // alertTickersForScreen projects live Emergency Alerts activations whose rule

@@ -8,7 +8,7 @@ Playlist items may reference either a ready Asset (`assetId`) or a published Lay
 
 Milestone 10 adds `GET /screens/{id}/reliability` for capability-versus-requested-state diagnostics and `PUT /screens/{id}/power-assist` for explicit administrator confirmation of physical sleep, wake, TV, input-selection, and startup test results. Persistent commands add `retry_player_recovery`, `exit_safe_mode`, `power_assist_sleep`, and `power_assist_wake`; all use empty typed payloads and remain Owner/Administrator-only.
 
-Built-in plugins are listed at `GET /plugins`. The catalog includes Forms, whose existing form and record endpoints remain below `/forms` and `/data-sources/{id}`, and Player-facing plugins such as Countdown Bar. Countdown Bar instances are managed below `/plugins/countdown-bar/instances`; Owner or Administrator and CSRF are required for create, replace, and delete. See [Built-in plugins](plugins.md) for plugin behavior and boundaries.
+Built-in plugins are listed at `GET /plugins`. The catalog includes Forms, whose existing form and record endpoints remain below `/forms` and `/data-sources/{id}`, and Player-facing plugins such as Countdown Bar and Brand Bug / Watermark. Countdown Bar instances are managed below `/plugins/countdown-bar/instances` and Brand Bug instances below `/plugins/brand-bug/instances`; Owner or Administrator and CSRF are required for create, replace, and delete. See [Built-in plugins](plugins.md) for plugin behavior and boundaries.
 
 ## System
 

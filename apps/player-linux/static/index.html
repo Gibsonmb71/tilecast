@@ -230,6 +230,63 @@
           max-width: 100%;
         }
       }
+      /* Brand Bug marks sit above the countdown bar's z-index because a
+         bottom-corner mark is lifted clear of the bar rather than hidden by
+         it. The layer never takes input: the player has no pointer. */
+      #brand-bugs {
+        position: absolute;
+        inset: 0;
+        z-index: 26;
+        pointer-events: none;
+      }
+      .brand-bug {
+        position: absolute;
+        display: none;
+        flex-direction: column;
+        gap: 0.35em;
+        box-sizing: border-box;
+        line-height: 1.15;
+        font-weight: 600;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+        --brand-bug-margin: 3vmin;
+        --brand-bug-lift: 0px;
+      }
+      .brand-bug.visible {
+        display: flex;
+      }
+      .brand-bug--top-left,
+      .brand-bug--top-right {
+        top: var(--brand-bug-margin);
+      }
+      .brand-bug--bottom-left,
+      .brand-bug--bottom-right {
+        bottom: calc(var(--brand-bug-margin) + var(--brand-bug-lift));
+      }
+      .brand-bug--top-left,
+      .brand-bug--bottom-left {
+        left: var(--brand-bug-margin);
+        align-items: flex-start;
+        text-align: left;
+      }
+      .brand-bug--top-right,
+      .brand-bug--bottom-right {
+        right: var(--brand-bug-margin);
+        align-items: flex-end;
+        text-align: right;
+      }
+      .brand-bug--scrim {
+        padding: 0.5em 0.75em;
+        border-radius: 10px;
+        background: rgba(13, 20, 27, 0.55);
+      }
+      .brand-bug__logo {
+        display: block;
+        height: auto;
+        max-width: 100%;
+      }
+      .brand-bug__text {
+        display: block;
+      }
       .layer.visible {
         opacity: 1;
       }
@@ -346,11 +403,13 @@
         <span class="ticker-track"><span class="ticker-message"></span></span>
       </span>
     </div>
+    <div id="brand-bugs" aria-hidden="true"></div>
     <div id="identify"></div>
     <script src="../dist/renderer/playback-policy.js"></script>
     <script src="../dist/renderer/countdown-display.js"></script>
     <script src="../dist/renderer/countdown-bar-resolver.js"></script>
     <script src="../dist/renderer/alert-ticker-resolver.js"></script>
+    <script src="../dist/renderer/brand-bug-resolver.js"></script>
     <script src="../dist/renderer/renderer.js"></script>
     <script src="../dist/renderer/synchronized-video.js"></script>
     <script src="../dist/renderer/outside-hours.js"></script>

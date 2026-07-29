@@ -144,6 +144,15 @@ export function requiredDownloads(manifest: Manifest): ManifestAsset[] {
     }
   }
 
+  // A Brand Bug logo is drawn over whatever is playing, including while the
+  // network is gone, so it must be cached before the manifest activates.
+  for (const plugin of manifest.plugins ?? []) {
+    if (plugin.type !== "brand_bug" || !plugin.config.imageAssetId) {
+      continue;
+    }
+    addAsset(plugin.config.imageAssetId, plugin.config.imageVariantId);
+  }
+
   return [...wanted.values()];
 }
 

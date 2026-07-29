@@ -110,6 +110,8 @@ func TestCountdownBarLifecycleAndManifestTargeting(t *testing.T) {
 	}
 	var customMetricsFound bool
 	for _, plugin := range targeted {
+		// Config is the discriminated payload now that more than one plugin type
+		// projects into the manifest, so the countdown entry is picked out by type.
 		if config, ok := plugin.Config.(ManifestCountdownConfig); ok && plugin.ID == created.ID {
 			customMetricsFound = config.ContentPadding == 0 && config.TextScale == 175 && config.ShowConfetti
 		}
@@ -118,9 +120,11 @@ func TestCountdownBarLifecycleAndManifestTargeting(t *testing.T) {
 		t.Fatalf("custom display options were not persisted and projected: created=%#v manifest=%#v", created, targeted)
 	}
 	other, err := service.ManifestForScreen(ctx, otherScreen)
-	config, _ := firstConfig(other).(ManifestCountdownConfig)
-	if err != nil || len(other) != 1 || config.Name != "All screens" {
+	if err != nil || len(other) != 1 {
 		t.Fatalf("untargeted manifest: %#v %v", other, err)
+	}
+	if config, ok := other[0].Config.(ManifestCountdownConfig); !ok || config.Name != "All screens" {
+		t.Fatalf("untargeted manifest config: %#v", other[0].Config)
 	}
 
 	created.Enabled = false
@@ -165,8 +169,9 @@ func TestCountdownBarLifecycleAndManifestTargeting(t *testing.T) {
 	for _, item := range catalog.Items {
 		byID[item.ID] = item
 	}
-	if len(catalog.Items) != 3 || byID["countdown_bar"].Name == "" || byID["emergency_alerts"].Name == "" || byID["forms"].Name == "" {
-		t.Fatalf("catalog = %+v, want Countdown Bar, Emergency Alerts, and Forms", catalog.Items)
+	if len(catalog.Items) != 4 || byID["countdown_bar"].Name == "" || byID["emergency_alerts"].Name == "" ||
+		byID["forms"].Name == "" || byID["brand_bug"].Name == "" {
+		t.Fatalf("catalog = %+v, want Countdown Bar, Emergency Alerts, Forms, and Brand Bug", catalog.Items)
 	}
 	if alerts := byID["emergency_alerts"]; alerts.Enabled || alerts.InstanceCount != 0 {
 		t.Fatalf("unconfigured Emergency Alerts = %+v, want disabled with no rules", alerts)

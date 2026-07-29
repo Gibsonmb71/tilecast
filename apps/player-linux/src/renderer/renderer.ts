@@ -163,7 +163,32 @@ interface RendererAlertTickerPlugin {
   };
 }
 
-type RendererPlugin = RendererCountdownBarPlugin | RendererAlertTickerPlugin;
+interface RendererBrandBugPlugin {
+  id: string;
+  type: "brand_bug";
+  version: 1;
+  config: {
+    name?: string;
+    corner: string;
+    imageAssetId?: string | null;
+    imageVariantId?: string | null;
+    text?: string;
+    widthPercent: number;
+    textSizePercent: number;
+    opacityPercent: number;
+    marginPercent: number;
+    textColor: string;
+    backgroundStyle: string;
+    startsAt?: string | null;
+    endsAt?: string | null;
+    priority: number;
+  };
+}
+
+type RendererPlugin =
+  | RendererCountdownBarPlugin
+  | RendererAlertTickerPlugin
+  | RendererBrandBugPlugin;
 
 declare const tilecast: TilecastBridge;
 
@@ -200,6 +225,7 @@ const alertTickerTrack = alertTickerBar.querySelector(
 const alertTickerText = alertTickerBar.querySelector(
   ".ticker-message",
 ) as HTMLSpanElement;
+const brandBugLayer = document.getElementById("brand-bugs") as HTMLDivElement;
 
 let frontLayer = layerA;
 let backLayer = layerB;
@@ -430,60 +456,159 @@ function triggerCountdownConfetti(
  * as soon as the alert clears, and playback is untouched throughout.
  */
 function updatePluginSurface(): void {
+  const now = new Date();
+  // Each resolver owns one discriminator, so the manifest's mixed plugin array
+  // is narrowed here rather than re-checked inside every one of them.
+  // Corner marks are independent of the bar slot: they are resolved once and
+  // then applied on whichever branch below decides what holds the strip.
+  const marks = tilecastBrandBug.resolve(
+    activePlugins.filter(
+      (plugin): plugin is RendererBrandBugPlugin => plugin.type === "brand_bug",
+    ),
+    now,
+    pluginClockOffsetMs,
+  );
   const ticker = tilecastAlertTicker.resolve(
     activePlugins,
-    new Date(),
+    now,
     pluginClockOffsetMs,
   );
   if (ticker) {
     countdownBar.classList.remove("visible");
     showAlertTicker(ticker);
+    // A ticker holds the same bottom strip a countdown bar would, so
+    // bottom-corner marks ride above it rather than being covered by it.
+    updateBrandBugs(marks, ticker.heightPx);
     return;
   }
   alertTickerBar.classList.remove("visible");
   activeTickerKey = "";
-  // Schedule resolution lives in countdown-bar-resolver so the surface and its
-  // unit tests share one implementation of the timezone and priority rules.
+  // Schedule resolution lives in countdown-bar-resolver and brand-bug-resolver
+  // so each surface and its unit tests share one implementation of the timezone,
+  // window, and priority rules.
   const selected = tilecastCountdownBar.resolve(
-    activePlugins,
-    new Date(),
+    activePlugins.filter(
+      (plugin): plugin is RendererCountdownBarPlugin =>
+        plugin.type === "countdown_bar",
+    ),
+    now,
     pluginClockOffsetMs,
   );
   triggerCountdownConfetti(selected);
-  if (!selected) {
+  // Confetti is triggered above rather than inside this branch: a completed
+  // instance stops holding the strip but still owes its completion burst.
+  if (!selected || !selected.showBar) {
     countdownBar.classList.remove("visible");
     contentStage.classList.remove("plugin-push");
-    return;
+  } else {
+    document.documentElement.style.setProperty(
+      "--plugin-height",
+      `${selected.heightPx}px`,
+    );
+    // Padding and type size are resolved centrally so both players agree on what
+    // a given contentPadding and textScale mean.
+    document.documentElement.style.setProperty(
+      "--plugin-bar-padding",
+      `${selected.contentPadding}%`,
+    );
+    document.documentElement.style.setProperty(
+      "--plugin-bar-font-size",
+      `${selected.fontSizePx}px`,
+    );
+    contentStage.classList.toggle(
+      "plugin-push",
+      selected.displayMode === "push",
+    );
+    countdownMessage.textContent = selected.message;
+    countdownValue.textContent = selected.value;
+    // A null fraction means this instance asked for no fill, so the width stays
+    // at zero and the bar keeps its plain background.
+    countdownFill.style.width =
+      selected.remainingFraction === null
+        ? "0"
+        : `${selected.remainingFraction * 100}%`;
+    countdownBar.classList.add("visible");
   }
-  if (!selected.showBar) {
-    countdownBar.classList.remove("visible");
-    contentStage.classList.remove("plugin-push");
-    return;
+  // A visible countdown bar owns the bottom strip, so bottom-corner marks ride
+  // above it instead of being covered by it. A resolved instance that is past
+  // its countdown holds no strip, so it lifts nothing.
+  updateBrandBugs(marks, selected?.showBar ? selected.heightPx : 0);
+}
+
+interface BrandBugNode {
+  root: HTMLDivElement;
+  logo: HTMLImageElement;
+  caption: HTMLSpanElement;
+  signature: string;
+}
+
+/**
+ * Corner marks are kept as long-lived elements keyed by corner. Rebuilding them
+ * on the one-second plugin tick would restart the logo's decode and flicker a
+ * watermark that is supposed to look painted on.
+ */
+const brandBugNodes = new Map<string, BrandBugNode>();
+
+function updateBrandBugs(
+  marks: TilecastActiveBrandBug[],
+  bottomLiftPx: number,
+): void {
+  const live = new Set<string>();
+  for (const mark of marks) {
+    live.add(mark.corner);
+    let node = brandBugNodes.get(mark.corner);
+    if (!node) {
+      const root = document.createElement("div");
+      root.className = `brand-bug brand-bug--${mark.corner.replace("_", "-")}`;
+      const logo = document.createElement("img");
+      logo.className = "brand-bug__logo";
+      logo.alt = "";
+      const caption = document.createElement("span");
+      caption.className = "brand-bug__text";
+      root.append(logo, caption);
+      brandBugLayer.append(root);
+      node = { root, logo, caption, signature: "" };
+      brandBugNodes.set(mark.corner, node);
+    }
+    const signature = JSON.stringify(mark);
+    if (node.signature !== signature) {
+      node.signature = signature;
+      // Assigning the same src again would re-decode the image, so only a real
+      // change touches it.
+      if (mark.imageSrc) {
+        if (node.logo.getAttribute("src") !== mark.imageSrc) {
+          node.logo.src = mark.imageSrc;
+        }
+        node.logo.style.display = "";
+        node.logo.style.width = `${mark.widthPercent}vw`;
+      } else {
+        node.logo.removeAttribute("src");
+        node.logo.style.display = "none";
+      }
+      node.caption.textContent = mark.text;
+      node.caption.style.display = mark.text ? "" : "none";
+      node.caption.style.color = mark.textColor;
+      node.caption.style.fontSize = `${mark.textSizePercent}vh`;
+      node.root.style.opacity = String(mark.opacityPercent / 100);
+      node.root.style.maxWidth = `${Math.max(mark.widthPercent, 12)}vw`;
+      node.root.classList.toggle(
+        "brand-bug--scrim",
+        mark.backgroundStyle === "scrim",
+      );
+      // vmin keeps the inset visually even on both axes at any aspect ratio.
+      node.root.style.setProperty(
+        "--brand-bug-margin",
+        `${mark.marginPercent}vmin`,
+      );
+    }
+    node.root.style.setProperty("--brand-bug-lift", `${bottomLiftPx}px`);
+    node.root.classList.add("visible");
   }
-  document.documentElement.style.setProperty(
-    "--plugin-height",
-    `${selected.heightPx}px`,
-  );
-  // Padding and type size are resolved centrally so both players agree on what
-  // a given contentPadding and textScale mean.
-  document.documentElement.style.setProperty(
-    "--plugin-bar-padding",
-    `${selected.contentPadding}%`,
-  );
-  document.documentElement.style.setProperty(
-    "--plugin-bar-font-size",
-    `${selected.fontSizePx}px`,
-  );
-  contentStage.classList.toggle("plugin-push", selected.displayMode === "push");
-  countdownMessage.textContent = selected.message;
-  countdownValue.textContent = selected.value;
-  // A null fraction means this instance asked for no fill, so the width stays
-  // at zero and the bar keeps its plain background.
-  countdownFill.style.width =
-    selected.remainingFraction === null
-      ? "0"
-      : `${selected.remainingFraction * 100}%`;
-  countdownBar.classList.add("visible");
+  for (const [corner, node] of brandBugNodes) {
+    if (!live.has(corner)) {
+      node.root.classList.remove("visible");
+    }
+  }
 }
 
 /**

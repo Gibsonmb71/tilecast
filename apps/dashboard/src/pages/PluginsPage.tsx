@@ -7,15 +7,16 @@ import {
   Plus,
   Puzzle,
   Siren,
+  Stamp,
   Trash2,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, type UseFormRegisterReturn } from "react-hook-form";
 import { Link, useNavigate, useParams } from "react-router";
 import { z } from "zod";
 import { api } from "../api/client";
-import type { CountdownBarInput } from "../api/types";
+import type { BrandBug, BrandBugInput, CountdownBarInput } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { FormField } from "../components/FormField";
 import {
@@ -149,6 +150,130 @@ function toLocalInputValue(iso: string) {
 }
 
 /**
+ * Targeting is identical for every plugin, so the scopes, the picker, and its
+ * loading, failed, and genuinely-empty wording live here once rather than being
+ * copied per editor.
+ */
+type TargetScope = FormValues["targetScope"];
+
+interface TargetSource {
+  query: {
+    data?: { items: { id: string; name: string }[] };
+    isLoading: boolean;
+    isError: boolean;
+  };
+  noun: string;
+  empty: string;
+}
+
+function useTargetSource(scope: TargetScope): TargetSource | null {
+  const screens = useQuery({ queryKey: ["screens"], queryFn: api.screens });
+  const groups = useQuery({
+    queryKey: ["screen-groups"],
+    queryFn: () => api.screenGroups(),
+  });
+  const locations = useQuery({
+    queryKey: ["locations"],
+    queryFn: api.locations,
+  });
+  return scope === "screens"
+    ? { query: screens, noun: "screens", empty: "No screens are enrolled yet." }
+    : scope === "sync_groups"
+      ? {
+          query: groups,
+          noun: "sync groups",
+          empty: "No sync groups exist yet.",
+        }
+      : scope === "locations"
+        ? {
+            query: locations,
+            noun: "locations",
+            empty: "No locations exist yet.",
+          }
+        : null;
+}
+
+function TargetFields({
+  idPrefix,
+  scope,
+  source,
+  chosenCount,
+  error,
+  registerTargetIds,
+  onScopeChange,
+}: {
+  idPrefix: string;
+  scope: TargetScope;
+  source: TargetSource | null;
+  chosenCount: number;
+  error?: string;
+  registerTargetIds: UseFormRegisterReturn;
+  onScopeChange: (value: TargetScope) => void;
+}) {
+  const targets = (source?.query.data?.items ?? []).map((item) => ({
+    id: item.id,
+    name: item.name,
+  }));
+  return (
+    <>
+      <Field label="Target type">
+        <Select
+          name="targetScope"
+          value={scope}
+          onChange={(event) => onScopeChange(event.target.value as TargetScope)}
+        >
+          <option value="all">All screens</option>
+          <option value="screens">Individual screens</option>
+          <option value="sync_groups">Sync groups</option>
+          <option value="locations">Locations</option>
+        </Select>
+      </Field>
+      {source && (
+        <div className="plugin-field-group">
+          <span className="field__label" id={`${idPrefix}-targets-label`}>
+            Choose targets
+          </span>
+          <div
+            className="countdown-targets"
+            role="group"
+            aria-labelledby={`${idPrefix}-targets-label`}
+          >
+            <div className="countdown-targets__header">
+              <span>Available {source.noun}</span>
+              <span>
+                {chosenCount} of {targets.length} selected
+              </span>
+            </div>
+            <div className="countdown-targets__list">
+              {targets.map((target) => (
+                <label className="countdown-target" key={target.id}>
+                  <input
+                    type="checkbox"
+                    value={target.id}
+                    {...registerTargetIds}
+                  />
+                  <span>{target.name}</span>
+                </label>
+              ))}
+              {!targets.length && (
+                <p className="countdown-targets__note">
+                  {source.query.isLoading
+                    ? `Loading ${source.noun}…`
+                    : source.query.isError
+                      ? `The ${source.noun} could not be loaded.`
+                      : source.empty}
+                </p>
+              )}
+            </div>
+          </div>
+          {error && <span className="field__error">{error}</span>}
+        </div>
+      )}
+    </>
+  );
+}
+
+/**
  * How Studio presents each plugin the server reports. The server owns the
  * catalog; this is only the icon and the page that manages it. A plugin Studio
  * does not recognise still gets a card — a newer server must not silently drop
@@ -172,6 +297,11 @@ const pluginPresentation: Record<
     icon: ClipboardList,
     path: "/plugins/forms",
     instanceNoun: ["form", "forms"],
+  },
+  brand_bug: {
+    icon: Stamp,
+    path: "/plugins/brand-bug",
+    instanceNoun: ["mark", "marks"],
   },
 };
 
@@ -360,15 +490,6 @@ export function CountdownBarEditorPage() {
     queryFn: () => api.countdownBar(id ?? ""),
     enabled: editing,
   });
-  const screens = useQuery({ queryKey: ["screens"], queryFn: api.screens });
-  const groups = useQuery({
-    queryKey: ["screen-groups"],
-    queryFn: () => api.screenGroups(),
-  });
-  const locations = useQuery({
-    queryKey: ["locations"],
-    queryFn: api.locations,
-  });
   const {
     register,
     handleSubmit,
@@ -449,30 +570,7 @@ export function CountdownBarEditorPage() {
       shouldValidate: Boolean(errors.daysOfWeek),
     });
   };
-  const targetSource =
-    targetScope === "screens"
-      ? {
-          query: screens,
-          noun: "screens",
-          empty: "No screens are enrolled yet.",
-        }
-      : targetScope === "sync_groups"
-        ? {
-            query: groups,
-            noun: "sync groups",
-            empty: "No sync groups exist yet.",
-          }
-        : targetScope === "locations"
-          ? {
-              query: locations,
-              noun: "locations",
-              empty: "No locations exist yet.",
-            }
-          : null;
-  const targets = (targetSource?.query.data?.items ?? []).map((item) => ({
-    id: item.id,
-    name: item.name,
-  }));
+  const targetSource = useTargetSource(targetScope);
   const chosenTargets = watch("targetIds") ?? [];
   const submit = (values: FormValues) => {
     save.mutate({
@@ -699,70 +797,20 @@ export function CountdownBarEditorPage() {
 
         <Panel className="plugin-form__section">
           <SectionHeader title="Targets" />
-          <Field label="Target type">
-            <Select
-              name="targetScope"
-              value={targetScope}
-              onChange={(event) => {
-                // Ids from the previous scope would otherwise stay registered
-                // and be submitted alongside the new scope's picks.
-                setValue("targetIds", []);
-                setValue(
-                  "targetScope",
-                  event.target.value as FormValues["targetScope"],
-                  { shouldDirty: true },
-                );
-              }}
-            >
-              <option value="all">All screens</option>
-              <option value="screens">Individual screens</option>
-              <option value="sync_groups">Sync groups</option>
-              <option value="locations">Locations</option>
-            </Select>
-          </Field>
-          {targetSource && (
-            <div className="plugin-field-group">
-              <span className="field__label" id="countdown-targets-label">
-                Choose targets
-              </span>
-              <div
-                className="countdown-targets"
-                role="group"
-                aria-labelledby="countdown-targets-label"
-              >
-                <div className="countdown-targets__header">
-                  <span>Available {targetSource.noun}</span>
-                  <span>
-                    {chosenTargets.length} of {targets.length} selected
-                  </span>
-                </div>
-                <div className="countdown-targets__list">
-                  {targets.map((target) => (
-                    <label className="countdown-target" key={target.id}>
-                      <input
-                        type="checkbox"
-                        value={target.id}
-                        {...register("targetIds")}
-                      />
-                      <span>{target.name}</span>
-                    </label>
-                  ))}
-                  {!targets.length && (
-                    <p className="countdown-targets__note">
-                      {targetSource.query.isLoading
-                        ? `Loading ${targetSource.noun}…`
-                        : targetSource.query.isError
-                          ? `The ${targetSource.noun} could not be loaded.`
-                          : targetSource.empty}
-                    </p>
-                  )}
-                </div>
-              </div>
-              {errors.targetIds && (
-                <span className="field__error">{errors.targetIds.message}</span>
-              )}
-            </div>
-          )}
+          <TargetFields
+            idPrefix="countdown"
+            scope={targetScope}
+            source={targetSource}
+            chosenCount={chosenTargets.length}
+            error={errors.targetIds?.message}
+            registerTargetIds={register("targetIds")}
+            onScopeChange={(value) => {
+              // Ids from the previous scope would otherwise stay registered and
+              // be submitted alongside the new scope's picks.
+              setValue("targetIds", []);
+              setValue("targetScope", value, { shouldDirty: true });
+            }}
+          />
         </Panel>
 
         {save.isError && <Notice variant="danger">{save.error.message}</Notice>}
@@ -771,6 +819,543 @@ export function CountdownBarEditorPage() {
             className="button button--secondary"
             to="/plugins/countdown-bar"
           >
+            Cancel
+          </Link>
+          <Button type="submit" variant="primary" loading={save.isPending}>
+            {editing ? "Save changes" : "Create instance"}
+          </Button>
+        </div>
+      </form>
+    </main>
+  );
+}
+
+// ------------------------------------------------------ Brand Bug / Watermark
+
+const cornerLabels: Record<BrandBugInput["corner"], string> = {
+  top_left: "Top left",
+  top_right: "Top right",
+  bottom_left: "Bottom left",
+  bottom_right: "Bottom right",
+};
+
+const brandBugSchema = z
+  .object({
+    name: z.string().trim().min(1).max(180),
+    corner: z.enum(["top_left", "top_right", "bottom_left", "bottom_right"]),
+    imageAssetId: z.string(),
+    text: z.string().trim().max(180, "Text is limited to 180 characters."),
+    widthPercent: z.coerce
+      .number({ error: "Enter a width between 2 and 40 percent." })
+      .int("Enter a width between 2 and 40 percent.")
+      .min(2, "Enter a width between 2 and 40 percent.")
+      .max(40, "Enter a width between 2 and 40 percent."),
+    textSizePercent: z.coerce
+      .number({ error: "Enter a text size between 1 and 12 percent." })
+      .int("Enter a text size between 1 and 12 percent.")
+      .min(1, "Enter a text size between 1 and 12 percent.")
+      .max(12, "Enter a text size between 1 and 12 percent."),
+    opacityPercent: z.coerce
+      .number({ error: "Enter an opacity between 10 and 100 percent." })
+      .int("Enter an opacity between 10 and 100 percent.")
+      .min(10, "Enter an opacity between 10 and 100 percent.")
+      .max(100, "Enter an opacity between 10 and 100 percent."),
+    marginPercent: z.coerce
+      .number({ error: "Enter a margin between 0 and 20 percent." })
+      .int("Enter a margin between 0 and 20 percent.")
+      .min(0, "Enter a margin between 0 and 20 percent.")
+      .max(20, "Enter a margin between 0 and 20 percent."),
+    textColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Choose a color."),
+    backgroundStyle: z.enum(["none", "scrim"]),
+    startsAt: z.string(),
+    endsAt: z.string(),
+    enabled: z.boolean(),
+    priority: z.coerce
+      .number({ error: "Enter a priority between -1000 and 1000." })
+      .int("Enter a priority between -1000 and 1000.")
+      .min(-1000, "Enter a priority between -1000 and 1000.")
+      .max(1000, "Enter a priority between -1000 and 1000."),
+    targetScope: z.enum(["all", "screens", "sync_groups", "locations"]),
+    targetIds: z.array(z.string()),
+  })
+  .superRefine((value, context) => {
+    if (!value.imageAssetId && value.text.length === 0) {
+      context.addIssue({
+        code: "custom",
+        path: ["text"],
+        message: "Choose a logo image, enter text, or both.",
+      });
+    }
+    if (
+      value.startsAt &&
+      value.endsAt &&
+      new Date(value.endsAt) <= new Date(value.startsAt)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["endsAt"],
+        message: "The end must be after the start.",
+      });
+    }
+    if (value.targetScope !== "all" && value.targetIds.length === 0) {
+      context.addIssue({
+        code: "custom",
+        path: ["targetIds"],
+        message: "Choose at least one target.",
+      });
+    }
+  });
+
+type BrandBugFormValues = z.infer<typeof brandBugSchema>;
+type BrandBugFormInput = z.input<typeof brandBugSchema>;
+
+const brandBugDefaults: BrandBugFormValues = {
+  name: "",
+  corner: "top_right",
+  imageAssetId: "",
+  text: "",
+  widthPercent: 12,
+  textSizePercent: 3,
+  opacityPercent: 90,
+  marginPercent: 3,
+  textColor: "#ffffff",
+  backgroundStyle: "scrim",
+  startsAt: "",
+  endsAt: "",
+  enabled: true,
+  priority: 0,
+  targetScope: "all",
+  targetIds: [],
+};
+
+/** One line describing what a configured mark actually puts on screen. */
+function brandBugSummary(instance: BrandBug) {
+  const parts = [cornerLabels[instance.corner]];
+  if (instance.imageAssetId) parts.push("logo");
+  if (instance.text) parts.push(`“${instance.text}”`);
+  parts.push(`${instance.opacityPercent}% opacity`);
+  if (instance.startsAt || instance.endsAt) parts.push("scheduled window");
+  return parts.join(" · ");
+}
+
+export function BrandBugsPage() {
+  const auth = useAuth();
+  const queryClient = useQueryClient();
+  const instances = useQuery({
+    queryKey: ["brand-bugs"],
+    queryFn: api.brandBugs,
+  });
+  const remove = useMutation({
+    mutationFn: (id: string) =>
+      api.deleteBrandBug(id, auth.status?.csrfToken ?? ""),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["brand-bugs"] });
+      void queryClient.invalidateQueries({ queryKey: ["plugins"] });
+    },
+  });
+  const manageable = canManage(auth.status?.user?.role);
+  // Only a successful, empty list is "nothing configured" — a failed load must
+  // not read as an empty fleet.
+  const showEmptyState =
+    !instances.isError &&
+    !instances.isLoading &&
+    (instances.data?.items.length ?? 0) === 0;
+  return (
+    <main className="page plugins-page">
+      <PageHeader
+        eyebrow={
+          <Link className="back-link" to="/plugins">
+            <ArrowLeft size={15} /> Plugins
+          </Link>
+        }
+        title="Brand Bug / Watermark"
+        description="Corner marks stay on screen over playlists, Layouts, websites, and Widgets without changing what is playing."
+        actions={
+          manageable ? (
+            <Link
+              className="button button--primary"
+              to="/plugins/brand-bug/new"
+            >
+              <Plus size={16} /> New instance
+            </Link>
+          ) : undefined
+        }
+      />
+      {!manageable && (
+        <Notice>
+          Owner or Administrator access is required to make changes.
+        </Notice>
+      )}
+      {instances.isError && (
+        <Notice variant="danger">Brand bugs could not be loaded.</Notice>
+      )}
+      {remove.isError && (
+        <Notice variant="danger">{remove.error.message}</Notice>
+      )}
+      {showEmptyState ? (
+        <EmptyState
+          icon={<Stamp />}
+          title="No brand bugs configured"
+          message="Create an instance to hold a logo, notice, or badge in a corner of selected screens."
+          action={
+            manageable ? (
+              <Link
+                className="button button--primary"
+                to="/plugins/brand-bug/new"
+              >
+                Create instance
+              </Link>
+            ) : undefined
+          }
+        />
+      ) : (
+        <div className="plugin-instance-list">
+          {(instances.data?.items ?? []).map((instance) => (
+            <article className="plugin-instance" key={instance.id}>
+              <div>
+                <div className="plugin-instance__heading">
+                  <h2>{instance.name}</h2>
+                  <StatusBadge
+                    label={instance.enabled ? "Enabled" : "Disabled"}
+                    tone={instance.enabled ? "success" : "neutral"}
+                  />
+                </div>
+                <p>{brandBugSummary(instance)}</p>
+              </div>
+              <div className="plugin-instance__actions">
+                <Link
+                  className="button button--secondary"
+                  to={`/plugins/brand-bug/${instance.id}`}
+                >
+                  Manage
+                </Link>
+                {manageable && (
+                  <Button
+                    compact
+                    variant="danger"
+                    aria-label={`Delete ${instance.name}`}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          `Delete “${instance.name}”? The mark will be removed from targeted Players.`,
+                        )
+                      )
+                        remove.mutate(instance.id);
+                    }}
+                  >
+                    <Trash2 size={16} />
+                  </Button>
+                )}
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </main>
+  );
+}
+
+export function BrandBugEditorPage() {
+  const { id } = useParams();
+  const editing = Boolean(id);
+  const auth = useAuth();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const instance = useQuery({
+    queryKey: ["brand-bug", id],
+    queryFn: () => api.brandBug(id ?? ""),
+    enabled: editing,
+  });
+  // Only a ready image can be projected into a manifest, so only ready images
+  // are offered here.
+  const images = useQuery({
+    queryKey: ["brand-bug-image-assets"],
+    queryFn: () =>
+      api.assets(
+        new URLSearchParams({
+          page: "1",
+          pageSize: "100",
+          type: "image",
+          status: "ready",
+          sort: "name",
+        }),
+      ),
+  });
+  const {
+    register,
+    handleSubmit,
+    reset,
+    setValue,
+    watch,
+    formState: { errors },
+  } = useForm<BrandBugFormInput, unknown, BrandBugFormValues>({
+    resolver: zodResolver(brandBugSchema),
+    defaultValues: brandBugDefaults,
+  });
+  useEffect(() => {
+    if (!instance.data) return;
+    const value = instance.data;
+    reset({
+      name: value.name,
+      corner: value.corner,
+      imageAssetId: value.imageAssetId ?? "",
+      text: value.text,
+      widthPercent: value.widthPercent,
+      textSizePercent: value.textSizePercent,
+      opacityPercent: value.opacityPercent,
+      marginPercent: value.marginPercent,
+      textColor: value.textColor,
+      backgroundStyle: value.backgroundStyle,
+      startsAt: value.startsAt ? toLocalInputValue(value.startsAt) : "",
+      endsAt: value.endsAt ? toLocalInputValue(value.endsAt) : "",
+      enabled: value.enabled,
+      priority: value.priority,
+      targetScope: value.targetScope,
+      targetIds: value.targetIds,
+    });
+  }, [instance.data, reset]);
+  const save = useMutation({
+    mutationFn: (input: BrandBugInput) =>
+      editing
+        ? api.updateBrandBug(id ?? "", input, auth.status?.csrfToken ?? "")
+        : api.createBrandBug(input, auth.status?.csrfToken ?? ""),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["brand-bugs"] });
+      void queryClient.invalidateQueries({ queryKey: ["plugins"] });
+      void navigate("/plugins/brand-bug");
+    },
+  });
+  // Signal Select owns the ref on its hidden native select, so register()'s ref
+  // never lands and react-hook-form drops the field on the next render. Every
+  // select here is held with watch/setValue instead.
+  const corner = watch("corner");
+  const backgroundStyle = watch("backgroundStyle");
+  const imageAssetId = watch("imageAssetId");
+  const targetScope = watch("targetScope");
+  const targetSource = useTargetSource(targetScope);
+  const chosenTargets = watch("targetIds") ?? [];
+  const submit = (values: BrandBugFormValues) => {
+    save.mutate({
+      name: values.name,
+      corner: values.corner,
+      imageAssetId: values.imageAssetId || null,
+      text: values.text,
+      widthPercent: values.widthPercent,
+      textSizePercent: values.textSizePercent,
+      opacityPercent: values.opacityPercent,
+      marginPercent: values.marginPercent,
+      textColor: values.textColor,
+      backgroundStyle: values.backgroundStyle,
+      startsAt: values.startsAt
+        ? new Date(values.startsAt).toISOString()
+        : null,
+      endsAt: values.endsAt ? new Date(values.endsAt).toISOString() : null,
+      enabled: values.enabled,
+      priority: values.priority,
+      targetScope: values.targetScope,
+      targetIds: values.targetScope === "all" ? [] : values.targetIds,
+    });
+  };
+  return (
+    <main className="page plugins-page">
+      <PageHeader
+        eyebrow={
+          <Link className="back-link" to="/plugins/brand-bug">
+            <ArrowLeft size={15} /> Brand Bug / Watermark
+          </Link>
+        }
+        title={editing ? "Manage brand bug" : "New brand bug"}
+        description="One mark shows per corner. Priority decides which instance wins when two want the same corner."
+      />
+      <form
+        className="plugin-form"
+        onSubmit={(event) => void handleSubmit(submit)(event)}
+      >
+        <Panel className="plugin-form__section">
+          <SectionHeader title="Mark" />
+          <FormField
+            id="brand-bug-name"
+            label="Name"
+            aria-required="true"
+            error={errors.name?.message}
+            {...register("name")}
+          />
+          <Field
+            label="Logo image"
+            description="Uploaded, processed images only."
+          >
+            <Select
+              name="imageAssetId"
+              value={imageAssetId}
+              onChange={(event) =>
+                setValue("imageAssetId", event.target.value, {
+                  shouldDirty: true,
+                })
+              }
+            >
+              <option value="">No image</option>
+              {(images.data?.items ?? []).map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <FormField
+            id="brand-bug-text"
+            label="Text"
+            placeholder="Presented by Example"
+            hint="Shown beneath the logo, or on its own for a notice or location label."
+            error={errors.text?.message}
+            {...register("text")}
+          />
+        </Panel>
+
+        <Panel className="plugin-form__section">
+          <SectionHeader title="Placement" />
+          <div className="plugin-form__row">
+            <Field label="Corner">
+              <Select
+                name="corner"
+                value={corner}
+                onChange={(event) =>
+                  setValue(
+                    "corner",
+                    event.target.value as BrandBugFormValues["corner"],
+                    { shouldDirty: true },
+                  )
+                }
+              >
+                {(Object.keys(cornerLabels) as BrandBugInput["corner"][]).map(
+                  (value) => (
+                    <option key={value} value={value}>
+                      {cornerLabels[value]}
+                    </option>
+                  ),
+                )}
+              </Select>
+            </Field>
+            <FormField
+              id="brand-bug-width"
+              label="Logo width (% of screen width)"
+              type="number"
+              min={2}
+              max={40}
+              error={errors.widthPercent?.message}
+              {...register("widthPercent", { valueAsNumber: true })}
+            />
+            <FormField
+              id="brand-bug-margin"
+              label="Margin (% of short edge)"
+              type="number"
+              min={0}
+              max={20}
+              error={errors.marginPercent?.message}
+              {...register("marginPercent", { valueAsNumber: true })}
+            />
+          </div>
+        </Panel>
+
+        <Panel className="plugin-form__section">
+          <SectionHeader title="Appearance" />
+          <div className="plugin-form__row">
+            <FormField
+              id="brand-bug-text-size"
+              label="Text size (% of screen height)"
+              type="number"
+              min={1}
+              max={12}
+              error={errors.textSizePercent?.message}
+              {...register("textSizePercent", { valueAsNumber: true })}
+            />
+            <FormField
+              id="brand-bug-color"
+              label="Text color"
+              type="color"
+              error={errors.textColor?.message}
+              {...register("textColor")}
+            />
+            <Field label="Backing">
+              <Select
+                name="backgroundStyle"
+                value={backgroundStyle}
+                onChange={(event) =>
+                  setValue(
+                    "backgroundStyle",
+                    event.target.value as BrandBugFormValues["backgroundStyle"],
+                    { shouldDirty: true },
+                  )
+                }
+              >
+                <option value="scrim">Shaded plate behind the mark</option>
+                <option value="none">Nothing behind the mark</option>
+              </Select>
+            </Field>
+          </div>
+          <div className="plugin-form__row">
+            <FormField
+              id="brand-bug-opacity"
+              label="Opacity (%)"
+              type="number"
+              min={10}
+              max={100}
+              error={errors.opacityPercent?.message}
+              {...register("opacityPercent", { valueAsNumber: true })}
+            />
+            <FormField
+              id="brand-bug-priority"
+              label="Priority"
+              type="number"
+              min={-1000}
+              max={1000}
+              error={errors.priority?.message}
+              {...register("priority", { valueAsNumber: true })}
+            />
+          </div>
+          <Checkbox label="Enabled" {...register("enabled")} />
+        </Panel>
+
+        <Panel className="plugin-form__section">
+          <SectionHeader title="Optional window" />
+          <div className="plugin-form__row">
+            <FormField
+              id="brand-bug-starts"
+              label="Show from"
+              type="datetime-local"
+              hint="Leave blank to show as soon as it is enabled."
+              error={errors.startsAt?.message}
+              {...register("startsAt")}
+            />
+            <FormField
+              id="brand-bug-ends"
+              label="Show until"
+              type="datetime-local"
+              hint="Leave blank to show indefinitely."
+              error={errors.endsAt?.message}
+              {...register("endsAt")}
+            />
+          </div>
+        </Panel>
+
+        <Panel className="plugin-form__section">
+          <SectionHeader title="Targets" />
+          <TargetFields
+            idPrefix="brand-bug"
+            scope={targetScope}
+            source={targetSource}
+            chosenCount={chosenTargets.length}
+            error={errors.targetIds?.message}
+            registerTargetIds={register("targetIds")}
+            onScopeChange={(value) => {
+              setValue("targetIds", []);
+              setValue("targetScope", value, { shouldDirty: true });
+            }}
+          />
+        </Panel>
+
+        {save.isError && <Notice variant="danger">{save.error.message}</Notice>}
+        <div className="plugin-form__actions">
+          <Link className="button button--secondary" to="/plugins/brand-bug">
             Cancel
           </Link>
           <Button type="submit" variant="primary" loading={save.isPending}>
