@@ -87,6 +87,7 @@ export const Textarea = forwardRef<
 export { Select } from "./SignalSelect";
 export { ContextMenu, useContextMenu } from "./ContextMenu";
 export type { ContextMenuItem } from "./ContextMenu";
+export { HoldButton } from "./HoldButton";
 export { MetricTile } from "./MetricTile";
 export type { MetricDelta, MetricDirection } from "./MetricTile";
 export { FilterBar, FilterChips, useUrlFilters } from "./FilterBar";

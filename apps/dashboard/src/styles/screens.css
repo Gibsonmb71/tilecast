@@ -100,7 +100,24 @@
   font: var(--tc-text-label);
 }
 
-.takeover-form__targets > div {
+/* Select-the-whole-fleet sits above the list rather than in it, because it is a
+   different kind of decision from ticking one screen — and the one that turns
+   the activate button into a three-second hold. */
+.takeover-form__targets-actions {
+  display: flex;
+  gap: var(--tc-space-3);
+  align-items: center;
+  color: var(--tc-text-secondary);
+  font: var(--tc-text-supporting);
+}
+
+.takeover-form__targets-actions .button[aria-pressed="true"] {
+  color: var(--tc-danger);
+  border-color: var(--tc-status-danger-border);
+  background: var(--tc-status-danger-bg);
+}
+
+.takeover-form__targets > div:not(.takeover-form__targets-actions) {
   display: grid;
   gap: var(--tc-space-1);
   max-height: 11rem;
@@ -135,6 +152,9 @@
 .takeover-dialog__actions {
   display: flex;
   justify-content: flex-end;
+  /* The hold button carries its instruction underneath it, so the row aligns to
+     the top of the controls instead of stretching Cancel to match. */
+  align-items: flex-start;
   gap: var(--tc-space-2);
 }
 
