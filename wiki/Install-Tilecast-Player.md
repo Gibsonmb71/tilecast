@@ -104,29 +104,18 @@ Download `tilecast-player.AppImage` from the latest **Tilecast Player for Linux*
 mkdir -p ~/tilecast
 mv ~/Downloads/tilecast-player.AppImage ~/tilecast/
 chmod +x ~/tilecast/tilecast-player.AppImage
-~/tilecast/tilecast-player.AppImage
+~/tilecast/tilecast-player.AppImage --appimage-extract-and-run
 ```
 
 Do not run the player as root.
 
-### AppImage or FUSE error
+### FUSE-independent startup
 
-Some distributions do not install the compatibility FUSE library by default. On Debian or Ubuntu, install the available FUSE 2 compatibility package:
+Current Tilecast releases use a static AppImage runtime and do not depend on the older FUSE 2 compatibility library. The managed service also uses AppImage's supported `--appimage-extract-and-run` mode as a safety net for older artifacts and hosts where filesystem mounting is unavailable. The runtime still identifies the original artifact through `$APPIMAGE`, so signed Studio updates can replace it normally.
 
-```sh
-sudo apt update
-sudo apt install libfuse2
-```
+Tilecast Linux Player 0.5.0 and older used the legacy runtime. If one of those releases reports a FUSE error, launch it with the managed command above once, then update to a newer release. Installing `libfuse2` or, on newer Ubuntu releases, `libfuse2t64` remains an alternative for legacy artifacts.
 
-On newer Ubuntu releases the package may be named `libfuse2t64` instead.
-
-For a temporary diagnostic run, AppImage can extract itself instead of mounting through FUSE:
-
-```sh
-~/tilecast/tilecast-player.AppImage --appimage-extract-and-run
-```
-
-Use the normal executable AppImage for a managed deployment. The extracted fallback is not the recommended self-update path.
+Do not manually unpack `squashfs-root` and run `AppRun`; that loses the managed AppImage identity used for updates.
 
 ## Supply the server address without typing
 
@@ -134,7 +123,7 @@ Set the server URL before launch:
 
 ```sh
 TILECAST_SERVER_URL=https://signage.example.org \
-  ~/tilecast/tilecast-player.AppImage
+  ~/tilecast/tilecast-player.AppImage --appimage-extract-and-run
 ```
 
 The player validates and saves the address. The same value can be placed in the systemd service environment for unattended provisioning (see [[Reliability and Kiosk]]).
@@ -143,6 +132,7 @@ The command-line equivalent is:
 
 ```sh
 ~/tilecast/tilecast-player.AppImage \
+  --appimage-extract-and-run \
   --server-url https://signage.example.org
 ```
 
@@ -160,7 +150,7 @@ To use another location:
 
 ```sh
 TILECAST_DATA_DIR=/path/to/player-data \
-  ~/tilecast/tilecast-player.AppImage
+  ~/tilecast/tilecast-player.AppImage --appimage-extract-and-run
 ```
 
 The player creates sensitive state files with owner-only permissions. Protect the entire data directory as a device credential store.

@@ -171,7 +171,10 @@ export function renderUnit(input: UnitRenderInput): string {
     "",
     "[Service]",
     "Type=simple",
-    `ExecStart=${unitQuote(appImagePath)}`,
+    // Extract-and-run is a runtime mode, not a manually unpacked installation.
+    // It preserves APPIMAGE for signed updates and starts even when mounting is
+    // unavailable, including legacy artifacts that still depend on FUSE 2.
+    `ExecStart=${unitQuote(appImagePath)} --appimage-extract-and-run`,
     "Restart=always",
     "RestartSec=5",
   );

@@ -50,7 +50,7 @@ Depending on device and provisioning, a person may need to:
 
 Tilecast does not use root, ADB deployment, simulated taps, or hidden APIs to bypass these prompts.
 
-Linux updates replace the running AppImage without a prompt, but only when the player runs as a managed AppImage. Development runs and extracted AppImages report an unsupported installation mode.
+Linux updates replace the running AppImage without a prompt, but only when the player runs as a managed AppImage. The supported `--appimage-extract-and-run` runtime mode remains managed; development runs and manually unpacked AppImages report an unsupported installation mode.
 
 ## Linux hardware and session limits
 
