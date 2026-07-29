@@ -378,17 +378,31 @@ export function CountdownBarEditorPage() {
       shouldValidate: Boolean(errors.daysOfWeek),
     });
   };
-  const targets =
+  const targetSource =
     targetScope === "screens"
-      ? screens.data?.items.map((item) => ({ id: item.id, name: item.name }))
+      ? {
+          query: screens,
+          noun: "screens",
+          empty: "No screens are enrolled yet.",
+        }
       : targetScope === "sync_groups"
-        ? groups.data?.items.map((item) => ({ id: item.id, name: item.name }))
+        ? {
+            query: groups,
+            noun: "sync groups",
+            empty: "No sync groups exist yet.",
+          }
         : targetScope === "locations"
-          ? locations.data?.items.map((item) => ({
-              id: item.id,
-              name: item.name,
-            }))
-          : [];
+          ? {
+              query: locations,
+              noun: "locations",
+              empty: "No locations exist yet.",
+            }
+          : null;
+  const targets = (targetSource?.query.data?.items ?? []).map((item) => ({
+    id: item.id,
+    name: item.name,
+  }));
+  const chosenTargets = watch("targetIds") ?? [];
   const submit = (values: FormValues) => {
     save.mutate({
       name: values.name,
@@ -474,7 +488,7 @@ export function CountdownBarEditorPage() {
                 error={errors.targetTime?.message}
                 {...register("targetTime")}
               />
-              <div className="field">
+              <div className="plugin-field-group">
                 <span className="field__label" id="countdown-days-label">
                   Days of the week
                 </span>
@@ -589,8 +603,8 @@ export function CountdownBarEditorPage() {
               <option value="locations">Locations</option>
             </Select>
           </Field>
-          {targetScope !== "all" && (
-            <div className="field">
+          {targetSource && (
+            <div className="plugin-field-group">
               <span className="field__label" id="countdown-targets-label">
                 Choose targets
               </span>
@@ -599,14 +613,33 @@ export function CountdownBarEditorPage() {
                 role="group"
                 aria-labelledby="countdown-targets-label"
               >
-                {(targets ?? []).map((target) => (
-                  <Checkbox
-                    key={target.id}
-                    label={target.name}
-                    value={target.id}
-                    {...register("targetIds")}
-                  />
-                ))}
+                <div className="countdown-targets__header">
+                  <span>Available {targetSource.noun}</span>
+                  <span>
+                    {chosenTargets.length} of {targets.length} selected
+                  </span>
+                </div>
+                <div className="countdown-targets__list">
+                  {targets.map((target) => (
+                    <label className="countdown-target" key={target.id}>
+                      <input
+                        type="checkbox"
+                        value={target.id}
+                        {...register("targetIds")}
+                      />
+                      <span>{target.name}</span>
+                    </label>
+                  ))}
+                  {!targets.length && (
+                    <p className="countdown-targets__note">
+                      {targetSource.query.isLoading
+                        ? `Loading ${targetSource.noun}…`
+                        : targetSource.query.isError
+                          ? `The ${targetSource.noun} could not be loaded.`
+                          : targetSource.empty}
+                    </p>
+                  )}
+                </div>
               </div>
               {errors.targetIds && (
                 <span className="field__error">{errors.targetIds.message}</span>
