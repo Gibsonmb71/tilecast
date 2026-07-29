@@ -139,10 +139,7 @@ describe("countdown bar resolver", () => {
         oneTimeAt: "2026-07-27T16:00:00Z",
       },
     };
-    const active = resolver.resolve(
-      [plugin],
-      new Date("2026-07-27T16:00:30Z"),
-    );
+    const active = resolver.resolve([plugin], new Date("2026-07-27T16:00:30Z"));
     expect(active?.value).toBe("Lunch is over");
     expect(active?.remainingFraction).toBe(0);
   });
