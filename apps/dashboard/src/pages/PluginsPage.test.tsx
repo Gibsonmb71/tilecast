@@ -8,6 +8,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes } from "react-router";
@@ -119,6 +120,13 @@ beforeEach(() => {
                     enabled: true,
                     instanceCount: 3,
                   },
+                  {
+                    id: "emergency_alerts",
+                    name: "Emergency Alerts",
+                    description: "Watch official NWS weather alerts.",
+                    enabled: false,
+                    instanceCount: 1,
+                  },
                 ],
               },
             }),
@@ -147,10 +155,23 @@ describe("Plugins", () => {
       await screen.findByRole("heading", { name: "Countdown Bar" }),
     ).toBeVisible();
     expect(screen.getByText("3 configured instances")).toBeVisible();
-    expect(screen.getByRole("link", { name: "Manage plugin" })).toHaveAttribute(
-      "href",
-      "/plugins/countdown-bar",
-    );
+    expect(
+      screen.getAllByRole("link", { name: "Manage plugin" })[0],
+    ).toHaveAttribute("href", "/plugins/countdown-bar");
+  });
+
+  it("lists Emergency Alerts as a plugin of its own", async () => {
+    renderRoute(<PluginsPage />);
+    const card = (
+      await screen.findByRole("heading", { name: "Emergency Alerts" })
+    ).closest("article")!;
+    // Its rules are its instances, and monitoring being off is what makes the
+    // plugin disabled — both are stated rather than left to be inferred.
+    expect(within(card).getByText("1 configured alert rule")).toBeVisible();
+    expect(within(card).getByText("Disabled")).toBeVisible();
+    expect(
+      within(card).getByRole("link", { name: "Manage plugin" }),
+    ).toHaveAttribute("href", "/plugins/emergency-alerts");
   });
 
   it("requires a target when a scoped instance is submitted", async () => {

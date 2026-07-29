@@ -43,7 +43,11 @@ export function isActivelyFailing(incident: Incident): boolean {
   return incident.status === "open" || incident.status === "acknowledged";
 }
 
-/** Actions available for a status. A closed incident can only be reopened. */
+/**
+ * Actions available for a status. A closed incident can only be reopened, and
+ * a recovered one counts as closed: the condition ended by itself, so it is
+ * history to read rather than work to sign off.
+ */
 export function actionsFor(
   status: IncidentStatus,
 ): { action: string; label: string }[] {
@@ -55,7 +59,6 @@ export function actionsFor(
         { action: "ignore", label: "Ignore" },
       ];
     case "acknowledged":
-    case "recovered":
       return [
         { action: "resolve", label: "Resolve" },
         { action: "ignore", label: "Ignore" },

@@ -87,15 +87,43 @@ type ManifestCountdownConfig struct {
 	Priority        int        `json:"priority"`
 }
 
+// Catalog reports every built-in plugin with the state Studio needs to describe
+// it. A plugin whose own tables are empty still appears, disabled and with no
+// instances: the catalog is the list of what Tilecast can do, not of what an
+// installation happens to have configured.
 func (s *Service) Catalog(ctx context.Context) (Catalog, error) {
-	var enabled bool
-	var count int
-	err := s.db.QueryRow(ctx, `SELECT COALESCE(bool_or(enabled),FALSE),count(*) FROM countdown_bar_instances`).Scan(&enabled, &count)
-	return Catalog{Items: []CatalogPlugin{{
-		ID: "countdown_bar", Name: "Countdown Bar",
-		Description: "Show a timed bottom bar without interrupting the content already playing.",
-		Enabled:     enabled, InstanceCount: count,
-	}}}, err
+	var countdownEnabled bool
+	var countdownCount int
+	if err := s.db.QueryRow(ctx,
+		`SELECT COALESCE(bool_or(enabled),FALSE),count(*) FROM countdown_bar_instances`).
+		Scan(&countdownEnabled, &countdownCount); err != nil {
+		return Catalog{}, err
+	}
+	// Emergency Alerts is enabled by its monitor, not by its rules: monitoring
+	// switched on with no rule yet is a half-finished setup, and reporting it as
+	// disabled would hide that from the person who switched it on. The rules are
+	// its instances, which is what the count says.
+	var alertsEnabled bool
+	var alertRules int
+	if err := s.db.QueryRow(ctx, `SELECT
+		COALESCE((SELECT enabled FROM alert_monitor WHERE singleton),FALSE),
+		(SELECT count(*) FROM alert_rules)`).Scan(&alertsEnabled, &alertRules); err != nil {
+		return Catalog{}, err
+	}
+	return Catalog{Items: []CatalogPlugin{
+		{
+			ID: "countdown_bar", Name: "Countdown Bar",
+			Description:   "Show a timed bottom bar without interrupting the content already playing.",
+			Enabled:       countdownEnabled,
+			InstanceCount: countdownCount,
+		},
+		{
+			ID: "emergency_alerts", Name: "Emergency Alerts",
+			Description:   "Watch official NWS weather alerts and take screens over automatically while one is active.",
+			Enabled:       alertsEnabled,
+			InstanceCount: alertRules,
+		},
+	}}, nil
 }
 
 func (s *Service) ListCountdownBars(ctx context.Context) ([]CountdownBar, error) {

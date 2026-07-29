@@ -83,7 +83,7 @@ func (s *server) incidentAnalytics(w http.ResponseWriter, r *http.Request) {
 
 	if err := s.db.QueryRow(r.Context(), `
 		SELECT
-			count(*) FILTER (WHERE status IN('open','acknowledged','recovered')),
+			count(*) FILTER (WHERE status IN('open','acknowledged')),
 			count(*) FILTER (WHERE opened_at>=$1 AND opened_at<$2),
 			count(*) FILTER (WHERE resolved_at>=$1 AND resolved_at<$2),
 			count(*) FILTER (WHERE recovery_mode='automatic' AND COALESCE(recovered_at,resolved_at)>=$1 AND COALESCE(recovered_at,resolved_at)<$2),

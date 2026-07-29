@@ -101,10 +101,11 @@ func scanIncident(scan proofScanner) (incidentRecord, error) {
 	return item, err
 }
 
-// Statuses an operator would call "still a problem". Recovered is included by
-// default because the condition ended but nobody has confirmed the matter is
-// closed, and silently hiding it would lose the follow-up.
-var incidentActiveStatuses = []string{"open", "acknowledged", "recovered"}
+// Statuses an operator would call "still a problem". Recovered is not one of
+// them: the condition ended, so the incident is a record of what happened
+// rather than work waiting on someone. It stays readable in the full list and
+// in analytics, and asks nothing of anybody.
+var incidentActiveStatuses = []string{"open", "acknowledged"}
 
 func (s *server) listIncidents(w http.ResponseWriter, r *http.Request) {
 	// A screen that stopped reporting sends no event, so current state has to
@@ -311,7 +312,7 @@ func (s *server) updateIncident(w http.ResponseWriter, r *http.Request) {
 	case "acknowledge":
 		statement = `UPDATE incidents SET status=CASE WHEN status='open' THEN 'acknowledged' ELSE status END,
 			acknowledged_at=COALESCE(acknowledged_at,now()),acknowledged_by=COALESCE(acknowledged_by,$2),updated_at=now()
-			WHERE id=$1 AND status IN('open','acknowledged','recovered')`
+			WHERE id=$1 AND status IN('open','acknowledged')`
 		args = append(args, actor.ID)
 		summary = "Acknowledged"
 	case "assign":

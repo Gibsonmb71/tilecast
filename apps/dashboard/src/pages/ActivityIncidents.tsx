@@ -63,18 +63,19 @@ function formatSeconds(value: number | null) {
  * Incidents tab. The panel is one section of a long page, so a bad day on a
  * large fleet must not push everything below it off the screen. The server
  * orders incidents worst-first, so a truncated preview still leads with what
- * matters most, and the counts beside each heading stay the true totals.
+ * matters most, and the count beside the heading stays the true total.
  */
 const PREVIEW_FAILING = 5;
-const PREVIEW_AWAITING = 3;
 
 /**
  * The Activity Overview's "Needs attention" section.
  *
  * It reads currently open and acknowledged incidents rather than whichever
  * warning happened to be latest, so a screen that failed five times is one
- * item and a screen that recovered is no longer presented as broken. The list
- * is current state, not a range-scoped report, and says so.
+ * item and a screen that recovered is no longer presented as broken. An
+ * incident that ended on its own is left out entirely — it is logged on the
+ * Incidents tab and needs nothing from anyone. The list is current state, not
+ * a range-scoped report, and says so.
  */
 export function NeedsAttentionPanel() {
   const canAct = useCanActOnIncidents();
@@ -92,9 +93,6 @@ export function NeedsAttentionPanel() {
   // longest unresolved, then the most recently updated.
   const items = query.data?.items ?? [];
   const failing = items.filter(isActivelyFailing);
-  // Recovered but not yet closed. Kept visible so the follow-up is not lost,
-  // and deliberately apart so it is never read as still failing.
-  const awaiting = items.filter((item) => item.status === "recovered");
 
   const actions = (incident: Incident) =>
     canAct ? (
@@ -154,33 +152,6 @@ export function NeedsAttentionPanel() {
             noun="still failing"
           />
         </>
-      )}
-
-      {awaiting.length > 0 && (
-        <div className="activity-incidents__awaiting">
-          <h4>
-            Recovered, awaiting acknowledgement
-            <span>{awaiting.length}</span>
-          </h4>
-          <p>
-            These conditions have ended. They stay here until someone closes
-            them so the follow-up is not lost.
-          </p>
-          <ul className="activity-incident-list">
-            {awaiting.slice(0, PREVIEW_AWAITING).map((incident) => (
-              <IncidentRow
-                key={incident.id}
-                incident={incident}
-                actions={actions(incident)}
-              />
-            ))}
-          </ul>
-          <TruncationNotice
-            shown={PREVIEW_AWAITING}
-            total={awaiting.length}
-            noun="awaiting acknowledgement"
-          />
-        </div>
       )}
     </section>
   );

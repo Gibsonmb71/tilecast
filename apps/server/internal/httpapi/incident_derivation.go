@@ -175,8 +175,10 @@ func openOrRepeatIncident(r *http.Request, tx pgx.Tx, screenID uuid.UUID, key st
 
 func recoverIncident(r *http.Request, tx pgx.Tx, key string, event playerActivityEventInput, hint string) error {
 	ctx := activityContextWithoutCancel(r.Context())
-	// Recovered, not resolved: the condition ended on its own, and whether the
-	// matter is closed is a person's call.
+	// Recovered, not resolved: the condition ended on its own, so this is a
+	// record of an outage that fixed itself, not a task. Nobody is asked to
+	// acknowledge it; the distinction from a person closing the matter by hand
+	// is kept only because the recovery figures depend on it.
 	tag, err := tx.Exec(ctx, `
 		UPDATE incidents SET status='recovered',recovered_at=$2,recovery_event_id=$3,
 			recovery_mode='automatic',resolution_reason=COALESCE(NULLIF(resolution_reason,''),$4),updated_at=now()

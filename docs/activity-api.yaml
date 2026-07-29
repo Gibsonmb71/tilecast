@@ -48,7 +48,9 @@ paths:
       parameters:
         - name: status
           in: query
-          description: Defaults to `active` (open, acknowledged, recovered).
+          description:
+            Defaults to `active` (open, acknowledged). A recovered incident is
+            history, not active work, and is returned by `all` or `recovered`.
           schema:
             {
               type: string,

@@ -31,6 +31,7 @@ import {
   CountdownBarsPage,
   PluginsPage,
 } from "./pages/PluginsPage";
+import { EmergencyAlertsPage } from "./pages/EmergencyAlertsPage";
 import { ApprovalsPage } from "./pages/ApprovalsPage";
 import {
   FormsListPage,
@@ -285,7 +286,7 @@ export const studioRoutes: RouteObject[] = [
             "Plugins",
             "Manage built-in features that operate outside playlists",
             "/plugins",
-            ["countdown bar", "player features"],
+            ["countdown bar", "emergency alerts", "player features"],
           ),
         },
         children: [
@@ -304,6 +305,21 @@ export const studioRoutes: RouteObject[] = [
             path: "countdown-bar/:id",
             element: <CountdownBarEditorPage />,
             handle: { breadcrumb: "Countdown Bar instance" },
+          },
+          {
+            path: "emergency-alerts",
+            element: <EmergencyAlertsPage />,
+            handle: {
+              breadcrumb: "Emergency Alerts",
+              // This used to live in Settings, so the words people already
+              // search for have to lead here rather than to a dead end.
+              search: search(
+                "Emergency Alerts",
+                "Automatic NWS weather alert monitoring and takeover rules",
+                "/plugins/emergency-alerts",
+                ["emergency", "weather", "nws", "alerts", "tornado", "warning"],
+              ),
+            },
           },
         ],
       },

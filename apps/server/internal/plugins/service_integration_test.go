@@ -140,4 +140,45 @@ func TestCountdownBarLifecycleAndManifestTargeting(t *testing.T) {
 	if revisions != 2 {
 		t.Fatalf("expected every screen manifest to be revised for create/update/delete, got %d", revisions)
 	}
+
+	// The catalog is the list of what Tilecast can do. Emergency Alerts belongs
+	// in it whether or not this installation has configured any of it, which is
+	// what moving it out of Settings and into Plugins means.
+	catalog, err := service.Catalog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := map[string]CatalogPlugin{}
+	for _, item := range catalog.Items {
+		byID[item.ID] = item
+	}
+	if len(catalog.Items) != 2 || byID["countdown_bar"].Name == "" || byID["emergency_alerts"].Name == "" {
+		t.Fatalf("catalog = %+v, want Countdown Bar and Emergency Alerts", catalog.Items)
+	}
+	if alerts := byID["emergency_alerts"]; alerts.Enabled || alerts.InstanceCount != 0 {
+		t.Fatalf("unconfigured Emergency Alerts = %+v, want disabled with no rules", alerts)
+	}
+	// The migration seeds the singleton row, but this test truncates users, and
+	// TRUNCATE ... CASCADE reaches every table referencing it.
+	if _, err = pool.Exec(ctx, `INSERT INTO alert_monitor(singleton,enabled) VALUES(TRUE,TRUE)
+		ON CONFLICT(singleton) DO UPDATE SET enabled=TRUE`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO alert_rules(id,organization_id,name,created_by) VALUES($1,$2,'Tornado Warning',$3)`,
+		uuid.New(), organizationID, userID); err != nil {
+		t.Fatal(err)
+	}
+	catalog, err = service.Catalog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range catalog.Items {
+		if item.ID != "emergency_alerts" {
+			continue
+		}
+		// Monitoring is what "enabled" means here; the rules are the instances.
+		if !item.Enabled || item.InstanceCount != 1 {
+			t.Fatalf("configured Emergency Alerts = %+v, want enabled with one rule", item)
+		}
+	}
 }
