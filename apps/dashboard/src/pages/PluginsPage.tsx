@@ -59,6 +59,16 @@ const formSchema = z
       .int("Enter a height between 40 and 320 pixels.")
       .min(40, "Enter a height between 40 and 320 pixels.")
       .max(320, "Enter a height between 40 and 320 pixels."),
+    contentPadding: z.coerce
+      .number({ error: "Enter padding between 0 and 40 percent." })
+      .int("Enter padding between 0 and 40 percent.")
+      .min(0, "Enter padding between 0 and 40 percent.")
+      .max(40, "Enter padding between 0 and 40 percent."),
+    textScale: z.coerce
+      .number({ error: "Enter a text size between 25 and 500 percent." })
+      .int("Enter a text size between 25 and 500 percent.")
+      .min(25, "Enter a text size between 25 and 500 percent.")
+      .max(500, "Enter a text size between 25 and 500 percent."),
     enabled: z.boolean(),
     priority: z.coerce
       .number({ error: "Enter a priority between -1000 and 1000." })
@@ -111,6 +121,8 @@ const defaultValues: FormValues = {
   displayMode: "overlay",
   progressFill: "none",
   heightPx: 72,
+  contentPadding: 4,
+  textScale: 100,
   enabled: true,
   priority: 0,
   targetScope: "all",
@@ -382,6 +394,8 @@ export function CountdownBarEditorPage() {
       displayMode: value.displayMode,
       progressFill: value.progressFill ?? "none",
       heightPx: value.heightPx,
+      contentPadding: value.contentPadding ?? 4,
+      textScale: value.textScale ?? 100,
       enabled: value.enabled,
       priority: value.priority,
       targetScope: value.targetScope,
@@ -475,6 +489,8 @@ export function CountdownBarEditorPage() {
       displayMode: values.displayMode,
       progressFill: values.progressFill,
       heightPx: values.heightPx,
+      contentPadding: values.contentPadding,
+      textScale: values.textScale,
       enabled: values.enabled,
       priority: values.priority,
       targetScope: values.targetScope,
@@ -637,6 +653,28 @@ export function CountdownBarEditorPage() {
               max={320}
               error={errors.heightPx?.message}
               {...register("heightPx", { valueAsNumber: true })}
+            />
+            <FormField
+              id="countdown-padding"
+              label="Horizontal padding (%)"
+              hint="Lower padding gives the message and countdown more room."
+              aria-label="Horizontal padding (%)"
+              type="number"
+              min={0}
+              max={40}
+              error={errors.contentPadding?.message}
+              {...register("contentPadding", { valueAsNumber: true })}
+            />
+            <FormField
+              id="countdown-text-scale"
+              label="Text size (%)"
+              hint="Increase the type size without changing the bar height."
+              aria-label="Text size (%)"
+              type="number"
+              min={25}
+              max={500}
+              error={errors.textScale?.message}
+              {...register("textScale", { valueAsNumber: true })}
             />
             <FormField
               id="countdown-priority"

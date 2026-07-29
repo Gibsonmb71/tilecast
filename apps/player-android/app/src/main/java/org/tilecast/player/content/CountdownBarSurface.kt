@@ -6,6 +6,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -103,30 +104,31 @@ private fun CountdownBar(active: ActiveCountdownBar, modifier: Modifier = Modifi
                 }
             }
         }
-        Row(
-            Modifier.fillMaxSize().padding(horizontal = 48.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                active.message,
-                color = Color.White,
-                fontSize = countdownBarFontSize(active.heightPx),
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                "  ${active.value}",
-                color = Color.White,
-                fontSize = countdownBarFontSize(active.heightPx),
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-            )
+        // The gutter is a share of the bar width, like the Linux percentage, so
+        // one instance looks the same on a 1080p panel and a 4K one.
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            val gutter = maxWidth * (active.contentPadding / 100f)
+            Row(
+                Modifier.fillMaxSize().padding(horizontal = gutter),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    active.message,
+                    color = Color.White,
+                    fontSize = active.fontSizeSp.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    "  ${active.value}",
+                    color = Color.White,
+                    fontSize = active.fontSizeSp.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                )
+            }
         }
     }
 }
-
-/** Mirrors the renderer's clamp so the bar reads the same at either height. */
-internal fun countdownBarFontSize(heightPx: Int) =
-    (heightPx * 0.42f).coerceIn(22f, 72f).sp

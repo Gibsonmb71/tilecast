@@ -12,7 +12,7 @@ Forms does not add a Player plugin manifest entry. Its published views flow thro
 
 ## Countdown Bar
 
-Countdown Bar was the first built-in plugin. An installation can create multiple instances, each with its own name, message, schedule, lead time, optional completion text, display mode, height, enabled state, priority, and targets.
+Countdown Bar was the first built-in plugin. An installation can create multiple instances, each with its own name, message, schedule, lead time, optional completion text, display mode, height, horizontal padding, text size, background countdown, enabled state, priority, and targets.
 
 Weekly instances use an IANA timezone, a wall-clock target time, and one or more days where Sunday is `0` and Saturday is `6`. One-time instances use an absolute RFC 3339 target. A bar is active from its configured lead time until the target. When completion text is configured, it remains visible for one minute after the target; otherwise the bar hides at zero. If active instances overlap, the Player shows the highest priority instance, then the earliest target, then the stable instance ID.
 
@@ -30,6 +30,10 @@ Targets are one of:
 The fill is a share of the configured lead time, not of a fixed span: a fifteen-minute lead empties over fifteen minutes and a two-minute lead over two. Players animate between the once-a-second steps, which smooths the sweep without implying a finer clock than the Player has, and honour a reduced-motion preference where the platform exposes one.
 
 `progressFill` is optional on the wire. An omitted value is stored as `none`, and a Player released before the field existed ignores the key and draws the bar exactly as before.
+
+### Text fit
+
+`contentPadding` is the percentage of the bar width reserved on both the left and right. It defaults to `4`; lowering it toward `0` lets text use more of the bar. `textScale` multiplies the height-derived type size and defaults to `100`. Studio accepts padding from 0–40 percent and text size from 25–500 percent. Players clamp both values defensively, and older manifests that omit them retain the original appearance.
 
 Changing an instance increments the manifest revision for every screen. The next authenticated manifest contains only enabled instances that apply to that screen.
 

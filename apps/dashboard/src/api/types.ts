@@ -776,6 +776,8 @@ export type CountdownBarInput = {
   displayMode: "overlay" | "push";
   heightPx: number;
   progressFill: "none" | "drain";
+  contentPadding: number;
+  textScale: number;
   enabled: boolean;
   priority: number;
   targetScope: "all" | "screens" | "sync_groups" | "locations";

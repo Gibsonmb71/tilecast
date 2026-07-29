@@ -31,6 +31,10 @@ internal data class ActiveCountdownBar(
      * for no fill.
      */
     val remainingFraction: Float?,
+    /** Gutter on each side, as a percentage of the bar width. */
+    val contentPadding: Int,
+    /** Type size in scale-independent pixels, already scaled. */
+    val fontSizeSp: Float,
 )
 
 private val CompletionDisplay: Duration = Duration.ofMinutes(1)
@@ -66,6 +70,8 @@ internal fun resolveCountdownBar(
                     targetAt = target,
                     completed = completed,
                     remainingFraction = if (config.progressFill == "drain") fraction else null,
+                    contentPadding = config.contentPadding.coerceIn(0, 40),
+                    fontSizeSp = countdownBarFontSize(config.heightPx, config.textScale),
                 )
         }
     }
@@ -130,6 +136,16 @@ private fun parseTargetTime(value: String?): LocalTime? {
     val minute = match.groupValues[2].toIntOrNull() ?: return null
     if (hour > 23 || minute > 59) return null
     return LocalTime.of(hour, minute)
+}
+
+/**
+ * Type size follows the bar height, clamped as the Linux stylesheet clamps it,
+ * then scaled. The scale multiplies the clamped result so a bar can exceed the
+ * unscaled 72 ceiling deliberately rather than by accident.
+ */
+internal fun countdownBarFontSize(heightPx: Int, textScale: Int): Float {
+    val base = (heightPx * 0.42f).coerceIn(22f, 72f)
+    return base * (textScale.coerceIn(25, 500) / 100f)
 }
 
 /**

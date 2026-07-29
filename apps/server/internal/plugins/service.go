@@ -53,6 +53,8 @@ type CountdownBarInput struct {
 	DisplayMode     string      `json:"displayMode"`
 	HeightPX        int         `json:"heightPx"`
 	ProgressFill    string      `json:"progressFill"`
+	ContentPadding  *int        `json:"contentPadding"`
+	TextScale       int         `json:"textScale"`
 	Enabled         bool        `json:"enabled"`
 	Priority        int         `json:"priority"`
 	TargetScope     string      `json:"targetScope"`
@@ -86,6 +88,8 @@ type ManifestCountdownConfig struct {
 	DisplayMode     string     `json:"displayMode"`
 	HeightPX        int        `json:"heightPx"`
 	ProgressFill    string     `json:"progressFill"`
+	ContentPadding  int        `json:"contentPadding"`
+	TextScale       int        `json:"textScale"`
 	Priority        int        `json:"priority"`
 }
 
@@ -142,7 +146,7 @@ func (s *Service) Catalog(ctx context.Context) (Catalog, error) {
 
 func (s *Service) ListCountdownBars(ctx context.Context) ([]CountdownBar, error) {
 	rows, err := s.db.Query(ctx, `SELECT id,name,message,schedule_type,target_time::text,days_of_week,one_time_at,timezone,
-		lead_time_seconds,completion_text,display_mode,height_px,progress_fill,enabled,priority,target_scope,created_at,updated_at
+		lead_time_seconds,completion_text,display_mode,height_px,progress_fill,content_padding,text_scale,enabled,priority,target_scope,created_at,updated_at
 		FROM countdown_bar_instances ORDER BY priority DESC,lower(name),id`)
 	if err != nil {
 		return nil, err
@@ -165,7 +169,7 @@ func (s *Service) ListCountdownBars(ctx context.Context) ([]CountdownBar, error)
 
 func (s *Service) GetCountdownBar(ctx context.Context, id uuid.UUID) (CountdownBar, error) {
 	row := s.db.QueryRow(ctx, `SELECT id,name,message,schedule_type,target_time::text,days_of_week,one_time_at,timezone,
-		lead_time_seconds,completion_text,display_mode,height_px,progress_fill,enabled,priority,target_scope,created_at,updated_at
+		lead_time_seconds,completion_text,display_mode,height_px,progress_fill,content_padding,text_scale,enabled,priority,target_scope,created_at,updated_at
 		FROM countdown_bar_instances WHERE id=$1`, id)
 	item, err := scanCountdownBar(row)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -183,9 +187,11 @@ type scanner interface{ Scan(...any) error }
 func scanCountdownBar(row scanner) (CountdownBar, error) {
 	var item CountdownBar
 	var targetTime *string
+	var contentPadding int
 	err := row.Scan(&item.ID, &item.Name, &item.Message, &item.ScheduleType, &targetTime, &item.DaysOfWeek,
 		&item.OneTimeAt, &item.Timezone, &item.LeadTimeSeconds, &item.CompletionText, &item.DisplayMode,
-		&item.HeightPX, &item.ProgressFill, &item.Enabled, &item.Priority, &item.TargetScope, &item.CreatedAt, &item.UpdatedAt)
+		&item.HeightPX, &item.ProgressFill, &contentPadding, &item.TextScale, &item.Enabled, &item.Priority, &item.TargetScope, &item.CreatedAt, &item.UpdatedAt)
+	item.ContentPadding = &contentPadding
 	item.TargetTime = trimTargetTime(targetTime)
 	return item, err
 }
@@ -217,11 +223,20 @@ func (s *Service) targetIDs(ctx context.Context, id uuid.UUID) ([]uuid.UUID, err
 	return ids, rows.Err()
 }
 
-// An omitted progressFill keeps the original no-fill behavior, so a client
-// written before the field existed still creates a valid instance.
+// Omitted values keep the original appearance, while a pointer lets zero
+// contentPadding remain an intentional full-width choice.
 func normalizeCountdownBar(input CountdownBarInput) CountdownBarInput {
 	if strings.TrimSpace(input.ProgressFill) == "" {
 		input.ProgressFill = "none"
+	}
+	if input.ContentPadding == nil {
+		defaultPadding := 4
+		input.ContentPadding = &defaultPadding
+	}
+	// Zero is a meaningful contentPadding, so only textScale can treat 0 as
+	// "omitted"; a zero scale would render nothing.
+	if input.TextScale == 0 {
+		input.TextScale = 100
 	}
 	return input
 }
@@ -272,18 +287,18 @@ func (s *Service) writeCountdownBar(ctx context.Context, id, organizationID, use
 	if create {
 		_, err = tx.Exec(ctx, `INSERT INTO countdown_bar_instances
 			(id,organization_id,name,message,schedule_type,target_time,days_of_week,one_time_at,timezone,lead_time_seconds,
-			 completion_text,display_mode,height_px,progress_fill,enabled,priority,target_scope,created_by)
-			VALUES($1,$2,$3,$4,$5,$6::time,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+			 completion_text,display_mode,height_px,progress_fill,content_padding,text_scale,enabled,priority,target_scope,created_by)
+			VALUES($1,$2,$3,$4,$5,$6::time,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
 			id, organizationID, strings.TrimSpace(input.Name), strings.TrimSpace(input.Message), input.ScheduleType,
 			targetTime, input.DaysOfWeek, input.OneTimeAt, input.Timezone, input.LeadTimeSeconds,
-			strings.TrimSpace(input.CompletionText), input.DisplayMode, input.HeightPX, input.ProgressFill, input.Enabled, input.Priority, input.TargetScope, userID)
+			strings.TrimSpace(input.CompletionText), input.DisplayMode, input.HeightPX, input.ProgressFill, *input.ContentPadding, input.TextScale, input.Enabled, input.Priority, input.TargetScope, userID)
 	} else {
 		tag, updateErr := tx.Exec(ctx, `UPDATE countdown_bar_instances SET name=$2,message=$3,schedule_type=$4,target_time=$5::time,
 			days_of_week=$6,one_time_at=$7,timezone=$8,lead_time_seconds=$9,completion_text=$10,display_mode=$11,height_px=$12,
-			progress_fill=$13,enabled=$14,priority=$15,target_scope=$16,updated_at=now() WHERE id=$1`,
+			progress_fill=$13,content_padding=$14,text_scale=$15,enabled=$16,priority=$17,target_scope=$18,updated_at=now() WHERE id=$1`,
 			id, strings.TrimSpace(input.Name), strings.TrimSpace(input.Message), input.ScheduleType, targetTime,
 			input.DaysOfWeek, input.OneTimeAt, input.Timezone, input.LeadTimeSeconds, strings.TrimSpace(input.CompletionText),
-			input.DisplayMode, input.HeightPX, input.ProgressFill, input.Enabled, input.Priority, input.TargetScope)
+			input.DisplayMode, input.HeightPX, input.ProgressFill, *input.ContentPadding, input.TextScale, input.Enabled, input.Priority, input.TargetScope)
 		err = updateErr
 		if err == nil && tag.RowsAffected() == 0 {
 			return ErrNotFound
@@ -363,6 +378,12 @@ func validateCountdownBar(input CountdownBarInput) error {
 	}
 	if input.ProgressFill != "none" && input.ProgressFill != "drain" {
 		return fmt.Errorf("%w: progressFill must be none or drain", ErrInvalid)
+	}
+	if input.ContentPadding == nil || *input.ContentPadding < 0 || *input.ContentPadding > 40 {
+		return fmt.Errorf("%w: contentPadding must be between 0 and 40 percent", ErrInvalid)
+	}
+	if input.TextScale < 25 || input.TextScale > 500 {
+		return fmt.Errorf("%w: textScale must be between 25 and 500 percent", ErrInvalid)
 	}
 	if input.ScheduleType == "weekly" {
 		if input.TargetTime == nil || input.OneTimeAt != nil || len(input.DaysOfWeek) == 0 {
@@ -462,7 +483,7 @@ func (s *Service) notify(notes []note) {
 
 func (s *Service) ManifestForScreen(ctx context.Context, screenID uuid.UUID) ([]ManifestPlugin, error) {
 	rows, err := s.db.Query(ctx, `SELECT DISTINCT i.id,i.name,i.message,i.schedule_type,i.target_time::text,i.days_of_week,
-		i.one_time_at,i.timezone,i.lead_time_seconds,i.completion_text,i.display_mode,i.height_px,i.progress_fill,i.priority
+		i.one_time_at,i.timezone,i.lead_time_seconds,i.completion_text,i.display_mode,i.height_px,i.progress_fill,i.content_padding,i.text_scale,i.priority
 		FROM countdown_bar_instances i
 		WHERE i.enabled AND (
 			i.target_scope='all'
@@ -486,7 +507,7 @@ func (s *Service) ManifestForScreen(ctx context.Context, screenID uuid.UUID) ([]
 		var config ManifestCountdownConfig
 		if err = rows.Scan(&id, &config.Name, &config.Message, &config.ScheduleType, &config.TargetTime,
 			&config.DaysOfWeek, &config.OneTimeAt, &config.Timezone, &config.LeadTimeSeconds,
-			&config.CompletionText, &config.DisplayMode, &config.HeightPX, &config.ProgressFill, &config.Priority); err != nil {
+			&config.CompletionText, &config.DisplayMode, &config.HeightPX, &config.ProgressFill, &config.ContentPadding, &config.TextScale, &config.Priority); err != nil {
 			return nil, err
 		}
 		config.TargetTime = trimTargetTime(config.TargetTime)
