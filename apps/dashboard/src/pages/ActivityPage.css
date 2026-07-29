@@ -977,42 +977,6 @@
   }
 }
 
-/* Recovered incidents are grouped apart from the still-failing ones so a list
-   of ended conditions is never read as an ongoing outage. */
-.activity-incidents__awaiting {
-  border-top: 1px solid var(--tc-border-default);
-  padding-top: 12px;
-}
-
-.activity-incidents__awaiting > h4 {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  padding: 0 16px;
-  color: var(--tc-text-secondary);
-  font: var(--tc-text-label);
-}
-
-.activity-incidents__awaiting > h4 > span {
-  display: inline-grid;
-  min-width: 20px;
-  min-height: 20px;
-  place-items: center;
-  padding: 0 6px;
-  border-radius: var(--tc-radius-pill);
-  background: var(--tc-bg-subtle);
-  color: var(--tc-text-secondary);
-  font: var(--tc-text-metric-delta);
-}
-
-.activity-incidents__awaiting > p {
-  margin: 3px 0 4px;
-  padding: 0 16px;
-  color: var(--tc-text-secondary);
-  font-size: 12px;
-}
-
 /* The "N more" line closing a truncated preview list. */
 .activity-incidents__more {
   margin: 0;

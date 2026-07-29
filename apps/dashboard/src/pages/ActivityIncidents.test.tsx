@@ -153,24 +153,19 @@ describe("Needs attention", () => {
     // Six heartbeat gaps are one incident, not six things to read.
     expect(await screen.findByText("Screen stopped reporting")).toBeTruthy();
     expect(screen.getByText("6 occurrences")).toBeTruthy();
-    expect(screen.getAllByRole("listitem").length).toBeGreaterThanOrEqual(2);
   });
 
-  it("separates recovered incidents and never calls them still failing", async () => {
+  it("leaves recovered incidents out and asks nothing about them", async () => {
     renderPanel();
 
     const section = await screen.findByRole("region", {
       name: "Needs attention",
     });
-    const awaiting = within(section).getByText(
-      "Recovered, awaiting acknowledgement",
-    ).parentElement!;
-    // The recovered one lives in its own group, described as ended.
-    expect(within(awaiting).getByText("Playback is failing")).toBeTruthy();
-    expect(awaiting.textContent).toMatch(/Lasted/);
-    expect(awaiting.textContent).not.toMatch(/Ongoing/);
-    // The still-failing one is described as ongoing, and is not in that group.
-    expect(within(awaiting).queryByText("Screen stopped reporting")).toBeNull();
+    await within(section).findByText("Screen stopped reporting");
+    // The condition ended by itself, so it is logged on the Incidents tab
+    // rather than presented here as work waiting on someone.
+    expect(within(section).queryByText("Playback is failing")).toBeNull();
+    expect(section.textContent).not.toMatch(/acknowledgement/i);
     expect(section.textContent).toMatch(/Ongoing for/);
   });
 
@@ -237,9 +232,6 @@ describe("Needs attention", () => {
       name: "Needs attention",
     });
     expect(within(section).queryByText(/more still failing/)).toBeNull();
-    expect(
-      within(section).queryByText(/more awaiting acknowledgement/),
-    ).toBeNull();
   });
 
   it("labels the list as current state, not the selected range", async () => {
@@ -260,23 +252,18 @@ describe("Needs attention", () => {
     expect(screen.getByText("Unknown cause")).toBeTruthy();
   });
 
-  it("reports how long a recovered incident lasted, not how long ago it opened", async () => {
-    renderPanel();
-
-    const section = await screen.findByRole("region", {
-      name: "Needs attention",
-    });
-    const row = within(section).getByText("Playback is failing").closest("li")!;
-    // Opened 07:00, recovered 07:30: half an hour, however long ago that was.
-    expect(row.textContent).toContain("Lasted 30m");
-  });
-
   it("states a cause the Player actually established", async () => {
     const user = userEvent.setup();
+    incidents = [
+      {
+        ...openIncident,
+        probableCause: "Renderer failure reported by the Player.",
+      },
+    ];
     renderPanel();
 
-    await screen.findByText("Playback is failing");
-    await user.click(screen.getAllByRole("button", { name: "Details" })[1]!);
+    await screen.findByText("Screen stopped reporting");
+    await user.click(screen.getAllByRole("button", { name: "Details" })[0]!);
     expect(
       screen.getByText("Renderer failure reported by the Player."),
     ).toBeTruthy();

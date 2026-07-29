@@ -114,6 +114,34 @@ const detail = {
   ],
 };
 
+// An incident whose condition ended by itself: a record of an outage, with
+// nothing left for an operator to do about it.
+const recoveredIncident = {
+  id: "incident-2",
+  incidentType: "playback",
+  severity: "warning",
+  status: "recovered",
+  title: "Playback is failing",
+  description: "The renderer reported a failure.",
+  openedAt: "2026-07-26T07:00:00.000Z",
+  lastSeenAt: "2026-07-26T07:20:00.000Z",
+  recoveredAt: "2026-07-26T07:30:00.000Z",
+  recoveryMode: "automatic",
+  affectedScreens: 1,
+  occurrenceCount: 1,
+};
+
+const recoveredDetail = {
+  ...recoveredIncident,
+  recoveryPath: "The renderer recovered on its own.",
+  timeline: [],
+  screens: [],
+  relatedEvents: [],
+  proofSessions: [],
+  auditChanges: [],
+};
+
+let listed: unknown[] = [];
 let patched: { url: string; body: unknown }[] = [];
 
 function renderTab(path = "/activity?tab=incidents") {
@@ -146,6 +174,7 @@ function LocationProbe() {
 
 beforeEach(() => {
   role = "owner";
+  listed = [incident];
   patched = [];
   vi.spyOn(api, "screens").mockResolvedValue({
     items: [{ id: "screen-1", name: "Lobby north" }],
@@ -171,9 +200,11 @@ beforeEach(() => {
       }
       const body = url.includes("/incidents/incident-1")
         ? { data: detail }
-        : url.includes("/incidents")
-          ? { data: { items: [incident] } }
-          : { data: { items: [], nextCursor: "" } };
+        : url.includes("/incidents/incident-2")
+          ? { data: recoveredDetail }
+          : url.includes("/incidents")
+            ? { data: { items: listed } }
+            : { data: { items: [], nextCursor: "" } };
       return Promise.resolve(
         new Response(JSON.stringify(body), {
           status: 200,
@@ -359,5 +390,35 @@ describe("Incident details drawer", () => {
 
     await waitFor(() => expect(patched).toHaveLength(1));
     expect(patched[0]?.body).toMatchObject({ action: "acknowledge" });
+  });
+});
+
+describe("Recovered incidents", () => {
+  it("logs what happened without asking anyone to sign it off", async () => {
+    listed = [recoveredIncident];
+    renderTab();
+
+    const row = (await screen.findByText("Playback is failing")).closest("li")!;
+    // Opened 07:00, recovered 07:30: what it cost, not what is owed.
+    expect(row.textContent).toContain("Lasted 30m");
+    expect(row.textContent).toMatch(/Recovered .*on its own/);
+    expect(row.textContent).not.toMatch(/Ongoing/);
+    expect(row.textContent).not.toMatch(/acknowledge/i);
+  });
+
+  it("offers only Reopen, since the condition already ended", async () => {
+    const user = userEvent.setup();
+    listed = [recoveredIncident];
+    renderTab();
+
+    await user.click(await screen.findByRole("button", { name: "Details" }));
+    const drawer = await screen.findByRole("dialog");
+    expect(
+      within(drawer).queryByRole("button", { name: "Acknowledge" }),
+    ).toBeNull();
+    expect(
+      within(drawer).queryByRole("button", { name: "Resolve" }),
+    ).toBeNull();
+    expect(within(drawer).getByRole("button", { name: "Reopen" })).toBeTruthy();
   });
 });

@@ -23,6 +23,8 @@ Activity used to treat the latest bad event on a screen as an unresolved issue. 
 
 An incident opens once, absorbs repeats into `last_seen_at` and an occurrence count, and recovers when the evidence says the condition ended. Statuses are `open`, `acknowledged`, `recovered`, `resolved`, and `ignored`. **Recovered** and **resolved** are deliberately different: recovered means the condition ended on its own, resolved means a person closed the matter. That distinction is what makes the automatic-versus-manual recovery breakdown meaningful.
 
+**A recovered incident is logged, not queued.** The condition ended without anyone doing anything, so it is a record of an outage rather than work waiting on an operator: it leaves the active list, is not counted as an active incident, and nobody is asked to acknowledge or close it. It stays readable on the Incidents tab under `status=recovered` or `status=all`, keeps its recovery timestamp and mode, counts toward time-to-recover, and can be reopened if the record turns out to be wrong.
+
 | Incident     | Opened by                                                                             | Recovered by                                                |
 | ------------ | ------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
 | Connectivity | Heartbeat gap, confirmed connection loss, or a screen past the heartbeat grace period | Connection restored, or a heartbeat inside the grace period |
@@ -37,7 +39,7 @@ A condition that returns after recovering opens a _new_ incident rather than rev
 
 **Probable cause is only stated when the evidence establishes it.** A heartbeat gap proves reporting stopped; it proves nothing about why, so the incident carries no cause and Studio shows "Unknown cause". A renderer failure reported by the Player is evidence, and is stated.
 
-Owners and Administrators can acknowledge, assign, note, resolve, ignore, and reopen an incident. Every applied action is appended to the incident timeline with its actor and written to the audit log; an action that does not apply to the current status returns 409 and records nothing.
+Owners and Administrators can acknowledge, assign, note, resolve, ignore, and reopen an incident. Acknowledging applies only while the condition is live (`open` or `acknowledged`); a recovered incident can only be reopened. Every applied action is appended to the incident timeline with its actor and written to the audit log; an action that does not apply to the current status returns 409 and records nothing.
 
 ## Proof-of-play derivation
 
@@ -184,7 +186,7 @@ Healthy + impaired + offline + unmeasured = measured fleet, exactly. Online is s
 
 | Metric                       | Exact definition                                                                                                                                                                    |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Active incidents             | Incidents in status `open`, `acknowledged` or `recovered`. Measured now, not over the range.                                                                                        |
+| Active incidents             | Incidents in status `open` or `acknowledged`. Measured now, not over the range. Recovered ones are excluded: the condition has ended.                                               |
 | Opened / resolved            | Incidents whose `opened_at` / `resolved_at` falls in the range.                                                                                                                     |
 | Time to recover              | `LEAST(recovered_at, resolved_at) − opened_at`, for incidents that ended in the range and are not `ignored`. Reported as mean, median and maximum. **Null** when nothing recovered. |
 | Automatic vs manual recovery | `recovery_mode='automatic'` means the condition ended on its own; `manual` means a person closed it.                                                                                |
