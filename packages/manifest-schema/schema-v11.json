@@ -113,6 +113,8 @@
         "displayMode": { "enum": ["overlay", "push"] },
         "heightPx": { "type": "integer", "minimum": 40, "maximum": 320 },
         "progressFill": { "enum": ["none", "drain"] },
+        "contentPadding": { "type": "integer", "minimum": 0, "maximum": 40 },
+        "textScale": { "type": "integer", "minimum": 25, "maximum": 500 },
         "priority": { "type": "integer", "minimum": -1000, "maximum": 1000 }
       },
       "allOf": [

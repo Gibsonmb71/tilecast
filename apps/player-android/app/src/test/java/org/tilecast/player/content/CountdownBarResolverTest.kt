@@ -18,6 +18,8 @@ class CountdownBarResolverTest {
         message: String = "Lunch ends in",
         displayMode: String = "overlay",
         progressFill: String = "none",
+        contentPadding: Int = 4,
+        textScale: Int = 100,
         id: String = "bar-1",
     ) = ManifestPlugin(
         id = id,
@@ -35,6 +37,8 @@ class CountdownBarResolverTest {
             displayMode = displayMode,
             heightPx = 72,
             progressFill = progressFill,
+            contentPadding = contentPadding,
+            textScale = textScale,
             priority = priority,
         ),
     )
@@ -133,6 +137,42 @@ class CountdownBarResolverTest {
         val other = weekly().copy(type = "something_else")
         val future = weekly().copy(version = 2)
         assertNull(resolveCountdownBar(listOf(other, future), Instant.parse("2026-07-27T15:50:00Z")))
+    }
+
+    @Test
+    fun `defaults padding and type size to the original appearance`() {
+        val active = resolveCountdownBar(listOf(weekly()), Instant.parse("2026-07-27T15:50:00Z"))
+        // 72 height * 0.42 = 30.24, inside the 22..72 clamp, at 100 percent.
+        assertEquals(4, active?.contentPadding)
+        assertEquals(30.24f, active!!.fontSizeSp, 0.01f)
+    }
+
+    @Test
+    fun `applies a custom padding and text scale`() {
+        val active = resolveCountdownBar(
+            listOf(weekly(contentPadding = 0, textScale = 200)),
+            Instant.parse("2026-07-27T15:50:00Z"),
+        )
+        assertEquals(0, active?.contentPadding)
+        assertEquals(60.48f, active!!.fontSizeSp, 0.01f)
+    }
+
+    @Test
+    fun `lets a scaled bar exceed the unscaled type ceiling`() {
+        val tall = weekly(textScale = 300).let { it.copy(config = it.config.copy(heightPx = 320)) }
+        val active = resolveCountdownBar(listOf(tall), Instant.parse("2026-07-27T15:50:00Z"))
+        // The height-derived size clamps at 72, then the scale multiplies it.
+        assertEquals(216f, active!!.fontSizeSp, 0.01f)
+    }
+
+    @Test
+    fun `clamps padding and scale that arrive out of range`() {
+        val active = resolveCountdownBar(
+            listOf(weekly(contentPadding = 99, textScale = 5_000)),
+            Instant.parse("2026-07-27T15:50:00Z"),
+        )
+        assertEquals(40, active?.contentPadding)
+        assertEquals(30.24f * 5, active!!.fontSizeSp, 0.1f)
     }
 
     @Test

@@ -8,13 +8,18 @@ import (
 	"github.com/google/uuid"
 )
 
+func intPointer(value int) *int {
+	return &value
+}
+
 func validInput() CountdownBarInput {
 	target := "12:00"
 	return CountdownBarInput{
 		Name: "Lunch", Message: "Lunch ends in", ScheduleType: "weekly",
 		TargetTime: &target, DaysOfWeek: []int{1, 2, 3, 4, 5},
 		Timezone: "America/New_York", LeadTimeSeconds: 900,
-		DisplayMode: "overlay", HeightPX: 72, ProgressFill: "none", Enabled: true,
+		DisplayMode: "overlay", HeightPX: 72, ProgressFill: "none",
+		ContentPadding: intPointer(4), TextScale: 100, Enabled: true,
 		TargetScope: "all", TargetIDs: []uuid.UUID{},
 	}
 }
@@ -35,6 +40,23 @@ func TestValidateCountdownBar(t *testing.T) {
 	}
 	if got := normalizeCountdownBar(omitted).ProgressFill; got != "none" {
 		t.Fatalf("expected omitted progressFill to normalize to none, got %q", got)
+	}
+	omitted.ContentPadding = nil
+	defaulted := normalizeCountdownBar(omitted)
+	if defaulted.ContentPadding == nil || *defaulted.ContentPadding != 4 {
+		t.Fatalf("expected omitted contentPadding to default to 4, got %#v", defaulted.ContentPadding)
+	}
+	// Zero padding is a real choice; a zero scale is an omission.
+	metrics := validInput()
+	metrics.ContentPadding = intPointer(0)
+	metrics.TextScale = 0
+	normalized := normalizeCountdownBar(metrics)
+	if normalized.ContentPadding == nil || *normalized.ContentPadding != 0 || normalized.TextScale != 100 {
+		t.Fatalf("expected padding 0 to survive and scale 0 to default, got %d and %d",
+			*normalized.ContentPadding, normalized.TextScale)
+	}
+	if err := validateCountdownBar(normalized); err != nil {
+		t.Fatalf("zero padding with a defaulted scale rejected: %v", err)
 	}
 	oneTime := validInput()
 	oneTime.ScheduleType = "one_time"
@@ -64,6 +86,16 @@ func TestValidateCountdownBarRejectsInvalidScheduleAndTargets(t *testing.T) {
 	input.TargetIDs = []uuid.UUID{duplicate, duplicate}
 	if err := validateCountdownBar(input); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("expected duplicate targets to be invalid, got %v", err)
+	}
+	input = validInput()
+	input.ContentPadding = intPointer(41)
+	if err := validateCountdownBar(input); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("expected an out-of-range contentPadding to be rejected, got %v", err)
+	}
+	input = validInput()
+	input.TextScale = 501
+	if err := validateCountdownBar(input); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("expected an out-of-range textScale to be rejected, got %v", err)
 	}
 	input = validInput()
 	input.ProgressFill = "sideways"

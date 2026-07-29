@@ -78,6 +78,8 @@ func TestCountdownBarLifecycleAndManifestTargeting(t *testing.T) {
 
 	service := NewService(pool, nil)
 	input := validInput()
+	input.ContentPadding = intPointer(0)
+	input.TextScale = 175
 	input.TargetScope = "locations"
 	input.TargetIDs = []uuid.UUID{locationID}
 	created, err := service.CreateCountdownBar(ctx, userID, input)
@@ -104,6 +106,15 @@ func TestCountdownBarLifecycleAndManifestTargeting(t *testing.T) {
 	targeted, err := service.ManifestForScreen(ctx, targetedScreen)
 	if err != nil || len(targeted) != 4 {
 		t.Fatalf("targeted manifest: %#v %v", targeted, err)
+	}
+	var customMetricsFound bool
+	for _, plugin := range targeted {
+		if plugin.ID == created.ID {
+			customMetricsFound = plugin.Config.ContentPadding == 0 && plugin.Config.TextScale == 175
+		}
+	}
+	if created.ContentPadding == nil || *created.ContentPadding != 0 || created.TextScale != 175 || !customMetricsFound {
+		t.Fatalf("custom text metrics were not persisted and projected: created=%#v manifest=%#v", created, targeted)
 	}
 	other, err := service.ManifestForScreen(ctx, otherScreen)
 	if err != nil || len(other) != 1 || other[0].Config.Name != "All screens" {

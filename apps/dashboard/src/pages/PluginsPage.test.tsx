@@ -74,6 +74,8 @@ const storedInstance = {
   displayMode: "overlay",
   progressFill: "drain",
   heightPx: 72,
+  contentPadding: 2,
+  textScale: 125,
   enabled: true,
   priority: 0,
   targetScope: "all",
@@ -214,6 +216,8 @@ describe("Plugins", () => {
     await waitFor(() => expect(submitted).toHaveLength(1));
     expect(submitted[0]?.daysOfWeek).toEqual([1, 3]);
     expect(submitted[0]?.progressFill).toBe("drain");
+    expect(submitted[0]?.contentPadding).toBe(2);
+    expect(submitted[0]?.textScale).toBe(125);
   }, 10_000);
 
   it("submits the checkbox groups it renders", async () => {
@@ -255,6 +259,24 @@ describe("Plugins", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create instance" }));
     await waitFor(() => expect(submitted).toHaveLength(1));
     expect(submitted[0]?.progressFill).toBe("drain");
+  }, 10_000);
+
+  it("submits custom padding and text size", async () => {
+    renderRoute(<CountdownBarEditorPage />, "/plugins/countdown-bar/new");
+    await waitFor(() => expect(screen.getByLabelText("Name")).toBeEnabled());
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Lunch" },
+    });
+    fireEvent.change(screen.getByLabelText("Horizontal padding (%)"), {
+      target: { value: "0" },
+    });
+    fireEvent.change(screen.getByLabelText("Text size (%)"), {
+      target: { value: "180" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create instance" }));
+    await waitFor(() => expect(submitted).toHaveLength(1));
+    expect(submitted[0]?.contentPadding).toBe(0);
+    expect(submitted[0]?.textScale).toBe(180);
   }, 10_000);
 
   it("keeps the schedule and mode selections across an unrelated edit", async () => {

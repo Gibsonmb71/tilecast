@@ -105,6 +105,10 @@ export interface ManifestCountdownBarConfig {
   heightPx: number;
   /** Absent on manifests published before the fill existed. */
   progressFill?: "none" | "drain" | null;
+  /** Percentage of the bar width kept as a gutter on each side. */
+  contentPadding?: number | null;
+  /** Percentage applied to the height-derived type size. */
+  textScale?: number | null;
   priority: number;
 }
 

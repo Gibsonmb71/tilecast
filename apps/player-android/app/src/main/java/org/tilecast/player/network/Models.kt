@@ -44,7 +44,7 @@ object PlayerPresentationSupport {
     val effectiveTakeover: ManifestTakeover? get() = takeover ?: emergency
 }
 @Serializable data class ManifestPlugin(val id:String,val type:String,val version:Int,val config:ManifestCountdownBarConfig)
-@Serializable data class ManifestCountdownBarConfig(val name:String="",val message:String,val scheduleType:String,val targetTime:String?=null,val daysOfWeek:List<Int> = emptyList(),val oneTimeAt:String?=null,val timezone:String,val leadTimeSeconds:Int,val completionText:String="",val displayMode:String,val heightPx:Int,val progressFill:String="none",val priority:Int)
+@Serializable data class ManifestCountdownBarConfig(val name:String="",val message:String,val scheduleType:String,val targetTime:String?=null,val daysOfWeek:List<Int> = emptyList(),val oneTimeAt:String?=null,val timezone:String,val leadTimeSeconds:Int,val completionText:String="",val displayMode:String,val heightPx:Int,val progressFill:String="none",val contentPadding:Int=4,val textScale:Int=100,val priority:Int)
 @Serializable data class ManifestSyncGroup(val id:String,val playbackEpoch:String)
 @Serializable data class ManifestTakeover(val id:String,val playlistId:String,val activatedAt:String,val expiresAt:String)
 @Serializable data class ManifestPlaylist(val id: String, val revision: Long, val name: String, val items: List<ManifestItem>)
