@@ -99,6 +99,13 @@ npm test                        # unit tests
 npm run dist                    # AppImage + deb via electron-builder
 ```
 
+Release AppImages use electron-builder's static AppImage runtime, so direct
+launches do not need the legacy `libfuse.so.2` compatibility library. The
+managed systemd unit also uses `--appimage-extract-and-run` as a startup safety
+net for older artifacts and hosts where mounting is unavailable. That supported
+runtime mode still sets `$APPIMAGE` to the installed artifact, so Studio-driven
+updates continue replacing the signed AppImage atomically.
+
 On first launch the player asks for the server address (or takes
 `TILECAST_SERVER_URL` / `--server-url`), then shows the pairing code. Approve
 it in Tilecast Studio; playback starts on approval and the device needs no

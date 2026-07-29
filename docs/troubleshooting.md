@@ -68,6 +68,18 @@ from Studio: the staged download loses its executable bit before restart. Instal
 then later Studio deployments can atomically replace the AppImage and let the
 user systemd unit start the verified update.
 
+If the Linux service repeatedly reports that FUSE is unavailable, update its
+`ExecStart` to:
+
+```ini
+ExecStart=%h/tilecast/tilecast-player.AppImage --appimage-extract-and-run
+```
+
+This is the supported managed startup path. It does not require FUSE 2 and
+still preserves the original AppImage path for Studio-driven replacement.
+Linux Player 0.5.0 and older use the legacy FUSE 2 runtime; later release
+artifacts use the static runtime as the primary packaging-level fix.
+
 ## Nobody can sign in with a passkey
 
 Passkeys need a secure browser context and a registrable domain. A plain-HTTP
