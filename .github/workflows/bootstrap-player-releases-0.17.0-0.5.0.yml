@@ -1,0 +1,199 @@
+name: Bootstrap Android 0.17.0 and Linux 0.5.0 releases
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  release:
+    if: contains(github.event.head_commit.message, 'Release Android Player 0.17.0 and Linux Player 0.5.0')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Synchronize the Linux workspace lockfile
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = 'package-lock.json';
+          const lock = JSON.parse(fs.readFileSync(path, 'utf8'));
+          const player = lock.packages?.['apps/player-linux'];
+          if (!player) throw new Error('apps/player-linux is missing from package-lock.json');
+          if (player.version !== '0.4.0' && player.version !== '0.5.0') {
+            throw new Error(`Unexpected Linux player lockfile version: ${player.version}`);
+          }
+          player.version = '0.5.0';
+          fs.writeFileSync(path, `${JSON.stringify(lock, null, 2)}\n`);
+          NODE
+
+          if ! git diff --quiet -- package-lock.json; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add package-lock.json
+            git commit -m 'chore: sync Linux Player lockfile for 0.5.0'
+            git push origin HEAD:main
+          fi
+
+          echo "release_sha=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Create immutable release tags
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for tag in player-v0.17.0 player-linux-v0.5.0; do
+            existing="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq .object.sha 2>/dev/null || true)"
+            if [ -n "$existing" ]; then
+              if [ "$existing" != "$release_sha" ]; then
+                echo "$tag already points to $existing instead of $release_sha" >&2
+                exit 1
+              fi
+              continue
+            fi
+            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f ref="refs/tags/$tag" \
+              -f sha="$release_sha" >/dev/null
+          done
+
+      - name: Dispatch signed player release workflows
+        id: dispatch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          android_notes=$(cat <<'EOF'
+          ## What's new
+
+          - Adds the built-in Countdown Bar to Android players, including overlay and push display modes.
+          - Adds the optional draining background countdown that visually empties as the target approaches.
+          - Keeps countdown scheduling and rendering aligned with Linux, including offline cached-manifest behavior.
+          EOF
+          )
+
+          linux_notes=$(cat <<'EOF'
+          ## What's new
+
+          - Adds the optional draining background countdown to the built-in Countdown Bar.
+          - Keeps the fill synchronized with the configured lead window and completion state.
+          - Preserves the existing plain background as the default for backward compatibility.
+          EOF
+          )
+
+          gh workflow run player-release.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f tag=player-v0.17.0 \
+            -f channel=stable \
+            -f release_notes="$android_notes"
+
+          gh workflow run linux-player-release.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f tag=player-linux-v0.5.0 \
+            -f channel=stable \
+            -f release_notes="$linux_notes"
+
+          find_run() {
+            local workflow="$1"
+            local run_id=""
+            for _ in $(seq 1 30); do
+              run_id="$(gh run list \
+                --repo "$GITHUB_REPOSITORY" \
+                --workflow "$workflow" \
+                --event workflow_dispatch \
+                --limit 20 \
+                --json databaseId,createdAt \
+                --jq ".[] | select(.createdAt >= \"$started_at\") | .databaseId" \
+                | head -1)"
+              if [ -n "$run_id" ]; then
+                printf '%s' "$run_id"
+                return 0
+              fi
+              sleep 2
+            done
+            return 1
+          }
+
+          android_run="$(find_run player-release.yml)"
+          linux_run="$(find_run linux-player-release.yml)"
+          echo "android_run=$android_run" >> "$GITHUB_OUTPUT"
+          echo "linux_run=$linux_run" >> "$GITHUB_OUTPUT"
+
+      - name: Require both signed releases to succeed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ANDROID_RUN: ${{ steps.dispatch.outputs.android_run }}
+          LINUX_RUN: ${{ steps.dispatch.outputs.linux_run }}
+        run: |
+          set -euo pipefail
+          gh run watch "$ANDROID_RUN" --repo "$GITHUB_REPOSITORY" --exit-status
+          gh run watch "$LINUX_RUN" --repo "$GITHUB_REPOSITORY" --exit-status
+
+      - name: Verify published release assets and manifests
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/player-release-verification"
+          mkdir -p "$root/android" "$root/linux"
+
+          gh release download player-v0.17.0 \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir "$root/android"
+          test -f "$root/android/tilecast-player.apk"
+          test -f "$root/android/tilecast-player-update.json"
+          test -f "$root/android/tilecast-player-update.json.sig"
+          jq -e '.product == "tilecast-player" and .platform == "android" and .versionName == "0.17.0" and .versionCode == 38 and .channel == "stable"' \
+            "$root/android/tilecast-player-update.json" >/dev/null
+
+          gh release download player-linux-v0.5.0 \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir "$root/linux"
+          test -f "$root/linux/tilecast-player.AppImage"
+          test -f "$root/linux/tilecast-player-update-linux.json"
+          test -f "$root/linux/tilecast-player-update-linux.json.sig"
+          jq -e '.product == "tilecast-player" and .platform == "linux" and .versionName == "0.5.0" and .versionCode == 5000 and .channel == "stable"' \
+            "$root/linux/tilecast-player-update-linux.json" >/dev/null
+
+      - name: Record successful completion for cleanup verification
+        env:
+          ANDROID_RUN: ${{ steps.dispatch.outputs.android_run }}
+          LINUX_RUN: ${{ steps.dispatch.outputs.linux_run }}
+        run: |
+          set -euo pipefail
+          git pull --rebase origin main
+          mkdir -p .release-status
+          cat > .release-status/player-0.17.0-linux-0.5.0.json <<EOF
+          {
+            "android": {
+              "version": "0.17.0",
+              "tag": "player-v0.17.0",
+              "workflowRunId": $ANDROID_RUN
+            },
+            "linux": {
+              "version": "0.5.0",
+              "tag": "player-linux-v0.5.0",
+              "workflowRunId": $LINUX_RUN
+            },
+            "verified": true,
+            "completedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .release-status/player-0.17.0-linux-0.5.0.json
+          git commit -m 'chore: record completed player releases 0.17.0 and 0.5.0'
+          git push origin HEAD:main
