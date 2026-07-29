@@ -756,7 +756,7 @@ export type ScreenGroupList = {
 };
 
 export type PluginSummary = {
-  id: "countdown_bar";
+  id: string;
   name: string;
   description: string;
   enabled: boolean;

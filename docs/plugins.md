@@ -1,6 +1,14 @@
 # Built-in plugins
 
-Plugins are typed Tilecast features that can affect Player behavior outside normal playlist items and Layout zones. They are compiled into Tilecast, configured in Studio, and projected into each targeted screen's authenticated manifest. Tilecast does not load third-party code, download plugins, or accept arbitrary plugin manifests.
+Plugins are typed, built-in Tilecast features that add bounded workflows or affect Player behavior outside normal playlist items and Layout zones. They are compiled into Tilecast and configured in Studio. Player-facing plugins are projected into each targeted screen's authenticated manifest; workflow plugins need not add manifest entries of their own. Tilecast does not load third-party code, download plugins, or accept arbitrary plugin manifests.
+
+## Forms
+
+Forms collects submissions, applies review and approval workflows, and exposes approved records to Widgets and Layout bindings. Operators create and manage forms at **Plugins → Forms**. Submitters continue to use **My Forms**, and reviewers may use the central Approvals inbox.
+
+Forms remains a typed Data Source provider in the internal content contract because its approved records are reusable signage data. That implementation detail does not make a form an external data connection: Studio omits Forms from the Data Sources library and creation gallery, and legacy `/data-sources/...` form links redirect to the canonical `/plugins/forms/...` routes.
+
+Forms does not add a Player plugin manifest entry. Its published views flow through the ordinary authenticated Data Source projection used by Widgets and Layout bindings.
 
 ## Countdown Bar
 
