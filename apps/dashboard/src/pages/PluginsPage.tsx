@@ -8,24 +8,21 @@ import { z } from "zod";
 import { api } from "../api/client";
 import type { CountdownBarInput } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
+import { FormField } from "../components/FormField";
 import {
   Button,
+  Checkbox,
   EmptyState,
+  Field,
   Notice,
   PageHeader,
+  Panel,
+  SectionHeader,
+  Select,
   StatusBadge,
 } from "../components/ui";
+import { scheduleWeekdays } from "../schedules/scheduleBuilderModel";
 import "./PluginsPage.css";
-
-const dayOptions = [
-  ["Sun", 0],
-  ["Mon", 1],
-  ["Tue", 2],
-  ["Wed", 3],
-  ["Thu", 4],
-  ["Fri", 5],
-  ["Sat", 6],
-] as const;
 
 const formSchema = z
   .object({
@@ -355,7 +352,32 @@ export function CountdownBarEditorPage() {
   });
   const scheduleType = watch("scheduleType");
   const targetScope = watch("targetScope");
-  const targetScopeField = register("targetScope");
+  const displayMode = watch("displayMode");
+  // Signal Select owns the ref on its hidden native select, so register()'s ref
+  // never lands and react-hook-form drops the field on the next render. The
+  // three selects are held explicitly instead.
+  const setScheduleType = (value: string) =>
+    setValue("scheduleType", value as FormValues["scheduleType"], {
+      shouldDirty: true,
+    });
+  const setDisplayMode = (value: string) =>
+    setValue("displayMode", value as FormValues["displayMode"], {
+      shouldDirty: true,
+    });
+  // Days are held as numbers, so a checkbox group cannot express them: react-hook-form
+  // compares an input's string `value` against the stored array, and a number never
+  // matches. The Signal weekday toggles used by Schedules keep the numeric form.
+  const daysOfWeek = watch("daysOfWeek");
+  const selectedDays = (daysOfWeek ?? []).map(Number);
+  const toggleDay = (day: number) => {
+    const next = selectedDays.includes(day)
+      ? selectedDays.filter((value) => value !== day)
+      : [...selectedDays, day];
+    setValue("daysOfWeek", next, {
+      shouldDirty: true,
+      shouldValidate: Boolean(errors.daysOfWeek),
+    });
+  };
   const targets =
     targetScope === "screens"
       ? screens.data?.items.map((item) => ({ id: item.id, name: item.name }))
@@ -405,204 +427,193 @@ export function CountdownBarEditorPage() {
         className="plugin-form"
         onSubmit={(event) => void handleSubmit(submit)(event)}
       >
-        <section className="plugin-form__section">
-          <h2>Content</h2>
-          <label>
-            Name
-            <input {...register("name")} />
-            {errors.name && <small>{errors.name.message}</small>}
-          </label>
-          <label>
-            Message
-            <input {...register("message")} />
-            {errors.message && <small>{errors.message.message}</small>}
-          </label>
-          <label>
-            Optional completion text
-            <input
-              {...register("completionText")}
-              placeholder="Lunch is over"
-            />
-            <span className="field-help">
-              Shown for one minute after the target; leave blank to hide at
-              zero.
-            </span>
-          </label>
-        </section>
+        <Panel className="plugin-form__section">
+          <SectionHeader title="Content" />
+          <FormField
+            id="countdown-name"
+            label="Name"
+            aria-required="true"
+            error={errors.name?.message}
+            {...register("name")}
+          />
+          <FormField
+            id="countdown-message"
+            label="Message"
+            aria-required="true"
+            error={errors.message?.message}
+            {...register("message")}
+          />
+          <FormField
+            id="countdown-completion"
+            label="Optional completion text"
+            placeholder="Lunch is over"
+            hint="Shown for one minute after the target; leave blank to hide at zero."
+            error={errors.completionText?.message}
+            {...register("completionText")}
+          />
+        </Panel>
 
-        <section className="plugin-form__section">
-          <h2>Timing</h2>
-          <label>
-            Schedule
-            <select {...register("scheduleType")}>
+        <Panel className="plugin-form__section">
+          <SectionHeader title="Timing" />
+          <Field label="Schedule">
+            <Select
+              name="scheduleType"
+              value={scheduleType}
+              onChange={(event) => setScheduleType(event.target.value)}
+            >
               <option value="weekly">Days of the week</option>
               <option value="one_time">One-time date</option>
-            </select>
-          </label>
+            </Select>
+          </Field>
           {scheduleType === "weekly" ? (
             <>
-              <label>
-                Target time
-                <input type="time" {...register("targetTime")} />
-              </label>
-              <fieldset>
-                <legend>Days of the week</legend>
-                <div className="day-picker">
-                  {dayOptions.map(([label, value]) => (
-                    <label key={value}>
-                      <input
-                        type="checkbox"
-                        value={value}
-                        {...register("daysOfWeek")}
-                      />
-                      {label}
-                    </label>
+              <FormField
+                id="countdown-target-time"
+                label="Target time"
+                type="time"
+                error={errors.targetTime?.message}
+                {...register("targetTime")}
+              />
+              <div className="field">
+                <span className="field__label" id="countdown-days-label">
+                  Days of the week
+                </span>
+                <div
+                  className="countdown-weekdays"
+                  role="group"
+                  aria-labelledby="countdown-days-label"
+                >
+                  {scheduleWeekdays.map((day) => (
+                    <button
+                      type="button"
+                      key={day.value}
+                      aria-pressed={selectedDays.includes(day.value)}
+                      onClick={() => toggleDay(day.value)}
+                    >
+                      {day.short}
+                    </button>
                   ))}
                 </div>
                 {errors.daysOfWeek && (
-                  <small>{errors.daysOfWeek.message}</small>
+                  <span className="field__error">
+                    {errors.daysOfWeek.message}
+                  </span>
                 )}
-              </fieldset>
+              </div>
             </>
           ) : (
-            <label>
-              Target date and time
-              <input type="datetime-local" {...register("oneTimeAt")} />
-              <span className="field-help">
-                Entered in this browser's local time; the Player counts down to
-                the same instant.
-              </span>
-              {errors.oneTimeAt && <small>{errors.oneTimeAt.message}</small>}
-            </label>
+            <FormField
+              id="countdown-one-time"
+              label="Target date and time"
+              type="datetime-local"
+              hint="Entered in this browser's local time; the Player counts down to the same instant."
+              error={errors.oneTimeAt?.message}
+              {...register("oneTimeAt")}
+            />
           )}
           <div className="plugin-form__row">
-            <label>
-              Timezone
-              <input
-                {...register("timezone")}
-                aria-invalid={errors.timezone ? true : undefined}
-                aria-describedby={
-                  errors.timezone ? "countdown-timezone-error" : undefined
-                }
-              />
-              {errors.timezone && (
-                <small id="countdown-timezone-error">
-                  {errors.timezone.message}
-                </small>
-              )}
-            </label>
-            <label>
-              Appear this many minutes before
-              <input
-                type="number"
-                min={1}
-                max={43_200}
-                {...register("leadMinutes", { valueAsNumber: true })}
-                aria-invalid={errors.leadMinutes ? true : undefined}
-                aria-describedby={
-                  errors.leadMinutes ? "countdown-lead-error" : undefined
-                }
-              />
-              {errors.leadMinutes && (
-                <small id="countdown-lead-error">
-                  {errors.leadMinutes.message}
-                </small>
-              )}
-            </label>
+            <FormField
+              id="countdown-timezone"
+              label="Timezone"
+              aria-required="true"
+              error={errors.timezone?.message}
+              {...register("timezone")}
+            />
+            <FormField
+              id="countdown-lead"
+              label="Appear this many minutes before"
+              type="number"
+              min={1}
+              max={43_200}
+              error={errors.leadMinutes?.message}
+              {...register("leadMinutes", { valueAsNumber: true })}
+            />
           </div>
-        </section>
+        </Panel>
 
-        <section className="plugin-form__section">
-          <h2>Display</h2>
+        <Panel className="plugin-form__section">
+          <SectionHeader title="Display" />
           <div className="plugin-form__row">
-            <label>
-              Mode
-              <select {...register("displayMode")}>
+            <Field label="Mode">
+              <Select
+                name="displayMode"
+                value={displayMode}
+                onChange={(event) => setDisplayMode(event.target.value)}
+              >
                 <option value="overlay">Overlay current content</option>
                 <option value="push">Push and shrink current content</option>
-              </select>
-            </label>
-            <label>
-              Bottom-bar height (px)
-              <input
-                type="number"
-                min={40}
-                max={320}
-                {...register("heightPx", { valueAsNumber: true })}
-                aria-invalid={errors.heightPx ? true : undefined}
-                aria-describedby={
-                  errors.heightPx ? "countdown-height-error" : undefined
-                }
-              />
-              {errors.heightPx && (
-                <small id="countdown-height-error">
-                  {errors.heightPx.message}
-                </small>
-              )}
-            </label>
-            <label>
-              Priority
-              <input
-                type="number"
-                min={-1000}
-                max={1000}
-                {...register("priority", { valueAsNumber: true })}
-                aria-invalid={errors.priority ? true : undefined}
-                aria-describedby={
-                  errors.priority ? "countdown-priority-error" : undefined
-                }
-              />
-              {errors.priority && (
-                <small id="countdown-priority-error">
-                  {errors.priority.message}
-                </small>
-              )}
-            </label>
+              </Select>
+            </Field>
+            <FormField
+              id="countdown-height"
+              label="Bottom-bar height (px)"
+              type="number"
+              min={40}
+              max={320}
+              error={errors.heightPx?.message}
+              {...register("heightPx", { valueAsNumber: true })}
+            />
+            <FormField
+              id="countdown-priority"
+              label="Priority"
+              type="number"
+              min={-1000}
+              max={1000}
+              error={errors.priority?.message}
+              {...register("priority", { valueAsNumber: true })}
+            />
           </div>
-          <label className="check-row">
-            <input type="checkbox" {...register("enabled")} />
-            Enabled
-          </label>
-        </section>
+          <Checkbox label="Enabled" {...register("enabled")} />
+        </Panel>
 
-        <section className="plugin-form__section">
-          <h2>Targets</h2>
-          <label>
-            Target type
-            <select
-              {...targetScopeField}
+        <Panel className="plugin-form__section">
+          <SectionHeader title="Targets" />
+          <Field label="Target type">
+            <Select
+              name="targetScope"
+              value={targetScope}
               onChange={(event) => {
                 // Ids from the previous scope would otherwise stay registered
                 // and be submitted alongside the new scope's picks.
                 setValue("targetIds", []);
-                void targetScopeField.onChange(event);
+                setValue(
+                  "targetScope",
+                  event.target.value as FormValues["targetScope"],
+                  { shouldDirty: true },
+                );
               }}
             >
               <option value="all">All screens</option>
               <option value="screens">Individual screens</option>
               <option value="sync_groups">Sync groups</option>
               <option value="locations">Locations</option>
-            </select>
-          </label>
+            </Select>
+          </Field>
           {targetScope !== "all" && (
-            <fieldset>
-              <legend>Choose targets</legend>
-              <div className="target-picker">
+            <div className="field">
+              <span className="field__label" id="countdown-targets-label">
+                Choose targets
+              </span>
+              <div
+                className="countdown-targets"
+                role="group"
+                aria-labelledby="countdown-targets-label"
+              >
                 {(targets ?? []).map((target) => (
-                  <label key={target.id}>
-                    <input
-                      type="checkbox"
-                      value={target.id}
-                      {...register("targetIds")}
-                    />
-                    {target.name}
-                  </label>
+                  <Checkbox
+                    key={target.id}
+                    label={target.name}
+                    value={target.id}
+                    {...register("targetIds")}
+                  />
                 ))}
               </div>
-              {errors.targetIds && <small>{errors.targetIds.message}</small>}
-            </fieldset>
+              {errors.targetIds && (
+                <span className="field__error">{errors.targetIds.message}</span>
+              )}
+            </div>
           )}
-        </section>
+        </Panel>
 
         {save.isError && <Notice variant="danger">{save.error.message}</Notice>}
         <div className="plugin-form__actions">
