@@ -1,26 +1,32 @@
+/* Signal tokens only. The earlier revision referenced --surface-raised,
+   --border-subtle, --text-primary, and --danger-text, none of which this
+   project defines, so every panel here rendered with no border, no surface,
+   and un-toned error text. */
+
 .plugins-page {
   display: grid;
-  gap: 24px;
+  gap: var(--tc-space-6);
 }
 
 .plugin-card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: 16px;
+  gap: var(--tc-space-4);
 }
 
 .plugin-card,
-.plugin-instance,
-.plugin-form__section {
-  border: 1px solid var(--border-subtle);
-  background: var(--surface-raised);
+.plugin-instance {
+  color: var(--tc-text-primary);
+  background: var(--tc-bg-surface);
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-panel);
 }
 
 .plugin-card {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 18px;
-  padding: 22px;
+  gap: var(--tc-space-5);
+  padding: var(--tc-space-5);
 }
 
 .plugin-card > .button {
@@ -33,9 +39,10 @@
   place-items: center;
   width: 44px;
   height: 44px;
-  color: var(--text-primary);
-  background: var(--surface-muted);
-  border: 1px solid var(--border-subtle);
+  color: var(--tc-text-primary);
+  background: var(--tc-bg-subtle);
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-control);
 }
 
 .plugin-card__heading,
@@ -43,121 +50,79 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--tc-space-3);
 }
 
 .plugin-card h2,
-.plugin-instance h2,
-.plugin-form__section h2 {
+.plugin-instance h2 {
   margin: 0;
-  font-size: 18px;
+  font: var(--tc-text-section-title);
 }
 
 .plugin-card p,
 .plugin-instance p {
-  color: var(--text-secondary);
+  font: var(--tc-text-body);
+  color: var(--tc-text-secondary);
 }
 
 .plugin-card__instances {
-  font-size: 13px;
-  color: var(--text-secondary);
+  font: var(--tc-text-supporting);
+  color: var(--tc-text-secondary);
 }
 
 .plugin-instance-list {
   display: grid;
-  gap: 10px;
+  gap: var(--tc-space-2);
 }
 
 .plugin-instance {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 20px;
-  padding: 18px 20px;
+  gap: var(--tc-space-5);
+  padding: var(--tc-space-4) var(--tc-space-5);
 }
 
 .plugin-instance__actions,
 .plugin-form__actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--tc-space-2);
 }
 
 .back-link {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--tc-space-1);
 }
 
 .plugin-form {
   display: grid;
-  gap: 16px;
+  gap: var(--tc-space-4);
   max-width: 980px;
 }
 
+/* .panel supplies the surface, border, radius, and padding. */
 .plugin-form__section {
   display: grid;
-  gap: 16px;
-  padding: 22px;
-}
-
-.plugin-form label,
-.plugin-form fieldset {
-  display: grid;
-  gap: 7px;
-  margin: 0;
-  color: var(--text-primary);
-  font-size: 14px;
-}
-
-.plugin-form input,
-.plugin-form select {
-  min-height: 40px;
-}
-
-.plugin-form small {
-  color: var(--danger-text);
+  gap: var(--tc-space-4);
 }
 
 .plugin-form__row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: 14px;
+  gap: var(--tc-space-3);
 }
 
-.day-picker,
-.target-picker {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
+/* .countdown-weekdays is defined beside .schedule-weekdays in signal.css so the
+   two surfaces cannot drift apart. */
 
-.day-picker label,
-.target-picker label,
-.plugin-form .check-row {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 38px;
-  padding: 7px 10px;
-  border: 1px solid var(--border-subtle);
-  background: var(--surface-muted);
-}
-
-.day-picker input,
-.target-picker input,
-.plugin-form .check-row input {
-  min-height: auto;
-}
-
-.target-picker {
+.countdown-targets {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: var(--tc-space-1) var(--tc-space-4);
   max-height: 260px;
   overflow: auto;
-}
-
-.field-help {
-  color: var(--text-secondary);
-  font-size: 13px;
 }
 
 .plugin-form__actions {

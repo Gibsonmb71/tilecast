@@ -3179,13 +3179,17 @@ tbody tr {
   gap: var(--tc-space-3);
 }
 
-.schedule-weekdays {
+/* One weekday row for every surface that picks weekdays, so a Monday reads the
+   same in Schedules and in the Countdown Bar editor. */
+.schedule-weekdays,
+.countdown-weekdays {
   display: grid;
   grid-template-columns: repeat(7, minmax(48px, 1fr));
   gap: var(--tc-space-2);
 }
 
-.schedule-weekdays button {
+.schedule-weekdays button,
+.countdown-weekdays button {
   min-height: 44px;
   border: 1px solid var(--tc-border-default);
   border-radius: var(--tc-radius-control);
@@ -3193,7 +3197,8 @@ tbody tr {
   background: var(--tc-bg-surface);
 }
 
-.schedule-weekdays button[aria-pressed="true"] {
+.schedule-weekdays button[aria-pressed="true"],
+.countdown-weekdays button[aria-pressed="true"] {
   border-color: var(--tc-action-primary);
   color: var(--tc-action-primary);
   background: var(--tc-action-primary-soft);
@@ -3514,7 +3519,8 @@ tbody tr {
     padding: var(--tc-space-3);
   }
 
-  .schedule-weekdays {
+  .schedule-weekdays,
+  .countdown-weekdays {
     grid-template-columns: repeat(4, minmax(52px, 1fr));
   }
 
