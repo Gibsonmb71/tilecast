@@ -28,7 +28,7 @@ Studio organizes Settings into:
 
 ### Operations
 
-- Emergency and commands
+- Takeovers and commands
 - Data retention
 - System
 - Import and export

@@ -165,7 +165,9 @@ export function useNotifications(user?: User): NotificationFeed {
           priority: "critical",
           title: takeover.name,
           detail: `${plural(takeover.failedCount, "screen")} failed to switch to takeover content`,
-          to: "/settings/operations/takeover",
+          // Screens is where a live takeover is seen and cancelled. Settings
+          // only carries its defaults now, which is no help mid-emergency.
+          to: "/screens",
         });
       } else {
         collected.push({
@@ -173,7 +175,7 @@ export function useNotifications(user?: User): NotificationFeed {
           priority: "warning",
           title: takeover.name,
           detail: `Takeover active on ${plural(takeover.affectedCount, "screen")}`,
-          to: "/settings/operations/takeover",
+          to: "/screens",
         });
       }
     }

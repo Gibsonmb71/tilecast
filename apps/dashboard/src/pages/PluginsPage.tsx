@@ -1,6 +1,14 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Clock3, Plus, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  Clock3,
+  Plus,
+  Puzzle,
+  Siren,
+  Trash2,
+  type LucideIcon,
+} from "lucide-react";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { Link, useNavigate, useParams } from "react-router";
@@ -123,6 +131,28 @@ function toLocalInputValue(iso: string) {
   return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:${pad(at.getMinutes())}`;
 }
 
+/**
+ * How Studio presents each plugin the server reports. The server owns the
+ * catalog; this is only the icon and the page that manages it. A plugin Studio
+ * does not recognise still gets a card — a newer server must not silently drop
+ * a feature from the list — it just carries the generic icon and no link.
+ */
+const pluginPresentation: Record<
+  string,
+  { icon: LucideIcon; path: string; instanceNoun: [string, string] }
+> = {
+  countdown_bar: {
+    icon: Clock3,
+    path: "/plugins/countdown-bar",
+    instanceNoun: ["instance", "instances"],
+  },
+  emergency_alerts: {
+    icon: Siren,
+    path: "/plugins/emergency-alerts",
+    instanceNoun: ["alert rule", "alert rules"],
+  },
+};
+
 export function PluginsPage() {
   const plugins = useQuery({ queryKey: ["plugins"], queryFn: api.plugins });
   return (
@@ -135,33 +165,43 @@ export function PluginsPage() {
         <Notice variant="danger">Plugins could not be loaded.</Notice>
       )}
       <div className="plugin-card-grid">
-        {(plugins.data?.items ?? []).map((plugin) => (
-          <article className="plugin-card" key={plugin.id}>
-            <div className="plugin-card__icon" aria-hidden="true">
-              <Clock3 size={24} />
-            </div>
-            <div className="plugin-card__copy">
-              <div className="plugin-card__heading">
-                <h2>{plugin.name}</h2>
-                <StatusBadge
-                  label={plugin.enabled ? "Enabled" : "Disabled"}
-                  tone={plugin.enabled ? "success" : "neutral"}
-                />
+        {(plugins.data?.items ?? []).map((plugin) => {
+          const presentation = pluginPresentation[plugin.id];
+          const Icon = presentation?.icon ?? Puzzle;
+          const [one, many] = presentation?.instanceNoun ?? [
+            "instance",
+            "instances",
+          ];
+          return (
+            <article className="plugin-card" key={plugin.id}>
+              <div className="plugin-card__icon" aria-hidden="true">
+                <Icon size={24} />
               </div>
-              <p>{plugin.description}</p>
-              <span className="plugin-card__instances">
-                {plugin.instanceCount} configured{" "}
-                {plugin.instanceCount === 1 ? "instance" : "instances"}
-              </span>
-            </div>
-            <Link
-              className="button button--secondary"
-              to="/plugins/countdown-bar"
-            >
-              Manage plugin
-            </Link>
-          </article>
-        ))}
+              <div className="plugin-card__copy">
+                <div className="plugin-card__heading">
+                  <h2>{plugin.name}</h2>
+                  <StatusBadge
+                    label={plugin.enabled ? "Enabled" : "Disabled"}
+                    tone={plugin.enabled ? "success" : "neutral"}
+                  />
+                </div>
+                <p>{plugin.description}</p>
+                <span className="plugin-card__instances">
+                  {plugin.instanceCount} configured{" "}
+                  {plugin.instanceCount === 1 ? one : many}
+                </span>
+              </div>
+              {presentation && (
+                <Link
+                  className="button button--secondary"
+                  to={presentation.path}
+                >
+                  Manage plugin
+                </Link>
+              )}
+            </article>
+          );
+        })}
       </div>
     </main>
   );

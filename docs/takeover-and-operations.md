@@ -2,17 +2,20 @@
 
 Studio keeps two operator flows distinct:
 
-- **Takeover** is the manual “show this now” action on Screens.
-- **Emergency management** configures automatic responses to matching National
-  Weather Service alerts.
+- **Takeover** is the manual “show this now” action on Screens. Its defaults
+  live in Settings → Takeovers and commands.
+- **Emergency Alerts** is a plugin, at Plugins → Emergency Alerts, that
+  configures automatic responses to matching National Weather Service alerts.
+  It is a feature an installation opts into and configures, not an
+  organization default, which is why it is not in Settings.
 
 For automatic emergencies, each weather event rule defaults to a Tilecast-owned
 fullscreen alert presentation populated from the matching live NWS alert. It
 shows the event, headline, severity, affected area, instructions, issuing
 office, and expiration without requiring the operator to author content.
 Organizations can instead select a separate, non-empty custom playlist for a
-rule. The page links to playlist management and back to Screens for a manual
-Takeover. Automatic emergencies reuse the same bounded playback-override
+rule. The plugin page links to playlist management, back to Screens for a
+manual Takeover, and to the takeover and command defaults in Settings. Automatic emergencies reuse the same bounded playback-override
 machinery, but Studio does not present a manual Takeover as an emergency rule.
 
 Takeover is an explicit, temporary fullscreen override. It is not a priority-1000 schedule. Resolution is active Takeover, normal schedule, direct fallback, then no content. Activation requires a ready non-empty playlist, at least one screen or group target, and an expiration no more than `TILECAST_MAX_TAKEOVER_DURATION_HOURS` (24 by default). Overlapping screens move to the newly activated Takeover; unaffected screens remain on the older Takeover.
@@ -21,7 +24,7 @@ The server stores per-screen preparation and activation state and increments onl
 
 ## National Weather Service monitoring
 
-Settings → Emergency management contains the NWS monitor. An Owner or
+The Emergency Alerts plugin contains the NWS monitor. An Owner or
 Administrator selects a state or territory by name. Studio then loads the
 saved NWS county and forecast-zone list for that area, so the operator can
 monitor the whole state or add specific locations without looking up codes.

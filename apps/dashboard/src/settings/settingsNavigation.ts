@@ -91,7 +91,7 @@ export const settingsNavigation: SettingsNavigationGroup[] = [
     items: [
       {
         id: "takeover",
-        label: "Emergency management",
+        label: "Takeovers and commands",
         path: "operations/takeover",
       },
       {
@@ -200,9 +200,9 @@ export const sectionDetails: Record<
   },
   takeover: {
     icon: Siren,
-    title: "Emergency management",
+    title: "Takeovers and commands",
     description:
-      "Choose weather coverage and automate a live NWS alert display or custom emergency playlist.",
+      "Defaults for a Takeover started by hand and for player commands. Automatic weather alerts are the Emergency Alerts plugin.",
   },
   retention: {
     icon: Archive,

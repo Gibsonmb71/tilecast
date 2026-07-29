@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { Link } from "react-router";
 import { z } from "zod";
 import { api, ApiError } from "../api/client";
 import type { NWSAlertRule, NWSAlertRuleInput, Playlist } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
+import { Notice, PageHeader } from "../components/ui";
 
 const emptyRule: NWSAlertRuleInput = {
   name: "",
@@ -110,8 +112,20 @@ const nwsAreas = [
   ["VI", "U.S. Virgin Islands"],
 ] as const;
 
-export function TakeoverPanel({ editable }: { editable: boolean }) {
+/**
+ * The Emergency Alerts plugin: watch official NWS alerts and take screens over
+ * while one is active.
+ *
+ * It lives under Plugins rather than in Settings because it is not a default
+ * anything — it is a feature an installation opts into and configures, in the
+ * same way a Countdown Bar is. Settings keeps the manual-takeover and command
+ * policy that applies whether or not this plugin is used at all.
+ */
+export function EmergencyAlertsPage() {
   const auth = useAuth();
+  const editable = ["owner", "administrator"].includes(
+    auth.status?.user?.role ?? "",
+  );
   const queryClient = useQueryClient();
   const settings = useQuery({
     queryKey: ["nws-alert-settings"],
@@ -210,504 +224,534 @@ export function TakeoverPanel({ editable }: { editable: boolean }) {
   });
   const monitor = settings.data?.monitor;
   return (
-    <div className="settings-sections takeover-settings">
-      <section className="settings-subsection">
-        <header>
-          <h3>Prepare automatic emergency content</h3>
-          <p>
-            Tilecast can generate a fullscreen alert directly from live NWS
-            data. A custom playlist remains optional for organizations with
-            their own response content. This page configures automatic
-            responses; a manual Takeover is the separate “show this now” action
-            on Screens.
-          </p>
-        </header>
-        <div className="takeover-settings__actions">
-          <Link className="button button--quiet" to="/playlists">
-            Optional: manage custom playlists
+    <main className="page plugins-page">
+      <PageHeader
+        eyebrow={
+          <Link className="back-link" to="/plugins">
+            <ArrowLeft size={15} /> Plugins
           </Link>
-          <Link className="button button--quiet" to="/screens">
-            Start a Takeover now
-          </Link>
-        </div>
-      </section>
-
-      <section className="settings-subsection">
-        <header>
-          <h3>Automated weather alerts</h3>
-          <p>
-            Monitor official active alerts for US states, territories, counties,
-            and forecast zones. Matching rules display live alert details or an
-            optional custom playlist, then restore normal playback when the
-            alert clears.
-          </p>
-        </header>
-        <div className="notice notice--info">
-          <strong>
-            Alert delivery is best-effort, not a life-safety system.
-          </strong>
-          <p>
-            Keep local emergency procedures and Wireless Emergency Alerts in
-            place. Studio shows poll health so upstream or network failures are
-            visible.
-          </p>
-        </div>
-        <div className="setting-row">
-          <div className="setting-copy">
-            <label htmlFor="nws-enabled">Automated NWS monitoring</label>
-            <p>Disabled by default. A configured rule is required to act.</p>
-          </div>
-          <div className="setting-control">
-            <input
-              id="nws-enabled"
-              type="checkbox"
-              checked={enabled}
-              disabled={!editable}
-              onChange={(event) => setEnabled(event.target.checked)}
-            />
-          </div>
-        </div>
-        <div className="setting-row setting-row--location-picker">
-          <div className="setting-copy">
-            <label htmlFor="nws-state">Alert coverage</label>
+        }
+        title="Emergency Alerts"
+        description="Watch official NWS weather alerts and take matching screens over automatically, then restore normal playback when the alert clears."
+      />
+      {!editable && (
+        <Notice>
+          Owner or Administrator access is required to make changes.
+        </Notice>
+      )}
+      <div className="settings-sections takeover-settings">
+        <section className="settings-subsection">
+          <header>
+            <h3>Prepare automatic emergency content</h3>
             <p>
-              Choose a state or territory by name, then monitor the whole state
-              or add specific counties and NWS forecast zones.
+              Tilecast can generate a fullscreen alert directly from live NWS
+              data. A custom playlist remains optional for organizations with
+              their own response content. This plugin configures automatic
+              responses; a manual Takeover is the separate “show this now”
+              action on Screens, and its defaults live in Settings.
+            </p>
+          </header>
+          <div className="takeover-settings__actions">
+            <Link className="button button--quiet" to="/playlists">
+              Optional: manage custom playlists
+            </Link>
+            <Link className="button button--quiet" to="/screens">
+              Start a Takeover now
+            </Link>
+            <Link
+              className="button button--quiet"
+              to="/settings/operations/takeover"
+            >
+              Takeover and command defaults
+            </Link>
+          </div>
+        </section>
+
+        <section className="settings-subsection">
+          <header>
+            <h3>Automated weather alerts</h3>
+            <p>
+              Monitor official active alerts for US states, territories,
+              counties, and forecast zones. Matching rules display live alert
+              details or an optional custom playlist, then restore normal
+              playback when the alert clears.
+            </p>
+          </header>
+          <div className="notice notice--info">
+            <strong>
+              Alert delivery is best-effort, not a life-safety system.
+            </strong>
+            <p>
+              Keep local emergency procedures and Wireless Emergency Alerts in
+              place. Studio shows poll health so upstream or network failures
+              are visible.
             </p>
           </div>
-          <div className="setting-control nws-location-picker">
-            <label>
-              State or territory
-              <select
-                id="nws-state"
-                value={selectedArea}
-                disabled={!editable}
-                onChange={(event) => {
-                  setSelectedArea(event.target.value);
-                  setSelectedZone("");
-                }}
-              >
-                <option value="">Select a state</option>
-                {nwsAreas.map(([code, name]) => (
-                  <option key={code} value={code}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              type="button"
-              className="button button--quiet"
-              disabled={
-                !editable || !selectedArea || areas.includes(selectedArea)
-              }
-              onClick={() => setAreas(addUnique(areas, selectedArea))}
-            >
-              Monitor entire state
-            </button>
-            <label>
-              County or forecast zone
-              <select
-                value={selectedZone}
-                disabled={!editable || !selectedArea || zoneOptions.isLoading}
-                onChange={(event) => setSelectedZone(event.target.value)}
-              >
-                <option value="">
-                  {zoneOptions.isLoading
-                    ? "Loading locations…"
-                    : "Select a location"}
-                </option>
-                {zoneOptions.data?.items.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name} (
-                    {item.type === "county" ? "County" : "Forecast zone"})
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              type="button"
-              className="button button--quiet"
-              disabled={
-                !editable || !selectedZone || zones.includes(selectedZone)
-              }
-              onClick={() => {
-                setZones(addUnique(zones, selectedZone));
-                setSelectedZone("");
-              }}
-            >
-              Add location
-            </button>
-            {zoneOptions.isError && (
-              <small className="form-error" role="alert">
-                Counties and forecast zones could not be loaded from NWS.
-              </small>
-            )}
-            <div className="nws-location-picker__selected">
-              {areas.map((area) => (
-                <span key={area}>
-                  Entire {areaName(area)}
-                  <button
-                    type="button"
-                    aria-label={`Remove entire ${areaName(area)}`}
-                    disabled={!editable}
-                    onClick={() =>
-                      setAreas(areas.filter((item) => item !== area))
-                    }
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-              {zones.map((zone) => (
-                <span key={zone}>
-                  {zoneLabel(zone, zoneOptions.data?.items ?? [])}
-                  <button
-                    type="button"
-                    aria-label={`Remove ${zone}`}
-                    disabled={!editable}
-                    onClick={() =>
-                      setZones(zones.filter((item) => item !== zone))
-                    }
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-              {areas.length + zones.length === 0 && (
-                <small>No locations selected.</small>
-              )}
+          <div className="setting-row">
+            <div className="setting-copy">
+              <label htmlFor="nws-enabled">Automated NWS monitoring</label>
+              <p>Disabled by default. A configured rule is required to act.</p>
             </div>
-          </div>
-        </div>
-        <div className="setting-row">
-          <div className="setting-copy">
-            <label htmlFor="nws-interval">Poll interval</label>
-            <p>A one- to two-minute interval is recommended for most sites.</p>
-          </div>
-          <div className="setting-control">
-            <select
-              id="nws-interval"
-              value={pollInterval}
-              disabled={!editable}
-              onChange={(event) => setPollInterval(Number(event.target.value))}
-            >
-              <option value={60}>1 minute</option>
-              <option value={120}>2 minutes</option>
-              <option value={300}>5 minutes</option>
-              <option value={900}>15 minutes</option>
-            </select>
-          </div>
-        </div>
-        <div className="takeover-settings__actions">
-          <button
-            type="button"
-            className="button button--primary"
-            disabled={!editable || saveMonitor.isPending}
-            onClick={() => saveMonitor.mutate()}
-          >
-            {saveMonitor.isPending ? "Saving…" : "Save NWS monitor"}
-          </button>
-          <button
-            type="button"
-            className="button button--quiet"
-            disabled={!editable || poll.isPending}
-            onClick={() => poll.mutate()}
-          >
-            {poll.isPending ? "Checking…" : "Check now"}
-          </button>
-        </div>
-        {errorText(saveMonitor.error ?? poll.error) && (
-          <p className="form-error" role="alert">
-            {errorText(saveMonitor.error ?? poll.error)}
-          </p>
-        )}
-        {monitor && (
-          <dl className="takeover-settings__health">
-            <div>
-              <dt>Last success</dt>
-              <dd>{dateText(monitor.lastSuccessAt)}</dd>
-            </div>
-            <div>
-              <dt>Last attempt</dt>
-              <dd>{dateText(monitor.lastPolledAt)}</dd>
-            </div>
-            <div>
-              <dt>Matched rules</dt>
-              <dd>{monitor.lastMatchedCount}</dd>
-            </div>
-            <div>
-              <dt>Health</dt>
-              <dd>{monitor.lastErrorCode || "Healthy"}</dd>
-            </div>
-          </dl>
-        )}
-      </section>
-
-      <section className="settings-subsection">
-        <header>
-          <h3>Weather event rules</h3>
-          <p>
-            Event names match NWS wording exactly. Leave the field empty to
-            match every event at or above the selected severity and urgency.
-            Tilecast's live fullscreen alert is the default.
-          </p>
-        </header>
-        <div className="takeover-rule-list">
-          {(settings.data?.rules ?? []).map((item) => (
-            <article key={item.id}>
-              <div>
-                <strong>{item.name}</strong>
-                <p>
-                  {item.eventNames.join(", ") || "All event types"} ·{" "}
-                  {item.minimumSeverity}+ ·{" "}
-                  {item.presentationMode === "builtin"
-                    ? "Tilecast live NWS alert"
-                    : item.playlistName || "No playlist"}
-                </p>
-              </div>
-              <div>
-                <span>{item.enabled ? "Enabled" : "Disabled"}</span>
-                {editable && (
-                  <>
-                    <button
-                      className="button button--quiet"
-                      type="button"
-                      onClick={() => {
-                        setEditing(item.id);
-                        const input = toInput(item);
-                        reset(input);
-                        setEventNamesText(input.eventNames.join(", "));
-                      }}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      className="button button--quiet"
-                      type="button"
-                      onClick={() => {
-                        if (confirm(`Delete “${item.name}”?`))
-                          removeRule.mutate(item.id);
-                      }}
-                    >
-                      Delete
-                    </button>
-                  </>
-                )}
-              </div>
-            </article>
-          ))}
-        </div>
-        {editable && (
-          <form
-            className="takeover-rule-editor"
-            onSubmit={(event) => void submitRule(event)}
-          >
-            <h4>{editing ? "Edit rule" : "Add rule"}</h4>
-            <label>
-              Rule name
-              <input maxLength={180} {...register("name")} />
-            </label>
-            {ruleErrors.name && (
-              <p className="form-error" role="alert">
-                {ruleErrors.name.message}
-              </p>
-            )}
-            <label>
-              NWS event names
+            <div className="setting-control">
               <input
-                value={eventNamesText}
-                placeholder="Tornado Warning, Flash Flood Warning"
-                onChange={(event) => setEventNamesText(event.target.value)}
+                id="nws-enabled"
+                type="checkbox"
+                checked={enabled}
+                disabled={!editable}
+                onChange={(event) => setEnabled(event.target.checked)}
               />
-            </label>
-            <div className="takeover-rule-editor__columns">
+            </div>
+          </div>
+          <div className="setting-row setting-row--location-picker">
+            <div className="setting-copy">
+              <label htmlFor="nws-state">Alert coverage</label>
+              <p>
+                Choose a state or territory by name, then monitor the whole
+                state or add specific counties and NWS forecast zones.
+              </p>
+            </div>
+            <div className="setting-control nws-location-picker">
               <label>
-                Minimum severity
-                <select {...register("minimumSeverity")}>
-                  {["Minor", "Moderate", "Severe", "Extreme"].map((value) => (
-                    <option key={value}>{value}</option>
+                State or territory
+                <select
+                  id="nws-state"
+                  value={selectedArea}
+                  disabled={!editable}
+                  onChange={(event) => {
+                    setSelectedArea(event.target.value);
+                    setSelectedZone("");
+                  }}
+                >
+                  <option value="">Select a state</option>
+                  {nwsAreas.map(([code, name]) => (
+                    <option key={code} value={code}>
+                      {name}
+                    </option>
                   ))}
                 </select>
               </label>
-              <label>
-                Minimum urgency
-                <select {...register("minimumUrgency")}>
-                  {["Unknown", "Future", "Expected", "Immediate"].map(
-                    (value) => (
-                      <option key={value}>{value}</option>
-                    ),
-                  )}
-                </select>
-              </label>
-              <label>
-                Emergency display
-                <select
-                  {...register("presentationMode", {
-                    onChange: () =>
-                      setValue("playlistId", undefined, {
-                        shouldDirty: true,
-                        shouldValidate: true,
-                      }),
-                  })}
-                >
-                  <option value="builtin">
-                    Tilecast live NWS alert — fullscreen
-                  </option>
-                  <option value="playlist">Use a custom playlist</option>
-                </select>
-                <small>
-                  The built-in display automatically shows the exact NWS event,
-                  headline, severity, affected area, instructions, sender, and
-                  expiration.
-                </small>
-              </label>
-              {rule.presentationMode === "playlist" && (
-                <label>
-                  Custom emergency playlist
-                  <select {...register("playlistId")}>
-                    <option value="">Select a playlist</option>
-                    {playlists.data?.items.map((item) => (
-                      <option
-                        key={item.id}
-                        value={item.id}
-                        disabled={item.itemCount === 0}
-                      >
-                        {emergencyPlaylistLabel(item)}
-                      </option>
-                    ))}
-                  </select>
-                  <small>
-                    Only non-empty playlists can be activated.{" "}
-                    <Link to="/playlists">Create or edit playlists</Link>
-                  </small>
-                  {ruleErrors.playlistId && (
-                    <span className="form-error" role="alert">
-                      {ruleErrors.playlistId.message}
-                    </span>
-                  )}
-                </label>
-              )}
-              <label>
-                Maximum duration
-                <select
-                  {...register("maximumDurationMinutes", {
-                    valueAsNumber: true,
-                  })}
-                >
-                  <option value={60}>1 hour</option>
-                  <option value={360}>6 hours</option>
-                  <option value={720}>12 hours</option>
-                  <option value={1440}>24 hours</option>
-                </select>
-              </label>
-            </div>
-            <fieldset>
-              <legend>Target screens</legend>
-              <div className="takeover-rule-editor__targets">
-                {screens.data?.items.map((item) => (
-                  <label key={item.id}>
-                    <input
-                      type="checkbox"
-                      checked={rule.screenIds.includes(item.id)}
-                      onChange={() =>
-                        setValue("screenIds", toggle(rule.screenIds, item.id), {
-                          shouldDirty: true,
-                          shouldValidate: true,
-                        })
-                      }
-                    />
-                    {item.name}
-                  </label>
-                ))}
-              </div>
-            </fieldset>
-            {ruleErrors.screenIds && (
-              <p className="form-error" role="alert">
-                {ruleErrors.screenIds.message}
-              </p>
-            )}
-            <fieldset>
-              <legend>Target groups</legend>
-              <div className="takeover-rule-editor__targets">
-                {groups.data?.items.map((item) => (
-                  <label key={item.id}>
-                    <input
-                      type="checkbox"
-                      checked={rule.groupIds.includes(item.id)}
-                      onChange={() =>
-                        setValue("groupIds", toggle(rule.groupIds, item.id), {
-                          shouldDirty: true,
-                          shouldValidate: true,
-                        })
-                      }
-                    />
-                    {item.name}
-                  </label>
-                ))}
-              </div>
-            </fieldset>
-            <label className="checkbox-control">
-              <input type="checkbox" {...register("enabled")} />
-              Enable this rule
-            </label>
-            <div className="takeover-settings__actions">
               <button
-                className="button button--primary"
-                type="submit"
-                disabled={saveRule.isPending}
+                type="button"
+                className="button button--quiet"
+                disabled={
+                  !editable || !selectedArea || areas.includes(selectedArea)
+                }
+                onClick={() => setAreas(addUnique(areas, selectedArea))}
               >
-                {saveRule.isPending
-                  ? "Saving…"
-                  : editing
-                    ? "Save rule"
-                    : "Add rule"}
+                Monitor entire state
               </button>
-              {editing && (
-                <button
-                  className="button button--quiet"
-                  type="button"
-                  onClick={() => {
-                    setEditing(undefined);
-                    reset(emptyRule);
-                    setEventNamesText(emptyRule.eventNames.join(", "));
-                  }}
+              <label>
+                County or forecast zone
+                <select
+                  value={selectedZone}
+                  disabled={!editable || !selectedArea || zoneOptions.isLoading}
+                  onChange={(event) => setSelectedZone(event.target.value)}
                 >
-                  Cancel
-                </button>
+                  <option value="">
+                    {zoneOptions.isLoading
+                      ? "Loading locations…"
+                      : "Select a location"}
+                  </option>
+                  {zoneOptions.data?.items.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name} (
+                      {item.type === "county" ? "County" : "Forecast zone"})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                className="button button--quiet"
+                disabled={
+                  !editable || !selectedZone || zones.includes(selectedZone)
+                }
+                onClick={() => {
+                  setZones(addUnique(zones, selectedZone));
+                  setSelectedZone("");
+                }}
+              >
+                Add location
+              </button>
+              {zoneOptions.isError && (
+                <small className="form-error" role="alert">
+                  Counties and forecast zones could not be loaded from NWS.
+                </small>
               )}
+              <div className="nws-location-picker__selected">
+                {areas.map((area) => (
+                  <span key={area}>
+                    Entire {areaName(area)}
+                    <button
+                      type="button"
+                      aria-label={`Remove entire ${areaName(area)}`}
+                      disabled={!editable}
+                      onClick={() =>
+                        setAreas(areas.filter((item) => item !== area))
+                      }
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+                {zones.map((zone) => (
+                  <span key={zone}>
+                    {zoneLabel(zone, zoneOptions.data?.items ?? [])}
+                    <button
+                      type="button"
+                      aria-label={`Remove ${zone}`}
+                      disabled={!editable}
+                      onClick={() =>
+                        setZones(zones.filter((item) => item !== zone))
+                      }
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+                {areas.length + zones.length === 0 && (
+                  <small>No locations selected.</small>
+                )}
+              </div>
             </div>
-            {errorText(saveRule.error) && (
-              <p className="form-error" role="alert">
-                {errorText(saveRule.error)}
+          </div>
+          <div className="setting-row">
+            <div className="setting-copy">
+              <label htmlFor="nws-interval">Poll interval</label>
+              <p>
+                A one- to two-minute interval is recommended for most sites.
               </p>
-            )}
-          </form>
-        )}
-      </section>
+            </div>
+            <div className="setting-control">
+              <select
+                id="nws-interval"
+                value={pollInterval}
+                disabled={!editable}
+                onChange={(event) =>
+                  setPollInterval(Number(event.target.value))
+                }
+              >
+                <option value={60}>1 minute</option>
+                <option value={120}>2 minutes</option>
+                <option value={300}>5 minutes</option>
+                <option value={900}>15 minutes</option>
+              </select>
+            </div>
+          </div>
+          <div className="takeover-settings__actions">
+            <button
+              type="button"
+              className="button button--primary"
+              disabled={!editable || saveMonitor.isPending}
+              onClick={() => saveMonitor.mutate()}
+            >
+              {saveMonitor.isPending ? "Saving…" : "Save NWS monitor"}
+            </button>
+            <button
+              type="button"
+              className="button button--quiet"
+              disabled={!editable || poll.isPending}
+              onClick={() => poll.mutate()}
+            >
+              {poll.isPending ? "Checking…" : "Check now"}
+            </button>
+          </div>
+          {errorText(saveMonitor.error ?? poll.error) && (
+            <p className="form-error" role="alert">
+              {errorText(saveMonitor.error ?? poll.error)}
+            </p>
+          )}
+          {monitor && (
+            <dl className="takeover-settings__health">
+              <div>
+                <dt>Last success</dt>
+                <dd>{dateText(monitor.lastSuccessAt)}</dd>
+              </div>
+              <div>
+                <dt>Last attempt</dt>
+                <dd>{dateText(monitor.lastPolledAt)}</dd>
+              </div>
+              <div>
+                <dt>Matched rules</dt>
+                <dd>{monitor.lastMatchedCount}</dd>
+              </div>
+              <div>
+                <dt>Health</dt>
+                <dd>{monitor.lastErrorCode || "Healthy"}</dd>
+              </div>
+            </dl>
+          )}
+        </section>
 
-      <section className="settings-subsection">
-        <header>
-          <h3>Active weather emergencies</h3>
-          <p>Alerts currently matched to a rule and displaying content.</p>
-        </header>
-        {(settings.data?.activeAlerts.length ?? 0) === 0 ? (
-          <p className="empty-state">No NWS alerts are currently active.</p>
-        ) : (
+        <section className="settings-subsection">
+          <header>
+            <h3>Weather event rules</h3>
+            <p>
+              Event names match NWS wording exactly. Leave the field empty to
+              match every event at or above the selected severity and urgency.
+              Tilecast's live fullscreen alert is the default.
+            </p>
+          </header>
           <div className="takeover-rule-list">
-            {settings.data?.activeAlerts.map((item) => (
-              <article key={`${item.alertId}:${item.ruleId}`}>
+            {(settings.data?.rules ?? []).map((item) => (
+              <article key={item.id}>
                 <div>
-                  <strong>{item.event}</strong>
-                  <p>{item.headline || item.areaDescription}</p>
+                  <strong>{item.name}</strong>
+                  <p>
+                    {item.eventNames.join(", ") || "All event types"} ·{" "}
+                    {item.minimumSeverity}+ ·{" "}
+                    {item.presentationMode === "builtin"
+                      ? "Tilecast live NWS alert"
+                      : item.playlistName || "No playlist"}
+                  </p>
                 </div>
-                <span>{item.severity}</span>
+                <div>
+                  <span>{item.enabled ? "Enabled" : "Disabled"}</span>
+                  {editable && (
+                    <>
+                      <button
+                        className="button button--quiet"
+                        type="button"
+                        onClick={() => {
+                          setEditing(item.id);
+                          const input = toInput(item);
+                          reset(input);
+                          setEventNamesText(input.eventNames.join(", "));
+                        }}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        className="button button--quiet"
+                        type="button"
+                        onClick={() => {
+                          if (confirm(`Delete “${item.name}”?`))
+                            removeRule.mutate(item.id);
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </>
+                  )}
+                </div>
               </article>
             ))}
           </div>
-        )}
-      </section>
-    </div>
+          {editable && (
+            <form
+              className="takeover-rule-editor"
+              onSubmit={(event) => void submitRule(event)}
+            >
+              <h4>{editing ? "Edit rule" : "Add rule"}</h4>
+              <label>
+                Rule name
+                <input maxLength={180} {...register("name")} />
+              </label>
+              {ruleErrors.name && (
+                <p className="form-error" role="alert">
+                  {ruleErrors.name.message}
+                </p>
+              )}
+              <label>
+                NWS event names
+                <input
+                  value={eventNamesText}
+                  placeholder="Tornado Warning, Flash Flood Warning"
+                  onChange={(event) => setEventNamesText(event.target.value)}
+                />
+              </label>
+              <div className="takeover-rule-editor__columns">
+                <label>
+                  Minimum severity
+                  <select {...register("minimumSeverity")}>
+                    {["Minor", "Moderate", "Severe", "Extreme"].map((value) => (
+                      <option key={value}>{value}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Minimum urgency
+                  <select {...register("minimumUrgency")}>
+                    {["Unknown", "Future", "Expected", "Immediate"].map(
+                      (value) => (
+                        <option key={value}>{value}</option>
+                      ),
+                    )}
+                  </select>
+                </label>
+                <label>
+                  Emergency display
+                  <select
+                    {...register("presentationMode", {
+                      onChange: () =>
+                        setValue("playlistId", undefined, {
+                          shouldDirty: true,
+                          shouldValidate: true,
+                        }),
+                    })}
+                  >
+                    <option value="builtin">
+                      Tilecast live NWS alert — fullscreen
+                    </option>
+                    <option value="playlist">Use a custom playlist</option>
+                  </select>
+                  <small>
+                    The built-in display automatically shows the exact NWS
+                    event, headline, severity, affected area, instructions,
+                    sender, and expiration.
+                  </small>
+                </label>
+                {rule.presentationMode === "playlist" && (
+                  <label>
+                    Custom emergency playlist
+                    <select {...register("playlistId")}>
+                      <option value="">Select a playlist</option>
+                      {playlists.data?.items.map((item) => (
+                        <option
+                          key={item.id}
+                          value={item.id}
+                          disabled={item.itemCount === 0}
+                        >
+                          {emergencyPlaylistLabel(item)}
+                        </option>
+                      ))}
+                    </select>
+                    <small>
+                      Only non-empty playlists can be activated.{" "}
+                      <Link to="/playlists">Create or edit playlists</Link>
+                    </small>
+                    {ruleErrors.playlistId && (
+                      <span className="form-error" role="alert">
+                        {ruleErrors.playlistId.message}
+                      </span>
+                    )}
+                  </label>
+                )}
+                <label>
+                  Maximum duration
+                  <select
+                    {...register("maximumDurationMinutes", {
+                      valueAsNumber: true,
+                    })}
+                  >
+                    <option value={60}>1 hour</option>
+                    <option value={360}>6 hours</option>
+                    <option value={720}>12 hours</option>
+                    <option value={1440}>24 hours</option>
+                  </select>
+                </label>
+              </div>
+              <fieldset>
+                <legend>Target screens</legend>
+                <div className="takeover-rule-editor__targets">
+                  {screens.data?.items.map((item) => (
+                    <label key={item.id}>
+                      <input
+                        type="checkbox"
+                        checked={rule.screenIds.includes(item.id)}
+                        onChange={() =>
+                          setValue(
+                            "screenIds",
+                            toggle(rule.screenIds, item.id),
+                            {
+                              shouldDirty: true,
+                              shouldValidate: true,
+                            },
+                          )
+                        }
+                      />
+                      {item.name}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+              {ruleErrors.screenIds && (
+                <p className="form-error" role="alert">
+                  {ruleErrors.screenIds.message}
+                </p>
+              )}
+              <fieldset>
+                <legend>Target groups</legend>
+                <div className="takeover-rule-editor__targets">
+                  {groups.data?.items.map((item) => (
+                    <label key={item.id}>
+                      <input
+                        type="checkbox"
+                        checked={rule.groupIds.includes(item.id)}
+                        onChange={() =>
+                          setValue("groupIds", toggle(rule.groupIds, item.id), {
+                            shouldDirty: true,
+                            shouldValidate: true,
+                          })
+                        }
+                      />
+                      {item.name}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+              <label className="checkbox-control">
+                <input type="checkbox" {...register("enabled")} />
+                Enable this rule
+              </label>
+              <div className="takeover-settings__actions">
+                <button
+                  className="button button--primary"
+                  type="submit"
+                  disabled={saveRule.isPending}
+                >
+                  {saveRule.isPending
+                    ? "Saving…"
+                    : editing
+                      ? "Save rule"
+                      : "Add rule"}
+                </button>
+                {editing && (
+                  <button
+                    className="button button--quiet"
+                    type="button"
+                    onClick={() => {
+                      setEditing(undefined);
+                      reset(emptyRule);
+                      setEventNamesText(emptyRule.eventNames.join(", "));
+                    }}
+                  >
+                    Cancel
+                  </button>
+                )}
+              </div>
+              {errorText(saveRule.error) && (
+                <p className="form-error" role="alert">
+                  {errorText(saveRule.error)}
+                </p>
+              )}
+            </form>
+          )}
+        </section>
+
+        <section className="settings-subsection">
+          <header>
+            <h3>Active weather emergencies</h3>
+            <p>Alerts currently matched to a rule and displaying content.</p>
+          </header>
+          {(settings.data?.activeAlerts.length ?? 0) === 0 ? (
+            <p className="empty-state">No NWS alerts are currently active.</p>
+          ) : (
+            <div className="takeover-rule-list">
+              {settings.data?.activeAlerts.map((item) => (
+                <article key={`${item.alertId}:${item.ruleId}`}>
+                  <div>
+                    <strong>{item.event}</strong>
+                    <p>{item.headline || item.areaDescription}</p>
+                  </div>
+                  <span>{item.severity}</span>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+    </main>
   );
 }
 

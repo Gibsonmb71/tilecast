@@ -4,21 +4,30 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../api/client";
-import { emergencyPlaylistLabel, TakeoverPanel } from "./TakeoverPanel";
+import {
+  emergencyPlaylistLabel,
+  EmergencyAlertsPage,
+} from "./EmergencyAlertsPage";
+
+let role = "owner";
 
 vi.mock("../auth/AuthProvider", () => ({
-  useAuth: () => ({ status: { csrfToken: "token" } }),
+  useAuth: () => ({ status: { csrfToken: "token", user: { role } } }),
 }));
+
+beforeEach(() => {
+  role = "owner";
+});
 
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
 
-describe("TakeoverPanel", () => {
-  it("keeps NWS automation in Settings and exposes poll health", async () => {
+describe("Emergency Alerts plugin", () => {
+  it("configures NWS automation under Plugins and exposes poll health", async () => {
     vi.spyOn(api, "nwsAlertSettings").mockResolvedValue({
       monitor: {
         enabled: true,
@@ -53,7 +62,7 @@ describe("TakeoverPanel", () => {
     render(
       <QueryClientProvider client={client}>
         <MemoryRouter>
-          <TakeoverPanel editable />
+          <EmergencyAlertsPage />
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -78,9 +87,18 @@ describe("TakeoverPanel", () => {
     expect(
       screen.getByText(/best-effort, not a life-safety system/i),
     ).toBeTruthy();
+    // It is a plugin page now, so it leads back to the catalog rather than
+    // sitting inside the Settings shell.
+    expect(
+      screen.getByRole("link", { name: /Plugins/ }).getAttribute("href"),
+    ).toBe("/plugins");
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Emergency Alerts" }),
+    ).toBeTruthy();
   });
 
   it("disables NWS monitor controls and management actions when read-only", async () => {
+    role = "viewer";
     vi.spyOn(api, "nwsAlertSettings").mockResolvedValue({
       monitor: {
         enabled: true,
@@ -139,7 +157,7 @@ describe("TakeoverPanel", () => {
     render(
       <QueryClientProvider client={client}>
         <MemoryRouter>
-          <TakeoverPanel editable={false} />
+          <EmergencyAlertsPage />
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -220,7 +238,7 @@ describe("TakeoverPanel", () => {
     render(
       <QueryClientProvider client={client}>
         <MemoryRouter>
-          <TakeoverPanel editable />
+          <EmergencyAlertsPage />
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -333,7 +351,7 @@ describe("TakeoverPanel", () => {
     render(
       <QueryClientProvider client={client}>
         <MemoryRouter>
-          <TakeoverPanel editable />
+          <EmergencyAlertsPage />
         </MemoryRouter>
       </QueryClientProvider>,
     );

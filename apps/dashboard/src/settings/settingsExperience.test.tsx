@@ -36,11 +36,13 @@ describe("settings presentation", () => {
     ]);
     expect(sectionFromPath("/settings/player/reliability")).toBe("reliability");
     expect(sectionFromPath("/settings")).toBe("general");
+    // Automatic weather alerts are the Emergency Alerts plugin; what is left
+    // in Settings is the policy for a Takeover someone starts by hand.
     expect(
       settingsNavigation
         .flatMap((group) => group.items)
         .find((item) => item.id === "takeover")?.label,
-    ).toBe("Emergency management");
+    ).toBe("Takeovers and commands");
   });
 
   it("renders booleans as an accessible switch", () => {
