@@ -2,11 +2,11 @@
 
 Version: **2**. Both the Android and the Linux Player emit this vocabulary. The server accepts version 1 names during the transition and maps them onto version 2 before deriving anything, so a fleet can be upgraded one player at a time.
 
-Before version 2 the two players described the same conditions differently. Android reported `playlist_item.completed`; Linux reported `content.completed` with no matching start, so its playback never became a proof-of-play session at all. Linux said `connection.recovered` where Android said `connection.restored`, and `reliability.safe_mode` where Android said `safe_mode.entered`. The same outage derived a different screen-state timeline depending on the platform. The contract exists so it cannot.
+Before version 2 the two players described the same conditions differently. Android reported `playlist_item.completed`. Linux reported `content.completed` with no matching start, so its playback never became a proof-of-play session at all. Linux said `connection.recovered` where Android said `connection.restored`, and `reliability.safe_mode` where Android said `safe_mode.entered`. The same outage derived a different screen-state timeline depending on the platform. The contract exists so it cannot.
 
 ## Envelope
 
-Every event carries the same envelope. The server assigns `receivedAt`; everything else comes from the Player.
+Every event carries the same envelope. The server assigns `receivedAt`. Everything else comes from the Player.
 
 | Field               | Required | Notes                                                                                      |
 | ------------------- | -------- | ------------------------------------------------------------------------------------------ |
@@ -24,7 +24,7 @@ Every event carries the same envelope. The server assigns `receivedAt`; everythi
 
 ## Session fields
 
-These fields are what turn an event stream into proof of play. A start event opens a session; the matching end event closes the same `activitySessionId`.
+These fields are what turn an event stream into proof of play. A start event opens a session. The matching end event closes the same `activitySessionId`.
 
 | Field                                                                                               | Applies to         | Notes                                                                                          |
 | --------------------------------------------------------------------------------------------------- | ------------------ | ---------------------------------------------------------------------------------------------- |
@@ -46,10 +46,10 @@ These fields are what turn an event stream into proof of play. A start event ope
 
 ### Session types
 
-- `presentation` — the root interval. This is the screen's wall clock, and only these intervals are unioned into confirmed screen playback time.
-- `content` — a media item, Widget, or website playing inside a presentation.
-- `layout_placement` — content bound to one zone of a layout. Several may run at once.
-- `playlist_item` — one position in a playlist.
+- `presentation`. The root interval. This is the screen's wall clock, and only these intervals are unioned into confirmed screen playback time.
+- `content`. A media item, Widget, or website playing inside a presentation.
+- `layout_placement`. Content bound to one zone of a layout. Several may run at once.
+- `playlist_item`. One position in a playlist.
 
 Child intervals are summed into content exposure, which may legitimately exceed wall clock. They are never added to screen playback time.
 
@@ -117,10 +117,10 @@ Both players emit the version 2 name. The version 1 column is what the server st
 - Report a `terminalReason` on every end event.
 - Use idempotent event IDs and a sequence persisted across restarts.
 - Keep unsent events buffered through short outages and retry them.
-- Report measurements, not conclusions, to the telemetry endpoint. A player says "round-trip was 2400ms"; the server decides whether that is an incident.
+- Report measurements, not conclusions, to the telemetry endpoint. A player says "round-trip was 2400ms". The server decides whether that is an incident.
 - Report render progress honestly: a renderer liveness probe is not evidence that anything is on screen, and must not be sent as a progress signal. See [meaningful render progress](activity.md#meaningful-render-progress).
 
-A terminal event with no matching start is still accepted, and the server synthesizes a session from the reported duration so the playback is not lost. That path exists only for the transition; it cannot recover a start time the Player never sent, so it is not a substitute for opening the session.
+A terminal event with no matching start is still accepted, and the server synthesizes a session from the reported duration so the playback is not lost. That path exists only for the transition. It cannot recover a start time the Player never sent, so it is not a substitute for opening the session.
 
 ## Versioning and compatibility
 
@@ -129,6 +129,6 @@ The contract version is a property of this document, not a field on the wire. Ve
 Two consequences follow, and both are deliberate:
 
 - A version 1 event's derived `terminalReason` is often `unknown`, so its session is not counted as an interruption. Under-reporting an interruption is safer than inventing one.
-- The reported `eventType` is stored verbatim. The Screen Events report shows exactly what the Player said; only derivation uses the canonical name.
+- The reported `eventType` is stored verbatim. The Screen Events report shows exactly what the Player said. Only derivation uses the canonical name.
 
 Version 1 support is removed only once no supported Player emits it. Fixtures for both versions live in `packages/api-schema/activity/contract-v2-fixtures.json` and are consumed by the Go, Kotlin, and TypeScript test suites, so a change to the contract fails all three at once.

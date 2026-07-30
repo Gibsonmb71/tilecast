@@ -10,38 +10,38 @@ Docker bridge networking does not reliably publish multicast DNS on every Linux 
 
 Set `TILECAST_PUBLIC_URL` to the external URL and `TILECAST_COOKIE_SECURE=true`. Forward HTTP to `server:8080` on a private Docker network. Preserve WebSocket upgrade headers when player notifications are introduced.
 
-This is also what makes passkeys possible. Browsers refuse WebAuthn outside a secure context and reject an IP address as a relying party identifier, so a plain-HTTP LAN installation can offer authenticator apps and recovery codes but not passkeys. `TILECAST_PUBLIC_URL` must be the address browsers actually use; when the proxy's external hostname differs from what the server sees, set `TILECAST_WEBAUTHN_RP_ID` (a bare hostname) and `TILECAST_WEBAUTHN_ORIGINS` (comma-separated, with scheme) together. The server logs the reason at startup whenever passkeys are disabled. See [multi-factor-authentication.md](multi-factor-authentication.md).
+This is also what makes passkeys possible. Browsers refuse WebAuthn outside a secure context and reject an IP address as a relying party identifier, so a plain-HTTP LAN installation can offer authenticator apps and recovery codes but not passkeys. `TILECAST_PUBLIC_URL` must be the address browsers actually use. When the proxy's external hostname differs from what the server sees, set `TILECAST_WEBAUTHN_RP_ID` (a bare hostname) and `TILECAST_WEBAUTHN_ORIGINS` (comma-separated, with scheme) together. The server logs the reason at startup whenever passkeys are disabled. See [multi-factor-authentication.md](multi-factor-authentication.md).
 
 ## Cloudflare Tunnel
 
-Cloudflare is optional. Follow [`deploy/cloudflare/README.md`](../deploy/cloudflare/README.md) to enable the profile. The Tunnel route should target `http://server:8080`; do not publish PostgreSQL.
+Cloudflare is optional. Follow [`deploy/cloudflare/README.md`](../deploy/cloudflare/README.md) to enable the profile. The Tunnel route should target `http://server:8080`. Do not publish PostgreSQL.
 
 Players using a Tunnel normally enter its public HTTPS hostname manually. LAN discovery advertises local services only and is not a Tunnel discovery mechanism.
 
-The dashboard CSP permits Cloudflare Web Analytics' beacon when a proxied deployment injects it; automatic injection reports to the same origin. Keep `script-src` free of `unsafe-inline` when applying a custom CSP.
+The dashboard CSP permits Cloudflare Web Analytics' beacon when a proxied deployment injects it. Automatic injection reports to the same origin. Keep `script-src` free of `unsafe-inline` when applying a custom CSP.
 
 ## Data and upgrades
 
-The `postgres_data` volume stores relational state. The `tilecast_data` volume stores originals, playback variants, thumbnails, posters, and temporary resumable uploads beneath `/data/media`; it must remain mounted across server/container recreation. The media tree is never served directly by the container.
+The `postgres_data` volume stores relational state. The `tilecast_data` volume stores originals, playback variants, thumbnails, posters, and temporary resumable uploads beneath `/data/media`. It must remain mounted across server/container recreation. The media tree is never served directly by the container.
 
 The production image includes FFmpeg and FFprobe and runs as the unprivileged `tilecast` user. Readiness checks database access, writable media storage, and both executables. Configure limits with `TILECAST_MAX_UPLOAD_BYTES`, `TILECAST_MEDIA_WORKERS`, `TILECAST_MEDIA_RESERVED_FREE_BYTES`, `TILECAST_VIDEO_MAX_WIDTH`, `TILECAST_VIDEO_MAX_HEIGHT`, `TILECAST_VIDEO_MAX_FRAME_RATE`, and `TILECAST_KEEP_ORIGINALS`.
 
 A complete backup requires:
 
-- the PostgreSQL database;
-- `/data/media/originals`;
-- `/data/media/variants` and `/data/media/thumbnails` (or time to regenerate them in a future recovery tool);
+- the PostgreSQL database.
+- `/data/media/originals`.
+- `/data/media/variants` and `/data/media/thumbnails` (or time to regenerate them in a future recovery tool).
 - deployment configuration, excluding copied secrets from documentation or source control.
 
 The database holds every enrolled authenticator secret. Unlike a password or a device credential, a TOTP secret cannot be hashed, so anyone who can read a database backup can generate codes for any enrolled account. Protect backup archives accordingly. Passkeys store only a public key and do not carry this risk.
 
-Take database and media snapshots from a consistent maintenance window. Restoring only PostgreSQL produces missing-file errors; restoring only media produces unreferenced files. Pin released Tilecast image tags rather than `latest`, back up both volumes before upgrades, and review migration notes. Automated backup/restore tooling remains a Milestone 9 deliverable.
-Scheduling limits are configured with `TILECAST_MAX_SCHEDULES` (1000), `TILECAST_MAX_SCHEDULE_TARGETS` (250), `TILECAST_MAX_GROUPS_PER_SCREEN` (50), `TILECAST_SCHEDULE_PREFETCH_DAYS` (14), `TILECAST_SCHEDULE_ACTIVATION_GRACE_SECONDS` (30), and `TILECAST_CLOCK_SKEW_WARNING_SECONDS` (300). Players need reasonably accurate clocks and current timezone data; Studio surfaces reported skew rather than changing offline evaluation time.
-Website defaults are `TILECAST_WEBSITE_ALLOW_PRIVATE_HTTP=false`, `TILECAST_WEBSITE_DEFAULT_TIMEOUT_SECONDS=20`, `TILECAST_WEBSITE_MAX_TIMEOUT_SECONDS=120`, `TILECAST_WEBSITE_MIN_REFRESH_SECONDS=30`, `TILECAST_WEBSITE_MAX_ALLOWED_HOSTS=25`, and `TILECAST_WEBSITE_MAX_ASSETS=500`. Enabling private HTTP is appropriate only for trusted LAN destinations; it does not permit public HTTP or nonstandard ports.
+Take database and media snapshots from a consistent maintenance window. Restoring only PostgreSQL produces missing-file errors. Restoring only media produces unreferenced files. Pin released Tilecast image tags rather than `latest`, back up both volumes before upgrades, and review migration notes. Automated backup/restore tooling remains a Milestone 9 deliverable.
+Scheduling limits are configured with `TILECAST_MAX_SCHEDULES` (1000), `TILECAST_MAX_SCHEDULE_TARGETS` (250), `TILECAST_MAX_GROUPS_PER_SCREEN` (50), `TILECAST_SCHEDULE_PREFETCH_DAYS` (14), `TILECAST_SCHEDULE_ACTIVATION_GRACE_SECONDS` (30), and `TILECAST_CLOCK_SKEW_WARNING_SECONDS` (300). Players need reasonably accurate clocks and current timezone data. Studio surfaces reported skew rather than changing offline evaluation time.
+Website defaults are `TILECAST_WEBSITE_ALLOW_PRIVATE_HTTP=false`, `TILECAST_WEBSITE_DEFAULT_TIMEOUT_SECONDS=20`, `TILECAST_WEBSITE_MAX_TIMEOUT_SECONDS=120`, `TILECAST_WEBSITE_MIN_REFRESH_SECONDS=30`, `TILECAST_WEBSITE_MAX_ALLOWED_HOSTS=25`, and `TILECAST_WEBSITE_MAX_ASSETS=500`. Enabling private HTTP is appropriate only for trusted LAN destinations. It does not permit public HTTP or nonstandard ports.
 
 Structured Source fetch defaults are `TILECAST_SOURCE_ALLOW_PRIVATE_NETWORKS=false`, a 15-second timeout, 2 MiB response limit, three redirects, five-minute minimum refresh, and one-day maximum refresh. Enable private networks only when administrators intentionally need an internal ICS endpoint. The fetcher never uses calendar credentials or environment HTTP proxies.
 
-Air Quality uses `TILECAST_AIR_QUALITY_BASE_URL`, defaulting to `https://air-quality-api.open-meteo.com`. The hosted endpoint is accepted only when a source explicitly acknowledges noncommercial use. Commercial installations must point this setting at an operator-managed self-hosted compatible endpoint; Tilecast does not store Open-Meteo API keys.
+Air Quality uses `TILECAST_AIR_QUALITY_BASE_URL`, defaulting to `https://air-quality-api.open-meteo.com`. The hosted endpoint is accepted only when a source explicitly acknowledges noncommercial use. Commercial installations must point this setting at an operator-managed self-hosted compatible endpoint. Tilecast does not store Open-Meteo API keys.
 
 Transit accepts public GTFS Static ZIP and GTFS Realtime protobuf feeds. Static archives are cached for 6–168 hours while realtime departures refresh every 30–300 seconds. CAP Alerts accepts public CAP 1.2 XML or bounded Atom/RSS indexes.
 

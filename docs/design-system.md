@@ -17,11 +17,11 @@ Signal covers two related but separate interfaces:
 | --------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | Tilecast Studio | Browser-based management interface             | CSS tokens in `packages/design-tokens` and shared React primitives in `apps/dashboard/src/components/ui` |
 | Tilecast Player | Fullscreen Android TV application              | Native Compose theme and components under `org.tilecast.player.ui.theme`                                 |
-| Signage content | Organization-authored material shown by Player | Content, layout, and organization-branding settings; it does not redefine Studio                         |
+| Signage content | Organization-authored material shown by Player | Content, layout, and organization-branding settings. it does not redefine Studio                         |
 
 Studio and Player share Signal's character, color intent, spacing rhythm, and
 accessibility expectations. They do not share a rendering library. CSS is
-authoritative for Studio; Compose is authoritative for Player.
+authoritative for Studio. Compose is authoritative for Player.
 
 Organization branding is content identity, not application chrome. An
 organization accent or logo may appear in a preview, avatar, or small identity
@@ -36,7 +36,7 @@ Use these labels when discussing the design system:
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | **Implemented**   | Available from shared tokens, React primitives, or the Player theme and safe to use now.                                      |
 | **Normative**     | Required behavior for new or changed UI, even if enforcement is partly manual.                                                |
-| **Page-specific** | Present in the product but not yet a shared pattern. Reuse its behavior cautiously; do not describe it as a system primitive. |
+| **Page-specific** | Present in the product but not yet a shared pattern. Reuse its behavior cautiously. do not describe it as a system primitive. |
 | **Planned**       | Proposed in the [Signal pattern roadmap](design-system-roadmap.md). It is not available until its status becomes Implemented. |
 
 The roadmap is planning material. This document remains authoritative for
@@ -50,7 +50,7 @@ implemented and normative behavior.
    oversized cards, decorative whitespace, or compressed touch targets.
 3. **Use predictable patterns.** Prefer shared controls and familiar layouts to
    page-specific interaction inventions.
-4. **Keep identity in its lane.** Tilecast application chrome remains Signal;
+4. **Keep identity in its lane.** Tilecast application chrome remains Signal.
    organization branding belongs to signage and restrained identity details.
 5. **Communicate beyond color.** Pair every status color with text and, where
    useful, an icon or dot.
@@ -90,7 +90,7 @@ value from this document.
 ### Color
 
 Signal Blue is the fixed interface action color. Broadcast Amber is a Tilecast
-identity color used in the tall logo tile and restrained brand details; it is
+identity color used in the tall logo tile and restrained brand details. It is
 not a warning color. Success, warning, danger, information, and neutral each
 have separate foreground, background, and border roles.
 
@@ -113,7 +113,7 @@ value.
 #### Studio control roles
 
 Control colors are theme-scoped. Components consume the aliases in
-`components.css`; they must not assume the dark palette is the default.
+`components.css`. They must not assume the dark palette is the default.
 
 | Token                 | Light value             | Dark value              | Use                                     |
 | --------------------- | ----------------------- | ----------------------- | --------------------------------------- |
@@ -168,7 +168,7 @@ pixels tall. Measured graphics use the visualization family instead.
 
 The family is theme-scoped: dark themes lift the up and impaired fills to the
 400 ramp, because the 700 ramp muddies against the dark canvas at segment size.
-Fills carry no meaning on their own — pair every series with a legend, a label,
+Fills carry no meaning on their own. Pair every series with a legend, a label,
 or an accessible name, per principle 5.
 
 ### Typography
@@ -238,7 +238,7 @@ compact type sizes to TV.
 
 Controls use one 8 px radius. Chips, keycaps, and badges nested inside controls
 use the 5 px chip radius. Panels remain 9 px and overlays remain 12 px. Buttons
-must not use pill radii. Normal panels use borders; shadows are reserved for
+must not use pill radii. Normal panels use borders. Shadows are reserved for
 overlays and drag states. Do not nest bordered panels when spacing, a heading,
 or a divider can express the relationship.
 
@@ -253,7 +253,7 @@ vertical screen insets, and keeps remote controls at least 52 dp high.
 | `--tc-motion-standard` | 180 ms   | Normal state transition                |
 | `--tc-motion-slow`     | 240 ms   | Larger but still restrained transition |
 
-Motion explains a state change; it does not decorate idle UI. Honor the system
+Motion explains a state change. It does not decorate idle UI. Honor the system
 `prefers-reduced-motion` setting and the user's reduced-motion preference.
 Loading indicators may rotate, but their accessible label must describe the
 work rather than the animation.
@@ -262,7 +262,7 @@ work rather than the animation.
 
 Studio supports light, dark, and system appearance through semantic tokens.
 Components are not duplicated by theme. System appearance follows
-`prefers-color-scheme`; explicit light or dark settings take precedence.
+`prefers-color-scheme`. Explicit light or dark settings take precedence.
 
 Studio also supports comfortable and compact density. Compact density reduces
 selected layout spacing, not type legibility, control semantics, focus
@@ -280,12 +280,12 @@ license to copy arbitrary breakpoint values.
 
 New work must:
 
-- preserve the primary task without horizontal page scrolling;
+- preserve the primary task without horizontal page scrolling.
 - let tables scroll within a labeled or obvious container when columns cannot
-  collapse safely;
-- stack actions and field rows before labels or controls become cramped;
-- keep important actions visible rather than hover-only;
-- preserve document order, focus order, and readable line lengths; and
+  collapse safely.
+- stack actions and field rows before labels or controls become cramped.
+- keep important actions visible rather than hover-only.
+- preserve document order, focus order, and readable line lengths, and
 - provide a deliberate narrow-screen alternative for desktop editing surfaces.
 
 ## Studio components
@@ -298,7 +298,7 @@ semantics remain the source of truth.
 
 | Primitive                  | Implemented variants or behavior                                 | Use                                                |
 | -------------------------- | ---------------------------------------------------------------- | -------------------------------------------------- |
-| `Button`                   | Primary, secondary, quiet, danger; compact and loading states    | Labeled actions                                    |
+| `Button`                   | Primary, secondary, quiet, danger. compact and loading states    | Labeled actions                                    |
 | `IconButton`               | Required accessible label and title                              | Compact familiar action with no visible label      |
 | `Input`, `Textarea`        | Native form semantics                                            | Text and multiline entry                           |
 | `Select`                   | Signal Select with keyboard menu and hidden native value control | Choosing one option from a closed set              |
@@ -328,7 +328,7 @@ semantics remain the source of truth.
 
 Popovers, ARIA tab panels, drop zones, inspectors, timelines, and editor shells
 currently have page-specific implementations. Their proposed shared forms are
-Planned, not Implemented. `ViewTabs` is navigation between page-owned views; it
+Planned, not Implemented. `ViewTabs` is navigation between page-owned views. It
 does not claim ARIA `tab` or `tabpanel` semantics.
 
 #### Reporting primitives
@@ -343,7 +343,7 @@ sign. A metric with no better or worse direction reports movement without a
 success or danger tone. Give a tile a `to` when the number has records behind
 it: a count a person cannot open is a dead end.
 
-The `hint` is not decoration — it carries the measurement's scope. A tile
+The `hint` is not decoration. It carries the measurement's scope. A tile
 without one invites the reader to assume the selected date range applies, so say
 "Right now, not over the range" wherever that is true.
 
@@ -365,16 +365,16 @@ than carried. A link that opens a differently-filtered report is worse than no
 link, because it silently contradicts the figure just read.
 
 **Excluded quantities stay visible.** Where a metric deliberately removes
-something from its denominator — emergency-overridden or intentionally stopped
-playback — list those amounts beside it. Silently improving a percentage makes
+something from its denominator. Emergency-overridden or intentionally stopped
+playback. List those amounts beside it. Silently improving a percentage makes
 it unexplainable.
 
-**Severity lives on a rail, not only in colour.** Timeline rows carry severity
+**Severity lives on a rail, not only in color.** Timeline rows carry severity
 as a left border alongside their badge text, so a failure is findable while
-scrolling and legible without colour vision.
+scrolling and legible without color vision.
 
 **Status language distinguishes ongoing from finished.** An incident still
-failing reads "Ongoing for 40m"; one that recovered reads "Lasted 40m".
+failing reads "Ongoing for 40m". One that recovered reads "Lasted 40m".
 Recovered items are grouped apart from failing ones and never described as
 still failing.
 
@@ -389,7 +389,7 @@ writing it.
 A `FilterBar` renders from filter definitions rather than hand-placed controls,
 and reflects every active filter except the search field as a removable chip, so
 a narrowed result set never reads as an empty one. Filter state belongs in the
-URL through `useUrlFilters`, which leaves parameters it does not own untouched;
+URL through `useUrlFilters`, which leaves parameters it does not own untouched.
 a filtered report that cannot be reloaded or shared is not finished.
 
 `resolveTimeRange` returns the selected bounds together with the equally long
@@ -408,7 +408,7 @@ uses static section labels rather than collapsible accordions:
   justify a real group.
 - Settings stays in a separate footer region above the account controls.
 
-Section labels describe information architecture; they are not interactive.
+Section labels describe information architecture. They are not interactive.
 Compact desktop and mobile navigation hide the labels while preserving every
 destination and the same route order. Do not add collapse state or hide a
 primary route behind disclosure while the navigation remains this size.
@@ -421,18 +421,18 @@ content. It contains three stable regions:
 - The left region renders breadcrumbs from the route hierarchy. A top-level
   route shows one semibold current-page label. Detail routes link muted
   ancestors and render the entity name as the unlinked current page. Page
-  headings remain `h1` elements; breadcrumbs are navigation, not headings.
+  headings remain `h1` elements. Breadcrumbs are navigation, not headings.
 - The center region opens global search with `Command+K` on Apple platforms or
   `Control+K` elsewhere. The implemented search providers cover Studio route
   destinations, settings sections, and screen names. Additional entity
   providers may extend this registry without changing the palette interaction.
 - The right region contains active-alert notifications, the role-gated Pair
   screen action, and the role-gated Create menu. Screen alerts link to screen
-  details; failed Player update deployments link to Player update settings.
+  details. Failed Player update deployments link to Player update settings.
 
 The header uses existing surface, border, text, status, focus, radius, spacing,
 and button tokens. Below 900px, global search becomes an icon button and Pair
-screen becomes icon-only; Create retains its label. Every icon-only control
+screen becomes icon-only. Create retains its label. Every icon-only control
 requires an accessible name. The palette supports arrow-key selection, Enter
 to navigate, and Escape to close. The global shortcut must not override text
 entry inside a dialog.
@@ -440,7 +440,7 @@ entry inside a dialog.
 ### Buttons and actions
 
 Use one primary action per local decision area. Secondary actions are bordered
-alternatives; quiet actions reduce visual weight; danger actions communicate a
+alternatives. Quiet actions reduce visual weight. Danger actions communicate a
 destructive consequence. Icon buttons are reserved for familiar actions where
 space is constrained and always require an accessible label.
 
@@ -450,7 +450,7 @@ Disabled controls use a not-allowed cursor, but a disabled state must not be the
 only explanation of why an action is unavailable.
 
 Primary buttons use the solid action accent with pure white text. Secondary
-buttons use the shared control border and label tokens on a transparent fill;
+buttons use the shared control border and label tokens on a transparent fill.
 hover changes only the shared secondary hover fill. Underlines belong to inline
 text links, never button labels. Use at most one primary action per decision
 region.
@@ -461,7 +461,7 @@ and does not receive danger styling.
 
 ### Forms and selection
 
-Labels sit above controls. Supporting text follows the label; validation follows
+Labels sit above controls. Supporting text follows the label. Validation follows
 the control. Required state must be available to assistive technology, not only
 shown as an asterisk. Errors identify the problem and, when known, how to fix
 it.
@@ -471,15 +471,15 @@ placeholder, disabled treatment, and focus tokens. Keyboard focus adds a 1 px
 accent border and a 3 px soft outer ring. Use the control that matches the data:
 Use the control that matches the data:
 
-- checkbox for an independent choice;
-- switch for an immediate enabled/disabled setting;
-- radio group for a small set whose alternatives should remain visible;
-- Signal Select for a longer closed set; and
+- checkbox for an independent choice.
+- switch for an immediate enabled/disabled setting.
+- radio group for a small set whose alternatives should remain visible.
+- Signal Select for a longer closed set, and
 - text input only when free entry is genuinely allowed.
 
 Signal Select supports groups, disabled options, visible selection, Escape,
 Arrow keys, Home, End, Enter, and Space. Its hidden native select preserves form
-values and change-event compatibility; it is not the visible interaction
+values and change-event compatibility. It is not the visible interaction
 surface.
 
 Settings translate bytes, durations, weekdays, enums, colors, and Android
@@ -492,12 +492,12 @@ rows and `StatusBadge` when the state benefits from a contained label. Translate
 raw internal values into user-facing language.
 
 Use a Notice for feedback that belongs in the current context. Danger notices
-use alert semantics; non-urgent variants use polite status semantics. Do not use
+use alert semantics. Non-urgent variants use polite status semantics. Do not use
 a warning notice as a permanent decorative panel.
 
 Use an Empty State only when loading has completed successfully and the result
 is genuinely empty. Loading, permission denial, network failure, and processing
-failure are separate states. Skeletons preserve structure; spinners represent
+failure are separate states. Skeletons preserve structure. Spinners represent
 indeterminate work. Neither replaces explanatory text when a wait may be long.
 
 ### Panels, tables, and dialogs
@@ -539,15 +539,15 @@ block.
 
 ### Icons and logos
 
-Icons clarify familiar actions and states; they do not replace necessary text.
+Icons clarify familiar actions and states. They do not replace necessary text.
 Use the existing Lucide icon vocabulary in Studio. Keep stroke weight and size
 consistent within a control group. Do not assign a unique icon to every field or
 use an unlabeled icon for an unfamiliar operation.
 
 The Tilecast mark retains its three-tile proportions:
 
-- tall left tile: Broadcast Amber;
-- upper-right tile: Signal Blue; and
+- tall left tile: Broadcast Amber.
+- upper-right tile: Signal Blue, and
 - lower-right tile: pale blue-gray.
 
 Use the dark wordmark on light surfaces and the white wordmark on dark surfaces.
@@ -563,10 +563,10 @@ change operational meaning.
 Player supplies dark navy surfaces, TV typography, shared dimensions, logo
 colors, and focus-aware filled and outlined buttons. Every remote action must:
 
-- be reachable in a logical D-pad sequence;
-- show a strong Signal Blue focus outline;
-- retain at least a 52 dp control height;
-- provide a small scale cue that remains stable at viewing distance; and
+- be reachable in a logical D-pad sequence.
+- show a strong Signal Blue focus outline.
+- retain at least a 52 dp control height.
+- provide a small scale cue that remains stable at viewing distance, and
 - remain operable without touch, mouse, or color perception.
 
 Motion is restrained and state-driven. Focus must not cause surrounding layout
@@ -584,8 +584,8 @@ nouns, active verbs, and the terminology already used by the product.
 
 | Context                 | Rule                                                          | Example                                        |
 | ----------------------- | ------------------------------------------------------------- | ---------------------------------------------- |
-| Page and section titles | Name the object or task; use sentence case                    | “Player updates”                               |
-| Buttons                 | Start with a specific verb; name the result when useful       | “Pair screen”, “Save changes”                  |
+| Page and section titles | Name the object or task. use sentence case                    | “Player updates”                               |
+| Buttons                 | Start with a specific verb. name the result when useful       | “Pair screen”, “Save changes”                  |
 | Labels                  | Name the value, not an instruction to the user                | “Server address”                               |
 | Supporting text         | Explain consequence, format, or scope                         | “Applies after the player reconnects.”         |
 | Status                  | Translate internal state into concise human language          | “Waiting” instead of `queued`                  |
@@ -610,16 +610,16 @@ screenshots, or logs.
 WCAG AA is the minimum contrast target for normal text and controls. In
 addition:
 
-- keep keyboard and D-pad focus visible at all times;
-- preserve logical document, reading, and focus order;
-- associate labels, descriptions, validation, and switch state semantically;
-- pair status color with text and an icon or dot;
-- honor reduced-motion preferences;
-- keep Studio touch targets near 44 px and Player controls at least 52 dp high;
-- supply accessible names for icon-only controls;
-- announce urgent errors assertively and routine updates politely;
+- keep keyboard and D-pad focus visible at all times.
+- preserve logical document, reading, and focus order.
+- associate labels, descriptions, validation, and switch state semantically.
+- pair status color with text and an icon or dot.
+- honor reduced-motion preferences.
+- keep Studio touch targets near 44 px and Player controls at least 52 dp high.
+- supply accessible names for icon-only controls.
+- announce urgent errors assertively and routine updates politely.
 - avoid organization colors where they could weaken Studio or emergency
-  readability; and
+  readability, and
 - verify zoom, narrow screens, text expansion, and contained overflow.
 
 Accessibility behavior is part of a component's contract, not a final review

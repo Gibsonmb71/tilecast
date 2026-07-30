@@ -1,5 +1,14 @@
 # LAN discovery
 
-Tilecast advertises `_tilecast._tcp.local` when `TILECAST_MDNS_ENABLED=true`. TXT records include the identity path, base URL, API version, and installation ID. Android Player uses the standard `NsdManager` DNS-SD APIs.
+Tilecast advertises `_tilecast._tcp.local` when `TILECAST_MDNS_ENABLED=true`. TXT records contain this information:
 
-Multicast discovery is only a convenience. Guest Wi-Fi, VLAN boundaries, multicast filtering, AP isolation, Docker bridge networking, and some enterprise wireless systems can block it. In those cases, enter the local server URL manually. Discovery never downgrades HTTPS and does not discover Cloudflare Tunnel hostnames.
+- Identity path
+- Base URL
+- API version
+- Installation ID
+
+Android Player uses the standard `NsdManager` DNS-SD APIs.
+
+Multicast discovery is an optional aid. Network configuration can block it. Examples include VLAN boundaries, AP isolation, and multicast filters.
+
+If discovery does not operate, enter the local server URL manually. Discovery does not downgrade HTTPS or find Cloudflare Tunnel hostnames.

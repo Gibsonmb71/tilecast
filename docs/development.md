@@ -1,15 +1,41 @@
 # Development
 
-Use `make bootstrap` after installing Go 1.24+, Node.js 22+, npm, and Docker. PostgreSQL is the only runtime dependency for Milestone 1.
+Install Go 1.24 or later, Node.js 22 or later, npm, and Docker. Then, run `make bootstrap`.
 
-The normal loop runs `make dev-server` and `make dev-dashboard` in separate terminals. Server changes require a restart; Vite handles dashboard updates. `make check` runs dashboard formatting checks, lint, unit tests, Go vet, and Go tests. `make build` creates the dashboard bundle, copies it into the server embed directory, and compiles the single binary.
+PostgreSQL is the only runtime dependency for Milestone 1.
+
+Run `make dev-server` and `make dev-dashboard` in separate terminals. Restart the server after a server change.
+
+Vite updates the dashboard automatically.
+
+Run `make check` to do these checks:
+
+- Dashboard format
+- Lint
+- Unit tests
+- Go vet
+- Go tests
+
+Run `make build` to create the dashboard bundle and the server binary. The command copies the bundle into the server embed directory.
 
 Android player requirements and commands are documented in [`android-development.md`](android-development.md).
 
 ## Migration changes
 
-Add sequential Goose SQL files under `apps/server/internal/database/migrations`. Every migration needs `-- +goose Up` and a working `-- +goose Down` section. Startup applies pending migrations automatically. Never edit an applied migration after a release; add another migration.
+Add sequential Goose SQL files to `apps/server/internal/database/migrations`. Each migration must contain these sections:
+
+- `-- +goose Up`
+- A functional `-- +goose Down`
+
+The server applies pending migrations during startup. Do not edit a released migration. Add a new migration.
 
 ## Integration database
 
-Local tests are unit tests and do not mutate a database. The container smoke check builds the actual image, starts PostgreSQL, applies migrations, and exercises the first-owner flow. CI performs the compilation and unit checks on every change.
+Local unit tests do not change a database. The container smoke test does these operations:
+
+1. Builds the image.
+2. Starts PostgreSQL.
+3. Applies migrations.
+4. Tests the first-Owner flow.
+
+CI compiles the applications and runs the unit checks after each change.
