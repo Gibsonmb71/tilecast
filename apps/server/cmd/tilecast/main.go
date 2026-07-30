@@ -204,6 +204,7 @@ func serve() {
 	defer snapshotWorker.Stop()
 	playlistService.SetApprovalGate(approvalService.Gate)
 	fleetService.SetApprovalGate(approvalService.Gate)
+	fleetService.SetScopeAuthorizer(deviceService)
 	notifyWorker := notify.NewWorker(notifyService, logger)
 	notifyWorker.AddSweeper(contentHealthService)
 	notifyWorker.SetGate(backupGuard.BackgroundJobsAllowed)

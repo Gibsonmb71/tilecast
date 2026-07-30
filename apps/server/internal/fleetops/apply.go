@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/tilecast/tilecast/apps/server/internal/devices"
 )
 
 // Operation is the record of an applied bulk change.
@@ -206,7 +207,7 @@ func auditResult(operation Operation) string {
 // It re-applies the previous assignment through the same single-screen path, so
 // undo is an ordinary change with its own audit trail rather than a hidden
 // rewrite of history.
-func (s *Service) Undo(ctx context.Context, user, id uuid.UUID) (Operation, error) {
+func (s *Service) Undo(ctx context.Context, user uuid.UUID, role string, id uuid.UUID) (Operation, error) {
 	var action string
 	var reversible bool
 	var undoneAt, expires *time.Time
@@ -233,6 +234,19 @@ func (s *Service) Undo(ctx context.Context, user, id uuid.UUID) (Operation, erro
 	var entries []undoEntry
 	if err := json.Unmarshal(undoRaw, &entries); err != nil {
 		return Operation{}, err
+	}
+	// Scope is enforced against the caller, not against the stored operation.
+	// Preview and apply are checked on the way in; without this, an operation id
+	// would be a way to rewrite screens the caller can no longer reach -- or
+	// never could.
+	if s.scopes != nil {
+		screens := make([]uuid.UUID, 0, len(entries))
+		for _, entry := range entries {
+			screens = append(screens, entry.ScreenID)
+		}
+		if err := s.scopes.AuthorizeScreens(ctx, user, role, screens); err != nil {
+			return Operation{}, err
+		}
 	}
 
 	restored, failed := 0, 0
@@ -277,7 +291,13 @@ func (s *Service) Undo(ctx context.Context, user, id uuid.UUID) (Operation, erro
 
 // Recent lists recent operations, so an operator can see what was done and
 // undo the last one.
-func (s *Service) Recent(ctx context.Context, limit int) ([]Operation, error) {
+//
+// The per-screen results carry screen names, locations, and assignments, so a
+// scoped caller is given only the operations it could have run itself. An
+// operation that touched anything outside the scope is withheld whole rather
+// than shown with rows removed: a partial account of somebody else's change is
+// more misleading than no entry at all.
+func (s *Service) Recent(ctx context.Context, user uuid.UUID, role string, limit int) ([]Operation, error) {
 	if limit <= 0 || limit > 50 {
 		limit = 10
 	}
@@ -300,6 +320,18 @@ func (s *Service) Recent(ctx context.Context, limit int) ([]Operation, error) {
 			return nil, err
 		}
 		_ = json.Unmarshal(raw, &operation.Results)
+		if s.scopes != nil {
+			screens := make([]uuid.UUID, 0, len(operation.Results))
+			for _, result := range operation.Results {
+				screens = append(screens, result.ScreenID)
+			}
+			if err := s.scopes.AuthorizeScreens(ctx, user, role, screens); err != nil {
+				if errors.Is(err, devices.ErrOutOfScope) {
+					continue
+				}
+				return nil, err
+			}
+		}
 		// A window that has already closed is reported as closed rather than
 		// offering a control that will be refused.
 		if operation.UndoneAt != nil || operation.UndoExpires == nil || time.Now().After(*operation.UndoExpires) {

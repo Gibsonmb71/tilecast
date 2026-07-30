@@ -231,11 +231,32 @@ func TestNewFeatureQueries(t *testing.T) {
 		if preview.GroupAddedCount != 1 {
 			t.Errorf("group added %d screens, want 1", preview.GroupAddedCount)
 		}
-		if _, err := service.Recent(ctx, 5); err != nil {
+		if _, err := service.Recent(ctx, owner.User.ID, "administrator", 5); err != nil {
 			t.Fatalf("Recent: %v", err)
 		}
 		t.Logf("preview: %d screens, %d added by the group, %d change",
 			len(preview.Screens), preview.GroupAddedCount, preview.ChangeCount)
+
+		// The operation-id paths must be scoped too. Preview and apply are
+		// checked on the way in, but an operation id would otherwise be a way to
+		// read or rewrite screens the caller cannot reach.
+		service.SetScopeAuthorizer(deviceService)
+		otherLocation := uuid.New()
+		if _, err := pool.Exec(ctx,
+			`INSERT INTO locations(id,organization_id,name) VALUES($1,$2,'Elsewhere')`,
+			otherLocation, org); err != nil {
+			t.Fatal(err)
+		}
+		if err := deviceService.ReplaceScopes(ctx, owner.User.ID, owner.User.ID,
+			[]devices.Scope{{Type: "location", ID: otherLocation}}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := service.Undo(ctx, owner.User.ID, "administrator", uuid.New()); err == nil {
+			t.Error("undo must not run for a caller outside the scope")
+		}
+		if err := deviceService.ReplaceScopes(ctx, owner.User.ID, owner.User.ID, nil); err != nil {
+			t.Fatal(err)
+		}
 	})
 
 	t.Run("review queue and gate", func(t *testing.T) {

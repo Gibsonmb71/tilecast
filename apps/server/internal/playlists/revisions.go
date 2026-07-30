@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -40,7 +41,7 @@ func snapshotRevision(ctx context.Context, tx pgx.Tx, playlistID uuid.UUID, user
 		SELECT gen_random_uuid(), p.id, p.revision, p.name, p.description,
 		       p.source_type, p.tag_match, p.tag_image_duration_ms,
 		       COALESCE((
-		           SELECT jsonb_agg(item ORDER BY item->>'position')
+		           SELECT jsonb_agg(item ORDER BY (item->>'position')::int)
 		           FROM (
 		               SELECT jsonb_build_object(
 		                   'assetId', i.asset_id, 'layoutId', i.layout_id,
@@ -214,6 +215,11 @@ func (s *Service) RestoreRevision(ctx context.Context, playlistID uuid.UUID, rev
 	if _, err := tx.Exec(ctx, `DELETE FROM playlist_items WHERE playlist_id=$1`, playlistID); err != nil {
 		return RestoreResult{}, err
 	}
+	// Restore in the order the snapshot recorded, not the order the array
+	// happens to be in. The aggregate is already ordered numerically; sorting
+	// again here means a snapshot written by an older build, or by any future
+	// path, still restores in the right order.
+	sort.SliceStable(items, func(i, j int) bool { return items[i].Position < items[j].Position })
 	skipped, position := 0, 0
 	for _, item := range items {
 		// Content deleted since the snapshot is skipped, never resurrected.

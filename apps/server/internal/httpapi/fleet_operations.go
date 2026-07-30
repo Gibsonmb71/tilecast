@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/tilecast/tilecast/apps/server/internal/auth"
+	"github.com/tilecast/tilecast/apps/server/internal/devices"
 	"github.com/tilecast/tilecast/apps/server/internal/fleetops"
 )
 
@@ -80,9 +81,14 @@ func (s *server) undoBulkOperation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user := r.Context().Value(sessionContextKey).(auth.Session).User
-	operation, err := s.fleet.Undo(r.Context(), user.ID, id)
+	operation, err := s.fleet.Undo(r.Context(), user.ID, user.Role, id)
 	switch {
 	case errors.Is(err, fleetops.ErrNotFound):
+		writeError(w, http.StatusNotFound, "not_found", "That operation no longer exists.")
+		return
+	case errors.Is(err, devices.ErrOutOfScope):
+		// Same answer as reading an out-of-scope screen: a scoped operator must
+		// not learn that the operation exists.
 		writeError(w, http.StatusNotFound, "not_found", "That operation no longer exists.")
 		return
 	case errors.Is(err, fleetops.ErrNotReversible):
@@ -101,7 +107,8 @@ func (s *server) undoBulkOperation(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) listBulkOperations(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	operations, err := s.fleet.Recent(r.Context(), limit)
+	session, _ := r.Context().Value(sessionContextKey).(auth.Session)
+	operations, err := s.fleet.Recent(r.Context(), session.User.ID, session.User.Role, limit)
 	if err != nil {
 		s.internalError(w, r, err)
 		return

@@ -80,12 +80,26 @@ type Service struct {
 	enabler      EnabledSetter
 	commands     CommandEnqueuer
 	approvalGate func(ctx context.Context, contentType string, id uuid.UUID) error
+	// scopes enforces the caller's screen scope. It is applied to the
+	// operation-id paths as well as to preview and apply, so an operation id
+	// cannot be used to reach a screen the caller may not touch.
+	scopes ScopeAuthorizer
+}
+
+// ScopeAuthorizer refuses screens outside an account's scope. It is the devices
+// service; the interface keeps the dependency one-way and testable.
+type ScopeAuthorizer interface {
+	AuthorizeScreens(ctx context.Context, user uuid.UUID, role string, screens []uuid.UUID) error
 }
 
 // NewService builds the fleet operations service.
 func NewService(db *pgxpool.Pool, assigner Assigner, enabler EnabledSetter) *Service {
 	return &Service{db: db, assigner: assigner, enabler: enabler}
 }
+
+// SetScopeAuthorizer installs the screen-scope check used by the operation-id
+// paths. Without it, scope is enforced only where the caller names screens.
+func (s *Service) SetScopeAuthorizer(authorizer ScopeAuthorizer) { s.scopes = authorizer }
 
 // SetApprovalGate installs the content review check. It is applied during
 // preview so unreviewed content is refused once, by name, rather than failing
