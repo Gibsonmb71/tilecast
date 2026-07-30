@@ -33,8 +33,8 @@ func (s *Service) applyAlert(ctx context.Context, alertID string, rule Rule, ale
 	ticker := responseMode == "ticker"
 	var existing *uuid.UUID
 	var shown displayedAlert
-	err := s.db.QueryRow(ctx, `SELECT takeover_id,event,headline,area_description,instruction,severity FROM alert_activations WHERE alert_id=$1 AND rule_id=$2 AND cleared_at IS NULL`,
-		alertID, rule.ID).Scan(&existing, &shown.event, &shown.headline, &shown.areaDescription, &shown.instruction, &shown.severity)
+	err := s.db.QueryRow(ctx, `SELECT takeover_id,event,headline,area_description,instruction,severity,expires_at FROM alert_activations WHERE alert_id=$1 AND rule_id=$2 AND cleared_at IS NULL`,
+		alertID, rule.ID).Scan(&existing, &shown.event, &shown.headline, &shown.areaDescription, &shown.instruction, &shown.severity, &shown.expiresAt)
 	if err == nil {
 		tx, beginErr := s.db.Begin(ctx)
 		if beginErr != nil {
@@ -52,12 +52,9 @@ func (s *Service) applyAlert(ctx context.Context, alertID string, rule Rule, ale
 			return updateErr
 		}
 		screenIDs := []uuid.UUID{}
-		// A bar carries the alert text in the manifest itself, so a reworded
-		// headline only reaches the screen through a new manifest. The expiry is
-		// deliberately not part of this comparison: an alert that publishes no
-		// expiry is given `now + maximum duration` on every poll, which would
-		// otherwise re-push a manifest every poll for a bar that has not changed.
-		if ticker && shown.differsFrom(alert) {
+		// A bar carries the alert text and its expiry in the manifest itself, so
+		// either only reaches the screen through a new manifest.
+		if ticker && shown.differsFrom(alert, expires) {
 			screenIDs, err = bumpRuleScreens(ctx, tx, rule.ID, now, "nws.alert.updated")
 			if err != nil {
 				return err
@@ -147,21 +144,37 @@ func (s *Service) applyAlert(ctx context.Context, alertID string, rule Rule, ale
 	return nil
 }
 
-// displayedAlert is the text an activation is currently putting on screen. A
-// ticker publishes that text in the manifest, so it is compared against the
-// freshly polled alert to decide whether a new manifest is owed.
+// displayedAlert is what an activation is currently putting on screen. A ticker
+// publishes it in the manifest, so it is compared against the freshly polled
+// alert to decide whether a new manifest is owed.
 type displayedAlert struct {
 	event           string
 	headline        string
 	areaDescription string
 	instruction     string
 	severity        string
+	expiresAt       *time.Time
 }
 
-func (d displayedAlert) differsFrom(alert nwsProperties) bool {
-	return d.event != alert.Event || d.headline != alert.Headline ||
+// differsFrom reports whether the polled alert would put anything new on screen.
+//
+// The expiry counts, because it is what a Player offline on a cached manifest
+// uses to take the bar down: a warning the office extends has to reach the
+// screen, not wait for the wording to change. It is compared only when the
+// stored expiry is the publisher's own end — when the rule ceiling supplied it
+// instead, the value is `now + maximum duration`, recomputed on every poll, and
+// comparing that would re-push a manifest a minute for a bar that reads the same.
+func (d displayedAlert) differsFrom(alert nwsProperties, expires time.Time) bool {
+	if d.event != alert.Event || d.headline != alert.Headline ||
 		d.areaDescription != alert.AreaDescription || d.instruction != alert.Instruction ||
-		d.severity != alert.Severity
+		d.severity != alert.Severity {
+		return true
+	}
+	end := alertEnd(alert)
+	if end == nil || !expires.Equal(*end) {
+		return false
+	}
+	return d.expiresAt == nil || !d.expiresAt.Equal(expires)
 }
 
 // bumpRuleScreens raises the manifest version of every screen a rule targets,
@@ -367,12 +380,18 @@ func bounded(value string, limit int) string {
 	return value[:limit]
 }
 
+// alertEnd is the end the publisher stated, if any. `ends` is the authoritative
+// one when both are present.
+func alertEnd(alert nwsProperties) *time.Time {
+	if alert.Ends != nil {
+		return alert.Ends
+	}
+	return alert.Expires
+}
+
 func alertExpiry(alert nwsProperties, now time.Time, maxMinutes int) time.Time {
 	maximum := now.Add(time.Duration(maxMinutes) * time.Minute)
-	candidate := alert.Expires
-	if alert.Ends != nil {
-		candidate = alert.Ends
-	}
+	candidate := alertEnd(alert)
 	if candidate == nil || !candidate.After(now) || candidate.After(maximum) {
 		return maximum
 	}

@@ -498,6 +498,19 @@ func (s *Service) SaveRule(ctx context.Context, id uuid.UUID, input RuleInput, u
 			return Rule{}, err
 		}
 	}
+	// Only a ticker rule is delivered in the manifest, so only a save that
+	// involves one owes any screen a new manifest. A rule that answers with a
+	// takeover — renamed, retargeted, or disabled — changes nothing a Player
+	// holds.
+	tickerInvolved := input.ResponseMode == "ticker" || previousResponseMode == "ticker"
+	// Screens this save drops still hold a manifest containing the bar, so their
+	// targets are read before the rewrite and refreshed alongside the new ones.
+	var previousScreenIDs []uuid.UUID
+	if tickerInvolved && !creating {
+		if previousScreenIDs, err = s.ruleScreenIDs(ctx, id); err != nil {
+			return Rule{}, err
+		}
+	}
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return Rule{}, err
@@ -545,10 +558,16 @@ func (s *Service) SaveRule(ctx context.Context, id uuid.UUID, input RuleInput, u
 			return Rule{}, err
 		}
 	}
-	// A ticker rule is delivered in the manifest, so its screens need a new
-	// manifest to see an edit at all — a changed height, speed, or target set.
-	if err = s.refreshRuleScreens(ctx, id, "nws.rule.saved"); err != nil {
-		return Rule{}, err
+	// A ticker's screens need a new manifest to see an edit at all — a changed
+	// height, speed, or target set — and so do the screens the edit dropped.
+	if tickerInvolved {
+		currentScreenIDs, screenErr := s.ruleScreenIDs(ctx, id)
+		if screenErr != nil {
+			return Rule{}, screenErr
+		}
+		if err = s.bumpScreens(ctx, uniqueUUIDs(append(previousScreenIDs, currentScreenIDs...)), "nws.rule.saved"); err != nil {
+			return Rule{}, err
+		}
 	}
 	rules, err := s.Rules(ctx)
 	if err != nil {
