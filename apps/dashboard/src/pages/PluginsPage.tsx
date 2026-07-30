@@ -52,6 +52,7 @@ const formSchema = z
       .min(1, "Lead time must be between 1 and 43200 minutes.")
       .max(43_200, "Lead time must be between 1 and 43200 minutes."),
     completionText: z.string().trim().max(280),
+    showConfetti: z.boolean(),
     displayMode: z.enum(["overlay", "push"]),
     progressFill: z.enum(["none", "drain"]),
     heightPx: z.coerce
@@ -118,6 +119,7 @@ const defaultValues: FormValues = {
   timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
   leadMinutes: 15,
   completionText: "",
+  showConfetti: false,
   displayMode: "overlay",
   progressFill: "none",
   heightPx: 72,
@@ -391,6 +393,7 @@ export function CountdownBarEditorPage() {
       timezone: value.timezone,
       leadMinutes: value.leadTimeSeconds / 60,
       completionText: value.completionText,
+      showConfetti: value.showConfetti ?? false,
       displayMode: value.displayMode,
       progressFill: value.progressFill ?? "none",
       heightPx: value.heightPx,
@@ -486,6 +489,7 @@ export function CountdownBarEditorPage() {
       timezone: values.timezone,
       leadTimeSeconds: values.leadMinutes * 60,
       completionText: values.completionText,
+      showConfetti: values.showConfetti,
       displayMode: values.displayMode,
       progressFill: values.progressFill,
       heightPx: values.heightPx,
@@ -535,6 +539,10 @@ export function CountdownBarEditorPage() {
             hint="Shown for one minute after the target; leave blank to hide at zero."
             error={errors.completionText?.message}
             {...register("completionText")}
+          />
+          <Checkbox
+            label="Show confetti when the countdown reaches zero"
+            {...register("showConfetti")}
           />
         </Panel>
 

@@ -80,6 +80,7 @@ func TestCountdownBarLifecycleAndManifestTargeting(t *testing.T) {
 	input := validInput()
 	input.ContentPadding = intPointer(0)
 	input.TextScale = 175
+	input.ShowConfetti = true
 	input.TargetScope = "locations"
 	input.TargetIDs = []uuid.UUID{locationID}
 	created, err := service.CreateCountdownBar(ctx, userID, input)
@@ -110,11 +111,11 @@ func TestCountdownBarLifecycleAndManifestTargeting(t *testing.T) {
 	var customMetricsFound bool
 	for _, plugin := range targeted {
 		if config, ok := plugin.Config.(ManifestCountdownConfig); ok && plugin.ID == created.ID {
-			customMetricsFound = config.ContentPadding == 0 && config.TextScale == 175
+			customMetricsFound = config.ContentPadding == 0 && config.TextScale == 175 && config.ShowConfetti
 		}
 	}
-	if created.ContentPadding == nil || *created.ContentPadding != 0 || created.TextScale != 175 || !customMetricsFound {
-		t.Fatalf("custom text metrics were not persisted and projected: created=%#v manifest=%#v", created, targeted)
+	if created.ContentPadding == nil || *created.ContentPadding != 0 || created.TextScale != 175 || !created.ShowConfetti || !customMetricsFound {
+		t.Fatalf("custom display options were not persisted and projected: created=%#v manifest=%#v", created, targeted)
 	}
 	other, err := service.ManifestForScreen(ctx, otherScreen)
 	config, _ := firstConfig(other).(ManifestCountdownConfig)

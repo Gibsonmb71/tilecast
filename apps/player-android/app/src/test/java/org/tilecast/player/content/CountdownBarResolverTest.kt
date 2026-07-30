@@ -43,7 +43,11 @@ class CountdownBarResolverTest {
         ),
     )
 
-    private fun oneTime(progressFill: String = "none") = ManifestPlugin(
+    private fun oneTime(
+        progressFill: String = "none",
+        completionText: String = "Lunch is over",
+        showConfetti: Boolean = false,
+    ) = ManifestPlugin(
         id = "bar-1",
         type = "countdown_bar",
         version = 1,
@@ -52,6 +56,8 @@ class CountdownBarResolverTest {
             targetTime = null,
             daysOfWeek = emptyList(),
             oneTimeAt = "2026-07-27T16:00:00Z",
+            completionText = completionText,
+            showConfetti = showConfetti,
         ),
     )
 
@@ -70,11 +76,22 @@ class CountdownBarResolverTest {
 
     @Test
     fun `shows completion text for one minute and then hides`() {
-        assertEquals(
-            "Lunch is over",
-            resolveCountdownBar(listOf(oneTime()), Instant.parse("2026-07-27T16:00:30Z"))?.value,
-        )
+        val completed =
+            resolveCountdownBar(listOf(oneTime()), Instant.parse("2026-07-27T16:00:30Z"))
+        assertEquals("", completed?.message)
+        assertEquals("Lunch is over", completed?.value)
         assertNull(resolveCountdownBar(listOf(oneTime()), Instant.parse("2026-07-27T16:01:01Z")))
+    }
+
+    @Test
+    fun `shows confetti briefly at zero without keeping an empty bar visible`() {
+        val plugin = oneTime(completionText = "", showConfetti = true)
+        val celebrating =
+            resolveCountdownBar(listOf(plugin), Instant.parse("2026-07-27T16:00:04Z"))
+        assertEquals(true, celebrating?.completed)
+        assertEquals(false, celebrating?.showBar)
+        assertEquals(true, celebrating?.showConfetti)
+        assertNull(resolveCountdownBar(listOf(plugin), Instant.parse("2026-07-27T16:00:09Z")))
     }
 
     @Test

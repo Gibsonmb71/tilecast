@@ -71,6 +71,7 @@ const storedInstance = {
   timezone: "America/New_York",
   leadTimeSeconds: 900,
   completionText: "",
+  showConfetti: true,
   displayMode: "overlay",
   progressFill: "drain",
   heightPx: 72,
@@ -236,6 +237,7 @@ describe("Plugins", () => {
     expect(submitted[0]?.progressFill).toBe("drain");
     expect(submitted[0]?.contentPadding).toBe(2);
     expect(submitted[0]?.textScale).toBe(125);
+    expect(submitted[0]?.showConfetti).toBe(true);
   }, 10_000);
 
   it("submits the checkbox groups it renders", async () => {
@@ -277,6 +279,20 @@ describe("Plugins", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create instance" }));
     await waitFor(() => expect(submitted).toHaveLength(1));
     expect(submitted[0]?.progressFill).toBe("drain");
+  }, 10_000);
+
+  it("submits the optional confetti celebration", async () => {
+    renderRoute(<CountdownBarEditorPage />, "/plugins/countdown-bar/new");
+    await waitFor(() => expect(screen.getByLabelText("Name")).toBeEnabled());
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Lunch" },
+    });
+    fireEvent.click(
+      screen.getByLabelText("Show confetti when the countdown reaches zero"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Create instance" }));
+    await waitFor(() => expect(submitted).toHaveLength(1));
+    expect(submitted[0]?.showConfetti).toBe(true);
   }, 10_000);
 
   it("submits custom padding and text size", async () => {

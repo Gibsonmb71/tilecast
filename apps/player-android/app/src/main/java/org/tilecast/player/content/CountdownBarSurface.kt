@@ -1,8 +1,10 @@
 package org.tilecast.player.content
 
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,6 +26,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -32,6 +37,8 @@ import androidx.compose.material3.Text
 import kotlinx.coroutines.delay
 import org.tilecast.player.network.ManifestPlugin
 import java.time.Instant
+import kotlin.math.sin
+import kotlin.random.Random
 
 private val BarBackground = Color(0xF50D141B)
 private val BarBorder = Color(0x3DFFFFFF)
@@ -79,8 +86,9 @@ internal fun WithPluginBars(
                 null
             }
         }
-    val height = ticker?.heightPx ?: countdown?.heightPx
-    val pushed = (ticker?.displayMode ?: countdown?.displayMode) == "push"
+    val visibleCountdown = countdown?.takeIf { it.showBar }
+    val height = ticker?.heightPx ?: visibleCountdown?.heightPx
+    val pushed = (ticker?.displayMode ?: visibleCountdown?.displayMode) == "push"
     // content() is called from exactly one place in exactly one layout, whatever
     // the bar is doing. Moving it between call sites — or between a Column and a
     // Box when the mode changes — would tear down and restart the media item,
@@ -99,7 +107,83 @@ internal fun WithPluginBars(
         if (ticker != null) {
             AlertTickerBar(ticker, barSlot)
         } else {
-            countdown?.let { bar -> CountdownBar(bar, barSlot) }
+            visibleCountdown?.let { bar -> CountdownBar(bar, barSlot) }
+            countdown?.takeIf { it.showConfetti }?.let { celebration ->
+                CountdownConfetti(celebration, Modifier.fillMaxSize())
+            }
+        }
+    }
+}
+
+private data class ConfettiPiece(
+    val startX: Float,
+    val drift: Float,
+    val delay: Float,
+    val turns: Float,
+    val width: Float,
+    val height: Float,
+    val color: Color,
+)
+
+private fun confettiPieces(key: String): List<ConfettiPiece> {
+    val random = Random(key.hashCode())
+    val colors =
+        listOf(
+            Color(0xFFF7C948),
+            Color(0xFFF45B69),
+            Color(0xFF4CC9F0),
+            Color(0xFF7BD389),
+            Color(0xFFA78BFA),
+        )
+    return List(72) {
+        ConfettiPiece(
+            startX = random.nextFloat(),
+            drift = random.nextFloat() * 0.2f - 0.1f,
+            delay = random.nextFloat() * 0.16f,
+            turns = 1f + random.nextFloat() * 2f,
+            width = 7f + random.nextFloat() * 7f,
+            height = 11f + random.nextFloat() * 10f,
+            color = colors[random.nextInt(colors.size)],
+        )
+    }
+}
+
+@Composable
+private fun CountdownConfetti(
+    active: ActiveCountdownBar,
+    modifier: Modifier = Modifier,
+) {
+    val key = "${active.id}:${active.targetAt}"
+    val progress = remember(key) { Animatable(0f) }
+    val pieces = remember(key) { confettiPieces(key) }
+    LaunchedEffect(key) {
+        progress.snapTo(0f)
+        progress.animateTo(1f, tween(durationMillis = 6_500, easing = LinearEasing))
+    }
+    Canvas(modifier) {
+        pieces.forEach { piece ->
+            val position =
+                ((progress.value - piece.delay) / (1f - piece.delay)).coerceIn(0f, 1f)
+            if (position <= 0f) return@forEach
+            val pieceWidth = piece.width * density
+            val pieceHeight = piece.height * density
+            val x =
+                size.width * piece.startX +
+                    sin(position * Math.PI.toFloat() * 3f) * size.width * piece.drift
+            val y = -pieceHeight + position * (size.height + pieceHeight * 2f)
+            val alpha =
+                if (position < 0.88f) {
+                    1f
+                } else {
+                    ((1f - position) / 0.12f).coerceIn(0f, 1f)
+                }
+            rotate(piece.turns * 360f * position, Offset(x, y)) {
+                drawRect(
+                    color = piece.color.copy(alpha = alpha),
+                    topLeft = Offset(x - pieceWidth / 2f, y),
+                    size = Size(pieceWidth, pieceHeight),
+                )
+            }
         }
     }
 }
@@ -134,16 +218,18 @@ private fun CountdownBar(active: ActiveCountdownBar, modifier: Modifier = Modifi
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                if (active.message.isNotEmpty()) {
+                    Text(
+                        active.message,
+                        color = Color.White,
+                        fontSize = active.fontSizeSp.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 Text(
-                    active.message,
-                    color = Color.White,
-                    fontSize = active.fontSizeSp.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    "  ${active.value}",
+                    if (active.message.isEmpty()) active.value else "  ${active.value}",
                     color = Color.White,
                     fontSize = active.fontSizeSp.sp,
                     fontWeight = FontWeight.Bold,

@@ -25,6 +25,8 @@ internal data class ActiveCountdownBar(
     val priority: Int,
     val targetAt: Instant,
     val completed: Boolean,
+    val showBar: Boolean,
+    val showConfetti: Boolean,
     /**
      * Share of the lead window still to run: 1 when the bar appears, 0 at the
      * target, and 0 while completion text shows. Null when the instance asked
@@ -38,6 +40,7 @@ internal data class ActiveCountdownBar(
 )
 
 private val CompletionDisplay: Duration = Duration.ofMinutes(1)
+private val ConfettiDisplay: Duration = Duration.ofSeconds(8)
 
 internal fun resolveCountdownBar(
     plugins: List<ManifestPlugin>,
@@ -53,22 +56,36 @@ internal fun resolveCountdownBar(
         for (target in countdownBarTargets(plugin, at)) {
             val remainingMs = Duration.between(at, target).toMillis()
             val completionText = config.completionText.trim()
-            val completed =
+            val completionVisible =
                 remainingMs <= 0 &&
                     remainingMs >= -CompletionDisplay.toMillis() &&
                     completionText.isNotEmpty()
-            if (remainingMs > leadMs || (remainingMs <= 0 && !completed)) continue
+            val confettiVisible =
+                remainingMs <= 0 &&
+                    remainingMs >= -ConfettiDisplay.toMillis() &&
+                    config.showConfetti
+            if (remainingMs > leadMs || (remainingMs <= 0 && !completionVisible && !confettiVisible)) continue
             val fraction = if (leadMs > 0) (remainingMs.toFloat() / leadMs).coerceIn(0f, 1f) else 0f
             active +=
                 ActiveCountdownBar(
                     id = plugin.id,
-                    message = config.message,
-                    value = if (completed) completionText else compactCountdown(remainingMs),
+                    // Completion text is the whole ending message. Retaining
+                    // the normal prefix would render phrases such as
+                    // "Lunch ends in Lunch is over".
+                    message = if (remainingMs <= 0) "" else config.message,
+                    value =
+                        when {
+                            completionVisible -> completionText
+                            remainingMs > 0 -> compactCountdown(remainingMs)
+                            else -> ""
+                        },
                     displayMode = config.displayMode,
                     heightPx = config.heightPx.coerceIn(40, 320),
                     priority = config.priority,
                     targetAt = target,
-                    completed = completed,
+                    completed = remainingMs <= 0,
+                    showBar = remainingMs > 0 || completionVisible,
+                    showConfetti = confettiVisible,
                     remainingFraction = if (config.progressFill == "drain") fraction else null,
                     contentPadding = config.contentPadding.coerceIn(0, 40),
                     fontSizeSp = countdownBarFontSize(config.heightPx, config.textScale),

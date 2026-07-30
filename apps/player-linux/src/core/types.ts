@@ -101,6 +101,7 @@ export interface ManifestCountdownBarConfig {
   timezone: string;
   leadTimeSeconds: number;
   completionText?: string;
+  showConfetti?: boolean;
   displayMode: "overlay" | "push";
   heightPx: number;
   /** Absent on manifests published before the fill existed. */

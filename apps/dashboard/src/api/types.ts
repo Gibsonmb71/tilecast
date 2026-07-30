@@ -782,6 +782,7 @@ export type CountdownBarInput = {
   timezone: string;
   leadTimeSeconds: number;
   completionText: string;
+  showConfetti: boolean;
   displayMode: "overlay" | "push";
   heightPx: number;
   progressFill: "none" | "drain";

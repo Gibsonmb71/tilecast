@@ -76,6 +76,9 @@
         position: relative;
         z-index: 1;
       }
+      #countdown-bar .countdown-message:empty {
+        display: none;
+      }
       #countdown-bar .countdown-value {
         font-variant-numeric: tabular-nums;
         font-weight: 750;
@@ -97,9 +100,45 @@
         border-right: 2px solid rgba(255, 255, 255, 0.42);
         transition: width 960ms linear;
       }
+      #countdown-confetti {
+        position: absolute;
+        inset: 0;
+        z-index: 30;
+        overflow: hidden;
+        pointer-events: none;
+      }
+      .countdown-confetti__piece {
+        position: absolute;
+        top: -24px;
+        left: var(--confetti-x);
+        width: var(--confetti-width);
+        height: var(--confetti-height);
+        border-radius: 2px;
+        opacity: 0;
+        background: var(--confetti-color);
+        animation: countdown-confetti-fall var(--confetti-duration) linear
+          var(--confetti-delay) both;
+      }
+      @keyframes countdown-confetti-fall {
+        0% {
+          opacity: 1;
+          transform: translate3d(0, -24px, 0) rotate(0deg);
+        }
+        88% {
+          opacity: 1;
+        }
+        100% {
+          opacity: 0;
+          transform: translate3d(var(--confetti-drift), calc(100vh + 48px), 0)
+            rotate(var(--confetti-spin));
+        }
+      }
       @media (prefers-reduced-motion: reduce) {
         #countdown-bar .countdown-fill {
           transition: none;
+        }
+        #countdown-confetti {
+          display: none;
         }
       }
       /* The Emergency Alerts ticker shares the bar slot and the push geometry
@@ -297,6 +336,7 @@
       <span class="countdown-message"></span>
       <span class="countdown-value"></span>
     </div>
+    <div id="countdown-confetti" aria-hidden="true"></div>
     <div id="alert-ticker" role="alert" aria-live="assertive">
       <span class="ticker-severity"></span>
       <span class="ticker-viewport">
