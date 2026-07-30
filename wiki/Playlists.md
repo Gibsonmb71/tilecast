@@ -27,8 +27,8 @@ Every content change increments the playlist revision. Screens receive a new man
 
 | Mode    | Result                                          |
 | ------- | ----------------------------------------------- |
-| Contain | Show the entire item; unused space may remain   |
-| Cover   | Fill the screen; edges may be cropped           |
+| Contain | Show the entire item. Unused space can remain.  |
+| Cover   | Fill the screen. The Player can crop the edges. |
 | Stretch | Fill the screen without preserving aspect ratio |
 
 ### Transition
@@ -70,7 +70,7 @@ Studio shows playlist warnings when an item is not ready or no longer valid. Res
 
 ## Duplicate a playlist
 
-Use **Duplicate** when creating a variation of an existing playlist. The copy is independent; editing it does not change the original.
+Use **Duplicate** to make a variation of a playlist. The copy is independent. Changes to the copy do not change the original.
 
 ## Assign a playlist directly
 

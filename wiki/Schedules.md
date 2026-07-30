@@ -84,7 +84,9 @@ When no schedule matches, the direct screen assignment plays. If the screen has 
 
 Player manifests include relevant schedules and the required playlists. A player can continue evaluating received schedules while offline.
 
-Offline scheduling depends on the device clock and timezone data. Studio warns about reported clock skew; Tilecast does not silently rewrite the player's clock.
+Offline scheduling uses the device clock and timezone data. Studio reports clock skew.
+
+Tilecast does not change the Player clock.
 
 An offline player cannot receive a schedule that was created after it disconnected.
 

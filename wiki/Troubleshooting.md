@@ -2,7 +2,12 @@
 
 Start with the narrowest failing layer: server, network, pairing, content, manifest, playback, Android capability, or the Linux graphical session.
 
-Most sections below apply to both players. Issues specific to the Linux AppImage — the graphical session, systemd service, framebuffer preview, and AppImage self-update — are grouped under [Linux player issues](#linux-player-issues).
+Most sections apply to both Players. [Linux player issues](#linux-player-issues) contains information about these Linux functions:
+
+- Graphical session
+- systemd service
+- Framebuffer preview
+- AppImage self-update
 
 ## Server does not open
 
@@ -223,7 +228,13 @@ ls -l ~/tilecast/tilecast-player.AppImage
 chmod +x ~/tilecast/tilecast-player.AppImage
 ```
 
-If the terminal reports a FUSE error, start the player with `--appimage-extract-and-run` and confirm the systemd unit includes that argument. This supported mode is the Tilecast default and needs no FUSE package while retaining managed self-updates. If the systemd log reports that the display cannot be opened, the service started without a graphical session or has the wrong `DISPLAY` or `WAYLAND_DISPLAY` value.
+If the terminal reports a FUSE error, start the Player with `--appimage-extract-and-run`. Make sure that the systemd service contains this argument.
+
+This supported mode is the Tilecast default. It does not require a FUSE package and supports managed self-updates.
+
+If systemd cannot open the display, the service probably started without a graphical session. The display environment value can also be incorrect.
+
+Check `DISPLAY` and `WAYLAND_DISPLAY`.
 
 ### The service is running but no window appears
 
@@ -258,7 +269,9 @@ rm -f credential.json pairing-session.json
 systemctl --user start tilecast-player
 ```
 
-Preserving `installation.json` keeps the stable player installation ID. Moving the entire data directory aside creates a completely new local identity and removes cached content, so the old screen record must then be cleaned up in Studio.
+Preserving `installation.json` keeps the stable Player installation ID. Moving the complete data directory creates a new local identity.
+
+This operation also removes cached content. After this operation, remove the old screen record in Studio.
 
 ### Content is black, corrupted, or stuttering
 
@@ -269,7 +282,11 @@ TILECAST_HW_DECODE=0 TILECAST_WINDOWED=1 ~/tilecast/tilecast-player.AppImage
 TILECAST_DISABLE_GPU=1 TILECAST_WINDOWED=1 ~/tilecast/tilecast-player.AppImage
 ```
 
-Apply a successful setting to the service with `systemctl --user edit tilecast-player`. Prefer H.264 video, test the actual display resolution and refresh rate, avoid overlapping videos in multiple layout zones on low-end hardware, and confirm media finished downloading before disconnecting the network.
+Apply a successful setting with `systemctl --user edit tilecast-player`. Use H.264 video when possible.
+
+Test the display resolution and refresh rate. On low-performance hardware, do not overlap videos in different Layout zones.
+
+Before network disconnection, make sure that all media downloads are complete.
 
 ### Cached content disappears after reboot
 
@@ -284,17 +301,41 @@ Keep the data directory on persistent local storage.
 
 ### Live preview is unavailable or black
 
-On X11, Tilecast captures the actual display framebuffer, so video overlays and website content appear in the preview. On Wayland, screen capture usually requires a desktop portal and may show a prompt an unattended kiosk cannot answer; the player defaults to window capture there, which can miss hardware-overlay video and embedded website frames.
+On X11, Tilecast captures the display framebuffer. Thus, video overlays and website content appear in the preview.
 
-Options: use X11 for the kiosk session; accept and persist the Wayland portal permission when supported; test `TILECAST_PREVIEW_SCREEN_CAPTURE=1`; or disable framebuffer capture with `TILECAST_PREVIEW_SCREEN_CAPTURE=0` when the portal blocks startup. Preview failure does not stop normal playback.
+On Wayland, screen capture usually requires a desktop portal. The portal can show a prompt that an unattended kiosk cannot answer.
+
+The Player uses window capture by default on Wayland. Window capture can omit hardware-overlay video and embedded website frames.
+
+Use one of these options:
+
+- Use X11 for the kiosk session.
+- Accept and save the Wayland portal permission when the system supports this operation.
+- Test with `TILECAST_PREVIEW_SCREEN_CAPTURE=1`.
+- Set `TILECAST_PREVIEW_SCREEN_CAPTURE=0` when the portal blocks startup.
+
+A preview failure does not stop normal playback.
 
 ### Remote AppImage update fails
 
-Studio-driven Linux updates require the player to be running as a managed AppImage. AppImage runtime extraction through `--appimage-extract-and-run` remains managed because the runtime preserves `$APPIMAGE`; a development run or manually unpacked `squashfs-root/AppRun` does not. Also verify the AppImage and its parent directory are writable by the kiosk user, the release is a Linux release with a signed update manifest, there is enough free space for the staged AppImage, and the systemd service points to the same AppImage that is currently running.
+Studio-driven Linux updates require a managed AppImage. The `--appimage-extract-and-run` mode keeps the managed state because it preserves `$APPIMAGE`.
+
+A development run does not have a managed state. A manually unpacked `squashfs-root/AppRun` also does not have a managed state.
+
+Make sure that these conditions are correct:
+
+- The kiosk user can write to the AppImage and its parent directory.
+- The release is a Linux release with a signed update manifest.
+- The device has sufficient free space for the staged AppImage.
+- The systemd service points to the active AppImage.
 
 ### The display still sleeps or shows a lock screen
 
-Tilecast requests a display-sleep blocker, but desktop policies can still lock or suspend the session. Disable lock-screen, screensaver, suspend, and hibernate behavior for the kiosk account, and test the monitor's own sleep timer separately. Active hours intentionally replace playback with a black or configured outside-hours presentation; an emergency overrides that.
+Tilecast requests a display-sleep blocker. Desktop policies can still lock or suspend the session.
+
+Disable the lock screen, screensaver, suspend, and hibernate functions for the kiosk account. Test the monitor sleep timer separately.
+
+Active hours replace playback with black or the configured outside-hours presentation. An emergency has precedence over this behavior.
 
 ## Still stuck
 
