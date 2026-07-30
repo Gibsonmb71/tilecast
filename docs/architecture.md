@@ -11,7 +11,7 @@ Tilecast begins as a modular monolith. The server compiles into one Go binary, s
 - `internal/httpapi` translates versioned HTTP contracts to application operations. Database rows are not serialized directly.
 - `internal/media` owns resumable upload state, generated storage keys, local storage, trusted inspection, compatibility decisions, persistent jobs, and delivery metadata.
 - `internal/playlists` owns ordered playlists, direct assignments, per-screen manifest versions, manifest contracts, and summarized synchronization status.
-- `internal/plugins` owns the closed built-in plugin registry, Countdown Bar instances and targets, and per-screen plugin projection. The registry also surfaces bounded workflow plugins such as Forms, whose approved records continue through the ordinary Data Source projection. Plugins do not load third-party code.
+- `internal/plugins` owns the closed built-in plugin registry, Countdown Bar instances and targets, the projection of live Emergency Alerts tickers, and per-screen plugin projection. The registry also surfaces bounded workflow plugins such as Forms, whose approved records continue through the ordinary Data Source projection. Plugins do not load third-party code and reach the Linux renderer on a channel independent of presentation playback.
 - `internal/web` serves immutable dashboard assets and the SPA fallback.
 - `apps/dashboard/src/api` owns browser API types and transport behavior.
 - `packages/*-schema` are reserved for stable, versioned cross-application contracts as those protocols are introduced.

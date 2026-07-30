@@ -577,9 +577,18 @@ export type NWSAlertRule = {
   eventNames: string[];
   minimumSeverity: "Minor" | "Moderate" | "Severe" | "Extreme";
   minimumUrgency: "Unknown" | "Future" | "Expected" | "Immediate";
+  /**
+   * How a matching alert reaches the screen: `takeover` replaces what is playing
+   * and restores it afterwards, `ticker` leaves playback running and shows the
+   * alert as a bar along the bottom.
+   */
+  responseMode: "takeover" | "ticker";
   presentationMode: "builtin" | "playlist";
   playlistId?: string;
   playlistName?: string;
+  tickerDisplayMode: "overlay" | "push";
+  tickerHeightPx: number;
+  tickerSpeed: "slow" | "medium" | "fast";
   maximumDurationMinutes: number;
   screenIds: string[];
   groupIds: string[];

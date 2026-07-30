@@ -145,7 +145,24 @@ interface RendererCountdownBarPlugin {
   };
 }
 
-type RendererPlugin = RendererCountdownBarPlugin;
+interface RendererAlertTickerPlugin {
+  id: string;
+  type: "alert_ticker";
+  version: 1;
+  config: {
+    name?: string;
+    message: string;
+    severity?: string;
+    event?: string;
+    displayMode: "overlay" | "push";
+    heightPx: number;
+    speed: "slow" | "medium" | "fast";
+    priority: number;
+    expiresAt: string;
+  };
+}
+
+type RendererPlugin = RendererCountdownBarPlugin | RendererAlertTickerPlugin;
 
 declare const tilecast: TilecastBridge;
 
@@ -163,6 +180,21 @@ const countdownValue = countdownBar.querySelector(
 ) as HTMLSpanElement;
 const countdownFill = countdownBar.querySelector(
   ".countdown-fill",
+) as HTMLSpanElement;
+const alertTickerBar = document.getElementById(
+  "alert-ticker",
+) as HTMLDivElement;
+const alertTickerSeverity = alertTickerBar.querySelector(
+  ".ticker-severity",
+) as HTMLSpanElement;
+const alertTickerViewport = alertTickerBar.querySelector(
+  ".ticker-viewport",
+) as HTMLSpanElement;
+const alertTickerTrack = alertTickerBar.querySelector(
+  ".ticker-track",
+) as HTMLSpanElement;
+const alertTickerText = alertTickerBar.querySelector(
+  ".ticker-message",
 ) as HTMLSpanElement;
 
 let frontLayer = layerA;
@@ -342,7 +374,25 @@ let pluginTimer: number | null = null;
 let activePlugins: RendererPlugin[] = [];
 let pluginClockOffsetMs = 0;
 
+/**
+ * The bar slot holds one bar. An emergency ticker takes it whenever one is
+ * active: a Countdown Bar counting down to lunch must never be what a screen is
+ * showing instead of a tornado warning. The countdown is not lost — it returns
+ * as soon as the alert clears, and playback is untouched throughout.
+ */
 function updatePluginSurface(): void {
+  const ticker = tilecastAlertTicker.resolve(
+    activePlugins,
+    new Date(),
+    pluginClockOffsetMs,
+  );
+  if (ticker) {
+    countdownBar.classList.remove("visible");
+    showAlertTicker(ticker);
+    return;
+  }
+  alertTickerBar.classList.remove("visible");
+  activeTickerKey = "";
   // Schedule resolution lives in countdown-bar-resolver so the surface and its
   // unit tests share one implementation of the timezone and priority rules.
   const selected = tilecastCountdownBar.resolve(
@@ -379,6 +429,44 @@ function updatePluginSurface(): void {
       ? "0"
       : `${selected.remainingFraction * 100}%`;
   countdownBar.classList.add("visible");
+}
+
+/**
+ * Identity of the alert currently scrolling. The surface re-resolves every
+ * second, and rewriting the text or the animation on each tick would restart the
+ * scroll from the right edge once a second — the message would never be read.
+ */
+let activeTickerKey = "";
+
+function showAlertTicker(ticker: TilecastActiveAlertTicker): void {
+  document.documentElement.style.setProperty(
+    "--plugin-height",
+    `${ticker.heightPx}px`,
+  );
+  contentStage.classList.toggle("plugin-push", ticker.displayMode === "push");
+  const key = `${ticker.id}${ticker.message}${ticker.severity}${ticker.pixelsPerSecond}${ticker.heightPx}`;
+  if (key !== activeTickerKey) {
+    activeTickerKey = key;
+    alertTickerSeverity.textContent = ticker.severity;
+    alertTickerSeverity.hidden = ticker.severity === "";
+    alertTickerText.textContent = ticker.message;
+    alertTickerBar.classList.add("visible");
+    // The message travels its own width plus the bar's, so it enters from the
+    // right edge and leaves past the left one. Duration is derived from that
+    // distance rather than fixed, so a long alert scrolls for longer instead of
+    // scrolling faster and becoming unreadable.
+    const distance =
+      alertTickerViewport.clientWidth + alertTickerText.scrollWidth;
+    const seconds = Math.max(6, distance / ticker.pixelsPerSecond);
+    alertTickerTrack.style.setProperty("--ticker-distance", `${distance}px`);
+    // Restarting the animation requires it to be taken off the element first;
+    // setting the same name again would otherwise be a no-op.
+    alertTickerTrack.style.animation = "none";
+    void alertTickerTrack.offsetWidth;
+    alertTickerTrack.style.animation = `ticker-scroll ${seconds}s linear infinite`;
+    return;
+  }
+  alertTickerBar.classList.add("visible");
 }
 
 // ------------------------------------------------- render-tree interpreter

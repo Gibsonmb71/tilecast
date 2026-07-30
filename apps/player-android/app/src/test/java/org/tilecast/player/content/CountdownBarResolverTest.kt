@@ -4,7 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import org.tilecast.player.network.ManifestCountdownBarConfig
+import org.tilecast.player.network.ManifestPluginConfig
 import org.tilecast.player.network.ManifestPlugin
 import java.time.Instant
 
@@ -25,7 +25,7 @@ class CountdownBarResolverTest {
         id = id,
         type = "countdown_bar",
         version = 1,
-        config = ManifestCountdownBarConfig(
+        config = ManifestPluginConfig(
             name = "Lunch",
             message = message,
             scheduleType = "weekly",

@@ -50,6 +50,11 @@ type Monitor struct {
 	UpdatedAt           time.Time  `json:"updatedAt"`
 }
 
+// A rule answers a matching alert in one of two ways. `takeover` replaces what
+// is playing with fullscreen alert content and restores playback when the alert
+// clears. `ticker` leaves playback running and delivers the alert as a bar
+// through the Player's plugin channel — the same channel and the same
+// overlay/push geometry the Countdown Bar uses.
 type Rule struct {
 	ID                     uuid.UUID   `json:"id"`
 	Name                   string      `json:"name"`
@@ -57,9 +62,13 @@ type Rule struct {
 	EventNames             []string    `json:"eventNames"`
 	MinimumSeverity        string      `json:"minimumSeverity"`
 	MinimumUrgency         string      `json:"minimumUrgency"`
+	ResponseMode           string      `json:"responseMode"`
 	PresentationMode       string      `json:"presentationMode"`
 	PlaylistID             *uuid.UUID  `json:"playlistId,omitempty"`
 	PlaylistName           string      `json:"playlistName,omitempty"`
+	TickerDisplayMode      string      `json:"tickerDisplayMode"`
+	TickerHeightPX         int         `json:"tickerHeightPx"`
+	TickerSpeed            string      `json:"tickerSpeed"`
 	MaximumDurationMinutes int         `json:"maximumDurationMinutes"`
 	ScreenIDs              []uuid.UUID `json:"screenIds"`
 	GroupIDs               []uuid.UUID `json:"groupIds"`
@@ -76,8 +85,12 @@ type RuleInput struct {
 	EventNames             []string    `json:"eventNames"`
 	MinimumSeverity        string      `json:"minimumSeverity"`
 	MinimumUrgency         string      `json:"minimumUrgency"`
+	ResponseMode           string      `json:"responseMode"`
 	PresentationMode       string      `json:"presentationMode"`
 	PlaylistID             *uuid.UUID  `json:"playlistId"`
+	TickerDisplayMode      string      `json:"tickerDisplayMode"`
+	TickerHeightPX         int         `json:"tickerHeightPx"`
+	TickerSpeed            string      `json:"tickerSpeed"`
 	MaximumDurationMinutes int         `json:"maximumDurationMinutes"`
 	ScreenIDs              []uuid.UUID `json:"screenIds"`
 	GroupIDs               []uuid.UUID `json:"groupIds"`
@@ -335,7 +348,7 @@ func normalizeCodes(values []string, length int, label string) ([]string, error)
 }
 
 func (s *Service) Rules(ctx context.Context) ([]Rule, error) {
-	rows, err := s.db.Query(ctx, `SELECT r.id,r.name,r.enabled,r.event_names,r.minimum_severity,r.minimum_urgency,r.presentation_mode,r.playlist_id,COALESCE(p.name,''),r.maximum_duration_minutes,r.created_at,r.updated_at,r.managed_data_source_id,r.managed_widget_id,r.managed_playlist_id,
+	rows, err := s.db.Query(ctx, `SELECT r.id,r.name,r.enabled,r.event_names,r.minimum_severity,r.minimum_urgency,r.response_mode,r.presentation_mode,r.playlist_id,COALESCE(p.name,''),r.ticker_display_mode,r.ticker_height_px,r.ticker_speed,r.maximum_duration_minutes,r.created_at,r.updated_at,r.managed_data_source_id,r.managed_widget_id,r.managed_playlist_id,
 		COALESCE(array_agg(t.screen_id) FILTER (WHERE t.screen_id IS NOT NULL),'{}'),COALESCE(array_agg(t.screen_group_id) FILTER (WHERE t.screen_group_id IS NOT NULL),'{}')
 		FROM alert_rules r LEFT JOIN playlists p ON p.id=r.playlist_id LEFT JOIN alert_rule_targets t ON t.rule_id=r.id
 		GROUP BY r.id,p.name ORDER BY r.position,r.name,r.id`)
@@ -346,7 +359,7 @@ func (s *Service) Rules(ctx context.Context) ([]Rule, error) {
 	result := []Rule{}
 	for rows.Next() {
 		var rule Rule
-		if err = rows.Scan(&rule.ID, &rule.Name, &rule.Enabled, &rule.EventNames, &rule.MinimumSeverity, &rule.MinimumUrgency, &rule.PresentationMode, &rule.PlaylistID, &rule.PlaylistName, &rule.MaximumDurationMinutes, &rule.CreatedAt, &rule.UpdatedAt, &rule.ManagedDataSourceID, &rule.ManagedWidgetID, &rule.ManagedPlaylistID, &rule.ScreenIDs, &rule.GroupIDs); err != nil {
+		if err = rows.Scan(&rule.ID, &rule.Name, &rule.Enabled, &rule.EventNames, &rule.MinimumSeverity, &rule.MinimumUrgency, &rule.ResponseMode, &rule.PresentationMode, &rule.PlaylistID, &rule.PlaylistName, &rule.TickerDisplayMode, &rule.TickerHeightPX, &rule.TickerSpeed, &rule.MaximumDurationMinutes, &rule.CreatedAt, &rule.UpdatedAt, &rule.ManagedDataSourceID, &rule.ManagedWidgetID, &rule.ManagedPlaylistID, &rule.ScreenIDs, &rule.GroupIDs); err != nil {
 			return nil, err
 		}
 		result = append(result, rule)
@@ -372,6 +385,43 @@ func (s *Service) SaveRule(ctx context.Context, id uuid.UUID, input RuleInput, u
 	if input.PresentationMode != "builtin" && input.PresentationMode != "playlist" {
 		return Rule{}, validationError("presentation mode is invalid")
 	}
+	if input.ResponseMode == "" {
+		input.ResponseMode = "takeover"
+	}
+	if input.ResponseMode != "takeover" && input.ResponseMode != "ticker" {
+		return Rule{}, validationError("response mode is invalid")
+	}
+	// Bar geometry is stored for every rule, whether or not it currently answers
+	// with a bar, so switching a rule to a ticker and back does not lose the
+	// shape it was last given.
+	if input.TickerDisplayMode == "" {
+		input.TickerDisplayMode = "push"
+	}
+	if input.TickerHeightPX == 0 {
+		input.TickerHeightPX = 96
+	}
+	if input.TickerSpeed == "" {
+		input.TickerSpeed = "medium"
+	}
+	if input.TickerDisplayMode != "overlay" && input.TickerDisplayMode != "push" {
+		return Rule{}, validationError("ticker display mode must be overlay or push")
+	}
+	if input.TickerHeightPX < 40 || input.TickerHeightPX > 320 {
+		return Rule{}, validationError("ticker height must be between 40 and 320 pixels")
+	}
+	if input.TickerSpeed != "slow" && input.TickerSpeed != "medium" && input.TickerSpeed != "fast" {
+		return Rule{}, validationError("ticker speed must be slow, medium, or fast")
+	}
+	if input.ResponseMode == "ticker" {
+		// A ticker is the live alert itself rendered as a bar. A custom playlist
+		// is fullscreen content by nature, so asking for both is a contradiction
+		// rather than something to resolve silently in one direction.
+		if input.PresentationMode == "playlist" || (input.PlaylistID != nil && *input.PlaylistID != uuid.Nil) {
+			return Rule{}, validationError("a ticker response shows the live alert and cannot use a custom playlist")
+		}
+		input.PresentationMode = "builtin"
+		input.PlaylistID = nil
+	}
 	if input.PresentationMode == "playlist" && (input.PlaylistID == nil || *input.PlaylistID == uuid.Nil) {
 		return Rule{}, validationError("select a ready, non-empty playlist")
 	}
@@ -394,10 +444,11 @@ func (s *Service) SaveRule(ctx context.Context, id uuid.UUID, input RuleInput, u
 	}
 	var organizationID uuid.UUID
 	var managedDataSourceID, managedWidgetID, managedPlaylistID *uuid.UUID
+	var previousResponseMode string
 	var err error
 	if !creating {
-		err = s.db.QueryRow(ctx, `SELECT organization_id,managed_data_source_id,managed_widget_id,managed_playlist_id FROM alert_rules WHERE id=$1`,
-			id).Scan(&organizationID, &managedDataSourceID, &managedWidgetID, &managedPlaylistID)
+		err = s.db.QueryRow(ctx, `SELECT organization_id,response_mode,managed_data_source_id,managed_widget_id,managed_playlist_id FROM alert_rules WHERE id=$1`,
+			id).Scan(&organizationID, &previousResponseMode, &managedDataSourceID, &managedWidgetID, &managedPlaylistID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Rule{}, pgx.ErrNoRows
 		}
@@ -405,7 +456,18 @@ func (s *Service) SaveRule(ctx context.Context, id uuid.UUID, input RuleInput, u
 			return Rule{}, err
 		}
 	}
-	if input.PresentationMode == "builtin" {
+	if input.ResponseMode == "ticker" {
+		// A bar is rendered by the Player from the manifest, so a ticker rule owns
+		// no presentation resources at all: no managed Data Source, Widget, or
+		// playlist, and nothing to validate a playlist against. Any resources an
+		// earlier fullscreen version of this rule created are left in place, so
+		// switching the rule back does not have to rebuild them.
+		if organizationID == uuid.Nil {
+			if err = s.db.QueryRow(ctx, `SELECT id FROM organization_settings WHERE singleton`).Scan(&organizationID); err != nil {
+				return Rule{}, err
+			}
+		}
+	} else if input.PresentationMode == "builtin" {
 		if organizationID == uuid.Nil {
 			if err = s.db.QueryRow(ctx, `SELECT id FROM organization_settings WHERE singleton`).Scan(&organizationID); err != nil {
 				return Rule{}, err
@@ -428,11 +490,13 @@ func (s *Service) SaveRule(ctx context.Context, id uuid.UUID, input RuleInput, u
 			return Rule{}, err
 		}
 	}
-	if err = s.playlists.ValidatePresentationTargets(ctx, input.PlaylistID, nil, input.ScreenIDs, input.GroupIDs); err != nil {
-		if errors.Is(err, playlists.ErrConflict) {
-			return Rule{}, validationError("%v", err)
+	if input.PlaylistID != nil {
+		if err = s.playlists.ValidatePresentationTargets(ctx, input.PlaylistID, nil, input.ScreenIDs, input.GroupIDs); err != nil {
+			if errors.Is(err, playlists.ErrConflict) {
+				return Rule{}, validationError("%v", err)
+			}
+			return Rule{}, err
 		}
-		return Rule{}, err
 	}
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
@@ -441,13 +505,13 @@ func (s *Service) SaveRule(ctx context.Context, id uuid.UUID, input RuleInput, u
 	defer tx.Rollback(ctx)
 	var tag pgconn.CommandTag
 	if creating {
-		tag, err = tx.Exec(ctx, `INSERT INTO alert_rules(id,organization_id,name,enabled,event_names,minimum_severity,minimum_urgency,response_mode,presentation_mode,playlist_id,maximum_duration_minutes,created_by,managed_data_source_id,managed_widget_id,managed_playlist_id)
-			VALUES($1,$2,$3,$4,$5,$6,$7,'takeover',$8,$9,$10,$11,$12,$13,$14)`,
-			id, organizationID, input.Name, input.Enabled, events, input.MinimumSeverity, input.MinimumUrgency, input.PresentationMode, input.PlaylistID, input.MaximumDurationMinutes, userID, managedDataSourceID, managedWidgetID, managedPlaylistID)
+		tag, err = tx.Exec(ctx, `INSERT INTO alert_rules(id,organization_id,name,enabled,event_names,minimum_severity,minimum_urgency,response_mode,presentation_mode,playlist_id,ticker_display_mode,ticker_height_px,ticker_speed,maximum_duration_minutes,created_by,managed_data_source_id,managed_widget_id,managed_playlist_id)
+			VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+			id, organizationID, input.Name, input.Enabled, events, input.MinimumSeverity, input.MinimumUrgency, input.ResponseMode, input.PresentationMode, input.PlaylistID, input.TickerDisplayMode, input.TickerHeightPX, input.TickerSpeed, input.MaximumDurationMinutes, userID, managedDataSourceID, managedWidgetID, managedPlaylistID)
 	} else {
-		tag, err = tx.Exec(ctx, `UPDATE alert_rules SET name=$3,enabled=$4,event_names=$5,minimum_severity=$6,minimum_urgency=$7,presentation_mode=$8,playlist_id=$9,maximum_duration_minutes=$10,managed_data_source_id=$11,managed_widget_id=$12,managed_playlist_id=$13,updated_at=now()
+		tag, err = tx.Exec(ctx, `UPDATE alert_rules SET name=$3,enabled=$4,event_names=$5,minimum_severity=$6,minimum_urgency=$7,response_mode=$8,presentation_mode=$9,playlist_id=$10,ticker_display_mode=$11,ticker_height_px=$12,ticker_speed=$13,maximum_duration_minutes=$14,managed_data_source_id=$15,managed_widget_id=$16,managed_playlist_id=$17,updated_at=now()
 			WHERE id=$1 AND organization_id=$2`,
-			id, organizationID, input.Name, input.Enabled, events, input.MinimumSeverity, input.MinimumUrgency, input.PresentationMode, input.PlaylistID, input.MaximumDurationMinutes, managedDataSourceID, managedWidgetID, managedPlaylistID)
+			id, organizationID, input.Name, input.Enabled, events, input.MinimumSeverity, input.MinimumUrgency, input.ResponseMode, input.PresentationMode, input.PlaylistID, input.TickerDisplayMode, input.TickerHeightPX, input.TickerSpeed, input.MaximumDurationMinutes, managedDataSourceID, managedWidgetID, managedPlaylistID)
 	}
 	if err != nil {
 		return Rule{}, err
@@ -470,6 +534,20 @@ func (s *Service) SaveRule(ctx context.Context, id uuid.UUID, input RuleInput, u
 	}
 	_, _ = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id) VALUES($1,$2,'nws_alert_rule.saved','nws_alert_rule',$3)`, uuid.New(), userID, id.String())
 	if err = tx.Commit(ctx); err != nil {
+		return Rule{}, err
+	}
+	// Changing how a rule answers cannot be applied to an alert already being
+	// answered the old way: a takeover has to be released and a bar withdrawn.
+	// Clearing the rule's live activations lets the next poll re-answer the same
+	// alert in the new form, and the poller is idempotent by alert identifier.
+	if !creating && previousResponseMode != input.ResponseMode {
+		if err = s.clearRuleActivations(ctx, id, "rule_changed"); err != nil {
+			return Rule{}, err
+		}
+	}
+	// A ticker rule is delivered in the manifest, so its screens need a new
+	// manifest to see an edit at all — a changed height, speed, or target set.
+	if err = s.refreshRuleScreens(ctx, id, "nws.rule.saved"); err != nil {
 		return Rule{}, err
 	}
 	rules, err := s.Rules(ctx)
@@ -547,22 +625,14 @@ func (s *Service) ensureBuiltinPresentation(
 }
 
 func (s *Service) DeleteRule(ctx context.Context, id, userID uuid.UUID) error {
-	rows, err := s.db.Query(ctx, `SELECT takeover_id FROM alert_activations WHERE rule_id=$1 AND cleared_at IS NULL AND takeover_id IS NOT NULL`, id)
+	// Read the targets before the delete cascades them away: a ticker rule's bar
+	// only leaves the screens that are told to fetch a manifest without it.
+	screenIDs, err := s.ruleScreenIDs(ctx, id)
 	if err != nil {
 		return err
 	}
-	takeoverIDs := []uuid.UUID{}
-	for rows.Next() {
-		var takeoverID uuid.UUID
-		if rows.Scan(&takeoverID) == nil {
-			takeoverIDs = append(takeoverIDs, takeoverID)
-		}
-	}
-	rows.Close()
-	for _, takeoverID := range takeoverIDs {
-		if err = s.cancelTakeover(ctx, takeoverID, time.Now().UTC()); err != nil {
-			return err
-		}
+	if err = s.clearRuleActivations(ctx, id, "rule_deleted"); err != nil {
+		return err
 	}
 	tag, err := s.db.Exec(ctx, `DELETE FROM alert_rules WHERE id=$1`, id)
 	if err != nil {
@@ -570,6 +640,9 @@ func (s *Service) DeleteRule(ctx context.Context, id, userID uuid.UUID) error {
 	}
 	if tag.RowsAffected() == 0 {
 		return pgx.ErrNoRows
+	}
+	if err = s.bumpScreens(ctx, screenIDs, "nws.rule.deleted"); err != nil {
+		return err
 	}
 	_, _ = s.db.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id) VALUES($1,$2,'nws_alert_rule.deleted','nws_alert_rule',$3)`, uuid.New(), userID, id.String())
 	return nil

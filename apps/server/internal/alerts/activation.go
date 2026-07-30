@@ -24,8 +24,17 @@ func (s *Service) applyAlert(ctx context.Context, alertID string, rule Rule, ale
 	alert.Certainty = bounded(alert.Certainty, 32)
 	alert.AreaDescription = bounded(alert.AreaDescription, 2000)
 	alert.SenderName = bounded(alert.SenderName, 500)
+	// A rule read from the database always states its response mode; one built in
+	// memory by an older caller may not, and a takeover is what it meant.
+	responseMode := rule.ResponseMode
+	if responseMode == "" {
+		responseMode = "takeover"
+	}
+	ticker := responseMode == "ticker"
 	var existing *uuid.UUID
-	err := s.db.QueryRow(ctx, `SELECT takeover_id FROM alert_activations WHERE alert_id=$1 AND rule_id=$2 AND cleared_at IS NULL`, alertID, rule.ID).Scan(&existing)
+	var shown displayedAlert
+	err := s.db.QueryRow(ctx, `SELECT takeover_id,event,headline,area_description,instruction,severity FROM alert_activations WHERE alert_id=$1 AND rule_id=$2 AND cleared_at IS NULL`,
+		alertID, rule.ID).Scan(&existing, &shown.event, &shown.headline, &shown.areaDescription, &shown.instruction, &shown.severity)
 	if err == nil {
 		tx, beginErr := s.db.Begin(ctx)
 		if beginErr != nil {
@@ -43,6 +52,17 @@ func (s *Service) applyAlert(ctx context.Context, alertID string, rule Rule, ale
 			return updateErr
 		}
 		screenIDs := []uuid.UUID{}
+		// A bar carries the alert text in the manifest itself, so a reworded
+		// headline only reaches the screen through a new manifest. The expiry is
+		// deliberately not part of this comparison: an alert that publishes no
+		// expiry is given `now + maximum duration` on every poll, which would
+		// otherwise re-push a manifest every poll for a bar that has not changed.
+		if ticker && shown.differsFrom(alert) {
+			screenIDs, err = bumpRuleScreens(ctx, tx, rule.ID, now, "nws.alert.updated")
+			if err != nil {
+				return err
+			}
+		}
 		if changed && existing != nil {
 			rows, bumpErr := tx.Query(ctx, `WITH bumped AS (
 				UPDATE screen_manifest_state manifest SET manifest_version=manifest_version+1,changed_at=$2,change_reason='nws.alert.updated'
@@ -76,7 +96,9 @@ func (s *Service) applyAlert(ctx context.Context, alertID string, rule Rule, ale
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return err
 	}
-	if rule.PlaylistID == nil {
+	// A takeover cannot be raised without content to raise. A ticker has its
+	// content in the manifest, so it has nothing to be missing.
+	if !ticker && rule.PlaylistID == nil {
 		return nil
 	}
 	expires := alertExpiry(alert, now, rule.MaximumDurationMinutes)
@@ -88,14 +110,33 @@ func (s *Service) applyAlert(ctx context.Context, alertID string, rule Rule, ale
 	if _, err = updateBuiltinAlertData(ctx, tx, rule, alert, expires, now); err != nil {
 		return err
 	}
-	takeoverID, screenIDs, err := s.activate(ctx, tx, rule, alert.Event, alert.Headline, alert.Description, now, expires)
-	if err != nil {
-		return err
+	var takeoverID *uuid.UUID
+	var screenIDs []uuid.UUID
+	if ticker {
+		// The bar reaches the screen the same way a Countdown Bar does: a bumped
+		// manifest, which the plugin channel then projects the activation into.
+		// Nothing is taken over, so there is nothing to restore afterwards.
+		if screenIDs, err = bumpRuleScreens(ctx, tx, rule.ID, now, "nws.ticker.activated"); err != nil {
+			return err
+		}
+		if len(screenIDs) == 0 {
+			return fmt.Errorf("alert rule has no eligible screens")
+		}
+		if _, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,action,resource_type,resource_id,metadata) VALUES($1,'nws_alert_ticker.activated','nws_alert_rule',$2,jsonb_build_object('alertId',$3::text,'event',$4::text))`,
+			uuid.New(), rule.ID.String(), alertID, alert.Event); err != nil {
+			return err
+		}
+	} else {
+		raised, takeoverScreens, activateErr := s.activate(ctx, tx, rule, alert.Event, alert.Headline, alert.Description, now, expires)
+		if activateErr != nil {
+			return activateErr
+		}
+		takeoverID, screenIDs = &raised, takeoverScreens
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO alert_activations(alert_id,rule_id,event,headline,description,instruction,severity,urgency,certainty,area_description,sender,effective_at,expires_at,response_mode,takeover_id,first_seen_at,last_seen_at)
-		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'takeover',$14,$15,$15)
-		ON CONFLICT(alert_id,rule_id) DO UPDATE SET event=EXCLUDED.event,headline=EXCLUDED.headline,description=EXCLUDED.description,instruction=EXCLUDED.instruction,severity=EXCLUDED.severity,urgency=EXCLUDED.urgency,certainty=EXCLUDED.certainty,area_description=EXCLUDED.area_description,sender=EXCLUDED.sender,effective_at=EXCLUDED.effective_at,expires_at=EXCLUDED.expires_at,takeover_id=EXCLUDED.takeover_id,last_seen_at=EXCLUDED.last_seen_at,cleared_at=NULL,clear_reason=NULL`,
-		alertID, rule.ID, alert.Event, alert.Headline, alert.Description, alert.Instruction, alert.Severity, alert.Urgency, alert.Certainty, alert.AreaDescription, alert.SenderName, alert.Effective, expires, takeoverID, now)
+		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$16)
+		ON CONFLICT(alert_id,rule_id) DO UPDATE SET event=EXCLUDED.event,headline=EXCLUDED.headline,description=EXCLUDED.description,instruction=EXCLUDED.instruction,severity=EXCLUDED.severity,urgency=EXCLUDED.urgency,certainty=EXCLUDED.certainty,area_description=EXCLUDED.area_description,sender=EXCLUDED.sender,effective_at=EXCLUDED.effective_at,expires_at=EXCLUDED.expires_at,response_mode=EXCLUDED.response_mode,takeover_id=EXCLUDED.takeover_id,last_seen_at=EXCLUDED.last_seen_at,cleared_at=NULL,clear_reason=NULL`,
+		alertID, rule.ID, alert.Event, alert.Headline, alert.Description, alert.Instruction, alert.Severity, alert.Urgency, alert.Certainty, alert.AreaDescription, alert.SenderName, alert.Effective, expires, responseMode, takeoverID, now)
 	if err != nil {
 		return err
 	}
@@ -103,6 +144,146 @@ func (s *Service) applyAlert(ctx context.Context, alertID string, rule Rule, ale
 		return err
 	}
 	s.notify(ctx, screenIDs)
+	return nil
+}
+
+// displayedAlert is the text an activation is currently putting on screen. A
+// ticker publishes that text in the manifest, so it is compared against the
+// freshly polled alert to decide whether a new manifest is owed.
+type displayedAlert struct {
+	event           string
+	headline        string
+	areaDescription string
+	instruction     string
+	severity        string
+}
+
+func (d displayedAlert) differsFrom(alert nwsProperties) bool {
+	return d.event != alert.Event || d.headline != alert.Headline ||
+		d.areaDescription != alert.AreaDescription || d.instruction != alert.Instruction ||
+		d.severity != alert.Severity
+}
+
+// bumpRuleScreens raises the manifest version of every screen a rule targets,
+// directly or through a group, and reports the screens that must be told. A
+// screen with no manifest state yet gets one: an alert must not be the request
+// that finds a screen has never had a manifest and give up.
+func bumpRuleScreens(ctx context.Context, tx pgx.Tx, ruleID uuid.UUID, now time.Time, reason string) ([]uuid.UUID, error) {
+	rows, err := tx.Query(ctx, `WITH targeted AS (
+		SELECT DISTINCT sc.id FROM alert_rule_targets t JOIN screens sc
+			ON sc.deleted_at IS NULL AND (sc.id=t.screen_id OR EXISTS(
+				SELECT 1 FROM screen_group_memberships m WHERE m.screen_group_id=t.screen_group_id AND m.screen_id=sc.id))
+		WHERE t.rule_id=$1)
+		INSERT INTO screen_manifest_state(screen_id,manifest_version,change_reason,changed_at)
+		SELECT id,1,$3,$2 FROM targeted
+		ON CONFLICT(screen_id) DO UPDATE SET previous_manifest_version=screen_manifest_state.manifest_version,
+			manifest_version=screen_manifest_state.manifest_version+1,changed_at=$2,change_reason=$3
+		RETURNING screen_id`, ruleID, now, reason)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	screenIDs := []uuid.UUID{}
+	for rows.Next() {
+		var screenID uuid.UUID
+		if err = rows.Scan(&screenID); err != nil {
+			return nil, err
+		}
+		screenIDs = append(screenIDs, screenID)
+	}
+	return screenIDs, rows.Err()
+}
+
+// ruleScreenIDs resolves a rule's targets without changing anything, for the
+// cases that must know the screens before the targets themselves are gone.
+func (s *Service) ruleScreenIDs(ctx context.Context, ruleID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := s.db.Query(ctx, `SELECT DISTINCT sc.id FROM alert_rule_targets t JOIN screens sc
+		ON sc.deleted_at IS NULL AND (sc.id=t.screen_id OR EXISTS(
+			SELECT 1 FROM screen_group_memberships m WHERE m.screen_group_id=t.screen_group_id AND m.screen_id=sc.id))
+		WHERE t.rule_id=$1`, ruleID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	screenIDs := []uuid.UUID{}
+	for rows.Next() {
+		var screenID uuid.UUID
+		if err = rows.Scan(&screenID); err != nil {
+			return nil, err
+		}
+		screenIDs = append(screenIDs, screenID)
+	}
+	return screenIDs, rows.Err()
+}
+
+func (s *Service) bumpScreens(ctx context.Context, screenIDs []uuid.UUID, reason string) error {
+	if len(screenIDs) == 0 {
+		return nil
+	}
+	if _, err := s.db.Exec(ctx, `INSERT INTO screen_manifest_state(screen_id,manifest_version,change_reason)
+		SELECT id,1,$2 FROM screens WHERE id=ANY($1) AND deleted_at IS NULL
+		ON CONFLICT(screen_id) DO UPDATE SET previous_manifest_version=screen_manifest_state.manifest_version,
+			manifest_version=screen_manifest_state.manifest_version+1,changed_at=now(),change_reason=$2`, screenIDs, reason); err != nil {
+		return err
+	}
+	s.notify(ctx, screenIDs)
+	return nil
+}
+
+// refreshRuleScreens re-publishes the manifest for a rule's current targets.
+func (s *Service) refreshRuleScreens(ctx context.Context, ruleID uuid.UUID, reason string) error {
+	screenIDs, err := s.ruleScreenIDs(ctx, ruleID)
+	if err != nil {
+		return err
+	}
+	return s.bumpScreens(ctx, screenIDs, reason)
+}
+
+// clearRuleActivations ends every live activation of one rule, whichever way it
+// was answering: a takeover is cancelled and restored, a bar is withdrawn by
+// republishing the manifest without it.
+func (s *Service) clearRuleActivations(ctx context.Context, ruleID uuid.UUID, reason string) error {
+	rows, err := s.db.Query(ctx, `SELECT alert_id,takeover_id FROM alert_activations WHERE rule_id=$1 AND cleared_at IS NULL`, ruleID)
+	if err != nil {
+		return err
+	}
+	type live struct {
+		alertID    string
+		takeoverID *uuid.UUID
+	}
+	items := []live{}
+	for rows.Next() {
+		var item live
+		if err = rows.Scan(&item.alertID, &item.takeoverID); err != nil {
+			rows.Close()
+			return err
+		}
+		items = append(items, item)
+	}
+	rows.Close()
+	if err = rows.Err(); err != nil {
+		return err
+	}
+	if len(items) == 0 {
+		return nil
+	}
+	now := time.Now().UTC()
+	withoutTakeover := false
+	for _, item := range items {
+		if item.takeoverID == nil {
+			withoutTakeover = true
+			continue
+		}
+		if err = s.cancelTakeover(ctx, *item.takeoverID, now); err != nil {
+			return err
+		}
+	}
+	if _, err = s.db.Exec(ctx, `UPDATE alert_activations SET cleared_at=$2,clear_reason=$3 WHERE rule_id=$1 AND cleared_at IS NULL`, ruleID, now, reason); err != nil {
+		return err
+	}
+	if withoutTakeover {
+		return s.refreshRuleScreens(ctx, ruleID, "nws.ticker.cleared")
+	}
 	return nil
 }
 
@@ -155,7 +336,12 @@ func updateBuiltinAlertData(
 	alert nwsProperties,
 	expires, now time.Time,
 ) (bool, error) {
-	if rule.PresentationMode != "builtin" || rule.ManagedDataSourceID == nil {
+	// A ticker rule keeps no managed presentation even though it reads as
+	// `builtin`: its text lives in the manifest, so there is no Data Source to
+	// keep in step. Rules that once answered fullscreen may still carry managed
+	// resource identifiers, and writing to them would be updating a snapshot
+	// nothing is showing.
+	if rule.ResponseMode == "ticker" || rule.PresentationMode != "builtin" || rule.ManagedDataSourceID == nil {
 		return false, nil
 	}
 	configuration, payload := builtinAlertDocuments(alert, expires, now)
@@ -291,6 +477,13 @@ func (s *Service) clearMissing(ctx context.Context, seen map[string]bool, now ti
 		_, err = s.db.Exec(ctx, `UPDATE alert_activations SET cleared_at=$3,clear_reason='no_longer_active' WHERE alert_id=$1 AND rule_id=$2 AND cleared_at IS NULL`, item.alertID, item.ruleID, now)
 		if err != nil {
 			return err
+		}
+		// A cleared bar is only gone once the screens are handed a manifest that
+		// no longer contains it. A cancelled takeover already republishes.
+		if item.takeoverID == nil {
+			if err = s.refreshRuleScreens(ctx, item.ruleID, "nws.ticker.cleared"); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

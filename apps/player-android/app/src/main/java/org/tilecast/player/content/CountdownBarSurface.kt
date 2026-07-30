@@ -39,18 +39,26 @@ private val BarFill = Color(0x29FFFFFF)
 private val BarFillEdge = Color(0x6BFFFFFF)
 
 /**
- * Hosts playback with the Countdown Bar channel layered on top. The bar never
+ * Hosts playback with the built-in bar channel layered on top. A bar never
  * touches playback: it appears, ticks, changes mode, and disappears while the
  * same media item stays mounted. In `push` mode the content is inset by the bar
  * height instead of being covered.
+ *
+ * The slot holds one bar. An Emergency Alerts ticker takes it whenever one is
+ * active: a Countdown Bar counting down to lunch must never be what a screen is
+ * showing instead of a tornado warning. The countdown is not lost — it returns as
+ * soon as the alert clears.
  */
 @Composable
-internal fun WithCountdownBar(
+internal fun WithPluginBars(
     plugins: List<ManifestPlugin>,
     clockOffsetSeconds: Long?,
     content: @Composable () -> Unit,
 ) {
-    val hasBars = plugins.any { it.type == "countdown_bar" && it.version == 1 }
+    val hasBars =
+        plugins.any {
+            it.version == 1 && (it.type == "countdown_bar" || it.type == "alert_ticker")
+        }
     var now by remember { mutableStateOf(Instant.now()) }
     LaunchedEffect(hasBars) {
         if (!hasBars) return@LaunchedEffect
@@ -59,10 +67,20 @@ internal fun WithCountdownBar(
             delay(1_000)
         }
     }
-    val active =
+    val ticker =
         remember(plugins, clockOffsetSeconds, now) {
-            if (hasBars) resolveCountdownBar(plugins, now, clockOffsetSeconds) else null
+            if (hasBars) resolveAlertTicker(plugins, now, clockOffsetSeconds) else null
         }
+    val countdown =
+        remember(plugins, clockOffsetSeconds, now) {
+            if (hasBars && ticker == null) {
+                resolveCountdownBar(plugins, now, clockOffsetSeconds)
+            } else {
+                null
+            }
+        }
+    val height = ticker?.heightPx ?: countdown?.heightPx
+    val pushed = (ticker?.displayMode ?: countdown?.displayMode) == "push"
     // content() is called from exactly one place in exactly one layout, whatever
     // the bar is doing. Moving it between call sites — or between a Column and a
     // Box when the mode changes — would tear down and restart the media item,
@@ -70,15 +88,18 @@ internal fun WithCountdownBar(
     Box(Modifier.fillMaxSize()) {
         Box(
             Modifier.fillMaxSize()
-                .padding(bottom = if (active?.displayMode == "push") active.heightPx.dp else 0.dp),
+                .padding(bottom = if (pushed && height != null) height.dp else 0.dp),
         ) {
             content()
         }
-        active?.let { bar ->
-            CountdownBar(
-                bar,
-                Modifier.fillMaxWidth().height(bar.heightPx.dp).align(Alignment.BottomCenter),
-            )
+        val barSlot =
+            Modifier.fillMaxWidth()
+                .height((height ?: 0).dp)
+                .align(Alignment.BottomCenter)
+        if (ticker != null) {
+            AlertTickerBar(ticker, barSlot)
+        } else {
+            countdown?.let { bar -> CountdownBar(bar, barSlot) }
         }
     }
 }

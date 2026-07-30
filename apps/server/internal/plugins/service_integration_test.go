@@ -109,15 +109,16 @@ func TestCountdownBarLifecycleAndManifestTargeting(t *testing.T) {
 	}
 	var customMetricsFound bool
 	for _, plugin := range targeted {
-		if plugin.ID == created.ID {
-			customMetricsFound = plugin.Config.ContentPadding == 0 && plugin.Config.TextScale == 175
+		if config, ok := plugin.Config.(ManifestCountdownConfig); ok && plugin.ID == created.ID {
+			customMetricsFound = config.ContentPadding == 0 && config.TextScale == 175
 		}
 	}
 	if created.ContentPadding == nil || *created.ContentPadding != 0 || created.TextScale != 175 || !customMetricsFound {
 		t.Fatalf("custom text metrics were not persisted and projected: created=%#v manifest=%#v", created, targeted)
 	}
 	other, err := service.ManifestForScreen(ctx, otherScreen)
-	if err != nil || len(other) != 1 || other[0].Config.Name != "All screens" {
+	config, _ := firstConfig(other).(ManifestCountdownConfig)
+	if err != nil || len(other) != 1 || config.Name != "All screens" {
 		t.Fatalf("untargeted manifest: %#v %v", other, err)
 	}
 
@@ -178,8 +179,9 @@ func TestCountdownBarLifecycleAndManifestTargeting(t *testing.T) {
 		ON CONFLICT(singleton) DO UPDATE SET enabled=TRUE`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = pool.Exec(ctx, `INSERT INTO alert_rules(id,organization_id,name,created_by) VALUES($1,$2,'Tornado Warning',$3)`,
-		uuid.New(), organizationID, userID); err != nil {
+	alertRuleID := uuid.New()
+	if _, err = pool.Exec(ctx, `INSERT INTO alert_rules(id,organization_id,name,created_by,response_mode,ticker_display_mode,ticker_height_px,ticker_speed) VALUES($1,$2,'Tornado Warning',$3,'ticker','push',120,'fast')`,
+		alertRuleID, organizationID, userID); err != nil {
 		t.Fatal(err)
 	}
 	catalog, err = service.Catalog(ctx)
@@ -195,4 +197,70 @@ func TestCountdownBarLifecycleAndManifestTargeting(t *testing.T) {
 			t.Fatalf("configured Emergency Alerts = %+v, want enabled with one rule", item)
 		}
 	}
+
+	// A live alert answered with a bar reaches the screen through the same plugin
+	// array as a Countdown Bar, with its message composed from the alert itself.
+	if _, err = pool.Exec(ctx, `INSERT INTO alert_rule_targets(rule_id,target_type,screen_id) VALUES($1,'screen',$2)`,
+		alertRuleID, targetedScreen); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO alert_activations(alert_id,rule_id,event,headline,area_description,instruction,severity,urgency,response_mode,expires_at)
+		VALUES('alert-1',$1,'Tornado Warning','Tornado observed','Franklin County','Move to an interior room.','Extreme','Immediate','ticker',now()+interval '30 minutes')`,
+		alertRuleID); err != nil {
+		t.Fatal(err)
+	}
+	withTicker, err := service.ManifestForScreen(ctx, targetedScreen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ticker *ManifestAlertTickerConfig
+	for _, plugin := range withTicker {
+		if config, ok := plugin.Config.(ManifestAlertTickerConfig); ok && plugin.Type == "alert_ticker" {
+			if plugin.ID != alertRuleID {
+				t.Fatalf("ticker plugin id = %s, want the rule that raised it", plugin.ID)
+			}
+			ticker = &config
+		}
+	}
+	if ticker == nil {
+		t.Fatalf("no alert ticker in manifest: %#v", withTicker)
+	}
+	if ticker.Message != "Tornado Warning — Tornado observed — Franklin County — Move to an interior room." ||
+		ticker.Severity != "Extreme" || ticker.DisplayMode != "push" ||
+		ticker.HeightPX != 120 || ticker.Speed != "fast" || ticker.Priority != alertTickerPriority {
+		t.Fatalf("alert ticker config = %#v", *ticker)
+	}
+	// An untargeted screen is not carrying someone else's emergency.
+	untargeted, err := service.ManifestForScreen(ctx, otherScreen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, plugin := range untargeted {
+		if plugin.Type == "alert_ticker" {
+			t.Fatalf("alert ticker leaked to an untargeted screen: %#v", plugin)
+		}
+	}
+	// A cleared activation takes the bar out of the manifest, which is the only
+	// way an offline-capable player learns the alert is over.
+	if _, err = pool.Exec(ctx, `UPDATE alert_activations SET cleared_at=now(),clear_reason='no_longer_active' WHERE rule_id=$1`, alertRuleID); err != nil {
+		t.Fatal(err)
+	}
+	cleared, err := service.ManifestForScreen(ctx, targetedScreen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, plugin := range cleared {
+		if plugin.Type == "alert_ticker" {
+			t.Fatalf("cleared alert still in manifest: %#v", plugin)
+		}
+	}
+}
+
+// The manifest carries one plugin array for every plugin type, so a test that
+// wants a Countdown Bar's configuration has to say which type it expects.
+func firstConfig(items []ManifestPlugin) any {
+	if len(items) == 0 {
+		return nil
+	}
+	return items[0].Config
 }

@@ -41,15 +41,31 @@ Changing an instance increments the manifest revision for every screen. The next
 
 Emergency Alerts watches official National Weather Service alerts and takes matching screens over automatically while one is active. It is a plugin rather than an organization default: an installation opts into monitoring, and the alert rules are its instances. Settings keeps only the defaults for a Takeover a person starts by hand and for player commands.
 
-Unlike Countdown Bar, it projects nothing into the manifest of its own. A matching alert raises an ordinary Takeover through the existing bounded playback-override machinery, so Player behavior is exactly Takeover behavior. The catalog reports the plugin as enabled when monitoring is on — a monitor switched on with no rule yet is a half-finished setup, not a disabled plugin — and its instance count is the number of alert rules.
+The catalog reports the plugin as enabled when monitoring is on — a monitor switched on with no rule yet is a half-finished setup, not a disabled plugin — and its instance count is the number of alert rules.
+
+### Response mode
+
+A rule answers a matching alert in one of two ways, chosen per rule as `responseMode`.
+
+`takeover` raises an ordinary Takeover through the existing bounded playback-override machinery, so Player behavior is exactly Takeover behavior. It shows either Tilecast's live fullscreen alert or a custom playlist, and normal playback is restored when the alert clears.
+
+`ticker` leaves playback running and delivers the alert as a bar along the bottom of the screen, through the same manifest `plugins` channel and the same `overlay`/`push` geometry as Countdown Bar. It raises no Takeover, owns no managed Data Source, Widget, or playlist, and has nothing to restore: the bar is gone once the screens hold a manifest without it. `tickerDisplayMode`, `tickerHeightPx`, and `tickerSpeed` (`slow`, `medium`, or `fast`) give the bar its shape. A ticker always shows the live alert; asking for a ticker and a custom playlist together is rejected rather than resolved in one direction, because a playlist is fullscreen content by nature.
+
+Both responses use the same matching, the same `maximumDurationMinutes` ceiling, and the same targets. Changing a rule's response mode clears its live activations so the next poll answers the same alert in the new form.
 
 Its configuration endpoints predate the plugin catalog and are unchanged, under `/api/v1/alerts/nws/`. See [takeover-and-operations.md](takeover-and-operations.md) for the monitor, rule matching, and poll health.
 
 ## Player behavior
 
-The manifest carries a discriminated `plugins` array. Countdown Bar uses `type: "countdown_bar"` and `version: 1`. The complete timing rule is cached in `manifest-active.json`; recurrence is evaluated locally with the configured timezone, so a temporary server outage does not stop future show or hide transitions.
+The manifest carries a discriminated `plugins` array. Countdown Bar uses `type: "countdown_bar"` and an Emergency Alerts ticker uses `type: "alert_ticker"`, both at `version: 1`; a Player ignores a type it does not implement. The complete timing rule is cached in `manifest-active.json`; recurrence is evaluated locally with the configured timezone, so a temporary server outage does not stop future show or hide transitions.
 
 Both the Linux and Android players render the bar, and both resolve the schedule from the cached manifest with the same weekly, one-time, daylight-saving, completion, priority, and fill rules. The two implementations are covered by matching test cases so a divergence surfaces as a failure rather than as a difference between screens.
+
+### One bar slot
+
+The two plugins share one bar slot, and an active alert ticker takes it: a bar counting down to lunch must never be what a screen is showing instead of a tornado warning. The countdown is not lost — it returns as soon as the alert clears, without touching playback either way.
+
+An alert ticker carries the alert text and an `expiresAt` rather than a schedule. The server publishes the ticker only while it is answering an alert and withdraws it by revising the manifest, but a Player on a cached manifest has no poller to hear from: it takes the bar down itself at the expiry, using its own corrected clock. An unreadable or passed expiry hides the bar, so the surface fails toward showing nothing rather than toward presenting a stale alert as current. Because the message is longer than a bar is wide, it scrolls at the configured speed while the severity stays fixed at the leading edge; where the platform exposes a reduced-motion preference, the message is clipped instead of scrolled.
 
 Plugin projection and presentation use a dedicated renderer channel. It does not replace the active presentation, change playlist selection, increment the renderer generation, remount media, touch synchronized-playback anchors, or open and close proof-of-play sessions. On Android the bar composes around a single playback call site for the same reason: appearing, changing mode, and hiding must not restart the media item.
 
