@@ -88,6 +88,8 @@ export { Select } from "./SignalSelect";
 export { ContextMenu, useContextMenu } from "./ContextMenu";
 export type { ContextMenuItem } from "./ContextMenu";
 export { HoldButton } from "./HoldButton";
+export { Popover } from "./Popover";
+export type { PopoverMode, PopoverTriggerProps } from "./Popover";
 export { MetricTile } from "./MetricTile";
 export type { MetricDelta, MetricDirection } from "./MetricTile";
 export { FilterBar, FilterChips, useUrlFilters } from "./FilterBar";

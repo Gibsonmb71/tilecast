@@ -296,40 +296,75 @@ semantics remain the source of truth.
 
 ### Component inventory
 
-| Primitive                  | Implemented variants or behavior                                 | Use                                                |
-| -------------------------- | ---------------------------------------------------------------- | -------------------------------------------------- |
-| `Button`                   | Primary, secondary, quiet, danger. compact and loading states    | Labeled actions                                    |
-| `IconButton`               | Required accessible label and title                              | Compact familiar action with no visible label      |
-| `Input`, `Textarea`        | Native form semantics                                            | Text and multiline entry                           |
-| `Select`                   | Signal Select with keyboard menu and hidden native value control | Choosing one option from a closed set              |
-| `Field`                    | Label, description, required indicator, error                    | Form control grouping                              |
-| `Checkbox`                 | Native checkbox with visible label                               | Independent boolean choice                         |
-| `Switch`                   | Native checkbox with switch semantics and optional description   | Immediate on/off setting                           |
-| `RadioGroup`               | Fieldset and legend                                              | One choice from a small visible set                |
-| `Panel`                    | Semantic section wrapper                                         | One genuinely separate concept                     |
-| `SectionHeader`            | Title, description, actions                                      | Page section introduction                          |
-| `PageHeader`               | Title, description, eyebrow, and actions                         | Consistent route and editor heading                |
-| `Toolbar`                  | Toolbar role                                                     | Related high-frequency controls                    |
-| `ViewTabs`                 | Current-view navigation, markers, Arrow/Home/End focus           | Switching route-backed or page-owned views         |
-| `Pagination`               | Previous/next controls with optional status                      | Server- or cursor-paginated collections            |
-| `ViewToggle`               | Grid/list selection                                              | Collection presentation choice                     |
-| `ToggleGroup`              | One active option in a compact visible group                     | Short filters and display modes                    |
-| `Notice`                   | Information, success, warning, danger, neutral                   | Contextual feedback with optional title and action |
-| `StatusDot`, `StatusBadge` | Success, information, warning, danger, neutral                   | Compact textual status                             |
-| `EmptyState`               | Title, message, optional action                                  | Valid collection or workspace with no content      |
-| `Dialog`                   | Native modal dialog, title, close action, cancel handling        | Focused modal task                                 |
-| `Drawer`                   | Modal detail surface, focus containment, responsive full width   | Browsing or editing contextual detail              |
-| `TableContainer`           | Contained overflow                                               | Responsive data table boundary                     |
-| `Skeleton`                 | Decorative loading placeholder                                   | Preserve approximate layout while loading          |
-| `Spinner`                  | Labeled status                                                   | Indeterminate work                                 |
-| `MetricTile`               | Value, label, optional icon, hint, delta, and drill-through link | One measured figure in a summary row               |
-| `FilterBar`, `FilterChips` | Declarative filter definitions with removable active chips       | Narrowing a reported collection                    |
-| `TimeRangePicker`          | Presets, custom bounds, and a resolved comparison window         | Choosing the period a report covers                |
+| Primitive                  | Implemented variants or behavior                                                             | Use                                                |
+| -------------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| `Button`                   | Primary, secondary, quiet, danger. compact and loading states                                | Labeled actions                                    |
+| `IconButton`               | Required accessible label and title                                                          | Compact familiar action with no visible label      |
+| `Input`, `Textarea`        | Native form semantics                                                                        | Text and multiline entry                           |
+| `Select`                   | Signal Select with keyboard menu and hidden native value control                             | Choosing one option from a closed set              |
+| `Field`                    | Label, description, required indicator, error                                                | Form control grouping                              |
+| `Checkbox`                 | Native checkbox with visible label                                                           | Independent boolean choice                         |
+| `Switch`                   | Native checkbox with switch semantics and optional description                               | Immediate on/off setting                           |
+| `RadioGroup`               | Fieldset and legend                                                                          | One choice from a small visible set                |
+| `Panel`                    | Semantic section wrapper                                                                     | One genuinely separate concept                     |
+| `SectionHeader`            | Title, description, actions                                                                  | Page section introduction                          |
+| `PageHeader`               | Title, description, eyebrow, and actions                                                     | Consistent route and editor heading                |
+| `Toolbar`                  | Toolbar role                                                                                 | Related high-frequency controls                    |
+| `ViewTabs`                 | Current-view navigation, markers, Arrow/Home/End focus                                       | Switching route-backed or page-owned views         |
+| `Pagination`               | Previous/next controls with optional status                                                  | Server- or cursor-paginated collections            |
+| `ViewToggle`               | Grid/list selection                                                                          | Collection presentation choice                     |
+| `ToggleGroup`              | One active option in a compact visible group                                                 | Short filters and display modes                    |
+| `Notice`                   | Information, success, warning, danger, neutral                                               | Contextual feedback with optional title and action |
+| `StatusDot`, `StatusBadge` | Success, information, warning, danger, neutral                                               | Compact textual status                             |
+| `EmptyState`               | Title, message, optional action                                                              | Valid collection or workspace with no content      |
+| `Dialog`                   | Native modal dialog, title, close action, cancel handling                                    | Focused modal task                                 |
+| `Drawer`                   | Modal detail surface, focus containment, responsive full width                               | Browsing or editing contextual detail              |
+| `Popover`                  | Anchored surface with menu and form modes, collision-aware placement, one dismissal contract | Trigger-opened menu or compact filter panel        |
+| `ContextMenu`              | Right-click and trigger-opened actions, single-level submenus, Arrow/Home/End/Escape         | Row and card actions                               |
+| `TableContainer`           | Contained overflow                                                                           | Responsive data table boundary                     |
+| `Skeleton`                 | Decorative loading placeholder                                                               | Preserve approximate layout while loading          |
+| `Spinner`                  | Labeled status                                                                               | Indeterminate work                                 |
+| `MetricTile`               | Value, label, optional icon, hint, delta, and drill-through link                             | One measured figure in a summary row               |
+| `FilterBar`, `FilterChips` | Declarative filter definitions with removable active chips                                   | Narrowing a reported collection                    |
+| `TimeRangePicker`          | Presets, custom bounds, and a resolved comparison window                                     | Choosing the period a report covers                |
 
-Popovers, ARIA tab panels, drop zones, inspectors, timelines, and editor shells
-currently have page-specific implementations. Their proposed shared forms are
-Planned, not Implemented. `ViewTabs` is navigation between page-owned views. It
-does not claim ARIA `tab` or `tabpanel` semantics.
+ARIA tab panels, drop zones, inspectors, timelines, and editor shells currently
+have page-specific implementations. Their proposed shared forms are Planned, not
+Implemented. `ViewTabs` is navigation between page-owned views. It does not claim
+ARIA `tab` or `tabpanel` semantics.
+
+#### Anchored surfaces
+
+`Popover` owns everything an anchored surface needs to behave the same way twice.
+It measures placement against the viewport and folds the panel back on screen
+near an edge. It dismisses on an outside pointer press, on Escape, on a scroll
+that moves the trigger, and on a route change. It also sets the trigger's
+`aria-expanded`, `aria-haspopup`, and `aria-controls`. Escape always returns
+focus to the trigger.
+
+Its two modes are separate contracts. Do not blur them:
+
+| Mode   | Surface role        | Contents               | Focus on open | Tab                     | Arrow keys            |
+| ------ | ------------------- | ---------------------- | ------------- | ----------------------- | --------------------- |
+| `menu` | `menu`              | Menu items only        | First item    | Closes, restores focus  | Move between items    |
+| `form` | `dialog`, non-modal | Labelled form controls | First control | Cycles within the panel | Belong to the control |
+
+Choose `form` when the panel holds anything a menu must not contain. A heading,
+static text, group labels, and fields are all such content. An ARIA `menu` drops
+that content. The notification panel previously announced as a bare item count,
+because its heading and priority-group labels were illegal inside the role it
+claimed. Tab cycles inside a form popover instead of leaving it, because the
+panel is portaled and is not next in document order after its trigger.
+
+A panel is portaled through `overlayPortalTarget`. This lets it escape clipping
+ancestors and share the top layer with a modal dialog that opened it. The panel
+sits at z-index 3100, which is above the drawer layer and below the select and
+context menus. A `Select` opened inside a popover therefore paints on top, and a
+press on one of its options does not dismiss the panel below it.
+
+The shared row and padding treatments in `styles/popover.css` are published
+inside `:where()`. They carry no specificity, so a consumer restyles rows with a
+plain class instead of out-specifying the shared layer.
 
 #### Reporting primitives
 

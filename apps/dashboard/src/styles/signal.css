@@ -3229,8 +3229,12 @@ tbody tr {
   background: var(--tc-action-primary-soft);
 }
 
-.schedule-timezone {
-  position: relative;
+/* The popover anchor is a flex container, so the trigger inside it would size to
+   its longest timezone name. Both fill the field's column instead, keeping this
+   control the same width as the ones beside it. */
+.schedule-timezone > .signal-popover,
+.schedule-timezone__trigger {
+  width: 100%;
 }
 
 .schedule-timezone__trigger {
@@ -3248,18 +3252,9 @@ tbody tr {
 }
 
 .schedule-timezone__menu {
-  position: absolute;
-  z-index: 20;
-  top: calc(100% + var(--tc-space-1));
-  right: 0;
-  left: 0;
   display: grid;
-  max-height: 300px;
-  overflow: hidden;
-  border: 1px solid var(--tc-border-strong);
-  border-radius: var(--tc-radius-overlay);
-  background: var(--tc-bg-elevated);
-  box-shadow: var(--tc-shadow-overlay);
+  grid-template-rows: auto minmax(0, 1fr);
+  padding: 0;
 }
 
 .schedule-timezone__menu > label,

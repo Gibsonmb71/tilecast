@@ -1,4 +1,4 @@
-import { Select } from "./ui";
+import { Popover, Select } from "./ui";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Filter, RotateCcw } from "lucide-react";
@@ -126,73 +126,78 @@ function AssetFilterMenu() {
     }, 0);
 
   return (
-    <details className="asset-filter-menu">
-      <summary className="button button--quiet">
-        <Filter size={16} />
-        Filters
-        {activeCount > 0 && (
-          <span className="asset-filter-menu__count">{activeCount}</span>
-        )}
-      </summary>
-      <div className="asset-filter-menu__panel">
-        <header>
-          <div>
-            <strong>Filter assets</strong>
-            <span>Show only the files you need.</span>
-          </div>
-          <button
-            type="button"
-            className="button button--quiet button--compact"
-            onClick={() => {
-              setType("media");
-              for (const filter of filters) {
-                if (!filter.element) continue;
-                dispatchChange(
-                  filter.element,
-                  filter.label === "Sort media" ? "updated" : "",
-                );
-              }
-              setRevision((value) => value + 1);
-            }}
-          >
-            <RotateCcw size={14} /> Clear
-          </button>
-        </header>
-        <label>
-          Type
+    <Popover
+      label="Filter assets"
+      className="asset-filter-menu"
+      panelClassName="asset-filter-menu__panel"
+      align="end"
+      trigger={(props) => (
+        <button type="button" className="button button--quiet" {...props}>
+          <Filter size={16} aria-hidden="true" />
+          Filters
+          {activeCount > 0 && (
+            <span className="signal-popover__count">{activeCount}</span>
+          )}
+        </button>
+      )}
+    >
+      <div className="signal-popover__header">
+        <div>
+          <strong>Filter assets</strong>
+          <span>Show only the files you need.</span>
+        </div>
+        <button
+          type="button"
+          className="button button--quiet button--compact"
+          onClick={() => {
+            setType("media");
+            for (const filter of filters) {
+              if (!filter.element) continue;
+              dispatchChange(
+                filter.element,
+                filter.label === "Sort media" ? "updated" : "",
+              );
+            }
+            setRevision((value) => value + 1);
+          }}
+        >
+          <RotateCcw size={14} aria-hidden="true" /> Clear
+        </button>
+      </div>
+      <label>
+        Type
+        <Select
+          value={type}
+          onChange={(event) => {
+            setType(event.target.value);
+            setRevision((value) => value + 1);
+          }}
+        >
+          <option value="media">All media</option>
+          <option value="image">Images</option>
+          <option value="video">Videos</option>
+        </Select>
+      </label>
+      {filters.map((filter) => (
+        <label key={filter.label}>
+          {filter.title}
           <Select
-            value={type}
+            value={filter.element?.value ?? ""}
+            disabled={!filter.element}
             onChange={(event) => {
-              setType(event.target.value);
+              if (filter.element)
+                dispatchChange(filter.element, event.target.value);
               setRevision((value) => value + 1);
             }}
           >
-            <option value="media">All media</option>
-            <option value="image">Images</option>
-            <option value="video">Videos</option>
+            {Array.from(filter.element?.options ?? []).map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.text}
+              </option>
+            ))}
           </Select>
         </label>
-        {filters.map((filter) => (
-          <label key={filter.label}>
-            {filter.title}
-            <Select
-              value={filter.element?.value ?? ""}
-              disabled={!filter.element}
-              onChange={(event) => {
-                if (filter.element)
-                  dispatchChange(filter.element, event.target.value);
-                setRevision((value) => value + 1);
-              }}
-            >
-              {Array.from(filter.element?.options ?? []).map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.text}
-                </option>
-              ))}
-            </Select>
-          </label>
-        ))}
-      </div>
-    </details>
+      ))}
+    </Popover>
   );
 }
