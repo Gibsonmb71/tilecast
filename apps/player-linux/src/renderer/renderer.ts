@@ -135,9 +135,10 @@ interface RendererCountdownBarPlugin {
     timezone: string;
     leadTimeSeconds: number;
     completionText?: string;
+    showConfetti?: boolean;
     displayMode: "overlay" | "push";
     heightPx: number;
-    /** All three are absent on manifests published before they existed. */
+    /** These fields are absent on manifests published before they existed. */
     progressFill?: "none" | "drain" | null;
     contentPadding?: number | null;
     textScale?: number | null;
@@ -181,6 +182,9 @@ const countdownValue = countdownBar.querySelector(
 const countdownFill = countdownBar.querySelector(
   ".countdown-fill",
 ) as HTMLSpanElement;
+const countdownConfetti = document.getElementById(
+  "countdown-confetti",
+) as HTMLDivElement;
 const alertTickerBar = document.getElementById(
   "alert-ticker",
 ) as HTMLDivElement;
@@ -373,6 +377,50 @@ function escapeHtml(value: string): string {
 let pluginTimer: number | null = null;
 let activePlugins: RendererPlugin[] = [];
 let pluginClockOffsetMs = 0;
+let lastConfettiKey = "";
+
+function triggerCountdownConfetti(
+  selected: TilecastActiveCountdownBar | null,
+): void {
+  if (!selected?.showConfetti) return;
+  const key = `${selected.id}:${selected.targetAt}`;
+  if (key === lastConfettiKey) return;
+  lastConfettiKey = key;
+  countdownConfetti.replaceChildren();
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const colors = ["#F7C948", "#F45B69", "#4CC9F0", "#7BD389", "#A78BFA"];
+  for (let index = 0; index < 72; index += 1) {
+    const piece = document.createElement("span");
+    piece.className = "countdown-confetti__piece";
+    piece.style.setProperty("--confetti-x", `${(index * 47) % 101}%`);
+    piece.style.setProperty(
+      "--confetti-drift",
+      `${((index * 29) % 221) - 110}px`,
+    );
+    piece.style.setProperty(
+      "--confetti-spin",
+      `${360 + ((index * 53) % 720)}deg`,
+    );
+    piece.style.setProperty(
+      "--confetti-delay",
+      `${((index * 7) % 18) * 0.06}s`,
+    );
+    piece.style.setProperty(
+      "--confetti-duration",
+      `${4.2 + (index % 7) * 0.35}s`,
+    );
+    piece.style.setProperty(
+      "--confetti-color",
+      colors[index % colors.length] ?? "#F7C948",
+    );
+    piece.style.setProperty("--confetti-width", `${7 + (index % 4) * 2}px`);
+    piece.style.setProperty("--confetti-height", `${11 + (index % 3) * 4}px`);
+    countdownConfetti.append(piece);
+  }
+  window.setTimeout(() => {
+    if (lastConfettiKey === key) countdownConfetti.replaceChildren();
+  }, 7_600);
+}
 
 /**
  * The bar slot holds one bar. An emergency ticker takes it whenever one is
@@ -400,7 +448,13 @@ function updatePluginSurface(): void {
     new Date(),
     pluginClockOffsetMs,
   );
+  triggerCountdownConfetti(selected);
   if (!selected) {
+    countdownBar.classList.remove("visible");
+    contentStage.classList.remove("plugin-push");
+    return;
+  }
+  if (!selected.showBar) {
     countdownBar.classList.remove("visible");
     contentStage.classList.remove("plugin-push");
     return;

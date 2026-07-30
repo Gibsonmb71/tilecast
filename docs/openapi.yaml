@@ -2128,6 +2128,7 @@ components:
           timezone,
           leadTimeSeconds,
           completionText,
+          showConfetti,
           displayMode,
           heightPx,
           enabled,
@@ -2148,6 +2149,12 @@ components:
         timezone: { type: string, minLength: 1, maxLength: 100 }
         leadTimeSeconds: { type: integer, minimum: 60, maximum: 2592000 }
         completionText: { type: string, maxLength: 280 }
+        showConfetti:
+          type: boolean
+          default: false
+          description: >-
+            Show a short confetti fall from the top of the Player when the
+            countdown reaches zero. This does not require completion text.
         displayMode: { enum: [overlay, push] }
         heightPx: { type: integer, minimum: 40, maximum: 320 }
         progressFill:

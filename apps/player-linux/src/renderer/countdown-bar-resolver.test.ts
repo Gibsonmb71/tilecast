@@ -15,6 +15,7 @@ interface CountdownBarPlugin {
     timezone: string;
     leadTimeSeconds: number;
     completionText?: string;
+    showConfetti?: boolean;
     displayMode: "overlay" | "push";
     heightPx: number;
     progressFill?: "none" | "drain" | null;
@@ -38,6 +39,8 @@ interface CountdownBarResolver {
     remainingFraction: number | null;
     contentPadding: number;
     fontSizePx: number;
+    showBar: boolean;
+    showConfetti: boolean;
   } | null;
 }
 
@@ -95,10 +98,36 @@ describe("countdown bar resolver", () => {
       },
     };
     expect(
-      resolver.resolve([plugin], new Date("2026-07-27T16:00:30Z"))?.value,
-    ).toBe("Lunch is over");
+      resolver.resolve([plugin], new Date("2026-07-27T16:00:30Z")),
+    ).toMatchObject({
+      message: "",
+      value: "Lunch is over",
+    });
     expect(
       resolver.resolve([plugin], new Date("2026-07-27T16:01:01Z")),
+    ).toBeNull();
+  });
+
+  it("shows confetti briefly at zero without keeping an empty bar visible", () => {
+    const plugin: CountdownBarPlugin = {
+      ...weekly({ completionText: "", showConfetti: true }),
+      config: {
+        ...weekly({ completionText: "", showConfetti: true }).config,
+        scheduleType: "one_time",
+        targetTime: null,
+        daysOfWeek: [],
+        oneTimeAt: "2026-07-27T16:00:00Z",
+      },
+    };
+    expect(
+      resolver.resolve([plugin], new Date("2026-07-27T16:00:04Z")),
+    ).toMatchObject({
+      completed: true,
+      showBar: false,
+      showConfetti: true,
+    });
+    expect(
+      resolver.resolve([plugin], new Date("2026-07-27T16:00:09Z")),
     ).toBeNull();
   });
 

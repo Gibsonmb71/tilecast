@@ -31,6 +31,7 @@ interface TilecastCountdownBarPlugin {
     timezone: string;
     leadTimeSeconds: number;
     completionText?: string;
+    showConfetti?: boolean;
     displayMode: "overlay" | "push";
     heightPx: number;
     progressFill?: "none" | "drain" | null;
@@ -49,6 +50,8 @@ interface TilecastActiveCountdownBar {
   priority: number;
   targetAt: string;
   completed: boolean;
+  showBar: boolean;
+  showConfetti: boolean;
   /**
    * Share of the lead window still to run, 1 when the bar first appears and 0 at
    * the target. Always 0 while completion text shows. `null` when the instance
@@ -72,6 +75,7 @@ interface TilecastCountdownBarResolver {
 
 const tilecastCountdownBar: TilecastCountdownBarResolver = (() => {
   const COMPLETION_DISPLAY_MS = 60_000;
+  const CONFETTI_DISPLAY_MS = 8_000;
   const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   // One formatter per zone: a bar re-resolves every second on hardware where
   // rebuilding Intl formatters is the most expensive part of the tick.
@@ -212,13 +216,17 @@ const tilecastCountdownBar: TilecastCountdownBarResolver = (() => {
         for (const target of candidateTargets(plugin, new Date(now))) {
           const remaining = target - now;
           const completionText = plugin.config.completionText?.trim() ?? "";
-          const completed =
+          const completionVisible =
             remaining <= 0 &&
             remaining >= -COMPLETION_DISPLAY_MS &&
             completionText.length > 0;
+          const confettiVisible =
+            remaining <= 0 &&
+            remaining >= -CONFETTI_DISPLAY_MS &&
+            plugin.config.showConfetti === true;
           if (
             remaining > plugin.config.leadTimeSeconds * 1_000 ||
-            (remaining <= 0 && !completed)
+            (remaining <= 0 && !completionVisible && !confettiVisible)
           ) {
             continue;
           }
@@ -229,15 +237,22 @@ const tilecastCountdownBar: TilecastCountdownBarResolver = (() => {
             leadMs > 0 ? Math.min(1, Math.max(0, remaining / leadMs)) : 0;
           active.push({
             id: plugin.id,
-            message: plugin.config.message,
-            value: completed
+            // Completion text is the whole ending message, not a replacement
+            // for only the numeric value. Keeping the normal prefix here would
+            // produce phrases such as "Lunch ends in Lunch is over".
+            message: remaining <= 0 ? "" : plugin.config.message,
+            value: completionVisible
               ? completionText
-              : tilecastCountdownDisplay.compact(remaining),
+              : remaining > 0
+                ? tilecastCountdownDisplay.compact(remaining)
+                : "",
             displayMode: plugin.config.displayMode,
             heightPx: Math.min(Math.max(plugin.config.heightPx, 40), 320),
             priority: plugin.config.priority,
             targetAt: new Date(target).toISOString(),
-            completed,
+            completed: remaining <= 0,
+            showBar: remaining > 0 || completionVisible,
+            showConfetti: confettiVisible,
             remainingFraction:
               plugin.config.progressFill === "drain" ? fraction : null,
             contentPadding: clampNumber(plugin.config.contentPadding, 4, 0, 40),

@@ -153,6 +153,7 @@
           "maximum": 2592000
         },
         "completionText": { "type": "string", "maxLength": 280 },
+        "showConfetti": { "type": "boolean" },
         "displayMode": { "enum": ["overlay", "push"] },
         "heightPx": { "type": "integer", "minimum": 40, "maximum": 320 },
         "progressFill": { "enum": ["none", "drain"] },
