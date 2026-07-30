@@ -34,6 +34,15 @@ type Service struct {
 	db       *pgxpool.Pool
 	notifier Notifier
 	now      func() time.Time
+	// history receives every successful capture when snapshot history is
+	// enabled. Nil means this installation keeps no history, which is the
+	// default.
+	history func(ctx context.Context, screenID uuid.UUID, upload Upload)
+}
+
+// SetHistoryRecorder installs the snapshot history recorder.
+func (s *Service) SetHistoryRecorder(record func(ctx context.Context, screenID uuid.UUID, upload Upload)) {
+	s.history = record
 }
 
 func NewService(db *pgxpool.Pool, notifier Notifier) *Service {
@@ -164,6 +173,12 @@ func (s *Service) RecordUpload(ctx context.Context, screenID uuid.UUID, upload U
 	}
 	if commandTag.RowsAffected() == 0 {
 		return ErrLeaseExpired
+	}
+	// Snapshot history, when it is enabled, records the frames that arrive here
+	// rather than capturing separately. One capture path means a manual preview
+	// and a scheduled snapshot cannot disagree about what the screen showed.
+	if s.history != nil && failureStatus == "" && len(upload.Data) > 0 {
+		s.history(ctx, screenID, upload)
 	}
 	return nil
 }

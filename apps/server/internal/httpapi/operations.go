@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -156,6 +157,11 @@ func (s *server) activateTakeover(w http.ResponseWriter, r *http.Request) {
 		return
 	} else if err != nil {
 		s.internalError(w, r, err)
+		return
+	}
+	// A takeover is the most disruptive thing in Studio, so scope is checked
+	// before anything is written.
+	if !s.authorizeScreenList(w, r, input.ScreenIDs, input.GroupIDs) {
 		return
 	}
 	if err := s.playlists.ValidatePresentationTargets(r.Context(), &input.PlaylistID, nil, input.ScreenIDs, input.GroupIDs); err != nil {
@@ -327,38 +333,24 @@ func (s *server) createPlayerCommand(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 422, "command_invalid_payload", err.Error())
 		return
 	}
-	var org uuid.UUID
-	if err = s.db.QueryRow(r.Context(), `SELECT organization_id FROM screens WHERE id=$1`, screen).Scan(&org); errors.Is(err, pgx.ErrNoRows) {
-		writeError(w, 404, "screen_not_found", "Screen was not found.")
-		return
-	} else if err != nil {
-		s.internalError(w, r, err)
-		return
-	}
-	var pending int
-	_ = s.db.QueryRow(r.Context(), `SELECT count(*) FROM player_commands WHERE screen_id=$1 AND state IN ('pending','delivered','acknowledged','running') AND expires_at>now()`, screen).Scan(&pending)
-	if pending >= s.operations.MaxPendingCommands {
-		writeError(w, 429, "command_limit_reached", "This screen has reached its pending-command limit.")
-		return
-	}
-	id := uuid.New()
-	key := id
+	user := r.Context().Value(sessionContextKey).(auth.Session).User
+	key := uuid.New()
 	if input.IdempotencyKey != nil {
 		key = *input.IdempotencyKey
 	}
-	user := r.Context().Value(sessionContextKey).(auth.Session).User
-	expires := time.Now().Add(time.Duration(s.runtimeInt(r, "commands.default_expiry_minutes", s.operations.DefaultCommandExpiryMinutes)) * time.Minute)
-	err = s.db.QueryRow(r.Context(), `INSERT INTO player_commands(id,organization_id,screen_id,type,payload,idempotency_key,created_by,expires_at)VALUES($1,$2,$3,$4,$5::jsonb,$6,$7,$8) ON CONFLICT(screen_id,idempotency_key) DO UPDATE SET updated_at=player_commands.updated_at RETURNING id`, id, org, screen, input.Type, string(payload), key, user.ID, expires).Scan(&id)
+	id, expires, err := s.queueCommand(r.Context(), screen, user.ID, input.Type, payload, key)
+	if errors.Is(err, errScreenNotFound) {
+		writeError(w, 404, "screen_not_found", "Screen was not found.")
+		return
+	}
+	if errors.Is(err, errCommandLimit) {
+		writeError(w, 429, "command_limit_reached", "This screen has reached its pending-command limit.")
+		return
+	}
 	if err != nil {
 		s.internalError(w, r, err)
 		return
 	}
-	_, _ = s.db.Exec(r.Context(), `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)VALUES($1,$2,'command.created','player_command',$3)`, uuid.New(), user.ID, id.String())
-	action := map[string]string{"clear_media_cache": "media.cache_clear_requested", "clear_website_data": "website.data_clear_requested", "disable_playback": "playback.disable_requested", "enable_playback": "playback.enable_requested"}[input.Type]
-	if action != "" {
-		_, _ = s.db.Exec(r.Context(), `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)VALUES($1,$2,$3,'screen',$4)`, uuid.New(), user.ID, action, screen.String())
-	}
-	s.devices.Notify(screen, map[string]any{"type": "commands.available"})
 	writeJSON(w, http.StatusAccepted, map[string]any{"data": map[string]any{"id": id, "state": "pending", "expiresAt": expires}})
 }
 
@@ -610,10 +602,14 @@ func (s *server) validateCommand(typ string, raw json.RawMessage) ([]byte, error
 	return json.Marshal(object)
 }
 func (s *server) runtimeInt(r *http.Request, key string, fallback int) int {
+	return s.runtimeIntContext(r.Context(), key, fallback)
+}
+
+func (s *server) runtimeIntContext(ctx context.Context, key string, fallback int) int {
 	if s.settings == nil {
 		return fallback
 	}
-	document, err := s.settings.Organization(r.Context())
+	document, err := s.settings.Organization(ctx)
 	if err != nil {
 		return fallback
 	}
@@ -636,4 +632,49 @@ func uniqueUUIDs(values []uuid.UUID) []uuid.UUID {
 func (s *server) expireCommands(r *http.Request) {
 	_, _ = s.db.Exec(r.Context(), `UPDATE player_commands SET state='expired',completed_at=now(),updated_at=now() WHERE state IN ('pending','delivered','acknowledged','running') AND expires_at<=now()`)
 	_, _ = s.db.Exec(r.Context(), `DELETE FROM player_commands WHERE completed_at<now()-make_interval(days=>$1)`, s.operations.CommandRetentionDays)
+}
+
+// Command enqueueing lives here, once. Bulk sending goes through the same
+// function as single sending, so the pending-command limit, the idempotency
+// key, the audit entries, and the socket wake cannot drift apart.
+var (
+	errScreenNotFound = errors.New("screen not found")
+	errCommandLimit   = errors.New("pending command limit reached")
+)
+
+func (s *server) queueCommand(ctx context.Context, screen, user uuid.UUID, commandType string, payload []byte, idempotencyKey uuid.UUID) (uuid.UUID, time.Time, error) {
+	var org uuid.UUID
+	if err := s.db.QueryRow(ctx, `SELECT organization_id FROM screens WHERE id=$1`, screen).Scan(&org); errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, time.Time{}, errScreenNotFound
+	} else if err != nil {
+		return uuid.Nil, time.Time{}, err
+	}
+	var pending int
+	_ = s.db.QueryRow(ctx, `SELECT count(*) FROM player_commands WHERE screen_id=$1 AND state IN ('pending','delivered','acknowledged','running') AND expires_at>now()`, screen).Scan(&pending)
+	if pending >= s.operations.MaxPendingCommands {
+		return uuid.Nil, time.Time{}, errCommandLimit
+	}
+	id := uuid.New()
+	expires := time.Now().Add(time.Duration(s.runtimeIntContext(ctx, "commands.default_expiry_minutes", s.operations.DefaultCommandExpiryMinutes)) * time.Minute)
+	if err := s.db.QueryRow(ctx, `INSERT INTO player_commands(id,organization_id,screen_id,type,payload,idempotency_key,created_by,expires_at)VALUES($1,$2,$3,$4,$5::jsonb,$6,$7,$8) ON CONFLICT(screen_id,idempotency_key) DO UPDATE SET updated_at=player_commands.updated_at RETURNING id`, id, org, screen, commandType, string(payload), idempotencyKey, user, expires).Scan(&id); err != nil {
+		return uuid.Nil, time.Time{}, err
+	}
+	_, _ = s.db.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)VALUES($1,$2,'command.created','player_command',$3)`, uuid.New(), user, id.String())
+	if action := map[string]string{"clear_media_cache": "media.cache_clear_requested", "clear_website_data": "website.data_clear_requested", "disable_playback": "playback.disable_requested", "enable_playback": "playback.enable_requested"}[commandType]; action != "" {
+		_, _ = s.db.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)VALUES($1,$2,$3,'screen',$4)`, uuid.New(), user, action, screen.String())
+	}
+	s.devices.Notify(screen, map[string]any{"type": "commands.available"})
+	return id, expires, nil
+}
+
+// EnqueueCommand satisfies fleetops.CommandEnqueuer. Each screen gets its own
+// idempotency key: one bulk operation is many commands, and sharing a key would
+// collapse them into one row.
+func (s *server) EnqueueCommand(ctx context.Context, screenID, userID uuid.UUID, commandType string, payload json.RawMessage) error {
+	validated, err := s.validateCommand(commandType, payload)
+	if err != nil {
+		return err
+	}
+	_, _, err = s.queueCommand(ctx, screenID, userID, commandType, validated, uuid.New())
+	return err
 }

@@ -29,7 +29,15 @@ func (s *server) previewRoutes(next http.Handler) http.Handler {
 }
 
 func (s *server) previewService() *previews.Service {
-	return previews.NewService(s.db, s.devices)
+	service := previews.NewService(s.db, s.devices)
+	if s.snapshots != nil {
+		// Every successful capture, scheduled or manual, flows through the
+		// recorder. Installing it here rather than at each call site means a
+		// frame cannot reach a screen's live preview without also being offered
+		// to history.
+		service.SetHistoryRecorder(s.snapshots.Record)
+	}
+	return service
 }
 
 func (s *server) renewScreenPreview(w http.ResponseWriter, r *http.Request) {

@@ -1,7 +1,7 @@
 import { useSearchParams } from "react-router";
 
 export type ActivityTabName =
-  "overview" | "proof" | "incidents" | "events" | "audit";
+  "overview" | "proof" | "incidents" | "content-health" | "events" | "audit";
 
 /** Exact-identifier proof filters, kept behind a disclosure but still chipped. */
 export const advancedProofFilterKeys = [
@@ -95,6 +95,8 @@ export const terminalReasonOptions = [
 export const activityTabFilterKeys: Record<ActivityTabName, readonly string[]> =
   {
     overview: [],
+    // Content health is a rollup of current state, not a filtered report.
+    "content-health": [],
     incidents: [
       "search",
       "status",

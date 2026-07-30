@@ -6,6 +6,8 @@ import { settingsItems } from "./settings/settingsNavigation";
 import { AuthPage } from "./pages/AuthPage";
 import { DashboardShell, FoundationPage } from "./pages/Dashboard";
 import { PairScreenPage, ScreensPage } from "./pages/ScreensPage";
+import { FleetBulkPage } from "./pages/FleetBulkPage";
+import { ContentReviewPage } from "./pages/ContentReviewPage";
 import { ScreenDetailWithPreviewPage } from "./pages/ScreenDetailWithPreviewPage";
 import { ArchivedScreensPage } from "./pages/ArchivedScreensPage";
 import { ContentPage } from "./pages/ContentPage";
@@ -84,6 +86,19 @@ export const studioRoutes: RouteObject[] = [
         },
         children: [
           { index: true, element: <ScreensPage /> },
+          {
+            path: "bulk",
+            element: <FleetBulkPage />,
+            handle: {
+              breadcrumb: "Bulk changes",
+              search: search(
+                "Bulk changes",
+                "Apply one change to many screens with a preview",
+                "/screens/bulk",
+                ["fleet", "bulk", "assign"],
+              ),
+            },
+          },
           {
             path: "pair",
             element: <PairScreenPage />,
@@ -216,6 +231,19 @@ export const studioRoutes: RouteObject[] = [
             handle: { breadcrumb: "Data source", resource: "data-source" },
           },
         ],
+      },
+      {
+        path: "content-review",
+        element: <ContentReviewPage />,
+        handle: {
+          breadcrumb: "Content review",
+          search: search(
+            "Content review",
+            "Approve content before it reaches a screen",
+            "/content-review",
+            ["approval", "review", "publish"],
+          ),
+        },
       },
       {
         path: "playlists",

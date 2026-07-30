@@ -31,6 +31,7 @@ import {
   DashboardListToolbar,
   DashboardSearch,
 } from "../components/DashboardListToolbar";
+import { PlaylistRevisionsPanel } from "../components/PlaylistRevisionsPanel";
 import { UsedByPanel } from "../content/UsedByPanel";
 import { WorkspaceTabs, presentationTabs } from "../navigation/WorkspaceTabs";
 import {
@@ -606,6 +607,7 @@ export function PlaylistEditorPage() {
           )}
         </div>
       </section>
+      <PlaylistRevisionsPanel playlistId={id} canRestore={canManage} />
       <div className="timeline-heading">
         <div>
           <h3>Playback timeline</h3>

@@ -3,12 +3,16 @@ import {
   Accessibility,
   Archive,
   ArrowLeftRight,
+  BellRing,
   Building2,
   CalendarClock,
+  Camera,
+  ClipboardCheck,
   DatabaseBackup,
   DownloadCloud,
   Globe,
   Image,
+  KeyRound,
   LifeBuoy,
   MapPin,
   Palette,
@@ -36,6 +40,10 @@ export type SettingsSectionId =
   | "takeover"
   | "retention"
   | "backups"
+  | "notifications"
+  | "integrations"
+  | "content-review"
+  | "snapshots"
   | "system"
   | "import-export"
   | "security"
@@ -67,6 +75,11 @@ export const settingsNavigation: SettingsNavigationGroup[] = [
       { id: "media", label: "Media", path: "content/media" },
       { id: "websites", label: "Websites", path: "content/websites" },
       { id: "scheduling", label: "Scheduling", path: "content/scheduling" },
+      {
+        id: "content-review",
+        label: "Content review",
+        path: "content-review",
+      },
     ],
   },
   {
@@ -104,7 +117,22 @@ export const settingsNavigation: SettingsNavigationGroup[] = [
         label: "Backup and restore",
         path: "operations/backups",
       },
+      {
+        id: "notifications",
+        label: "Notifications",
+        path: "operations/notifications",
+      },
+      {
+        id: "snapshots",
+        label: "Snapshot history",
+        path: "snapshots",
+      },
       { id: "system", label: "System", path: "system" },
+      {
+        id: "integrations",
+        label: "Integration tokens",
+        path: "integrations",
+      },
       {
         id: "import-export",
         label: "Import and export",
@@ -215,10 +243,34 @@ export const sectionDetails: Record<
     description:
       "Create, verify, download, schedule, and restore full installation backups.",
   },
+  notifications: {
+    icon: BellRing,
+    title: "Notifications",
+    description:
+      "Where Tilecast reports a problem when nobody has Studio open. Each account chooses what it receives under My preferences.",
+  },
   system: {
     icon: Wrench,
     title: "System",
     description: "Safe diagnostics and deliberate maintenance actions.",
+  },
+  "content-review": {
+    icon: ClipboardCheck,
+    title: "Content review",
+    description:
+      "Require approval before a playlist or Layout can be assigned to a screen. A Contributor authors content but cannot publish or assign it.",
+  },
+  snapshots: {
+    icon: Camera,
+    title: "Snapshot history",
+    description:
+      "Keep periodic images of what screens showed. A snapshot proves the Player rendered that frame; it does not prove the television was on or on the right input.",
+  },
+  integrations: {
+    icon: KeyRound,
+    title: "Integration tokens",
+    description:
+      "Let another system write a Manual Table Data Source, or let your monitoring read fleet health, with a token that can do nothing else.",
   },
   "import-export": {
     icon: ArrowLeftRight,

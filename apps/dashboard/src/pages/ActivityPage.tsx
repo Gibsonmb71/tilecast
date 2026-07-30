@@ -17,6 +17,7 @@ import { api } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
 import { OverviewTab } from "./ActivityOverviewPanel";
 import { AuditTab, EventsTab, ProofTab } from "./ActivityReportTabs";
+import { ContentHealthTab } from "./ContentHealthTab";
 import { IncidentsTab } from "./ActivityIncidentsTab";
 import { activityParams } from "./ActivityShared";
 import {
@@ -300,6 +301,9 @@ export function ActivityPage() {
     // Incidents is the grouped operational view; Screen Events stays the raw
     // diagnostic stream behind it, with its existing privileged access.
     { value: "incidents" as const, label: "Incidents" },
+    // Content health sits beside Incidents because it answers the same
+    // question from the other side: the screen is fine, the content is not.
+    { value: "content-health" as const, label: "Content Health" },
     ...(privileged
       ? [
           { value: "events" as const, label: "Screen Events" },
@@ -456,6 +460,7 @@ export function ActivityPage() {
           onClearFilters={clear}
         />
       )}
+      {tab === "content-health" && <ContentHealthTab />}
       {tab === "events" && <EventsTab range={range} filters={values} />}
       {tab === "audit" && <AuditTab range={range} filters={values} />}
     </section>
@@ -463,7 +468,8 @@ export function ActivityPage() {
 }
 
 function normalizeTab(value: string | null, role: string): ActivityTab {
-  if (value === "proof" || value === "incidents") return value;
+  if (value === "proof" || value === "incidents" || value === "content-health")
+    return value;
   if (value === "events" && ["owner", "administrator"].includes(role)) {
     return value;
   }

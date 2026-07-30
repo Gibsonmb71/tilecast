@@ -5,7 +5,19 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/tilecast/tilecast/apps/server/internal/integrations"
 	"github.com/tilecast/tilecast/apps/server/internal/web"
+)
+
+// Content roles, named so the difference is visible at every call site rather
+// than inferred from a repeated literal.
+//
+// A Contributor authors content but cannot publish a Layout, delete anything,
+// or put content on a screen. Assignment has always been Owner/Administrator
+// only, so the boundary that matters for a Contributor is publish and delete.
+var (
+	contentAuthors  = []string{"owner", "administrator", "editor", "contributor"}
+	contentManagers = []string{"owner", "administrator", "editor"}
 )
 
 func (s *server) routes() http.Handler {
@@ -64,13 +76,23 @@ func (s *server) routes() http.Handler {
 		api.With(s.requireDevice).Post("/player/update-deployments/{deploymentId}/status", s.playerUpdateStatus)
 		api.With(s.operationsRateLimit, s.requireReleasePublisher, s.blockDuringBackup).Post("/player-releases/upload", s.uploadPlayerRelease)
 
+		// Integration tokens are a third authentication boundary, next to the
+		// dashboard cookie and the device credential. These routes take neither
+		// a session nor a CSRF token, and each one names the scope it needs.
+		api.With(s.operationsRateLimit, s.requireIntegrationToken(integrations.ScopeDataSourceWrite), s.blockDuringBackup).
+			Put("/integration/data-sources/{id}/rows", s.replaceDataSourceRows)
+		api.With(s.operationsRateLimit, s.requireIntegrationToken(integrations.ScopeActivityRead)).
+			Get("/integration/activity/fleet", s.integrationFleetHealth)
+		api.With(s.operationsRateLimit, s.requireIntegrationToken(integrations.ScopeActivityRead)).
+			Get("/integration/metrics", s.integrationMetrics)
+
 		api.Group(func(dashboard chi.Router) {
 			dashboard.Use(s.requireSession)
 			dashboard.Use(s.requireEnrollment)
 			dashboard.Get("/screens", s.listScreens)
 			dashboard.Get("/screens/archive", s.listArchivedScreens)
-			dashboard.Get("/screens/{id}", s.getScreen)
-			dashboard.Get("/screens/{id}/reliability", s.screenReliability)
+			dashboard.With(s.requireScreenScope).Get("/screens/{id}", s.getScreen)
+			dashboard.With(s.requireScreenScope).Get("/screens/{id}/reliability", s.screenReliability)
 			dashboard.Get("/locations", s.listLocations)
 			dashboard.Get("/plugins", s.listPlugins)
 			dashboard.Get("/plugins/countdown-bar/instances", s.listCountdownBars)
@@ -99,10 +121,10 @@ func (s *server) routes() http.Handler {
 			dashboard.Get("/screen-groups/{id}/policy", s.getGroupPolicy)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Put("/screen-groups/{id}/policy", s.putGroupPolicy)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Delete("/screen-groups/{id}/policy", s.deleteGroupPolicy)
-			dashboard.Get("/screens/{id}/policy", s.getScreenPolicy)
-			dashboard.Get("/screens/{id}/effective-policy", s.getEffectivePolicy)
-			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Put("/screens/{id}/policy", s.putScreenPolicy)
-			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Delete("/screens/{id}/policy", s.deleteScreenPolicy)
+			dashboard.With(s.requireScreenScope).Get("/screens/{id}/policy", s.getScreenPolicy)
+			dashboard.With(s.requireScreenScope).Get("/screens/{id}/effective-policy", s.getEffectivePolicy)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF, s.requireScreenScope).Put("/screens/{id}/policy", s.putScreenPolicy)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF, s.requireScreenScope).Delete("/screens/{id}/policy", s.deleteScreenPolicy)
 			dashboard.With(s.requireRoles("owner", "administrator")).Get("/system/status", s.systemStatus)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/system/maintenance/{action}", s.systemMaintenance)
 			if s.backups != nil {
@@ -128,6 +150,49 @@ func (s *server) routes() http.Handler {
 				dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/alerts/nws/rules", s.createAlertRule)
 				dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Put("/alerts/nws/rules/{id}", s.updateAlertRule)
 				dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Delete("/alerts/nws/rules/{id}", s.deleteAlertRule)
+			}
+			if s.snapshots != nil {
+				// Scoped like every other per-screen route.
+				dashboard.With(s.requireScreenScope).Get("/screens/{id}/snapshots", s.listScreenSnapshots)
+				dashboard.With(s.requireScreenScope).Get("/screens/{id}/snapshots/{snapshotId}/image", s.getScreenSnapshotImage)
+				dashboard.With(s.requireRoles("owner", "administrator")).Get("/system/snapshots/usage", s.snapshotUsage)
+			}
+			if s.approvals != nil {
+				// Anyone who can author content can see where it stands.
+				dashboard.With(s.requireRoles(contentAuthors...)).Get("/content-reviews", s.listContentReviews)
+				dashboard.With(s.requireRoles(contentManagers...), s.requireCSRF).
+					Post("/content-reviews/{type}/{id}", s.decideContentReview)
+			}
+			if s.integrations != nil {
+				// Only an Owner mints or revokes a token: it is a standing
+				// outbound-and-inbound capability, not a content change.
+				dashboard.With(s.requireRoles("owner")).Get("/integration-tokens", s.listIntegrationTokens)
+				dashboard.With(s.requireRoles("owner"), s.requireCSRF).Post("/integration-tokens", s.createIntegrationToken)
+				dashboard.With(s.requireRoles("owner"), s.requireCSRF).Delete("/integration-tokens/{id}", s.revokeIntegrationToken)
+			}
+			if s.fleet != nil {
+				// Preview is a read of what would change, so it needs no CSRF
+				// token and no elevated role beyond seeing screens.
+				dashboard.With(s.requireRoles("owner", "administrator")).Post("/screens/bulk/preview", s.previewBulkOperation)
+				dashboard.With(s.requireRoles("owner", "administrator"), s.operationsRateLimit, s.requireCSRF).Post("/screens/bulk/apply", s.applyBulkOperation)
+				dashboard.With(s.requireRoles("owner", "administrator")).Get("/screens/bulk/operations", s.listBulkOperations)
+				dashboard.With(s.requireRoles("owner", "administrator"), s.operationsRateLimit, s.requireCSRF).Post("/screens/bulk/operations/{id}/undo", s.undoBulkOperation)
+			}
+			if s.contentHealthService != nil {
+				dashboard.Get("/content-health", s.contentHealth)
+			}
+			if s.notifications != nil {
+				// Any signed-in account can see whether email works and can
+				// test its own address; only administrators configure where
+				// notifications go, because a webhook is an outbound data path.
+				dashboard.Get("/notifications/status", s.notificationStatus)
+				dashboard.With(s.operationsRateLimit, s.requireCSRF).Post("/notifications/test", s.sendTestNotification)
+				dashboard.With(s.requireRoles("owner", "administrator")).Get("/notifications/deliveries", s.listNotificationDeliveries)
+				dashboard.With(s.requireRoles("owner", "administrator")).Get("/notifications/webhooks", s.listNotificationWebhooks)
+				dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/notifications/webhooks", s.createNotificationWebhook)
+				dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Put("/notifications/webhooks/{id}", s.updateNotificationWebhook)
+				dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Delete("/notifications/webhooks/{id}", s.deleteNotificationWebhook)
+				dashboard.With(s.requireRoles("owner", "administrator"), s.operationsRateLimit, s.requireCSRF).Post("/notifications/webhooks/{id}/test", s.testNotificationWebhook)
 			}
 			dashboard.Get("/player-releases", s.listPlayerReleases)
 			dashboard.With(s.requireRoles("owner"), s.operationsRateLimit, s.requireCSRF).Post("/player-releases/check", s.checkPlayerReleases)
@@ -167,70 +232,73 @@ func (s *server) routes() http.Handler {
 			dashboard.Get("/content-folders", s.listContentFolders)
 			dashboard.Get("/content-collections", s.listContentCollections)
 			dashboard.Get("/content-tags", s.listContentTags)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/content-folders", s.createContentFolder)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Patch("/content-folders/{id}", s.updateContentFolder)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Delete("/content-folders/{id}", s.deleteContentFolder)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/content-collections", s.createContentCollection)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Patch("/content-collections/{id}", s.updateContentCollection)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Delete("/content-collections/{id}", s.deleteContentCollection)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/content-tags", s.createContentTag)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Patch("/content-tags/{id}", s.updateContentTag)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Delete("/content-tags/{id}", s.deleteContentTag)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/assets/bulk-organize", s.bulkOrganizeContent)
+			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Post("/content-folders", s.createContentFolder)
+			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Patch("/content-folders/{id}", s.updateContentFolder)
+			dashboard.With(s.requireRoles(contentManagers...), s.requireCSRF).Delete("/content-folders/{id}", s.deleteContentFolder)
+			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Post("/content-collections", s.createContentCollection)
+			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Patch("/content-collections/{id}", s.updateContentCollection)
+			dashboard.With(s.requireRoles(contentManagers...), s.requireCSRF).Delete("/content-collections/{id}", s.deleteContentCollection)
+			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Post("/content-tags", s.createContentTag)
+			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Patch("/content-tags/{id}", s.updateContentTag)
+			dashboard.With(s.requireRoles(contentManagers...), s.requireCSRF).Delete("/content-tags/{id}", s.deleteContentTag)
+			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Post("/assets/bulk-organize", s.bulkOrganizeContent)
 			dashboard.Get("/playlists", s.listPlaylists)
 			dashboard.Get("/layouts", s.listLayouts)
 			dashboard.Get("/layouts/{id}", s.getLayout)
 			dashboard.Get("/layouts/{id}/preview-image", s.getLayoutPreviewImage)
+			dashboard.Get("/playlists/{id}/revisions", s.listPlaylistRevisions)
+			dashboard.With(s.requireRoles(contentManagers...), s.requireCSRF).
+				Post("/playlists/{id}/revisions/{revision}/restore", s.restorePlaylistRevision)
 			dashboard.Get("/layouts/{id}/revisions", s.listLayoutRevisions)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/layouts", s.createLayout)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Patch("/layouts/{id}", s.updateLayout)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Put("/layouts/{id}/preview-image", s.updateLayoutPreviewImage)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Put("/layouts/{id}/draft", s.saveLayoutDraft)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/layouts/{id}/publish", s.publishLayout)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/layouts/{id}/duplicate", s.duplicateLayout)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/layouts/{id}/revisions/{revisionId}/restore", s.restoreLayoutRevision)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Delete("/layouts/{id}", s.deleteLayout)
+			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Post("/layouts", s.createLayout)
+			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Patch("/layouts/{id}", s.updateLayout)
+			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Put("/layouts/{id}/preview-image", s.updateLayoutPreviewImage)
+			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Put("/layouts/{id}/draft", s.saveLayoutDraft)
+			dashboard.With(s.requireRoles(contentManagers...), s.requireCSRF).Post("/layouts/{id}/publish", s.publishLayout)
+			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Post("/layouts/{id}/duplicate", s.duplicateLayout)
+			dashboard.With(s.requireRoles(contentManagers...), s.requireCSRF).Post("/layouts/{id}/revisions/{revisionId}/restore", s.restoreLayoutRevision)
+			dashboard.With(s.requireRoles(contentManagers...), s.requireCSRF).Delete("/layouts/{id}", s.deleteLayout)
 			dashboard.Get("/playlists/{id}", s.getPlaylist)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/playlists", s.createPlaylist)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Patch("/playlists/{id}", s.updatePlaylist)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Delete("/playlists/{id}", s.deletePlaylist)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/playlists/{id}/duplicate", s.duplicatePlaylist)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/playlists/{id}/items", s.addPlaylistItem)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Patch("/playlists/{id}/items/{itemId}", s.updatePlaylistItem)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Delete("/playlists/{id}/items/{itemId}", s.deletePlaylistItem)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Put("/playlists/{id}/items/order", s.reorderPlaylistItems)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Put("/playlists/{id}/tag-rule", s.setPlaylistTagRule)
-			dashboard.Get("/screens/{id}/playlist-assignment", s.getPlaylistAssignment)
-			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Put("/screens/{id}/playlist-assignment", s.assignPlaylist)
-			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Delete("/screens/{id}/playlist-assignment", s.unassignPlaylist)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Patch("/assets/{id}", s.updateAsset)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/assets/websites", s.createWebsite)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Patch("/assets/{id}/website", s.updateWebsite)
+			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Post("/playlists", s.createPlaylist)
+			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Patch("/playlists/{id}", s.updatePlaylist)
+			dashboard.With(s.requireRoles(contentManagers...), s.requireCSRF).Delete("/playlists/{id}", s.deletePlaylist)
+			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Post("/playlists/{id}/duplicate", s.duplicatePlaylist)
+			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Post("/playlists/{id}/items", s.addPlaylistItem)
+			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Patch("/playlists/{id}/items/{itemId}", s.updatePlaylistItem)
+			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Delete("/playlists/{id}/items/{itemId}", s.deletePlaylistItem)
+			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Put("/playlists/{id}/items/order", s.reorderPlaylistItems)
+			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Put("/playlists/{id}/tag-rule", s.setPlaylistTagRule)
+			dashboard.With(s.requireScreenScope).Get("/screens/{id}/playlist-assignment", s.getPlaylistAssignment)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF, s.requireScreenScope).Put("/screens/{id}/playlist-assignment", s.assignPlaylist)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF, s.requireScreenScope).Delete("/screens/{id}/playlist-assignment", s.unassignPlaylist)
+			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Patch("/assets/{id}", s.updateAsset)
+			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Post("/assets/websites", s.createWebsite)
+			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Patch("/assets/{id}/website", s.updateWebsite)
 			// Widgets — renderable visual content.
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/widgets", s.createWidget)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/widgets/compile-preview", s.compileWidgetPreview)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Put("/widgets/{id}/preview-image", s.updateWidgetPreviewImage)
+			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Post("/widgets", s.createWidget)
+			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Post("/widgets/compile-preview", s.compileWidgetPreview)
+			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Put("/widgets/{id}/preview-image", s.updateWidgetPreviewImage)
 			dashboard.Get("/provider-catalog", s.providerCatalog)
 			dashboard.Get("/content-definitions", s.contentDefinitions)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Patch("/widgets/{id}", s.updateWidget)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/widgets/{id}/duplicate", s.duplicateWidget)
+			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Patch("/widgets/{id}", s.updateWidget)
+			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Post("/widgets/{id}/duplicate", s.duplicateWidget)
 			// Data Sources — reusable non-visual data connections.
 			dashboard.Get("/data-sources", s.listDataSources)
 			dashboard.Get("/data-sources/{id}", s.getDataSource)
 			dashboard.Get("/data-sources/{id}/preview", s.previewSavedDataSource)
 			dashboard.Get("/data-sources/{id}/diagnostics", s.dataSourceDiagnostics)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.operationsRateLimit).Get("/data-sources/{id}/inspect", s.inspectSavedDataSource)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/data-sources", s.createDataSource)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Patch("/data-sources/{id}", s.updateDataSource)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/data-sources/{id}/duplicate", s.duplicateDataSource)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Delete("/data-sources/{id}", s.deleteDataSource)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.operationsRateLimit, s.requireCSRF).Post("/data-sources/{provider}/preview", s.previewDataSource)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.operationsRateLimit, s.requireCSRF).Post("/data-sources/{provider}/inspect", s.inspectDataSource)
+			dashboard.With(s.requireRoles(contentAuthors...), s.operationsRateLimit).Get("/data-sources/{id}/inspect", s.inspectSavedDataSource)
+			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Post("/data-sources", s.createDataSource)
+			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Patch("/data-sources/{id}", s.updateDataSource)
+			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Post("/data-sources/{id}/duplicate", s.duplicateDataSource)
+			dashboard.With(s.requireRoles(contentManagers...), s.requireCSRF).Delete("/data-sources/{id}", s.deleteDataSource)
+			dashboard.With(s.requireRoles(contentAuthors...), s.operationsRateLimit, s.requireCSRF).Post("/data-sources/{provider}/preview", s.previewDataSource)
+			dashboard.With(s.requireRoles(contentAuthors...), s.operationsRateLimit, s.requireCSRF).Post("/data-sources/{provider}/inspect", s.inspectDataSource)
 			// Form Data Sources. Reads are session-guarded and further authorized per-form inside
 			// each handler (grants depend on the {id} path param); mutations add CSRF. Creating a
 			// form requires the editor+ global role; the creator becomes its manager.
 			if s.forms != nil {
-				dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF).Post("/forms", s.createForm)
+				dashboard.With(s.requireRoles(contentManagers...), s.requireCSRF).Post("/forms", s.createForm)
 				dashboard.Get("/forms", s.listForms)
 				dashboard.Get("/data-sources/{id}/form", s.getForm)
 				dashboard.With(s.requireCSRF).Patch("/data-sources/{id}/form", s.updateFormMetadata)
@@ -261,26 +329,26 @@ func (s *server) routes() http.Handler {
 				dashboard.Get("/data-sources/{id}/user-directory", s.searchFormUsers)
 				dashboard.Get("/approvals", s.listApprovals)
 			}
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF, s.blockDuringBackup).Delete("/assets/{id}", s.deleteAsset)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF, s.blockDuringBackup).Post("/assets/{id}/retry", s.retryAsset)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF, s.blockDuringBackup).Post("/uploads", s.createUpload)
+			dashboard.With(s.requireRoles(contentManagers...), s.requireCSRF, s.blockDuringBackup).Delete("/assets/{id}", s.deleteAsset)
+			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF, s.blockDuringBackup).Post("/assets/{id}/retry", s.retryAsset)
+			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF, s.blockDuringBackup).Post("/uploads", s.createUpload)
 			dashboard.Head("/uploads/{id}", s.headUpload)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF, s.blockDuringBackup).Patch("/uploads/{id}", s.patchUpload)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF, s.blockDuringBackup).Post("/uploads/{id}/complete", s.completeUpload)
-			dashboard.With(s.requireRoles("owner", "administrator", "editor"), s.requireCSRF, s.blockDuringBackup).Delete("/uploads/{id}", s.cancelUpload)
+			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF, s.blockDuringBackup).Patch("/uploads/{id}", s.patchUpload)
+			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF, s.blockDuringBackup).Post("/uploads/{id}/complete", s.completeUpload)
+			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF, s.blockDuringBackup).Delete("/uploads/{id}", s.cancelUpload)
 			dashboard.With(s.requireRoles("owner", "administrator")).Get("/system/media-diagnostics", s.mediaDiagnostics)
 			dashboard.With(s.requireRoles("owner", "administrator")).Get("/screens/pairing/pending", s.listPendingPairings)
 			dashboard.With(s.codeRateLimit).Post("/screens/pairing/resolve", s.resolvePairing)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/screens/pairing/{id}/approve", s.approvePairing)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/screens/pairing/{id}/reject", s.rejectPairing)
-			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Patch("/screens/{id}", s.updateScreen)
-			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/screens/{id}/disable", s.disableScreen)
-			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/screens/{id}/enable", s.enableScreen)
-			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/screens/{id}/revoke", s.revokeScreen)
-			dashboard.Get("/screens/{id}/commands", s.listScreenCommands)
-			dashboard.With(s.requireRoles("owner", "administrator"), s.operationsRateLimit, s.requireCSRF).Post("/screens/{id}/commands", s.createPlayerCommand)
-			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/screens/{id}/commands/{commandId}/cancel", s.cancelPlayerCommand)
-			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Put("/screens/{id}/power-assist", s.confirmPowerAssist)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF, s.requireScreenScope).Patch("/screens/{id}", s.updateScreen)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF, s.requireScreenScope).Post("/screens/{id}/disable", s.disableScreen)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF, s.requireScreenScope).Post("/screens/{id}/enable", s.enableScreen)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF, s.requireScreenScope).Post("/screens/{id}/revoke", s.revokeScreen)
+			dashboard.With(s.requireScreenScope).Get("/screens/{id}/commands", s.listScreenCommands)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.operationsRateLimit, s.requireCSRF, s.requireScreenScope).Post("/screens/{id}/commands", s.createPlayerCommand)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF, s.requireScreenScope).Post("/screens/{id}/commands/{commandId}/cancel", s.cancelPlayerCommand)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF, s.requireScreenScope).Put("/screens/{id}/power-assist", s.confirmPowerAssist)
 		})
 	})
 	r.Handle("/*", web.Handler())

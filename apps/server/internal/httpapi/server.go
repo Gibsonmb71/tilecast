@@ -15,16 +15,22 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/tilecast/tilecast/apps/server/internal/alerts"
+	"github.com/tilecast/tilecast/apps/server/internal/approvals"
 	"github.com/tilecast/tilecast/apps/server/internal/auth"
 	"github.com/tilecast/tilecast/apps/server/internal/backup"
+	"github.com/tilecast/tilecast/apps/server/internal/contenthealth"
 	"github.com/tilecast/tilecast/apps/server/internal/devices"
+	"github.com/tilecast/tilecast/apps/server/internal/fleetops"
 	"github.com/tilecast/tilecast/apps/server/internal/forms"
+	"github.com/tilecast/tilecast/apps/server/internal/integrations"
 	"github.com/tilecast/tilecast/apps/server/internal/layouts"
 	"github.com/tilecast/tilecast/apps/server/internal/media"
+	"github.com/tilecast/tilecast/apps/server/internal/notify"
 	"github.com/tilecast/tilecast/apps/server/internal/playlists"
 	"github.com/tilecast/tilecast/apps/server/internal/plugins"
 	"github.com/tilecast/tilecast/apps/server/internal/scheduling"
 	"github.com/tilecast/tilecast/apps/server/internal/settings"
+	"github.com/tilecast/tilecast/apps/server/internal/snapshots"
 	"github.com/tilecast/tilecast/apps/server/internal/updates"
 )
 
@@ -40,6 +46,12 @@ type Dependencies struct {
 	Settings            *settings.Service
 	Updates             *updates.Service
 	Alerts              *alerts.Service
+	Notifications       *notify.Service
+	ContentHealth       *contenthealth.Service
+	Fleet               *fleetops.Service
+	Integrations        *integrations.Service
+	Approvals           *approvals.Service
+	Snapshots           *snapshots.Service
 	DB                  *pgxpool.Pool
 	Logger              *slog.Logger
 	CookieName          string
@@ -81,6 +93,12 @@ type server struct {
 	settings                      *settings.Service
 	updates                       *updates.Service
 	alerts                        *alerts.Service
+	notifications                 *notify.Service
+	contentHealthService          *contenthealth.Service
+	fleet                         *fleetops.Service
+	integrations                  *integrations.Service
+	approvals                     *approvals.Service
+	snapshots                     *snapshots.Service
 	releasePublishTokenHash       [32]byte
 	releasePublishTokenConfigured bool
 	startedAt                     time.Time
@@ -95,30 +113,41 @@ const sessionContextKey contextKey = "session"
 
 func New(deps Dependencies) http.Handler {
 	s := &server{
-		auth:              deps.Auth,
-		devices:           deps.Devices,
-		media:             deps.Media,
-		forms:             deps.Forms,
-		playlists:         deps.Playlists,
-		plugins:           deps.Plugins,
-		layouts:           deps.Layouts,
-		scheduling:        deps.Scheduling,
-		db:                deps.DB,
-		logger:            deps.Logger,
-		cookieName:        deps.CookieName,
-		secureCookies:     deps.SecureCookies,
-		authLimiter:       newRateLimiter(10, 10*time.Minute),
-		pairingLimiter:    newRateLimiter(10, time.Minute),
-		codeLimiter:       newRateLimiter(30, 10*time.Minute),
-		operationsLimiter: newRateLimiter(60, time.Minute),
-		operations:        deps.Operations,
-		settings:          deps.Settings,
-		updates:           deps.Updates,
-		alerts:            deps.Alerts,
-		startedAt:         time.Now(),
-		backups:           deps.Backups,
-		backupWorker:      deps.BackupWorker,
-		backupLimits:      deps.BackupLimits,
+		auth:                 deps.Auth,
+		devices:              deps.Devices,
+		media:                deps.Media,
+		forms:                deps.Forms,
+		playlists:            deps.Playlists,
+		plugins:              deps.Plugins,
+		layouts:              deps.Layouts,
+		scheduling:           deps.Scheduling,
+		db:                   deps.DB,
+		logger:               deps.Logger,
+		cookieName:           deps.CookieName,
+		secureCookies:        deps.SecureCookies,
+		authLimiter:          newRateLimiter(10, 10*time.Minute),
+		pairingLimiter:       newRateLimiter(10, time.Minute),
+		codeLimiter:          newRateLimiter(30, 10*time.Minute),
+		operationsLimiter:    newRateLimiter(60, time.Minute),
+		operations:           deps.Operations,
+		settings:             deps.Settings,
+		updates:              deps.Updates,
+		alerts:               deps.Alerts,
+		notifications:        deps.Notifications,
+		contentHealthService: deps.ContentHealth,
+		fleet:                deps.Fleet,
+		integrations:         deps.Integrations,
+		approvals:            deps.Approvals,
+		snapshots:            deps.Snapshots,
+		startedAt:            time.Now(),
+		backups:              deps.Backups,
+		backupWorker:         deps.BackupWorker,
+		backupLimits:         deps.BackupLimits,
+	}
+	if s.fleet != nil {
+		// The command path lives on the server, so bulk sending and single
+		// sending share one implementation.
+		s.fleet.SetCommandEnqueuer(s)
 	}
 	if deps.ReleasePublishToken != "" {
 		s.releasePublishTokenHash = sha256.Sum256([]byte(deps.ReleasePublishToken))

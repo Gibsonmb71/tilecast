@@ -47,6 +47,23 @@ var definitions = []Definition{
 	{Key: "backups.schedule_timezone", Category: "backups", Type: "timezone", Default: "UTC", Scope: ScopeOrganization, Title: "Backup timezone"},
 	{Key: "backups.retention_max_count", Category: "backups", Type: "int", Default: 7.0, Min: number(1), Max: number(365), Scope: ScopeOrganization, Title: "Scheduled backups to keep"},
 	{Key: "backups.retention_max_age_days", Category: "backups", Type: "int", Default: 90.0, Min: number(1), Max: number(3650), Scope: ScopeOrganization, Title: "Maximum scheduled backup age (days)"},
+	{Key: "notifications.enabled", Category: "notifications", Type: "bool", Default: false, Scope: ScopeOrganization, Title: "Send notifications", Description: "Email needs TILECAST_SMTP_HOST on the server. Without it, notifications stay off and nothing fails.", Documentation: "docs/notifications.md"},
+	{Key: "notifications.from_address", Category: "notifications", Type: "email", Default: "", Scope: ScopeOrganization, Title: "From address", Description: "Address that notification email is sent from"},
+	{Key: "notifications.from_name", Category: "notifications", Type: "string", Default: "Tilecast", Scope: ScopeOrganization, Title: "From name"},
+	{Key: "notifications.minimum_severity", Category: "notifications", Type: "enum", Default: "warning", Allowed: []string{"info", "warning", "error", "critical"}, Scope: ScopeOrganization, Title: "Minimum severity", Description: "Conditions below this severity are recorded in Activity but are not sent"},
+	{Key: "notifications.digest_time", Category: "notifications", Type: "local_time", Default: "07:30", Scope: ScopeOrganization, Title: "Daily digest time"},
+	{Key: "notifications.timezone", Category: "notifications", Type: "timezone", Default: "UTC", Scope: ScopeOrganization, Title: "Notification timezone", Description: "Applies to the digest time and to quiet hours"},
+	{Key: "notifications.quiet_hours_enabled", Category: "notifications", Type: "bool", Default: false, Scope: ScopeOrganization, Title: "Quiet hours", Description: "Holds notifications until quiet hours end. Critical conditions are always sent immediately."},
+	{Key: "notifications.quiet_hours_start", Category: "notifications", Type: "local_time", Default: "20:00", Scope: ScopeOrganization, Title: "Quiet hours start"},
+	{Key: "notifications.quiet_hours_end", Category: "notifications", Type: "local_time", Default: "06:30", Scope: ScopeOrganization, Title: "Quiet hours end"},
+	{Key: "notifications.retention_days", Category: "notifications", Type: "int", Default: 90.0, Min: number(1), Max: number(3650), Scope: ScopeOrganization, Title: "Delivery log retention"},
+	{Key: "content_health.stale_source_hours", Category: "notifications", Type: "int", Default: 12.0, Min: number(1), Max: number(720), Scope: ScopeOrganization, Title: "Stale Data Source after", Description: "Hours without a successful refresh before a Data Source counts as stale. A weekly calendar tolerates far more than a weather feed.", Documentation: "docs/notifications.md"},
+	{Key: "content_health.expiring_media_days", Category: "notifications", Type: "int", Default: 14.0, Min: number(1), Max: number(365), Scope: ScopeOrganization, Title: "Warn about expiring media", Description: "How far ahead the content health report lists media that is about to expire"},
+	{Key: "snapshots.enabled", Category: "snapshots", Type: "bool", Default: false, Scope: ScopeOrganization, Title: "Keep a snapshot history", Description: "Stores periodic screen images so you can see what a screen showed earlier. Snapshots are held in the database and are included in every backup.", Documentation: "docs/snapshots.md"},
+	{Key: "snapshots.interval_minutes", Category: "snapshots", Type: "int", Default: 60.0, Min: number(15), Max: number(1440), Scope: ScopeOrganization, Title: "Capture every"},
+	{Key: "snapshots.retention_days", Category: "snapshots", Type: "int", Default: 7.0, Min: number(1), Max: number(90), Scope: ScopeOrganization, Title: "Keep snapshots for"},
+	{Key: "snapshots.max_per_screen", Category: "snapshots", Type: "int", Default: 48.0, Min: number(1), Max: number(500), Scope: ScopeOrganization, Title: "Snapshots to keep per screen", Description: "The oldest are removed once a screen reaches this many, whatever the retention period says"},
+	{Key: "content.approval_required", Category: "content_review", Type: "bool", Default: false, Scope: ScopeOrganization, Title: "Require approval before content reaches a screen", Description: "A playlist or Layout must be approved at its current revision before it can be assigned. Editing approved content sends it back for review.", Documentation: "docs/content-review.md"},
 	{Key: "organization.name", Category: "general", Type: "string", Default: "Tilecast", Scope: ScopeOrganization, Title: "Organization name", Description: "Name shown throughout Tilecast Studio"},
 	{Key: "organization.short_name", Category: "general", Type: "string", Default: "", Scope: ScopeOrganization, Title: "Short name", Description: "Compact organization name", Documentation: "docs/settings.md"},
 	{Key: "organization.timezone", Category: "general", Type: "timezone", Default: "UTC", Scope: ScopeOrganization, Title: "Default timezone"},
@@ -174,6 +191,17 @@ var definitions = []Definition{
 	{Key: "preference.table_page_size", Category: "interface", Type: "int", Default: 25.0, Allowed: []string{"10", "25", "50", "100"}, Scope: ScopePreference, Title: "Table page size"},
 	{Key: "preference.remember_filters", Category: "interface", Type: "bool", Default: true, Scope: ScopePreference, Title: "Remember filters"},
 	{Key: "preference.hide_completed_uploads_minutes", Category: "interface", Type: "int", Default: 60.0, Min: number(0), Max: number(10080), Scope: ScopePreference, Title: "Hide completed uploads after"},
+	// Opt-in by design. An installation that turns notifications on must not
+	// start mailing every existing account without those people choosing it.
+	{Key: "preference.notifications.mode", Category: "notifications", Type: "enum", Default: "off", Allowed: []string{"off", "immediate", "digest"}, Scope: ScopePreference, Title: "Notify me", Description: "Immediate sends each condition as it happens. Digest collects them into one daily message."},
+	// Tilecast accounts sign in with a username, which is not necessarily an
+	// address, so where to send is asked rather than assumed. Empty means this
+	// account is never emailed, whatever else it has selected.
+	{Key: "preference.notifications.address", Category: "notifications", Type: "email", Default: "", Scope: ScopePreference, Title: "Send to", Description: "Your email address. Notifications are not sent until this is set."},
+	{Key: "preference.notifications.incidents", Category: "notifications", Type: "bool", Default: true, Scope: ScopePreference, Title: "Screen problems", Description: "A screen stops reporting, playback fails, or a Player enters safe mode"},
+	{Key: "preference.notifications.content_health", Category: "notifications", Type: "bool", Default: true, Scope: ScopePreference, Title: "Content problems", Description: "A Data Source is serving stale data, or a playlist has nothing available to play"},
+	{Key: "preference.notifications.backups", Category: "notifications", Type: "bool", Default: false, Scope: ScopePreference, Title: "Backups"},
+	{Key: "preference.notifications.updates", Category: "notifications", Type: "bool", Default: false, Scope: ScopePreference, Title: "Player updates"},
 }
 
 var byKey = func() map[string]Definition {

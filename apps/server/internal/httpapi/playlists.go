@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/tilecast/tilecast/apps/server/internal/approvals"
 	"github.com/tilecast/tilecast/apps/server/internal/auth"
 	"github.com/tilecast/tilecast/apps/server/internal/devices"
 	"github.com/tilecast/tilecast/apps/server/internal/playlists"
@@ -277,6 +278,12 @@ func (s *server) playerManifest(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) writePlaylistError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
+	case errors.Is(err, approvals.ErrNotApproved):
+		// A refusal an operator can act on, not a server fault: the content
+		// exists and the request was well formed, it just has not been reviewed.
+		writeError(w, http.StatusConflict, "content_not_approved",
+			strings.TrimPrefix(err.Error(), approvals.ErrNotApproved.Error()+": ")+
+				" Approve it under Content review first.")
 	case errors.Is(err, playlists.ErrNotFound):
 		writeError(w, http.StatusNotFound, "playlist_not_found", "The requested playlist was not found.")
 	case errors.Is(err, playlists.ErrInvalidAsset):
@@ -290,4 +297,42 @@ func (s *server) writePlaylistError(w http.ResponseWriter, r *http.Request, err 
 	default:
 		s.internalError(w, r, err)
 	}
+}
+
+// Playlist revision history. Layouts have had this; playlists are the thing
+// most likely to be edited in a hurry while sitting on every screen.
+
+func (s *server) listPlaylistRevisions(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	revisions, err := s.playlists.ListRevisions(r.Context(), id)
+	if err != nil {
+		s.writePlaylistError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"items": revisions,
+		"kept":  playlists.RevisionsToKeep,
+	}})
+}
+
+func (s *server) restorePlaylistRevision(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	revision, err := strconv.ParseInt(chi.URLParam(r, "revision"), 10, 64)
+	if err != nil || revision <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid_revision", "The revision is not valid.")
+		return
+	}
+	user := r.Context().Value(sessionContextKey).(auth.Session).User
+	result, err := s.playlists.RestoreRevision(r.Context(), id, revision, user.ID)
+	if err != nil {
+		s.writePlaylistError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": result})
 }

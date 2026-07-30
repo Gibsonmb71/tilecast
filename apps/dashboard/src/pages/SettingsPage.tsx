@@ -22,6 +22,8 @@ import {
 } from "../settings/SettingsOperations";
 import { UsersPage } from "./UsersPage";
 import { BackupPanel } from "../settings/BackupPanel";
+import { NotificationsPanel } from "../settings/NotificationsPanel";
+import { IntegrationTokensPanel } from "../settings/IntegrationTokensPanel";
 import { LocationsPanel } from "../settings/LocationsPanel";
 import { ActivityRetentionPanel } from "../settings/ActivityRetentionPanel";
 
@@ -212,6 +214,44 @@ function Destination({
         />
       </>
     );
+  if (active === "notifications")
+    return (
+      <>
+        <SettingsSection
+          section={active}
+          definitions={definitions}
+          values={values}
+          editable={manageable}
+          onChange={onChange}
+        />
+        <NotificationsPanel manageable={manageable} />
+      </>
+    );
+  if (active === "content-review")
+    return (
+      <>
+        <SettingsSection
+          section={active}
+          definitions={definitions}
+          values={values}
+          editable={manageable}
+          onChange={onChange}
+        />
+        <div className="settings-sections">
+          <section className="settings-subsection">
+            <header>
+              <h3>The review queue</h3>
+              <p>
+                Content waiting for review is listed under Content review in the
+                main navigation.
+              </p>
+            </header>
+          </section>
+        </div>
+      </>
+    );
+  if (active === "integrations")
+    return <IntegrationTokensPanel owner={owner} />;
   if (active === "import-export") return <ImportExportPanel owner={owner} />;
   if (active === "player-updates")
     return <PlayerUpdatesPanel owner={owner} manageable={manageable} />;
@@ -389,6 +429,9 @@ function dirtySections(
     "takeover",
     "retention",
     "backups",
+    "notifications",
+    "content-review",
+    "snapshots",
     "security",
   ] as SettingsSectionId[])
     if (sectionDirty(definitionsFor(section, definitions), baseline, draft))

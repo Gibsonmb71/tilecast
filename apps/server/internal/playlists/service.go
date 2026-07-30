@@ -25,6 +25,9 @@ type Service struct {
 	sources     SourceProjector
 	definitions *contentdefs.Catalog
 	plugins     PluginProjector
+	// approvalGate refuses assignment of content that is waiting for review.
+	// Nil means this installation does not gate assignment at all.
+	approvalGate func(ctx context.Context, contentType string, id uuid.UUID) error
 }
 
 type SourceProjector interface {
@@ -44,6 +47,12 @@ func (s *Service) SetScheduling(service *scheduling.Service)          { s.schedu
 func (s *Service) SetSourceProjector(projector SourceProjector)       { s.sources = projector }
 func (s *Service) SetContentDefinitions(catalog *contentdefs.Catalog) { s.definitions = catalog }
 func (s *Service) SetPluginProjector(projector PluginProjector)       { s.plugins = projector }
+
+// SetApprovalGate installs the content review check used by every assignment
+// path.
+func (s *Service) SetApprovalGate(gate func(ctx context.Context, contentType string, id uuid.UUID) error) {
+	s.approvalGate = gate
+}
 
 func (s *Service) Create(ctx context.Context, userID uuid.UUID, name, description, sourceType string) (Playlist, error) {
 	name = strings.TrimSpace(name)
@@ -311,6 +320,9 @@ func (s *Service) SetTagRule(ctx context.Context, id, userID uuid.UUID, input Ta
 			return Playlist{}, err
 		}
 	}
+	if err = snapshotRevision(ctx, tx, id, &userID); err != nil {
+		return Playlist{}, err
+	}
 	notes, err := bumpAssigned(ctx, tx, id, "playlist.tag_rule_updated")
 	if err != nil {
 		return Playlist{}, err
@@ -415,6 +427,9 @@ func (s *Service) Update(ctx context.Context, id, userID uuid.UUID, name, descri
 	}
 	if tag.RowsAffected() == 0 {
 		return Playlist{}, ErrNotFound
+	}
+	if err = snapshotRevision(ctx, tx, id, &userID); err != nil {
+		return Playlist{}, err
 	}
 	notifications, err := bumpAssigned(ctx, tx, id, "playlist.updated")
 	if err != nil {
@@ -668,6 +683,9 @@ func (s *Service) AddItem(ctx context.Context, playlistID, userID uuid.UUID, inp
 	if err != nil {
 		return Playlist{}, err
 	}
+	if err = snapshotRevision(ctx, tx, playlistID, &userID); err != nil {
+		return Playlist{}, err
+	}
 	notifications, err := bumpAssigned(ctx, tx, playlistID, "playlist.item_added")
 	if err != nil {
 		return Playlist{}, err
@@ -712,6 +730,9 @@ func (s *Service) UpdateItem(ctx context.Context, playlistID, itemID, userID uui
 	if _, err = tx.Exec(ctx, `UPDATE playlists SET revision=revision+1,updated_at=now() WHERE id=$1`, playlistID); err != nil {
 		return Playlist{}, err
 	}
+	if err = snapshotRevision(ctx, tx, playlistID, &userID); err != nil {
+		return Playlist{}, err
+	}
 	notifications, err := bumpAssigned(ctx, tx, playlistID, "playlist.item_updated")
 	if err != nil {
 		return Playlist{}, err
@@ -749,6 +770,9 @@ func (s *Service) DeleteItem(ctx context.Context, playlistID, itemID, userID uui
 		return Playlist{}, err
 	}
 	if _, err = tx.Exec(ctx, `UPDATE playlists SET revision=revision+1,updated_at=now() WHERE id=$1`, playlistID); err != nil {
+		return Playlist{}, err
+	}
+	if err = snapshotRevision(ctx, tx, playlistID, &userID); err != nil {
 		return Playlist{}, err
 	}
 	notifications, err := bumpAssigned(ctx, tx, playlistID, "playlist.item_deleted")
@@ -801,6 +825,9 @@ func (s *Service) Reorder(ctx context.Context, playlistID, userID uuid.UUID, ids
 		}
 	}
 	if _, err = tx.Exec(ctx, `UPDATE playlists SET revision=revision+1,updated_at=now() WHERE id=$1`, playlistID); err != nil {
+		return Playlist{}, err
+	}
+	if err = snapshotRevision(ctx, tx, playlistID, &userID); err != nil {
 		return Playlist{}, err
 	}
 	notifications, err := bumpAssigned(ctx, tx, playlistID, "playlist.reordered")
@@ -901,6 +928,18 @@ func (s *Service) Assign(ctx context.Context, screenID, playlistID, userID uuid.
 func (s *Service) AssignPresentation(ctx context.Context, screenID uuid.UUID, playlistID, layoutID *uuid.UUID, userID uuid.UUID) (Assignment, error) {
 	if (playlistID == nil) == (layoutID == nil) {
 		return Assignment{}, errors.New("assignment requires exactly one presentation")
+	}
+	// Review is checked here rather than in the HTTP layer so single
+	// assignment, bulk assignment, and anything added later all pass through
+	// it. The gate is nil unless the approval feature is wired in.
+	if s.approvalGate != nil {
+		contentType, contentID := "layout", layoutID
+		if playlistID != nil {
+			contentType, contentID = "playlist", playlistID
+		}
+		if err := s.approvalGate(ctx, contentType, *contentID); err != nil {
+			return Assignment{}, err
+		}
 	}
 	tx, err := s.db.Begin(ctx)
 	if err != nil {

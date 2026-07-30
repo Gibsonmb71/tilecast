@@ -761,3 +761,71 @@ type DependencyError struct {
 func (e *DependencyError) Error() string {
 	return e.Resource + " is in use by " + strings.Join(e.UsedBy, ", ")
 }
+
+// ManualRowWrite is one row supplied by an integration. Values are keyed by
+// column key; a key the source does not declare is rejected rather than stored,
+// so a renamed column upstream fails loudly instead of writing rows that no
+// Widget can bind to.
+type ManualRowWrite struct {
+	Values map[string]string `json:"values"`
+}
+
+// MaxManualRowsPerWrite bounds one integration write. A signage row set is a
+// menu or a scoreboard, not a database export.
+const MaxManualRowsPerWrite = 500
+
+// ReplaceManualRows replaces every row of a Manual Table Data Source, keeping
+// its columns, date field, and date selection as they are.
+//
+// This is the only write an integration token can perform. Columns are
+// deliberately immutable here: changing them would silently break the Widgets
+// bound to them, and that is a decision for a person in Studio.
+func (s *Service) ReplaceManualRows(ctx context.Context, id, user uuid.UUID, rows []ManualRowWrite) (DataSource, error) {
+	if len(rows) > MaxManualRowsPerWrite {
+		return DataSource{}, fmt.Errorf("no more than %d rows in one write", MaxManualRowsPerWrite)
+	}
+	existing, err := s.rawDataSource(ctx, id)
+	if err != nil {
+		return DataSource{}, err
+	}
+	if existing.Provider != "manual" {
+		return DataSource{}, fmt.Errorf("%s Data Sources cannot be written to; only a Manual Table can", existing.Provider)
+	}
+	var config ManualSourceConfig
+	if err := json.Unmarshal(existing.Configuration, &config); err != nil {
+		return DataSource{}, err
+	}
+
+	allowed := make(map[string]bool, len(config.Columns))
+	for _, column := range config.Columns {
+		allowed[column.Key] = true
+	}
+	replacement := make([]ManualRow, 0, len(rows))
+	for index, row := range rows {
+		values := make(map[string]string, len(row.Values))
+		for key, value := range row.Values {
+			if !allowed[key] {
+				return DataSource{}, fmt.Errorf("row %d has no column %q in this Data Source", index+1, key)
+			}
+			values[key] = value
+		}
+		// Row identity is generated: an integration replaces the whole set, so a
+		// caller-supplied id would only be a way to collide with another row.
+		replacement = append(replacement, ManualRow{ID: uuid.NewString(), Values: values})
+	}
+	config.Rows = replacement
+
+	encoded, err := json.Marshal(config)
+	if err != nil {
+		return DataSource{}, err
+	}
+	// Routed through the ordinary update so the cached player payload, the
+	// audit entry, and the assets that bind to this source are all handled by
+	// the one code path that already knows how.
+	return s.UpdateDataSource(ctx, id, user, DataSourceInput{
+		Provider:      existing.Provider,
+		Name:          existing.Name,
+		Description:   existing.Description,
+		Configuration: encoded,
+	})
+}

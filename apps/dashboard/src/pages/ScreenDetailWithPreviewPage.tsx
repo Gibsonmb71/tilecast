@@ -1,6 +1,7 @@
 import { Navigate, useParams, useSearchParams } from "react-router";
 import { FireTvAccessibilityAdbPanel } from "../components/FireTvAccessibilityAdbPanel";
 import { LivePreviewPanel } from "../components/LivePreviewPanel";
+import { SnapshotHistoryPanel } from "../components/SnapshotHistoryPanel";
 import { ScreenActivityPanel } from "../components/ScreenActivityPanel";
 import { ScreenDetailPage } from "./ScreensPage";
 
@@ -16,7 +17,10 @@ export function ScreenDetailWithPreviewPage() {
         <div className="screen-detail-preview-layout__detail">
           <ScreenDetailPage />
         </div>
-        <LivePreviewPanel screenId={id} />
+        <div>
+          <LivePreviewPanel screenId={id} />
+          <SnapshotHistoryPanel screenId={id} />
+        </div>
       </div>
     );
   }
