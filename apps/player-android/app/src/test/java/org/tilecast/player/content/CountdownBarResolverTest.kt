@@ -91,7 +91,11 @@ class CountdownBarResolverTest {
         assertEquals(true, celebrating?.completed)
         assertEquals(false, celebrating?.showBar)
         assertEquals(true, celebrating?.showConfetti)
-        assertNull(resolveCountdownBar(listOf(plugin), Instant.parse("2026-07-27T16:00:09Z")))
+        assertEquals(
+            true,
+            resolveCountdownBar(listOf(plugin), Instant.parse("2026-07-27T16:00:09Z"))?.showConfetti,
+        )
+        assertNull(resolveCountdownBar(listOf(plugin), Instant.parse("2026-07-27T16:00:13Z")))
     }
 
     @Test

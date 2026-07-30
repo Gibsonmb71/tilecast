@@ -119,6 +119,7 @@ private data class ConfettiPiece(
     val startX: Float,
     val drift: Float,
     val delay: Float,
+    val duration: Float,
     val turns: Float,
     val width: Float,
     val height: Float,
@@ -135,14 +136,15 @@ private fun confettiPieces(key: String): List<ConfettiPiece> {
             Color(0xFF7BD389),
             Color(0xFFA78BFA),
         )
-    return List(72) {
+    return List(220) {
         ConfettiPiece(
             startX = random.nextFloat(),
-            drift = random.nextFloat() * 0.2f - 0.1f,
-            delay = random.nextFloat() * 0.16f,
-            turns = 1f + random.nextFloat() * 2f,
-            width = 7f + random.nextFloat() * 7f,
-            height = 11f + random.nextFloat() * 10f,
+            drift = random.nextFloat() * 0.32f - 0.16f,
+            delay = random.nextFloat() * 0.36f,
+            duration = 0.48f + random.nextFloat() * 0.16f,
+            turns = 1.5f + random.nextFloat() * 3f,
+            width = 12f + random.nextFloat() * 14f,
+            height = 18f + random.nextFloat() * 20f,
             color = colors[random.nextInt(colors.size)],
         )
     }
@@ -158,12 +160,12 @@ private fun CountdownConfetti(
     val pieces = remember(key) { confettiPieces(key) }
     LaunchedEffect(key) {
         progress.snapTo(0f)
-        progress.animateTo(1f, tween(durationMillis = 6_500, easing = LinearEasing))
+        progress.animateTo(1f, tween(durationMillis = 10_500, easing = LinearEasing))
     }
     Canvas(modifier) {
         pieces.forEach { piece ->
             val position =
-                ((progress.value - piece.delay) / (1f - piece.delay)).coerceIn(0f, 1f)
+                ((progress.value - piece.delay) / piece.duration).coerceIn(0f, 1f)
             if (position <= 0f) return@forEach
             val pieceWidth = piece.width * density
             val pieceHeight = piece.height * density

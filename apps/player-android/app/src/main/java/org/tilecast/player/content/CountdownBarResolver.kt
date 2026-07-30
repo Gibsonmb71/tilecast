@@ -40,7 +40,7 @@ internal data class ActiveCountdownBar(
 )
 
 private val CompletionDisplay: Duration = Duration.ofMinutes(1)
-private val ConfettiDisplay: Duration = Duration.ofSeconds(8)
+private val ConfettiDisplay: Duration = Duration.ofSeconds(12)
 
 internal fun resolveCountdownBar(
     plugins: List<ManifestPlugin>,

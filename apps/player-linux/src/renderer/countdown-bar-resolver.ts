@@ -75,7 +75,7 @@ interface TilecastCountdownBarResolver {
 
 const tilecastCountdownBar: TilecastCountdownBarResolver = (() => {
   const COMPLETION_DISPLAY_MS = 60_000;
-  const CONFETTI_DISPLAY_MS = 8_000;
+  const CONFETTI_DISPLAY_MS = 12_000;
   const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   // One formatter per zone: a bar re-resolves every second on hardware where
   // rebuilding Intl formatters is the most expensive part of the tick.
