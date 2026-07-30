@@ -128,6 +128,9 @@ describe("countdown bar resolver", () => {
     });
     expect(
       resolver.resolve([plugin], new Date("2026-07-27T16:00:09Z")),
+    ).toMatchObject({ showConfetti: true });
+    expect(
+      resolver.resolve([plugin], new Date("2026-07-27T16:00:13Z")),
     ).toBeNull();
   });
 

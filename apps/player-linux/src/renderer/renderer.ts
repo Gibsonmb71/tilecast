@@ -389,37 +389,38 @@ function triggerCountdownConfetti(
   countdownConfetti.replaceChildren();
   if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   const colors = ["#F7C948", "#F45B69", "#4CC9F0", "#7BD389", "#A78BFA"];
-  for (let index = 0; index < 72; index += 1) {
+  let seed = Array.from(key).reduce(
+    (value, character) =>
+      Math.imul(value ^ character.charCodeAt(0), 16_777_619) >>> 0,
+    2_166_136_261,
+  );
+  const random = () => {
+    seed = (Math.imul(seed, 1_664_525) + 1_013_904_223) >>> 0;
+    return seed / 4_294_967_296;
+  };
+  for (let index = 0; index < 220; index += 1) {
     const piece = document.createElement("span");
     piece.className = "countdown-confetti__piece";
-    piece.style.setProperty("--confetti-x", `${(index * 47) % 101}%`);
-    piece.style.setProperty(
-      "--confetti-drift",
-      `${((index * 29) % 221) - 110}px`,
-    );
-    piece.style.setProperty(
-      "--confetti-spin",
-      `${360 + ((index * 53) % 720)}deg`,
-    );
-    piece.style.setProperty(
-      "--confetti-delay",
-      `${((index * 7) % 18) * 0.06}s`,
-    );
-    piece.style.setProperty(
-      "--confetti-duration",
-      `${4.2 + (index % 7) * 0.35}s`,
-    );
+    piece.style.setProperty("--confetti-x", `${random() * 100}%`);
+    piece.style.setProperty("--confetti-drift", `${random() * 28 - 14}vw`);
+    piece.style.setProperty("--confetti-spin", `${540 + random() * 1_080}deg`);
+    piece.style.setProperty("--confetti-delay", `${random() * 3.8}s`);
+    piece.style.setProperty("--confetti-duration", `${5 + random() * 2}s`);
     piece.style.setProperty(
       "--confetti-color",
       colors[index % colors.length] ?? "#F7C948",
     );
-    piece.style.setProperty("--confetti-width", `${7 + (index % 4) * 2}px`);
-    piece.style.setProperty("--confetti-height", `${11 + (index % 3) * 4}px`);
+    piece.style.setProperty("--confetti-width", `${14 + random() * 14}px`);
+    piece.style.setProperty("--confetti-height", `${20 + random() * 20}px`);
+    piece.style.setProperty(
+      "--confetti-radius",
+      random() > 0.75 ? "50%" : "2px",
+    );
     countdownConfetti.append(piece);
   }
   window.setTimeout(() => {
     if (lastConfettiKey === key) countdownConfetti.replaceChildren();
-  }, 7_600);
+  }, 11_500);
 }
 
 /**
