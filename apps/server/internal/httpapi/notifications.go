@@ -22,12 +22,11 @@ func (s *server) notificationStatus(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
-	pendingCount := 0
-	_ = s.db.QueryRow(r.Context(),
-		`SELECT count(*) FROM notification_deliveries WHERE status='pending'`).Scan(&pendingCount)
-	failedCount := 0
-	_ = s.db.QueryRow(r.Context(),
-		`SELECT count(*) FROM notification_deliveries WHERE status='failed' AND created_at>now()-interval '7 days'`).Scan(&failedCount)
+	pendingCount, failedCount, err := s.notifications.DeliveryCounts(r.Context())
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
 		"emailConfigured": s.notifications.EmailConfigured(),
@@ -141,7 +140,20 @@ func (s *server) updateNotificationWebhook(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
+	// Default to the stored value. Defaulting to true meant a client updating
+	// only the name or URL switched a deliberately disabled receiver back on.
+	existing, err := s.notifications.ListWebhooks(r.Context())
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
 	enabled := true
+	for _, webhook := range existing {
+		if webhook.ID == id {
+			enabled = webhook.Enabled
+			break
+		}
+	}
 	if body.Enabled != nil {
 		enabled = *body.Enabled
 	}

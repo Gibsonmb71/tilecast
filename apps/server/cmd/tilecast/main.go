@@ -192,7 +192,7 @@ func serve() {
 		logger.Info("notification email is unavailable", "reason", "TILECAST_SMTP_HOST is not set")
 	}
 	contentHealthService := contenthealth.NewService(db, settingsService)
-	fleetService := fleetops.NewService(db, playlistService, deviceService)
+	fleetService := fleetops.NewService(db, playlistService, deviceService, logger)
 	integrationService := integrations.NewService(db)
 	approvalService := approvals.NewService(db, settingsService)
 	// The snapshot service drives scheduled captures through the same live

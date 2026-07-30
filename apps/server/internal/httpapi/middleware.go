@@ -135,7 +135,11 @@ func (s *server) requireScreenScope(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		session, ok := r.Context().Value(sessionContextKey).(auth.Session)
 		if !ok {
-			next.ServeHTTP(w, r)
+			// Fail closed. This middleware is only mounted inside the
+			// authenticated subtree today, but the whole point is that a screen
+			// route added later has to opt out of scoping deliberately, and
+			// passing an unauthenticated request through would quietly undo that.
+			writeError(w, http.StatusUnauthorized, "unauthenticated", "Sign in to continue.")
 			return
 		}
 		id, err := uuid.Parse(chi.URLParam(r, "id"))
@@ -163,23 +167,33 @@ func (s *server) requireScreenScope(next http.Handler) http.Handler {
 func (s *server) authorizeScreenList(w http.ResponseWriter, r *http.Request, screens []uuid.UUID, groups []uuid.UUID) bool {
 	session, ok := r.Context().Value(sessionContextKey).(auth.Session)
 	if !ok {
-		return true
+		writeError(w, http.StatusUnauthorized, "unauthenticated", "Sign in to continue.")
+		return false
 	}
 	targets := append([]uuid.UUID(nil), screens...)
-	for _, group := range groups {
+	if len(groups) > 0 {
+		// One query rather than one per group, and every failure is reported.
+		// A dropped row would shorten the set being authorized, and the failure
+		// mode of that is permitting an operation on a screen nobody checked.
 		rows, err := s.db.Query(r.Context(),
-			`SELECT screen_id FROM screen_group_memberships WHERE screen_group_id=$1`, group)
+			`SELECT screen_id FROM screen_group_memberships WHERE screen_group_id = ANY($1)`, groups)
 		if err != nil {
 			s.internalError(w, r, err)
 			return false
 		}
+		defer rows.Close()
 		for rows.Next() {
 			var id uuid.UUID
-			if rows.Scan(&id) == nil {
-				targets = append(targets, id)
+			if err := rows.Scan(&id); err != nil {
+				s.internalError(w, r, err)
+				return false
 			}
+			targets = append(targets, id)
 		}
-		rows.Close()
+		if err := rows.Err(); err != nil {
+			s.internalError(w, r, err)
+			return false
+		}
 	}
 	if err := s.devices.AuthorizeScreens(r.Context(), session.User.ID, session.User.Role, targets); err != nil {
 		if errors.Is(err, devices.ErrOutOfScope) {

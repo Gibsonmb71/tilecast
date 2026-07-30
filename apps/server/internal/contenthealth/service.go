@@ -112,7 +112,7 @@ func (s *Service) sweepDataSources(ctx context.Context, staleAfter time.Duration
 	}
 
 	_, err := s.db.Exec(ctx, `
-		UPDATE incidents i SET status='recovered',recovered_at=r.last_success_at,
+		UPDATE incidents i SET status='recovered',recovered_at=COALESCE(r.last_success_at,now()),
 			recovery_mode='automatic',
 			resolution_reason=COALESCE(NULLIF(i.resolution_reason,''),'The Data Source refreshed successfully.'),
 			updated_at=now()
@@ -210,9 +210,22 @@ func (s *Service) sweepEmptyPlaylists(ctx context.Context) error {
 		                AND s.processing_status='ready'
 		                AND (s.available_from IS NULL OR s.available_from<=now())
 		                AND (s.expires_at IS NULL OR s.expires_at>now())
-		                AND EXISTS(SELECT 1 FROM playlist_tags t
-		                           JOIN content_asset_tags ct ON ct.tag_id=t.tag_id
-		                           WHERE t.playlist_id=a.id AND ct.asset_id=s.id))
+		                -- Must mirror the opening query's branching. Testing an
+		                -- all-match playlist with any-match semantics would close
+		                -- the incident while the playlist still has nothing to play.
+		                AND (
+		                  CASE WHEN a.tag_match='all' THEN
+		                      NOT EXISTS(
+		                          SELECT 1 FROM playlist_tags t
+		                          WHERE t.playlist_id=a.id
+		                            AND NOT EXISTS(SELECT 1 FROM content_asset_tags ct
+		                                           WHERE ct.asset_id=s.id AND ct.tag_id=t.tag_id))
+		                      AND EXISTS(SELECT 1 FROM playlist_tags t WHERE t.playlist_id=a.id)
+		                  ELSE
+		                      EXISTS(SELECT 1 FROM playlist_tags t
+		                             JOIN content_asset_tags ct ON ct.tag_id=t.tag_id
+		                             WHERE t.playlist_id=a.id AND ct.asset_id=s.id)
+		                  END))
 		          ELSE (
 		              SELECT count(*) FROM playlist_items pi
 		              JOIN assets s ON s.id=pi.asset_id
@@ -344,8 +357,18 @@ func (s *Service) Report(ctx context.Context) (Report, error) {
 	// the page and the notification can never disagree about what is wrong.
 	rows, err = s.db.Query(ctx, `
 		SELECT (i.metadata->>'playlistId')::uuid, COALESCE(i.metadata->>'playlistName',''),
-		       (SELECT count(*) FROM screen_playlist_assignments a
-		        WHERE a.playlist_id=(i.metadata->>'playlistId')::uuid)
+		       -- Both assignment paths, like the unassigned-screens query below.
+		       -- Counting only direct rows reported zero for a playlist assigned
+		       -- through a sync group, which is the common case.
+		       (SELECT count(DISTINCT s.id) FROM screens s
+		        WHERE EXISTS(SELECT 1 FROM screen_playlist_assignments a
+		                     WHERE a.playlist_id=(i.metadata->>'playlistId')::uuid
+		                       AND a.screen_id=s.id)
+		           OR EXISTS(SELECT 1 FROM screen_group_memberships m
+		                     JOIN screen_group_playlist_assignments g
+		                       ON g.screen_group_id=m.screen_group_id
+		                     WHERE g.playlist_id=(i.metadata->>'playlistId')::uuid
+		                       AND m.screen_id=s.id))
 		FROM incidents i
 		WHERE i.incident_type='content' AND i.status IN('open','acknowledged')
 		  AND i.metadata->>'playlistId' IS NOT NULL

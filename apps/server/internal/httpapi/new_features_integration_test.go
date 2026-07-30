@@ -215,7 +215,7 @@ func TestNewFeatureQueries(t *testing.T) {
 	})
 
 	t.Run("bulk operation preview expands the sync group", func(t *testing.T) {
-		service := fleetops.NewService(pool, playlistService, deviceService)
+		service := fleetops.NewService(pool, playlistService, deviceService, logger)
 		preview, err := service.Build(ctx, fleetops.Request{
 			ScreenIDs:  []uuid.UUID{screenA},
 			Action:     fleetops.ActionAssignPlaylist,

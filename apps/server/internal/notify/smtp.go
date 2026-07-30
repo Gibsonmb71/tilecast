@@ -93,12 +93,18 @@ func (s *SMTPSender) dial(ctx context.Context) (*smtp.Client, error) {
 		if err != nil {
 			return nil, err
 		}
+		if deadline, ok := ctx.Deadline(); ok {
+			_ = conn.SetDeadline(deadline)
+		}
 		return smtp.NewClient(conn, s.cfg.SMTPHost)
 	}
 
 	conn, err := dialer.DialContext(ctx, "tcp", address)
 	if err != nil {
 		return nil, err
+	}
+	if deadline, ok := ctx.Deadline(); ok {
+		_ = conn.SetDeadline(deadline)
 	}
 	client, err := smtp.NewClient(conn, s.cfg.SMTPHost)
 	if err != nil {
@@ -169,8 +175,14 @@ func buildMIME(from, to mail.Address, message Message) []byte {
 		b.WriteString("X-Tilecast-Category: " + message.Category + "\r\n")
 	}
 	b.WriteString("\r\n")
-	// A bare "." starts the terminating sequence in SMTP DATA.
-	b.WriteString(strings.ReplaceAll(normalizeNewlines(message.Body), "\r\n.", "\r\n.."))
+	// A bare "." starts the terminating sequence in SMTP DATA. The first line
+	// has no preceding CRLF, so it needs its own check or a body beginning with
+	// a dot truncates the message.
+	body := strings.ReplaceAll(normalizeNewlines(message.Body), "\r\n.", "\r\n..")
+	if strings.HasPrefix(body, ".") {
+		body = "." + body
+	}
+	b.WriteString(body)
 	b.WriteString("\r\n")
 	return []byte(b.String())
 }

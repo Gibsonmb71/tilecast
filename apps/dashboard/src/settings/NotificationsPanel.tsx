@@ -154,6 +154,12 @@ export function NotificationsPanel({ manageable }: { manageable: boolean }) {
             onDismissSecret={() => setNewSecret(undefined)}
             createError={createWebhook.error?.message}
             testError={testWebhook.error?.message}
+            actionError={
+              toggleWebhook.error?.message ??
+              (removeWebhook.error instanceof CancelledAction
+                ? undefined
+                : removeWebhook.error?.message)
+            }
             creating={createWebhook.isPending}
             onCreate={(body) => {
               setNewSecret(undefined);
@@ -215,6 +221,7 @@ function WebhookSection({
   onDismissSecret,
   createError,
   testError,
+  actionError,
   creating,
   onCreate,
   onToggle,
@@ -227,6 +234,7 @@ function WebhookSection({
   onDismissSecret: () => void;
   createError?: string;
   testError?: string;
+  actionError?: string;
   creating: boolean;
   onCreate: (body: {
     name: string;
@@ -330,6 +338,11 @@ function WebhookSection({
       {testError && (
         <div className="notice notice--error" role="alert">
           {testError}
+        </div>
+      )}
+      {actionError && (
+        <div className="notice notice--error" role="alert">
+          {actionError}
         </div>
       )}
 

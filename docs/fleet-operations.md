@@ -65,7 +65,7 @@ Undo is an ordinary change: it writes its own audit entries and bumps the
 manifest again. It does not rewrite history.
 
 **A command cannot be undone.** A Player may collect it immediately. Tilecast
-says so before you send, and offers no undo control afterwards.
+says so before you send, and offers no undo control afterward.
 
 ## Limits and safety
 

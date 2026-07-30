@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // Categories a subscriber can turn on independently. Adding one means adding
@@ -272,6 +273,12 @@ func intSetting(values map[string]any, key string, fallback int) int {
 func truncate(value string, limit int) string {
 	if limit <= 0 || len(value) <= limit {
 		return value
+	}
+	// Cut on a rune boundary. Slicing by byte can split a multi-byte character,
+	// and the result is stored in a UTF-8 column, so the insert would fail
+	// rather than merely look wrong.
+	for limit > 0 && !utf8.RuneStart(value[limit]) {
+		limit--
 	}
 	return value[:limit] + "\n[truncated]"
 }

@@ -58,7 +58,12 @@ func (s *Service) Apply(ctx context.Context, user uuid.UUID, request Request, ex
 	// member of a sync group rewrites the group row, so the entry for each
 	// affected screen has to be read first or the later ones would record the
 	// state the earlier writes produced.
-	undo := s.captureUndo(ctx, preview, request)
+	undo, err := s.captureUndo(ctx, preview, request)
+	if err != nil {
+		// Undo state that cannot be read is not a change worth making: the
+		// operation would be unreversible in a way nobody was told about.
+		return Operation{}, err
+	}
 
 	results := make([]ScreenChange, 0, len(preview.Screens))
 	applied, skipped, failed := 0, 0, 0
@@ -89,7 +94,15 @@ func (s *Service) Apply(ctx context.Context, user uuid.UUID, request Request, ex
 		expires := time.Now().Add(UndoWindow)
 		operation.UndoExpires = &expires
 	}
-	return operation, s.record(ctx, user, request, operation, undo)
+	if err := s.record(ctx, user, request, operation, undo); err != nil {
+		// The screens have already changed. Reporting a 500 and dropping the
+		// result would leave the operator with no account of what happened and
+		// no undo, which is worse than an operation that cannot be reversed.
+		s.logger.Error("recording the bulk operation failed", "error", err, "operation", operation.ID)
+		operation.Reversible = false
+		operation.UndoExpires = nil
+	}
+	return operation, nil
 }
 
 // applyOne routes one screen through the existing single-screen path. Nothing
@@ -117,9 +130,9 @@ func (s *Service) applyOne(ctx context.Context, user uuid.UUID, request Request,
 	return validationError("unknown action %q", request.Action)
 }
 
-func (s *Service) captureUndo(ctx context.Context, preview Preview, request Request) []undoEntry {
+func (s *Service) captureUndo(ctx context.Context, preview Preview, request Request) ([]undoEntry, error) {
 	if !request.Reversible() {
-		return nil
+		return nil, nil
 	}
 	entries := make([]undoEntry, 0, len(preview.Screens))
 	for _, change := range preview.Screens {
@@ -129,25 +142,29 @@ func (s *Service) captureUndo(ctx context.Context, preview Preview, request Requ
 		entry := undoEntry{ScreenID: change.ScreenID}
 		if request.Action == ActionSetEnabled {
 			var enabled bool
-			if err := s.db.QueryRow(ctx, `SELECT enabled FROM screens WHERE id=$1`, change.ScreenID).Scan(&enabled); err == nil {
-				entry.Enabled = &enabled
+			if err := s.db.QueryRow(ctx, `SELECT enabled FROM screens WHERE id=$1`, change.ScreenID).Scan(&enabled); err != nil {
+				return nil, fmt.Errorf("read previous state for %s: %w", change.ScreenID, err)
 			}
+			entry.Enabled = &enabled
 		} else {
 			var playlistID, layoutID *uuid.UUID
 			// Read through the group, because that is where a grouped screen's
 			// assignment actually lives.
-			_ = s.db.QueryRow(ctx, `
+			if err := s.db.QueryRow(ctx, `
 				SELECT COALESCE(sa.playlist_id, ga.playlist_id), COALESCE(sa.layout_id, ga.layout_id)
 				FROM screens sc
 				LEFT JOIN screen_group_memberships m ON m.screen_id=sc.id
 				LEFT JOIN screen_playlist_assignments sa ON sa.screen_id=sc.id
 				LEFT JOIN screen_group_playlist_assignments ga ON ga.screen_group_id=m.screen_group_id
-				WHERE sc.id=$1`, change.ScreenID).Scan(&playlistID, &layoutID)
+				WHERE sc.id=$1
+				LIMIT 1`, change.ScreenID).Scan(&playlistID, &layoutID); err != nil {
+				return nil, fmt.Errorf("read previous state for %s: %w", change.ScreenID, err)
+			}
 			entry.PlaylistID, entry.LayoutID = playlistID, layoutID
 		}
 		entries = append(entries, entry)
 	}
-	return entries
+	return entries, nil
 }
 
 func (s *Service) record(ctx context.Context, user uuid.UUID, request Request, operation Operation, undo []undoEntry) error {
@@ -230,6 +247,18 @@ func (s *Service) Undo(ctx context.Context, user uuid.UUID, role string, id uuid
 	if expires == nil || time.Now().After(*expires) {
 		return Operation{}, fmt.Errorf("%w: the undo window has closed. Change the screens again instead.", ErrValidation)
 	}
+	// Claim it before restoring anything. The read above and the write at the
+	// end left a window in which two concurrent undos both passed the check and
+	// both re-applied the previous assignments.
+	claim, err := s.db.Exec(ctx, `
+		UPDATE bulk_operations SET undone_at=now(),undone_by=$2
+		WHERE id=$1 AND undone_at IS NULL`, id, user)
+	if err != nil {
+		return Operation{}, err
+	}
+	if claim.RowsAffected() == 0 {
+		return Operation{}, fmt.Errorf("%w: this operation was already undone", ErrValidation)
+	}
 
 	var entries []undoEntry
 	if err := json.Unmarshal(undoRaw, &entries); err != nil {
@@ -272,10 +301,6 @@ func (s *Service) Undo(ctx context.Context, user uuid.UUID, role string, id uuid
 		results = append(results, change)
 	}
 
-	if _, err := s.db.Exec(ctx,
-		`UPDATE bulk_operations SET undone_at=now(),undone_by=$2 WHERE id=$1`, id, user); err != nil {
-		return Operation{}, err
-	}
 	_, _ = s.db.Exec(ctx, `
 		INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,result,summary)
 		VALUES($1,$2,'fleet.bulk_operation_undone','bulk_operation',$3,$4,$5)`,

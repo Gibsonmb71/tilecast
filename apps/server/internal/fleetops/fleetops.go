@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"time"
 
@@ -84,6 +85,7 @@ type Service struct {
 	// operation-id paths as well as to preview and apply, so an operation id
 	// cannot be used to reach a screen the caller may not touch.
 	scopes ScopeAuthorizer
+	logger *slog.Logger
 }
 
 // ScopeAuthorizer refuses screens outside an account's scope. It is the devices
@@ -93,8 +95,11 @@ type ScopeAuthorizer interface {
 }
 
 // NewService builds the fleet operations service.
-func NewService(db *pgxpool.Pool, assigner Assigner, enabler EnabledSetter) *Service {
-	return &Service{db: db, assigner: assigner, enabler: enabler}
+func NewService(db *pgxpool.Pool, assigner Assigner, enabler EnabledSetter, logger *slog.Logger) *Service {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &Service{db: db, assigner: assigner, enabler: enabler, logger: logger}
 }
 
 // SetScopeAuthorizer installs the screen-scope check used by the operation-id
@@ -243,6 +248,15 @@ func (s *Service) Build(ctx context.Context, request Request) (Preview, error) {
 	if len(rows) == 0 {
 		return Preview{}, validationError("none of the selected screens exist")
 	}
+	// The cap applies to what will actually change, not to what was selected.
+	// Sync-group fan-out happens after Validate, and a screen may belong to
+	// several groups, so a legal selection can expand past the limit the
+	// constant exists to enforce.
+	if len(rows) > MaxScreensPerOperation {
+		return Preview{}, validationError(
+			"sync groups expand this selection to %d screens; no more than %d in one operation",
+			len(rows), MaxScreensPerOperation)
+	}
 
 	nextLabel, err := s.nextLabel(ctx, request)
 	if err != nil {
@@ -303,9 +317,13 @@ func (s *Service) Build(ctx context.Context, request Request) (Preview, error) {
 			names = append(names, name)
 		}
 		sort.Strings(names)
+		subject := "screens are"
+		if preview.GroupAddedCount == 1 {
+			subject = "screen is"
+		}
 		preview.Warnings = append(preview.Warnings, fmt.Sprintf(
-			"%d more screens are included because they share a sync group (%s). A sync group plays one assignment on every member.",
-			preview.GroupAddedCount, joinNames(names)))
+			"%d more %s included because they share a sync group (%s). A sync group plays one assignment on every member.",
+			preview.GroupAddedCount, subject, joinNames(names)))
 	}
 	if !request.Reversible() {
 		preview.Warnings = append(preview.Warnings,
@@ -329,7 +347,8 @@ func (s *Service) expand(ctx context.Context, selected []uuid.UUID) ([]screenRow
 			SELECT m.screen_id FROM screen_group_memberships m
 			JOIN groups g ON g.screen_group_id=m.screen_group_id
 		)
-		SELECT sc.id, sc.name, COALESCE(l.name,''), sc.enabled,
+		SELECT DISTINCT ON (sc.id)
+		       sc.id, sc.name, COALESCE(l.name,''), sc.enabled,
 		       sc.archived_at IS NOT NULL,
 		       NOT EXISTS(SELECT 1 FROM device_credentials c
 		                  WHERE c.screen_id=sc.id AND c.revoked_at IS NULL),
@@ -351,7 +370,10 @@ func (s *Service) expand(ctx context.Context, selected []uuid.UUID) ([]screenRow
 		LEFT JOIN layouts sl ON sl.id=sa.layout_id
 		LEFT JOIN layouts gl ON gl.id=ga.layout_id
 		WHERE sc.deleted_at IS NULL
-		ORDER BY sc.name, sc.id`, selected)
+		-- DISTINCT ON needs sc.id leading; the caller-facing order is restored
+		-- by the sort below. Without this a screen in several groups appears
+		-- once per membership and inflates every count in the preview.
+		ORDER BY sc.id, g.name`, selected)
 	if err != nil {
 		return nil, err
 	}
@@ -367,7 +389,16 @@ func (s *Service) expand(ctx context.Context, selected []uuid.UUID) ([]screenRow
 		}
 		out = append(out, row)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].name != out[j].name {
+			return out[i].name < out[j].name
+		}
+		return out[i].id.String() < out[j].id.String()
+	})
+	return out, nil
 }
 
 func (s *Service) nextLabel(ctx context.Context, request Request) (string, error) {

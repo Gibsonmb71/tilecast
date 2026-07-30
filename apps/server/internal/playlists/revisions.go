@@ -118,12 +118,18 @@ func (s *Service) ListRevisions(ctx context.Context, playlistID uuid.UUID) ([]Re
 		       r.created_at, r.created_by, COALESCE(u.name,''),
 		       r.revision = p.revision,
 		       (SELECT count(*) FROM jsonb_array_elements(r.items) item
+		        -- The same predicates the restore applies, or a revision could be
+		        -- offered as restorable and then come back with fewer items.
 		        WHERE (item->>'assetId' IS NOT NULL
 		               AND NOT EXISTS(SELECT 1 FROM assets a
-		                              WHERE a.id=(item->>'assetId')::uuid AND a.deleted_at IS NULL))
+		                              WHERE a.id=(item->>'assetId')::uuid
+		                                AND a.deleted_at IS NULL
+		                                AND a.processing_status='ready'))
 		           OR (item->>'layoutId' IS NOT NULL
 		               AND NOT EXISTS(SELECT 1 FROM layouts l
-		                              WHERE l.id=(item->>'layoutId')::uuid AND l.deleted_at IS NULL)))
+		                              WHERE l.id=(item->>'layoutId')::uuid
+		                                AND l.deleted_at IS NULL
+		                                AND l.published_revision_id IS NOT NULL)))
 		FROM playlist_revisions r
 		JOIN playlists p ON p.id=r.playlist_id
 		LEFT JOIN users u ON u.id=r.created_by
@@ -275,7 +281,11 @@ func (s *Service) RestoreRevision(ctx context.Context, playlistID uuid.UUID, rev
 		return RestoreResult{}, err
 	}
 	var restoredTags []uuid.UUID
-	_ = json.Unmarshal(tagIDs, &restoredTags)
+	if err := json.Unmarshal(tagIDs, &restoredTags); err != nil {
+		// A malformed snapshot must not restore a tag playlist with no tags
+		// after its tags have already been deleted.
+		return RestoreResult{}, fmt.Errorf("decode restored tags: %w", err)
+	}
 	for _, tag := range restoredTags {
 		// A tag deleted since the snapshot is skipped for the same reason an
 		// asset is.

@@ -55,6 +55,8 @@ export function FleetBulkPage() {
   const [commandType, setCommandType] = useState("sync_now");
   const [preview, setPreview] = useState<BulkPreview>();
   const [result, setResult] = useState<BulkOperation>();
+  // Kept separately because apply clears the preview before the result renders.
+  const [undoWindowMinutes, setUndoWindowMinutes] = useState<number>();
 
   const items = screens.data?.items ?? [];
 
@@ -72,6 +74,7 @@ export function FleetBulkPage() {
     onSuccess: (data) => {
       setPreview(data);
       setResult(undefined);
+      setUndoWindowMinutes(data.undoWindowMinutes);
     },
   });
   const apply = useMutation({
@@ -342,8 +345,8 @@ export function FleetBulkPage() {
               <div className="settings-subsection__action">
                 <div>
                   <p>
-                    You can put this back for the next{" "}
-                    {preview?.undoWindowMinutes ?? 15} minutes.
+                    You can put this back for the next {undoWindowMinutes ?? 15}{" "}
+                    minutes.
                   </p>
                 </div>
                 <button

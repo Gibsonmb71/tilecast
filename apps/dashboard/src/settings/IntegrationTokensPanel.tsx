@@ -168,6 +168,11 @@ export function IntegrationTokensPanel({ owner }: { owner: boolean }) {
             ))}
           </div>
         )}
+        {revoke.error && !(revoke.error instanceof CancelledAction) && (
+          <div className="notice notice--error" role="alert">
+            {revoke.error.message}
+          </div>
+        )}
       </section>
 
       <section className="settings-subsection">
@@ -237,7 +242,11 @@ export function IntegrationTokensPanel({ owner }: { owner: boolean }) {
                 </p>
               </div>
               <div className="setting-control setting-control--checks">
-                {!sources.data?.items?.length ? (
+                {sources.isLoading ? (
+                  <span className="setting-dependency">
+                    Loading Data Sources…
+                  </span>
+                ) : !sources.data?.items?.length ? (
                   <span className="setting-dependency">
                     No Manual Table Data Sources exist yet.
                   </span>

@@ -270,12 +270,24 @@ type pendingDelivery struct {
 }
 
 func (s *Service) claimDue(ctx context.Context) ([]pendingDelivery, error) {
+	// Claim by leasing: the rows stay pending, but their next attempt moves out
+	// of reach so a concurrent DeliverDue cannot pick them up and send a second
+	// copy. Delivery has no receiver-side idempotency, so a duplicate read is a
+	// duplicate email. A crash between the lease and the send costs a delay,
+	// not a lost message.
 	rows, err := s.db.Query(ctx, `
-		SELECT id,event_key,category,severity,channel,target,subject,body,payload,attempts
-		FROM notification_deliveries
-		WHERE status='pending' AND next_attempt_at<=now()
-		ORDER BY next_attempt_at
-		LIMIT 200`)
+		WITH due AS (
+			SELECT id FROM notification_deliveries
+			WHERE status='pending' AND next_attempt_at<=now()
+			ORDER BY next_attempt_at
+			LIMIT 200
+			FOR UPDATE SKIP LOCKED
+		)
+		UPDATE notification_deliveries d
+		SET next_attempt_at = now() + interval '5 minutes'
+		FROM due WHERE d.id = due.id
+		RETURNING d.id,d.event_key,d.category,d.severity,d.channel,d.target,
+		          d.subject,d.body,d.payload,d.attempts`)
 	if err != nil {
 		return nil, err
 	}
@@ -582,6 +594,10 @@ func (s *Service) CreateWebhook(ctx context.Context, user uuid.UUID, name, rawUR
 // a receiver that needs a new key gets a new webhook, so a silent rotation
 // cannot break an integration nobody is watching.
 func (s *Service) UpdateWebhook(ctx context.Context, id uuid.UUID, name, rawURL string, enabled bool, categories []string) (Webhook, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return Webhook{}, errors.New("a name is required")
+	}
 	if err := ValidateWebhookURL(rawURL); err != nil {
 		return Webhook{}, err
 	}
@@ -591,7 +607,7 @@ func (s *Service) UpdateWebhook(ctx context.Context, id uuid.UUID, name, rawURL 
 	tag, err := s.db.Exec(ctx, `
 		UPDATE notification_webhooks SET name=$2,url=$3,enabled=$4,categories=$5,updated_at=now()
 		WHERE id=$1 AND deleted_at IS NULL`,
-		id, strings.TrimSpace(name), strings.TrimSpace(rawURL), enabled, normalizeCategories(categories))
+		id, name, strings.TrimSpace(rawURL), enabled, normalizeCategories(categories))
 	if err != nil {
 		return Webhook{}, err
 	}
@@ -620,6 +636,11 @@ func (s *Service) DeleteWebhook(ctx context.Context, id uuid.UUID) error {
 // TestWebhook posts a signed sample event so an operator can confirm the
 // receiver accepts it.
 func (s *Service) TestWebhook(ctx context.Context, id uuid.UUID) error {
+	if s.webhooks == nil {
+		// deliverWebhook already treats a nil sender as a supported build; this
+		// path has to agree rather than panic.
+		return errors.New("webhook delivery is not configured")
+	}
 	target, err := s.resolveWebhook(ctx, id.String())
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound
@@ -694,6 +715,17 @@ type Delivery struct {
 	LastError string     `json:"lastError,omitempty"`
 	CreatedAt time.Time  `json:"createdAt"`
 	SentAt    *time.Time `json:"sentAt,omitempty"`
+}
+
+// DeliveryCounts reports the queue depth and recent failures. It lives here
+// rather than in the handler so a failing count is an error rather than a
+// healthy-looking zero.
+func (s *Service) DeliveryCounts(ctx context.Context) (pending int, recentFailures int, err error) {
+	err = s.db.QueryRow(ctx, `
+		SELECT count(*) FILTER (WHERE status='pending'),
+		       count(*) FILTER (WHERE status='failed' AND created_at > now()-interval '7 days')
+		FROM notification_deliveries`).Scan(&pending, &recentFailures)
+	return pending, recentFailures, err
 }
 
 // RecentDeliveries returns the delivery log, newest first.

@@ -107,7 +107,9 @@ export function ActivityPage() {
   });
 
   const definitions = useMemo<FilterDefinition[]>(() => {
-    if (tab === "overview") return [];
+    // Content Health is a rollup of current state and takes no filters, so it
+    // must not inherit the Audit Log set.
+    if (tab === "overview" || tab === "content-health") return [];
     const search: FilterDefinition = {
       key: "search",
       kind: "search",
@@ -372,7 +374,7 @@ export function ActivityPage() {
         onValueChange={selectTab}
       />
 
-      {tab !== "overview" && (
+      {tab !== "overview" && tab !== "content-health" && (
         <FilterBar
           definitions={definitions}
           values={values}

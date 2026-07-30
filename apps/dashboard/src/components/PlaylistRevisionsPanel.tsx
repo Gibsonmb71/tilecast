@@ -34,7 +34,9 @@ export function PlaylistRevisionsPanel({
             : ""),
       );
       void client.invalidateQueries({ queryKey: ["playlist-revisions"] });
-      void client.invalidateQueries({ queryKey: ["playlist", playlistId] });
+      // The editor caches under ["playlists", id]; invalidating ["playlist"]
+      // left the revision badge and timeline stale after a restore.
+      void client.invalidateQueries({ queryKey: ["playlists", playlistId] });
     },
   });
 

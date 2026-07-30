@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/google/uuid"
@@ -14,6 +15,17 @@ import (
 )
 
 var managedUsernamePattern = regexp.MustCompile(`^[a-zA-Z0-9._@+-]{3,254}$`)
+
+// sortedManagedRoles keeps the validation message in step with the set, so a
+// new role cannot be accepted while the error still lists the old ones.
+func sortedManagedRoles() []string {
+	out := make([]string, 0, len(managedRoles))
+	for role := range managedRoles {
+		out = append(out, role)
+	}
+	sort.Strings(out)
+	return out
+}
 
 var managedRoles = map[string]bool{
 	"owner":         true,
@@ -340,7 +352,7 @@ func validateManagedUser(input managedUserInput, requirePassword bool) error {
 		return errors.New("username must be 3 to 254 characters and contain only letters, numbers, or . _ @ + -")
 	}
 	if !managedRoles[input.Role] {
-		return errors.New("role must be owner, administrator, editor, or viewer")
+		return errors.New("role must be " + strings.Join(sortedManagedRoles(), ", "))
 	}
 	if requirePassword || input.Password != "" {
 		if len(input.Password) < 12 || len(input.Password) > 1024 {
