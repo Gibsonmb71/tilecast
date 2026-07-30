@@ -57,11 +57,11 @@
         align-items: center;
         justify-content: center;
         gap: 0.35em;
-        padding: 0 4vw;
+        padding: 0 var(--plugin-bar-padding, 4%);
         background: rgba(13, 20, 27, 0.96);
         color: #fff;
         border-top: 1px solid rgba(255, 255, 255, 0.24);
-        font-size: clamp(22px, calc(var(--plugin-height, 72px) * 0.42), 72px);
+        font-size: var(--plugin-bar-font-size, 30px);
         font-weight: 600;
         line-height: 1;
         transform: translateY(100%);

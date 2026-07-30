@@ -4,6 +4,7 @@ import { extractFile } from "@electron/asar";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -39,6 +40,10 @@ const appImage = option("--appimage");
 const packageFile = option("--package");
 const manifestFile = option("--manifest");
 const packageMetadata = readJSON(packageFile);
+const require = createRequire(import.meta.url);
+const builderConfig = require(
+  path.join(path.dirname(packageFile), "electron-builder.config.cjs"),
+);
 const manifest = readJSON(manifestFile);
 const expectedVersion = String(packageMetadata.version ?? "");
 const expectedVersionCode = versionCode(expectedVersion);
@@ -83,6 +88,7 @@ try {
   );
   requireEqual("Manifest platform", manifest.platform, "linux");
   requireEqual("Manifest product", manifest.product, "tilecast-player");
+  requireEqual("AppImage toolset", builderConfig.toolsets?.appimage, "1.0.3");
   requireEqual(
     "Manifest artifact SHA-256",
     manifest.artifactSha256,

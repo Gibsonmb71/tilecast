@@ -137,6 +137,10 @@ interface RendererCountdownBarPlugin {
     completionText?: string;
     displayMode: "overlay" | "push";
     heightPx: number;
+    /** All three are absent on manifests published before they existed. */
+    progressFill?: "none" | "drain" | null;
+    contentPadding?: number | null;
+    textScale?: number | null;
     priority: number;
   };
 }
@@ -404,6 +408,16 @@ function updatePluginSurface(): void {
   document.documentElement.style.setProperty(
     "--plugin-height",
     `${selected.heightPx}px`,
+  );
+  // Padding and type size are resolved centrally so both players agree on what
+  // a given contentPadding and textScale mean.
+  document.documentElement.style.setProperty(
+    "--plugin-bar-padding",
+    `${selected.contentPadding}%`,
+  );
+  document.documentElement.style.setProperty(
+    "--plugin-bar-font-size",
+    `${selected.fontSizePx}px`,
   );
   contentStage.classList.toggle("plugin-push", selected.displayMode === "push");
   countdownMessage.textContent = selected.message;

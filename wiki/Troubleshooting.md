@@ -223,7 +223,7 @@ ls -l ~/tilecast/tilecast-player.AppImage
 chmod +x ~/tilecast/tilecast-player.AppImage
 ```
 
-If the terminal reports a FUSE error, install the distribution's FUSE 2 compatibility package or test with `--appimage-extract-and-run`. If the systemd log reports that the display cannot be opened, the service started without a graphical session or has the wrong `DISPLAY` or `WAYLAND_DISPLAY` value.
+If the terminal reports a FUSE error, start the player with `--appimage-extract-and-run` and confirm the systemd unit includes that argument. This supported mode is the Tilecast default and needs no FUSE package while retaining managed self-updates. If the systemd log reports that the display cannot be opened, the service started without a graphical session or has the wrong `DISPLAY` or `WAYLAND_DISPLAY` value.
 
 ### The service is running but no window appears
 
@@ -290,7 +290,7 @@ Options: use X11 for the kiosk session; accept and persist the Wayland portal pe
 
 ### Remote AppImage update fails
 
-Studio-driven Linux updates require the player to be running as a managed AppImage. Development runs and extracted AppImages report they are not managed installations. Also verify the AppImage and its parent directory are writable by the kiosk user, the release is a Linux release with a signed update manifest, there is enough free space for the staged AppImage, and the systemd service points to the same AppImage that is currently running.
+Studio-driven Linux updates require the player to be running as a managed AppImage. AppImage runtime extraction through `--appimage-extract-and-run` remains managed because the runtime preserves `$APPIMAGE`; a development run or manually unpacked `squashfs-root/AppRun` does not. Also verify the AppImage and its parent directory are writable by the kiosk user, the release is a Linux release with a signed update manifest, there is enough free space for the staged AppImage, and the systemd service points to the same AppImage that is currently running.
 
 ### The display still sleeps or shows a lock screen
 

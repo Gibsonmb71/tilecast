@@ -177,6 +177,10 @@ jobs:
 
           mkdir -p "$extract_root"
           chmod +x "$output/tilecast-player.AppImage"
+          # Validate the AppImage runtime without launching the Electron kiosk,
+          # which intentionally keeps running until the service stops it.
+          timeout 30s "$output/tilecast-player.AppImage" \
+            --appimage-version >/dev/null
           (
             cd "$extract_root"
             "$output/tilecast-player.AppImage" --appimage-extract >/dev/null

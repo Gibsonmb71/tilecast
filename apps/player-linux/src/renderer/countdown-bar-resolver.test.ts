@@ -18,6 +18,8 @@ interface CountdownBarPlugin {
     displayMode: "overlay" | "push";
     heightPx: number;
     progressFill?: "none" | "drain" | null;
+    contentPadding?: number | null;
+    textScale?: number | null;
     priority: number;
   };
 }
@@ -34,6 +36,8 @@ interface CountdownBarResolver {
     displayMode: string;
     targetAt: string;
     remainingFraction: number | null;
+    contentPadding: number;
+    fontSizePx: number;
   } | null;
 }
 
@@ -142,6 +146,42 @@ describe("countdown bar resolver", () => {
     const active = resolver.resolve([plugin], new Date("2026-07-27T16:00:30Z"));
     expect(active?.value).toBe("Lunch is over");
     expect(active?.remainingFraction).toBe(0);
+  });
+
+  it("defaults padding and type size to the original appearance", () => {
+    const active = resolver.resolve(
+      [weekly()],
+      new Date("2026-07-27T15:50:00Z"),
+    );
+    // 72px height * 0.42 = 30.24, inside the 22..72 clamp, at 100% scale.
+    expect(active?.contentPadding).toBe(4);
+    expect(active?.fontSizePx).toBeCloseTo(30.24, 2);
+  });
+
+  it("applies a custom padding and text scale", () => {
+    const active = resolver.resolve(
+      [weekly({ contentPadding: 0, textScale: 200 })],
+      new Date("2026-07-27T15:50:00Z"),
+    );
+    expect(active?.contentPadding).toBe(0);
+    expect(active?.fontSizePx).toBeCloseTo(60.48, 2);
+  });
+
+  it("lets a scaled bar exceed the unscaled type ceiling", () => {
+    const tall = weekly({ textScale: 300 });
+    tall.config.heightPx = 320;
+    const active = resolver.resolve([tall], new Date("2026-07-27T15:50:00Z"));
+    // The height-derived size clamps at 72, then the scale multiplies it.
+    expect(active?.fontSizePx).toBeCloseTo(216, 2);
+  });
+
+  it("clamps padding and scale that arrive out of range", () => {
+    const active = resolver.resolve(
+      [weekly({ contentPadding: 99, textScale: 5_000 })],
+      new Date("2026-07-27T15:50:00Z"),
+    );
+    expect(active?.contentPadding).toBe(40);
+    expect(active?.fontSizePx).toBeCloseTo(30.24 * 5, 1);
   });
 
   it("applies the persisted server clock offset", () => {

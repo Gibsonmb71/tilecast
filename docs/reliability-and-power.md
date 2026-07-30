@@ -8,6 +8,13 @@ Tilecast Studio exposes Linux kiosk fullscreen and display-sleep prevention alon
 
 Linux boot startup, restart after process exit, and desktop lockdown are operating-system responsibilities provided by the installed systemd unit and kiosk compositor. Studio does not claim those external safeguards are active merely because a policy value is enabled. Android device-owner, lock-task, Accessibility Control Assist, and Power Assist settings do not apply to Linux.
 
+Release AppImages use a static runtime that does not dynamically load the
+legacy `libfuse.so.2` compatibility library. The supplied and in-product
+systemd units also start the AppImage with `--appimage-extract-and-run` as a
+safety net for older artifacts and hosts where mounting is unavailable. This
+supported runtime path preserves `$APPIMAGE` as the installed artifact path
+used by signed, atomic Studio updates.
+
 Tilecast Player has two reliability modes. **Standard Reliability** works with a normally installed APK and provides cached startup, boot recovery, immersive fullscreen, keep-awake behavior, bounded playback recovery, safe mode, and locally approved Accessibility Control Assist. Android can still let a user leave the app. **Managed Kiosk** is effective only when Android confirms device-owner/device-policy provisioning and active lock task. Requesting it in policy is not proof that it is active.
 
 ## First-run commissioning

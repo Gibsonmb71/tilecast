@@ -78,6 +78,8 @@ func TestCountdownBarLifecycleAndManifestTargeting(t *testing.T) {
 
 	service := NewService(pool, nil)
 	input := validInput()
+	input.ContentPadding = intPointer(0)
+	input.TextScale = 175
 	input.TargetScope = "locations"
 	input.TargetIDs = []uuid.UUID{locationID}
 	created, err := service.CreateCountdownBar(ctx, userID, input)
@@ -104,6 +106,15 @@ func TestCountdownBarLifecycleAndManifestTargeting(t *testing.T) {
 	targeted, err := service.ManifestForScreen(ctx, targetedScreen)
 	if err != nil || len(targeted) != 4 {
 		t.Fatalf("targeted manifest: %#v %v", targeted, err)
+	}
+	var customMetricsFound bool
+	for _, plugin := range targeted {
+		if config, ok := plugin.Config.(ManifestCountdownConfig); ok && plugin.ID == created.ID {
+			customMetricsFound = config.ContentPadding == 0 && config.TextScale == 175
+		}
+	}
+	if created.ContentPadding == nil || *created.ContentPadding != 0 || created.TextScale != 175 || !customMetricsFound {
+		t.Fatalf("custom text metrics were not persisted and projected: created=%#v manifest=%#v", created, targeted)
 	}
 	other, err := service.ManifestForScreen(ctx, otherScreen)
 	config, _ := firstConfig(other).(ManifestCountdownConfig)
@@ -153,11 +164,14 @@ func TestCountdownBarLifecycleAndManifestTargeting(t *testing.T) {
 	for _, item := range catalog.Items {
 		byID[item.ID] = item
 	}
-	if len(catalog.Items) != 2 || byID["countdown_bar"].Name == "" || byID["emergency_alerts"].Name == "" {
-		t.Fatalf("catalog = %+v, want Countdown Bar and Emergency Alerts", catalog.Items)
+	if len(catalog.Items) != 3 || byID["countdown_bar"].Name == "" || byID["emergency_alerts"].Name == "" || byID["forms"].Name == "" {
+		t.Fatalf("catalog = %+v, want Countdown Bar, Emergency Alerts, and Forms", catalog.Items)
 	}
 	if alerts := byID["emergency_alerts"]; alerts.Enabled || alerts.InstanceCount != 0 {
 		t.Fatalf("unconfigured Emergency Alerts = %+v, want disabled with no rules", alerts)
+	}
+	if forms := byID["forms"]; !forms.Enabled || forms.InstanceCount != 0 {
+		t.Fatalf("unconfigured Forms = %+v, want enabled with no forms", forms)
 	}
 	// The migration seeds the singleton row, but this test truncates users, and
 	// TRUNCATE ... CASCADE reaches every table referencing it.

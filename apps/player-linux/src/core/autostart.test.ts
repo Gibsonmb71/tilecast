@@ -130,7 +130,7 @@ describe("renderUnit", () => {
       },
     });
     expect(unit).toContain(GENERATED_MARKER);
-    expect(unit).toContain(`ExecStart=${APP_IMAGE}`);
+    expect(unit).toContain(`ExecStart=${APP_IMAGE} --appimage-extract-and-run`);
     expect(unit).toContain("Environment=WAYLAND_DISPLAY=wayland-1");
     expect(unit).not.toContain("DISPLAY=:0");
     expect(unit).toContain("Environment=TILECAST_DATA_DIR=/srv/tilecast-state");

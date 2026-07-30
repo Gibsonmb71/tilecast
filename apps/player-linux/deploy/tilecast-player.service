@@ -28,7 +28,10 @@ StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-ExecStart=%h/tilecast/tilecast-player.AppImage
+# Extract-and-run is an AppImage runtime mode, not an unpacked installation.
+# It avoids a host FUSE 2 dependency while preserving APPIMAGE as the path to
+# this file, so signed Studio updates can still replace it atomically.
+ExecStart=%h/tilecast/tilecast-player.AppImage --appimage-extract-and-run
 Restart=always
 RestartSec=5
 Environment=TILECAST_LOG_LEVEL=info

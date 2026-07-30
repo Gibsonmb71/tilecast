@@ -12,7 +12,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Copy, EllipsisVertical, SquarePen, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { useNavigate, useParams } from "react-router";
+import { Navigate, useLocation, useNavigate, useParams } from "react-router";
 import { api, ApiError } from "../api/client";
 import type { DataSource, DataSourceDefinition } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
@@ -53,8 +53,13 @@ export function DataSourcesPage() {
     queryFn: api.contentDefinitions,
   });
   const definitionsByProvider = new Map<string, DataSourceDefinition>(
-    (definitions.data?.dataSources ?? []).map((item) => [item.id, item]),
+    (definitions.data?.dataSources ?? [])
+      .filter((item) => item.id !== "form")
+      .map((item) => [item.id, item]),
   );
+  const visibleDataSources =
+    dataSources.data?.items?.filter((source) => source.provider !== "form") ??
+    [];
   const duplicate = useMutation({
     mutationFn: (id: string) => api.duplicateDataSource(id, csrf),
     onSuccess: (created) => {
@@ -130,11 +135,13 @@ export function DataSourcesPage() {
           onChange={(event) => setProvider(event.target.value)}
         >
           <option value="">All Data Source types</option>
-          {(definitions.data?.dataSources ?? []).map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.name}
-            </option>
-          ))}
+          {(definitions.data?.dataSources ?? [])
+            .filter((item) => item.id !== "form")
+            .map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
         </Select>
         <ViewToggle value={view} onValueChange={setView} />
       </DashboardListToolbar>
@@ -154,7 +161,7 @@ export function DataSourcesPage() {
       )}
       {dataSources.isLoading ? (
         <div className="table-loading">Loading Data Sources...</div>
-      ) : dataSources.data?.items?.length === 0 ? (
+      ) : visibleDataSources.length === 0 ? (
         <EmptyState
           className="content-empty"
           icon={<Plus size={24} aria-hidden="true" />}
@@ -173,7 +180,7 @@ export function DataSourcesPage() {
         />
       ) : (
         <div className={`asset-collection asset-collection--${view}`}>
-          {dataSources.data?.items?.map((source) => (
+          {visibleDataSources.map((source) => (
             <article
               className="asset-card asset-card--has-menu"
               key={source.id}
@@ -231,9 +238,14 @@ export function DataSourcesPage() {
   );
 }
 
-export function DataSourceEditorPage() {
+export function DataSourceEditorPage({
+  redirectForms = false,
+}: {
+  redirectForms?: boolean;
+} = {}) {
   const auth = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const { id, provider: providerParam } = useParams();
   const csrf = auth.status?.csrfToken ?? "";
   const detail = useQuery({
@@ -255,10 +267,14 @@ export function DataSourceEditorPage() {
     (candidate) => candidate.id === provider,
   );
 
+  if (providerParam === "form" && redirectForms) {
+    return <Navigate to="/plugins/forms/new" replace />;
+  }
   if (!id && !providerParam) {
     return (
       <section className="app-editor-route">
         <DataSourceProviderGallery
+          exclude={["form"]}
           page
           onClose={close}
           onChoose={(choice) => void navigate(`/data-sources/new/${choice}`)}
@@ -271,7 +287,9 @@ export function DataSourceEditorPage() {
   // Form Data Sources use a dedicated, full-width management page rather than the compact generic
   // editor shell, and enforce per-form capabilities instead of only global roles.
   if (provider === "form") {
-    return dataSource ? (
+    return redirectForms ? (
+      <Navigate to={`/plugins/forms/${id}${location.search}`} replace />
+    ) : dataSource ? (
       <FormDataSourcePage dataSource={dataSource} />
     ) : (
       <CreateFormDataSourcePage />

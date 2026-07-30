@@ -113,11 +113,17 @@ describe("Data Source card actions", () => {
     widgetUsage: [],
     bindingUsage: [],
   } as unknown as DataSource;
+  const formSource = {
+    ...source,
+    id: "form-1",
+    provider: "form",
+    name: "Staff announcements",
+  } as DataSource;
 
   function renderPage() {
     vi.spyOn(api, "listDataSources").mockResolvedValue({
-      items: [source],
-      total: 1,
+      items: [source, formSource],
+      total: 2,
       page: 1,
       pageSize: 100,
     });
@@ -151,6 +157,12 @@ describe("Data Source card actions", () => {
     await waitFor(() =>
       expect(duplicate).toHaveBeenCalledWith("source-1", "csrf-token"),
     );
+  });
+
+  it("keeps Forms out of the Data Source library", async () => {
+    renderPage();
+    expect(await screen.findByText("District news")).toBeInTheDocument();
+    expect(screen.queryByText("Staff announcements")).toBeNull();
   });
 
   it("confirms before deleting a Data Source", async () => {

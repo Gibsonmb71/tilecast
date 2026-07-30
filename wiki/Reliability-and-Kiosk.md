@@ -159,7 +159,7 @@ StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-ExecStart=%h/tilecast/tilecast-player.AppImage
+ExecStart=%h/tilecast/tilecast-player.AppImage --appimage-extract-and-run
 Restart=always
 RestartSec=5
 Environment=TILECAST_LOG_LEVEL=info
@@ -167,6 +167,10 @@ Environment=TILECAST_LOG_LEVEL=info
 [Install]
 WantedBy=graphical-session.target
 ```
+
+Extract-and-run is the managed, FUSE-independent startup path. It still
+preserves the original AppImage path for signed Studio updates; do not manually
+unpack and launch `squashfs-root/AppRun`.
 
 Then enable it:
 

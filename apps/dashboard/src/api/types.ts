@@ -765,7 +765,7 @@ export type ScreenGroupList = {
 };
 
 export type PluginSummary = {
-  id: "countdown_bar";
+  id: string;
   name: string;
   description: string;
   enabled: boolean;
@@ -785,6 +785,8 @@ export type CountdownBarInput = {
   displayMode: "overlay" | "push";
   heightPx: number;
   progressFill: "none" | "drain";
+  contentPadding: number;
+  textScale: number;
   enabled: boolean;
   priority: number;
   targetScope: "all" | "screens" | "sync_groups" | "locations";

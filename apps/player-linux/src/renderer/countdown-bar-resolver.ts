@@ -34,6 +34,8 @@ interface TilecastCountdownBarPlugin {
     displayMode: "overlay" | "push";
     heightPx: number;
     progressFill?: "none" | "drain" | null;
+    contentPadding?: number | null;
+    textScale?: number | null;
     priority: number;
   };
 }
@@ -54,6 +56,10 @@ interface TilecastActiveCountdownBar {
    * paint a full-width tint.
    */
   remainingFraction: number | null;
+  /** Gutter on each side, as a percentage of the bar width. */
+  contentPadding: number;
+  /** Type size in pixels, already scaled. */
+  fontSizePx: number;
 }
 
 interface TilecastCountdownBarResolver {
@@ -135,6 +141,27 @@ const tilecastCountdownBar: TilecastCountdownBarResolver = (() => {
     return guess;
   }
 
+  /** Manifests may omit these, and a hand-edited one may be out of range. */
+  function clampNumber(
+    value: number | null | undefined,
+    fallback: number,
+    lowest: number,
+    highest: number,
+  ): number {
+    if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+    return Math.min(highest, Math.max(lowest, value));
+  }
+
+  /**
+   * Type size follows the bar height, clamped the way the stylesheet used to
+   * clamp it, then scaled. The scale multiplies the clamped result so a bar can
+   * exceed the original 72px ceiling deliberately rather than by accident.
+   */
+  function countdownFontSizePx(heightPx: number, scalePercent: number): number {
+    const base = Math.min(72, Math.max(22, heightPx * 0.42));
+    return Math.round(base * (scalePercent / 100) * 100) / 100;
+  }
+
   function candidateTargets(
     plugin: TilecastCountdownBarPlugin,
     now: Date,
@@ -213,6 +240,11 @@ const tilecastCountdownBar: TilecastCountdownBarResolver = (() => {
             completed,
             remainingFraction:
               plugin.config.progressFill === "drain" ? fraction : null,
+            contentPadding: clampNumber(plugin.config.contentPadding, 4, 0, 40),
+            fontSizePx: countdownFontSizePx(
+              plugin.config.heightPx,
+              clampNumber(plugin.config.textScale, 100, 25, 500),
+            ),
           });
         }
       }

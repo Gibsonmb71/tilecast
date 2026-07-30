@@ -74,6 +74,8 @@ const storedInstance = {
   displayMode: "overlay",
   progressFill: "drain",
   heightPx: 72,
+  contentPadding: 2,
+  textScale: 125,
   enabled: true,
   priority: 0,
   targetScope: "all",
@@ -128,6 +130,13 @@ beforeEach(() => {
                     enabled: false,
                     instanceCount: 1,
                   },
+                  {
+                    id: "forms",
+                    name: "Forms",
+                    description: "Collect submissions.",
+                    enabled: true,
+                    instanceCount: 2,
+                  },
                 ],
               },
             }),
@@ -175,6 +184,17 @@ describe("Plugins", () => {
     ).toHaveAttribute("href", "/plugins/emergency-alerts");
   });
 
+  it("lists Forms as a plugin rather than a Data Source", async () => {
+    renderRoute(<PluginsPage />);
+    const card = (
+      await screen.findByRole("heading", { name: "Forms" })
+    ).closest("article")!;
+    expect(within(card).getByText("2 configured forms")).toBeVisible();
+    expect(
+      within(card).getByRole("link", { name: "Manage plugin" }),
+    ).toHaveAttribute("href", "/plugins/forms");
+  });
+
   it("requires a target when a scoped instance is submitted", async () => {
     renderRoute(<CountdownBarEditorPage />, "/plugins/countdown-bar/new");
     await waitFor(() =>
@@ -214,6 +234,8 @@ describe("Plugins", () => {
     await waitFor(() => expect(submitted).toHaveLength(1));
     expect(submitted[0]?.daysOfWeek).toEqual([1, 3]);
     expect(submitted[0]?.progressFill).toBe("drain");
+    expect(submitted[0]?.contentPadding).toBe(2);
+    expect(submitted[0]?.textScale).toBe(125);
   }, 10_000);
 
   it("submits the checkbox groups it renders", async () => {
@@ -255,6 +277,24 @@ describe("Plugins", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create instance" }));
     await waitFor(() => expect(submitted).toHaveLength(1));
     expect(submitted[0]?.progressFill).toBe("drain");
+  }, 10_000);
+
+  it("submits custom padding and text size", async () => {
+    renderRoute(<CountdownBarEditorPage />, "/plugins/countdown-bar/new");
+    await waitFor(() => expect(screen.getByLabelText("Name")).toBeEnabled());
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Lunch" },
+    });
+    fireEvent.change(screen.getByLabelText("Horizontal padding (%)"), {
+      target: { value: "0" },
+    });
+    fireEvent.change(screen.getByLabelText("Text size (%)"), {
+      target: { value: "180" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create instance" }));
+    await waitFor(() => expect(submitted).toHaveLength(1));
+    expect(submitted[0]?.contentPadding).toBe(0);
+    expect(submitted[0]?.textScale).toBe(180);
   }, 10_000);
 
   it("keeps the schedule and mode selections across an unrelated edit", async () => {
