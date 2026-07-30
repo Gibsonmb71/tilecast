@@ -30,13 +30,13 @@ to sixty, and you see that before it happens.
 
 ## Actions
 
-| Action | Notes |
-| --- | --- |
-| Assign a playlist | |
-| Assign a Layout | Published Layouts only |
-| Remove the assignment | |
-| Enable or disable playback | |
-| Send a command | Sync now, reload playback, clear media cache, restart the Player |
+| Action                     | Notes                                                            |
+| -------------------------- | ---------------------------------------------------------------- |
+| Assign a playlist          |                                                                  |
+| Assign a Layout            | Published Layouts only                                           |
+| Remove the assignment      |                                                                  |
+| Enable or disable playback |                                                                  |
+| Send a command             | Sync now, reload playback, clear media cache, restart the Player |
 
 Each action runs through the same code as the single-screen equivalent, so the
 manifest change, the sync-group fan-out, the Player-version compatibility check,

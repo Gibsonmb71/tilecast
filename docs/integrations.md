@@ -12,10 +12,10 @@ The capability set is closed and short, in the same spirit as the fixed player
 command set. There is no scope that reaches general administration, creates or
 deletes content, or touches screens.
 
-| Capability | What it permits |
-| --- | --- |
-| `data_source:write` | Replace the rows of a Manual Table Data Source |
-| `activity:read` | Read fleet health counts as JSON or Prometheus metrics |
+| Capability          | What it permits                                        |
+| ------------------- | ------------------------------------------------------ |
+| `data_source:write` | Replace the rows of a Manual Table Data Source         |
+| `activity:read`     | Read fleet health counts as JSON or Prometheus metrics |
 
 A write token cannot create a Data Source, delete one, or change its columns.
 Columns are what Widgets bind to, so changing them is a decision for a person in

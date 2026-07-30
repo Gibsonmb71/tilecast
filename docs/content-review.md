@@ -23,13 +23,13 @@ A Contributor cannot:
 Assignment has always been Owner and Administrator only, so the boundary that
 matters for a Contributor is publish and delete.
 
-| Role | Creates content | Publishes and deletes | Operates screens | Reviews |
-| --- | --- | --- | --- | --- |
-| Owner | Yes | Yes | Yes | Yes |
-| Administrator | Yes | Yes | Yes | Yes |
-| Editor | Yes | Yes | Yes | Yes |
-| Contributor | Yes | No | No | No |
-| Viewer | No | No | No | No |
+| Role          | Creates content | Publishes and deletes | Operates screens | Reviews |
+| ------------- | --------------- | --------------------- | ---------------- | ------- |
+| Owner         | Yes             | Yes                   | Yes              | Yes     |
+| Administrator | Yes             | Yes                   | Yes              | Yes     |
+| Editor        | Yes             | Yes                   | Yes              | Yes     |
+| Contributor   | Yes             | No                    | No               | No      |
+| Viewer        | No              | No                    | No               | No      |
 
 ## Review
 

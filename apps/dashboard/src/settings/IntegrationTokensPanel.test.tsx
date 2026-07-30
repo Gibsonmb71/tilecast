@@ -117,6 +117,7 @@ describe("Integration tokens", () => {
     await user.click(screen.getByRole("button", { name: "Create token" }));
 
     await waitFor(() => expect(create).toHaveBeenCalled());
-    expect(create.mock.calls[0][0].dataSourceIds).toEqual(["d1"]);
+    const [body] = create.mock.calls[0] ?? [];
+    expect(body?.dataSourceIds).toEqual(["d1"]);
   });
 });

@@ -16,12 +16,12 @@ opens and one when it recovers. It does not send ten messages.
 
 Tilecast sends these categories:
 
-| Category | Condition |
-| --- | --- |
-| Screen problems | A screen stops reporting, playback fails, storage is full, a Player enters safe mode, or an update fails |
+| Category         | Condition                                                                                                            |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Screen problems  | A screen stops reporting, playback fails, storage is full, a Player enters safe mode, or an update fails             |
 | Content problems | A Data Source serves stale data, or a playlist has nothing available to play. See [Content health](#content-health). |
-| Backups | A scheduled backup completes or fails |
-| Player updates | An update deployment completes or fails |
+| Backups          | A scheduled backup completes or fails                                                                                |
+| Player updates   | An update deployment completes or fails                                                                              |
 
 A recovery message is always sent at `info` severity. It goes to the people who
 received the message that opened the condition. Nobody is woken to be told that
@@ -33,14 +33,14 @@ Email needs an SMTP relay. Set it in the server environment, not in Studio. A
 password saved through Studio would be stored in the database, in every backup,
 and in the configuration export.
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `TILECAST_SMTP_HOST` | empty | Relay host name. Email is off while this is empty. |
-| `TILECAST_SMTP_PORT` | `587` | Relay port |
-| `TILECAST_SMTP_USERNAME` | empty | Leave empty for a relay that needs no sign-in |
-| `TILECAST_SMTP_PASSWORD` | empty | Password for the user name above |
-| `TILECAST_SMTP_TLS` | `starttls` | `starttls`, `implicit`, or `none` |
-| `TILECAST_SMTP_ALLOW_INSECURE` | `false` | Accepts a private certificate and allows sign-in without encryption |
+| Variable                       | Default    | Purpose                                                             |
+| ------------------------------ | ---------- | ------------------------------------------------------------------- |
+| `TILECAST_SMTP_HOST`           | empty      | Relay host name. Email is off while this is empty.                  |
+| `TILECAST_SMTP_PORT`           | `587`      | Relay port                                                          |
+| `TILECAST_SMTP_USERNAME`       | empty      | Leave empty for a relay that needs no sign-in                       |
+| `TILECAST_SMTP_PASSWORD`       | empty      | Password for the user name above                                    |
+| `TILECAST_SMTP_TLS`            | `starttls` | `starttls`, `implicit`, or `none`                                   |
+| `TILECAST_SMTP_ALLOW_INSECURE` | `false`    | Accepts a private certificate and allows sign-in without encryption |
 
 Tilecast refuses to continue without encryption when `TILECAST_SMTP_TLS` is
 `starttls` and the relay does not offer STARTTLS. Set `none` to accept an
@@ -81,10 +81,10 @@ the local network. Tilecast does not follow redirects.
 
 Each request carries these headers:
 
-| Header | Value |
-| --- | --- |
+| Header                 | Value          |
+| ---------------------- | -------------- |
 | `X-Tilecast-Signature` | `sha256=<hex>` |
-| `X-Tilecast-Timestamp` | Unix seconds |
+| `X-Tilecast-Timestamp` | Unix seconds   |
 
 Compute the signature as `HMAC-SHA256(secret, timestamp + "." + body)`. Compare
 it with a constant-time comparison. Reject a request when the timestamp is not

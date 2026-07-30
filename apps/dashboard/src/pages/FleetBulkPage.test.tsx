@@ -196,7 +196,8 @@ describe("Fleet bulk changes", () => {
     );
 
     await waitFor(() => expect(apply).toHaveBeenCalled());
-    expect(apply.mock.calls[0][0].expectedChangeCount).toBe(2);
+    const [applied] = apply.mock.calls[0] ?? [];
+    expect(applied?.expectedChangeCount).toBe(2);
   });
 
   it("offers undo after a reversible change", async () => {

@@ -82,11 +82,9 @@ describe("Content review", () => {
     await user.click(await screen.findByRole("button", { name: "Approve" }));
 
     await waitFor(() => expect(decide).toHaveBeenCalled());
-    expect(decide.mock.calls[0][0]).toBe("playlist");
-    expect(decide.mock.calls[0][2]).toMatchObject({
-      approve: true,
-      revision: 7,
-    });
+    const [contentType, , decision] = decide.mock.calls[0] ?? [];
+    expect(contentType).toBe("playlist");
+    expect(decision).toMatchObject({ approve: true, revision: 7 });
   });
 
   it("passes the note along when sending content back", async () => {
@@ -103,10 +101,8 @@ describe("Content review", () => {
     await user.click(screen.getByRole("button", { name: "Send back" }));
 
     await waitFor(() => expect(decide).toHaveBeenCalled());
-    expect(decide.mock.calls[0][2]).toMatchObject({
-      approve: false,
-      note: "Wrong date",
-    });
+    const [, , decision] = decide.mock.calls[0] ?? [];
+    expect(decision).toMatchObject({ approve: false, note: "Wrong date" });
   });
 
   it("shows a contributor the queue without decision controls", async () => {

@@ -156,7 +156,7 @@ export function FleetBulkPage() {
                   <small>
                     {item.syncGroupName
                       ? `Sync group: ${item.syncGroupName}`
-                      : item.locationName || "No location"}
+                      : item.location || "No location"}
                   </small>
                 </span>
               </label>

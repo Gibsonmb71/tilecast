@@ -21,12 +21,12 @@ can support.
 
 **Settings**, **Snapshot history**:
 
-| Setting | Default | Purpose |
-| --- | --- | --- |
-| Keep a snapshot history | off | Nothing is captured or stored while this is off |
-| Capture every | 60 minutes | Minimum 15 |
-| Keep snapshots for | 7 days | Retention period |
-| Snapshots to keep per screen | 48 | The oldest go once a screen reaches this, whatever the retention says |
+| Setting                      | Default    | Purpose                                                               |
+| ---------------------------- | ---------- | --------------------------------------------------------------------- |
+| Keep a snapshot history      | off        | Nothing is captured or stored while this is off                       |
+| Capture every                | 60 minutes | Minimum 15                                                            |
+| Keep snapshots for           | 7 days     | Retention period                                                      |
+| Snapshots to keep per screen | 48         | The oldest go once a screen reaches this, whatever the retention says |
 
 The interval, the retention period, and the per-screen count are three
 independent caps. The per-screen cap is applied when a snapshot is written, not
