@@ -23,15 +23,15 @@ Uploads are resumable. Studio sends files in chunks and keeps incomplete upload 
 
 ## Processing states
 
-| State      | Meaning                                                          |
-| ---------- | ---------------------------------------------------------------- |
-| Uploading  | Browser is sending file data                                     |
-| Uploaded   | Transfer finished                                                |
-| Waiting    | A media job is queued                                            |
-| Inspecting | Tilecast is identifying the file and reading trusted metadata    |
-| Processing | A compatible playback variant or thumbnail is being created      |
-| Ready      | The item can be added to playlists                               |
-| Failed     | Processing failed; open the item for the reason and retry option |
+| State      | Meaning                                                              |
+| ---------- | -------------------------------------------------------------------- |
+| Uploading  | Browser is sending file data                                         |
+| Uploaded   | Transfer finished                                                    |
+| Waiting    | A media job is queued                                                |
+| Inspecting | Tilecast is identifying the file and reading trusted metadata        |
+| Processing | A compatible playback variant or thumbnail is being created          |
+| Ready      | The item can be added to playlists                                   |
+| Failed     | Processing failed. Open the item to see the reason and retry option. |
 
 Tilecast stores media under generated identifiers. The uploaded filename is metadata and never controls a filesystem path.
 

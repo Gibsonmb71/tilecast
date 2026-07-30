@@ -2,7 +2,9 @@
 
 Tilecast can verify, cache, and deploy signed Tilecast Player releases for both platforms: Android APK releases and Linux AppImage releases. Players download from their paired Tilecast server, not from GitHub.
 
-Releases are matched to screens by platform. An Android deployment targets only Android screens; a Linux deployment targets only Linux screens. The verification pipeline, deployment modes, rollout, and state machine are shared.
+Tilecast matches releases to screens by platform. An Android deployment targets only Android screens.
+
+A Linux deployment targets only Linux screens. Both platforms use the same verification, deployment, rollout, and state processes.
 
 Android and Fire OS can still require a person at the TV to approve installation. Linux self-updates apply without a prompt when the player runs as a managed AppImage.
 
@@ -62,7 +64,10 @@ Tilecast checks the fixed [Gibsonmb71/tilecast Releases](https://github.com/Gibs
 
 ### Upload release
 
-Upload one platform's bundle together: for Android, the APK, JSON manifest, and signature; for Linux, the AppImage, Linux JSON manifest, and signature.
+Upload all files for one platform together:
+
+- For Android, upload the APK, JSON manifest, and signature.
+- For Linux, upload the AppImage, Linux JSON manifest, and signature.
 
 Direct upload and GitHub sync use the same verification pipeline and create the same Player release record. GitHub availability is not required for deployment.
 
@@ -96,7 +101,18 @@ Studio distinguishes:
 
 `WaitingForPermission` and `WaitingForUser` are expected states, not automatic failures.
 
-A screen reaches success once it heartbeats at or above the expected version with healthy playback after installation, no update failure, and no safe mode. Repeated heartbeats do not re-count it. If a screen is heartbeating healthily at the new version but its target is still shown as reconnecting, opening the deployment list or a deployment's detail reconciles it — there is no permanent reconnecting state to wait out.
+A screen reports success when it meets these conditions:
+
+- Its heartbeat reports the expected version or a later version.
+- Playback is healthy after installation.
+- It does not report an update failure.
+- Safe mode is not active.
+
+Repeated heartbeats do not count the screen again.
+
+Open the deployment list if a healthy updated screen still shows `reconnecting`. You can also open the deployment details.
+
+This action reconciles the state. A screen does not remain permanently in the `reconnecting` state.
 
 ## Canary rollout
 
@@ -124,7 +140,9 @@ Before installation, Player checks:
 
 An active emergency delays installation but does not prevent download.
 
-Pairing credentials, manifests, configuration, disabled state, and media cache live outside the artifact and survive replacement. On Linux the player replaces the running AppImage and relaunches under systemd; on Android it installs the signed APK.
+Pairing credentials, manifests, configuration, disabled state, and media cache are outside the application artifact. They remain after replacement.
+
+On Linux, the Player replaces the AppImage and starts again through systemd. On Android, the Player installs the signed APK.
 
 Success is recorded only after the updated Player reconnects with the expected version and reports healthy playback.
 
