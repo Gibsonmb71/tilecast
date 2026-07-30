@@ -56,11 +56,26 @@ function listUsers() {
   return userRequest<{ items: ManagedUser[]; total: number }>("/users", "");
 }
 
+import { ScreenScopeEditor } from "./ScreenScopeEditor";
+
 const roleLabels: Record<UserRole, string> = {
   owner: "Owner",
   administrator: "Administrator",
   editor: "Editor",
+  contributor: "Contributor",
   viewer: "Viewer",
+};
+
+// Roles are a hierarchy of what an account can put in front of people, so the
+// difference between the two content roles is worth spelling out where somebody
+// is choosing between them.
+const roleDescriptions: Record<UserRole, string> = {
+  owner: "Everything, including backups and integration tokens.",
+  administrator: "Everything except Owner-only system operations.",
+  editor: "Creates content, publishes it, and manages screens and playback.",
+  contributor:
+    "Creates and edits content, but cannot publish a Layout, delete anything, or put content on a screen.",
+  viewer: "Reads only.",
 };
 
 export function UsersPage() {
@@ -106,8 +121,8 @@ export function UsersPage() {
   }
 
   const allowedRoles: UserRole[] = isOwner
-    ? ["owner", "administrator", "editor", "viewer"]
-    : ["editor", "viewer"];
+    ? ["owner", "administrator", "editor", "contributor", "viewer"]
+    : ["editor", "contributor", "viewer"];
 
   return (
     <section className="user-management">
@@ -155,6 +170,7 @@ export function UsersPage() {
                 </option>
               ))}
             </Select>
+            <small className="role-description">{roleDescriptions[role]}</small>
           </label>
           <button
             type="button"
@@ -196,7 +212,7 @@ export function UsersPage() {
             const canEdit =
               currentUser?.role === "owner" ||
               (currentUser?.role === "administrator" &&
-                ["editor", "viewer"].includes(user.role));
+                ["editor", "contributor", "viewer"].includes(user.role));
             return (
               <article className="user-list-row" key={user.id}>
                 <span className="avatar" aria-hidden="true">
@@ -250,7 +266,8 @@ export function UsersPage() {
           user={editing}
           currentUser={currentUser}
           allowedRoles={
-            isOwner || editing.role === "editor" || editing.role === "viewer"
+            isOwner ||
+            ["editor", "contributor", "viewer"].includes(editing.role)
               ? allowedRoles
               : [editing.role]
           }
@@ -431,6 +448,15 @@ function UserEditorDialog({
             }
           </div>
         )}
+        <section className="user-edit-dialog__scope">
+          <h4>Screen scope</h4>
+          <ScreenScopeEditor
+            userId={user.id}
+            userRole={role}
+            csrf={csrf}
+            disabled={role === "owner"}
+          />
+        </section>
         <footer className="user-edit-dialog__actions">
           {user.active ? (
             <button

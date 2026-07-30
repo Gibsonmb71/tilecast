@@ -353,6 +353,9 @@ func (s *server) createUpdateDeployment(w http.ResponseWriter, r *http.Request) 
 		s.internalError(w, r, err)
 		return
 	}
+	if !s.authorizeScreenList(w, r, input.ScreenIDs, input.GroupIDs) {
+		return
+	}
 	for _, screen := range uniqueUUIDs(input.ScreenIDs) {
 		if _, err = tx.Exec(r.Context(), `INSERT INTO update_deployment_targets(deployment_id,target_type,screen_id) SELECT $1,'screen',$2 WHERE EXISTS(SELECT 1 FROM screens WHERE id=$2 AND deleted_at IS NULL)`, id, screen); err != nil {
 			s.internalError(w, r, err)

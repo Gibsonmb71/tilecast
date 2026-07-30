@@ -5,27 +5,45 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
 type Config struct {
-	Environment  string
-	HTTPAddr     string
-	DatabaseURL  string
-	PublicURL    string
-	CookieName   string
-	CookieSecure bool
-	SessionTTL   time.Duration
-	LogLevel     string
-	MDNSEnabled  bool
-	Media        MediaConfig
-	Scheduling   SchedulingConfig
-	Website      WebsiteConfig
-	Sources      SourcesConfig
-	Operations   OperationsConfig
-	Updates      UpdatesConfig
-	Backup       BackupConfig
-	WebAuthn     WebAuthnConfig
+	Environment   string
+	HTTPAddr      string
+	DatabaseURL   string
+	PublicURL     string
+	CookieName    string
+	CookieSecure  bool
+	SessionTTL    time.Duration
+	LogLevel      string
+	MDNSEnabled   bool
+	Media         MediaConfig
+	Scheduling    SchedulingConfig
+	Website       WebsiteConfig
+	Sources       SourcesConfig
+	Operations    OperationsConfig
+	Updates       UpdatesConfig
+	Backup        BackupConfig
+	WebAuthn      WebAuthnConfig
+	Notifications NotificationsConfig
+}
+
+// NotificationsConfig carries the SMTP relay. These are environment values
+// rather than settings in the database because a mail password stored through
+// Studio would become a recoverable secret in the schema, in every backup, and
+// in the configuration export.
+type NotificationsConfig struct {
+	SMTPHost     string
+	SMTPPort     int
+	SMTPUsername string
+	SMTPPassword string
+	// starttls, implicit, or none.
+	SMTPTLS string
+	// Accepts a self-signed relay certificate and allows authentication on an
+	// unencrypted connection. For a mail server on the same host only.
+	SMTPAllowInsecure bool
 }
 
 // WebAuthnConfig overrides the relying party that is otherwise derived from
@@ -188,6 +206,22 @@ func Load() (Config, error) {
 		return Config{}, errors.New("TILECAST_SOURCE_MIN_REFRESH_SECONDS must not exceed TILECAST_SOURCE_MAX_REFRESH_SECONDS")
 	}
 	cfg.Sources.AirQualityBaseURL = get("TILECAST_AIR_QUALITY_BASE_URL", "https://air-quality-api.open-meteo.com")
+	cfg.Notifications.SMTPHost = strings.TrimSpace(get("TILECAST_SMTP_HOST", ""))
+	cfg.Notifications.SMTPUsername = get("TILECAST_SMTP_USERNAME", "")
+	cfg.Notifications.SMTPPassword = os.Getenv("TILECAST_SMTP_PASSWORD")
+	cfg.Notifications.SMTPTLS = strings.ToLower(strings.TrimSpace(get("TILECAST_SMTP_TLS", "starttls")))
+	switch cfg.Notifications.SMTPTLS {
+	case "starttls", "implicit", "none":
+	default:
+		return Config{}, errors.New("TILECAST_SMTP_TLS must be starttls, implicit, or none")
+	}
+	if cfg.Notifications.SMTPPort, err = parsePositiveInt("TILECAST_SMTP_PORT", "587", 65535); err != nil {
+		return Config{}, err
+	}
+	cfg.Notifications.SMTPAllowInsecure, err = strconv.ParseBool(get("TILECAST_SMTP_ALLOW_INSECURE", "false"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parse TILECAST_SMTP_ALLOW_INSECURE: %w", err)
+	}
 	takeoverDurationFallback := get("TILECAST_MAX_EMERGENCY_DURATION_HOURS", "24")
 	takeoverTargetsFallback := get("TILECAST_MAX_EMERGENCY_TARGETS", "250")
 	operationValues := []struct {

@@ -2324,6 +2324,106 @@ button.organizer-chip:disabled {
     justify-content: flex-start;
   }
 }
+.secret-value {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--tc-border);
+  border-radius: 4px;
+  background: var(--tc-surface-sunken, var(--tc-surface));
+  font-family: var(--tc-font-mono, monospace);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.webhook-form {
+  display: grid;
+  padding-top: 8px;
+  border-top: 1px solid var(--tc-border);
+}
+.setting-control--checks {
+  display: grid;
+  gap: 6px;
+}
+.bulk-screen-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 4px;
+  max-height: 340px;
+  overflow-y: auto;
+  padding: 8px 0;
+  border-top: 1px solid var(--tc-border);
+  border-bottom: 1px solid var(--tc-border);
+}
+.user-edit-dialog__scope {
+  display: grid;
+  gap: 10px;
+  padding: 14px 0;
+  border-top: 1px solid var(--tc-border);
+}
+.user-edit-dialog__scope h4 {
+  margin: 0;
+  font-size: 13px;
+}
+.screen-scope-editor {
+  display: grid;
+  gap: 12px;
+}
+.screen-scope-editor fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.snapshot-history {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+}
+.snapshot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+.snapshot-grid figure {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+.snapshot-grid figcaption {
+  color: var(--tc-ink-muted);
+  font-size: 11px;
+}
+.snapshot-thumb {
+  padding: 0;
+  border: 1px solid var(--tc-border);
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+  overflow: hidden;
+}
+.snapshot-thumb img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.role-description,
+.review-note .field__label {
+  color: var(--tc-ink-muted);
+  font-size: 12px;
+}
+.review-actions {
+  align-items: flex-end;
+}
+.review-note {
+  display: grid;
+  gap: 3px;
+  min-width: 220px;
+}
+.check-option {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+}
 .file-input,
 .deployment-fields label,
 .target-search {

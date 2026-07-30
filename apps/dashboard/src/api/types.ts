@@ -2,7 +2,7 @@ export type User = {
   id: string;
   name: string;
   username: string;
-  role: "owner" | "administrator" | "editor" | "viewer";
+  role: "owner" | "administrator" | "editor" | "contributor" | "viewer";
   active: boolean;
   createdAt: string;
   lastLoginAt?: string;
@@ -2286,4 +2286,219 @@ export type UploadSession = {
   assetId?: string;
   uploadEndpoint: string;
   maximumSizeBytes: number;
+};
+
+export type NotificationStatus = {
+  emailConfigured: boolean;
+  emailUnavailableReason: string;
+  pendingCount: number;
+  recentFailureCount: number;
+  hasDeliveryHistory: boolean;
+};
+
+export type NotificationCategory =
+  "incident" | "content_health" | "backup" | "update";
+
+export type NotificationWebhook = {
+  id: string;
+  name: string;
+  url: string;
+  enabled: boolean;
+  categories: NotificationCategory[];
+  lastAttemptAt?: string;
+  lastSuccessAt?: string;
+  lastError?: string;
+  createdAt: string;
+};
+
+export type NotificationWebhookCreated = {
+  webhook: NotificationWebhook;
+  signingSecret: string;
+  secretNotice: string;
+};
+
+export type NotificationDelivery = {
+  id: string;
+  eventKey: string;
+  category: NotificationCategory;
+  severity: "info" | "warning" | "error" | "critical";
+  channel: "email" | "webhook";
+  target: string;
+  subject: string;
+  status: "pending" | "sent" | "failed" | "cancelled";
+  attempts: number;
+  lastError?: string;
+  createdAt: string;
+  sentAt?: string;
+};
+
+export type ContentHealthReport = {
+  staleSources: {
+    id: string;
+    name: string;
+    provider: string;
+    lastSuccessAt?: string;
+    errorCode?: string;
+    usingCachedData: boolean;
+  }[];
+  expiringAssets: {
+    id: string;
+    name: string;
+    expiresAt: string;
+    inUse: boolean;
+  }[];
+  emptyPlaylists: { id: string; name: string; screenCount: number }[];
+  unassignedScreens: { id: string; name: string }[];
+  thresholds: { staleSourceHours: number; expiringMediaDays: number };
+  generatedAt: string;
+};
+
+export type BulkAction =
+  | "assign_playlist"
+  | "assign_layout"
+  | "clear_assignment"
+  | "set_enabled"
+  | "send_command";
+
+export type BulkScreenChange = {
+  screenId: string;
+  name: string;
+  location?: string;
+  current: string;
+  next: string;
+  changes: boolean;
+  blocked?: string;
+  fromGroup?: string;
+  selected: boolean;
+  applied?: boolean;
+  error?: string;
+};
+
+export type BulkPreview = {
+  action: BulkAction;
+  screens: BulkScreenChange[];
+  changeCount: number;
+  unchangedCount: number;
+  blockedCount: number;
+  groupAddedCount: number;
+  warnings: string[];
+  reversible: boolean;
+  undoWindowMinutes: number;
+};
+
+export type BulkOperation = {
+  id: string;
+  action: BulkAction;
+  screenCount: number;
+  appliedCount: number;
+  skippedCount: number;
+  failedCount: number;
+  results: BulkScreenChange[];
+  reversible: boolean;
+  undoExpiresAt?: string;
+  undoneAt?: string;
+  createdAt: string;
+};
+
+export type BulkOperationRequest = {
+  screenIds: string[];
+  action: BulkAction;
+  playlistId?: string;
+  layoutId?: string;
+  enabled?: boolean;
+  commandType?: string;
+};
+
+export type IntegrationScope = "data_source:write" | "activity:read";
+
+export type IntegrationToken = {
+  id: string;
+  name: string;
+  publicId: string;
+  scopes: IntegrationScope[];
+  dataSourceIds: string[];
+  createdAt: string;
+  createdBy?: string;
+  expiresAt?: string;
+  lastUsedAt?: string;
+  revokedAt?: string;
+};
+
+export type IntegrationTokenCreated = {
+  token: IntegrationToken;
+  secret: string;
+  notice: string;
+};
+
+export type ContentReviewState = "pending" | "approved" | "rejected";
+
+export type ContentReviewItem = {
+  contentType: "playlist" | "layout";
+  contentId: string;
+  name: string;
+  revision: number;
+  state: ContentReviewState;
+  assignedScreens: number;
+  updatedAt: string;
+  authorName?: string;
+  lastNote?: string;
+  lastReviewedAt?: string;
+};
+
+export type ContentReviewQueue = {
+  required: boolean;
+  items: ContentReviewItem[];
+};
+
+export type ScreenScope = {
+  type: "location" | "group";
+  id: string;
+  name?: string;
+};
+
+export type ScreenScopes = {
+  scopes: ScreenScope[];
+  wholeFleet: boolean;
+};
+
+export type ScreenSnapshot = {
+  id: string;
+  screenId: string;
+  capturedAt: string;
+  width: number;
+  height: number;
+  fileSize: number;
+  playerVersion?: string;
+  trigger: "scheduled" | "manual";
+};
+
+export type ScreenSnapshotList = {
+  items: ScreenSnapshot[];
+  enabled: boolean;
+  retentionDays: number;
+  maxPerScreen: number;
+  proofNote: string;
+};
+
+export type PlaylistRevision = {
+  revision: number;
+  name: string;
+  itemCount: number;
+  sourceType: string;
+  createdAt: string;
+  authorName?: string;
+  isCurrent: boolean;
+  restorable: boolean;
+  missingReferences: number;
+};
+
+export type PlaylistRevisionList = {
+  items: PlaylistRevision[];
+  kept: number;
+};
+
+export type PlaylistRestoreResult = {
+  restoredFrom: number;
+  newRevision: number;
+  skippedItems: number;
 };

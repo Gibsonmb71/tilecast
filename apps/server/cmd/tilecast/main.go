@@ -15,21 +15,28 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/tilecast/tilecast/apps/server/internal/alerts"
+	"github.com/tilecast/tilecast/apps/server/internal/approvals"
 	"github.com/tilecast/tilecast/apps/server/internal/auth"
 	"github.com/tilecast/tilecast/apps/server/internal/backup"
 	"github.com/tilecast/tilecast/apps/server/internal/config"
 	"github.com/tilecast/tilecast/apps/server/internal/contentdefs"
+	"github.com/tilecast/tilecast/apps/server/internal/contenthealth"
 	"github.com/tilecast/tilecast/apps/server/internal/database"
 	"github.com/tilecast/tilecast/apps/server/internal/devices"
 	"github.com/tilecast/tilecast/apps/server/internal/discovery"
+	"github.com/tilecast/tilecast/apps/server/internal/fleetops"
 	"github.com/tilecast/tilecast/apps/server/internal/forms"
 	"github.com/tilecast/tilecast/apps/server/internal/httpapi"
+	"github.com/tilecast/tilecast/apps/server/internal/integrations"
 	"github.com/tilecast/tilecast/apps/server/internal/layouts"
 	"github.com/tilecast/tilecast/apps/server/internal/media"
+	"github.com/tilecast/tilecast/apps/server/internal/notify"
 	"github.com/tilecast/tilecast/apps/server/internal/playlists"
 	"github.com/tilecast/tilecast/apps/server/internal/plugins"
+	"github.com/tilecast/tilecast/apps/server/internal/previews"
 	"github.com/tilecast/tilecast/apps/server/internal/scheduling"
 	"github.com/tilecast/tilecast/apps/server/internal/settings"
+	"github.com/tilecast/tilecast/apps/server/internal/snapshots"
 	"github.com/tilecast/tilecast/apps/server/internal/updates"
 	"github.com/tilecast/tilecast/apps/server/internal/version"
 )
@@ -171,6 +178,38 @@ func serve() {
 	formWorker.SetGate(backupGuard.BackgroundJobsAllowed)
 	formWorker.Start(ctx)
 	defer formWorker.Stop()
+	notifyConfig := notify.DefaultConfig()
+	notifyConfig.SMTPHost = cfg.Notifications.SMTPHost
+	notifyConfig.SMTPPort = cfg.Notifications.SMTPPort
+	notifyConfig.SMTPUsername = cfg.Notifications.SMTPUsername
+	notifyConfig.SMTPPassword = cfg.Notifications.SMTPPassword
+	notifyConfig.SMTPTLS = cfg.Notifications.SMTPTLS
+	notifyConfig.SMTPAllowInsecure = cfg.Notifications.SMTPAllowInsecure
+	notifyConfig.PublicURL = cfg.PublicURL
+	notifyService := notify.NewService(db, settingsService, notifyConfig,
+		notify.NewSMTPSender(notifyConfig), notify.NewWebhookSender(notifyConfig), logger)
+	if !notifyConfig.EmailConfigured() {
+		logger.Info("notification email is unavailable", "reason", "TILECAST_SMTP_HOST is not set")
+	}
+	contentHealthService := contenthealth.NewService(db, settingsService)
+	fleetService := fleetops.NewService(db, playlistService, deviceService, logger)
+	integrationService := integrations.NewService(db)
+	approvalService := approvals.NewService(db, settingsService)
+	// The snapshot service drives scheduled captures through the same live
+	// preview lease Studio uses, so there is one capture path.
+	snapshotService := snapshots.NewService(db, settingsService, previews.NewService(db, deviceService), logger)
+	snapshotWorker := snapshots.NewWorker(snapshotService, logger)
+	snapshotWorker.SetGate(backupGuard.BackgroundJobsAllowed)
+	snapshotWorker.Start(ctx)
+	defer snapshotWorker.Stop()
+	playlistService.SetApprovalGate(approvalService.Gate)
+	fleetService.SetApprovalGate(approvalService.Gate)
+	fleetService.SetScopeAuthorizer(deviceService)
+	notifyWorker := notify.NewWorker(notifyService, logger)
+	notifyWorker.AddSweeper(contentHealthService)
+	notifyWorker.SetGate(backupGuard.BackgroundJobsAllowed)
+	notifyWorker.Start(ctx)
+	defer notifyWorker.Stop()
 	alertService.SetGate(backupGuard.BackgroundJobsAllowed)
 	alertService.Start(ctx)
 	defer alertService.Stop()
@@ -203,6 +242,12 @@ func serve() {
 		Settings:            settingsService,
 		Updates:             updateService,
 		Alerts:              alertService,
+		Notifications:       notifyService,
+		ContentHealth:       contentHealthService,
+		Fleet:               fleetService,
+		Integrations:        integrationService,
+		Approvals:           approvalService,
+		Snapshots:           snapshotService,
 		DB:                  db,
 		Logger:              logger,
 		CookieName:          cfg.CookieName,

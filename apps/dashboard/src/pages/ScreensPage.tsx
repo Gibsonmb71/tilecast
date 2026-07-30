@@ -292,6 +292,7 @@ export function ScreensPage() {
           Screens
         </Link>
         <Link to="/groups">Sync groups</Link>
+        {manageable && <Link to="/screens/bulk">Bulk changes</Link>}
       </nav>
       <ActiveTakeoverBanners canManage={manageable} />
       {screens.isError && (

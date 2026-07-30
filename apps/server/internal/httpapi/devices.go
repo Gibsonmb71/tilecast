@@ -230,7 +230,10 @@ func (s *server) rejectPairing(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) listScreens(w http.ResponseWriter, r *http.Request) {
-	screens, err := s.devices.ListScreens(r.Context())
+	// A scoped account sees only its own screens here. The same predicate backs
+	// the per-screen authorization, so the list and what it can act on agree.
+	session, _ := r.Context().Value(sessionContextKey).(auth.Session)
+	screens, err := s.devices.ListScreensForUser(r.Context(), session.User.ID, session.User.Role)
 	if err != nil {
 		s.internalError(w, r, err)
 		return

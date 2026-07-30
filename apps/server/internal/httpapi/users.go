@@ -4,20 +4,34 @@ import (
 	"errors"
 	"net/http"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/tilecast/tilecast/apps/server/internal/auth"
+	"github.com/tilecast/tilecast/apps/server/internal/devices"
 )
 
 var managedUsernamePattern = regexp.MustCompile(`^[a-zA-Z0-9._@+-]{3,254}$`)
+
+// sortedManagedRoles keeps the validation message in step with the set, so a
+// new role cannot be accepted while the error still lists the old ones.
+func sortedManagedRoles() []string {
+	out := make([]string, 0, len(managedRoles))
+	for role := range managedRoles {
+		out = append(out, role)
+	}
+	sort.Strings(out)
+	return out
+}
 
 var managedRoles = map[string]bool{
 	"owner":         true,
 	"administrator": true,
 	"editor":        true,
+	"contributor":   true,
 	"viewer":        true,
 }
 
@@ -338,7 +352,7 @@ func validateManagedUser(input managedUserInput, requirePassword bool) error {
 		return errors.New("username must be 3 to 254 characters and contain only letters, numbers, or . _ @ + -")
 	}
 	if !managedRoles[input.Role] {
-		return errors.New("role must be owner, administrator, editor, or viewer")
+		return errors.New("role must be " + strings.Join(sortedManagedRoles(), ", "))
 	}
 	if requirePassword || input.Password != "" {
 		if len(input.Password) < 12 || len(input.Password) > 1024 {
@@ -352,10 +366,75 @@ func canManageRole(actorRole, targetRole string) bool {
 	if actorRole == "owner" {
 		return true
 	}
-	return actorRole == "administrator" && (targetRole == "editor" || targetRole == "viewer")
+	return actorRole == "administrator" &&
+		(targetRole == "editor" || targetRole == "contributor" || targetRole == "viewer")
 }
 
 func uniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}
+
+// Screen scopes narrow which screens an account may operate on. They are
+// managed alongside the account itself, under the same role hierarchy that
+// governs editing it, so nobody can widen their own reach.
+
+func (s *server) getUserScreenScopes(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	scopes, err := s.devices.ScopesFor(r.Context(), id)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"scopes": scopes,
+		// An empty list means the whole fleet, which is worth saying out loud
+		// rather than leaving a reader to infer from an empty table.
+		"wholeFleet": len(scopes) == 0,
+	}})
+}
+
+func (s *server) putUserScreenScopes(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	var body struct {
+		Scopes []devices.Scope `json:"scopes"`
+	}
+	if err := decodeJSON(w, r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	actor := r.Context().Value(sessionContextKey).(auth.Session).User
+	if actor.ID == id {
+		// Otherwise a scoped administrator could simply widen themselves.
+		writeError(w, http.StatusForbidden, "cannot_scope_self",
+			"You cannot change your own screen scope.")
+		return
+	}
+	var target struct{ Role string }
+	if err := s.db.QueryRow(r.Context(),
+		`SELECT role FROM users WHERE id=$1`, id).Scan(&target.Role); err != nil {
+		writeError(w, http.StatusNotFound, "user_not_found", "That account no longer exists.")
+		return
+	}
+	if !canManageRole(actor.Role, target.Role) {
+		writeError(w, http.StatusForbidden, "forbidden", "You may not change that account.")
+		return
+	}
+	if target.Role == "owner" {
+		// An installation must not be able to lock itself out of its own fleet.
+		writeError(w, http.StatusUnprocessableEntity, "owner_not_scopable",
+			"An Owner always reaches every screen.")
+		return
+	}
+	if err := s.devices.ReplaceScopes(r.Context(), actor.ID, id, body.Scopes); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "scope_invalid", err.Error())
+		return
+	}
+	s.getUserScreenScopes(w, r)
 }

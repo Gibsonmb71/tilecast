@@ -63,6 +63,24 @@ import type {
   PolicyDocument,
   EffectivePolicy,
   SystemStatus,
+  ContentHealthReport,
+  PlaylistRestoreResult,
+  PlaylistRevisionList,
+  ScreenSnapshotList,
+  ContentReviewQueue,
+  ScreenScope,
+  ScreenScopes,
+  IntegrationScope,
+  IntegrationToken,
+  IntegrationTokenCreated,
+  BulkOperation,
+  BulkOperationRequest,
+  BulkPreview,
+  NotificationCategory,
+  NotificationDelivery,
+  NotificationStatus,
+  NotificationWebhook,
+  NotificationWebhookCreated,
   PlayerReleaseList,
   PlayerReleaseImport,
   GitHubDeviceStart,
@@ -679,6 +697,139 @@ export const api = {
   effectivePolicy: (id: string) =>
     request<EffectivePolicy>(`/screens/${id}/effective-policy`),
   systemStatus: () => request<SystemStatus>("/system/status"),
+  contentHealth: () => request<ContentHealthReport>("/content-health"),
+  screenSnapshots: (screenId: string, limit = 50) =>
+    request<ScreenSnapshotList>(
+      `/screens/${screenId}/snapshots?limit=${limit}`,
+    ),
+  playlistRevisions: (playlistId: string) =>
+    request<PlaylistRevisionList>(`/playlists/${playlistId}/revisions`),
+  restorePlaylistRevision: (
+    playlistId: string,
+    revision: number,
+    csrfToken: string,
+  ) =>
+    request<PlaylistRestoreResult>(
+      `/playlists/${playlistId}/revisions/${revision}/restore`,
+      { method: "POST", headers: { "X-CSRF-Token": csrfToken } },
+    ),
+  contentReviews: (state = "") =>
+    request<ContentReviewQueue>(
+      `/content-reviews${state ? `?state=${state}` : ""}`,
+    ),
+  decideContentReview: (
+    contentType: string,
+    id: string,
+    body: { approve: boolean; note?: string; revision?: number },
+    csrfToken: string,
+  ) =>
+    request<unknown>(`/content-reviews/${contentType}/${id}`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(body),
+    }),
+  userScreenScopes: (userId: string) =>
+    request<ScreenScopes>(`/users/${userId}/screen-scopes`),
+  putUserScreenScopes: (
+    userId: string,
+    scopes: ScreenScope[],
+    csrfToken: string,
+  ) =>
+    request<ScreenScopes>(`/users/${userId}/screen-scopes`, {
+      method: "PUT",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ scopes }),
+    }),
+  integrationTokens: () => request<IntegrationToken[]>("/integration-tokens"),
+  createIntegrationToken: (
+    body: {
+      name: string;
+      scopes: IntegrationScope[];
+      dataSourceIds?: string[];
+      expiresAt?: string;
+    },
+    csrfToken: string,
+  ) =>
+    request<IntegrationTokenCreated>("/integration-tokens", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(body),
+    }),
+  revokeIntegrationToken: (id: string, csrfToken: string) =>
+    request<void>(`/integration-tokens/${id}`, {
+      method: "DELETE",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
+  previewBulkOperation: (body: BulkOperationRequest) =>
+    request<BulkPreview>("/screens/bulk/preview", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  applyBulkOperation: (
+    body: BulkOperationRequest & { expectedChangeCount: number },
+    csrfToken: string,
+  ) =>
+    request<BulkOperation>("/screens/bulk/apply", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(body),
+    }),
+  bulkOperations: (limit = 10) =>
+    request<BulkOperation[]>(`/screens/bulk/operations?limit=${limit}`),
+  undoBulkOperation: (id: string, csrfToken: string) =>
+    request<BulkOperation>(`/screens/bulk/operations/${id}/undo`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
+  notificationStatus: () =>
+    request<NotificationStatus>("/notifications/status"),
+  notificationDeliveries: (limit = 50) =>
+    request<NotificationDelivery[]>(`/notifications/deliveries?limit=${limit}`),
+  sendTestNotification: (csrfToken: string) =>
+    request<{ sentTo: string }>("/notifications/test", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
+  notificationWebhooks: () =>
+    request<NotificationWebhook[]>("/notifications/webhooks"),
+  createNotificationWebhook: (
+    body: {
+      name: string;
+      url: string;
+      categories: NotificationCategory[];
+    },
+    csrfToken: string,
+  ) =>
+    request<NotificationWebhookCreated>("/notifications/webhooks", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(body),
+    }),
+  updateNotificationWebhook: (
+    id: string,
+    body: {
+      name: string;
+      url: string;
+      enabled: boolean;
+      categories: NotificationCategory[];
+    },
+    csrfToken: string,
+  ) =>
+    request<NotificationWebhook>(`/notifications/webhooks/${id}`, {
+      method: "PUT",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(body),
+    }),
+  deleteNotificationWebhook: (id: string, csrfToken: string) =>
+    request<void>(`/notifications/webhooks/${id}`, {
+      method: "DELETE",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
+  testNotificationWebhook: (id: string, csrfToken: string) =>
+    request<{ delivered: boolean }>(`/notifications/webhooks/${id}/test`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
   backups: () => request<BackupList>("/system/backups"),
   createBackup: (csrfToken: string) =>
     request<BackupJob>("/system/backups", {

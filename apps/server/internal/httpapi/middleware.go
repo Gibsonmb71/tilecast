@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/netip"
@@ -8,8 +9,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/google/uuid"
 	"github.com/tilecast/tilecast/apps/server/internal/auth"
+	"github.com/tilecast/tilecast/apps/server/internal/devices"
 )
 
 const dashboardContentSecurityPolicy = "default-src 'self'; script-src 'self' https://static.cloudflareinsights.com/beacon.min.js; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://images.unsplash.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
@@ -119,4 +123,86 @@ func (s *server) rateLimit(limiter *rateLimiter, includeUser bool, next http.Han
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// requireScreenScope refuses an operation on a screen outside the account's
+// assigned scope.
+//
+// It is middleware rather than a check inside each handler so a screen route
+// added later has to opt out of scoping deliberately rather than forget it. An
+// unscoped account, and every Owner, passes through untouched.
+func (s *server) requireScreenScope(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		session, ok := r.Context().Value(sessionContextKey).(auth.Session)
+		if !ok {
+			// Fail closed. This middleware is only mounted inside the
+			// authenticated subtree today, but the whole point is that a screen
+			// route added later has to opt out of scoping deliberately, and
+			// passing an unauthenticated request through would quietly undo that.
+			writeError(w, http.StatusUnauthorized, "unauthenticated", "Sign in to continue.")
+			return
+		}
+		id, err := uuid.Parse(chi.URLParam(r, "id"))
+		if err != nil {
+			// Let the handler report a malformed id in its own words.
+			next.ServeHTTP(w, r)
+			return
+		}
+		if err := s.devices.AuthorizeScreen(r.Context(), session.User.ID, session.User.Role, id); err != nil {
+			if errors.Is(err, devices.ErrOutOfScope) {
+				// 404 rather than 403: a scoped operator has no business
+				// learning which screens exist outside their scope.
+				writeError(w, http.StatusNotFound, "screen_not_found", "Screen was not found.")
+				return
+			}
+			s.internalError(w, r, err)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// authorizeScreenList checks a set of screens and groups named in a request
+// body. It returns false when it has already written the response.
+func (s *server) authorizeScreenList(w http.ResponseWriter, r *http.Request, screens []uuid.UUID, groups []uuid.UUID) bool {
+	session, ok := r.Context().Value(sessionContextKey).(auth.Session)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthenticated", "Sign in to continue.")
+		return false
+	}
+	targets := append([]uuid.UUID(nil), screens...)
+	if len(groups) > 0 {
+		// One query rather than one per group, and every failure is reported.
+		// A dropped row would shorten the set being authorized, and the failure
+		// mode of that is permitting an operation on a screen nobody checked.
+		rows, err := s.db.Query(r.Context(),
+			`SELECT screen_id FROM screen_group_memberships WHERE screen_group_id = ANY($1)`, groups)
+		if err != nil {
+			s.internalError(w, r, err)
+			return false
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id uuid.UUID
+			if err := rows.Scan(&id); err != nil {
+				s.internalError(w, r, err)
+				return false
+			}
+			targets = append(targets, id)
+		}
+		if err := rows.Err(); err != nil {
+			s.internalError(w, r, err)
+			return false
+		}
+	}
+	if err := s.devices.AuthorizeScreens(r.Context(), session.User.ID, session.User.Role, targets); err != nil {
+		if errors.Is(err, devices.ErrOutOfScope) {
+			writeError(w, http.StatusForbidden, "out_of_scope",
+				"Some of the selected screens are outside your assigned scope.")
+			return false
+		}
+		s.internalError(w, r, err)
+		return false
+	}
+	return true
 }

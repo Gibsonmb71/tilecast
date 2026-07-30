@@ -266,6 +266,57 @@ Organization settings use `GET/PATCH /settings` with optimistic revision checkin
 
 Stable settings errors include `unknown_setting`, `invalid_setting_value`, `setting_not_allowed_at_scope`, `setting_exceeds_hard_limit`, `settings_revision_conflict`, `settings_import_invalid`, `settings_import_version_unsupported`, and `branding_asset_invalid`.
 
+## Snapshot history
+
+`GET /screens/{id}/snapshots?limit=` returns snapshot metadata newest-first, plus whether history is enabled and the current caps, so Studio can distinguish "not kept" from "nothing happened". `GET /screens/{id}/snapshots/{snapshotId}/image` returns the stored frame; the screen id is part of the lookup, so the screen-scope middleware on the route also governs the image. `GET /system/snapshots/usage` reports total bytes and count for Owners and Administrators.
+
+Off by default. Capture goes through the ordinary live preview lease, so there is one capture path, and only screens that are currently reporting are asked. The per-screen cap is applied on write as well as on the retention sweep. Responses carry the proof note: a snapshot proves the Player rendered that frame, not that the television was on or on the right input. See [Snapshot history](snapshots.md).
+
+## Playlist history
+
+`GET /playlists/{id}/revisions` returns the kept revisions with each one's item count, author, whether it is current, and how many of its items reference content that has since been deleted. The read backfills a snapshot of the current revision when one is missing, so a playlist edited before this shipped still has one recoverable point. `POST /playlists/{id}/revisions/{revision}/restore` restores a snapshot; it is Editor and above.
+
+A restore is a new edit: it bumps the revision, so the manifest changes, content review re-opens where required, and the replaced state stays in the history. Deleted media and Layouts are skipped rather than resurrected, and the response reports `skippedItems`. Layout revisions keep their existing routes under `/layouts/{id}/revisions`. See [Playlist history](playlist-history.md).
+
+## Content review
+
+`GET /content-reviews?state=pending|approved|rejected` returns the review queue with each item's current revision, how many screens it is already on, and the last decision. There is no submit endpoint: content is pending whenever its current revision has no decision, so editing approved content re-enters the queue by itself. `POST /content-reviews/{type}/{id}` records a decision for `playlist` or `layout`; it takes `approve`, an optional `note` (required to reject), and the `revision` the reviewer read. A decision against a stale revision answers `409 review_invalid`.
+
+Authoring routes accept the `contributor` role; publish and delete routes remain Editor and above. When `content.approval_required` is on, assignment answers `409 content_not_approved` for content that has not been approved at its current revision. The gate lives in the assignment path, so single assignment, bulk changes, and later paths all pass through it. See [Content review](content-review.md).
+
+## Screen scopes
+
+`GET /users/{id}/screen-scopes` and `PUT /users/{id}/screen-scopes` manage which locations and sync groups an account may operate screens in. No grants means the whole fleet; an Owner cannot be scoped, and nobody can change their own scope. Screen routes enforce it: an out-of-scope screen answers `404 screen_not_found` rather than `403`, so a scoped operator cannot enumerate the rest of the fleet, and an operation naming a mix answers `403 out_of_scope`. `GET /screens` is filtered by the same predicate that authorizes each operation. Activity reporting is deliberately not scoped. See [Screen scopes](screen-scopes.md).
+
+## Integration tokens
+
+Integration tokens are a third authentication boundary, separate from the dashboard cookie and the device credential. They authenticate with `Authorization: Bearer tci_<public-id>.<secret>`: the public part selects the record and the random secret is checked against its SHA-256 hash with a constant-time comparison. The secret is returned once by `POST /integration-tokens` and is never stored or readable afterwards. Every authentication failure answers `401 invalid_token`, so a revoked token is indistinguishable from an unknown one, and a missing scope answers `403 insufficient_scope`.
+
+Scopes are a closed set: `data_source:write` and `activity:read`. Token routes take no session and no CSRF token, and each names the scope it needs:
+
+- `PUT /integration/data-sources/{id}/rows` — replaces the rows of a Manual Table Data Source, at most 500 per write. Column keys must already exist on the source; a write cannot create or delete a source or change its columns. Routed through the ordinary update so the cached player payload, audit entry, and bound Widgets stay consistent.
+- `GET /integration/activity/fleet` and `GET /integration/metrics` — bounded fleet counts as JSON and as Prometheus text. There is no `online` count: presence lives in the process-local socket hub, which these reads cannot see, so the field reported is `recent` (contacted within two minutes).
+
+A token is attributed to the account that created it, and stops working if that account is removed. Owner-only management lives at `GET/POST /integration-tokens` and `DELETE /integration-tokens/{id}`; a token can never mint or revoke another. See [Integration tokens](integrations.md).
+
+## Bulk screen operations
+
+`POST /screens/bulk/preview` returns what a change would do without doing it: per-screen current and next state, whether each screen changes, why a screen is blocked, and which screens a sync group added to the selection. `POST /screens/bulk/apply` carries `expectedChangeCount` from the confirmed preview and returns `409 bulk_operation_stale` when the fleet no longer matches. `GET /screens/bulk/operations` lists recent operations; `POST /screens/bulk/operations/{id}/undo` reverses a reversible one inside a 15-minute window.
+
+Actions are `assign_playlist`, `assign_layout`, `clear_assignment`, `set_enabled`, and `send_command`. Each routes through the same service call as the single-screen route, so the manifest bump, sync-group fan-out, player-version check, and audit entries do not diverge. Sending a command is never reversible. Owner or Administrator only; at most 500 screens per operation. See [Bulk changes](fleet-operations.md).
+
+## Content health
+
+`GET /content-health` returns Data Sources that have not refreshed within the configured window, media expiring inside the warning horizon, assigned playlists with nothing available to play, and enabled screens with no playlist. The first and third also open `data_source` and `content` incidents, so they reach notifications; the other two never open one, because neither is a fault.
+
+## Notifications
+
+`GET /notifications/status` reports whether the server can send email at all, why not when it cannot, and the pending and recent-failure counts. Any signed-in account may read it and may call `POST /notifications/test`, which sends only to that account's own notification address so an authenticated session cannot be used as a relay.
+
+Owners and Administrators read the delivery log with `GET /notifications/deliveries?limit=` and manage receivers with `GET/POST /notifications/webhooks`, `PUT/DELETE /notifications/webhooks/{id}`, and `POST /notifications/webhooks/{id}/test`. `POST` returns the HMAC signing secret exactly once; no route reads it back. Requests carry `X-Tilecast-Signature: sha256=<hex>` over `timestamp + "." + body` and `X-Tilecast-Timestamp`. Stable errors include `email_not_configured`, `no_address`, `invalid_address`, `invalid_webhook`, `send_failed`, and `webhook_failed`.
+
+Notification volume is derived from incidents, not from events: each incident notifies at most twice, once when it opens and once when it recovers. See [Notifications](notifications.md).
+
 ## Declarative presentation runtime
 
 `GET /api/v1/provider-catalog` returns the legacy compatibility catalog. `GET /api/v1/content-definitions` returns the authoritative release definitions. `POST /api/v1/widgets/compile-preview` compiles an authorized draft into the same resolved declarative presentation document used by v13 manifests.

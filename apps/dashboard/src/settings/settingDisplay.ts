@@ -288,7 +288,39 @@ export const subsectionOrder: Record<
       prefix: ["backups.retention_"],
     },
   ],
+  notifications: [
+    {
+      title: "Delivery",
+      description:
+        "Email needs an SMTP relay configured on the server. Webhooks work without one.",
+      keys: [
+        "notifications.enabled",
+        "notifications.from_address",
+        "notifications.from_name",
+        "notifications.minimum_severity",
+      ],
+    },
+    {
+      title: "Timing",
+      description:
+        "A critical condition is always sent immediately, whatever these say.",
+      keys: [
+        "notifications.timezone",
+        "notifications.digest_time",
+        "notifications.quiet_hours_enabled",
+        "notifications.quiet_hours_start",
+        "notifications.quiet_hours_end",
+      ],
+    },
+    { title: "History", keys: ["notifications.retention_days"] },
+  ],
   preferences: [
+    {
+      title: "Notifications",
+      description:
+        "What Tilecast tells you about when you are not looking at Studio.",
+      prefix: ["preference.notifications."],
+    },
     {
       title: "Appearance",
       prefix: [
@@ -319,6 +351,23 @@ export const subsectionOrder: Record<
     },
   ],
   locations: [],
+  snapshots: [
+    {
+      title: "Capture",
+      description:
+        "Snapshots are held in the database and are included in every backup. The caps below are what keep that bounded.",
+      prefix: ["snapshots."],
+    },
+  ],
+  "content-review": [
+    {
+      title: "Approval",
+      description:
+        "There is no submit step. Content is waiting for review whenever its current revision has no decision, so editing approved content sends it back automatically.",
+      prefix: ["content.approval_"],
+    },
+  ],
+  integrations: [],
   "player-updates": [],
   system: [],
   "import-export": [],

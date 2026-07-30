@@ -235,6 +235,7 @@ describe("Activity navigation", () => {
       "Overview",
       "Proof of Play",
       "Incidents",
+      "Content Health",
       "Screen Events",
       "Audit Log",
     ]);
