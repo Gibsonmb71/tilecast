@@ -7,6 +7,7 @@ import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../api/client";
 import {
+  emergencyDisplayLabel,
   emergencyPlaylistLabel,
   EmergencyAlertsPage,
 } from "./EmergencyAlertsPage";
@@ -116,9 +117,13 @@ describe("Emergency Alerts plugin", () => {
           eventNames: ["Tornado Warning"],
           minimumSeverity: "Severe",
           minimumUrgency: "Expected",
+          responseMode: "takeover",
           presentationMode: "playlist",
           playlistId: "22222222-2222-4222-8222-222222222222",
           playlistName: "Emergency",
+          tickerDisplayMode: "push",
+          tickerHeightPx: 96,
+          tickerSpeed: "medium",
           maximumDurationMinutes: 360,
           screenIds: [],
           groupIds: [],
@@ -338,7 +343,11 @@ describe("Emergency Alerts plugin", () => {
       eventNames: ["Tornado Warning", "Flash Flood Warning"],
       minimumSeverity: "Severe",
       minimumUrgency: "Expected",
+      responseMode: "takeover",
       presentationMode: "builtin",
+      tickerDisplayMode: "push",
+      tickerHeightPx: 96,
+      tickerSpeed: "medium",
       maximumDurationMinutes: 360,
       screenIds: ["11111111-1111-4111-8111-111111111111"],
       groupIds: [],
@@ -367,11 +376,53 @@ describe("Emergency Alerts plugin", () => {
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
         eventNames: ["Tornado Warning", "Flash Flood Warning"],
+        responseMode: "takeover",
         presentationMode: "builtin",
         playlistId: undefined,
       }),
       "token",
     );
+
+    // Choosing the ticker reveals the bar's own shape, and saves as a response
+    // mode rather than as a third kind of presentation. A saved rule empties the
+    // editor, so the second rule is entered from scratch.
+    await user.type(screen.getByLabelText("Rule name"), "Ticker warnings");
+    await user.click(await screen.findByLabelText("Lobby"));
+    await user.selectOptions(
+      screen.getByLabelText(/Emergency display/),
+      "ticker",
+    );
+    await user.selectOptions(screen.getByLabelText("Ticker placement"), "push");
+    await user.selectOptions(screen.getByLabelText("Ticker speed"), "fast");
+    await user.click(screen.getByRole("button", { name: "Add rule" }));
+
+    expect(create).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        responseMode: "ticker",
+        presentationMode: "builtin",
+        tickerDisplayMode: "push",
+        tickerHeightPx: 96,
+        tickerSpeed: "fast",
+        playlistId: undefined,
+      }),
+      "token",
+    );
+  });
+
+  it("names what a rule will do without opening its editor", () => {
+    expect(
+      emergencyDisplayLabel({
+        responseMode: "ticker",
+        presentationMode: "builtin",
+      }),
+    ).toBe("Tilecast live NWS ticker bar");
+    expect(
+      emergencyDisplayLabel({
+        responseMode: "takeover",
+        presentationMode: "playlist",
+        playlistName: "Closure",
+      }),
+    ).toBe("Closure");
   });
 
   it("makes playlist readiness visible before a weather rule is saved", () => {

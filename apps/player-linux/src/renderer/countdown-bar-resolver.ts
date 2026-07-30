@@ -5,6 +5,19 @@
  * imports, and shared so the renderer surface and its tests evaluate the exact
  * same weekly, one-time, DST, completion, and priority behavior.
  */
+/**
+ * One entry of the manifest's plugin array as it arrives, before any resolver
+ * has claimed it. A resolver narrows by `type` and `version` and then reads its
+ * own configuration shape, so an entry belonging to another plugin — or to a
+ * plugin this Player predates — travels through untouched.
+ */
+interface TilecastManifestPluginEntry {
+  id: string;
+  type: string;
+  version: number;
+  config: unknown;
+}
+
 interface TilecastCountdownBarPlugin {
   id: string;
   type: string;
@@ -45,7 +58,7 @@ interface TilecastActiveCountdownBar {
 
 interface TilecastCountdownBarResolver {
   resolve(
-    plugins: TilecastCountdownBarPlugin[] | null | undefined,
+    plugins: TilecastManifestPluginEntry[] | null | undefined,
     localNow: Date,
     clockOffsetMs?: number,
   ): TilecastActiveCountdownBar | null;
@@ -160,14 +173,15 @@ const tilecastCountdownBar: TilecastCountdownBarResolver = (() => {
 
   return Object.freeze({
     resolve(
-      plugins: TilecastCountdownBarPlugin[] | null | undefined,
+      plugins: TilecastManifestPluginEntry[] | null | undefined,
       localNow: Date,
       clockOffsetMs = 0,
     ): TilecastActiveCountdownBar | null {
       const now = localNow.getTime() + clockOffsetMs;
       const active: TilecastActiveCountdownBar[] = [];
-      for (const plugin of plugins ?? []) {
-        if (plugin.type !== "countdown_bar" || plugin.version !== 1) continue;
+      for (const entry of plugins ?? []) {
+        if (entry.type !== "countdown_bar" || entry.version !== 1) continue;
+        const plugin = entry as TilecastCountdownBarPlugin;
         for (const target of candidateTargets(plugin, new Date(now))) {
           const remaining = target - now;
           const completionText = plugin.config.completionText?.trim() ?? "";

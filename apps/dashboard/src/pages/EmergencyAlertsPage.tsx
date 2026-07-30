@@ -16,8 +16,12 @@ const emptyRule: NWSAlertRuleInput = {
   eventNames: ["Tornado Warning"],
   minimumSeverity: "Severe",
   minimumUrgency: "Expected",
+  responseMode: "takeover",
   presentationMode: "builtin",
   playlistId: undefined,
+  tickerDisplayMode: "push",
+  tickerHeightPx: 96,
+  tickerSpeed: "medium",
   maximumDurationMinutes: 360,
   screenIds: [],
   groupIds: [],
@@ -30,8 +34,12 @@ const ruleSchema = z
     eventNames: z.array(z.string()),
     minimumSeverity: z.enum(["Minor", "Moderate", "Severe", "Extreme"]),
     minimumUrgency: z.enum(["Unknown", "Future", "Expected", "Immediate"]),
+    responseMode: z.enum(["takeover", "ticker"]),
     presentationMode: z.enum(["builtin", "playlist"]),
     playlistId: z.string().optional(),
+    tickerDisplayMode: z.enum(["overlay", "push"]),
+    tickerHeightPx: z.number().min(40).max(320),
+    tickerSpeed: z.enum(["slow", "medium", "fast"]),
     maximumDurationMinutes: z.number(),
     screenIds: z.array(z.string()),
     groupIds: z.array(z.string()),
@@ -489,7 +497,9 @@ export function EmergencyAlertsPage() {
             <p>
               Event names match NWS wording exactly. Leave the field empty to
               match every event at or above the selected severity and urgency.
-              Tilecast's live fullscreen alert is the default.
+              Tilecast's live fullscreen alert is the default; a ticker bar is
+              the alternative for alerts that should inform without interrupting
+              what is playing.
             </p>
           </header>
           <div className="takeover-rule-list">
@@ -499,10 +509,7 @@ export function EmergencyAlertsPage() {
                   <strong>{item.name}</strong>
                   <p>
                     {item.eventNames.join(", ") || "All event types"} ·{" "}
-                    {item.minimumSeverity}+ ·{" "}
-                    {item.presentationMode === "builtin"
-                      ? "Tilecast live NWS alert"
-                      : item.playlistName || "No playlist"}
+                    {item.minimumSeverity}+ · {emergencyDisplayLabel(item)}
                   </p>
                 </div>
                 <div>
@@ -582,25 +589,80 @@ export function EmergencyAlertsPage() {
                 <label>
                   Emergency display
                   <select
-                    {...register("presentationMode", {
-                      onChange: () =>
-                        setValue("playlistId", undefined, {
-                          shouldDirty: true,
-                          shouldValidate: true,
-                        }),
-                    })}
+                    value={displayChoice(rule)}
+                    onChange={(event) => {
+                      const choice = event.target.value;
+                      const update = {
+                        shouldDirty: true,
+                        shouldValidate: true,
+                      } as const;
+                      setValue(
+                        "responseMode",
+                        choice === "ticker" ? "ticker" : "takeover",
+                        update,
+                      );
+                      setValue(
+                        "presentationMode",
+                        choice === "playlist" ? "playlist" : "builtin",
+                        update,
+                      );
+                      setValue("playlistId", undefined, update);
+                    }}
                   >
                     <option value="builtin">
                       Tilecast live NWS alert — fullscreen
                     </option>
-                    <option value="playlist">Use a custom playlist</option>
+                    <option value="ticker">
+                      Tilecast live NWS alert — ticker bar
+                    </option>
+                    <option value="playlist">
+                      Use a custom playlist — fullscreen
+                    </option>
                   </select>
                   <small>
                     The built-in display automatically shows the exact NWS
                     event, headline, severity, affected area, instructions,
-                    sender, and expiration.
+                    sender, and expiration. A ticker bar shows the same alert
+                    text along the bottom and leaves whatever is playing on
+                    screen.
                   </small>
                 </label>
+                {rule.responseMode === "ticker" && (
+                  <>
+                    <label>
+                      Ticker placement
+                      <select {...register("tickerDisplayMode")}>
+                        <option value="push">
+                          Push content up — nothing is covered
+                        </option>
+                        <option value="overlay">
+                          Overlay — the bar covers the bottom edge
+                        </option>
+                      </select>
+                    </label>
+                    <label>
+                      Ticker height
+                      <select
+                        {...register("tickerHeightPx", {
+                          valueAsNumber: true,
+                        })}
+                      >
+                        <option value={64}>Compact — 64px</option>
+                        <option value={96}>Standard — 96px</option>
+                        <option value={140}>Large — 140px</option>
+                        <option value={200}>Extra large — 200px</option>
+                      </select>
+                    </label>
+                    <label>
+                      Ticker speed
+                      <select {...register("tickerSpeed")}>
+                        <option value="slow">Slow</option>
+                        <option value="medium">Medium</option>
+                        <option value="fast">Fast</option>
+                      </select>
+                    </label>
+                  </>
+                )}
                 {rule.presentationMode === "playlist" && (
                   <label>
                     Custom emergency playlist
@@ -791,14 +853,39 @@ export const emergencyPlaylistLabel = (
   playlist.itemCount === 0
     ? `${playlist.name} — empty, add content first`
     : `${playlist.name} — ${playlist.itemCount} item${playlist.itemCount === 1 ? "" : "s"}`;
+/**
+ * One select covers both of the rule's display decisions, because to an operator
+ * they are one decision: what an alert does to the screen. `responseMode` and
+ * `presentationMode` stay separate in the API — a ticker is not a kind of
+ * presentation — and this collapses them for the form and expands them back.
+ */
+const displayChoice = (
+  rule: Pick<NWSAlertRule, "responseMode" | "presentationMode">,
+) => (rule.responseMode === "ticker" ? "ticker" : rule.presentationMode);
+
+export const emergencyDisplayLabel = (
+  rule: Pick<
+    NWSAlertRule,
+    "responseMode" | "presentationMode" | "playlistName"
+  >,
+) => {
+  if (rule.responseMode === "ticker") return "Tilecast live NWS ticker bar";
+  if (rule.presentationMode === "builtin") return "Tilecast live NWS alert";
+  return rule.playlistName || "No playlist";
+};
+
 const toInput = (rule: NWSAlertRule): NWSAlertRuleInput => ({
   name: rule.name,
   enabled: rule.enabled,
   eventNames: rule.eventNames,
   minimumSeverity: rule.minimumSeverity,
   minimumUrgency: rule.minimumUrgency,
+  responseMode: rule.responseMode,
   presentationMode: rule.presentationMode,
   playlistId: rule.playlistId,
+  tickerDisplayMode: rule.tickerDisplayMode,
+  tickerHeightPx: rule.tickerHeightPx,
+  tickerSpeed: rule.tickerSpeed,
   maximumDurationMinutes: rule.maximumDurationMinutes,
   screenIds: rule.screenIds,
   groupIds: rule.groupIds,

@@ -14,6 +14,8 @@ Manifest v14 adds the optional `crossfade` playlist transition. Capable Players 
 
 Manifests v11-v14 may also carry the optional typed `plugins` projection. Built-in plugins are independent of playlist and Layout selection. The first discriminator is `countdown_bar@1`; its recurrence, target, display mode, height, optional background fill, and priority are cached with the rest of the manifest so Players can evaluate it locally while offline. The optional `progressFill` is additive: a Player that predates it ignores the key and renders the bar exactly as before.
 
+`alert_ticker@1` is the second discriminator: one live Emergency Alerts message delivered as a bar rather than as a Takeover, with the same `overlay`/`push` geometry, a named scroll speed, and an `expiresAt` the Player enforces against its own corrected clock so a cached manifest cannot keep an alert on screen indefinitely. Adding a discriminator is additive in the same way: a Player that predates a type ignores that entry and renders the rest of the array.
+
 Time-series points may carry one `value` or a bounded `values` object for multi-series charts. Capability revision 2 covers native charts, asset images, target progress, repeat indexes, and richer conditions without changing the presentation schema version.
 
 Native presentation schema v1 may also use the capability-gated `playback.auto_skip@1` behavior. Eligible definitions place `autoSkipWhenEmpty` and a bounded presentation condition in the root node properties. Players that report the capability evaluate that condition locally and may advance an unsynchronized fullscreen playlist item; other placements retain the normal empty-state render.

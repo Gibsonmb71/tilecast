@@ -66,6 +66,13 @@
   },
   "$defs": {
     "plugin": {
+      "description": "One built-in plugin surface delivered beside the presentation. Each type carries its own configuration; a Player ignores a type it does not implement.",
+      "oneOf": [
+        { "$ref": "#/$defs/countdownBarPlugin" },
+        { "$ref": "#/$defs/alertTickerPlugin" }
+      ]
+    },
+    "countdownBarPlugin": {
       "type": "object",
       "additionalProperties": false,
       "required": ["id", "type", "version", "config"],
@@ -74,6 +81,42 @@
         "type": { "const": "countdown_bar" },
         "version": { "const": 1 },
         "config": { "$ref": "#/$defs/countdownBarConfig" }
+      }
+    },
+    "alertTickerPlugin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "version", "config"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "type": { "const": "alert_ticker" },
+        "version": { "const": 1 },
+        "config": { "$ref": "#/$defs/alertTickerConfig" }
+      }
+    },
+    "alertTickerConfig": {
+      "description": "A live emergency alert delivered as a bar rather than as a takeover. The message is composed by the server from the alert itself, so the Player renders text rather than resolving a schedule. `expiresAt` is the Player's own stop condition: a cached manifest must not keep showing an alert that may be over.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "message",
+        "displayMode",
+        "heightPx",
+        "speed",
+        "priority",
+        "expiresAt"
+      ],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 180 },
+        "message": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "severity": { "type": "string", "maxLength": 32 },
+        "event": { "type": "string", "maxLength": 200 },
+        "displayMode": { "enum": ["overlay", "push"] },
+        "heightPx": { "type": "integer", "minimum": 40, "maximum": 320 },
+        "speed": { "enum": ["slow", "medium", "fast"] },
+        "priority": { "type": "integer", "minimum": -1000, "maximum": 1000 },
+        "expiresAt": { "type": "string", "format": "date-time" }
       }
     },
     "countdownBarConfig": {

@@ -1775,9 +1775,10 @@ paths:
         "502": { description: NWS retrieval failed }
   /api/v1/alerts/nws/rules:
     post:
-      summary: Create an automatic NWS rule with a built-in display or custom playlist
+      summary: Create an automatic NWS rule answering with a takeover or a ticker bar
       responses:
         "201": { description: Rule created }
+        "422": { description: Invalid rule, response mode, or ticker geometry }
   /api/v1/alerts/nws/rules/{id}:
     parameters:
       - {
@@ -1790,8 +1791,9 @@ paths:
       summary: Replace an automatic NWS rule
       responses:
         "200": { description: Rule updated }
+        "422": { description: Invalid rule, response mode, or ticker geometry }
     delete:
-      summary: Delete a rule and end Takeovers it raised
+      summary: Delete a rule, ending Takeovers it raised and withdrawing its ticker
       responses:
         "200": { description: Rule deleted }
   /api/v1/screens/{id}/commands:

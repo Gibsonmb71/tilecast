@@ -66,11 +66,14 @@ type CountdownBar struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
+// Config is the union of every plugin's configuration rather than one plugin's
+// struct: the manifest carries a single `plugins` array, and a screen may be
+// delivered a Countdown Bar and an Emergency Alerts ticker at the same time.
 type ManifestPlugin struct {
-	ID      uuid.UUID               `json:"id"`
-	Type    string                  `json:"type"`
-	Version int                     `json:"version"`
-	Config  ManifestCountdownConfig `json:"config"`
+	ID      uuid.UUID `json:"id"`
+	Type    string    `json:"type"`
+	Version int       `json:"version"`
+	Config  any       `json:"config"`
 }
 
 type ManifestCountdownConfig struct {
@@ -88,6 +91,31 @@ type ManifestCountdownConfig struct {
 	ProgressFill    string     `json:"progressFill"`
 	Priority        int        `json:"priority"`
 }
+
+// ManifestAlertTickerConfig carries one live NWS alert as a bar rather than as a
+// takeover. The message is composed server-side from the same alert fields the
+// built-in fullscreen presentation shows, so a site that switches a rule from
+// fullscreen to ticker reads the same alert either way.
+//
+// `expiresAt` is what ends the bar. The poller clears an activation as soon as
+// the alert stops matching, but a player running on a cached manifest has no
+// poller to hear from: the expiry lets it take the bar down on its own rather
+// than display an alert that may be over.
+type ManifestAlertTickerConfig struct {
+	Name        string    `json:"name"`
+	Message     string    `json:"message"`
+	Severity    string    `json:"severity"`
+	Event       string    `json:"event"`
+	DisplayMode string    `json:"displayMode"`
+	HeightPX    int       `json:"heightPx"`
+	Speed       string    `json:"speed"`
+	Priority    int       `json:"priority"`
+	ExpiresAt   time.Time `json:"expiresAt"`
+}
+
+// An emergency outranks every configured bar. Priority is published rather than
+// implied so a player only has to compare one field to decide what shows.
+const alertTickerPriority = 1000
 
 // Catalog reports every built-in plugin with the state Studio needs to describe
 // it. A plugin whose own tables are empty still appears, disabled and with no
@@ -121,7 +149,7 @@ func (s *Service) Catalog(ctx context.Context) (Catalog, error) {
 		},
 		{
 			ID: "emergency_alerts", Name: "Emergency Alerts",
-			Description:   "Watch official NWS weather alerts and take screens over automatically while one is active.",
+			Description:   "Watch official NWS weather alerts and respond automatically while one is active, with a fullscreen takeover or a ticker bar.",
 			Enabled:       alertsEnabled,
 			InstanceCount: alertRules,
 		},
@@ -448,7 +476,61 @@ func (s *Service) notify(notes []note) {
 	}
 }
 
+// ManifestForScreen publishes every plugin surface this screen should be
+// running. Bars from different plugins travel in one array and carry their own
+// priority, so the player decides what occupies the bar from the manifest alone
+// rather than from the order the server happened to query in.
 func (s *Service) ManifestForScreen(ctx context.Context, screenID uuid.UUID) ([]ManifestPlugin, error) {
+	out, err := s.countdownBarsForScreen(ctx, screenID)
+	if err != nil {
+		return nil, err
+	}
+	tickers, err := s.alertTickersForScreen(ctx, screenID)
+	if err != nil {
+		return nil, err
+	}
+	return append(out, tickers...), nil
+}
+
+// alertTickersForScreen projects live Emergency Alerts activations whose rule
+// answers with a bar instead of a Takeover. The message is composed in SQL from
+// the activation the poller already stored, so the ticker needs no managed Data
+// Source, Widget, or playlist — the three resources a fullscreen response has to
+// keep in step with the alert.
+func (s *Service) alertTickersForScreen(ctx context.Context, screenID uuid.UUID) ([]ManifestPlugin, error) {
+	// One bar per rule: two alerts matching the same rule would otherwise stack
+	// two bars from one configured response. The most severe, then the
+	// longest-running, is the one that stays.
+	rows, err := s.db.Query(ctx, `SELECT DISTINCT ON (a.rule_id) a.rule_id,r.name,
+		left(COALESCE(NULLIF(concat_ws(' — ',NULLIF(a.event,''),NULLIF(a.headline,''),NULLIF(a.area_description,''),NULLIF(a.instruction,'')),''),'Active NWS weather alert'),1000),
+		a.severity,a.event,r.ticker_display_mode,r.ticker_height_px,r.ticker_speed,a.expires_at
+		FROM alert_activations a JOIN alert_rules r ON r.id=a.rule_id
+		WHERE a.cleared_at IS NULL AND r.enabled AND r.response_mode='ticker'
+			AND a.expires_at IS NOT NULL AND a.expires_at>now()
+			AND EXISTS(SELECT 1 FROM alert_rule_targets t WHERE t.rule_id=r.id AND (
+				t.screen_id=$1
+				OR EXISTS(SELECT 1 FROM screen_group_memberships m WHERE m.screen_group_id=t.screen_group_id AND m.screen_id=$1)))
+		ORDER BY a.rule_id,
+			CASE a.severity WHEN 'Extreme' THEN 4 WHEN 'Severe' THEN 3 WHEN 'Moderate' THEN 2 WHEN 'Minor' THEN 1 ELSE 0 END DESC,
+			a.first_seen_at`, screenID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []ManifestPlugin{}
+	for rows.Next() {
+		var id uuid.UUID
+		config := ManifestAlertTickerConfig{Priority: alertTickerPriority}
+		if err = rows.Scan(&id, &config.Name, &config.Message, &config.Severity, &config.Event,
+			&config.DisplayMode, &config.HeightPX, &config.Speed, &config.ExpiresAt); err != nil {
+			return nil, err
+		}
+		out = append(out, ManifestPlugin{ID: id, Type: "alert_ticker", Version: 1, Config: config})
+	}
+	return out, rows.Err()
+}
+
+func (s *Service) countdownBarsForScreen(ctx context.Context, screenID uuid.UUID) ([]ManifestPlugin, error) {
 	rows, err := s.db.Query(ctx, `SELECT DISTINCT i.id,i.name,i.message,i.schedule_type,i.target_time::text,i.days_of_week,
 		i.one_time_at,i.timezone,i.lead_time_seconds,i.completion_text,i.display_mode,i.height_px,i.progress_fill,i.priority
 		FROM countdown_bar_instances i

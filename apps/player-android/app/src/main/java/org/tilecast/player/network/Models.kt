@@ -43,8 +43,15 @@ object PlayerPresentationSupport {
 @Serializable data class PlayerManifest(val schemaVersion: Int, val manifestVersion: Long, val screenId: String, val generatedAt: String, val mode: String, val playlist: ManifestPlaylist? = null, val directFallbackPlaylist:ManifestPlaylist?=null,val playlists:List<ManifestPlaylist> = emptyList(),val layout:ManifestLayout?=null,val directFallbackLayout:ManifestLayout?=null,val layouts:List<ManifestLayout> = emptyList(),val schedules:List<ManifestSchedule> = emptyList(),val assets: List<ManifestAsset> = emptyList(),val websites:List<ManifestWebsite> = emptyList(),val widgets:List<ManifestWidget> = emptyList(),val dataSources:List<ManifestDataSource> = emptyList(),val takeover:ManifestTakeover?=null,val emergency:ManifestTakeover?=null,val plugins:List<ManifestPlugin> = emptyList(),val syncGroup:ManifestSyncGroup?=null,val serverTime:String?=null,val prefetchHorizonDays:Int=14,val activationGraceSeconds:Int=30) {
     val effectiveTakeover: ManifestTakeover? get() = takeover ?: emergency
 }
-@Serializable data class ManifestPlugin(val id:String,val type:String,val version:Int,val config:ManifestCountdownBarConfig)
-@Serializable data class ManifestCountdownBarConfig(val name:String="",val message:String,val scheduleType:String,val targetTime:String?=null,val daysOfWeek:List<Int> = emptyList(),val oneTimeAt:String?=null,val timezone:String,val leadTimeSeconds:Int,val completionText:String="",val displayMode:String,val heightPx:Int,val progressFill:String="none",val priority:Int)
+@Serializable data class ManifestPlugin(val id:String,val type:String,val version:Int,val config:ManifestPluginConfig)
+/**
+ * The plugin channel carries one array for every built-in plugin, so one config
+ * shape covers all of them and every field a given plugin does not use keeps its
+ * default. `type` and `version` say which fields are meaningful; a resolver that
+ * reads a field belonging to another plugin is the bug this makes visible rather
+ * than one polymorphic serializer per bar would.
+ */
+@Serializable data class ManifestPluginConfig(val name:String="",val message:String="",val scheduleType:String="",val targetTime:String?=null,val daysOfWeek:List<Int> = emptyList(),val oneTimeAt:String?=null,val timezone:String="UTC",val leadTimeSeconds:Int=0,val completionText:String="",val displayMode:String="overlay",val heightPx:Int=72,val progressFill:String="none",val priority:Int=0,val severity:String="",val event:String="",val speed:String="medium",val expiresAt:String="")
 @Serializable data class ManifestSyncGroup(val id:String,val playbackEpoch:String)
 @Serializable data class ManifestTakeover(val id:String,val playlistId:String,val activatedAt:String,val expiresAt:String)
 @Serializable data class ManifestPlaylist(val id: String, val revision: Long, val name: String, val items: List<ManifestItem>)

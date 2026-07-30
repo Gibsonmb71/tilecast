@@ -167,6 +167,50 @@ func TestAlertTakeoverLifecycle(t *testing.T) {
 		}
 	}
 
+	// A ticker rule answers the same alert without a Takeover: no managed
+	// presentation, no playlist, and the bar delivered through the manifest.
+	tickerRule, err := service.SaveRule(ctx, uuid.Nil, RuleInput{
+		Name: "Ticker alert", Enabled: true, EventNames: []string{"Tornado Warning"},
+		MinimumSeverity: "Severe", MinimumUrgency: "Expected", ResponseMode: "ticker",
+		TickerDisplayMode: "push", TickerHeightPX: 120, TickerSpeed: "fast",
+		MaximumDurationMinutes: 360, ScreenIDs: []uuid.UUID{screenID},
+	}, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tickerRule.ResponseMode != "ticker" || tickerRule.PlaylistID != nil ||
+		tickerRule.ManagedPlaylistID != nil || tickerRule.TickerHeightPX != 120 {
+		t.Fatalf("ticker rule kept fullscreen resources: %#v", tickerRule)
+	}
+	if _, err = service.SaveRule(ctx, uuid.Nil, RuleInput{
+		Name: "Contradiction", Enabled: true, MinimumSeverity: "Severe",
+		MinimumUrgency: "Expected", ResponseMode: "ticker", PlaylistID: &playlistID,
+		MaximumDurationMinutes: 360, ScreenIDs: []uuid.UUID{screenID},
+	}, userID); !errors.Is(err, ErrValidation) {
+		t.Fatalf("a ticker rule with a playlist returned %v, want validation", err)
+	}
+	var tickerVersionBefore int64
+	if err = pool.QueryRow(ctx, `SELECT manifest_version FROM screen_manifest_state WHERE screen_id=$1`, screenID).Scan(&tickerVersionBefore); err != nil {
+		t.Fatal(err)
+	}
+	if err = service.applyAlert(ctx, "alert-ticker", tickerRule, builtinAlert, now); err != nil {
+		t.Fatal(err)
+	}
+	var tickerTakeover *uuid.UUID
+	var tickerResponse string
+	var tickerVersionAfter int64
+	if err = pool.QueryRow(ctx, `SELECT takeover_id,response_mode FROM alert_activations WHERE alert_id='alert-ticker' AND rule_id=$1 AND cleared_at IS NULL`,
+		tickerRule.ID).Scan(&tickerTakeover, &tickerResponse); err != nil {
+		t.Fatal(err)
+	}
+	if err = pool.QueryRow(ctx, `SELECT manifest_version FROM screen_manifest_state WHERE screen_id=$1`, screenID).Scan(&tickerVersionAfter); err != nil {
+		t.Fatal(err)
+	}
+	if tickerTakeover != nil || tickerResponse != "ticker" || tickerVersionAfter <= tickerVersionBefore {
+		t.Fatalf("ticker activation takeover=%v response=%q manifest %d->%d",
+			tickerTakeover, tickerResponse, tickerVersionBefore, tickerVersionAfter)
+	}
+
 	unrelatedID := uuid.New()
 	if _, err = pool.Exec(ctx, `INSERT INTO takeovers(id,organization_id,name,playlist_id,status,activated_at,expires_at) VALUES($1,$2,'Manual takeover',$3,'active',$4,$5)`, unrelatedID, organizationID, playlistID, now, now.Add(time.Hour)); err != nil {
 		t.Fatal(err)

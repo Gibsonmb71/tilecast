@@ -68,7 +68,7 @@ import kotlinx.coroutines.delay
 import org.tilecast.player.core.DiscoveredServer
 import org.tilecast.player.core.PlayerState
 import org.tilecast.player.content.FullscreenPlayback
-import org.tilecast.player.content.WithCountdownBar
+import org.tilecast.player.content.WithPluginBars
 import org.tilecast.player.preview.LivePreviewCoordinator
 import org.tilecast.player.reliability.ReliabilityController
 import org.tilecast.player.ui.theme.SignalBackground
@@ -149,9 +149,10 @@ class MainActivity : ComponentActivity() {
 	if(safeMode){Box(Modifier.fillMaxSize().background(brandedBackground),contentAlignment=Alignment.Center){Column(horizontalAlignment=Alignment.CenterHorizontally){TilecastBrand();Spacer(Modifier.height(28.dp));Text("Player recovery mode",color=brandedText,style=MaterialTheme.typography.headlineLarge);Text("Tilecast remains paired and connected. Use Studio or the local maintenance menu to retry.",color=brandedText);Text("Diagnostic code: TC-RCV-10",color=SignalWarning)}};return}
 	if(!activeHours){OutsideActiveHoursScreen(config?.power,config?.branding,brandedText);return}
 	if (content != null) {
-		// The bar rides above playback from the cached manifest, so it keeps
-		// appearing and hiding on schedule even while the server is unreachable.
-		WithCountdownBar(content!!.content.manifest.plugins, content!!.content.serverClockOffsetSeconds) {
+		// A bar rides above playback from the cached manifest, so a countdown keeps
+		// appearing on schedule — and an alert ticker keeps its own expiry — even
+		// while the server is unreachable.
+		WithPluginBars(content!!.content.manifest.plugins, content!!.content.serverClockOffsetSeconds) {
 			FullscreenPlayback(content!!, model::playbackBoundary, model::playbackError,model::websitePlaybackStatus,model::widgetPlaybackStatus,model::playbackProgress)
 		}
 		return
