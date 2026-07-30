@@ -22,8 +22,9 @@ A rule may answer with a ticker bar instead of taking the screen over. The bar
 carries the same live alert text along the bottom of the screen and leaves
 whatever is playing in place — pushing the content up, or overlaying its bottom
 edge — which suits alerts that should inform a room without interrupting it. A
-ticker raises no Takeover and needs no playlist, so nothing is restored when the
-alert clears: the bar is withdrawn by revising the targeted manifests. It is
+ticker raises no Takeover and needs no playlist, so playback needs no restoring
+when the alert clears: the bar is withdrawn by revising the targeted manifests,
+and a Countdown Bar that was waiting for the slot returns immediately. It is
 delivered through the Player plugin channel described in
 [plugins.md](plugins.md), alongside the Countdown Bar, and takes the bar slot
 from any countdown while the alert is live.
@@ -50,9 +51,10 @@ are fetched separately and unioned by NWS alert ID. Repeated polls update both
 the existing `(alert, rule)` activation and its built-in live data rather than
 raising duplicates. A new match raises a Takeover, or publishes a ticker to the
 rule's targets; the earlier of the alert's end/expiry and the rule ceiling
-determines expiration either way. Repeated polls revise a ticker's manifests only
-when the alert text itself changes, so an alert that publishes no expiry does not
-re-push a bar that reads the same. When an alert is no longer active, or its rule
+determines expiration either way. Repeated polls revise a ticker's manifests when
+the alert text or the office's own end time changes, but not when the rule ceiling
+supplied the expiry, since that is recomputed on every poll and would re-push a
+bar that reads the same. When an alert is no longer active, or its rule
 is deleted, Tilecast cancels only the Takeover raised by that activation and
 restores current scheduling, or revises the targeted manifests to drop the bar.
 

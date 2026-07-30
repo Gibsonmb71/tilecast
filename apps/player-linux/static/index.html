@@ -181,11 +181,14 @@
         #alert-ticker .ticker-track {
           left: 0;
           animation: none !important;
+          max-width: 100%;
         }
+        /* Constrained by the track, not by the viewport: the severity chip takes
+           part of the bar, and the bar is not always the full screen width. */
         #alert-ticker .ticker-message {
           overflow: hidden;
           text-overflow: ellipsis;
-          max-width: 92vw;
+          max-width: 100%;
         }
       }
       .layer.visible {

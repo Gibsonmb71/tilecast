@@ -99,7 +99,7 @@ describe("alert ticker resolver", () => {
     expect(resolver.resolve(null, now)).toBe(null);
   });
 
-  it("keeps the most severe rule's bar when two alerts are live", () => {
+  it("keeps the longest-running alert when two are live at equal priority", () => {
     const later = ticker({ expiresAt: "2026-07-29T14:00:00Z" });
     const other = {
       ...ticker(),

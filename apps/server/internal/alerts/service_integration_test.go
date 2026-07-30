@@ -211,6 +211,39 @@ func TestAlertTakeoverLifecycle(t *testing.T) {
 			tickerTakeover, tickerResponse, tickerVersionBefore, tickerVersionAfter)
 	}
 
+	// An office that extends a warning has to reach the bar: the text is
+	// unchanged, so only the new end time can revise the manifest.
+	extended := builtinAlert
+	extendedEnd := now.Add(45 * time.Minute)
+	extended.Ends = &extendedEnd
+	if err = service.applyAlert(ctx, "alert-ticker", tickerRule, extended, now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	var extendedVersion int64
+	var storedExpiry time.Time
+	if err = pool.QueryRow(ctx, `SELECT manifest_version FROM screen_manifest_state WHERE screen_id=$1`, screenID).Scan(&extendedVersion); err != nil {
+		t.Fatal(err)
+	}
+	if err = pool.QueryRow(ctx, `SELECT expires_at FROM alert_activations WHERE alert_id='alert-ticker' AND rule_id=$1`, tickerRule.ID).Scan(&storedExpiry); err != nil {
+		t.Fatal(err)
+	}
+	if extendedVersion <= tickerVersionAfter || !storedExpiry.Equal(extendedEnd) {
+		t.Fatalf("extended ticker expiry %s at manifest %d, want %s past %d",
+			storedExpiry, extendedVersion, extendedEnd, tickerVersionAfter)
+	}
+	// Re-polling the same extended alert must not revise anything again, or a
+	// bar that reads the same would re-push a manifest every poll.
+	if err = service.applyAlert(ctx, "alert-ticker", tickerRule, extended, now.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	var unchangedVersion int64
+	if err = pool.QueryRow(ctx, `SELECT manifest_version FROM screen_manifest_state WHERE screen_id=$1`, screenID).Scan(&unchangedVersion); err != nil {
+		t.Fatal(err)
+	}
+	if unchangedVersion != extendedVersion {
+		t.Fatalf("unchanged ticker revised the manifest %d->%d", extendedVersion, unchangedVersion)
+	}
+
 	unrelatedID := uuid.New()
 	if _, err = pool.Exec(ctx, `INSERT INTO takeovers(id,organization_id,name,playlist_id,status,activated_at,expires_at) VALUES($1,$2,'Manual takeover',$3,'active',$4,$5)`, unrelatedID, organizationID, playlistID, now, now.Add(time.Hour)); err != nil {
 		t.Fatal(err)
@@ -227,5 +260,21 @@ func TestAlertTakeoverLifecycle(t *testing.T) {
 	}
 	if createdStatus != "cancelled" || unrelatedStatus != "active" {
 		t.Fatalf("clearMissing statuses created=%q unrelated=%q", createdStatus, unrelatedStatus)
+	}
+	// A ticker has no Takeover to cancel, so the clear itself and the manifest
+	// revision are the only evidence the bar is gone.
+	var tickerCleared *time.Time
+	var tickerReason string
+	var withdrawnVersion int64
+	if err = pool.QueryRow(ctx, `SELECT cleared_at,COALESCE(clear_reason,'') FROM alert_activations WHERE alert_id='alert-ticker' AND rule_id=$1`,
+		tickerRule.ID).Scan(&tickerCleared, &tickerReason); err != nil {
+		t.Fatal(err)
+	}
+	if err = pool.QueryRow(ctx, `SELECT manifest_version FROM screen_manifest_state WHERE screen_id=$1`, screenID).Scan(&withdrawnVersion); err != nil {
+		t.Fatal(err)
+	}
+	if tickerCleared == nil || tickerReason != "no_longer_active" || withdrawnVersion <= extendedVersion {
+		t.Fatalf("withdrawn ticker cleared=%v reason=%q manifest %d->%d",
+			tickerCleared, tickerReason, extendedVersion, withdrawnVersion)
 	}
 }
