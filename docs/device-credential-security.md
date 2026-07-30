@@ -1,14 +1,40 @@
 # Device credential security
 
-Every screen receives a separate random credential formatted as `tc_device_<public-id>.<secret>`. The public ID selects a database record; the 256-bit random secret is checked against its SHA-256 hash with constant-time comparison. The full credential is returned once and is never stored or logged by the server.
+Each screen receives a separate random credential. The credential has the format `tc_device_<public-id>.<secret>`.
 
-Android stores the credential encrypted with an AES-GCM key generated inside Android Keystore. Room contains non-secret configuration only. Revocation timestamps the credential record, closes the active WebSocket, rejects future requests with `device_credential_revoked`, and causes the player to delete its local credential.
+The public ID selects a database record. The server compares the 256-bit secret with its SHA-256 hash in constant time.
 
-The local maintenance PIN is independent of device authentication. Tilecast stores only a random-salted PBKDF2-SHA256 PIN hash, rate-limits verification, and temporarily locks after repeated failures. Accessibility Control is optional and locally enabled; it cannot retrieve window content, click, gesture, approve installers, change Wi-Fi, or accept arbitrary actions from Studio. Detailed foreground package reporting is restricted to Owners and Administrators and is not retained as an unbounded event history.
+The server returns the full credential one time. The server does not store or log the full credential.
 
-Disable is reversible and preserves the credential. Revoke is permanent and requires pairing again. Both operations are role-restricted, CSRF-protected, and audited.
-Website content does not change device authentication. Website pages never receive the Tilecast device credential, and WebView requests are not given Tilecast authorization headers. Website authentication credentials, imported cookies, OAuth tokens, and native JavaScript bridges are outside the product boundary.
+Android encrypts the credential with an AES-GCM key from Android Keystore. Room contains only non-secret configuration.
 
-The player configuration endpoint uses the same per-device boundary and returns only effective non-secret values for that screen. It never returns policy sources, environment values, connection strings, signing material, sessions, or other screens.
+Revocation adds a timestamp to the credential record and closes the active WebSocket. Future requests return `device_credential_revoked`.
 
-Update metadata and APK ranges require device authentication plus an active deployment targeting that exact screen. Commands contain identifiers, expected version/hash, mode, and expiration only—never URLs, keys, credentials, or paths. Releases come only from `Gibsonmb71/tilecast`; the server verifies the Ed25519 statement, APK checksum, Android signature, and signing certificate.
+The player then deletes its local credential.
+
+The local maintenance PIN is independent of device authentication. Tilecast stores only a PBKDF2-SHA256 hash with a random salt.
+
+Tilecast limits the verification rate. Repeated failures cause a temporary lock.
+
+Accessibility Control is optional. A local user must enable it.
+
+Accessibility Control cannot read window content, approve installers, change Wi-Fi, or accept unspecified Studio actions. It cannot make clicks or gestures.
+
+Only Owners and Administrators can read detailed foreground package reports. Tilecast does not keep an unlimited event history.
+
+The disable operation is reversible and keeps the credential. The revoke operation is permanent and requires new pairing.
+
+Role rules and CSRF protection apply to both operations. Tilecast writes an audit event for each operation.
+Website content does not change device authentication. Website pages do not receive the Tilecast device credential.
+
+WebView requests do not contain Tilecast authorization headers. Tilecast does not support website credentials, imported cookies, OAuth tokens, or native JavaScript bridges.
+
+The player configuration endpoint uses the same device boundary. It returns only the effective, non-secret values for that screen.
+
+It does not return policy sources, environment values, connection strings, signing material, sessions, or information about other screens.
+
+Update metadata and APK ranges require device authentication. An active deployment must also target the exact screen.
+
+Commands contain only identifiers, the expected version and hash, the mode, and the expiration. They do not contain URLs, credentials, or paths.
+
+Releases come only from `Gibsonmb71/tilecast`. The server verifies the Ed25519 statement, APK checksum, Android signature, and signing certificate.
