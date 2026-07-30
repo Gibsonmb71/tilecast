@@ -4,7 +4,9 @@ Tilecast reports platform limits instead of presenting them as completed capabil
 
 ## Layout capabilities
 
-Playback supports published multi-zone Layouts as well as fullscreen playlists. A Layout remains limited to one active video-capable zone and one audio-emitting zone; arbitrary simultaneous-video compositions are not supported.
+Playback supports published multi-zone Layouts and fullscreen playlists.
+
+A Layout has a maximum of one active video zone and one audio zone. Tilecast does not support other simultaneous-video compositions.
 
 Not currently supported:
 
@@ -19,14 +21,15 @@ The **Layouts** route in Studio is available for creating and publishing support
 
 Tilecast does report proof of play: a Player confirms what it displayed, and Activity derives playback sessions from those reports. An assignment or a schedule is never treated as proof that anything appeared on a screen.
 
-There are real limits worth knowing before you rely on a figure. The full list is in [the Activity documentation](https://github.com/tilecast/tilecast/blob/main/docs/activity.md#known-limitations); the ones that most often surprise people:
+Review these limits before you use an Activity value. The [Activity documentation](https://github.com/tilecast/tilecast/blob/main/docs/activity.md#known-limitations) contains the full list.
 
 - **Playback compliance is not retroactive.** Expectations are recorded as they happen, so compliance over a period before this feature existed reports little or no expected time. It says "No data" rather than inventing a percentage.
 - **A screen can read healthy seconds after it broke.** Fleet health reflects the last heartbeat and status. Use the per-screen timeline or incidents for what actually happened.
 - **"Interrupted plays" is a floor, not a total.** Sessions recorded by an older Player usually have no recorded reason for ending, and are excluded rather than guessed at.
 - **Some conditions cannot be detected on every device.** A Player that cannot measure screen brightness or frame changes never reports a black or frozen screen. No such event is not proof that the screen is fine.
 - **Cause is often genuinely unknown.** When a screen stops reporting, Tilecast knows that it stopped. It does not know whether the cause was the network, the power, or the device, and it says "Unknown cause" instead of guessing.
-- **Telemetry gaps are not recovered.** Detailed telemetry from a Player that was offline is lost for that period. Proof of play and Activity events are buffered and retried; telemetry is deliberately not, to keep memory bounded on a long outage.
+- **Telemetry gaps are not recovered.** Tilecast cannot recover detailed telemetry from an offline period.
+- The Player buffers and retries proof-of-play and Activity events. It does not buffer telemetry during a long outage.
 
 ## No authenticated Website Sources
 
@@ -50,7 +53,9 @@ Depending on device and provisioning, a person may need to:
 
 Tilecast does not use root, ADB deployment, simulated taps, or hidden APIs to bypass these prompts.
 
-Linux updates replace the running AppImage without a prompt, but only when the player runs as a managed AppImage. The supported `--appimage-extract-and-run` runtime mode remains managed; development runs and manually unpacked AppImages report an unsupported installation mode.
+Linux updates replace the active AppImage without a prompt. This operation requires a managed AppImage.
+
+The supported `--appimage-extract-and-run` mode keeps the managed state. Development runs and manually unpacked AppImages report an unsupported installation mode.
 
 ## Linux hardware and session limits
 

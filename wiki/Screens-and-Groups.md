@@ -7,7 +7,7 @@ A screen represents one paired Tilecast Player. A group is a reusable set of scr
 | Status          | Meaning                                                             |
 | --------------- | ------------------------------------------------------------------- |
 | Online          | An authenticated Player WebSocket is active                         |
-| Recently online | No active socket; last contact was within two minutes               |
+| Recently online | No active socket. The last contact was within two minutes.          |
 | Stale           | Last contact was more than two and no more than fifteen minutes ago |
 | Offline         | No contact for more than fifteen minutes, or never contacted        |
 | Disabled        | Playback was administratively disabled                              |

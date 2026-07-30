@@ -28,15 +28,15 @@ Existing installation:
 
 Tilecast Player is one product with two builds. Both use the same server, pairing flow, screen assignments, playlists, schedules, layouts, widgets, emergency controls, offline cache, and signed updates. They differ only in how the host device is locked down, started at boot, and updated.
 
-| Capability                                                 | Android TV / Fire TV / Google TV                             | Linux (x86_64)                            |
-| ---------------------------------------------------------- | ------------------------------------------------------------ | ----------------------------------------- |
-| Core playback, scheduling, layouts, widgets, offline cache | Supported                                                    | Supported                                 |
-| Install format                                             | Signed APK (`tilecast-player.apk`)                           | AppImage (`tilecast-player.AppImage`)     |
-| Kiosk lockdown                                             | Android lock task, device owner, or accessibility assistance | Linux desktop or kiosk compositor         |
-| Start at boot and crash recovery                           | Android boot receiver and platform services                  | systemd plus a graphical session          |
-| Self-update                                                | Installs a signed APK                                        | Replaces the running AppImage             |
-| HDMI-CEC and TV sleep/wake assistance                      | Best-effort Android platform behavior                        | Not provided                              |
-| Live screen preview                                        | Supported                                                    | Best on X11; Wayland may require a portal |
+| Capability                                                 | Android TV / Fire TV / Google TV                             | Linux (x86_64)                                  |
+| ---------------------------------------------------------- | ------------------------------------------------------------ | ----------------------------------------------- |
+| Core playback, scheduling, layouts, widgets, offline cache | Supported                                                    | Supported                                       |
+| Install format                                             | Signed APK (`tilecast-player.apk`)                           | AppImage (`tilecast-player.AppImage`)           |
+| Kiosk lockdown                                             | Android lock task, device owner, or accessibility assistance | Linux desktop or kiosk compositor               |
+| Start at boot and crash recovery                           | Android boot receiver and platform services                  | systemd plus a graphical session                |
+| Self-update                                                | Installs a signed APK                                        | Replaces the running AppImage                   |
+| HDMI-CEC and TV sleep/wake assistance                      | Best-effort Android platform behavior                        | Not provided                                    |
+| Live screen preview                                        | Supported                                                    | X11 is preferred. Wayland can require a portal. |
 
 The Linux build targets mini PCs, thin clients, and repurposed signage computers, down to a roughly 2012-era Intel machine with 4 GB of RAM. The Android build targets Fire TV, Google TV, and Android TV without Google Play Services.
 

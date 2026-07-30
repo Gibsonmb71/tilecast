@@ -2,8 +2,8 @@
 
 Tilecast Player runs on two kinds of device:
 
-- **Android TV devices** — Fire TV, Google TV, and Android TV, without Google Play Services. Installed as an APK with package ID `org.tilecast.player`.
-- **Linux computers** — 64-bit Intel or AMD machines with a graphical session. Installed as an AppImage.
+- **Android TV devices:** Fire TV, Google TV, and Android TV without Google Play Services. Install the APK with package ID `org.tilecast.player`.
+- **Linux computers:** 64-bit Intel or AMD computers with a graphical session. Install the AppImage.
 
 Both builds pair, play, schedule, and update the same way. Pick your platform below. First-launch pairing is shared and described at the end of this page.
 
@@ -82,7 +82,11 @@ Tilecast does not use ADB, simulated clicks, root, or hidden APIs to bypass the 
 
 This installs the published AppImage on an Intel or AMD Linux computer. The player needs a working graphical session and network access to the Tilecast server.
 
-The automated release process publishes an **x86_64 AppImage** named `tilecast-player.AppImage`. That is the recommended format for Intel and AMD Linux signage computers. ARM and Raspberry Pi-class hardware can be evaluated with a source build, but there is no separately published or broadly validated ARM release yet — see [[Known Limitations]].
+The automated release process publishes an **x86_64 AppImage** named `tilecast-player.AppImage`. Use this format for Intel and AMD Linux signage computers.
+
+You can evaluate ARM hardware with a source build. Tilecast does not publish or fully validate a separate ARM release.
+
+See [[Known Limitations]].
 
 ## Before you begin
 
@@ -115,7 +119,7 @@ Current Tilecast releases use a static AppImage runtime and do not depend on the
 
 Tilecast Linux Player 0.5.0 and older used the legacy runtime. If one of those releases reports a FUSE error, launch it with the managed command above once, then update to a newer release. Installing `libfuse2` or, on newer Ubuntu releases, `libfuse2t64` remains an alternative for legacy artifacts.
 
-Do not manually unpack `squashfs-root` and run `AppRun`; that loses the managed AppImage identity used for updates.
+Do not manually unpack `squashfs-root` and run `AppRun`. This action removes the managed AppImage identity that updates require.
 
 ## Supply the server address without typing
 
@@ -157,17 +161,17 @@ The player creates sensitive state files with owner-only permissions. Protect th
 
 ## Environment variables (Linux)
 
-| Variable                            | Purpose                                                     |
-| ----------------------------------- | ----------------------------------------------------------- |
-| `TILECAST_SERVER_URL`               | Server address; saved after first use                       |
-| `TILECAST_DATA_DIR`                 | State and media-cache directory                             |
-| `TILECAST_LOG_LEVEL=debug`          | Verbose structured logs                                     |
-| `TILECAST_WINDOWED=1`               | Disable kiosk fullscreen for testing                        |
-| `TILECAST_HW_DECODE=0`              | Disable Intel VA-API video decode                           |
-| `TILECAST_DISABLE_GPU=1`            | Force software rendering                                    |
-| `TILECAST_MAX_FPS=30`               | Set the frame-rate cap                                      |
-| `TILECAST_PREVIEW_SCREEN_CAPTURE=0` | Disable framebuffer capture for live previews               |
-| `TILECAST_PREVIEW_SCREEN_CAPTURE=1` | Force framebuffer capture; Wayland may show a portal prompt |
+| Variable                            | Purpose                                                      |
+| ----------------------------------- | ------------------------------------------------------------ |
+| `TILECAST_SERVER_URL`               | Server address. The Player saves it after first use.         |
+| `TILECAST_DATA_DIR`                 | State and media-cache directory                              |
+| `TILECAST_LOG_LEVEL=debug`          | Verbose structured logs                                      |
+| `TILECAST_WINDOWED=1`               | Disable kiosk fullscreen for testing                         |
+| `TILECAST_HW_DECODE=0`              | Disable Intel VA-API video decode                            |
+| `TILECAST_DISABLE_GPU=1`            | Force software rendering                                     |
+| `TILECAST_MAX_FPS=30`               | Set the frame-rate cap                                       |
+| `TILECAST_PREVIEW_SCREEN_CAPTURE=0` | Disable framebuffer capture for live previews                |
+| `TILECAST_PREVIEW_SCREEN_CAPTURE=1` | Force framebuffer capture. Wayland can show a portal prompt. |
 
 ## Build from source
 
@@ -219,4 +223,4 @@ If LAN discovery fails, enter the URL manually. Discovery is only a convenience.
 
 Installing successfully does not verify launch after power restoration, kiosk lockdown, standby and wake, HDMI input selection, unattended updates, or firmware-specific recovery.
 
-Complete [[Reliability and Kiosk]] on every device model and firmware family — including the systemd and kiosk-session setup for Linux screens.
+Complete [[Reliability and Kiosk]] on each device model and firmware family. For Linux screens, complete the systemd and kiosk-session setup.
