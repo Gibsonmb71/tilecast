@@ -10,8 +10,7 @@ const scopeLabels: Record<IntegrationScope, string> = {
   "activity:read": "Read fleet health",
 };
 const scopeDescriptions: Record<IntegrationScope, string> = {
-  "data_source:write":
-    "Replace the rows of a Manual Table Data Source. It cannot create or delete a Data Source, and it cannot change the columns Widgets are bound to.",
+  "data_source:write": "Replace rows in selected Manual Table Data Sources.",
   "activity:read":
     "Read counts of screens by reporting state, unresolved incidents, and content problems, as JSON or Prometheus metrics.",
 };
@@ -125,17 +124,12 @@ export function IntegrationTokensPanel({ owner }: { owner: boolean }) {
       <section className="settings-subsection">
         <header>
           <h3>Integration tokens</h3>
-          <p>
-            Let another system write a Manual Table Data Source, or let your
-            monitoring read fleet health, without sharing a Studio password. A
-            token can never do more than the capabilities listed below.
-          </p>
+          <p>Grant selected integrations without sharing a Studio password.</p>
         </header>
 
         {secret && (
           <div className="notice" role="status">
-            <strong>Copy this token now.</strong> Tilecast does not show it
-            again, and no endpoint reads it back.
+            <strong>Copy this token now.</strong> Shown once.
             <pre className="secret-value">{secret}</pre>
             {notice}
             <div>

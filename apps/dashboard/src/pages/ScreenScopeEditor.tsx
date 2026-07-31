@@ -52,8 +52,7 @@ export function ScreenScopeEditor({
   if (userRole === "owner")
     return (
       <p className="role-description">
-        An Owner always reaches every screen. Scope cannot be narrowed, so an
-        installation cannot lock itself out of its own fleet.
+        Owner access applies to the entire fleet.
       </p>
     );
 

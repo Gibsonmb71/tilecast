@@ -91,10 +91,7 @@ export function SystemPanel({ canManage }: { canManage: boolean }) {
       <section className="settings-subsection">
         <header>
           <h3>Diagnostics</h3>
-          <p>
-            Safe runtime information. Secrets and sensitive filesystem paths are
-            never shown.
-          </p>
+          <p>Runtime status without secrets or sensitive paths.</p>
         </header>
         {query.error ? (
           <div className="notice notice--error" role="alert">
@@ -136,10 +133,7 @@ export function SystemPanel({ canManage }: { canManage: boolean }) {
       <section className="settings-subsection">
         <header>
           <h3>Maintenance</h3>
-          <p>
-            Run bounded maintenance tasks. Tilecast does not expose shell
-            commands or destructive database controls.
-          </p>
+          <p>Run approved maintenance tasks.</p>
         </header>
         <div className="maintenance-list">
           {maintenanceActions.map((action) => (

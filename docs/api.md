@@ -270,7 +270,7 @@ Stable settings errors include `unknown_setting`, `invalid_setting_value`, `sett
 
 `GET /screens/{id}/snapshots?limit=` returns snapshot metadata newest-first, plus whether history is enabled and the current caps, so Studio can distinguish "not kept" from "nothing happened". `GET /screens/{id}/snapshots/{snapshotId}/image` returns the stored frame; the screen id is part of the lookup, so the screen-scope middleware on the route also governs the image. `GET /system/snapshots/usage` reports total bytes and count for Owners and Administrators.
 
-Off by default. Capture goes through the ordinary live preview lease, so there is one capture path, and only screens that are currently reporting are asked. The per-screen cap is applied on write as well as on the retention sweep. Responses carry the proof note: a snapshot proves the Player rendered that frame, not that the television was on or on the right input. See [Snapshot history](snapshots.md).
+Off by default. Capture goes through the ordinary live preview lease, so there is one capture path, and only screens that are currently reporting are asked. The per-screen cap is applied on write as well as on the retention sweep. See [Snapshot history](snapshots.md).
 
 ## Playlist history
 

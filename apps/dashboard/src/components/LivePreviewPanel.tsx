@@ -6,6 +6,7 @@ import {
   Monitor,
   RefreshCw,
   ShieldAlert,
+  ShieldCheck,
   Video,
   WifiOff,
 } from "lucide-react";
@@ -176,10 +177,10 @@ export function LivePreviewPanel({ screenId }: { screenId: string }) {
           </dd>
         </div>
       </dl>
-      <p className="live-preview-panel__privacy">
-        Tilecast captures only its own player window. Protected setup and
-        maintenance screens are never uploaded.
-      </p>
+      <div className="live-preview-panel__privacy">
+        <ShieldCheck size={15} aria-hidden="true" />
+        <span>Protected screens are not captured.</span>
+      </div>
       {csrfToken && (
         <LiveStreamDialog
           open={watchingLive}

@@ -150,9 +150,17 @@
 }
 
 .live-preview-panel__privacy {
+  display: flex;
+  align-items: center;
+  gap: var(--tc-space-2);
   margin: 0;
   padding-top: var(--tc-space-3);
   border-top: 1px solid var(--tc-border-default);
+}
+
+.live-preview-panel__privacy svg {
+  flex: 0 0 auto;
+  color: var(--tc-status-success);
 }
 
 @media (max-width: 1120px) {

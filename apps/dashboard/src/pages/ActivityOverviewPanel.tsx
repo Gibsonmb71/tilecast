@@ -252,9 +252,8 @@ export function OverviewTab({
             <div>
               <h3>Fleet health</h3>
               <p>
-                {fleet.measured} enabled, paired screens measured right now, not
-                over {range.label}. A screen is healthy only when it is
-                reporting and confirmed to be playing what it should be.
+                Current status for {fleet.measured} enabled, paired screens.
+                Healthy screens are reporting and playing assigned content.
               </p>
             </div>
           </header>
@@ -283,7 +282,7 @@ export function OverviewTab({
 
       <NeedsAttentionPanel />
 
-      <FleetUptimePanel description="Measured player time spent connected and playing, over its own fixed window rather than the range selected above." />
+      <FleetUptimePanel description="Player connection and playback time over a fixed window." />
 
       <section className="activity-metrics" aria-label="Activity totals">
         <div className="activity-metrics__primary">
