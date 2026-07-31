@@ -67,7 +67,7 @@ Its configuration endpoints predate the plugin catalog and are unchanged, under 
 
 Brand Bug places a persistent mark — a logo, sponsor mark, legal notice, campaign badge, or location label — in one corner over all normal content. An installation can create multiple instances, each with its own name, corner, optional logo image, optional text, size, opacity, margin, text color, backing, optional date window, enabled state, priority, and targets.
 
-An instance needs a logo, text, or both; a mark with neither would hold a corner invisibly and is rejected. The logo comes from the Media library and must be a ready image; it is projected into the manifest as an ordinary asset, so the Player verifies, caches, and redraws it exactly like playlist media.
+An instance needs a logo, text, or both; a mark with neither would hold a corner invisibly and is rejected. The optional logo comes from the Media library and, when configured, must be a ready image; it is projected into the manifest as an ordinary asset, so the Player verifies, caches, and redraws it exactly like playlist media.
 
 Sizes are expressed against the screen rather than in pixels, so one instance reads the same on a 1080p panel and a 4K one:
 
@@ -96,7 +96,7 @@ Plugin projection and presentation use a dedicated renderer channel. It does not
 
 Overlay mode positions the bar above the current content at the bottom of the screen. Push mode changes only the content stage's bottom inset. Existing image, video, website, Widget, and Layout nodes remain mounted and are resized inside the remaining stage, preserving their normal fit or aspect-ratio behavior.
 
-Brand Bug always overlays and never reflows the content stage. Its corner elements are created once and updated in place, so a mark does not re-decode its logo on the one-second plugin tick. When a Countdown Bar is visible, bottom-corner marks are lifted by the bar's height rather than being covered by it. A Brand Bug logo is a required download: the manifest does not activate until the image is verified, so the mark keeps drawing while the network is gone.
+Brand Bug always overlays and never reflows the content stage. Its corner elements are created once and updated in place, so a mark does not re-decode its logo on the one-second plugin tick. When a Countdown Bar is visible, bottom-corner marks are lifted by the bar's height rather than being covered by it. When a logo is configured and resolved, it is a required download: the manifest does not activate until the image is verified, so the mark keeps drawing while the network is gone. Text-only marks have no image download requirement.
 
 A logo that becomes unavailable between saving an instance and building a manifest degrades to that instance's text; if the instance had no text, the mark is omitted from the manifest instead of publishing an empty corner. Neither case fails the manifest.
 

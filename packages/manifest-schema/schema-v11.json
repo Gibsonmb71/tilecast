@@ -121,7 +121,10 @@
         "backgroundStyle",
         "priority"
       ],
-      "anyOf": [{ "required": ["imageAssetId"] }, { "required": ["text"] }],
+      "anyOf": [
+        { "required": ["imageAssetId"] },
+        { "required": ["text"], "properties": { "text": { "minLength": 1 } } }
+      ],
       "properties": {
         "name": { "type": "string", "minLength": 1, "maxLength": 180 },
         "corner": {

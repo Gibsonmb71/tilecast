@@ -280,6 +280,23 @@ func (s *Service) targetIDsFrom(ctx context.Context, table string, id uuid.UUID)
 	return ids, rows.Err()
 }
 
+// targetScopeFilter returns the shared screen-target predicate. Both table
+// names are package-controlled literals, never request input.
+func targetScopeFilter(instancesTable, targetsTable string) string {
+	return fmt.Sprintf(`FROM %s i
+		WHERE i.enabled AND (
+			i.target_scope='all'
+			OR (i.target_scope='screens' AND EXISTS(
+				SELECT 1 FROM %s t WHERE t.instance_id=i.id AND t.target_type='screens' AND t.target_id=$1))
+			OR (i.target_scope='locations' AND EXISTS(
+				SELECT 1 FROM %s t JOIN screens sc ON sc.id=$1 AND sc.location_id=t.target_id
+				WHERE t.instance_id=i.id AND t.target_type='locations'))
+			OR (i.target_scope='sync_groups' AND EXISTS(
+				SELECT 1 FROM %s t JOIN screen_group_memberships m ON m.screen_id=$1 AND m.screen_group_id=t.target_id
+				WHERE t.instance_id=i.id AND t.target_type='sync_groups'))
+		)`, instancesTable, targetsTable, targetsTable, targetsTable)
+}
+
 // Omitted values keep the original appearance, while a pointer lets zero
 // contentPadding remain an intentional full-width choice.
 func normalizeCountdownBar(input CountdownBarInput) CountdownBarInput {
@@ -607,18 +624,7 @@ func (s *Service) alertTickersForScreen(ctx context.Context, screenID uuid.UUID)
 func (s *Service) countdownBarsForScreen(ctx context.Context, screenID uuid.UUID) ([]ManifestPlugin, error) {
 	rows, err := s.db.Query(ctx, `SELECT DISTINCT i.id,i.name,i.message,i.schedule_type,i.target_time::text,i.days_of_week,
 		i.one_time_at,i.timezone,i.lead_time_seconds,i.completion_text,i.show_confetti,i.display_mode,i.height_px,i.progress_fill,i.content_padding,i.text_scale,i.priority
-		FROM countdown_bar_instances i
-		WHERE i.enabled AND (
-			i.target_scope='all'
-			OR (i.target_scope='screens' AND EXISTS(
-				SELECT 1 FROM countdown_bar_targets t WHERE t.instance_id=i.id AND t.target_type='screens' AND t.target_id=$1))
-			OR (i.target_scope='locations' AND EXISTS(
-				SELECT 1 FROM countdown_bar_targets t JOIN screens sc ON sc.id=$1 AND sc.location_id=t.target_id
-				WHERE t.instance_id=i.id AND t.target_type='locations'))
-			OR (i.target_scope='sync_groups' AND EXISTS(
-				SELECT 1 FROM countdown_bar_targets t JOIN screen_group_memberships m ON m.screen_id=$1 AND m.screen_group_id=t.target_id
-				WHERE t.instance_id=i.id AND t.target_type='sync_groups'))
-		)
+		`+targetScopeFilter("countdown_bar_instances", "countdown_bar_targets")+`
 		ORDER BY i.priority DESC,i.id`, screenID)
 	if err != nil {
 		return nil, err

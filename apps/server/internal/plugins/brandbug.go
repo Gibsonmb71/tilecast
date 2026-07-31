@@ -299,18 +299,7 @@ func validateBrandBugImage(ctx context.Context, tx pgx.Tx, assetID *uuid.UUID) e
 func (s *Service) brandBugsForScreen(ctx context.Context, screenID uuid.UUID) ([]ManifestPlugin, error) {
 	rows, err := s.db.Query(ctx, `SELECT DISTINCT i.id,i.name,i.corner,i.image_asset_id,i.text,i.width_percent,
 		i.text_size_percent,i.opacity_percent,i.margin_percent,i.text_color,i.background_style,i.starts_at,i.ends_at,i.priority
-		FROM brand_bug_instances i
-		WHERE i.enabled AND (
-			i.target_scope='all'
-			OR (i.target_scope='screens' AND EXISTS(
-				SELECT 1 FROM brand_bug_targets t WHERE t.instance_id=i.id AND t.target_type='screens' AND t.target_id=$1))
-			OR (i.target_scope='locations' AND EXISTS(
-				SELECT 1 FROM brand_bug_targets t JOIN screens sc ON sc.id=$1 AND sc.location_id=t.target_id
-				WHERE t.instance_id=i.id AND t.target_type='locations'))
-			OR (i.target_scope='sync_groups' AND EXISTS(
-				SELECT 1 FROM brand_bug_targets t JOIN screen_group_memberships m ON m.screen_id=$1 AND m.screen_group_id=t.target_id
-				WHERE t.instance_id=i.id AND t.target_type='sync_groups'))
-		)
+		`+targetScopeFilter("brand_bug_instances", "brand_bug_targets")+`
 		ORDER BY i.priority DESC,i.id`, screenID)
 	if err != nil {
 		return nil, err

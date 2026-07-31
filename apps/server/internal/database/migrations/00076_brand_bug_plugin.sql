@@ -23,8 +23,6 @@ CREATE TABLE brand_bug_instances (
     created_by UUID NOT NULL REFERENCES users(id),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    -- A mark with neither a logo nor a caption would occupy a corner invisibly.
-    CHECK (image_asset_id IS NOT NULL OR char_length(btrim(text)) > 0),
     CHECK (starts_at IS NULL OR ends_at IS NULL OR ends_at > starts_at)
 );
 
