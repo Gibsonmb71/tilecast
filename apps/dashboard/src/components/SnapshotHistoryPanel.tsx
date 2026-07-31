@@ -11,32 +11,42 @@ export function SnapshotHistoryPanel({ screenId }: { screenId: string }) {
   const [openId, setOpenId] = useState<string>();
 
   if (history.isLoading)
-    return <div className="table-loading">Loading snapshot history…</div>;
+    return (
+      <div className="snapshot-history">
+        <div className="table-loading">Loading snapshot history…</div>
+      </div>
+    );
   if (history.error)
     return (
-      <div className="notice notice--error" role="alert">
-        {history.error.message}
+      <div className="snapshot-history">
+        <div className="notice notice--error" role="alert">
+          {history.error.message}
+        </div>
       </div>
     );
 
   const data = history.data;
   if (!data?.enabled)
     return (
-      <div className="empty-card">
-        <strong>Snapshot history is off.</strong>
-        <p>
-          Tilecast is not keeping images of what this screen showed. An Owner or
-          Administrator can turn it on under{" "}
-          <Link to="/settings/snapshots">Settings, Snapshot history</Link>.
-        </p>
+      <div className="snapshot-history">
+        <div className="empty-card">
+          <strong>Snapshot history is off.</strong>
+          <p>
+            Tilecast is not keeping images of what this screen showed. An Owner
+            or Administrator can turn it on under{" "}
+            <Link to="/settings/snapshots">Settings, Snapshot history</Link>.
+          </p>
+        </div>
       </div>
     );
 
   if (!data.items.length)
     return (
-      <div className="empty-card">
-        No snapshots yet. Tilecast captures a frame on a schedule from screens
-        that are reporting.
+      <div className="snapshot-history">
+        <div className="empty-card">
+          No snapshots yet. Tilecast captures a frame on a schedule from screens
+          that are reporting.
+        </div>
       </div>
     );
 

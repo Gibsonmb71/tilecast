@@ -2376,7 +2376,38 @@ button.organizer-chip:disabled {
 .snapshot-history {
   display: grid;
   gap: 6px;
-  margin-top: 14px;
+  padding: var(--tc-space-5) var(--tc-space-6) var(--tc-space-6);
+}
+.snapshot-history > .notice {
+  margin: 0;
+}
+.snapshot-history > .table-loading {
+  padding: var(--tc-space-5);
+  background: transparent;
+  border: 0;
+}
+.snapshot-history-card {
+  max-width: 1000px;
+  margin-top: var(--tc-space-5);
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-panel);
+  background: var(--tc-bg-surface);
+}
+.snapshot-history-card > header {
+  padding: var(--tc-space-4) var(--tc-space-6);
+  border-bottom: 1px solid var(--tc-border-default);
+}
+.snapshot-history-card > header h3,
+.snapshot-history-card > header p {
+  margin: 0;
+}
+.snapshot-history-card > header h3 {
+  font-size: 15px;
+}
+.snapshot-history-card > header p {
+  margin-top: var(--tc-space-1);
+  color: var(--tc-text-secondary);
+  font-size: 13px;
 }
 .snapshot-grid {
   display: grid;
