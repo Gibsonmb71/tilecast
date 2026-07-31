@@ -183,12 +183,41 @@
 
 /* Both tables were eight and nine columns wide and needed a horizontal
    scrollbar inside the settings column. Related facts are now paired inside a
-   cell, which lets the tables fit the available width. */
-.player-updates .player-updates-table {
-  min-width: 560px;
+   cell, which lets the tables fit the available width.
+
+   The proportional column layout below is chosen from the width of this
+   scroll container rather than the window: the settings column is a fraction of
+   the viewport, so a viewport query switched on fixed percentage columns while
+   the actual column was hundreds of pixels narrower, squeezing cells until
+   nowrap text ran over its neighbour. The container is the wrapper, not
+   `.player-updates`, because size containment on the panel would make it the
+   containing block for the fixed-position deployment drawer. */
+.player-updates .player-updates-table-wrap {
+  container: player-updates-table / inline-size;
 }
 
-.player-updates .player-updates-table th {
+/* One unconditional floor per table. This used to be 560px at wide viewports and
+   700px at narrow ones, which was a proxy for the panel width the container
+   query now measures directly. */
+.player-updates .player-updates-table {
+  min-width: 640px;
+}
+
+/* Four columns of prose fit the settings pane without a scrollbar. */
+.player-updates__history .player-updates-table {
+  min-width: 520px;
+}
+
+/* A legacy rule right-aligns the last cell of both tables, from when each ended
+   in an actions column. The history table now ends in a sentence. */
+.player-updates__history .player-updates-table :is(th, td):last-child {
+  text-align: left;
+}
+
+/* Column headings only. This used to match every `th`, so each row header — and,
+   through inheritance, its version-and-mode line — was also nowrap and ran over
+   the next column instead of wrapping. */
+.player-updates .player-updates-table thead th {
   min-width: 0;
   padding: var(--tc-space-2) var(--tc-space-3);
   color: var(--tc-text-secondary);
@@ -283,18 +312,27 @@
   gap: 6px;
 }
 
-.player-updates__history .player-updates-table :is(th, td):nth-child(4) {
+.player-updates__history .player-updates-table :is(th, td):nth-child(3) {
   font-variant-numeric: tabular-nums;
 }
 
-.player-updates__history .player-updates-table :is(th, td):nth-child(5) {
-  text-align: left;
+/* The sentence takes its own line so the control below it always starts one,
+   rather than trailing the last word when there is no failure line. */
+.player-updates__history .player-updates-table td:nth-child(4) > span {
+  display: block;
+}
+
+/* The detail action is one control on one line: at any width it reads "6
+   screens", never a number stranded above its own noun. */
+.player-updates__history .player-updates-table td:nth-child(4) .button {
+  margin-top: 6px;
+  white-space: nowrap;
 }
 
 /* Fixed proportions only while the settings column is wide enough to hold them.
    Below that the tables size to their content and scroll inside their own
    container, rather than shredding status text into five-line columns. */
-@media (min-width: 901px) {
+@container player-updates-table (min-width: 620px) {
   .player-updates .player-updates-table {
     table-layout: fixed;
   }
@@ -324,25 +362,22 @@
     width: 16%;
   }
 
-  /* History table: deployment | status | screens | needs | detail action. */
+  /* History table: deployment | status | screens | needs, with the detail
+     action inside the last cell. */
   .player-updates__history .player-updates-table :is(th, td):nth-child(1) {
-    width: 24%;
+    width: 26%;
   }
 
   .player-updates__history .player-updates-table :is(th, td):nth-child(2) {
-    width: 17%;
+    width: 18%;
   }
 
   .player-updates__history .player-updates-table :is(th, td):nth-child(3) {
-    width: 21%;
+    width: 22%;
   }
 
   .player-updates__history .player-updates-table :is(th, td):nth-child(4) {
-    width: 24%;
-  }
-
-  .player-updates__history .player-updates-table :is(th, td):nth-child(5) {
-    width: 14%;
+    width: 34%;
   }
 }
 
@@ -907,10 +942,6 @@
       "mode"
       "window"
       "canary";
-  }
-
-  .player-updates .player-updates-table {
-    min-width: 700px;
   }
 }
 

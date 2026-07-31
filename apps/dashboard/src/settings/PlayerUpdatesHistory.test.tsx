@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter, useLocation } from "react-router";
 import { PlayerUpdatesPanel } from "./SettingsOperations";
 import { api } from "../api/client";
 import type { UpdateDeployment, UpdateDeploymentDetail } from "../api/types";
@@ -53,6 +54,11 @@ function widen<T>(value: unknown) {
   return value as T;
 }
 
+// The panel keeps the chosen platform in the URL; this reports what it wrote.
+function SearchProbe() {
+  return <span data-testid="search">{useLocation().search}</span>;
+}
+
 describe("Player update deployment history", () => {
   beforeEach(() => {
     vi.spyOn(api, "playerReleases").mockResolvedValue(
@@ -87,14 +93,17 @@ describe("Player update deployment history", () => {
     vi.restoreAllMocks();
   });
 
-  function renderPanel() {
+  function renderPanel(entry = "/settings/player/updates") {
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
     return render(
-      <QueryClientProvider client={client}>
-        <PlayerUpdatesPanel owner manageable />
-      </QueryClientProvider>,
+      <MemoryRouter initialEntries={[entry]}>
+        <QueryClientProvider client={client}>
+          <PlayerUpdatesPanel owner manageable />
+          <SearchProbe />
+        </QueryClientProvider>
+      </MemoryRouter>,
     );
   }
 
@@ -108,6 +117,25 @@ describe("Player update deployment history", () => {
         name: "3 Updated, 2 Waiting on someone, 1 Failed",
       }),
     ).toBeTruthy();
+  });
+
+  it("reads the platform from the URL so a reload stays on Linux", async () => {
+    renderPanel("/settings/player/updates?platform=linux");
+    expect(await screen.findByText("Available Linux releases")).toBeTruthy();
+    // The Android-only deployment is not the Linux fleet's history.
+    expect(screen.queryByText(/1 screen needs a retry/)).toBeNull();
+  });
+
+  it("records a platform switch in the URL", async () => {
+    renderPanel();
+    expect(await screen.findByText("Available Android releases")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Linux" }));
+    expect(await screen.findByText("Available Linux releases")).toBeTruthy();
+    expect(screen.getByTestId("search").textContent).toBe("?platform=linux");
+    // Android is the default, so it leaves no parameter behind.
+    await userEvent.click(screen.getByRole("button", { name: "Android" }));
+    expect(await screen.findByText("Available Android releases")).toBeTruthy();
+    expect(screen.getByTestId("search").textContent).toBe("");
   });
 
   it("opens the per-screen drawer from the history row", async () => {

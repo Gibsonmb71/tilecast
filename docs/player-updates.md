@@ -83,6 +83,10 @@ player never contacts GitHub.
 
 ## Reading a deployment in Studio
 
+The Android/Linux choice is held in the URL as `?platform=linux`, so a reload, a
+bookmark, or the back button all return to the fleet the operator was reading
+rather than to Android.
+
 **Settings → Player Updates → Deployment history** answers "did this land?"
 without arithmetic. Each row carries one meter divided into updated, waiting on
 someone, failed, and still in progress, and one sentence saying what the
