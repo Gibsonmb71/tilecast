@@ -237,6 +237,17 @@
   vertical-align: top;
 }
 
+.player-updates .player-release-cache-progress {
+  display: grid;
+  gap: 0.2rem;
+  margin-top: 0.35rem;
+  max-width: 14rem;
+}
+
+.player-updates .player-release-cache-progress progress {
+  width: 100%;
+}
+
 .player-updates .player-updates-table tbody th {
   color: var(--tc-text-primary);
   font: var(--tc-text-body);

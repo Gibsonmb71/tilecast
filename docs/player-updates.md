@@ -67,6 +67,12 @@ optional.
 
 Tilecast refreshes the GitHub release catalog automatically when the catalog is empty or the previous check is more than 15 minutes old. Studio keeps **Sync from GitHub** as an immediate retry and displays provider, signature, and release-verification failures instead of showing an unexplained empty table.
 
+When a release is being cached, the server records downloaded bytes while the
+artifact streams to disk. The Player Updates page polls that release every
+second during the download and shows the live megabytes downloaded against the
+signed artifact size; it returns to the normal slower refresh interval when no
+release is downloading.
+
 Authenticated GitHub requests receive a substantially higher API allowance than anonymous requests. To enable the Studio **Connect GitHub** device flow, create a GitHub OAuth App, enable **Device Flow**, and set its public client ID as `TILECAST_GITHUB_CLIENT_ID`. The OAuth App callback URL is required by GitHub but is not used by device flow; the Tilecast repository URL is an acceptable callback for this fixed public-release integration. No OAuth client secret belongs on Tilecast Server.
 
 The Owner starts sign-in in Studio, opens GitHub's device page, and enters the displayed one-time code. The private device code remains only in server memory. After approval, Tilecast validates the GitHub account and stores the access token in `/data/updates/github-oauth.json` with owner-only file permissions. The token is never returned through the API, audit metadata, diagnostics, or logs. Disconnecting removes the local credential; the GitHub account can separately revoke the OAuth App grant. `TILECAST_GITHUB_TOKEN` remains supported as an environment-managed override and cannot be disconnected from Studio.

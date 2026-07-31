@@ -219,6 +219,13 @@ func TestLinuxGitHubReleaseSyncAndCache(t *testing.T) {
 	if err = service.Cache(ctx, releaseID); err != nil {
 		t.Fatalf("cache Linux release: %v", err)
 	}
+	var downloadedBytes int64
+	if err = pool.QueryRow(ctx, `SELECT cache_downloaded_bytes FROM player_releases WHERE id=$1`, releaseID).Scan(&downloadedBytes); err != nil {
+		t.Fatal(err)
+	}
+	if downloadedBytes != int64(len(artifact)) {
+		t.Fatalf("download progress = %d, want %d", downloadedBytes, len(artifact))
+	}
 	path, size, hash, cachedPlatform, err := service.ArtifactPath(ctx, releaseID)
 	if err != nil {
 		t.Fatal(err)

@@ -34,7 +34,7 @@ func (s *server) listPlayerReleases(w http.ResponseWriter, r *http.Request) {
 		_ = s.db.QueryRow(r.Context(), `SELECT last_checked_at,safe_error FROM update_provider_state WHERE provider='github'`).Scan(&checked, &providerError)
 	}
 
-	rows, err := s.db.Query(r.Context(), `SELECT id,COALESCE(github_tag,''),platform,source,channel,version_code,version_name,minimum_sdk,release_notes,published_at,apk_size,apk_sha256,signing_certificate_sha256,manifest_signature,cache_status,verification_status,verification_error,
+	rows, err := s.db.Query(r.Context(), `SELECT id,COALESCE(github_tag,''),platform,source,channel,version_code,version_name,minimum_sdk,release_notes,published_at,apk_size,cache_downloaded_bytes,apk_sha256,signing_certificate_sha256,manifest_signature,cache_status,verification_status,verification_error,
 		(SELECT count(*) FROM update_deployments d WHERE d.release_id=player_releases.id),
 		(SELECT count(*) FROM update_deployments d WHERE d.release_id=player_releases.id AND d.status IN('pending','active'))
 		FROM player_releases ORDER BY platform,version_code DESC`)
@@ -47,13 +47,13 @@ func (s *server) listPlayerReleases(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var id uuid.UUID
 		var tag, platform, source, channel, name, notes, hash, cert, signature, cache, verification string
-		var code, size int64
+		var code, size, downloadedBytes int64
 		var deploymentCount, activeDeploymentCount int
 		var sdk *int
 		var published time.Time
 		var verificationError *string
-		if rows.Scan(&id, &tag, &platform, &source, &channel, &code, &name, &sdk, &notes, &published, &size, &hash, &cert, &signature, &cache, &verification, &verificationError, &deploymentCount, &activeDeploymentCount) == nil {
-			items = append(items, map[string]any{"id": id, "tag": tag, "platform": platform, "source": source, "channel": channel, "versionCode": code, "versionName": name, "minimumSdk": sdk, "releaseNotes": notes, "publishedAt": published, "apkSizeBytes": size, "apkSha256": hash, "signingCertificateSha256": cert, "manifestSignature": signature, "cacheStatus": cache, "verificationStatus": verification, "verificationError": verificationError, "deploymentCount": deploymentCount, "activeDeploymentCount": activeDeploymentCount})
+		if rows.Scan(&id, &tag, &platform, &source, &channel, &code, &name, &sdk, &notes, &published, &size, &downloadedBytes, &hash, &cert, &signature, &cache, &verification, &verificationError, &deploymentCount, &activeDeploymentCount) == nil {
+			items = append(items, map[string]any{"id": id, "tag": tag, "platform": platform, "source": source, "channel": channel, "versionCode": code, "versionName": name, "minimumSdk": sdk, "releaseNotes": notes, "publishedAt": published, "apkSizeBytes": size, "downloadedBytes": downloadedBytes, "apkSha256": hash, "signingCertificateSha256": cert, "manifestSignature": signature, "cacheStatus": cache, "verificationStatus": verification, "verificationError": verificationError, "deploymentCount": deploymentCount, "activeDeploymentCount": activeDeploymentCount})
 		}
 	}
 	writeJSON(w, 200, map[string]any{"data": map[string]any{"repository": "Gibsonmb71/tilecast", "lastCheckedAt": checked, "providerError": providerError, "manifestKeyConfigured": s.updates.ManifestKeyConfigured(), "githubAuth": s.updates.GitHubAuthStatus(), "items": items}})
@@ -248,7 +248,7 @@ func (s *server) cachePlayerRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var status string
-	if err := s.db.QueryRow(r.Context(), `UPDATE player_releases SET cache_status='downloading',verification_status='verified_manifest',verification_error=NULL,updated_at=now() WHERE id=$1 AND verification_status IN('verified_manifest','failed') AND cache_status<>'downloading' RETURNING cache_status`, id).Scan(&status); err != nil {
+	if err := s.db.QueryRow(r.Context(), `UPDATE player_releases SET cache_status='downloading',cache_downloaded_bytes=0,verification_status='verified_manifest',verification_error=NULL,updated_at=now() WHERE id=$1 AND verification_status IN('verified_manifest','failed') AND cache_status<>'downloading' RETURNING cache_status`, id).Scan(&status); err != nil {
 		writeError(w, 409, "player_release_not_importable", "Release is unavailable or already verified.")
 		return
 	}
