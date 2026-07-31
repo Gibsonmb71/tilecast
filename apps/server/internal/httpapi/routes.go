@@ -253,6 +253,8 @@ func (s *server) routes() http.Handler {
 			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Patch("/content-tags/{id}", s.updateContentTag)
 			dashboard.With(s.requireRoles(contentManagers...), s.requireCSRF).Delete("/content-tags/{id}", s.deleteContentTag)
 			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Post("/assets/bulk-organize", s.bulkOrganizeContent)
+			dashboard.With(s.requireRoles(contentManagers...), s.requireCSRF).Post("/assets/archive", s.archiveAssets)
+			dashboard.With(s.requireRoles(contentManagers...), s.requireCSRF).Post("/assets/restore", s.restoreAssets)
 			dashboard.Get("/playlists", s.listPlaylists)
 			dashboard.Get("/layouts", s.listLayouts)
 			dashboard.Get("/layouts/{id}", s.getLayout)

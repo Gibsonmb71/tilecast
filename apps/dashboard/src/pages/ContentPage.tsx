@@ -14,6 +14,8 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   EllipsisVertical,
+  Archive,
+  ArchiveRestore,
   FileImage,
   Folder,
   Upload,
@@ -117,6 +119,24 @@ function formatDuration(seconds?: number) {
     .padStart(2, "0")}`;
 }
 
+export function isExpiredAsset(asset: Asset, now = Date.now()) {
+  return Boolean(
+    asset.expiresAt &&
+    Number.isFinite(Date.parse(asset.expiresAt)) &&
+    Date.parse(asset.expiresAt) <= now,
+  );
+}
+
+export function nextExpirationDelay(assets: Asset[], now = Date.now()) {
+  const next = assets.reduce<number | undefined>((soonest, asset) => {
+    if (!asset.expiresAt) return soonest;
+    const expiresAt = Date.parse(asset.expiresAt);
+    if (!Number.isFinite(expiresAt) || expiresAt <= now) return soonest;
+    return soonest == null || expiresAt < soonest ? expiresAt : soonest;
+  }, undefined);
+  return next == null ? undefined : Math.max(0, next - now) + 100;
+}
+
 export function ContentPage() {
   const auth = useAuth();
   const canManage = canManageContent(auth.status?.user);
@@ -129,6 +149,9 @@ export function ContentPage() {
   const [folderFilter, setFolderFilter] = useState("");
   const [collectionFilter, setCollectionFilter] = useState("");
   const [tagFilter, setTagFilter] = useState("");
+  const [libraryView, setLibraryView] = useState<"active" | "archive">(
+    "active",
+  );
   const [checkedAssetIds, setCheckedAssetIds] = useState<Set<string>>(
     new Set(),
   );
@@ -152,6 +175,7 @@ export function ContentPage() {
   const controllers = useRef(new Map<string, AbortController>());
   const fileInput = useRef<HTMLInputElement>(null);
   const params = new URLSearchParams({ page: "1", pageSize: "48", sort });
+  if (libraryView === "archive") params.set("archived", "true");
   if (search) params.set("search", search);
   if (["media", "image", "video"].includes(contentFilter))
     params.set("type", contentFilter);
@@ -181,6 +205,28 @@ export function ContentPage() {
     queryKey: ["content-tags"],
     queryFn: api.contentTags,
   });
+  useEffect(() => {
+    const delay = nextExpirationDelay(assets.data?.items ?? []);
+    if (delay == null) return;
+    const timer = window.setTimeout(
+      () => void queryClient.invalidateQueries({ queryKey: ["assets"] }),
+      Math.min(delay, 2_147_483_647),
+    );
+    return () => window.clearTimeout(timer);
+  }, [assets.data?.items, queryClient]);
+  useEffect(() => {
+    setCheckedAssetIds(new Set());
+    setSelected(undefined);
+  }, [
+    libraryView,
+    search,
+    contentFilter,
+    status,
+    sort,
+    folderFilter,
+    collectionFilter,
+    tagFilter,
+  ]);
   const refreshOrganization = () => {
     void queryClient.invalidateQueries({ queryKey: ["assets"] });
     void queryClient.invalidateQueries({ queryKey: ["content-folders"] });
@@ -322,14 +368,18 @@ export function ContentPage() {
     <section
       className="content-page"
       onDragOver={(event) => event.preventDefault()}
-      onDrop={dropFiles}
+      onDrop={libraryView === "active" ? dropFiles : undefined}
     >
       <WorkspaceTabs label="Content library" tabs={contentTabs} />
       <PageHeader
         title="Media"
-        description="Uploaded images and videos available to playlists and Layouts."
+        description={
+          libraryView === "active"
+            ? "Uploaded images and videos available to playlists and Layouts."
+            : "Archived and expired content stays here until you restore or permanently delete it."
+        }
         actions={
-          canManage ? (
+          canManage && libraryView === "active" ? (
             <Button
               variant="primary"
               type="button"
@@ -339,6 +389,16 @@ export function ContentPage() {
             </Button>
           ) : undefined
         }
+      />
+      <ToggleGroup
+        className="content-library-switch"
+        label="Library view"
+        value={libraryView}
+        onValueChange={setLibraryView}
+        items={[
+          { value: "active", label: "Library" },
+          { value: "archive", label: "Archive" },
+        ]}
       />
       <input
         ref={fileInput}
@@ -350,7 +410,7 @@ export function ContentPage() {
         aria-label="Choose media files"
       />
 
-      {queue.length > 0 && (
+      {libraryView === "active" && queue.length > 0 && (
         <section className="upload-queue" aria-label="Upload queue">
           <header>
             <strong>Uploads</strong>
@@ -428,45 +488,49 @@ export function ContentPage() {
           <option value="processing">Processing</option>
           <option value="failed">Failed</option>
         </Select>
-        <Select
-          className="dashboard-list-toolbar__filter"
-          aria-label="Filter by folder"
-          value={folderFilter}
-          onChange={(event) => setFolderFilter(event.target.value)}
-        >
-          <option value="">All folders</option>
-          {folders.data?.map((folder) => (
-            <option key={folder.id} value={folder.id}>
-              {folder.name} ({folder.assetCount})
-            </option>
-          ))}
-        </Select>
-        <Select
-          className="dashboard-list-toolbar__filter"
-          aria-label="Filter by collection"
-          value={collectionFilter}
-          onChange={(event) => setCollectionFilter(event.target.value)}
-        >
-          <option value="">All collections</option>
-          {collections.data?.map((collection) => (
-            <option key={collection.id} value={collection.id}>
-              {collection.name} ({collection.assetCount})
-            </option>
-          ))}
-        </Select>
-        <Select
-          className="dashboard-list-toolbar__filter"
-          aria-label="Filter by tag"
-          value={tagFilter}
-          onChange={(event) => setTagFilter(event.target.value)}
-        >
-          <option value="">All tags</option>
-          {tags.data?.map((tag) => (
-            <option key={tag.id} value={tag.id}>
-              {tag.name} ({tag.assetCount ?? 0})
-            </option>
-          ))}
-        </Select>
+        {libraryView === "active" && (
+          <>
+            <Select
+              className="dashboard-list-toolbar__filter"
+              aria-label="Filter by folder"
+              value={folderFilter}
+              onChange={(event) => setFolderFilter(event.target.value)}
+            >
+              <option value="">All folders</option>
+              {folders.data?.map((folder) => (
+                <option key={folder.id} value={folder.id}>
+                  {folder.name} ({folder.assetCount})
+                </option>
+              ))}
+            </Select>
+            <Select
+              className="dashboard-list-toolbar__filter"
+              aria-label="Filter by collection"
+              value={collectionFilter}
+              onChange={(event) => setCollectionFilter(event.target.value)}
+            >
+              <option value="">All collections</option>
+              {collections.data?.map((collection) => (
+                <option key={collection.id} value={collection.id}>
+                  {collection.name} ({collection.assetCount})
+                </option>
+              ))}
+            </Select>
+            <Select
+              className="dashboard-list-toolbar__filter"
+              aria-label="Filter by tag"
+              value={tagFilter}
+              onChange={(event) => setTagFilter(event.target.value)}
+            >
+              <option value="">All tags</option>
+              {tags.data?.map((tag) => (
+                <option key={tag.id} value={tag.id}>
+                  {tag.name} ({tag.assetCount ?? 0})
+                </option>
+              ))}
+            </Select>
+          </>
+        )}
         <Select
           className="dashboard-list-toolbar__filter"
           aria-label="Sort media"
@@ -478,10 +542,31 @@ export function ContentPage() {
           <option value="oldest">Oldest</option>
           <option value="name">Name</option>
         </Select>
+        {(search ||
+          contentFilter !== "media" ||
+          status ||
+          folderFilter ||
+          collectionFilter ||
+          tagFilter) && (
+          <Button
+            variant="quiet"
+            type="button"
+            onClick={() => {
+              setSearch("");
+              setContentFilter("media");
+              setStatus("");
+              setFolderFilter("");
+              setCollectionFilter("");
+              setTagFilter("");
+            }}
+          >
+            Reset filters
+          </Button>
+        )}
         <ViewToggle value={view} onValueChange={setView} />
       </DashboardListToolbar>
 
-      {canManage && (
+      {canManage && (libraryView === "active" || checkedAssetIds.size > 0) && (
         <ContentOrganizer
           csrf={csrf}
           folders={folders.data ?? []}
@@ -493,6 +578,35 @@ export function ContentPage() {
             refreshOrganization();
           }}
           onCatalogChanged={refreshOrganization}
+          onSelectAll={() =>
+            setCheckedAssetIds(
+              new Set((assets.data?.items ?? []).map((asset) => asset.id)),
+            )
+          }
+          onClear={() => setCheckedAssetIds(new Set())}
+          archiveMode={libraryView === "archive"}
+          onArchive={async () => {
+            await api.archiveAssets([...checkedAssetIds], csrf);
+            setCheckedAssetIds(new Set());
+            refreshOrganization();
+          }}
+          onRestore={async () => {
+            await api.restoreAssets([...checkedAssetIds], csrf);
+            setCheckedAssetIds(new Set());
+            refreshOrganization();
+          }}
+          onDelete={async () => {
+            const ids = [...checkedAssetIds];
+            if (
+              !confirm(
+                `Permanently delete ${ids.length} archived item${ids.length === 1 ? "" : "s"}? This cannot be undone.`,
+              )
+            )
+              return;
+            await Promise.all(ids.map((id) => api.deleteAsset(id, csrf)));
+            setCheckedAssetIds(new Set());
+            refreshOrganization();
+          }}
         />
       )}
 
@@ -507,9 +621,10 @@ export function ContentPage() {
         <div className="table-loading">Loading media…</div>
       ) : assets.data?.items?.length === 0 ? (
         <ContentEmpty
-          canManage={canManage}
+          canManage={canManage && libraryView === "active"}
           onChoose={() => fileInput.current?.click()}
           onDrop={dropFiles}
+          archived={libraryView === "archive"}
         />
       ) : (
         <AssetCollection
@@ -520,8 +635,13 @@ export function ContentPage() {
               (folders.data ?? []).map((folder) => [folder.id, folder.name]),
             )
           }
-          onSelect={(asset) => void api.asset(asset.id).then(setSelected)}
+          onSelect={(asset) =>
+            libraryView === "archive"
+              ? setSelected(asset)
+              : void api.asset(asset.id).then(setSelected)
+          }
           canManage={canManage}
+          archived={libraryView === "archive"}
           onDuplicate={(asset) =>
             void api
               .duplicateWidget(asset.id, csrf)
@@ -529,13 +649,22 @@ export function ContentPage() {
                 queryClient.invalidateQueries({ queryKey: ["assets"] }),
               )
           }
-          onDelete={(asset) => {
-            if (confirm(`Delete ${asset.name}?`))
+          onArchive={(asset) => {
+            if (confirm(`Move ${asset.name} to the archive?`))
               void api
-                .deleteAsset(asset.id, csrf)
-                .then(() =>
-                  queryClient.invalidateQueries({ queryKey: ["assets"] }),
-                );
+                .archiveAssets([asset.id], csrf)
+                .then(refreshOrganization);
+          }}
+          onRestore={(asset) => {
+            void api.restoreAssets([asset.id], csrf).then(refreshOrganization);
+          }}
+          onDelete={(asset) => {
+            if (
+              confirm(
+                `Permanently delete ${asset.name}? This cannot be undone.`,
+              )
+            )
+              void api.deleteAsset(asset.id, csrf).then(refreshOrganization);
           }}
           selectedIds={checkedAssetIds}
           onToggle={(id) =>
@@ -551,7 +680,7 @@ export function ContentPage() {
       {selected && (
         <AssetDetails
           asset={selected}
-          canManage={canManage}
+          canManage={canManage && libraryView === "active"}
           csrf={csrf}
           onClose={() => setSelected(undefined)}
           onChanged={(asset) => {
@@ -568,25 +697,29 @@ export function ContentEmpty({
   canManage,
   onChoose,
   onDrop,
+  archived = false,
 }: {
   canManage: boolean;
   onChoose: () => void;
   onDrop?: (event: DragEvent) => void;
+  archived?: boolean;
 }) {
   return (
     <div
       className="content-empty"
       onDragOver={(event) => event.preventDefault()}
-      onDrop={onDrop}
+      onDrop={archived ? undefined : onDrop}
     >
-      <FileImage size={30} />
-      <h3>No media yet</h3>
+      {archived ? <Archive size={30} /> : <FileImage size={30} />}
+      <h3>{archived ? "Archive is empty" : "No media yet"}</h3>
       <p>
-        {canManage
-          ? "Drag images or videos here, or choose files to begin your library."
-          : "An Owner, Administrator, or Editor can upload media."}
+        {archived
+          ? "Items you archive—or that reach their expiration—appear here and can be restored later."
+          : canManage
+            ? "Drag images or videos here, or choose files to begin your library."
+            : "An Owner, Administrator, or Editor can upload media."}
       </p>
-      {canManage && (
+      {canManage && !archived && (
         <button className="button button--quiet" onClick={onChoose}>
           Choose files
         </button>
@@ -601,32 +734,40 @@ export function AssetCollection({
   onSelect,
   canManage = false,
   onDuplicate,
+  onArchive,
+  onRestore,
   onDelete,
   selectedIds = new Set(),
   onToggle,
   folderNames,
+  archived = false,
 }: {
   items: Asset[];
   view: "grid" | "list";
   onSelect: (asset: Asset) => void;
   canManage?: boolean;
   onDuplicate?: (asset: Asset) => void;
+  onArchive?: (asset: Asset) => void;
+  onRestore?: (asset: Asset) => void;
   onDelete?: (asset: Asset) => void;
   selectedIds?: Set<string>;
   onToggle?: (id: string) => void;
   folderNames?: Map<string, string>;
+  archived?: boolean;
 }) {
   const menu = useContextMenu<Asset>();
   // Every action is also reachable from a visible control, so the menu stays a shortcut
   // rather than the only route to duplication or deletion.
   const actionsFor = (asset: Asset): ContextMenuItem[] => {
-    const actions: ContextMenuItem[] = [
-      {
-        label: canManage ? "Edit" : "Open",
-        icon: <SquarePen size={14} />,
-        onSelect: () => onSelect(asset),
-      },
-    ];
+    const actions: ContextMenuItem[] = archived
+      ? []
+      : [
+          {
+            label: canManage ? "Edit" : "Open",
+            icon: <SquarePen size={14} />,
+            onSelect: () => onSelect(asset),
+          },
+        ];
     if (canManage && onToggle)
       actions.push({
         label: selectedIds.has(asset.id) ? "Clear selection" : "Select",
@@ -644,9 +785,22 @@ export function AssetCollection({
         icon: <Copy size={14} />,
         onSelect: () => onDuplicate(asset),
       });
-    if (canManage && onDelete)
+    if (canManage && !archived && onArchive)
       actions.push({
-        label: "Delete",
+        label: "Archive",
+        icon: <Archive size={14} />,
+        separated: actions.length > 0,
+        onSelect: () => onArchive(asset),
+      });
+    if (canManage && archived && onRestore)
+      actions.push({
+        label: "Restore to library",
+        icon: <ArchiveRestore size={14} />,
+        onSelect: () => onRestore(asset),
+      });
+    if (canManage && archived && onDelete)
+      actions.push({
+        label: "Delete permanently",
         icon: <Trash2 size={14} />,
         danger: true,
         separated: actions.length > 0,
@@ -659,10 +813,11 @@ export function AssetCollection({
       {items.map((asset) => {
         // Widget cards already spell their actions out in a footer, so they skip the trigger
         // and keep right-click as the shortcut.
-        const showTrigger = !(asset.type === "widget" && canManage);
+        const showTrigger = archived || !(asset.type === "widget" && canManage);
+        const expired = archived && isExpiredAsset(asset);
         return (
           <article
-            className={`asset-card${showTrigger ? " asset-card--has-menu" : ""}`}
+            className={`asset-card${showTrigger ? " asset-card--has-menu" : ""}${selectedIds.has(asset.id) ? " asset-card--selected" : ""}`}
             key={asset.id}
             onContextMenu={(event) => menu.open(event, asset)}
           >
@@ -691,7 +846,7 @@ export function AssetCollection({
             <button
               className="asset-card__open"
               onClick={() => onSelect(asset)}
-              aria-label={`Edit ${asset.name}`}
+              aria-label={`${archived ? "View" : "Edit"} ${asset.name}`}
             >
               <span className="asset-preview">
                 <AssetPreview asset={asset} />
@@ -740,12 +895,16 @@ export function AssetCollection({
                 })()}
               </span>
               <span
-                className={`media-status media-status--${asset.processingStatus}`}
+                className={`media-status media-status--${expired ? "expired" : archived ? "archived" : asset.processingStatus}`}
               >
-                {statusLabel(asset.processingStatus)}
+                {expired
+                  ? "Expired"
+                  : archived
+                    ? "Archived"
+                    : statusLabel(asset.processingStatus)}
               </span>
             </button>
-            {asset.type === "widget" && (
+            {asset.type === "widget" && !archived && (
               <footer className="source-card-actions">
                 <span>
                   {asset.playlistUsage ?? 0} playlist
@@ -766,10 +925,10 @@ export function AssetCollection({
                     </button>
                     <button
                       type="button"
-                      onClick={() => onDelete?.(asset)}
-                      aria-label={`Delete ${asset.name}`}
+                      onClick={() => onArchive?.(asset)}
+                      aria-label={`Archive ${asset.name}`}
                     >
-                      <Trash2 size={14} /> Delete
+                      <Archive size={14} /> Archive
                     </button>
                   </>
                 )}
@@ -1111,6 +1270,12 @@ function ContentOrganizer({
   assetIds,
   onApplied,
   onCatalogChanged,
+  onSelectAll,
+  onClear,
+  archiveMode,
+  onArchive,
+  onRestore,
+  onDelete,
 }: {
   csrf: string;
   folders: ContentFolder[];
@@ -1119,6 +1284,12 @@ function ContentOrganizer({
   assetIds: string[];
   onApplied: () => void;
   onCatalogChanged: () => void;
+  onSelectAll: () => void;
+  onClear: () => void;
+  archiveMode: boolean;
+  onArchive: () => Promise<void>;
+  onRestore: () => Promise<void>;
+  onDelete: () => Promise<void>;
 }) {
   const [folderId, setFolderId] = useState("");
   const [tagId, setTagId] = useState("");
@@ -1126,6 +1297,23 @@ function ContentOrganizer({
   const [error, setError] = useState("");
   const [creating, setCreating] = useState<OrganizerKind>();
   const [managing, setManaging] = useState(false);
+  const [organizing, setOrganizing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const run = async (action: () => Promise<void>) => {
+    setBusy(true);
+    setError("");
+    try {
+      await action();
+    } catch (cause) {
+      setError(
+        cause instanceof ApiError
+          ? cause.message
+          : "The selected content could not be updated.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
   const apply = async () => {
     if (!assetIds.length) return;
     setError("");
@@ -1157,6 +1345,7 @@ function ContentOrganizer({
       setFolderId("");
       setTagId("");
       setCollectionId("");
+      setOrganizing(false);
       onApplied();
     } catch (cause) {
       setError(
@@ -1168,96 +1357,95 @@ function ContentOrganizer({
   };
   return (
     <div className="content-organizer" aria-label="Content organization">
-      <div className="content-organizer__create">
-        <button
-          type="button"
-          className="button button--quiet"
-          onClick={() => setCreating("folder")}
-        >
-          <FolderPlus size={15} /> Create folder
-        </button>
-        <button
-          type="button"
-          className="button button--quiet"
-          onClick={() => setCreating("collection")}
-        >
-          <Library size={15} /> Create collection
-        </button>
-        <button
-          type="button"
-          className="button button--quiet"
-          onClick={() => setCreating("tag")}
-        >
-          <Tags size={15} /> Create tag
-        </button>
-        {(folders.length > 0 || collections.length > 0 || tags.length > 0) && (
+      {!archiveMode && assetIds.length === 0 && (
+        <div className="content-organizer__create">
           <button
             type="button"
             className="button button--quiet"
-            onClick={() => setManaging(true)}
+            onClick={() => setCreating("folder")}
           >
-            <Pencil size={15} /> Manage
+            <FolderPlus size={15} /> Create folder
           </button>
-        )}
-      </div>
+          <button
+            type="button"
+            className="button button--quiet"
+            onClick={() => setCreating("collection")}
+          >
+            <Library size={15} /> Create collection
+          </button>
+          <button
+            type="button"
+            className="button button--quiet"
+            onClick={() => setCreating("tag")}
+          >
+            <Tags size={15} /> Create tag
+          </button>
+          {(folders.length > 0 ||
+            collections.length > 0 ||
+            tags.length > 0) && (
+            <button
+              type="button"
+              className="button button--quiet"
+              onClick={() => setManaging(true)}
+            >
+              <Pencil size={15} /> Manage
+            </button>
+          )}
+        </div>
+      )}
       {assetIds.length > 0 && (
         <div className="content-organizer__bulk">
           <strong>{assetIds.length} selected</strong>
-          <Select
-            aria-label="Move selected content to folder"
-            value={folderId}
-            onChange={(e) => setFolderId(e.target.value)}
-          >
-            <option value="">Folder…</option>
-            <option value="unfiled">Unfiled</option>
-            {folders.map((v) => (
-              <option key={v.id} value={v.id}>
-                {v.name}
-              </option>
-            ))}
-          </Select>
-          <Select
-            aria-label="Tag selected content"
-            value={tagId}
-            onChange={(e) => setTagId(e.target.value)}
-          >
-            <option value="">Add tag…</option>
-            {tags.map((v) => (
-              <option key={`add-${v.id}`} value={`add:${v.id}`}>
-                Add {v.name}
-              </option>
-            ))}
-            {tags.map((v) => (
-              <option key={`remove-${v.id}`} value={`remove:${v.id}`}>
-                Remove {v.name}
-              </option>
-            ))}
-          </Select>
-          <Select
-            aria-label="Add selected content to collection"
-            value={collectionId}
-            onChange={(e) => setCollectionId(e.target.value)}
-          >
-            <option value="">Collection…</option>
-            {collections.map((v) => (
-              <option key={`add-${v.id}`} value={`add:${v.id}`}>
-                Add to {v.name}
-              </option>
-            ))}
-            {collections.map((v) => (
-              <option key={`remove-${v.id}`} value={`remove:${v.id}`}>
-                Remove from {v.name}
-              </option>
-            ))}
-          </Select>
-          <button
-            type="button"
-            className="button button--primary"
-            disabled={!folderId && !tagId && !collectionId}
-            onClick={() => void apply()}
-          >
-            Apply
-          </button>
+          <span className="content-organizer__selection-actions">
+            <button
+              type="button"
+              className="button button--quiet"
+              onClick={onSelectAll}
+            >
+              Select page
+            </button>
+            <button
+              type="button"
+              className="button button--quiet"
+              onClick={onClear}
+            >
+              Clear
+            </button>
+          </span>
+          <span className="content-organizer__primary-actions">
+            {!archiveMode && (
+              <button
+                type="button"
+                className="button button--quiet"
+                onClick={() => setOrganizing(true)}
+              >
+                <Folder size={15} /> Organize
+              </button>
+            )}
+            <button
+              type="button"
+              className="button button--quiet"
+              disabled={busy}
+              onClick={() => void run(archiveMode ? onRestore : onArchive)}
+            >
+              {archiveMode ? (
+                <ArchiveRestore size={15} />
+              ) : (
+                <Archive size={15} />
+              )}
+              {archiveMode ? "Restore" : "Archive"}
+            </button>
+            {archiveMode && (
+              <button
+                type="button"
+                className="button button--danger-quiet"
+                disabled={busy}
+                onClick={() => void run(onDelete)}
+              >
+                <Trash2 size={15} /> Delete permanently
+              </button>
+            )}
+          </span>
         </div>
       )}
       {error && <span className="notice notice--error">{error}</span>}
@@ -1278,6 +1466,96 @@ function ContentOrganizer({
           onChanged={onCatalogChanged}
           onClose={() => setManaging(false)}
         />
+      )}
+      {organizing && (
+        <Dialog
+          open
+          title={`Organize ${assetIds.length} selected item${assetIds.length === 1 ? "" : "s"}`}
+          onClose={() => setOrganizing(false)}
+        >
+          <div className="bulk-organize-dialog">
+            <p>
+              Choose one or more changes. Existing tags and collections stay
+              unless you explicitly remove them.
+            </p>
+            <label className="field">
+              <span className="field__label">Move to folder</span>
+              <Select
+                value={folderId}
+                onChange={(event) => setFolderId(event.target.value)}
+              >
+                <option value="">Leave folder unchanged</option>
+                <option value="unfiled">Move to Unfiled</option>
+                {folders.map((folder) => (
+                  <option key={folder.id} value={folder.id}>
+                    {folder.name}
+                  </option>
+                ))}
+              </Select>
+            </label>
+            <label className="field">
+              <span className="field__label">Tag change</span>
+              <Select
+                value={tagId}
+                onChange={(event) => setTagId(event.target.value)}
+              >
+                <option value="">Leave tags unchanged</option>
+                {tags.map((tag) => (
+                  <option key={`add-${tag.id}`} value={`add:${tag.id}`}>
+                    Add {tag.name}
+                  </option>
+                ))}
+                {tags.map((tag) => (
+                  <option key={`remove-${tag.id}`} value={`remove:${tag.id}`}>
+                    Remove {tag.name}
+                  </option>
+                ))}
+              </Select>
+            </label>
+            <label className="field">
+              <span className="field__label">Collection change</span>
+              <Select
+                value={collectionId}
+                onChange={(event) => setCollectionId(event.target.value)}
+              >
+                <option value="">Leave collections unchanged</option>
+                {collections.map((collection) => (
+                  <option
+                    key={`add-${collection.id}`}
+                    value={`add:${collection.id}`}
+                  >
+                    Add to {collection.name}
+                  </option>
+                ))}
+                {collections.map((collection) => (
+                  <option
+                    key={`remove-${collection.id}`}
+                    value={`remove:${collection.id}`}
+                  >
+                    Remove from {collection.name}
+                  </option>
+                ))}
+              </Select>
+            </label>
+            <div className="form-actions">
+              <Button
+                variant="quiet"
+                type="button"
+                onClick={() => setOrganizing(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                type="button"
+                disabled={!folderId && !tagId && !collectionId}
+                onClick={() => void apply()}
+              >
+                Apply changes
+              </Button>
+            </div>
+          </div>
+        </Dialog>
       )}
     </div>
   );
@@ -1507,6 +1785,7 @@ function MediaAssetDetails({
   onClose: () => void;
   onChanged: (asset: Asset) => void;
 }) {
+  const queryClient = useQueryClient();
   const [name, setName] = useState(asset.name);
   const [description, setDescription] = useState(asset.description);
   const [availableFrom, setAvailableFrom] = useState(
@@ -1562,13 +1841,18 @@ function MediaAssetDetails({
               </Button>
             )}
             <Button
-              variant="danger"
+              variant="quiet"
               onClick={() => {
-                if (window.confirm(`Delete ${asset.name}?`))
-                  void api.deleteAsset(asset.id, csrf).then(onClose);
+                if (window.confirm(`Move ${asset.name} to the archive?`))
+                  void api.archiveAssets([asset.id], csrf).then(() => {
+                    void queryClient.invalidateQueries({
+                      queryKey: ["assets"],
+                    });
+                    onClose();
+                  });
               }}
             >
-              Delete asset
+              <Archive size={15} /> Archive asset
             </Button>
           </>
         ) : undefined

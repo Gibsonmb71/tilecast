@@ -354,7 +354,7 @@ func (s *Service) getAsset(ctx context.Context, id uuid.UUID, allowFormAttachmen
 			return Asset{}, ErrNotFound
 		}
 	}
-	row := s.db.QueryRow(ctx, assetSelect+` WHERE a.id=$1 AND a.deleted_at IS NULL`, id)
+	row := s.db.QueryRow(ctx, assetSelect+` WHERE a.id=$1 AND a.deleted_at IS NULL AND a.archived_at IS NULL AND (a.expires_at IS NULL OR a.expires_at>now())`, id)
 	asset, err := scanAsset(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Asset{}, ErrNotFound
@@ -400,7 +400,7 @@ func (s *Service) getAsset(ctx context.Context, id uuid.UUID, allowFormAttachmen
 	return asset, nil
 }
 
-const assetSelect = `SELECT a.id,a.name,a.description,a.type,a.original_filename,a.declared_mime_type,a.detected_mime_type,encode(a.sha256,'hex'),a.original_size,a.width,a.height,a.duration_seconds,a.frame_rate,a.video_codec,a.audio_codec,a.audio_channels,a.metadata,a.processing_status,a.processing_progress,a.error_code,a.error_message,u.id,u.name,a.created_at,a.updated_at,a.available_from,a.expires_at,(EXISTS(SELECT 1 FROM asset_variants preview WHERE preview.asset_id=a.id AND preview.deleted_at IS NULL AND preview.kind IN ('thumbnail','poster')) OR EXISTS(SELECT 1 FROM widgets widget_preview WHERE widget_preview.asset_id=a.id AND widget_preview.preview_image IS NOT NULL)) FROM assets a LEFT JOIN users u ON u.id=a.created_by`
+const assetSelect = `SELECT a.id,a.name,a.description,a.type,a.original_filename,a.declared_mime_type,a.detected_mime_type,encode(a.sha256,'hex'),a.original_size,a.width,a.height,a.duration_seconds,a.frame_rate,a.video_codec,a.audio_codec,a.audio_channels,a.metadata,a.processing_status,a.processing_progress,a.error_code,a.error_message,u.id,u.name,a.created_at,a.updated_at,a.available_from,a.expires_at,a.archived_at,(EXISTS(SELECT 1 FROM asset_variants preview WHERE preview.asset_id=a.id AND preview.deleted_at IS NULL AND preview.kind IN ('thumbnail','poster')) OR EXISTS(SELECT 1 FROM widgets widget_preview WHERE widget_preview.asset_id=a.id AND widget_preview.preview_image IS NOT NULL)) FROM assets a LEFT JOIN users u ON u.id=a.created_by`
 
 type rowScanner interface{ Scan(...any) error }
 
@@ -410,7 +410,7 @@ func scanAsset(row rowScanner) (Asset, error) {
 	var creatorID *uuid.UUID
 	var creatorName *string
 	var hasPreview bool
-	err := row.Scan(&a.ID, &a.Name, &a.Description, &a.Type, &a.OriginalFilename, &a.DeclaredMIMEType, &a.DetectedMIMEType, &a.SHA256, &a.OriginalSize, &a.Width, &a.Height, &a.Duration, &a.FrameRate, &a.VideoCodec, &a.AudioCodec, &a.AudioChannels, &metadata, &a.ProcessingStatus, &a.ProcessingProgress, &a.ErrorCode, &a.ErrorMessage, &creatorID, &creatorName, &a.CreatedAt, &a.UpdatedAt, &a.AvailableFrom, &a.ExpiresAt, &hasPreview)
+	err := row.Scan(&a.ID, &a.Name, &a.Description, &a.Type, &a.OriginalFilename, &a.DeclaredMIMEType, &a.DetectedMIMEType, &a.SHA256, &a.OriginalSize, &a.Width, &a.Height, &a.Duration, &a.FrameRate, &a.VideoCodec, &a.AudioCodec, &a.AudioChannels, &metadata, &a.ProcessingStatus, &a.ProcessingProgress, &a.ErrorCode, &a.ErrorMessage, &creatorID, &creatorName, &a.CreatedAt, &a.UpdatedAt, &a.AvailableFrom, &a.ExpiresAt, &a.ArchivedAt, &hasPreview)
 	if err != nil {
 		return Asset{}, err
 	}
@@ -502,12 +502,20 @@ func (s *Service) ListAssets(ctx context.Context, o ListOptions) (ListResult, er
 	case "updated":
 		sortSQL = "a.updated_at DESC,a.id DESC"
 	}
+	if o.Archived && o.Sort == "updated" {
+		sortSQL = "COALESCE(a.archived_at,a.expires_at) DESC,a.id DESC"
+	}
 	// Form submission attachments (origin='form_attachment') are managed through their Form Data
 	// Source and must never appear in the public Media library or its pickers.
 	where := []string{
 		"a.deleted_at IS NULL",
 		"a.origin='library'",
 		"a.system_managed=FALSE",
+	}
+	if o.Archived {
+		where = append(where, "(a.archived_at IS NOT NULL OR (a.expires_at IS NOT NULL AND a.expires_at<=now()))")
+	} else {
+		where = append(where, "a.archived_at IS NULL", "(a.expires_at IS NULL OR a.expires_at>now())")
 	}
 	args := []any{}
 	add := func(query string, value any) {
@@ -568,6 +576,9 @@ func (s *Service) ListAssets(ctx context.Context, o ListOptions) (ListResult, er
 				}
 			}
 		}
+		if o.Archived && a.ArchivedAt == nil && a.ExpiresAt != nil {
+			a.ArchivedAt = a.ExpiresAt
+		}
 		_ = s.db.QueryRow(ctx, `SELECT count(DISTINCT playlist_id) FROM playlist_items WHERE asset_id=$1`, a.ID).Scan(&a.PlaylistUsage)
 		a.LayoutUsage, err = s.layoutUsage(ctx, a.ID)
 		if err != nil {
@@ -609,7 +620,10 @@ func (s *Service) updateAsset(ctx context.Context, id, userID uuid.UUID, name, d
 	if availabilitySet && availableFrom != nil && expiresAt != nil && !availableFrom.Before(*expiresAt) {
 		return Asset{}, errors.New("availableFrom must be before expiresAt")
 	}
-	tag, err := s.db.Exec(ctx, `UPDATE assets SET name=COALESCE($2,name),description=COALESCE($3,description),available_from=CASE WHEN $4 THEN $5 ELSE available_from END,expires_at=CASE WHEN $4 THEN $6 ELSE expires_at END,updated_at=now() WHERE id=$1 AND deleted_at IS NULL`, id, name, description, availabilitySet, availableFrom, expiresAt)
+	if availabilitySet && expiresAt != nil && !expiresAt.After(time.Now()) {
+		return Asset{}, errors.New("expiresAt must be in the future")
+	}
+	tag, err := s.db.Exec(ctx, `UPDATE assets SET name=COALESCE($2,name),description=COALESCE($3,description),available_from=CASE WHEN $4 THEN $5 ELSE available_from END,expires_at=CASE WHEN $4 THEN $6 ELSE expires_at END,updated_at=now() WHERE id=$1 AND deleted_at IS NULL AND archived_at IS NULL AND (expires_at IS NULL OR expires_at>now())`, id, name, description, availabilitySet, availableFrom, expiresAt)
 	if err != nil {
 		return Asset{}, err
 	}
@@ -635,7 +649,7 @@ func (s *Service) RetryAsset(ctx context.Context, id, userID uuid.UUID) error {
 	defer tx.Rollback(ctx)
 	var status AssetStatus
 	var origin string
-	if err = tx.QueryRow(ctx, `SELECT processing_status,origin FROM assets WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, id).Scan(&status, &origin); errors.Is(err, pgx.ErrNoRows) {
+	if err = tx.QueryRow(ctx, `SELECT processing_status,origin FROM assets WHERE id=$1 AND deleted_at IS NULL AND archived_at IS NULL AND (expires_at IS NULL OR expires_at>now()) FOR UPDATE`, id).Scan(&status, &origin); errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound
 	}
 	if err != nil {
@@ -661,6 +675,98 @@ func (s *Service) RetryAsset(ctx context.Context, id, userID uuid.UUID) error {
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// ArchiveAssets moves unused library assets out of the active library without
+// deleting their files or organization. The whole selection is validated before any row moves.
+func (s *Service) ArchiveAssets(ctx context.Context, ids []uuid.UUID, userID uuid.UUID) error {
+	if len(ids) == 0 || len(ids) > 100 {
+		return errors.New("assetIds must contain between 1 and 100 assets")
+	}
+	seen := make(map[uuid.UUID]struct{}, len(ids))
+	for _, id := range ids {
+		if _, exists := seen[id]; exists {
+			return errors.New("assetIds must not contain duplicates")
+		}
+		seen[id] = struct{}{}
+	}
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	var count int
+	if err = tx.QueryRow(ctx, `SELECT count(*) FROM assets WHERE id=ANY($1) AND deleted_at IS NULL AND archived_at IS NULL AND (expires_at IS NULL OR expires_at>now()) AND origin='library' AND system_managed=FALSE`, ids).Scan(&count); err != nil {
+		return err
+	}
+	if count != len(ids) {
+		return ErrNotFound
+	}
+	for _, id := range ids {
+		var inUse bool
+		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM playlist_items WHERE asset_id=$1) OR EXISTS(SELECT 1 FROM website_assets WHERE fallback_image_asset_id=$1) OR EXISTS(SELECT 1 FROM widgets JOIN assets widget_asset ON widget_asset.id=widgets.asset_id AND widget_asset.deleted_at IS NULL WHERE widgets.configuration->>'fallbackImageAssetId'=$1::text) OR EXISTS(SELECT 1 FROM organization_runtime_settings WHERE settings->>'branding.logo_asset_id'=$1::text OR settings->>'branding.icon_asset_id'=$1::text) OR EXISTS(SELECT 1 FROM layout_draft_dependencies WHERE dependency_id=$1 AND dependency_type IN('widget','asset')) OR EXISTS(SELECT 1 FROM layout_revision_dependencies WHERE dependency_id=$1 AND dependency_type IN('widget','asset'))`, id).Scan(&inUse); err != nil {
+			return err
+		}
+		if inUse {
+			return errors.New("asset is in use by a playlist, Layout, or shared configuration")
+		}
+	}
+	if _, err = tx.Exec(ctx, `UPDATE assets SET archived_at=now(),updated_at=now() WHERE id=ANY($1)`, ids); err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if _, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)VALUES($1,$2,'media.asset_archived','asset',$3)`, uuid.New(), userID, id.String()); err != nil {
+			return err
+		}
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return err
+	}
+	if s.invalidator != nil {
+		for _, id := range ids {
+			_ = s.invalidator.AssetChanged(ctx, id, "media.asset_archived")
+		}
+	}
+	return nil
+}
+
+func (s *Service) RestoreAssets(ctx context.Context, ids []uuid.UUID, userID uuid.UUID) error {
+	if len(ids) == 0 || len(ids) > 100 {
+		return errors.New("assetIds must contain between 1 and 100 assets")
+	}
+	seen := make(map[uuid.UUID]struct{}, len(ids))
+	for _, id := range ids {
+		if _, exists := seen[id]; exists {
+			return errors.New("assetIds must not contain duplicates")
+		}
+		seen[id] = struct{}{}
+	}
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	tag, err := tx.Exec(ctx, `UPDATE assets SET archived_at=NULL,expires_at=CASE WHEN expires_at<=now() THEN NULL ELSE expires_at END,updated_at=now() WHERE id=ANY($1) AND deleted_at IS NULL AND (archived_at IS NOT NULL OR (expires_at IS NOT NULL AND expires_at<=now())) AND origin='library' AND system_managed=FALSE`, ids)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() != int64(len(ids)) {
+		return ErrNotFound
+	}
+	for _, id := range ids {
+		if _, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)VALUES($1,$2,'media.asset_restored','asset',$3)`, uuid.New(), userID, id.String()); err != nil {
+			return err
+		}
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return err
+	}
+	if s.invalidator != nil {
+		for _, id := range ids {
+			_ = s.invalidator.AssetChanged(ctx, id, "media.asset_restored")
+		}
+	}
+	return nil
 }
 
 func (s *Service) DeleteAsset(ctx context.Context, id, userID uuid.UUID) error {

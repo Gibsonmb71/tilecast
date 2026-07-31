@@ -1139,6 +1139,7 @@ export type Asset = {
   updatedAt: string;
   availableFrom?: string;
   expiresAt?: string;
+  archivedAt?: string;
   variants: AssetVariant[];
   thumbnailUrl?: string;
   website?: WebsiteConfig;

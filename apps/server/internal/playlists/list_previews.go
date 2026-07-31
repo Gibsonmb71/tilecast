@@ -56,6 +56,8 @@ func (s *Service) ListPreviewItems(ctx context.Context, playlistIDs []uuid.UUID)
 				row_number() OVER(PARTITION BY p.id ORDER BY lower(a.name),a.id) AS preview_rank
 			FROM requested p
 			JOIN assets a ON a.deleted_at IS NULL
+				AND a.archived_at IS NULL
+				AND (a.expires_at IS NULL OR a.expires_at>now())
 				AND a.origin='library'
 				AND a.type IN('image','video')
 				AND a.processing_status='ready'

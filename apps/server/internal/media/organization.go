@@ -20,7 +20,7 @@ func cleanOrganizationName(name string, max int) (string, error) {
 }
 
 func (s *Service) ListFolders(ctx context.Context) ([]ContentFolder, error) {
-	rows, err := s.db.Query(ctx, `SELECT f.id,f.parent_id,f.name,f.description,count(a.id),f.created_at,f.updated_at FROM content_folders f LEFT JOIN assets a ON a.folder_id=f.id AND a.deleted_at IS NULL GROUP BY f.id ORDER BY lower(f.name),f.id`)
+	rows, err := s.db.Query(ctx, `SELECT f.id,f.parent_id,f.name,f.description,count(a.id),f.created_at,f.updated_at FROM content_folders f LEFT JOIN assets a ON a.folder_id=f.id AND a.deleted_at IS NULL AND a.archived_at IS NULL AND (a.expires_at IS NULL OR a.expires_at>now()) GROUP BY f.id ORDER BY lower(f.name),f.id`)
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +69,7 @@ func (s *Service) UpdateFolder(ctx context.Context, id uuid.UUID, parentID *uuid
 		}
 	}
 	var v ContentFolder
-	err = s.db.QueryRow(ctx, `UPDATE content_folders SET parent_id=$2,name=$3,description=$4,updated_at=now() WHERE id=$1 RETURNING id,parent_id,name,description,(SELECT count(*) FROM assets WHERE folder_id=$1 AND deleted_at IS NULL),created_at,updated_at`, id, parentID, name, strings.TrimSpace(description)).Scan(&v.ID, &v.ParentID, &v.Name, &v.Description, &v.AssetCount, &v.CreatedAt, &v.UpdatedAt)
+	err = s.db.QueryRow(ctx, `UPDATE content_folders SET parent_id=$2,name=$3,description=$4,updated_at=now() WHERE id=$1 RETURNING id,parent_id,name,description,(SELECT count(*) FROM assets WHERE folder_id=$1 AND deleted_at IS NULL AND archived_at IS NULL AND (expires_at IS NULL OR expires_at>now())),created_at,updated_at`, id, parentID, name, strings.TrimSpace(description)).Scan(&v.ID, &v.ParentID, &v.Name, &v.Description, &v.AssetCount, &v.CreatedAt, &v.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		err = ErrNotFound
 	}
@@ -103,7 +103,7 @@ func (s *Service) DeleteFolder(ctx context.Context, id, userID uuid.UUID) error 
 }
 
 func (s *Service) ListCollections(ctx context.Context) ([]ContentCollection, error) {
-	rows, err := s.db.Query(ctx, `SELECT c.id,c.name,c.description,count(ca.asset_id),c.created_at,c.updated_at FROM content_collections c LEFT JOIN content_collection_assets ca ON ca.collection_id=c.id GROUP BY c.id ORDER BY lower(c.name),c.id`)
+	rows, err := s.db.Query(ctx, `SELECT c.id,c.name,c.description,count(a.id),c.created_at,c.updated_at FROM content_collections c LEFT JOIN content_collection_assets ca ON ca.collection_id=c.id LEFT JOIN assets a ON a.id=ca.asset_id AND a.deleted_at IS NULL AND a.archived_at IS NULL AND (a.expires_at IS NULL OR a.expires_at>now()) GROUP BY c.id ORDER BY lower(c.name),c.id`)
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +142,7 @@ func (s *Service) UpdateCollection(ctx context.Context, id uuid.UUID, name, desc
 		return ContentCollection{}, errors.New("description must be 500 characters or fewer")
 	}
 	var v ContentCollection
-	err = s.db.QueryRow(ctx, `UPDATE content_collections SET name=$2,description=$3,updated_at=now() WHERE id=$1 RETURNING id,name,description,(SELECT count(*) FROM content_collection_assets WHERE collection_id=$1),created_at,updated_at`, id, name, strings.TrimSpace(description)).Scan(&v.ID, &v.Name, &v.Description, &v.AssetCount, &v.CreatedAt, &v.UpdatedAt)
+	err = s.db.QueryRow(ctx, `UPDATE content_collections SET name=$2,description=$3,updated_at=now() WHERE id=$1 RETURNING id,name,description,(SELECT count(*) FROM content_collection_assets ca JOIN assets a ON a.id=ca.asset_id WHERE ca.collection_id=$1 AND a.deleted_at IS NULL AND a.archived_at IS NULL AND (a.expires_at IS NULL OR a.expires_at>now())),created_at,updated_at`, id, name, strings.TrimSpace(description)).Scan(&v.ID, &v.Name, &v.Description, &v.AssetCount, &v.CreatedAt, &v.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		err = ErrNotFound
 	}
@@ -158,7 +158,7 @@ func (s *Service) DeleteCollection(ctx context.Context, id uuid.UUID) error {
 }
 
 func (s *Service) ListTags(ctx context.Context) ([]ContentTag, error) {
-	rows, err := s.db.Query(ctx, `SELECT t.id,t.name,t.color,count(at.asset_id) FROM content_tags t LEFT JOIN content_asset_tags at ON at.tag_id=t.id GROUP BY t.id ORDER BY lower(t.name),t.id`)
+	rows, err := s.db.Query(ctx, `SELECT t.id,t.name,t.color,count(a.id) FROM content_tags t LEFT JOIN content_asset_tags at ON at.tag_id=t.id LEFT JOIN assets a ON a.id=at.asset_id AND a.deleted_at IS NULL AND a.archived_at IS NULL AND (a.expires_at IS NULL OR a.expires_at>now()) GROUP BY t.id ORDER BY lower(t.name),t.id`)
 	if err != nil {
 		return nil, err
 	}
@@ -203,7 +203,7 @@ func (s *Service) UpdateTag(ctx context.Context, id uuid.UUID, name, color strin
 		return ContentTag{}, errors.New("color must be a six-digit hexadecimal color")
 	}
 	var v ContentTag
-	err = s.db.QueryRow(ctx, `UPDATE content_tags SET name=$2,color=$3 WHERE id=$1 RETURNING id,name,color,(SELECT count(*) FROM content_asset_tags WHERE tag_id=$1)`, id, name, color).Scan(&v.ID, &v.Name, &v.Color, &v.AssetCount)
+	err = s.db.QueryRow(ctx, `UPDATE content_tags SET name=$2,color=$3 WHERE id=$1 RETURNING id,name,color,(SELECT count(*) FROM content_asset_tags at JOIN assets a ON a.id=at.asset_id WHERE at.tag_id=$1 AND a.deleted_at IS NULL AND a.archived_at IS NULL AND (a.expires_at IS NULL OR a.expires_at>now()))`, id, name, color).Scan(&v.ID, &v.Name, &v.Color, &v.AssetCount)
 	if errors.Is(err, pgx.ErrNoRows) {
 		err = ErrNotFound
 	}
@@ -252,7 +252,7 @@ func (s *Service) BulkOrganize(ctx context.Context, userID uuid.UUID, in BulkOrg
 	}
 	defer tx.Rollback(ctx)
 	var count int
-	if err = tx.QueryRow(ctx, `SELECT count(*) FROM assets WHERE id=ANY($1) AND deleted_at IS NULL`, in.AssetIDs).Scan(&count); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT count(*) FROM assets WHERE id=ANY($1) AND deleted_at IS NULL AND archived_at IS NULL AND (expires_at IS NULL OR expires_at>now())`, in.AssetIDs).Scan(&count); err != nil {
 		return err
 	}
 	if count != len(in.AssetIDs) {

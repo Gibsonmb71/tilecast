@@ -19,6 +19,8 @@ import {
   canManageContent,
   ContentEmpty,
   CreateOrganizerDialog,
+  isExpiredAsset,
+  nextExpirationDelay,
   statusLabel,
 } from "./ContentPage";
 
@@ -179,6 +181,36 @@ describe("content library", () => {
     expect(statusLabel("failed")).toBe("Failed");
   });
 
+  it("treats elapsed expiration as an archive state", () => {
+    const expired = { ...asset, expiresAt: "2026-01-01T00:00:00Z" };
+    expect(isExpiredAsset(expired, Date.parse("2026-01-02T00:00:00Z"))).toBe(
+      true,
+    );
+    render(
+      <AssetCollection
+        items={[expired]}
+        view="grid"
+        onSelect={vi.fn()}
+        archived
+      />,
+    );
+    expect(screen.getByText("Expired")).toBeInTheDocument();
+  });
+
+  it("schedules the library to refresh when the next item expires", () => {
+    const now = Date.parse("2026-01-01T00:00:00Z");
+    expect(
+      nextExpirationDelay(
+        [
+          { ...asset, expiresAt: "2026-01-01T00:10:00Z" },
+          { ...asset, id: "asset-2", expiresAt: "2026-01-01T00:02:00Z" },
+        ],
+        now,
+      ),
+    ).toBe(120_100);
+    expect(nextExpirationDelay([asset], now)).toBeUndefined();
+  });
+
   it("shows folder and tag chips on organized asset cards", () => {
     const organized: Asset = {
       ...asset,
@@ -198,7 +230,7 @@ describe("content library", () => {
   });
 
   it("opens card actions from a right-click and runs the chosen action", () => {
-    const remove = vi.fn();
+    const archive = vi.fn();
     const toggle = vi.fn();
     render(
       <AssetCollection
@@ -206,7 +238,7 @@ describe("content library", () => {
         view="grid"
         onSelect={vi.fn()}
         canManage
-        onDelete={remove}
+        onArchive={archive}
         onToggle={toggle}
       />,
     );
@@ -220,8 +252,43 @@ describe("content library", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Actions for Welcome" }),
     );
-    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
-    expect(remove).toHaveBeenCalledWith(asset);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Archive" }));
+    expect(archive).toHaveBeenCalledWith(asset);
+  });
+
+  it("keeps archived content recoverable and makes permanent deletion explicit", () => {
+    const restore = vi.fn();
+    const remove = vi.fn();
+    render(
+      <AssetCollection
+        items={[{ ...asset, archivedAt: "2026-02-01T00:00:00Z" }]}
+        view="grid"
+        onSelect={vi.fn()}
+        canManage
+        archived
+        onRestore={restore}
+        onDelete={remove}
+      />,
+    );
+    expect(screen.getByText("Archived")).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Actions for Welcome" }),
+    );
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: "Restore to library" }),
+    );
+    expect(restore).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "asset-1" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Actions for Welcome" }),
+    );
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: "Delete permanently" }),
+    );
+    expect(remove).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "asset-1" }),
+    );
   });
 
   it("limits card actions to what the viewer is allowed to do", () => {

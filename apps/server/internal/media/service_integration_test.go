@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/tilecast/tilecast/apps/server/internal/auth"
 	"github.com/tilecast/tilecast/apps/server/internal/database"
@@ -132,6 +133,9 @@ func TestMediaUploadProcessingAndDeletionLifecycle(t *testing.T) {
 	}
 	if website.Type != "widget" || website.Widget == nil || website.Widget.Provider != "website" || website.Website == nil || len(website.Variants) != 0 || website.Website.FallbackImageAssetID == nil {
 		t.Fatalf("website=%#v", website)
+	}
+	if err = service.ArchiveAssets(ctx, []uuid.UUID{ready.ID}, owner.User.ID); err == nil {
+		t.Fatal("asset used as a website fallback was archived")
 	}
 	websiteInput.URL = "https://status.example.org/display"
 	websiteInput.AllowedHosts = []string{"cdn.example.org"}
@@ -265,6 +269,47 @@ func TestMediaUploadProcessingAndDeletionLifecycle(t *testing.T) {
 	}
 	if err := worker.cleanExpired(ctx); err != nil {
 		t.Fatalf("repeat expired cleanup: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE assets SET expires_at=now()-interval '1 minute' WHERE id=$1`, asset.ID); err != nil {
+		t.Fatal(err)
+	}
+	active, err := service.ListAssets(ctx, ListOptions{Page: 1, PageSize: 24})
+	if err != nil || len(active.Items) != 0 {
+		t.Fatalf("expired asset remained active: %#v %v", active, err)
+	}
+	archived, err := service.ListAssets(ctx, ListOptions{Page: 1, PageSize: 24, Archived: true, Sort: "updated"})
+	if err != nil || len(archived.Items) != 1 || archived.Items[0].ArchivedAt == nil || archived.Items[0].ExpiresAt == nil {
+		t.Fatalf("expired asset missing from archive: %#v %v", archived, err)
+	}
+	if _, err = service.GetAsset(ctx, asset.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expired asset visible through active detail: %v", err)
+	}
+	if err = service.RestoreAssets(ctx, []uuid.UUID{asset.ID}, owner.User.ID); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := service.GetAsset(ctx, asset.ID)
+	if err != nil || restored.ExpiresAt != nil {
+		t.Fatalf("restored expired asset kept its elapsed expiration: %#v %v", restored, err)
+	}
+	if err := service.ArchiveAssets(ctx, []uuid.UUID{asset.ID}, owner.User.ID); err != nil {
+		t.Fatal(err)
+	}
+	active, err = service.ListAssets(ctx, ListOptions{Page: 1, PageSize: 24})
+	if err != nil || len(active.Items) != 0 {
+		t.Fatalf("archived asset remained active: %#v %v", active, err)
+	}
+	archived, err = service.ListAssets(ctx, ListOptions{Page: 1, PageSize: 24, Archived: true})
+	if err != nil || len(archived.Items) != 1 || archived.Items[0].ArchivedAt == nil {
+		t.Fatalf("archive listing: %#v %v", archived, err)
+	}
+	if _, err = service.GetAsset(ctx, asset.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("archived asset visible through active detail: %v", err)
+	}
+	if err = service.RestoreAssets(ctx, []uuid.UUID{asset.ID}, owner.User.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = service.GetAsset(ctx, asset.ID); err != nil {
+		t.Fatalf("restored asset unavailable: %v", err)
 	}
 	if err := service.DeleteAsset(ctx, asset.ID, owner.User.ID); err != nil {
 		t.Fatal(err)

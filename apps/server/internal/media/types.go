@@ -98,6 +98,7 @@ type Asset struct {
 	UpdatedAt          time.Time      `json:"updatedAt"`
 	AvailableFrom      *time.Time     `json:"availableFrom,omitempty"`
 	ExpiresAt          *time.Time     `json:"expiresAt,omitempty"`
+	ArchivedAt         *time.Time     `json:"archivedAt,omitempty"`
 	Variants           []Variant      `json:"variants"`
 	ThumbnailURL       *string        `json:"thumbnailUrl,omitempty"`
 	Website            *WebsiteConfig `json:"website,omitempty"`
@@ -860,6 +861,7 @@ type ListOptions struct {
 	Search, Type, WidgetProvider, Status, Sort string
 	FolderID, CollectionID, TagID              *uuid.UUID
 	Page, PageSize                             int
+	Archived                                   bool
 }
 
 // DataSourceListOptions filters the Data Source library.

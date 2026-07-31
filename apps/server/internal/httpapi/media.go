@@ -181,7 +181,7 @@ func (s *server) listAssets(w http.ResponseWriter, r *http.Request) {
 			*target = &id
 		}
 	}
-	result, err := s.media.ListAssets(r.Context(), media.ListOptions{Search: query.Get("search"), Type: query.Get("type"), WidgetProvider: query.Get("provider"), Status: query.Get("status"), Sort: query.Get("sort"), FolderID: folderID, CollectionID: collectionID, TagID: tagID, Page: page, PageSize: pageSize})
+	result, err := s.media.ListAssets(r.Context(), media.ListOptions{Search: query.Get("search"), Type: query.Get("type"), WidgetProvider: query.Get("provider"), Status: query.Get("status"), Sort: query.Get("sort"), FolderID: folderID, CollectionID: collectionID, TagID: tagID, Page: page, PageSize: pageSize, Archived: query.Get("archived") == "true"})
 	if err != nil {
 		s.writeMediaError(w, r, err)
 		return
@@ -654,6 +654,38 @@ func (s *server) deleteAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+type assetSelectionRequest struct {
+	AssetIDs []uuid.UUID `json:"assetIds"`
+}
+
+func (s *server) archiveAssets(w http.ResponseWriter, r *http.Request) {
+	var body assetSelectionRequest
+	if err := decodeJSON(w, r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	user := r.Context().Value(sessionContextKey).(auth.Session).User
+	if err := s.media.ArchiveAssets(r.Context(), body.AssetIDs, user.ID); err != nil {
+		s.writeMediaError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"updated": len(body.AssetIDs)}})
+}
+
+func (s *server) restoreAssets(w http.ResponseWriter, r *http.Request) {
+	var body assetSelectionRequest
+	if err := decodeJSON(w, r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	user := r.Context().Value(sessionContextKey).(auth.Session).User
+	if err := s.media.RestoreAssets(r.Context(), body.AssetIDs, user.ID); err != nil {
+		s.writeMediaError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"updated": len(body.AssetIDs)}})
 }
 
 func (s *server) assetThumbnail(w http.ResponseWriter, r *http.Request) {
