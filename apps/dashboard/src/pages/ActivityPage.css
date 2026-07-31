@@ -45,76 +45,23 @@
   white-space: nowrap;
 }
 
-.activity-more-filters {
-  position: relative;
-}
-
-.activity-more-filters > summary {
-  display: inline-flex;
-  min-height: 36px;
-  box-sizing: border-box;
-  align-items: center;
-  gap: 7px;
-  padding: 0 11px;
-  list-style: none;
-  border: 1px solid var(--tc-border-default);
-  border-radius: var(--tc-radius-control);
-  background: var(--tc-bg-surface);
-  color: var(--tc-text-primary);
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 650;
-  white-space: nowrap;
-}
-
-.activity-more-filters > summary::-webkit-details-marker,
 .activity-summary-breakdown > summary::-webkit-details-marker {
   display: none;
 }
 
-.activity-more-filters[open] > summary,
-.activity-more-filters > summary:hover {
-  background: var(--tc-bg-subtle);
-}
-
-.activity-filter-count {
-  display: inline-grid;
-  min-width: 19px;
-  min-height: 19px;
-  place-items: center;
-  padding: 0 5px;
-  border-radius: var(--tc-radius-pill);
-  background: var(--tc-action-primary-soft);
-  color: var(--tc-action-primary);
-  font-size: 10px;
-  font-weight: 750;
-}
-
+/* Header and field grid each run edge to edge, so the panel carries no padding
+   of its own. Wider than the shared ceiling to fit two ID fields per row. */
 .activity-more-filters-panel {
-  position: absolute;
-  z-index: 20;
-  top: calc(100% + 8px);
-  right: 0;
   width: min(600px, calc(100vw - 48px));
-  overflow: hidden;
-  border: 1px solid var(--tc-border-default);
-  border-radius: var(--tc-radius-panel);
-  background: var(--tc-bg-surface);
-  box-shadow: 0 16px 38px rgb(8 15 23 / 20%);
+  max-width: none;
+  gap: 0;
+  padding: 0;
 }
 
-.activity-more-filters-panel > header {
-  display: flex;
+.activity-more-filters-panel > .signal-popover__header {
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
   padding: 14px 16px;
   border-bottom: 1px solid var(--tc-border-subtle);
-}
-
-.activity-more-filters-panel > header > span {
-  display: grid;
-  gap: 2px;
 }
 
 .activity-more-filters-panel small,
@@ -732,23 +679,19 @@
   }
 
   .filter-bar__controls > .signal-select,
-  .activity-more-filters,
-  .activity-more-filters > summary {
+  .activity-more-filters {
     flex: 1 1 140px;
   }
 
-  .activity-more-filters > summary {
+  .activity-more-filters .signal-popover__filter-trigger {
     justify-content: center;
+    width: 100%;
   }
 
+  /* The shared surface already places and clamps the panel; it only needs to
+     stop reserving room for two columns of ID fields. */
   .activity-more-filters-panel {
-    position: fixed;
-    top: 12vh;
-    right: 16px;
-    left: 16px;
     width: auto;
-    max-height: 76vh;
-    overflow-y: auto;
   }
 
   .activity-advanced-filter-grid,

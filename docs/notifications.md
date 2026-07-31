@@ -33,18 +33,28 @@ Email needs an SMTP relay. Set it in the server environment, not in Studio. A
 password saved through Studio would be stored in the database, in every backup,
 and in the configuration export.
 
-| Variable                       | Default    | Purpose                                                             |
-| ------------------------------ | ---------- | ------------------------------------------------------------------- |
-| `TILECAST_SMTP_HOST`           | empty      | Relay host name. Email is off while this is empty.                  |
-| `TILECAST_SMTP_PORT`           | `587`      | Relay port                                                          |
-| `TILECAST_SMTP_USERNAME`       | empty      | Leave empty for a relay that needs no sign-in                       |
-| `TILECAST_SMTP_PASSWORD`       | empty      | Password for the user name above                                    |
-| `TILECAST_SMTP_TLS`            | `starttls` | `starttls`, `implicit`, or `none`                                   |
-| `TILECAST_SMTP_ALLOW_INSECURE` | `false`    | Accepts a private certificate and allows sign-in without encryption |
+| Variable                             | Default    | Purpose                                                    |
+| ------------------------------------ | ---------- | ---------------------------------------------------------- |
+| `TILECAST_SMTP_HOST`                 | empty      | Relay host name. Email is off while this is empty.         |
+| `TILECAST_SMTP_PORT`                 | `587`      | Relay port                                                 |
+| `TILECAST_SMTP_USERNAME`             | empty      | Leave empty for a relay that needs no sign-in              |
+| `TILECAST_SMTP_PASSWORD`             | empty      | Password for the user name above                           |
+| `TILECAST_SMTP_TLS`                  | `starttls` | `starttls`, `implicit`, or `none`                          |
+| `TILECAST_SMTP_ALLOW_INSECURE`       | `false`    | Accepts a relay certificate no public authority signed     |
+| `TILECAST_SMTP_ALLOW_PLAINTEXT_AUTH` | `false`    | Sends the user name and password without encryption at all |
 
 Tilecast refuses to continue without encryption when `TILECAST_SMTP_TLS` is
 `starttls` and the relay does not offer STARTTLS. Set `none` to accept an
 unencrypted relay on the same host.
+
+The last two are separate on purpose. A district that runs its own certificate
+authority needs the first, and needs it often. The second puts a mail password on
+the wire in readable text, which is a different decision with a different
+consequence, so turning on the first does not turn on the second. If a relay
+needs a sign-in and offers no encryption, either set
+`TILECAST_SMTP_ALLOW_PLAINTEXT_AUTH=true` deliberately, or leave
+`TILECAST_SMTP_USERNAME` empty and let the relay accept mail from this host
+without a sign-in.
 
 Restart the server after you change these values.
 

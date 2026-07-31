@@ -8,12 +8,14 @@ import {
   ViewTabs,
 } from "../components/ui";
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CheckCircle2,
   Download,
   ExternalLink,
   Github,
+  ListChecks,
   LogOut,
   RefreshCw,
   Rocket,
@@ -29,6 +31,11 @@ import type {
   UpdateDeployment,
 } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
+import {
+  DeploymentMeter,
+  UpdateDeploymentDrawer,
+} from "./UpdateDeploymentDrawer";
+import { deploymentHeadline, screenUpdateMeaning } from "./playerUpdateStates";
 
 const maintenanceActions = [
   {
@@ -91,10 +98,7 @@ export function SystemPanel({ canManage }: { canManage: boolean }) {
       <section className="settings-subsection">
         <header>
           <h3>Diagnostics</h3>
-          <p>
-            Safe runtime information. Secrets and sensitive filesystem paths are
-            never shown.
-          </p>
+          <p>Runtime status without secrets or sensitive paths.</p>
         </header>
         {query.error ? (
           <div className="notice notice--error" role="alert">
@@ -136,10 +140,7 @@ export function SystemPanel({ canManage }: { canManage: boolean }) {
       <section className="settings-subsection">
         <header>
           <h3>Maintenance</h3>
-          <p>
-            Run bounded maintenance tasks. Tilecast does not expose shell
-            commands or destructive database controls.
-          </p>
+          <p>Run approved maintenance tasks.</p>
         </header>
         <div className="maintenance-list">
           {maintenanceActions.map((action) => (
@@ -320,7 +321,12 @@ export function PlayerUpdatesPanel({
     queryKey: ["screen-groups"],
     queryFn: () => api.screenGroups(),
   });
-  const [platform, setPlatform] = useState<PlayerPlatform>("android");
+  // The chosen platform lives in the URL, not in component state, so a reload,
+  // a bookmark, or the back button all keep the fleet the operator was looking
+  // at instead of silently returning to Android.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const platform: PlayerPlatform =
+    searchParams.get("platform") === "linux" ? "linux" : "android";
   const [releaseId, setReleaseId] = useState("");
   const [screenIds, setScreenIds] = useState<string[]>([]);
   const [groupIds, setGroupIds] = useState<string[]>([]);
@@ -332,6 +338,7 @@ export function PlayerUpdatesPanel({
   const [showAllReleases, setShowAllReleases] = useState(false);
   const [confirmDeploy, setConfirmDeploy] = useState(false);
   const [purging, setPurging] = useState<PlayerRelease>();
+  const [openDeployment, setOpenDeployment] = useState<string>();
   const [purgeNotice, setPurgeNotice] = useState("");
   const [deploySuccess, setDeploySuccess] = useState("");
   const [githubFlow, setGitHubFlow] = useState<
@@ -527,13 +534,17 @@ export function PlayerUpdatesPanel({
         ]}
         onValueChange={(value) => {
           if (value === platform) return;
-          setPlatform(value);
+          const next = new URLSearchParams(searchParams);
+          if (value === "android") next.delete("platform");
+          else next.set("platform", value);
+          setSearchParams(next);
           // Selections do not carry across platforms.
           setReleaseId("");
           setScreenIds([]);
           setGroupIds([]);
           setShowUpload(false);
           setShowAllReleases(false);
+          setOpenDeployment(undefined);
         }}
       />
       <section className="settings-subsection player-updates__releases">
@@ -1111,8 +1122,9 @@ export function PlayerUpdatesPanel({
         <header>
           <h3>Deployment history</h3>
           <p>
-            Waiting for user means the TV still requires local installer
-            approval; it is not a failure.
+            Open a deployment to read the status of each screen it reaches.
+            Waiting for approval means the TV still needs someone to accept the
+            installer; it is not a failure.
           </p>
         </header>
         {deployments.error && (
@@ -1133,48 +1145,68 @@ export function PlayerUpdatesPanel({
             <thead>
               <tr>
                 <th scope="col">Deployment</th>
-                <th scope="col">Mode</th>
                 <th scope="col">Status</th>
-                <th scope="col">Progress</th>
-                <th scope="col">Attention</th>
+                <th scope="col">Screens</th>
+                <th scope="col">What this needs</th>
               </tr>
             </thead>
             <tbody>
-              {platformDeployments.map((item) => (
-                <tr key={item.id}>
-                  <th scope="row">
-                    <strong>{item.name}</strong>
-                    <small className="technical">
-                      {item.versionName} ({item.versionCode})
-                    </small>
-                  </th>
-                  <td>{humanize(item.mode)}</td>
-                  <td>
-                    <UpdateStatus value={item.status} />
-                    <small>{rolloutSummary(item)}</small>
-                  </td>
-                  <td>
-                    <strong>
-                      {item.succeededCount} of {item.targetCount} succeeded
-                    </strong>
-                    <small>{outstandingSummary(item)}</small>
-                  </td>
-                  <td>
-                    {item.lastFailure ? (
-                      <span className="deployment-attention">
-                        {humanize(item.lastFailure)}
+              {platformDeployments.map((item) => {
+                const headline = deploymentHeadline(item);
+                const needsAttention =
+                  item.failedCount > 0 ||
+                  item.waitingForUserCount > 0 ||
+                  item.status === "paused";
+                return (
+                  <tr key={item.id}>
+                    <th scope="row">
+                      <strong>{item.name}</strong>
+                      <small className="technical">
+                        {item.versionName} ({item.versionCode}) ·{" "}
+                        {humanize(item.mode)}
+                      </small>
+                    </th>
+                    <td>
+                      <UpdateStatus value={item.status} />
+                      <small>{rolloutSummary(item)}</small>
+                    </td>
+                    <td>
+                      <DeploymentMeter compact {...item} />
+                      <small>{outstandingSummary(item)}</small>
+                    </td>
+                    <td>
+                      <span
+                        className={
+                          needsAttention ? "deployment-attention" : undefined
+                        }
+                      >
+                        {headline}
                       </span>
-                    ) : (
-                      "None"
-                    )}
-                  </td>
-                </tr>
-              ))}
+                      {item.lastFailure && (
+                        <small>Last failure: {item.lastFailure}</small>
+                      )}
+                      {/* The way in sits with the sentence that gives a reason
+                          to take it, which also keeps this table at four
+                          columns: a column of its own for one button forced a
+                          horizontal scroll in a narrow settings pane. */}
+                      <Button
+                        variant="secondary"
+                        compact
+                        onClick={() => setOpenDeployment(item.id)}
+                      >
+                        <ListChecks size={15} aria-hidden="true" />
+                        {item.targetCount}{" "}
+                        {item.targetCount === 1 ? "screen" : "screens"}
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
               {!deployments.isLoading &&
                 !deployments.error &&
                 platformDeployments.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="table-empty-state">
+                    <td colSpan={4} className="table-empty-state">
                       <CheckCircle2 size={18} aria-hidden="true" />
                       No {platformLabel} Player deployments have been created.
                     </td>
@@ -1184,6 +1216,14 @@ export function PlayerUpdatesPanel({
           </table>
         </TableContainer>
       </section>
+      {openDeployment && (
+        <UpdateDeploymentDrawer
+          deploymentId={openDeployment}
+          screens={screens.data?.items ?? []}
+          manageable={manageable}
+          onClose={() => setOpenDeployment(undefined)}
+        />
+      )}
     </div>
   );
 }
@@ -1291,14 +1331,7 @@ function rolloutSummary(item: UpdateDeployment) {
 }
 
 function outstandingSummary(item: UpdateDeployment) {
-  const parts = [
-    item.waitingForUserCount && `${item.waitingForUserCount} waiting for user`,
-    item.failedCount && `${item.failedCount} failed`,
-  ].filter(Boolean);
-  if (parts.length) return parts.join(" · ");
-  return item.succeededCount >= item.targetCount
-    ? "Every target succeeded"
-    : "Remaining targets in progress";
+  return `${item.succeededCount} of ${item.targetCount} updated`;
 }
 
 const RELEASE_FILE_NAMES: Record<PlayerPlatform, readonly string[]> = {
@@ -1518,12 +1551,13 @@ function UpdateStatus({ value }: { value: string }) {
 function mutationError(error: unknown) {
   return error instanceof Error ? error.message : "The request failed.";
 }
+// One vocabulary for a screen's update state, shared with the deployment drawer
+// so a state never reads one way in a table and another way in a detail view.
 export function playerUpdateStateLabel(state: string) {
-  return state === "waiting_for_user"
-    ? "Waiting for user — approval required on TV"
-    : state === "waiting_for_permission"
-      ? "Waiting for install permission"
-      : humanize(state);
+  const meaning = screenUpdateMeaning(state);
+  return meaning.detail
+    ? `${meaning.label} — ${meaning.detail}`
+    : meaning.label;
 }
 export function canDeployPlayerUpdates(role: string | undefined) {
   return role === "owner" || role === "administrator";

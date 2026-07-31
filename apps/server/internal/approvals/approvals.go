@@ -42,6 +42,12 @@ type SettingsReader interface {
 	Organization(ctx context.Context) (settings.Document, error)
 }
 
+// Querier is the part of pgx that both a pool and a transaction satisfy, so the
+// gate can run on its own or inside a caller's assignment transaction.
+type Querier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
 // Service records review decisions and answers whether content may be used.
 type Service struct {
 	db       *pgxpool.Pool
@@ -71,14 +77,34 @@ func (s *Service) Required(ctx context.Context) bool {
 
 // Gate returns nil when the content may be assigned to a screen.
 //
-// It is called from the assignment path rather than from the HTTP layer, so
-// single assignment, bulk assignment, and anything added later are all covered
-// by the same check.
+// This is the advisory form, for a caller that only reports what would happen —
+// the bulk preview. A caller that is about to write the assignment must use
+// GateTx instead, so the answer cannot go stale before it commits.
 func (s *Service) Gate(ctx context.Context, contentType string, id uuid.UUID) error {
+	return s.gate(ctx, s.db, contentType, id, false)
+}
+
+// GateTx is the gate inside the caller's assignment transaction, and it is what
+// every path that actually writes an assignment uses. Being in the assignment
+// path rather than the HTTP layer is what makes single assignment, bulk
+// assignment, and anything added later share one check.
+//
+// Reading the revision without a lock leaves a window: an edit that lands
+// between the check and the assignment's commit puts content on a screen whose
+// approval names the revision before the edit. The share lock closes it. A
+// concurrent edit blocks until the assignment commits and then bumps the
+// revision, which re-opens review the same way any other edit does. Share
+// rather than exclusive, so two assignments of the same playlist still proceed
+// together — they are not what has to be serialized here.
+func (s *Service) GateTx(ctx context.Context, tx pgx.Tx, contentType string, id uuid.UUID) error {
+	return s.gate(ctx, tx, contentType, id, true)
+}
+
+func (s *Service) gate(ctx context.Context, q Querier, contentType string, id uuid.UUID, lock bool) error {
 	if !s.Required(ctx) {
 		return nil
 	}
-	revision, err := s.currentRevision(ctx, contentType, id)
+	revision, err := s.currentRevision(ctx, q, contentType, id, lock)
 	if errors.Is(err, ErrNotFound) {
 		// Existence is the assignment path's business, not this one's.
 		return nil
@@ -87,7 +113,7 @@ func (s *Service) Gate(ctx context.Context, contentType string, id uuid.UUID) er
 		return err
 	}
 	var approved bool
-	if err := s.db.QueryRow(ctx, `
+	if err := q.QueryRow(ctx, `
 		SELECT EXISTS(
 			SELECT 1 FROM content_reviews
 			WHERE content_type=$1 AND content_id=$2 AND revision=$3 AND decision='approved')`,
@@ -108,24 +134,47 @@ func errUnapproved(contentType string) error {
 // currentRevision reads the revision a decision would apply to. For a Layout
 // that is the published revision: an unpublished draft cannot be assigned in
 // the first place, so there is nothing to review.
-func (s *Service) currentRevision(ctx context.Context, contentType string, id uuid.UUID) (int64, error) {
-	var query string
-	switch contentType {
-	case TypePlaylist:
-		query = `SELECT revision FROM playlists WHERE id=$1 AND deleted_at IS NULL`
-	case TypeLayout:
-		query = `SELECT r.revision FROM layouts l
-		         JOIN layout_revisions r ON r.id=l.published_revision_id
-		         WHERE l.id=$1 AND l.deleted_at IS NULL`
-	default:
-		return 0, fmt.Errorf("%w: unknown content type %q", ErrValidation, contentType)
+//
+// With lock set it takes a share lock on the one row an edit writes: the
+// playlists row, whose revision an edit bumps, or the layouts row, whose
+// published_revision_id a publish moves. Locking the revision row instead would
+// lock nothing useful, because a publish leaves the old revision untouched and
+// points elsewhere.
+func (s *Service) currentRevision(ctx context.Context, q Querier, contentType string, id uuid.UUID, lock bool) (int64, error) {
+	query, err := revisionQuery(contentType, lock)
+	if err != nil {
+		return 0, err
 	}
 	var revision int64
-	err := s.db.QueryRow(ctx, query, id).Scan(&revision)
+	err = q.QueryRow(ctx, query, id).Scan(&revision)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, ErrNotFound
 	}
 	return revision, err
+}
+
+func revisionQuery(contentType string, lock bool) (string, error) {
+	switch contentType {
+	case TypePlaylist:
+		query := `SELECT revision FROM playlists WHERE id=$1 AND deleted_at IS NULL`
+		if lock {
+			query += ` FOR SHARE`
+		}
+		return query, nil
+	case TypeLayout:
+		query := `SELECT r.revision FROM layouts l
+		         JOIN layout_revisions r ON r.id=l.published_revision_id
+		         WHERE l.id=$1 AND l.deleted_at IS NULL`
+		if lock {
+			// OF l, not the revision row: a publish leaves the old revision
+			// untouched and moves layouts.published_revision_id, so the layouts row
+			// is the one an assignment has to hold.
+			query += ` FOR SHARE OF l`
+		}
+		return query, nil
+	default:
+		return "", fmt.Errorf("%w: unknown content type %q", ErrValidation, contentType)
+	}
 }
 
 // Decide records an approval or a rejection for the content's current revision.
@@ -134,7 +183,11 @@ func (s *Service) currentRevision(ctx context.Context, contentType string, id uu
 // can never be recorded against a revision the reviewer did not see. If the
 // content changed while the review was open, the reviewer is told.
 func (s *Service) Decide(ctx context.Context, reviewer uuid.UUID, contentType string, id uuid.UUID, approve bool, note string, expectedRevision int64) (Review, error) {
-	revision, err := s.currentRevision(ctx, contentType, id)
+	// Unlocked on purpose. An edit that lands after this read leaves the decision
+	// recorded against the revision the reviewer saw, which is exactly a
+	// superseded decision: the content reads as pending again. The failure mode of
+	// locking here would be a reviewer holding an editor's save open.
+	revision, err := s.currentRevision(ctx, s.db, contentType, id, false)
 	if err != nil {
 		return Review{}, err
 	}

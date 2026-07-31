@@ -828,6 +828,37 @@ export type CountdownBar = CountdownBarInput & {
   createdAt: string;
   updatedAt: string;
 };
+
+export type BrandBugCorner =
+  "top_left" | "top_right" | "bottom_left" | "bottom_right";
+
+export type BrandBugInput = {
+  name: string;
+  corner: BrandBugCorner;
+  imageAssetId?: string | null;
+  text: string;
+  /** Logo width as a percentage of screen width. */
+  widthPercent: number;
+  /** Caption size as a percentage of screen height. */
+  textSizePercent: number;
+  opacityPercent: number;
+  /** Corner inset as a percentage of the screen's shorter edge. */
+  marginPercent: number;
+  textColor: string;
+  backgroundStyle: "none" | "scrim";
+  startsAt?: string | null;
+  endsAt?: string | null;
+  enabled: boolean;
+  priority: number;
+  targetScope: "all" | "screens" | "sync_groups" | "locations";
+  targetIds: string[];
+};
+
+export type BrandBug = BrandBugInput & {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+};
 export type ScheduleTarget = {
   type: "screen" | "group";
   id: string;
@@ -968,6 +999,60 @@ export type UpdateDeployment = {
   canarySize?: number;
   pauseReason?: string;
   lastFailure?: string;
+};
+export type UpdateDeploymentScreenState =
+  | "held"
+  | "pending"
+  | "offline"
+  | "downloading"
+  | "downloaded"
+  | "verifying"
+  | "ready"
+  | "waiting_for_permission"
+  | "waiting_for_user"
+  | "installing"
+  | "reconnecting"
+  | "succeeded"
+  | "failed"
+  | "cancelled"
+  | "incompatible"
+  | "already_current";
+export type UpdateDeploymentScreen = {
+  screenId: string;
+  screenName: string;
+  previousVersionCode: number | null;
+  expectedVersionCode: number;
+  downloadedBytes: number;
+  permissionStatus?: string;
+  installerStatus?: string;
+  state: UpdateDeploymentScreenState;
+  safeError?: string;
+  updatedAt: string;
+  isCanary: boolean;
+  downloadStartedAt?: string;
+  downloadedAt?: string;
+  installStartedAt?: string;
+  completedAt?: string;
+};
+// The detail read repeats the deployment header so a drawer can render without
+// the list row, and adds the artifact size that turns reported bytes into a
+// download percentage.
+export type UpdateDeploymentDetail = {
+  id: string;
+  name: string;
+  mode: string;
+  status: string;
+  createdAt: string;
+  completedAt?: string;
+  platform: PlayerPlatform;
+  versionCode: number;
+  versionName: string;
+  artifactSizeBytes: number;
+  rolloutMode: string;
+  rolloutPhase: string;
+  canarySize: number;
+  pauseReason?: string;
+  screens: UpdateDeploymentScreen[];
 };
 
 export type PairingRequest = {

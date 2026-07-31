@@ -7,8 +7,7 @@ import { MemoryRouter } from "react-router";
 import { SnapshotHistoryPanel } from "./SnapshotHistoryPanel";
 import { api } from "../api/client";
 
-const proofNote =
-  "A snapshot proves the Player rendered that frame. It does not prove the television was on, on the right input, or visible to anybody.";
+const proofNote = "Captured from Tilecast Player.";
 
 function renderPanel() {
   const client = new QueryClient({
@@ -53,7 +52,7 @@ describe("Snapshot history", () => {
     expect(await screen.findByText(/No snapshots yet/)).toBeTruthy();
   });
 
-  it("states what a snapshot does and does not prove", async () => {
+  it("shows the configured retention", async () => {
     vi.spyOn(api, "screenSnapshots").mockResolvedValue({
       items: [
         {
@@ -73,10 +72,7 @@ describe("Snapshot history", () => {
     });
     renderPanel();
     expect(
-      await screen.findByText(/does not prove the television was on/),
-    ).toBeTruthy();
-    expect(
-      screen.getByText(/Keeping up to 48 per screen for 7 days/),
+      await screen.findByText(/Retains up to 48 per screen for 7 days/),
     ).toBeTruthy();
   });
 

@@ -19,6 +19,15 @@ import (
 	"github.com/tilecast/tilecast/apps/server/internal/devices"
 )
 
+// deploymentRequest is a signed dashboard request. The update-deployment reads
+// narrow to the caller's screen scope, so they need a session the way the real
+// routes always have one.
+func deploymentRequest(method, target string, user uuid.UUID, role string) *http.Request {
+	request := httptest.NewRequest(method, target, nil)
+	return request.WithContext(context.WithValue(request.Context(), sessionContextKey,
+		auth.Session{User: auth.User{ID: user, Role: role}}))
+}
+
 func TestCreateUpdateDeploymentPersistsHistoryAndCommand(t *testing.T) {
 	databaseURL := os.Getenv("TEST_DATABASE_URL")
 	if databaseURL == "" {
@@ -122,7 +131,7 @@ func TestCreateUpdateDeploymentPersistsHistoryAndCommand(t *testing.T) {
 	}
 
 	historyResponse := httptest.NewRecorder()
-	s.listUpdateDeployments(historyResponse, httptest.NewRequest(http.MethodGet, "/api/v1/update-deployments", nil))
+	s.listUpdateDeployments(historyResponse, deploymentRequest(http.MethodGet, "/api/v1/update-deployments", userID, "owner"))
 	if historyResponse.Code != http.StatusOK {
 		t.Fatalf("history status=%d body=%s", historyResponse.Code, historyResponse.Body.String())
 	}
@@ -140,6 +149,70 @@ func TestCreateUpdateDeploymentPersistsHistoryAndCommand(t *testing.T) {
 	}
 	if len(history.Data.Items) != 1 || history.Data.Items[0].ID != created.Data.ID || history.Data.Items[0].TargetCount != 1 || history.Data.Items[0].LastFailure != "installer_conflict" {
 		t.Fatalf("deployment missing from history: %#v", history.Data.Items)
+	}
+
+	// The detail read has to stand on its own: Studio renders a per-screen status
+	// from it, which needs the release it installs, the artifact size that turns
+	// reported bytes into a percentage, and the version this screen came from.
+	detailResponse := httptest.NewRecorder()
+	s.getUpdateDeployment(detailResponse, routeContext(
+		deploymentRequest(http.MethodGet, "/api/v1/update-deployments/"+created.Data.ID.String(), userID, "owner"),
+		map[string]string{"id": created.Data.ID.String()}))
+	if detailResponse.Code != http.StatusOK {
+		t.Fatalf("detail status=%d body=%s", detailResponse.Code, detailResponse.Body.String())
+	}
+	var detail struct {
+		Data struct {
+			Name              string `json:"name"`
+			Mode              string `json:"mode"`
+			Status            string `json:"status"`
+			VersionName       string `json:"versionName"`
+			VersionCode       int64  `json:"versionCode"`
+			Platform          string `json:"platform"`
+			ArtifactSizeBytes int64  `json:"artifactSizeBytes"`
+			RolloutMode       string `json:"rolloutMode"`
+			Screens           []struct {
+				ScreenID            uuid.UUID `json:"screenId"`
+				ScreenName          string    `json:"screenName"`
+				State               string    `json:"state"`
+				SafeError           string    `json:"safeError"`
+				PreviousVersionCode *int64    `json:"previousVersionCode"`
+				ExpectedVersionCode int64     `json:"expectedVersionCode"`
+				IsCanary            bool      `json:"isCanary"`
+			} `json:"screens"`
+		} `json:"data"`
+	}
+	if err = json.Unmarshal(detailResponse.Body.Bytes(), &detail); err != nil {
+		t.Fatal(err)
+	}
+	// The read reconciles first, so the deployment reports completed: its only
+	// target reached a terminal state, even though that state was a failure.
+	if detail.Data.Name != "Tilecast Player 0.11.0" || detail.Data.Mode != "install_now" || detail.Data.Status != "completed" {
+		t.Errorf("detail header = %#v", detail.Data)
+	}
+	if detail.Data.VersionName != "0.11.0" || detail.Data.VersionCode != 11 || detail.Data.Platform != "android" || detail.Data.ArtifactSizeBytes != 1024 || detail.Data.RolloutMode != "full" {
+		t.Errorf("detail release facts = %#v", detail.Data)
+	}
+	if len(detail.Data.Screens) != 1 {
+		t.Fatalf("detail screens = %#v", detail.Data.Screens)
+	}
+	target := detail.Data.Screens[0]
+	if target.ScreenID != screenID || target.ScreenName != "Lobby" || target.State != "failed" || target.SafeError != "installer_conflict" {
+		t.Errorf("detail screen = %#v", target)
+	}
+	if target.PreviousVersionCode == nil || *target.PreviousVersionCode != 10 || target.ExpectedVersionCode != 11 || target.IsCanary {
+		t.Errorf("detail screen versions = %#v", target)
+	}
+
+	// An id that does not exist is a 404 rather than an empty screen list, so a
+	// stale link cannot render as a deployment that reaches nothing.
+	missing := httptest.NewRecorder()
+	unknown := uuid.New()
+	s.getUpdateDeployment(missing, routeContext(
+		deploymentRequest(http.MethodGet, "/api/v1/update-deployments/"+unknown.String(), userID, "owner"),
+		map[string]string{"id": unknown.String()}))
+	if missing.Code != http.StatusNotFound {
+		t.Errorf("unknown deployment status=%d, want 404", missing.Code)
 	}
 }
 
@@ -342,7 +415,7 @@ func TestStuckReconnectingTargetIsReconciled(t *testing.T) {
 		devices: devices.NewService(pool, devices.NewPresenceHub(), "http://localhost"),
 	}
 	recorder := httptest.NewRecorder()
-	s.listUpdateDeployments(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/update-deployments", nil))
+	s.listUpdateDeployments(recorder, deploymentRequest(http.MethodGet, "/api/v1/update-deployments", userID, "owner"))
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("list status=%d body=%s", recorder.Code, recorder.Body.String())
 	}

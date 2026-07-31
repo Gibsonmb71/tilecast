@@ -183,12 +183,41 @@
 
 /* Both tables were eight and nine columns wide and needed a horizontal
    scrollbar inside the settings column. Related facts are now paired inside a
-   cell, which lets the tables fit the available width. */
-.player-updates .player-updates-table {
-  min-width: 560px;
+   cell, which lets the tables fit the available width.
+
+   The proportional column layout below is chosen from the width of this
+   scroll container rather than the window: the settings column is a fraction of
+   the viewport, so a viewport query switched on fixed percentage columns while
+   the actual column was hundreds of pixels narrower, squeezing cells until
+   nowrap text ran over its neighbour. The container is the wrapper, not
+   `.player-updates`, because size containment on the panel would make it the
+   containing block for the fixed-position deployment drawer. */
+.player-updates .player-updates-table-wrap {
+  container: player-updates-table / inline-size;
 }
 
-.player-updates .player-updates-table th {
+/* One unconditional floor per table. This used to be 560px at wide viewports and
+   700px at narrow ones, which was a proxy for the panel width the container
+   query now measures directly. */
+.player-updates .player-updates-table {
+  min-width: 640px;
+}
+
+/* Four columns of prose fit the settings pane without a scrollbar. */
+.player-updates__history .player-updates-table {
+  min-width: 520px;
+}
+
+/* A legacy rule right-aligns the last cell of both tables, from when each ended
+   in an actions column. The history table now ends in a sentence. */
+.player-updates__history .player-updates-table :is(th, td):last-child {
+  text-align: left;
+}
+
+/* Column headings only. This used to match every `th`, so each row header — and,
+   through inheritance, its version-and-mode line — was also nowrap and ran over
+   the next column instead of wrapping. */
+.player-updates .player-updates-table thead th {
   min-width: 0;
   padding: var(--tc-space-2) var(--tc-space-3);
   color: var(--tc-text-secondary);
@@ -283,18 +312,27 @@
   gap: 6px;
 }
 
-.player-updates__history .player-updates-table :is(th, td):nth-child(4) {
+.player-updates__history .player-updates-table :is(th, td):nth-child(3) {
   font-variant-numeric: tabular-nums;
 }
 
-.player-updates__history .player-updates-table :is(th, td):nth-child(5) {
-  text-align: left;
+/* The sentence takes its own line so the control below it always starts one,
+   rather than trailing the last word when there is no failure line. */
+.player-updates__history .player-updates-table td:nth-child(4) > span {
+  display: block;
+}
+
+/* The detail action is one control on one line: at any width it reads "6
+   screens", never a number stranded above its own noun. */
+.player-updates__history .player-updates-table td:nth-child(4) .button {
+  margin-top: 6px;
+  white-space: nowrap;
 }
 
 /* Fixed proportions only while the settings column is wide enough to hold them.
    Below that the tables size to their content and scroll inside their own
    container, rather than shredding status text into five-line columns. */
-@media (min-width: 901px) {
+@container player-updates-table (min-width: 620px) {
   .player-updates .player-updates-table {
     table-layout: fixed;
   }
@@ -324,7 +362,8 @@
     width: 16%;
   }
 
-  /* History table: deployment | mode | status | progress | attention. */
+  /* History table: deployment | status | screens | needs, with the detail
+     action inside the last cell. */
   .player-updates__history .player-updates-table :is(th, td):nth-child(1) {
     width: 26%;
   }
@@ -338,11 +377,7 @@
   }
 
   .player-updates__history .player-updates-table :is(th, td):nth-child(4) {
-    width: 20%;
-  }
-
-  .player-updates__history .player-updates-table :is(th, td):nth-child(5) {
-    width: 14%;
+    width: 34%;
   }
 }
 
@@ -595,6 +630,289 @@
   font-weight: 600;
 }
 
+/* Deployment meter -------------------------------------------------------- */
+
+/* Four segments over one track: updated, waiting on a person, failed, still
+   moving. The legend repeats every segment as a number and a word, so the bar
+   never carries meaning in colour alone. */
+.deployment-meter {
+  display: grid;
+  gap: 6px;
+}
+
+.deployment-meter__track {
+  display: flex;
+  overflow: hidden;
+  height: 8px;
+  background: var(--tc-bg-subtle);
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-chip);
+}
+
+.deployment-meter--compact .deployment-meter__track {
+  height: 6px;
+}
+
+.deployment-meter__fill--success {
+  background: var(--tc-status-success);
+}
+
+.deployment-meter__fill--warning {
+  background: var(--tc-status-warning);
+}
+
+.deployment-meter__fill--danger {
+  background: var(--tc-status-danger);
+}
+
+.deployment-meter__fill--neutral {
+  background: var(--tc-status-neutral);
+}
+
+.deployment-meter__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--tc-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.deployment-meter__legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--tc-text-secondary);
+  font: var(--tc-text-supporting);
+}
+
+.deployment-meter--compact .deployment-meter__legend {
+  display: none;
+}
+
+/* Deployment drawer ------------------------------------------------------- */
+
+.deployment-drawer .drawer__body {
+  display: grid;
+  gap: var(--tc-space-4);
+  align-content: start;
+}
+
+.deployment-drawer__facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--tc-space-3);
+  margin: 0;
+}
+
+.deployment-drawer__facts dt {
+  color: var(--tc-text-secondary);
+  font: var(--tc-text-label);
+}
+
+.deployment-drawer__facts dd {
+  margin: 2px 0 0;
+  color: var(--tc-text-primary);
+  font: var(--tc-text-body);
+}
+
+.deployment-drawer__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--tc-space-2);
+}
+
+.deployment-drawer__search {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 var(--tc-space-2);
+  color: var(--tc-text-secondary);
+  background: var(--tc-bg-surface);
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-chip);
+}
+
+.deployment-drawer__search input {
+  min-width: 0;
+  width: 160px;
+  padding: 5px 0;
+  color: var(--tc-text-primary);
+  background: none;
+  border: 0;
+  font: var(--tc-text-body);
+}
+
+.deployment-drawer__search input:focus {
+  outline: none;
+}
+
+.deployment-drawer__empty {
+  margin: 0;
+  padding: var(--tc-space-5);
+  color: var(--tc-text-secondary);
+  background: var(--tc-bg-subtle);
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-panel);
+  font: var(--tc-text-supporting);
+  text-align: center;
+}
+
+.deployment-drawer__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--tc-space-3);
+}
+
+.deployment-drawer__footer span {
+  flex: 1 1 240px;
+  color: var(--tc-text-secondary);
+  font: var(--tc-text-supporting);
+  line-height: 1.45;
+}
+
+/* One row per screen ------------------------------------------------------ */
+
+.deployment-screen-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-panel);
+}
+
+.deployment-screen {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  gap: var(--tc-space-3);
+  padding: var(--tc-space-3);
+  border-top: 1px solid var(--tc-border-subtle);
+}
+
+.deployment-screen:first-child {
+  border-top: 0;
+}
+
+/* A left edge marks the rows a person has to do something about, so scanning a
+   long list does not depend on reading every status line. It repeats the status
+   tone rather than replacing it: the row still names its state in words. */
+.deployment-screen--attention {
+  box-shadow: inset 3px 0 0 var(--tc-status-warning);
+}
+
+.deployment-screen--attention:has(.status-dot-label--danger) {
+  box-shadow: inset 3px 0 0 var(--tc-status-danger);
+}
+
+.deployment-screen__identity strong {
+  display: block;
+  color: var(--tc-text-primary);
+  font: var(--tc-text-label);
+}
+
+.deployment-screen__identity small,
+.deployment-screen__status small {
+  display: block;
+  margin-top: 2px;
+  color: var(--tc-text-secondary);
+  font: var(--tc-text-supporting);
+  line-height: 1.4;
+}
+
+.deployment-screen__status {
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+}
+
+.deployment-screen__download {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+}
+
+.deployment-screen__download progress {
+  width: 100%;
+  height: 6px;
+}
+
+.deployment-screen__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.deployment-screen__actions time {
+  color: var(--tc-text-secondary);
+  font: var(--tc-text-supporting);
+  white-space: nowrap;
+}
+
+/* Stage trail ------------------------------------------------------------- */
+
+.deployment-stage-trail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--tc-space-2);
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.deployment-stage-trail li {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--tc-text-secondary);
+  font: var(--tc-text-supporting);
+}
+
+.deployment-stage-trail li > span {
+  width: 7px;
+  height: 7px;
+  background: var(--tc-bg-subtle);
+  border: 1px solid var(--tc-status-neutral-border);
+  border-radius: 50%;
+}
+
+.deployment-stage-trail li.is-complete > span {
+  background: var(--tc-status-success);
+  border-color: var(--tc-status-success);
+}
+
+.deployment-stage-trail li.is-current {
+  color: var(--tc-text-primary);
+  font-weight: 600;
+}
+
+.deployment-stage-trail li.is-current > span {
+  background: var(--tc-status-info);
+  border-color: var(--tc-status-info);
+}
+
+.deployment-stage-trail li.is-pending {
+  opacity: 0.65;
+}
+
+@media (max-width: 640px) {
+  .deployment-screen {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .deployment-screen__actions {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+}
+
 .player-updates-deploy-dialog p {
   margin: 0 0 var(--tc-space-3);
   color: var(--tc-text-secondary);
@@ -624,10 +942,6 @@
       "mode"
       "window"
       "canary";
-  }
-
-  .player-updates .player-updates-table {
-    min-width: 700px;
   }
 }
 

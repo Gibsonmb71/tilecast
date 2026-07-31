@@ -18,7 +18,7 @@ import {
   Settings,
   Upload,
 } from "lucide-react";
-import { useEffect, useRef, useState, type ComponentType } from "react";
+import { useEffect, useState, type ComponentType } from "react";
 import {
   Link,
   matchRoutes,
@@ -38,7 +38,7 @@ import {
   type BreadcrumbResource,
 } from "../navigation/studioRoutes";
 import { UploadContentDialog } from "./content-picker/UploadContentDialog";
-import { Button, Dialog, IconButton } from "./ui";
+import { Button, Dialog, IconButton, Popover } from "./ui";
 
 type CommandGroupName =
   | "Quick actions"
@@ -548,11 +548,7 @@ export function StudioTopbar({
   const location = useLocation();
   const queryClient = useQueryClient();
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [createOpen, setCreateOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
-  const notificationsRef = useRef<HTMLDivElement>(null);
-  const createRef = useRef<HTMLDivElement>(null);
   const breadcrumbs = useBreadcrumbs(routes, location.pathname);
   const screens = useQuery({
     queryKey: ["screens"],
@@ -573,33 +569,15 @@ export function StudioTopbar({
         event.preventDefault();
         setPaletteOpen(true);
       }
-      if (event.key === "Escape") {
-        setNotificationsOpen(false);
-        setCreateOpen(false);
-      }
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  // Popover dismisses itself on Escape, an outside press, and a route change.
   useEffect(() => {
-    setNotificationsOpen(false);
-    setCreateOpen(false);
     setPaletteOpen(false);
   }, [location.pathname]);
-
-  useEffect(() => {
-    if (!notificationsOpen && !createOpen) return;
-    const closeOutside = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (notificationsOpen && !notificationsRef.current?.contains(target))
-        setNotificationsOpen(false);
-      if (createOpen && !createRef.current?.contains(target))
-        setCreateOpen(false);
-    };
-    document.addEventListener("pointerdown", closeOutside);
-    return () => document.removeEventListener("pointerdown", closeOutside);
-  }, [createOpen, notificationsOpen]);
 
   return (
     <header className="topbar">
@@ -622,70 +600,78 @@ export function StudioTopbar({
         <kbd>{platformShortcut()}</kbd>
       </button>
       <div className="topbar__utilities">
-        <div className="topbar__notifications" ref={notificationsRef}>
-          <IconButton
-            label="Notifications"
-            aria-haspopup="menu"
-            aria-expanded={notificationsOpen}
-            onClick={() => {
-              setCreateOpen(false);
-              setNotificationsOpen((open) => !open);
-            }}
-          >
-            <Bell size={18} aria-hidden="true" />
-            {notifications.count > 0 && (
-              <span
-                className={`topbar__notification-badge topbar__notification-badge--${notifications.topPriority}`}
-                aria-hidden="true"
-              >
-                {notifications.count > 99 ? "99+" : notifications.count}
-              </span>
-            )}
-          </IconButton>
-          {notificationsOpen && (
-            <div className="topbar__popover topbar__alerts" role="menu">
-              <header>
-                <strong>Notifications</strong>
-                <span>{notifications.count || "No"} active</span>
-              </header>
-              {notifications.count === 0 ? (
-                <p>You&rsquo;re all caught up.</p>
-              ) : (
-                <div className="topbar__alert-groups">
-                  {notificationGroups.map((group) => {
-                    const groupItems = notifications.items.filter(
-                      (item) => item.priority === group.priority,
-                    );
-                    if (groupItems.length === 0) return null;
-                    return (
-                      <div className="topbar__alert-group" key={group.priority}>
-                        <p className="topbar__alert-group-label">
-                          {group.label}
-                          <span>{groupItems.length}</span>
-                        </p>
-                        <div className="topbar__alert-list">
-                          {groupItems.map((item) => (
-                            <Link key={item.id} role="menuitem" to={item.to}>
-                              <span
-                                className={`topbar__alert-marker topbar__alert-marker--${item.priority}`}
-                                aria-hidden
-                              />
-                              <span>
-                                <strong>{item.title}</strong>
-                                <small>{item.detail}</small>
-                              </span>
-                              <ChevronRight size={15} aria-hidden="true" />
-                            </Link>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+        {/* Not a menu: the panel carries a heading, a count, and labelled
+            groups, none of which an ARIA menu may contain — a screen reader
+            drops them and announces a bare item count. It is a labelled surface
+            holding grouped lists of links. */}
+        <Popover
+          label="Notifications"
+          className="topbar__notifications"
+          panelClassName="topbar__alerts"
+          width="22rem"
+          align="end"
+          trigger={(props) => (
+            <IconButton label="Notifications" {...props}>
+              <Bell size={18} aria-hidden="true" />
+              {notifications.count > 0 && (
+                <span
+                  className={`topbar__notification-badge topbar__notification-badge--${notifications.topPriority}`}
+                  aria-hidden="true"
+                >
+                  {notifications.count > 99 ? "99+" : notifications.count}
+                </span>
               )}
+            </IconButton>
+          )}
+        >
+          <header>
+            <strong>Notifications</strong>
+            <span>{notifications.count || "No"} active</span>
+          </header>
+          {notifications.count === 0 ? (
+            <p>You&rsquo;re all caught up.</p>
+          ) : (
+            <div className="topbar__alert-groups">
+              {notificationGroups.map((group) => {
+                const groupItems = notifications.items.filter(
+                  (item) => item.priority === group.priority,
+                );
+                if (groupItems.length === 0) return null;
+                return (
+                  <div className="topbar__alert-group" key={group.priority}>
+                    <p
+                      className="topbar__alert-group-label"
+                      id={`topbar-alert-group-${group.priority}`}
+                    >
+                      {group.label}
+                      <span>{groupItems.length}</span>
+                    </p>
+                    <ul
+                      className="topbar__alert-list"
+                      aria-labelledby={`topbar-alert-group-${group.priority}`}
+                    >
+                      {groupItems.map((item) => (
+                        <li key={item.id}>
+                          <Link to={item.to}>
+                            <span
+                              className={`topbar__alert-marker topbar__alert-marker--${item.priority}`}
+                              aria-hidden
+                            />
+                            <span>
+                              <strong>{item.title}</strong>
+                              <small>{item.detail}</small>
+                            </span>
+                            <ChevronRight size={15} aria-hidden="true" />
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                );
+              })}
             </div>
           )}
-        </div>
+        </Popover>
         <span className="topbar__divider" aria-hidden="true" />
         {canPair && (
           <Link
@@ -698,69 +684,49 @@ export function StudioTopbar({
           </Link>
         )}
         {canCreate && (
-          <div className="topbar__create" ref={createRef}>
-            <Button
-              variant="primary"
-              aria-haspopup="menu"
-              aria-expanded={createOpen}
-              onClick={() => {
-                setNotificationsOpen(false);
-                setCreateOpen((open) => !open);
-              }}
-            >
-              <Plus size={16} aria-hidden="true" /> Create
-              <ChevronDown size={15} aria-hidden="true" />
-            </Button>
-            {createOpen && (
-              <div className="topbar__popover topbar__create-menu" role="menu">
+          <Popover
+            label="Create"
+            mode="menu"
+            className="topbar__create"
+            panelClassName="topbar__create-menu"
+            align="end"
+            trigger={(props) => (
+              <Button variant="primary" {...props}>
+                <Plus size={16} aria-hidden="true" /> Create
+                <ChevronDown size={15} aria-hidden="true" />
+              </Button>
+            )}
+          >
+            {(close) => (
+              <>
                 <button
                   type="button"
                   role="menuitem"
                   onClick={() => {
-                    setCreateOpen(false);
+                    close();
                     setUploadOpen(true);
                   }}
                 >
                   <Upload size={16} aria-hidden="true" /> Upload media
                 </button>
-                <Link
-                  role="menuitem"
-                  to="/widgets/new"
-                  onClick={() => setCreateOpen(false)}
-                >
+                <Link role="menuitem" to="/widgets/new" onClick={close}>
                   <Blocks size={16} aria-hidden="true" /> Create widget
                 </Link>
-                <Link
-                  role="menuitem"
-                  to="/data-sources/new"
-                  onClick={() => setCreateOpen(false)}
-                >
+                <Link role="menuitem" to="/data-sources/new" onClick={close}>
                   <Database size={16} aria-hidden="true" /> Create data source
                 </Link>
-                <Link
-                  role="menuitem"
-                  to="/playlists?create=1"
-                  onClick={() => setCreateOpen(false)}
-                >
+                <Link role="menuitem" to="/playlists?create=1" onClick={close}>
                   <ListVideo size={16} aria-hidden="true" /> Create playlist
                 </Link>
-                <Link
-                  role="menuitem"
-                  to="/layouts?create=1"
-                  onClick={() => setCreateOpen(false)}
-                >
+                <Link role="menuitem" to="/layouts?create=1" onClick={close}>
                   <Layers3 size={16} aria-hidden="true" /> Create layout
                 </Link>
-                <Link
-                  role="menuitem"
-                  to="/schedules/new"
-                  onClick={() => setCreateOpen(false)}
-                >
+                <Link role="menuitem" to="/schedules/new" onClick={close}>
                   <CalendarClock size={16} aria-hidden="true" /> Create schedule
                 </Link>
-              </div>
+              </>
             )}
-          </div>
+          </Popover>
         )}
       </div>
       <CommandPalette

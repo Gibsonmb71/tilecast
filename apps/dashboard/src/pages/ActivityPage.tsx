@@ -1,6 +1,7 @@
 import {
   FilterBar,
   PageHeader,
+  Popover,
   TimeRangePicker,
   ViewTabs,
   resolveTimeRange,
@@ -383,51 +384,58 @@ export function ActivityPage() {
           label={`${activityTabs.find((item) => item.value === tab)?.label} filters`}
         >
           {tab === "proof" && (
-            <details className="activity-more-filters">
-              <summary>
-                <SlidersHorizontal size={15} />
-                <span>More filters</span>
-                {activeAdvanced.length > 0 && (
-                  <span className="activity-filter-count">
-                    {activeAdvanced.length}
-                  </span>
-                )}
-              </summary>
-              <div className="activity-more-filters-panel">
-                <header>
-                  <span>
-                    <strong>Advanced filters</strong>
-                    <small>Filter by an exact resource ID.</small>
-                  </span>
+            <Popover
+              label="Advanced filters"
+              className="activity-more-filters"
+              panelClassName="activity-more-filters-panel"
+              align="end"
+              trigger={(props) => (
+                <button
+                  type="button"
+                  className="signal-popover__filter-trigger"
+                  {...props}
+                >
+                  <SlidersHorizontal size={15} aria-hidden="true" />
+                  <span>More filters</span>
                   {activeAdvanced.length > 0 && (
-                    <button
-                      type="button"
-                      className="button button--quiet button--compact"
-                      onClick={() => {
-                        for (const filter of advancedProofFilters)
-                          set(filter.key, "");
-                      }}
-                    >
-                      Clear
-                    </button>
+                    <span className="signal-popover__count">
+                      {activeAdvanced.length}
+                    </span>
                   )}
-                </header>
-                <div className="activity-advanced-filter-grid">
-                  {advancedProofFilters.map((filter) => (
-                    <label key={filter.key}>
-                      <span>{filter.label} ID</span>
-                      <input
-                        value={values[filter.key] ?? ""}
-                        onChange={(event) =>
-                          set(filter.key, event.target.value)
-                        }
-                        placeholder={`${filter.label} ID`}
-                      />
-                    </label>
-                  ))}
+                </button>
+              )}
+            >
+              <div className="signal-popover__header">
+                <div>
+                  <strong>Advanced filters</strong>
+                  <small>Filter by an exact resource ID.</small>
                 </div>
+                {activeAdvanced.length > 0 && (
+                  <button
+                    type="button"
+                    className="button button--quiet button--compact"
+                    onClick={() => {
+                      for (const filter of advancedProofFilters)
+                        set(filter.key, "");
+                    }}
+                  >
+                    Clear
+                  </button>
+                )}
               </div>
-            </details>
+              <div className="activity-advanced-filter-grid">
+                {advancedProofFilters.map((filter) => (
+                  <label key={filter.key}>
+                    <span>{filter.label} ID</span>
+                    <input
+                      value={values[filter.key] ?? ""}
+                      onChange={(event) => set(filter.key, event.target.value)}
+                      placeholder={`${filter.label} ID`}
+                    />
+                  </label>
+                ))}
+              </div>
+            </Popover>
           )}
         </FilterBar>
       )}

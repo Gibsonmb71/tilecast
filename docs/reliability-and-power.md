@@ -15,6 +15,12 @@ safety net for older artifacts and hosts where mounting is unavailable. This
 supported runtime path preserves `$APPIMAGE` as the installed artifact path
 used by signed, atomic Studio updates.
 
+The managed systemd unit also runs a best-effort pre-start cleanup. It unmounts
+only FUSE filesystems under `/tmp/.mount_*` and removes only empty mount
+directories, so a failed legacy launcher can recover on the next systemd retry.
+The cleanup is not a substitute for `--appimage-extract-and-run`; it is a
+bounded recovery step for stale mounts left by older artifacts.
+
 Tilecast Player has two reliability modes. **Standard Reliability** works with a normally installed APK and provides cached startup, boot recovery, immersive fullscreen, keep-awake behavior, bounded playback recovery, safe mode, and locally approved Accessibility Control Assist. Android can still let a user leave the app. **Managed Kiosk** is effective only when Android confirms device-owner/device-policy provisioning and active lock task. Requesting it in policy is not proof that it is active.
 
 ## First-run commissioning

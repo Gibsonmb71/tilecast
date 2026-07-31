@@ -600,6 +600,58 @@ paths:
         "204": { description: Countdown Bar instance deleted }
         "403": { description: Owner or Administrator required }
         "404": { description: Instance not found }
+  /api/v1/plugins/brand-bug/instances:
+    get:
+      operationId: listBrandBugInstances
+      responses:
+        "200": { description: Configured Brand Bug instances }
+    post:
+      operationId: createBrandBugInstance
+      parameters:
+        - { $ref: "#/components/parameters/CSRFToken" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BrandBugInput" }
+      responses:
+        "201": { description: Brand Bug instance created }
+        "400":
+          description: Typed configuration, logo image, or targets are invalid
+        "403": { description: Owner or Administrator required }
+  /api/v1/plugins/brand-bug/instances/{id}:
+    get:
+      operationId: getBrandBugInstance
+      parameters:
+        - { $ref: "#/components/parameters/ResourceID" }
+      responses:
+        "200": { description: Brand Bug instance }
+        "404": { description: Instance not found }
+    put:
+      operationId: updateBrandBugInstance
+      parameters:
+        - { $ref: "#/components/parameters/ResourceID" }
+        - { $ref: "#/components/parameters/CSRFToken" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BrandBugInput" }
+      responses:
+        "200": { description: Brand Bug instance replaced }
+        "400":
+          description: Typed configuration, logo image, or targets are invalid
+        "403": { description: Owner or Administrator required }
+        "404": { description: Instance not found }
+    delete:
+      operationId: deleteBrandBugInstance
+      parameters:
+        - { $ref: "#/components/parameters/ResourceID" }
+        - { $ref: "#/components/parameters/CSRFToken" }
+      responses:
+        "204": { description: Brand Bug instance deleted }
+        "403": { description: Owner or Administrator required }
+        "404": { description: Instance not found }
   /api/v1/screens/pairing/{id}/reject:
     post:
       operationId: rejectPairing
@@ -2051,26 +2103,44 @@ paths:
         }
   /api/v1/update-deployments:
     get:
-      summary: List Player update deployments
+      summary: List Player update deployments, narrowed to the caller's screen scope
       responses: { "200": { description: Deployment list } }
     post:
       summary: Create a deduplicated screen and group deployment with an optional canary cohort
       responses:
         {
           "201": { description: Deployment created },
+          "403": { description: Targets outside the caller's screen scope },
           "422": { description: Invalid or unverified release/targets },
         }
   /api/v1/update-deployments/{id}:
     get:
-      summary: Read per-screen update state
-      responses: { "200": { description: Deployment detail } }
+      summary:
+        Read the deployment header, release artifact size, and per-screen update
+        state for the screens in the caller's scope
+      responses:
+        {
+          "200": { description: Deployment detail },
+          "404":
+            {
+              description: "Scoped callers only - unknown or reaching no screen in scope",
+            },
+        }
   /api/v1/update-deployments/{id}/cancel:
     post:
-      summary: Cancel pending update work
+      summary: Cancel pending update work on every screen the deployment reaches
       responses:
         {
           "200": { description: Cancelled },
-          "409": { description: Already complete },
+          "403": { description: Reaches screens outside the caller's scope },
+          "404":
+            {
+              description: "Scoped callers only - unknown or reaching no screen in scope",
+            },
+          "409":
+            {
+              description: "Already complete, or unknown to an unscoped caller",
+            },
         }
   /api/v1/update-deployments/{id}/screens/{screenId}/retry:
     post:
@@ -2078,6 +2148,7 @@ paths:
       responses:
         {
           "202": { description: Retry queued },
+          "404": { description: Screen outside the caller's scope },
           "409": { description: Retry not allowed },
         }
   /api/v1/player/updates/{releaseId}:
@@ -2238,6 +2309,52 @@ components:
             Percentage applied to the height-derived type size, so a bar can
             carry larger text without changing its height. 100 is the original
             appearance.
+        enabled: { type: boolean }
+        priority: { type: integer, minimum: -1000, maximum: 1000 }
+        targetScope: { enum: [all, screens, sync_groups, locations] }
+        targetIds:
+          type: array
+          uniqueItems: true
+          maxItems: 250
+          items: { type: string, format: uuid }
+    BrandBugInput:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          name,
+          corner,
+          text,
+          widthPercent,
+          textSizePercent,
+          opacityPercent,
+          marginPercent,
+          textColor,
+          backgroundStyle,
+          enabled,
+          priority,
+          targetScope,
+          targetIds,
+        ]
+      description:
+        A mark needs a logo image, text, or both. Sizes are percentages of the
+        screen so one instance reads the same at any panel resolution.
+      properties:
+        name: { type: string, minLength: 1, maxLength: 180 }
+        corner: { enum: [top_left, top_right, bottom_left, bottom_right] }
+        imageAssetId:
+          type: [string, "null"]
+          format: uuid
+          description: A ready image in the Media library.
+        text: { type: string, maxLength: 180 }
+        widthPercent: { type: integer, minimum: 2, maximum: 40 }
+        textSizePercent: { type: integer, minimum: 1, maximum: 12 }
+        opacityPercent: { type: integer, minimum: 10, maximum: 100 }
+        marginPercent: { type: integer, minimum: 0, maximum: 20 }
+        textColor: { type: string, pattern: "^#[0-9a-fA-F]{6}$" }
+        backgroundStyle: { enum: [none, scrim] }
+        startsAt: { type: [string, "null"], format: date-time }
+        endsAt: { type: [string, "null"], format: date-time }
         enabled: { type: boolean }
         priority: { type: integer, minimum: -1000, maximum: 1000 }
         targetScope: { enum: [all, screens, sync_groups, locations] }

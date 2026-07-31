@@ -86,6 +86,7 @@ import type {
   GitHubDeviceStart,
   GitHubDevicePoll,
   UpdateDeployment,
+  UpdateDeploymentDetail,
   UptimeReport,
   UptimeWindow,
   ReliabilityStatus,
@@ -120,6 +121,8 @@ import type {
   BackupJob,
   BackupRestorePlan,
   PluginSummary,
+  BrandBug,
+  BrandBugInput,
   DependencyGraph,
   CountdownBar,
   CountdownBarInput,
@@ -607,6 +610,17 @@ export const api = {
     }),
   updateDeployments: () =>
     request<{ items: UpdateDeployment[] }>("/update-deployments"),
+  updateDeployment: (id: string) =>
+    request<UpdateDeploymentDetail>(`/update-deployments/${id}`),
+  retryUpdateScreen: (
+    deploymentId: string,
+    screenId: string,
+    csrfToken: string,
+  ) =>
+    request<{ state: string }>(
+      `/update-deployments/${deploymentId}/screens/${screenId}/retry`,
+      { method: "POST", headers: { "X-CSRF-Token": csrfToken } },
+    ),
   createUpdateDeployment: (
     input: {
       releaseId: string;
@@ -1019,6 +1033,29 @@ export const api = {
     }),
   deleteCountdownBar: (id: string, csrfToken: string) =>
     request<void>(`/plugins/countdown-bar/instances/${id}`, {
+      method: "DELETE",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
+  brandBugs: () =>
+    request<{ items: BrandBug[]; total: number }>(
+      "/plugins/brand-bug/instances",
+    ),
+  brandBug: (id: string) =>
+    request<BrandBug>(`/plugins/brand-bug/instances/${id}`),
+  createBrandBug: (input: BrandBugInput, csrfToken: string) =>
+    request<BrandBug>("/plugins/brand-bug/instances", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  updateBrandBug: (id: string, input: BrandBugInput, csrfToken: string) =>
+    request<BrandBug>(`/plugins/brand-bug/instances/${id}`, {
+      method: "PUT",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  deleteBrandBug: (id: string, csrfToken: string) =>
+    request<void>(`/plugins/brand-bug/instances/${id}`, {
       method: "DELETE",
       headers: { "X-CSRF-Token": csrfToken },
     }),

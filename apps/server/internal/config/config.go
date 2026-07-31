@@ -41,9 +41,17 @@ type NotificationsConfig struct {
 	SMTPPassword string
 	// starttls, implicit, or none.
 	SMTPTLS string
-	// Accepts a self-signed relay certificate and allows authentication on an
-	// unencrypted connection. For a mail server on the same host only.
+	// Accepts a relay certificate that no public authority signed, for a mail
+	// server inside the installation. It does not permit sending credentials in
+	// the clear.
 	SMTPAllowInsecure bool
+	// Permits SMTP authentication on a connection with no encryption at all.
+	//
+	// Separate from SMTPAllowInsecure because trusting a private certificate and
+	// putting a mail password on the wire in plaintext are different decisions
+	// with different consequences, and an operator who makes the first should not
+	// silently have made the second.
+	SMTPAllowPlaintextAuth bool
 }
 
 // WebAuthnConfig overrides the relying party that is otherwise derived from
@@ -221,6 +229,13 @@ func Load() (Config, error) {
 	cfg.Notifications.SMTPAllowInsecure, err = strconv.ParseBool(get("TILECAST_SMTP_ALLOW_INSECURE", "false"))
 	if err != nil {
 		return Config{}, fmt.Errorf("parse TILECAST_SMTP_ALLOW_INSECURE: %w", err)
+	}
+	// Defaults to false on its own rather than following ALLOW_INSECURE: putting
+	// a mail password on the wire in plaintext is a decision an operator has to
+	// make deliberately, not one that comes along with a private certificate.
+	cfg.Notifications.SMTPAllowPlaintextAuth, err = strconv.ParseBool(get("TILECAST_SMTP_ALLOW_PLAINTEXT_AUTH", "false"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parse TILECAST_SMTP_ALLOW_PLAINTEXT_AUTH: %w", err)
 	}
 	takeoverDurationFallback := get("TILECAST_MAX_EMERGENCY_DURATION_HOURS", "24")
 	takeoverTargetsFallback := get("TILECAST_MAX_EMERGENCY_TARGETS", "250")

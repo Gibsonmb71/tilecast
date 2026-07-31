@@ -10,12 +10,45 @@ const scopeLabels: Record<IntegrationScope, string> = {
   "activity:read": "Read fleet health",
 };
 const scopeDescriptions: Record<IntegrationScope, string> = {
-  "data_source:write":
-    "Replace the rows of a Manual Table Data Source. It cannot create or delete a Data Source, and it cannot change the columns Widgets are bound to.",
+  "data_source:write": "Replace rows in selected Manual Table Data Sources.",
   "activity:read":
     "Read counts of screens by reporting state, unresolved incidents, and content problems, as JSON or Prometheus metrics.",
 };
 const allScopes = Object.keys(scopeLabels) as IntegrationScope[];
+
+// An expiry is a date an operator picks, not an instant. It is read as the end of
+// that day in their own time, so a token chosen to expire today still works for
+// the rest of today.
+// The date input speaks YYYY-MM-DD, built from local calendar parts so the
+// earliest choice is today where the operator is, not wherever UTC has got to.
+function localDate(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+function endOfDay(date: string): string | undefined {
+  if (!date) return undefined;
+  const [year, month, day] = date.split("-").map(Number);
+  if (!year || !month || !day) return undefined;
+  return new Date(year, month - 1, day, 23, 59, 59, 999).toISOString();
+}
+
+// Revoked, expired, and active are three different answers, and an operator
+// chasing a system that stopped working has to be able to tell which one it is.
+// A revoked token reads as revoked even after its expiry passes: that is the
+// decision somebody made.
+function status(token: IntegrationToken): "Revoked" | "Expired" | "Active" {
+  if (token.revokedAt) return "Revoked";
+  if (token.expiresAt && new Date(token.expiresAt).getTime() <= Date.now())
+    return "Expired";
+  return "Active";
+}
+
+function expiryNote(token: IntegrationToken): string | undefined {
+  if (!token.expiresAt) return undefined;
+  return `Expiry ${new Date(token.expiresAt).toLocaleDateString()}`;
+}
 
 export function IntegrationTokensPanel({ owner }: { owner: boolean }) {
   const auth = useAuth();
@@ -45,6 +78,7 @@ export function IntegrationTokensPanel({ owner }: { owner: boolean }) {
     "data_source:write",
   ]);
   const [sourceIds, setSourceIds] = useState<string[]>([]);
+  const [expiresOn, setExpiresOn] = useState("");
   const [secret, setSecret] = useState<string>();
   const [notice, setNotice] = useState<string>();
 
@@ -60,6 +94,7 @@ export function IntegrationTokensPanel({ owner }: { owner: boolean }) {
           dataSourceIds: scopes.includes("data_source:write")
             ? sourceIds
             : undefined,
+          expiresAt: endOfDay(expiresOn),
         },
         csrf,
       ),
@@ -68,6 +103,7 @@ export function IntegrationTokensPanel({ owner }: { owner: boolean }) {
       setNotice(data.notice);
       setName("");
       setSourceIds([]);
+      setExpiresOn("");
       void refresh();
     },
   });
@@ -96,17 +132,12 @@ export function IntegrationTokensPanel({ owner }: { owner: boolean }) {
       <section className="settings-subsection">
         <header>
           <h3>Integration tokens</h3>
-          <p>
-            Let another system write a Manual Table Data Source, or let your
-            monitoring read fleet health, without sharing a Studio password. A
-            token can never do more than the capabilities listed below.
-          </p>
+          <p>Grant selected integrations without sharing a Studio password.</p>
         </header>
 
         {secret && (
           <div className="notice" role="status">
-            <strong>Copy this token now.</strong> Tilecast does not show it
-            again, and no endpoint reads it back.
+            <strong>Copy this token now.</strong> Shown once.
             <pre className="secret-value">{secret}</pre>
             {notice}
             <div>
@@ -140,14 +171,15 @@ export function IntegrationTokensPanel({ owner }: { owner: boolean }) {
                   </span>
                   <span>
                     <span
-                      className={`status-badge status-badge--${token.revokedAt ? "offline" : "online"}`}
+                      className={`status-badge status-badge--${status(token) === "Active" ? "online" : "offline"}`}
                     >
-                      {token.revokedAt ? "Revoked" : "Active"}
+                      {status(token)}
                     </span>
                     {" · "}
                     {token.lastUsedAt
                       ? `Last used ${new Date(token.lastUsedAt).toLocaleString()}`
                       : "Never used"}
+                    {expiryNote(token) ? ` · ${expiryNote(token)}` : ""}
                     {token.dataSourceIds.length > 0
                       ? ` · Limited to ${token.dataSourceIds.length} Data Source${token.dataSourceIds.length === 1 ? "" : "s"}`
                       : ""}
@@ -229,6 +261,28 @@ export function IntegrationTokensPanel({ owner }: { owner: boolean }) {
                   </span>
                 </label>
               ))}
+            </div>
+          </div>
+
+          <div className="setting-row">
+            <div className="setting-copy">
+              <label htmlFor="token-expires">Expires on</label>
+              <p>
+                The token stops working at the end of this day. Leave it empty
+                for a token that never expires, and revoke it when the system
+                using it is retired.
+              </p>
+            </div>
+            <div className="setting-control">
+              <input
+                id="token-expires"
+                type="date"
+                value={expiresOn}
+                // Today is the earliest useful choice: it expires tonight. The
+                // server refuses anything already past regardless.
+                min={localDate(new Date())}
+                onChange={(event) => setExpiresOn(event.target.value)}
+              />
             </div>
           </div>
 

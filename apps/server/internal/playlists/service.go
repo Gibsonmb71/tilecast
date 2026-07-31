@@ -26,8 +26,9 @@ type Service struct {
 	definitions *contentdefs.Catalog
 	plugins     PluginProjector
 	// approvalGate refuses assignment of content that is waiting for review.
-	// Nil means this installation does not gate assignment at all.
-	approvalGate func(ctx context.Context, contentType string, id uuid.UUID) error
+	// Nil means this installation does not gate assignment at all. It runs inside
+	// the assignment transaction so the answer cannot go stale before the commit.
+	approvalGate func(ctx context.Context, tx pgx.Tx, contentType string, id uuid.UUID) error
 }
 
 type SourceProjector interface {
@@ -49,9 +50,25 @@ func (s *Service) SetContentDefinitions(catalog *contentdefs.Catalog) { s.defini
 func (s *Service) SetPluginProjector(projector PluginProjector)       { s.plugins = projector }
 
 // SetApprovalGate installs the content review check used by every assignment
-// path.
-func (s *Service) SetApprovalGate(gate func(ctx context.Context, contentType string, id uuid.UUID) error) {
+// path. The gate takes the assignment's own transaction: it locks the content
+// against a concurrent edit, and that lock is only worth anything if it is held
+// until the assignment commits.
+func (s *Service) SetApprovalGate(gate func(ctx context.Context, tx pgx.Tx, contentType string, id uuid.UUID) error) {
 	s.approvalGate = gate
+}
+
+// passApprovalGate runs the review check for whichever presentation an
+// assignment names. Exactly one of playlistID and layoutID is set by the time
+// it is called. It is a no-op unless the approval feature is wired in.
+func (s *Service) passApprovalGate(ctx context.Context, tx pgx.Tx, playlistID, layoutID *uuid.UUID) error {
+	if s.approvalGate == nil {
+		return nil
+	}
+	contentType, contentID := "layout", layoutID
+	if playlistID != nil {
+		contentType, contentID = "playlist", playlistID
+	}
+	return s.approvalGate(ctx, tx, contentType, *contentID)
 }
 
 func (s *Service) Create(ctx context.Context, userID uuid.UUID, name, description, sourceType string) (Playlist, error) {
@@ -929,23 +946,21 @@ func (s *Service) AssignPresentation(ctx context.Context, screenID uuid.UUID, pl
 	if (playlistID == nil) == (layoutID == nil) {
 		return Assignment{}, errors.New("assignment requires exactly one presentation")
 	}
-	// Review is checked here rather than in the HTTP layer so single
-	// assignment, bulk assignment, and anything added later all pass through
-	// it. The gate is nil unless the approval feature is wired in.
-	if s.approvalGate != nil {
-		contentType, contentID := "layout", layoutID
-		if playlistID != nil {
-			contentType, contentID = "playlist", playlistID
-		}
-		if err := s.approvalGate(ctx, contentType, *contentID); err != nil {
-			return Assignment{}, err
-		}
-	}
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return Assignment{}, err
 	}
 	defer tx.Rollback(ctx)
+	// Review is checked here rather than in the HTTP layer so single
+	// assignment, bulk assignment, and anything added later all pass through
+	// it. The gate is nil unless the approval feature is wired in.
+	//
+	// Inside the transaction, and before anything is written: the gate locks the
+	// content against a concurrent edit, and an edit that arrives now waits for
+	// this assignment rather than slipping between the check and the commit.
+	if err := s.passApprovalGate(ctx, tx, playlistID, layoutID); err != nil {
+		return Assignment{}, err
+	}
 	var exists bool
 	if playlistID != nil {
 		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM playlists WHERE id=$1 AND deleted_at IS NULL)`, playlistID).Scan(&exists)
@@ -1087,6 +1102,12 @@ func (s *Service) AssignGroupPresentation(ctx context.Context, groupID uuid.UUID
 		return err
 	}
 	defer tx.Rollback(ctx)
+	// A sync group assignment reaches every screen in the group, so it is an
+	// assignment path like any other and passes the same gate, in the same
+	// transaction.
+	if err := s.passApprovalGate(ctx, tx, playlistID, layoutID); err != nil {
+		return err
+	}
 	var valid bool
 	if playlistID != nil {
 		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM screen_groups g JOIN playlists p ON p.organization_id=g.organization_id WHERE g.id=$1 AND g.deleted_at IS NULL AND p.id=$2 AND p.deleted_at IS NULL)`, groupID, playlistID).Scan(&valid)
@@ -1612,6 +1633,9 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 			return Manifest{}, "", err
 		}
 	}
+	if err = s.projectPluginAssets(ctx, &manifest, seen); err != nil {
+		return Manifest{}, "", err
+	}
 	// Project the shared dataset for every Data Source every data-driven widget in
 	// the manifest references. Release-defined widgets may reference more than one.
 	for _, widget := range append([]ManifestWidget(nil), manifest.Widgets...) {
@@ -1847,6 +1871,62 @@ func (s *Service) projectWidgetAssets(ctx context.Context, manifest *Manifest, w
 	asset.DownloadPath = "/api/v1/player/assets/" + asset.AssetID.String() + "/variants/" + asset.VariantID.String()
 	configuration["imageVariantId"] = asset.VariantID.String()
 	widget.Configuration, _ = json.Marshal(configuration)
+	if !seen[asset.VariantID] {
+		manifest.Assets = append(manifest.Assets, asset)
+		seen[asset.VariantID] = true
+	}
+	return nil
+}
+
+// projectPluginAssets resolves media a built-in plugin references. Brand Bug is
+// the only plugin with media today: its logo becomes a normal manifest asset so
+// the Player verifies and caches it like any other image and keeps drawing the
+// mark offline.
+//
+// A logo that has become unavailable since the instance was saved drops to a
+// text-only mark rather than failing the manifest — one deleted image must not
+// cost a screen its entire content.
+func (s *Service) projectPluginAssets(ctx context.Context, manifest *Manifest, seen map[uuid.UUID]bool) error {
+	kept := make([]plugins.ManifestPlugin, 0, len(manifest.Plugins))
+	for _, plugin := range manifest.Plugins {
+		config, ok := plugin.Config.(*plugins.ManifestBrandBugConfig)
+		if !ok {
+			kept = append(kept, plugin)
+			continue
+		}
+		if err := s.resolveBrandBugLogo(ctx, manifest, config, seen); err != nil {
+			return err
+		}
+		// A mark left with no logo and no text has nothing to draw; publishing it
+		// would only give the Player an empty corner to reason about.
+		if config.ImageAssetID != nil || strings.TrimSpace(config.Text) != "" {
+			kept = append(kept, plugin)
+		}
+	}
+	manifest.Plugins = kept
+	return nil
+}
+
+func (s *Service) resolveBrandBugLogo(ctx context.Context, manifest *Manifest, config *plugins.ManifestBrandBugConfig, seen map[uuid.UUID]bool) error {
+	if config.ImageAssetID == nil {
+		return nil
+	}
+	var asset ManifestAsset
+	err := s.db.QueryRow(ctx, `SELECT v.asset_id,v.id,v.mime_type,encode(v.sha256,'hex'),v.file_size,v.width,v.height,v.duration_seconds
+		FROM asset_variants v JOIN assets a ON a.id=v.asset_id AND a.type='image' AND a.deleted_at IS NULL
+		WHERE v.asset_id=$1 AND v.deleted_at IS NULL AND v.player_compatible=TRUE
+		ORDER BY CASE v.kind WHEN 'playback' THEN 0 WHEN 'original' THEN 1 ELSE 2 END LIMIT 1`, *config.ImageAssetID).
+		Scan(&asset.AssetID, &asset.VariantID, &asset.MIMEType, &asset.SHA256, &asset.FileSize, &asset.Width, &asset.Height, &asset.DurationSeconds)
+	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		config.ImageAssetID = nil
+		return nil
+	}
+	asset.DownloadPath = "/api/v1/player/assets/" + asset.AssetID.String() + "/variants/" + asset.VariantID.String()
+	variantID := asset.VariantID
+	config.ImageVariantID = &variantID
 	if !seen[asset.VariantID] {
 		manifest.Assets = append(manifest.Assets, asset)
 		seen[asset.VariantID] = true

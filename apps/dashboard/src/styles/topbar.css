@@ -177,21 +177,11 @@
   background: var(--tc-divider);
 }
 
-.topbar__popover {
-  position: absolute;
-  z-index: 50;
-  top: calc(100% + var(--tc-space-2));
-  right: 0;
-  overflow: hidden;
-  color: var(--tc-text-primary);
-  background: var(--tc-bg-elevated);
-  border: 1px solid var(--tc-border-default);
-  border-radius: var(--tc-radius-overlay);
-  box-shadow: var(--tc-shadow-overlay);
-}
-
+/* Header, group labels, and rows each run edge to edge, so the panel itself
+   carries no padding. */
 .topbar__alerts {
-  width: min(360px, calc(100vw - var(--tc-space-8)));
+  display: grid;
+  padding: 0;
 }
 
 .topbar__alerts > header {
@@ -244,6 +234,9 @@
 
 .topbar__alert-list {
   display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .topbar__alert-list a {
@@ -257,7 +250,7 @@
   text-decoration: none;
 }
 
-.topbar__alert-list a:last-child {
+.topbar__alert-list li:last-child a {
   border-bottom: 0;
 }
 
@@ -310,8 +303,6 @@
 
 .topbar__create-menu {
   display: grid;
-  width: 210px;
-  padding: var(--tc-space-2);
 }
 
 .topbar__create-menu a,

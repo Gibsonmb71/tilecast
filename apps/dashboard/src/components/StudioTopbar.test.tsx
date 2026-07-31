@@ -215,9 +215,12 @@ describe("StudioTopbar", () => {
     expect(screen.getByRole("button", { name: /Create/ })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
     expect(
-      (
-        await screen.findByRole("menuitem", { name: /Amazon AFTKRT/ })
-      ).getAttribute("href"),
+      await screen.findByRole("dialog", { name: "Notifications" }),
+    ).toBeTruthy();
+    expect(
+      (await screen.findByRole("link", { name: /Amazon AFTKRT/ })).getAttribute(
+        "href",
+      ),
     ).toBe("/screens/screen-1");
   });
 
@@ -257,7 +260,7 @@ describe("StudioTopbar", () => {
 
     expect(
       (
-        await screen.findByRole("menuitem", { name: /Winter rollout/ })
+        await screen.findByRole("link", { name: /Winter rollout/ })
       ).getAttribute("href"),
     ).toBe("/settings/player/updates");
     expect(screen.getByText("Critical")).toBeTruthy();
@@ -265,9 +268,12 @@ describe("StudioTopbar", () => {
     expect(screen.getByText("Info")).toBeTruthy();
     expect(
       screen
-        .getByRole("menuitem", { name: /Screens awaiting approval/ })
+        .getByRole("link", { name: /Screens awaiting approval/ })
         .getAttribute("href"),
     ).toBe("/screens/pair");
+    // The three priority labels above name their own list, which an ARIA menu
+    // could not have carried.
+    expect(screen.getByRole("list", { name: /Critical/ })).toBeTruthy();
   });
 
   it("offers creation actions for the full content workflow", () => {

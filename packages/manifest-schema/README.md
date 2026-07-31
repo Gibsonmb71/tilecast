@@ -16,6 +16,8 @@ Manifests v11-v14 may also carry the optional typed `plugins` projection. Built-
 
 `alert_ticker@1` is the second discriminator: one live Emergency Alerts message delivered as a bar rather than as a Takeover, with the same `overlay`/`push` geometry, a named scroll speed, and an `expiresAt` the Player enforces against its own corrected clock so a cached manifest cannot keep an alert on screen indefinitely. Adding a discriminator is additive in the same way: a Player that predates a type ignores that entry and renders the rest of the array.
 
+`brand_bug@1` is the third discriminator: a mark held in one screen corner over all normal content. It carries its corner, resolved logo asset and variant, screen-relative sizing, and optional date window, and its logo appears in `assets` like any other required image.
+
 Time-series points may carry one `value` or a bounded `values` object for multi-series charts. Capability revision 2 covers native charts, asset images, target progress, repeat indexes, and richer conditions without changing the presentation schema version.
 
 Native presentation schema v1 may also use the capability-gated `playback.auto_skip@1` behavior. Eligible definitions place `autoSkipWhenEmpty` and a bounded presentation condition in the root node properties. Players that report the capability evaluate that condition locally and may advance an unsynchronized fullscreen playlist item; other placements retain the normal empty-state render.

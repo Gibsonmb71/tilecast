@@ -246,8 +246,7 @@ export const sectionDetails: Record<
   notifications: {
     icon: BellRing,
     title: "Notifications",
-    description:
-      "Where Tilecast reports a problem when nobody has Studio open. Each account chooses what it receives under My preferences.",
+    description: "Send alerts by email or webhook.",
   },
   system: {
     icon: Wrench,
@@ -263,14 +262,12 @@ export const sectionDetails: Record<
   snapshots: {
     icon: Camera,
     title: "Snapshot history",
-    description:
-      "Keep periodic images of what screens showed. A snapshot proves the Player rendered that frame; it does not prove the television was on or on the right input.",
+    description: "Periodic Player screenshots with configurable retention.",
   },
   integrations: {
     icon: KeyRound,
     title: "Integration tokens",
-    description:
-      "Let another system write a Manual Table Data Source, or let your monitoring read fleet health, with a token that can do nothing else.",
+    description: "Scoped tokens for Manual Tables and fleet health.",
   },
   "import-export": {
     icon: ArrowLeftRight,

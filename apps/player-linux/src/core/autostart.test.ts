@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   AutostartInstaller,
   COLD_BOOT_WINDOW_SECONDS,
+  FUSE_RECOVERY_COMMAND,
   GENERATED_MARKER,
   UNIT_NAME,
   coldBootLaunchVerified,
@@ -130,6 +131,9 @@ describe("renderUnit", () => {
       },
     });
     expect(unit).toContain(GENERATED_MARKER);
+    expect(unit).toContain(
+      `ExecStartPre=/bin/sh -c ${unitQuote(FUSE_RECOVERY_COMMAND)}`,
+    );
     expect(unit).toContain(`ExecStart=${APP_IMAGE} --appimage-extract-and-run`);
     expect(unit).toContain("Environment=WAYLAND_DISPLAY=wayland-1");
     expect(unit).not.toContain("DISPLAY=:0");
@@ -163,6 +167,10 @@ describe("renderUnit", () => {
     expect(unitSection).toContain("StartLimitIntervalSec=0");
     expect(unit).toContain("Restart=always");
     expect(unit).toContain("RestartSec=5");
+    expect(unit).toContain("findmnt -rn -o TARGET,FSTYPE");
+    expect(unit).toContain("fusermount3 -uz");
+    expect(unit).toContain("rmdir");
+    expect(unit).not.toContain("rm -rf");
     // default.target has no session to be part of.
     expect(unit).not.toContain("PartOf=");
   });
