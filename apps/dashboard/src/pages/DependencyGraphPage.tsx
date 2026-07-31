@@ -15,6 +15,7 @@ import {
   Search,
   Users,
   WandSparkles,
+  X,
   ZoomIn,
   ZoomOut,
   type LucideIcon,
@@ -338,18 +339,18 @@ export function DependencyGraphPage() {
       )
     : [];
   const needle = search.trim().toLocaleLowerCase();
-  const matchingKeys = useMemo(
+  const matchingNodes = useMemo(
     () =>
-      new Set(
-        data.nodes
-          .filter(
-            (node) =>
-              (type === "all" || node.type === type) &&
-              (!needle || node.name.toLocaleLowerCase().includes(needle)),
-          )
-          .map((node) => nodeKey(node.type, node.id)),
+      data.nodes.filter(
+        (node) =>
+          (type === "all" || node.type === type) &&
+          (!needle || node.name.toLocaleLowerCase().includes(needle)),
       ),
     [data.nodes, needle, type],
+  );
+  const matchingKeys = useMemo(
+    () => new Set(matchingNodes.map((node) => nodeKey(node.type, node.id))),
+    [matchingNodes],
   );
   const filtering = type !== "all" || Boolean(needle);
 
@@ -392,16 +393,24 @@ export function DependencyGraphPage() {
   };
 
   const handleWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
+    if (
+      (event.target as HTMLElement).closest(
+        ".dependency-detail, .dependency-graph-toolbar",
+      )
+    ) {
+      return;
+    }
     event.preventDefault();
     const bounds = canvasRef.current?.getBoundingClientRect();
     if (!bounds) return;
     const pointerX = event.clientX - bounds.left;
     const pointerY = event.clientY - bounds.top;
     setViewport((current) => {
-      const nextScale = Math.min(
-        1.8,
-        Math.max(0.22, current.scale * (event.deltaY > 0 ? 0.9 : 1.1)),
+      const factor = Math.min(
+        1.06,
+        Math.max(0.94, Math.exp(-event.deltaY * 0.0012)),
       );
+      const nextScale = Math.min(1.8, Math.max(0.22, current.scale * factor));
       const worldX = (pointerX - current.x) / current.scale;
       const worldY = (pointerY - current.y) / current.scale;
       return {
@@ -413,7 +422,13 @@ export function DependencyGraphPage() {
   };
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if ((event.target as HTMLElement).closest(".dependency-graph-node")) return;
+    if (
+      (event.target as HTMLElement).closest(
+        ".dependency-graph-node, .dependency-graph-toolbar, .dependency-graph-controls, .dependency-detail",
+      )
+    ) {
+      return;
+    }
     event.currentTarget.setPointerCapture(event.pointerId);
     dragRef.current = {
       pointerX: event.clientX,
@@ -432,6 +447,28 @@ export function DependencyGraphPage() {
       y: drag.viewportY + event.clientY - drag.pointerY,
     }));
   };
+
+  const selectNode = (node: DependencyNode) => {
+    const key = nodeKey(node.type, node.id);
+    setSelectedKey(key);
+    const positioned = positionedByKey.get(key);
+    const bounds = canvasRef.current?.getBoundingClientRect();
+    if (!positioned || !bounds) return;
+    setViewport((current) => ({
+      ...current,
+      x: bounds.width / 2 - (positioned.x + nodeWidth / 2) * current.scale,
+      y: bounds.height / 2 - (positioned.y + nodeHeight / 2) * current.scale,
+    }));
+  };
+
+  useEffect(() => {
+    if (!selected) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSelectedKey(undefined);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [selected]);
 
   return (
     <main className="page plugins-page dependency-graph-page">
@@ -458,246 +495,264 @@ export function DependencyGraphPage() {
           message="Add content, a presentation, or a screen to start building the graph."
         />
       ) : (
-        <>
-          <div className="dependency-toolbar">
-            <label className="dependency-search">
-              <Search size={16} aria-hidden="true" />
-              <span className="sr-only">Search graph</span>
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Find a node"
-              />
-            </label>
-            <label>
-              <span className="sr-only">Filter by type</span>
-              <select
-                value={type}
-                onChange={(event) =>
-                  setType(event.target.value as DependencyNodeType | "all")
-                }
+        <div className="dependency-workspace">
+          <section
+            className={`dependency-graph-canvas${dragRef.current ? " dependency-graph-canvas--dragging" : ""}`}
+            ref={canvasRef}
+            aria-label="Visual dependency graph"
+            onWheel={handleWheel}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={() => {
+              dragRef.current = undefined;
+            }}
+            onPointerCancel={() => {
+              dragRef.current = undefined;
+            }}
+          >
+            <div className="dependency-graph-toolbar">
+              <label className="dependency-search">
+                <Search size={16} aria-hidden="true" />
+                <span className="sr-only">Search graph</span>
+                <input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && matchingNodes[0]) {
+                      selectNode(matchingNodes[0]);
+                    }
+                  }}
+                  placeholder="Search nodes"
+                />
+                {search && (
+                  <button
+                    type="button"
+                    aria-label="Clear search"
+                    onClick={() => setSearch("")}
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </label>
+              <label className="dependency-type-filter">
+                <span className="sr-only">Filter by type</span>
+                <select
+                  value={type}
+                  onChange={(event) =>
+                    setType(event.target.value as DependencyNodeType | "all")
+                  }
+                >
+                  <option value="all">All types</option>
+                  {typeOrder.map((nodeType) => (
+                    <option value={nodeType} key={nodeType}>
+                      {typePresentation[nodeType].plural}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <span className="dependency-filter-count">
+                {filtering
+                  ? `${matchingNodes.length}/${data.nodes.length}`
+                  : data.nodes.length}
+              </span>
+            </div>
+            <div
+              className={`dependency-graph-controls${selected ? " dependency-graph-controls--inspector" : ""}`}
+            >
+              <button
+                type="button"
+                aria-label="Zoom in"
+                onClick={() => zoom(1.1)}
               >
-                <option value="all">All types</option>
-                {typeOrder.map((nodeType) => (
-                  <option value={nodeType} key={nodeType}>
-                    {typePresentation[nodeType].plural}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <span className="dependency-toolbar__count">
-              {data.nodes.length} nodes · {data.edges.length} connections
-            </span>
-          </div>
-
-          <div className="dependency-workspace">
-            <section
-              className={`dependency-graph-canvas${dragRef.current ? " dependency-graph-canvas--dragging" : ""}`}
-              ref={canvasRef}
-              aria-label="Visual dependency graph"
-              onWheel={handleWheel}
-              onPointerDown={handlePointerDown}
-              onPointerMove={handlePointerMove}
-              onPointerUp={() => {
-                dragRef.current = undefined;
-              }}
-              onPointerCancel={() => {
-                dragRef.current = undefined;
+                <ZoomIn size={16} />
+              </button>
+              <button
+                type="button"
+                aria-label="Zoom out"
+                onClick={() => zoom(0.9)}
+              >
+                <ZoomOut size={16} />
+              </button>
+              <button type="button" aria-label="Fit graph" onClick={fitGraph}>
+                <Focus size={16} />
+              </button>
+            </div>
+            <div className="dependency-graph-legend" aria-hidden="true">
+              <span className="dependency-graph-legend__source">Sources</span>
+              <span className="dependency-graph-legend__presentation">
+                Presentations
+              </span>
+              <span className="dependency-graph-legend__delivery">
+                Delivery
+              </span>
+            </div>
+            <div
+              className="dependency-graph-world"
+              style={{
+                width: layout.width,
+                height: layout.height,
+                transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.scale})`,
               }}
             >
-              <div className="dependency-graph-controls">
-                <button
-                  type="button"
-                  aria-label="Zoom in"
-                  onClick={() => zoom(1.2)}
-                >
-                  <ZoomIn size={16} />
-                </button>
-                <button
-                  type="button"
-                  aria-label="Zoom out"
-                  onClick={() => zoom(0.8)}
-                >
-                  <ZoomOut size={16} />
-                </button>
-                <button type="button" aria-label="Fit graph" onClick={fitGraph}>
-                  <Focus size={16} />
-                </button>
-              </div>
-              <div className="dependency-graph-legend" aria-hidden="true">
-                <span className="dependency-graph-legend__source">Sources</span>
-                <span className="dependency-graph-legend__presentation">
-                  Presentations
-                </span>
-                <span className="dependency-graph-legend__delivery">
-                  Delivery
-                </span>
-              </div>
-              <div
-                className="dependency-graph-world"
-                style={{
-                  width: layout.width,
-                  height: layout.height,
-                  transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.scale})`,
-                }}
+              <svg
+                className="dependency-graph-lines"
+                width={layout.width}
+                height={layout.height}
+                aria-hidden="true"
               >
-                <svg
-                  className="dependency-graph-lines"
-                  width={layout.width}
-                  height={layout.height}
-                  aria-hidden="true"
-                >
-                  <defs>
-                    <marker
-                      id="dependency-arrow"
-                      markerWidth="7"
-                      markerHeight="7"
-                      refX="6"
-                      refY="3.5"
-                      orient="auto"
-                    >
-                      <path d="M0,0 L7,3.5 L0,7 Z" />
-                    </marker>
-                    <marker
-                      id="dependency-arrow-active"
-                      markerWidth="7"
-                      markerHeight="7"
-                      refX="6"
-                      refY="3.5"
-                      orient="auto"
-                    >
-                      <path d="M0,0 L7,3.5 L0,7 Z" />
-                    </marker>
-                  </defs>
-                  {data.edges.map((edge, index) => {
-                    const fromKey = nodeKey(edge.fromType, edge.fromId);
-                    const toKey = nodeKey(edge.toType, edge.toId);
-                    const from = positionedByKey.get(fromKey);
-                    const to = positionedByKey.get(toKey);
-                    if (!from || !to) return null;
-                    const active =
-                      selected &&
-                      connectedKeys.has(fromKey) &&
-                      connectedKeys.has(toKey);
-                    return (
-                      <path
-                        className={`dependency-edge${active ? " dependency-edge--active" : ""}${selected && !active ? " dependency-edge--muted" : ""}`}
-                        d={edgePath(from, to)}
-                        key={`${fromKey}-${toKey}-${edge.relationship}-${index}`}
-                        markerEnd={
-                          active
-                            ? "url(#dependency-arrow-active)"
-                            : "url(#dependency-arrow)"
-                        }
-                      />
-                    );
-                  })}
-                </svg>
-                {typeOrder.map((nodeType, column) => (
-                  <div
-                    className="dependency-graph-column-label"
-                    key={nodeType}
-                    style={{
-                      left: worldPadding + column * (nodeWidth + columnGap),
-                      width: nodeWidth,
-                    }}
+                <defs>
+                  <marker
+                    id="dependency-arrow"
+                    markerWidth="7"
+                    markerHeight="7"
+                    refX="6"
+                    refY="3.5"
+                    orient="auto"
                   >
-                    {typePresentation[nodeType].plural}
-                  </div>
-                ))}
-                {layout.nodes.map((node) => {
-                  const key = nodeKey(node.type, node.id);
-                  const presentation = typePresentation[node.type];
-                  const Icon = presentation.icon;
-                  const muted =
-                    (selected && !connectedKeys.has(key)) ||
-                    (filtering && !matchingKeys.has(key));
+                    <path d="M0,0 L7,3.5 L0,7 Z" />
+                  </marker>
+                  <marker
+                    id="dependency-arrow-active"
+                    markerWidth="7"
+                    markerHeight="7"
+                    refX="6"
+                    refY="3.5"
+                    orient="auto"
+                  >
+                    <path d="M0,0 L7,3.5 L0,7 Z" />
+                  </marker>
+                </defs>
+                {data.edges.map((edge, index) => {
+                  const fromKey = nodeKey(edge.fromType, edge.fromId);
+                  const toKey = nodeKey(edge.toType, edge.toId);
+                  const from = positionedByKey.get(fromKey);
+                  const to = positionedByKey.get(toKey);
+                  if (!from || !to) return null;
+                  const active =
+                    selected &&
+                    connectedKeys.has(fromKey) &&
+                    connectedKeys.has(toKey);
                   return (
-                    <button
-                      className={`dependency-graph-node dependency-graph-node--${node.type}${key === selectedKey ? " dependency-graph-node--selected" : ""}${muted ? " dependency-graph-node--muted" : ""}`}
-                      type="button"
-                      key={key}
-                      style={{
-                        left: node.x,
-                        top: node.y,
-                        width: nodeWidth,
-                        height: nodeHeight,
-                      }}
-                      aria-pressed={key === selectedKey}
-                      onClick={() => setSelectedKey(key)}
-                    >
-                      <Icon size={17} aria-hidden="true" />
-                      <span>
-                        <strong>{node.name}</strong>
-                        <small>{presentation.label}</small>
-                      </span>
-                    </button>
+                    <path
+                      className={`dependency-edge${active ? " dependency-edge--active" : ""}${selected && !active ? " dependency-edge--muted" : ""}`}
+                      d={edgePath(from, to)}
+                      key={`${fromKey}-${toKey}-${edge.relationship}-${index}`}
+                      markerEnd={
+                        active
+                          ? "url(#dependency-arrow-active)"
+                          : "url(#dependency-arrow)"
+                      }
+                    />
                   );
                 })}
-              </div>
-              <p className="dependency-graph-hint">
-                Drag to pan · Scroll to zoom · Arrows point to consumers
-              </p>
-            </section>
-
-            <Panel className="dependency-detail">
-              {!selected ? (
-                <EmptyState
-                  icon={<Network size={24} aria-hidden="true" />}
-                  title="Select a node"
-                  message="Choose any node to highlight its complete upstream and downstream path."
-                />
-              ) : (
-                <>
-                  <header className="dependency-detail__header">
+              </svg>
+              {typeOrder.map((nodeType, column) => (
+                <div
+                  className="dependency-graph-column-label"
+                  key={nodeType}
+                  style={{
+                    left: worldPadding + column * (nodeWidth + columnGap),
+                    width: nodeWidth,
+                  }}
+                >
+                  {typePresentation[nodeType].plural}
+                </div>
+              ))}
+              {layout.nodes.map((node) => {
+                const key = nodeKey(node.type, node.id);
+                const presentation = typePresentation[node.type];
+                const Icon = presentation.icon;
+                const muted =
+                  (selected && !connectedKeys.has(key)) ||
+                  (filtering && !matchingKeys.has(key));
+                return (
+                  <button
+                    className={`dependency-graph-node dependency-graph-node--${node.type}${key === selectedKey ? " dependency-graph-node--selected" : ""}${muted ? " dependency-graph-node--muted" : ""}`}
+                    type="button"
+                    key={key}
+                    style={{
+                      left: node.x,
+                      top: node.y,
+                      width: nodeWidth,
+                      height: nodeHeight,
+                    }}
+                    aria-pressed={key === selectedKey}
+                    onClick={() => selectNode(node)}
+                  >
+                    <Icon size={17} aria-hidden="true" />
                     <span>
-                      <small>{typePresentation[selected.type].label}</small>
-                      <h2>{selected.name}</h2>
+                      <strong>{node.name}</strong>
+                      <small>{presentation.label}</small>
                     </span>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="dependency-graph-hint">
+              Drag to pan · Scroll to zoom · Arrows point to consumers
+            </p>
+          </section>
+
+          {selected && (
+            <Panel
+              className="dependency-detail"
+              aria-label={`${selected.name} dependency details`}
+            >
+              <>
+                <header className="dependency-detail__header">
+                  <span>
+                    <small>{typePresentation[selected.type].label}</small>
+                    <h2>{selected.name}</h2>
+                  </span>
+                  <div className="dependency-detail__actions">
                     <Link
                       className="button button--secondary button--compact"
                       to={typePresentation[selected.type].path(selected.id)}
                     >
                       Open <ExternalLink size={14} aria-hidden="true" />
                     </Link>
-                  </header>
-                  <div className="dependency-impact">
-                    <span>
-                      <strong>{upstream.length}</strong>
-                      upstream
-                    </span>
-                    <span>
-                      <strong>{downstream.length}</strong>
-                      downstream
-                    </span>
+                    <button
+                      className="icon-button"
+                      type="button"
+                      aria-label="Close inspector"
+                      onClick={() => setSelectedKey(undefined)}
+                    >
+                      <X size={16} />
+                    </button>
                   </div>
-                  <div className="dependency-detail__relationships">
-                    <RelationshipList
-                      title="Direct dependencies"
-                      icon={ArrowUp}
-                      edges={directUpstream}
-                      graph={data}
-                      direction="upstream"
-                      onSelect={(node) =>
-                        setSelectedKey(nodeKey(node.type, node.id))
-                      }
-                    />
-                    <RelationshipList
-                      title="Direct consumers"
-                      icon={ArrowDown}
-                      edges={directDownstream}
-                      graph={data}
-                      direction="downstream"
-                      onSelect={(node) =>
-                        setSelectedKey(nodeKey(node.type, node.id))
-                      }
-                    />
-                  </div>
-                </>
-              )}
+                </header>
+                <div className="dependency-impact">
+                  <span>
+                    <strong>{upstream.length}</strong>
+                    upstream
+                  </span>
+                  <span>
+                    <strong>{downstream.length}</strong>
+                    downstream
+                  </span>
+                </div>
+                <div className="dependency-detail__relationships">
+                  <RelationshipList
+                    title="Direct dependencies"
+                    icon={ArrowUp}
+                    edges={directUpstream}
+                    graph={data}
+                    direction="upstream"
+                    onSelect={selectNode}
+                  />
+                  <RelationshipList
+                    title="Direct consumers"
+                    icon={ArrowDown}
+                    edges={directDownstream}
+                    graph={data}
+                    direction="downstream"
+                    onSelect={selectNode}
+                  />
+                </div>
+              </>
             </Panel>
-          </div>
-        </>
+          )}
+        </div>
       )}
     </main>
   );
