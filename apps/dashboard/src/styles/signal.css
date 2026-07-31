@@ -3679,6 +3679,43 @@ tbody tr {
   padding-bottom: var(--tc-space-6);
 }
 
+.screen-manage__navigation {
+  padding: var(--tc-space-4) var(--tc-space-5) 0;
+  margin-bottom: var(--tc-space-5);
+  background: var(--tc-bg-surface);
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-panel);
+}
+
+.screen-manage__navigation-copy {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--tc-space-4);
+}
+
+.screen-manage__navigation-copy h2,
+.screen-manage__navigation-copy p {
+  margin: 0;
+}
+
+.screen-manage__navigation-copy h2 {
+  font-size: 18px;
+}
+
+.screen-manage__navigation-copy p {
+  margin-top: var(--tc-space-1);
+  color: var(--tc-text-secondary);
+}
+
+.screen-manage-tabs {
+  margin: var(--tc-space-4) 0 0;
+}
+
+.screen-manage-tabs button {
+  min-height: 40px;
+}
+
 .screen-detail__heading-actions {
   display: flex;
   align-items: center;

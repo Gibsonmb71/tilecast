@@ -138,7 +138,7 @@ async function tabList() {
 }
 
 describe("screen detail tabs", () => {
-  it("consolidates settings, reliability, and commands under Manage", async () => {
+  it("organizes settings, health, and maintenance under Manage", async () => {
     renderDetail("/screens/screen-1?tab=reliability");
 
     const tabs = await tabList();
@@ -154,7 +154,36 @@ describe("screen detail tabs", () => {
       within(tabs).queryByRole("button", { name: "Reliability" }),
     ).toBeNull();
     expect(within(tabs).queryByRole("button", { name: "Commands" })).toBeNull();
+    const manageTabs = await screen.findByRole("navigation", {
+      name: "Manage screen sections",
+    });
+    expect(
+      within(manageTabs)
+        .getByRole("button", { name: "Health" })
+        .getAttribute("aria-current"),
+    ).toBe("page");
+    expect(
+      await screen.findByRole("heading", { name: "Health & recovery" }),
+    ).toBeTruthy();
+    expect(screen.queryByTestId("screen-behavior")).toBeNull();
+  });
+
+  it("shows only the selected Manage workspace", async () => {
+    const user = userEvent.setup();
+    renderDetail("/screens/screen-1?tab=reliability");
+
+    const manageTabs = await screen.findByRole("navigation", {
+      name: "Manage screen sections",
+    });
+    await user.click(
+      within(manageTabs).getByRole("button", { name: "Settings" }),
+    );
+
     expect(await screen.findByTestId("screen-behavior")).toBeTruthy();
+    expect(
+      screen.queryByRole("heading", { name: "Health & recovery" }),
+    ).toBeNull();
+    expect(screen.getByText("?tab=manage")).toBeTruthy();
   });
 
   it("does not append snapshot history to the Overview sidebar", async () => {

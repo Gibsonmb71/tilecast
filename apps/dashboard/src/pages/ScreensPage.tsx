@@ -57,6 +57,7 @@ import type {
 import { useAuth } from "../auth/AuthProvider";
 import { ScreenContentChain } from "../content/ScreenContentChain";
 import { FormField } from "../components/FormField";
+import { FireTvAccessibilityAdbPanel } from "../components/FireTvAccessibilityAdbPanel";
 import { PlayerPolicyEditor } from "../settings/PlayerPolicyEditor";
 import { formatLocationAddress } from "../settings/LocationsPanel";
 import { previewApi } from "../api/previews";
@@ -68,6 +69,28 @@ const GRID_PREVIEW_AGE_REFRESH_MILLIS = 10_000;
 
 export const canManageScreens = (user?: User) =>
   user?.role === "owner" || user?.role === "administrator";
+
+export type ScreenManageSection =
+  "settings" | "health" | "maintenance" | "device";
+
+const screenManageSections: readonly ScreenManageSection[] = [
+  "settings",
+  "health",
+  "maintenance",
+  "device",
+];
+
+export function normalizeScreenManageSection(
+  requestedTab: string,
+  requestedSection: string | null,
+): ScreenManageSection {
+  if (requestedTab === "player-settings") return "settings";
+  if (requestedTab === "reliability") return "health";
+  if (requestedTab === "commands") return "maintenance";
+  return screenManageSections.includes(requestedSection as ScreenManageSection)
+    ? (requestedSection as ScreenManageSection)
+    : "settings";
+}
 const formatBytes = (value: number) => {
   const units = ["B", "KB", "MB", "GB", "TB"];
   let amount = value;
@@ -2383,6 +2406,10 @@ export function ScreenDetailPage() {
         )
       ? requestedTab
       : "overview";
+  const manageSection = normalizeScreenManageSection(
+    requestedTab,
+    searchParams.get("section"),
+  );
   const selectTab = (nextTab: string) => {
     if (policyDirty && tab === "manage") {
       if (!confirm("Leave Manage without saving your changes?")) return;
@@ -2391,6 +2418,22 @@ export function ScreenDetailPage() {
     const next = new URLSearchParams(searchParams);
     if (nextTab === "overview") next.delete("tab");
     else next.set("tab", nextTab);
+    if (nextTab !== "manage") next.delete("section");
+    setSearchParams(next);
+  };
+  const selectManageSection = (nextSection: ScreenManageSection) => {
+    if (
+      policyDirty &&
+      manageSection === "settings" &&
+      nextSection !== "settings"
+    ) {
+      if (!confirm("Leave Settings without saving your changes?")) return;
+      setPolicyDirty(false);
+    }
+    const next = new URLSearchParams(searchParams);
+    next.set("tab", "manage");
+    if (nextSection === "settings") next.delete("section");
+    else next.set("section", nextSection);
     setSearchParams(next);
   };
   return (
@@ -2817,6 +2860,33 @@ export function ScreenDetailPage() {
       )}
 
       {tab === "manage" && (
+        <section
+          className="screen-manage__navigation"
+          aria-labelledby="screen-manage-title"
+        >
+          <div className="screen-manage__navigation-copy">
+            <div>
+              <h2 id="screen-manage-title">Manage screen</h2>
+              <p>Choose an area to configure, inspect, or maintain.</p>
+            </div>
+            <StatusLabel status={screen.status} />
+          </div>
+          <ViewTabs
+            className="screen-manage-tabs"
+            label="Manage screen sections"
+            value={manageSection}
+            onValueChange={selectManageSection}
+            items={[
+              { value: "settings", label: "Settings" },
+              { value: "health", label: "Health" },
+              { value: "maintenance", label: "Maintenance" },
+              { value: "device", label: "Device & access" },
+            ]}
+          />
+        </section>
+      )}
+
+      {tab === "manage" && manageSection === "settings" && (
         <PlayerPolicyEditor
           target="screen"
           id={id}
@@ -2824,7 +2894,7 @@ export function ScreenDetailPage() {
         />
       )}
 
-      {tab === "manage" && (
+      {tab === "manage" && manageSection === "health" && (
         <section className="operations" aria-labelledby="reliability-heading">
           <h3 id="reliability-heading">Health &amp; recovery</h3>
           <p>
@@ -3194,110 +3264,116 @@ export function ScreenDetailPage() {
               </section>
             </>
           )}
+          <FireTvAccessibilityAdbPanel screenId={id} />
         </section>
       )}
 
-      {tab === "manage" && canManageScreens(auth.status?.user) && (
-        <section className="operations">
-          <h3>Maintenance</h3>
-          <p>
-            Commands remain pending during brief disconnections and expire
-            automatically.
-          </p>
-          <div className="heading-actions">
-            <button
-              className="button button--secondary"
-              onClick={() => command.mutate({ type: "sync_now", payload: {} })}
-            >
-              Sync now
-            </button>
-            <button
-              className="button button--secondary"
-              onClick={() =>
-                command.mutate({ type: "reload_playback", payload: {} })
-              }
-            >
-              Reload playback
-            </button>
-            <button
-              className="button button--secondary"
-              onClick={() =>
-                command.mutate({
-                  type: "identify_screen",
-                  payload: { durationSeconds: 30 },
-                })
-              }
-            >
-              Identify screen
-            </button>
-            <button
-              className="button button--danger-quiet"
-              onClick={() => {
-                if (
-                  confirm(
-                    "Clear media not protected by active or pending playback?",
-                  )
-                )
-                  command.mutate({ type: "clear_media_cache", payload: {} });
-              }}
-            >
-              Clear media cache
-            </button>
-            <button
-              className="button button--danger-quiet"
-              onClick={() => {
-                if (
-                  confirm(
-                    "Clear cookies, cache, DOM storage, and WebView state?",
-                  )
-                )
-                  command.mutate({ type: "clear_website_data", payload: {} });
-              }}
-            >
-              Clear website data
-            </button>
-            <button
-              className="button button--danger-quiet"
-              onClick={() => {
-                const disabling = !assignment.data?.playbackDisabled;
-                if (
-                  !disabling ||
-                  confirm(
-                    "Disable ordinary playback while keeping this player paired and connected?",
-                  )
-                )
-                  command.mutate({
-                    type: disabling ? "disable_playback" : "enable_playback",
-                    payload: {},
-                  });
-              }}
-            >
-              {assignment.data?.playbackDisabled
-                ? "Enable playback"
-                : "Disable playback"}
-            </button>
-          </div>
-          {command.isSuccess && (
-            <p>Command queued; this does not mean it has completed.</p>
-          )}
-          <div className="command-history">
-            {commands.data?.items?.map((c) => (
-              <div key={c.id}>
-                <strong>
-                  {c.type?.replaceAll("_", " ") ?? "Unknown command"}
-                </strong>
-                <span>
-                  {c.state} · {new Date(c.createdAt).toLocaleString()}
-                </span>
-                <small>
-                  {c.resultCode?.replaceAll("_", " ") ?? "No result yet"}
-                </small>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
       {tab === "manage" &&
+        manageSection === "maintenance" &&
+        canManageScreens(auth.status?.user) && (
+          <section className="operations">
+            <h3>Maintenance</h3>
+            <p>
+              Commands remain pending during brief disconnections and expire
+              automatically.
+            </p>
+            <div className="heading-actions">
+              <button
+                className="button button--secondary"
+                onClick={() =>
+                  command.mutate({ type: "sync_now", payload: {} })
+                }
+              >
+                Sync now
+              </button>
+              <button
+                className="button button--secondary"
+                onClick={() =>
+                  command.mutate({ type: "reload_playback", payload: {} })
+                }
+              >
+                Reload playback
+              </button>
+              <button
+                className="button button--secondary"
+                onClick={() =>
+                  command.mutate({
+                    type: "identify_screen",
+                    payload: { durationSeconds: 30 },
+                  })
+                }
+              >
+                Identify screen
+              </button>
+              <button
+                className="button button--danger-quiet"
+                onClick={() => {
+                  if (
+                    confirm(
+                      "Clear media not protected by active or pending playback?",
+                    )
+                  )
+                    command.mutate({ type: "clear_media_cache", payload: {} });
+                }}
+              >
+                Clear media cache
+              </button>
+              <button
+                className="button button--danger-quiet"
+                onClick={() => {
+                  if (
+                    confirm(
+                      "Clear cookies, cache, DOM storage, and WebView state?",
+                    )
+                  )
+                    command.mutate({ type: "clear_website_data", payload: {} });
+                }}
+              >
+                Clear website data
+              </button>
+              <button
+                className="button button--danger-quiet"
+                onClick={() => {
+                  const disabling = !assignment.data?.playbackDisabled;
+                  if (
+                    !disabling ||
+                    confirm(
+                      "Disable ordinary playback while keeping this player paired and connected?",
+                    )
+                  )
+                    command.mutate({
+                      type: disabling ? "disable_playback" : "enable_playback",
+                      payload: {},
+                    });
+                }}
+              >
+                {assignment.data?.playbackDisabled
+                  ? "Enable playback"
+                  : "Disable playback"}
+              </button>
+            </div>
+            {command.isSuccess && (
+              <p>Command queued; this does not mean it has completed.</p>
+            )}
+            <div className="command-history">
+              {commands.data?.items?.map((c) => (
+                <div key={c.id}>
+                  <strong>
+                    {c.type?.replaceAll("_", " ") ?? "Unknown command"}
+                  </strong>
+                  <span>
+                    {c.state} · {new Date(c.createdAt).toLocaleString()}
+                  </span>
+                  <small>
+                    {c.resultCode?.replaceAll("_", " ") ?? "No result yet"}
+                  </small>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+      {tab === "manage" &&
+        manageSection === "maintenance" &&
         !canManageScreens(auth.status?.user) &&
         (commands.data?.items?.length ?? 0) > 0 && (
           <section className="operations">
@@ -3319,7 +3395,7 @@ export function ScreenDetailPage() {
             </div>
           </section>
         )}
-      {tab === "manage" && (
+      {tab === "manage" && manageSection === "device" && (
         <>
           <section className="detail-grid">
             <div className="detail-card">

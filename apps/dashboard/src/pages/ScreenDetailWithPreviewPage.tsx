@@ -1,5 +1,4 @@
 import { Navigate, useParams, useSearchParams } from "react-router";
-import { FireTvAccessibilityAdbPanel } from "../components/FireTvAccessibilityAdbPanel";
 import { LivePreviewPanel } from "../components/LivePreviewPanel";
 import { SnapshotHistoryPanel } from "../components/SnapshotHistoryPanel";
 import { ScreenActivityPanel } from "../components/ScreenActivityPanel";
@@ -44,7 +43,6 @@ export function ScreenDetailWithPreviewPage() {
         </section>
       )}
       {tab === "activity" && <ScreenActivityPanel screenId={id} />}
-      {tab === "manage" && <FireTvAccessibilityAdbPanel screenId={id} />}
     </>
   );
 }
