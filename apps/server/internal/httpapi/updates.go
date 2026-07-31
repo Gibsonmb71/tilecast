@@ -597,9 +597,17 @@ func (s *server) getUpdateDeployment(w http.ResponseWriter, r *http.Request) {
 		var expected, downloaded int64
 		var permission, installer, errorText *string
 		var updated time.Time
-		if rows.Scan(&screen, &name, &previous, &expected, &downloaded, &permission, &installer, &state, &errorText, &updated) == nil {
-			items = append(items, map[string]any{"screenId": screen, "screenName": name, "previousVersionCode": previous, "expectedVersionCode": expected, "downloadedBytes": downloaded, "permissionStatus": permission, "installerStatus": installer, "state": state, "safeError": errorText, "updatedAt": updated})
+		// A read that failed is not a deployment that reaches nothing: reporting
+		// it as 404 would tell a scoped operator their screens are not covered.
+		if err := rows.Scan(&screen, &name, &previous, &expected, &downloaded, &permission, &installer, &state, &errorText, &updated); err != nil {
+			s.internalError(w, r, err)
+			return
 		}
+		items = append(items, map[string]any{"screenId": screen, "screenName": name, "previousVersionCode": previous, "expectedVersionCode": expected, "downloadedBytes": downloaded, "permissionStatus": permission, "installerStatus": installer, "state": state, "safeError": errorText, "updatedAt": updated})
+	}
+	if err := rows.Err(); err != nil {
+		s.internalError(w, r, err)
+		return
 	}
 	if scoped && len(items) == 0 {
 		// Either it does not exist or it reaches nothing in scope. Both are 404,

@@ -57,6 +57,20 @@ func (s *Service) SetApprovalGate(gate func(ctx context.Context, tx pgx.Tx, cont
 	s.approvalGate = gate
 }
 
+// passApprovalGate runs the review check for whichever presentation an
+// assignment names. Exactly one of playlistID and layoutID is set by the time
+// it is called. It is a no-op unless the approval feature is wired in.
+func (s *Service) passApprovalGate(ctx context.Context, tx pgx.Tx, playlistID, layoutID *uuid.UUID) error {
+	if s.approvalGate == nil {
+		return nil
+	}
+	contentType, contentID := "layout", layoutID
+	if playlistID != nil {
+		contentType, contentID = "playlist", playlistID
+	}
+	return s.approvalGate(ctx, tx, contentType, *contentID)
+}
+
 func (s *Service) Create(ctx context.Context, userID uuid.UUID, name, description, sourceType string) (Playlist, error) {
 	name = strings.TrimSpace(name)
 	description = strings.TrimSpace(description)
@@ -944,14 +958,8 @@ func (s *Service) AssignPresentation(ctx context.Context, screenID uuid.UUID, pl
 	// Inside the transaction, and before anything is written: the gate locks the
 	// content against a concurrent edit, and an edit that arrives now waits for
 	// this assignment rather than slipping between the check and the commit.
-	if s.approvalGate != nil {
-		contentType, contentID := "layout", layoutID
-		if playlistID != nil {
-			contentType, contentID = "playlist", playlistID
-		}
-		if err := s.approvalGate(ctx, tx, contentType, *contentID); err != nil {
-			return Assignment{}, err
-		}
+	if err := s.passApprovalGate(ctx, tx, playlistID, layoutID); err != nil {
+		return Assignment{}, err
 	}
 	var exists bool
 	if playlistID != nil {
@@ -1097,14 +1105,8 @@ func (s *Service) AssignGroupPresentation(ctx context.Context, groupID uuid.UUID
 	// A sync group assignment reaches every screen in the group, so it is an
 	// assignment path like any other and passes the same gate, in the same
 	// transaction.
-	if s.approvalGate != nil {
-		contentType, contentID := "layout", layoutID
-		if playlistID != nil {
-			contentType, contentID = "playlist", playlistID
-		}
-		if err := s.approvalGate(ctx, tx, contentType, *contentID); err != nil {
-			return err
-		}
+	if err := s.passApprovalGate(ctx, tx, playlistID, layoutID); err != nil {
+		return err
 	}
 	var valid bool
 	if playlistID != nil {

@@ -2053,7 +2053,10 @@ paths:
       responses:
         {
           "200": { description: Deployment detail },
-          "404": { description: Unknown, or reaching no screen in scope },
+          "404":
+            {
+              description: "Scoped callers only - unknown or reaching no screen in scope",
+            },
         }
   /api/v1/update-deployments/{id}/cancel:
     post:
@@ -2062,8 +2065,14 @@ paths:
         {
           "200": { description: Cancelled },
           "403": { description: Reaches screens outside the caller's scope },
-          "404": { description: Unknown, or reaching no screen in scope },
-          "409": { description: Already complete },
+          "404":
+            {
+              description: "Scoped callers only - unknown or reaching no screen in scope",
+            },
+          "409":
+            {
+              description: "Already complete, or unknown to an unscoped caller",
+            },
         }
   /api/v1/update-deployments/{id}/screens/{screenId}/retry:
     post:
