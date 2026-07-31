@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -37,30 +38,88 @@ type telemetrySnapshot struct {
 	AverageLuminance    *float32 `json:"averageLuminance,omitempty"`
 	ThermalState        string   `json:"thermalState,omitempty"`
 	MemoryPressureState string   `json:"memoryPressureState,omitempty"`
+
+	NetworkLinkType        string `json:"networkLinkType,omitempty"`
+	WifiSignalDBM          *int32 `json:"wifiSignalDbm,omitempty"`
+	WifiLinkSpeedMbps      *int32 `json:"wifiLinkSpeedMbps,omitempty"`
+	GatewayReachable       *bool  `json:"gatewayReachable,omitempty"`
+	CaptivePortalSuspected *bool  `json:"captivePortalSuspected,omitempty"`
+	LastDisconnectReason   string `json:"lastDisconnectReason,omitempty"`
+
+	DisplayConnected   *bool    `json:"displayConnected,omitempty"`
+	DisplayResolution  string   `json:"displayResolution,omitempty"`
+	DisplayRefreshHz   *float32 `json:"displayRefreshHz,omitempty"`
+	DisplayPowerState  string   `json:"displayPowerState,omitempty"`
+	LastShutdownReason string   `json:"lastShutdownReason,omitempty"`
+	PowerSource        string   `json:"powerSource,omitempty"`
+	BatteryPercent     *int32   `json:"batteryPercent,omitempty"`
+
+	ClockOffsetSeconds *int32 `json:"clockOffsetSeconds,omitempty"`
+	TimeSyncState      string `json:"timeSyncState,omitempty"`
+
+	StartupTotalMS       *int64 `json:"startupTotalMs,omitempty"`
+	StartupConfigMS      *int64 `json:"startupConfigMs,omitempty"`
+	StartupManifestMS    *int64 `json:"startupManifestMs,omitempty"`
+	StartupAssetVerifyMS *int64 `json:"startupAssetVerifyMs,omitempty"`
+	StartupFirstFrameMS  *int64 `json:"startupFirstFrameMs,omitempty"`
+
+	VideoDecoderPath       string `json:"videoDecoderPath,omitempty"`
+	VideoDecodedResolution string `json:"videoDecodedResolution,omitempty"`
 }
 
 type telemetryRollup struct {
-	BucketStart            time.Time          `json:"bucketStart"`
-	Samples                int32              `json:"samples"`
-	AverageRoundTripMS     *float32           `json:"averageRoundTripMs,omitempty"`
-	MaxRoundTripMS         *int32             `json:"maxRoundTripMs,omitempty"`
-	ConnectedSeconds       int32              `json:"connectedSeconds"`
-	DisconnectedSeconds    int32              `json:"disconnectedSeconds"`
-	HealthyPlaybackSeconds int32              `json:"healthyPlaybackSeconds"`
-	StalledPlaybackSeconds int32              `json:"stalledPlaybackSeconds"`
-	BlackOutputSeconds     int32              `json:"blackOutputSeconds"`
-	DroppedFrames          int64              `json:"droppedFrames"`
-	FrameChangeCount       int64              `json:"frameChangeCount"`
-	DownloadedBytes        int64              `json:"downloadedBytes"`
-	CacheHits              int64              `json:"cacheHits"`
-	CacheMisses            int64              `json:"cacheMisses"`
-	AverageMemoryBytes     *int64             `json:"averageMemoryBytes,omitempty"`
-	PeakMemoryBytes        *int64             `json:"peakMemoryBytes,omitempty"`
-	AverageCPUPercent      *float32           `json:"averageCpuPercent,omitempty"`
-	ThermalDistribution    map[string]float64 `json:"thermalDistribution"`
-	SyncDriftP50MS         *int32             `json:"syncDriftP50Ms,omitempty"`
-	SyncDriftP95MS         *int32             `json:"syncDriftP95Ms,omitempty"`
-	SyncDriftMaxMS         *int32             `json:"syncDriftMaxMs,omitempty"`
+	BucketStart            time.Time `json:"bucketStart"`
+	Samples                int32     `json:"samples"`
+	AverageRoundTripMS     *float32  `json:"averageRoundTripMs,omitempty"`
+	MaxRoundTripMS         *int32    `json:"maxRoundTripMs,omitempty"`
+	ConnectedSeconds       int32     `json:"connectedSeconds"`
+	DisconnectedSeconds    int32     `json:"disconnectedSeconds"`
+	HealthyPlaybackSeconds int32     `json:"healthyPlaybackSeconds"`
+	StalledPlaybackSeconds int32     `json:"stalledPlaybackSeconds"`
+	BlackOutputSeconds     int32     `json:"blackOutputSeconds"`
+	DroppedFrames          int64     `json:"droppedFrames"`
+	FrameChangeCount       int64     `json:"frameChangeCount"`
+	DownloadedBytes        int64     `json:"downloadedBytes"`
+	CacheHits              int64     `json:"cacheHits"`
+	CacheMisses            int64     `json:"cacheMisses"`
+	AverageMemoryBytes     *int64    `json:"averageMemoryBytes,omitempty"`
+	PeakMemoryBytes        *int64    `json:"peakMemoryBytes,omitempty"`
+	AverageCPUPercent      *float32  `json:"averageCpuPercent,omitempty"`
+	// Decoded from thermalRaw after the scan, because the column is JSON.
+	ThermalDistribution map[string]float64 `json:"thermalDistribution"`
+	thermalRaw          []byte
+	SyncDriftP50MS      *int32 `json:"syncDriftP50Ms,omitempty"`
+	SyncDriftP95MS      *int32 `json:"syncDriftP95Ms,omitempty"`
+	SyncDriftMaxMS      *int32 `json:"syncDriftMaxMs,omitempty"`
+
+	HTTPRequestCount                int64  `json:"httpRequestCount"`
+	HTTPFailureCount                int64  `json:"httpFailureCount"`
+	HTTPClientErrorCount            int64  `json:"httpClientErrorCount"`
+	HTTPServerErrorCount            int64  `json:"httpServerErrorCount"`
+	RequestRetryCount               int64  `json:"requestRetryCount"`
+	SocketReconnectCount            int64  `json:"socketReconnectCount"`
+	NetworkInterfaceChangeCount     int64  `json:"networkInterfaceChangeCount"`
+	DNSResolveP95MS                 *int32 `json:"dnsResolveP95Ms,omitempty"`
+	TLSHandshakeP95MS               *int32 `json:"tlsHandshakeP95Ms,omitempty"`
+	TimeToFirstByteP95MS            *int32 `json:"timeToFirstByteP95Ms,omitempty"`
+	AverageThroughputBytesPerSecond *int64 `json:"averageThroughputBytesPerSecond,omitempty"`
+
+	FrameTimeP95MS          *float32 `json:"frameTimeP95Ms,omitempty"`
+	FrameTimeP99MS          *float32 `json:"frameTimeP99Ms,omitempty"`
+	JankFrameCount          int64    `json:"jankFrameCount"`
+	RendererCrashCount      int64    `json:"rendererCrashCount"`
+	SurfaceLostCount        int64    `json:"surfaceLostCount"`
+	DecoderInitFailureCount int64    `json:"decoderInitFailureCount"`
+
+	CacheEvictionCount    int64 `json:"cacheEvictionCount"`
+	CacheEvictedBytes     int64 `json:"cacheEvictedBytes"`
+	IntegrityFailureCount int64 `json:"integrityFailureCount"`
+	DownloadResumeCount   int64 `json:"downloadResumeCount"`
+	DownloadFailureCount  int64 `json:"downloadFailureCount"`
+
+	UnexpectedRebootCount int64 `json:"unexpectedRebootCount"`
+	DisplaySleepCount     int64 `json:"displaySleepCount"`
+	DisplayWakeCount      int64 `json:"displayWakeCount"`
 }
 
 type telemetryCondition struct {
@@ -103,21 +162,9 @@ func (s *server) screenTelemetry(w http.ResponseWriter, r *http.Request) {
 	response.Range.From, response.Range.To = window.From, window.To
 
 	var snapshot telemetrySnapshot
-	if err := s.db.QueryRow(r.Context(), `
-		SELECT observed_at,current_item_id,item_started_at,last_meaningful_progress_at,
-		       playback_stall_duration_ms,stall_reason,renderer_state,renderer_responding,expected_motion,
-		       server_round_trip_ms,download_queue_count,bytes_remaining,cache_used_bytes,cache_limit_bytes,
-		       free_storage_bytes,process_uptime_seconds,device_uptime_seconds,sync_group_drift_ms,
-		       frame_fingerprint,average_luminance,thermal_state,memory_pressure_state
-		FROM screen_telemetry_snapshots WHERE screen_id=$1`, screenID).Scan(
-		&snapshot.ObservedAt, &snapshot.CurrentItemID, &snapshot.ItemStartedAt,
-		&snapshot.LastMeaningfulProgressAt, &snapshot.PlaybackStallDurationMS, &snapshot.StallReason,
-		&snapshot.RendererState, &snapshot.RendererResponding, &snapshot.ExpectedMotion,
-		&snapshot.ServerRoundTripMS, &snapshot.DownloadQueueCount, &snapshot.BytesRemaining,
-		&snapshot.CacheUsedBytes, &snapshot.CacheLimitBytes, &snapshot.FreeStorageBytes,
-		&snapshot.ProcessUptimeSeconds, &snapshot.DeviceUptimeSeconds, &snapshot.SyncGroupDriftMS,
-		&snapshot.FrameFingerprint, &snapshot.AverageLuminance, &snapshot.ThermalState,
-		&snapshot.MemoryPressureState); err == nil {
+	if err := s.db.QueryRow(r.Context(),
+		fmt.Sprintf(`SELECT %s FROM screen_telemetry_snapshots WHERE screen_id=$1`, telemetryGaugeSelection),
+		screenID).Scan(telemetryGaugeScanTargets(&snapshot)...); err == nil {
 		response.Snapshot = &snapshot
 	} else if err != pgx.ErrNoRows {
 		s.internalError(w, r, err)
@@ -146,15 +193,12 @@ func (s *server) screenTelemetry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rollupRows, err := s.db.Query(r.Context(), `
-		SELECT bucket_start,samples,average_round_trip_ms,max_round_trip_ms,
-		       connected_seconds,disconnected_seconds,healthy_playback_seconds,stalled_playback_seconds,
-		       black_output_seconds,dropped_frames,frame_change_count,downloaded_bytes,cache_hits,cache_misses,
-		       average_memory_bytes,peak_memory_bytes,average_cpu_percent,thermal_distribution,
-		       sync_drift_p50_ms,sync_drift_p95_ms,sync_drift_max_ms
+	rollupRows, err := s.db.Query(r.Context(), fmt.Sprintf(`
+		SELECT bucket_start,samples,%s
 		FROM screen_telemetry_rollups
 		WHERE screen_id=$1 AND bucket_start>=$2 AND bucket_start<$3
-		ORDER BY bucket_start DESC LIMIT 600`, screenID, window.From, window.To)
+		ORDER BY bucket_start DESC LIMIT 600`, telemetryRollupSelection),
+		screenID, window.From, window.To)
 	if err != nil {
 		s.internalError(w, r, err)
 		return
@@ -162,18 +206,13 @@ func (s *server) screenTelemetry(w http.ResponseWriter, r *http.Request) {
 	defer rollupRows.Close()
 	for rollupRows.Next() {
 		var item telemetryRollup
-		var thermal []byte
-		if err := rollupRows.Scan(&item.BucketStart, &item.Samples, &item.AverageRoundTripMS, &item.MaxRoundTripMS,
-			&item.ConnectedSeconds, &item.DisconnectedSeconds, &item.HealthyPlaybackSeconds,
-			&item.StalledPlaybackSeconds, &item.BlackOutputSeconds, &item.DroppedFrames,
-			&item.FrameChangeCount, &item.DownloadedBytes, &item.CacheHits, &item.CacheMisses,
-			&item.AverageMemoryBytes, &item.PeakMemoryBytes, &item.AverageCPUPercent, &thermal,
-			&item.SyncDriftP50MS, &item.SyncDriftP95MS, &item.SyncDriftMaxMS); err != nil {
+		targets := append([]any{&item.BucketStart, &item.Samples}, telemetryRollupScanTargets(&item)...)
+		if err := rollupRows.Scan(targets...); err != nil {
 			s.internalError(w, r, err)
 			return
 		}
 		item.ThermalDistribution = map[string]float64{}
-		_ = json.Unmarshal(thermal, &item.ThermalDistribution)
+		_ = json.Unmarshal(item.thermalRaw, &item.ThermalDistribution)
 		response.Rollups = append(response.Rollups, item)
 	}
 	if err := rollupRows.Err(); err != nil {

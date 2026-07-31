@@ -173,3 +173,98 @@ describe("percentile", () => {
     expect(percentile([7], 0.95)).toBe(7);
   });
 });
+
+describe("request accounting", () => {
+  it("counts every request once and attributes failures to a class", async () => {
+    const { sent, subject, advance } = reporter();
+
+    subject.recordRequest({ status: 200 });
+    subject.recordRequest({ status: 304 });
+    subject.recordRequest({ status: 401 });
+    subject.recordRequest({ status: 503 });
+    // No status at all: the request never reached a response.
+    subject.recordRequest({});
+    advance(60_000);
+    await subject.flush();
+
+    const counters = interval(sent[0]!);
+    expect(counters["httpRequestCount"]).toBe(5);
+    // A 4xx, a 5xx, and a network failure — a 304 is not a failure.
+    expect(counters["httpFailureCount"]).toBe(3);
+    expect(counters["httpClientErrorCount"]).toBe(1);
+    expect(counters["httpServerErrorCount"]).toBe(1);
+  });
+
+  it("counts a retry only when the previous attempt failed", async () => {
+    const { sent, subject, advance } = reporter();
+
+    subject.recordRequest({ status: 200 });
+    subject.recordRequest({ status: 500 });
+    subject.recordRequest({ status: 200, retry: true });
+    advance(60_000);
+    await subject.flush();
+
+    expect(interval(sent[0]!)["requestRetryCount"]).toBe(1);
+  });
+
+  it("derives throughput from bytes and elapsed time", async () => {
+    const { sent, subject, advance } = reporter();
+
+    subject.recordRequest({ status: 200, bytes: 2_000_000, durationMs: 1_000 });
+    subject.recordRequest({ status: 200, bytes: 1_000_000, durationMs: 1_000 });
+    advance(60_000);
+    await subject.flush();
+
+    expect(interval(sent[0]!)["averageThroughputBytesPerSecond"]).toBe(
+      1_500_000,
+    );
+  });
+
+  it("ignores a transfer with no elapsed time rather than dividing by zero", async () => {
+    const { sent, subject, advance } = reporter();
+
+    subject.recordRequest({ status: 200, bytes: 5_000, durationMs: 0 });
+    advance(60_000);
+    await subject.flush();
+
+    expect(
+      interval(sent[0]!)["averageThroughputBytesPerSecond"],
+    ).toBeUndefined();
+  });
+
+  it("reports connection timing as a percentile, not as raw samples", async () => {
+    const { sent, subject, advance } = reporter();
+
+    for (const ms of [10, 12, 14, 16, 900]) {
+      subject.recordRequest({ status: 200, timeToFirstByteMs: ms });
+    }
+    advance(60_000);
+    await subject.flush();
+
+    // The outlier is what a p95 exists to surface.
+    expect(interval(sent[0]!)["timeToFirstByteP95Ms"]).toBe(900);
+  });
+});
+
+describe("frame timing", () => {
+  it("reports p95 and p99 frame time and leaves them absent without samples", async () => {
+    const { sent, subject, advance } = reporter();
+    advance(60_000);
+    await subject.flush();
+    expect(interval(sent[0]!)["frameTimeP95Ms"]).toBeUndefined();
+
+    for (let index = 0; index < 100; index += 1) {
+      subject.recordSample("frameTime", index < 97 ? 16 : 120);
+    }
+    advance(60_000);
+    await subject.flush();
+
+    expect(interval(sent[1]!)["frameTimeP95Ms"]).toBe(16);
+    expect(interval(sent[1]!)["frameTimeP99Ms"]).toBe(120);
+  });
+
+  it("ignores a non-finite sample instead of poisoning the percentile", () => {
+    const { subject } = reporter();
+    expect(() => subject.recordSample("frameTime", Number.NaN)).not.toThrow();
+  });
+});

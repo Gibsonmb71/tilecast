@@ -42,8 +42,31 @@ func telemetryMeasurements(input telemetrySampleInput) map[string]float64 {
 	if input.CacheUsedBytes != nil && input.CacheLimitBytes != nil && *input.CacheLimitBytes > 0 {
 		values["storage_pressure"] = float64(*input.CacheUsedBytes) / float64(*input.CacheLimitBytes) * 100
 	}
+	// Signal strength is only meaningful on a wireless link. A wired screen
+	// reporting no radio must not be read as a screen with a weak one.
+	if input.WifiSignalDBM != nil && input.NetworkLinkType == "wifi" {
+		values["wifi_signal_weak"] = float64(*input.WifiSignalDBM)
+	}
+	if input.ClockOffsetSeconds != nil {
+		offset := float64(*input.ClockOffsetSeconds)
+		if offset < 0 {
+			offset = -offset
+		}
+		values["clock_drift"] = offset
+	}
+	// A rate needs a denominator worth dividing by: one failed request in an
+	// otherwise idle window is not a failing screen, so the measurement is
+	// simply not produced below the minimum.
+	if input.Interval.HTTPRequestCount >= telemetryMinimumRequestSample {
+		failures := float64(input.Interval.HTTPFailureCount)
+		values["request_failure_rate"] = failures / float64(input.Interval.HTTPRequestCount) * 100
+	}
 	return values
 }
+
+// Ten requests in a five-minute window is a normally active player; below that
+// the failure rate is too coarse to act on.
+const telemetryMinimumRequestSample = 10
 
 type telemetryConditionState struct {
 	Active      bool
@@ -131,9 +154,28 @@ func telemetryStateFor(input telemetrySampleInput, condition string) (string, bo
 		return input.ThermalState, input.ThermalState != ""
 	case "renderer_recreated", "decoder_failed":
 		return input.RendererState, input.RendererState != ""
+	case "display_disconnected":
+		// A boolean becomes a state so that "not reported" stays distinct from
+		// "reported connected". A player that cannot see its display at all must
+		// not be treated as one reporting a fault.
+		return telemetryBooleanState(input.DisplayConnected, "connected", "disconnected")
+	case "captive_portal":
+		return telemetryBooleanState(input.CaptivePortalSuspected, "suspected", "clear")
+	case "software_decode_fallback":
+		return input.VideoDecoderPath, input.VideoDecoderPath != ""
 	default:
 		return "", false
 	}
+}
+
+func telemetryBooleanState(value *bool, whenTrue, whenFalse string) (string, bool) {
+	if value == nil {
+		return "", false
+	}
+	if *value {
+		return whenTrue, true
+	}
+	return whenFalse, true
 }
 
 type telemetryTransition struct {

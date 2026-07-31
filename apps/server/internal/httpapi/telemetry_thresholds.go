@@ -83,6 +83,34 @@ var telemetryThresholds = []telemetryThreshold{
 		EnterEvent: "storage.pressure", ExitEvent: "storage.recovered",
 		Severity: "warning", Cooldown: 15 * time.Minute,
 	},
+	{
+		Condition: "wifi_signal_weak",
+		// Received signal strength in dBm, where less negative is stronger, so
+		// the lower value is the bad direction. Around -78 is where retries and
+		// throughput collapse on most panels; the eight-point gap keeps a screen
+		// at the edge of coverage from flapping all day.
+		Enter: -78, Exit: -70, HigherIsWorse: false,
+		EnterEvent: "network.wifi_signal_weak", ExitEvent: "network.wifi_signal_recovered",
+		Severity: "warning", Cooldown: 15 * time.Minute,
+	},
+	{
+		Condition: "clock_drift",
+		// Absolute offset in seconds from server time. Offline scheduling runs on
+		// the device clock, so this is the measurement that explains content
+		// appearing at the wrong time when nothing else looks wrong.
+		Enter: 120, Exit: 30, HigherIsWorse: true,
+		EnterEvent: "clock.drift_exceeded", ExitEvent: "clock.drift_recovered",
+		Severity: "warning", Cooldown: 30 * time.Minute,
+	},
+	{
+		Condition: "request_failure_rate",
+		// Percent of the interval's requests that failed. The measurement is
+		// only produced above a minimum request count, so a single failed
+		// request in a quiet window cannot read as a hundred percent.
+		Enter: 50, Exit: 15, HigherIsWorse: true,
+		EnterEvent: "network.requests_failing", ExitEvent: "network.requests_recovered",
+		Severity: "error", Cooldown: 10 * time.Minute,
+	},
 }
 
 var telemetryThresholdsByCondition = func() map[string]telemetryThreshold {
@@ -152,6 +180,31 @@ var telemetryStateConditions = []telemetryStateCondition{
 		CriticalStates: []string{"decoder_failure"},
 		EnterEvent:     "decoder.failure", ExitEvent: "",
 		Severity: "error", Cooldown: time.Minute,
+	},
+	{
+		// A healthy player in front of a dark panel. Without this the screen
+		// looks fine in every other measurement, which is exactly the case that
+		// used to need someone to walk over and look at it.
+		Condition:      "display_disconnected",
+		CriticalStates: []string{"disconnected"},
+		EnterEvent:     "display.disconnected", ExitEvent: "display.reconnected",
+		Severity: "error", Cooldown: 5 * time.Minute,
+	},
+	{
+		// A captive portal is indistinguishable from a working link at the radio,
+		// so the player's own verdict is the only signal there is.
+		Condition:      "captive_portal",
+		CriticalStates: []string{"suspected"},
+		EnterEvent:     "network.captive_portal_suspected", ExitEvent: "network.captive_portal_cleared",
+		Severity: "warning", Cooldown: 15 * time.Minute,
+	},
+	{
+		// Silent fallback to software decoding is the usual explanation for one
+		// device playing a video badly while an identical one plays it fine.
+		Condition:      "software_decode_fallback",
+		CriticalStates: []string{"software"},
+		EnterEvent:     "decoder.software_fallback", ExitEvent: "decoder.hardware_restored",
+		Severity: "warning", Cooldown: 30 * time.Minute,
 	},
 }
 

@@ -428,6 +428,34 @@ async function startRuntime(serverUrl: string): Promise<void> {
         }
         return { width: 1920, height: 1080 };
       },
+      // Deliberately not the fallback chain above. `screenSize` must always
+      // return something usable because a heartbeat is rejected without it;
+      // this reports what the panel actually says, including "nothing", because
+      // a screen with no display attached is precisely the fault being looked
+      // for. The two disagreeing is the signal.
+      displayInfo: () => {
+        try {
+          const displays = screen.getAllDisplays();
+          const display = screen.getPrimaryDisplay();
+          const size = display.size;
+          return {
+            connected:
+              displays.length > 0 && size.width >= 1 && size.height >= 1,
+            width: Math.round(size.width),
+            height: Math.round(size.height),
+            // Electron reports 0 when the compositor does not publish a rate.
+            refreshHz:
+              display.displayFrequency > 0
+                ? display.displayFrequency
+                : undefined,
+          };
+        } catch {
+          // No display server answered at all, which is not the same as a panel
+          // reporting itself absent — so it is reported as unknown, not as a
+          // disconnected display.
+          return null;
+        }
+      },
       availableStorageBytes,
       capturePreview: async (max) => {
         if (!window || window.isDestroyed()) {

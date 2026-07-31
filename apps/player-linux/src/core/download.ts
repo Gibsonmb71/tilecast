@@ -73,13 +73,42 @@ async function fileSize(filePath: string): Promise<number | null> {
 }
 
 /**
+ * Transfer facts worth counting. A resume and an integrity failure are
+ * separately reported because they mean different things: the first says the
+ * link is unreliable, the second says the bytes arriving are wrong.
+ */
+export interface DownloadObserver {
+  onResumed?(): void;
+  onBytes?(bytes: number, durationMs: number): void;
+  onIntegrityFailure?(): void;
+  onFailure?(): void;
+}
+
+/**
  * Download one variant. Returns when the verified file exists at
  * `request.destination`. Throws DownloadError otherwise.
  */
 export async function downloadVerified(
   request: DownloadRequest,
   fetchImpl: typeof fetch = fetch,
+  observer?: DownloadObserver,
 ): Promise<void> {
+  try {
+    await transferVerified(request, fetchImpl, observer);
+  } catch (err) {
+    // Reported here rather than at each throw site, so a failure cannot be
+    // counted twice or missed by a path added later.
+    observer?.onFailure?.();
+    throw err;
+  }
+}
+
+async function transferVerified(
+  request: DownloadRequest,
+  fetchImpl: typeof fetch,
+  observer?: DownloadObserver,
+): Promise<void> {
+  const startedAt = Date.now();
   // Already promoted and intact? Done. (Cheap size check first; hash check
   // happens at manifest verification time.)
   const existing = await fileSize(request.destination);
@@ -114,7 +143,9 @@ export async function downloadVerified(
     await fs.rm(partPath, { force: true });
     offset = 0;
   } else if (response.status === 206) {
-    // Server honored the resume.
+    // Server honored the resume. Counted because a screen resuming constantly
+    // has an unreliable link, which nothing else in telemetry would show.
+    observer?.onResumed?.();
   } else if (response.status === 401 || response.status === 403) {
     throw new DownloadError(`download unauthorized: ${response.status}`, false);
   } else if (response.status === 404 || response.status === 410) {
@@ -164,11 +195,16 @@ export async function downloadVerified(
   const digest = await sha256File(partPath);
   if (digest.toLowerCase() !== request.expectedSha256.toLowerCase()) {
     await fs.rm(partPath, { force: true });
+    observer?.onIntegrityFailure?.();
     throw new DownloadError("sha-256 mismatch", true);
   }
 
   await fs.mkdir(path.dirname(request.destination), { recursive: true });
   await fs.rename(partPath, request.destination);
+  observer?.onBytes?.(
+    request.expectedSizeBytes - offset,
+    Date.now() - startedAt,
+  );
   log.info("variant downloaded", {
     destination: path.basename(request.destination),
     bytes: request.expectedSizeBytes,
