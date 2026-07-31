@@ -29,7 +29,12 @@ import {
   PlaybackSessionTracker,
   type TerminalReason,
 } from "./activity-sessions";
-import { TelemetryReporter } from "./telemetry";
+import {
+  TelemetryReporter,
+  TELEMETRY_INTERVAL_MS,
+  type DisconnectReason,
+  type TelemetryGauges,
+} from "./telemetry";
 import { LiveStream } from "./live-stream";
 import {
   assessRenderProgress,
@@ -51,6 +56,7 @@ import {
 import { CommandCoordinator } from "./commands";
 import { ConfigSync } from "./config";
 import { downloadVerified } from "./download";
+import { readSystemDiagnostics } from "./system-probe";
 import { SelfUpdater, parseVersionCode, promoteAppImage } from "./self-update";
 import {
   AutostartInstaller,
@@ -197,6 +203,16 @@ export interface PlayerHost {
   retryCurrentItem(): void;
   skipCurrentItem(): void;
   screenSize(): { width: number; height: number };
+  /**
+   * What the panel actually negotiated, which is not the same as the window
+   * size the renderer was given. Optional because a preview host has no panel.
+   */
+  displayInfo?(): {
+    connected: boolean;
+    width: number;
+    height: number;
+    refreshHz?: number;
+  } | null;
   availableStorageBytes(): Promise<number | null>;
   /** Capture the window for live preview, downscaled within limits. Returns
    * null in states that must not be uploaded (the runtime also gates this). */
@@ -286,6 +302,27 @@ export class PlayerRuntime {
   private stopped = false;
   private socketOpen = false;
   private readonly startedAt = Date.now();
+  /**
+   * Server time minus device time, from the most recent manifest. Reported
+   * because offline scheduling runs on the device clock, so drift shows up only
+   * as content playing at the wrong time.
+   */
+  private clockOffsetMs = 0;
+  /** Refreshed on the telemetry cadence rather than per tick: sysfs reads. */
+  private systemDiagnostics: TelemetryGauges = {};
+  private lastDisconnectReason: DisconnectReason | undefined;
+  /**
+   * Startup phase durations for this process. Recorded once per boot, which is
+   * what makes "it took four minutes to come back after the power cut"
+   * attributable to a phase instead of a guess.
+   */
+  private startupTimings: {
+    configMs?: number;
+    manifestMs?: number;
+    assetVerifyMs?: number;
+    firstFrameMs?: number;
+    totalMs?: number;
+  } = {};
 
   constructor(
     private readonly store: StateStore,
@@ -297,12 +334,41 @@ export class PlayerRuntime {
       null,
       options.fetchImpl ?? fetch,
     );
-    this.manifestSync = new ManifestSync(this.store, this.client, {
-      onManifestPrepared: (manifest, clockOffsetMs) =>
-        this.onManifestPrepared(manifest, clockOffsetMs),
-      onCredentialRejected: () => void this.onCredentialRejected(),
-      onSyncError: (error) => log.warn("manifest sync error", { error }),
-    });
+    // Every request counts, from the client's own choke point, so the counters
+    // describe all of the player's traffic and not the call sites that
+    // remembered to measure.
+    this.client.observeRequests((observation) =>
+      this.telemetry?.recordRequest(observation),
+    );
+    this.manifestSync = new ManifestSync(
+      this.store,
+      this.client,
+      {
+        onManifestPrepared: (manifest, clockOffsetMs) =>
+          this.onManifestPrepared(manifest, clockOffsetMs),
+        onCredentialRejected: () => void this.onCredentialRejected(),
+        onSyncError: (error) => log.warn("manifest sync error", { error }),
+      },
+      {
+        onResumed: () => this.telemetry?.addCount("downloadResumeCount", 1),
+        onBytes: (bytes, durationMs) => {
+          this.telemetry?.addCount("downloadedBytes", bytes);
+          // Throughput only. A media transfer is deliberately not counted as an
+          // HTTP request: it does not go through the client's request path, so a
+          // failed one would not be counted there either, and the request
+          // failure rate would read lower than the truth.
+          if (durationMs > 0 && bytes > 0) {
+            this.telemetry?.recordSample(
+              "throughput",
+              (bytes / durationMs) * 1_000,
+            );
+          }
+        },
+        onIntegrityFailure: () =>
+          this.telemetry?.addCount("integrityFailureCount", 1),
+        onFailure: () => this.telemetry?.addCount("downloadFailureCount", 1),
+      },
+    );
     this.configSync = new ConfigSync(this.store, this.client, {
       onConfigApplied: (config) => {
         this.config = config;
@@ -445,8 +511,12 @@ export class PlayerRuntime {
     // Cached content and configuration first — playback never waits for the
     // network. These emit onManifestPrepared/onConfigApplied from disk and
     // send nothing over the wire.
+    const cachedConfigAt = Date.now();
     await this.configSync.loadCached();
+    this.startupTimings.configMs = Date.now() - cachedConfigAt;
+    const cachedManifestAt = Date.now();
     await this.manifestSync.loadCached();
+    this.startupTimings.manifestMs = Date.now() - cachedManifestAt;
 
     this.timers.push(
       setInterval(
@@ -538,7 +608,15 @@ export class PlayerRuntime {
       () => Date.now(),
     );
     this.telemetry.start();
-    this.timers.push(setInterval(() => this.accumulateTelemetry(), 10_000));
+    this.timers.push(
+      setInterval(() => this.accumulateTelemetry(), 10_000),
+      setInterval(
+        () => void this.refreshSystemDiagnostics(),
+        TELEMETRY_INTERVAL_MS,
+      ),
+    );
+    // Read once now so the first sample already carries them.
+    void this.refreshSystemDiagnostics();
 
     this.sessions = new PlaybackSessionTracker(
       (event) => void this.activity?.record(event),
@@ -585,6 +663,9 @@ export class PlayerRuntime {
 
     await this.configSync.syncNow("startup");
     await this.manifestSync.start();
+    // Caught up with the server, which is a different milestone from having
+    // content on screen: cached playback starts long before this.
+    this.startupTimings.totalMs = Date.now() - this.startedAt;
     await this.commands.start();
     await autostartProbed;
     this.connectSocket();
@@ -622,11 +703,16 @@ export class PlayerRuntime {
           this.liveStream?.sessionChanged();
           void this.reportStatus();
         },
-        onClose: (reason, policyViolation) => {
+        onClose: (reason, policyViolation, category) => {
           const wasOpen = this.socketOpen;
           this.socketOpen = false;
           const delay = this.backoff.onDisconnected(Date.now());
-          log.warn("socket closed", { reason, retryInMs: delay });
+          // The category is safe to report; the text stays in this log.
+          this.lastDisconnectReason = category;
+          if (wasOpen) {
+            this.telemetry?.addCount("socketReconnectCount", 1);
+          }
+          log.warn("socket closed", { reason, category, retryInMs: delay });
           if (wasOpen) {
             void this.activity?.record({
               eventType: "connection.lost",
@@ -683,6 +769,7 @@ export class PlayerRuntime {
   // ------------------------------------------------------------- activation
 
   private onManifestPrepared(manifest: Manifest, clockOffsetMs = 0): void {
+    this.clockOffsetMs = clockOffsetMs;
     // Plugin state is independent of presentation activation. Sending it on
     // its own channel makes create/update/hide immediate and guarantees that
     // the current item, decoder, timeline, and proof-of-play session remain
@@ -780,6 +867,9 @@ export class PlayerRuntime {
       );
     }
     if (kind === "item-started") {
+      // The first item on screen is the milestone an operator watching a screen
+      // power on actually sees, so it is recorded once and never overwritten.
+      this.startupTimings.firstFrameMs ??= Date.now() - this.startedAt;
       // The renderer reports the item it is about to show, which is what opens
       // the child session. Without this the server would only ever see a
       // terminal event and could not derive a real playback interval.
@@ -802,7 +892,7 @@ export class PlayerRuntime {
    * The latest value of each telemetry gauge. Read at flush time so the
    * snapshot is genuinely current rather than whatever was last pushed.
    */
-  private telemetryGauges() {
+  private telemetryGauges(): TelemetryGauges {
     const assessment = this.renderProgressStatus();
     const progress = this.renderProgress;
     return {
@@ -824,7 +914,41 @@ export class PlayerRuntime {
       // player does not yet expose them, and a fabricated zero would read as
       // an empty cache.
       processUptimeSeconds: Math.floor((Date.now() - this.startedAt) / 1_000),
+      deviceUptimeSeconds: this.deviceUptimeSeconds() ?? undefined,
+      // Link type, signal, clock, and power, refreshed on the reporting
+      // cadence rather than read here: these are sysfs files, not variables.
+      ...this.systemDiagnostics,
+      lastDisconnectReason: this.lastDisconnectReason,
+      clockOffsetSeconds: Math.round(this.clockOffsetMs / 1_000),
+      ...this.displayGauges(),
+      startupTotalMs: this.startupTimings.totalMs,
+      startupConfigMs: this.startupTimings.configMs,
+      startupManifestMs: this.startupTimings.manifestMs,
+      startupFirstFrameMs: this.startupTimings.firstFrameMs,
+      // startupAssetVerifyMs is omitted: manifest verification is not timed
+      // separately from the download it follows, and a figure that actually
+      // measured both phases would be read as the verify cost alone.
     };
+  }
+
+  /**
+   * What the panel reports, when the host can see it. A window size is not a
+   * substitute: the two differ exactly when the display is the problem.
+   */
+  private displayGauges(): TelemetryGauges {
+    const info = this.host.displayInfo?.();
+    if (!info) return {};
+    const gauges: TelemetryGauges = {
+      displayConnected: info.connected,
+      displayPowerState: info.connected ? "on" : "unknown",
+    };
+    if (info.width > 0 && info.height > 0) {
+      gauges.displayResolution = `${Math.round(info.width)}x${Math.round(info.height)}`;
+    }
+    if (info.refreshHz !== undefined && info.refreshHz > 0) {
+      gauges.displayRefreshHz = info.refreshHz;
+    }
+    return gauges;
   }
 
   /**
@@ -1453,6 +1577,30 @@ export class PlayerRuntime {
     return Number.isFinite(value) && value >= 15
       ? value
       : DEFAULT_STATUS_INTERVAL_S;
+  }
+
+  /**
+   * Device uptime derived from the reading taken at start, rather than by
+   * re-reading procfs on every sample. An unexpected reboot is visible as this
+   * dropping, which the server sees as a new uptime, not as a gap.
+   */
+  private deviceUptimeSeconds(): number | null {
+    if (this.systemUptimeAtStartSeconds === null) return null;
+    return Math.floor(
+      this.systemUptimeAtStartSeconds + (Date.now() - this.startedAt) / 1_000,
+    );
+  }
+
+  /** Refreshed on the reporting cadence: every field here is a sysfs read. */
+  private async refreshSystemDiagnostics(): Promise<void> {
+    try {
+      this.systemDiagnostics = await readSystemDiagnostics();
+    } catch (error) {
+      // A probe failure is not a player failure. Keeping the previous reading
+      // is wrong too, so the gauges simply go absent.
+      this.systemDiagnostics = {};
+      log.debug("system probe failed", { error: String(error) });
+    }
   }
 
   private async readSystemUptimeSeconds(): Promise<number | null> {

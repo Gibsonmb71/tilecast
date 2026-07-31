@@ -66,12 +66,45 @@ export interface ConditionalResult<T> {
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
+/**
+ * What one request cost and how it ended. Reported for every request from the
+ * single choke point below, so the telemetry counters describe all of the
+ * player's traffic rather than whichever call sites remembered to measure.
+ */
+export interface RequestObservation {
+  /** Absent when no response arrived at all. */
+  status?: number;
+  /** Milliseconds until the response headers arrived. */
+  timeToFirstByteMs: number;
+  /** Milliseconds until the body was fully read. */
+  durationMs: number;
+  bytes: number;
+  /** True when the previous attempt at this same endpoint failed. */
+  retry: boolean;
+}
+
+/** How many endpoints' failure state is remembered, for retry attribution. */
+const FAILED_ENDPOINT_LIMIT = 32;
+
 export class ApiClient {
+  private observer: ((observation: RequestObservation) => void) | null = null;
+  /**
+   * Endpoints whose last attempt failed. A request to one of them is a retry,
+   * which is what makes "the player is hammering a failing endpoint" visible
+   * as something other than ordinary traffic.
+   */
+  private failedEndpoints = new Set<string>();
+
   constructor(
     readonly baseUrl: string,
     private credential: string | null = null,
     private readonly fetchImpl: typeof fetch = fetch,
   ) {}
+
+  /** Telemetry observes requests through this rather than by wrapping fetch. */
+  observeRequests(observer: (observation: RequestObservation) => void): void {
+    this.observer = observer;
+  }
 
   setCredential(credential: string | null): void {
     this.credential = credential;
@@ -108,6 +141,10 @@ export class ApiClient {
       headers["Authorization"] = `Bearer ${this.credential}`;
     }
 
+    const endpoint = `${method} ${path}`;
+    const retry = this.failedEndpoints.has(endpoint);
+    const startedAt = Date.now();
+
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     let response: Response;
@@ -119,17 +156,30 @@ export class ApiClient {
         signal: controller.signal,
       });
     } catch (err) {
+      // No status: the request never reached a response, which is a different
+      // fact from a server that answered with an error.
+      this.finishRequest(endpoint, retry, startedAt, startedAt, 0, undefined);
       throw new NetworkError(`request failed: ${method} ${path}`, err);
     } finally {
       clearTimeout(timer);
     }
+    const headersAt = Date.now();
 
     if (response.status === 304) {
+      this.finishRequest(endpoint, retry, startedAt, headersAt, 0, 304);
       return { status: 304, headers: response.headers, json: null };
     }
 
     let json: unknown = null;
     const text = await response.text().catch(() => "");
+    this.finishRequest(
+      endpoint,
+      retry,
+      startedAt,
+      headersAt,
+      text.length,
+      response.status,
+    );
     if (text.length > 0) {
       try {
         json = JSON.parse(text);
@@ -151,6 +201,36 @@ export class ApiClient {
     }
 
     return { status: response.status, headers: response.headers, json };
+  }
+
+  /**
+   * Reports the request and remembers whether this endpoint is currently
+   * failing. The failure set is capped: a player that cannot reach the server at
+   * all would otherwise accumulate an entry per distinct path it tried.
+   */
+  private finishRequest(
+    endpoint: string,
+    retry: boolean,
+    startedAt: number,
+    headersAt: number,
+    bytes: number,
+    status?: number,
+  ): void {
+    const failed = status === undefined || status >= 400;
+    if (failed) {
+      if (this.failedEndpoints.size < FAILED_ENDPOINT_LIMIT) {
+        this.failedEndpoints.add(endpoint);
+      }
+    } else {
+      this.failedEndpoints.delete(endpoint);
+    }
+    this.observer?.({
+      status,
+      timeToFirstByteMs: Math.max(0, headersAt - startedAt),
+      durationMs: Math.max(0, Date.now() - startedAt),
+      bytes,
+      retry,
+    });
   }
 
   private static data<T>(json: unknown): T {

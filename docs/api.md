@@ -146,8 +146,10 @@ All routes below require a dashboard session. Owner, Administrator, and Editor m
 - `PATCH /api/v1/uploads/{id}` accepts `application/offset+octet-stream` and requires the exact `Upload-Offset`. A mismatch returns `409 upload_offset_mismatch` without moving the accepted offset.
 - `POST /api/v1/uploads/{id}/complete` validates size, synchronizes the file, hashes it, detects its actual type, atomically promotes it, creates the asset and original variant, and queues inspection. Repeating completion after success returns the same asset.
 - `DELETE /api/v1/uploads/{id}` cancels an unfinished upload and removes temporary bytes.
-- `GET /api/v1/assets` is paginated and supports `search`, `type`, `status`, `folderId`, `collectionId`, `tagId`, `sort`, `page`, and `pageSize` (maximum 100).
-- `GET`, `PATCH`, and `DELETE /api/v1/assets/{id}` read, edit, or soft-delete an asset.
+- `GET /api/v1/assets` is paginated and supports `search`, `type`, `status`, `folderId`, `collectionId`, `tagId`, `sort`, `page`, and `pageSize` (maximum 100). Active content is returned by default; `archived=true` returns manually archived content plus content whose `expiresAt` has elapsed. This time-based transition is computed against the database clock, so it needs no cleanup job or browser session.
+- `POST /api/v1/assets/archive` moves 1–100 unused assets out of the active library without deleting their files or folder, collection, and tag organization. The transaction is rejected if any selected asset is missing or still used by a playlist, Layout, Widget, or shared setting.
+- `POST /api/v1/assets/restore` returns 1–100 archived or expired assets to the active library while preserving organization. Restoring expired content clears its elapsed `expiresAt`; restoring manually archived content preserves a future expiration.
+- `GET` and `PATCH /api/v1/assets/{id}` read or edit an active asset. `DELETE /api/v1/assets/{id}` permanently soft-deletes an active or archived asset and queues file cleanup; Studio presents this operation only from Archive.
 - `POST /api/v1/assets/{id}/retry` retries a failed processing pipeline.
 - `GET /api/v1/assets/{id}/thumbnail` streams the authenticated thumbnail or poster.
 - `GET` and `HEAD /api/v1/assets/{id}/preview` stream the authenticated, player-compatible image or video variant for Studio previews, including byte-range requests.

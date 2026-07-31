@@ -1339,6 +1339,18 @@ export const api = {
       headers: { "X-CSRF-Token": csrfToken },
       body: JSON.stringify(input),
     }),
+  archiveAssets: (assetIds: string[], csrfToken: string) =>
+    request<{ updated: number }>("/assets/archive", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ assetIds }),
+    }),
+  restoreAssets: (assetIds: string[], csrfToken: string) =>
+    request<{ updated: number }>("/assets/restore", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ assetIds }),
+    }),
   asset: (id: string) => request<Asset>(`/assets/${id}`),
   assetPreviewUrl: (id: string) =>
     `/api/v1/assets/${encodeURIComponent(id)}/preview`,

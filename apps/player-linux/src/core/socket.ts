@@ -13,6 +13,7 @@
 
 import WebSocket from "ws";
 import { logger } from "./log";
+import type { DisconnectReason } from "./telemetry";
 import type { Heartbeat, SocketEnvelope } from "./types";
 
 const log = logger("socket");
@@ -21,10 +22,61 @@ export const PROTOCOL_VERSION = 1;
 /** Three missed 30-second server pings ⇒ the peer is gone. */
 const LIVENESS_TIMEOUT_MS = 95_000;
 
+/**
+ * Turns the close reason into one of the categories telemetry reports. The
+ * text itself stays in this player's log: an operator needs to know which class
+ * of failure it was, and a fleet-wide table is the wrong place for an error
+ * string that can contain an address.
+ */
+export function classifyDisconnectReason(
+  reason: string,
+  policyViolation: boolean,
+  closedLocally: boolean,
+): DisconnectReason {
+  // A revoked credential or a disabled screen is the one case the server tells
+  // us outright, and it is not a network fault.
+  if (policyViolation) return "credential_rejected";
+  if (closedLocally) return "client_closed";
+  const text = reason.toLowerCase();
+  if (text.includes("liveness") || text.includes("etimedout")) return "timeout";
+  if (
+    text.includes("certificate") ||
+    text.includes("tls") ||
+    text.includes("ssl") ||
+    text.includes("self-signed")
+  ) {
+    return "tls_failure";
+  }
+  if (
+    text.includes("enetunreach") ||
+    text.includes("enetdown") ||
+    text.includes("ehostunreach")
+  ) {
+    return "network_lost";
+  }
+  if (
+    text.includes("enotfound") ||
+    text.includes("eai_again") ||
+    text.includes("econnrefused") ||
+    text.includes("econnreset")
+  ) {
+    return "server_unreachable";
+  }
+  if (text.startsWith("close ")) return "server_closed";
+  return "unknown";
+}
+
 export interface SocketEvents {
   onOpen(): void;
-  /** Fired exactly once per connection, after open. */
-  onClose(reason: string, policyViolation: boolean): void;
+  /**
+   * Fired exactly once per connection, after open. `category` is the same fact
+   * as `reason`, reduced to something safe to report.
+   */
+  onClose(
+    reason: string,
+    policyViolation: boolean,
+    category: DisconnectReason,
+  ): void;
   onManifestChanged(manifestVersion: number): void;
   onConfigChanged(configRevision: number): void;
   onCommandsAvailable(): void;
@@ -211,7 +263,11 @@ export class PlayerSocket {
       return;
     }
     this.closeReported = true;
-    this.events.onClose(reason, policyViolation);
+    this.events.onClose(
+      reason,
+      policyViolation,
+      classifyDisconnectReason(reason, policyViolation, this.closed),
+    );
   }
 }
 

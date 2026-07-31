@@ -10,6 +10,10 @@
  * Threshold events are the server's job. The player reports measurements; the
  * server owns the hysteresis and cooldowns, so a player that restarts cannot
  * re-announce every condition it was already in.
+ *
+ * A measurement this player cannot make is omitted, never sent as zero. The
+ * server distinguishes the two, and the difference is the whole reason a screen
+ * that cannot read its own luminance is not reported as a black screen.
  */
 
 import type { ApiClient } from "./api";
@@ -42,7 +46,67 @@ export interface TelemetryGauges {
   averageLuminance?: number;
   thermalState?: string;
   memoryPressureState?: string;
+
+  /**
+   * Network path. Deliberately the link and not the network: no SSID, host,
+   * address, or URL is reported, because a fleet-wide table is the wrong place
+   * for any of them and the server rejects them anyway.
+   */
+  networkLinkType?: "ethernet" | "wifi" | "cellular" | "other" | "unknown";
+  wifiSignalDbm?: number;
+  wifiLinkSpeedMbps?: number;
+  gatewayReachable?: boolean;
+  captivePortalSuspected?: boolean;
+  lastDisconnectReason?: DisconnectReason;
+
+  /** Display and power: how a dark panel is told apart from a dead player. */
+  displayConnected?: boolean;
+  displayResolution?: string;
+  displayRefreshHz?: number;
+  displayPowerState?: "on" | "standby" | "off" | "unknown";
+  lastShutdownReason?: ShutdownReason;
+  powerSource?: "mains" | "battery" | "ups" | "unknown";
+  batteryPercent?: number;
+
+  /** Offline scheduling runs on the device clock, so drift is a real fault. */
+  clockOffsetSeconds?: number;
+  timeSyncState?: "synchronized" | "unsynchronized" | "unknown";
+
+  /** One set per boot, so a slow recovery is attributable to a phase. */
+  startupTotalMs?: number;
+  startupConfigMs?: number;
+  startupManifestMs?: number;
+  startupAssetVerifyMs?: number;
+  startupFirstFrameMs?: number;
+
+  videoDecoderPath?: "hardware" | "software" | "mixed" | "unknown";
+  videoDecodedResolution?: string;
 }
+
+/**
+ * The categories the server accepts. They are categories rather than messages
+ * on purpose: an operator needs to know which class of failure happened, and
+ * the text that produced it belongs in this player's own log.
+ */
+export type DisconnectReason =
+  | "network_lost"
+  | "server_unreachable"
+  | "timeout"
+  | "tls_failure"
+  | "credential_rejected"
+  | "server_closed"
+  | "client_closed"
+  | "process_restart"
+  | "unknown";
+
+export type ShutdownReason =
+  | "clean"
+  | "power_loss"
+  | "kernel_panic"
+  | "thermal"
+  | "watchdog"
+  | "update"
+  | "unknown";
 
 /** Counters accumulated between samples, then reset. */
 interface Counters {
@@ -57,11 +121,51 @@ interface Counters {
   cacheHits: number;
   cacheMisses: number;
   consecutiveDownloadFailures: number;
+  httpRequestCount: number;
+  httpFailureCount: number;
+  httpClientErrorCount: number;
+  httpServerErrorCount: number;
+  requestRetryCount: number;
+  socketReconnectCount: number;
+  networkInterfaceChangeCount: number;
+  jankFrameCount: number;
+  rendererCrashCount: number;
+  surfaceLostCount: number;
+  decoderInitFailureCount: number;
+  cacheEvictionCount: number;
+  cacheEvictedBytes: number;
+  integrityFailureCount: number;
+  downloadResumeCount: number;
+  downloadFailureCount: number;
+  unexpectedRebootCount: number;
+  displaySleepCount: number;
+  displayWakeCount: number;
   thermalSeconds: Record<string, number>;
   syncDriftSamples: number[];
   memorySamples: number[];
   cpuSamples: number[];
+  timeToFirstByteSamples: number[];
+  throughputSamples: number[];
+  frameTimeSamples: number[];
 }
+
+/** The sample sets, named so a caller cannot record into the wrong one. */
+export type TelemetrySampleKind =
+  | "syncDrift"
+  | "memory"
+  | "cpu"
+  | "timeToFirstByte"
+  | "throughput"
+  | "frameTime";
+
+const SAMPLE_SETS: Record<TelemetrySampleKind, keyof Counters> = {
+  syncDrift: "syncDriftSamples",
+  memory: "memorySamples",
+  cpu: "cpuSamples",
+  timeToFirstByte: "timeToFirstByteSamples",
+  throughput: "throughputSamples",
+  frameTime: "frameTimeSamples",
+};
 
 function emptyCounters(): Counters {
   return {
@@ -76,10 +180,32 @@ function emptyCounters(): Counters {
     cacheHits: 0,
     cacheMisses: 0,
     consecutiveDownloadFailures: 0,
+    httpRequestCount: 0,
+    httpFailureCount: 0,
+    httpClientErrorCount: 0,
+    httpServerErrorCount: 0,
+    requestRetryCount: 0,
+    socketReconnectCount: 0,
+    networkInterfaceChangeCount: 0,
+    jankFrameCount: 0,
+    rendererCrashCount: 0,
+    surfaceLostCount: 0,
+    decoderInitFailureCount: 0,
+    cacheEvictionCount: 0,
+    cacheEvictedBytes: 0,
+    integrityFailureCount: 0,
+    downloadResumeCount: 0,
+    downloadFailureCount: 0,
+    unexpectedRebootCount: 0,
+    displaySleepCount: 0,
+    displayWakeCount: 0,
     thermalSeconds: {},
     syncDriftSamples: [],
     memorySamples: [],
     cpuSamples: [],
+    timeToFirstByteSamples: [],
+    throughputSamples: [],
+    frameTimeSamples: [],
   };
 }
 
@@ -100,6 +226,23 @@ export function percentile(
 function mean(values: number[]): number | undefined {
   if (values.length === 0) return undefined;
   return values.reduce((total, value) => total + value, 0) / values.length;
+}
+
+function maximum(values: number[]): number | undefined {
+  return values.length > 0 ? Math.max(...values) : undefined;
+}
+
+/** One request's outcome, as the HTTP client sees it. */
+export interface RequestOutcome {
+  /** Absent when the request never got a response at all. */
+  status?: number;
+  /** Milliseconds until the response headers arrived. */
+  timeToFirstByteMs?: number;
+  /** Body size and elapsed time, for throughput. Both or neither. */
+  bytes?: number;
+  durationMs?: number;
+  /** True when this attempt followed a previous failed one. */
+  retry?: boolean;
 }
 
 export class TelemetryReporter {
@@ -151,19 +294,57 @@ export class TelemetryReporter {
       (this.counters.thermalSeconds[state] ?? 0) + seconds;
   }
 
-  recordSample(kind: "syncDrift" | "memory" | "cpu", value: number): void {
-    const target =
-      kind === "syncDrift"
-        ? this.counters.syncDriftSamples
-        : kind === "memory"
-          ? this.counters.memorySamples
-          : this.counters.cpuSamples;
+  recordSample(kind: TelemetrySampleKind, value: number): void {
+    if (!Number.isFinite(value)) return;
+    const target = this.counters[SAMPLE_SETS[kind]] as number[];
     if (target.length >= TelemetryReporter.MAX_SAMPLES) {
       // Drop the oldest rather than grow without bound; the percentiles stay
       // representative and memory stays flat.
       target.shift();
     }
     target.push(value);
+  }
+
+  /**
+   * One HTTP request's outcome. Kept in one place so the counters cannot
+   * disagree with each other: every request counts once, and a request that
+   * failed counts as a failure exactly once whether it failed at the socket or
+   * with a status code.
+   */
+  recordRequest(outcome: RequestOutcome): void {
+    this.counters.httpRequestCount += 1;
+    if (outcome.retry) {
+      this.counters.requestRetryCount += 1;
+    }
+    const status = outcome.status;
+    if (status === undefined) {
+      // No response at all: a network failure, with no class to attribute it to.
+      this.counters.httpFailureCount += 1;
+    } else {
+      if (status >= 400) {
+        this.counters.httpFailureCount += 1;
+      }
+      if (status >= 400 && status < 500) {
+        this.counters.httpClientErrorCount += 1;
+      } else if (status >= 500) {
+        this.counters.httpServerErrorCount += 1;
+      }
+    }
+    if (outcome.timeToFirstByteMs !== undefined) {
+      this.recordSample("timeToFirstByte", outcome.timeToFirstByteMs);
+    }
+    // Throughput needs both terms, and a duration of zero would divide by it.
+    if (
+      outcome.bytes !== undefined &&
+      outcome.durationMs !== undefined &&
+      outcome.durationMs > 0 &&
+      outcome.bytes > 0
+    ) {
+      this.recordSample(
+        "throughput",
+        (outcome.bytes / outcome.durationMs) * 1_000,
+      );
+    }
   }
 
   setConsecutiveDownloadFailures(count: number): void {
@@ -200,15 +381,39 @@ export class TelemetryReporter {
         cacheMisses: counters.cacheMisses,
         consecutiveDownloadFailures: counters.consecutiveDownloadFailures,
         averageMemoryBytes: mean(counters.memorySamples),
-        peakMemoryBytes:
-          counters.memorySamples.length > 0
-            ? Math.max(...counters.memorySamples)
-            : undefined,
+        peakMemoryBytes: maximum(counters.memorySamples),
         averageCpuPercent: mean(counters.cpuSamples),
         thermalSeconds: counters.thermalSeconds,
         syncDriftP50Ms: percentile(drift, 0.5),
         syncDriftP95Ms: percentile(drift, 0.95),
-        syncDriftMaxMs: drift.length > 0 ? Math.max(...drift) : undefined,
+        syncDriftMaxMs: maximum(drift),
+
+        httpRequestCount: counters.httpRequestCount,
+        httpFailureCount: counters.httpFailureCount,
+        httpClientErrorCount: counters.httpClientErrorCount,
+        httpServerErrorCount: counters.httpServerErrorCount,
+        requestRetryCount: counters.requestRetryCount,
+        socketReconnectCount: counters.socketReconnectCount,
+        networkInterfaceChangeCount: counters.networkInterfaceChangeCount,
+        timeToFirstByteP95Ms: percentile(counters.timeToFirstByteSamples, 0.95),
+        averageThroughputBytesPerSecond: mean(counters.throughputSamples),
+
+        frameTimeP95Ms: percentile(counters.frameTimeSamples, 0.95),
+        frameTimeP99Ms: percentile(counters.frameTimeSamples, 0.99),
+        jankFrameCount: counters.jankFrameCount,
+        rendererCrashCount: counters.rendererCrashCount,
+        surfaceLostCount: counters.surfaceLostCount,
+        decoderInitFailureCount: counters.decoderInitFailureCount,
+
+        cacheEvictionCount: counters.cacheEvictionCount,
+        cacheEvictedBytes: counters.cacheEvictedBytes,
+        integrityFailureCount: counters.integrityFailureCount,
+        downloadResumeCount: counters.downloadResumeCount,
+        downloadFailureCount: counters.downloadFailureCount,
+
+        unexpectedRebootCount: counters.unexpectedRebootCount,
+        displaySleepCount: counters.displaySleepCount,
+        displayWakeCount: counters.displayWakeCount,
       },
     };
 

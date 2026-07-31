@@ -101,6 +101,30 @@ A measurement the player did not report is absent, not zero. A player that canno
 
 **Five-minute rollups.** Average and maximum round-trip time, connected and disconnected seconds, healthy and stalled playback seconds, black-output seconds, dropped frames, frame changes, downloaded bytes, cache hits and misses, average and peak memory, average CPU, thermal distribution, and sync drift at p50, p95 and maximum. Averages are running means weighted by sample count, so every sample in a bucket counts equally. Rollups are the only telemetry that accumulates and have their own retention bound (`telemetryRollupDays`, 7–400 days) enforced by the existing cleanup worker. Raw high-frequency samples are never uploaded and never stored.
 
+### Diagnostic measurements
+
+The measurements above answer "is this screen playing". These answer "why is it not", which otherwise needs physical access to the device.
+
+**Network path.** Round-trip time alone cannot tell a weak radio from a slow resolver from a failing server. Gauges: link type (ethernet, wifi, cellular, other, unknown), Wi-Fi signal in dBm and link speed in Mbit/s, gateway reachability, a captive-portal verdict, and the category of the last disconnect. Counters: total requests, failures, 4xx and 5xx separately, retries, socket reconnects, interface changes, time-to-first-byte at p95, and average throughput.
+
+Deliberately absent: SSID, hostname, IP address, and URL. The columns cannot hold them — every state field is an allowlist and the resolution fields accept only `<digits>x<digits>` — so a player sending one has it dropped rather than stored. A disconnect or shutdown _reason_ is likewise a category and never the error text, which stays in the player's own log.
+
+**Display and power.** A dark panel in front of a healthy player is the case where every other measurement reads normal. Gauges: display connected, negotiated resolution and refresh rate, display power state, last shutdown reason, power source, battery percent. Counters: unexpected reboots, display sleeps and wakes. The negotiated resolution is not the window size the renderer was given; the two disagreeing is itself the signal.
+
+**Clock.** Offline scheduling is evaluated on the device clock, so drift presents only as content playing at the wrong time. Reported as a signed offset in seconds — behind and ahead are different faults — plus the time-sync state.
+
+**Startup timing.** One set per boot: total, config load, manifest load, asset verification, and time to first frame. This is what makes "the screen took four minutes to come back after the power cut" attributable to a phase.
+
+**Render and decode.** Frame time at p95 and p99, jank frames, renderer crashes, surface losses, decoder init failures, and the decode path actually used. Silent hardware-to-software fallback is the usual explanation for one device playing a video badly while an identical one plays it fine.
+
+**Cache churn.** Distinct from cache hits and misses, which only say whether content was local: evictions and evicted bytes, integrity failures, download resumes, and download failures.
+
+Six further conditions come from these: weak Wi-Fi signal, clock drift, request failure rate, display disconnected, captive portal suspected, and software decode fallback. Each obeys the same hysteresis and cooldown rules as the original conditions, and each is only evaluated on evidence — a wired screen reporting a meaningless signal figure does not raise a weak-signal condition, and the failure _rate_ is not computed at all below ten requests in the window, because one failed request in an idle window is not a failing screen.
+
+Two sanitization rules apply, and they differ on purpose. An implausible **gauge** is dropped, because absent is honest and a luminance of 4 recorded as darkness is not. An implausible **counter** is clamped, because its column is `NOT NULL` and accumulates, so one bad delta would otherwise fail the whole request for a screen that is reporting fine.
+
+Coverage is not yet equal across platforms. Tilecast Player for Linux reports the network, clock, power, display, startup, cache, and request measurements; frame timing, decode path, and cache eviction await renderer and cache-manager instrumentation, and are omitted rather than sent as zero. Tilecast Player for Android does not yet post telemetry samples at all — its heartbeat is unaffected, but the telemetry conditions are dark for Android screens until it does.
+
 ## Meaningful render progress
 
 Three things are routinely confused, and conflating them is what lets a player report itself healthy over a blank screen: the process is alive, the renderer object is alive, and playback is actually progressing. Only the third is health.

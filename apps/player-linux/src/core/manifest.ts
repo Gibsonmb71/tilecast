@@ -17,7 +17,11 @@
 import { promises as fs } from "fs";
 import * as path from "path";
 import { ApiError, NetworkError, type ApiClient } from "./api";
-import { downloadVerified, DownloadError } from "./download";
+import {
+  downloadVerified,
+  DownloadError,
+  type DownloadObserver,
+} from "./download";
 import { logger } from "./log";
 import type { StateStore } from "./storage";
 import type { Manifest, ManifestAsset } from "./types";
@@ -168,6 +172,8 @@ export class ManifestSync {
     private readonly store: StateStore,
     private readonly client: ApiClient,
     private readonly events: ManifestSyncEvents,
+    /** Counts transfer facts for telemetry. Absent in tests and previews. */
+    private readonly downloadObserver?: DownloadObserver,
   ) {}
 
   /**
@@ -308,6 +314,7 @@ export class ManifestSync {
               etag: `"${asset.sha256}"`,
             },
             undefined,
+            this.downloadObserver,
           );
         } catch (err) {
           if (err instanceof DownloadError && !err.retryable) {

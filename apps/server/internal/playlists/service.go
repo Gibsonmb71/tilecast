@@ -143,7 +143,7 @@ func (s *Service) List(ctx context.Context, search string, page, pageSize int) (
 	rows, err := s.db.Query(ctx, `SELECT p.id,p.name,p.description,p.revision,p.created_at,p.updated_at,p.source_type,
 		CASE WHEN p.source_type='static' THEN count(i.id) ELSE (
 			SELECT count(*) FROM assets a
-			WHERE a.deleted_at IS NULL AND a.origin='library' AND a.type IN('image','video') AND a.processing_status='ready'
+			WHERE a.deleted_at IS NULL AND a.archived_at IS NULL AND (a.expires_at IS NULL OR a.expires_at>now()) AND a.origin='library' AND a.type IN('image','video') AND a.processing_status='ready'
 			  AND EXISTS(SELECT 1 FROM asset_variants v WHERE v.asset_id=a.id AND v.deleted_at IS NULL AND v.player_compatible=TRUE)
 			  AND EXISTS(SELECT 1 FROM playlist_tags selected WHERE selected.playlist_id=p.id)
 			  AND ((p.tag_match='any' AND EXISTS(
@@ -220,7 +220,7 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (Playlist, error) {
 			a.processing_status,a.duration_seconds,v.id,a.created_at,a.updated_at,a.available_from,a.expires_at,TRUE
 		FROM matched m JOIN assets a ON a.id=m.asset_id
 		LEFT JOIN LATERAL(SELECT id FROM asset_variants WHERE asset_id=a.id AND deleted_at IS NULL AND player_compatible=TRUE ORDER BY CASE kind WHEN 'playback' THEN 0 WHEN 'original' THEN 1 ELSE 2 END LIMIT 1)v ON TRUE
-		WHERE a.deleted_at IS NULL AND a.origin='library' AND a.type IN ('image','video') AND a.processing_status='ready' AND v.id IS NOT NULL
+		WHERE a.deleted_at IS NULL AND a.archived_at IS NULL AND (a.expires_at IS NULL OR a.expires_at>now()) AND a.origin='library' AND a.type IN ('image','video') AND a.processing_status='ready' AND v.id IS NOT NULL
 		ORDER BY lower(a.name),a.id`
 	}
 	var rows pgx.Rows
