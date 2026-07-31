@@ -2374,20 +2374,18 @@ export function ScreenDetailPage() {
       <div className="notice notice--error">Screen could not be loaded.</div>
     );
   const requestedTab = searchParams.get("tab") ?? "overview";
-  const tab = [
-    "overview",
-    "content",
-    "activity",
-    "player-settings",
-    "reliability",
-    "commands",
-  ].includes(requestedTab)
-    ? requestedTab
-    : "overview";
+  const tab = ["player-settings", "reliability", "commands"].includes(
+    requestedTab,
+  )
+    ? "manage"
+    : ["overview", "snapshots", "content", "activity", "manage"].includes(
+          requestedTab,
+        )
+      ? requestedTab
+      : "overview";
   const selectTab = (nextTab: string) => {
-    if (policyDirty && tab === "player-settings") {
-      if (!confirm("Leave Player settings without saving your changes?"))
-        return;
+    if (policyDirty && tab === "manage") {
+      if (!confirm("Leave Manage without saving your changes?")) return;
       setPolicyDirty(false);
     }
     const next = new URLSearchParams(searchParams);
@@ -2396,7 +2394,9 @@ export function ScreenDetailPage() {
     setSearchParams(next);
   };
   return (
-    <div className="screen-detail">
+    <div
+      className={`screen-detail${tab === "manage" ? " screen-detail--manage" : ""}`}
+    >
       <PageHeader
         title={screen.name}
         description={
@@ -2510,15 +2510,14 @@ export function ScreenDetailPage() {
         onValueChange={selectTab}
         items={[
           { value: "overview", label: "Overview" },
+          { value: "snapshots", label: "Snapshots" },
           { value: "content", label: "Content" },
           { value: "activity", label: "Activity" },
           {
-            value: "player-settings",
-            label: "Player settings",
+            value: "manage",
+            label: "Manage",
             marker: policyDirty ? "Unsaved" : undefined,
           },
-          { value: "reliability", label: "Reliability" },
-          { value: "commands", label: "Commands" },
         ]}
       />
 
@@ -2574,9 +2573,9 @@ export function ScreenDetailPage() {
             <div>
               <dt>Player-setting overrides</dt>
               <dd>
-                <Link to={`?tab=player-settings`}>
+                <Link to={`?tab=manage`}>
                   {Object.keys(screenPolicy.data?.values ?? {}).length}{" "}
-                  configured · Review settings
+                  configured · Manage screen
                 </Link>
               </dd>
             </div>
@@ -2585,11 +2584,8 @@ export function ScreenDetailPage() {
             <button type="button" onClick={() => selectTab("content")}>
               View content
             </button>
-            <button type="button" onClick={() => selectTab("reliability")}>
-              View reliability
-            </button>
-            <button type="button" onClick={() => selectTab("commands")}>
-              View commands
+            <button type="button" onClick={() => selectTab("manage")}>
+              Manage screen
             </button>
           </div>
         </section>
@@ -2820,13 +2816,21 @@ export function ScreenDetailPage() {
         </section>
       )}
 
-      {tab === "reliability" && (
+      {tab === "manage" && (
+        <PlayerPolicyEditor
+          target="screen"
+          id={id}
+          onDirtyChange={setPolicyDirty}
+        />
+      )}
+
+      {tab === "manage" && (
         <section className="operations" aria-labelledby="reliability-heading">
-          <h3 id="reliability-heading">Reliability &amp; Power</h3>
+          <h3 id="reliability-heading">Health &amp; recovery</h3>
           <p>
-            Configured features are reported separately from Android-confirmed
-            capabilities. Power Assist asks Android to sleep or wake; it does
-            not send direct HDMI-CEC commands.
+            Configured behavior is reported separately from capabilities
+            confirmed by this device. Platform-specific controls appear only
+            when the player reports support.
           </p>
           <div className="readiness-panel">
             <div className="readiness-panel__heading">
@@ -2889,10 +2893,14 @@ export function ScreenDetailPage() {
                     : "Not confirmed"}
                 </dd>
               </div>
-              <div>
-                <dt>Install permission</dt>
-                <dd>{formatReportedStatus(screen.installPermissionStatus)}</dd>
-              </div>
+              {screen.platform === "android" && (
+                <div>
+                  <dt>Install permission</dt>
+                  <dd>
+                    {formatReportedStatus(screen.installPermissionStatus)}
+                  </dd>
+                </div>
+              )}
               <div>
                 <dt>Free storage</dt>
                 <dd>
@@ -2951,25 +2959,31 @@ export function ScreenDetailPage() {
                   : "Wake lock released"}
               </dd>
             </div>
-            <div>
-              <dt>Managed Kiosk</dt>
-              <dd>
-                {formatReportedStatus(reliability.data?.managedKioskCapability)}{" "}
-                · lock task{" "}
-                {formatReportedStatus(
-                  reliability.data?.lockTaskState,
-                  "unknown",
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt>Accessibility Control</dt>
-              <dd>
-                {formatReportedStatus(
-                  reliability.data?.accessibilityServiceState,
-                )}
-              </dd>
-            </div>
+            {screen.platform === "android" && (
+              <>
+                <div>
+                  <dt>Managed Kiosk</dt>
+                  <dd>
+                    {formatReportedStatus(
+                      reliability.data?.managedKioskCapability,
+                    )}{" "}
+                    · lock task{" "}
+                    {formatReportedStatus(
+                      reliability.data?.lockTaskState,
+                      "unknown",
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Accessibility Control</dt>
+                  <dd>
+                    {formatReportedStatus(
+                      reliability.data?.accessibilityServiceState,
+                    )}
+                  </dd>
+                </div>
+              </>
+            )}
             <div>
               <dt>Active hours</dt>
               <dd>
@@ -3025,38 +3039,40 @@ export function ScreenDetailPage() {
                   )}
                 </header>
                 <div className="reliability-control-groups">
-                  <div className="reliability-control-group">
-                    <div>
-                      <h5>Power Assist</h5>
-                      <p>Test Android sleep and wake behavior.</p>
+                  {screen.platform === "android" && (
+                    <div className="reliability-control-group">
+                      <div>
+                        <h5>Power Assist</h5>
+                        <p>Test Android sleep and wake behavior.</p>
+                      </div>
+                      <div className="reliability-button-grid">
+                        <button
+                          className="button button--secondary"
+                          disabled={command.isPending}
+                          onClick={() =>
+                            command.mutate({
+                              type: "power_assist_sleep",
+                              payload: {},
+                            })
+                          }
+                        >
+                          Test sleep
+                        </button>
+                        <button
+                          className="button button--secondary"
+                          disabled={command.isPending}
+                          onClick={() =>
+                            command.mutate({
+                              type: "power_assist_wake",
+                              payload: {},
+                            })
+                          }
+                        >
+                          Test wake
+                        </button>
+                      </div>
                     </div>
-                    <div className="reliability-button-grid">
-                      <button
-                        className="button button--secondary"
-                        disabled={command.isPending}
-                        onClick={() =>
-                          command.mutate({
-                            type: "power_assist_sleep",
-                            payload: {},
-                          })
-                        }
-                      >
-                        Test sleep
-                      </button>
-                      <button
-                        className="button button--secondary"
-                        disabled={command.isPending}
-                        onClick={() =>
-                          command.mutate({
-                            type: "power_assist_wake",
-                            payload: {},
-                          })
-                        }
-                      >
-                        Test wake
-                      </button>
-                    </div>
-                  </div>
+                  )}
                   <div className="reliability-control-group">
                     <div>
                       <h5>Recovery</h5>
@@ -3181,9 +3197,9 @@ export function ScreenDetailPage() {
         </section>
       )}
 
-      {tab === "commands" && canManageScreens(auth.status?.user) && (
+      {tab === "manage" && canManageScreens(auth.status?.user) && (
         <section className="operations">
-          <h3>Operations</h3>
+          <h3>Maintenance</h3>
           <p>
             Commands remain pending during brief disconnections and expire
             automatically.
@@ -3281,7 +3297,7 @@ export function ScreenDetailPage() {
           </div>
         </section>
       )}
-      {tab === "commands" &&
+      {tab === "manage" &&
         !canManageScreens(auth.status?.user) &&
         (commands.data?.items?.length ?? 0) > 0 && (
           <section className="operations">
@@ -3303,14 +3319,7 @@ export function ScreenDetailPage() {
             </div>
           </section>
         )}
-      {tab === "player-settings" && (
-        <PlayerPolicyEditor
-          target="screen"
-          id={id}
-          onDirtyChange={setPolicyDirty}
-        />
-      )}
-      {tab === "commands" && (
+      {tab === "manage" && (
         <>
           <section className="detail-grid">
             <div className="detail-card">
@@ -3327,7 +3336,9 @@ export function ScreenDetailPage() {
                   <dd>
                     {screen.platform === "linux"
                       ? "Linux"
-                      : `${screen.platform} · Android ${screen.androidVersion}`}
+                      : screen.platform === "android"
+                        ? `Android ${screen.androidVersion ?? ""}`.trim()
+                        : formatReportedStatus(screen.platform)}
                   </dd>
                 </div>
                 <div>
@@ -3339,21 +3350,25 @@ export function ScreenDetailPage() {
                       : ""}
                   </dd>
                 </div>
-                <div>
-                  <dt>Android SDK</dt>
-                  <dd>{screen.androidSdk ?? "Not reported"}</dd>
-                </div>
-                <div>
-                  <dt>Installer source</dt>
-                  <dd>{screen.installerSource ?? "Not reported"}</dd>
-                </div>
-                <div>
-                  <dt>Install permission</dt>
-                  <dd>
-                    {screen.installPermissionStatus?.replaceAll("_", " ") ??
-                      "Unknown"}
-                  </dd>
-                </div>
+                {screen.platform === "android" && (
+                  <>
+                    <div>
+                      <dt>Android SDK</dt>
+                      <dd>{screen.androidSdk ?? "Not reported"}</dd>
+                    </div>
+                    <div>
+                      <dt>Installer source</dt>
+                      <dd>{screen.installerSource ?? "Not reported"}</dd>
+                    </div>
+                    <div>
+                      <dt>Install permission</dt>
+                      <dd>
+                        {screen.installPermissionStatus?.replaceAll("_", " ") ??
+                          "Unknown"}
+                      </dd>
+                    </div>
+                  </>
+                )}
                 <div>
                   <dt>Player update</dt>
                   <dd>

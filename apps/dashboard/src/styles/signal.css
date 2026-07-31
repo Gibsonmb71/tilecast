@@ -3675,6 +3675,10 @@ tbody tr {
   width: min(1000px, 100%);
 }
 
+.screen-detail--manage .policy-editor {
+  padding-bottom: var(--tc-space-6);
+}
+
 .screen-detail__heading-actions {
   display: flex;
   align-items: center;

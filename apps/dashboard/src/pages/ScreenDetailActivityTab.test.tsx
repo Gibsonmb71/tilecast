@@ -31,6 +31,9 @@ vi.mock("../components/LivePreviewPanel", () => ({
 vi.mock("../components/FireTvAccessibilityAdbPanel", () => ({
   FireTvAccessibilityAdbPanel: () => <div data-testid="firetv" />,
 }));
+vi.mock("../settings/PlayerPolicyEditor", () => ({
+  PlayerPolicyEditor: () => <div data-testid="screen-behavior" />,
+}));
 
 const screenRecord = {
   id: "screen-1",
@@ -82,6 +85,13 @@ function stubApi() {
   vi.spyOn(api, "screenCommands").mockResolvedValue(empty);
   vi.spyOn(api, "screenReliability").mockResolvedValue(empty);
   vi.spyOn(api, "screenPolicy").mockResolvedValue(empty);
+  vi.spyOn(api, "screenSnapshots").mockResolvedValue({
+    items: [],
+    enabled: true,
+    retentionDays: 7,
+    maxPerScreen: 48,
+    proofNote: "Captured from Tilecast Player.",
+  });
   vi.spyOn(api, "playlistAssignment").mockResolvedValue(empty);
   vi.spyOn(api, "screen").mockResolvedValue(screenRecord as never);
   vi.spyOn(api, "screens").mockResolvedValue({
@@ -127,7 +137,50 @@ async function tabList() {
   return await screen.findByRole("navigation", { name: "Screen details" });
 }
 
-describe("screen detail Activity tab", () => {
+describe("screen detail tabs", () => {
+  it("consolidates settings, reliability, and commands under Manage", async () => {
+    renderDetail("/screens/screen-1?tab=reliability");
+
+    const tabs = await tabList();
+    expect(
+      within(tabs)
+        .getByRole("button", { name: "Manage" })
+        .getAttribute("aria-current"),
+    ).toBe("page");
+    expect(
+      within(tabs).queryByRole("button", { name: "Player settings" }),
+    ).toBeNull();
+    expect(
+      within(tabs).queryByRole("button", { name: "Reliability" }),
+    ).toBeNull();
+    expect(within(tabs).queryByRole("button", { name: "Commands" })).toBeNull();
+    expect(await screen.findByTestId("screen-behavior")).toBeTruthy();
+  });
+
+  it("does not append snapshot history to the Overview sidebar", async () => {
+    renderDetail("/screens/screen-1");
+
+    expect(await screen.findByTestId("preview")).toBeTruthy();
+    expect(
+      screen.queryByRole("heading", { name: "Snapshot history" }),
+    ).toBeNull();
+  });
+
+  it("places snapshot history in its own tab", async () => {
+    renderDetail("/screens/screen-1?tab=snapshots");
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Snapshot history",
+        level: 3,
+      }),
+    ).toBeTruthy();
+    expect(screen.queryByTestId("preview")).toBeNull();
+    expect(
+      screen.queryByRole("heading", { name: "Screen overview" }),
+    ).toBeNull();
+  });
+
   it("renders exactly one Activity tab, owned by the shared tab strip", async () => {
     renderDetail("/screens/screen-1?tab=activity");
 
@@ -198,13 +251,13 @@ describe("screen detail Activity tab", () => {
     const activity = within(tabs).getByRole("button", { name: "Activity" });
     activity.focus();
     await user.keyboard("{ArrowRight}");
-    expect(document.activeElement?.textContent).toContain("Player settings");
+    expect(document.activeElement?.textContent).toContain("Manage");
     await user.keyboard("{ArrowLeft}{ArrowLeft}");
     expect(document.activeElement?.textContent).toContain("Content");
     await user.keyboard("{Home}");
     expect(document.activeElement?.textContent).toContain("Overview");
     await user.keyboard("{End}");
-    expect(document.activeElement?.textContent).toContain("Commands");
+    expect(document.activeElement?.textContent).toContain("Manage");
   });
 
   it("does not reach outside its own subtree to place a tab", async () => {
