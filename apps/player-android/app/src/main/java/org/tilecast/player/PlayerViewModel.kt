@@ -541,7 +541,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 						// A root-Layout session never reports playlist boundaries, so waiting
 						// for one would leave the new manifest pending forever.
 						val boundaryless=mutableContent.value?.content?.manifest?.layout!=null
-						if (mutableContent.value == null||takeoverChanged||prepared.manifest.syncGroup!=null||boundaryless) activatePrepared(prepared, url, credential) else { pendingContent = prepared; schedulePendingActivationFallback(url, credential) }
+						if (shouldActivateManifestImmediately(mutableContent.value != null, takeoverChanged, boundaryless, prepared.manifest.syncGroup != null)) activatePrepared(prepared, url, credential) else { pendingContent = prepared; schedulePendingActivationFallback(url, credential) }
 					}
 					refreshCommissioning()
 				}
