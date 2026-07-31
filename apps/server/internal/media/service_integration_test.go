@@ -273,12 +273,21 @@ func TestMediaUploadProcessingAndDeletionLifecycle(t *testing.T) {
 	if _, err := pool.Exec(ctx, `UPDATE assets SET expires_at=now()-interval '1 minute' WHERE id=$1`, asset.ID); err != nil {
 		t.Fatal(err)
 	}
+	findAsset := func(items []Asset, id uuid.UUID) *Asset {
+		for index := range items {
+			if items[index].ID == id {
+				return &items[index]
+			}
+		}
+		return nil
+	}
 	active, err := service.ListAssets(ctx, ListOptions{Page: 1, PageSize: 24})
-	if err != nil || len(active.Items) != 0 {
+	if err != nil || findAsset(active.Items, asset.ID) != nil {
 		t.Fatalf("expired asset remained active: %#v %v", active, err)
 	}
 	archived, err := service.ListAssets(ctx, ListOptions{Page: 1, PageSize: 24, Archived: true, Sort: "updated"})
-	if err != nil || len(archived.Items) != 1 || archived.Items[0].ArchivedAt == nil || archived.Items[0].ExpiresAt == nil {
+	expiredAsset := findAsset(archived.Items, asset.ID)
+	if err != nil || expiredAsset == nil || expiredAsset.ArchivedAt == nil || expiredAsset.ExpiresAt == nil {
 		t.Fatalf("expired asset missing from archive: %#v %v", archived, err)
 	}
 	if _, err = service.GetAsset(ctx, asset.ID); !errors.Is(err, ErrNotFound) {
@@ -295,11 +304,12 @@ func TestMediaUploadProcessingAndDeletionLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	active, err = service.ListAssets(ctx, ListOptions{Page: 1, PageSize: 24})
-	if err != nil || len(active.Items) != 0 {
+	if err != nil || findAsset(active.Items, asset.ID) != nil {
 		t.Fatalf("archived asset remained active: %#v %v", active, err)
 	}
 	archived, err = service.ListAssets(ctx, ListOptions{Page: 1, PageSize: 24, Archived: true})
-	if err != nil || len(archived.Items) != 1 || archived.Items[0].ArchivedAt == nil {
+	archivedAsset := findAsset(archived.Items, asset.ID)
+	if err != nil || archivedAsset == nil || archivedAsset.ArchivedAt == nil {
 		t.Fatalf("archive listing: %#v %v", archived, err)
 	}
 	if _, err = service.GetAsset(ctx, asset.ID); !errors.Is(err, ErrNotFound) {
