@@ -8,11 +8,7 @@ import (
 	"github.com/tilecast/tilecast/apps/server/internal/snapshots"
 )
 
-// The snapshot routes carry the same wording everywhere they are surfaced: a
-// snapshot proves the Player rendered that frame. It does not prove the
-// television was on, on the right input, or visible to anybody.
-const snapshotProofNote = "A snapshot proves the Player rendered that frame. " +
-	"It does not prove the television was on, on the right input, or visible to anybody."
+const snapshotProofNote = "Captured from Tilecast Player."
 
 func (s *server) listScreenSnapshots(w http.ResponseWriter, r *http.Request) {
 	id, ok := urlUUID(w, r, "id")

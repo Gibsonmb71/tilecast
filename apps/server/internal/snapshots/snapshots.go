@@ -4,9 +4,7 @@
 // "what was on it at 10:14", which is the question asked after somebody reports
 // a wrong board, or over a break when nobody is in the building.
 //
-// What a snapshot proves is narrow, and the surfaces that show one say so: it
-// proves the Player rendered that frame. It does not prove the television was
-// on, on the right input, or visible to anybody.
+// Snapshots are captured from the Player render surface.
 package snapshots
 
 import (
