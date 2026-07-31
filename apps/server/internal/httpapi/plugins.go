@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/tilecast/tilecast/apps/server/internal/auth"
 	"github.com/tilecast/tilecast/apps/server/internal/plugins"
 )
@@ -15,6 +16,25 @@ func (s *server) listPlugins(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": catalog})
+}
+
+func (s *server) dependencyGraph(w http.ResponseWriter, r *http.Request) {
+	session := r.Context().Value(sessionContextKey).(auth.Session)
+	screens, err := s.devices.ListScreensForUser(r.Context(), session.User.ID, session.User.Role)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	screenIDs := make([]uuid.UUID, 0, len(screens))
+	for _, screen := range screens {
+		screenIDs = append(screenIDs, screen.ID)
+	}
+	graph, err := s.plugins.DependencyGraph(r.Context(), screenIDs)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": graph})
 }
 
 func (s *server) listCountdownBars(w http.ResponseWriter, r *http.Request) {

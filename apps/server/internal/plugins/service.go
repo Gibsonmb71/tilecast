@@ -171,6 +171,12 @@ func (s *Service) Catalog(ctx context.Context) (Catalog, error) {
 			Enabled:       true,
 			InstanceCount: formCount,
 		},
+		{
+			ID: "dependency_graph", Name: "Dependency Graph",
+			Description:   "Trace how Data Sources, content, Layouts, playlists, schedules, groups, and screens connect.",
+			Enabled:       true,
+			InstanceCount: 1,
+		},
 	}}, nil
 }
 

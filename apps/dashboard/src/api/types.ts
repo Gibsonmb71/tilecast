@@ -772,6 +772,35 @@ export type PluginSummary = {
   instanceCount: number;
 };
 
+export type DependencyNodeType =
+  | "data_source"
+  | "asset"
+  | "widget"
+  | "layout"
+  | "playlist"
+  | "schedule"
+  | "screen_group"
+  | "screen";
+
+export type DependencyNode = {
+  id: string;
+  type: DependencyNodeType;
+  name: string;
+};
+
+export type DependencyEdge = {
+  fromType: DependencyNodeType;
+  fromId: string;
+  toType: DependencyNodeType;
+  toId: string;
+  relationship: string;
+};
+
+export type DependencyGraph = {
+  nodes: DependencyNode[];
+  edges: DependencyEdge[];
+};
+
 export type CountdownBarInput = {
   name: string;
   message: string;

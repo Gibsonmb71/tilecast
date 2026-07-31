@@ -165,14 +165,30 @@ func TestCountdownBarLifecycleAndManifestTargeting(t *testing.T) {
 	for _, item := range catalog.Items {
 		byID[item.ID] = item
 	}
-	if len(catalog.Items) != 3 || byID["countdown_bar"].Name == "" || byID["emergency_alerts"].Name == "" || byID["forms"].Name == "" {
-		t.Fatalf("catalog = %+v, want Countdown Bar, Emergency Alerts, and Forms", catalog.Items)
+	if len(catalog.Items) != 4 || byID["countdown_bar"].Name == "" || byID["emergency_alerts"].Name == "" || byID["forms"].Name == "" || byID["dependency_graph"].Name == "" {
+		t.Fatalf("catalog = %+v, want Countdown Bar, Emergency Alerts, Forms, and Dependency Graph", catalog.Items)
 	}
 	if alerts := byID["emergency_alerts"]; alerts.Enabled || alerts.InstanceCount != 0 {
 		t.Fatalf("unconfigured Emergency Alerts = %+v, want disabled with no rules", alerts)
 	}
 	if forms := byID["forms"]; !forms.Enabled || forms.InstanceCount != 0 {
 		t.Fatalf("unconfigured Forms = %+v, want enabled with no forms", forms)
+	}
+	graph, err := service.DependencyGraph(ctx, []uuid.UUID{targetedScreen, otherScreen})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var groupContainsScreen bool
+	for _, edge := range graph.Edges {
+		if edge.FromType == "screen_group" && edge.FromID == groupID &&
+			edge.ToType == "screen" && edge.ToID == targetedScreen &&
+			edge.Relationship == "contains" {
+			groupContainsScreen = true
+			break
+		}
+	}
+	if !groupContainsScreen {
+		t.Fatalf("dependency graph omitted sync group membership: %+v", graph.Edges)
 	}
 	// The migration seeds the singleton row, but this test truncates users, and
 	// TRUNCATE ... CASCADE reaches every table referencing it.
