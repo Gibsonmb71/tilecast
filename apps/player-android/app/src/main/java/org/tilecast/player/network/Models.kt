@@ -60,7 +60,7 @@ object PlayerPresentationSupport {
  * reads a field belonging to another plugin is the bug this makes visible rather
  * than one polymorphic serializer per bar would.
  */
-@Serializable data class ManifestPluginConfig(val name:String="",val message:String="",val scheduleType:String="",val targetTime:String?=null,val daysOfWeek:List<Int> = emptyList(),val oneTimeAt:String?=null,val timezone:String="UTC",val leadTimeSeconds:Int=0,val completionText:String="",val showConfetti:Boolean=false,val displayMode:String="overlay",val heightPx:Int=72,val progressFill:String="none",val contentPadding:Int=4,val textScale:Int=100,val priority:Int=0,val severity:String="",val event:String="",val speed:String="medium",val expiresAt:String="")
+@Serializable data class ManifestPluginConfig(val name:String="",val message:String="",val scheduleType:String="",val targetTime:String?=null,val daysOfWeek:List<Int> = emptyList(),val oneTimeAt:String?=null,val timezone:String="UTC",val leadTimeSeconds:Int=0,val completionText:String="",val showConfetti:Boolean=false,val displayMode:String="overlay",val heightPx:Int=72,val progressFill:String="none",val contentPadding:Int=4,val textScale:Int=100,val urgencyEnabled:Boolean=false,val startingSoonSeconds:Int=300,val urgentSeconds:Int=60,val pulseSeconds:Int=10,val priority:Int=0,val severity:String="",val event:String="",val speed:String="medium",val expiresAt:String="")
 @Serializable data class ManifestSyncGroup(val id:String,val playbackEpoch:String)
 @Serializable data class ManifestTakeover(val id:String,val playlistId:String,val activatedAt:String,val expiresAt:String)
 @Serializable data class ManifestPlaylist(val id: String, val revision: Long, val name: String, val items: List<ManifestItem>)

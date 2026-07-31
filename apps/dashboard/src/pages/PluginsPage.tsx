@@ -12,7 +12,7 @@ import {
   Trash2,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useForm, type UseFormRegisterReturn } from "react-hook-form";
 import { Link, useNavigate, useParams } from "react-router";
 import { z } from "zod";
@@ -72,6 +72,28 @@ const formSchema = z
       .int("Enter a text size between 25 and 500 percent.")
       .min(25, "Enter a text size between 25 and 500 percent.")
       .max(500, "Enter a text size between 25 and 500 percent."),
+    urgencyEnabled: z.boolean(),
+    startingSoonMinutes: z.coerce
+      .number({ error: "Enter a whole number of minutes." })
+      .int("Enter a whole number of minutes.")
+      .min(
+        1,
+        "Starting soon must begin between 1 and 1440 minutes before zero.",
+      )
+      .max(
+        1_440,
+        "Starting soon must begin between 1 and 1440 minutes before zero.",
+      ),
+    urgentSeconds: z.coerce
+      .number({ error: "Enter a whole number of seconds." })
+      .int("Enter a whole number of seconds.")
+      .min(2, "Urgent must begin between 2 and 3600 seconds before zero.")
+      .max(3_600, "Urgent must begin between 2 and 3600 seconds before zero."),
+    pulseSeconds: z.coerce
+      .number({ error: "Enter a whole number of seconds." })
+      .int("Enter a whole number of seconds.")
+      .min(1, "Pulse must begin between 1 and 60 seconds before zero.")
+      .max(60, "Pulse must begin between 1 and 60 seconds before zero."),
     enabled: z.boolean(),
     priority: z.coerce
       .number({ error: "Enter a priority between -1000 and 1000." })
@@ -106,10 +128,41 @@ const formSchema = z
         message: "Choose at least one target.",
       });
     }
+    if (
+      value.urgencyEnabled &&
+      (value.startingSoonMinutes * 60 <= value.urgentSeconds ||
+        value.urgentSeconds <= value.pulseSeconds)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["startingSoonMinutes"],
+        message:
+          "Stages must begin in order: starting soon, urgent, then pulse.",
+      });
+    }
   });
 
 type FormValues = z.infer<typeof formSchema>;
 type FormInput = z.input<typeof formSchema>;
+
+function urgencyDefaults(leadMinutes: number) {
+  const leadSeconds = Math.max(60, Math.round(leadMinutes * 60));
+  const startingSoonMinutes = Math.min(
+    1_440,
+    Math.max(1, Math.round(leadMinutes / 3)),
+  );
+  const urgentSeconds = Math.min(
+    startingSoonMinutes * 60 - 1,
+    3_600,
+    Math.max(2, Math.round(leadSeconds / 15)),
+  );
+  const pulseSeconds = Math.min(
+    urgentSeconds - 1,
+    60,
+    Math.max(1, Math.round(leadSeconds / 90)),
+  );
+  return { startingSoonMinutes, urgentSeconds, pulseSeconds };
+}
 
 const defaultValues: FormValues = {
   name: "",
@@ -127,6 +180,10 @@ const defaultValues: FormValues = {
   heightPx: 72,
   contentPadding: 4,
   textScale: 100,
+  urgencyEnabled: false,
+  startingSoonMinutes: 5,
+  urgentSeconds: 60,
+  pulseSeconds: 10,
   enabled: true,
   priority: 0,
   targetScope: "all",
@@ -502,6 +559,12 @@ export function CountdownBarEditorPage() {
     queryFn: () => api.countdownBar(id ?? ""),
     enabled: editing,
   });
+  const previousLeadMinutes = useRef(defaultValues.leadMinutes);
+  const linkedUrgencyDefaults = useRef({
+    startingSoonMinutes: true,
+    urgentSeconds: true,
+    pulseSeconds: true,
+  });
   const {
     register,
     handleSubmit,
@@ -516,6 +579,23 @@ export function CountdownBarEditorPage() {
   useEffect(() => {
     if (!instance.data) return;
     const value = instance.data;
+    const leadMinutes = value.leadTimeSeconds / 60;
+    const derived = urgencyDefaults(leadMinutes);
+    const storedStartingSoon = (value.startingSoonSeconds ?? 300) / 60;
+    const storedUrgent = value.urgentSeconds ?? 60;
+    const storedPulse = value.pulseSeconds ?? 10;
+    previousLeadMinutes.current = leadMinutes;
+    linkedUrgencyDefaults.current = {
+      startingSoonMinutes:
+        storedStartingSoon === derived.startingSoonMinutes ||
+        storedStartingSoon === defaultValues.startingSoonMinutes,
+      urgentSeconds:
+        storedUrgent === derived.urgentSeconds ||
+        storedUrgent === defaultValues.urgentSeconds,
+      pulseSeconds:
+        storedPulse === derived.pulseSeconds ||
+        storedPulse === defaultValues.pulseSeconds,
+    };
     reset({
       name: value.name,
       message: value.message,
@@ -524,7 +604,7 @@ export function CountdownBarEditorPage() {
       daysOfWeek: value.daysOfWeek,
       oneTimeAt: value.oneTimeAt ? toLocalInputValue(value.oneTimeAt) : "",
       timezone: value.timezone,
-      leadMinutes: value.leadTimeSeconds / 60,
+      leadMinutes,
       completionText: value.completionText,
       showConfetti: value.showConfetti ?? false,
       displayMode: value.displayMode,
@@ -532,6 +612,10 @@ export function CountdownBarEditorPage() {
       heightPx: value.heightPx,
       contentPadding: value.contentPadding ?? 4,
       textScale: value.textScale ?? 100,
+      urgencyEnabled: value.urgencyEnabled ?? false,
+      startingSoonMinutes: storedStartingSoon,
+      urgentSeconds: storedUrgent,
+      pulseSeconds: storedPulse,
       enabled: value.enabled,
       priority: value.priority,
       targetScope: value.targetScope,
@@ -553,6 +637,31 @@ export function CountdownBarEditorPage() {
   const targetScope = watch("targetScope");
   const displayMode = watch("displayMode");
   const progressFill = watch("progressFill");
+  const urgencyEnabled = watch("urgencyEnabled");
+  const leadMinutes = Number(watch("leadMinutes"));
+  useEffect(() => {
+    if (
+      !Number.isFinite(leadMinutes) ||
+      leadMinutes < 1 ||
+      leadMinutes === previousLeadMinutes.current
+    ) {
+      return;
+    }
+    previousLeadMinutes.current = leadMinutes;
+    const derived = urgencyDefaults(leadMinutes);
+    for (const field of [
+      "startingSoonMinutes",
+      "urgentSeconds",
+      "pulseSeconds",
+    ] as const) {
+      if (linkedUrgencyDefaults.current[field]) {
+        setValue(field, derived[field], {
+          shouldDirty: false,
+          shouldValidate: false,
+        });
+      }
+    }
+  }, [leadMinutes, setValue]);
   // Signal Select owns the ref on its hidden native select, so register()'s ref
   // never lands and react-hook-form drops the field on the next render. The
   // three selects are held explicitly instead.
@@ -605,6 +714,10 @@ export function CountdownBarEditorPage() {
       heightPx: values.heightPx,
       contentPadding: values.contentPadding,
       textScale: values.textScale,
+      urgencyEnabled: values.urgencyEnabled,
+      startingSoonSeconds: values.startingSoonMinutes * 60,
+      urgentSeconds: values.urgentSeconds,
+      pulseSeconds: values.pulseSeconds,
       enabled: values.enabled,
       priority: values.priority,
       targetScope: values.targetScope,
@@ -805,6 +918,64 @@ export function CountdownBarEditorPage() {
             />
           </div>
           <Checkbox label="Enabled" {...register("enabled")} />
+        </Panel>
+
+        <Panel className="plugin-form__section">
+          <SectionHeader
+            title="Urgency stages"
+            description="Change the bar automatically as the target approaches. Untouched stage times follow the total lead time; custom values stay fixed. Completed messages return to the normal size."
+          />
+          <Checkbox
+            label="Enable countdown urgency stages"
+            {...register("urgencyEnabled")}
+          />
+          {urgencyEnabled && (
+            <div className="plugin-form__row">
+              <FormField
+                id="countdown-starting-soon"
+                label="Starting soon (orange), minutes before"
+                type="number"
+                min={1}
+                max={1_440}
+                error={errors.startingSoonMinutes?.message}
+                {...register("startingSoonMinutes", {
+                  valueAsNumber: true,
+                  onChange: () => {
+                    linkedUrgencyDefaults.current.startingSoonMinutes = false;
+                  },
+                })}
+              />
+              <FormField
+                id="countdown-urgent"
+                label="Urgent (red), seconds before"
+                type="number"
+                min={2}
+                max={3_600}
+                error={errors.urgentSeconds?.message}
+                {...register("urgentSeconds", {
+                  valueAsNumber: true,
+                  onChange: () => {
+                    linkedUrgencyDefaults.current.urgentSeconds = false;
+                  },
+                })}
+              />
+              <FormField
+                id="countdown-pulse"
+                label="Pulse and enlarge, final seconds"
+                hint="The bar and text grow by 25% during this final stage."
+                type="number"
+                min={1}
+                max={60}
+                error={errors.pulseSeconds?.message}
+                {...register("pulseSeconds", {
+                  valueAsNumber: true,
+                  onChange: () => {
+                    linkedUrgencyDefaults.current.pulseSeconds = false;
+                  },
+                })}
+              />
+            </div>
+          )}
         </Panel>
 
         <Panel className="plugin-form__section">

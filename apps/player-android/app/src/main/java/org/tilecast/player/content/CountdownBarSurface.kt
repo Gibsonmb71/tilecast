@@ -2,7 +2,11 @@ package org.tilecast.player.content
 
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -44,6 +48,8 @@ private val BarBackground = Color(0xF50D141B)
 private val BarBorder = Color(0x3DFFFFFF)
 private val BarFill = Color(0x29FFFFFF)
 private val BarFillEdge = Color(0x6BFFFFFF)
+private val StartingSoonBackground = Color(0xFFB45309)
+private val UrgentBackground = Color(0xFFB91C1C)
 
 /**
  * Hosts playback with the built-in bar channel layered on top. A bar never
@@ -192,7 +198,21 @@ private fun CountdownConfetti(
 
 @Composable
 private fun CountdownBar(active: ActiveCountdownBar, modifier: Modifier = Modifier) {
-    Box(modifier.background(BarBackground)) {
+    val pulseTransition = rememberInfiniteTransition(label = "countdown-urgency-pulse")
+    val pulseAlpha by
+        pulseTransition.animateFloat(
+            initialValue = 0.78f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
+            label = "countdown-urgency-pulse-alpha",
+        )
+    val stageBackground =
+        when (active.urgencyStage) {
+            "starting_soon" -> StartingSoonBackground
+            "urgent", "final" -> UrgentBackground
+            else -> BarBackground
+        }
+    Box(modifier.background(stageBackground.copy(alpha = if (active.pulse) pulseAlpha else stageBackground.alpha))) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(BarBorder))
         active.remainingFraction?.let { fraction ->
             // Animating over the tick interval turns the once-a-second step into a
@@ -220,6 +240,16 @@ private fun CountdownBar(active: ActiveCountdownBar, modifier: Modifier = Modifi
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                if (active.urgencyLabel.isNotEmpty()) {
+                    Text(
+                        active.urgencyLabel.uppercase(),
+                        color = Color.White,
+                        fontSize = (active.fontSizeSp * 0.64f).sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        maxLines = 1,
+                    )
+                    Text("  ", fontSize = active.fontSizeSp.sp)
+                }
                 if (active.message.isNotEmpty()) {
                     Text(
                         active.message,

@@ -21,6 +21,10 @@ interface CountdownBarPlugin {
     progressFill?: "none" | "drain" | null;
     contentPadding?: number | null;
     textScale?: number | null;
+    urgencyEnabled?: boolean;
+    startingSoonSeconds?: number | null;
+    urgentSeconds?: number | null;
+    pulseSeconds?: number | null;
     priority: number;
   };
 }
@@ -41,6 +45,9 @@ interface CountdownBarResolver {
     fontSizePx: number;
     showBar: boolean;
     showConfetti: boolean;
+    urgencyStage: string;
+    urgencyLabel: string;
+    pulse: boolean;
   } | null;
 }
 
@@ -197,6 +204,37 @@ describe("countdown bar resolver", () => {
     );
     expect(active?.contentPadding).toBe(0);
     expect(active?.fontSizePx).toBeCloseTo(60.48, 2);
+  });
+
+  it("advances through urgency stages and recompacts completion text", () => {
+    const plugin = weekly({
+      urgencyEnabled: true,
+      startingSoonSeconds: 300,
+      urgentSeconds: 60,
+      pulseSeconds: 10,
+    });
+    expect(
+      resolver.resolve([plugin], new Date("2026-07-27T15:54:59Z")),
+    ).toMatchObject({ urgencyStage: "normal", urgencyLabel: "", pulse: false });
+    expect(
+      resolver.resolve([plugin], new Date("2026-07-27T15:55:00Z")),
+    ).toMatchObject({
+      urgencyStage: "starting_soon",
+      urgencyLabel: "Starting soon",
+    });
+    expect(
+      resolver.resolve([plugin], new Date("2026-07-27T15:59:00Z")),
+    ).toMatchObject({
+      urgencyStage: "urgent",
+      urgencyLabel: "Urgent",
+      heightPx: 72,
+    });
+    expect(
+      resolver.resolve([plugin], new Date("2026-07-27T15:59:50Z")),
+    ).toMatchObject({ urgencyStage: "final", pulse: true, heightPx: 90 });
+    expect(
+      resolver.resolve([plugin], new Date("2026-07-27T16:00:10Z")),
+    ).toMatchObject({ urgencyStage: "normal", pulse: false, heightPx: 72 });
   });
 
   it("lets a scaled bar exceed the unscaled type ceiling", () => {

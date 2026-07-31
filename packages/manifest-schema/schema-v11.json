@@ -123,7 +123,10 @@
       ],
       "anyOf": [
         { "required": ["imageAssetId"] },
-        { "required": ["text"], "properties": { "text": { "minLength": 1 } } }
+        {
+          "required": ["text"],
+          "properties": { "text": { "pattern": "\\S" } }
+        }
       ],
       "properties": {
         "name": { "type": "string", "minLength": 1, "maxLength": 180 },
@@ -209,6 +212,14 @@
         "progressFill": { "enum": ["none", "drain"] },
         "contentPadding": { "type": "integer", "minimum": 0, "maximum": 40 },
         "textScale": { "type": "integer", "minimum": 25, "maximum": 500 },
+        "urgencyEnabled": { "type": "boolean" },
+        "startingSoonSeconds": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 86400
+        },
+        "urgentSeconds": { "type": "integer", "minimum": 2, "maximum": 3600 },
+        "pulseSeconds": { "type": "integer", "minimum": 1, "maximum": 60 },
         "priority": { "type": "integer", "minimum": -1000, "maximum": 1000 }
       },
       "allOf": [

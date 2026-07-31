@@ -824,6 +824,10 @@ export type CountdownBarInput = {
   progressFill: "none" | "drain";
   contentPadding: number;
   textScale: number;
+  urgencyEnabled: boolean;
+  startingSoonSeconds: number;
+  urgentSeconds: number;
+  pulseSeconds: number;
   enabled: boolean;
   priority: number;
 } & PluginTargeting;

@@ -8,6 +8,7 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.OffsetDateTime
 import java.time.ZoneId
+import kotlin.math.roundToInt
 
 /**
  * Countdown Bar schedule resolution. This mirrors the Linux renderer's
@@ -27,6 +28,9 @@ internal data class ActiveCountdownBar(
     val completed: Boolean,
     val showBar: Boolean,
     val showConfetti: Boolean,
+    val urgencyStage: String,
+    val urgencyLabel: String,
+    val pulse: Boolean,
     /**
      * Share of the lead window still to run: 1 when the bar appears, 0 at the
      * target, and 0 while completion text shows. Null when the instance asked
@@ -66,6 +70,16 @@ internal fun resolveCountdownBar(
                     config.showConfetti
             if (remainingMs > leadMs || (remainingMs <= 0 && !completionVisible && !confettiVisible)) continue
             val fraction = if (leadMs > 0) (remainingMs.toFloat() / leadMs).coerceIn(0f, 1f) else 0f
+            val urgencyStage =
+                when {
+                    !config.urgencyEnabled || remainingMs <= 0 -> "normal"
+                    remainingMs <= config.pulseSeconds.coerceIn(1, 60) * 1_000L -> "final"
+                    remainingMs <= config.urgentSeconds.coerceIn(2, 3_600) * 1_000L -> "urgent"
+                    remainingMs <= config.startingSoonSeconds.coerceIn(2, 86_400) * 1_000L -> "starting_soon"
+                    else -> "normal"
+                }
+            val finalScale = if (urgencyStage == "final") 1.25f else 1f
+            val baseHeight = config.heightPx.coerceIn(40, 320)
             active +=
                 ActiveCountdownBar(
                     id = plugin.id,
@@ -80,15 +94,23 @@ internal fun resolveCountdownBar(
                             else -> ""
                         },
                     displayMode = config.displayMode,
-                    heightPx = config.heightPx.coerceIn(40, 320),
+                    heightPx = (baseHeight * finalScale).roundToInt(),
                     priority = config.priority,
                     targetAt = target,
                     completed = remainingMs <= 0,
                     showBar = remainingMs > 0 || completionVisible,
                     showConfetti = confettiVisible,
+                    urgencyStage = urgencyStage,
+                    urgencyLabel =
+                        when (urgencyStage) {
+                            "starting_soon" -> "Starting soon"
+                            "urgent", "final" -> "Urgent"
+                            else -> ""
+                        },
+                    pulse = urgencyStage == "final",
                     remainingFraction = if (config.progressFill == "drain") fraction else null,
                     contentPadding = config.contentPadding.coerceIn(0, 40),
-                    fontSizeSp = countdownBarFontSize(config.heightPx, config.textScale),
+                    fontSizeSp = countdownBarFontSize(config.heightPx, config.textScale) * finalScale,
                 )
         }
     }

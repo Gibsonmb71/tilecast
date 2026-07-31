@@ -20,6 +20,7 @@ func validInput() CountdownBarInput {
 		Timezone: "America/New_York", LeadTimeSeconds: 900,
 		DisplayMode: "overlay", HeightPX: 72, ProgressFill: "none",
 		ContentPadding: intPointer(4), TextScale: 100, Enabled: true,
+		StartingSoonSeconds: 300, UrgentSeconds: 60, PulseSeconds: 10,
 		TargetScope: "all", TargetIDs: []uuid.UUID{},
 	}
 }
@@ -40,6 +41,10 @@ func TestValidateCountdownBar(t *testing.T) {
 	}
 	if got := normalizeCountdownBar(omitted).ProgressFill; got != "none" {
 		t.Fatalf("expected omitted progressFill to normalize to none, got %q", got)
+	}
+	urgencyDefaults := normalizeCountdownBar(CountdownBarInput{})
+	if urgencyDefaults.StartingSoonSeconds != 300 || urgencyDefaults.UrgentSeconds != 60 || urgencyDefaults.PulseSeconds != 10 {
+		t.Fatalf("unexpected urgency defaults: %#v", urgencyDefaults)
 	}
 	omitted.ContentPadding = nil
 	defaulted := normalizeCountdownBar(omitted)
@@ -101,6 +106,12 @@ func TestValidateCountdownBarRejectsInvalidScheduleAndTargets(t *testing.T) {
 	input.ProgressFill = "sideways"
 	if err := validateCountdownBar(input); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("expected an unknown progressFill to be rejected, got %v", err)
+	}
+	input = validInput()
+	input.UrgencyEnabled = true
+	input.UrgentSeconds = input.StartingSoonSeconds
+	if err := validateCountdownBar(input); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("expected unordered urgency thresholds to be rejected, got %v", err)
 	}
 	input = validInput()
 	input.Timezone = "not/a-zone"

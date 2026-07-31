@@ -207,6 +207,9 @@ const countdownValue = countdownBar.querySelector(
 const countdownFill = countdownBar.querySelector(
   ".countdown-fill",
 ) as HTMLSpanElement;
+const countdownUrgency = countdownBar.querySelector(
+  ".countdown-urgency",
+) as HTMLSpanElement;
 const countdownConfetti = document.getElementById(
   "countdown-confetti",
 ) as HTMLDivElement;
@@ -475,6 +478,7 @@ function updatePluginSurface(): void {
   );
   if (ticker) {
     countdownBar.classList.remove("visible");
+    countdownBar.classList.remove("countdown-pulse");
     showAlertTicker(ticker);
     // A ticker holds the same bottom strip a countdown bar would, so
     // bottom-corner marks ride above it rather than being covered by it.
@@ -499,6 +503,7 @@ function updatePluginSurface(): void {
   // instance stops holding the strip but still owes its completion burst.
   if (!selected || !selected.showBar) {
     countdownBar.classList.remove("visible");
+    countdownBar.classList.remove("countdown-pulse");
     contentStage.classList.remove("plugin-push");
   } else {
     document.documentElement.style.setProperty(
@@ -521,6 +526,9 @@ function updatePluginSurface(): void {
     );
     countdownMessage.textContent = selected.message;
     countdownValue.textContent = selected.value;
+    countdownUrgency.textContent = selected.urgencyLabel;
+    countdownBar.dataset.urgency = selected.urgencyStage;
+    countdownBar.classList.toggle("countdown-pulse", selected.pulse);
     // A null fraction means this instance asked for no fill, so the width stays
     // at zero and the bar keeps its plain background.
     countdownFill.style.width =

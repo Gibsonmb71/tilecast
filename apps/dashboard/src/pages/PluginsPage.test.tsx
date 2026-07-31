@@ -93,6 +93,10 @@ const storedInstance = {
   heightPx: 72,
   contentPadding: 2,
   textScale: 125,
+  urgencyEnabled: true,
+  startingSoonSeconds: 300,
+  urgentSeconds: 60,
+  pulseSeconds: 10,
   enabled: true,
   priority: 0,
   targetScope: "all",
@@ -321,6 +325,8 @@ describe("Plugins", () => {
     expect(submitted[0]?.contentPadding).toBe(2);
     expect(submitted[0]?.textScale).toBe(125);
     expect(submitted[0]?.showConfetti).toBe(true);
+    expect(submitted[0]?.urgencyEnabled).toBe(true);
+    expect(submitted[0]?.startingSoonSeconds).toBe(300);
   }, 10_000);
 
   it("submits the checkbox groups it renders", async () => {
@@ -376,6 +382,60 @@ describe("Plugins", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create instance" }));
     await waitFor(() => expect(submitted).toHaveLength(1));
     expect(submitted[0]?.showConfetti).toBe(true);
+  }, 10_000);
+
+  it("configures ordered countdown urgency stages", async () => {
+    renderRoute(<CountdownBarEditorPage />, "/plugins/countdown-bar/new");
+    await waitFor(() => expect(screen.getByLabelText("Name")).toBeEnabled());
+    expect(screen.queryByLabelText(/Starting soon/)).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Lunch" },
+    });
+    fireEvent.click(screen.getByLabelText("Enable countdown urgency stages"));
+    fireEvent.change(screen.getByLabelText(/Starting soon/), {
+      target: { value: "8" },
+    });
+    fireEvent.change(screen.getByLabelText(/Urgent \(red\)/), {
+      target: { value: "90" },
+    });
+    fireEvent.change(screen.getByLabelText(/Pulse and enlarge/), {
+      target: { value: "15" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create instance" }));
+    await waitFor(() => expect(submitted).toHaveLength(1));
+    expect(submitted[0]).toMatchObject({
+      urgencyEnabled: true,
+      startingSoonSeconds: 480,
+      urgentSeconds: 90,
+      pulseSeconds: 15,
+    });
+  }, 10_000);
+
+  it("keeps untouched urgency defaults linked to the total lead time", async () => {
+    renderRoute(<CountdownBarEditorPage />, "/plugins/countdown-bar/new");
+    await waitFor(() => expect(screen.getByLabelText("Name")).toBeEnabled());
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Lunch" },
+    });
+    fireEvent.click(screen.getByLabelText("Enable countdown urgency stages"));
+    fireEvent.change(screen.getByLabelText("Appear this many minutes before"), {
+      target: { value: "30" },
+    });
+    expect(screen.getByLabelText(/Starting soon/)).toHaveValue(10);
+    expect(screen.getByLabelText(/Urgent \(red\)/)).toHaveValue(120);
+    expect(screen.getByLabelText(/Pulse and enlarge/)).toHaveValue(20);
+
+    // Once one stage is customized, that stage stays fixed while the still-
+    // linked defaults continue to follow the total window.
+    fireEvent.change(screen.getByLabelText(/Urgent \(red\)/), {
+      target: { value: "90" },
+    });
+    fireEvent.change(screen.getByLabelText("Appear this many minutes before"), {
+      target: { value: "45" },
+    });
+    expect(screen.getByLabelText(/Starting soon/)).toHaveValue(15);
+    expect(screen.getByLabelText(/Urgent \(red\)/)).toHaveValue(90);
+    expect(screen.getByLabelText(/Pulse and enlarge/)).toHaveValue(30);
   }, 10_000);
 
   it("submits custom padding and text size", async () => {
