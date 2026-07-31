@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/avast/apkparser"
 	"github.com/avast/apkverifier"
@@ -421,7 +422,14 @@ func (s *Service) Cache(ctx context.Context, releaseID uuid.UUID) error {
 		return err
 	}
 	hash := sha256.New()
-	written, copyErr := io.Copy(io.MultiWriter(file, hash), io.LimitReader(response.Body, s.maxAPK+1))
+	progress := &cacheProgressWriter{
+		ctx:      ctx,
+		db:       s.db,
+		release:  releaseID,
+		lastSave: time.Now(),
+	}
+	written, copyErr := io.Copy(io.MultiWriter(file, hash, progress), io.LimitReader(response.Body, s.maxAPK+1))
+	progress.flush()
 	syncErr := file.Sync()
 	closeErr := file.Close()
 	if copyErr != nil || syncErr != nil || closeErr != nil || written != expectedSize || hex.EncodeToString(hash.Sum(nil)) != expectedHash {
@@ -441,8 +449,37 @@ func (s *Service) Cache(ctx context.Context, releaseID uuid.UUID) error {
 	if err := os.Rename(part, final); err != nil {
 		return err
 	}
-	_, err = s.db.Exec(ctx, `UPDATE player_releases SET cache_status='cached',verification_status='verified',verification_error=NULL,updated_at=now() WHERE id=$1`, releaseID)
+	_, err = s.db.Exec(ctx, `UPDATE player_releases SET cache_status='cached',cache_downloaded_bytes=$2,verification_status='verified',verification_error=NULL,updated_at=now() WHERE id=$1`, releaseID, written)
 	return err
+}
+
+// cacheProgressWriter records coarse download progress so the dashboard can
+// show movement without making the download depend on a database write for
+// every network read.
+type cacheProgressWriter struct {
+	ctx        context.Context
+	db         *pgxpool.Pool
+	release    uuid.UUID
+	downloaded int64
+	lastSaved  int64
+	lastSave   time.Time
+}
+
+func (w *cacheProgressWriter) Write(p []byte) (int, error) {
+	w.downloaded += int64(len(p))
+	if w.downloaded-w.lastSaved >= 256<<10 || time.Since(w.lastSave) >= 250*time.Millisecond {
+		w.flush()
+	}
+	return len(p), nil
+}
+
+func (w *cacheProgressWriter) flush() {
+	if w.downloaded == w.lastSaved {
+		return
+	}
+	_, _ = w.db.Exec(w.ctx, `UPDATE player_releases SET cache_downloaded_bytes=$2,updated_at=now() WHERE id=$1 AND cache_status='downloading'`, w.release, w.downloaded)
+	w.lastSaved = w.downloaded
+	w.lastSave = time.Now()
 }
 
 func verifyAPK(path string, manifest Manifest) error {

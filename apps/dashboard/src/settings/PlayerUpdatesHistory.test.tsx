@@ -7,7 +7,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, useLocation } from "react-router";
 import { PlayerUpdatesPanel } from "./SettingsOperations";
 import { api } from "../api/client";
-import type { UpdateDeployment, UpdateDeploymentDetail } from "../api/types";
+import type {
+  PlayerRelease,
+  UpdateDeployment,
+  UpdateDeploymentDetail,
+} from "../api/types";
 
 vi.mock("../auth/AuthProvider", () => ({
   useAuth: () => ({ status: { csrfToken: "csrf", user: { role: "owner" } } }),
@@ -124,6 +128,46 @@ describe("Player update deployment history", () => {
     expect(await screen.findByText("Available Linux releases")).toBeTruthy();
     // The Android-only deployment is not the Linux fleet's history.
     expect(screen.queryByText(/1 screen needs a retry/)).toBeNull();
+  });
+
+  it("shows live cache progress in megabytes", async () => {
+    const release: PlayerRelease = {
+      id: "r1",
+      tag: "player-v1.4.0",
+      platform: "android",
+      source: "github",
+      channel: "stable",
+      versionCode: 42,
+      versionName: "1.4.0",
+      minimumSdk: 23,
+      releaseNotes: "",
+      publishedAt: "2026-07-30T11:00:00Z",
+      apkSizeBytes: 50 * 1024 * 1024,
+      downloadedBytes: 20 * 1024 * 1024,
+      apkSha256: "a".repeat(64),
+      signingCertificateSha256: "b".repeat(64),
+      manifestSignature: "signature",
+      cacheStatus: "downloading",
+      verificationStatus: "verified_manifest",
+      deploymentCount: 0,
+      activeDeploymentCount: 0,
+    };
+    vi.mocked(api.playerReleases).mockResolvedValue({
+      repository: "Gibsonmb71/tilecast",
+      manifestKeyConfigured: true,
+      githubAuth: {
+        available: false,
+        connected: false,
+        source: "anonymous",
+        canDisconnect: false,
+      },
+      items: [release],
+    });
+    renderPanel();
+    expect(await screen.findByText("20.0 MB of 50.0 MB")).toBeTruthy();
+    expect(
+      document.querySelector(".player-release-cache-progress progress"),
+    ).toHaveProperty("value", 20 * 1024 * 1024);
   });
 
   it("records a platform switch in the URL", async () => {

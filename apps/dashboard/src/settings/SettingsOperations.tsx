@@ -309,7 +309,10 @@ export function PlayerUpdatesPanel({
   const releases = useQuery({
     queryKey: ["player-releases"],
     queryFn: api.playerReleases,
-    refetchInterval: 10_000,
+    refetchInterval: (query) =>
+      query.state.data?.items.some((item) => item.cacheStatus === "downloading")
+        ? 1_000
+        : 10_000,
   });
   const deployments = useQuery({
     queryKey: ["update-deployments"],
@@ -764,6 +767,21 @@ export function PlayerUpdatesPanel({
                             tone={readiness.tone}
                             label={readiness.label}
                           />
+                          {release.cacheStatus === "downloading" && (
+                            <span className="player-release-cache-progress">
+                              <progress
+                                value={Math.min(
+                                  release.downloadedBytes,
+                                  release.apkSizeBytes,
+                                )}
+                                max={release.apkSizeBytes}
+                              />
+                              <small>
+                                {formatBytes(release.downloadedBytes)} of{" "}
+                                {formatBytes(release.apkSizeBytes)}
+                              </small>
+                            </span>
+                          )}
                           {readiness.detail && (
                             <small>{readiness.detail}</small>
                           )}
