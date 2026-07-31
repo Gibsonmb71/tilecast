@@ -138,6 +138,10 @@ describe("Integration tokens", () => {
     expect(when.getMonth()).toBe(5);
     expect(when.getDate()).toBe(30);
     expect(when.getHours()).toBe(23);
+    // The last instant of the day, so nothing in the final second is cut off.
+    expect(when.getMinutes()).toBe(59);
+    expect(when.getSeconds()).toBe(59);
+    expect(when.getMilliseconds()).toBe(999);
   });
 
   it("distinguishes an expired token from a revoked one", async () => {

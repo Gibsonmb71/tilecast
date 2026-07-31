@@ -148,8 +148,8 @@ func (s *SMTPSender) authenticate(client *smtp.Client) error {
 		encrypted = true
 	}
 	if !encrypted && !s.cfg.SMTPAllowPlaintextAuth {
-		// net/smtp refuses PLAIN on an unencrypted connection anyway; failing
-		// here makes the reason legible in the delivery log. Accepting a private
+		// Failing here makes the reason legible in the delivery log rather than
+		// arriving as an authentication error. Accepting a private
 		// certificate is deliberately not enough to reach this: that is
 		// TILECAST_SMTP_ALLOW_INSECURE, and it is a different decision.
 		return fmt.Errorf("%w: refusing to send SMTP credentials over an unencrypted connection; set TILECAST_SMTP_ALLOW_PLAINTEXT_AUTH=true to accept that", ErrPermanent)
@@ -158,7 +158,32 @@ func (s *SMTPSender) authenticate(client *smtp.Client) error {
 	if !ok {
 		return fmt.Errorf("%w: the mail server does not accept authentication", ErrPermanent)
 	}
-	return client.Auth(smtp.PlainAuth("", s.cfg.SMTPUsername, s.cfg.SMTPPassword, s.cfg.SMTPHost))
+	if encrypted {
+		return client.Auth(smtp.PlainAuth("", s.cfg.SMTPUsername, s.cfg.SMTPPassword, s.cfg.SMTPHost))
+	}
+	return client.Auth(plaintextPlainAuth{username: s.cfg.SMTPUsername, password: s.cfg.SMTPPassword, host: s.cfg.SMTPHost})
+}
+
+// plaintextPlainAuth is PLAIN without net/smtp's own refusal to send it over an
+// unencrypted connection, which otherwise makes
+// TILECAST_SMTP_ALLOW_PLAINTEXT_AUTH do nothing for any relay that is not
+// localhost. The host check net/smtp performs to keep credentials from going to
+// a server the client did not name is kept: only the encryption rule is the
+// operator's to waive, and they waive it explicitly.
+type plaintextPlainAuth struct{ username, password, host string }
+
+func (a plaintextPlainAuth) Start(server *smtp.ServerInfo) (string, []byte, error) {
+	if server.Name != a.host {
+		return "", nil, errors.New("wrong host name")
+	}
+	return "PLAIN", []byte("\x00" + a.username + "\x00" + a.password), nil
+}
+
+func (a plaintextPlainAuth) Next(fromServer []byte, more bool) ([]byte, error) {
+	if more {
+		return nil, errors.New("unexpected server challenge")
+	}
+	return nil, nil
 }
 
 // buildMIME renders a minimal, well-formed plain-text message. Tilecast does

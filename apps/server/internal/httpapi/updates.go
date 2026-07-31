@@ -600,9 +600,13 @@ func (s *server) getUpdateDeployment(w http.ResponseWriter, r *http.Request) {
 		var updated time.Time
 		var canary bool
 		var downloadStarted, downloadFinished, installStarted, completed *time.Time
-		if rows.Scan(&screen, &name, &previous, &expected, &downloaded, &permission, &installer, &state, &errorText, &updated, &canary, &downloadStarted, &downloadFinished, &installStarted, &completed) == nil {
-			items = append(items, map[string]any{"screenId": screen, "screenName": name, "previousVersionCode": previous, "expectedVersionCode": expected, "downloadedBytes": downloaded, "permissionStatus": permission, "installerStatus": installer, "state": state, "safeError": errorText, "updatedAt": updated, "isCanary": canary, "downloadStartedAt": downloadStarted, "downloadedAt": downloadFinished, "installStartedAt": installStarted, "completedAt": completed})
+		// A read that failed is not a deployment that reaches nothing: reporting
+		// it as 404 would tell a scoped operator their screens are not covered.
+		if err := rows.Scan(&screen, &name, &previous, &expected, &downloaded, &permission, &installer, &state, &errorText, &updated, &canary, &downloadStarted, &downloadFinished, &installStarted, &completed); err != nil {
+			s.internalError(w, r, err)
+			return
 		}
+		items = append(items, map[string]any{"screenId": screen, "screenName": name, "previousVersionCode": previous, "expectedVersionCode": expected, "downloadedBytes": downloaded, "permissionStatus": permission, "installerStatus": installer, "state": state, "safeError": errorText, "updatedAt": updated, "isCanary": canary, "downloadStartedAt": downloadStarted, "downloadedAt": downloadFinished, "installStartedAt": installStarted, "completedAt": completed})
 	}
 	if err = rows.Err(); err != nil {
 		s.internalError(w, r, err)

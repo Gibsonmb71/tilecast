@@ -19,11 +19,19 @@ const allScopes = Object.keys(scopeLabels) as IntegrationScope[];
 // An expiry is a date an operator picks, not an instant. It is read as the end of
 // that day in their own time, so a token chosen to expire today still works for
 // the rest of today.
+// The date input speaks YYYY-MM-DD, built from local calendar parts so the
+// earliest choice is today where the operator is, not wherever UTC has got to.
+function localDate(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
 function endOfDay(date: string): string | undefined {
   if (!date) return undefined;
   const [year, month, day] = date.split("-").map(Number);
   if (!year || !month || !day) return undefined;
-  return new Date(year, month - 1, day, 23, 59, 59).toISOString();
+  return new Date(year, month - 1, day, 23, 59, 59, 999).toISOString();
 }
 
 // Revoked, expired, and active are three different answers, and an operator
@@ -272,7 +280,7 @@ export function IntegrationTokensPanel({ owner }: { owner: boolean }) {
                 value={expiresOn}
                 // Today is the earliest useful choice: it expires tonight. The
                 // server refuses anything already past regardless.
-                min={new Date().toLocaleDateString("en-CA")}
+                min={localDate(new Date())}
                 onChange={(event) => setExpiresOn(event.target.value)}
               />
             </div>
