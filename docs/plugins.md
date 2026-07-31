@@ -63,9 +63,26 @@ Both responses use the same matching, the same `maximumDurationMinutes` ceiling,
 
 Its configuration endpoints predate the plugin catalog and are unchanged, under `/api/v1/alerts/nws/`. See [takeover-and-operations.md](takeover-and-operations.md) for the monitor, rule matching, and poll health.
 
+## Brand Bug / Watermark
+
+Brand Bug places a persistent mark — a logo, sponsor mark, legal notice, campaign badge, or location label — in one corner over all normal content. An installation can create multiple instances, each with its own name, corner, optional logo image, optional text, size, opacity, margin, text color, backing, optional date window, enabled state, priority, and targets.
+
+An instance needs a logo, text, or both; a mark with neither would hold a corner invisibly and is rejected. The logo comes from the Media library and must be a ready image; it is projected into the manifest as an ordinary asset, so the Player verifies, caches, and redraws it exactly like playlist media.
+
+Sizes are expressed against the screen rather than in pixels, so one instance reads the same on a 1080p panel and a 4K one:
+
+- logo width is 2–40 percent of screen width;
+- text size is 1–12 percent of screen height;
+- the corner margin is 0–20 percent of the screen's shorter edge;
+- opacity is 10–100 percent.
+
+`startsAt` and `endsAt` are both optional. An unset bound is open-ended, so a permanent logo carries neither and a campaign badge carries one or both. The window is evaluated locally against the corrected clock, the same way Countdown Bar evaluates recurrence.
+
+At most one mark occupies a corner: the highest priority wins, then the stable instance ID. Marks in different corners appear together, so a logo can hold the top right while a legal notice holds the bottom left. Targets use the same four scopes as Countdown Bar.
+
 ## Player behavior
 
-The manifest carries a discriminated `plugins` array. Countdown Bar uses `type: "countdown_bar"` and an Emergency Alerts ticker uses `type: "alert_ticker"`, both at `version: 1`; a Player ignores a type it does not implement. The complete timing rule is cached in `manifest-active.json`; recurrence is evaluated locally with the configured timezone, so a temporary server outage does not stop future show or hide transitions.
+The manifest carries a discriminated `plugins` array. Countdown Bar uses `type: "countdown_bar"`, an Emergency Alerts ticker uses `type: "alert_ticker"`, and Brand Bug uses `type: "brand_bug"`, all at `version: 1`; a Player ignores a type it does not implement. The complete timing rule is cached in `manifest-active.json`; recurrence and date windows are evaluated locally with the configured timezone, so a temporary server outage does not stop future show or hide transitions.
 
 Both the Linux and Android players render the bar, and both resolve the schedule from the cached manifest with the same weekly, one-time, daylight-saving, completion, priority, and fill rules. The two implementations are covered by matching test cases so a divergence surfaces as a failure rather than as a difference between screens.
 
@@ -78,6 +95,12 @@ An alert ticker carries the alert text and an `expiresAt` rather than a schedule
 Plugin projection and presentation use a dedicated renderer channel. It does not replace the active presentation, change playlist selection, increment the renderer generation, remount media, touch synchronized-playback anchors, or open and close proof-of-play sessions. On Android the bar composes around a single playback call site for the same reason: appearing, changing mode, and hiding must not restart the media item.
 
 Overlay mode positions the bar above the current content at the bottom of the screen. Push mode changes only the content stage's bottom inset. Existing image, video, website, Widget, and Layout nodes remain mounted and are resized inside the remaining stage, preserving their normal fit or aspect-ratio behavior.
+
+Brand Bug always overlays and never reflows the content stage. Its corner elements are created once and updated in place, so a mark does not re-decode its logo on the one-second plugin tick. When a Countdown Bar is visible, bottom-corner marks are lifted by the bar's height rather than being covered by it. A Brand Bug logo is a required download: the manifest does not activate until the image is verified, so the mark keeps drawing while the network is gone.
+
+A logo that becomes unavailable between saving an instance and building a manifest degrades to that instance's text; if the instance had no text, the mark is omitted from the manifest instead of publishing an empty corner. Neither case fails the manifest.
+
+Brand Bug is drawn by Linux Player only. Android Player ignores plugin types it does not implement, so a configured mark is inert there rather than an error; drawing it on Android is outstanding work.
 
 The Player estimates server clock offset when a manifest is received. The cached offset is reconstructed from the manifest's `serverTime` and local `storedAt`, so offline restarts retain the last known correction instead of treating the old server timestamp as the current time.
 
@@ -92,5 +115,10 @@ Dashboard reads require a valid Tilecast session. Mutations additionally require
 - `POST /api/v1/plugins/countdown-bar/instances`
 - `PUT /api/v1/plugins/countdown-bar/instances/{id}`
 - `DELETE /api/v1/plugins/countdown-bar/instances/{id}`
+- `GET /api/v1/plugins/brand-bug/instances`
+- `GET /api/v1/plugins/brand-bug/instances/{id}`
+- `POST /api/v1/plugins/brand-bug/instances`
+- `PUT /api/v1/plugins/brand-bug/instances/{id}`
+- `DELETE /api/v1/plugins/brand-bug/instances/{id}`
 
 All successful JSON responses use the standard `{ "data": ... }` envelope.

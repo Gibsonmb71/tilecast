@@ -41,7 +41,7 @@ Snapshot history keeps bounded periodic images of what screens showed, so "what 
 
 Tilecast Studio and Tilecast Player use the [Tilecast Signal design system](docs/design-system.md) for shared color, typography, spacing, status, focus, and accessibility behavior.
 
-Built-in Plugins extend Tilecast with bounded workflows and Player behavior without loading third-party code. Forms provides submission and approval workflows, while Countdown Bar supports recurring or one-time targeted bars, overlay and aspect-preserving push modes, local clock evaluation, and cached offline operation on both the Linux and Android Players. Emergency Alerts can answer a matching NWS alert on the same bar channel, as a scrolling ticker that leaves playback running instead of taking the screen over. See [Built-in plugins](docs/plugins.md).
+Built-in Plugins extend Tilecast with bounded workflows and Player behavior without loading third-party code. Forms provides submission and approval workflows, while Countdown Bar supports recurring or one-time targeted bars, overlay and aspect-preserving push modes, local clock evaluation, and cached offline operation on both the Linux and Android Players. Emergency Alerts can answer a matching NWS alert on the same bar channel, as a scrolling ticker that leaves playback running instead of taking the screen over. Brand Bug / Watermark holds a logo, sponsor mark, legal notice, campaign badge, or location label in any corner over all normal content, with screen-relative sizing, an optional date window, and one mark per corner. It is drawn by the Linux Player. See [Built-in plugins](docs/plugins.md).
 
 ## Quick start with Docker Compose
 

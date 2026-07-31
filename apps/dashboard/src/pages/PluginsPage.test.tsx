@@ -13,7 +13,12 @@ import {
 import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CountdownBarEditorPage, PluginsPage } from "./PluginsPage";
+import {
+  BrandBugEditorPage,
+  BrandBugsPage,
+  CountdownBarEditorPage,
+  PluginsPage,
+} from "./PluginsPage";
 
 vi.mock("../auth/AuthProvider", () => ({
   useAuth: () => ({
@@ -39,6 +44,8 @@ function renderRoute(element: ReactNode, path = "/plugins") {
           {/* Mirrors App.tsx, where "new" is a static route rather than an :id. */}
           <Route path="/plugins/countdown-bar/new" element={element} />
           <Route path="/plugins/countdown-bar/:id" element={element} />
+          <Route path="/plugins/brand-bug/new" element={element} />
+          <Route path="/plugins/brand-bug/:id" element={element} />
           <Route path="*" element={element} />
         </Routes>
       </MemoryRouter>
@@ -50,6 +57,15 @@ function renderRoute(element: ReactNode, path = "/plugins") {
 function chooseOption(selectLabel: string, optionLabel: string) {
   fireEvent.click(screen.getByLabelText(selectLabel));
   fireEvent.click(screen.getByRole("option", { name: optionLabel }));
+}
+
+/** Same, for a select whose options arrive with a query rather than statically. */
+async function chooseLoadedOption(
+  selectLabel: string | RegExp,
+  optionLabel: string,
+) {
+  fireEvent.click(screen.getByLabelText(selectLabel));
+  fireEvent.click(await screen.findByRole("option", { name: optionLabel }));
 }
 
 function pressedDays() {
@@ -85,6 +101,28 @@ const storedInstance = {
   updatedAt: "2026-07-01T00:00:00Z",
 };
 
+const storedBrandBug = {
+  id: "bug-1",
+  name: "Sponsor logo",
+  corner: "bottom_right",
+  imageAssetId: "asset-1",
+  text: "Presented by Example",
+  widthPercent: 14,
+  textSizePercent: 3,
+  opacityPercent: 80,
+  marginPercent: 4,
+  textColor: "#ffffff",
+  backgroundStyle: "scrim",
+  startsAt: null,
+  endsAt: null,
+  enabled: true,
+  priority: 10,
+  targetScope: "all",
+  targetIds: [],
+  createdAt: "2026-07-01T00:00:00Z",
+  updatedAt: "2026-07-01T00:00:00Z",
+};
+
 const submitted: Record<string, unknown>[] = [];
 
 beforeEach(() => {
@@ -109,6 +147,30 @@ beforeEach(() => {
       if (path.includes("/instances/bar-1")) {
         return Promise.resolve(
           new Response(JSON.stringify({ data: storedInstance })),
+        );
+      }
+      if (path.includes("/brand-bug/instances/bug-1")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ data: storedBrandBug })),
+        );
+      }
+      if (path.includes("/brand-bug/instances")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ data: { items: [storedBrandBug], total: 1 } }),
+          ),
+        );
+      }
+      if (path.includes("/assets?")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: {
+                items: [{ id: "asset-1", name: "District logo" }],
+                total: 1,
+              },
+            }),
+          ),
         );
       }
       if (path.endsWith("/plugins")) {
@@ -138,6 +200,13 @@ beforeEach(() => {
                     enabled: true,
                     instanceCount: 2,
                   },
+                  {
+                    id: "brand_bug",
+                    name: "Brand Bug / Watermark",
+                    description: "A corner mark.",
+                    enabled: false,
+                    instanceCount: 1,
+                  },
                 ],
               },
             }),
@@ -160,10 +229,13 @@ afterEach(() => {
 });
 
 describe("Plugins", () => {
-  it("shows the installed Countdown Bar card and instance count", async () => {
+  it("shows a card per installed plugin, each linking to its own surface", async () => {
     renderRoute(<PluginsPage />);
     expect(
       await screen.findByRole("heading", { name: "Countdown Bar" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: "Brand Bug / Watermark" }),
     ).toBeVisible();
     expect(screen.getByText("3 configured instances")).toBeVisible();
     expect(
@@ -194,6 +266,17 @@ describe("Plugins", () => {
     expect(
       within(card).getByRole("link", { name: "Manage plugin" }),
     ).toHaveAttribute("href", "/plugins/forms");
+  });
+
+  it("lists Brand Bug with its own instance noun and surface", async () => {
+    renderRoute(<PluginsPage />);
+    const card = (
+      await screen.findByRole("heading", { name: "Brand Bug / Watermark" })
+    ).closest("article")!;
+    expect(within(card).getByText("1 configured mark")).toBeVisible();
+    expect(
+      within(card).getByRole("link", { name: "Manage plugin" }),
+    ).toHaveAttribute("href", "/plugins/brand-bug");
   });
 
   it("requires a target when a scoped instance is submitted", async () => {
@@ -328,5 +411,101 @@ describe("Plugins", () => {
     await waitFor(() => expect(submitted).toHaveLength(1));
     expect(submitted[0]?.scheduleType).toBe("weekly");
     expect(submitted[0]?.displayMode).toBe("push");
+  }, 10_000);
+});
+
+describe("Brand Bug", () => {
+  it("summarizes what a configured mark puts on screen", async () => {
+    renderRoute(<BrandBugsPage />, "/plugins/brand-bug");
+    expect(
+      await screen.findByRole("heading", { name: "Sponsor logo" }),
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        "Bottom right · logo · \u201cPresented by Example\u201d · 80% opacity",
+      ),
+    ).toBeVisible();
+  });
+
+  it("requires a logo or text before it can be created", async () => {
+    renderRoute(<BrandBugEditorPage />, "/plugins/brand-bug/new");
+    await waitFor(() => expect(screen.getByLabelText("Name")).toBeEnabled());
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Empty mark" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create instance" }));
+    expect(
+      await screen.findByText("Choose a logo image, enter text, or both."),
+    ).toBeVisible();
+    expect(submitted).toHaveLength(0);
+  }, 10_000);
+
+  it("submits a chosen logo, corner, and campaign window", async () => {
+    renderRoute(<BrandBugEditorPage />, "/plugins/brand-bug/new");
+    await waitFor(() => expect(screen.getByLabelText("Name")).toBeEnabled());
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Sponsor logo" },
+    });
+    await chooseLoadedOption(/^Logo image/, "District logo");
+    chooseOption("Corner", "Bottom left");
+    fireEvent.change(screen.getByLabelText(/^Show from/), {
+      target: { value: "2026-09-01T08:00" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create instance" }));
+    await waitFor(() => expect(submitted).toHaveLength(1));
+    expect(submitted[0]).toMatchObject({
+      name: "Sponsor logo",
+      corner: "bottom_left",
+      imageAssetId: "asset-1",
+      text: "",
+      endsAt: null,
+    });
+    expect(String(submitted[0]?.startsAt)).toMatch(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/,
+    );
+  }, 10_000);
+
+  it("rejects a window that ends before it starts", async () => {
+    renderRoute(<BrandBugEditorPage />, "/plugins/brand-bug/new");
+    await waitFor(() => expect(screen.getByLabelText("Name")).toBeEnabled());
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Campaign badge" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Presented by Example"), {
+      target: { value: "Vote Tuesday" },
+    });
+    fireEvent.change(screen.getByLabelText(/^Show from/), {
+      target: { value: "2026-09-10T08:00" },
+    });
+    fireEvent.change(screen.getByLabelText(/^Show until/), {
+      target: { value: "2026-09-01T08:00" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create instance" }));
+    expect(
+      await screen.findByText("The end must be after the start."),
+    ).toBeVisible();
+    expect(submitted).toHaveLength(0);
+  }, 10_000);
+
+  it("keeps every select across an unrelated edit and preserves the stored mark", async () => {
+    renderRoute(<BrandBugEditorPage />, "/plugins/brand-bug/bug-1");
+    await waitFor(() =>
+      expect(screen.getByLabelText("Name")).toHaveValue("Sponsor logo"),
+    );
+    // A select whose value react-hook-form dropped here would silently revert
+    // to its first option on the next render.
+    fireEvent.change(screen.getByLabelText("Opacity (%)"), {
+      target: { value: "55" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(submitted).toHaveLength(1));
+    expect(submitted[0]).toMatchObject({
+      corner: "bottom_right",
+      imageAssetId: "asset-1",
+      backgroundStyle: "scrim",
+      targetScope: "all",
+      opacityPercent: 55,
+      priority: 10,
+    });
   }, 10_000);
 });

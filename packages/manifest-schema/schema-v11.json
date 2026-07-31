@@ -69,7 +69,8 @@
       "description": "One built-in plugin surface delivered beside the presentation. Each type carries its own configuration; a Player ignores a type it does not implement.",
       "oneOf": [
         { "$ref": "#/$defs/countdownBarPlugin" },
-        { "$ref": "#/$defs/alertTickerPlugin" }
+        { "$ref": "#/$defs/alertTickerPlugin" },
+        { "$ref": "#/$defs/brandBugPlugin" }
       ]
     },
     "countdownBarPlugin": {
@@ -92,6 +93,52 @@
         "type": { "const": "alert_ticker" },
         "version": { "const": 1 },
         "config": { "$ref": "#/$defs/alertTickerConfig" }
+      }
+    },
+    "brandBugPlugin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "version", "config"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "type": { "const": "brand_bug" },
+        "version": { "const": 1 },
+        "config": { "$ref": "#/$defs/brandBugConfig" }
+      }
+    },
+    "brandBugConfig": {
+      "description": "A mark held in one screen corner over all normal content. Sizing is screen-relative, so one instance reads the same on a 1080p panel and a 4K one. A mark must draw a logo, text, or both.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "corner",
+        "widthPercent",
+        "textSizePercent",
+        "opacityPercent",
+        "marginPercent",
+        "textColor",
+        "backgroundStyle",
+        "priority"
+      ],
+      "anyOf": [{ "required": ["imageAssetId"] }, { "required": ["text"] }],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 180 },
+        "corner": {
+          "enum": ["top_left", "top_right", "bottom_left", "bottom_right"]
+        },
+        "imageAssetId": { "type": "string", "format": "uuid" },
+        "imageVariantId": { "type": "string", "format": "uuid" },
+        "text": { "type": "string", "maxLength": 180 },
+        "widthPercent": { "type": "integer", "minimum": 2, "maximum": 40 },
+        "textSizePercent": { "type": "integer", "minimum": 1, "maximum": 12 },
+        "opacityPercent": { "type": "integer", "minimum": 10, "maximum": 100 },
+        "marginPercent": { "type": "integer", "minimum": 0, "maximum": 20 },
+        "textColor": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
+        "backgroundStyle": { "enum": ["none", "scrim"] },
+        "startsAt": { "type": "string", "format": "date-time" },
+        "endsAt": { "type": "string", "format": "date-time" },
+        "priority": { "type": "integer", "minimum": -1000, "maximum": 1000 }
       }
     },
     "alertTickerConfig": {

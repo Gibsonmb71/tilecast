@@ -828,6 +828,37 @@ export type CountdownBar = CountdownBarInput & {
   createdAt: string;
   updatedAt: string;
 };
+
+export type BrandBugCorner =
+  "top_left" | "top_right" | "bottom_left" | "bottom_right";
+
+export type BrandBugInput = {
+  name: string;
+  corner: BrandBugCorner;
+  imageAssetId?: string | null;
+  text: string;
+  /** Logo width as a percentage of screen width. */
+  widthPercent: number;
+  /** Caption size as a percentage of screen height. */
+  textSizePercent: number;
+  opacityPercent: number;
+  /** Corner inset as a percentage of the screen's shorter edge. */
+  marginPercent: number;
+  textColor: string;
+  backgroundStyle: "none" | "scrim";
+  startsAt?: string | null;
+  endsAt?: string | null;
+  enabled: boolean;
+  priority: number;
+  targetScope: "all" | "screens" | "sync_groups" | "locations";
+  targetIds: string[];
+};
+
+export type BrandBug = BrandBugInput & {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+};
 export type ScheduleTarget = {
   type: "screen" | "group";
   id: string;
