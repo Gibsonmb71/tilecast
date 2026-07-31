@@ -58,6 +58,11 @@ it("traces direct and transitive content dependencies", async () => {
     </QueryClientProvider>,
   );
 
+  expect(
+    await screen.findByRole("region", { name: "Visual dependency graph" }),
+  ).toBeInTheDocument();
+  expect(document.querySelectorAll(".dependency-edge")).toHaveLength(3);
+
   const lunchMenu = await screen.findByText("Lunch menu");
   fireEvent.click(lunchMenu.closest("button")!);
   expect(screen.getByText("3", { selector: "strong" })).toBeInTheDocument();
@@ -72,4 +77,10 @@ it("traces direct and transitive content dependencies", async () => {
     "href",
     "/screens/screen-1",
   );
+  fireEvent.click(screen.getByRole("button", { name: "Close inspector" }));
+  expect(
+    screen.queryByRole("region", {
+      name: "Cafeteria TV dependency details",
+    }),
+  ).not.toBeInTheDocument();
 });
