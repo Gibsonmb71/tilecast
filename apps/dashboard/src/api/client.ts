@@ -86,6 +86,7 @@ import type {
   GitHubDeviceStart,
   GitHubDevicePoll,
   UpdateDeployment,
+  UpdateDeploymentDetail,
   UptimeReport,
   UptimeWindow,
   ReliabilityStatus,
@@ -120,6 +121,7 @@ import type {
   BackupJob,
   BackupRestorePlan,
   PluginSummary,
+  DependencyGraph,
   CountdownBar,
   CountdownBarInput,
 } from "./types";
@@ -606,6 +608,17 @@ export const api = {
     }),
   updateDeployments: () =>
     request<{ items: UpdateDeployment[] }>("/update-deployments"),
+  updateDeployment: (id: string) =>
+    request<UpdateDeploymentDetail>(`/update-deployments/${id}`),
+  retryUpdateScreen: (
+    deploymentId: string,
+    screenId: string,
+    csrfToken: string,
+  ) =>
+    request<{ state: string }>(
+      `/update-deployments/${deploymentId}/screens/${screenId}/retry`,
+      { method: "POST", headers: { "X-CSRF-Token": csrfToken } },
+    ),
   createUpdateDeployment: (
     input: {
       releaseId: string;
@@ -993,6 +1006,7 @@ export const api = {
   },
   locations: () => request<{ items: Location[]; total: number }>("/locations"),
   plugins: () => request<{ items: PluginSummary[] }>("/plugins"),
+  dependencyGraph: () => request<DependencyGraph>("/plugins/dependency-graph"),
   countdownBars: () =>
     request<{ items: CountdownBar[]; total: number }>(
       "/plugins/countdown-bar/instances",

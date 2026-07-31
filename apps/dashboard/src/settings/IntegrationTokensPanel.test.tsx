@@ -51,14 +51,14 @@ describe("Integration tokens", () => {
     ).toBeTruthy();
   });
 
-  it("states what each capability can and cannot do", async () => {
+  it("describes each capability", async () => {
     renderPanel();
     expect(
-      await screen.findByText(/cannot create or delete a Data Source/),
+      await screen.findByText(/Replace rows in selected Manual Table/),
     ).toBeTruthy();
   });
 
-  it("shows the token once, with the warning that it is not shown again", async () => {
+  it("marks a newly created token as shown once", async () => {
     vi.spyOn(api, "createIntegrationToken").mockResolvedValue({
       token: {
         id: "t1",
@@ -78,7 +78,7 @@ describe("Integration tokens", () => {
     await user.click(screen.getByRole("button", { name: "Create token" }));
 
     expect(await screen.findByText("tci_abc.supersecret")).toBeTruthy();
-    expect(screen.getByText(/does not show it again/)).toBeTruthy();
+    expect(screen.getByText(/Shown once/)).toBeTruthy();
   });
 
   it("reports a revoked token as revoked and offers no revoke control", async () => {

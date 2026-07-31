@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/tilecast/tilecast/apps/server/internal/auth"
 	"github.com/tilecast/tilecast/apps/server/internal/devices"
 	"github.com/tilecast/tilecast/apps/server/internal/updates"
@@ -582,7 +583,7 @@ func (s *server) getUpdateDeployment(w http.ResponseWriter, r *http.Request) {
 		filter = ` AND ` + devices.InScopeSQL("sc", "$2")
 		args = append(args, user)
 	}
-	rows, err := s.db.Query(r.Context(), `SELECT st.screen_id,sc.name,st.previous_version_code,st.expected_version_code,st.downloaded_bytes,st.permission_status,st.installer_status,st.state,st.safe_error,st.updated_at FROM `+
+	rows, err := s.db.Query(r.Context(), `SELECT st.screen_id,sc.name,st.previous_version_code,st.expected_version_code,st.downloaded_bytes,st.permission_status,st.installer_status,st.state,st.safe_error,st.updated_at,st.is_canary,st.download_started_at,st.downloaded_at,st.install_started_at,st.completed_at FROM `+
 		deploymentScreenStates+` WHERE st.deployment_id=$1`+filter+` ORDER BY sc.name,sc.id`, args...)
 	if err != nil {
 		s.internalError(w, r, err)
@@ -597,15 +598,17 @@ func (s *server) getUpdateDeployment(w http.ResponseWriter, r *http.Request) {
 		var expected, downloaded int64
 		var permission, installer, errorText *string
 		var updated time.Time
+		var canary bool
+		var downloadStarted, downloadFinished, installStarted, completed *time.Time
 		// A read that failed is not a deployment that reaches nothing: reporting
 		// it as 404 would tell a scoped operator their screens are not covered.
-		if err := rows.Scan(&screen, &name, &previous, &expected, &downloaded, &permission, &installer, &state, &errorText, &updated); err != nil {
+		if err := rows.Scan(&screen, &name, &previous, &expected, &downloaded, &permission, &installer, &state, &errorText, &updated, &canary, &downloadStarted, &downloadFinished, &installStarted, &completed); err != nil {
 			s.internalError(w, r, err)
 			return
 		}
-		items = append(items, map[string]any{"screenId": screen, "screenName": name, "previousVersionCode": previous, "expectedVersionCode": expected, "downloadedBytes": downloaded, "permissionStatus": permission, "installerStatus": installer, "state": state, "safeError": errorText, "updatedAt": updated})
+		items = append(items, map[string]any{"screenId": screen, "screenName": name, "previousVersionCode": previous, "expectedVersionCode": expected, "downloadedBytes": downloaded, "permissionStatus": permission, "installerStatus": installer, "state": state, "safeError": errorText, "updatedAt": updated, "isCanary": canary, "downloadStartedAt": downloadStarted, "downloadedAt": downloadFinished, "installStartedAt": installStarted, "completedAt": completed})
 	}
-	if err := rows.Err(); err != nil {
+	if err = rows.Err(); err != nil {
 		s.internalError(w, r, err)
 		return
 	}
@@ -615,7 +618,38 @@ func (s *server) getUpdateDeployment(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 404, "update_deployment_not_found", "Deployment was not found.")
 		return
 	}
-	writeJSON(w, 200, map[string]any{"data": map[string]any{"id": id, "screens": items}})
+	// The detail view reads on its own — a per-screen row means little without the
+	// release it installs, the artifact size that turns downloaded bytes into
+	// progress, and the rollout state that explains why a screen is still waiting.
+	summary, ok := s.updateDeploymentSummary(w, r, id)
+	if !ok {
+		return
+	}
+	summary["id"] = id
+	summary["screens"] = items
+	writeJSON(w, 200, map[string]any{"data": summary})
+}
+
+// updateDeploymentSummary reads the deployment header its detail view renders.
+// Scope is already settled by the caller, which narrows the screen rows.
+func (s *server) updateDeploymentSummary(w http.ResponseWriter, r *http.Request, id uuid.UUID) (map[string]any, bool) {
+	var name, mode, status, platform, version, rolloutMode, rolloutPhase string
+	var pauseReason *string
+	var created time.Time
+	var completed *time.Time
+	var code, artifactSize int64
+	var canarySize int
+	err := s.db.QueryRow(r.Context(), `SELECT d.name,d.mode,d.status,d.created_at,d.completed_at,d.rollout_mode,d.rollout_phase,d.canary_size,d.pause_reason,r.platform,r.version_code,r.version_name,r.apk_size FROM update_deployments d JOIN player_releases r ON r.id=d.release_id WHERE d.id=$1`, id).
+		Scan(&name, &mode, &status, &created, &completed, &rolloutMode, &rolloutPhase, &canarySize, &pauseReason, &platform, &code, &version, &artifactSize)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, 404, "update_deployment_not_found", "Deployment was not found.")
+		return nil, false
+	}
+	if err != nil {
+		s.internalError(w, r, err)
+		return nil, false
+	}
+	return map[string]any{"name": name, "mode": mode, "status": status, "createdAt": created, "completedAt": completed, "rolloutMode": rolloutMode, "rolloutPhase": rolloutPhase, "canarySize": canarySize, "pauseReason": pauseReason, "platform": platform, "versionCode": code, "versionName": version, "artifactSizeBytes": artifactSize}, true
 }
 
 func (s *server) cancelUpdateDeployment(w http.ResponseWriter, r *http.Request) {

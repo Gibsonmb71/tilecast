@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   ClipboardList,
   Clock3,
+  Network,
   Plus,
   Puzzle,
   Siren,
@@ -172,6 +173,11 @@ const pluginPresentation: Record<
     icon: ClipboardList,
     path: "/plugins/forms",
     instanceNoun: ["form", "forms"],
+  },
+  dependency_graph: {
+    icon: Network,
+    path: "/plugins/dependency-graph",
+    instanceNoun: ["map", "maps"],
   },
 };
 

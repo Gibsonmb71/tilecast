@@ -10,6 +10,14 @@ Forms remains a typed Data Source provider in the internal content contract beca
 
 Forms does not add a Player plugin manifest entry. Its published views flow through the ordinary authenticated Data Source projection used by Widgets and Layout bindings.
 
+## Dependency Graph
+
+Dependency Graph is a read-only Studio tool at **Plugins → Dependency Graph**. It maps Data Sources, media, Widgets, Layouts, playlists, schedules, sync groups, and screens without adding anything to a Player manifest.
+
+Edges point from a dependency to its consumer. Following them forward answers where a change can appear; following them backward answers what feeds a presentation or screen. The explorer reports direct relationships separately from the complete upstream and downstream counts, and every node links to its canonical Studio surface.
+
+The graph uses the same stored dependency records and assignment tables as playback and the existing “Used by” panels. Deleted content, deleted groups and schedules, and archived screens are excluded. A screen-scoped account sees only the screen nodes and screen-targeting edges allowed by the same scope used for the Screens list; the shared content library remains organization-wide.
+
 ## Countdown Bar
 
 Countdown Bar was the first built-in plugin. An installation can create multiple instances, each with its own name, message, schedule, lead time, optional completion text and confetti, display mode, height, horizontal padding, text size, background countdown, enabled state, priority, and targets.
@@ -78,6 +86,7 @@ The Player estimates server clock offset when a manifest is received. The cached
 Dashboard reads require a valid Tilecast session. Mutations additionally require Owner or Administrator, the session CSRF token, strict JSON, and normal request-size limits.
 
 - `GET /api/v1/plugins` — the catalog, one entry per built-in plugin
+- `GET /api/v1/plugins/dependency-graph` — typed nodes and directed dependency-to-consumer edges
 - `GET /api/v1/plugins/countdown-bar/instances`
 - `GET /api/v1/plugins/countdown-bar/instances/{id}`
 - `POST /api/v1/plugins/countdown-bar/instances`
