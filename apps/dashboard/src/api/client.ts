@@ -120,6 +120,7 @@ import type {
   BackupJob,
   BackupRestorePlan,
   PluginSummary,
+  DependencyGraph,
   CountdownBar,
   CountdownBarInput,
 } from "./types";
@@ -993,6 +994,7 @@ export const api = {
   },
   locations: () => request<{ items: Location[]; total: number }>("/locations"),
   plugins: () => request<{ items: PluginSummary[] }>("/plugins"),
+  dependencyGraph: () => request<DependencyGraph>("/plugins/dependency-graph"),
   countdownBars: () =>
     request<{ items: CountdownBar[]; total: number }>(
       "/plugins/countdown-bar/instances",
