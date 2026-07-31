@@ -24,6 +24,7 @@ import "./styles/data-sources.css";
 import "./styles/forms.css";
 import "./styles/player-updates.css";
 import "./styles/context-menu.css";
+import "./styles/popover.css";
 import "./styles/screens-media-fixes.css";
 
 installCommandPaletteFocus();

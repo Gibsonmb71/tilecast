@@ -50,11 +50,6 @@
   margin: 0 0 0 auto;
 }
 
-.content-page:not(.apps-page) .asset-filter-menu > summary.button {
-  min-height: 36px;
-  margin: 0;
-}
-
 @media (max-width: 760px) {
   .dialog:has(.user-edit-dialog) {
     width: min(560px, calc(100vw - 24px));

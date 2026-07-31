@@ -5,6 +5,7 @@ import {
   HoldButton,
   Notice,
   PageHeader,
+  Popover,
   Select,
   ToggleGroup,
   ViewTabs,
@@ -718,32 +719,6 @@ export function ScreenListContent({
   );
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkLocation, setBulkLocation] = useState("");
-  const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
-  const moreFiltersRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!moreFiltersOpen) return;
-    const closeOutside = (event: PointerEvent) => {
-      const target = event.target as Node;
-      // Select menus portal to <body>, so a click on one of their options is
-      // outside this panel in the DOM. Closing there would unmount the select
-      // before its own click landed.
-      if (
-        target instanceof Element &&
-        target.closest(".signal-select__menu, .signal-select__trigger")
-      )
-        return;
-      if (!moreFiltersRef.current?.contains(target)) setMoreFiltersOpen(false);
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMoreFiltersOpen(false);
-    };
-    document.addEventListener("pointerdown", closeOutside);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeOutside);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [moreFiltersOpen]);
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return screens.filter((screen) => {
@@ -1026,71 +1001,70 @@ export function ScreenListContent({
             <option value="playlist">Playlist</option>
             <option value="nothing">Nothing assigned</option>
           </FilterSelect>
-          {/* Button plus aria-expanded, matching every other popover in Studio.
-              A <details> element cannot close on an outside click. */}
-          <div className="screen-more-filters" ref={moreFiltersRef}>
-            <button
-              type="button"
-              className="screen-more-filters__trigger"
-              aria-expanded={moreFiltersOpen}
-              aria-haspopup="true"
-              onClick={() => setMoreFiltersOpen((open) => !open)}
-            >
-              <SlidersHorizontal size={15} aria-hidden="true" />
-              More filters
-              {advancedFilterCount > 0 && (
-                <span className="screen-more-filters__count">
-                  {advancedFilterCount}
-                </span>
-              )}
-            </button>
-            {moreFiltersOpen && (
-              <div className="screen-more-filters__panel">
-                <FilterSelect
-                  label="Sync group"
-                  value={syncGroup}
-                  onChange={setSyncGroup}
-                  block
-                >
-                  <option value="">All screens</option>
-                  <option value="any">In any sync group</option>
-                  <option value="none">Not in a sync group</option>
-                  {[
-                    ...new Map(
-                      screens
-                        .filter((item) => item.syncGroupId)
-                        .map((item) => [item.syncGroupId, item.syncGroupName]),
-                    ).entries(),
-                  ].map(([id, name]) => (
-                    <option value={id} key={id}>
-                      {name}
-                    </option>
-                  ))}
-                </FilterSelect>
-                <FilterSelect
-                  label="Orientation"
-                  value={orientation}
-                  onChange={setOrientation}
-                  block
-                >
-                  <option value="">Any orientation</option>
-                  <option value="landscape">Landscape</option>
-                  <option value="portrait">Portrait</option>
-                </FilterSelect>
-                <FilterSelect
-                  label="Software update"
-                  value={update}
-                  onChange={setUpdate}
-                  block
-                >
-                  <option value="">Any update status</option>
-                  <option value="current">Current</option>
-                  <option value="downloading">Downloading</option>
-                  <option value="attention">Needs attention</option>
-                </FilterSelect>
-              </div>
+          <Popover
+            label="More screen filters"
+            className="screen-more-filters"
+            width="16rem"
+            align="end"
+            trigger={(props) => (
+              <button
+                type="button"
+                className="signal-popover__filter-trigger"
+                {...props}
+              >
+                <SlidersHorizontal size={15} aria-hidden="true" />
+                More filters
+                {advancedFilterCount > 0 && (
+                  <span className="signal-popover__count">
+                    {advancedFilterCount}
+                  </span>
+                )}
+              </button>
             )}
-          </div>
+          >
+            <FilterSelect
+              label="Sync group"
+              value={syncGroup}
+              onChange={setSyncGroup}
+              block
+            >
+              <option value="">All screens</option>
+              <option value="any">In any sync group</option>
+              <option value="none">Not in a sync group</option>
+              {[
+                ...new Map(
+                  screens
+                    .filter((item) => item.syncGroupId)
+                    .map((item) => [item.syncGroupId, item.syncGroupName]),
+                ).entries(),
+              ].map(([id, name]) => (
+                <option value={id} key={id}>
+                  {name}
+                </option>
+              ))}
+            </FilterSelect>
+            <FilterSelect
+              label="Orientation"
+              value={orientation}
+              onChange={setOrientation}
+              block
+            >
+              <option value="">Any orientation</option>
+              <option value="landscape">Landscape</option>
+              <option value="portrait">Portrait</option>
+            </FilterSelect>
+            <FilterSelect
+              label="Software update"
+              value={update}
+              onChange={setUpdate}
+              block
+            >
+              <option value="">Any update status</option>
+              <option value="current">Current</option>
+              <option value="downloading">Downloading</option>
+              <option value="attention">Needs attention</option>
+            </FilterSelect>
+          </Popover>
         </div>
         {anyFilterActive && (
           <div className="screen-filter-chips">

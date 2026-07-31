@@ -30,6 +30,7 @@ import { useAuth } from "../auth/AuthProvider";
 import { Brand } from "../components/Brand";
 import { RouteErrorBoundary } from "../components/RouteErrorBoundary";
 import { StudioTopbar } from "../components/StudioTopbar";
+import { Popover } from "../components/ui";
 import { api } from "../api/client";
 import { canReviewForm } from "../forms/capabilities";
 import { OperationsDashboard } from "./OperationsDashboard";
@@ -198,7 +199,6 @@ export function DashboardShell() {
   const auth = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [sidebarCompact, setSidebarCompact] = useState(() => {
     try {
       return window.localStorage.getItem(sidebarCompactKey) === "true";
@@ -206,8 +206,6 @@ export function DashboardShell() {
       return false;
     }
   });
-  const accountMenuRef = useRef<HTMLDivElement>(null);
-  const accountMenuButtonRef = useRef<HTMLButtonElement>(null);
   // Enrollment is latched rather than read straight from the session flag on
   // every render: confirming the first factor clears the flag server-side, and
   // the wizard still has recovery codes and a passkey to offer after that.
@@ -254,30 +252,10 @@ export function DashboardShell() {
     if (auth.status?.mfaEnrollmentRequired && !enrollmentFinished.current)
       setEnrolling(true);
   }, [auth.status?.mfaEnrollmentRequired]);
-  useEffect(() => {
-    if (!accountMenuOpen) return;
-
-    const closeOnOutsideClick = (event: PointerEvent) => {
-      if (
-        accountMenuRef.current &&
-        !accountMenuRef.current.contains(event.target as Node)
-      )
-        setAccountMenuOpen(false);
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      setAccountMenuOpen(false);
-      accountMenuButtonRef.current?.focus();
-    };
-
-    document.addEventListener("pointerdown", closeOnOutsideClick);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeOnOutsideClick);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [accountMenuOpen]);
   if (auth.isLoading || !auth.status?.authenticated) return null;
+  // Read before the JSX: the account trigger is a render prop, and the narrowing
+  // from the guard above does not reach inside a callback.
+  const initial = auth.status.user?.name?.slice(0, 1).toUpperCase();
   // The server refuses every dashboard route until the required factor
   // exists, so the shell gives way to enrollment rather than rendering a page
   // whose data will not load.
@@ -316,59 +294,49 @@ export function DashboardShell() {
         <SidebarNavigation />
         <div className="sidebar__account">
           <span className="avatar" aria-hidden="true">
-            {auth.status.user?.name?.slice(0, 1).toUpperCase()}
+            {initial}
           </span>
           <span className="sidebar__account-copy">
             <strong>{auth.status.user?.name}</strong>
             <small>{auth.status.user?.role}</small>
           </span>
-          <div className="account-menu" ref={accountMenuRef}>
-            <button
-              ref={accountMenuButtonRef}
-              className="account-menu__trigger"
-              type="button"
-              aria-label="Open account menu"
-              aria-haspopup="menu"
-              aria-expanded={accountMenuOpen}
-              aria-controls="sidebar-account-menu"
-              onClick={() => setAccountMenuOpen((open) => !open)}
-            >
-              <Ellipsis
-                className="account-menu__ellipsis"
-                size={18}
-                aria-hidden="true"
-              />
-              <span className="account-menu__mobile-avatar" aria-hidden="true">
-                {auth.status.user?.name?.slice(0, 1).toUpperCase()}
-              </span>
-            </button>
-            {accountMenuOpen && (
-              <div
-                className="account-menu__popover"
-                id="sidebar-account-menu"
-                role="menu"
+          <Popover
+            label="Account"
+            mode="menu"
+            className="account-menu"
+            panelClassName="account-menu__popover"
+            trigger={(props) => (
+              <button
+                className="account-menu__trigger"
+                type="button"
+                aria-label="Open account menu"
+                {...props}
               >
-                <Link
-                  to="/forms"
-                  role="menuitem"
-                  onClick={() => setAccountMenuOpen(false)}
+                <Ellipsis
+                  className="account-menu__ellipsis"
+                  size={18}
+                  aria-hidden="true"
+                />
+                <span
+                  className="account-menu__mobile-avatar"
+                  aria-hidden="true"
                 >
+                  {initial}
+                </span>
+              </button>
+            )}
+          >
+            {(close) => (
+              <>
+                <Link to="/forms" role="menuitem" onClick={close}>
                   <ClipboardList size={16} aria-hidden="true" />
                   My Forms
                 </Link>
-                <Link
-                  to="/preferences"
-                  role="menuitem"
-                  onClick={() => setAccountMenuOpen(false)}
-                >
+                <Link to="/preferences" role="menuitem" onClick={close}>
                   <SlidersHorizontal size={16} aria-hidden="true" />
                   My preferences
                 </Link>
-                <Link
-                  to="/security"
-                  role="menuitem"
-                  onClick={() => setAccountMenuOpen(false)}
-                >
+                <Link to="/security" role="menuitem" onClick={close}>
                   <ShieldCheck size={16} aria-hidden="true" />
                   Sign-in security
                 </Link>
@@ -376,7 +344,7 @@ export function DashboardShell() {
                   type="button"
                   role="menuitem"
                   onClick={() => {
-                    setAccountMenuOpen(false);
+                    close();
                     void auth.logout();
                   }}
                   disabled={auth.isSubmitting}
@@ -384,9 +352,9 @@ export function DashboardShell() {
                   <LogOut size={16} aria-hidden="true" />
                   Sign out
                 </button>
-              </div>
+              </>
             )}
-          </div>
+          </Popover>
         </div>
       </aside>
       <div className="workspace">
