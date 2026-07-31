@@ -219,68 +219,21 @@
 }
 
 .asset-filter-menu {
-  position: relative;
   margin-left: 0;
 }
 
-.asset-filter-menu > summary {
-  margin: 0;
-  list-style: none;
-  text-decoration: none;
-}
-
-.asset-filter-menu > summary::-webkit-details-marker {
-  display: none;
-}
-
-.asset-filter-menu__count {
-  display: grid;
-  min-width: 18px;
-  height: 18px;
-  place-items: center;
-  padding: 0 5px;
-  color: var(--tc-text-inverse);
-  background: var(--tc-action-primary);
-  border-radius: var(--tc-radius-pill);
-  font-size: 10px;
-  font-weight: 750;
-}
-
+/* Two columns, because six short selects stacked would be taller than the
+   library behind them. Wider than the shared ceiling for the same reason. */
 .asset-filter-menu__panel {
-  position: absolute;
-  z-index: 25;
-  top: calc(100% + 8px);
-  right: 0;
-  display: grid;
   grid-template-columns: repeat(2, minmax(170px, 1fr));
-  gap: 12px;
   width: min(470px, calc(100vw - 48px));
-  padding: 16px;
-  color: var(--tc-text-primary);
-  background: var(--tc-bg-surface);
-  border: 1px solid var(--tc-border-default);
-  border-radius: var(--tc-radius-panel);
-  box-shadow: var(--tc-shadow-lg);
+  max-width: none;
 }
 
-.asset-filter-menu__panel > header {
-  display: flex;
+.asset-filter-menu__panel > .signal-popover__header {
   grid-column: 1 / -1;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: start;
   padding-bottom: 10px;
   border-bottom: 1px solid var(--tc-border-default);
-}
-
-.asset-filter-menu__panel > header > div {
-  display: grid;
-  gap: 2px;
-}
-
-.asset-filter-menu__panel > header span {
-  color: var(--tc-text-secondary);
-  font-size: 12px;
 }
 
 .asset-filter-menu__panel > label {
@@ -319,9 +272,5 @@
 
   .user-edit-dialog__actions .button--danger-quiet {
     grid-column: 1 / -1;
-  }
-
-  .asset-filter-menu__panel {
-    right: min(0px, calc(100vw - 100%));
   }
 }

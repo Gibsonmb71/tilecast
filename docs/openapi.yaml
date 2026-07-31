@@ -536,6 +536,20 @@ paths:
       operationId: listPlugins
       responses:
         "200": { description: Closed catalog of built-in Tilecast plugins }
+  /api/v1/plugins/dependency-graph:
+    get:
+      operationId: getDependencyGraph
+      description: Returns the current content and delivery topology. Directed edges run from a dependency to the record that consumes it.
+      responses:
+        "200":
+          description: Typed dependency nodes and directed consumer edges
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/DependencyGraph" }
   /api/v1/plugins/countdown-bar/instances:
     get:
       operationId: listCountdownBarInstances
@@ -2089,25 +2103,34 @@ paths:
         }
   /api/v1/update-deployments:
     get:
-      summary: List Player update deployments
+      summary: List Player update deployments, narrowed to the caller's screen scope
       responses: { "200": { description: Deployment list } }
     post:
       summary: Create a deduplicated screen and group deployment with an optional canary cohort
       responses:
         {
           "201": { description: Deployment created },
+          "403": { description: Targets outside the caller's screen scope },
           "422": { description: Invalid or unverified release/targets },
         }
   /api/v1/update-deployments/{id}:
     get:
-      summary: Read per-screen update state
-      responses: { "200": { description: Deployment detail } }
+      summary:
+        Read the deployment header, release artifact size, and per-screen update
+        state for the screens in the caller's scope
+      responses:
+        {
+          "200": { description: Deployment detail },
+          "404": { description: Unknown, or reaching no screen in scope },
+        }
   /api/v1/update-deployments/{id}/cancel:
     post:
-      summary: Cancel pending update work
+      summary: Cancel pending update work on every screen the deployment reaches
       responses:
         {
           "200": { description: Cancelled },
+          "403": { description: Reaches screens outside the caller's scope },
+          "404": { description: Unknown, or reaching no screen in scope },
           "409": { description: Already complete },
         }
   /api/v1/update-deployments/{id}/screens/{screenId}/retry:
@@ -2116,6 +2139,7 @@ paths:
       responses:
         {
           "202": { description: Retry queued },
+          "404": { description: Screen outside the caller's scope },
           "409": { description: Retry not allowed },
         }
   /api/v1/player/updates/{releaseId}:
@@ -2168,6 +2192,47 @@ components:
       scheme: bearer
       bearerFormat: Tilecast device credential
   schemas:
+    DependencyGraph:
+      type: object
+      additionalProperties: false
+      required: [nodes, edges]
+      properties:
+        nodes:
+          type: array
+          items: { $ref: "#/components/schemas/DependencyNode" }
+        edges:
+          type: array
+          items: { $ref: "#/components/schemas/DependencyEdge" }
+    DependencyNode:
+      type: object
+      additionalProperties: false
+      required: [id, type, name]
+      properties:
+        id: { type: string, format: uuid }
+        type:
+          enum:
+            [
+              data_source,
+              asset,
+              widget,
+              layout,
+              playlist,
+              schedule,
+              screen_group,
+              screen,
+            ]
+        name: { type: string }
+    DependencyEdge:
+      type: object
+      additionalProperties: false
+      required: [fromType, fromId, toType, toId, relationship]
+      properties:
+        fromType:
+          { $ref: "#/components/schemas/DependencyNode/properties/type" }
+        fromId: { type: string, format: uuid }
+        toType: { $ref: "#/components/schemas/DependencyNode/properties/type" }
+        toId: { type: string, format: uuid }
+        relationship: { type: string }
     CountdownBarInput:
       type: object
       additionalProperties: false

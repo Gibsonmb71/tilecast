@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"sort"
 	"sync"
@@ -11,6 +12,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 	"github.com/tilecast/tilecast/apps/server/internal/devices"
+	"github.com/tilecast/tilecast/apps/server/internal/livestream"
 	"github.com/tilecast/tilecast/apps/server/internal/playlists"
 )
 
@@ -51,6 +53,7 @@ func (s *server) playerSocket(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
+	connection.SetReadLimit(livestream.MaxFrameBytes + 1024)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	defer connection.Close(websocket.StatusNormalClosure, "connection closed") //nolint:errcheck
@@ -122,8 +125,31 @@ func (s *server) playerSocket(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	for ctx.Err() == nil {
+		messageType, data, err := connection.Read(ctx)
+		if err != nil {
+			break
+		}
+		if messageType == websocket.MessageBinary {
+			sessionID, frame, parseErr := livestream.ParseBinaryFrame(data)
+			if parseErr != nil {
+				s.logger.Warn("invalid live stream frame rejected",
+					"error", parseErr, "screen_id", principal.ScreenID)
+				continue
+			}
+			if publishErr := s.liveStreams.Publish(principal.ScreenID, sessionID, frame); publishErr != nil &&
+				!errors.Is(publishErr, livestream.ErrNotFound) {
+				s.logger.Warn("live stream frame rejected",
+					"error", publishErr, "screen_id", principal.ScreenID)
+			}
+			continue
+		}
+		if messageType != websocket.MessageText {
+			continue
+		}
 		var message socketMessage
-		if err := wsjson.Read(ctx, connection, &message); err != nil {
+		if err := json.Unmarshal(data, &message); err != nil {
+			_ = connection.Close(websocket.StatusInvalidFramePayloadData, "invalid JSON message")
+			cancel()
 			break
 		}
 		switch message.Type {

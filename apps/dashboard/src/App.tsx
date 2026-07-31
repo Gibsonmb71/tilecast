@@ -46,6 +46,7 @@ import {
 import { FormsPluginPage } from "./pages/FormsPluginPage";
 import { CreateFormDataSourcePage } from "./pages/CreateFormDataSourcePage";
 import { FormDataSourcePage } from "./pages/FormDataSourcePage";
+import { DependencyGraphPage } from "./pages/DependencyGraphPage";
 
 const search = (
   label: string,
@@ -331,6 +332,19 @@ export const studioRoutes: RouteObject[] = [
         },
         children: [
           { index: true, element: <PluginsPage /> },
+          {
+            path: "dependency-graph",
+            element: <DependencyGraphPage />,
+            handle: {
+              breadcrumb: "Dependency Graph",
+              search: search(
+                "Dependency Graph",
+                "Trace content, presentations, schedules, groups, and screens",
+                "/plugins/dependency-graph",
+                ["content map", "used by", "relationships", "impact"],
+              ),
+            },
+          },
           {
             path: "countdown-bar",
             element: <CountdownBarsPage />,

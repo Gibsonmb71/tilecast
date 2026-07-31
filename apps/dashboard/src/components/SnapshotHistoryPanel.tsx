@@ -3,9 +3,6 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { api } from "../api/client";
 
-// What a snapshot proves is narrow, and this panel says so rather than letting
-// a picture of a screen imply more than it can: it proves the Player rendered
-// that frame, not that the television was on or on the right input.
 export function SnapshotHistoryPanel({ screenId }: { screenId: string }) {
   const history = useQuery({
     queryKey: ["screen-snapshots", screenId],
@@ -45,9 +42,8 @@ export function SnapshotHistoryPanel({ screenId }: { screenId: string }) {
 
   return (
     <div className="snapshot-history">
-      <p className="role-description">{data.proofNote}</p>
       <p className="role-description">
-        Keeping up to {data.maxPerScreen} per screen for {data.retentionDays}{" "}
+        Retains up to {data.maxPerScreen} per screen for {data.retentionDays}{" "}
         days.
       </p>
       <div className="snapshot-grid">

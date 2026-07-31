@@ -24,7 +24,14 @@ import type {
   ScheduleTarget,
 } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
-import { Button, Field, Notice, PageHeader, Switch } from "../components/ui";
+import {
+  Button,
+  Field,
+  Notice,
+  PageHeader,
+  Popover,
+  Switch,
+} from "../components/ui";
 import { PlaylistPicker } from "../components/content-picker";
 import {
   conflictWinnerReason,
@@ -695,7 +702,6 @@ function TimezonePicker({
   onChange: (value: string) => void;
   error?: string;
 }) {
-  const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const zones = useMemo(timezones, []);
   const filtered = zones
@@ -705,49 +711,59 @@ function TimezonePicker({
     .slice(0, 80);
   return (
     <div className="schedule-timezone">
-      <span className="field__label">
+      <span className="field__label" id="schedule-timezone-label">
         Timezone <span aria-hidden="true">*</span>
       </span>
-      <button
-        type="button"
-        className="schedule-timezone__trigger"
-        aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
+      <Popover
+        label="Timezone"
+        panelClassName="schedule-timezone__menu"
+        matchTriggerWidth
+        onOpenChange={(open) => {
+          if (!open) setSearch("");
+        }}
+        trigger={(props) => (
+          <button
+            type="button"
+            className="schedule-timezone__trigger"
+            aria-labelledby="schedule-timezone-label"
+            {...props}
+          >
+            <span>{timezoneLabel(value)}</span>
+            <ChevronDown size={17} aria-hidden="true" />
+          </button>
+        )}
       >
-        <span>{timezoneLabel(value)}</span>
-        <ChevronDown size={17} />
-      </button>
-      {open && (
-        <div className="schedule-timezone__menu">
-          <label>
-            <Search size={16} />
-            <input
-              type="search"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search city or region"
-              autoFocus
-            />
-          </label>
-          <div>
-            {filtered.map((zone) => (
-              <button
-                type="button"
-                key={zone}
-                className={zone === value ? "selected" : ""}
-                onClick={() => {
-                  onChange(zone);
-                  setOpen(false);
-                  setSearch("");
-                }}
-              >
-                {timezoneLabel(zone)}
-                {zone === value && <Check size={16} />}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+        {(close) => (
+          <>
+            <label>
+              <Search size={16} aria-hidden="true" />
+              <input
+                type="search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search city or region"
+                aria-label="Search timezones"
+              />
+            </label>
+            <div>
+              {filtered.map((zone) => (
+                <button
+                  type="button"
+                  key={zone}
+                  className={zone === value ? "selected" : ""}
+                  onClick={() => {
+                    onChange(zone);
+                    close();
+                  }}
+                >
+                  {timezoneLabel(zone)}
+                  {zone === value && <Check size={16} aria-hidden="true" />}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </Popover>
       {error && <span className="field__error">{error}</span>}
     </div>
   );

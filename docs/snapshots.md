@@ -8,14 +8,9 @@ when nobody is in the building.
 
 Snapshot history is **off by default**.
 
-## What a snapshot proves
+## Snapshot source
 
-A snapshot proves that the Player rendered that frame.
-
-It does **not** prove that the television was on, that it was on the right
-input, or that anybody could see it. Tilecast repeats this wherever it shows a
-snapshot, because a picture of a screen invites a reader to assume more than it
-can support.
+Snapshots are captured from the Tilecast Player render surface.
 
 ## Turning it on
 

@@ -56,10 +56,6 @@
   }
 }
 
-.screen-more-filters__trigger {
-  white-space: nowrap;
-}
-
 /* Keep icon and label on the same optical baseline in the table/preview switch. */
 .screen-view-controls .toggle-group button {
   display: inline-flex;

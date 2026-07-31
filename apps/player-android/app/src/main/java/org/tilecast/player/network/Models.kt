@@ -14,6 +14,15 @@ import kotlinx.serialization.SerialName
 @Serializable data class EnrollmentRequest(val pairingSessionId: String, val enrollmentToken: String)
 @Serializable data class EnrollmentResult(val screenId: String, val screenName: String, val deviceCredential: String)
 @Serializable data class PreviewSession(val active: Boolean = false, val expiresAt: String? = null, val captureIntervalSeconds: Int = 20, val captureNow: Boolean = false)
+@Serializable data class LiveStreamSession(
+    val id: String? = null,
+    val active: Boolean = false,
+    val expiresAt: String? = null,
+    val frameIntervalMillis: Int = 125,
+    val maxWidth: Int = 640,
+    val maxHeight: Int = 360,
+    val maxFrameBytes: Int = 100 * 1024,
+)
 object PlayerPresentationSupport {
     val schemas = listOf(1)
     val native = mapOf(

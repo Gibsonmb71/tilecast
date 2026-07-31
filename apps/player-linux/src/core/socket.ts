@@ -28,6 +28,7 @@ export interface SocketEvents {
   onManifestChanged(manifestVersion: number): void;
   onConfigChanged(configRevision: number): void;
   onCommandsAvailable(): void;
+  onLiveStreamSessionChanged(): void;
 }
 
 export class PlayerSocket {
@@ -110,6 +111,9 @@ export class PlayerSocket {
       case "commands.available":
         this.events.onCommandsAvailable();
         break;
+      case "live_stream.session_changed":
+        this.events.onLiveStreamSessionChanged();
+        break;
       default:
         log.debug("ignoring unknown socket message", { type: message.type });
     }
@@ -123,6 +127,18 @@ export class PlayerSocket {
       playerVersion: this.playerVersion,
       payload: heartbeat,
     });
+  }
+
+  sendLiveStreamFrame(
+    sessionId: string,
+    capturedAtMs: number,
+    width: number,
+    height: number,
+    jpeg: Buffer,
+  ): boolean {
+    return this.sendBinary(
+      encodeLiveStreamFrame(sessionId, capturedAtMs, width, height, jpeg),
+    );
   }
 
   get isOpen(): boolean {
@@ -147,6 +163,16 @@ export class PlayerSocket {
     }
     try {
       this.ws!.send(JSON.stringify(message));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private sendBinary(message: Buffer): boolean {
+    if (!this.isOpen) return false;
+    try {
+      this.ws!.send(message, { binary: true });
       return true;
     } catch {
       return false;
@@ -187,4 +213,23 @@ export class PlayerSocket {
     this.closeReported = true;
     this.events.onClose(reason, policyViolation);
   }
+}
+
+export function encodeLiveStreamFrame(
+  sessionId: string,
+  capturedAtMs: number,
+  width: number,
+  height: number,
+  jpeg: Buffer,
+): Buffer {
+  const id = Buffer.from(sessionId.replaceAll("-", ""), "hex");
+  if (id.length !== 16) throw new Error("invalid live stream session id");
+  const header = Buffer.alloc(33);
+  header.write("TCLS", 0, "ascii");
+  header.writeUInt8(1, 4);
+  id.copy(header, 5);
+  header.writeBigInt64BE(BigInt(Math.trunc(capturedAtMs)), 21);
+  header.writeUInt16BE(width, 29);
+  header.writeUInt16BE(height, 31);
+  return Buffer.concat([header, jpeg]);
 }
