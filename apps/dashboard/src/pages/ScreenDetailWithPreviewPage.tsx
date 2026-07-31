@@ -2,19 +2,14 @@ import { Navigate, useParams, useSearchParams } from "react-router";
 import { LivePreviewPanel } from "../components/LivePreviewPanel";
 import { SnapshotHistoryPanel } from "../components/SnapshotHistoryPanel";
 import { ScreenActivityPanel } from "../components/ScreenActivityPanel";
-import { ScreenDetailPage } from "./ScreensPage";
+import { ScreenDetailPage, normalizeScreenDetailTab } from "./ScreensPage";
 
 export function ScreenDetailWithPreviewPage() {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   if (!id) return <Navigate to="/screens" replace />;
 
-  const requestedTab = searchParams.get("tab") ?? "overview";
-  const tab = ["player-settings", "reliability", "commands"].includes(
-    requestedTab,
-  )
-    ? "manage"
-    : requestedTab;
+  const tab = normalizeScreenDetailTab(searchParams.get("tab"));
   if (tab === "overview") {
     return (
       <div className="screen-detail-preview-layout">

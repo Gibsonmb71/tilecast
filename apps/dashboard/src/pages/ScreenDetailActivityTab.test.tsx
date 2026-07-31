@@ -289,6 +289,49 @@ describe("screen detail tabs", () => {
     expect(document.activeElement?.textContent).toContain("Manage");
   });
 
+  it("falls back to Overview when the tab in the URL is not a real tab", async () => {
+    renderDetail("/screens/screen-1?tab=bogus");
+
+    // Both the wrapper and the detail page must agree that this is Overview,
+    // or the preview panel silently disappears.
+    expect(await screen.findByTestId("preview")).toBeTruthy();
+    expect(
+      await screen.findByRole("heading", { name: "Screen overview" }),
+    ).toBeTruthy();
+  });
+
+  it("shows Android device fields for a screen reporting android-tv", async () => {
+    vi.spyOn(api, "screen").mockResolvedValue({
+      ...screenRecord,
+      platform: "android-tv",
+      androidSdk: 33,
+      installerSource: "sideload",
+    } as never);
+    renderDetail("/screens/screen-1?tab=manage&section=device");
+
+    expect(await screen.findByText("Android SDK")).toBeTruthy();
+    expect(screen.getByText("Installer source")).toBeTruthy();
+  });
+
+  it("explains an empty Maintenance workspace to a Viewer", async () => {
+    authStatus.user = { id: "user-2", name: "Viewer", role: "viewer" };
+    try {
+      renderDetail("/screens/screen-1?tab=manage&section=maintenance");
+
+      expect(
+        await screen.findByRole("heading", {
+          name: "Recent operations",
+          level: 3,
+        }),
+      ).toBeTruthy();
+      expect(
+        screen.getByText(/No maintenance commands have been sent/),
+      ).toBeTruthy();
+    } finally {
+      authStatus.user = { id: "user-1", name: "Owner", role: "owner" };
+    }
+  });
+
   it("does not reach outside its own subtree to place a tab", async () => {
     renderDetail("/screens/screen-1?tab=activity");
     await screen.findByRole("heading", { name: "Activity", level: 3 });
