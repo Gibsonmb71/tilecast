@@ -324,21 +324,21 @@
     width: 16%;
   }
 
-  /* History table: deployment | mode | status | progress | attention. */
+  /* History table: deployment | status | screens | needs | detail action. */
   .player-updates__history .player-updates-table :is(th, td):nth-child(1) {
-    width: 26%;
+    width: 24%;
   }
 
   .player-updates__history .player-updates-table :is(th, td):nth-child(2) {
-    width: 18%;
+    width: 17%;
   }
 
   .player-updates__history .player-updates-table :is(th, td):nth-child(3) {
-    width: 22%;
+    width: 21%;
   }
 
   .player-updates__history .player-updates-table :is(th, td):nth-child(4) {
-    width: 20%;
+    width: 24%;
   }
 
   .player-updates__history .player-updates-table :is(th, td):nth-child(5) {
@@ -593,6 +593,289 @@
   color: var(--tc-status-danger);
   font: var(--tc-text-supporting);
   font-weight: 600;
+}
+
+/* Deployment meter -------------------------------------------------------- */
+
+/* Four segments over one track: updated, waiting on a person, failed, still
+   moving. The legend repeats every segment as a number and a word, so the bar
+   never carries meaning in colour alone. */
+.deployment-meter {
+  display: grid;
+  gap: 6px;
+}
+
+.deployment-meter__track {
+  display: flex;
+  overflow: hidden;
+  height: 8px;
+  background: var(--tc-bg-subtle);
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-chip);
+}
+
+.deployment-meter--compact .deployment-meter__track {
+  height: 6px;
+}
+
+.deployment-meter__fill--success {
+  background: var(--tc-status-success);
+}
+
+.deployment-meter__fill--warning {
+  background: var(--tc-status-warning);
+}
+
+.deployment-meter__fill--danger {
+  background: var(--tc-status-danger);
+}
+
+.deployment-meter__fill--neutral {
+  background: var(--tc-status-neutral);
+}
+
+.deployment-meter__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--tc-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.deployment-meter__legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--tc-text-secondary);
+  font: var(--tc-text-supporting);
+}
+
+.deployment-meter--compact .deployment-meter__legend {
+  display: none;
+}
+
+/* Deployment drawer ------------------------------------------------------- */
+
+.deployment-drawer .drawer__body {
+  display: grid;
+  gap: var(--tc-space-4);
+  align-content: start;
+}
+
+.deployment-drawer__facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--tc-space-3);
+  margin: 0;
+}
+
+.deployment-drawer__facts dt {
+  color: var(--tc-text-secondary);
+  font: var(--tc-text-label);
+}
+
+.deployment-drawer__facts dd {
+  margin: 2px 0 0;
+  color: var(--tc-text-primary);
+  font: var(--tc-text-body);
+}
+
+.deployment-drawer__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--tc-space-2);
+}
+
+.deployment-drawer__search {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 var(--tc-space-2);
+  color: var(--tc-text-secondary);
+  background: var(--tc-bg-surface);
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-chip);
+}
+
+.deployment-drawer__search input {
+  min-width: 0;
+  width: 160px;
+  padding: 5px 0;
+  color: var(--tc-text-primary);
+  background: none;
+  border: 0;
+  font: var(--tc-text-body);
+}
+
+.deployment-drawer__search input:focus {
+  outline: none;
+}
+
+.deployment-drawer__empty {
+  margin: 0;
+  padding: var(--tc-space-5);
+  color: var(--tc-text-secondary);
+  background: var(--tc-bg-subtle);
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-panel);
+  font: var(--tc-text-supporting);
+  text-align: center;
+}
+
+.deployment-drawer__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--tc-space-3);
+}
+
+.deployment-drawer__footer span {
+  flex: 1 1 240px;
+  color: var(--tc-text-secondary);
+  font: var(--tc-text-supporting);
+  line-height: 1.45;
+}
+
+/* One row per screen ------------------------------------------------------ */
+
+.deployment-screen-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-panel);
+}
+
+.deployment-screen {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  gap: var(--tc-space-3);
+  padding: var(--tc-space-3);
+  border-top: 1px solid var(--tc-border-subtle);
+}
+
+.deployment-screen:first-child {
+  border-top: 0;
+}
+
+/* A left edge marks the rows a person has to do something about, so scanning a
+   long list does not depend on reading every status line. It repeats the status
+   tone rather than replacing it: the row still names its state in words. */
+.deployment-screen--attention {
+  box-shadow: inset 3px 0 0 var(--tc-status-warning);
+}
+
+.deployment-screen--attention:has(.status-dot-label--danger) {
+  box-shadow: inset 3px 0 0 var(--tc-status-danger);
+}
+
+.deployment-screen__identity strong {
+  display: block;
+  color: var(--tc-text-primary);
+  font: var(--tc-text-label);
+}
+
+.deployment-screen__identity small,
+.deployment-screen__status small {
+  display: block;
+  margin-top: 2px;
+  color: var(--tc-text-secondary);
+  font: var(--tc-text-supporting);
+  line-height: 1.4;
+}
+
+.deployment-screen__status {
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+}
+
+.deployment-screen__download {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+}
+
+.deployment-screen__download progress {
+  width: 100%;
+  height: 6px;
+}
+
+.deployment-screen__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.deployment-screen__actions time {
+  color: var(--tc-text-secondary);
+  font: var(--tc-text-supporting);
+  white-space: nowrap;
+}
+
+/* Stage trail ------------------------------------------------------------- */
+
+.deployment-stage-trail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--tc-space-2);
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.deployment-stage-trail li {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--tc-text-secondary);
+  font: var(--tc-text-supporting);
+}
+
+.deployment-stage-trail li > span {
+  width: 7px;
+  height: 7px;
+  background: var(--tc-bg-subtle);
+  border: 1px solid var(--tc-status-neutral-border);
+  border-radius: 50%;
+}
+
+.deployment-stage-trail li.is-complete > span {
+  background: var(--tc-status-success);
+  border-color: var(--tc-status-success);
+}
+
+.deployment-stage-trail li.is-current {
+  color: var(--tc-text-primary);
+  font-weight: 600;
+}
+
+.deployment-stage-trail li.is-current > span {
+  background: var(--tc-status-info);
+  border-color: var(--tc-status-info);
+}
+
+.deployment-stage-trail li.is-pending {
+  opacity: 0.65;
+}
+
+@media (max-width: 640px) {
+  .deployment-screen {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .deployment-screen__actions {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
 }
 
 .player-updates-deploy-dialog p {

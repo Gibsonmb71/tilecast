@@ -81,6 +81,30 @@ failure, cancellation, incompatibility, and already-current. Players always
 retrieve the verified APK or AppImage from their paired Tilecast server; the
 player never contacts GitHub.
 
+## Reading a deployment in Studio
+
+**Settings → Player Updates → Deployment history** answers "did this land?"
+without arithmetic. Each row carries one meter divided into updated, waiting on
+someone, failed, and still in progress, and one sentence saying what the
+deployment needs — a retry, someone at a TV, or nothing. Every segment is
+repeated as a number and a word, so no state is carried by colour alone.
+
+Opening a row reads `GET /api/v1/update-deployments/{id}` and lists the screens
+the deployment reaches, one row each: the plain-language status, what a person
+has to do about it, the version the screen is coming from and going to, whether
+it is a canary, and when it last reported. States are grouped into needs
+attention, in progress, and finished; screens that need attention sort first and
+carry a marked edge, and the three groups are also filter tabs. Only a running
+download shows a percentage, computed from reported bytes against the release's
+artifact size; every other state shows its place in a Queued → Downloading →
+Installing → Updated trail, because a step is what the player actually reports.
+Failed and cancelled screens show no trail position at all.
+
+A failed screen offers **Retry**, and an active or paused deployment offers
+**Cancel deployment**; both are limited to Owners and Administrators and follow
+the same screen-scope rules as the rest of the update routes. A screen waiting
+for permission or for approval on the TV is never presented as a failure.
+
 ## CI publishing
 
 Set `TILECAST_RELEASE_PUBLISH_TOKEN` to a high-entropy secret to enable narrowly scoped CI publishing. A CI job may send the same three multipart files to `POST /api/v1/player-releases/upload` with `Authorization: Bearer <token>`. This token grants only release upload access. Studio uses the normal Owner session and CSRF token instead. Keep the publishing token in CI and deployment secret storage; it is never returned by the API or written to audit metadata. The update-manifest private key and Android keystore must never be installed on Tilecast Server.

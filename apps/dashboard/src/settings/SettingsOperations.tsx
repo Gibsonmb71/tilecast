@@ -14,6 +14,7 @@ import {
   Download,
   ExternalLink,
   Github,
+  ListChecks,
   LogOut,
   RefreshCw,
   Rocket,
@@ -29,6 +30,11 @@ import type {
   UpdateDeployment,
 } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
+import {
+  DeploymentMeter,
+  UpdateDeploymentDrawer,
+} from "./UpdateDeploymentDrawer";
+import { deploymentHeadline, screenUpdateMeaning } from "./playerUpdateStates";
 
 const maintenanceActions = [
   {
@@ -326,6 +332,7 @@ export function PlayerUpdatesPanel({
   const [showAllReleases, setShowAllReleases] = useState(false);
   const [confirmDeploy, setConfirmDeploy] = useState(false);
   const [purging, setPurging] = useState<PlayerRelease>();
+  const [openDeployment, setOpenDeployment] = useState<string>();
   const [purgeNotice, setPurgeNotice] = useState("");
   const [deploySuccess, setDeploySuccess] = useState("");
   const [githubFlow, setGitHubFlow] = useState<
@@ -1105,8 +1112,9 @@ export function PlayerUpdatesPanel({
         <header>
           <h3>Deployment history</h3>
           <p>
-            Waiting for user means the TV still requires local installer
-            approval; it is not a failure.
+            Open a deployment to read the status of each screen it reaches.
+            Waiting for approval means the TV still needs someone to accept the
+            installer; it is not a failure.
           </p>
         </header>
         {deployments.error && (
@@ -1127,43 +1135,64 @@ export function PlayerUpdatesPanel({
             <thead>
               <tr>
                 <th scope="col">Deployment</th>
-                <th scope="col">Mode</th>
                 <th scope="col">Status</th>
-                <th scope="col">Progress</th>
-                <th scope="col">Attention</th>
+                <th scope="col">Screens</th>
+                <th scope="col">What this needs</th>
+                <th scope="col">
+                  <span className="visually-hidden">Screen detail</span>
+                </th>
               </tr>
             </thead>
             <tbody>
-              {platformDeployments.map((item) => (
-                <tr key={item.id}>
-                  <th scope="row">
-                    <strong>{item.name}</strong>
-                    <small className="technical">
-                      {item.versionName} ({item.versionCode})
-                    </small>
-                  </th>
-                  <td>{humanize(item.mode)}</td>
-                  <td>
-                    <UpdateStatus value={item.status} />
-                    <small>{rolloutSummary(item)}</small>
-                  </td>
-                  <td>
-                    <strong>
-                      {item.succeededCount} of {item.targetCount} succeeded
-                    </strong>
-                    <small>{outstandingSummary(item)}</small>
-                  </td>
-                  <td>
-                    {item.lastFailure ? (
-                      <span className="deployment-attention">
-                        {humanize(item.lastFailure)}
+              {platformDeployments.map((item) => {
+                const headline = deploymentHeadline(item);
+                const needsAttention =
+                  item.failedCount > 0 ||
+                  item.waitingForUserCount > 0 ||
+                  item.status === "paused";
+                return (
+                  <tr key={item.id}>
+                    <th scope="row">
+                      <strong>{item.name}</strong>
+                      <small className="technical">
+                        {item.versionName} ({item.versionCode}) ·{" "}
+                        {humanize(item.mode)}
+                      </small>
+                    </th>
+                    <td>
+                      <UpdateStatus value={item.status} />
+                      <small>{rolloutSummary(item)}</small>
+                    </td>
+                    <td>
+                      <DeploymentMeter compact {...item} />
+                      <small>{outstandingSummary(item)}</small>
+                    </td>
+                    <td>
+                      <span
+                        className={
+                          needsAttention ? "deployment-attention" : undefined
+                        }
+                      >
+                        {headline}
                       </span>
-                    ) : (
-                      "None"
-                    )}
-                  </td>
-                </tr>
-              ))}
+                      {item.lastFailure && (
+                        <small>Last failure: {item.lastFailure}</small>
+                      )}
+                    </td>
+                    <td>
+                      <Button
+                        variant="secondary"
+                        compact
+                        onClick={() => setOpenDeployment(item.id)}
+                      >
+                        <ListChecks size={15} aria-hidden="true" />
+                        {item.targetCount}{" "}
+                        {item.targetCount === 1 ? "screen" : "screens"}
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
               {!deployments.isLoading &&
                 !deployments.error &&
                 platformDeployments.length === 0 && (
@@ -1178,6 +1207,14 @@ export function PlayerUpdatesPanel({
           </table>
         </TableContainer>
       </section>
+      {openDeployment && (
+        <UpdateDeploymentDrawer
+          deploymentId={openDeployment}
+          screens={screens.data?.items ?? []}
+          manageable={manageable}
+          onClose={() => setOpenDeployment(undefined)}
+        />
+      )}
     </div>
   );
 }
@@ -1285,14 +1322,7 @@ function rolloutSummary(item: UpdateDeployment) {
 }
 
 function outstandingSummary(item: UpdateDeployment) {
-  const parts = [
-    item.waitingForUserCount && `${item.waitingForUserCount} waiting for user`,
-    item.failedCount && `${item.failedCount} failed`,
-  ].filter(Boolean);
-  if (parts.length) return parts.join(" · ");
-  return item.succeededCount >= item.targetCount
-    ? "Every target succeeded"
-    : "Remaining targets in progress";
+  return `${item.succeededCount} of ${item.targetCount} updated`;
 }
 
 const RELEASE_FILE_NAMES: Record<PlayerPlatform, readonly string[]> = {
@@ -1512,12 +1542,13 @@ function UpdateStatus({ value }: { value: string }) {
 function mutationError(error: unknown) {
   return error instanceof Error ? error.message : "The request failed.";
 }
+// One vocabulary for a screen's update state, shared with the deployment drawer
+// so a state never reads one way in a table and another way in a detail view.
 export function playerUpdateStateLabel(state: string) {
-  return state === "waiting_for_user"
-    ? "Waiting for user — approval required on TV"
-    : state === "waiting_for_permission"
-      ? "Waiting for install permission"
-      : humanize(state);
+  const meaning = screenUpdateMeaning(state);
+  return meaning.detail
+    ? `${meaning.label} — ${meaning.detail}`
+    : meaning.label;
 }
 export function canDeployPlayerUpdates(role: string | undefined) {
   return role === "owner" || role === "administrator";

@@ -3,9 +3,9 @@ import { canDeployPlayerUpdates, playerUpdateStateLabel } from "./SettingsPage";
 
 describe("Player Updates settings", () => {
   it("treats TV approval as a waiting state rather than a failure", () => {
-    expect(playerUpdateStateLabel("waiting_for_user")).toContain(
-      "approval required on TV",
-    );
+    const label = playerUpdateStateLabel("waiting_for_user");
+    expect(label).toContain("approve the installer on the TV");
+    expect(label).toContain("not a failure");
   });
 
   it("restricts deployment mutations to owners and administrators", () => {

@@ -86,6 +86,7 @@ import type {
   GitHubDeviceStart,
   GitHubDevicePoll,
   UpdateDeployment,
+  UpdateDeploymentDetail,
   UptimeReport,
   UptimeWindow,
   ReliabilityStatus,
@@ -606,6 +607,17 @@ export const api = {
     }),
   updateDeployments: () =>
     request<{ items: UpdateDeployment[] }>("/update-deployments"),
+  updateDeployment: (id: string) =>
+    request<UpdateDeploymentDetail>(`/update-deployments/${id}`),
+  retryUpdateScreen: (
+    deploymentId: string,
+    screenId: string,
+    csrfToken: string,
+  ) =>
+    request<{ state: string }>(
+      `/update-deployments/${deploymentId}/screens/${screenId}/retry`,
+      { method: "POST", headers: { "X-CSRF-Token": csrfToken } },
+    ),
   createUpdateDeployment: (
     input: {
       releaseId: string;
