@@ -1508,12 +1508,10 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 					if parseErr != nil {
 						return Manifest{}, "", fmt.Errorf("%w: widget fallback image is invalid", ErrConflict)
 					}
-					var fallback ManifestAsset
-					err = s.db.QueryRow(ctx, `SELECT v.asset_id,v.id,v.mime_type,encode(v.sha256,'hex'),v.file_size,v.width,v.height,v.duration_seconds FROM asset_variants v WHERE v.asset_id=$1 AND v.deleted_at IS NULL AND v.player_compatible=TRUE ORDER BY CASE kind WHEN 'playback' THEN 0 WHEN 'original' THEN 1 ELSE 2 END LIMIT 1`, fallbackID).Scan(&fallback.AssetID, &fallback.VariantID, &fallback.MIMEType, &fallback.SHA256, &fallback.FileSize, &fallback.Width, &fallback.Height, &fallback.DurationSeconds)
-					if err != nil {
+					fallback, resolveErr := s.resolveImageVariant(ctx, fallbackID)
+					if resolveErr != nil {
 						return Manifest{}, "", fmt.Errorf("%w: widget fallback image unavailable", ErrConflict)
 					}
-					fallback.DownloadPath = "/api/v1/player/assets/" + fallback.AssetID.String() + "/variants/" + fallback.VariantID.String()
 					configuration["fallbackVariantId"] = fallback.VariantID.String()
 					if !seen[fallback.VariantID] {
 						manifest.Assets = append(manifest.Assets, fallback)
@@ -1542,12 +1540,10 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 					return Manifest{}, "", err
 				}
 				if website.FallbackImageAssetID != nil {
-					var fallback ManifestAsset
-					err = s.db.QueryRow(ctx, `SELECT v.asset_id,v.id,v.mime_type,encode(v.sha256,'hex'),v.file_size,v.width,v.height,v.duration_seconds FROM asset_variants v WHERE v.asset_id=$1 AND v.deleted_at IS NULL AND v.player_compatible=TRUE ORDER BY CASE kind WHEN 'playback' THEN 0 WHEN 'original' THEN 1 ELSE 2 END LIMIT 1`, *website.FallbackImageAssetID).Scan(&fallback.AssetID, &fallback.VariantID, &fallback.MIMEType, &fallback.SHA256, &fallback.FileSize, &fallback.Width, &fallback.Height, &fallback.DurationSeconds)
-					if err != nil {
+					fallback, resolveErr := s.resolveImageVariant(ctx, *website.FallbackImageAssetID)
+					if resolveErr != nil {
 						return Manifest{}, "", fmt.Errorf("%w: website fallback image unavailable", ErrConflict)
 					}
-					fallback.DownloadPath = "/api/v1/player/assets/" + fallback.AssetID.String() + "/variants/" + fallback.VariantID.String()
 					website.FallbackVariantID = &fallback.VariantID
 					if !seen[fallback.VariantID] {
 						manifest.Assets = append(manifest.Assets, fallback)
@@ -1863,12 +1859,10 @@ func (s *Service) projectWidgetAssets(ctx context.Context, manifest *Manifest, w
 	if err != nil {
 		return fmt.Errorf("%w: widget image reference is invalid", ErrConflict)
 	}
-	var asset ManifestAsset
-	err = s.db.QueryRow(ctx, `SELECT v.asset_id,v.id,v.mime_type,encode(v.sha256,'hex'),v.file_size,v.width,v.height,v.duration_seconds FROM asset_variants v JOIN assets a ON a.id=v.asset_id AND a.type='image' AND a.deleted_at IS NULL WHERE v.asset_id=$1 AND v.deleted_at IS NULL AND v.player_compatible=TRUE ORDER BY CASE v.kind WHEN 'playback' THEN 0 WHEN 'original' THEN 1 ELSE 2 END LIMIT 1`, assetID).Scan(&asset.AssetID, &asset.VariantID, &asset.MIMEType, &asset.SHA256, &asset.FileSize, &asset.Width, &asset.Height, &asset.DurationSeconds)
-	if err != nil {
+	asset, resolveErr := s.resolveImageVariant(ctx, assetID)
+	if resolveErr != nil {
 		return fmt.Errorf("%w: widget image unavailable", ErrConflict)
 	}
-	asset.DownloadPath = "/api/v1/player/assets/" + asset.AssetID.String() + "/variants/" + asset.VariantID.String()
 	configuration["imageVariantId"] = asset.VariantID.String()
 	widget.Configuration, _ = json.Marshal(configuration)
 	if !seen[asset.VariantID] {
@@ -1876,6 +1870,20 @@ func (s *Service) projectWidgetAssets(ctx context.Context, manifest *Manifest, w
 		seen[asset.VariantID] = true
 	}
 	return nil
+}
+
+func (s *Service) resolveImageVariant(ctx context.Context, assetID uuid.UUID) (ManifestAsset, error) {
+	var asset ManifestAsset
+	err := s.db.QueryRow(ctx, `SELECT v.asset_id,v.id,v.mime_type,encode(v.sha256,'hex'),v.file_size,v.width,v.height,v.duration_seconds
+		FROM asset_variants v JOIN assets a ON a.id=v.asset_id AND a.type='image' AND a.deleted_at IS NULL
+		WHERE v.asset_id=$1 AND v.deleted_at IS NULL AND v.player_compatible=TRUE
+		ORDER BY CASE v.kind WHEN 'playback' THEN 0 WHEN 'original' THEN 1 ELSE 2 END LIMIT 1`, assetID).
+		Scan(&asset.AssetID, &asset.VariantID, &asset.MIMEType, &asset.SHA256, &asset.FileSize, &asset.Width, &asset.Height, &asset.DurationSeconds)
+	if err != nil {
+		return ManifestAsset{}, err
+	}
+	asset.DownloadPath = "/api/v1/player/assets/" + asset.AssetID.String() + "/variants/" + asset.VariantID.String()
+	return asset, nil
 }
 
 // projectPluginAssets resolves media a built-in plugin references. Brand Bug is
@@ -1911,12 +1919,7 @@ func (s *Service) resolveBrandBugLogo(ctx context.Context, manifest *Manifest, c
 	if config.ImageAssetID == nil {
 		return nil
 	}
-	var asset ManifestAsset
-	err := s.db.QueryRow(ctx, `SELECT v.asset_id,v.id,v.mime_type,encode(v.sha256,'hex'),v.file_size,v.width,v.height,v.duration_seconds
-		FROM asset_variants v JOIN assets a ON a.id=v.asset_id AND a.type='image' AND a.deleted_at IS NULL
-		WHERE v.asset_id=$1 AND v.deleted_at IS NULL AND v.player_compatible=TRUE
-		ORDER BY CASE v.kind WHEN 'playback' THEN 0 WHEN 'original' THEN 1 ELSE 2 END LIMIT 1`, *config.ImageAssetID).
-		Scan(&asset.AssetID, &asset.VariantID, &asset.MIMEType, &asset.SHA256, &asset.FileSize, &asset.Width, &asset.Height, &asset.DurationSeconds)
+	asset, err := s.resolveImageVariant(ctx, *config.ImageAssetID)
 	if err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return err
@@ -1924,7 +1927,6 @@ func (s *Service) resolveBrandBugLogo(ctx context.Context, manifest *Manifest, c
 		config.ImageAssetID = nil
 		return nil
 	}
-	asset.DownloadPath = "/api/v1/player/assets/" + asset.AssetID.String() + "/variants/" + asset.VariantID.String()
 	variantID := asset.VariantID
 	config.ImageVariantID = &variantID
 	if !seen[asset.VariantID] {

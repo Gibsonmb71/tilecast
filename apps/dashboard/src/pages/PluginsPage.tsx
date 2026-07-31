@@ -168,14 +168,20 @@ interface TargetSource {
 }
 
 function useTargetSource(scope: TargetScope): TargetSource | null {
-  const screens = useQuery({ queryKey: ["screens"], queryFn: api.screens });
+  const screens = useQuery({
+    queryKey: ["screens"],
+    queryFn: api.screens,
+    enabled: scope === "screens",
+  });
   const groups = useQuery({
     queryKey: ["screen-groups"],
     queryFn: () => api.screenGroups(),
+    enabled: scope === "sync_groups",
   });
   const locations = useQuery({
     queryKey: ["locations"],
     queryFn: api.locations,
+    enabled: scope === "locations",
   });
   return scope === "screens"
     ? { query: screens, noun: "screens", empty: "No screens are enrolled yet." }

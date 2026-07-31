@@ -801,6 +801,13 @@ export type DependencyGraph = {
   edges: DependencyEdge[];
 };
 
+export type PluginTargetScope = "all" | "screens" | "sync_groups" | "locations";
+
+export type PluginTargeting = {
+  targetScope: PluginTargetScope;
+  targetIds: string[];
+};
+
 export type CountdownBarInput = {
   name: string;
   message: string;
@@ -819,9 +826,7 @@ export type CountdownBarInput = {
   textScale: number;
   enabled: boolean;
   priority: number;
-  targetScope: "all" | "screens" | "sync_groups" | "locations";
-  targetIds: string[];
-};
+} & PluginTargeting;
 
 export type CountdownBar = CountdownBarInput & {
   id: string;
@@ -850,9 +855,7 @@ export type BrandBugInput = {
   endsAt?: string | null;
   enabled: boolean;
   priority: number;
-  targetScope: "all" | "screens" | "sync_groups" | "locations";
-  targetIds: string[];
-};
+} & PluginTargeting;
 
 export type BrandBug = BrandBugInput & {
   id: string;
@@ -930,6 +933,7 @@ export type PlayerRelease = {
   releaseNotes: string;
   publishedAt: string;
   apkSizeBytes: number;
+  downloadedBytes: number;
   apkSha256: string;
   signingCertificateSha256: string;
   manifestSignature: string;
