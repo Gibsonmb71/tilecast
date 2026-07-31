@@ -60,6 +60,7 @@ import { FormField } from "../components/FormField";
 import { FireTvAccessibilityAdbPanel } from "../components/FireTvAccessibilityAdbPanel";
 import { PlayerPolicyEditor } from "../settings/PlayerPolicyEditor";
 import { formatLocationAddress } from "../settings/LocationsPanel";
+import { isAndroidScreen } from "../playerPlatform";
 import { previewApi } from "../api/previews";
 import { previewAge } from "../components/livePreviewState";
 
@@ -90,6 +91,31 @@ export function normalizeScreenManageSection(
   return screenManageSections.includes(requestedSection as ScreenManageSection)
     ? (requestedSection as ScreenManageSection)
     : "settings";
+}
+
+export type ScreenDetailTab =
+  "overview" | "snapshots" | "content" | "activity" | "manage";
+
+const screenDetailTabs: readonly ScreenDetailTab[] = [
+  "overview",
+  "snapshots",
+  "content",
+  "activity",
+  "manage",
+];
+
+// Legacy tabs collapsed into Manage; each maps to a section via
+// normalizeScreenManageSection.
+const legacyManageTabs = ["player-settings", "reliability", "commands"];
+
+export function normalizeScreenDetailTab(
+  requestedTab: string | null,
+): ScreenDetailTab {
+  if (!requestedTab) return "overview";
+  if (legacyManageTabs.includes(requestedTab)) return "manage";
+  return screenDetailTabs.includes(requestedTab as ScreenDetailTab)
+    ? (requestedTab as ScreenDetailTab)
+    : "overview";
 }
 const formatBytes = (value: number) => {
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -2397,15 +2423,7 @@ export function ScreenDetailPage() {
       <div className="notice notice--error">Screen could not be loaded.</div>
     );
   const requestedTab = searchParams.get("tab") ?? "overview";
-  const tab = ["player-settings", "reliability", "commands"].includes(
-    requestedTab,
-  )
-    ? "manage"
-    : ["overview", "snapshots", "content", "activity", "manage"].includes(
-          requestedTab,
-        )
-      ? requestedTab
-      : "overview";
+  const tab = normalizeScreenDetailTab(requestedTab);
   const manageSection = normalizeScreenManageSection(
     requestedTab,
     searchParams.get("section"),
@@ -2963,7 +2981,7 @@ export function ScreenDetailPage() {
                     : "Not confirmed"}
                 </dd>
               </div>
-              {screen.platform === "android" && (
+              {isAndroidScreen(screen.platform) && (
                 <div>
                   <dt>Install permission</dt>
                   <dd>
@@ -3029,7 +3047,7 @@ export function ScreenDetailPage() {
                   : "Wake lock released"}
               </dd>
             </div>
-            {screen.platform === "android" && (
+            {isAndroidScreen(screen.platform) && (
               <>
                 <div>
                   <dt>Managed Kiosk</dt>
@@ -3109,7 +3127,7 @@ export function ScreenDetailPage() {
                   )}
                 </header>
                 <div className="reliability-control-groups">
-                  {screen.platform === "android" && (
+                  {isAndroidScreen(screen.platform) && (
                     <div className="reliability-control-group">
                       <div>
                         <h5>Power Assist</h5>
@@ -3374,25 +3392,33 @@ export function ScreenDetailPage() {
         )}
       {tab === "manage" &&
         manageSection === "maintenance" &&
-        !canManageScreens(auth.status?.user) &&
-        (commands.data?.items?.length ?? 0) > 0 && (
+        !canManageScreens(auth.status?.user) && (
           <section className="operations">
             <h3>Recent operations</h3>
-            <div className="command-history">
-              {commands.data?.items?.map((c) => (
-                <div key={c.id}>
-                  <strong>
-                    {c.type?.replaceAll("_", " ") ?? "Unknown command"}
-                  </strong>
-                  <span>
-                    {c.state} · {new Date(c.createdAt).toLocaleString()}
-                  </span>
-                  <small>
-                    {c.resultCode?.replaceAll("_", " ") ?? "No result yet"}
-                  </small>
-                </div>
-              ))}
-            </div>
+            {commands.isLoading ? (
+              <div className="table-loading">Loading operations…</div>
+            ) : (commands.data?.items?.length ?? 0) === 0 ? (
+              <p>
+                No maintenance commands have been sent to this screen. An Owner
+                or Administrator can send them.
+              </p>
+            ) : (
+              <div className="command-history">
+                {commands.data?.items?.map((c) => (
+                  <div key={c.id}>
+                    <strong>
+                      {c.type?.replaceAll("_", " ") ?? "Unknown command"}
+                    </strong>
+                    <span>
+                      {c.state} · {new Date(c.createdAt).toLocaleString()}
+                    </span>
+                    <small>
+                      {c.resultCode?.replaceAll("_", " ") ?? "No result yet"}
+                    </small>
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
         )}
       {tab === "manage" && manageSection === "device" && (
@@ -3412,9 +3438,9 @@ export function ScreenDetailPage() {
                   <dd>
                     {screen.platform === "linux"
                       ? "Linux"
-                      : screen.platform === "android"
-                        ? `Android ${screen.androidVersion ?? ""}`.trim()
-                        : formatReportedStatus(screen.platform)}
+                      : `${formatReportedStatus(screen.platform)} ${
+                          screen.androidVersion ?? ""
+                        }`.trim()}
                   </dd>
                 </div>
                 <div>
@@ -3426,7 +3452,7 @@ export function ScreenDetailPage() {
                       : ""}
                   </dd>
                 </div>
-                {screen.platform === "android" && (
+                {isAndroidScreen(screen.platform) && (
                   <>
                     <div>
                       <dt>Android SDK</dt>

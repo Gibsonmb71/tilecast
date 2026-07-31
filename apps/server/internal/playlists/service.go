@@ -1874,8 +1874,11 @@ func (s *Service) projectWidgetAssets(ctx context.Context, manifest *Manifest, w
 
 func (s *Service) resolveImageVariant(ctx context.Context, assetID uuid.UUID) (ManifestAsset, error) {
 	var asset ManifestAsset
+	// processing_status is checked alongside player_compatible because the worker
+	// marks a variant compatible while the asset is still processing; publishing
+	// then would hand the Player a logo it cannot yet download.
 	err := s.db.QueryRow(ctx, `SELECT v.asset_id,v.id,v.mime_type,encode(v.sha256,'hex'),v.file_size,v.width,v.height,v.duration_seconds
-		FROM asset_variants v JOIN assets a ON a.id=v.asset_id AND a.type='image' AND a.deleted_at IS NULL
+		FROM asset_variants v JOIN assets a ON a.id=v.asset_id AND a.type='image' AND a.deleted_at IS NULL AND a.processing_status='ready'
 		WHERE v.asset_id=$1 AND v.deleted_at IS NULL AND v.player_compatible=TRUE
 		ORDER BY CASE v.kind WHEN 'playback' THEN 0 WHEN 'original' THEN 1 ELSE 2 END LIMIT 1`, assetID).
 		Scan(&asset.AssetID, &asset.VariantID, &asset.MIMEType, &asset.SHA256, &asset.FileSize, &asset.Width, &asset.Height, &asset.DurationSeconds)

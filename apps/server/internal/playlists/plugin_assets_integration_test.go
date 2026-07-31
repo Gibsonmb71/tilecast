@@ -143,6 +143,37 @@ func TestBrandBugLogoBecomesAManifestAsset(t *testing.T) {
 		t.Fatalf("unavailable logo was still published: %#v", manifest.Plugins[0].Config)
 	}
 
+	// The worker marks a variant player-compatible before the asset finishes
+	// processing, so compatibility alone must not publish a logo.
+	processingID, processingVariantID := uuid.New(), uuid.New()
+	if _, err = pool.Exec(ctx, `INSERT INTO assets(id,organization_id,name,type,original_filename,detected_mime_type,sha256,
+		original_size,width,height,processing_status,created_by)
+		VALUES($1,$2,'Fresh logo','image','fresh.png','image/png',$3,100,600,200,'processing',$4)`, processingID, org, make([]byte, 32), userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO asset_variants(id,asset_id,kind,storage_provider,storage_key,mime_type,file_size,
+		sha256,width,height,player_compatible) VALUES($1,$2,'original','local','originals/fresh','image/png',100,$3,600,200,TRUE)`,
+		processingVariantID, processingID, make([]byte, 32)); err != nil {
+		t.Fatal(err)
+	}
+	projector.items = []plugins.ManifestPlugin{brandBug(&processingID, "Presented by Example")}
+	manifest, _, err = service.BuildManifest(ctx, screenID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest.Plugins) != 1 {
+		t.Fatalf("text-only fallback was dropped: %#v", manifest.Plugins)
+	}
+	config, ok = manifest.Plugins[0].Config.(*plugins.ManifestBrandBugConfig)
+	if !ok || config.ImageAssetID != nil || config.ImageVariantID != nil {
+		t.Fatalf("processing logo was published: %#v", manifest.Plugins[0].Config)
+	}
+	for _, asset := range manifest.Assets {
+		if asset.VariantID == processingVariantID {
+			t.Fatalf("processing logo was projected as an asset: %#v", manifest.Assets)
+		}
+	}
+
 	// With nothing left to draw, the mark is not published at all.
 	projector.items = []plugins.ManifestPlugin{brandBug(&missing, "")}
 	manifest, _, err = service.BuildManifest(ctx, screenID)

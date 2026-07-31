@@ -24,6 +24,7 @@ import {
   Upload,
 } from "lucide-react";
 import { api } from "../api/client";
+import { screenPlatformFamily } from "../playerPlatform";
 import type {
   GitHubDeviceStart,
   PlayerPlatform,
@@ -483,14 +484,10 @@ export function PlayerUpdatesPanel({
   for (const group of groups.data?.items ?? [])
     if (groupIds.includes(group.id))
       for (const screen of group.screens) targetSet.add(screen.id);
-  // Screens report a specific platform string ("fire-tv", "android-tv",
-  // "linux", …); anything that is not Linux belongs to the Android family, the
-  // same mapping the server applies when resolving deployment targets.
-  const screenFamily = (value: string): PlayerPlatform =>
-    value === "linux" ? "linux" : "android";
   const selectedScreens = (screens.data?.items ?? []).filter(
     (screen) =>
-      targetSet.has(screen.id) && screenFamily(screen.platform) === platform,
+      targetSet.has(screen.id) &&
+      screenPlatformFamily(screen.platform) === platform,
   );
   const releaseItems = [...(releases.data?.items ?? [])]
     .filter((item) => item.platform === platform)
@@ -509,7 +506,7 @@ export function PlayerUpdatesPanel({
   const platformLabel = platform === "android" ? "Android" : "Linux";
   const query = targetSearch.toLowerCase();
   const platformScreens = (screens.data?.items ?? []).filter(
-    (item) => screenFamily(item.platform) === platform,
+    (item) => screenPlatformFamily(item.platform) === platform,
   );
   const matchingScreens = platformScreens.filter((item) =>
     item.name.toLowerCase().includes(query),
@@ -770,6 +767,9 @@ export function PlayerUpdatesPanel({
                           {release.cacheStatus === "downloading" && (
                             <span className="player-release-cache-progress">
                               <progress
+                                aria-label={`Caching ${release.versionName}: ${formatBytes(
+                                  release.downloadedBytes,
+                                )} of ${formatBytes(release.apkSizeBytes)} downloaded`}
                                 value={Math.min(
                                   release.downloadedBytes,
                                   release.apkSizeBytes,
