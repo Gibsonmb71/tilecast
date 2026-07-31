@@ -77,4 +77,10 @@ it("traces direct and transitive content dependencies", async () => {
     "href",
     "/screens/screen-1",
   );
+  fireEvent.click(screen.getByRole("button", { name: "Close inspector" }));
+  expect(
+    screen.queryByRole("region", {
+      name: "Cafeteria TV dependency details",
+    }),
+  ).not.toBeInTheDocument();
 });
