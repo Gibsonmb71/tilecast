@@ -188,12 +188,12 @@ export function PlayerPolicyEditor({
       <header className="policy-editor__heading">
         <div>
           <h2 id="player-policy-title">
-            {target === "screen" ? "Player settings" : "Player policy"}
+            {target === "screen" ? "Screen behavior" : "Player policy"}
           </h2>
           <p>
             {target === "group"
               ? "Override organization defaults for this sync group."
-              : "Override inherited player behavior for this screen only."}
+              : "Override inherited playback and device behavior for this screen only."}
           </p>
         </div>
       </header>

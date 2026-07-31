@@ -1,5 +1,4 @@
 import { Navigate, useParams, useSearchParams } from "react-router";
-import { FireTvAccessibilityAdbPanel } from "../components/FireTvAccessibilityAdbPanel";
 import { LivePreviewPanel } from "../components/LivePreviewPanel";
 import { SnapshotHistoryPanel } from "../components/SnapshotHistoryPanel";
 import { ScreenActivityPanel } from "../components/ScreenActivityPanel";
@@ -10,17 +9,19 @@ export function ScreenDetailWithPreviewPage() {
   const [searchParams] = useSearchParams();
   if (!id) return <Navigate to="/screens" replace />;
 
-  const tab = searchParams.get("tab") ?? "overview";
+  const requestedTab = searchParams.get("tab") ?? "overview";
+  const tab = ["player-settings", "reliability", "commands"].includes(
+    requestedTab,
+  )
+    ? "manage"
+    : requestedTab;
   if (tab === "overview") {
     return (
       <div className="screen-detail-preview-layout">
         <div className="screen-detail-preview-layout__detail">
           <ScreenDetailPage />
         </div>
-        <div>
-          <LivePreviewPanel screenId={id} />
-          <SnapshotHistoryPanel screenId={id} />
-        </div>
+        <LivePreviewPanel screenId={id} />
       </div>
     );
   }
@@ -29,8 +30,19 @@ export function ScreenDetailWithPreviewPage() {
   return (
     <>
       <ScreenDetailPage />
+      {tab === "snapshots" && (
+        <section
+          className="snapshot-history-card"
+          aria-labelledby="snapshot-history-title"
+        >
+          <header>
+            <h3 id="snapshot-history-title">Snapshot history</h3>
+            <p>Previously captured frames reported by this player.</p>
+          </header>
+          <SnapshotHistoryPanel screenId={id} />
+        </section>
+      )}
       {tab === "activity" && <ScreenActivityPanel screenId={id} />}
-      {tab === "reliability" && <FireTvAccessibilityAdbPanel screenId={id} />}
     </>
   );
 }
