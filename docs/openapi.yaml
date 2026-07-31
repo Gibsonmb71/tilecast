@@ -2049,7 +2049,9 @@ paths:
         }
   /api/v1/update-deployments/{id}:
     get:
-      summary: Read per-screen update state for the screens in the caller's scope
+      summary:
+        Read the deployment header, release artifact size, and per-screen update
+        state for the screens in the caller's scope
       responses:
         {
           "200": { description: Deployment detail },

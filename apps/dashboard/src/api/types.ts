@@ -940,6 +940,60 @@ export type UpdateDeployment = {
   pauseReason?: string;
   lastFailure?: string;
 };
+export type UpdateDeploymentScreenState =
+  | "held"
+  | "pending"
+  | "offline"
+  | "downloading"
+  | "downloaded"
+  | "verifying"
+  | "ready"
+  | "waiting_for_permission"
+  | "waiting_for_user"
+  | "installing"
+  | "reconnecting"
+  | "succeeded"
+  | "failed"
+  | "cancelled"
+  | "incompatible"
+  | "already_current";
+export type UpdateDeploymentScreen = {
+  screenId: string;
+  screenName: string;
+  previousVersionCode: number | null;
+  expectedVersionCode: number;
+  downloadedBytes: number;
+  permissionStatus?: string;
+  installerStatus?: string;
+  state: UpdateDeploymentScreenState;
+  safeError?: string;
+  updatedAt: string;
+  isCanary: boolean;
+  downloadStartedAt?: string;
+  downloadedAt?: string;
+  installStartedAt?: string;
+  completedAt?: string;
+};
+// The detail read repeats the deployment header so a drawer can render without
+// the list row, and adds the artifact size that turns reported bytes into a
+// download percentage.
+export type UpdateDeploymentDetail = {
+  id: string;
+  name: string;
+  mode: string;
+  status: string;
+  createdAt: string;
+  completedAt?: string;
+  platform: PlayerPlatform;
+  versionCode: number;
+  versionName: string;
+  artifactSizeBytes: number;
+  rolloutMode: string;
+  rolloutPhase: string;
+  canarySize: number;
+  pauseReason?: string;
+  screens: UpdateDeploymentScreen[];
+};
 
 export type PairingRequest = {
   id: string;
