@@ -37,6 +37,10 @@ interface TilecastCountdownBarPlugin {
     progressFill?: "none" | "drain" | null;
     contentPadding?: number | null;
     textScale?: number | null;
+    urgencyEnabled?: boolean;
+    startingSoonSeconds?: number | null;
+    urgentSeconds?: number | null;
+    pulseSeconds?: number | null;
     priority: number;
   };
 }
@@ -52,6 +56,9 @@ interface TilecastActiveCountdownBar {
   completed: boolean;
   showBar: boolean;
   showConfetti: boolean;
+  urgencyStage: "normal" | "starting_soon" | "urgent" | "final";
+  urgencyLabel: string;
+  pulse: boolean;
   /**
    * Share of the lead window still to run, 1 when the bar first appears and 0 at
    * the target. Always 0 while completion text shows. `null` when the instance
@@ -235,6 +242,28 @@ const tilecastCountdownBar: TilecastCountdownBarResolver = (() => {
           const leadMs = plugin.config.leadTimeSeconds * 1_000;
           const fraction =
             leadMs > 0 ? Math.min(1, Math.max(0, remaining / leadMs)) : 0;
+          const startingSoonMs =
+            clampNumber(plugin.config.startingSoonSeconds, 300, 2, 86_400) *
+            1_000;
+          const urgentMs =
+            clampNumber(plugin.config.urgentSeconds, 60, 2, 3_600) * 1_000;
+          const pulseMs =
+            clampNumber(plugin.config.pulseSeconds, 10, 1, 60) * 1_000;
+          const urgencyStage =
+            plugin.config.urgencyEnabled !== true || remaining <= 0
+              ? "normal"
+              : remaining <= pulseMs
+                ? "final"
+                : remaining <= urgentMs
+                  ? "urgent"
+                  : remaining <= startingSoonMs
+                    ? "starting_soon"
+                    : "normal";
+          const finalScale = urgencyStage === "final" ? 1.25 : 1;
+          const baseHeight = Math.min(
+            Math.max(plugin.config.heightPx, 40),
+            320,
+          );
           active.push({
             id: plugin.id,
             // Completion text is the whole ending message, not a replacement
@@ -247,19 +276,28 @@ const tilecastCountdownBar: TilecastCountdownBarResolver = (() => {
                 ? tilecastCountdownDisplay.compact(remaining)
                 : "",
             displayMode: plugin.config.displayMode,
-            heightPx: Math.min(Math.max(plugin.config.heightPx, 40), 320),
+            heightPx: Math.round(baseHeight * finalScale),
             priority: plugin.config.priority,
             targetAt: new Date(target).toISOString(),
             completed: remaining <= 0,
             showBar: remaining > 0 || completionVisible,
             showConfetti: confettiVisible,
+            urgencyStage,
+            urgencyLabel:
+              urgencyStage === "starting_soon"
+                ? "Starting soon"
+                : urgencyStage === "urgent" || urgencyStage === "final"
+                  ? "Urgent"
+                  : "",
+            pulse: urgencyStage === "final",
             remainingFraction:
               plugin.config.progressFill === "drain" ? fraction : null,
             contentPadding: clampNumber(plugin.config.contentPadding, 4, 0, 40),
-            fontSizePx: countdownFontSizePx(
-              plugin.config.heightPx,
-              clampNumber(plugin.config.textScale, 100, 25, 500),
-            ),
+            fontSizePx:
+              countdownFontSizePx(
+                plugin.config.heightPx,
+                clampNumber(plugin.config.textScale, 100, 25, 500),
+              ) * finalScale,
           });
         }
       }

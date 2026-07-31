@@ -41,25 +41,29 @@ type Catalog struct {
 }
 
 type CountdownBarInput struct {
-	Name            string      `json:"name"`
-	Message         string      `json:"message"`
-	ScheduleType    string      `json:"scheduleType"`
-	TargetTime      *string     `json:"targetTime,omitempty"`
-	DaysOfWeek      []int       `json:"daysOfWeek"`
-	OneTimeAt       *time.Time  `json:"oneTimeAt,omitempty"`
-	Timezone        string      `json:"timezone"`
-	LeadTimeSeconds int         `json:"leadTimeSeconds"`
-	CompletionText  string      `json:"completionText"`
-	ShowConfetti    bool        `json:"showConfetti"`
-	DisplayMode     string      `json:"displayMode"`
-	HeightPX        int         `json:"heightPx"`
-	ProgressFill    string      `json:"progressFill"`
-	ContentPadding  *int        `json:"contentPadding"`
-	TextScale       int         `json:"textScale"`
-	Enabled         bool        `json:"enabled"`
-	Priority        int         `json:"priority"`
-	TargetScope     string      `json:"targetScope"`
-	TargetIDs       []uuid.UUID `json:"targetIds"`
+	Name                string      `json:"name"`
+	Message             string      `json:"message"`
+	ScheduleType        string      `json:"scheduleType"`
+	TargetTime          *string     `json:"targetTime,omitempty"`
+	DaysOfWeek          []int       `json:"daysOfWeek"`
+	OneTimeAt           *time.Time  `json:"oneTimeAt,omitempty"`
+	Timezone            string      `json:"timezone"`
+	LeadTimeSeconds     int         `json:"leadTimeSeconds"`
+	CompletionText      string      `json:"completionText"`
+	ShowConfetti        bool        `json:"showConfetti"`
+	DisplayMode         string      `json:"displayMode"`
+	HeightPX            int         `json:"heightPx"`
+	ProgressFill        string      `json:"progressFill"`
+	ContentPadding      *int        `json:"contentPadding"`
+	TextScale           int         `json:"textScale"`
+	UrgencyEnabled      bool        `json:"urgencyEnabled"`
+	StartingSoonSeconds int         `json:"startingSoonSeconds"`
+	UrgentSeconds       int         `json:"urgentSeconds"`
+	PulseSeconds        int         `json:"pulseSeconds"`
+	Enabled             bool        `json:"enabled"`
+	Priority            int         `json:"priority"`
+	TargetScope         string      `json:"targetScope"`
+	TargetIDs           []uuid.UUID `json:"targetIds"`
 }
 
 type CountdownBar struct {
@@ -82,22 +86,26 @@ type ManifestPlugin struct {
 }
 
 type ManifestCountdownConfig struct {
-	Name            string     `json:"name"`
-	Message         string     `json:"message"`
-	ScheduleType    string     `json:"scheduleType"`
-	TargetTime      *string    `json:"targetTime,omitempty"`
-	DaysOfWeek      []int      `json:"daysOfWeek,omitempty"`
-	OneTimeAt       *time.Time `json:"oneTimeAt,omitempty"`
-	Timezone        string     `json:"timezone"`
-	LeadTimeSeconds int        `json:"leadTimeSeconds"`
-	CompletionText  string     `json:"completionText,omitempty"`
-	ShowConfetti    bool       `json:"showConfetti"`
-	DisplayMode     string     `json:"displayMode"`
-	HeightPX        int        `json:"heightPx"`
-	ProgressFill    string     `json:"progressFill"`
-	ContentPadding  int        `json:"contentPadding"`
-	TextScale       int        `json:"textScale"`
-	Priority        int        `json:"priority"`
+	Name                string     `json:"name"`
+	Message             string     `json:"message"`
+	ScheduleType        string     `json:"scheduleType"`
+	TargetTime          *string    `json:"targetTime,omitempty"`
+	DaysOfWeek          []int      `json:"daysOfWeek,omitempty"`
+	OneTimeAt           *time.Time `json:"oneTimeAt,omitempty"`
+	Timezone            string     `json:"timezone"`
+	LeadTimeSeconds     int        `json:"leadTimeSeconds"`
+	CompletionText      string     `json:"completionText,omitempty"`
+	ShowConfetti        bool       `json:"showConfetti"`
+	DisplayMode         string     `json:"displayMode"`
+	HeightPX            int        `json:"heightPx"`
+	ProgressFill        string     `json:"progressFill"`
+	ContentPadding      int        `json:"contentPadding"`
+	TextScale           int        `json:"textScale"`
+	UrgencyEnabled      bool       `json:"urgencyEnabled"`
+	StartingSoonSeconds int        `json:"startingSoonSeconds"`
+	UrgentSeconds       int        `json:"urgentSeconds"`
+	PulseSeconds        int        `json:"pulseSeconds"`
+	Priority            int        `json:"priority"`
 }
 
 // ManifestAlertTickerConfig carries one live NWS alert as a bar rather than as a
@@ -197,7 +205,8 @@ func (s *Service) Catalog(ctx context.Context) (Catalog, error) {
 
 func (s *Service) ListCountdownBars(ctx context.Context) ([]CountdownBar, error) {
 	rows, err := s.db.Query(ctx, `SELECT id,name,message,schedule_type,target_time::text,days_of_week,one_time_at,timezone,
-		lead_time_seconds,completion_text,show_confetti,display_mode,height_px,progress_fill,content_padding,text_scale,enabled,priority,target_scope,created_at,updated_at
+		lead_time_seconds,completion_text,show_confetti,display_mode,height_px,progress_fill,content_padding,text_scale,
+		urgency_enabled,starting_soon_seconds,urgent_seconds,pulse_seconds,enabled,priority,target_scope,created_at,updated_at
 		FROM countdown_bar_instances ORDER BY priority DESC,lower(name),id`)
 	if err != nil {
 		return nil, err
@@ -220,7 +229,8 @@ func (s *Service) ListCountdownBars(ctx context.Context) ([]CountdownBar, error)
 
 func (s *Service) GetCountdownBar(ctx context.Context, id uuid.UUID) (CountdownBar, error) {
 	row := s.db.QueryRow(ctx, `SELECT id,name,message,schedule_type,target_time::text,days_of_week,one_time_at,timezone,
-		lead_time_seconds,completion_text,show_confetti,display_mode,height_px,progress_fill,content_padding,text_scale,enabled,priority,target_scope,created_at,updated_at
+		lead_time_seconds,completion_text,show_confetti,display_mode,height_px,progress_fill,content_padding,text_scale,
+		urgency_enabled,starting_soon_seconds,urgent_seconds,pulse_seconds,enabled,priority,target_scope,created_at,updated_at
 		FROM countdown_bar_instances WHERE id=$1`, id)
 	item, err := scanCountdownBar(row)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -241,7 +251,9 @@ func scanCountdownBar(row scanner) (CountdownBar, error) {
 	var contentPadding int
 	err := row.Scan(&item.ID, &item.Name, &item.Message, &item.ScheduleType, &targetTime, &item.DaysOfWeek,
 		&item.OneTimeAt, &item.Timezone, &item.LeadTimeSeconds, &item.CompletionText, &item.ShowConfetti,
-		&item.DisplayMode, &item.HeightPX, &item.ProgressFill, &contentPadding, &item.TextScale, &item.Enabled, &item.Priority, &item.TargetScope, &item.CreatedAt, &item.UpdatedAt)
+		&item.DisplayMode, &item.HeightPX, &item.ProgressFill, &contentPadding, &item.TextScale,
+		&item.UrgencyEnabled, &item.StartingSoonSeconds, &item.UrgentSeconds, &item.PulseSeconds,
+		&item.Enabled, &item.Priority, &item.TargetScope, &item.CreatedAt, &item.UpdatedAt)
 	item.ContentPadding = &contentPadding
 	item.TargetTime = trimTargetTime(targetTime)
 	return item, err
@@ -312,6 +324,15 @@ func normalizeCountdownBar(input CountdownBarInput) CountdownBarInput {
 	if input.TextScale == 0 {
 		input.TextScale = 100
 	}
+	if input.StartingSoonSeconds == 0 {
+		input.StartingSoonSeconds = 300
+	}
+	if input.UrgentSeconds == 0 {
+		input.UrgentSeconds = 60
+	}
+	if input.PulseSeconds == 0 {
+		input.PulseSeconds = 10
+	}
 	return input
 }
 
@@ -361,18 +382,22 @@ func (s *Service) writeCountdownBar(ctx context.Context, id, organizationID, use
 	if create {
 		_, err = tx.Exec(ctx, `INSERT INTO countdown_bar_instances
 			(id,organization_id,name,message,schedule_type,target_time,days_of_week,one_time_at,timezone,lead_time_seconds,
-			 completion_text,show_confetti,display_mode,height_px,progress_fill,content_padding,text_scale,enabled,priority,target_scope,created_by)
-			VALUES($1,$2,$3,$4,$5,$6::time,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
+			 completion_text,show_confetti,display_mode,height_px,progress_fill,content_padding,text_scale,
+			 urgency_enabled,starting_soon_seconds,urgent_seconds,pulse_seconds,enabled,priority,target_scope,created_by)
+			VALUES($1,$2,$3,$4,$5,$6::time,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)`,
 			id, organizationID, strings.TrimSpace(input.Name), strings.TrimSpace(input.Message), input.ScheduleType,
 			targetTime, input.DaysOfWeek, input.OneTimeAt, input.Timezone, input.LeadTimeSeconds,
-			strings.TrimSpace(input.CompletionText), input.ShowConfetti, input.DisplayMode, input.HeightPX, input.ProgressFill, *input.ContentPadding, input.TextScale, input.Enabled, input.Priority, input.TargetScope, userID)
+			strings.TrimSpace(input.CompletionText), input.ShowConfetti, input.DisplayMode, input.HeightPX, input.ProgressFill, *input.ContentPadding, input.TextScale,
+			input.UrgencyEnabled, input.StartingSoonSeconds, input.UrgentSeconds, input.PulseSeconds, input.Enabled, input.Priority, input.TargetScope, userID)
 	} else {
 		tag, updateErr := tx.Exec(ctx, `UPDATE countdown_bar_instances SET name=$2,message=$3,schedule_type=$4,target_time=$5::time,
 			days_of_week=$6,one_time_at=$7,timezone=$8,lead_time_seconds=$9,completion_text=$10,show_confetti=$11,display_mode=$12,height_px=$13,
-			progress_fill=$14,content_padding=$15,text_scale=$16,enabled=$17,priority=$18,target_scope=$19,updated_at=now() WHERE id=$1`,
+			progress_fill=$14,content_padding=$15,text_scale=$16,urgency_enabled=$17,starting_soon_seconds=$18,
+			urgent_seconds=$19,pulse_seconds=$20,enabled=$21,priority=$22,target_scope=$23,updated_at=now() WHERE id=$1`,
 			id, strings.TrimSpace(input.Name), strings.TrimSpace(input.Message), input.ScheduleType, targetTime,
 			input.DaysOfWeek, input.OneTimeAt, input.Timezone, input.LeadTimeSeconds, strings.TrimSpace(input.CompletionText),
-			input.ShowConfetti, input.DisplayMode, input.HeightPX, input.ProgressFill, *input.ContentPadding, input.TextScale, input.Enabled, input.Priority, input.TargetScope)
+			input.ShowConfetti, input.DisplayMode, input.HeightPX, input.ProgressFill, *input.ContentPadding, input.TextScale,
+			input.UrgencyEnabled, input.StartingSoonSeconds, input.UrgentSeconds, input.PulseSeconds, input.Enabled, input.Priority, input.TargetScope)
 		err = updateErr
 		if err == nil && tag.RowsAffected() == 0 {
 			return ErrNotFound
@@ -458,6 +483,11 @@ func validateCountdownBar(input CountdownBarInput) error {
 	}
 	if input.TextScale < 25 || input.TextScale > 500 {
 		return fmt.Errorf("%w: textScale must be between 25 and 500 percent", ErrInvalid)
+	}
+	if input.StartingSoonSeconds < 2 || input.StartingSoonSeconds > 86400 ||
+		input.UrgentSeconds < 2 || input.UrgentSeconds > 3600 || input.PulseSeconds < 1 || input.PulseSeconds > 60 ||
+		input.StartingSoonSeconds <= input.UrgentSeconds || input.UrgentSeconds <= input.PulseSeconds {
+		return fmt.Errorf("%w: urgency thresholds must be ordered starting soon, urgent, then pulse", ErrInvalid)
 	}
 	if input.ScheduleType == "weekly" {
 		if input.TargetTime == nil || input.OneTimeAt != nil || len(input.DaysOfWeek) == 0 {
@@ -623,7 +653,8 @@ func (s *Service) alertTickersForScreen(ctx context.Context, screenID uuid.UUID)
 
 func (s *Service) countdownBarsForScreen(ctx context.Context, screenID uuid.UUID) ([]ManifestPlugin, error) {
 	rows, err := s.db.Query(ctx, `SELECT DISTINCT i.id,i.name,i.message,i.schedule_type,i.target_time::text,i.days_of_week,
-		i.one_time_at,i.timezone,i.lead_time_seconds,i.completion_text,i.show_confetti,i.display_mode,i.height_px,i.progress_fill,i.content_padding,i.text_scale,i.priority
+		i.one_time_at,i.timezone,i.lead_time_seconds,i.completion_text,i.show_confetti,i.display_mode,i.height_px,i.progress_fill,i.content_padding,i.text_scale,
+		i.urgency_enabled,i.starting_soon_seconds,i.urgent_seconds,i.pulse_seconds,i.priority
 		`+targetScopeFilter("countdown_bar_instances", "countdown_bar_targets")+`
 		ORDER BY i.priority DESC,i.id`, screenID)
 	if err != nil {
@@ -636,7 +667,8 @@ func (s *Service) countdownBarsForScreen(ctx context.Context, screenID uuid.UUID
 		var config ManifestCountdownConfig
 		if err = rows.Scan(&id, &config.Name, &config.Message, &config.ScheduleType, &config.TargetTime,
 			&config.DaysOfWeek, &config.OneTimeAt, &config.Timezone, &config.LeadTimeSeconds,
-			&config.CompletionText, &config.ShowConfetti, &config.DisplayMode, &config.HeightPX, &config.ProgressFill, &config.ContentPadding, &config.TextScale, &config.Priority); err != nil {
+			&config.CompletionText, &config.ShowConfetti, &config.DisplayMode, &config.HeightPX, &config.ProgressFill, &config.ContentPadding, &config.TextScale,
+			&config.UrgencyEnabled, &config.StartingSoonSeconds, &config.UrgentSeconds, &config.PulseSeconds, &config.Priority); err != nil {
 			return nil, err
 		}
 		config.TargetTime = trimTargetTime(config.TargetTime)

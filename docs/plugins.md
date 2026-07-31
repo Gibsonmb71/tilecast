@@ -20,7 +20,7 @@ The graph uses the same stored dependency records and assignment tables as playb
 
 ## Countdown Bar
 
-Countdown Bar was the first built-in plugin. An installation can create multiple instances, each with its own name, message, schedule, lead time, optional completion text and confetti, display mode, height, horizontal padding, text size, background countdown, enabled state, priority, and targets.
+Countdown Bar was the first built-in plugin. An installation can create multiple instances, each with its own name, message, schedule, lead time, optional completion text and confetti, display mode, height, horizontal padding, text size, background countdown, urgency stages, enabled state, priority, and targets.
 
 Weekly instances use an IANA timezone, a wall-clock target time, and one or more days where Sunday is `0` and Saturday is `6`. One-time instances use an absolute RFC 3339 target. A bar is active from its configured lead time until the target. When completion text is configured, it replaces the countdown message and value for one minute after the target; otherwise the bar hides at zero. Optional confetti falls from the top for several seconds when the selected countdown reaches zero, independently of whether completion text keeps the bar visible. Reduced-motion settings suppress the effect where the platform exposes that preference. If active instances overlap, the Player shows the highest priority instance, then the earliest target, then the stable instance ID.
 
@@ -42,6 +42,10 @@ The fill is a share of the configured lead time, not of a fixed span: a fifteen-
 ### Text fit
 
 `contentPadding` is the percentage of the bar width reserved on both the left and right. It defaults to `4`; lowering it toward `0` lets text use more of the bar. `textScale` multiplies the height-derived type size and defaults to `100`. Studio accepts padding from 0–40 percent and text size from 25–500 percent. Players clamp both values defensively, and older manifests that omit them retain the original appearance.
+
+### Urgency stages
+
+Urgency stages are opt-in per instance. For the default fifteen-minute lead window, they enter **Starting soon** five minutes before the target with an orange bar, enter **Urgent** at 60 seconds with a red bar, and pulse in the final ten seconds. Untouched thresholds follow changes to the lead window at those same proportions; once an operator edits a threshold, that value stays fixed while the other untouched defaults continue to follow the lead window. Studio requires the resulting thresholds to remain ordered. During the pulse stage, the bar height and text grow by 25 percent. At zero the bar returns to its configured height and text size while completion text is visible, or disappears immediately when no completion text is configured. Players suppress the pulse animation when the platform exposes a reduced-motion preference.
 
 Changing an instance increments the manifest revision for every screen. The next authenticated manifest contains only enabled instances that apply to that screen.
 

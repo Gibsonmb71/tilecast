@@ -81,6 +81,10 @@ func TestCountdownBarLifecycleAndManifestTargeting(t *testing.T) {
 	input.ContentPadding = intPointer(0)
 	input.TextScale = 175
 	input.ShowConfetti = true
+	input.UrgencyEnabled = true
+	input.StartingSoonSeconds = 480
+	input.UrgentSeconds = 90
+	input.PulseSeconds = 15
 	input.TargetScope = "locations"
 	input.TargetIDs = []uuid.UUID{locationID}
 	created, err := service.CreateCountdownBar(ctx, userID, input)
@@ -113,10 +117,12 @@ func TestCountdownBarLifecycleAndManifestTargeting(t *testing.T) {
 		// Config is the discriminated payload now that more than one plugin type
 		// projects into the manifest, so the countdown entry is picked out by type.
 		if config, ok := plugin.Config.(ManifestCountdownConfig); ok && plugin.ID == created.ID {
-			customMetricsFound = config.ContentPadding == 0 && config.TextScale == 175 && config.ShowConfetti
+			customMetricsFound = config.ContentPadding == 0 && config.TextScale == 175 && config.ShowConfetti &&
+				config.UrgencyEnabled && config.StartingSoonSeconds == 480 && config.UrgentSeconds == 90 && config.PulseSeconds == 15
 		}
 	}
-	if created.ContentPadding == nil || *created.ContentPadding != 0 || created.TextScale != 175 || !created.ShowConfetti || !customMetricsFound {
+	if created.ContentPadding == nil || *created.ContentPadding != 0 || created.TextScale != 175 || !created.ShowConfetti ||
+		!created.UrgencyEnabled || created.StartingSoonSeconds != 480 || created.UrgentSeconds != 90 || created.PulseSeconds != 15 || !customMetricsFound {
 		t.Fatalf("custom display options were not persisted and projected: created=%#v manifest=%#v", created, targeted)
 	}
 	other, err := service.ManifestForScreen(ctx, otherScreen)

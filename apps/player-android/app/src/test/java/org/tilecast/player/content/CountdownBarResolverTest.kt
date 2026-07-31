@@ -20,6 +20,7 @@ class CountdownBarResolverTest {
         progressFill: String = "none",
         contentPadding: Int = 4,
         textScale: Int = 100,
+        urgencyEnabled: Boolean = false,
         id: String = "bar-1",
     ) = ManifestPlugin(
         id = id,
@@ -39,6 +40,7 @@ class CountdownBarResolverTest {
             progressFill = progressFill,
             contentPadding = contentPadding,
             textScale = textScale,
+            urgencyEnabled = urgencyEnabled,
             priority = priority,
         ),
     )
@@ -176,6 +178,31 @@ class CountdownBarResolverTest {
         )
         assertEquals(0, active?.contentPadding)
         assertEquals(60.48f, active!!.fontSizeSp, 0.01f)
+    }
+
+    @Test
+    fun `advances through urgency stages and recompacts completion text`() {
+        val plugin = weekly(urgencyEnabled = true)
+        assertEquals(
+            "normal",
+            resolveCountdownBar(listOf(plugin), Instant.parse("2026-07-27T15:54:59Z"))?.urgencyStage,
+        )
+        assertEquals(
+            "starting_soon",
+            resolveCountdownBar(listOf(plugin), Instant.parse("2026-07-27T15:55:00Z"))?.urgencyStage,
+        )
+        assertEquals(
+            "urgent",
+            resolveCountdownBar(listOf(plugin), Instant.parse("2026-07-27T15:59:00Z"))?.urgencyStage,
+        )
+        val final = resolveCountdownBar(listOf(plugin), Instant.parse("2026-07-27T15:59:50Z"))
+        assertEquals("final", final?.urgencyStage)
+        assertEquals(true, final?.pulse)
+        assertEquals(90, final?.heightPx)
+        val completed = resolveCountdownBar(listOf(plugin), Instant.parse("2026-07-27T16:00:10Z"))
+        assertEquals("normal", completed?.urgencyStage)
+        assertEquals(false, completed?.pulse)
+        assertEquals(72, completed?.heightPx)
     }
 
     @Test
