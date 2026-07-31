@@ -8,6 +8,7 @@ import {
   ViewTabs,
 } from "../components/ui";
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CheckCircle2,
@@ -320,7 +321,12 @@ export function PlayerUpdatesPanel({
     queryKey: ["screen-groups"],
     queryFn: () => api.screenGroups(),
   });
-  const [platform, setPlatform] = useState<PlayerPlatform>("android");
+  // The chosen platform lives in the URL, not in component state, so a reload,
+  // a bookmark, or the back button all keep the fleet the operator was looking
+  // at instead of silently returning to Android.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const platform: PlayerPlatform =
+    searchParams.get("platform") === "linux" ? "linux" : "android";
   const [releaseId, setReleaseId] = useState("");
   const [screenIds, setScreenIds] = useState<string[]>([]);
   const [groupIds, setGroupIds] = useState<string[]>([]);
@@ -528,13 +534,17 @@ export function PlayerUpdatesPanel({
         ]}
         onValueChange={(value) => {
           if (value === platform) return;
-          setPlatform(value);
+          const next = new URLSearchParams(searchParams);
+          if (value === "android") next.delete("platform");
+          else next.set("platform", value);
+          setSearchParams(next);
           // Selections do not carry across platforms.
           setReleaseId("");
           setScreenIds([]);
           setGroupIds([]);
           setShowUpload(false);
           setShowAllReleases(false);
+          setOpenDeployment(undefined);
         }}
       />
       <section className="settings-subsection player-updates__releases">
@@ -1138,9 +1148,6 @@ export function PlayerUpdatesPanel({
                 <th scope="col">Status</th>
                 <th scope="col">Screens</th>
                 <th scope="col">What this needs</th>
-                <th scope="col">
-                  <span className="visually-hidden">Screen detail</span>
-                </th>
               </tr>
             </thead>
             <tbody>
@@ -1178,8 +1185,10 @@ export function PlayerUpdatesPanel({
                       {item.lastFailure && (
                         <small>Last failure: {item.lastFailure}</small>
                       )}
-                    </td>
-                    <td>
+                      {/* The way in sits with the sentence that gives a reason
+                          to take it, which also keeps this table at four
+                          columns: a column of its own for one button forced a
+                          horizontal scroll in a narrow settings pane. */}
                       <Button
                         variant="secondary"
                         compact
@@ -1197,7 +1206,7 @@ export function PlayerUpdatesPanel({
                 !deployments.error &&
                 platformDeployments.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="table-empty-state">
+                    <td colSpan={4} className="table-empty-state">
                       <CheckCircle2 size={18} aria-hidden="true" />
                       No {platformLabel} Player deployments have been created.
                     </td>
