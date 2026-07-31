@@ -131,8 +131,9 @@ func (s *SMTPSender) dial(ctx context.Context) (*smtp.Client, error) {
 func (s *SMTPSender) tlsConfig() *tls.Config {
 	return &tls.Config{
 		ServerName: s.cfg.SMTPHost,
-		// Only for a self-hosted relay with a private certificate authority,
-		// and only when the operator opts in by environment.
+		// Only for a self-hosted relay with a private certificate authority, and
+		// only when the operator opts in by environment. It says nothing about
+		// sending credentials in the clear, which is a separate opt-in.
 		InsecureSkipVerify: s.cfg.SMTPAllowInsecure, //nolint:gosec // documented opt-in
 		MinVersion:         tls.VersionTLS12,
 	}
@@ -146,10 +147,12 @@ func (s *SMTPSender) authenticate(client *smtp.Client) error {
 	if state, ok := client.TLSConnectionState(); ok && state.HandshakeComplete {
 		encrypted = true
 	}
-	if !encrypted && !s.cfg.SMTPAllowInsecure {
+	if !encrypted && !s.cfg.SMTPAllowPlaintextAuth {
 		// net/smtp refuses PLAIN on an unencrypted connection anyway; failing
-		// here makes the reason legible in the delivery log.
-		return fmt.Errorf("%w: refusing to send SMTP credentials over an unencrypted connection", ErrPermanent)
+		// here makes the reason legible in the delivery log. Accepting a private
+		// certificate is deliberately not enough to reach this: that is
+		// TILECAST_SMTP_ALLOW_INSECURE, and it is a different decision.
+		return fmt.Errorf("%w: refusing to send SMTP credentials over an unencrypted connection; set TILECAST_SMTP_ALLOW_PLAINTEXT_AUTH=true to accept that", ErrPermanent)
 	}
 	ok, _ := client.Extension("AUTH")
 	if !ok {

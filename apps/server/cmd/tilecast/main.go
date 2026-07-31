@@ -185,6 +185,7 @@ func serve() {
 	notifyConfig.SMTPPassword = cfg.Notifications.SMTPPassword
 	notifyConfig.SMTPTLS = cfg.Notifications.SMTPTLS
 	notifyConfig.SMTPAllowInsecure = cfg.Notifications.SMTPAllowInsecure
+	notifyConfig.SMTPAllowPlaintextAuth = cfg.Notifications.SMTPAllowPlaintextAuth
 	notifyConfig.PublicURL = cfg.PublicURL
 	notifyService := notify.NewService(db, settingsService, notifyConfig,
 		notify.NewSMTPSender(notifyConfig), notify.NewWebhookSender(notifyConfig), logger)
@@ -202,7 +203,11 @@ func serve() {
 	snapshotWorker.SetGate(backupGuard.BackgroundJobsAllowed)
 	snapshotWorker.Start(ctx)
 	defer snapshotWorker.Stop()
-	playlistService.SetApprovalGate(approvalService.Gate)
+	// The assignment path gets the transactional gate, which holds the content
+	// locked against a concurrent edit until the assignment commits. The bulk
+	// preview gets the advisory one: it reports what would happen and writes
+	// nothing, and the apply that follows goes through the assignment path.
+	playlistService.SetApprovalGate(approvalService.GateTx)
 	fleetService.SetApprovalGate(approvalService.Gate)
 	fleetService.SetScopeAuthorizer(deviceService)
 	notifyWorker := notify.NewWorker(notifyService, logger)

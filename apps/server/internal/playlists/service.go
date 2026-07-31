@@ -26,8 +26,9 @@ type Service struct {
 	definitions *contentdefs.Catalog
 	plugins     PluginProjector
 	// approvalGate refuses assignment of content that is waiting for review.
-	// Nil means this installation does not gate assignment at all.
-	approvalGate func(ctx context.Context, contentType string, id uuid.UUID) error
+	// Nil means this installation does not gate assignment at all. It runs inside
+	// the assignment transaction so the answer cannot go stale before the commit.
+	approvalGate func(ctx context.Context, tx pgx.Tx, contentType string, id uuid.UUID) error
 }
 
 type SourceProjector interface {
@@ -49,8 +50,10 @@ func (s *Service) SetContentDefinitions(catalog *contentdefs.Catalog) { s.defini
 func (s *Service) SetPluginProjector(projector PluginProjector)       { s.plugins = projector }
 
 // SetApprovalGate installs the content review check used by every assignment
-// path.
-func (s *Service) SetApprovalGate(gate func(ctx context.Context, contentType string, id uuid.UUID) error) {
+// path. The gate takes the assignment's own transaction: it locks the content
+// against a concurrent edit, and that lock is only worth anything if it is held
+// until the assignment commits.
+func (s *Service) SetApprovalGate(gate func(ctx context.Context, tx pgx.Tx, contentType string, id uuid.UUID) error) {
 	s.approvalGate = gate
 }
 
@@ -929,23 +932,27 @@ func (s *Service) AssignPresentation(ctx context.Context, screenID uuid.UUID, pl
 	if (playlistID == nil) == (layoutID == nil) {
 		return Assignment{}, errors.New("assignment requires exactly one presentation")
 	}
-	// Review is checked here rather than in the HTTP layer so single
-	// assignment, bulk assignment, and anything added later all pass through
-	// it. The gate is nil unless the approval feature is wired in.
-	if s.approvalGate != nil {
-		contentType, contentID := "layout", layoutID
-		if playlistID != nil {
-			contentType, contentID = "playlist", playlistID
-		}
-		if err := s.approvalGate(ctx, contentType, *contentID); err != nil {
-			return Assignment{}, err
-		}
-	}
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return Assignment{}, err
 	}
 	defer tx.Rollback(ctx)
+	// Review is checked here rather than in the HTTP layer so single
+	// assignment, bulk assignment, and anything added later all pass through
+	// it. The gate is nil unless the approval feature is wired in.
+	//
+	// Inside the transaction, and before anything is written: the gate locks the
+	// content against a concurrent edit, and an edit that arrives now waits for
+	// this assignment rather than slipping between the check and the commit.
+	if s.approvalGate != nil {
+		contentType, contentID := "layout", layoutID
+		if playlistID != nil {
+			contentType, contentID = "playlist", playlistID
+		}
+		if err := s.approvalGate(ctx, tx, contentType, *contentID); err != nil {
+			return Assignment{}, err
+		}
+	}
 	var exists bool
 	if playlistID != nil {
 		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM playlists WHERE id=$1 AND deleted_at IS NULL)`, playlistID).Scan(&exists)
@@ -1087,6 +1094,18 @@ func (s *Service) AssignGroupPresentation(ctx context.Context, groupID uuid.UUID
 		return err
 	}
 	defer tx.Rollback(ctx)
+	// A sync group assignment reaches every screen in the group, so it is an
+	// assignment path like any other and passes the same gate, in the same
+	// transaction.
+	if s.approvalGate != nil {
+		contentType, contentID := "layout", layoutID
+		if playlistID != nil {
+			contentType, contentID = "playlist", playlistID
+		}
+		if err := s.approvalGate(ctx, tx, contentType, *contentID); err != nil {
+			return err
+		}
+	}
 	var valid bool
 	if playlistID != nil {
 		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM screen_groups g JOIN playlists p ON p.organization_id=g.organization_id WHERE g.id=$1 AND g.deleted_at IS NULL AND p.id=$2 AND p.deleted_at IS NULL)`, groupID, playlistID).Scan(&valid)

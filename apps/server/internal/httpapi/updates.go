@@ -480,9 +480,63 @@ func (s *server) reconcileUpdateDeployments(ctx context.Context) {
 	_, _ = s.db.Exec(ctx, `UPDATE update_deployments d SET status='completed',completed_at=COALESCE(d.completed_at,now()) WHERE d.status='active' AND EXISTS(SELECT 1 FROM screen_update_states st WHERE st.deployment_id=d.id) AND NOT EXISTS(SELECT 1 FROM screen_update_states st WHERE st.deployment_id=d.id AND st.state NOT IN('succeeded','failed','cancelled','incompatible','already_current'))`)
 }
 
+// A deployment is not a screen, so the update-deployment routes cannot be
+// scoped with requireScreenScope on an {id}. Their screen target is the set of
+// screens the deployment created states for, which is fixed when the deployment
+// starts and does not drift with group membership afterwards. The reads narrow
+// to that set; the operations refuse anything they cannot cover in full.
+const deploymentScreenStates = `screen_update_states st JOIN screens sc ON sc.id=st.screen_id`
+
+// authorizeDeploymentScope authorizes every screen a deployment reaches.
+//
+// All or nothing, like every other bulk operation: cancelling the part of a
+// deployment an operator can reach would leave the rest of it running and report
+// a change they did not ask for. When none of it is in scope the answer is 404,
+// because a scoped operator has no business learning the deployment exists.
+func (s *server) authorizeDeploymentScope(w http.ResponseWriter, r *http.Request, deployment uuid.UUID) bool {
+	user, scoped, ok := s.callerScope(w, r)
+	if !ok {
+		return false
+	}
+	if !scoped {
+		return true
+	}
+	var total, inScope int
+	if err := s.db.QueryRow(r.Context(),
+		`SELECT count(*),count(*) FILTER(WHERE `+devices.InScopeSQL("sc", "$2")+`) FROM `+
+			deploymentScreenStates+` WHERE st.deployment_id=$1`, deployment, user).Scan(&total, &inScope); err != nil {
+		s.internalError(w, r, err)
+		return false
+	}
+	if inScope == 0 {
+		writeError(w, http.StatusNotFound, "update_deployment_not_found", "Deployment was not found.")
+		return false
+	}
+	if inScope < total {
+		writeError(w, http.StatusForbidden, "out_of_scope",
+			"This deployment reaches screens outside your assigned scope.")
+		return false
+	}
+	return true
+}
+
 func (s *server) listUpdateDeployments(w http.ResponseWriter, r *http.Request) {
 	s.reconcileUpdateDeployments(r.Context())
-	rows, err := s.db.Query(r.Context(), `SELECT d.id,d.name,d.mode,d.status,d.created_at,r.platform,r.version_code,r.version_name,count(st.screen_id),count(*) FILTER(WHERE st.state='succeeded'),count(*) FILTER(WHERE st.state='failed'),count(*) FILTER(WHERE st.state IN ('waiting_for_permission','waiting_for_user')),d.rollout_mode,d.rollout_phase,d.canary_size,d.pause_reason,max(st.safe_error) FILTER(WHERE st.state='failed') FROM update_deployments d JOIN player_releases r ON r.id=d.release_id LEFT JOIN screen_update_states st ON st.deployment_id=d.id GROUP BY d.id,r.id ORDER BY d.created_at DESC LIMIT 100`)
+	user, scoped, ok := s.callerScope(w, r)
+	if !ok {
+		return
+	}
+	// A scoped operator sees the deployments that reach their screens, and every
+	// count is a count of their screens. The inner join is what drops a
+	// deployment that reaches none of them.
+	states := `LEFT JOIN screen_update_states st ON st.deployment_id=d.id`
+	args := []any{}
+	if scoped {
+		states = `JOIN screen_update_states st ON st.deployment_id=d.id JOIN screens sc ON sc.id=st.screen_id AND ` +
+			devices.InScopeSQL("sc", "$1")
+		args = append(args, user)
+	}
+	rows, err := s.db.Query(r.Context(), `SELECT d.id,d.name,d.mode,d.status,d.created_at,r.platform,r.version_code,r.version_name,count(st.screen_id),count(*) FILTER(WHERE st.state='succeeded'),count(*) FILTER(WHERE st.state='failed'),count(*) FILTER(WHERE st.state IN ('waiting_for_permission','waiting_for_user')),d.rollout_mode,d.rollout_phase,d.canary_size,d.pause_reason,max(st.safe_error) FILTER(WHERE st.state='failed') FROM update_deployments d JOIN player_releases r ON r.id=d.release_id `+states+` GROUP BY d.id,r.id ORDER BY d.created_at DESC LIMIT 100`, args...)
 	if err != nil {
 		s.internalError(w, r, err)
 		return
@@ -516,7 +570,20 @@ func (s *server) getUpdateDeployment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.reconcileUpdateDeployments(r.Context())
-	rows, err := s.db.Query(r.Context(), `SELECT st.screen_id,sc.name,st.previous_version_code,st.expected_version_code,st.downloaded_bytes,st.permission_status,st.installer_status,st.state,st.safe_error,st.updated_at FROM screen_update_states st JOIN screens sc ON sc.id=st.screen_id WHERE st.deployment_id=$1 ORDER BY sc.name,sc.id`, id)
+	user, scoped, ok := s.callerScope(w, r)
+	if !ok {
+		return
+	}
+	// The screen rows are narrowed rather than refused: a scoped operator reads
+	// how their own screens are doing in a deployment that also covers screens
+	// they cannot reach.
+	filter, args := ``, []any{id}
+	if scoped {
+		filter = ` AND ` + devices.InScopeSQL("sc", "$2")
+		args = append(args, user)
+	}
+	rows, err := s.db.Query(r.Context(), `SELECT st.screen_id,sc.name,st.previous_version_code,st.expected_version_code,st.downloaded_bytes,st.permission_status,st.installer_status,st.state,st.safe_error,st.updated_at FROM `+
+		deploymentScreenStates+` WHERE st.deployment_id=$1`+filter+` ORDER BY sc.name,sc.id`, args...)
 	if err != nil {
 		s.internalError(w, r, err)
 		return
@@ -534,12 +601,23 @@ func (s *server) getUpdateDeployment(w http.ResponseWriter, r *http.Request) {
 			items = append(items, map[string]any{"screenId": screen, "screenName": name, "previousVersionCode": previous, "expectedVersionCode": expected, "downloadedBytes": downloaded, "permissionStatus": permission, "installerStatus": installer, "state": state, "safeError": errorText, "updatedAt": updated})
 		}
 	}
+	if scoped && len(items) == 0 {
+		// Either it does not exist or it reaches nothing in scope. Both are 404,
+		// so the id cannot be used to learn which.
+		writeError(w, 404, "update_deployment_not_found", "Deployment was not found.")
+		return
+	}
 	writeJSON(w, 200, map[string]any{"data": map[string]any{"id": id, "screens": items}})
 }
 
 func (s *server) cancelUpdateDeployment(w http.ResponseWriter, r *http.Request) {
 	id, ok := urlUUID(w, r, "id")
 	if !ok {
+		return
+	}
+	// Cancelling stops the deployment on every screen it reaches, so a scoped
+	// operator must be able to reach all of them.
+	if !s.authorizeDeploymentScope(w, r, id) {
 		return
 	}
 	tag, err := s.db.Exec(r.Context(), `UPDATE update_deployments SET status='cancelled',cancelled_at=now() WHERE id=$1 AND status='active'`, id)
@@ -563,6 +641,12 @@ func (s *server) retryUpdateScreen(w http.ResponseWriter, r *http.Request) {
 	}
 	screen, ok := urlUUID(w, r, "screenId")
 	if !ok {
+		return
+	}
+	// A retry installs on one screen, so the single-screen rule applies rather
+	// than the whole deployment's: an operator may retry their own screen in a
+	// deployment that also covers screens they cannot reach.
+	if !s.authorizeScreen(w, r, screen) {
 		return
 	}
 	var release uuid.UUID

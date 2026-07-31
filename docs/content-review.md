@@ -76,10 +76,19 @@ told to look again, so an approval can never land on a revision nobody read.
 ## Where the check happens
 
 The gate is in the assignment path in the server, not in Studio. Single
-assignment, bulk changes, and anything added later all pass through it.
+assignment, sync group assignment, bulk changes, and anything added later all
+pass through it.
+
+The check runs inside the transaction that writes the assignment, and it holds
+the content against an edit until that transaction commits. An edit that arrives
+during an assignment waits for it, and then bumps the revision as any edit does.
+Without that, an assignment approved at one revision could commit after the
+content had already changed.
 
 Bulk changes check it during the preview, so unreviewed content is refused once
-by name rather than failing separately on every screen in the selection.
+by name rather than failing separately on every screen in the selection. The
+preview takes no lock, because it writes nothing; the apply that follows goes
+through the assignment path and is checked again there.
 
 ## Known limitations
 
