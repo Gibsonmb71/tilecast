@@ -189,6 +189,10 @@ StartLimitIntervalSec=0
 
 [Service]
 Type=simple
+# Remove stale FUSE mounts left by a legacy AppImage launch before retrying.
+# The command only targets AppImage temporary FUSE mountpoints and is
+# best-effort; current releases use extract-and-run and do not mount FUSE.
+ExecStartPre=/bin/sh -c 'command -v findmnt >/dev/null 2>&1 || exit 0; findmnt -rn -o TARGET,FSTYPE | while read -r mountpoint fstype; do case "$mountpoint:$fstype" in /tmp/.mount_*:fuse*) fusermount3 -uz "$mountpoint" 2>/dev/null || fusermount -uz "$mountpoint" 2>/dev/null || umount -l "$mountpoint" 2>/dev/null || true; rmdir "$mountpoint" 2>/dev/null || true;; esac; done'
 ExecStart=%h/tilecast/tilecast-player.AppImage --appimage-extract-and-run
 Restart=always
 RestartSec=5
@@ -200,7 +204,9 @@ WantedBy=graphical-session.target
 
 Extract-and-run is the managed, FUSE-independent startup path. It still
 preserves the original AppImage path for signed Studio updates. Do not manually
-unpack and launch `squashfs-root/AppRun`.
+unpack and launch `squashfs-root/AppRun`. The pre-start cleanup is best-effort
+and only handles stale FUSE mounts under `/tmp/.mount_*`; it does not recursively
+delete temporary directories.
 
 Then enable it:
 

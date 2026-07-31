@@ -117,6 +117,10 @@ Do not run the player as root.
 
 Current Tilecast releases use a static AppImage runtime and do not depend on the older FUSE 2 compatibility library. The managed service also uses AppImage's supported `--appimage-extract-and-run` mode as a safety net for older artifacts and hosts where filesystem mounting is unavailable. The runtime still identifies the original artifact through `$APPIMAGE`, so signed Studio updates can replace it normally.
 
+The managed service cleans stale AppImage FUSE mountpoints before each retry.
+This is intentionally limited to FUSE filesystems mounted below
+`/tmp/.mount_*`; it removes only empty directories after an unmount attempt.
+
 Tilecast Linux Player 0.5.0 and older used the legacy runtime. If one of those releases reports a FUSE error, launch it with the managed command above once, then update to a newer release. Installing `libfuse2` or, on newer Ubuntu releases, `libfuse2t64` remains an alternative for legacy artifacts.
 
 Do not manually unpack `squashfs-root` and run `AppRun`. This action removes the managed AppImage identity that updates require.
