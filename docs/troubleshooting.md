@@ -80,6 +80,24 @@ still preserves the original AppImage path for Studio-driven replacement.
 Linux Player 0.5.0 and older use the legacy FUSE 2 runtime; later release
 artifacts use the static runtime as the primary packaging-level fix.
 
+The Tilecast-managed service is a **user** unit. Use `systemctl --user`, not
+`sudo systemctl`; the latter operates a separate system manager and may still
+be running an older unit without the recovery hook. Re-run **Set up autostart**
+in Studio, or replace the hand-installed unit with the template in
+`apps/player-linux/deploy/tilecast-player.service`, then run:
+
+```sh
+systemctl --user daemon-reload
+systemctl --user reset-failed tilecast-player
+systemctl --user start tilecast-player
+```
+
+The managed unit attempts to unmount stale FUSE filesystems below
+`/tmp/.mount_*` before each start. It does not recursively delete arbitrary
+temporary directories. If a separately installed system-level unit is required,
+copy the same `ExecStartPre` from the template into that unit and manage it
+consistently through `sudo systemctl`.
+
 ## Nobody can sign in with a passkey
 
 Passkeys need a secure browser context and a registrable domain. A plain-HTTP

@@ -214,7 +214,7 @@ For an interactive diagnostic run:
 ```sh
 systemctl --user stop tilecast-player
 TILECAST_LOG_LEVEL=debug TILECAST_WINDOWED=1 \
-  ~/tilecast/tilecast-player.AppImage
+  ~/tilecast/tilecast-player.AppImage --appimage-extract-and-run
 ```
 
 Stop the interactive copy before restarting the service. Tilecast allows only one player instance at a time.
