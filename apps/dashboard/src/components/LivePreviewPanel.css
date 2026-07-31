@@ -27,6 +27,13 @@
   gap: var(--tc-space-3);
 }
 
+.live-preview-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--tc-space-2);
+}
+
 .live-preview-panel__header h2 {
   margin: 2px 0 0;
   font: var(--tc-text-section-title);

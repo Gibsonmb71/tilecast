@@ -2,16 +2,7 @@ package org.tilecast.player.preview
 
 import android.app.Activity
 import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.os.Build
-import android.os.Handler
-import android.os.Looper
 import android.os.SystemClock
-import android.view.PixelCopy
-import android.view.SurfaceView
-import android.view.View
-import android.view.ViewGroup
-import androidx.annotation.RequiresApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -20,7 +11,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import org.tilecast.player.BuildConfig
 import org.tilecast.player.data.ConfigurationRepository
@@ -30,8 +20,6 @@ import org.tilecast.player.network.TilecastApi
 import org.tilecast.player.security.KeystoreCredentialStore
 import java.io.ByteArrayOutputStream
 import java.time.Instant
-import kotlin.coroutines.resume
-import kotlin.math.min
 import kotlin.math.roundToInt
 
 private const val MAX_PREVIEW_WIDTH = 960
@@ -43,23 +31,18 @@ internal data class PreviewDimensions(val width: Int, val height: Int)
 internal data class EncodedPreview(val bytes: ByteArray, val width: Int, val height: Int)
 
 internal fun previewDimensions(width: Int, height: Int): PreviewDimensions {
-    require(width > 0 && height > 0)
-    val scale = min(1.0, min(MAX_PREVIEW_WIDTH.toDouble() / width, MAX_PREVIEW_HEIGHT.toDouble() / height))
-    return PreviewDimensions(
-        width = (width * scale).roundToInt().coerceAtLeast(1),
-        height = (height * scale).roundToInt().coerceAtLeast(1),
-    )
+    return scaledDimensions(width, height, MAX_PREVIEW_WIDTH, MAX_PREVIEW_HEIGHT)
 }
 
-class LivePreviewCoordinator(
+internal class LivePreviewCoordinator(
     private val activity: Activity,
     private val blockReason: () -> String?,
     private val api: TilecastApi = TilecastApi(),
+    private val captureSource: PlayerWindowCapture = PlayerWindowCapture(activity),
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val configuration = ConfigurationRepository(PlayerDatabase.get(activity).configuration())
     private val credentials = KeystoreCredentialStore(activity)
-    private val mainHandler = Handler(Looper.getMainLooper())
     private var pollingJob: Job? = null
     private var lastCaptureElapsed = 0L
     private var forceCaptureSeen = false
@@ -133,7 +116,7 @@ class LivePreviewCoordinator(
             }.isSuccess
         }
 
-        return when (val captured = captureWindow()) {
+        return when (val captured = captureSource.capture(MAX_PREVIEW_WIDTH, MAX_PREVIEW_HEIGHT)) {
             is WindowCapture.Failure -> runCatching {
                 api.uploadPreview(
                     serverUrl = serverUrl,
@@ -184,136 +167,6 @@ class LivePreviewCoordinator(
         }
     }
 
-    private suspend fun captureWindow(): WindowCapture = withContext(Dispatchers.Main.immediate) {
-        val view = activity.window.decorView
-        if (!view.isAttachedToWindow || view.width < 1 || view.height < 1) {
-            return@withContext WindowCapture.Failure("window_unavailable")
-        }
-        val dimensions = previewDimensions(view.width, view.height)
-        val bitmap = runCatching {
-            Bitmap.createBitmap(dimensions.width, dimensions.height, Bitmap.Config.ARGB_8888)
-        }.getOrElse { return@withContext WindowCapture.Failure("bitmap_allocation_failed") }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            captureWithPixelCopy(view, bitmap)
-        } else {
-            captureWithCanvas(view, bitmap)
-        }
-    }
-
-    @RequiresApi(Build.VERSION_CODES.O)
-    private suspend fun captureWithPixelCopy(root: View, bitmap: Bitmap): WindowCapture {
-        val windowResult = copyWindow(bitmap)
-        if (windowResult != PixelCopy.SUCCESS) {
-            bitmap.recycle()
-            return WindowCapture.Failure("pixel_copy_$windowResult")
-        }
-
-        val surfaces = visibleSurfaceViews(root)
-        overlaySurfaceViews(root, surfaces, bitmap)
-        if (surfaces.isNotEmpty() && isNearlyBlack(bitmap)) {
-            delay(250)
-            if (copyWindow(bitmap) == PixelCopy.SUCCESS) {
-                overlaySurfaceViews(root, surfaces, bitmap)
-            }
-        }
-        if (surfaces.isNotEmpty() && isNearlyBlack(bitmap)) {
-            bitmap.recycle()
-            return WindowCapture.Failure("blank_video_frame")
-        }
-        return WindowCapture.Success(bitmap)
-    }
-
-    @RequiresApi(Build.VERSION_CODES.O)
-    private suspend fun copyWindow(bitmap: Bitmap): Int =
-        suspendCancellableCoroutine { continuation ->
-            PixelCopy.request(
-                activity.window,
-                bitmap,
-                { result -> if (continuation.isActive) continuation.resume(result) },
-                mainHandler,
-            )
-        }
-
-    @RequiresApi(Build.VERSION_CODES.O)
-    private suspend fun copySurface(surface: SurfaceView, bitmap: Bitmap): Int =
-        suspendCancellableCoroutine { continuation ->
-            PixelCopy.request(
-                surface,
-                bitmap,
-                { result -> if (continuation.isActive) continuation.resume(result) },
-                mainHandler,
-            )
-        }
-
-    @RequiresApi(Build.VERSION_CODES.O)
-    private suspend fun overlaySurfaceViews(root: View, surfaces: List<SurfaceView>, destination: Bitmap) {
-        if (surfaces.isEmpty()) return
-        val rootLocation = IntArray(2).also(root::getLocationInWindow)
-        val scaleX = destination.width.toFloat() / root.width
-        val scaleY = destination.height.toFloat() / root.height
-        val canvas = Canvas(destination)
-        for (surface in surfaces) {
-            val location = IntArray(2).also(surface::getLocationInWindow)
-            val width = (surface.width * scaleX).roundToInt().coerceAtLeast(1)
-            val height = (surface.height * scaleY).roundToInt().coerceAtLeast(1)
-            val layer = runCatching {
-                Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-            }.getOrNull() ?: continue
-            try {
-                if (copySurface(surface, layer) != PixelCopy.SUCCESS) continue
-                val left = (location[0] - rootLocation[0]) * scaleX
-                val top = (location[1] - rootLocation[1]) * scaleY
-                canvas.drawBitmap(layer, left, top, null)
-            } finally {
-                layer.recycle()
-            }
-        }
-    }
-
-    private fun captureWithCanvas(view: View, bitmap: Bitmap): WindowCapture = runCatching {
-        val canvas = Canvas(bitmap)
-        canvas.scale(bitmap.width.toFloat() / view.width, bitmap.height.toFloat() / view.height)
-        view.draw(canvas)
-        WindowCapture.Success(bitmap)
-    }.getOrElse {
-        bitmap.recycle()
-        WindowCapture.Failure("view_draw_failed")
-    }
-}
-
-private fun visibleSurfaceViews(root: View): List<SurfaceView> {
-    val result = mutableListOf<SurfaceView>()
-    fun visit(view: View) {
-        if (view is SurfaceView && view.isShown && view.width > 0 && view.height > 0) result += view
-        if (view is ViewGroup) {
-            for (index in 0 until view.childCount) visit(view.getChildAt(index))
-        }
-    }
-    visit(root)
-    return result
-}
-
-internal fun isNearlyBlack(bitmap: Bitmap): Boolean {
-    val columns = 12
-    val rows = 8
-    var dark = 0
-    var sampled = 0
-    for (column in 0 until columns) {
-        val x = ((column + 0.5f) * bitmap.width / columns).toInt().coerceIn(0, bitmap.width - 1)
-        for (row in 0 until rows) {
-            val y = ((row + 0.5f) * bitmap.height / rows).toInt().coerceIn(0, bitmap.height - 1)
-            val pixel = bitmap.getPixel(x, y)
-            val brightness = (android.graphics.Color.red(pixel) + android.graphics.Color.green(pixel) + android.graphics.Color.blue(pixel)) / 3
-            if (brightness <= 10) dark++
-            sampled++
-        }
-    }
-    return sampled > 0 && dark * 100 / sampled >= 98
-}
-
-private sealed interface WindowCapture {
-    data class Success(val bitmap: Bitmap) : WindowCapture
-    data class Failure(val status: String) : WindowCapture
 }
 
 internal fun encodePreview(source: Bitmap): EncodedPreview? {

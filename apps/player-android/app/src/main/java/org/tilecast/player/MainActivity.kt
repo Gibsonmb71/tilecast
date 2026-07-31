@@ -70,6 +70,8 @@ import org.tilecast.player.core.PlayerState
 import org.tilecast.player.content.FullscreenPlayback
 import org.tilecast.player.content.WithPluginBars
 import org.tilecast.player.preview.LivePreviewCoordinator
+import org.tilecast.player.preview.LiveStreamCoordinator
+import org.tilecast.player.preview.PlayerWindowCapture
 import org.tilecast.player.reliability.ReliabilityController
 import org.tilecast.player.ui.theme.SignalBackground
 import org.tilecast.player.ui.theme.SignalBlue
@@ -91,6 +93,7 @@ class MainActivity : ComponentActivity() {
     private val model:PlayerViewModel by viewModels()
 	private lateinit var reliability:ReliabilityController
 	private lateinit var livePreview:LivePreviewCoordinator
+	private lateinit var liveStream:LiveStreamCoordinator
 	private var adminPrompt by mutableStateOf(false)
 	private val escapeKeys=ArrayDeque<Int>()
 	private val reliabilityHandler=Handler(Looper.getMainLooper())
@@ -100,16 +103,19 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 		reliability=ReliabilityController(this)
-		livePreview=LivePreviewCoordinator(this,::previewCaptureBlockReason)
+		val captureSource=PlayerWindowCapture(this)
+		livePreview=LivePreviewCoordinator(this,::previewCaptureBlockReason,captureSource=captureSource)
+		liveStream=LiveStreamCoordinator(this,::previewCaptureBlockReason,model::sendLiveStreamFrame,captureSource=captureSource)
+		model.onLiveStreamSessionChanged=liveStream::sessionChanged
 		getSharedPreferences("tilecast-reliability",MODE_PRIVATE).edit().putBoolean("update-active",model.update.value?.state in setOf("waiting_for_permission","waiting_for_user","installing")).putBoolean("update-relaunch-requested",false).putInt("update-relaunch-attempts",0).apply()
         enableEdgeToEdge()
 		WindowCompat.getInsetsController(window,window.decorView).hide(WindowInsetsCompat.Type.systemBars())
         setContent { TilecastSignalTheme { TilecastPlayer(model,adminPrompt,{adminPrompt=false},reliability) } }
     }
-    override fun onStart(){super.onStart();livePreview.start();getSharedPreferences("tilecast-reliability",MODE_PRIVATE).edit().putBoolean("foreground",true).apply();ContextCompat.registerReceiver(this,clockReceiver,IntentFilter().apply{addAction(Intent.ACTION_TIME_CHANGED);addAction(Intent.ACTION_TIMEZONE_CHANGED)},ContextCompat.RECEIVER_NOT_EXPORTED);model.recalculateSchedule();model.refreshUpdatePermission();model.resumeUpdateSchedule();model.playerConfig.value?.let{reliability.applyWindow(this,it,model.activeHours.value)};reliabilityHandler.postDelayed({BootRecovery.markForegroundHealthy(this);model.refreshCommissioning()},5000)}
+    override fun onStart(){super.onStart();livePreview.start();liveStream.start();getSharedPreferences("tilecast-reliability",MODE_PRIVATE).edit().putBoolean("foreground",true).apply();ContextCompat.registerReceiver(this,clockReceiver,IntentFilter().apply{addAction(Intent.ACTION_TIME_CHANGED);addAction(Intent.ACTION_TIMEZONE_CHANGED)},ContextCompat.RECEIVER_NOT_EXPORTED);model.recalculateSchedule();model.refreshUpdatePermission();model.resumeUpdateSchedule();model.playerConfig.value?.let{reliability.applyWindow(this,it,model.activeHours.value)};reliabilityHandler.postDelayed({BootRecovery.markForegroundHealthy(this);model.refreshCommissioning()},5000)}
     override fun onResume(){super.onResume();model.refreshCommissioning()}
-    override fun onStop(){livePreview.stop();getSharedPreferences("tilecast-reliability",MODE_PRIVATE).edit().putBoolean("foreground",false).putLong("last-foreground-exit",System.currentTimeMillis()).apply();unregisterReceiver(clockReceiver);super.onStop()}
-    override fun onDestroy(){livePreview.close();super.onDestroy()}
+    override fun onStop(){livePreview.stop();liveStream.stop();getSharedPreferences("tilecast-reliability",MODE_PRIVATE).edit().putBoolean("foreground",false).putLong("last-foreground-exit",System.currentTimeMillis()).apply();unregisterReceiver(clockReceiver);super.onStop()}
+    override fun onDestroy(){model.onLiveStreamSessionChanged=null;livePreview.close();liveStream.close();super.onDestroy()}
     override fun onWindowFocusChanged(hasFocus:Boolean){super.onWindowFocusChanged(hasFocus);if(hasFocus)model.playerConfig.value?.let{reliability.applyWindow(this,it,model.activeHours.value)}}
     override fun onKeyDown(keyCode:Int,event:KeyEvent?):Boolean {escapeKeys.addLast(keyCode);while(escapeKeys.size>escapeSequence.size)escapeKeys.removeFirst();if(escapeKeys.toList()==escapeSequence){escapeKeys.clear();adminPrompt=true;return true};return if(keyCode==KeyEvent.KEYCODE_BACK)true else super.onKeyDown(keyCode,event)}
 	fun openSystemSettings(action:String){val intent=Intent(action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);if(action==Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES)intent.data=Uri.parse("package:$packageName");runCatching{startActivity(intent)}}

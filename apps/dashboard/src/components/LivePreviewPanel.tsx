@@ -6,12 +6,14 @@ import {
   Monitor,
   RefreshCw,
   ShieldAlert,
+  Video,
   WifiOff,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import { previewApi } from "../api/previews";
 import { useAuth } from "../auth/AuthProvider";
+import { LiveStreamDialog } from "./LiveStreamDialog";
 import { Button } from "./ui";
 import {
   livePreviewState,
@@ -27,6 +29,7 @@ export function LivePreviewPanel({ screenId }: { screenId: string }) {
   const auth = useAuth();
   const [renewalError, setRenewalError] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now);
+  const [watchingLive, setWatchingLive] = useState(false);
   const screen = useQuery({
     queryKey: ["screens", screenId],
     queryFn: () => api.screen(screenId),
@@ -101,15 +104,25 @@ export function LivePreviewPanel({ screenId }: { screenId: string }) {
           <span className="live-preview-panel__eyebrow">On demand</span>
           <h2>Live preview</h2>
         </div>
-        <Button
-          compact
-          variant="quiet"
-          onClick={() => manualRefresh.mutate()}
-          loading={manualRefresh.isPending}
-        >
-          <RefreshCw size={15} aria-hidden="true" />
-          Refresh
-        </Button>
+        <div className="live-preview-panel__actions">
+          <Button
+            compact
+            variant="quiet"
+            onClick={() => manualRefresh.mutate()}
+            loading={manualRefresh.isPending}
+          >
+            <RefreshCw size={15} aria-hidden="true" />
+            Refresh
+          </Button>
+          <Button
+            compact
+            onClick={() => setWatchingLive(true)}
+            disabled={screen.data?.status !== "online" || !csrfToken}
+          >
+            <Video size={15} aria-hidden="true" />
+            Watch live
+          </Button>
+        </div>
       </header>
 
       <div className={`live-preview-frame live-preview-frame--${state}`}>
@@ -167,6 +180,15 @@ export function LivePreviewPanel({ screenId }: { screenId: string }) {
         Tilecast captures only its own player window. Protected setup and
         maintenance screens are never uploaded.
       </p>
+      {csrfToken && (
+        <LiveStreamDialog
+          open={watchingLive}
+          screenId={screenId}
+          screenName={screen.data?.name ?? "Screen"}
+          csrfToken={csrfToken}
+          onClose={() => setWatchingLive(false)}
+        />
+      )}
     </aside>
   );
 }

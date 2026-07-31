@@ -62,6 +62,7 @@ import org.tilecast.player.content.pendingActivationDelayMillis
 import org.tilecast.player.content.withAvailablePlaylistItems
 import org.tilecast.player.content.nextAvailabilityTransition
 import org.tilecast.player.network.PlayerConfig
+import org.tilecast.player.network.encodeLiveStreamFrame
 import org.tilecast.player.reliability.ActiveHoursEngine
 import org.tilecast.player.reliability.ActiveHoursRule
 import org.tilecast.player.reliability.ReliabilityController
@@ -80,6 +81,7 @@ import java.util.Locale
 import java.util.TimeZone
 
 class PlayerViewModel(application: Application) : AndroidViewModel(application) {
+    var onLiveStreamSessionChanged: (() -> Unit)? = null
     private val machine = PlayerStateMachine()
     private val mutableState = MutableStateFlow<PlayerState>(PlayerState.Unconfigured)
     val state: StateFlow<PlayerState> = mutableState.asStateFlow()
@@ -321,6 +323,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 getApplication<Application>().getSharedPreferences("tilecast-reliability", Application.MODE_PRIVATE).edit().putString("offline-last-action", "NONE").apply()
                 webSocket.send("{\"type\":\"player.hello\",\"protocolVersion\":1,\"playerVersion\":\"${BuildConfig.VERSION_NAME}\"}")
                 webSocket.send(Json.encodeToString(kotlinx.serialization.json.JsonObject.serializer(), statusMessage()))
+                onLiveStreamSessionChanged?.invoke()
 				viewModelScope.launch { if (connectionEpoch.isCurrent(epoch)) emit(PlayerEvent.Connected(screenName)) }
 					getApplication<Application>().getSharedPreferences("tilecast-reliability",Application.MODE_PRIVATE).edit().putLong("last-server-connection-at",System.currentTimeMillis()).apply()
 				viewModelScope.launch { if (connectionEpoch.isCurrent(epoch)) reconcileManifest(url, credential) }
@@ -337,6 +340,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 				if (text.contains("manifest.changed")) viewModelScope.launch { if (connectionEpoch.isCurrent(epoch)) reconcileManifest(url, credential) }
 				if(text.contains("commands.available"))viewModelScope.launch{if(connectionEpoch.isCurrent(epoch))runCommands(url,credential)}
 				if(text.contains("config.changed"))viewModelScope.launch{if(connectionEpoch.isCurrent(epoch))reconcilePlayerConfig(url,credential)}
+				if(text.contains("live_stream.session_changed"))onLiveStreamSessionChanged?.invoke()
             }
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
 				if (!connectionEpoch.isCurrent(epoch) || socket !== webSocket) return
@@ -359,6 +363,19 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 scheduleReconnect(url, screenName, credential, nextReconnectAttempt(attempt), reason, epoch)
             }
         })
+    }
+
+    fun sendLiveStreamFrame(
+        sessionId: String,
+        capturedAtMillis: Long,
+        width: Int,
+        height: Int,
+        jpeg: ByteArray,
+    ): Boolean {
+        val activeSocket = socket ?: return false
+        return runCatching {
+            activeSocket.send(encodeLiveStreamFrame(sessionId, capturedAtMillis, width, height, jpeg))
+        }.getOrDefault(false)
     }
 
     // nextReconnectAttempt resets the escalation index when the socket that just closed had

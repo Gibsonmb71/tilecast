@@ -1,5 +1,9 @@
 # On-demand live screen previews
 
+This feature is a periodically refreshed still image. The explicit,
+higher-refresh **Watch live** dialog uses a separate, storage-free transport;
+see [Ephemeral live streaming](live-streaming.md).
+
 Tilecast Studio starts a temporary preview session whenever a screen detail page is open or its preview card is visible in the Screens grid. The session uses a 60-second lease. Studio renews the lease every 30 seconds and stops renewing it when the detail page closes or the card leaves the visible grid, so the player stops capturing automatically. Grid cards request an immediate first capture, poll for updated metadata while visible, and show the age of the latest snapshot.
 
 The player captures immediately after it observes a new session and then approximately every 20 seconds while the lease remains active. Preview captures are not player commands and do not create command-history records.
