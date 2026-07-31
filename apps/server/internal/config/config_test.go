@@ -38,6 +38,38 @@ func TestDevelopmentDefaults(t *testing.T) {
 	}
 }
 
+func TestPlaintextSMTPAuthIsItsOwnDecision(t *testing.T) {
+	// Trusting a relay certificate a private authority signed is ordinary inside
+	// a district. Sending the mail password in readable text is not, so the first
+	// flag must not imply the second.
+	t.Setenv("TILECAST_DATABASE_URL", "postgres://example")
+	t.Setenv("TILECAST_ENV", "development")
+	t.Setenv("TILECAST_SMTP_ALLOW_INSECURE", "true")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if !cfg.Notifications.SMTPAllowInsecure {
+		t.Error("the certificate flag was not read")
+	}
+	if cfg.Notifications.SMTPAllowPlaintextAuth {
+		t.Error("accepting a private certificate must not also allow credentials in the clear")
+	}
+
+	t.Setenv("TILECAST_SMTP_ALLOW_PLAINTEXT_AUTH", "true")
+	if cfg, err = Load(); err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if !cfg.Notifications.SMTPAllowPlaintextAuth {
+		t.Error("the plaintext-auth opt-in was not read")
+	}
+
+	t.Setenv("TILECAST_SMTP_ALLOW_PLAINTEXT_AUTH", "sometimes")
+	if _, err = Load(); err == nil {
+		t.Error("expected an unparseable plaintext-auth flag to fail rather than default to on")
+	}
+}
+
 func TestWebsiteConfigurationValidation(t *testing.T) {
 	t.Setenv("TILECAST_DATABASE_URL", "postgres://example")
 	t.Setenv("TILECAST_WEBSITE_ALLOW_PRIVATE_HTTP", "sometimes")

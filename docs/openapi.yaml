@@ -2037,25 +2037,32 @@ paths:
         }
   /api/v1/update-deployments:
     get:
-      summary: List Player update deployments
+      summary: List Player update deployments, narrowed to the caller's screen scope
       responses: { "200": { description: Deployment list } }
     post:
       summary: Create a deduplicated screen and group deployment with an optional canary cohort
       responses:
         {
           "201": { description: Deployment created },
+          "403": { description: Targets outside the caller's screen scope },
           "422": { description: Invalid or unverified release/targets },
         }
   /api/v1/update-deployments/{id}:
     get:
-      summary: Read per-screen update state
-      responses: { "200": { description: Deployment detail } }
+      summary: Read per-screen update state for the screens in the caller's scope
+      responses:
+        {
+          "200": { description: Deployment detail },
+          "404": { description: Unknown, or reaching no screen in scope },
+        }
   /api/v1/update-deployments/{id}/cancel:
     post:
-      summary: Cancel pending update work
+      summary: Cancel pending update work on every screen the deployment reaches
       responses:
         {
           "200": { description: Cancelled },
+          "403": { description: Reaches screens outside the caller's scope },
+          "404": { description: Unknown, or reaching no screen in scope },
           "409": { description: Already complete },
         }
   /api/v1/update-deployments/{id}/screens/{screenId}/retry:
@@ -2064,6 +2071,7 @@ paths:
       responses:
         {
           "202": { description: Retry queued },
+          "404": { description: Screen outside the caller's scope },
           "409": { description: Retry not allowed },
         }
   /api/v1/player/updates/{releaseId}:

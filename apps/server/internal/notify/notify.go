@@ -75,14 +75,19 @@ type Config struct {
 	SMTPPassword string
 	// starttls (default), implicit, or none. "none" is allowed because a
 	// self-hosted installation is often relaying through localhost.
-	SMTPTLS            string
-	SMTPTimeout        time.Duration
-	SMTPAllowInsecure  bool
-	PublicURL          string
-	MaxAttempts        int
-	WebhookTimeout     time.Duration
-	MaxWebhooksPerOrg  int
-	MaxDeliveryBodyLen int
+	SMTPTLS     string
+	SMTPTimeout time.Duration
+	// SMTPAllowInsecure accepts a relay certificate no public authority signed.
+	// SMTPAllowPlaintextAuth permits credentials on a connection with no
+	// encryption. Two flags because they are two decisions: a private certificate
+	// authority is ordinary inside a district, a password in the clear is not.
+	SMTPAllowInsecure      bool
+	SMTPAllowPlaintextAuth bool
+	PublicURL              string
+	MaxAttempts            int
+	WebhookTimeout         time.Duration
+	MaxWebhooksPerOrg      int
+	MaxDeliveryBodyLen     int
 }
 
 // EmailConfigured reports whether this installation can send email at all.

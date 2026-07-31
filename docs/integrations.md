@@ -49,6 +49,21 @@ is deliberate: a token must not outlive everybody who knows why it exists.
 
 Revoking is permanent. There is no un-revoke; replace the token instead.
 
+## Expiry
+
+Set **Expires on** when you create a token and it stops working at the end of
+that day. Leave it empty for a token with no expiry.
+
+An expiry is worth setting for anything short-lived: a vendor doing an
+installation, a pilot, a script somebody is trying out. It is the difference
+between a token that stops on its own and one that keeps working until somebody
+remembers it exists.
+
+The token list says **Active**, **Expired**, or **Revoked**, and shows the expiry
+date. Expired and revoked are different answers on purpose: one is a date that
+passed, the other is a decision somebody made. Both answer `401 invalid_token` to
+the caller, which learns nothing about which it was.
+
 ## Write rows to a Manual Table Data Source
 
 ```

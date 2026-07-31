@@ -59,6 +59,23 @@ The screen list is filtered by the same predicate that authorizes each
 operation, so the list a person sees and the screens they can act on cannot
 disagree.
 
+## Update deployments
+
+A deployment is not a screen. It names a set of screens, and it keeps one row per
+screen from the moment it starts, so that set is what a scope is applied to.
+
+- **Reading narrows.** The deployment history and one deployment's detail report
+  the caller's screens. Every count is a count of their screens, so the progress a
+  wing lead reads is the progress of their wing.
+- **Cancelling is all or nothing.** Cancelling stops the deployment on every
+  screen it reaches, so a deployment that also covers screens outside the scope
+  answers `403 out_of_scope` and nothing is cancelled.
+- **A retry is one screen.** Retrying follows the single-screen rule, so an
+  operator may retry their own failed screen in a deployment that also covers
+  screens they cannot reach.
+- A deployment that reaches nothing in scope answers `404`, the same as a screen
+  outside the scope.
+
 ## Known limitations
 
 - **Activity reporting is not scoped.** Proof of play, incidents, compliance, and

@@ -19,6 +19,15 @@ import (
 	"github.com/tilecast/tilecast/apps/server/internal/devices"
 )
 
+// deploymentRequest is a signed dashboard request. The update-deployment reads
+// narrow to the caller's screen scope, so they need a session the way the real
+// routes always have one.
+func deploymentRequest(method, target string, user uuid.UUID, role string) *http.Request {
+	request := httptest.NewRequest(method, target, nil)
+	return request.WithContext(context.WithValue(request.Context(), sessionContextKey,
+		auth.Session{User: auth.User{ID: user, Role: role}}))
+}
+
 func TestCreateUpdateDeploymentPersistsHistoryAndCommand(t *testing.T) {
 	databaseURL := os.Getenv("TEST_DATABASE_URL")
 	if databaseURL == "" {
@@ -122,7 +131,7 @@ func TestCreateUpdateDeploymentPersistsHistoryAndCommand(t *testing.T) {
 	}
 
 	historyResponse := httptest.NewRecorder()
-	s.listUpdateDeployments(historyResponse, httptest.NewRequest(http.MethodGet, "/api/v1/update-deployments", nil))
+	s.listUpdateDeployments(historyResponse, deploymentRequest(http.MethodGet, "/api/v1/update-deployments", userID, "owner"))
 	if historyResponse.Code != http.StatusOK {
 		t.Fatalf("history status=%d body=%s", historyResponse.Code, historyResponse.Body.String())
 	}
@@ -342,7 +351,7 @@ func TestStuckReconnectingTargetIsReconciled(t *testing.T) {
 		devices: devices.NewService(pool, devices.NewPresenceHub(), "http://localhost"),
 	}
 	recorder := httptest.NewRecorder()
-	s.listUpdateDeployments(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/update-deployments", nil))
+	s.listUpdateDeployments(recorder, deploymentRequest(http.MethodGet, "/api/v1/update-deployments", userID, "owner"))
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("list status=%d body=%s", recorder.Code, recorder.Body.String())
 	}

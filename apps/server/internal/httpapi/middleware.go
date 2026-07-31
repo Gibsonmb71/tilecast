@@ -162,6 +162,44 @@ func (s *server) requireScreenScope(next http.Handler) http.Handler {
 	})
 }
 
+// authorizeScreen is requireScreenScope for a screen named by something other
+// than the {id} path parameter, such as the screen inside an update deployment.
+// It returns false when it has already written the response.
+func (s *server) authorizeScreen(w http.ResponseWriter, r *http.Request, screen uuid.UUID) bool {
+	session, ok := r.Context().Value(sessionContextKey).(auth.Session)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthenticated", "Sign in to continue.")
+		return false
+	}
+	if err := s.devices.AuthorizeScreen(r.Context(), session.User.ID, session.User.Role, screen); err != nil {
+		if errors.Is(err, devices.ErrOutOfScope) {
+			// 404 for the same reason requireScreenScope reports one.
+			writeError(w, http.StatusNotFound, "screen_not_found", "Screen was not found.")
+			return false
+		}
+		s.internalError(w, r, err)
+		return false
+	}
+	return true
+}
+
+// callerScope reports the account and whether it is narrowed, for the reads that
+// have to filter their SQL rather than refuse outright. It returns false when it
+// has already written the response.
+func (s *server) callerScope(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool, bool) {
+	session, ok := r.Context().Value(sessionContextKey).(auth.Session)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthenticated", "Sign in to continue.")
+		return uuid.Nil, false, false
+	}
+	scoped, err := s.devices.Scoped(r.Context(), session.User.ID, session.User.Role)
+	if err != nil {
+		s.internalError(w, r, err)
+		return uuid.Nil, false, false
+	}
+	return session.User.ID, scoped, true
+}
+
 // authorizeScreenList checks a set of screens and groups named in a request
 // body. It returns false when it has already written the response.
 func (s *server) authorizeScreenList(w http.ResponseWriter, r *http.Request, screens []uuid.UUID, groups []uuid.UUID) bool {

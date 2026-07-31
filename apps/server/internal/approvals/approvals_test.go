@@ -55,9 +55,42 @@ func TestGateIsANoOpWhenApprovalIsOff(t *testing.T) {
 
 func TestUnknownContentTypeIsRejected(t *testing.T) {
 	svc := NewService(nil, stubSettings{values: map[string]any{"content.approval_required": true}})
-	_, err := svc.currentRevision(context.Background(), "screen", testUUID())
+	_, err := svc.currentRevision(context.Background(), nil, "screen", testUUID(), false)
 	if !errors.Is(err, ErrValidation) {
 		t.Errorf("currentRevision = %v, want a validation error", err)
+	}
+}
+
+func TestTheGatedRevisionReadLocksTheRowAnEditWrites(t *testing.T) {
+	// Without the lock the gate answers about a revision that can change before
+	// the assignment commits. The lock has to name the row an edit actually
+	// writes: the playlists row, or the layouts row a publish repoints. Locking
+	// layout_revisions would block nothing, because a publish inserts a new
+	// revision rather than changing the old one.
+	for _, testCase := range []struct{ contentType, want string }{
+		{TypePlaylist, "FOR SHARE"},
+		{TypeLayout, "FOR SHARE OF l"},
+	} {
+		query, err := revisionQuery(testCase.contentType, true)
+		if err != nil {
+			t.Fatalf("revisionQuery(%s) = %v", testCase.contentType, err)
+		}
+		if !strings.HasSuffix(query, testCase.want) {
+			t.Errorf("%s locked with %q, want a %q suffix", testCase.contentType, query, testCase.want)
+		}
+	}
+}
+
+func TestTheAdvisoryRevisionReadTakesNoLock(t *testing.T) {
+	// The preview and the reviewer's own read must not hold an editor's save open.
+	for _, contentType := range []string{TypePlaylist, TypeLayout} {
+		query, err := revisionQuery(contentType, false)
+		if err != nil {
+			t.Fatalf("revisionQuery(%s) = %v", contentType, err)
+		}
+		if strings.Contains(query, "FOR SHARE") {
+			t.Errorf("%s read unlocked still locks: %q", contentType, query)
+		}
 	}
 }
 
