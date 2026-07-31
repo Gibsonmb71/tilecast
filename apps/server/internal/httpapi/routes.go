@@ -100,6 +100,7 @@ func (s *server) routes() http.Handler {
 			dashboard.With(s.requireScreenScope).Get("/screens/{id}/reliability", s.screenReliability)
 			dashboard.Get("/locations", s.listLocations)
 			dashboard.Get("/plugins", s.listPlugins)
+			dashboard.Get("/plugins/dependency-graph", s.dependencyGraph)
 			dashboard.Get("/plugins/countdown-bar/instances", s.listCountdownBars)
 			dashboard.Get("/plugins/countdown-bar/instances/{id}", s.getCountdownBar)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/plugins/countdown-bar/instances", s.createCountdownBar)
