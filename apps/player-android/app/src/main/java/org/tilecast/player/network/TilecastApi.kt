@@ -41,6 +41,9 @@ class TilecastApi(
     suspend fun previewSession(serverUrl: String, credential: String): PreviewSession =
         get(serverUrl, "/api/v1/player/preview-session", "Bearer $credential")
 
+    suspend fun liveStreamSession(serverUrl: String, credential: String): LiveStreamSession =
+        get(serverUrl, "/api/v1/player/live-stream-session", "Bearer $credential")
+
     suspend fun uploadPreview(
         serverUrl: String,
         credential: String,

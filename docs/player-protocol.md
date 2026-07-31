@@ -25,6 +25,14 @@ Only the latest pending or approved pairing session for a player installation is
 
 Player endpoints accept `Authorization: Bearer <device-credential>`. Dashboard cookies are never accepted. `/api/v1/player/socket` uses protocol version 1 and supports `player.hello`, `player.status`, `server.ping`, and `player.pong`. `/api/v1/player/heartbeat` is the lower-frequency fallback.
 
+The same authenticated socket carries bounded binary `TCLS` version 1 frames
+only while Studio holds an ephemeral live-stream lease. The fixed header is
+magic plus version, session UUID, capture time in Unix milliseconds, unsigned
+width and height, followed by a JPEG of at most 100 KiB. The server accepts a
+frame only for the socket's own screen and its current in-memory session.
+Frames never enter the preview, snapshot, Activity, audit, or backup paths.
+See [Ephemeral live streaming](live-streaming.md).
+
 Authenticated `player.status` messages and HTTP heartbeats share the same contact and Activity derivation path. The server records socket contact even when optional status metadata cannot be decoded or validated, while rejecting that metadata and logging only the error, screen ID, and invalid field names. A bad optional field therefore cannot leave an active Player with a stale `lastContactAt`, and it cannot silently bypass uptime measurement. Replacing a socket also uses connection-scoped cleanup, so the old socket cannot mark the replacement as disconnected.
 
 ### Heartbeat identifier contract

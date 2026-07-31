@@ -315,6 +315,12 @@ export class ApiClient {
     return (res.json as { data?: Record<string, unknown> })?.data ?? null;
   }
 
+  /** Read the separate, ephemeral Studio live-stream lease. */
+  async liveStreamSession(): Promise<Record<string, unknown>> {
+    const res = await this.request("GET", "/api/v1/player/live-stream-session");
+    return (res.json as { data?: Record<string, unknown> })?.data ?? {};
+  }
+
   /** Upload a preview capture (or a failure status) as multipart form data. */
   async postPreview(form: FormData): Promise<void> {
     if (!this.credential) {

@@ -24,6 +24,7 @@ import (
 	"github.com/tilecast/tilecast/apps/server/internal/forms"
 	"github.com/tilecast/tilecast/apps/server/internal/integrations"
 	"github.com/tilecast/tilecast/apps/server/internal/layouts"
+	"github.com/tilecast/tilecast/apps/server/internal/livestream"
 	"github.com/tilecast/tilecast/apps/server/internal/media"
 	"github.com/tilecast/tilecast/apps/server/internal/notify"
 	"github.com/tilecast/tilecast/apps/server/internal/playlists"
@@ -99,6 +100,7 @@ type server struct {
 	integrations                  *integrations.Service
 	approvals                     *approvals.Service
 	snapshots                     *snapshots.Service
+	liveStreams                   *livestream.Service
 	releasePublishTokenHash       [32]byte
 	releasePublishTokenConfigured bool
 	startedAt                     time.Time
@@ -139,6 +141,7 @@ func New(deps Dependencies) http.Handler {
 		integrations:         deps.Integrations,
 		approvals:            deps.Approvals,
 		snapshots:            deps.Snapshots,
+		liveStreams:          livestream.NewService(deps.Devices),
 		startedAt:            time.Now(),
 		backups:              deps.Backups,
 		backupWorker:         deps.BackupWorker,

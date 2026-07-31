@@ -30,6 +30,7 @@ import {
   type TerminalReason,
 } from "./activity-sessions";
 import { TelemetryReporter } from "./telemetry";
+import { LiveStream } from "./live-stream";
 import {
   assessRenderProgress,
   initialRenderProgressState,
@@ -246,6 +247,7 @@ export class PlayerRuntime {
   private telemetry: TelemetryReporter | null = null;
   private lastTelemetryTickMs = Date.now();
   private preview: LivePreview | null = null;
+  private liveStream: LiveStream | null = null;
   private socket: PlayerSocket | null = null;
   private readonly backoff = new ReconnectBackoff({
     baseDelayMs: 2_000,
@@ -368,6 +370,7 @@ export class PlayerRuntime {
     void this.activity?.flush();
     this.activity?.stop();
     this.preview?.stop();
+    this.liveStream?.stop();
   }
 
   // ---------------------------------------------------------------- pairing
@@ -558,6 +561,27 @@ export class PlayerRuntime {
       () => Date.now(),
     );
     this.preview.start();
+    this.liveStream = new LiveStream(
+      this.client,
+      {
+        capture: (max) =>
+          this.playbackState === "pairing" ||
+          this.playbackState === "setup" ||
+          this.supervisorState.safeMode
+            ? Promise.resolve(null)
+            : this.host.capturePreview(max),
+        send: (sessionId, capturedAtMs, capture) =>
+          this.socket?.sendLiveStreamFrame(
+            sessionId,
+            capturedAtMs,
+            capture.width,
+            capture.height,
+            capture.jpeg,
+          ) ?? false,
+      },
+      () => Date.now(),
+    );
+    this.liveStream.start();
 
     await this.configSync.syncNow("startup");
     await this.manifestSync.start();
@@ -595,6 +619,7 @@ export class PlayerRuntime {
           void this.manifestSync.syncNow("socket-open");
           void this.configSync.syncNow("socket-open");
           void this.commands?.pollNow("socket-open");
+          this.liveStream?.sessionChanged();
           void this.reportStatus();
         },
         onClose: (reason, policyViolation) => {
@@ -622,6 +647,7 @@ export class PlayerRuntime {
         onManifestChanged: () => void this.manifestSync.syncNow("push"),
         onConfigChanged: () => void this.configSync.syncNow("push"),
         onCommandsAvailable: () => void this.commands?.pollNow("push"),
+        onLiveStreamSessionChanged: () => this.liveStream?.sessionChanged(),
       },
     );
     this.socket.connect();
