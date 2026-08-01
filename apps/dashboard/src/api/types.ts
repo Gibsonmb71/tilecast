@@ -1150,6 +1150,7 @@ export type PairingRequest = {
   existingScreenName?: string;
   hasActiveCredential: boolean;
   credentialReplacementAuthorized: boolean;
+  pairingMode?: "new_screen" | "credential_repair" | "hardware_replacement";
   metadata: {
     playerInstallationId: string;
     platform: string;
@@ -1164,6 +1165,26 @@ export type PairingRequest = {
     timezone: string;
     approximateAddress?: string;
   };
+};
+
+export type PlayerHistory = {
+  id: string;
+  screenId: string;
+  credentialId?: string;
+  installationId: string;
+  platform: string;
+  manufacturer: string;
+  model: string;
+  androidVersion: string;
+  playerVersion: string;
+  screenWidth: number;
+  screenHeight: number;
+  density: number;
+  locale: string;
+  timezone: string;
+  pairedAt: string;
+  retiredAt?: string;
+  retirementReason?: string;
 };
 
 export type AssetStatus =

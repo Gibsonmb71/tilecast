@@ -238,15 +238,33 @@ type ApprovalForm = z.infer<typeof approvalSchema>;
 export const pairingApprovalPayload = (
   request: PairingRequest,
   values: ApprovalForm,
+  destination: PairingDestination = "automatic",
+  replacementScreenId?: string,
 ) => ({
   ...values,
   replaceExistingCredential:
-    request.previouslyPaired && request.hasActiveCredential,
+    destination === "credential_repair" ||
+    (destination === "automatic" &&
+      request.previouslyPaired &&
+      request.hasActiveCredential),
+  ...(destination === "replace_hardware"
+    ? { replaceHardware: true, replacementScreenId }
+    : {}),
 });
-export const pairingApprovalLabel = (request: PairingRequest) =>
-  request.previouslyPaired && request.hasActiveCredential
-    ? "Repair and replace credential"
-    : "Approve and pair";
+type PairingDestination =
+  "automatic" | "new_screen" | "credential_repair" | "replace_hardware";
+export const pairingApprovalLabel = (
+  request: PairingRequest,
+  destination: PairingDestination = "automatic",
+) =>
+  destination === "replace_hardware"
+    ? "Replace hardware"
+    : destination === "credential_repair" ||
+        (destination === "automatic" &&
+          request.previouslyPaired &&
+          request.hasActiveCredential)
+      ? "Repair and replace credential"
+      : "Approve and pair";
 
 function LocationPicker({
   locations,
@@ -2087,6 +2105,13 @@ function ApprovalPanel({
 }) {
   const auth = useAuth();
   const queryClient = useQueryClient();
+  const defaultDestination: PairingDestination =
+    request.previouslyPaired && request.hasActiveCredential
+      ? "credential_repair"
+      : "new_screen";
+  const [destination, setDestination] =
+    useState<PairingDestination>(defaultDestination);
+  const [replacementScreenId, setReplacementScreenId] = useState("");
   const form = useForm<ApprovalForm>({
     resolver: zodResolver(approvalSchema),
     defaultValues: {
@@ -2103,9 +2128,18 @@ function ApprovalPanel({
     queryKey: ["locations"],
     queryFn: api.locations,
   });
+  const screens = useQuery({
+    queryKey: ["screens", "pairing-replacement-options"],
+    queryFn: api.screens,
+    enabled: destination === "replace_hardware",
+  });
   const approve = useMutation({
     mutationFn: (values: ApprovalForm) => {
-      const repair = request.previouslyPaired && request.hasActiveCredential;
+      const repair = destination === "credential_repair";
+      if (destination === "replace_hardware" && !replacementScreenId)
+        throw new Error(
+          "Choose the existing screen whose hardware is being replaced.",
+        );
       if (
         repair &&
         !window.confirm(
@@ -2113,9 +2147,27 @@ function ApprovalPanel({
         )
       )
         throw new Error("Pairing repair was cancelled.");
+      if (destination === "replace_hardware") {
+        const target = screens.data?.items.find(
+          (screen) => screen.id === replacementScreenId,
+        );
+        if (!target)
+          throw new Error("The replacement screen could not be found.");
+        if (
+          !window.confirm(
+            `Replace the hardware for “${target.name}”? Its name, group membership, assignments, schedules, policies, and history will stay on the same logical screen.`,
+          )
+        )
+          throw new Error("Hardware replacement was cancelled.");
+      }
       return api.approvePairing(
         request.id,
-        pairingApprovalPayload(request, values),
+        pairingApprovalPayload(
+          request,
+          values,
+          destination,
+          replacementScreenId,
+        ),
         auth.status?.csrfToken ?? "",
       );
     },
@@ -2194,15 +2246,87 @@ function ApprovalPanel({
           </div>
         )}
       </dl>
+      <fieldset className="pairing-destination">
+        <legend>Pairing destination</legend>
+        <label className="radio-control">
+          <input
+            type="radio"
+            name="pairingDestination"
+            value="new_screen"
+            checked={destination === "new_screen"}
+            onChange={() => setDestination("new_screen")}
+          />
+          <span>
+            <strong>Create new screen</strong>
+            <small>Create a new logical screen from this player.</small>
+          </span>
+        </label>
+        {request.previouslyPaired && request.hasActiveCredential && (
+          <label className="radio-control">
+            <input
+              type="radio"
+              name="pairingDestination"
+              value="credential_repair"
+              checked={destination === "credential_repair"}
+              onChange={() => setDestination("credential_repair")}
+            />
+            <span>
+              <strong>Repair existing credential</strong>
+              <small>
+                Keep this player installation on “{request.existingScreenName}”.
+              </small>
+            </span>
+          </label>
+        )}
+        <label className="radio-control">
+          <input
+            type="radio"
+            name="pairingDestination"
+            value="replace_hardware"
+            checked={destination === "replace_hardware"}
+            onChange={() => setDestination("replace_hardware")}
+          />
+          <span>
+            <strong>Replace hardware for an existing screen</strong>
+            <small>
+              Keep the logical screen, Display Group, content, schedules,
+              policies, and history.
+            </small>
+          </span>
+        </label>
+        {destination === "replace_hardware" && (
+          <label className="field pairing-destination__picker">
+            <span className="field__label">Existing screen</span>
+            <Select
+              value={replacementScreenId}
+              onChange={(event) => setReplacementScreenId(event.target.value)}
+            >
+              <option value="">Choose a screen</option>
+              {(screens.data?.items ?? [])
+                .filter((screen) => screen.id !== request.existingScreenId)
+                .map((screen) => (
+                  <option key={screen.id} value={screen.id}>
+                    {screen.name}
+                    {screen.location ? ` — ${screen.location}` : ""}
+                  </option>
+                ))}
+            </Select>
+            <small>
+              The old credential is retired only after this player successfully
+              enrolls.
+            </small>
+          </label>
+        )}
+      </fieldset>
       {request.previouslyPaired && (
         <div className="notice notice--warning" role="status">
           <strong>
             This device was previously paired as “{request.existingScreenName}.”
           </strong>
           <p>
-            Repairing the pairing will preserve this screen and its content
-            assignments. The previous device credential will be revoked only
-            after this player completes enrollment.
+            {destination === "replace_hardware"
+              ? "Choose the logical screen above; its identity and configuration are preserved."
+              : "Repairing the pairing will preserve this screen and its content assignments. The previous device credential will be revoked only after this player completes enrollment."}
           </p>
         </div>
       )}
@@ -2261,7 +2385,9 @@ function ApprovalPanel({
             className="button button--primary"
             disabled={approve.isPending || reject.isPending}
           >
-            {approve.isPending ? "Approving…" : pairingApprovalLabel(request)}
+            {approve.isPending
+              ? "Approving…"
+              : pairingApprovalLabel(request, destination)}
           </button>
         </div>
       </form>
@@ -2401,6 +2527,10 @@ export function ScreenDetailPage() {
     queryKey: ["screens", id, "reliability"],
     queryFn: () => api.screenReliability(id),
     refetchInterval: 10_000,
+  });
+  const playerHistory = useQuery({
+    queryKey: ["screens", id, "player-history"],
+    queryFn: () => api.screenPlayerHistory(id),
   });
   const screenPolicy = useQuery({
     queryKey: ["screen", id, "policy"],
@@ -2687,6 +2817,55 @@ export function ScreenDetailPage() {
               Manage screen
             </button>
           </div>
+          <section
+            className="screen-hardware-history"
+            aria-labelledby="screen-hardware-history-title"
+          >
+            <header>
+              <h3 id="screen-hardware-history-title">Hardware history</h3>
+              <p>The logical screen stays stable when hardware is replaced.</p>
+            </header>
+            {playerHistory.data?.items.length ? (
+              <div className="screen-hardware-history__list">
+                {playerHistory.data.items.map((hardware) => (
+                  <article
+                    key={hardware.id}
+                    className="screen-hardware-history__item"
+                  >
+                    <div>
+                      <strong>
+                        {hardware.manufacturer} {hardware.model}
+                      </strong>
+                      <span>
+                        {hardware.platform} · {hardware.playerVersion} ·{" "}
+                        {hardware.screenWidth}×{hardware.screenHeight}
+                      </span>
+                    </div>
+                    <div>
+                      <span>
+                        {hardware.retiredAt
+                          ? `Retired ${new Date(hardware.retiredAt).toLocaleDateString()}`
+                          : "Current hardware"}
+                      </span>
+                      <small>
+                        Paired{" "}
+                        {new Date(hardware.pairedAt).toLocaleDateString()}
+                        {hardware.retirementReason
+                          ? ` · ${hardware.retirementReason}`
+                          : ""}
+                      </small>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : playerHistory.isLoading ? (
+              <p className="table-loading">Loading hardware history…</p>
+            ) : (
+              <p className="empty-state__message">
+                No hardware history recorded.
+              </p>
+            )}
+          </section>
         </section>
       )}
 

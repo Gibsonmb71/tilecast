@@ -28,6 +28,7 @@ import type {
   PasskeyCeremony,
   Passkey,
   PairingRequest,
+  PlayerHistory,
   Location,
   LocationInput,
   Screen,
@@ -1086,6 +1087,15 @@ export const api = {
     normalizeScreen(await request<Screen | null>(`/screens/${id}`)),
   screenReliability: (id: string) =>
     request<ReliabilityStatus>(`/screens/${id}/reliability`),
+  screenPlayerHistory: async (id: string) => {
+    const result = await request<{ items: PlayerHistory[]; total: number }>(
+      `/screens/${id}/player-history`,
+    );
+    return {
+      ...result,
+      items: Array.isArray(result.items) ? result.items : [],
+    };
+  },
   airplaySession: (id: string) =>
     request<AirplaySession>(`/airplay/sessions/${id}`),
   createAirplaySession: (
@@ -1138,6 +1148,8 @@ export const api = {
       roomNumber: string;
       description: string;
       replaceExistingCredential: boolean;
+      replaceHardware?: boolean;
+      replacementScreenId?: string;
     },
     csrfToken: string,
   ) =>

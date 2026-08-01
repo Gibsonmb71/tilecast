@@ -453,6 +453,19 @@ paths:
       responses:
         "200": { description: Screen updated }
         "403": { description: Owner or Administrator required }
+  /api/v1/screens/{id}/player-history:
+    get:
+      operationId: listScreenPlayerHistory
+      parameters:
+        - {
+            in: path,
+            name: id,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+      responses:
+        "200": { description: Current and retired physical player records }
+        "404": { description: Screen not found }
   /api/v1/screens/pairing/resolve:
     post:
       operationId: resolvePairingCode
@@ -487,11 +500,23 @@ paths:
                   type: boolean
                   default: false
                   description: Explicitly authorizes credential rotation after successful enrollment.
+                replaceHardware:
+                  type: boolean
+                  default: false
+                  description: Assigns the new player to an existing logical screen without changing its content or policy relationships.
+                replacementScreenId:
+                  {
+                    type: [string, "null"],
+                    format: uuid,
+                    description: Required when replaceHardware is true.,
+                  }
       responses:
         "200": { description: Screen approved }
         "409":
           {
-            description: Pairing recovery confirmation required or pairing state conflict,
+            description: Pairing recovery confirmation required,
+            hardware replacement conflict,
+            or pairing state conflict,
           }
   /api/v1/locations:
     get:

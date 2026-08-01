@@ -497,4 +497,50 @@ describe("screen management", () => {
       replaceExistingCredential: true,
     });
   });
+
+  it("uses a separate hardware replacement payload", () => {
+    const request: PairingRequest = {
+      id: "pairing",
+      status: "pending",
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      previouslyPaired: false,
+      hasActiveCredential: false,
+      credentialReplacementAuthorized: false,
+      metadata: {
+        playerInstallationId: "new-installation",
+        platform: "linux",
+        manufacturer: "Intel",
+        model: "NUC",
+        androidVersion: "none",
+        playerVersion: "0.10.1",
+        screenWidth: 1920,
+        screenHeight: 1080,
+        density: 1,
+        locale: "en-US",
+        timezone: "America/New_York",
+      },
+    };
+    expect(pairingApprovalLabel(request, "replace_hardware")).toBe(
+      "Replace hardware",
+    );
+    expect(
+      pairingApprovalPayload(
+        request,
+        {
+          name: "Ignored logical name",
+          locationId: undefined,
+          roomName: "",
+          roomNumber: "",
+          description: "",
+        },
+        "replace_hardware",
+        "screen-1",
+      ),
+    ).toMatchObject({
+      replaceExistingCredential: false,
+      replaceHardware: true,
+      replacementScreenId: "screen-1",
+    });
+  });
 });

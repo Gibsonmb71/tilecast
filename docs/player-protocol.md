@@ -19,6 +19,12 @@ Pairing sessions expire after ten minutes. Codes use an unambiguous alphabet and
 
 The player installation UUID remains stable across upgrades and is used to recognize a previously paired screen. Studio shows the existing screen name and requires the deliberate **Repair and replace credential** action when that screen still has an active credential. Approval records the authorization but does not revoke the old credential. Only a successful one-time enrollment creates the replacement credential and revokes the previous active credentials in the same database transaction. The existing screen ID, assignments, groups, schedules, policies, and history remain unchanged.
 
+### Screen replacement
+
+Hardware replacement is a separate approval mode from pairing recovery. Studio can select **Replace hardware for an existing screen** for a new player installation. The server records the target logical screen ID in the pairing session but leaves its name, location, Display Group membership and geometry, assignments, schedules, policies, scopes, and snapshots untouched. The target screen is updated with the new physical metadata only during successful one-time enrollment.
+
+The new credential is inserted before the old credential is retired. The hardware update, history transition, old-credential revocation, and enrollment-token consumption commit together; any failure rolls back the whole replacement and leaves the old player usable. `screen_player_history` stores the installation ID, platform, version, hardware metadata, pairing time, retirement time, and reason. Credential repair continues to use the stable player installation UUID and does not create a hardware-replacement history row.
+
 Only the latest pending or approved pairing session for a player installation is actionable. Tilecast Player stores its session ID, private poll secret, visible code, expiry, and polling interval in Room, resumes that session after activity or process recreation, and clears it after enrollment or expiry. A stored device credential is attempted first and is cleared only after an authenticated endpoint confirms that it is invalid or revoked.
 
 ## Authenticated connection

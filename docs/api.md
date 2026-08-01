@@ -124,8 +124,9 @@ Screens reference an optional `locationId` and carry independent optional `roomN
 - `GET /api/v1/screens/{id}`
 - `GET /api/v1/screens/pairing/pending`
 - `POST /api/v1/screens/pairing/resolve`
-- `POST /api/v1/screens/pairing/{id}/approve` — accepts `replaceExistingCredential` (default `false`); an existing active credential otherwise returns `pairing_recovery_required`.
+- `POST /api/v1/screens/pairing/{id}/approve` — accepts `replaceExistingCredential` (default `false`) for credential repair, or `replaceHardware` plus `replacementScreenId` for hardware replacement. Hardware replacement preserves the selected logical screen and retires the previous credential only after enrollment succeeds. An existing active credential otherwise returns `pairing_recovery_required`.
 - `POST /api/v1/screens/pairing/{id}/reject`
+- `GET /api/v1/screens/{id}/player-history` — returns current and retired physical player records for the logical screen.
 - `PATCH /api/v1/screens/{id}`
 - `POST /api/v1/screens/{id}/disable`
 - `POST /api/v1/screens/{id}/enable`
