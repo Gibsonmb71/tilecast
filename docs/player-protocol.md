@@ -49,6 +49,8 @@ Status thresholds are centralized on the server: connected socket is `online`, c
 
 Playback-relevant changes send only `{ "type": "manifest.changed", "manifestVersion": 12 }` on the authenticated socket. Players also reconcile every five minutes and on connection. They save a pending manifest, resume `.part` downloads with `Range` and `If-Range`, verify size and SHA-256, and atomically promote verified files. A replacement activates at the next item boundary; failed preparation never overwrites active content.
 
+Synchronized playlists use that same boundary rule. Their monotonic shared timeline supplies the boundary, so rapid manifest revisions coalesce without remounting the current item several times. Takeovers and root Layout presentations still activate immediately; root Layouts do not emit playlist boundaries.
+
 Delivery is deterministic: Download always caches; Stream requires connectivity; Automatic downloads images and videos up to 256 MiB when cache and reserved disk space permit, otherwise it streams video. The cache limit is 8 GiB, free-space reserve is 1 GiB, and at most two downloads run concurrently.
 
 ## Scheduled playback and offline limits
