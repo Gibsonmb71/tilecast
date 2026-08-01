@@ -83,6 +83,15 @@ Source playlist items may run until the provider signals completion or for a fix
 
 Manifest v4 may contain one active Takeover with its playlist and half-open activation/expiration interval. The released manifest retains the `emergency` property for backward compatibility; current heartbeat and activity contracts use Takeover names. The player prepares it atomically, interrupts normal playback when ready, and re-evaluates schedules on restoration. `commands.available` prompts authenticated retrieval; acknowledgement and safe result endpoints make delivery persistent and idempotent. Takeover overrides playback-disabled state, then returns to disabled after expiration.
 
+Quick Present is carried as the optional `presentationOverride` field in the
+same manifest. It references a projected playlist, Layout, or deterministic
+one-item asset playlist and includes its start, optional expiration, and
+playback anchor. Players select it below an active Takeover and above schedules,
+reevaluate at both boundaries, and use the anchor for synchronized playback.
+The field is optional so older Players continue their normal assigned or
+scheduled presentation while the server stack is upgraded. AirPlay remains a
+runtime presentation path and keeps its existing priority over this field.
+
 Player configuration is retrieved separately from `/api/v1/player/config` with device authentication, ETag, schema version, and monotonic effective revision. `config.changed` contains only the revision. The player validates and stores current and previous valid configurations; it never receives administrative inheritance sources or deployment secrets.
 
 Configuration v1 also carries typed `reliability`, `power`, `managedKiosk`, and `accessibility` sections. Status reports distinguish configured and effective reliability mode and include throttled foreground, boot attempts, commissioning step and completion, cached fallback, last healthy playback/sync/connection, lock-task, accessibility, active-hours, sleep/wake, recovery, safe-mode, self-test, update-readiness, and maintenance-session state. Foreground package is omitted from non-administrative diagnostics and is never retained as unbounded history.

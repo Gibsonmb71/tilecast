@@ -191,6 +191,12 @@ Schedule targets for a grouped screen are normalized to its sync group, so every
 
 Weekly weekdays are integers `0` (Sunday) through `6` (Saturday). Times are `HH:MM`, dates are `YYYY-MM-DD`, timezones are IANA identifiers, and an end time less than or equal to its start denotes an overnight window.
 
+## Quick Present
+
+`GET /api/v1/presentation-overrides` lists active temporary **Show now** sessions. `POST /api/v1/presentation-overrides` accepts a `targetType` of `screen` or `group`, a ready `contentType` of `playlist`, `layout`, or `asset`, the corresponding IDs, a `durationMinutes` of `5`, `15`, `30`, `60`, or `0` for until stopped, `afterAction: "resume"`, and an explicit `wakeDisplay` boolean. `POST /api/v1/presentation-overrides/{id}/stop` ends a session. Owner and Administrator mutations require CSRF and use the same screen/Display Group authorization as assignment changes.
+
+Quick Present is below Emergency Takeovers and external presentation, including the existing AirPlay runtime, and above normal schedules. An active AirPlay destination returns `409 presentation_conflict`; it is never silently interrupted. Expiration advances the affected manifests and causes Players to reevaluate current state rather than restore a saved playback snapshot. See [Quick Present](quick-present.md).
+
 ## Website assets
 
 `POST /api/v1/assets/websites` creates a ready configuration-only website asset. `PATCH /api/v1/assets/{id}/website` updates its normalized configuration and revises only affected screen manifests. `GET /api/v1/assets/{id}/website/diagnostics` returns safe load timestamps, categorized failure state, reporting screens, allowed hosts, and fallback configuration. Website pages are never fetched as part of save.

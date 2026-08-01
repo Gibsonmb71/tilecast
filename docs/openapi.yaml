@@ -1889,6 +1889,42 @@ paths:
       responses:
         "200": { description: Takeover cancelled }
         "409": { description: Takeover already ended }
+  /api/v1/presentation-overrides:
+    get:
+      operationId: listPresentationOverrides
+      summary: List active Quick Present sessions
+      responses:
+        "200": { description: Active temporary presentation overrides }
+    post:
+      operationId: createPresentationOverride
+      summary: Start Quick Present
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PresentationOverrideInput"
+      responses:
+        "201": { description: Quick Present started }
+        "409":
+          {
+            description: Destination conflicts with AirPlay or another temporary presentation,
+          }
+        "422": { description: Destination or content validation failed }
+  /api/v1/presentation-overrides/{id}/stop:
+    post:
+      operationId: stopPresentationOverride
+      summary: Stop Quick Present
+      parameters:
+        - {
+            in: path,
+            name: id,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+      responses:
+        "200": { description: Quick Present stopped }
+        "404": { description: Quick Present is no longer active }
   /api/v1/alerts/nws:
     get:
       summary: Read the NWS monitor, rules, active matches, and poll health
@@ -2628,6 +2664,50 @@ components:
         assets: { type: array, items: { type: object } }
         widgets: { type: array, items: { type: object } }
         dataSources: { type: array, items: { type: object } }
+        presentationOverride:
+          {
+            oneOf:
+              [
+                { type: "null" },
+                { $ref: "#/components/schemas/PresentationOverride" },
+              ],
+          }
+    PresentationOverride:
+      type: object
+      additionalProperties: false
+      required:
+        [id, contentType, contentId, contentName, startedAt, wakeDisplay]
+      properties:
+        id: { type: string, format: uuid }
+        contentType: { type: string, enum: [playlist, layout, asset] }
+        contentId: { type: string, format: uuid }
+        contentName: { type: string }
+        startedAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time, nullable: true }
+        playlistId: { type: string, format: uuid, nullable: true }
+        layoutId: { type: string, format: uuid, nullable: true }
+        wakeDisplay: { type: boolean }
+    PresentationOverrideInput:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          targetType,
+          targetId,
+          contentType,
+          contentId,
+          durationMinutes,
+          afterAction,
+          wakeDisplay,
+        ]
+      properties:
+        targetType: { type: string, enum: [screen, group] }
+        targetId: { type: string, format: uuid }
+        contentType: { type: string, enum: [playlist, layout, asset] }
+        contentId: { type: string, format: uuid }
+        durationMinutes: { type: integer, enum: [0, 5, 15, 30, 60] }
+        afterAction: { type: string, enum: [resume] }
+        wakeDisplay: { type: boolean }
     ManifestResponse:
       type: object
       required: [data]

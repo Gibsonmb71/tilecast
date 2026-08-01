@@ -19,12 +19,13 @@ import (
 )
 
 type Service struct {
-	db          *pgxpool.Pool
-	notifier    Notifier
-	scheduling  *scheduling.Service
-	sources     SourceProjector
-	definitions *contentdefs.Catalog
-	plugins     PluginProjector
+	db                    *pgxpool.Pool
+	notifier              Notifier
+	scheduling            *scheduling.Service
+	sources               SourceProjector
+	definitions           *contentdefs.Catalog
+	plugins               PluginProjector
+	presentationOverrides PresentationOverrideProjector
 	// approvalGate refuses assignment of content that is waiting for review.
 	// Nil means this installation does not gate assignment at all. It runs inside
 	// the assignment transaction so the answer cannot go stale before the commit.
@@ -48,6 +49,9 @@ func (s *Service) SetScheduling(service *scheduling.Service)          { s.schedu
 func (s *Service) SetSourceProjector(projector SourceProjector)       { s.sources = projector }
 func (s *Service) SetContentDefinitions(catalog *contentdefs.Catalog) { s.definitions = catalog }
 func (s *Service) SetPluginProjector(projector PluginProjector)       { s.plugins = projector }
+func (s *Service) SetPresentationOverrides(projector PresentationOverrideProjector) {
+	s.presentationOverrides = projector
+}
 
 // SetApprovalGate installs the content review check used by every assignment
 // path. The gate takes the assignment's own transaction: it locks the content
@@ -1303,6 +1307,11 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 	if err := s.reconcilePresentationCatalog(ctx); err != nil {
 		return Manifest{}, "", err
 	}
+	if s.presentationOverrides != nil {
+		if err := s.presentationOverrides.ReconcileExpired(ctx); err != nil {
+			return Manifest{}, "", err
+		}
+	}
 	// Expiration is persisted during reconciliation so an unchanged ETag can never
 	// hide the removal of a takeover from a player.
 	var expired bool
@@ -1343,6 +1352,30 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 	}
 	playlistIDs := []uuid.UUID{}
 	layoutIDs := []uuid.UUID{}
+	var presentationOverride *PresentationOverride
+	if s.presentationOverrides != nil {
+		presentationOverride, err = s.presentationOverrides.ActiveForScreen(ctx, screenID)
+		if err != nil {
+			return Manifest{}, "", err
+		}
+		if presentationOverride != nil {
+			manifest.PresentationOverride = &ManifestPresentationOverride{
+				ID:          presentationOverride.ID,
+				ContentType: presentationOverride.ContentType,
+				ContentID:   presentationOverride.ContentID,
+				ContentName: presentationOverride.ContentName,
+				StartedAt:   presentationOverride.StartedAt,
+				ExpiresAt:   presentationOverride.ExpiresAt,
+				WakeDisplay: presentationOverride.WakeDisplay,
+			}
+			switch presentationOverride.ContentType {
+			case "playlist":
+				playlistIDs = append(playlistIDs, presentationOverride.ContentID)
+			case "layout":
+				layoutIDs = append(layoutIDs, presentationOverride.ContentID)
+			}
+		}
+	}
 	if assignment.PlaylistID != nil {
 		playlistIDs = append(playlistIDs, *assignment.PlaylistID)
 	}
@@ -1468,6 +1501,15 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 	}
 	seen := map[uuid.UUID]bool{}
 	seenPlaylists := map[uuid.UUID]bool{}
+	if presentationOverride != nil && presentationOverride.ContentType == "asset" {
+		virtual, projectionErr := s.projectPresentationAsset(ctx, &manifest, *presentationOverride, seen)
+		if projectionErr != nil {
+			return Manifest{}, "", projectionErr
+		}
+		manifest.Playlists = append(manifest.Playlists, virtual)
+		manifest.PresentationOverride.PlaylistID = &virtual.ID
+		manifest.Playlist = &virtual
+	}
 	for _, playlistID := range playlistIDs {
 		if seenPlaylists[playlistID] {
 			continue
@@ -1578,6 +1620,28 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 		if assignment.PlaylistID != nil && playlistID == *assignment.PlaylistID {
 			fallback := mp
 			manifest.DirectFallbackPlaylist = &fallback
+		}
+	}
+	if presentationOverride != nil {
+		switch presentationOverride.ContentType {
+		case "playlist":
+			for index := range manifest.Playlists {
+				if manifest.Playlists[index].ID == presentationOverride.ContentID {
+					selected := manifest.Playlists[index]
+					manifest.PresentationOverride.PlaylistID = &selected.ID
+					manifest.Playlist = &selected
+					break
+				}
+			}
+		case "layout":
+			for index := range manifest.Layouts {
+				if manifest.Layouts[index].ID == presentationOverride.ContentID {
+					selected := manifest.Layouts[index]
+					manifest.PresentationOverride.LayoutID = &selected.ID
+					manifest.Layout = &selected
+					break
+				}
+			}
 		}
 	}
 	for _, dependency := range layoutDependencies {
@@ -1752,6 +1816,99 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 	}
 	baseETag := manifestETagForSchema(screenID, assignment.ManifestVersion, manifest.SchemaVersion)
 	return manifest, manifestETagForSchedules(baseETag, manifest.Schedules), nil
+}
+
+// projectPresentationAsset adapts one library asset into the same one-item
+// playlist shape used by the normal Player renderer. This keeps Quick Present
+// lightweight without creating hidden playlists that would leak into the
+// content library or require cleanup after expiry.
+func (s *Service) projectPresentationAsset(ctx context.Context, manifest *Manifest, override PresentationOverride, seen map[uuid.UUID]bool) (ManifestPlaylist, error) {
+	var name, assetType, status string
+	var availableFrom, expiresAt *time.Time
+	if err := s.db.QueryRow(ctx, `SELECT name,type,processing_status,available_from,expires_at FROM assets WHERE id=$1 AND deleted_at IS NULL AND archived_at IS NULL AND origin='library' AND system_managed=FALSE`, override.ContentID).Scan(&name, &assetType, &status, &availableFrom, &expiresAt); err != nil {
+		return ManifestPlaylist{}, fmt.Errorf("%w: Quick Present content is unavailable", ErrConflict)
+	}
+	if status != "ready" {
+		return ManifestPlaylist{}, fmt.Errorf("%w: Quick Present content is still processing", ErrConflict)
+	}
+	itemID := uuid.NewSHA1(override.ID, []byte("quick-present-item"))
+	item := ManifestItem{ID: itemID, AssetID: override.ContentID, AssetType: assetType, FitMode: "contain", Transition: "none", AudioEnabled: false, Volume: 1, DeliveryPolicy: "download", AvailableFrom: availableFrom, ExpiresAt: expiresAt}
+	switch assetType {
+	case "image", "video":
+		var asset ManifestAsset
+		if err := s.db.QueryRow(ctx, `SELECT v.asset_id,v.id,v.mime_type,encode(v.sha256,'hex'),v.file_size,v.width,v.height,v.duration_seconds FROM asset_variants v WHERE v.asset_id=$1 AND v.deleted_at IS NULL AND v.player_compatible=TRUE ORDER BY CASE v.kind WHEN 'playback' THEN 0 WHEN 'original' THEN 1 ELSE 2 END LIMIT 1`, override.ContentID).Scan(&asset.AssetID, &asset.VariantID, &asset.MIMEType, &asset.SHA256, &asset.FileSize, &asset.Width, &asset.Height, &asset.DurationSeconds); err != nil {
+			return ManifestPlaylist{}, fmt.Errorf("%w: Quick Present media variant is unavailable", ErrConflict)
+		}
+		asset.DownloadPath = "/api/v1/player/assets/" + asset.AssetID.String() + "/variants/" + asset.VariantID.String()
+		if !seen[asset.VariantID] {
+			manifest.Assets = append(manifest.Assets, asset)
+			seen[asset.VariantID] = true
+		}
+		item.VariantID = &asset.VariantID
+		if assetType == "image" {
+			duration := int64(10_000)
+			item.DurationMS = &duration
+		} else {
+			item.AudioEnabled = true
+		}
+	case "widget":
+		var widget ManifestWidget
+		widget.AssetID = override.ContentID
+		if err := s.db.QueryRow(ctx, `SELECT w.provider,w.preset_id,w.config_version,w.configuration FROM widgets w WHERE w.asset_id=$1`, override.ContentID).Scan(&widget.Provider, &widget.PresetID, &widget.ConfigVersion, &widget.Configuration); err != nil {
+			return ManifestPlaylist{}, fmt.Errorf("%w: Quick Present widget is unavailable", ErrConflict)
+		}
+		widget.Name = name
+		if widget.Provider == "website" {
+			if err := s.projectPresentationWebsite(ctx, manifest, override.ContentID, name); err != nil {
+				return ManifestPlaylist{}, err
+			}
+			item.AssetType = "website"
+			item.DeliveryPolicy = "stream"
+		} else {
+			manifest.Widgets = append(manifest.Widgets, widget)
+			item.DeliveryPolicy = "stream"
+		}
+		duration := int64(10_000)
+		item.DurationMS = &duration
+	case "website":
+		if err := s.projectPresentationWebsite(ctx, manifest, override.ContentID, name); err != nil {
+			return ManifestPlaylist{}, err
+		}
+		item.AssetType = "website"
+		item.DeliveryPolicy = "stream"
+		duration := int64(10_000)
+		item.DurationMS = &duration
+	default:
+		return ManifestPlaylist{}, fmt.Errorf("%w: Quick Present content type is unsupported", ErrConflict)
+	}
+	return ManifestPlaylist{ID: override.ID, Revision: 1, Name: name, Items: []ManifestItem{item}}, nil
+}
+
+func (s *Service) projectPresentationWebsite(ctx context.Context, manifest *Manifest, assetID uuid.UUID, name string) error {
+	var website ManifestWebsite
+	website.AssetID, website.Name = assetID, name
+	if err := s.db.QueryRow(ctx, `SELECT url,allowed_hosts,javascript_enabled,dom_storage_enabled,cookie_policy,reload_policy,refresh_interval_seconds,load_timeout_seconds,zoom_percent,scroll_x,scroll_y,custom_user_agent,background_color,failure_behavior,fallback_image_asset_id FROM website_assets WHERE asset_id=$1`, assetID).Scan(&website.URL, &website.AllowedHosts, &website.JavaScriptEnabled, &website.DOMStorageEnabled, &website.CookiePolicy, &website.ReloadPolicy, &website.RefreshIntervalSeconds, &website.LoadTimeoutSeconds, &website.ZoomPercent, &website.ScrollX, &website.ScrollY, &website.CustomUserAgent, &website.BackgroundColor, &website.FailureBehavior, &website.FallbackImageAssetID); err != nil {
+		return fmt.Errorf("%w: Quick Present website is unavailable", ErrConflict)
+	}
+	if website.FallbackImageAssetID != nil {
+		fallback, err := s.resolveImageVariant(ctx, *website.FallbackImageAssetID)
+		if err != nil {
+			return fmt.Errorf("%w: Quick Present website fallback is unavailable", ErrConflict)
+		}
+		website.FallbackVariantID = &fallback.VariantID
+		found := false
+		for _, asset := range manifest.Assets {
+			if asset.VariantID == fallback.VariantID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			manifest.Assets = append(manifest.Assets, fallback)
+		}
+	}
+	manifest.Websites = append(manifest.Websites, website)
+	return nil
 }
 
 const crossfadePlayerVersionCode = 33

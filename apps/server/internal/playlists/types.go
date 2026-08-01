@@ -1,6 +1,7 @@
 package playlists
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"time"
@@ -191,24 +192,25 @@ type AssignmentSchedule struct {
 }
 
 type Manifest struct {
-	SchemaVersion          int                      `json:"schemaVersion"`
-	ManifestVersion        int64                    `json:"manifestVersion"`
-	ScreenID               uuid.UUID                `json:"screenId"`
-	GeneratedAt            time.Time                `json:"generatedAt"`
-	Mode                   string                   `json:"mode"`
-	Playlist               *ManifestPlaylist        `json:"playlist,omitempty"`
-	DirectFallbackPlaylist *ManifestPlaylist        `json:"directFallbackPlaylist,omitempty"`
-	Playlists              []ManifestPlaylist       `json:"playlists"`
-	Schedules              []ManifestSchedule       `json:"schedules"`
-	Assets                 []ManifestAsset          `json:"assets"`
-	ServerTime             time.Time                `json:"serverTime"`
-	PrefetchHorizonDays    int                      `json:"prefetchHorizonDays"`
-	ActivationGraceSeconds int                      `json:"activationGraceSeconds"`
-	Websites               []ManifestWebsite        `json:"websites"`
-	Widgets                []ManifestWidget         `json:"widgets"`
-	DataSources            []ManifestDataSource     `json:"dataSources"`
-	Plugins                []plugins.ManifestPlugin `json:"plugins"`
-	Takeover               *ManifestTakeover        `json:"takeover,omitempty"`
+	SchemaVersion          int                           `json:"schemaVersion"`
+	ManifestVersion        int64                         `json:"manifestVersion"`
+	ScreenID               uuid.UUID                     `json:"screenId"`
+	GeneratedAt            time.Time                     `json:"generatedAt"`
+	Mode                   string                        `json:"mode"`
+	Playlist               *ManifestPlaylist             `json:"playlist,omitempty"`
+	DirectFallbackPlaylist *ManifestPlaylist             `json:"directFallbackPlaylist,omitempty"`
+	Playlists              []ManifestPlaylist            `json:"playlists"`
+	Schedules              []ManifestSchedule            `json:"schedules"`
+	Assets                 []ManifestAsset               `json:"assets"`
+	ServerTime             time.Time                     `json:"serverTime"`
+	PrefetchHorizonDays    int                           `json:"prefetchHorizonDays"`
+	ActivationGraceSeconds int                           `json:"activationGraceSeconds"`
+	Websites               []ManifestWebsite             `json:"websites"`
+	Widgets                []ManifestWidget              `json:"widgets"`
+	DataSources            []ManifestDataSource          `json:"dataSources"`
+	Plugins                []plugins.ManifestPlugin      `json:"plugins"`
+	PresentationOverride   *ManifestPresentationOverride `json:"presentationOverride,omitempty"`
+	Takeover               *ManifestTakeover             `json:"takeover,omitempty"`
 	// LegacyTakeover mirrors Takeover under the pre-rename `emergency` key. A
 	// Player built before the takeover rename looks only for that key, and an
 	// override it cannot see is the one failure this feature must not have, so
@@ -219,6 +221,17 @@ type Manifest struct {
 	Layout               *ManifestLayout    `json:"layout,omitempty"`
 	DirectFallbackLayout *ManifestLayout    `json:"directFallbackLayout,omitempty"`
 	Layouts              []ManifestLayout   `json:"layouts"`
+}
+type ManifestPresentationOverride struct {
+	ID          uuid.UUID  `json:"id"`
+	ContentType string     `json:"contentType"`
+	ContentID   uuid.UUID  `json:"contentId"`
+	ContentName string     `json:"contentName"`
+	StartedAt   time.Time  `json:"startedAt"`
+	ExpiresAt   *time.Time `json:"expiresAt,omitempty"`
+	PlaylistID  *uuid.UUID `json:"playlistId,omitempty"`
+	LayoutID    *uuid.UUID `json:"layoutId,omitempty"`
+	WakeDisplay bool       `json:"wakeDisplay"`
 }
 type ManifestLayout struct {
 	ID             uuid.UUID        `json:"id"`
@@ -381,4 +394,25 @@ type PlayerStatus struct {
 
 type Notifier interface {
 	ManifestChanged(screenID uuid.UUID, version int64)
+}
+
+// PresentationOverride is the small cross-package contract used to project a
+// Quick Present record into an ordinary player manifest. Persistence and
+// validation live in the presentations package; this package owns content
+// graph projection so the Player receives no second content protocol.
+type PresentationOverride struct {
+	ID          uuid.UUID
+	TargetType  string
+	TargetID    uuid.UUID
+	ContentType string
+	ContentID   uuid.UUID
+	ContentName string
+	StartedAt   time.Time
+	ExpiresAt   *time.Time
+	WakeDisplay bool
+}
+
+type PresentationOverrideProjector interface {
+	ActiveForScreen(context.Context, uuid.UUID) (*PresentationOverride, error)
+	ReconcileExpired(context.Context) error
 }
