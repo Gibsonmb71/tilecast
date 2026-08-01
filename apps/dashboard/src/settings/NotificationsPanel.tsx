@@ -105,7 +105,7 @@ export function NotificationsPanel({ manageable }: { manageable: boolean }) {
           <p className="backup-summary">
             <span className="status-badge status-badge--online">Available</span>{" "}
             An SMTP relay is configured. Each account chooses what it receives
-            under My preferences.
+            under My Account → Preferences.
           </p>
         ) : (
           <div className="notice">

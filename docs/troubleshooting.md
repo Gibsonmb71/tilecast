@@ -103,7 +103,7 @@ consistently through `sudo systemctl`.
 Passkeys need a secure browser context and a registrable domain. A plain-HTTP
 LAN installation, or one reached at an IP address, cannot run a WebAuthn
 ceremony at all; Studio hides the passkey controls and states the reason on
-Settings → Sign-in security. Serve Tilecast over HTTPS at a hostname and point
+My Account → Sign-in security. Serve Tilecast over HTTPS at a hostname and point
 `TILECAST_PUBLIC_URL` at that address. When a proxy's external hostname differs
 from the one the server sees, set `TILECAST_WEBAUTHN_RP_ID` and
 `TILECAST_WEBAUTHN_ORIGINS` together and restart. The server logs the reason

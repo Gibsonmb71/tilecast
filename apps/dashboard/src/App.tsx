@@ -21,8 +21,7 @@ import {
   ScheduleEditorPage,
 } from "./pages/SchedulesPage";
 import { SettingsPage } from "./pages/SettingsPage";
-import { PreferencesPage } from "./pages/PreferencesPage";
-import { SecurityPage } from "./pages/SecurityPage";
+import { MyAccountPage } from "./pages/MyAccountPage";
 import { LayoutsPage } from "./pages/LayoutsPage";
 import { LayoutEditorPage } from "./pages/LayoutEditorPage";
 import { WidgetEditorPage, WidgetsPage } from "./pages/WidgetsPage";
@@ -443,30 +442,36 @@ export const studioRoutes: RouteObject[] = [
         },
       },
       {
-        path: "preferences",
-        element: <PreferencesPage />,
+        path: "account",
+        element: <MyAccountPage />,
         handle: {
-          breadcrumb: "My preferences",
+          breadcrumb: "My Account",
           search: search(
-            "My preferences",
-            "Appearance and workflow preferences for your Studio account",
-            "/preferences",
-            ["settings", "theme", "appearance", "density"],
+            "My Account",
+            "Manage your profile, preferences, and sign-in security",
+            "/account",
+            [
+              "preferences",
+              "security",
+              "mfa",
+              "2fa",
+              "passkey",
+              "authenticator",
+              "recovery",
+              "theme",
+              "appearance",
+              "density",
+            ],
           ),
         },
       },
       {
+        path: "preferences",
+        element: <Navigate to="/account#preferences" replace />,
+      },
+      {
         path: "security",
-        element: <SecurityPage />,
-        handle: {
-          breadcrumb: "Sign-in security",
-          search: search(
-            "Sign-in security",
-            "Two-step verification, passkeys, and recovery codes for your account",
-            "/security",
-            ["mfa", "2fa", "passkey", "authenticator", "recovery"],
-          ),
-        },
+        element: <Navigate to="/account#security" replace />,
       },
       {
         path: "settings",
@@ -498,7 +503,7 @@ export const studioRoutes: RouteObject[] = [
           })),
           {
             path: "preferences",
-            element: <Navigate to="/preferences" replace />,
+            element: <Navigate to="/account#preferences" replace />,
           },
           {
             path: "*",
