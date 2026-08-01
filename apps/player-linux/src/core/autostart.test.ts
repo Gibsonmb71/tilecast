@@ -390,7 +390,11 @@ describe("AutostartInstaller.probe", () => {
 
   it("flags an enabled unit that Tilecast did not write", async () => {
     const h = harness({
-      files: { [UNIT_PATH]: "[Install]\nWantedBy=default.target\n" },
+      files: {
+        [UNIT_PATH]:
+          `[Service]\nExecStart=${APP_IMAGE}\n` +
+          "[Install]\nWantedBy=default.target\n",
+      },
       responses: { "is-enabled": output({ stdout: "enabled\n" }) },
     });
     const status = await new AutostartInstaller(h.d).probe();
