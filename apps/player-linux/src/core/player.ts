@@ -78,6 +78,7 @@ import {
 } from "./pairing";
 import {
   takeoverActive,
+  presentationOverrideActive,
   findPlaylist,
   resolveSelection,
   type Selection,
@@ -830,10 +831,12 @@ export class PlayerRuntime {
       clockOffsetMs,
     );
     const takeoverNow = takeoverActive(manifest, new Date());
+    const quickPresentNow = presentationOverrideActive(manifest, new Date());
     if (
       this.activeManifest === null ||
       this.playbackState !== "playing" ||
-      takeoverNow
+      takeoverNow ||
+      quickPresentNow
     ) {
       // Nothing on screen yet, or a takeover: activate immediately.
       if (this.pendingActivationTimer) {
@@ -1413,6 +1416,8 @@ export class PlayerRuntime {
     const branding = this.config?.branding ?? {};
     const takeoverNow =
       manifest !== null && takeoverActive(manifest, new Date());
+    const quickPresentNow =
+      manifest !== null && presentationOverrideActive(manifest, new Date());
 
     // Emergency takeover outranks AirPlay. The server normally sends an
     // explicit stop command as well; this local check closes the race when a
@@ -1438,14 +1443,14 @@ export class PlayerRuntime {
 
     // Outside active hours the screen rests (true black), unless a takeover
     // is active — takeover always overrides off-hours sleep.
-    if (!takeoverNow) {
+    if (!takeoverNow && !quickPresentNow) {
       const activeHours = activeHoursFromConfig(this.config?.power);
       if (!evaluateActiveHours(activeHours, new Date()).active) {
         return { state: "sleep" };
       }
     }
 
-    if (this.flags.playbackDisabled && !takeoverNow) {
+    if (this.flags.playbackDisabled && !takeoverNow && !quickPresentNow) {
       return {
         state: "disabled",
         title: String(branding["disabledTitle"] ?? "Screen disabled"),

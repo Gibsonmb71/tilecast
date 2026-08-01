@@ -192,6 +192,18 @@ export interface ManifestTakeover {
   expiresAt: string;
 }
 
+export interface ManifestPresentationOverride {
+  id: string;
+  contentType: "playlist" | "layout" | "asset";
+  contentId: string;
+  contentName: string;
+  startedAt: string;
+  expiresAt?: string | null;
+  playlistId?: string | null;
+  layoutId?: string | null;
+  wakeDisplay?: boolean;
+}
+
 export interface Manifest {
   schemaVersion: number;
   manifestVersion: number;
@@ -208,6 +220,7 @@ export interface Manifest {
   prefetchHorizonDays: number;
   activationGraceSeconds: number;
   websites: ManifestWebsite[];
+  presentationOverride?: ManifestPresentationOverride | null;
   takeover?: ManifestTakeover | null;
   /** Pre-rename manifest key accepted during staggered upgrades. */
   emergency?: ManifestTakeover | null;
