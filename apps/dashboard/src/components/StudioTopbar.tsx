@@ -17,6 +17,7 @@ import {
   Search,
   Settings,
   Upload,
+  UserRound,
 } from "lucide-react";
 import { useEffect, useState, type ComponentType } from "react";
 import {
@@ -138,8 +139,12 @@ function resultIcon(to: string) {
   if (to.startsWith("/playlists")) return ListVideo;
   if (to.startsWith("/layouts")) return Layers3;
   if (to.startsWith("/schedules")) return CalendarClock;
-  if (to.startsWith("/settings") || to.startsWith("/preferences"))
-    return Settings;
+  if (
+    to.startsWith("/settings") ||
+    to.startsWith("/preferences") ||
+    to.startsWith("/account")
+  )
+    return to.startsWith("/account") ? UserRound : Settings;
   return FileSliders;
 }
 
@@ -157,6 +162,7 @@ function routeGroup(to: string): CommandGroupName {
   if (
     to.startsWith("/settings") ||
     to.startsWith("/preferences") ||
+    to.startsWith("/account") ||
     to.startsWith("/approvals") ||
     to.startsWith("/activity")
   )

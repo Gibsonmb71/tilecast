@@ -32,19 +32,19 @@
   display: none;
 }
 
-/* Narrower than the shared minimum: four short account destinations. */
+/* Keep the account switcher compact; detailed account settings live on My Account. */
 .account-menu__popover {
-  min-width: 166px;
+  min-width: 154px;
 }
 
 .account-menu__popover a,
 .account-menu__popover button {
   display: flex;
   width: 100%;
-  min-height: 36px;
+  min-height: 34px;
   align-items: center;
   gap: 9px;
-  padding: 7px 9px;
+  padding: 5px 9px;
   text-align: left;
   text-decoration: none;
   background: transparent;

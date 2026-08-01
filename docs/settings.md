@@ -25,7 +25,7 @@ Players preserve the current and previous valid configuration in Room, validate 
 
 ## Sign-in security
 
-`security.mfa_required_scope` is an organization-scoped enum: `none`, `administrators`, or `all`. It controls who must enroll a second factor, not how anyone signs in — enrollment itself is always available to every account from Sign-in security in the account menu. A malformed or unknown stored value is read as `none`, so a bad value cannot lock an installation out.
+`security.mfa_required_scope` is an organization-scoped enum: `none`, `administrators`, or `all`. It controls who must enroll a second factor, not how anyone signs in — enrollment itself is always available to every account from **My Account → Sign-in security**. A malformed or unknown stored value is read as `none`, so a bad value cannot lock an installation out.
 
 Enforcement is a session flag, not a login refusal. A covered account with no factor is admitted with its session marked as owing one; that session reaches only the enrollment endpoints until a factor exists, and the flag clears in place. See [multi-factor authentication](multi-factor-authentication.md).
 

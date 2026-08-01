@@ -14,8 +14,7 @@ import {
   PanelLeftOpen,
   Puzzle,
   Settings,
-  ShieldCheck,
-  SlidersHorizontal,
+  UserRound,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -332,13 +331,9 @@ export function DashboardShell() {
                   <ClipboardList size={16} aria-hidden="true" />
                   My Forms
                 </Link>
-                <Link to="/preferences" role="menuitem" onClick={close}>
-                  <SlidersHorizontal size={16} aria-hidden="true" />
-                  My preferences
-                </Link>
-                <Link to="/security" role="menuitem" onClick={close}>
-                  <ShieldCheck size={16} aria-hidden="true" />
-                  Sign-in security
+                <Link to="/account" role="menuitem" onClick={close}>
+                  <UserRound size={16} aria-hidden="true" />
+                  My Account
                 </Link>
                 <button
                   type="button"
