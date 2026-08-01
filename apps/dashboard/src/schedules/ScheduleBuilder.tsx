@@ -22,6 +22,7 @@ import type {
   ScheduleInput,
   SchedulePreview,
   ScheduleTarget,
+  DisplayControlAction,
 } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import {
@@ -70,8 +71,9 @@ function scheduleToInput(
   return {
     name: schedule.name,
     description: schedule.description,
-    playlistId: schedule.playlistId,
-    layoutId: schedule.layoutId,
+    playlistId: schedule.displayAction ? undefined : schedule.playlistId,
+    layoutId: schedule.displayAction ? undefined : schedule.layoutId,
+    displayAction: schedule.displayAction,
     type: schedule.type,
     timezone: schedule.timezone,
     priority: schedule.priority,
@@ -190,7 +192,9 @@ export function ScheduleEditorPage() {
         input,
       ),
     enabled: Boolean(
-      previewScreenId && (input.playlistId || input.layoutId) && valid,
+      previewScreenId &&
+      (input.playlistId || input.layoutId || input.displayAction) &&
+      valid,
     ),
   });
   const targetCount = countTargetScreens(
@@ -256,12 +260,49 @@ export function ScheduleEditorPage() {
                 placeholder="Morning announcements"
               />
             </Field>
-            <PlaylistSelection
-              playlist={selectedPlaylistData}
-              layout={selectedLayout}
-              onChoose={() => setPlaylistOpen(true)}
-              error={attempted ? errors.playlistId : undefined}
-            />
+            <div
+              className="schedule-segmented"
+              role="group"
+              aria-label="Schedule content type"
+            >
+              <button
+                type="button"
+                aria-pressed={!input.displayAction}
+                onClick={() => set("displayAction", undefined)}
+              >
+                Content
+              </button>
+              <button
+                type="button"
+                aria-pressed={Boolean(input.displayAction)}
+                onClick={() => {
+                  set("playlistId", undefined);
+                  set("layoutId", undefined);
+                  set(
+                    "displayAction",
+                    input.displayAction ?? { type: "display_power_on" },
+                  );
+                }}
+              >
+                Display Control
+              </button>
+            </div>
+            {input.displayAction ? (
+              <DisplayControlSelection
+                action={input.displayAction}
+                onChange={(displayAction) =>
+                  set("displayAction", displayAction)
+                }
+                error={attempted ? errors.playlistId : undefined}
+              />
+            ) : (
+              <PlaylistSelection
+                playlist={selectedPlaylistData}
+                layout={selectedLayout}
+                onChoose={() => setPlaylistOpen(true)}
+                error={attempted ? errors.playlistId : undefined}
+              />
+            )}
           </BuilderSection>
 
           <BuilderSection
@@ -531,6 +572,94 @@ function PlaylistSelection({
           Choose presentation
         </Button>
       )}
+      {error && <span className="field__error">{error}</span>}
+    </div>
+  );
+}
+
+function DisplayControlSelection({
+  action,
+  onChange,
+  error,
+}: {
+  action: DisplayControlAction;
+  onChange: (action: DisplayControlAction) => void;
+  error?: string;
+}) {
+  const setType = (type: DisplayControlAction["type"]) => {
+    onChange({ type });
+  };
+  return (
+    <div className="schedule-playlist-field">
+      <span className="field__label">
+        Display action <span aria-hidden="true">*</span>
+      </span>
+      <div className="schedule-control-action">
+        <Field label="Action">
+          <select
+            value={action.type}
+            onChange={(event) =>
+              setType(event.target.value as DisplayControlAction["type"])
+            }
+          >
+            <option value="display_power_on">Power on</option>
+            <option value="display_power_off">Power off</option>
+            <option value="display_set_input">Set input</option>
+            <option value="display_set_volume">Set volume</option>
+            <option value="display_mute">Mute</option>
+            <option value="display_unmute">Unmute</option>
+            <option value="display_set_brightness">Set brightness</option>
+          </select>
+        </Field>
+        {action.type === "display_set_input" && (
+          <Field
+            label="Input identifier"
+            description="For HDMI-CEC, use a physical address such as 1.0.0.0."
+          >
+            <input
+              value={action.input ?? ""}
+              maxLength={32}
+              onChange={(event) =>
+                onChange({ ...action, input: event.target.value })
+              }
+            />
+          </Field>
+        )}
+        {(action.type === "display_set_volume" ||
+          action.type === "display_set_brightness") && (
+          <Field
+            label={
+              action.type === "display_set_volume" ? "Volume" : "Brightness"
+            }
+          >
+            <input
+              type="number"
+              min={0}
+              max={100}
+              value={
+                action.type === "display_set_volume"
+                  ? (action.volume ?? "")
+                  : (action.brightness ?? "")
+              }
+              onChange={(event) => {
+                const value =
+                  event.target.value === ""
+                    ? undefined
+                    : Number(event.target.value);
+                onChange(
+                  action.type === "display_set_volume"
+                    ? { type: action.type, volume: value }
+                    : { type: action.type, brightness: value },
+                );
+              }}
+            />
+          </Field>
+        )}
+      </div>
+      <Notice variant="info">
+        The action uses the same schedule timing, priority, and targets as
+        content schedules. Players report whether the panel state is confirmed.
+      </Notice>
       {error && <span className="field__error">{error}</span>}
     </div>
   );
@@ -997,11 +1126,13 @@ function ScheduleSummary({
         <div>
           <dt>Content</dt>
           <dd>
-            {layout
-              ? `Shows Layout ${layout.name}`
-              : playlist
-                ? `Plays ${playlist.name}`
-                : "No presentation selected"}
+            {input.displayAction
+              ? displayActionLabel(input.displayAction)
+              : layout
+                ? `Shows Layout ${layout.name}`
+                : playlist
+                  ? `Plays ${playlist.name}`
+                  : "No presentation selected"}
           </dd>
         </div>
         <div>
@@ -1019,7 +1150,8 @@ function ScheduleSummary({
       </dl>
       <div className="schedule-conflicts">
         <h4>Conflict preview</h4>
-        {!input.targets.length || (!input.playlistId && !input.layoutId) ? (
+        {!input.targets.length ||
+        (!input.playlistId && !input.layoutId && !input.displayAction) ? (
           <Notice variant="neutral">
             Choose content and targets to check conflicts.
           </Notice>
@@ -1068,6 +1200,19 @@ function ScheduleSummary({
       </p>
     </aside>
   );
+}
+
+function displayActionLabel(action: DisplayControlAction) {
+  const labels: Record<DisplayControlAction["type"], string> = {
+    display_power_on: "Power on display",
+    display_power_off: "Power off display",
+    display_set_input: `Set display input to ${action.input ?? "not set"}`,
+    display_set_volume: `Set display volume to ${action.volume ?? "not set"}`,
+    display_mute: "Mute display",
+    display_unmute: "Unmute display",
+    display_set_brightness: `Set display brightness to ${action.brightness ?? "not set"}`,
+  };
+  return labels[action.type];
 }
 
 function playlistDuration(playlist: Playlist) {

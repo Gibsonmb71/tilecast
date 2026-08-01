@@ -2550,11 +2550,17 @@ export function ScreenDetailPage() {
       payload,
     }: {
       type: string;
-      payload: Record<string, number>;
+      payload: Record<string, unknown>;
     }) =>
       api.createScreenCommand(id, type, payload, auth.status?.csrfToken ?? ""),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ["screens", id, "commands"] }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ["screens", id, "commands"],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["screens", id, "reliability"],
+      });
+    },
   });
   const listedScreen = screens.data?.items?.find((screen) => screen.id === id);
   const screen = resolveScreenDetail(query.data, listedScreen);
@@ -2564,6 +2570,9 @@ export function ScreenDetailPage() {
     return (
       <div className="notice notice--error">Screen could not be loaded.</div>
     );
+  const displayCapabilities =
+    reliability.data?.displayControlCapabilities ?? {};
+  const hasDisplayControl = Object.keys(displayCapabilities).length > 0;
   const requestedTab = searchParams.get("tab") ?? "overview";
   const tab = normalizeScreenDetailTab(requestedTab);
   const manageSection = normalizeScreenManageSection(
@@ -3258,6 +3267,39 @@ export function ScreenDetailPage() {
               {screen.platform.toLowerCase() === "linux" && (
                 <>
                   <div>
+                    <dt>Display Control</dt>
+                    <dd>
+                      {reliability.data?.displayControlProvider
+                        ? `${reliability.data.displayControlProvider} · ${Object.keys(reliability.data.displayControlCapabilities ?? {}).length} capabilities`
+                        : "Not reported"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Display state</dt>
+                    <dd>
+                      {formatReportedStatus(
+                        reliability.data?.displayPowerState,
+                      )}
+                      {reliability.data?.displayControlLastCommandResult ===
+                        "display_command_sent" &&
+                      reliability.data?.displayPowerStateConfirmed === false
+                        ? " · command sent, not confirmed"
+                        : ""}
+                      {reliability.data?.displayControlPolicyState ===
+                      "powered_off_by_policy"
+                        ? " · powered off by policy"
+                        : ""}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Last display command</dt>
+                    <dd>
+                      {reliability.data?.displayControlLastCommandState
+                        ? `${formatReportedStatus(reliability.data.displayControlLastCommandState)}${reliability.data.displayControlLastCommandResult ? ` · ${reliability.data.displayControlLastCommandResult}` : ""}`
+                        : "Not reported"}
+                    </dd>
+                  </div>
+                  <div>
                     <dt>AirPlay Present</dt>
                     <dd>
                       {reliability.data?.airplaySupported
@@ -3506,6 +3548,162 @@ export function ScreenDetailPage() {
                         >
                           Remove autostart
                         </button>
+                      </div>
+                    </div>
+                  )}
+                  {screen.platform.toLowerCase() === "linux" && (
+                    <div className="reliability-control-group reliability-control-group--wide">
+                      <div>
+                        <h5>Display Control</h5>
+                        <p>
+                          Player connectivity and display power are separate
+                          states. Controls appear only for capabilities reported
+                          by this player; provider commands have a bounded
+                          timeout and may report sent without a confirmed panel
+                          state.
+                        </p>
+                      </div>
+                      <div className="reliability-button-grid reliability-button-grid--wide">
+                        {displayCapabilities.power && (
+                          <>
+                            <button
+                              className="button button--secondary"
+                              disabled={command.isPending}
+                              onClick={() =>
+                                command.mutate({
+                                  type: "display_power_on",
+                                  payload: {},
+                                })
+                              }
+                            >
+                              Power on display
+                            </button>
+                            <button
+                              className="button button--secondary"
+                              disabled={command.isPending}
+                              onClick={() =>
+                                command.mutate({
+                                  type: "display_power_off",
+                                  payload: {},
+                                })
+                              }
+                            >
+                              Power off display
+                            </button>
+                          </>
+                        )}
+                        {displayCapabilities.input && (
+                          <button
+                            className="button button--secondary"
+                            disabled={command.isPending}
+                            onClick={() => {
+                              const input = window.prompt(
+                                "CEC physical address (for example 1.0.0.0)",
+                              );
+                              if (input?.trim())
+                                command.mutate({
+                                  type: "display_set_input",
+                                  payload: { input: input.trim() },
+                                });
+                            }}
+                          >
+                            Set display input
+                          </button>
+                        )}
+                        {displayCapabilities.volume && (
+                          <button
+                            className="button button--secondary"
+                            disabled={command.isPending}
+                            onClick={() => {
+                              const value = window.prompt(
+                                "Display volume, from 0 to 100",
+                              );
+                              const volume =
+                                value == null ? NaN : Number(value);
+                              if (
+                                Number.isInteger(volume) &&
+                                volume >= 0 &&
+                                volume <= 100
+                              )
+                                command.mutate({
+                                  type: "display_set_volume",
+                                  payload: { volume },
+                                });
+                            }}
+                          >
+                            Set display volume
+                          </button>
+                        )}
+                        {displayCapabilities.mute && (
+                          <>
+                            <button
+                              className="button button--secondary"
+                              disabled={command.isPending}
+                              onClick={() =>
+                                command.mutate({
+                                  type: "display_mute",
+                                  payload: {},
+                                })
+                              }
+                            >
+                              Mute display
+                            </button>
+                            <button
+                              className="button button--secondary"
+                              disabled={command.isPending}
+                              onClick={() =>
+                                command.mutate({
+                                  type: "display_unmute",
+                                  payload: {},
+                                })
+                              }
+                            >
+                              Unmute display
+                            </button>
+                          </>
+                        )}
+                        {displayCapabilities.brightness && (
+                          <button
+                            className="button button--secondary"
+                            disabled={command.isPending}
+                            onClick={() => {
+                              const value = window.prompt(
+                                "Display brightness, from 0 to 100",
+                              );
+                              const brightness =
+                                value == null ? NaN : Number(value);
+                              if (
+                                Number.isInteger(brightness) &&
+                                brightness >= 0 &&
+                                brightness <= 100
+                              )
+                                command.mutate({
+                                  type: "display_set_brightness",
+                                  payload: { brightness },
+                                });
+                            }}
+                          >
+                            Set display brightness
+                          </button>
+                        )}
+                        <button
+                          className="button button--secondary"
+                          disabled={command.isPending}
+                          onClick={() =>
+                            command.mutate({
+                              type: "display_probe",
+                              payload: {},
+                            })
+                          }
+                        >
+                          Probe display capabilities
+                        </button>
+                        {!hasDisplayControl && (
+                          <span className="field__hint">
+                            No HDMI-CEC or DDC/CI capability is currently
+                            reported.
+                          </span>
+                        )}
                       </div>
                     </div>
                   )}
