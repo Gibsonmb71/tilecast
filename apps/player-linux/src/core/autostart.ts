@@ -430,6 +430,15 @@ export class AutostartInstaller {
           detail: "unit file present but not enabled",
         };
       }
+      if (!/^ExecStart=/m.test(existing)) {
+        return {
+          ...base,
+          state: "needs_attention",
+          lingerEnabled,
+          target: this.targetFromUnit(existing),
+          detail: "operator-managed unit has no executable start command",
+        };
+      }
       if (
         !hasFuseIndependentLaunch(existing) &&
         (generated || usesLegacyDirectAppImageLaunch(existing))
