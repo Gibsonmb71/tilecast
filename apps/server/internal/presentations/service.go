@@ -114,17 +114,29 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (Override, erro
 	}
 	var conflict bool
 	err = tx.QueryRow(ctx, `
-		SELECT EXISTS(
-			SELECT 1 FROM presentation_overrides po
-			WHERE po.organization_id=$1 AND po.stopped_at IS NULL
+		SELECT EXISTS (
+			SELECT 1
+			FROM presentation_overrides po
+			WHERE po.organization_id=$1
+			  AND po.stopped_at IS NULL
 			  AND (po.expires_at IS NULL OR po.expires_at>$2)
-			  AND EXISTS(
-				SELECT 1 FROM screens affected
+			  AND EXISTS (
+				SELECT 1
+				FROM screens affected
 				WHERE affected.id=ANY($3::uuid[])
-				  AND ((po.target_type='screen' AND po.target_id=affected.id)
-				       OR (po.target_type='group' AND EXISTS(
-						SELECT 1 FROM screen_group_memberships m
-						WHERE m.screen_id=affected.id AND m.screen_group_id=po.target_id))))`, org, s.now().UTC(), screens).Scan(&conflict)
+				  AND (
+					(po.target_type='screen' AND po.target_id=affected.id)
+					OR (
+						po.target_type='group'
+						AND EXISTS (
+							SELECT 1
+							FROM screen_group_memberships m
+							WHERE m.screen_id=affected.id AND m.screen_group_id=po.target_id
+						)
+					)
+				  )
+			)
+		)`, org, s.now().UTC(), screens).Scan(&conflict)
 	if err != nil {
 		return Override{}, fmt.Errorf("check presentation conflicts: %w", err)
 	}
@@ -191,7 +203,7 @@ func (s *Service) Stop(ctx context.Context, id uuid.UUID, userID uuid.UUID, reas
 	}
 	var item Override
 	var org uuid.UUID
-	err = tx.QueryRow(ctx, `SELECT po.organization_id,po.target_type,po.target_id,po.content_type,po.content_id,po.duration_seconds,po.started_at,po.expires_at,po.after_action,po.wake_display,COALESCE(sc.name,g.name,''),CASE WHEN po.content_type='playlist' THEN p.name WHEN po.content_type='layout' THEN l.name ELSE a.name END FROM presentation_overrides po LEFT JOIN screens sc ON sc.id=po.target_id AND po.target_type='screen' LEFT JOIN screen_groups g ON g.id=po.target_id AND po.target_type='group' LEFT JOIN playlists p ON p.id=po.content_id AND po.content_type='playlist' LEFT JOIN layouts l ON l.id=po.content_id AND po.content_type='layout' LEFT JOIN assets a ON a.id=po.content_id AND po.content_type='asset' WHERE po.id=$1 AND po.stopped_at IS NULL FOR UPDATE`, id).Scan(&org, &item.TargetType, &item.TargetID, &item.ContentType, &item.ContentID, &item.DurationSecs, &item.StartedAt, &item.ExpiresAt, &item.AfterAction, &item.WakeDisplay, &item.TargetName, &item.ContentName)
+	err = tx.QueryRow(ctx, `SELECT po.organization_id,po.target_type,po.target_id,po.content_type,po.content_id,po.duration_seconds,po.started_at,po.expires_at,po.after_action,po.wake_display,COALESCE(sc.name,g.name,''),CASE WHEN po.content_type='playlist' THEN p.name WHEN po.content_type='layout' THEN l.name ELSE a.name END FROM presentation_overrides po LEFT JOIN screens sc ON sc.id=po.target_id AND po.target_type='screen' LEFT JOIN screen_groups g ON g.id=po.target_id AND po.target_type='group' LEFT JOIN playlists p ON p.id=po.content_id AND po.content_type='playlist' LEFT JOIN layouts l ON l.id=po.content_id AND po.content_type='layout' LEFT JOIN assets a ON a.id=po.content_id AND po.content_type='asset' WHERE po.id=$1 AND po.stopped_at IS NULL FOR UPDATE OF po`, id).Scan(&org, &item.TargetType, &item.TargetID, &item.ContentType, &item.ContentID, &item.DurationSecs, &item.StartedAt, &item.ExpiresAt, &item.AfterAction, &item.WakeDisplay, &item.TargetName, &item.ContentName)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Override{}, ErrNotFound
 	}
