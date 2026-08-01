@@ -21,6 +21,7 @@ import type { ScreenGroup } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { PlayerPolicyEditor } from "../settings/PlayerPolicyEditor";
 import { AirPlayPresentDialog } from "../components/AirPlayPresentDialog";
+import { QuickPresentDialog } from "../components/QuickPresentDialog";
 
 const canManage = (role?: string) =>
   role === "owner" || role === "administrator";
@@ -176,6 +177,7 @@ export function GroupDetailPage() {
   const [screenSearch, setScreenSearch] = useState("");
   const [selectedPresentation, setSelectedPresentation] = useState("");
   const [airplayOpen, setAirplayOpen] = useState(false);
+  const [quickPresentOpen, setQuickPresentOpen] = useState(false);
   const group = useQuery({
       queryKey: ["screen-groups", id],
       queryFn: () => api.screenGroup(id),
@@ -310,6 +312,12 @@ export function GroupDetailPage() {
                 Present · AirPlay
               </Button>
               <Button
+                variant="secondary"
+                onClick={() => setQuickPresentOpen(true)}
+              >
+                Show now
+              </Button>
+              <Button
                 variant="danger"
                 onClick={() => {
                   if (
@@ -344,6 +352,14 @@ export function GroupDetailPage() {
             : "Automatic gateway"
         }
         onClose={() => setAirplayOpen(false)}
+      />
+      <QuickPresentDialog
+        open={quickPresentOpen}
+        targetType="group"
+        targetId={groupData.id}
+        destinationName={groupData.name}
+        csrfToken={csrf}
+        onClose={() => setQuickPresentOpen(false)}
       />
       <ScreenManagementTabs />
 

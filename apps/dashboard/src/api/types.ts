@@ -632,6 +632,23 @@ export type Takeover = {
   failedCount: number;
 };
 
+export type PresentationOverride = {
+  id: string;
+  targetType: "screen" | "group";
+  targetId: string;
+  targetName: string;
+  contentType: "playlist" | "layout" | "asset";
+  contentId: string;
+  contentName: string;
+  durationSeconds: number;
+  startedAt: string;
+  expiresAt?: string;
+  afterAction: "resume";
+  wakeDisplay: boolean;
+  stoppedAt?: string;
+  stopReason?: string;
+};
+
 export type NWSAlertMonitor = {
   enabled: boolean;
   areas: string[];

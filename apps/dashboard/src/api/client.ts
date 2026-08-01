@@ -55,6 +55,7 @@ import type {
   DataSourceListResult,
   PlayerCommand,
   Takeover,
+  PresentationOverride,
   NWSAlertMonitor,
   NWSAlertRule,
   NWSAlertRuleInput,
@@ -1118,6 +1119,33 @@ export const api = {
       method: "POST",
       headers: { "X-CSRF-Token": csrfToken },
       body: JSON.stringify({ reason }),
+    }),
+  presentationOverrides: () =>
+    request<{ items: PresentationOverride[]; total: number }>(
+      "/presentation-overrides",
+    ),
+  createPresentationOverride: (
+    input: {
+      targetType: "screen" | "group";
+      targetId: string;
+      contentType: "playlist" | "layout" | "asset";
+      contentId: string;
+      durationMinutes: 0 | 5 | 15 | 30 | 60;
+      afterAction: "resume";
+      wakeDisplay: boolean;
+    },
+    csrfToken: string,
+  ) =>
+    request<PresentationOverride>("/presentation-overrides", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  stopPresentationOverride: (id: string, csrfToken: string) =>
+    request<PresentationOverride>(`/presentation-overrides/${id}/stop`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ reason: "Stopped from Tilecast Studio" }),
     }),
   fleetUptime: (window: UptimeWindow) =>
     request<UptimeReport>(`/activity/uptime?window=${window}`),

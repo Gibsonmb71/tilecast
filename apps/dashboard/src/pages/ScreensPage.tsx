@@ -57,6 +57,7 @@ import type {
 import { useAuth } from "../auth/AuthProvider";
 import { ScreenContentChain } from "../content/ScreenContentChain";
 import { AirPlayPresentDialog } from "../components/AirPlayPresentDialog";
+import { QuickPresentDialog } from "../components/QuickPresentDialog";
 import { FormField } from "../components/FormField";
 import { FireTvAccessibilityAdbPanel } from "../components/FireTvAccessibilityAdbPanel";
 import { PlayerPolicyEditor } from "../settings/PlayerPolicyEditor";
@@ -967,6 +968,10 @@ export function ScreenListContent({
           {
             label: "Assign content",
             onSelect: () => navigate(`/screens/${screen.id}?tab=content`),
+          },
+          {
+            label: "Show now",
+            onSelect: () => navigate(`/screens/${screen.id}?present=1`),
           },
           {
             label: screen.syncGroupId
@@ -2405,6 +2410,9 @@ export function ScreenDetailPage() {
   const [policyDirty, setPolicyDirty] = useState(false);
   const [selectedPresentation, setSelectedPresentation] = useState("");
   const [airplayOpen, setAirplayOpen] = useState(false);
+  const [quickPresentOpen, setQuickPresentOpen] = useState(
+    () => searchParams.get("present") === "1",
+  );
   useEffect(() => {
     if (searchParams.get("edit") === "details") setEditingDetails(true);
   }, [searchParams]);
@@ -2621,6 +2629,15 @@ export function ScreenDetailPage() {
                   Present · AirPlay
                 </button>
               )}
+            {canManageScreens(auth.status?.user) && (
+              <button
+                type="button"
+                className="button button--secondary"
+                onClick={() => setQuickPresentOpen(true)}
+              >
+                Show now
+              </button>
+            )}
           </>
         }
       />
@@ -2636,6 +2653,14 @@ export function ScreenDetailPage() {
         capabilityError={reliability.error?.message}
         audioDisplayName={screen.name}
         onClose={() => setAirplayOpen(false)}
+      />
+      <QuickPresentDialog
+        open={quickPresentOpen}
+        targetType="screen"
+        targetId={screen.id}
+        destinationName={screen.name}
+        csrfToken={auth.status?.csrfToken ?? ""}
+        onClose={() => setQuickPresentOpen(false)}
       />
       {editingDetails && (
         <section
