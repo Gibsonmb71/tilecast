@@ -74,12 +74,18 @@ func (s *Service) Enroll(ctx context.Context, sessionID uuid.UUID, enrollmentTok
 			return EnrollmentResult{}, err
 		}
 	}
-	if replaceExisting {
-		if _, err := tx.Exec(ctx, `UPDATE device_credentials SET revoked_at=now(),revocation_reason='Replaced through approved pairing recovery' WHERE screen_id=$1 AND id<>$2 AND revoked_at IS NULL`, screenID, credentialID); err != nil {
+	if replaceExisting || pairingMode == "hardware_replacement" {
+		revocationReason := "Replaced through approved pairing recovery"
+		auditAction := "screen.pairing.credential_replaced"
+		if pairingMode == "hardware_replacement" {
+			revocationReason = "Replaced through approved hardware replacement"
+			auditAction = "screen.pairing.hardware_replaced"
+		}
+		if _, err := tx.Exec(ctx, `UPDATE device_credentials SET revoked_at=now(),revocation_reason=$3 WHERE screen_id=$1 AND id<>$2 AND revoked_at IS NULL`, screenID, credentialID, revocationReason); err != nil {
 			return EnrollmentResult{}, fmt.Errorf("replace previous device credentials: %w", err)
 		}
 		if approvedBy != nil {
-			if err := insertAudit(ctx, tx, *approvedBy, "screen.pairing.credential_replaced", screenID); err != nil {
+			if err := insertAudit(ctx, tx, *approvedBy, auditAction, screenID); err != nil {
 				return EnrollmentResult{}, err
 			}
 		}
