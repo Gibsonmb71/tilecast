@@ -494,7 +494,7 @@ export type ReliabilityStatus = {
   airplayH264DecoderAvailable?: boolean;
   airplayHardwareDecode?: boolean;
   airplayDecoder?: string;
-  airplayMaxProfile?: "1080p30" | "720p30" | "unsupported" | string;
+  airplayMaxProfile?: AirplayString<"1080p30" | "720p30" | "unsupported">;
   airplayGroupSupported?: boolean;
   airplayAudioAvailable?: boolean;
   airplayAvahiAvailable?: boolean;
@@ -505,17 +505,19 @@ export type ReliabilityStatus = {
   externalPresentationSessionId?: string;
   externalPresentationRole?: string;
   airplayReceiverState?: string;
-  airplayTransport?: "unicast" | "multicast" | string;
+  airplayTransport?: AirplayString<"unicast" | "multicast">;
   airplayConnected?: boolean;
   externalPresentationExpiresAt?: string;
   powerAssist: PowerAssistResults;
 };
 
+type AirplayString<T extends string> = T | (string & {});
+
 export type AirplaySessionScreenState = {
   screenId: string;
   screenName: string;
-  role: "single" | "gateway" | "receiver" | string;
-  state:
+  role: AirplayString<"single" | "gateway" | "receiver">;
+  state: AirplayString<
     | "preparing"
     | "ready"
     | "waiting"
@@ -523,7 +525,7 @@ export type AirplaySessionScreenState = {
     | "degraded"
     | "failed"
     | "stopped"
-    | string;
+  >;
   lastUpdatedAt: string;
   failureCode?: string;
   failureMessage?: string;
@@ -532,7 +534,7 @@ export type AirplaySessionScreenState = {
 export type AirplaySession = {
   id: string;
   provider: "airplay";
-  status:
+  status: AirplayString<
     | "preparing"
     | "waiting"
     | "active"
@@ -540,7 +542,7 @@ export type AirplaySession = {
     | "ended"
     | "expired"
     | "failed"
-    | string;
+  >;
   targetType: "screen" | "group";
   targetId: string;
   gatewayScreenId: string;
@@ -548,9 +550,9 @@ export type AirplaySession = {
   receiverName: string;
   pin?: string;
   expiresAt: string;
-  transport: "unicast" | "multicast" | string;
-  videoProfile: "1080p30" | "720p30" | string;
-  audioMode: "gateway_only" | "none" | string;
+  transport: AirplayString<"unicast" | "multicast">;
+  videoProfile: AirplayString<"1080p30" | "720p30">;
+  audioMode: AirplayString<"gateway_only" | "none">;
   screenCount: number;
   readyCount: number;
   connectedCount: number;

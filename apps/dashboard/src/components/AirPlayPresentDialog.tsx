@@ -76,10 +76,13 @@ export function AirPlayPresentDialog({
   });
   const current = useQuery({
     queryKey: ["airplay-session", session?.id],
-    queryFn: () => api.airplaySession(session!.id),
+    queryFn: () => {
+      if (!session) throw new Error("AirPlay session is not available");
+      return api.airplaySession(session.id);
+    },
     enabled: Boolean(open && session?.id),
     refetchInterval: (query) => {
-      const value = query.state.data as AirplaySession | undefined;
+      const value = query.state.data;
       return value && ["ended", "expired", "failed"].includes(value.status)
         ? false
         : 2_000;
@@ -93,7 +96,10 @@ export function AirPlayPresentDialog({
     if (!open) setSession(null);
   }, [open, targetId]);
   const live = current.data ?? session;
-  const allCapabilities = capabilities ?? (capability ? [capability] : []);
+  const allCapabilities = useMemo(
+    () => capabilities ?? (capability ? [capability] : []),
+    [capabilities, capability],
+  );
   const capabilitiesComplete =
     displayCount > 0 && allCapabilities.length === displayCount;
   const groupReady =
