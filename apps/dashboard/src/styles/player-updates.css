@@ -7,6 +7,13 @@
   margin-bottom: 0;
 }
 
+/* This is the one settings pane that opens on a tab strip, and the strip draws
+   its own rule. Keeping the page heading's rule as well stacks two lines a row
+   of tabs apart, so the heading gives its rule up to the tabs. */
+.settings-content:has(.player-updates) .settings-heading {
+  border-bottom: 0;
+}
+
 .player-updates .settings-subsection {
   min-width: 0;
   padding: var(--tc-space-5) 0 var(--tc-space-6);

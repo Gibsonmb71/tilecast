@@ -26,6 +26,12 @@ export interface DownloadRequest {
   /** ETag to send as If-Range when resuming a partial file. */
   etag?: string;
   signal?: AbortSignal;
+  /**
+   * Called with the total bytes on disk as they arrive. Fired per chunk and
+   * never awaited, so a caller that reports progress anywhere slow (the server,
+   * a log) has to throttle it itself.
+   */
+  onProgress?(downloadedBytes: number): void;
 }
 
 export class DownloadError extends Error {
@@ -176,6 +182,7 @@ async function transferVerified(
             false,
           );
         }
+        request.onProgress?.(position);
       }
     }
     await handle.sync();
