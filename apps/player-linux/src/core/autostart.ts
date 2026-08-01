@@ -358,7 +358,8 @@ export class AutostartInstaller {
     }
 
     try {
-      const target = this.targetFromUnit(existing) ?? (await this.chooseTarget());
+      const target =
+        this.targetFromUnit(existing) ?? (await this.chooseTarget());
       await this.deps.writeFile(
         this.unitPath(),
         renderUnit({
