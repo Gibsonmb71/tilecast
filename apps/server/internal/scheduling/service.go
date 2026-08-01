@@ -35,6 +35,7 @@ type Group struct {
 	ID                          uuid.UUID     `json:"id"`
 	Name                        string        `json:"name"`
 	Description                 string        `json:"description"`
+	DisplayMode                 string        `json:"displayMode"`
 	PresentationGatewayScreenID *uuid.UUID    `json:"presentationGatewayScreenId,omitempty"`
 	PlaylistID                  *uuid.UUID    `json:"playlistId,omitempty"`
 	PlaylistName                *string       `json:"playlistName,omitempty"`
@@ -112,7 +113,7 @@ func (s *Service) ListGroups(ctx context.Context, search string, page, size int)
 	if err := s.db.QueryRow(ctx, `SELECT count(*) FROM screen_groups WHERE deleted_at IS NULL AND ($1='' OR name ILIKE '%'||$1||'%')`, strings.TrimSpace(search)).Scan(&out.Total); err != nil {
 		return out, err
 	}
-	rows, err := s.db.Query(ctx, `SELECT g.id,g.name,g.description,g.presentation_gateway_screen_id,a.playlist_id,p.name,a.layout_id,l.name,CASE WHEN a.layout_id IS NOT NULL THEN 'layout' WHEN a.playlist_id IS NOT NULL THEN 'playlist' END,g.playback_epoch,g.created_at,g.updated_at,count(m.screen_id) FROM screen_groups g LEFT JOIN screen_group_memberships m ON m.screen_group_id=g.id LEFT JOIN screen_group_playlist_assignments a ON a.screen_group_id=g.id LEFT JOIN playlists p ON p.id=a.playlist_id LEFT JOIN layouts l ON l.id=a.layout_id WHERE g.deleted_at IS NULL AND ($1='' OR g.name ILIKE '%'||$1||'%') GROUP BY g.id,g.presentation_gateway_screen_id,a.playlist_id,p.name,a.layout_id,l.name ORDER BY lower(g.name),g.id LIMIT $2 OFFSET $3`, strings.TrimSpace(search), size, (page-1)*size)
+	rows, err := s.db.Query(ctx, `SELECT g.id,g.name,g.description,g.display_mode,g.presentation_gateway_screen_id,a.playlist_id,p.name,a.layout_id,l.name,CASE WHEN a.layout_id IS NOT NULL THEN 'layout' WHEN a.playlist_id IS NOT NULL THEN 'playlist' END,g.playback_epoch,g.created_at,g.updated_at,count(m.screen_id) FROM screen_groups g LEFT JOIN screen_group_memberships m ON m.screen_group_id=g.id LEFT JOIN screen_group_playlist_assignments a ON a.screen_group_id=g.id LEFT JOIN playlists p ON p.id=a.playlist_id LEFT JOIN layouts l ON l.id=a.layout_id WHERE g.deleted_at IS NULL AND ($1='' OR g.name ILIKE '%'||$1||'%') GROUP BY g.id,g.display_mode,g.presentation_gateway_screen_id,a.playlist_id,p.name,a.layout_id,l.name ORDER BY lower(g.name),g.id LIMIT $2 OFFSET $3`, strings.TrimSpace(search), size, (page-1)*size)
 	if err != nil {
 		return out, err
 	}
@@ -120,9 +121,10 @@ func (s *Service) ListGroups(ctx context.Context, search string, page, size int)
 	out.Items = []Group{}
 	for rows.Next() {
 		var g Group
-		if err = rows.Scan(&g.ID, &g.Name, &g.Description, &g.PresentationGatewayScreenID, &g.PlaylistID, &g.PlaylistName, &g.LayoutID, &g.LayoutName, &g.PresentationType, &g.PlaybackEpoch, &g.CreatedAt, &g.UpdatedAt, &g.MembershipCount); err != nil {
+		if err = rows.Scan(&g.ID, &g.Name, &g.Description, &g.DisplayMode, &g.PresentationGatewayScreenID, &g.PlaylistID, &g.PlaylistName, &g.LayoutID, &g.LayoutName, &g.PresentationType, &g.PlaybackEpoch, &g.CreatedAt, &g.UpdatedAt, &g.MembershipCount); err != nil {
 			return out, err
 		}
+		g.DisplayMode = normalizeDisplayMode(g.DisplayMode)
 		g.Screens = []GroupScreen{}
 		out.Items = append(out.Items, g)
 	}
@@ -179,13 +181,14 @@ func (s *Service) CreateGroup(ctx context.Context, user uuid.UUID, name, descrip
 }
 func (s *Service) GetGroup(ctx context.Context, id uuid.UUID) (Group, error) {
 	var g Group
-	err := s.db.QueryRow(ctx, `SELECT g.id,g.name,g.description,g.presentation_gateway_screen_id,a.playlist_id,p.name,a.layout_id,l.name,CASE WHEN a.layout_id IS NOT NULL THEN 'layout' WHEN a.playlist_id IS NOT NULL THEN 'playlist' END,g.playback_epoch,g.created_at,g.updated_at,count(m.screen_id) FROM screen_groups g LEFT JOIN screen_group_memberships m ON m.screen_group_id=g.id LEFT JOIN screen_group_playlist_assignments a ON a.screen_group_id=g.id LEFT JOIN playlists p ON p.id=a.playlist_id LEFT JOIN layouts l ON l.id=a.layout_id WHERE g.id=$1 AND g.deleted_at IS NULL GROUP BY g.id,g.presentation_gateway_screen_id,a.playlist_id,p.name,a.layout_id,l.name`, id).Scan(&g.ID, &g.Name, &g.Description, &g.PresentationGatewayScreenID, &g.PlaylistID, &g.PlaylistName, &g.LayoutID, &g.LayoutName, &g.PresentationType, &g.PlaybackEpoch, &g.CreatedAt, &g.UpdatedAt, &g.MembershipCount)
+	err := s.db.QueryRow(ctx, `SELECT g.id,g.name,g.description,g.display_mode,g.presentation_gateway_screen_id,a.playlist_id,p.name,a.layout_id,l.name,CASE WHEN a.layout_id IS NOT NULL THEN 'layout' WHEN a.playlist_id IS NOT NULL THEN 'playlist' END,g.playback_epoch,g.created_at,g.updated_at,count(m.screen_id) FROM screen_groups g LEFT JOIN screen_group_memberships m ON m.screen_group_id=g.id LEFT JOIN screen_group_playlist_assignments a ON a.screen_group_id=g.id LEFT JOIN playlists p ON p.id=a.playlist_id LEFT JOIN layouts l ON l.id=a.layout_id WHERE g.id=$1 AND g.deleted_at IS NULL GROUP BY g.id,g.display_mode,g.presentation_gateway_screen_id,a.playlist_id,p.name,a.layout_id,l.name`, id).Scan(&g.ID, &g.Name, &g.Description, &g.DisplayMode, &g.PresentationGatewayScreenID, &g.PlaylistID, &g.PlaylistName, &g.LayoutID, &g.LayoutName, &g.PresentationType, &g.PlaybackEpoch, &g.CreatedAt, &g.UpdatedAt, &g.MembershipCount)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return g, ErrNotFound
 	}
 	if err != nil {
 		return g, err
 	}
+	g.DisplayMode = normalizeDisplayMode(g.DisplayMode)
 	rows, err := s.db.Query(ctx, `SELECT sc.id,sc.name,COALESCE(l.name,'') FROM screen_group_memberships m JOIN screens sc ON sc.id=m.screen_id LEFT JOIN locations l ON l.id=sc.location_id WHERE m.screen_group_id=$1 ORDER BY lower(sc.name),sc.id`, id)
 	if err != nil {
 		return g, err
