@@ -408,6 +408,12 @@ paths:
     post:
       operationId: playerHeartbeat
       security: [{ deviceBearer: [] }]
+      description: >-
+        Accepts the authenticated Player heartbeat. Optional Linux Display
+        Control fields report detected providers, independent capabilities,
+        display power observations, and policy state. They do not determine
+        Player online status; command acknowledgement and display state
+        confirmation remain separate.
       responses:
         "200":
           description:
@@ -1215,6 +1221,10 @@ paths:
       responses: { "200": { description: Paginated schedules } }
     post:
       operationId: createSchedule
+      description: >-
+        The request contains exactly one of playlistId, layoutId, or
+        displayAction. Display Control actions use the closed typed command
+        registry; display_probe is not schedulable.
       responses:
         {
           "201": { description: Validated schedule created },
@@ -1985,7 +1995,12 @@ paths:
       responses:
         "200": { description: Command history }
     post:
-      summary: Queue a typed operational or bounded player-recovery command
+      summary: Queue a typed operational, Display Control, or bounded player-recovery command
+      description: >-
+        Display Control command types are display_power_on,
+        display_power_off, display_set_input, display_set_volume,
+        display_mute, display_unmute, display_set_brightness, and
+        display_probe. They are capability-gated by the target Player.
       responses:
         "202": { description: Command queued }
         "429": { description: Pending command limit reached }
@@ -2639,6 +2654,57 @@ components:
         - required: [layoutId]
           properties:
             layoutId: { type: string, format: uuid }
+    DisplayControlAction:
+      type: object
+      additionalProperties: false
+      required: [type]
+      description: >-
+        A bounded Display Control action. A schedule may contain one action
+        instead of a playlist or Layout. The server validates that only the
+        field belonging to the selected type is present.
+      properties:
+        type:
+          type: string
+          enum:
+            [
+              display_power_on,
+              display_power_off,
+              display_set_input,
+              display_set_volume,
+              display_mute,
+              display_unmute,
+              display_set_brightness,
+            ]
+        input:
+          type: string
+          pattern: "^[A-Za-z0-9._:-]{1,32}$"
+        volume: { type: integer, minimum: 0, maximum: 100 }
+        brightness: { type: integer, minimum: 0, maximum: 100 }
+    ManifestSchedule:
+      type: object
+      additionalProperties: false
+      required: [id, type, timezone, priority, specificity]
+      properties:
+        id: { type: string, format: uuid }
+        playlistId: { type: string, format: uuid, nullable: true }
+        layoutId: { type: string, format: uuid, nullable: true }
+        displayAction:
+          oneOf:
+            - { type: "null" }
+            - { $ref: "#/components/schemas/DisplayControlAction" }
+        type: { type: string, enum: [weekly, one_time] }
+        timezone: { type: string }
+        priority: { type: integer, minimum: -999, maximum: 999 }
+        specificity: { type: integer }
+        startDate: { type: string, format: date, nullable: true }
+        endDate: { type: string, format: date, nullable: true }
+        oneTimeStart: { type: string, format: date-time, nullable: true }
+        oneTimeEnd: { type: string, format: date-time, nullable: true }
+        dailyStart: { type: string, nullable: true }
+        dailyEnd: { type: string, nullable: true }
+        daysOfWeek:
+          type: array
+          items: { type: integer, minimum: 0, maximum: 6 }
     PlayerManifest:
       type: object
       additionalProperties: false
@@ -2662,6 +2728,9 @@ components:
         layout: { oneOf: [{ type: "null" }, { type: object }] }
         layouts: { type: array, items: { type: object } }
         assets: { type: array, items: { type: object } }
+        schedules:
+          type: array
+          items: { $ref: "#/components/schemas/ManifestSchedule" }
         widgets: { type: array, items: { type: object } }
         dataSources: { type: array, items: { type: object } }
         presentationOverride:

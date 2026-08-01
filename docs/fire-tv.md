@@ -7,7 +7,9 @@ Fire OS firmware is different on some models. Test these functions on each targe
 - Immersive mode
 - Accessibility Control Assist
 
-Fire TV can send Android sleep or wake events through HDMI-CEC. Tilecast does not send CEC commands.
+Fire TV can send Android sleep or wake events through HDMI-CEC. The Android
+Player does not send direct CEC commands; Linux Display Control is a separate
+host-only feature and does not apply to Fire TV.
 
 Studio requires an administrator to confirm the physical result.
 

@@ -49,6 +49,15 @@ Server-side handling is deliberately asymmetric. A malformed **optional playback
 
 Status thresholds are centralized on the server: connected socket is `online`, contact within two minutes is `recent`, contact within fifteen minutes is `stale`, and older contact is `offline`. Administrative disable and credential revocation override those states.
 
+Display Control is optional heartbeat metadata. A Linux Player may report
+`displayControlProvider`, `displayControlProviders`,
+`displayControlCapabilities` (capability-to-provider), `displayPowerState`,
+`displayPowerStateConfirmed`, `displayPowerStateObservedAt`,
+`displayControlPolicyState`, and a bounded `displayControlError`. These fields
+never change the Player's connection status. A successful Display Control
+command means that the Player accepted and attempted its fixed provider call;
+state confirmation is a separate observation.
+
 ## Manifest synchronization and playback
 
 `GET /api/v1/player/manifest` uses the active device credential. It returns schema version 1, a persisted per-screen version, a single-zone playlist or `null`, exact compatible variants, hashes, sizes, and authenticated relative download paths. `If-None-Match` returns 304 without incrementing the version.
@@ -97,3 +106,12 @@ Player configuration is retrieved separately from `/api/v1/player/config` with d
 Configuration v1 also carries typed `reliability`, `power`, `managedKiosk`, and `accessibility` sections. Status reports distinguish configured and effective reliability mode and include throttled foreground, boot attempts, commissioning step and completion, cached fallback, last healthy playback/sync/connection, lock-task, accessibility, active-hours, sleep/wake, recovery, safe-mode, self-test, update-readiness, and maintenance-session state. Foreground package is omitted from non-administrative diagnostics and is never retained as unbounded history.
 
 The persistent command allowlist includes bounded recovery operations: retry or skip the current item, recreate the renderer or playback session, restart the activity or Player process, resynchronize content and configuration, clear safe mode, and run the local self-test. Payloads cannot specify applications, URLs, paths, or executable actions. Device reboot is not exposed without confirmed device-owner capability.
+
+The same persistent command system carries `display_power_on`,
+`display_power_off`, `display_set_input`, `display_set_volume`,
+`display_mute`, `display_unmute`, `display_set_brightness`, and
+`display_probe`. Payloads are closed and range-checked by the server and the
+Player. Linux executes only fixed shell-free `cec-ctl` or `ddcutil` calls with
+bounded time and output. A Display Control schedule uses the normal manifest
+schedule entry with `displayAction`; it has no playlist or Layout and is
+evaluated by the same timezone, priority, and offline transition resolver.

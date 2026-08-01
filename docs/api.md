@@ -187,7 +187,7 @@ Direct assignment routes remain `/api/v1/screens/{id}/playlist-assignment` for c
 
 The API retains `/screen-groups` paths and legacy `syncGroupId` fields for compatibility, while Studio calls these resources Display Groups. Group responses include `displayMode`, which is `mirror` for existing installations. A database unique constraint permits each screen in at most one Display Group. Adding an already-grouped screen returns `409`; removing a screen preserves the group fallback as that screen's independent assignment. Authenticated read routes are `GET /api/v1/screen-groups`, `GET /api/v1/screen-groups/{id}`, `GET /api/v1/schedules`, and `GET /api/v1/schedules/{id}`. Owner and Administrator mutations use the documented CSRF header on group create/update/delete and membership routes, schedule create/update/delete, and enable/disable routes.
 
-Schedule targets for a grouped screen are normalized to its sync group, so every member receives the same schedule set. Schedule create, update, and preview inputs contain exactly one of `playlistId` or `layoutId`; existing playlist schedules remain intact. `POST /api/v1/schedules/preview` returns precedence-ordered applicable schedules, conflicts, fallback content, winner, and next transition using the production resolver. Players resolve the active playlist or Layout locally, including while offline.
+Schedule targets for a grouped screen are normalized to its sync group, so every member receives the same schedule set. Schedule create, update, and preview inputs contain exactly one of `playlistId`, `layoutId`, or `displayAction`. Display actions are the typed `display_power_on`, `display_power_off`, `display_set_input`, `display_set_volume`, `display_mute`, `display_unmute`, or `display_set_brightness` operations; probe is intentionally not a scheduled action. Existing content schedules remain intact. `POST /api/v1/schedules/preview` returns precedence-ordered applicable schedules, conflicts, fallback content, winner, and next transition using the production resolver. Players resolve content and Display Control policy windows locally, including while offline.
 
 Weekly weekdays are integers `0` (Sunday) through `6` (Saturday). Times are `HH:MM`, dates are `YYYY-MM-DD`, timezones are IANA identifiers, and an end time less than or equal to its start denotes an overnight window.
 
@@ -196,6 +196,16 @@ Weekly weekdays are integers `0` (Sunday) through `6` (Saturday). Times are `HH:
 `GET /api/v1/presentation-overrides` lists active temporary **Show now** sessions. `POST /api/v1/presentation-overrides` accepts a `targetType` of `screen` or `group`, a ready `contentType` of `playlist`, `layout`, or `asset`, the corresponding IDs, a `durationMinutes` of `5`, `15`, `30`, `60`, or `0` for until stopped, `afterAction: "resume"`, and an explicit `wakeDisplay` boolean. `POST /api/v1/presentation-overrides/{id}/stop` ends a session. Owner and Administrator mutations require CSRF and use the same screen/Display Group authorization as assignment changes.
 
 Quick Present is below Emergency Takeovers and external presentation, including the existing AirPlay runtime, and above normal schedules. An active AirPlay destination returns `409 presentation_conflict`; it is never silently interrupted. Expiration advances the affected manifests and causes Players to reevaluate current state rather than restore a saved playback snapshot. See [Quick Present](quick-present.md).
+
+## Display Control
+
+`POST /api/v1/screens/{id}/commands` accepts the capability-gated Display
+Control command names documented in [Display Control](display-control.md).
+Linux Players report provider and capability snapshots in their authenticated
+heartbeat; Android and older Players may omit them. Reliability responses keep
+Player status, display power state, policy state, command acknowledgement, and
+state confirmation separate. Unsupported controls fail safely and never stop
+playback.
 
 ## Website assets
 

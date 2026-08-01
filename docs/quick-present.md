@@ -46,9 +46,10 @@ session.
 When a session expires, Tilecast reevaluates the current Emergency Takeover,
 external presentation, schedule, assignment, active-hours policy, and content
 availability. It never restores a stale saved playback snapshot. A session
-with `wakeDisplay: true` records an explicit future wake request; it does not
-power on a display automatically until the Display Control feature is
-available and the operator has enabled that behavior.
+with `wakeDisplay: true` records an explicit wake request; Display Control may
+honor it only when the target Player reports a power capability and the
+operator has enabled the behavior. Quick Present never silently powers on an
+unsupported display.
 
 The dashboard routes are:
 
