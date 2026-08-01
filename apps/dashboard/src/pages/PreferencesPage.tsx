@@ -8,7 +8,7 @@ import { SettingsActionBar } from "../settings/SettingsActionBar";
 import { sectionDetails } from "../settings/settingsNavigation";
 import { useNavigationWarning } from "../settings/useNavigationWarning";
 
-export function PreferencesPage() {
+export function PreferencesPage({ embedded = false }: { embedded?: boolean }) {
   const auth = useAuth();
   const client = useQueryClient();
   const preferences = useQuery({
@@ -39,8 +39,8 @@ export function PreferencesPage() {
     );
   useNavigationWarning(
     dirty,
-    "/preferences",
-    "Leave My preferences with unsaved changes?",
+    embedded ? "/account" : "/preferences",
+    "Leave My Account with unsaved preference changes?",
   );
   const save = useMutation({
     mutationFn: (values: Record<string, unknown>) =>
@@ -61,9 +61,8 @@ export function PreferencesPage() {
   if (preferences.isLoading)
     return <div className="table-loading">Loading preferences…</div>;
   const details = sectionDetails.preferences;
-  return (
-    <section>
-      <PageHeader title={details.title} description={details.description} />
+  const content = (
+    <>
       <SettingsSection
         section="preferences"
         definitions={definitions}
@@ -89,6 +88,14 @@ export function PreferencesPage() {
         }}
         onReload={isConflict(save.error) ? reload : undefined}
       />
+    </>
+  );
+  return embedded ? (
+    <div className="my-account-preferences">{content}</div>
+  ) : (
+    <section>
+      <PageHeader title={details.title} description={details.description} />
+      {content}
     </section>
   );
 }

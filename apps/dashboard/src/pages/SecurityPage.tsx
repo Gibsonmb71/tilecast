@@ -17,7 +17,7 @@ import "./SecurityPage.css";
 
 export const securityKey = ["me", "security"] as const;
 
-export function SecurityPage() {
+export function SecurityPage({ embedded = false }: { embedded?: boolean }) {
   const security = useQuery({ queryKey: securityKey, queryFn: api.security });
   if (security.isLoading)
     return <div className="table-loading">Loading sign-in security…</div>;
@@ -27,10 +27,16 @@ export function SecurityPage() {
         Sign-in security could not be loaded.
       </div>
     );
-  return <SecurityPanels status={security.data} />;
+  return embedded ? (
+    <div className="my-account-security">
+      <SecurityPanels status={security.data} />
+    </div>
+  ) : (
+    <SecurityPanels status={security.data} />
+  );
 }
 
-function SecurityPanels({ status }: { status: SecurityStatus }) {
+export function SecurityPanels({ status }: { status: SecurityStatus }) {
   return (
     <section className="security-page">
       <AuthenticatorPanel status={status} />

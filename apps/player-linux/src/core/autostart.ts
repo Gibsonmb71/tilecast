@@ -358,7 +358,8 @@ export class AutostartInstaller {
     }
 
     try {
-      const target = this.targetFromUnit(existing) ?? (await this.chooseTarget());
+      const target =
+        this.targetFromUnit(existing) ?? (await this.chooseTarget());
       await this.deps.writeFile(
         this.unitPath(),
         renderUnit({
@@ -427,6 +428,15 @@ export class AutostartInstaller {
           lingerEnabled,
           target: this.targetFromUnit(existing),
           detail: "unit file present but not enabled",
+        };
+      }
+      if (!/^ExecStart=/m.test(existing)) {
+        return {
+          ...base,
+          state: "needs_attention",
+          lingerEnabled,
+          target: this.targetFromUnit(existing),
+          detail: "operator-managed unit has no executable start command",
         };
       }
       if (

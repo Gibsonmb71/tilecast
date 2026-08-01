@@ -204,7 +204,9 @@ export class SelfUpdater {
         return;
       }
 
-      const resumedBytes = await existingFileSize(`${this.deps.stagePath}.part`);
+      const resumedBytes = await existingFileSize(
+        `${this.deps.stagePath}.part`,
+      );
       await this.report(deploymentId, {
         state: "downloading",
         downloadedBytes: resumedBytes,
