@@ -30,7 +30,7 @@ function ScreenManagementTabs() {
     <nav className="view-tabs sync-groups-tabs" aria-label="Screen management">
       <Link to="/screens">Screens</Link>
       <Link to="/groups" aria-current="page">
-        Sync groups
+        Display Groups
       </Link>
     </nav>
   );
@@ -92,12 +92,12 @@ export function GroupsPage() {
   return (
     <section className="sync-groups-page">
       <PageHeader
-        title="Sync groups"
-        description="Keep a set of screens on the same content, schedule, and playback position."
+        title="Display Groups"
+        description="Keep a set of screens on the same content, schedule, and playback position. Mirror groups preserve synchronized playback."
         actions={
           manageable ? (
             <Button variant="primary" onClick={createGroup}>
-              Create sync group
+              Create Display Group
             </Button>
           ) : undefined
         }
@@ -105,10 +105,12 @@ export function GroupsPage() {
       <ScreenManagementTabs />
       {q.isError && (
         <div className="notice notice--error" role="alert">
-          Sync groups could not be loaded. Try refreshing the page.
+          Display Groups could not be loaded. Try refreshing the page.
         </div>
       )}
-      {q.isLoading && <div className="table-loading">Loading sync groups…</div>}
+      {q.isLoading && (
+        <div className="table-loading">Loading Display Groups…</div>
+      )}
       <div className="sync-group-grid">
         {q.data?.items?.map((group) => (
           <Link
@@ -149,12 +151,12 @@ export function GroupsPage() {
       {q.data?.items?.length === 0 && (
         <EmptyState
           className="sync-groups-empty"
-          title="No sync groups yet"
-          message="Create a group for screens that should always share content, schedules, and playback position."
+          title="No Display Groups yet"
+          message="Create a Display Group for screens that should always share content, schedules, and playback position."
           action={
             manageable ? (
               <Button variant="primary" onClick={createGroup}>
-                Create sync group
+                Create Display Group
               </Button>
             ) : undefined
           }
@@ -302,7 +304,7 @@ export function GroupDetailPage() {
                     });
                 }}
               >
-                Edit sync group
+                Edit Display Group
               </Button>
               <Button variant="primary" onClick={() => setAirplayOpen(true)}>
                 Present · AirPlay
@@ -318,7 +320,7 @@ export function GroupDetailPage() {
                     deleteGroup.mutate();
                 }}
               >
-                Delete sync group
+                Delete Display Group
               </Button>
             </>
           ) : undefined
@@ -350,6 +352,10 @@ export function GroupDetailPage() {
           <div>
             <dt>Screens</dt>
             <dd>{groupData.membershipCount}</dd>
+          </div>
+          <div>
+            <dt>Mode</dt>
+            <dd>{groupData.displayMode === "span" ? "Span" : "Mirror"}</dd>
           </div>
           <div>
             <dt>Fallback content</dt>
@@ -410,7 +416,7 @@ export function GroupDetailPage() {
         {manageable ? (
           <div className="sync-group-content-controls">
             <Select
-              aria-label="Sync group fallback content"
+              aria-label="Display Group fallback content"
               value={selectedPresentation}
               onChange={(event) => setSelectedPresentation(event.target.value)}
             >
@@ -438,7 +444,7 @@ export function GroupDetailPage() {
               disabled={selectedPresentation === savedPresentation}
               onClick={() => assignContent.mutate(selectedPresentation)}
             >
-              Apply to sync group
+              Apply to Display Group
             </Button>
           </div>
         ) : (
@@ -458,7 +464,7 @@ export function GroupDetailPage() {
           <div className="sync-group-add-controls">
             <Field
               label="Search available screens"
-              description="Screens already assigned to another sync group are excluded."
+              description="Screens already assigned to another Display Group are excluded."
             >
               <input
                 type="search"
@@ -535,7 +541,7 @@ export function SchedulesPage() {
     <section>
       <PageHeader
         title="Schedules"
-        description="Higher priority wins. Screens in a sync group always share the same schedule and fallback content."
+        description="Higher priority wins. Screens in a Display Group always share the same schedule and fallback content."
         actions={
           canManage(auth.status?.user?.role) ? (
             <Link className="button button--primary" to="/schedules/new">

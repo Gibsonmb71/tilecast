@@ -342,7 +342,7 @@ export function ScreensPage() {
         <Link to="/screens" aria-current="page">
           Screens
         </Link>
-        <Link to="/groups">Sync groups</Link>
+        <Link to="/groups">Display Groups</Link>
         {manageable && <Link to="/screens/bulk">Bulk changes</Link>}
       </nav>
       <ActiveTakeoverBanners canManage={manageable} />
@@ -618,7 +618,7 @@ function TakeoverAction({ screens }: { screens: Screen[] }) {
             </div>
           </fieldset>
           <fieldset className="takeover-form__targets">
-            <legend>Target sync groups</legend>
+            <legend>Target Display Groups</legend>
             <div>
               {groups.data?.items?.map((group) => (
                 <label className="checkbox-control" key={group.id}>
@@ -651,7 +651,7 @@ function TakeoverAction({ screens }: { screens: Screen[] }) {
             ) : (
               `${screenIds.length} screen${screenIds.length === 1 ? "" : "s"} selected`
             )}{" "}
-            and {groupIds.length} sync group
+            and {groupIds.length} Display Group
             {groupIds.length === 1 ? "" : "s"} selected
             {offlineSelected > 0
               ? ` · ${offlineSelected} selected screen${offlineSelected === 1 ? " is" : "s are"} not online`
@@ -841,7 +841,7 @@ export function ScreenListContent({
     [];
   if (syncGroup)
     chippedFilters.push({
-      facet: "Sync group",
+      facet: "Display Group",
       value: syncGroupFilterLabel(syncGroup, screens),
       remove: () => setSyncGroup(""),
     });
@@ -951,7 +951,9 @@ export function ScreenListContent({
             onSelect: () => navigate(`/screens/${screen.id}?tab=content`),
           },
           {
-            label: screen.syncGroupId ? "Open sync group" : "Add to sync group",
+            label: screen.syncGroupId
+              ? "Open Display Group"
+              : "Add to Display Group",
             onSelect: () =>
               navigate(
                 screen.syncGroupId
@@ -1073,14 +1075,14 @@ export function ScreenListContent({
             )}
           >
             <FilterSelect
-              label="Sync group"
+              label="Display Group"
               value={syncGroup}
               onChange={setSyncGroup}
               block
             >
               <option value="">All screens</option>
-              <option value="any">In any sync group</option>
-              <option value="none">Not in a sync group</option>
+              <option value="any">In any Display Group</option>
+              <option value="none">Not in a Display Group</option>
               {[
                 ...new Map(
                   screens
@@ -1151,7 +1153,7 @@ export function ScreenListContent({
           <FilterSelect label="Group by" value={groupBy} onChange={setGroupBy}>
             <option value="location">Group by location</option>
             <option value="status">Group by status</option>
-            <option value="sync">Group by sync group</option>
+            <option value="sync">Group by Display Group</option>
             <option value="none">No grouping</option>
           </FilterSelect>
           <FilterSelect label="Sort" value={sort} onChange={setSort}>
@@ -1518,8 +1520,8 @@ function GroupHealth({ screens }: { screens: Screen[] }) {
 }
 
 function syncGroupFilterLabel(value: string, screens: Screen[]) {
-  if (value === "any") return "In any sync group";
-  if (value === "none") return "Not in a sync group";
+  if (value === "any") return "In any Display Group";
+  if (value === "none") return "Not in a Display Group";
   return (
     screens.find((item) => item.syncGroupId === value)?.syncGroupName ??
     "Selected"
@@ -1622,7 +1624,7 @@ function buildScreenGroups(
       groupBy === "status"
         ? statusContent[screen.status].label
         : groupBy === "sync"
-          ? (screen.syncGroupName ?? "Not in a sync group")
+          ? (screen.syncGroupName ?? "Not in a Display Group")
           : screen.location || "Unassigned";
     const description =
       groupBy === "location"
@@ -2697,7 +2699,7 @@ export function ScreenDetailPage() {
               <Link to={`/groups/${assignment.data.groups[0].id}`}>
                 {assignment.data.groups[0].name}
               </Link>{" "}
-              sync group. Content and schedules apply to every member.
+              Display Group. Content and schedules apply to every member.
             </div>
           )}
           {canManageScreens(auth.status?.user) ? (
@@ -2741,7 +2743,7 @@ export function ScreenDetailPage() {
                 onClick={() => assign.mutate()}
               >
                 {assignment.data?.groups?.[0]
-                  ? "Apply to sync group"
+                  ? "Apply to Display Group"
                   : "Apply assignment"}
               </button>
             </div>
@@ -2806,7 +2808,7 @@ export function ScreenDetailPage() {
               </dd>
             </div>
             <div>
-              <dt>Sync group</dt>
+              <dt>Display Group</dt>
               <dd>
                 {(assignment.data?.groups ?? [])
                   .map((g) => g.name)

@@ -921,7 +921,7 @@ export function PlayerUpdatesPanel({
             <h3>New deployment</h3>
             <p>
               Choose a cached, verified release and target {platformLabel}{" "}
-              screens or sync groups.
+              screens or Display Groups.
             </p>
           </header>
           <div className="deployment-fields deployment-fields--primary">
@@ -989,7 +989,7 @@ export function PlayerUpdatesPanel({
           </div>
           <div className="deployment-targets">
             <label className="target-search">
-              <span>Target screens and sync groups</span>
+              <span>Target screens and Display Groups</span>
               <span className="target-search__control">
                 <Search size={16} aria-hidden="true" />
                 <input
@@ -1036,7 +1036,7 @@ export function PlayerUpdatesPanel({
               </div>
               <div className="target-picker__column">
                 <h4>
-                  Sync groups <span>{matchingGroups.length}</span>
+                  Display Groups <span>{matchingGroups.length}</span>
                 </h4>
                 <div className="target-picker__list">
                   {matchingGroups.map((group) => (
@@ -1057,8 +1057,8 @@ export function PlayerUpdatesPanel({
                   {!matchingGroups.length && (
                     <p className="target-picker__empty">
                       {groups.data?.items?.length
-                        ? "No sync group matches this search."
-                        : "No sync groups exist yet."}
+                        ? "No Display Group matches this search."
+                        : "No Display Groups exist yet."}
                     </p>
                   )}
                 </div>

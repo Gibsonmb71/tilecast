@@ -28,7 +28,7 @@ export function ArchivedScreensPage() {
       />
       <nav className="screen-primary-tabs" aria-label="Screen management">
         <Link to="/screens">Screens</Link>
-        <Link to="/groups">Sync groups</Link>
+        <Link to="/groups">Display Groups</Link>
         <Link to="/screens/archive" aria-current="page">
           Archive
         </Link>

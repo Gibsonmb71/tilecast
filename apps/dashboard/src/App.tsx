@@ -139,12 +139,12 @@ export const studioRoutes: RouteObject[] = [
       {
         path: "groups",
         handle: {
-          breadcrumb: "Sync groups",
+          breadcrumb: "Display Groups",
           search: search(
-            "Sync groups",
+            "Display Groups",
             "Keep multiple screens playing in lockstep",
             "/groups",
-            ["screen groups", "synchronized playback"],
+            ["screen groups", "synchronized playback", "mirror", "span"],
           ),
         },
         children: [
@@ -152,7 +152,7 @@ export const studioRoutes: RouteObject[] = [
           {
             path: ":id",
             element: <GroupDetailPage />,
-            handle: { breadcrumb: "Sync group", resource: "screen-group" },
+            handle: { breadcrumb: "Display Group", resource: "screen-group" },
           },
         ],
       },

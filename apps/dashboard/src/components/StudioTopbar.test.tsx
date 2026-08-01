@@ -184,7 +184,7 @@ describe("StudioTopbar", () => {
     ).toBeTruthy();
   });
 
-  it("finds sync groups and opens upload from a command action", async () => {
+  it("finds Display Groups and opens upload from a command action", async () => {
     renderTopbar();
     await waitFor(() => expect(api.screens).toHaveBeenCalled());
 
@@ -195,7 +195,7 @@ describe("StudioTopbar", () => {
     fireEvent.change(searchInput, { target: { value: "sync" } });
 
     expect(
-      await screen.findByRole("option", { name: /Sync groups/ }),
+      await screen.findByRole("option", { name: /Display Groups/ }),
     ).toBeTruthy();
 
     fireEvent.change(searchInput, { target: { value: "upload" } });

@@ -163,6 +163,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 function normalizeScreenGroup(group: ScreenGroup): ScreenGroup {
   return {
     ...group,
+    displayMode: group.displayMode === "span" ? "span" : "mirror",
     screens: Array.isArray(group.screens) ? group.screens : [],
   };
 }
@@ -1910,16 +1911,18 @@ export const api = {
   },
   screenGroup: async (id: string) =>
     normalizeScreenGroup(await request<ScreenGroup>(`/screen-groups/${id}`)),
-  createScreenGroup: (
+  createScreenGroup: async (
     input: { name: string; description: string },
     csrfToken: string,
   ) =>
-    request<ScreenGroup>("/screen-groups", {
-      method: "POST",
-      headers: { "X-CSRF-Token": csrfToken },
-      body: JSON.stringify(input),
-    }),
-  updateScreenGroup: (
+    normalizeScreenGroup(
+      await request<ScreenGroup>("/screen-groups", {
+        method: "POST",
+        headers: { "X-CSRF-Token": csrfToken },
+        body: JSON.stringify(input),
+      }),
+    ),
+  updateScreenGroup: async (
     id: string,
     input: {
       name: string;
@@ -1929,11 +1932,13 @@ export const api = {
     },
     csrfToken: string,
   ) =>
-    request<ScreenGroup>(`/screen-groups/${id}`, {
-      method: "PATCH",
-      headers: { "X-CSRF-Token": csrfToken },
-      body: JSON.stringify(input),
-    }),
+    normalizeScreenGroup(
+      await request<ScreenGroup>(`/screen-groups/${id}`, {
+        method: "PATCH",
+        headers: { "X-CSRF-Token": csrfToken },
+        body: JSON.stringify(input),
+      }),
+    ),
   deleteScreenGroup: (id: string, csrfToken: string) =>
     request<void>(`/screen-groups/${id}`, {
       method: "DELETE",

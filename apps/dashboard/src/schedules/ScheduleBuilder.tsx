@@ -814,7 +814,7 @@ function TargetPicker({
                   type: "group" as const,
                   id: group.id,
                   name: group.name,
-                  detail: `Sync group: ${group.name}`,
+                  detail: `Display Group: ${group.name}`,
                 }
               : {
                   type: "screen" as const,
@@ -868,7 +868,7 @@ function TargetPicker({
           aria-selected={tab === "groups"}
           onClick={() => setTab("groups")}
         >
-          Sync groups
+          Display Groups
         </button>
       </div>
       <label className="schedule-picker-search">
@@ -878,7 +878,7 @@ function TargetPicker({
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           placeholder={
-            tab === "groups" ? "Search sync groups" : "Search screens"
+            tab === "groups" ? "Search Display Groups" : "Search screens"
           }
         />
       </label>

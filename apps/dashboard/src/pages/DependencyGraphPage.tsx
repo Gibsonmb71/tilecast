@@ -94,8 +94,8 @@ const typePresentation: Record<DependencyNodeType, TypePresentation> = {
     path: (id) => `/schedules/${id}`,
   },
   screen_group: {
-    label: "Sync group",
-    plural: "Sync groups",
+    label: "Display Group",
+    plural: "Display Groups",
     icon: Users,
     path: (id) => `/groups/${id}`,
   },

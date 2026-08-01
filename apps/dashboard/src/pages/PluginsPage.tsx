@@ -245,8 +245,8 @@ function useTargetSource(scope: TargetScope): TargetSource | null {
     : scope === "sync_groups"
       ? {
           query: groups,
-          noun: "sync groups",
-          empty: "No sync groups exist yet.",
+          noun: "Display Groups",
+          empty: "No Display Groups exist yet.",
         }
       : scope === "locations"
         ? {
@@ -288,7 +288,7 @@ function TargetFields({
         >
           <option value="all">All screens</option>
           <option value="screens">Individual screens</option>
-          <option value="sync_groups">Sync groups</option>
+          <option value="sync_groups">Display Groups</option>
           <option value="locations">Locations</option>
         </Select>
       </Field>

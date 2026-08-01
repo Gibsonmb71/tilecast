@@ -820,6 +820,8 @@ export type ScreenGroup = {
   id: string;
   name: string;
   description: string;
+  /** Added by the Display Groups migration; old servers are normalized to Mirror. */
+  displayMode: "mirror" | "span";
   playlistId?: string;
   playlistName?: string;
   layoutId?: string;

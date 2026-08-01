@@ -351,10 +351,12 @@ describe("Plugins", () => {
     expect(await screen.findByText("0 of 1 selected")).toBeVisible();
     fireEvent.click(await screen.findByLabelText("Cafeteria"));
     expect(screen.getByText("1 of 1 selected")).toBeVisible();
-    // No sync groups exist in this fixture, so the list must say so rather than
+    // No Display Groups exist in this fixture, so the list must say so rather than
     // render an empty box.
-    chooseOption("Target type", "Sync groups");
-    expect(await screen.findByText("No sync groups exist yet.")).toBeVisible();
+    chooseOption("Target type", "Display Groups");
+    expect(
+      await screen.findByText("No Display Groups exist yet."),
+    ).toBeVisible();
     expect(screen.getByText("0 of 0 selected")).toBeVisible();
   }, 10_000);
 

@@ -48,9 +48,18 @@ Android Room stores pending, ready, active, failed, and superseded manifests plu
 
 Playback supports either a fullscreen playlist or a published Layout. Layouts render natively, scale landscape and portrait canvases without distortion, and run positioned playlist zones independently alongside Apps, Assets, and primitives. Publishing limits a Layout to one active video-capable placement or zone and one audio-emitting placement or zone. An invalid or incompletely prepared Layout never replaces the previous verified presentation.
 
-## Scheduling and sync groups
+## Scheduling and Display Groups
 
-Sync groups own synchronized fallback content and schedule targeting. A screen belongs to zero or one group; PostgreSQL enforces the invariant with a unique membership constraint. Assigning content through any member updates the group assignment, and a schedule aimed at a grouped screen is normalized to the group target. Ungrouped screens keep independent assignments and schedules. `internal/scheduling` remains the server authority for half-open interval evaluation and deterministic precedence: priority, later effective start, then stable ID. The Android `ScheduleEngine` implements the same transport semantics for offline evaluation.
+Display Groups own synchronized fallback content and schedule targeting. Existing
+groups migrate to `display_mode=mirror`, which is the current synchronized
+behavior. A screen belongs to zero or one group; PostgreSQL enforces the
+invariant with a unique membership constraint. Assigning content through any
+member updates the group assignment, and a schedule aimed at a grouped screen
+is normalized to the group target. Ungrouped screens keep independent
+assignments and schedules. `internal/scheduling` remains the server authority
+for half-open interval evaluation and deterministic precedence: priority, later
+effective start, then stable ID. The Android `ScheduleEngine` implements the
+same transport semantics for offline evaluation.
 
 Player manifests contain only schedules relevant to the authenticated screen, its playlist or Layout fallback, referenced published Layout revisions, required Apps, playlist zones, structured datasets, media variants, server time, preparation policy, and optional sync-group playback epoch. Group members calculate the same current item and elapsed offset from the shared clock, including after reconnecting late. Recurring rules use calendar calculations rather than fixed-duration days. A repeated local time uses the earlier occurrence for a start and later occurrence for an end; a nonexistent local time advances to the first valid time after the DST gap.
 

@@ -1111,7 +1111,9 @@ paths:
       responses:
         {
           "200":
-            { description: "Paginated sync groups, assignments, and members" },
+            {
+              description: "Paginated Display Groups, assignments, and members",
+            },
         }
     post:
       operationId: createScreenGroup
@@ -1126,7 +1128,7 @@ paths:
         ]
       responses:
         {
-          "201": { description: Sync group created },
+          "201": { description: Display Group created in Mirror mode },
           "422": { description: Validation or configured limit failed },
         }
   /api/v1/screen-groups/{id}:
@@ -1134,23 +1136,24 @@ paths:
       operationId: getScreenGroup
       responses:
         {
-          "200": { description: Sync group with assignment and screen members },
-          "404": { description: Sync group not found },
+          "200":
+            { description: Display Group with assignment and screen members },
+          "404": { description: Display Group not found },
         }
     patch:
       operationId: updateScreenGroup
-      responses: { "200": { description: Sync group updated } }
+      responses: { "200": { description: Display Group updated } }
     delete:
       operationId: deleteScreenGroup
       responses:
-        { "204": { description: Sync group soft deleted; screens retained } }
+        { "204": { description: Display Group soft deleted; screens retained } }
   /api/v1/screen-groups/{id}/screens:
     post:
       operationId: addScreenGroupMember
       responses:
         {
           "200": { description: Screen added and member manifests revised },
-          "409": { description: Screen already belongs to a sync group },
+          "409": { description: Screen already belongs to a Display Group },
         }
   /api/v1/screen-groups/{id}/screens/{screenId}:
     delete:
