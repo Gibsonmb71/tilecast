@@ -2,6 +2,7 @@ package scheduling
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/tilecast/tilecast/apps/server/internal/displaycontrol"
 )
 
 var (
@@ -83,22 +85,23 @@ type List struct {
 	DefaultTimezone string   `json:"defaultTimezone"`
 }
 type Input struct {
-	Name         string     `json:"name"`
-	Description  string     `json:"description"`
-	PlaylistID   uuid.UUID  `json:"playlistId"`
-	LayoutID     *uuid.UUID `json:"layoutId,omitempty"`
-	Type         Kind       `json:"type"`
-	Timezone     string     `json:"timezone"`
-	Priority     int        `json:"priority"`
-	Enabled      bool       `json:"enabled"`
-	StartDate    *string    `json:"startDate"`
-	EndDate      *string    `json:"endDate"`
-	OneTimeStart *time.Time `json:"oneTimeStart"`
-	OneTimeEnd   *time.Time `json:"oneTimeEnd"`
-	DailyStart   *string    `json:"dailyStart"`
-	DailyEnd     *string    `json:"dailyEnd"`
-	DaysOfWeek   []int      `json:"daysOfWeek"`
-	Targets      []Target   `json:"targets"`
+	Name          string                 `json:"name"`
+	Description   string                 `json:"description"`
+	PlaylistID    uuid.UUID              `json:"playlistId"`
+	LayoutID      *uuid.UUID             `json:"layoutId,omitempty"`
+	DisplayAction *displaycontrol.Action `json:"displayAction,omitempty"`
+	Type          Kind                   `json:"type"`
+	Timezone      string                 `json:"timezone"`
+	Priority      int                    `json:"priority"`
+	Enabled       bool                   `json:"enabled"`
+	StartDate     *string                `json:"startDate"`
+	EndDate       *string                `json:"endDate"`
+	OneTimeStart  *time.Time             `json:"oneTimeStart"`
+	OneTimeEnd    *time.Time             `json:"oneTimeEnd"`
+	DailyStart    *string                `json:"dailyStart"`
+	DailyEnd      *string                `json:"dailyEnd"`
+	DaysOfWeek    []int                  `json:"daysOfWeek"`
+	Targets       []Target               `json:"targets"`
 }
 
 func (s *Service) ListGroups(ctx context.Context, search string, page, size int) (GroupList, error) {
@@ -435,15 +438,32 @@ func (s *Service) validateInput(ctx context.Context, in Input) error {
 	if len(in.Targets) > s.limits.MaxTargetsPerSchedule {
 		return ErrLimit
 	}
-	if (in.PlaylistID == uuid.Nil) == (in.LayoutID == nil) {
-		return errors.New("schedule requires exactly one presentation")
+	presentations := 0
+	if in.PlaylistID != uuid.Nil {
+		presentations++
+	}
+	if in.LayoutID != nil {
+		presentations++
+	}
+	if in.DisplayAction != nil {
+		presentations++
+	}
+	if presentations != 1 {
+		return errors.New("schedule requires exactly one presentation or display action")
+	}
+	if in.DisplayAction != nil {
+		if err := in.DisplayAction.Validate(); err != nil {
+			return err
+		}
 	}
 	if err := Validate(Schedule{PlaylistID: in.PlaylistID, LayoutID: in.LayoutID, Type: in.Type, Timezone: in.Timezone, Priority: in.Priority, Enabled: in.Enabled, StartDate: in.StartDate, EndDate: in.EndDate, OneTimeStart: in.OneTimeStart, OneTimeEnd: in.OneTimeEnd, DailyStart: in.DailyStart, DailyEnd: in.DailyEnd, DaysOfWeek: in.DaysOfWeek}); err != nil {
 		return err
 	}
 	var ok bool
 	var presentationErr error
-	if in.LayoutID != nil {
+	if in.DisplayAction != nil {
+		ok = true
+	} else if in.LayoutID != nil {
 		presentationErr = s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM layouts WHERE id=$1 AND deleted_at IS NULL AND published_revision_id IS NOT NULL)`, in.LayoutID).Scan(&ok)
 	} else {
 		presentationErr = s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM playlists WHERE id=$1 AND deleted_at IS NULL)`, in.PlaylistID).Scan(&ok)
@@ -598,9 +618,9 @@ func (s *Service) write(ctx context.Context, id, user uuid.UUID, in Input, creat
 		return err
 	}
 	if create {
-		_, err = tx.Exec(ctx, `INSERT INTO schedules(id,organization_id,name,description,playlist_id,layout_id,type,timezone,priority,enabled,start_date,end_date,one_time_start,one_time_end,daily_start,daily_end,days_of_week,created_by)SELECT $1,id,$2,$3,NULLIF($4,$18::uuid),$5,$6,$7,$8,$9,$10::date,$11::date,$12,$13,$14::time,$15::time,COALESCE($16::smallint[],'{}'::smallint[]),$17 FROM organization_settings WHERE singleton`, id, strings.TrimSpace(in.Name), in.Description, in.PlaylistID, in.LayoutID, in.Type, in.Timezone, in.Priority, in.Enabled, in.StartDate, in.EndDate, in.OneTimeStart, in.OneTimeEnd, in.DailyStart, in.DailyEnd, in.DaysOfWeek, user, uuid.Nil)
+		_, err = tx.Exec(ctx, `INSERT INTO schedules(id,organization_id,name,description,playlist_id,layout_id,display_action,type,timezone,priority,enabled,start_date,end_date,one_time_start,one_time_end,daily_start,daily_end,days_of_week,created_by)SELECT $1,id,$2,$3,NULLIF($4,$19::uuid),$5,$6::jsonb,$7,$8,$9,$10,$11::date,$12::date,$13,$14,$15::time,$16::time,COALESCE($17::smallint[],'{}'::smallint[]),$18 FROM organization_settings WHERE singleton`, id, strings.TrimSpace(in.Name), in.Description, in.PlaylistID, in.LayoutID, displayActionJSON(in.DisplayAction), in.Type, in.Timezone, in.Priority, in.Enabled, in.StartDate, in.EndDate, in.OneTimeStart, in.OneTimeEnd, in.DailyStart, in.DailyEnd, in.DaysOfWeek, user, uuid.Nil)
 	} else {
-		tag, e := tx.Exec(ctx, `UPDATE schedules SET name=$2,description=$3,playlist_id=NULLIF($4,$17::uuid),layout_id=$5,type=$6,timezone=$7,priority=$8,enabled=$9,start_date=$10::date,end_date=$11::date,one_time_start=$12,one_time_end=$13,daily_start=$14::time,daily_end=$15::time,days_of_week=COALESCE($16::smallint[],'{}'::smallint[]),updated_at=now() WHERE id=$1 AND deleted_at IS NULL`, id, strings.TrimSpace(in.Name), in.Description, in.PlaylistID, in.LayoutID, in.Type, in.Timezone, in.Priority, in.Enabled, in.StartDate, in.EndDate, in.OneTimeStart, in.OneTimeEnd, in.DailyStart, in.DailyEnd, in.DaysOfWeek, uuid.Nil)
+		tag, e := tx.Exec(ctx, `UPDATE schedules SET name=$2,description=$3,playlist_id=NULLIF($4,$18::uuid),layout_id=$5,display_action=$6::jsonb,type=$7,timezone=$8,priority=$9,enabled=$10,start_date=$11::date,end_date=$12::date,one_time_start=$13,one_time_end=$14,daily_start=$15::time,daily_end=$16::time,days_of_week=COALESCE($17::smallint[],'{}'::smallint[]),updated_at=now() WHERE id=$1 AND deleted_at IS NULL`, id, strings.TrimSpace(in.Name), in.Description, in.PlaylistID, in.LayoutID, displayActionJSON(in.DisplayAction), in.Type, in.Timezone, in.Priority, in.Enabled, in.StartDate, in.EndDate, in.OneTimeStart, in.OneTimeEnd, in.DailyStart, in.DailyEnd, in.DaysOfWeek, uuid.Nil)
 		err = e
 		if err == nil && tag.RowsAffected() == 0 {
 			return ErrNotFound
@@ -706,13 +726,32 @@ func (s *Service) SetEnabled(ctx context.Context, id, user uuid.UUID, enabled bo
 	return s.Get(ctx, id)
 }
 
-const recordSelect = `SELECT s.id,s.name,s.description,COALESCE(s.playlist_id,'00000000-0000-0000-0000-000000000000'::uuid),COALESCE(p.name,l.name),s.layout_id,l.name,CASE WHEN s.layout_id IS NOT NULL THEN 'layout' ELSE 'playlist' END,s.type,s.timezone,s.priority,s.enabled,to_char(s.start_date,'YYYY-MM-DD'),to_char(s.end_date,'YYYY-MM-DD'),s.one_time_start,s.one_time_end,to_char(s.daily_start,'HH24:MI'),to_char(s.daily_end,'HH24:MI'),s.days_of_week,s.created_at,s.updated_at FROM schedules s LEFT JOIN playlists p ON p.id=s.playlist_id LEFT JOIN layouts l ON l.id=s.layout_id`
+const recordSelect = `SELECT s.id,s.name,s.description,COALESCE(s.playlist_id,'00000000-0000-0000-0000-000000000000'::uuid),COALESCE(p.name,l.name,''),s.layout_id,l.name,CASE WHEN s.display_action IS NOT NULL THEN 'display_control' WHEN s.layout_id IS NOT NULL THEN 'layout' ELSE 'playlist' END,s.display_action,s.type,s.timezone,s.priority,s.enabled,to_char(s.start_date,'YYYY-MM-DD'),to_char(s.end_date,'YYYY-MM-DD'),s.one_time_start,s.one_time_end,to_char(s.daily_start,'HH24:MI'),to_char(s.daily_end,'HH24:MI'),s.days_of_week,s.created_at,s.updated_at FROM schedules s LEFT JOIN playlists p ON p.id=s.playlist_id LEFT JOIN layouts l ON l.id=s.layout_id`
 
 func scanRecord(row pgx.Row) (Record, error) {
 	var r Record
-	err := row.Scan(&r.ID, &r.Name, &r.Description, &r.PlaylistID, &r.PlaylistName, &r.LayoutID, &r.LayoutName, &r.PresentationType, &r.Type, &r.Timezone, &r.Priority, &r.Enabled, &r.StartDate, &r.EndDate, &r.OneTimeStart, &r.OneTimeEnd, &r.DailyStart, &r.DailyEnd, &r.DaysOfWeek, &r.CreatedAt, &r.UpdatedAt)
+	var actionJSON []byte
+	err := row.Scan(&r.ID, &r.Name, &r.Description, &r.PlaylistID, &r.PlaylistName, &r.LayoutID, &r.LayoutName, &r.PresentationType, &actionJSON, &r.Type, &r.Timezone, &r.Priority, &r.Enabled, &r.StartDate, &r.EndDate, &r.OneTimeStart, &r.OneTimeEnd, &r.DailyStart, &r.DailyEnd, &r.DaysOfWeek, &r.CreatedAt, &r.UpdatedAt)
+	if err == nil && len(actionJSON) > 0 {
+		var action displaycontrol.Action
+		if e := json.Unmarshal(actionJSON, &action); e != nil {
+			return r, e
+		}
+		r.DisplayAction = &action
+	}
 	r.Targets = []Target{}
 	return r, err
+}
+
+func displayActionJSON(action *displaycontrol.Action) any {
+	if action == nil {
+		return nil
+	}
+	raw, err := json.Marshal(action)
+	if err != nil {
+		return nil
+	}
+	return string(raw)
 }
 func (s *Service) Get(ctx context.Context, id uuid.UUID) (Record, error) {
 	r, err := scanRecord(s.db.QueryRow(ctx, recordSelect+` WHERE s.id=$1 AND s.deleted_at IS NULL`, id))
@@ -845,7 +884,7 @@ func (s *Service) Preview(ctx context.Context, screen uuid.UUID, at time.Time, p
 			}
 		}
 		if specificity >= 0 {
-			records = append(records, Record{Schedule: Schedule{ID: uuid.Nil, PlaylistID: proposed.PlaylistID, LayoutID: proposed.LayoutID, Type: proposed.Type, Timezone: proposed.Timezone, Priority: proposed.Priority, Specificity: specificity, Enabled: proposed.Enabled, StartDate: proposed.StartDate, EndDate: proposed.EndDate, OneTimeStart: proposed.OneTimeStart, OneTimeEnd: proposed.OneTimeEnd, DailyStart: proposed.DailyStart, DailyEnd: proposed.DailyEnd, DaysOfWeek: proposed.DaysOfWeek}, Name: proposed.Name})
+			records = append(records, Record{Schedule: Schedule{ID: uuid.Nil, PlaylistID: proposed.PlaylistID, LayoutID: proposed.LayoutID, DisplayAction: proposed.DisplayAction, Type: proposed.Type, Timezone: proposed.Timezone, Priority: proposed.Priority, Specificity: specificity, Enabled: proposed.Enabled, StartDate: proposed.StartDate, EndDate: proposed.EndDate, OneTimeStart: proposed.OneTimeStart, OneTimeEnd: proposed.OneTimeEnd, DailyStart: proposed.DailyStart, DailyEnd: proposed.DailyEnd, DaysOfWeek: proposed.DaysOfWeek}, Name: proposed.Name})
 		}
 	}
 	base := make([]Schedule, len(records))

@@ -14,7 +14,7 @@ fun pendingActivationDelayMillis(graceSeconds:Int):Long = (if(graceSeconds>0)gra
 object ScheduleEngine {
     fun resolve(now:Instant,schedules:List<ManifestSchedule>,fallbackPlaylistId:String?,fallbackLayoutId:String?=null,override:ManifestPresentationOverride?=null):ScheduleSelection = try {
         val active=mutableListOf<ActiveWindow>();val transitions=mutableListOf<Instant>()
-        schedules.forEach { schedule -> windows(schedule,now).forEach { window -> transitions += window.start;transitions += window.end;if(!now.isBefore(window.start)&&now.isBefore(window.end))active+=window } }
+        schedules.filter { it.playlistId != null || it.layoutId != null }.forEach { schedule -> windows(schedule,now).forEach { window -> transitions += window.start;transitions += window.end;if(!now.isBefore(window.start)&&now.isBefore(window.end))active+=window } }
         override?.let { value ->
             runCatching { Instant.parse(value.startedAt) }.getOrNull()?.let { start -> if (start.isAfter(now)) transitions += start }
             value.expiresAt?.let { expires -> runCatching { Instant.parse(expires) }.getOrNull()?.let { if (it.isAfter(now)) transitions += it } }

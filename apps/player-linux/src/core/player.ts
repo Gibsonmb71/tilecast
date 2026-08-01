@@ -81,6 +81,7 @@ import {
   presentationOverrideActive,
   findPlaylist,
   resolveSelection,
+  resolveDisplayPolicy,
   type Selection,
 } from "./schedule";
 import { PlayerSocket } from "./socket";
@@ -100,6 +101,12 @@ import type {
   ExternalPresentationStatus,
 } from "./external-presentation";
 import { parseExternalPresentationConfig } from "./external-presentation";
+import {
+  parseDisplayControlCommand,
+  unsupportedDisplayControlStatus,
+  type DisplayControlHost,
+  type DisplayControlStatus,
+} from "./display-control";
 import {
   DEFAULT_SUPERVISOR_CONFIG,
   clearSafeMode,
@@ -199,7 +206,7 @@ export function manifestActivationGraceMilliseconds(
   );
 }
 
-export interface PlayerHost {
+export interface PlayerHost extends DisplayControlHost {
   /** Replace what the renderer is showing. */
   present(presentation: Presentation): void;
   /** Update built-in plugin surfaces without touching playlist playback. */
@@ -306,6 +313,7 @@ export class PlayerRuntime {
   private installationId = "";
   private config: PlayerConfig | null = null;
   private airplayCapabilities: AirplayCapabilities | null = null;
+  private displayControlStatus: DisplayControlStatus | null = null;
   private externalPresentation: ExternalPresentationConfig | null = null;
   private externalPresentationStatus: ExternalPresentationStatus | null = null;
   /**
@@ -339,6 +347,9 @@ export class PlayerRuntime {
   private pendingActivationTimer: NodeJS.Timeout | null = null;
   private selectionTransitionTimer: NodeJS.Timeout | null = null;
   private selectionTransitionAt: string | null = null;
+  private displayPolicyTransitionTimer: NodeJS.Timeout | null = null;
+  private displayPolicyTransitionAt: string | null = null;
+  private displayPolicyKey = "";
   private stopped = false;
   private socketOpen = false;
   private readonly startedAt = Date.now();
@@ -465,6 +476,8 @@ export class PlayerRuntime {
     if (this.pendingActivationTimer) clearTimeout(this.pendingActivationTimer);
     if (this.selectionTransitionTimer)
       clearTimeout(this.selectionTransitionTimer);
+    if (this.displayPolicyTransitionTimer)
+      clearTimeout(this.displayPolicyTransitionTimer);
     this.socket?.close();
     this.manifestSync.stop();
     this.commands?.stop();
@@ -667,6 +680,7 @@ export class PlayerRuntime {
     // Capability probing is intentionally asynchronous and infrequent: the
     // 2012-class target should not spawn vainfo/gst-inspect on every heartbeat.
     void this.refreshAirplayCapabilities().then(() => void this.reportStatus());
+    void this.refreshDisplayControl().then(() => void this.reportStatus());
 
     this.sessions = new PlaybackSessionTracker(
       (event) => void this.activity?.record(event),
@@ -987,6 +1001,21 @@ export class PlayerRuntime {
       log.warn("AirPlay capability probe failed", { error: String(error) });
       return null;
     }
+  }
+
+  private async refreshDisplayControl(): Promise<DisplayControlStatus> {
+    if (!this.host.probeDisplayControl) {
+      this.displayControlStatus = unsupportedDisplayControlStatus();
+      return this.displayControlStatus;
+    }
+    try {
+      this.displayControlStatus = await this.host.probeDisplayControl();
+    } catch (error) {
+      this.displayControlStatus = unsupportedDisplayControlStatus(
+        `Display Control probe failed: ${String(error).slice(0, 180)}`,
+      );
+    }
+    return this.displayControlStatus;
   }
 
   private async prepareExternalPresentation(
@@ -1320,6 +1349,7 @@ export class PlayerRuntime {
 
   /** Recompute what should be on screen; presents only when it changed. */
   evaluatePresentation(force = false): void {
+    void this.applyDisplayPolicy();
     const next = this.buildPresentation();
     // generation is a renderer transport counter, not presentation content.
     // Including it here restarted otherwise-unchanged playback every 30s.
@@ -1388,6 +1418,75 @@ export class PlayerRuntime {
     return "manifest_replacement";
   }
   private lastPresentedKey = "";
+
+  private async applyDisplayPolicy(): Promise<void> {
+    const manifest = this.activeManifest;
+    if (!manifest) return;
+    const resolved = resolveDisplayPolicy(manifest, new Date());
+    this.scheduleDisplayPolicyTransition(resolved.nextTransitionAt);
+    const key = resolved.action
+      ? `${resolved.scheduleId}:${JSON.stringify(resolved.action)}`
+      : "none";
+    if (key === this.displayPolicyKey) return;
+    this.displayPolicyKey = key;
+    if (!resolved.action) {
+      if (this.displayControlStatus) {
+        this.displayControlStatus = {
+          ...this.displayControlStatus,
+          policyState: "normal",
+        };
+        void this.reportStatus();
+      }
+      return;
+    }
+    if (!this.host.executeDisplayControl) {
+      this.displayControlStatus = {
+        ...(this.displayControlStatus ?? unsupportedDisplayControlStatus()),
+        policyState: resolved.policyState,
+        error: "This player does not provide Display Control.",
+      };
+      void this.reportStatus();
+      return;
+    }
+    try {
+      const result = await this.host.executeDisplayControl(resolved.action);
+      this.displayControlStatus = {
+        ...(result.status ??
+          this.displayControlStatus ??
+          unsupportedDisplayControlStatus()),
+        policyState: resolved.policyState,
+        error: result.success ? result.status?.error : result.message,
+      };
+    } catch (error) {
+      this.displayControlStatus = {
+        ...(this.displayControlStatus ?? unsupportedDisplayControlStatus()),
+        policyState: resolved.policyState,
+        error: String(error).slice(0, 240),
+      };
+    }
+    void this.reportStatus();
+  }
+
+  private scheduleDisplayPolicyTransition(at: string | null): void {
+    if (at === this.displayPolicyTransitionAt) return;
+    if (this.displayPolicyTransitionTimer) {
+      clearTimeout(this.displayPolicyTransitionTimer);
+      this.displayPolicyTransitionTimer = null;
+    }
+    this.displayPolicyTransitionAt = at;
+    if (!at) return;
+    const delay = Date.parse(at) - Date.now();
+    if (!Number.isFinite(delay)) return;
+    this.displayPolicyTransitionTimer = setTimeout(
+      () => {
+        this.displayPolicyTransitionTimer = null;
+        this.displayPolicyTransitionAt = null;
+        this.evaluatePresentation();
+      },
+      Math.min(Math.max(delay + 100, 0), 2_147_000_000),
+    );
+    this.displayPolicyTransitionTimer.unref?.();
+  }
 
   private scheduleSelectionTransition(): void {
     const at = this.selection?.nextTransitionAt ?? null;
@@ -2033,6 +2132,20 @@ export class PlayerRuntime {
         );
       }
     }
+    if (this.displayControlStatus) {
+      heartbeat.displayControlProvider = this.displayControlStatus.provider;
+      heartbeat.displayControlProviders = this.displayControlStatus.providers;
+      heartbeat.displayControlCapabilities =
+        this.displayControlStatus.capabilities;
+      heartbeat.displayPowerState = this.displayControlStatus.powerState;
+      heartbeat.displayPowerStateConfirmed =
+        this.displayControlStatus.powerStateConfirmed;
+      heartbeat.displayPowerStateObservedAt =
+        this.displayControlStatus.observedAt;
+      heartbeat.displayControlPolicyState =
+        this.displayControlStatus.policyState;
+      heartbeat.displayControlError = this.displayControlStatus.error;
+    }
     if (this.externalPresentation && this.externalPresentationStatus) {
       heartbeat.externalPresentationState =
         this.externalPresentationStatus.state;
@@ -2297,6 +2410,46 @@ export class PlayerRuntime {
         message: results.join(" "),
       };
     });
+    for (const type of [
+      "display_power_on",
+      "display_power_off",
+      "display_set_input",
+      "display_set_volume",
+      "display_mute",
+      "display_unmute",
+      "display_set_brightness",
+      "display_probe",
+    ]) {
+      handlers.set(type, async (command) => {
+        const parsed = parseDisplayControlCommand(command);
+        if (!parsed) {
+          return {
+            success: false,
+            code: "display_invalid_payload",
+            message: "Display command payload is invalid.",
+          };
+        }
+        if (!this.host.executeDisplayControl) {
+          return {
+            success: false,
+            code: "display_unsupported",
+            message: "This player does not provide Display Control.",
+          };
+        }
+        try {
+          const result = await this.host.executeDisplayControl(parsed);
+          if (result.status) this.displayControlStatus = result.status;
+          void this.reportStatus();
+          return result;
+        } catch (error) {
+          return {
+            success: false,
+            code: "display_command_failed",
+            message: String(error).slice(0, 240),
+          };
+        }
+      });
+    }
     handlers.set("test_airplay_support", async () => {
       const capabilities = await this.refreshAirplayCapabilities();
       if (!capabilities) {

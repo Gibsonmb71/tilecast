@@ -1226,7 +1226,7 @@ export const api = {
   createScreenCommand: (
     id: string,
     type: string,
-    payload: Record<string, number>,
+    payload: Record<string, unknown>,
     csrfToken: string,
   ) =>
     request<{ id: string; state: string; expiresAt: string }>(

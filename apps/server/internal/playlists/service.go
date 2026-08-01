@@ -1277,7 +1277,7 @@ func (s *Service) Assignment(ctx context.Context, screenID uuid.UUID) (Assignmen
 	if s.scheduling != nil {
 		_, _, a.ClockSkewWarningSeconds = s.scheduling.Config()
 	}
-	scheduleRows, e := s.db.Query(ctx, `SELECT DISTINCT s.id,s.name,COALESCE(p.name,l.name),CASE WHEN s.layout_id IS NOT NULL THEN 'layout' ELSE 'playlist' END,s.priority,s.enabled FROM schedules s LEFT JOIN playlists p ON p.id=s.playlist_id LEFT JOIN layouts l ON l.id=s.layout_id JOIN schedule_targets t ON t.schedule_id=s.id LEFT JOIN screen_group_memberships m ON m.screen_group_id=t.screen_group_id AND m.screen_id=$1 WHERE s.deleted_at IS NULL AND (t.screen_id=$1 OR m.screen_id=$1) ORDER BY s.priority DESC,s.id`, screenID)
+	scheduleRows, e := s.db.Query(ctx, `SELECT DISTINCT s.id,s.name,COALESCE(p.name,l.name,''),CASE WHEN s.display_action IS NOT NULL THEN 'display_control' WHEN s.layout_id IS NOT NULL THEN 'layout' ELSE 'playlist' END,s.priority,s.enabled FROM schedules s LEFT JOIN playlists p ON p.id=s.playlist_id LEFT JOIN layouts l ON l.id=s.layout_id JOIN schedule_targets t ON t.schedule_id=s.id LEFT JOIN screen_group_memberships m ON m.screen_group_id=t.screen_group_id AND m.screen_id=$1 WHERE s.deleted_at IS NULL AND (t.screen_id=$1 OR m.screen_id=$1) ORDER BY s.priority DESC,s.id`, screenID)
 	if e != nil {
 		return Assignment{}, e
 	}
@@ -1406,14 +1406,14 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 				}
 			}
 			var schedulePlaylistID *uuid.UUID
-			if record.LayoutID == nil {
+			if record.LayoutID == nil && record.DisplayAction == nil && record.PlaylistID != uuid.Nil {
 				value := record.PlaylistID
 				schedulePlaylistID = &value
 			}
-			manifest.Schedules = append(manifest.Schedules, ManifestSchedule{ID: record.ID, PlaylistID: schedulePlaylistID, LayoutID: record.LayoutID, Type: string(record.Type), Timezone: record.Timezone, Priority: record.Priority, Specificity: record.Specificity, StartDate: record.StartDate, EndDate: record.EndDate, OneTimeStart: record.OneTimeStart, OneTimeEnd: record.OneTimeEnd, DailyStart: record.DailyStart, DailyEnd: record.DailyEnd, DaysOfWeek: record.DaysOfWeek})
+			manifest.Schedules = append(manifest.Schedules, ManifestSchedule{ID: record.ID, PlaylistID: schedulePlaylistID, LayoutID: record.LayoutID, DisplayAction: record.DisplayAction, Type: string(record.Type), Timezone: record.Timezone, Priority: record.Priority, Specificity: record.Specificity, StartDate: record.StartDate, EndDate: record.EndDate, OneTimeStart: record.OneTimeStart, OneTimeEnd: record.OneTimeEnd, DailyStart: record.DailyStart, DailyEnd: record.DailyEnd, DaysOfWeek: record.DaysOfWeek})
 			if record.LayoutID != nil {
 				layoutIDs = append(layoutIDs, *record.LayoutID)
-			} else {
+			} else if record.DisplayAction == nil && record.PlaylistID != uuid.Nil {
 				playlistIDs = append(playlistIDs, record.PlaylistID)
 			}
 		}
@@ -2321,7 +2321,8 @@ func manifestETagForSchedules(base string, schedules []ManifestSchedule) string 
 	}
 	value := base
 	for _, schedule := range schedules {
-		value += ":" + schedule.ID.String()
+		action, _ := json.Marshal(schedule.DisplayAction)
+		value += ":" + schedule.ID.String() + ":" + string(action)
 	}
 	sum := sha256.Sum256([]byte(value))
 	return `"sha256-` + hex.EncodeToString(sum[:]) + `"`

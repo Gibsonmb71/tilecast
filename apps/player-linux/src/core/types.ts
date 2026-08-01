@@ -172,6 +172,12 @@ export interface ManifestSchedule {
   id: string;
   playlistId?: string | null;
   layoutId?: string | null;
+  displayAction?: {
+    type: string;
+    input?: string;
+    volume?: number;
+    brightness?: number;
+  } | null;
   type: string; // "weekly" | "one_time"
   timezone: string;
   priority: number;
@@ -396,6 +402,15 @@ export interface Heartbeat {
   airplayTransport?: string;
   airplayConnected?: boolean;
   externalPresentationExpiresAt?: string;
+  displayControlProvider?: string;
+  displayControlProviders?: string[];
+  displayControlCapabilities?: Record<string, string>;
+  displayPowerState?:
+    "unknown" | "on" | "off" | "transitioning" | "unsupported";
+  displayPowerStateConfirmed?: boolean;
+  displayPowerStateObservedAt?: string;
+  displayControlPolicyState?: "normal" | "powered_off_by_policy" | "unknown";
+  displayControlError?: string;
 }
 
 // ---------------------------------------------------------------------------

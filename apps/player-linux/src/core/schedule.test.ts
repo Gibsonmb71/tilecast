@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   presentationOverrideActive,
+  resolveDisplayPolicy,
   resolveSelection,
   scheduleApplies,
 } from "./schedule";
@@ -154,6 +155,32 @@ describe("scheduleApplies", () => {
     expect(
       scheduleApplies(weekly({ timezone: "Not/AZone" }), fridayMorningNY),
     ).toBe(false);
+  });
+});
+
+describe("resolveDisplayPolicy", () => {
+  it("uses schedule precedence and marks a power-off policy", () => {
+    const result = resolveDisplayPolicy(
+      baseManifest({
+        schedules: [
+          weekly({
+            id: "power-on",
+            priority: 10,
+            displayAction: { type: "display_power_on" },
+            playlistId: null,
+          }),
+          weekly({
+            id: "power-off",
+            priority: 20,
+            displayAction: { type: "display_power_off" },
+            playlistId: null,
+          }),
+        ],
+      }),
+      new Date("2026-07-17T15:00:00Z"),
+    );
+    expect(result.scheduleId).toBe("power-off");
+    expect(result.policyState).toBe("powered_off_by_policy");
   });
 });
 

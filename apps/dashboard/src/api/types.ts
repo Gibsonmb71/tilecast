@@ -401,7 +401,7 @@ export type PlaylistAssignment = {
     id: string;
     name: string;
     playlistName: string;
-    presentationType: "playlist" | "layout";
+    presentationType: "playlist" | "layout" | "display_control";
     priority: number;
     enabled: boolean;
   }[];
@@ -430,7 +430,7 @@ export type PlaylistAssignment = {
 export type PlayerCommand = {
   id: string;
   type: string;
-  payload: Record<string, number>;
+  payload: Record<string, unknown>;
   state: string;
   createdAt: string;
   expiresAt: string;
@@ -509,6 +509,23 @@ export type ReliabilityStatus = {
   airplayTransport?: AirplayString<"unicast" | "multicast">;
   airplayConnected?: boolean;
   externalPresentationExpiresAt?: string;
+  displayControlProvider?: string;
+  displayControlProviders?: string[];
+  displayControlCapabilities?: Record<string, string>;
+  displayPowerState?: AirplayString<
+    "unknown" | "on" | "off" | "transitioning" | "unsupported"
+  >;
+  displayPowerStateConfirmed?: boolean;
+  displayPowerStateObservedAt?: string;
+  displayControlPolicyState?: AirplayString<
+    "normal" | "powered_off_by_policy" | "unknown"
+  >;
+  displayControlLastCommandId?: string;
+  displayControlLastCommandState?: string;
+  displayControlLastCommandResult?: string;
+  displayControlLastCommandSentAt?: string;
+  displayControlLastStateConfirmedAt?: string;
+  displayControlError?: string;
   powerAssist: PowerAssistResults;
 };
 
@@ -965,6 +982,19 @@ export type ScheduleTarget = {
   id: string;
   name?: string;
 };
+export type DisplayControlAction = {
+  type:
+    | "display_power_on"
+    | "display_power_off"
+    | "display_set_input"
+    | "display_set_volume"
+    | "display_mute"
+    | "display_unmute"
+    | "display_set_brightness";
+  input?: string;
+  volume?: number;
+  brightness?: number;
+};
 export type Schedule = {
   id: string;
   name: string;
@@ -973,7 +1003,7 @@ export type Schedule = {
   playlistName: string;
   layoutId?: string;
   layoutName?: string;
-  presentationType: "playlist" | "layout";
+  presentationType: "playlist" | "layout" | "display_control";
   type: "one_time" | "weekly";
   timezone: string;
   priority: number;
@@ -986,6 +1016,7 @@ export type Schedule = {
   dailyStart?: string;
   dailyEnd?: string;
   daysOfWeek: number[];
+  displayAction?: DisplayControlAction;
   targets: ScheduleTarget[];
   createdAt: string;
   updatedAt: string;

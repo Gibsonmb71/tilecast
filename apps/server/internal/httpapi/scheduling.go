@@ -190,6 +190,9 @@ func (s *server) updateSchedule(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) validateSchedulePresentation(r *http.Request, input scheduling.Input) error {
+	if input.DisplayAction != nil {
+		return nil
+	}
 	var playlistID *uuid.UUID
 	if input.LayoutID == nil {
 		playlistID = &input.PlaylistID

@@ -17,6 +17,13 @@ export interface Selection {
   playbackAnchor: string | null;
 }
 
+export interface DisplayPolicySelection {
+  action: ManifestSchedule["displayAction"];
+  scheduleId: string | null;
+  nextTransitionAt: string | null;
+  policyState: "normal" | "powered_off_by_policy" | "unknown";
+}
+
 interface ZonedParts {
   year: number;
   month: number;
@@ -398,6 +405,43 @@ export function resolveSelection(manifest: Manifest, at: Date): Selection {
     source: "none",
     nextTransitionAt: transition,
     playbackAnchor: null,
+  };
+}
+
+/** Resolve Display Control actions with the same windows and precedence as
+ * content schedules. Display policies are optional manifest entries, so older
+ * players simply see no action field and retain their existing behavior. */
+export function resolveDisplayPolicy(
+  manifest: Manifest,
+  at: Date,
+): DisplayPolicySelection {
+  const now = at.getTime();
+  const policyWindows = (manifest.schedules ?? []).flatMap((schedule) =>
+    schedule.displayAction ? windows(schedule, at) : [],
+  );
+  const futureTransitions = policyWindows
+    .flatMap((window) => [window.start, window.end])
+    .filter((transition) => transition > now);
+  const winner = policyWindows
+    .filter((window) => now >= window.start && now < window.end)
+    .sort(
+      (a, b) =>
+        b.schedule.priority - a.schedule.priority ||
+        b.schedule.specificity - a.schedule.specificity ||
+        b.start - a.start ||
+        a.schedule.id.localeCompare(b.schedule.id),
+    )[0];
+  const action = winner?.schedule.displayAction ?? null;
+  return {
+    action,
+    scheduleId: winner?.schedule.id ?? null,
+    nextTransitionAt: nextTransition(futureTransitions),
+    policyState:
+      action?.type === "display_power_off"
+        ? "powered_off_by_policy"
+        : action
+          ? "normal"
+          : "normal",
   };
 }
 

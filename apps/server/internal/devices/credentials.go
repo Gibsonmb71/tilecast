@@ -191,6 +191,9 @@ func (s *Service) Heartbeat(ctx context.Context, principal DevicePrincipal, hear
 	// fields. The helper is best effort so older/non-Linux players continue to
 	// heartbeat normally while the migration rolls through the fleet.
 	s.updateAirplayHeartbeat(ctx, principal.ScreenID, heartbeat)
+	// Display Control is also optional. Invalid capability claims are discarded
+	// by the helper rather than taking a healthy legacy player offline.
+	s.updateDisplayControlHeartbeat(ctx, principal.ScreenID, heartbeat)
 	if heartbeat.ConfiguredReliabilityMode != "" || heartbeat.SafeMode != nil {
 		var previousSafeMode bool
 		var previousMaintenance, previousPINChange *time.Time

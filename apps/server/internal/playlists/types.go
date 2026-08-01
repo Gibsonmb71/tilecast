@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/tilecast/tilecast/apps/server/internal/displaycontrol"
 	"github.com/tilecast/tilecast/apps/server/internal/layouts"
 	"github.com/tilecast/tilecast/apps/server/internal/plugins"
 )
@@ -296,20 +297,21 @@ type ManifestWebsite struct {
 	FallbackVariantID      *uuid.UUID `json:"fallbackVariantId,omitempty"`
 }
 type ManifestSchedule struct {
-	ID           uuid.UUID  `json:"id"`
-	PlaylistID   *uuid.UUID `json:"playlistId,omitempty"`
-	LayoutID     *uuid.UUID `json:"layoutId,omitempty"`
-	Type         string     `json:"type"`
-	Timezone     string     `json:"timezone"`
-	Priority     int        `json:"priority"`
-	Specificity  int        `json:"specificity"`
-	StartDate    *string    `json:"startDate,omitempty"`
-	EndDate      *string    `json:"endDate,omitempty"`
-	OneTimeStart *time.Time `json:"oneTimeStart,omitempty"`
-	OneTimeEnd   *time.Time `json:"oneTimeEnd,omitempty"`
-	DailyStart   *string    `json:"dailyStart,omitempty"`
-	DailyEnd     *string    `json:"dailyEnd,omitempty"`
-	DaysOfWeek   []int      `json:"daysOfWeek,omitempty"`
+	ID            uuid.UUID              `json:"id"`
+	PlaylistID    *uuid.UUID             `json:"playlistId,omitempty"`
+	LayoutID      *uuid.UUID             `json:"layoutId,omitempty"`
+	DisplayAction *displaycontrol.Action `json:"displayAction,omitempty"`
+	Type          string                 `json:"type"`
+	Timezone      string                 `json:"timezone"`
+	Priority      int                    `json:"priority"`
+	Specificity   int                    `json:"specificity"`
+	StartDate     *string                `json:"startDate,omitempty"`
+	EndDate       *string                `json:"endDate,omitempty"`
+	OneTimeStart  *time.Time             `json:"oneTimeStart,omitempty"`
+	OneTimeEnd    *time.Time             `json:"oneTimeEnd,omitempty"`
+	DailyStart    *string                `json:"dailyStart,omitempty"`
+	DailyEnd      *string                `json:"dailyEnd,omitempty"`
+	DaysOfWeek    []int                  `json:"daysOfWeek,omitempty"`
 }
 type ManifestPlaylist struct {
 	ID       uuid.UUID      `json:"id"`
