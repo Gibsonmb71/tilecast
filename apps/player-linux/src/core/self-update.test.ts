@@ -210,6 +210,51 @@ describe("SelfUpdater", () => {
     ]);
   });
 
+  it("serializes shared-stage runs and releases the lock after failure", async () => {
+    const stagePath = "/var/lib/tilecast/shared-player-update.AppImage";
+    let releaseFirst!: () => void;
+    let markFirstStarted!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const firstStarted = new Promise<void>((resolve) => {
+      markFirstStarted = resolve;
+    });
+    const firstDownload = vi.fn(async () => {
+      markFirstStarted();
+      await firstGate;
+      throw new Error("first update failed");
+    });
+    const first = deps({ stagePath, download: firstDownload });
+    const second = deps({ stagePath });
+
+    const firstRun = new SelfUpdater(first.d).run(
+      command({ installationMode: "download_only" }),
+    );
+    await firstStarted;
+    const secondRun = new SelfUpdater(second.d).run(
+      command({
+        deploymentId: "33333333-3333-3333-3333-333333333333",
+        installationMode: "download_only",
+      }),
+    );
+    await Promise.resolve();
+
+    expect(second.download).not.toHaveBeenCalled();
+
+    releaseFirst();
+    await Promise.all([firstRun, secondRun]);
+
+    expect(first.states).toEqual(["downloading", "failed"]);
+    expect(second.download).toHaveBeenCalledOnce();
+    expect(second.states).toEqual([
+      "downloading",
+      "downloaded",
+      "verifying",
+      "ready",
+    ]);
+  });
+
   it("stages but does not restart on download_only", async () => {
     const { d, states, restart, promote } = deps();
     await new SelfUpdater(d).run(

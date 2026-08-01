@@ -39,6 +39,31 @@ const MAX_WINDOW_DELAY_MS = 24 * 60 * 60 * 1_000;
  */
 const PROGRESS_INTERVAL_MS = 2_000;
 
+/** One exclusive update execution per staging path, even across updater instances. */
+const stagePathLocks = new Map<string, Promise<void>>();
+
+async function withStagePathLock<T>(
+  stagePath: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const previous = stagePathLocks.get(stagePath) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  stagePathLocks.set(stagePath, current);
+
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (stagePathLocks.get(stagePath) === current) {
+      stagePathLocks.delete(stagePath);
+    }
+  }
+}
+
 /**
  * Make the verified download executable before atomically replacing the
  * running AppImage. Downloads intentionally start as mode 0600; renaming that
@@ -140,6 +165,13 @@ export class SelfUpdater {
       });
       return;
     }
+
+    await withStagePathLock(this.deps.stagePath, () =>
+      this.runExclusive(payload),
+    );
+  }
+
+  private async runExclusive(payload: UpdatePayload): Promise<void> {
     const { deploymentId } = payload;
 
     // Progress serialization belongs to this run. Two disruptive commands may
