@@ -35,6 +35,8 @@ import { StateStore, defaultDataDir } from "../core/storage";
 import { normalizeServerUrl } from "../core/server-url";
 import { applyLowEndTuning } from "./hardware";
 import { LanDiscovery, type DiscoveredServer } from "./discovery";
+import { AirplayManager } from "./airplay";
+import type { SupportedDecoder } from "./airplay";
 
 const log = logger("main");
 
@@ -363,6 +365,10 @@ function guardWebContents(): void {
 }
 
 async function startRuntime(serverUrl: string): Promise<void> {
+  const airplay = new AirplayManager({
+    store,
+    onStatus: (status) => runtime?.onExternalPresentationStatus(status),
+  });
   runtime = new PlayerRuntime(
     store,
     {
@@ -400,6 +406,62 @@ async function startRuntime(serverUrl: string): Promise<void> {
       },
       retryCurrentItem: () => window?.webContents.send("retry-item"),
       skipCurrentItem: () => window?.webContents.send("skip-item"),
+      prepareExternalPresentation: async (config) => {
+        const capabilities = await airplay.probeCapabilities();
+        const decoder = capabilities.decoder as SupportedDecoder | null;
+        const roleReady =
+          config.role === "receiver"
+            ? capabilities.groupAirplaySupported
+            : capabilities.airplaySupported;
+        if (!decoder || !roleReady) {
+          throw new Error(
+            capabilities.limitation ??
+              (config.role === "receiver"
+                ? "A GStreamer H.264 receiver is required for group AirPlay."
+                : "UxPlay, Avahi, and a supported H.264 GStreamer decoder are required."),
+          );
+        }
+        if (config.role !== "single" && !capabilities.groupAirplaySupported) {
+          throw new Error(
+            "Group AirPlay requires the GStreamer RTP receiver health/sink plugins.",
+          );
+        }
+        if (
+          config.role !== "receiver" &&
+          config.audioMode === "gateway_only" &&
+          !capabilities.audioAvailable
+        ) {
+          throw new Error(
+            "This player has no verified audio sink; choose no audio for this AirPlay session.",
+          );
+        }
+        if (
+          config.profile === "1080p30" &&
+          (!capabilities.hardwareH264Decode ||
+            capabilities.maxProfile !== "1080p30")
+        ) {
+          throw new Error(
+            "This player cannot safely decode the requested 1080p30 AirPlay profile.",
+          );
+        }
+        return airplay.prepareSession(config, decoder);
+      },
+      startExternalPresentation: async () => {
+        const capabilities = await airplay.probeCapabilities();
+        const decoder = capabilities.decoder as SupportedDecoder | null;
+        if (!decoder) throw new Error("No H.264 decoder is available.");
+        return airplay.startGateway(decoder);
+      },
+      stopExternalPresentation: (reason) => airplay.stopSession(reason),
+      recoverExternalPresentation: async () => {
+        const capabilities = await airplay.probeCapabilities();
+        const decoder = capabilities.decoder as SupportedDecoder | null;
+        const status = await airplay.recoverSession(decoder);
+        const config = airplay.getConfig();
+        return status && config ? { config, status } : null;
+      },
+      getExternalPresentationStatus: () => airplay.getStatus(),
+      probeAirplayCapabilities: () => airplay.probeCapabilities(),
       screenSize: () => {
         // The server rejects any heartbeat whose screen size is < 1, which
         // silently freezes the screen's presence ("online" but never updating

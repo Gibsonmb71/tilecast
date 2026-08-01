@@ -32,6 +32,7 @@ export type TerminalReason =
   | "empty_content"
   | "recovery_action"
   | "bounded_timeout"
+  | "external_presentation"
   | "unknown";
 
 export interface PresentationContext {

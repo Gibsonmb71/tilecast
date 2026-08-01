@@ -30,6 +30,9 @@ var commandTypes = map[string]bool{
 	"resynchronize_player": true, "run_player_self_test": true,
 	// Linux (systemd) autostart. Android players answer unsupported_command.
 	"install_autostart": true, "remove_autostart": true,
+	// External presentation is a player capability, not playlist content.
+	"prepare_airplay_session": true, "stop_airplay_session": true,
+	"test_airplay_support": true,
 }
 
 type takeoverInput struct {
@@ -247,6 +250,9 @@ func (s *server) activateTakeover(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
+	// Emergency takeover preempts the lower-priority external presentation.
+	// For groups this stops every participant through the session's state rows.
+	s.stopAirplayForScreens(r.Context(), screens, user.ID, "emergency_takeover")
 	for _, screen := range screens {
 		var version int64
 		_ = s.db.QueryRow(r.Context(), `SELECT manifest_version FROM screen_manifest_state WHERE screen_id=$1`, screen).Scan(&version)
@@ -333,6 +339,14 @@ func (s *server) createPlayerCommand(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 422, "command_invalid_payload", err.Error())
 		return
 	}
+	if input.Type == "prepare_airplay_session" || input.Type == "stop_airplay_session" {
+		// AirPlay commands carry a temporary PIN/device identity and must be
+		// issued only by the session coordinator after it has resolved the target
+		// membership and authorization. Do not expose a generic command escape
+		// hatch that can advertise an arbitrary receiver on a screen.
+		writeError(w, http.StatusForbidden, "airplay_session_api_required", "Use the AirPlay Present session API for AirPlay activation and stop commands.")
+		return
+	}
 	user := r.Context().Value(sessionContextKey).(auth.Session).User
 	key := uuid.New()
 	if input.IdempotencyKey != nil {
@@ -407,6 +421,7 @@ func (s *server) cancelPlayerCommand(w http.ResponseWriter, r *http.Request) {
 func (s *server) playerCommands(w http.ResponseWriter, r *http.Request) {
 	principal := r.Context().Value(deviceContextKey).(devices.DevicePrincipal)
 	s.expireCommands(r)
+	s.expireAirplaySessions(r.Context())
 	rows, err := s.db.Query(r.Context(), `
 		WITH delivered AS (
 			UPDATE player_commands
@@ -535,6 +550,7 @@ func (s *server) updatePlayerCommand(w http.ResponseWriter, r *http.Request, sta
 	}
 	if state != "acknowledged" {
 		_, _ = s.db.Exec(r.Context(), `UPDATE screen_player_status SET last_command_id=$2,last_command_state=$3,last_command_result=NULLIF($4,''),last_command_completed_at=now(),playback_disabled=CASE WHEN $4='playback_disabled' THEN true WHEN $4='playback_enabled' THEN false ELSE playback_disabled END WHERE screen_id=$1`, principal.ScreenID, id, state, code)
+		s.recordAirplayCommandResult(r.Context(), id, state, code, message)
 		action := "command.failed"
 		if state == "succeeded" {
 			action = "command.completed"
@@ -551,7 +567,13 @@ func (s *server) validateCommand(typ string, raw json.RawMessage) ([]byte, error
 	if len(raw) == 0 {
 		raw = []byte(`{}`)
 	}
-	if len(raw) > 2048 {
+	maxPayload := 2048
+	if typ == "prepare_airplay_session" {
+		// A group command carries one bounded destination per display. It is
+		// still deliberately small and never contains a shell command.
+		maxPayload = 8192
+	}
+	if len(raw) > maxPayload {
 		return nil, errors.New("command payload is too large")
 	}
 	var object map[string]any
@@ -593,6 +615,14 @@ func (s *server) validateCommand(typ string, raw json.RawMessage) ([]byte, error
 		mode, modeOK := object["installationMode"].(string)
 		if !versionOK || version <= 0 || version != float64(int64(version)) || !hashOK || len(hash) != 64 || !modeOK || (mode != "download_only" && mode != "install_now" && mode != "maintenance_window") {
 			return nil, errors.New("player update payload is invalid")
+		}
+	case "prepare_airplay_session", "stop_airplay_session":
+		if err := validateAirplayCommandPayload(typ, object); err != nil {
+			return nil, err
+		}
+	case "test_airplay_support":
+		if len(object) > 0 {
+			return nil, errors.New("AirPlay support test does not accept a payload")
 		}
 	default:
 		if len(object) > 0 {

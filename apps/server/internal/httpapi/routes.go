@@ -98,6 +98,12 @@ func (s *server) routes() http.Handler {
 			dashboard.With(s.requireCSRF, s.requireScreenScope).Delete("/screens/{id}/live-stream/{sessionId}", s.endLiveStream)
 			dashboard.With(s.requireScreenScope).Get("/screens/{id}/live-stream/{sessionId}/mjpeg", s.watchLiveStream)
 			dashboard.With(s.requireScreenScope).Get("/screens/{id}/reliability", s.screenReliability)
+			// AirPlay Present is a temporary, high-priority external
+			// presentation. Only screen managers can start/stop it; read access
+			// is available to any enrolled dashboard session.
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/airplay/sessions", s.createAirplaySession)
+			dashboard.Get("/airplay/sessions/{id}", s.getAirplaySession)
+			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/airplay/sessions/{id}/stop", s.stopAirplaySession)
 			dashboard.Get("/locations", s.listLocations)
 			dashboard.Get("/plugins", s.listPlugins)
 			dashboard.Get("/plugins/dependency-graph", s.dependencyGraph)

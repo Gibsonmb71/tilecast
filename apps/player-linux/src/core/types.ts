@@ -360,6 +360,28 @@ export interface Heartbeat {
   autostartError?: string;
   bootLaunchVerified?: boolean;
   lastSuccessfulColdBootAt?: string;
+  /** External AirPlay presentation capability and live process state. */
+  airplaySupported?: boolean;
+  airplayUxPlayInstalled?: boolean;
+  airplayUxPlayVersion?: string;
+  airplayGstreamerInstalled?: boolean;
+  airplayH264DecoderAvailable?: boolean;
+  airplayHardwareDecode?: boolean;
+  airplayDecoder?: string;
+  airplayMaxProfile?: string;
+  airplayGroupSupported?: boolean;
+  airplayAudioAvailable?: boolean;
+  airplayAvahiAvailable?: boolean;
+  airplayMdnsAdvertisementAvailable?: boolean;
+  airplayMulticastSupported?: boolean;
+  airplayMulticastTestStatus?: string;
+  externalPresentationState?: string;
+  externalPresentationSessionId?: string;
+  externalPresentationRole?: string;
+  airplayReceiverState?: string;
+  airplayTransport?: string;
+  airplayConnected?: boolean;
+  externalPresentationExpiresAt?: string;
 }
 
 // ---------------------------------------------------------------------------

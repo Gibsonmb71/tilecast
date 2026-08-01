@@ -8,13 +8,19 @@ import {
   Select,
   StatusBadge,
 } from "../components/ui";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { api } from "../api/client";
 import type { ScreenGroup } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { PlayerPolicyEditor } from "../settings/PlayerPolicyEditor";
+import { AirPlayPresentDialog } from "../components/AirPlayPresentDialog";
 
 const canManage = (role?: string) =>
   role === "owner" || role === "administrator";
@@ -167,6 +173,7 @@ export function GroupDetailPage() {
   const manageable = canManage(auth.status?.user?.role);
   const [screenSearch, setScreenSearch] = useState("");
   const [selectedPresentation, setSelectedPresentation] = useState("");
+  const [airplayOpen, setAirplayOpen] = useState(false);
   const group = useQuery({
       queryKey: ["screen-groups", id],
       queryFn: () => api.screenGroup(id),
@@ -184,6 +191,13 @@ export function GroupDetailPage() {
       queryKey: ["layouts", "sync-group"],
       queryFn: () => api.layouts(""),
     });
+  const groupAirplayCapabilities = useQueries({
+    queries: (group.data?.screens ?? []).map((screen) => ({
+      queryKey: ["screen-reliability", screen.id],
+      queryFn: () => api.screenReliability(screen.id),
+      refetchInterval: 10_000,
+    })),
+  }).flatMap((query) => (query.data ? [query.data] : []));
   const refresh = () =>
     client.invalidateQueries({ queryKey: ["screen-groups", id] });
   const add = useMutation({
@@ -197,8 +211,12 @@ export function GroupDetailPage() {
       onSuccess: refresh,
     }),
     update = useMutation({
-      mutationFn: (value: { name: string; description: string }) =>
-        api.updateScreenGroup(id, value, csrf),
+      mutationFn: (value: {
+        name: string;
+        description: string;
+        presentationGatewayScreenId?: string;
+        clearPresentationGateway?: boolean;
+      }) => api.updateScreenGroup(id, value, csrf),
       onSuccess: refresh,
     }),
     deleteGroup = useMutation({
@@ -278,6 +296,9 @@ export function GroupDetailPage() {
               >
                 Edit sync group
               </Button>
+              <Button variant="primary" onClick={() => setAirplayOpen(true)}>
+                Present · AirPlay
+              </Button>
               <Button
                 variant="danger"
                 onClick={() => {
@@ -294,6 +315,23 @@ export function GroupDetailPage() {
             </>
           ) : undefined
         }
+      />
+      <AirPlayPresentDialog
+        open={airplayOpen}
+        targetType="group"
+        targetId={groupData.id}
+        destinationName={groupData.name}
+        displayCount={groupData.membershipCount}
+        csrfToken={csrf}
+        capabilities={groupAirplayCapabilities}
+        audioDisplayName={
+          groupData.presentationGatewayScreenId
+            ? groupData.screens.find(
+                (screen) => screen.id === groupData.presentationGatewayScreenId,
+              )?.name
+            : "Automatic gateway"
+        }
+        onClose={() => setAirplayOpen(false)}
       />
       <ScreenManagementTabs />
 
@@ -316,6 +354,43 @@ export function GroupDetailPage() {
           </div>
         </dl>
       </Panel>
+
+      {manageable && groupData.screens.length > 0 && (
+        <Panel className="sync-group-panel">
+          <SectionHeader
+            title="AirPlay gateway"
+            description="The preferred gateway is stable across sessions. Automatic selection uses online Linux capability, hardware decode, wired link, then screen name."
+          />
+          <Field label="Preferred presentation gateway">
+            <Select
+              value={groupData.presentationGatewayScreenId ?? ""}
+              onChange={(event) => {
+                if (!event.target.value) {
+                  update.mutate({
+                    name: groupData.name,
+                    description: groupData.description,
+                    clearPresentationGateway: true,
+                  });
+                  return;
+                }
+                update.mutate({
+                  name: groupData.name,
+                  description: groupData.description,
+                  presentationGatewayScreenId: event.target.value,
+                });
+              }}
+              disabled={update.isPending}
+            >
+              <option value="">Automatic</option>
+              {groupData.screens.map((screen) => (
+                <option key={screen.id} value={screen.id}>
+                  {screen.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </Panel>
+      )}
 
       <Panel className="sync-group-panel">
         <SectionHeader

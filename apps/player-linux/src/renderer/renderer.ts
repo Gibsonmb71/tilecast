@@ -96,6 +96,15 @@ interface RendererPresentation {
   title?: string;
   message?: string;
   reason?: string;
+  provider?: string;
+  sessionId?: string;
+  receiverName?: string;
+  pin?: string;
+  expiresAt?: string;
+  connected?: boolean;
+  role?: string;
+  transport?: string;
+  audioMode?: string;
 }
 
 interface TilecastBridge {
@@ -1973,6 +1982,29 @@ function present(presentation: RendererPresentation): void {
     case "playing":
       startPlaying(presentation);
       break;
+    case "external-presentation": {
+      // UxPlay owns the single-screen window and GStreamer owns the group
+      // receiver window once connected. Keeping Electron's message layer
+      // empty in that state prevents a stale ready page from covering either
+      // external surface. Before connection the ready page is the only
+      // visible Tilecast surface.
+      if (presentation.connected) {
+        showMessage("");
+        break;
+      }
+      const expires = presentation.expiresAt
+        ? new Date(presentation.expiresAt).toLocaleString()
+        : "the scheduled end time";
+      showMessage(`
+        <h1>Ready to Present</h1>
+        <h2>${escapeHtml(presentation.receiverName ?? "Tilecast AirPlay")}</h2>
+        <div class="code">${escapeHtml(presentation.pin ?? "")}</div>
+        <p>On iPhone, iPad, or Mac, choose Screen Mirroring and select this receiver.</p>
+        <p>Available until ${escapeHtml(expires)}.</p>
+        <p>Waiting for a presenter…</p>
+      `);
+      break;
+    }
     default:
       break;
   }

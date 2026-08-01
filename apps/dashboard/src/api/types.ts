@@ -487,7 +487,78 @@ export type ReliabilityStatus = {
   autostartSupervised?: boolean;
   autostartLingerEnabled?: boolean;
   autostartError?: string;
+  airplaySupported?: boolean;
+  airplayUxPlayInstalled?: boolean;
+  airplayUxPlayVersion?: string;
+  airplayGstreamerInstalled?: boolean;
+  airplayH264DecoderAvailable?: boolean;
+  airplayHardwareDecode?: boolean;
+  airplayDecoder?: string;
+  airplayMaxProfile?: "1080p30" | "720p30" | "unsupported" | string;
+  airplayGroupSupported?: boolean;
+  airplayAudioAvailable?: boolean;
+  airplayAvahiAvailable?: boolean;
+  airplayMdnsAdvertisementAvailable?: boolean;
+  airplayMulticastSupported?: boolean;
+  airplayMulticastTestStatus?: string;
+  externalPresentationState?: string;
+  externalPresentationSessionId?: string;
+  externalPresentationRole?: string;
+  airplayReceiverState?: string;
+  airplayTransport?: "unicast" | "multicast" | string;
+  airplayConnected?: boolean;
+  externalPresentationExpiresAt?: string;
   powerAssist: PowerAssistResults;
+};
+
+export type AirplaySessionScreenState = {
+  screenId: string;
+  screenName: string;
+  role: "single" | "gateway" | "receiver" | string;
+  state:
+    | "preparing"
+    | "ready"
+    | "waiting"
+    | "connected"
+    | "degraded"
+    | "failed"
+    | "stopped"
+    | string;
+  lastUpdatedAt: string;
+  failureCode?: string;
+  failureMessage?: string;
+};
+
+export type AirplaySession = {
+  id: string;
+  provider: "airplay";
+  status:
+    | "preparing"
+    | "waiting"
+    | "active"
+    | "stopping"
+    | "ended"
+    | "expired"
+    | "failed"
+    | string;
+  targetType: "screen" | "group";
+  targetId: string;
+  gatewayScreenId: string;
+  audioScreenId?: string;
+  receiverName: string;
+  pin?: string;
+  expiresAt: string;
+  transport: "unicast" | "multicast" | string;
+  videoProfile: "1080p30" | "720p30" | string;
+  audioMode: "gateway_only" | "none" | string;
+  screenCount: number;
+  readyCount: number;
+  connectedCount: number;
+  failedCount: number;
+  createdAt?: string;
+  endedAt?: string;
+  endReason?: string;
+  screens: AirplaySessionScreenState[];
 };
 export type UptimeWindow = "24h" | "7d";
 /** A screen spends every measured second in exactly one of these states. */
@@ -751,6 +822,7 @@ export type ScreenGroup = {
   layoutId?: string;
   layoutName?: string;
   presentationType?: "playlist" | "layout";
+  presentationGatewayScreenId?: string;
   playbackEpoch: string;
   membershipCount: number;
   screens: { id: string; name: string; location: string }[];
