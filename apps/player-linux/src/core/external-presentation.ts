@@ -1,4 +1,4 @@
-import { randomBytes } from "crypto";
+import { randomBytes, randomInt } from "crypto";
 
 /** Fixed ports are part of the AirPlay firewall contract. */
 export const AIRPLAY_PORTS = {
@@ -175,8 +175,14 @@ export function randomAirplayDeviceId(random = randomBytes(6)): string {
 }
 
 export function randomAirplayPin(random = randomBytes(4)): string {
-  const value = random.readUInt32BE(0) % 10_000;
-  return value.toString().padStart(4, "0");
+  const maxUnbiased = Math.floor(0x1_0000_0000 / 10_000) * 10_000;
+  if (random.length >= 4) {
+    const value = random.readUInt32BE(0);
+    if (value < maxUnbiased) {
+      return (value % 10_000).toString().padStart(4, "0");
+    }
+  }
+  return randomInt(0, 10_000).toString().padStart(4, "0");
 }
 
 export function isAirplayPin(value: unknown): value is string {
