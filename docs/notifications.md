@@ -64,7 +64,7 @@ Then open **Settings**, **Notifications** and:
 2. Set a **From address** the relay accepts.
 3. Choose a **Minimum severity**.
 
-Each person then opens **My preferences**, **Notifications** and sets an
+Each person then opens **My Account**, **Preferences**, **Notifications** and sets an
 address and what to receive. Nobody is subscribed until they choose it. An
 account with no address is never emailed.
 

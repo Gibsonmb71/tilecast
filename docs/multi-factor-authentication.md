@@ -22,7 +22,7 @@ To use passkeys, serve Tilecast over HTTPS at a hostname and set `TILECAST_PUBLI
 
 ## Enabling it
 
-Per-person enrollment is always available from **Sign-in security** in the account menu. Nothing has to be turned on organization-wide for someone to protect their own account.
+Per-person enrollment is always available from **My Account → Sign-in security**. Nothing has to be turned on organization-wide for someone to protect their own account.
 
 To require it, an Owner or Administrator sets **Settings → Sign-in security → Require multi-factor authentication**:
 
@@ -34,7 +34,7 @@ Changing the policy signs nobody out. An account in scope that has not enrolled 
 
 ### The guided first sign-in
 
-That enrollment screen is a wizard, not the Sign-in security page in a frame. It opens with the person's first name and the two or three steps ahead of them, then does one thing per screen: authenticator app, recovery codes, passkey. Only the steps the account still owes are planned, so somebody who already has an authenticator starts at recovery codes, and the passkey step is left out entirely where the installation cannot run a ceremony.
+That enrollment screen is a wizard, not the Sign-in security section of My Account in a frame. It opens with the person's first name and the two or three steps ahead of them, then does one thing per screen: authenticator app, recovery codes, passkey. Only the steps the account still owes are planned, so somebody who already has an authenticator starts at recovery codes, and the passkey step is left out entirely where the installation cannot run a ceremony.
 
 Two behaviors in it are load-bearing:
 
@@ -47,7 +47,7 @@ While a policy covers a role, the last remaining factor on such an account canno
 
 Tilecast has no email delivery, so there is no self-service reset link. Three paths exist, in order of preference:
 
-1. **Recovery codes.** Ten single-use codes, generated from Sign-in security and shown exactly once. Regenerating invalidates every unused code.
+1. **Recovery codes.** Ten single-use codes, generated from My Account → Sign-in security and shown exactly once. Regenerating invalidates every unused code.
 2. **An Owner or Administrator resets the account.** Settings → Users → edit the account → **Reset** under Two-step verification. This clears the authenticator, every passkey, and all recovery codes, signs the account out everywhere, and writes an audit entry. The usual role rules apply: only an Owner may reset an Owner or Administrator.
 3. **Break-glass on the server.** When the only Owner is locked out and no other administrator can help, run on the server host:
 

@@ -210,13 +210,8 @@ describe("AutostartInstaller.repairLegacyGeneratedUnit", () => {
       `ExecStart=${APP_IMAGE} --appimage-extract-and-run`,
     );
     expect(h.files.get(UNIT_PATH)).toContain("WantedBy=default.target");
-    expect(h.runs).toContainEqual([
-      "systemctl",
-      ["--user", "daemon-reload"],
-    ]);
-    expect(
-      h.runs.some(([, args]) => args.includes("enable")),
-    ).toBe(false);
+    expect(h.runs).toContainEqual(["systemctl", ["--user", "daemon-reload"]]);
+    expect(h.runs.some(([, args]) => args.includes("enable"))).toBe(false);
   });
 
   it("leaves missing, current, and operator-owned units untouched", async () => {

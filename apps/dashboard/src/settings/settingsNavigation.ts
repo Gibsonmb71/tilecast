@@ -172,7 +172,7 @@ export const sectionDetails: Record<
     icon: ShieldCheck,
     title: "Sign-in security",
     description:
-      "Decide who must use a second factor to sign in. Each person manages their own authenticator, passkeys, and recovery codes from Sign-in security in their account menu.",
+      "Decide who must use a second factor to sign in. Each person manages their own authenticator, passkeys, and recovery codes from My Account → Sign-in security.",
   },
   locations: {
     icon: MapPin,
@@ -276,7 +276,7 @@ export const sectionDetails: Record<
   },
   preferences: {
     icon: SlidersHorizontal,
-    title: "My preferences",
+    title: "Preferences",
     description: "Appearance and workflow preferences for your Studio account.",
   },
 };

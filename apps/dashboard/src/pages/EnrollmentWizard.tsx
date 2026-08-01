@@ -20,7 +20,7 @@ import "./EnrollmentWizard.css";
 /**
  * The guided first sign-in. A session that owes the organization a factor
  * cannot reach any other page, so this replaces the shell entirely and walks
- * one step at a time instead of presenting the whole Sign-in security page and
+ * one step at a time instead of presenting the whole My Account page and
  * leaving the user to work out the order.
  */
 export function EnrollmentWizard({ onFinish }: { onFinish: () => void }) {
@@ -438,7 +438,7 @@ function PasskeyStep({
         <p>
           A passkey signs you in with your fingerprint, face, or screen lock,
           with no code to type. It counts as your second step on its own. You
-          can add one later from Sign-in security instead.
+          can add one later from My Account instead.
         </p>
       </header>
       {errorNotice(
@@ -486,8 +486,7 @@ function DoneScreen({
         <h1>{firstName ? `You're set, ${firstName}.` : "You're set."}</h1>
         <p className="enrollment__lede">
           Next time you sign in, Tilecast asks for your second step after your
-          password. You can change any of this from Sign-in security in the
-          account menu.
+          password. You can change any of this from My Account.
         </p>
       </header>
       {summary.length > 0 && (
