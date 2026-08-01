@@ -17,7 +17,7 @@
  * fresh command).
  */
 
-import { chmod, rename } from "node:fs/promises";
+import { chmod, rename, stat } from "node:fs/promises";
 import type { DownloadRequest } from "./download";
 import { logger } from "./log";
 import type {
@@ -47,6 +47,14 @@ const PROGRESS_INTERVAL_MS = 2_000;
 export async function promoteAppImage(from: string, to: string): Promise<void> {
   await chmod(from, 0o755);
   await rename(from, to);
+}
+
+async function existingFileSize(filePath: string): Promise<number> {
+  try {
+    return (await stat(filePath)).size;
+  } catch {
+    return 0;
+  }
 }
 
 export interface SelfUpdateDeps {
@@ -121,9 +129,6 @@ function readPayload(command: PlayerCommand): UpdatePayload | null {
 }
 
 export class SelfUpdater {
-  private progressReportedAt = 0;
-  private progressInFlight = false;
-
   constructor(private readonly deps: SelfUpdateDeps) {}
 
   /** Execute an install_player_update command. Never throws. */
@@ -136,6 +141,26 @@ export class SelfUpdater {
       return;
     }
     const { deploymentId } = payload;
+
+    // Progress serialization belongs to this run. Two disruptive commands may
+    // overlap briefly, and neither deployment should throttle or await the
+    // other's status request.
+    let progressReportedAt = 0;
+    let latestProgressReport: Promise<void> = Promise.resolve();
+    const reportProgress = (downloadedBytes: number): void => {
+      const now = this.deps.now();
+      if (now - progressReportedAt < PROGRESS_INTERVAL_MS) {
+        return;
+      }
+      progressReportedAt = now;
+      latestProgressReport = latestProgressReport.then(() =>
+        this.report(deploymentId, {
+          state: "downloading",
+          downloadedBytes,
+        }),
+      );
+    };
+
     try {
       if (!this.deps.appImagePath) {
         // Not packaged as an AppImage (dev run or unmanaged install): the
@@ -147,11 +172,12 @@ export class SelfUpdater {
         return;
       }
 
+      const resumedBytes = await existingFileSize(`${this.deps.stagePath}.part`);
       await this.report(deploymentId, {
         state: "downloading",
-        downloadedBytes: 0,
+        downloadedBytes: resumedBytes,
       });
-      this.progressReportedAt = this.deps.now();
+      progressReportedAt = this.deps.now();
       const meta = await this.deps.fetchMetadata(payload.releaseId);
       if (
         meta.platform !== "linux" ||
@@ -175,8 +201,13 @@ export class SelfUpdater {
         destination: this.deps.stagePath,
         expectedSha256: meta.artifactSha256,
         expectedSizeBytes: meta.artifactSizeBytes,
-        onProgress: (bytes) => this.reportProgress(deploymentId, bytes),
+        etag: `"sha256-${meta.artifactSha256}"`,
+        onProgress: reportProgress,
       });
+      // The downloader callback cannot await network telemetry. Drain its
+      // serialized tail before advancing, so a late downloading report cannot
+      // overwrite downloaded/verifying or any later state.
+      await latestProgressReport;
       await this.report(deploymentId, {
         state: "downloaded",
         downloadedBytes: meta.artifactSizeBytes,
@@ -213,6 +244,9 @@ export class SelfUpdater {
       this.deps.restart();
     } catch (err) {
       log.warn("self-update failed", { deploymentId, error: String(err) });
+      // A failed terminal state must also stay ahead of any callback already
+      // queued by the downloader.
+      await latestProgressReport;
       await this.report(deploymentId, {
         state: "failed",
         error: String(err).slice(0, 240),
@@ -244,29 +278,6 @@ export class SelfUpdater {
     }
     // download_only (and any unknown mode): stage only, do not restart.
     return null;
-  }
-
-  /**
-   * Post download progress, at most one report every PROGRESS_INTERVAL_MS and
-   * never two at once. Deliberately not awaited by the download loop: a slow or
-   * failing server must not hold up the bytes it is reporting on.
-   */
-  private reportProgress(deploymentId: string, downloadedBytes: number): void {
-    const now = this.deps.now();
-    if (
-      this.progressInFlight ||
-      now - this.progressReportedAt < PROGRESS_INTERVAL_MS
-    ) {
-      return;
-    }
-    this.progressReportedAt = now;
-    this.progressInFlight = true;
-    void this.report(deploymentId, {
-      state: "downloading",
-      downloadedBytes,
-    }).finally(() => {
-      this.progressInFlight = false;
-    });
   }
 
   private async report(
