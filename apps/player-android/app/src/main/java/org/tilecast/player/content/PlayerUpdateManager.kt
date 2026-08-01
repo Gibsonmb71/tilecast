@@ -63,6 +63,7 @@ class PlayerUpdateManager(private val app:Application,private val api:TilecastAp
         val release=command.payload["releaseId"]?.jsonPrimitive?.contentOrNull?:return CommandOutcome(false,"update_payload_invalid","Update release is invalid")
         val expected=command.payload["expectedVersionCode"]?.jsonPrimitive?.longOrNull?:return CommandOutcome(false,"update_payload_invalid","Expected version is invalid")
         if(expected<=BuildConfig.VERSION_CODE)return CommandOutcome(true,"update_already_current","Player is already current")
+        var progressReporter:SerializedUpdateStatusReporter?=null
         return try{
             val metadata=api.playerUpdate(server,credential,release)
             val part=File(app.filesDir,"updates/$release.apk.part")
@@ -71,12 +72,12 @@ class PlayerUpdateManager(private val app:Application,private val api:TilecastAp
             // Progress goes to the server as well as the local screen: the
             // deployment drawer has no other source for a download percentage,
             // and reporting it per chunk would be a request per few kilobytes.
-            var reportedAt=System.currentTimeMillis();var reporting=false
+            val reporter=SerializedUpdateStatusReporter(scope,PROGRESS_REPORT_INTERVAL_MS){written->api.updateStatus(server,credential,deployment,"downloading",written)}
+            progressReporter=reporter
             api.downloadVariant(server,metadata.apkPath,credential,part,metadata.apkSha256,metadata.apkSizeBytes){written->
-                state=state.copy(downloadedBytes=written);persist(state);onState(state)
-                val now=System.currentTimeMillis()
-                if(!reporting&&now-reportedAt>=PROGRESS_REPORT_INTERVAL_MS){reportedAt=now;reporting=true;scope.launch{runCatching{api.updateStatus(server,credential,deployment,"downloading",written)};reporting=false}}
+                state=state.copy(downloadedBytes=written);persist(state);onState(state);reporter.submit(written)
             }
+            reporter.awaitIdle()
             state=state.copy(state="verifying",downloadedBytes=metadata.apkSizeBytes,message="Verifying signed player update");persist(state);onState(state);api.updateStatus(server,credential,deployment,"verifying",state.downloadedBytes)
             val archive=inspect(part)
             PlayerUpdateVerifier.validate(metadata,BuildConfig.VERSION_CODE.toLong(),Build.VERSION.SDK_INT,archive,installedCertificateSha256())
@@ -97,7 +98,7 @@ class PlayerUpdateManager(private val app:Application,private val api:TilecastAp
                 return CommandOutcome(true,"unattended_update_started","Verified Player update installation started")
             }
             state=state.copy(state="waiting_for_user",message="This Android version requires local installer approval",installReady=true);persist(state);onState(state);api.updateStatus(server,credential,deployment,"waiting_for_user",state.downloadedBytes,permissionStatus="granted",installerStatus="system_confirmation_required");CommandOutcome(true,"update_waiting_for_user","This Android version requires local installer approval")
-        }catch(error:Exception){val code=error.message?.takeIf{it.matches(Regex("[a-z_]+"))}?:"update_preparation_failed";api.updateStatus(server,credential,deployment,"failed",0,error=code);CommandOutcome(false,code,"Player update could not be prepared")}
+        }catch(error:Exception){progressReporter?.awaitIdle();val code=error.message?.takeIf{it.matches(Regex("[a-z_]+"))}?:"update_preparation_failed";api.updateStatus(server,credential,deployment,"failed",0,error=code);CommandOutcome(false,code,"Player update could not be prepared")}
     }
 
     fun openPermissionSettings(){app.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${app.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}

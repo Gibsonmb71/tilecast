@@ -5,7 +5,11 @@ import {
   promoteAppImage,
   type SelfUpdateDeps,
 } from "./self-update";
-import type { PlayerCommand, UpdateMetadata } from "./types";
+import type {
+  PlayerCommand,
+  UpdateMetadata,
+  UpdateStatusReport,
+} from "./types";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -50,11 +54,13 @@ function command(payload: Record<string, unknown> = {}): PlayerCommand {
 function deps(overrides: Partial<SelfUpdateDeps> = {}): {
   d: SelfUpdateDeps;
   states: string[];
+  reports: UpdateStatusReport[];
   restart: ReturnType<typeof vi.fn>;
   promote: ReturnType<typeof vi.fn>;
   download: ReturnType<typeof vi.fn>;
 } {
   const states: string[] = [];
+  const reports: UpdateStatusReport[] = [];
   const restart = vi.fn();
   const promote = vi.fn(async () => {});
   const download = vi.fn(async () => {});
@@ -64,6 +70,7 @@ function deps(overrides: Partial<SelfUpdateDeps> = {}): {
     fetchMetadata: async () => metadata(),
     reportStatus: async (_id, body) => {
       states.push(body.state);
+      reports.push(body);
     },
     download,
     buildUrl: (path) => `https://server${path}`,
@@ -73,7 +80,7 @@ function deps(overrides: Partial<SelfUpdateDeps> = {}): {
     now: () => Date.parse("2026-07-20T12:00:00Z"),
     ...overrides,
   };
-  return { d, states, restart, promote, download };
+  return { d, states, reports, restart, promote, download };
 }
 
 describe("parseVersionCode", () => {
@@ -128,10 +135,79 @@ describe("SelfUpdater", () => {
         destination: d.stagePath,
         expectedSha256: ARTIFACT_SHA,
         expectedSizeBytes: 4096,
+        etag: `"sha256-${ARTIFACT_SHA}"`,
       }),
     );
     expect(promote).toHaveBeenCalledWith(d.stagePath, d.appImagePath);
     expect(restart).toHaveBeenCalledOnce();
+  });
+
+  it("preserves the resumed byte count in the initial status", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "tilecast-resume-"));
+    const stagePath = path.join(root, "player-update.AppImage");
+    try {
+      await writeFile(`${stagePath}.part`, Buffer.alloc(1024));
+      const { d, reports } = deps({ stagePath });
+
+      await new SelfUpdater(d).run(
+        command({ installationMode: "download_only" }),
+      );
+
+      expect(reports[0]).toMatchObject({
+        state: "downloading",
+        downloadedBytes: 1024,
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("waits for an in-flight progress report before advancing state", async () => {
+    let now = 0;
+    let releaseProgress!: () => void;
+    let markProgressStarted!: () => void;
+    const progressGate = new Promise<void>((resolve) => {
+      releaseProgress = resolve;
+    });
+    const progressStarted = new Promise<void>((resolve) => {
+      markProgressStarted = resolve;
+    });
+    const reports: UpdateStatusReport[] = [];
+    const { d } = deps({
+      now: () => now,
+      reportStatus: async (_id, body) => {
+        reports.push(body);
+        if (body.state === "downloading" && body.downloadedBytes === 1024) {
+          markProgressStarted();
+          await progressGate;
+        }
+      },
+      download: vi.fn(async (request) => {
+        now = 3_000;
+        request.onProgress?.(1024);
+      }),
+    });
+
+    const running = new SelfUpdater(d).run(
+      command({ installationMode: "download_only" }),
+    );
+    await progressStarted;
+
+    expect(reports.map((report) => report.state)).toEqual([
+      "downloading",
+      "downloading",
+    ]);
+
+    releaseProgress();
+    await running;
+
+    expect(reports.map((report) => report.state)).toEqual([
+      "downloading",
+      "downloading",
+      "downloaded",
+      "verifying",
+      "ready",
+    ]);
   });
 
   it("stages but does not restart on download_only", async () => {
