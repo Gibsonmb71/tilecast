@@ -499,6 +499,17 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         pendingActivationJob?.cancel(); pendingActivationJob = null
     }
 
+    // Activity restarts can overlap the creation of the replacement Activity. Close the
+    // socket before launching that replacement so an in-flight OkHttp upgrade from this
+    // ViewModel cannot win the server's single-screen presence slot after the new player has
+    // connected. onCleared covers normal Activity/process teardown as well.
+    fun shutdownForRestart() { stopConnectionWork() }
+
+    override fun onCleared() {
+        stopConnectionWork()
+        super.onCleared()
+    }
+
     private fun clearPlaybackState() {
         mutableContent.value = null
         pendingContent = null
@@ -541,7 +552,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 						// A root-Layout session never reports playlist boundaries, so waiting
 						// for one would leave the new manifest pending forever.
 						val boundaryless=mutableContent.value?.content?.manifest?.layout!=null
-						if (mutableContent.value == null||takeoverChanged||prepared.manifest.syncGroup!=null||boundaryless) activatePrepared(prepared, url, credential) else { pendingContent = prepared; schedulePendingActivationFallback(url, credential) }
+						if (shouldActivateManifestImmediately(mutableContent.value != null, takeoverChanged, boundaryless, prepared.manifest.syncGroup != null)) activatePrepared(prepared, url, credential) else { pendingContent = prepared; schedulePendingActivationFallback(url, credential) }
 					}
 					refreshCommissioning()
 				}
