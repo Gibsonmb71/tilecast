@@ -194,6 +194,8 @@ type approvePairingRequest struct {
 	RoomNumber                string     `json:"roomNumber"`
 	Description               string     `json:"description"`
 	ReplaceExistingCredential bool       `json:"replaceExistingCredential"`
+	ReplaceHardware           bool       `json:"replaceHardware"`
+	ReplacementScreenID       *uuid.UUID `json:"replacementScreenId"`
 }
 
 func (s *server) approvePairing(w http.ResponseWriter, r *http.Request) {
@@ -207,7 +209,11 @@ func (s *server) approvePairing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user := r.Context().Value(sessionContextKey).(auth.Session).User
-	screen, err := s.devices.ApprovePairing(r.Context(), id, user.ID, body.Name, body.LocationID, body.RoomName, body.RoomNumber, body.Description, body.ReplaceExistingCredential)
+	screen, err := s.devices.ApprovePairingWithOptions(r.Context(), id, user.ID, devices.PairingApproval{
+		Name: body.Name, LocationID: body.LocationID, RoomName: body.RoomName, RoomNumber: body.RoomNumber,
+		Description: body.Description, ReplaceExistingCredential: body.ReplaceExistingCredential,
+		ReplaceHardware: body.ReplaceHardware, ReplacementScreenID: body.ReplacementScreenID,
+	})
 	if err != nil {
 		s.writeDeviceError(w, r, err)
 		return
@@ -258,6 +264,19 @@ func (s *server) getScreen(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": screen})
+}
+
+func (s *server) listScreenPlayerHistory(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	history, err := s.devices.ListPlayerHistory(r.Context(), id)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"items": history, "total": len(history)}})
 }
 
 func (s *server) updateScreen(w http.ResponseWriter, r *http.Request) {

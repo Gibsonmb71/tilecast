@@ -59,6 +59,38 @@ type PairingRequest struct {
 	ExistingScreenName      string         `json:"existingScreenName,omitempty"`
 	HasActiveCredential     bool           `json:"hasActiveCredential"`
 	CredentialReplacementOK bool           `json:"credentialReplacementAuthorized"`
+	PairingMode             string         `json:"pairingMode"`
+}
+
+type PairingApproval struct {
+	Name                      string
+	LocationID                *uuid.UUID
+	RoomName                  string
+	RoomNumber                string
+	Description               string
+	ReplaceExistingCredential bool
+	ReplaceHardware           bool
+	ReplacementScreenID       *uuid.UUID
+}
+
+type PlayerHistory struct {
+	ID               uuid.UUID  `json:"id"`
+	ScreenID         uuid.UUID  `json:"screenId"`
+	CredentialID     *uuid.UUID `json:"credentialId,omitempty"`
+	InstallationID   string     `json:"installationId"`
+	Platform         string     `json:"platform"`
+	Manufacturer     string     `json:"manufacturer"`
+	Model            string     `json:"model"`
+	AndroidVersion   string     `json:"androidVersion"`
+	PlayerVersion    string     `json:"playerVersion"`
+	ScreenWidth      int        `json:"screenWidth"`
+	ScreenHeight     int        `json:"screenHeight"`
+	Density          float32    `json:"density"`
+	Locale           string     `json:"locale"`
+	Timezone         string     `json:"timezone"`
+	PairedAt         time.Time  `json:"pairedAt"`
+	RetiredAt        *time.Time `json:"retiredAt,omitempty"`
+	RetirementReason string     `json:"retirementReason,omitempty"`
 }
 
 type PollResult struct {

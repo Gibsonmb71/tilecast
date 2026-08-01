@@ -2,6 +2,7 @@ package devices
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -35,7 +36,9 @@ func (s *Service) Enroll(ctx context.Context, sessionID uuid.UUID, enrollmentTok
 	var screenName string
 	var replaceExisting bool
 	var approvedBy *uuid.UUID
-	err = tx.QueryRow(ctx, `SELECT p.status,p.enrollment_token_hash,p.enrolled_at,p.resulting_screen_id,s.name,p.replace_existing_credential,p.approved_by_user_id FROM device_pairing_sessions p JOIN screens s ON s.id=p.resulting_screen_id WHERE p.id=$1 FOR UPDATE`, sessionID).Scan(&status, &expected, &enrolledAt, &screenID, &screenName, &replaceExisting, &approvedBy)
+	var pairingMode string
+	var encodedMetadata []byte
+	err = tx.QueryRow(ctx, `SELECT p.status,p.enrollment_token_hash,p.enrolled_at,p.resulting_screen_id,s.name,p.replace_existing_credential,p.approved_by_user_id,p.pairing_mode,p.requested_metadata FROM device_pairing_sessions p JOIN screens s ON s.id=p.resulting_screen_id WHERE p.id=$1 FOR UPDATE`, sessionID).Scan(&status, &expected, &enrolledAt, &screenID, &screenName, &replaceExisting, &approvedBy, &pairingMode, &encodedMetadata)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return EnrollmentResult{}, ErrNotFound
 	}
@@ -48,6 +51,10 @@ func (s *Service) Enroll(ctx context.Context, sessionID uuid.UUID, enrollmentTok
 	if !secretMatches(expected, enrollmentToken) {
 		return EnrollmentResult{}, ErrWrongSecret
 	}
+	var metadata DeviceMetadata
+	if err := json.Unmarshal(encodedMetadata, &metadata); err != nil {
+		return EnrollmentResult{}, fmt.Errorf("decode enrollment metadata: %w", err)
+	}
 	publicID, secret, credential, err := newDeviceCredential()
 	if err != nil {
 		return EnrollmentResult{}, err
@@ -55,6 +62,17 @@ func (s *Service) Enroll(ctx context.Context, sessionID uuid.UUID, enrollmentTok
 	credentialID := uuid.New()
 	if _, err := tx.Exec(ctx, `INSERT INTO device_credentials (id,screen_id,public_id,secret_hash) VALUES ($1,$2,$3,$4)`, credentialID, screenID, publicID, secretHash(secret)); err != nil {
 		return EnrollmentResult{}, fmt.Errorf("create device credential: %w", err)
+	}
+	if pairingMode == "hardware_replacement" {
+		if _, err := tx.Exec(ctx, `UPDATE screen_player_history SET retired_at=now(),retirement_reason='Hardware replaced' WHERE screen_id=$1 AND retired_at IS NULL`, screenID); err != nil {
+			return EnrollmentResult{}, fmt.Errorf("retire previous hardware history: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `UPDATE screens SET player_installation_id=$2,platform=$3,device_manufacturer=$4,device_model=$5,android_version=$6,player_version=$7,screen_width=$8,screen_height=$9,density=$10,locale=$11,timezone=$12,archived_at=NULL,archived_reason='',enabled=TRUE,paired_at=now(),updated_at=now() WHERE id=$1`, screenID, metadata.PlayerInstallationID, metadata.Platform, metadata.Manufacturer, metadata.Model, metadata.AndroidVersion, metadata.PlayerVersion, metadata.ScreenWidth, metadata.ScreenHeight, metadata.Density, metadata.Locale, metadata.Timezone); err != nil {
+			return EnrollmentResult{}, fmt.Errorf("save replacement hardware: %w", err)
+		}
+		if err := recordPlayerHistory(ctx, tx, screenID, credentialID, metadata); err != nil {
+			return EnrollmentResult{}, err
+		}
 	}
 	if replaceExisting {
 		if _, err := tx.Exec(ctx, `UPDATE device_credentials SET revoked_at=now(),revocation_reason='Replaced through approved pairing recovery' WHERE screen_id=$1 AND id<>$2 AND revoked_at IS NULL`, screenID, credentialID); err != nil {
@@ -66,6 +84,11 @@ func (s *Service) Enroll(ctx context.Context, sessionID uuid.UUID, enrollmentTok
 			}
 		}
 	}
+	if pairingMode == "new_screen" {
+		if err := recordPlayerHistory(ctx, tx, screenID, credentialID, metadata); err != nil {
+			return EnrollmentResult{}, err
+		}
+	}
 	if _, err := tx.Exec(ctx, `UPDATE screens SET archived_at=NULL,archived_reason='',enabled=TRUE,paired_at=now(),updated_at=now() WHERE id=$1`, screenID); err != nil {
 		return EnrollmentResult{}, fmt.Errorf("restore archived screen: %w", err)
 	}
@@ -74,6 +97,9 @@ func (s *Service) Enroll(ctx context.Context, sessionID uuid.UUID, enrollmentTok
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return EnrollmentResult{}, fmt.Errorf("commit enrollment: %w", err)
+	}
+	if pairingMode == "hardware_replacement" {
+		s.presence.Disconnect(screenID)
 	}
 	return EnrollmentResult{ScreenID: screenID, ScreenName: screenName, DeviceCredential: credential}, nil
 }

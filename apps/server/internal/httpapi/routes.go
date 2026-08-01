@@ -102,6 +102,7 @@ func (s *server) routes() http.Handler {
 			dashboard.Get("/screens", s.listScreens)
 			dashboard.Get("/screens/archive", s.listArchivedScreens)
 			dashboard.With(s.requireScreenScope).Get("/screens/{id}", s.getScreen)
+			dashboard.With(s.requireScreenScope).Get("/screens/{id}/player-history", s.listScreenPlayerHistory)
 			dashboard.With(s.requireCSRF, s.requireScreenScope).Post("/screens/{id}/live-stream", s.startLiveStream)
 			dashboard.With(s.requireCSRF, s.requireScreenScope).Post("/screens/{id}/live-stream/{sessionId}/renew", s.renewLiveStream)
 			dashboard.With(s.requireCSRF, s.requireScreenScope).Delete("/screens/{id}/live-stream/{sessionId}", s.endLiveStream)
