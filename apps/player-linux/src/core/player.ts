@@ -93,6 +93,12 @@ import type {
 } from "./content-types";
 import type { LayoutRenderPayload, WidgetRenderPayload } from "./render-tree";
 import type { StateStore } from "./storage";
+import type {
+  AirplayCapabilities,
+  ExternalPresentationConfig,
+  ExternalPresentationStatus,
+} from "./external-presentation";
+import { parseExternalPresentationConfig } from "./external-presentation";
 import {
   DEFAULT_SUPERVISOR_CONFIG,
   clearSafeMode,
@@ -164,6 +170,18 @@ export type Presentation =
       items: PresentationItem[];
       takeover: boolean;
       generation: number;
+    }
+  | {
+      state: "external-presentation";
+      provider: "airplay";
+      sessionId: string;
+      receiverName: string;
+      pin: string;
+      expiresAt: string;
+      connected: boolean;
+      role: "single" | "gateway" | "receiver";
+      transport: "unicast" | "multicast";
+      audioMode: "gateway_only" | "none" | "all";
     };
 
 export function presentationIdentity(presentation: Presentation): string {
@@ -221,6 +239,18 @@ export interface PlayerHost {
     height: number;
     bytes: number;
   }): Promise<{ jpeg: Buffer; width: number; height: number } | null>;
+  /** Linux owns UxPlay/GStreamer; the generic runtime only owns policy/state. */
+  prepareExternalPresentation?(
+    config: ExternalPresentationConfig,
+  ): Promise<ExternalPresentationStatus>;
+  startExternalPresentation?(): Promise<ExternalPresentationStatus>;
+  stopExternalPresentation?(reason: string): Promise<void>;
+  recoverExternalPresentation?(): Promise<{
+    config: ExternalPresentationConfig;
+    status: ExternalPresentationStatus;
+  } | null>;
+  getExternalPresentationStatus?(): ExternalPresentationStatus | null;
+  probeAirplayCapabilities?(): Promise<AirplayCapabilities>;
 }
 
 interface PlaybackFlags {
@@ -274,6 +304,15 @@ export class PlayerRuntime {
   private credential: CredentialRecord | null = null;
   private installationId = "";
   private config: PlayerConfig | null = null;
+  private airplayCapabilities: AirplayCapabilities | null = null;
+  private externalPresentation: ExternalPresentationConfig | null = null;
+  private externalPresentationStatus: ExternalPresentationStatus | null = null;
+  /**
+   * Keep the last session identity on a clearing heartbeat. This lets the
+   * server reconcile the session that actually stopped without allowing a
+   * delayed `none` heartbeat from an old session to clear a newer one.
+   */
+  private lastExternalPresentationSessionId: string | null = null;
 
   private activeManifest: Manifest | null = null;
   private pendingManifest: Manifest | null = null;
@@ -437,6 +476,7 @@ export class PlayerRuntime {
     this.activity?.stop();
     this.preview?.stop();
     this.liveStream?.stop();
+    void this.host.stopExternalPresentation?.("process_exit");
   }
 
   // ---------------------------------------------------------------- pairing
@@ -518,12 +558,18 @@ export class PlayerRuntime {
     await this.manifestSync.loadCached();
     this.startupTimings.manifestMs = Date.now() - cachedManifestAt;
 
+    // A power cut must not silently end an unexpired presentation. The Linux
+    // host reconstructs UxPlay/GStreamer from its owner-only session file;
+    // normal signage remains the fallback if the file is absent or expired.
+    await this.recoverExternalPresentation();
+
     this.timers.push(
       setInterval(
         () => this.evaluatePresentation(),
         SELECTION_EVAL_INTERVAL_MS,
       ),
       setInterval(() => void this.supervisorTick(), SUPERVISOR_TICK_MS),
+      setInterval(() => void this.externalPresentationTick(), 1_000),
       setInterval(
         () => void this.reportStatus(),
         this.statusIntervalSeconds() * 1_000,
@@ -617,6 +663,9 @@ export class PlayerRuntime {
     );
     // Read once now so the first sample already carries them.
     void this.refreshSystemDiagnostics();
+    // Capability probing is intentionally asynchronous and infrequent: the
+    // 2012-class target should not spawn vainfo/gst-inspect on every heartbeat.
+    void this.refreshAirplayCapabilities().then(() => void this.reportStatus());
 
     this.sessions = new PlaybackSessionTracker(
       (event) => void this.activity?.record(event),
@@ -631,6 +680,7 @@ export class PlayerRuntime {
           // Protected states never upload an image.
           this.playbackState === "pairing" ||
           this.playbackState === "setup" ||
+          this.playbackState === "external-presentation" ||
           this.supervisorState.safeMode
             ? Promise.resolve(null)
             : this.host.capturePreview(max),
@@ -645,6 +695,7 @@ export class PlayerRuntime {
         capture: (max) =>
           this.playbackState === "pairing" ||
           this.playbackState === "setup" ||
+          this.playbackState === "external-presentation" ||
           this.supervisorState.safeMode
             ? Promise.resolve(null)
             : this.host.capturePreview(max),
@@ -774,7 +825,10 @@ export class PlayerRuntime {
     // its own channel makes create/update/hide immediate and guarantees that
     // the current item, decoder, timeline, and proof-of-play session remain
     // untouched.
-    this.host.presentPlugins?.(manifest.plugins ?? [], clockOffsetMs);
+    this.host.presentPlugins?.(
+      this.externalPresentation ? [] : (manifest.plugins ?? []),
+      clockOffsetMs,
+    );
     const takeoverNow = takeoverActive(manifest, new Date());
     if (
       this.activeManifest === null ||
@@ -811,6 +865,214 @@ export class PlayerRuntime {
       manifestVersion: manifest.manifestVersion,
       graceSeconds: graceMilliseconds / 1_000,
     });
+  }
+
+  private externalPresentationView(): Presentation | null {
+    const config = this.externalPresentation;
+    const status = this.externalPresentationStatus;
+    if (!config || !status) return null;
+    return {
+      state: "external-presentation",
+      provider: "airplay",
+      sessionId: config.sessionId,
+      receiverName: config.receiverName,
+      pin: config.pin,
+      expiresAt: config.expiresAt,
+      connected: status.connected,
+      role: config.role,
+      transport: config.transport,
+      audioMode: config.audioMode,
+    };
+  }
+
+  private renderExternalPresentation(): void {
+    const view = this.externalPresentationView();
+    if (!view) return;
+    this.playbackState = "external-presentation";
+    this.presentedItems = [];
+    // Manifest plugins are part of normal signage and must not remain over a
+    // user's mirrored device. They are restored from the current manifest as
+    // soon as the external session ends.
+    this.host.presentPlugins?.([], this.clockOffsetMs);
+    this.sessions?.stopPresentation("external_presentation", "partial");
+    this.host.present(view);
+  }
+
+  private async recoverExternalPresentation(): Promise<void> {
+    if (!this.host.recoverExternalPresentation) return;
+    try {
+      const recovered = await this.host.recoverExternalPresentation();
+      if (!recovered) return;
+      const takeoverNow =
+        this.activeManifest !== null &&
+        takeoverActive(this.activeManifest, new Date());
+      if (takeoverNow) {
+        await this.host.stopExternalPresentation?.("emergency_takeover");
+        return;
+      }
+      this.externalPresentation = recovered.config;
+      this.externalPresentationStatus = recovered.status;
+      this.lastExternalPresentationSessionId = recovered.config.sessionId;
+      this.renderExternalPresentation();
+      log.info("recovered unexpired AirPlay session", {
+        sessionId: recovered.config.sessionId,
+        role: recovered.config.role,
+      });
+    } catch (error) {
+      log.warn("AirPlay session recovery failed; signage remains available", {
+        error: String(error),
+      });
+    }
+  }
+
+  /** Called by the Linux host callback and also polled for crash recovery. */
+  onExternalPresentationStatus(
+    status: ExternalPresentationStatus | null,
+  ): void {
+    if (!this.externalPresentation) return;
+    if (!status || status.sessionId !== this.externalPresentation.sessionId) {
+      this.lastExternalPresentationSessionId =
+        this.externalPresentation.sessionId;
+      this.externalPresentation = null;
+      this.externalPresentationStatus = null;
+      this.lastPresentedKey = "";
+      this.host.presentPlugins?.(
+        this.activeManifest?.plugins ?? [],
+        this.clockOffsetMs,
+      );
+      this.evaluatePresentation(true);
+      void this.reportStatus();
+      return;
+    }
+    const previous = this.externalPresentationStatus;
+    const changed = JSON.stringify(status) !== JSON.stringify(previous);
+    // lastRtpAt is intentionally high-frequency process health data. Keep it
+    // locally so the manager can detect a stalled stream, but do not turn every
+    // fpsdisplaysink line into an Electron repaint and immediate heartbeat.
+    const presentationChanged =
+      !previous ||
+      previous.state !== status.state ||
+      previous.connected !== status.connected ||
+      previous.receiverAlive !== status.receiverAlive ||
+      previous.gatewayAlive !== status.gatewayAlive ||
+      previous.failureCode !== status.failureCode ||
+      previous.failureMessage !== status.failureMessage;
+    this.externalPresentationStatus = status;
+    if (changed && presentationChanged) {
+      this.renderExternalPresentation();
+      void this.reportStatus();
+    }
+  }
+
+  private async externalPresentationTick(): Promise<void> {
+    const config = this.externalPresentation;
+    if (!config) return;
+    if (Date.parse(config.expiresAt) <= Date.now()) {
+      await this.stopExternalPresentation("expired");
+      return;
+    }
+    const status = this.host.getExternalPresentationStatus?.() ?? null;
+    this.onExternalPresentationStatus(status);
+  }
+
+  private async refreshAirplayCapabilities(): Promise<AirplayCapabilities | null> {
+    if (!this.host.probeAirplayCapabilities) return null;
+    try {
+      this.airplayCapabilities = await this.host.probeAirplayCapabilities();
+      return this.airplayCapabilities;
+    } catch (error) {
+      log.warn("AirPlay capability probe failed", { error: String(error) });
+      return null;
+    }
+  }
+
+  private async prepareExternalPresentation(
+    command: PlayerCommand,
+    startGateway: boolean,
+  ): Promise<CommandResultReport> {
+    if (!this.host.prepareExternalPresentation) {
+      return {
+        success: false,
+        code: "airplay_unsupported",
+        message: "AirPlay is not available on this player.",
+      };
+    }
+    const config = parseExternalPresentationConfig(command.payload);
+    const takeoverNow =
+      this.activeManifest !== null &&
+      takeoverActive(this.activeManifest, new Date());
+    if (takeoverNow) {
+      return {
+        success: false,
+        code: "emergency_takeover_active",
+        message: "AirPlay cannot start while an emergency takeover is active.",
+      };
+    }
+    if (this.externalPresentation?.sessionId !== config.sessionId) {
+      await this.stopExternalPresentation("replaced");
+      const capabilities = await this.refreshAirplayCapabilities();
+      const roleReady =
+        config.role === "receiver"
+          ? capabilities?.groupAirplaySupported
+          : capabilities?.airplaySupported;
+      if (!roleReady) {
+        return {
+          success: false,
+          code: "airplay_not_ready",
+          message:
+            capabilities?.limitation ??
+            "This Linux player is not ready for AirPlay Present.",
+        };
+      }
+    }
+    const status = await this.host.prepareExternalPresentation(config);
+    this.externalPresentation = config;
+    this.externalPresentationStatus = status;
+    this.lastExternalPresentationSessionId = config.sessionId;
+    this.lastPresentedKey = "";
+    this.renderExternalPresentation();
+    if (startGateway) {
+      if (!this.host.startExternalPresentation) {
+        await this.stopExternalPresentation("gateway_start_unsupported");
+        return {
+          success: false,
+          code: "airplay_gateway_unsupported",
+          message: "This player cannot start the AirPlay gateway.",
+        };
+      }
+      this.externalPresentationStatus =
+        await this.host.startExternalPresentation();
+      this.renderExternalPresentation();
+    }
+    void this.reportStatus();
+    return {
+      success: true,
+      code: startGateway ? "airplay_started" : "airplay_prepared",
+      message: startGateway
+        ? "AirPlay receiver is advertised."
+        : "AirPlay display receiver is prepared.",
+    };
+  }
+
+  private async stopExternalPresentation(reason: string): Promise<void> {
+    if (this.externalPresentation) {
+      this.lastExternalPresentationSessionId =
+        this.externalPresentation.sessionId;
+    }
+    if (this.host.stopExternalPresentation) {
+      await this.host.stopExternalPresentation(reason).catch((error) => {
+        log.warn("failed to stop AirPlay processes", { error: String(error) });
+      });
+    }
+    this.externalPresentation = null;
+    this.externalPresentationStatus = null;
+    this.lastPresentedKey = "";
+    this.host.presentPlugins?.(
+      this.activeManifest?.plugins ?? [],
+      this.clockOffsetMs,
+    );
+    this.evaluatePresentation(true);
+    void this.reportStatus();
   }
 
   /** Renderer reported an item boundary. */
@@ -1064,7 +1326,14 @@ export class PlayerRuntime {
       return;
     }
     this.lastPresentedKey = key;
-    if (next.state === "playing") {
+    if (next.state === "external-presentation") {
+      this.generation += 1;
+      this.playbackState = "external-presentation";
+      this.presentedItems = [];
+      this.renderProgress = onPlaybackIdle(this.renderProgress, Date.now());
+      this.sessions?.stopPresentation("external_presentation", "partial");
+      this.host.present(next);
+    } else if (next.state === "playing") {
       this.generation += 1;
       this.playbackState = "playing";
       this.presentedItems = next.items;
@@ -1140,17 +1409,32 @@ export class PlayerRuntime {
   }
 
   private buildPresentation(): Presentation {
+    const manifest = this.activeManifest;
+    const branding = this.config?.branding ?? {};
+    const takeoverNow =
+      manifest !== null && takeoverActive(manifest, new Date());
+
+    // Emergency takeover outranks AirPlay. The server normally sends an
+    // explicit stop command as well; this local check closes the race when a
+    // manifest arrives first or the server connection is briefly delayed.
+    if (this.externalPresentation && takeoverNow) {
+      void this.stopExternalPresentation("emergency_takeover");
+    } else if (this.externalPresentation) {
+      const view = this.externalPresentationView();
+      if (view) return view;
+    }
+
+    // AirPlay is an explicit external presentation and therefore outranks the
+    // normal playback recovery surface as well as scheduling. Once the session
+    // is active, a prior signage safe-mode state must not cover the sender's
+    // presentation; the session's own process health monitor remains in charge
+    // of recovering or ending it.
     if (this.supervisorState.safeMode) {
       return {
         state: "safe-mode",
         reason: this.supervisorState.safeModeReason ?? "repeated failures",
       };
     }
-
-    const manifest = this.activeManifest;
-    const branding = this.config?.branding ?? {};
-    const takeoverNow =
-      manifest !== null && takeoverActive(manifest, new Date());
 
     // Outside active hours the screen rests (true black), unless a takeover
     // is active — takeover always overrides off-hours sleep.
@@ -1710,6 +1994,51 @@ export class PlayerRuntime {
       ...this.renderProgressHeartbeatFields(),
       ...this.autostartHeartbeatFields(),
     };
+    if (this.airplayCapabilities) {
+      heartbeat.airplaySupported = this.airplayCapabilities.airplaySupported;
+      heartbeat.airplayUxPlayInstalled =
+        this.airplayCapabilities.uxplayInstalled;
+      heartbeat.airplayUxPlayVersion =
+        this.airplayCapabilities.uxplayVersion ?? undefined;
+      heartbeat.airplayGstreamerInstalled =
+        this.airplayCapabilities.gstreamerInstalled;
+      heartbeat.airplayH264DecoderAvailable =
+        this.airplayCapabilities.h264DecoderAvailable;
+      heartbeat.airplayHardwareDecode =
+        this.airplayCapabilities.hardwareH264Decode;
+      heartbeat.airplayDecoder = this.airplayCapabilities.decoder ?? undefined;
+      heartbeat.airplayMaxProfile = this.airplayCapabilities.maxProfile;
+      heartbeat.airplayGroupSupported =
+        this.airplayCapabilities.groupAirplaySupported;
+      heartbeat.airplayAudioAvailable = this.airplayCapabilities.audioAvailable;
+      heartbeat.airplayAvahiAvailable = this.airplayCapabilities.avahiAvailable;
+      heartbeat.airplayMdnsAdvertisementAvailable =
+        this.airplayCapabilities.mdnsAdvertisementAvailable;
+      heartbeat.airplayMulticastSupported =
+        this.airplayCapabilities.multicastSupported ?? undefined;
+      heartbeat.airplayMulticastTestStatus =
+        this.airplayCapabilities.multicastTestStatus;
+    }
+    if (this.externalPresentation && this.externalPresentationStatus) {
+      heartbeat.externalPresentationState =
+        this.externalPresentationStatus.state;
+      heartbeat.externalPresentationSessionId =
+        this.externalPresentation.sessionId;
+      heartbeat.externalPresentationRole = this.externalPresentation.role;
+      heartbeat.airplayReceiverState = this.externalPresentationStatus.state;
+      heartbeat.airplayTransport = this.externalPresentation.transport;
+      heartbeat.airplayConnected = this.externalPresentationStatus.connected;
+      heartbeat.externalPresentationExpiresAt =
+        this.externalPresentation.expiresAt;
+    } else {
+      // Explicitly clear the server's last external-presentation snapshot
+      // after a local expiry, restart, or manual stop.
+      heartbeat.externalPresentationState = "none";
+      if (this.lastExternalPresentationSessionId) {
+        heartbeat.externalPresentationSessionId =
+          this.lastExternalPresentationSessionId;
+      }
+    }
     if (this.lastHealthyPlaybackAt) {
       heartbeat.lastHealthyPlaybackAt = this.lastHealthyPlaybackAt;
     }
@@ -1952,6 +2281,63 @@ export class PlayerRuntime {
         success: !failed,
         code: failed ? "self_test_failed" : "self_test_passed",
         message: results.join(" "),
+      };
+    });
+    handlers.set("test_airplay_support", async () => {
+      const capabilities = await this.refreshAirplayCapabilities();
+      if (!capabilities) {
+        return {
+          success: false,
+          code: "airplay_probe_unavailable",
+          message:
+            "This player does not expose a Linux AirPlay capability probe.",
+        };
+      }
+      void this.reportStatus();
+      return {
+        success: capabilities.airplaySupported,
+        code: capabilities.airplaySupported
+          ? "airplay_supported"
+          : "airplay_not_ready",
+        message:
+          capabilities.limitation ??
+          (capabilities.airplaySupported
+            ? `AirPlay ready with ${capabilities.decoder}.`
+            : "Required UxPlay or GStreamer support is unavailable."),
+      };
+    });
+    handlers.set("prepare_airplay_session", async (command) => {
+      const phase = command.payload["phase"];
+      const startGateway = phase === undefined || phase === "start";
+      try {
+        return await this.prepareExternalPresentation(command, startGateway);
+      } catch (error) {
+        return {
+          success: false,
+          code: "airplay_prepare_failed",
+          message: String(error).slice(0, 240),
+        };
+      }
+    });
+    handlers.set("stop_airplay_session", async (command) => {
+      const requested = command.payload["sessionId"];
+      if (
+        typeof requested === "string" &&
+        this.externalPresentation &&
+        requested !== this.externalPresentation.sessionId
+      ) {
+        return {
+          success: true,
+          code: "airplay_already_stopped",
+          message:
+            "The requested AirPlay session is not active on this player.",
+        };
+      }
+      await this.stopExternalPresentation("remote_stop");
+      return {
+        success: true,
+        code: "airplay_stopped",
+        message: "AirPlay stopped and current signage state was evaluated.",
       };
     });
 

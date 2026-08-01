@@ -107,6 +107,7 @@ func (s *server) playerHeartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	principal := r.Context().Value(deviceContextKey).(devices.DevicePrincipal)
+	s.expireAirplaySessions(r.Context())
 	var body devices.Heartbeat
 	var dropped []string
 	if decodeErr := decodeJSONReader(r, bytes.NewReader(raw), &body); decodeErr != nil {
@@ -131,6 +132,11 @@ func (s *server) playerHeartbeat(w http.ResponseWriter, r *http.Request) {
 		s.writeDeviceError(w, r, err)
 		return
 	}
+	// A multicast receiver that reports a degraded RTP path is eligible for the
+	// session-level unicast fallback. The fallback is handled after the device
+	// service records the heartbeat so the screen state query sees the new
+	// failure before rebuilding commands.
+	s.fallbackAirplayForScreen(r.Context(), principal.ScreenID)
 	s.advanceCanaryDeploymentsForScreen(r.Context(), principal.ScreenID)
 	if s.playlists != nil {
 		_ = s.playlists.ReportStatus(r.Context(), principal.ScreenID, playlists.PlayerStatus{

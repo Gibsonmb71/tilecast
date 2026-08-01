@@ -206,6 +206,10 @@ func (s *server) handleSocketStatus(r *http.Request, ctx context.Context, princi
 		}
 	} else {
 		contactRecorded = true
+		// Socket status is the player's normal heartbeat path. Run the same
+		// multicast degradation hook as the HTTP fallback so a follower can
+		// trigger session-level unicast fallback without waiting for a poll.
+		s.fallbackAirplayForScreen(ctx, principal.ScreenID)
 		s.advanceCanaryDeploymentsForScreen(ctx, principal.ScreenID)
 	}
 

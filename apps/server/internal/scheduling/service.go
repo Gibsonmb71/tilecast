@@ -32,19 +32,20 @@ func NewService(db *pgxpool.Pool, n Notifier, l Limits) *Service {
 }
 
 type Group struct {
-	ID               uuid.UUID     `json:"id"`
-	Name             string        `json:"name"`
-	Description      string        `json:"description"`
-	PlaylistID       *uuid.UUID    `json:"playlistId,omitempty"`
-	PlaylistName     *string       `json:"playlistName,omitempty"`
-	LayoutID         *uuid.UUID    `json:"layoutId,omitempty"`
-	LayoutName       *string       `json:"layoutName,omitempty"`
-	PresentationType *string       `json:"presentationType,omitempty"`
-	PlaybackEpoch    time.Time     `json:"playbackEpoch"`
-	MembershipCount  int           `json:"membershipCount"`
-	Screens          []GroupScreen `json:"screens"`
-	CreatedAt        time.Time     `json:"createdAt"`
-	UpdatedAt        time.Time     `json:"updatedAt"`
+	ID                          uuid.UUID     `json:"id"`
+	Name                        string        `json:"name"`
+	Description                 string        `json:"description"`
+	PresentationGatewayScreenID *uuid.UUID    `json:"presentationGatewayScreenId,omitempty"`
+	PlaylistID                  *uuid.UUID    `json:"playlistId,omitempty"`
+	PlaylistName                *string       `json:"playlistName,omitempty"`
+	LayoutID                    *uuid.UUID    `json:"layoutId,omitempty"`
+	LayoutName                  *string       `json:"layoutName,omitempty"`
+	PresentationType            *string       `json:"presentationType,omitempty"`
+	PlaybackEpoch               time.Time     `json:"playbackEpoch"`
+	MembershipCount             int           `json:"membershipCount"`
+	Screens                     []GroupScreen `json:"screens"`
+	CreatedAt                   time.Time     `json:"createdAt"`
+	UpdatedAt                   time.Time     `json:"updatedAt"`
 }
 type GroupScreen struct {
 	ID       uuid.UUID `json:"id"`
@@ -111,7 +112,7 @@ func (s *Service) ListGroups(ctx context.Context, search string, page, size int)
 	if err := s.db.QueryRow(ctx, `SELECT count(*) FROM screen_groups WHERE deleted_at IS NULL AND ($1='' OR name ILIKE '%'||$1||'%')`, strings.TrimSpace(search)).Scan(&out.Total); err != nil {
 		return out, err
 	}
-	rows, err := s.db.Query(ctx, `SELECT g.id,g.name,g.description,a.playlist_id,p.name,a.layout_id,l.name,CASE WHEN a.layout_id IS NOT NULL THEN 'layout' WHEN a.playlist_id IS NOT NULL THEN 'playlist' END,g.playback_epoch,g.created_at,g.updated_at,count(m.screen_id) FROM screen_groups g LEFT JOIN screen_group_memberships m ON m.screen_group_id=g.id LEFT JOIN screen_group_playlist_assignments a ON a.screen_group_id=g.id LEFT JOIN playlists p ON p.id=a.playlist_id LEFT JOIN layouts l ON l.id=a.layout_id WHERE g.deleted_at IS NULL AND ($1='' OR g.name ILIKE '%'||$1||'%') GROUP BY g.id,a.playlist_id,p.name,a.layout_id,l.name ORDER BY lower(g.name),g.id LIMIT $2 OFFSET $3`, strings.TrimSpace(search), size, (page-1)*size)
+	rows, err := s.db.Query(ctx, `SELECT g.id,g.name,g.description,g.presentation_gateway_screen_id,a.playlist_id,p.name,a.layout_id,l.name,CASE WHEN a.layout_id IS NOT NULL THEN 'layout' WHEN a.playlist_id IS NOT NULL THEN 'playlist' END,g.playback_epoch,g.created_at,g.updated_at,count(m.screen_id) FROM screen_groups g LEFT JOIN screen_group_memberships m ON m.screen_group_id=g.id LEFT JOIN screen_group_playlist_assignments a ON a.screen_group_id=g.id LEFT JOIN playlists p ON p.id=a.playlist_id LEFT JOIN layouts l ON l.id=a.layout_id WHERE g.deleted_at IS NULL AND ($1='' OR g.name ILIKE '%'||$1||'%') GROUP BY g.id,g.presentation_gateway_screen_id,a.playlist_id,p.name,a.layout_id,l.name ORDER BY lower(g.name),g.id LIMIT $2 OFFSET $3`, strings.TrimSpace(search), size, (page-1)*size)
 	if err != nil {
 		return out, err
 	}
@@ -119,7 +120,7 @@ func (s *Service) ListGroups(ctx context.Context, search string, page, size int)
 	out.Items = []Group{}
 	for rows.Next() {
 		var g Group
-		if err = rows.Scan(&g.ID, &g.Name, &g.Description, &g.PlaylistID, &g.PlaylistName, &g.LayoutID, &g.LayoutName, &g.PresentationType, &g.PlaybackEpoch, &g.CreatedAt, &g.UpdatedAt, &g.MembershipCount); err != nil {
+		if err = rows.Scan(&g.ID, &g.Name, &g.Description, &g.PresentationGatewayScreenID, &g.PlaylistID, &g.PlaylistName, &g.LayoutID, &g.LayoutName, &g.PresentationType, &g.PlaybackEpoch, &g.CreatedAt, &g.UpdatedAt, &g.MembershipCount); err != nil {
 			return out, err
 		}
 		g.Screens = []GroupScreen{}
@@ -178,7 +179,7 @@ func (s *Service) CreateGroup(ctx context.Context, user uuid.UUID, name, descrip
 }
 func (s *Service) GetGroup(ctx context.Context, id uuid.UUID) (Group, error) {
 	var g Group
-	err := s.db.QueryRow(ctx, `SELECT g.id,g.name,g.description,a.playlist_id,p.name,a.layout_id,l.name,CASE WHEN a.layout_id IS NOT NULL THEN 'layout' WHEN a.playlist_id IS NOT NULL THEN 'playlist' END,g.playback_epoch,g.created_at,g.updated_at,count(m.screen_id) FROM screen_groups g LEFT JOIN screen_group_memberships m ON m.screen_group_id=g.id LEFT JOIN screen_group_playlist_assignments a ON a.screen_group_id=g.id LEFT JOIN playlists p ON p.id=a.playlist_id LEFT JOIN layouts l ON l.id=a.layout_id WHERE g.id=$1 AND g.deleted_at IS NULL GROUP BY g.id,a.playlist_id,p.name,a.layout_id,l.name`, id).Scan(&g.ID, &g.Name, &g.Description, &g.PlaylistID, &g.PlaylistName, &g.LayoutID, &g.LayoutName, &g.PresentationType, &g.PlaybackEpoch, &g.CreatedAt, &g.UpdatedAt, &g.MembershipCount)
+	err := s.db.QueryRow(ctx, `SELECT g.id,g.name,g.description,g.presentation_gateway_screen_id,a.playlist_id,p.name,a.layout_id,l.name,CASE WHEN a.layout_id IS NOT NULL THEN 'layout' WHEN a.playlist_id IS NOT NULL THEN 'playlist' END,g.playback_epoch,g.created_at,g.updated_at,count(m.screen_id) FROM screen_groups g LEFT JOIN screen_group_memberships m ON m.screen_group_id=g.id LEFT JOIN screen_group_playlist_assignments a ON a.screen_group_id=g.id LEFT JOIN playlists p ON p.id=a.playlist_id LEFT JOIN layouts l ON l.id=a.layout_id WHERE g.id=$1 AND g.deleted_at IS NULL GROUP BY g.id,g.presentation_gateway_screen_id,a.playlist_id,p.name,a.layout_id,l.name`, id).Scan(&g.ID, &g.Name, &g.Description, &g.PresentationGatewayScreenID, &g.PlaylistID, &g.PlaylistName, &g.LayoutID, &g.LayoutName, &g.PresentationType, &g.PlaybackEpoch, &g.CreatedAt, &g.UpdatedAt, &g.MembershipCount)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return g, ErrNotFound
 	}
@@ -200,11 +201,24 @@ func (s *Service) GetGroup(ctx context.Context, id uuid.UUID) (Group, error) {
 	}
 	return g, rows.Err()
 }
-func (s *Service) UpdateGroup(ctx context.Context, id, user uuid.UUID, name, description string) (Group, error) {
+func (s *Service) UpdateGroup(ctx context.Context, id, user uuid.UUID, name, description string, presentationGatewayScreenID *uuid.UUID, clearPresentationGateway bool) (Group, error) {
 	if err := validateGroup(name, description); err != nil {
 		return Group{}, err
 	}
-	tag, err := s.db.Exec(ctx, `UPDATE screen_groups SET name=$2,description=$3,updated_at=now() WHERE id=$1 AND deleted_at IS NULL`, id, strings.TrimSpace(name), description)
+	if presentationGatewayScreenID != nil {
+		var member bool
+		if err := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM screen_group_memberships WHERE screen_group_id=$1 AND screen_id=$2)`, id, *presentationGatewayScreenID).Scan(&member); err != nil {
+			return Group{}, err
+		}
+		if !member {
+			return Group{}, fmt.Errorf("presentation gateway must be a member of the screen group: %w", ErrConflict)
+		}
+	}
+	presentationGatewayAssignment := "presentation_gateway_screen_id=COALESCE($4,presentation_gateway_screen_id)"
+	if clearPresentationGateway {
+		presentationGatewayAssignment = "presentation_gateway_screen_id=$4"
+	}
+	tag, err := s.db.Exec(ctx, `UPDATE screen_groups SET name=$2,description=$3,`+presentationGatewayAssignment+`,updated_at=now() WHERE id=$1 AND deleted_at IS NULL`, id, strings.TrimSpace(name), description, presentationGatewayScreenID)
 	if err != nil {
 		return Group{}, err
 	}
@@ -380,6 +394,12 @@ func (s *Service) RemoveScreen(ctx context.Context, group, screen, user uuid.UUI
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
+	}
+	// A preferred AirPlay gateway must remain a member of the group. Clear the
+	// preference as part of the same membership transaction so the next session
+	// does not carry a stale identity into deterministic fallback selection.
+	if _, err = tx.Exec(ctx, `UPDATE screen_groups SET presentation_gateway_screen_id=NULL,updated_at=now() WHERE id=$1 AND presentation_gateway_screen_id=$2`, group, screen); err != nil {
+		return err
 	}
 	notes, err := bumpScreens(ctx, tx, []uuid.UUID{screen}, "screen_group.membership_changed")
 	if err != nil {

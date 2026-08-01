@@ -12,8 +12,10 @@ import (
 )
 
 type groupBody struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	Name                        string     `json:"name"`
+	Description                 string     `json:"description"`
+	PresentationGatewayScreenID *uuid.UUID `json:"presentationGatewayScreenId"`
+	ClearPresentationGateway    bool       `json:"clearPresentationGateway"`
 }
 
 func (s *server) listScreenGroups(w http.ResponseWriter, r *http.Request) {
@@ -51,7 +53,7 @@ func (s *server) updateScreenGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u := r.Context().Value(sessionContextKey).(auth.Session).User
-	x, e := s.scheduling.UpdateGroup(r.Context(), id, u.ID, b.Name, b.Description)
+	x, e := s.scheduling.UpdateGroup(r.Context(), id, u.ID, b.Name, b.Description, b.PresentationGatewayScreenID, b.ClearPresentationGateway)
 	s.scheduleResponse(w, r, x, e, http.StatusOK)
 }
 func (s *server) deleteScreenGroup(w http.ResponseWriter, r *http.Request) {

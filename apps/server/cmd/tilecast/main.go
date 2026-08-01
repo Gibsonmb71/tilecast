@@ -285,11 +285,16 @@ func serve() {
 	go func() {
 		ticker := time.NewTicker(time.Minute)
 		defer ticker.Stop()
+		// AirPlay has a player-local deadline as a second line of defense, but
+		// the server also expires sessions when a player is offline so the
+		// transient identity and commands do not remain active in Studio/DB.
+		deviceService.ExpireAirplaySessions(shutdownCtx)
 		for {
 			select {
 			case <-shutdownCtx.Done():
 				return
 			case <-ticker.C:
+				deviceService.ExpireAirplaySessions(shutdownCtx)
 				updateService.Cleanup(shutdownCtx, cfg.Updates.RetentionDays)
 				_, _ = db.Exec(shutdownCtx, `UPDATE player_commands SET state='expired',completed_at=now(),updated_at=now() WHERE state IN ('pending','delivered','acknowledged','running') AND expires_at<=now()`)
 				_, _ = db.Exec(shutdownCtx, `DELETE FROM player_commands WHERE completed_at<now()-make_interval(days=>COALESCE((SELECT (settings->>'retention.command_history_days')::int FROM organization_runtime_settings),$1))`, cfg.Operations.CommandRetentionDays)

@@ -90,6 +90,7 @@ import type {
   UptimeReport,
   UptimeWindow,
   ReliabilityStatus,
+  AirplaySession,
   PowerAssistResults,
   CalendarConfig,
   CalendarPreview,
@@ -1084,6 +1085,29 @@ export const api = {
     normalizeScreen(await request<Screen | null>(`/screens/${id}`)),
   screenReliability: (id: string) =>
     request<ReliabilityStatus>(`/screens/${id}/reliability`),
+  airplaySession: (id: string) =>
+    request<AirplaySession>(`/airplay/sessions/${id}`),
+  createAirplaySession: (
+    input: {
+      targetType: "screen" | "group";
+      targetId: string;
+      durationMinutes: 0 | 15 | 30 | 60;
+      transport: "auto" | "unicast" | "multicast";
+      audioMode: "gateway_only" | "none";
+    },
+    csrfToken: string,
+  ) =>
+    request<AirplaySession>("/airplay/sessions", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  stopAirplaySession: (id: string, csrfToken: string, reason = "manual_stop") =>
+    request<AirplaySession>(`/airplay/sessions/${id}/stop`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ reason }),
+    }),
   fleetUptime: (window: UptimeWindow) =>
     request<UptimeReport>(`/activity/uptime?window=${window}`),
   confirmPowerAssist: (
@@ -1897,7 +1921,12 @@ export const api = {
     }),
   updateScreenGroup: (
     id: string,
-    input: { name: string; description: string },
+    input: {
+      name: string;
+      description: string;
+      presentationGatewayScreenId?: string;
+      clearPresentationGateway?: boolean;
+    },
     csrfToken: string,
   ) =>
     request<ScreenGroup>(`/screen-groups/${id}`, {

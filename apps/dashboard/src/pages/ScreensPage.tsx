@@ -56,6 +56,7 @@ import type {
 } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import { ScreenContentChain } from "../content/ScreenContentChain";
+import { AirPlayPresentDialog } from "../components/AirPlayPresentDialog";
 import { FormField } from "../components/FormField";
 import { FireTvAccessibilityAdbPanel } from "../components/FireTvAccessibilityAdbPanel";
 import { PlayerPolicyEditor } from "../settings/PlayerPolicyEditor";
@@ -2275,6 +2276,7 @@ export function ScreenDetailPage() {
   const [editingDetails, setEditingDetails] = useState(false);
   const [policyDirty, setPolicyDirty] = useState(false);
   const [selectedPresentation, setSelectedPresentation] = useState("");
+  const [airplayOpen, setAirplayOpen] = useState(false);
   useEffect(() => {
     if (searchParams.get("edit") === "details") setEditingDetails(true);
   }, [searchParams]);
@@ -2477,8 +2479,29 @@ export function ScreenDetailPage() {
                 {editingDetails ? "Close editor" : "Edit details"}
               </button>
             )}
+            {canManageScreens(auth.status?.user) &&
+              screen.platform.toLowerCase() === "linux" && (
+                <button
+                  type="button"
+                  className="button button--primary"
+                  onClick={() => setAirplayOpen(true)}
+                >
+                  Present · AirPlay
+                </button>
+              )}
           </>
         }
+      />
+      <AirPlayPresentDialog
+        open={airplayOpen}
+        targetType="screen"
+        targetId={screen.id}
+        destinationName={screen.name}
+        displayCount={1}
+        csrfToken={auth.status?.csrfToken ?? ""}
+        capability={reliability.data}
+        audioDisplayName={screen.name}
+        onClose={() => setAirplayOpen(false)}
       />
       {editingDetails && (
         <section
@@ -2591,6 +2614,17 @@ export function ScreenDetailPage() {
             <h3 id="screen-overview-title">Screen overview</h3>
             <p>Current player state and the settings that affect it.</p>
           </header>
+          {reliability.data?.externalPresentationState &&
+            reliability.data.externalPresentationState !== "none" && (
+              <div className="notice notice--info">
+                <strong>AIRPLAY ACTIVE</strong> · This screen is showing an
+                external presentation
+                {reliability.data.airplayConnected
+                  ? " and is receiving mirrored video."
+                  : "; it is waiting for a sender."}{" "}
+                Preview capture is disabled while AirPlay is active.
+              </div>
+            )}
           <dl className="screen-overview__grid">
             <div>
               <dt>Online status</dt>
@@ -3013,6 +3047,27 @@ export function ScreenDetailPage() {
                   {formatReportedStatus(reliability.data?.updateReadiness)}
                 </dd>
               </div>
+              {screen.platform.toLowerCase() === "linux" && (
+                <>
+                  <div>
+                    <dt>AirPlay Present</dt>
+                    <dd>
+                      {reliability.data?.airplaySupported
+                        ? `Ready · ${reliability.data.airplayMaxProfile ?? "profile pending"}`
+                        : "Not ready"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>AirPlay decoder</dt>
+                    <dd>
+                      {reliability.data?.airplayDecoder ?? "Not reported"}
+                      {reliability.data?.airplayHardwareDecode
+                        ? " · hardware"
+                        : " · software-limited"}
+                    </dd>
+                  </div>
+                </>
+              )}
             </dl>
           </div>
           <dl className="detail-list">
@@ -3242,6 +3297,31 @@ export function ScreenDetailPage() {
                           }}
                         >
                           Remove autostart
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {screen.platform.toLowerCase() === "linux" && (
+                    <div className="reliability-control-group">
+                      <div>
+                        <h5>AirPlay diagnostics</h5>
+                        <p>
+                          Probe UxPlay, GStreamer, VA-API, audio, and local
+                          Avahi support without advertising a receiver.
+                        </p>
+                      </div>
+                      <div className="reliability-button-grid">
+                        <button
+                          className="button button--secondary"
+                          disabled={command.isPending}
+                          onClick={() =>
+                            command.mutate({
+                              type: "test_airplay_support",
+                              payload: {},
+                            })
+                          }
+                        >
+                          Test AirPlay support
                         </button>
                       </div>
                     </div>
