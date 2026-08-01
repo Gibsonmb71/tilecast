@@ -15,6 +15,7 @@ import type { Screen, UpdateDeploymentScreen } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import {
   bucketCounts,
+  deploymentPollInterval,
   deploymentSegments,
   filterDeploymentScreens,
   screenDownloadPercent,
@@ -45,7 +46,10 @@ export function UpdateDeploymentDrawer({
   const detail = useQuery({
     queryKey: ["update-deployment", deploymentId],
     queryFn: () => api.updateDeployment(deploymentId),
-    refetchInterval: 10_000,
+    refetchInterval: (query) => deploymentPollInterval(query.state.data),
+    // Ten seconds of an unchanged panel reads as a panel that is not working, so
+    // the drawer keeps polling while it is open even if the tab loses focus.
+    refetchIntervalInBackground: true,
   });
   const invalidate = async () => {
     await Promise.all([

@@ -27,6 +27,14 @@ import java.io.File
 import java.security.MessageDigest
 import java.time.Instant
 
+/**
+ * Least time between two download-progress reports to the server. The download
+ * callback fires per chunk; without this the player would post hundreds of times
+ * a second, and without any report at all Studio shows the download frozen at 0%
+ * until it finishes.
+ */
+private const val PROGRESS_REPORT_INTERVAL_MS=2_000L
+
 data class UpdateUiState(val deploymentId:String,val currentVersion:String,val newVersion:String,val state:String,val downloadedBytes:Long,val expectedBytes:Long,val message:String,val permissionRequired:Boolean=false,val installReady:Boolean=false,val maintenanceAt:String?=null,val errorCode:String?=null)
 data class ArchiveMetadata(val applicationId:String,val versionCode:Long,val certificateSha256:String)
 
@@ -60,7 +68,15 @@ class PlayerUpdateManager(private val app:Application,private val api:TilecastAp
             val part=File(app.filesDir,"updates/$release.apk.part")
             var state=UpdateUiState(deployment,BuildConfig.VERSION_NAME,metadata.versionName,"downloading",part.takeIf{it.exists()}?.length()?:0,metadata.apkSizeBytes,"Downloading player update")
             persist(state);onState(state);api.updateStatus(server,credential,deployment,"downloading",state.downloadedBytes)
-            api.downloadVariant(server,metadata.apkPath,credential,part,metadata.apkSha256,metadata.apkSizeBytes){written->state=state.copy(downloadedBytes=written);persist(state);onState(state)}
+            // Progress goes to the server as well as the local screen: the
+            // deployment drawer has no other source for a download percentage,
+            // and reporting it per chunk would be a request per few kilobytes.
+            var reportedAt=System.currentTimeMillis();var reporting=false
+            api.downloadVariant(server,metadata.apkPath,credential,part,metadata.apkSha256,metadata.apkSizeBytes){written->
+                state=state.copy(downloadedBytes=written);persist(state);onState(state)
+                val now=System.currentTimeMillis()
+                if(!reporting&&now-reportedAt>=PROGRESS_REPORT_INTERVAL_MS){reportedAt=now;reporting=true;scope.launch{runCatching{api.updateStatus(server,credential,deployment,"downloading",written)};reporting=false}}
+            }
             state=state.copy(state="verifying",downloadedBytes=metadata.apkSizeBytes,message="Verifying signed player update");persist(state);onState(state);api.updateStatus(server,credential,deployment,"verifying",state.downloadedBytes)
             val archive=inspect(part)
             PlayerUpdateVerifier.validate(metadata,BuildConfig.VERSION_CODE.toLong(),Build.VERSION.SDK_INT,archive,installedCertificateSha256())

@@ -203,6 +203,20 @@ export function screenDownloadPercent(
   return Math.min(100, Math.max(0, percent));
 }
 
+// How often the drawer re-reads a deployment. A download moves in seconds, so a
+// rollout with a screen still working is polled at a rate a person watching it
+// reads as live; one that has finished is not polled at all.
+export function deploymentPollInterval(
+  detail: { status: string; screens: UpdateDeploymentScreen[] } | undefined,
+): number | false {
+  if (!detail) return 5_000;
+  if (detail.status !== "active" && detail.status !== "paused") return false;
+  const moving = detail.screens.some(
+    (screen) => screenUpdateMeaning(screen.state).bucket === "progress",
+  );
+  return moving ? 2_000 : 5_000;
+}
+
 export type DeploymentSegment = {
   key: "succeeded" | "attention" | "failed" | "remaining";
   label: string;

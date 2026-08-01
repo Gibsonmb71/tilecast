@@ -32,6 +32,14 @@ const log = logger("self-update");
 const MAX_WINDOW_DELAY_MS = 24 * 60 * 60 * 1_000;
 
 /**
+ * Least time between two download-progress reports. Without one of these the
+ * dashboard shows a download frozen at 0% for its whole run; with one per chunk
+ * it would post hundreds of times a second, so the rate is set to what a person
+ * watching the drawer can actually read.
+ */
+const PROGRESS_INTERVAL_MS = 2_000;
+
+/**
  * Make the verified download executable before atomically replacing the
  * running AppImage. Downloads intentionally start as mode 0600; renaming that
  * file without this chmod leaves systemd unable to execute the replacement.
@@ -113,6 +121,9 @@ function readPayload(command: PlayerCommand): UpdatePayload | null {
 }
 
 export class SelfUpdater {
+  private progressReportedAt = 0;
+  private progressInFlight = false;
+
   constructor(private readonly deps: SelfUpdateDeps) {}
 
   /** Execute an install_player_update command. Never throws. */
@@ -136,7 +147,11 @@ export class SelfUpdater {
         return;
       }
 
-      await this.report(deploymentId, { state: "downloading" });
+      await this.report(deploymentId, {
+        state: "downloading",
+        downloadedBytes: 0,
+      });
+      this.progressReportedAt = this.deps.now();
       const meta = await this.deps.fetchMetadata(payload.releaseId);
       if (
         meta.platform !== "linux" ||
@@ -160,6 +175,7 @@ export class SelfUpdater {
         destination: this.deps.stagePath,
         expectedSha256: meta.artifactSha256,
         expectedSizeBytes: meta.artifactSizeBytes,
+        onProgress: (bytes) => this.reportProgress(deploymentId, bytes),
       });
       await this.report(deploymentId, {
         state: "downloaded",
@@ -228,6 +244,29 @@ export class SelfUpdater {
     }
     // download_only (and any unknown mode): stage only, do not restart.
     return null;
+  }
+
+  /**
+   * Post download progress, at most one report every PROGRESS_INTERVAL_MS and
+   * never two at once. Deliberately not awaited by the download loop: a slow or
+   * failing server must not hold up the bytes it is reporting on.
+   */
+  private reportProgress(deploymentId: string, downloadedBytes: number): void {
+    const now = this.deps.now();
+    if (
+      this.progressInFlight ||
+      now - this.progressReportedAt < PROGRESS_INTERVAL_MS
+    ) {
+      return;
+    }
+    this.progressReportedAt = now;
+    this.progressInFlight = true;
+    void this.report(deploymentId, {
+      state: "downloading",
+      downloadedBytes,
+    }).finally(() => {
+      this.progressInFlight = false;
+    });
   }
 
   private async report(

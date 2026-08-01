@@ -318,7 +318,14 @@ export function PlayerUpdatesPanel({
   const deployments = useQuery({
     queryKey: ["update-deployments"],
     queryFn: api.updateDeployments,
-    refetchInterval: 10_000,
+    // A rollout in flight changes its counts every few seconds; a history of
+    // finished ones does not, and polling it at that rate buys nothing.
+    refetchInterval: (query) =>
+      query.state.data?.items.some(
+        (item) => item.status === "active" || item.status === "paused",
+      )
+        ? 3_000
+        : 15_000,
   });
   const screens = useQuery({ queryKey: ["screens"], queryFn: api.screens });
   const groups = useQuery({
