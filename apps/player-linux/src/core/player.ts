@@ -1616,6 +1616,10 @@ export class PlayerRuntime {
     if (!this.autostart) {
       return;
     }
+    // A successfully launched update gets one chance to repair an older
+    // Tilecast-owned service before the next reboot returns it to the legacy
+    // FUSE mount path. Missing and operator-owned units remain untouched.
+    await this.autostart.repairLegacyGeneratedUnit();
     this.autostartStatus = await this.autostart.probe();
   }
 

@@ -223,6 +223,21 @@ export function renderUnit(input: UnitRenderInput): string {
   return lines.join("\n");
 }
 
+/**
+ * Whether a unit bypasses AppImage's FUSE mount path. Keep this check strict:
+ * the command-line switch predates the equivalent environment variable and is
+ * therefore the portable recovery path for Tilecast's older AppImages.
+ */
+export function hasFuseIndependentLaunch(contents: string): boolean {
+  return /^ExecStart=.*(?:^|\s)--appimage-extract-and-run(?:\s|$)/m.test(
+    contents,
+  );
+}
+
+function usesLegacyDirectAppImageLaunch(contents: string): boolean {
+  return /^ExecStart=.*\.AppImage(?:\s|$)/m.test(contents);
+}
+
 export class AutostartInstaller {
   constructor(private readonly deps: AutostartDeps) {}
 
@@ -322,6 +337,58 @@ export class AutostartInstaller {
     return null;
   }
 
+  /**
+   * Upgrade an older Tilecast-owned unit after any successful player launch.
+   *
+   * This is intentionally not a general install: a missing unit still needs an
+   * explicit install_autostart command, and an operator-owned unit is never
+   * changed. It only closes the upgrade gap where an old generated ExecStart
+   * would put the screen back into a FUSE-dependent crash loop on its next
+   * restart.
+   */
+  async repairLegacyGeneratedUnit(): Promise<boolean> {
+    const existing = await this.deps.readFile(this.unitPath());
+    if (
+      existing === null ||
+      !existing.includes(GENERATED_MARKER) ||
+      hasFuseIndependentLaunch(existing) ||
+      !this.deps.appImagePath
+    ) {
+      return false;
+    }
+
+    try {
+      const target = this.targetFromUnit(existing) ?? (await this.chooseTarget());
+      await this.deps.writeFile(
+        this.unitPath(),
+        renderUnit({
+          appImagePath: this.deps.appImagePath,
+          target,
+          environment: this.deps.environment,
+        }),
+      );
+      const reload = await this.deps.run("systemctl", [
+        "--user",
+        "daemon-reload",
+      ]);
+      if (reload.code !== 0) {
+        log.warn("legacy autostart unit rewritten but daemon-reload failed", {
+          error: reload.stderr.trim().slice(0, 160),
+        });
+        return false;
+      }
+      log.info("legacy autostart unit upgraded to FUSE-independent launch", {
+        target,
+      });
+      return true;
+    } catch (err) {
+      log.warn("legacy autostart unit upgrade failed", {
+        error: String(err).slice(0, 240),
+      });
+      return false;
+    }
+  }
+
   /** Current autostart facts for the heartbeat. Never throws. */
   async probe(): Promise<AutostartStatus> {
     const base: AutostartStatus = {
@@ -360,6 +427,20 @@ export class AutostartInstaller {
           lingerEnabled,
           target: this.targetFromUnit(existing),
           detail: "unit file present but not enabled",
+        };
+      }
+      if (
+        !hasFuseIndependentLaunch(existing) &&
+        (generated || usesLegacyDirectAppImageLaunch(existing))
+      ) {
+        return {
+          ...base,
+          state: "needs_attention",
+          lingerEnabled,
+          target: this.targetFromUnit(existing),
+          detail: generated
+            ? "Tilecast unit still launches through the legacy FUSE mount path"
+            : "operator-managed unit launches through the legacy FUSE mount path",
         };
       }
       return {
