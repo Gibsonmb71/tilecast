@@ -17,6 +17,24 @@ Built-in plugins are listed at `GET /plugins`. The catalog includes Forms, whose
 - `GET /api/v1/system/health` — versioned liveness response.
 - `GET /api/v1/system/identity` — public, safe installation bootstrap identity.
 
+## Linux provisioning
+
+Provisioning routes are public because a new player has no credential until it
+pairs. They are rate-limited and expose only embedded installer assets or
+verified artifacts selected by the operator.
+
+- `GET /install.sh` — Tilecast Linux Player installer with this server's public URL embedded.
+- `GET /install-airplay.sh` — AirPlay support installer with this server's public URL embedded.
+- `GET /install/tilecast-player.service` — managed Linux user-service template.
+- `GET /api/v1/install/linux` — metadata and SHA-256 for the latest stable, verified, cached Linux Player release.
+- `GET|HEAD /api/v1/install/linux/artifact` — that verified AppImage.
+- `GET|HEAD /api/v1/install/airplay/uxplay` — embedded UxPlay 1.73.6 source archive.
+- `GET /api/v1/install/airplay/uxplay.sha256` — pinned SHA-256 for that archive.
+
+The AirPlay installer verifies the published checksum against its own pinned
+value before downloading and again against the archive bytes before building.
+It does not direct the signage player to GitHub or any other source-code host.
+
 ## Authentication
 
 - `GET /api/v1/auth/status` — returns `setupRequired`, `authenticated`, `passkeysAvailable`, `passkeysUnavailableReason`, and, for a valid session, the user, CSRF token, `authMethod`, and `mfaEnrollmentRequired`.

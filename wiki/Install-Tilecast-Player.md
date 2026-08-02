@@ -128,6 +128,11 @@ AirPlay provisioning never blocks the install. If it fails — usually no route 
 curl -fsSL https://your-tilecast-server/install-airplay.sh | sudo bash
 ```
 
+UxPlay 1.73.6 comes from a SHA-256-verified source archive embedded in
+Tilecast Server. The signage machine does not clone GitHub or contact another
+source-code host; it only needs the Tilecast server and normal Debian/APT
+mirrors.
+
 ## Install by hand
 
 Download `tilecast-player.AppImage` from the latest **Tilecast Player for Linux** release, then place it in a permanent location:
