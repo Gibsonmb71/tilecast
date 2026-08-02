@@ -127,14 +127,19 @@ export function QuickPresentDialog({
     >
       <div className="quick-present-dialog__body">
         <p className="quick-present-dialog__intro">
-          Temporarily replace normal scheduled content on {destinationName}.
-          Emergency Takeovers and AirPlay remain higher priority.
+          <span>
+            Temporarily replace normal scheduled content on {destinationName}.
+          </span>
+          <small>Emergency Takeovers and AirPlay remain higher priority.</small>
         </p>
-        <Field label="Destination">
-          <div className="quick-present-dialog__destination">
+        <div className="quick-present-dialog__context">
+          <span className="quick-present-dialog__context-label">
+            Destination
+          </span>
+          <strong className="quick-present-dialog__destination">
             {destinationName}
-          </div>
-        </Field>
+          </strong>
+        </div>
         <Field label="Content" required>
           <div
             className="quick-present-dialog__content-type"
@@ -160,7 +165,7 @@ export function QuickPresentDialog({
             ))}
           </div>
           <select
-            className="input"
+            className="quick-present-dialog__select"
             value={contentId}
             onChange={(event) => setContentId(event.target.value)}
             disabled={loading || contentOptions.length === 0}
@@ -178,26 +183,30 @@ export function QuickPresentDialog({
         </Field>
         <fieldset className="quick-present-dialog__durations">
           <legend>Duration</legend>
-          {[5, 15, 30, 60, 0].map((value) => (
-            <label className="radio-control" key={value}>
-              <input
-                type="radio"
-                name="quick-present-duration"
-                checked={durationMinutes === value}
-                onChange={() =>
-                  setDurationMinutes(value as 0 | 5 | 15 | 30 | 60)
-                }
-              />
-              <span>{value === 0 ? "Until stopped" : `${value} min`}</span>
-            </label>
-          ))}
+          <div className="quick-present-dialog__duration-options">
+            {[5, 15, 30, 60, 0].map((value) => (
+              <label className="radio-control" key={value}>
+                <input
+                  type="radio"
+                  name="quick-present-duration"
+                  checked={durationMinutes === value}
+                  onChange={() =>
+                    setDurationMinutes(value as 0 | 5 | 15 | 30 | 60)
+                  }
+                />
+                <span>
+                  {value === 0 ? "Until stopped" : String(value) + " min"}
+                </span>
+              </label>
+            ))}
+          </div>
         </fieldset>
         <Field label="Afterward">
-          <div className="quick-present-dialog__destination">
+          <div className="quick-present-dialog__static-value">
             Resume normal content
           </div>
         </Field>
-        <label className="checkbox-control">
+        <label className="checkbox-control quick-present-dialog__checkbox">
           <input
             type="checkbox"
             checked={wakeDisplay}
