@@ -181,6 +181,16 @@ func TestAirplayInstallerSeparatesRuntimeFromBuildDependencies(t *testing.T) {
 	if !strings.Contains(script, "comm -13") || !strings.Contains(script, "airplay-build-packages") {
 		t.Error("the installer does not record which packages it installed before removing them")
 	}
+	// The record must accumulate, not be replaced. A run that installs the
+	// toolchain and then fails leaves it on disk; on the retry those packages
+	// are already present so the diff is empty, and truncating here would
+	// forget them and leak the whole toolchain permanently.
+	if !strings.Contains(script, `comm -13 "${before_packages}" "${after_packages}" >> "${BUILD_PACKAGE_STATE}"`) {
+		t.Error("the recorded build-package state is overwritten instead of merged, so a failed-then-retried build leaks the toolchain")
+	}
+	if !strings.Contains(script, `sort -u -o "${BUILD_PACKAGE_STATE}" "${BUILD_PACKAGE_STATE}"`) {
+		t.Error("the merged build-package state is not deduplicated and sorted")
+	}
 	if strings.Contains(script, "apt-get autoremove") {
 		t.Error("the installer autoremoves packages instead of removing only what it installed")
 	}

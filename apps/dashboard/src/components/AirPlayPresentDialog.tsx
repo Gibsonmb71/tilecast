@@ -181,7 +181,7 @@ export function AirPlayPresentDialog({
       // probe rather than at a version number. Every player release since
       // AirPlay shipped has carried fixes that changed what "new enough" means,
       // and naming one version sends operators to check the wrong thing.
-      return "This display has not reported AirPlay capabilities yet. Run Test AirPlay support from Health & recovery; if the probe never reports, update the Linux Player.";
+      return "This display has not reported AirPlay capabilities yet. Run Test AirPlay support from Health & recovery; if the probe never reports, update Tilecast Player.";
     const hardware1080 = allCapabilities.every(
       (item) =>
         item.airplayHardwareDecode && item.airplayMaxProfile === "1080p30",

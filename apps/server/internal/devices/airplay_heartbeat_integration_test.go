@@ -442,6 +442,47 @@ func TestGatewayHeartbeatCannotPromoteAPreparingGroup(t *testing.T) {
 	}
 }
 
+// The guard above is scoped to the promotion, not to the whole transition. A
+// preparing group gateway that reports a failure still fails the room —
+// otherwise the group would sit in `preparing` until its deadline.
+func TestGatewayHeartbeatStillFailsAPreparingGroup(t *testing.T) {
+	service, pool, principal := airplayHeartbeatTestService(t)
+	ctx := context.Background()
+	var organizationID uuid.UUID
+	if err := pool.QueryRow(ctx, `SELECT organization_id FROM screens WHERE id=$1`, principal.ScreenID).Scan(&organizationID); err != nil {
+		t.Fatal(err)
+	}
+	sessionID := uuid.New()
+	if _, err := pool.Exec(ctx, `INSERT INTO external_presentation_sessions(id,organization_id,provider,status,target_type,target_id,gateway_screen_id,receiver_name,pin,device_id,expires_at,transport,video_port,audio_port,video_profile,audio_mode)
+		VALUES($1,$2,'airplay','preparing','group',$3,$4,'Library Room','4821','02:11:22:33:44:55',$5,'unicast',42000,42002,'720p30','none')`, sessionID, organizationID, uuid.New(), principal.ScreenID, time.Now().UTC().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO external_presentation_screen_states(session_id,screen_id,role,state) VALUES($1,$2,'gateway','preparing')`, sessionID, principal.ScreenID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE screen_player_status SET external_presentation_state='preparing',external_presentation_session_id=$2,external_presentation_role='gateway' WHERE screen_id=$1`, principal.ScreenID, sessionID); err != nil {
+		t.Fatal(err)
+	}
+
+	service.updateAirplayHeartbeat(ctx, principal.ScreenID, Heartbeat{
+		ExternalPresentationState:     "failed",
+		ExternalPresentationSessionID: &sessionID,
+		AirplayReceiverState:          "failed",
+	})
+
+	var status, reason string
+	var pin, deviceID *string
+	if err := pool.QueryRow(ctx, `SELECT status,COALESCE(end_reason,''),pin,device_id FROM external_presentation_sessions WHERE id=$1`, sessionID).Scan(&status, &reason, &pin, &deviceID); err != nil {
+		t.Fatal(err)
+	}
+	if status != "failed" || reason != "player_reported_failure" {
+		t.Fatalf("session = %q/%q, want failed/player_reported_failure", status, reason)
+	}
+	if pin != nil || deviceID != nil {
+		t.Fatalf("failed session retained its temporary identity: pin=%v device=%v", pin, deviceID)
+	}
+}
+
 // A single-screen session has no group readiness to wait for, so its gateway
 // heartbeat still owns the room lifecycle exactly as before.
 func TestSingleScreenHeartbeatStillAdvancesThePreparingSession(t *testing.T) {
