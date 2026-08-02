@@ -340,7 +340,7 @@ export class AirplayManager {
   }
 
   async probeCapabilities(): Promise<AirplayCapabilities> {
-    const uxplay = await probeCommand(this.spawn, "uxplay", ["--version"]);
+    const uxplay = await probeCommand(this.spawn, "uxplay", ["-v"]);
     const uxplayVersion = parseUxplayVersion(uxplay.output);
     const gstreamer = await probeCommand(this.spawn, "gst-inspect-1.0", [
       "--version",

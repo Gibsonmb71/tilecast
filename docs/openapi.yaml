@@ -10,12 +10,67 @@ paths:
       operationId: health
       responses:
         "200": { description: Server process is running }
+  /install.sh:
+    get:
+      operationId: installLinuxPlayerScript
+      description: Public, rate-limited Linux Player provisioning script with this server's URL embedded.
+      responses:
+        "200": { description: Shell installer }
+  /install-airplay.sh:
+    get:
+      operationId: installAirPlayScript
+      description: Public, rate-limited AirPlay provisioning script with this server's URL embedded.
+      responses:
+        "200": { description: Shell installer }
+  /install/tilecast-player.service:
+    get:
+      operationId: installLinuxPlayerService
+      responses:
+        "200": { description: Managed systemd user-service template }
   /readyz:
     get:
       operationId: ready
       responses:
         "200": { description: Server and database are ready }
         "503": { description: Database is unavailable }
+  /api/v1/install/linux:
+    get:
+      operationId: installableLinuxPlayerRelease
+      responses:
+        "200":
+          {
+            description: Latest stable,
+            verified,
+            cached Linux Player release metadata,
+          }
+        "404": { description: No installable Linux Player release is cached }
+  /api/v1/install/linux/artifact:
+    get:
+      operationId: installableLinuxPlayerArtifact
+      responses:
+        "200": { description: Verified Linux Player AppImage }
+        "404": { description: No installable Linux Player release is cached }
+    head:
+      operationId: headInstallableLinuxPlayerArtifact
+      responses:
+        "200": { description: Verified Linux Player AppImage metadata }
+        "404": { description: No installable Linux Player release is cached }
+  /api/v1/install/airplay/uxplay:
+    get:
+      operationId: installableUxPlayArtifact
+      description: Public, rate-limited, pinned UxPlay 1.73.6 source archive embedded in Tilecast Server.
+      responses:
+        "200": { description: Verified UxPlay 1.73.6 source archive }
+    head:
+      operationId: headInstallableUxPlayArtifact
+      responses:
+        "200": { description: Verified UxPlay 1.73.6 source archive metadata }
+  /api/v1/install/airplay/uxplay.sha256:
+    get:
+      operationId: installableUxPlayChecksum
+      responses:
+        "200":
+          { description: Pinned lowercase SHA-256 of the UxPlay source archive }
   /api/v1/auth/status:
     get:
       operationId: authStatus

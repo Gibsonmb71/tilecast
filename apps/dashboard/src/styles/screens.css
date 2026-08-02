@@ -158,6 +158,116 @@
   gap: var(--tc-space-2);
 }
 
+/* Hardware history ---------------------------------------------------- */
+
+.screen-hardware-history {
+  margin: 0 var(--tc-space-6) var(--tc-space-6);
+  overflow: hidden;
+  background: var(--tc-bg-surface);
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-panel);
+}
+
+.screen-hardware-history > header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--tc-space-2) var(--tc-space-4);
+  padding: var(--tc-space-4);
+  background: var(--tc-bg-subtle);
+  border-bottom: 1px solid var(--tc-border-default);
+}
+
+.screen-hardware-history h3 {
+  margin: 0;
+  font: var(--tc-text-panel-title);
+}
+
+.screen-hardware-history > header p {
+  flex: 1 1 18rem;
+  margin: 0;
+  color: var(--tc-text-secondary);
+  font: var(--tc-text-supporting);
+}
+
+.screen-hardware-history__item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(12rem, auto);
+  gap: var(--tc-space-4);
+  align-items: center;
+  padding: var(--tc-space-4);
+  border-bottom: 1px solid var(--tc-border-default);
+  transition: background var(--tc-motion-fast);
+}
+
+.screen-hardware-history__item:last-child {
+  border-bottom: 0;
+}
+
+.screen-hardware-history__item:hover {
+  background: var(--tc-table-row-hover);
+}
+
+.screen-hardware-history__identity,
+.screen-hardware-history__lifecycle {
+  display: grid;
+  gap: var(--tc-space-1);
+  min-width: 0;
+}
+
+.screen-hardware-history__identity strong {
+  overflow-wrap: anywhere;
+  font: var(--tc-text-label);
+}
+
+.screen-hardware-history__specs,
+.screen-hardware-history__meta {
+  color: var(--tc-text-secondary);
+  font: var(--tc-text-supporting);
+}
+
+.screen-hardware-history__lifecycle {
+  justify-items: end;
+}
+
+.screen-hardware-history__state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tc-space-2);
+  color: var(--tc-status-success);
+  font: var(--tc-text-label);
+  white-space: nowrap;
+}
+
+.screen-hardware-history__state > span {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  background: currentColor;
+  border-radius: 50%;
+}
+
+.screen-hardware-history__item--retired .screen-hardware-history__state {
+  color: var(--tc-text-secondary);
+}
+
+.screen-hardware-history__meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--tc-space-1);
+  text-align: right;
+}
+
+.screen-hardware-history .table-loading,
+.screen-hardware-history .empty-state__message {
+  padding: var(--tc-space-5) var(--tc-space-4);
+  margin: 0;
+  color: var(--tc-text-secondary);
+  font: var(--tc-text-supporting);
+}
+
 /* Pairing queue -------------------------------------------------------- */
 
 .pending-panel {
@@ -990,5 +1100,25 @@
 
   .pending-row__expiry {
     grid-column: 1;
+  }
+}
+
+@media (max-width: 720px) {
+  .screen-hardware-history {
+    margin-inline: var(--tc-space-4);
+  }
+
+  .screen-hardware-history__item {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--tc-space-3);
+  }
+
+  .screen-hardware-history__lifecycle {
+    justify-items: start;
+  }
+
+  .screen-hardware-history__meta {
+    justify-content: flex-start;
+    text-align: left;
   }
 }

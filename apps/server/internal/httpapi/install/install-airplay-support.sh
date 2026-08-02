@@ -7,7 +7,8 @@ set -eu
 # as that existing unprivileged user.
 
 readonly UXPLAY_VERSION="1.73.6"
-readonly UXPLAY_REPOSITORY="https://github.com/FDH2/UxPlay.git"
+readonly UXPLAY_SHA256="3a1a754bc7ed4b0f72b6237aa4d769238b9c20a71b651bc3fe9ac679e2a67f18"
+readonly SERVER_URL="__TILECAST_SERVER_URL__"
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "Run this provisioning script as root." >&2
@@ -19,12 +20,19 @@ if ! command -v apt-get >/dev/null 2>&1; then
   exit 1
 fi
 
+if [ "$(uname -m)" != "x86_64" ]; then
+  echo "Tilecast AirPlay provisioning currently supports x86_64 Linux; this machine is $(uname -m)." >&2
+  exit 1
+fi
+
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y \
   ca-certificates \
   cmake \
-  git \
+  coreutils \
+  curl \
+  tar \
   build-essential \
   pkg-config \
   libavahi-compat-libdnssd-dev \
@@ -48,7 +56,7 @@ apt-get install -y \
 
 uxplay_is_baseline() {
   command -v uxplay >/dev/null 2>&1 || return 1
-  uxplay --version 2>&1 | grep -Eq "UxPlay[^0-9]*${UXPLAY_VERSION}([[:space:]]|$)"
+  uxplay -v 2>&1 | grep -Eq "UxPlay[^0-9]*${UXPLAY_VERSION}([[:space:];]|$)"
 }
 
 if ! uxplay_is_baseline; then
@@ -58,10 +66,28 @@ if ! uxplay_is_baseline; then
   }
   trap cleanup EXIT
 
-  git clone --depth 1 --branch "v${UXPLAY_VERSION}" "${UXPLAY_REPOSITORY}" "${build_dir}/UxPlay"
-  cmake -S "${build_dir}/UxPlay" -B "${build_dir}/UxPlay/build" -DCMAKE_BUILD_TYPE=Release
-  cmake --build "${build_dir}/UxPlay/build" --parallel "$(nproc)"
-  cmake --install "${build_dir}/UxPlay/build"
+  archive="${build_dir}/uxplay-${UXPLAY_VERSION}.tar.gz"
+  advertised_sha="$(curl -fsS "${SERVER_URL}/api/v1/install/airplay/uxplay.sha256")"
+  if [ "${advertised_sha}" != "${UXPLAY_SHA256}" ]; then
+    echo "Tilecast published an unexpected UxPlay ${UXPLAY_VERSION} checksum." >&2
+    exit 1
+  fi
+
+  curl -fSL --progress-bar -o "${archive}" "${SERVER_URL}/api/v1/install/airplay/uxplay"
+  actual_sha="$(sha256sum "${archive}" | cut -d' ' -f1)"
+  if [ "${actual_sha}" != "${UXPLAY_SHA256}" ]; then
+    echo "UxPlay ${UXPLAY_VERSION} checksum mismatch: expected ${UXPLAY_SHA256}, got ${actual_sha}." >&2
+    exit 1
+  fi
+
+  tar -xzf "${archive}" -C "${build_dir}"
+  source_dir="${build_dir}/UxPlay-${UXPLAY_VERSION}"
+  cmake -S "${source_dir}" -B "${source_dir}/build" -DCMAKE_BUILD_TYPE=Release
+  cmake --build "${source_dir}/build" --parallel "$(nproc)"
+  cmake --install "${source_dir}/build"
+  # A distro UxPlay may already have been resolved from /usr/bin. Forget that
+  # shell cache so verification sees the newly installed /usr/local/bin copy.
+  hash -r
 fi
 
 if ! uxplay_is_baseline; then

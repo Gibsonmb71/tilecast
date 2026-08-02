@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -162,6 +164,115 @@ func TestAirplayCleanupCommandWakesThePlayerAndDeduplicates(t *testing.T) {
 	})
 }
 
+func TestAirPlayInstallScriptUsesOnlyTheTilecastServer(t *testing.T) {
+	withActivityDatabase(t, func(env activityTestEnvironment) {
+		env.server.installLimiter = newRateLimiter(60, time.Minute)
+		origin := httptest.NewServer(env.server.routes())
+		defer origin.Close()
+		env.server.publicURL = origin.URL
+
+		response, err := origin.Client().Get(origin.URL + "/install-airplay.sh")
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(response.Body)
+		response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("script status = %d, body = %s", response.StatusCode, string(body))
+		}
+		script := string(body)
+		if strings.Contains(script, installServerURLToken) {
+			t.Fatal("the server address placeholder was not substituted")
+		}
+		if !strings.Contains(script, `readonly SERVER_URL="`+origin.URL+`"`) {
+			t.Fatalf("script does not carry the server URL: %s", firstLines(script, 20))
+		}
+		if strings.Contains(script, "git clone") || strings.Contains(script, "github.com") || strings.Contains(script, "githubusercontent") {
+			t.Fatal("the AirPlay installer reaches a source-code host")
+		}
+		if !strings.Contains(script, "uxplay -v") || strings.Contains(script, "uxplay --version") {
+			t.Fatal("the AirPlay installer does not use UxPlay's supported version flag")
+		}
+		for _, match := range regexp.MustCompile(`https?://[^[:space:]"']+`).FindAllString(script, -1) {
+			if !strings.HasPrefix(match, origin.URL) {
+				t.Fatalf("the AirPlay installer contains a non-Tilecast URL: %s", match)
+			}
+		}
+
+		paths := scriptFetchPaths(script)
+		if len(paths) != 2 {
+			t.Fatalf("AirPlay installer fetch paths = %v, want checksum and archive", paths)
+		}
+		for _, path := range paths {
+			fetched, err := origin.Client().Get(origin.URL + path)
+			if err != nil {
+				t.Fatalf("GET %s: %v", path, err)
+			}
+			fetchedBody, _ := io.ReadAll(fetched.Body)
+			fetched.Body.Close()
+			if fetched.StatusCode != http.StatusOK || len(fetchedBody) == 0 {
+				t.Fatalf("GET %s = %d with %d bytes", path, fetched.StatusCode, len(fetchedBody))
+			}
+		}
+	})
+}
+
+func TestEmbeddedUxPlayArtifactMatchesPinnedIdentity(t *testing.T) {
+	archive, err := installAssets.ReadFile(installUxPlayArchive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(archive)
+	if got := hex.EncodeToString(digest[:]); got != installUxPlaySHA256 {
+		t.Fatalf("embedded archive SHA-256 = %s, want %s", got, installUxPlaySHA256)
+	}
+
+	gzipReader, err := gzip.NewReader(strings.NewReader(string(archive)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gzipReader.Close()
+	want := map[string]bool{
+		"UxPlay-" + installUxPlayVersion + "/CMakeLists.txt": false,
+		"UxPlay-" + installUxPlayVersion + "/LICENSE":        false,
+		"UxPlay-" + installUxPlayVersion + "/uxplay.cpp":     false,
+	}
+	tarReader := tar.NewReader(gzipReader)
+	for {
+		header, err := tarReader.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := want[header.Name]; ok {
+			want[header.Name] = true
+		}
+	}
+	for name, found := range want {
+		if !found {
+			t.Errorf("embedded UxPlay archive is missing %s", name)
+		}
+	}
+
+	server := &server{}
+	artifact := httptest.NewRecorder()
+	server.installableUxPlayArtifact(artifact, httptest.NewRequest(http.MethodGet, installUxPlayArchiveURL, nil))
+	if artifact.Code != http.StatusOK {
+		t.Fatalf("artifact status = %d", artifact.Code)
+	}
+	served := sha256.Sum256(artifact.Body.Bytes())
+	if hex.EncodeToString(served[:]) != installUxPlaySHA256 {
+		t.Fatal("served UxPlay artifact does not match its pinned checksum")
+	}
+
+	checksum := httptest.NewRecorder()
+	server.installableUxPlayChecksum(checksum, httptest.NewRequest(http.MethodGet, installUxPlayArchiveURL+".sha256", nil))
+	if strings.TrimSpace(checksum.Body.String()) != installUxPlaySHA256 {
+		t.Fatalf("published checksum = %q", checksum.Body.String())
+	}
+}
 func TestInstallableLinuxReleaseReportsNothingUntilOneIsCached(t *testing.T) {
 	withActivityDatabase(t, func(env activityTestEnvironment) {
 		env.server.updates = newTestUpdateService(t, env, t.TempDir())

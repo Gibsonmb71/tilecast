@@ -44,6 +44,18 @@ Either path installs or validates:
 - Avahi daemon and `avahi-browse`
 - UxPlay build dependencies when the distro package is not exactly 1.73.6
 
+The script never clones a repository or contacts GitHub or another source-code
+host. Tilecast Server embeds the upstream UxPlay v1.73.6 source archive (tag
+commit `21eef8df25d91e12635c36d8176ad192725baca2`) and serves it at
+`/api/v1/install/airplay/uxplay`. The installer obtains the published checksum
+from `/api/v1/install/airplay/uxplay.sha256`, requires it to match Tilecast's
+pinned SHA-256
+`3a1a754bc7ed4b0f72b6237aa4d769238b9c20a71b651bc3fe9ac679e2a67f18`,
+verifies the downloaded archive again, and only then extracts and builds it.
+The signage player therefore needs network access only to Tilecast Server and
+the configured Debian/APT mirrors. As with the Linux Player AppImage, this
+provisioning path currently supports x86_64 machines.
+
 The script does not create a permanent AirPlay advertisement, a kiosk-user
 sudo rule, or a second player service. Normal UxPlay/GStreamer processes are
 spawned by Electron as the existing unprivileged kiosk user.
