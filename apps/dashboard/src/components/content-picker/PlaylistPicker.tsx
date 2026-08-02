@@ -5,6 +5,7 @@ import { api } from "../../api/client";
 import type { LayoutSummary, Playlist } from "../../api/types";
 import { Button, Dialog } from "../ui";
 import { DashboardSearch } from "../DashboardListToolbar";
+import { LayoutPreview, PlaylistPreview } from "../PresentationPreview";
 
 export type PlaylistPickerChoice =
   | { kind: "playlist"; playlist: Playlist }
@@ -153,6 +154,21 @@ export function PlaylistPicker({
                 onClick={() => setChosen(id)}
                 onDoubleClick={() => onConfirm(choice)}
               >
+                <span
+                  className="playlist-picker__preview"
+                  data-orientation={
+                    choice.kind === "layout"
+                      ? choice.layout.orientation
+                      : undefined
+                  }
+                  aria-hidden="true"
+                >
+                  {choice.kind === "layout" ? (
+                    <LayoutPreview layout={choice.layout} />
+                  ) : (
+                    <PlaylistPreview playlist={choice.playlist} />
+                  )}
+                </span>
                 <span className="playlist-picker__icon" aria-hidden="true">
                   {choice.kind === "layout" ? (
                     <LayoutTemplate size={17} />

@@ -66,6 +66,22 @@ afterEach(() => {
 });
 
 describe("ContentPicker", () => {
+  it("mounts the overlay at the document root above route chrome", async () => {
+    vi.spyOn(api, "assets").mockResolvedValue({
+      items: [welcome],
+      total: 1,
+      page: 1,
+      pageSize: 48,
+    });
+    const { container } = picker("multiple");
+
+    await screen.findByRole("button", { name: /Welcome/ });
+    expect(container.querySelector(".content-picker-backdrop")).toBeNull();
+    expect(
+      document.body.querySelector(".content-picker-backdrop"),
+    ).toBeInTheDocument();
+  });
+
   it("selects and confirms multiple reusable content items", async () => {
     vi.spyOn(api, "assets").mockResolvedValue({
       items,

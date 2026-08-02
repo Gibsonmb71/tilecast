@@ -129,6 +129,27 @@ describe("PlaylistPicker", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows the same preview thumbnail data as the playlist library", async () => {
+    list([
+      playlist("lobby", "Lobby loop", {
+        previewItems: [
+          {
+            id: "welcome",
+            name: "Welcome",
+            type: "image",
+            thumbnailUrl: "/api/v1/assets/welcome/thumbnail",
+          },
+        ],
+      }),
+    ]);
+    const { container } = picker();
+
+    await screen.findByRole("button", { name: /Lobby loop/ });
+    expect(
+      container.querySelector('img[src="/api/v1/assets/welcome/thumbnail"]'),
+    ).toBeInTheDocument();
+  });
+
   it("leaves Layouts out unless the caller can target one", async () => {
     list();
     const layouts = listLayouts([layout("hero", "Hero wall", 3)]);
@@ -140,15 +161,22 @@ describe("PlaylistPicker", () => {
 
   it("offers published Layouts alongside playlists for schedules", async () => {
     list();
-    const hero = layout("hero", "Hero wall", 3);
+    const hero = {
+      ...layout("hero", "Hero wall", 3),
+      orientation: "landscape" as const,
+      previewImageUrl: "/api/v1/layouts/hero/preview-image",
+    };
     listLayouts([hero, layout("wip", "Draft only", 0)]);
     const confirm = vi.fn();
-    picker(confirm, true);
+    const { container } = picker(confirm, true);
     const user = userEvent.setup();
 
     // An unpublished Layout has no revision a player could show.
     expect(await screen.findByText("Hero wall")).toBeInTheDocument();
     expect(screen.queryByText("Draft only")).not.toBeInTheDocument();
+    expect(
+      container.querySelector('img[src="/api/v1/layouts/hero/preview-image"]'),
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /Hero wall/ }));
     await user.click(screen.getByRole("button", { name: "Add playlist" }));

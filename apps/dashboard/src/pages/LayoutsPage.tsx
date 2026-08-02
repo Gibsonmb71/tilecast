@@ -31,6 +31,7 @@ import {
   DashboardListToolbar,
   DashboardSearch,
 } from "../components/DashboardListToolbar";
+import { LayoutPreview } from "../components/PresentationPreview";
 import { WorkspaceTabs, presentationTabs } from "../navigation/WorkspaceTabs";
 import "./LayoutLibraryPage.css";
 
@@ -566,7 +567,7 @@ export function LayoutsPage() {
                   onClick={() => void navigate(`/layouts/${layout.id}`)}
                 >
                   <span className="layout-library-card__preview">
-                    <FrozenLayoutPreview layout={layout} />
+                    <LayoutPreview layout={layout} />
                     <span className="layout-library-card__status">
                       {layoutPublicationLabel(layout)}
                     </span>
@@ -764,29 +765,6 @@ export function LayoutsPage() {
         </div>
       </Dialog>
     </section>
-  );
-}
-
-function FrozenLayoutPreview({ layout }: { layout: LayoutSummary }) {
-  const [failed, setFailed] = useState(false);
-  useEffect(() => setFailed(false), [layout.previewImageUrl]);
-  if (!layout.previewImageUrl || failed) {
-    return (
-      <span className="layout-library-preview-fallback" aria-hidden="true">
-        <LayoutTemplate size={30} />
-        <strong>Preview unavailable</strong>
-        <small>Open the layout to continue editing.</small>
-      </span>
-    );
-  }
-  return (
-    <img
-      className="layout-library-thumbnail"
-      src={layout.previewImageUrl}
-      alt=""
-      loading="lazy"
-      onError={() => setFailed(true)}
-    />
   );
 }
 
