@@ -26,6 +26,35 @@
   margin-bottom: 0;
 }
 
+/* Screen detail header ------------------------------------------------ */
+
+.screen-detail__page-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--tc-space-4);
+}
+
+.screen-detail__title {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--tc-space-3);
+}
+
+.screen-detail__title > span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.screen-detail__title > .status-chip {
+  flex: 0 0 auto;
+}
+
+.screen-detail__page-header .page-header__actions {
+  justify-content: flex-start;
+}
+
 /* Takeover ---------------------------------------------------- */
 
 /* Quiet until it matters: the trigger is a .button--danger-quiet header utility,

@@ -2,10 +2,19 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import type { LayoutList, PlaylistList } from "../api/types";
-import { Button, Dialog, Field } from "./ui";
+import { Button, Checkbox, Dialog, Field, Select, ToggleGroup } from "./ui";
 import "./QuickPresentDialog.css";
 
 type QuickPresentContentType = "playlist" | "layout" | "asset";
+
+const contentTypes: readonly {
+  value: QuickPresentContentType;
+  label: string;
+}[] = [
+  { value: "playlist", label: "Playlist" },
+  { value: "layout", label: "Layout" },
+  { value: "asset", label: "Media / web" },
+];
 
 export function QuickPresentDialog({
   open,
@@ -127,44 +136,28 @@ export function QuickPresentDialog({
     >
       <div className="quick-present-dialog__body">
         <p className="quick-present-dialog__intro">
+          Temporarily show content on <strong>{destinationName}</strong>.
           <span>
-            Temporarily replace normal scheduled content on {destinationName}.
+            Normal content resumes when this session ends. Emergency Takeovers
+            and AirPlay remain higher priority.
           </span>
-          <small>Emergency Takeovers and AirPlay remain higher priority.</small>
         </p>
-        <div className="quick-present-dialog__context">
-          <span className="quick-present-dialog__context-label">
-            Destination
+        <div className="quick-present-dialog__field">
+          <span className="field__label">
+            Content <span aria-hidden="true">*</span>
           </span>
-          <strong className="quick-present-dialog__destination">
-            {destinationName}
-          </strong>
-        </div>
-        <Field label="Content" required>
-          <div
+          <ToggleGroup
             className="quick-present-dialog__content-type"
-            role="tablist"
-            aria-label="Content type"
-          >
-            {(["playlist", "layout", "asset"] as const).map((type) => (
-              <button
-                key={type}
-                type="button"
-                role="tab"
-                aria-selected={contentType === type}
-                className={contentType === type ? "is-active" : ""}
-                onClick={() => {
-                  setContentType(type);
-                  setContentId("");
-                }}
-              >
-                {type === "asset"
-                  ? "Media, widget, or website"
-                  : type.charAt(0).toUpperCase() + type.slice(1)}
-              </button>
-            ))}
-          </div>
-          <select
+            label="Content type"
+            value={contentType}
+            items={contentTypes}
+            onValueChange={(type) => {
+              setContentType(type);
+              setContentId("");
+            }}
+          />
+          <Select
+            aria-label="Content selection"
             className="quick-present-dialog__select"
             value={contentId}
             onChange={(event) => setContentId(event.target.value)}
@@ -179,48 +172,36 @@ export function QuickPresentDialog({
                 </option>
               ))
             )}
-          </select>
+          </Select>
+        </div>
+        <Field label="Duration">
+          <Select
+            value={durationMinutes}
+            onChange={(event) =>
+              setDurationMinutes(
+                Number(event.target.value) as 0 | 5 | 15 | 30 | 60,
+              )
+            }
+          >
+            <option value={5}>5 minutes</option>
+            <option value={15}>15 minutes</option>
+            <option value={30}>30 minutes</option>
+            <option value={60}>1 hour</option>
+            <option value={0}>Until stopped</option>
+          </Select>
         </Field>
-        <fieldset className="quick-present-dialog__durations">
-          <legend>Duration</legend>
-          <div className="quick-present-dialog__duration-options">
-            {[5, 15, 30, 60, 0].map((value) => (
-              <label className="radio-control" key={value}>
-                <input
-                  type="radio"
-                  name="quick-present-duration"
-                  checked={durationMinutes === value}
-                  onChange={() =>
-                    setDurationMinutes(value as 0 | 5 | 15 | 30 | 60)
-                  }
-                />
-                <span>
-                  {value === 0 ? "Until stopped" : String(value) + " min"}
-                </span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
-        <Field label="Afterward">
-          <div className="quick-present-dialog__static-value">
-            Resume normal content
-          </div>
-        </Field>
-        <label className="checkbox-control quick-present-dialog__checkbox">
-          <input
-            type="checkbox"
-            checked={wakeDisplay}
-            onChange={(event) => setWakeDisplay(event.target.checked)}
-          />
-          <span>Wake display if needed</span>
-        </label>
+        <Checkbox
+          label="Wake display if needed"
+          checked={wakeDisplay}
+          onChange={(event) => setWakeDisplay(event.target.checked)}
+        />
         {present.error && (
           <div className="notice notice--error" role="alert">
             {present.error.message}
           </div>
         )}
       </div>
-      <footer className="quick-present-dialog__footer">
+      <footer className="form-actions quick-present-dialog__actions">
         <Button type="button" variant="quiet" onClick={onClose}>
           Cancel
         </Button>

@@ -2610,14 +2610,19 @@ export function ScreenDetailPage() {
       className={`screen-detail${tab === "manage" ? " screen-detail--manage" : ""}`}
     >
       <PageHeader
-        title={screen.name}
+        className="screen-detail__page-header"
+        title={
+          <span className="screen-detail__title">
+            <span>{screen.name}</span>
+            <StatusLabel status={screen.status} />
+          </span>
+        }
         description={
           [screen.location, roomLabel(screen)].filter(Boolean).join(" · ") ||
           "No location set"
         }
         actions={
           <>
-            <StatusLabel status={screen.status} />
             {canManageScreens(auth.status?.user) && (
               <button
                 type="button"
