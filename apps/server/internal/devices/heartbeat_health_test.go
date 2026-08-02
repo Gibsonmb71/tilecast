@@ -6,9 +6,7 @@ import (
 )
 
 func TestEffectiveHealthyPlaybackAt(t *testing.T) {
-	// A device clock running well behind the server's, which is what stranded
-	// Linux players at "Installing": their reported timestamp could never be
-	// later than the server-stamped install_started_at.
+	// A device clock running well behind the server's.
 	behind := time.Now().UTC().Add(-90 * time.Minute)
 	yes, no := true, false
 	serverNow := func(at *time.Time) bool {
@@ -59,6 +57,28 @@ func TestEffectiveHealthyPlaybackAt(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			if got := effectiveHealthyPlaybackAt(testCase.heartbeat); !testCase.expect(got) {
 				t.Fatalf("unexpected healthy playback timestamp: %v", got)
+			}
+		})
+	}
+}
+
+func TestSettledUptime(t *testing.T) {
+	seconds := func(value int64) *int64 { return &value }
+	for _, testCase := range []struct {
+		name      string
+		heartbeat Heartbeat
+		expect    bool
+	}{
+		{"a player up for an hour has stayed up", Heartbeat{UptimeSeconds: seconds(3600)}, true},
+		{"exactly at the floor counts", Heartbeat{UptimeSeconds: seconds(SettledUptimeSeconds)}, true},
+		{"a player up for four seconds has not", Heartbeat{UptimeSeconds: seconds(4)}, false},
+		// A player that does not report uptime must not be held back by a check it
+		// cannot answer; the version code still has to match either way.
+		{"an unreported uptime does not block", Heartbeat{}, true},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			if got := settledUptime(testCase.heartbeat); got != testCase.expect {
+				t.Fatalf("settledUptime = %v, want %v", got, testCase.expect)
 			}
 		})
 	}
