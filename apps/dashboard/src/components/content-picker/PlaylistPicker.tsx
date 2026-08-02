@@ -10,6 +10,8 @@ export type PlaylistPickerChoice =
   | { kind: "playlist"; playlist: Playlist }
   | { kind: "layout"; layout: LayoutSummary };
 
+export type PlaylistPickerKind = PlaylistPickerChoice["kind"];
+
 export type PlaylistPickerProps = {
   open: boolean;
   title?: string;
@@ -20,6 +22,8 @@ export type PlaylistPickerProps = {
    * inside a Layout can only hold a playlist.
    */
   includeLayouts?: boolean;
+  /** Narrow the picker to one kind when a caller has separate content tabs. */
+  allowedKinds?: readonly PlaylistPickerKind[];
   /** Highlighted on open, so reopening the picker shows the current choice. */
   selectedId?: string;
   onConfirm: (choice: PlaylistPickerChoice) => void;
@@ -36,26 +40,42 @@ export function PlaylistPicker({
   description,
   confirmLabel = "Add playlist",
   includeLayouts = false,
+  allowedKinds,
   selectedId = "",
   onConfirm,
   onClose,
 }: PlaylistPickerProps) {
+  const kinds: readonly PlaylistPickerKind[] =
+    allowedKinds ?? (includeLayouts ? ["playlist", "layout"] : ["playlist"]);
+  const canChoosePlaylists = kinds.includes("playlist");
+  const canChooseLayouts = kinds.includes("layout");
+  const mixedKinds = canChoosePlaylists && canChooseLayouts;
+  const noun = mixedKinds
+    ? "presentations"
+    : canChooseLayouts
+      ? "layouts"
+      : "playlists";
+  const defaultTitle = mixedKinds
+    ? "Choose presentation"
+    : canChooseLayouts
+      ? "Choose layout"
+      : "Choose playlist";
   const [search, setSearch] = useState("");
   const [chosen, setChosen] = useState(selectedId);
   const playlists = useQuery({
     queryKey: ["playlist-picker", "playlists", search],
     queryFn: () => api.playlists(search),
-    enabled: open,
+    enabled: open && canChoosePlaylists,
   });
   const layouts = useQuery({
     queryKey: ["playlist-picker", "layouts", search],
     queryFn: () => api.layouts(search),
-    enabled: open && includeLayouts,
+    enabled: open && canChooseLayouts,
   });
 
-  const playlistItems = playlists.data?.items ?? [];
+  const playlistItems = canChoosePlaylists ? (playlists.data?.items ?? []) : [];
   // An unpublished Layout has nothing a player could show, so it is not offerable.
-  const layoutItems = includeLayouts
+  const layoutItems = canChooseLayouts
     ? (layouts.data?.items ?? []).filter((layout) => layout.publishedRevision)
     : [];
   const choices: PlaylistPickerChoice[] = [
@@ -69,16 +89,17 @@ export function PlaylistPicker({
     choice.kind === "playlist" ? choice.playlist.id : choice.layout.id;
   const selected = choices.find((choice) => idOf(choice) === chosen);
 
-  const loading = playlists.isLoading || (includeLayouts && layouts.isLoading);
-  const failed = playlists.isError || (includeLayouts && layouts.isError);
-  const noun = includeLayouts ? "presentations" : "playlists";
+  const loading =
+    (canChoosePlaylists && playlists.isLoading) ||
+    (canChooseLayouts && layouts.isLoading);
+  const failed =
+    (canChoosePlaylists && playlists.isError) ||
+    (canChooseLayouts && layouts.isError);
 
   return (
     <Dialog
       open={open}
-      title={
-        title ?? (includeLayouts ? "Choose presentation" : "Choose playlist")
-      }
+      title={title ?? defaultTitle}
       onClose={onClose}
       className="playlist-picker"
     >
@@ -98,14 +119,14 @@ export function PlaylistPicker({
         ) : failed ? (
           <div className="notice notice--error">
             <strong>
-              {includeLayouts ? "Presentations" : "Playlists"} could not be
+              {noun.charAt(0).toUpperCase() + noun.slice(1)} could not be
               loaded.
             </strong>
             <button
               className="button button--quiet"
               onClick={() => {
-                void playlists.refetch();
-                if (includeLayouts) void layouts.refetch();
+                if (canChoosePlaylists) void playlists.refetch();
+                if (canChooseLayouts) void layouts.refetch();
               }}
             >
               Try again
