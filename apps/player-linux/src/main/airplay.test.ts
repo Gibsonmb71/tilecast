@@ -332,3 +332,216 @@ describe("AirPlay capability probing", () => {
     expect(capabilities.uxplayVersion).toBe("1.73.6");
   });
 });
+
+describe("AirPlay persisted preparation state", () => {
+  function persistedSession(files: Map<string, unknown>) {
+    return files.get("airplay-session.json") as
+      | {
+          version: number;
+          config: ExternalPresentationConfig;
+          gatewayStarted: boolean;
+        }
+      | undefined;
+  }
+
+  it("records a group gateway as prepared, not started, and does not advertise", async () => {
+    const result = testManager(() => new FakeProcess());
+    await result.manager.prepareSession(config("gateway"), "vah264dec");
+
+    const persisted = persistedSession(result.files);
+    expect(persisted?.version).toBe(2);
+    expect(persisted?.gatewayStarted).toBe(false);
+    expect(persisted?.config.sessionId).toBe(config("gateway").sessionId);
+    // The RTP receiver is up so the display is ready the moment the server
+    // releases the room, but nothing is on the network yet.
+    expect(result.calls.map((call) => call.binary)).toEqual([
+      "/usr/bin/gst-launch-1.0",
+    ]);
+
+    await result.manager.stopSession("test_cleanup");
+  });
+
+  it("records the start permission before UxPlay can be seen on the network", async () => {
+    const seenAtSpawn: (boolean | undefined)[] = [];
+    const result = testManager((binary) => {
+      if (binary === "/usr/local/bin/uxplay") {
+        seenAtSpawn.push(
+          (
+            result.files.get("airplay-session.json") as
+              { gatewayStarted: boolean } | undefined
+          )?.gatewayStarted,
+        );
+      }
+      return new FakeProcess();
+    });
+    await result.manager.prepareSession(config("gateway"), "vah264dec");
+    await result.manager.startGateway("vah264dec");
+
+    expect(seenAtSpawn).toEqual([true]);
+    expect(persistedSession(result.files)?.gatewayStarted).toBe(true);
+
+    await result.manager.stopSession("test_cleanup");
+  });
+
+  it("recovers a prepared gateway without advertising it", async () => {
+    const result = testManager(() => new FakeProcess());
+    result.files.set("airplay-session.json", {
+      version: 2,
+      config: config("gateway"),
+      gatewayStarted: false,
+    });
+
+    const status = await result.manager.recoverSession("vah264dec");
+
+    expect(status?.role).toBe("gateway");
+    expect(status?.gatewayAlive).toBe(false);
+    expect(result.calls.map((call) => call.binary)).toEqual([
+      "/usr/bin/gst-launch-1.0",
+    ]);
+    expect(persistedSession(result.files)?.gatewayStarted).toBe(false);
+
+    // The server's start command still releases it after the reboot.
+    await result.manager.startGateway("vah264dec");
+    expect(result.calls.map((call) => call.binary)).toEqual([
+      "/usr/bin/gst-launch-1.0",
+      "/usr/local/bin/uxplay",
+    ]);
+    expect(persistedSession(result.files)?.gatewayStarted).toBe(true);
+
+    await result.manager.stopSession("test_cleanup");
+  });
+
+  it("recovers a started gateway with both processes", async () => {
+    const result = testManager(() => new FakeProcess());
+    result.files.set("airplay-session.json", {
+      version: 2,
+      config: config("gateway"),
+      gatewayStarted: true,
+    });
+
+    const status = await result.manager.recoverSession("vah264dec");
+
+    expect(status?.gatewayAlive).toBe(true);
+    expect(result.calls.map((call) => call.binary)).toEqual([
+      "/usr/bin/gst-launch-1.0",
+      "/usr/local/bin/uxplay",
+    ]);
+
+    await result.manager.stopSession("test_cleanup");
+  });
+
+  it("recovers a single-screen session with UxPlay as before", async () => {
+    const result = testManager(() => new FakeProcess());
+    const single = config("single");
+    await result.manager.prepareSession(single, "avdec_h264");
+    await result.manager.startGateway("avdec_h264");
+    const persisted = persistedSession(result.files);
+    expect(persisted?.gatewayStarted).toBe(true);
+
+    // Reboot: a fresh manager over the same on-disk state.
+    const rebooted = testManager(() => new FakeProcess());
+    rebooted.files.set("airplay-session.json", persisted);
+    const status = await rebooted.manager.recoverSession("avdec_h264");
+
+    expect(status?.role).toBe("single");
+    expect(status?.gatewayAlive).toBe(true);
+    expect(rebooted.calls.map((call) => call.binary)).toEqual([
+      "/usr/local/bin/uxplay",
+    ]);
+
+    await result.manager.stopSession("test_cleanup");
+    await rebooted.manager.stopSession("test_cleanup");
+  });
+
+  it("never advertises an old-format group gateway whose start state is unknown", async () => {
+    const result = testManager(() => new FakeProcess());
+    // Version 1 persisted the bare config with no record of the start phase.
+    result.files.set("airplay-session.json", config("gateway"));
+
+    const status = await result.manager.recoverSession("vah264dec");
+
+    expect(status?.gatewayAlive).toBe(false);
+    expect(result.calls.map((call) => call.binary)).toEqual([
+      "/usr/bin/gst-launch-1.0",
+    ]);
+    // It is rewritten in the current format so the next reboot is unambiguous.
+    expect(persistedSession(result.files)?.version).toBe(2);
+    expect(persistedSession(result.files)?.gatewayStarted).toBe(false);
+
+    await result.manager.stopSession("test_cleanup");
+  });
+
+  it("still recovers an old-format single-screen session, whose start state is knowable", async () => {
+    const result = testManager(() => new FakeProcess());
+    result.files.set("airplay-session.json", config("single"));
+
+    const status = await result.manager.recoverSession("avdec_h264");
+
+    expect(status?.gatewayAlive).toBe(true);
+    expect(result.calls.map((call) => call.binary)).toEqual([
+      "/usr/local/bin/uxplay",
+    ]);
+
+    await result.manager.stopSession("test_cleanup");
+  });
+
+  it("deletes an expired persisted session instead of recovering it", async () => {
+    const result = testManager(() => new FakeProcess());
+    const expired = config("gateway");
+    expired.expiresAt = new Date(Date.now() - 1_000).toISOString();
+    result.files.set("airplay-session.json", {
+      version: 2,
+      config: expired,
+      gatewayStarted: true,
+    });
+
+    const status = await result.manager.recoverSession("vah264dec");
+
+    expect(status).toBeNull();
+    expect(result.files.has("airplay-session.json")).toBe(false);
+    expect(result.calls).toHaveLength(0);
+  });
+
+  it("does not recover a corrupt persisted session or leave it behind", async () => {
+    const result = testManager(() => new FakeProcess());
+    result.files.set("airplay-session.json", { version: 2, config: {} });
+
+    const status = await result.manager.recoverSession("vah264dec");
+
+    expect(status).toBeNull();
+    expect(result.files.has("airplay-session.json")).toBe(false);
+  });
+
+  it("keeps the session while reconfiguring and clears it on stop", async () => {
+    const result = testManager(() => new FakeProcess());
+    const statuses: (string | null)[] = [];
+    const observed = new AirplayManager({
+      store: {
+        writeJson: async (name: string, value: unknown) =>
+          result.files.set(name, value),
+        readJson: async <T>(name: string) =>
+          (result.files.get(name) as T | undefined) ?? null,
+        delete: async (name: string) => void result.files.delete(name),
+      } as never,
+      resolveExecutable: async (name: string) => resolvedExecutable(name),
+      spawn: (() => new FakeProcess()) as never,
+      onStatus: (status) => statuses.push(status?.state ?? null),
+    });
+
+    const multicast = config("gateway");
+    multicast.transport = "multicast";
+    multicast.multicastAddress = "239.255.42.7";
+    await observed.prepareSession(multicast, "vah264dec");
+    await observed.startGateway("vah264dec");
+    // Multicast -> unicast fallback reuses the same server session.
+    await observed.prepareSession(config("gateway"), "vah264dec");
+
+    expect(statuses).not.toContain(null);
+    expect(persistedSession(result.files)?.config.transport).toBe("unicast");
+    expect(persistedSession(result.files)?.gatewayStarted).toBe(false);
+
+    await observed.stopSession("manual_stop");
+    expect(result.files.has("airplay-session.json")).toBe(false);
+    expect(statuses[statuses.length - 1]).toBeNull();
+  });
+});

@@ -177,7 +177,11 @@ export function AirPlayPresentDialog({
       targetType !== "group" &&
       allCapabilities.some((item) => item.airplaySupported !== true)
     )
-      return "This display has not reported AirPlay capabilities yet. Run Test AirPlay support from Health & recovery, and confirm the player is on 0.12.0 or newer.";
+      // The reported capability is the source of truth, so this points at the
+      // probe rather than at a version number. Every player release since
+      // AirPlay shipped has carried fixes that changed what "new enough" means,
+      // and naming one version sends operators to check the wrong thing.
+      return "This display has not reported AirPlay capabilities yet. Run Test AirPlay support from Health & recovery; if the probe never reports, update the Linux Player.";
     const hardware1080 = allCapabilities.every(
       (item) =>
         item.airplayHardwareDecode && item.airplayMaxProfile === "1080p30",

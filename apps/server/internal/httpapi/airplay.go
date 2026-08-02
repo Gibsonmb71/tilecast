@@ -305,7 +305,15 @@ func (s *server) createAirplaySession(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	record := airplaySessionRecord{ID: sessionID, OrganizationID: org, Provider: "airplay", Status: "preparing", TargetType: input.TargetType, TargetID: input.TargetID, GatewayID: gatewayID, AudioID: audioID, ReceiverName: targetName, PIN: pin, DeviceID: deviceID, ExpiresAt: expiresAt, CreatedBy: &user.ID, CreatedAt: now, Transport: transport, Multicast: multicastAddress, VideoPort: airplay.VideoPort, AudioPort: airplay.AudioPort, Profile: string(profile), AudioMode: input.AudioMode}
-	if _, err = tx.Exec(r.Context(), `INSERT INTO external_presentation_sessions(id,organization_id,provider,status,target_type,target_id,gateway_screen_id,audio_screen_id,receiver_name,pin,device_id,expires_at,created_by,transport,multicast_address,video_port,audio_port,video_profile,audio_mode) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NULLIF($15,'')::inet,$16,$17,$18,$19)`, record.ID, record.OrganizationID, record.Provider, record.Status, record.TargetType, record.TargetID, record.GatewayID, record.AudioID, record.ReceiverName, record.PIN, record.DeviceID, record.ExpiresAt, user.ID, record.Transport, record.Multicast, record.VideoPort, record.AudioPort, record.Profile, record.AudioMode); err != nil {
+	// Group preparation is bounded by a deadline stored with the session, not by
+	// a timer in this process. A restart mid-preparation must neither lose the
+	// bound nor restart it.
+	var prepareDeadline *time.Time
+	if input.TargetType == "group" {
+		deadline := airplayPreparationDeadline(now)
+		prepareDeadline = &deadline
+	}
+	if _, err = tx.Exec(r.Context(), `INSERT INTO external_presentation_sessions(id,organization_id,provider,status,target_type,target_id,gateway_screen_id,audio_screen_id,receiver_name,pin,device_id,expires_at,created_by,transport,multicast_address,video_port,audio_port,video_profile,audio_mode,prepare_deadline_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NULLIF($15,'')::inet,$16,$17,$18,$19,$20)`, record.ID, record.OrganizationID, record.Provider, record.Status, record.TargetType, record.TargetID, record.GatewayID, record.AudioID, record.ReceiverName, record.PIN, record.DeviceID, record.ExpiresAt, user.ID, record.Transport, record.Multicast, record.VideoPort, record.AudioPort, record.Profile, record.AudioMode, prepareDeadline); err != nil {
 		s.internalError(w, r, err)
 		return
 	}
@@ -370,7 +378,10 @@ func (s *server) createAirplaySession(w http.ResponseWriter, r *http.Request) {
 		s.devices.Notify(screen.ID, map[string]any{"type": "external_presentation.changed", "sessionId": record.ID})
 	}
 	if input.TargetType == "group" {
-		go s.coordinateAirplaySession(record.ID, user.ID)
+		// Nothing is ready yet, so this is normally a no-op. It keeps activation
+		// and recovery on one code path, and it releases a one-member group
+		// immediately if its only participant already reported.
+		s.reconcileAirplaySession(r.Context(), record.ID)
 	}
 	writeJSON(w, 202, map[string]any{"data": s.airplaySessionResponse(r.Context(), record, screens)})
 }
@@ -452,7 +463,7 @@ func (s *server) loadAirplayTarget(ctx context.Context, targetType string, targe
 	if targetType == "group" {
 		where = `EXISTS(SELECT 1 FROM screen_group_memberships gm WHERE gm.screen_group_id=$1 AND gm.screen_id=sc.id)`
 	}
-	rows, err := s.db.Query(ctx, `SELECT sc.id,sc.name,sc.platform,COALESCE(sc.last_known_ip::text,''),sc.enabled,COALESCE(sc.last_heartbeat_at>now()-interval '5 minutes',false),COALESCE(ps.airplay_supported,false),COALESCE(ps.airplay_group_supported,false),COALESCE(ps.airplay_audio_available,false),COALESCE(ps.airplay_hardware_decode,false),COALESCE(NULLIF(ps.airplay_max_profile,''),'unsupported'),COALESCE(ps.airplay_multicast_supported,false),COALESCE(ts.network_link_type='ethernet',false) FROM screens sc LEFT JOIN screen_player_status ps ON ps.screen_id=sc.id LEFT JOIN screen_telemetry_snapshots ts ON ts.screen_id=sc.id WHERE sc.organization_id=$2 AND sc.archived_at IS NULL AND `+where+` ORDER BY lower(sc.name),sc.id`, append(args, org)...)
+	rows, err := s.db.Query(ctx, `SELECT sc.id,sc.name,sc.platform,COALESCE(host(sc.last_known_ip),''),sc.enabled,COALESCE(sc.last_heartbeat_at>now()-interval '5 minutes',false),COALESCE(ps.airplay_supported,false),COALESCE(ps.airplay_group_supported,false),COALESCE(ps.airplay_audio_available,false),COALESCE(ps.airplay_hardware_decode,false),COALESCE(NULLIF(ps.airplay_max_profile,''),'unsupported'),COALESCE(ps.airplay_multicast_supported,false),COALESCE(ts.network_link_type='ethernet',false) FROM screens sc LEFT JOIN screen_player_status ps ON ps.screen_id=sc.id LEFT JOIN screen_telemetry_snapshots ts ON ts.screen_id=sc.id WHERE sc.organization_id=$2 AND sc.archived_at IS NULL AND `+where+` ORDER BY lower(sc.name),sc.id`, append(args, org)...)
 	if err != nil {
 		return uuid.Nil, "", nil, nil, err
 	}
@@ -526,8 +537,15 @@ func airplayCommandPayload(record airplaySessionRecord, role, phase string, scre
 }
 
 func (s *server) getAirplayRecord(ctx context.Context, id uuid.UUID) (airplaySessionRecord, error) {
+	return getAirplayRecordFrom(ctx, s.db, id)
+}
+
+func getAirplayRecordFrom(ctx context.Context, q airplayQuerier, id uuid.UUID) (airplaySessionRecord, error) {
 	var record airplaySessionRecord
-	err := s.db.QueryRow(ctx, `SELECT id,organization_id,provider,status,target_type,target_id,gateway_screen_id,audio_screen_id,receiver_name,COALESCE(pin,''),COALESCE(device_id,''),expires_at,created_by,created_at,ended_at,COALESCE(end_reason,''),transport,COALESCE(multicast_address::text,''),video_port,audio_port,video_profile,audio_mode FROM external_presentation_sessions WHERE id=$1`, id).Scan(&record.ID, &record.OrganizationID, &record.Provider, &record.Status, &record.TargetType, &record.TargetID, &record.GatewayID, &record.AudioID, &record.ReceiverName, &record.PIN, &record.DeviceID, &record.ExpiresAt, &record.CreatedBy, &record.CreatedAt, &record.EndedAt, &record.EndReason, &record.Transport, &record.Multicast, &record.VideoPort, &record.AudioPort, &record.Profile, &record.AudioMode)
+	// host(), not ::text: casting an inet to text appends the netmask, and
+	// "239.255.42.7/32" is neither a valid multicast address in the command
+	// payload nor something the player's validator accepts.
+	err := q.QueryRow(ctx, `SELECT id,organization_id,provider,status,target_type,target_id,gateway_screen_id,audio_screen_id,receiver_name,COALESCE(pin,''),COALESCE(device_id,''),expires_at,created_by,created_at,ended_at,COALESCE(end_reason,''),transport,COALESCE(host(multicast_address),''),video_port,audio_port,video_profile,audio_mode FROM external_presentation_sessions WHERE id=$1`, id).Scan(&record.ID, &record.OrganizationID, &record.Provider, &record.Status, &record.TargetType, &record.TargetID, &record.GatewayID, &record.AudioID, &record.ReceiverName, &record.PIN, &record.DeviceID, &record.ExpiresAt, &record.CreatedBy, &record.CreatedAt, &record.EndedAt, &record.EndReason, &record.Transport, &record.Multicast, &record.VideoPort, &record.AudioPort, &record.Profile, &record.AudioMode)
 	return record, err
 }
 
@@ -575,59 +593,12 @@ func (s *server) airplaySessionResponse(ctx context.Context, record airplaySessi
 	return result
 }
 
-func (s *server) coordinateAirplaySession(sessionID, userID uuid.UUID) {
-	ctx, cancel := context.WithTimeout(context.Background(), airplayPreparationWait)
-	defer cancel()
-	ticker := time.NewTicker(750 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		ready, failed, total, err := s.airplayPreparationCounts(ctx, sessionID)
-		if err != nil {
-			return
-		}
-		if failed > 0 {
-			s.failAirplaySession(context.Background(), sessionID, userID, "group_preparation_failed")
-			return
-		}
-		if total > 0 && ready == total {
-			record, err := s.getAirplayRecord(ctx, sessionID)
-			if err != nil || record.Status != "preparing" {
-				return
-			}
-			screens, err := s.airplaySessionScreens(ctx, sessionID)
-			if err != nil {
-				s.failAirplaySession(context.Background(), sessionID, userID, "group_membership_unavailable")
-				return
-			}
-			payload := airplayCommandPayload(record, "gateway", "start", screens)
-			validated, err := s.validateCommand("prepare_airplay_session", mustJSON(payload))
-			if err != nil {
-				s.failAirplaySession(context.Background(), sessionID, userID, "gateway_command_invalid")
-				return
-			}
-			if _, _, err = s.queueCommand(ctx, record.GatewayID, userID, "prepare_airplay_session", validated, uuid.New()); err != nil {
-				s.failAirplaySession(context.Background(), sessionID, userID, "gateway_command_queue_failed")
-				return
-			}
-			_, _ = s.db.Exec(ctx, `UPDATE external_presentation_sessions SET status='waiting' WHERE id=$1 AND status='preparing'`, sessionID)
-			return
-		}
-		select {
-		case <-ctx.Done():
-			s.failAirplaySession(context.Background(), sessionID, userID, "group_preparation_timeout")
-			return
-		case <-ticker.C:
-		}
-	}
-}
-
-func (s *server) airplayPreparationCounts(ctx context.Context, sessionID uuid.UUID) (ready, failed, total int, err error) {
-	err = s.db.QueryRow(ctx, `SELECT count(*),count(*) FILTER(WHERE state IN ('waiting','connected')),count(*) FILTER(WHERE state IN ('failed','degraded','stopped')) FROM external_presentation_screen_states WHERE session_id=$1`, sessionID).Scan(&total, &ready, &failed)
-	return
-}
-
 func (s *server) airplaySessionScreens(ctx context.Context, sessionID uuid.UUID) ([]airplayTargetScreen, error) {
-	rows, err := s.db.Query(ctx, `SELECT sc.id,sc.name,sc.platform,COALESCE(sc.last_known_ip::text,''),sc.enabled,COALESCE(sc.last_heartbeat_at>now()-interval '5 minutes',false),COALESCE(ps.airplay_supported,false),COALESCE(ps.airplay_group_supported,false),COALESCE(ps.airplay_audio_available,false),COALESCE(ps.airplay_hardware_decode,false),COALESCE(NULLIF(ps.airplay_max_profile,''),'unsupported'),COALESCE(ps.airplay_multicast_supported,false),COALESCE(ts.network_link_type='ethernet',false) FROM external_presentation_screen_states st JOIN screens sc ON sc.id=st.screen_id LEFT JOIN screen_player_status ps ON ps.screen_id=sc.id LEFT JOIN screen_telemetry_snapshots ts ON ts.screen_id=sc.id WHERE st.session_id=$1 ORDER BY lower(sc.name),sc.id`, sessionID)
+	return airplaySessionScreensFrom(ctx, s.db, sessionID)
+}
+
+func airplaySessionScreensFrom(ctx context.Context, q airplayQuerier, sessionID uuid.UUID) ([]airplayTargetScreen, error) {
+	rows, err := q.Query(ctx, `SELECT sc.id,sc.name,sc.platform,COALESCE(host(sc.last_known_ip),''),sc.enabled,COALESCE(sc.last_heartbeat_at>now()-interval '5 minutes',false),COALESCE(ps.airplay_supported,false),COALESCE(ps.airplay_group_supported,false),COALESCE(ps.airplay_audio_available,false),COALESCE(ps.airplay_hardware_decode,false),COALESCE(NULLIF(ps.airplay_max_profile,''),'unsupported'),COALESCE(ps.airplay_multicast_supported,false),COALESCE(ts.network_link_type='ethernet',false) FROM external_presentation_screen_states st JOIN screens sc ON sc.id=st.screen_id LEFT JOIN screen_player_status ps ON ps.screen_id=sc.id LEFT JOIN screen_telemetry_snapshots ts ON ts.screen_id=sc.id WHERE st.session_id=$1 ORDER BY lower(sc.name),sc.id`, sessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -844,7 +815,10 @@ func (s *server) fallbackAirplaySession(ctx context.Context, record airplaySessi
 	if err != nil || len(screens) == 0 {
 		return false
 	}
-	if tag, execErr := s.db.Exec(ctx, `UPDATE external_presentation_sessions SET transport='unicast',multicast_address=NULL,status='preparing',ended_at=NULL,end_reason=NULL WHERE id=$1 AND status IN ('preparing','waiting','active') AND transport='multicast'`, record.ID); execErr != nil || tag.RowsAffected() != 1 {
+	// The fallback restarts preparation, so it also restarts the durable
+	// preparation deadline. Reusing the original one would fail the unicast
+	// attempt immediately whenever multicast burned the first window.
+	if tag, execErr := s.db.Exec(ctx, `UPDATE external_presentation_sessions SET transport='unicast',multicast_address=NULL,status='preparing',ended_at=NULL,end_reason=NULL,prepare_deadline_at=now()+make_interval(secs=>$2) WHERE id=$1 AND status IN ('preparing','waiting','active') AND transport='multicast'`, record.ID, airplayPreparationWait.Seconds()); execErr != nil || tag.RowsAffected() != 1 {
 		return false
 	}
 	_, _ = s.db.Exec(ctx, `UPDATE player_commands SET state='cancelled',completed_at=now(),updated_at=now(),safe_result_code='airplay_transport_fallback',safe_result_message='Multicast was unavailable; Tilecast is restarting this session over unicast.' WHERE type='prepare_airplay_session' AND payload->>'sessionId'=$1 AND state IN ('pending','delivered','acknowledged','running')`, record.ID.String())
@@ -876,7 +850,7 @@ func (s *server) fallbackAirplaySession(ctx context.Context, record airplaySessi
 		}
 	}
 	s.logger.Warn("AirPlay multicast failed; restarting group over unicast", "session_id", record.ID, "reason", reason)
-	go s.coordinateAirplaySession(record.ID, userID)
+	s.reconcileAirplaySession(ctx, record.ID)
 	return true
 }
 
@@ -982,9 +956,10 @@ func (s *server) recordAirplayCommandResult(ctx context.Context, commandID uuid.
 	}
 	if state == "succeeded" {
 		// Player command completion is immediate, while heartbeats are periodic.
-		// Mark the display ready here so the group coordinator can release the
-		// gateway without waiting for the next heartbeat interval.
+		// Mark the display ready here so reconciliation can release the gateway
+		// without waiting for the next heartbeat interval.
 		_, _ = s.db.Exec(ctx, `UPDATE external_presentation_screen_states SET state='waiting',last_updated_at=now(),failure_code=NULL,safe_failure_message=NULL WHERE session_id=$1 AND screen_id=(SELECT screen_id FROM player_commands WHERE id=$2) AND EXISTS(SELECT 1 FROM external_presentation_sessions WHERE id=$1 AND status IN ('preparing','waiting','active'))`, sessionID, commandID)
+		s.reconcileAirplaySession(ctx, sessionID)
 		return
 	}
 	role := fmt.Sprint(payload["role"])
@@ -1015,8 +990,10 @@ func safeAirplayMessage(value string) string {
 	if value == "" {
 		return "The Linux player could not start the AirPlay process."
 	}
-	if len(value) > 240 {
-		return value[:240]
+	// By rune, like airplay_limitation: slicing bytes can cut a multi-byte
+	// character in half, and Postgres rejects the invalid UTF-8 that produces.
+	if runes := []rune(value); len(runes) > 240 {
+		return string(runes[:240])
 	}
 	return value
 }

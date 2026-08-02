@@ -11,6 +11,7 @@ export const AIRPLAY_PORTS = {
 
 export type AirplayTransport = "unicast" | "multicast";
 export type AirplayVideoProfile = "1080p30" | "720p30";
+export type AirplayAudioMode = "gateway_only" | "none";
 export type ExternalPresentationRole = "single" | "gateway" | "receiver";
 
 export interface AirplayCapabilities {
@@ -55,7 +56,12 @@ export interface ExternalPresentationConfig {
   destinations: AirplayDestination[];
   multicastAddress?: string;
   profile: AirplayVideoProfile;
-  audioMode: "gateway_only" | "none" | "all";
+  /**
+   * AirPlay v1 forwards audio on the gateway/primary display only, or not at
+   * all. Multi-display audio is deliberately not part of this contract, and the
+   * server rejects any other value before a command is ever queued.
+   */
+  audioMode: AirplayAudioMode;
 }
 
 function stringField(value: Record<string, unknown>, key: string): string {
@@ -105,7 +111,7 @@ export function parseExternalPresentationConfig(
     !["single", "gateway", "receiver"].includes(role) ||
     !["screen", "group"].includes(targetType) ||
     !["unicast", "multicast"].includes(transport) ||
-    !["gateway_only", "none", "all"].includes(audioMode)
+    !["gateway_only", "none"].includes(audioMode)
   ) {
     throw new Error("AirPlay payload role or transport is invalid");
   }
@@ -129,7 +135,7 @@ export function parseExternalPresentationConfig(
         ? raw["multicastAddress"]
         : undefined,
     profile: raw["profile"] as AirplayVideoProfile,
-    audioMode: audioMode as "gateway_only" | "none" | "all",
+    audioMode: audioMode as AirplayAudioMode,
   };
   if (config.provider !== "airplay")
     throw new Error("AirPlay provider is invalid");

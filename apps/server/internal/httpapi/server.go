@@ -122,7 +122,22 @@ type contextKey string
 
 const sessionContextKey contextKey = "session"
 
-func New(deps Dependencies) http.Handler {
+// API is the HTTP handler together with the background work the request layer
+// owns. AirPlay group preparation is durable state that has to be reconciled at
+// startup and on a timer, not only while a request is in flight, so the process
+// needs a handle on it.
+type API struct {
+	http.Handler
+	server *server
+}
+
+// ReconcileAirplaySessions advances or fails every group AirPlay session that
+// is still preparing. Safe to call repeatedly and concurrently.
+func (a *API) ReconcileAirplaySessions(ctx context.Context) {
+	a.server.ReconcileAirplaySessions(ctx)
+}
+
+func New(deps Dependencies) *API {
 	s := &server{
 		auth:              deps.Auth,
 		devices:           deps.Devices,
@@ -168,6 +183,11 @@ func New(deps Dependencies) http.Handler {
 		// sending share one implementation.
 		s.fleet.SetCommandEnqueuer(s)
 	}
+	if s.devices != nil {
+		// A heartbeat that reports the last preparing participant as ready should
+		// release the gateway immediately rather than wait for the periodic sweep.
+		s.devices.SetAirplayReconciler(s.reconcileAirplaySession)
+	}
 	if deps.ReleasePublishToken != "" {
 		s.releasePublishTokenHash = sha256.Sum256([]byte(deps.ReleasePublishToken))
 		s.releasePublishTokenConfigured = true
@@ -175,7 +195,7 @@ func New(deps Dependencies) http.Handler {
 	if s.operations.MaxTakeoverDurationHours == 0 {
 		s.operations = OperationsConfig{24, 250, 50, 10, 120, 30}
 	}
-	return s.routes()
+	return &API{Handler: s.routes(), server: s}
 }
 
 func (s *server) requireRoles(roles ...string) func(http.Handler) http.Handler {

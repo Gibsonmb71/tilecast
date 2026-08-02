@@ -385,3 +385,156 @@ func TestStoppingAirplaySessionIsReconciledAfterRestart(t *testing.T) {
 		t.Fatalf("cleanup commands = %d reason %q, want one manual_stop command", stopCount, stopReason)
 	}
 }
+
+// A group gateway that rebooted with a prepared-but-not-started session
+// truthfully reports 'waiting': its RTP receiver is up and it is deliberately
+// not advertising. Letting that promote the room would tell the server the
+// start phase had been issued when no start command exists, and reconciliation
+// would then skip the session forever. Leaving 'preparing' for a group is the
+// server's all-or-nothing decision alone.
+func TestGatewayHeartbeatCannotPromoteAPreparingGroup(t *testing.T) {
+	service, pool, principal := airplayHeartbeatTestService(t)
+	ctx := context.Background()
+	var organizationID uuid.UUID
+	if err := pool.QueryRow(ctx, `SELECT organization_id FROM screens WHERE id=$1`, principal.ScreenID).Scan(&organizationID); err != nil {
+		t.Fatal(err)
+	}
+	sessionID := uuid.New()
+	if _, err := pool.Exec(ctx, `INSERT INTO external_presentation_sessions(id,organization_id,provider,status,target_type,target_id,gateway_screen_id,receiver_name,pin,device_id,expires_at,transport,video_port,audio_port,video_profile,audio_mode)
+		VALUES($1,$2,'airplay','preparing','group',$3,$4,'Library Room','4821','02:11:22:33:44:55',$5,'unicast',42000,42002,'720p30','none')`, sessionID, organizationID, uuid.New(), principal.ScreenID, time.Now().UTC().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO external_presentation_screen_states(session_id,screen_id,role,state) VALUES($1,$2,'gateway','preparing')`, sessionID, principal.ScreenID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE screen_player_status SET external_presentation_state='preparing',external_presentation_session_id=$2,external_presentation_role='gateway' WHERE screen_id=$1`, principal.ScreenID, sessionID); err != nil {
+		t.Fatal(err)
+	}
+	reconciled := make([]uuid.UUID, 0, 1)
+	service.SetAirplayReconciler(func(_ context.Context, id uuid.UUID) {
+		reconciled = append(reconciled, id)
+	})
+
+	service.updateAirplayHeartbeat(ctx, principal.ScreenID, Heartbeat{
+		ExternalPresentationState:     "waiting",
+		ExternalPresentationSessionID: &sessionID,
+		AirplayReceiverState:          "waiting",
+		AirplayTransport:              "unicast",
+	})
+
+	var status, screenState string
+	if err := pool.QueryRow(ctx, `SELECT status FROM external_presentation_sessions WHERE id=$1`, sessionID).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status != "preparing" {
+		t.Fatalf("session status = %q, want preparing until the server issues the gateway start", status)
+	}
+	// The participant is still recorded as ready. That is what lets
+	// reconciliation observe a complete group and release the gateway.
+	if err := pool.QueryRow(ctx, `SELECT state FROM external_presentation_screen_states WHERE session_id=$1 AND screen_id=$2`, sessionID, principal.ScreenID).Scan(&screenState); err != nil {
+		t.Fatal(err)
+	}
+	if screenState != "waiting" {
+		t.Fatalf("participant state = %q, want waiting", screenState)
+	}
+	if len(reconciled) != 1 || reconciled[0] != sessionID {
+		t.Fatalf("reconciliation triggers = %v, want one for %s", reconciled, sessionID)
+	}
+}
+
+// A single-screen session has no group readiness to wait for, so its gateway
+// heartbeat still owns the room lifecycle exactly as before.
+func TestSingleScreenHeartbeatStillAdvancesThePreparingSession(t *testing.T) {
+	service, pool, principal := airplayHeartbeatTestService(t)
+	ctx := context.Background()
+	var organizationID uuid.UUID
+	if err := pool.QueryRow(ctx, `SELECT organization_id FROM screens WHERE id=$1`, principal.ScreenID).Scan(&organizationID); err != nil {
+		t.Fatal(err)
+	}
+	sessionID := uuid.New()
+	if _, err := pool.Exec(ctx, `INSERT INTO external_presentation_sessions(id,organization_id,provider,status,target_type,target_id,gateway_screen_id,receiver_name,pin,device_id,expires_at,transport,video_port,audio_port,video_profile,audio_mode)
+		VALUES($1,$2,'airplay','preparing','screen',$3,$3,'Library TV','4821','02:11:22:33:44:55',$4,'unicast',42000,42002,'720p30','none')`, sessionID, organizationID, principal.ScreenID, time.Now().UTC().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO external_presentation_screen_states(session_id,screen_id,role,state) VALUES($1,$2,'single','preparing')`, sessionID, principal.ScreenID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE screen_player_status SET external_presentation_state='preparing',external_presentation_session_id=$2,external_presentation_role='single' WHERE screen_id=$1`, principal.ScreenID, sessionID); err != nil {
+		t.Fatal(err)
+	}
+
+	service.updateAirplayHeartbeat(ctx, principal.ScreenID, Heartbeat{
+		ExternalPresentationState:     "waiting",
+		ExternalPresentationSessionID: &sessionID,
+		AirplayReceiverState:          "waiting",
+	})
+
+	var status string
+	if err := pool.QueryRow(ctx, `SELECT status FROM external_presentation_sessions WHERE id=$1`, sessionID).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status != "waiting" {
+		t.Fatalf("single-screen session status = %q, want waiting", status)
+	}
+}
+
+// A gateway that no longer has the session is a room-level failure: followers
+// would otherwise sit on the last forwarded frame. A follower reporting the
+// same thing degrades only itself.
+func TestGatewayClearEndsTheRoomButAFollowerClearDoesNot(t *testing.T) {
+	service, pool, principal := airplayHeartbeatTestService(t)
+	ctx := context.Background()
+	var organizationID uuid.UUID
+	if err := pool.QueryRow(ctx, `SELECT organization_id FROM screens WHERE id=$1`, principal.ScreenID).Scan(&organizationID); err != nil {
+		t.Fatal(err)
+	}
+	newSession := func(role string) uuid.UUID {
+		t.Helper()
+		sessionID := uuid.New()
+		if _, err := pool.Exec(ctx, `INSERT INTO external_presentation_sessions(id,organization_id,provider,status,target_type,target_id,gateway_screen_id,receiver_name,pin,device_id,expires_at,transport,video_port,audio_port,video_profile,audio_mode)
+			VALUES($1,$2,'airplay','active','group',$3,$4,'Library Room','4821','02:11:22:33:44:55',$5,'unicast',42000,42002,'720p30','none')`, sessionID, organizationID, uuid.New(), principal.ScreenID, time.Now().UTC().Add(time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pool.Exec(ctx, `INSERT INTO external_presentation_screen_states(session_id,screen_id,role,state) VALUES($1,$2,$3,'connected')`, sessionID, principal.ScreenID, role); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pool.Exec(ctx, `UPDATE screen_player_status SET external_presentation_state='connected',external_presentation_session_id=$2,external_presentation_role=$3 WHERE screen_id=$1`, principal.ScreenID, sessionID, role); err != nil {
+			t.Fatal(err)
+		}
+		return sessionID
+	}
+
+	followerSession := newSession("receiver")
+	service.updateAirplayHeartbeat(ctx, principal.ScreenID, Heartbeat{
+		ExternalPresentationState:     "none",
+		ExternalPresentationSessionID: &followerSession,
+	})
+	var followerStatus, followerState string
+	if err := pool.QueryRow(ctx, `SELECT ep.status,st.state FROM external_presentation_sessions ep JOIN external_presentation_screen_states st ON st.session_id=ep.id WHERE ep.id=$1`, followerSession).Scan(&followerStatus, &followerState); err != nil {
+		t.Fatal(err)
+	}
+	if followerStatus != "active" || followerState != "stopped" {
+		t.Fatalf("follower clear = session %q participant %q, want an otherwise healthy active room", followerStatus, followerState)
+	}
+
+	gatewaySession := newSession("gateway")
+	service.updateAirplayHeartbeat(ctx, principal.ScreenID, Heartbeat{
+		ExternalPresentationState:     "none",
+		ExternalPresentationSessionID: &gatewaySession,
+	})
+	var gatewayStatus, gatewayReason string
+	var pin, deviceID *string
+	if err := pool.QueryRow(ctx, `SELECT status,COALESCE(end_reason,''),pin,device_id FROM external_presentation_sessions WHERE id=$1`, gatewaySession).Scan(&gatewayStatus, &gatewayReason, &pin, &deviceID); err != nil {
+		t.Fatal(err)
+	}
+	if gatewayStatus != "failed" || gatewayReason != "gateway_cleared_session" || pin != nil || deviceID != nil {
+		t.Fatalf("gateway clear = %q/%q pin=%v device=%v", gatewayStatus, gatewayReason, pin, deviceID)
+	}
+	var stopCommands int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM player_commands WHERE type='stop_airplay_session' AND payload->>'sessionId'=$1`, gatewaySession.String()).Scan(&stopCommands); err != nil {
+		t.Fatal(err)
+	}
+	if stopCommands != 1 {
+		t.Fatalf("gateway clear queued %d cleanup commands, want one per participant", stopCommands)
+	}
+}
