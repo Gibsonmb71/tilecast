@@ -3,6 +3,7 @@ import { Airplay, Radio, ShieldCheck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import type { AirplaySession, ReliabilityStatus } from "../api/types";
+import { airplayCapabilityBlockDetail } from "./airplayCapability";
 import { Button, Dialog, Field, Select } from "./ui";
 import "./AirPlayPresentDialog.css";
 
@@ -17,45 +18,16 @@ function countdown(expiresAt: string, now: number) {
     : `${minutes}m ${String(seconds).padStart(2, "0")}s`;
 }
 
-// Fallback for a player too old to send its own limitation string, and for the
-// group case where several displays fail for different reasons.
-function missingComponents(blocked: ReliabilityStatus[]) {
-  const missing = [
-    [
-      "UxPlay",
-      blocked.some((item) => item.airplayUxPlayInstalled === false),
-    ] as const,
-    [
-      "GStreamer",
-      blocked.some((item) => item.airplayGstreamerInstalled === false),
-    ] as const,
-    [
-      "an H.264 decoder",
-      blocked.some((item) => item.airplayH264DecoderAvailable === false),
-    ] as const,
-    [
-      "Avahi/Bonjour",
-      blocked.some((item) => item.airplayAvahiAvailable === false),
-    ] as const,
-  ]
-    .filter(([, absent]) => absent)
-    .map(([name]) => name);
-  if (missing.length === 0)
-    return "Run install-airplay-support.sh on the player to provision UxPlay, GStreamer, an H.264 decoder, and Avahi.";
-  const list =
-    missing.length === 1
-      ? missing[0]
-      : `${missing.slice(0, -1).join(", ")} and ${missing[missing.length - 1]}`;
-  return `Missing ${list}. Run install-airplay-support.sh on the player.`;
-}
-
 function sessionStatus(session: AirplaySession) {
-  if (session.status === "active" || session.connectedCount > 0)
-    return `Presenting · ${session.connectedCount}/${session.screenCount} displays receiving`;
-  if (session.status === "failed" || session.failedCount > 0)
-    return "AirPlay could not prepare every display";
   if (session.status === "ended" || session.status === "expired")
     return session.status === "expired" ? "AirPlay expired" : "AirPlay stopped";
+  if (session.status === "stopping") return "Stopping AirPlay";
+  if (session.status === "failed" || session.failedCount > 0)
+    return "AirPlay could not prepare every display";
+  if (session.status === "active" || session.connectedCount > 0)
+    return `Presenting · ${session.connectedCount}/${session.screenCount} displays receiving`;
+  if (session.status === "waiting")
+    return `Waiting · ${session.readyCount}/${session.screenCount} displays ready`;
   return `Preparing · ${session.readyCount}/${session.screenCount} displays ready`;
 }
 
@@ -94,6 +66,7 @@ export function AirPlayPresentDialog({
     "gateway_only",
   );
   const [session, setSession] = useState<AirplaySession | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -108,15 +81,38 @@ export function AirPlayPresentDialog({
         { targetType, targetId, durationMinutes, transport, audioMode },
         csrfToken,
       ),
-    onSuccess: setSession,
-  });
-  const current = useQuery({
-    queryKey: ["airplay-session", session?.id],
-    queryFn: () => {
-      if (!session) throw new Error("AirPlay session is not available");
-      return api.airplaySession(session.id);
+    onSuccess: (value) => {
+      setSession(value);
+      setSessionId(value.id);
     },
-    enabled: Boolean(open && session?.id),
+  });
+  const allCapabilities = useMemo(
+    () => capabilities ?? (capability ? [capability] : []),
+    [capabilities, capability],
+  );
+  const reportedSessionId = useMemo(() => {
+    const ids = new Set(
+      allCapabilities
+        .map((item) => item.externalPresentationSessionId)
+        .filter((value): value is string => Boolean(value)),
+    );
+    return ids.size === 1 ? [...ids][0] : null;
+  }, [allCapabilities]);
+  useEffect(() => {
+    if (open && !sessionId && reportedSessionId) {
+      // Rehydrate a session created by another Studio tab, or before this
+      // dialog was reopened. The server response remains the source of truth;
+      // the reliability row supplies only the durable session ID.
+      setSessionId(reportedSessionId);
+    }
+  }, [open, reportedSessionId, sessionId]);
+  const current = useQuery({
+    queryKey: ["airplay-session", sessionId],
+    queryFn: () => {
+      if (!sessionId) throw new Error("AirPlay session is not available");
+      return api.airplaySession(sessionId);
+    },
+    enabled: Boolean(open && sessionId),
     refetchInterval: (query) => {
       const value = query.state.data;
       return value && ["ended", "expired", "failed"].includes(value.status)
@@ -125,17 +121,22 @@ export function AirPlayPresentDialog({
     },
   });
   const stop = useMutation({
-    mutationFn: () => api.stopAirplaySession(session!.id, csrfToken),
-    onSuccess: setSession,
+    mutationFn: () => {
+      if (!sessionId) throw new Error("AirPlay session is not available");
+      return api.stopAirplaySession(sessionId, csrfToken);
+    },
+    onSuccess: (value) => {
+      setSession(value);
+      setSessionId(value.id);
+    },
   });
   useEffect(() => {
-    if (!open) setSession(null);
+    if (!open) {
+      setSession(null);
+      setSessionId(null);
+    }
   }, [open, targetId]);
   const live = current.data ?? session;
-  const allCapabilities = useMemo(
-    () => capabilities ?? (capability ? [capability] : []),
-    [capabilities, capability],
-  );
   const capabilitiesComplete =
     displayCount > 0 && allCapabilities.length === displayCount;
   const groupReady =
@@ -164,10 +165,7 @@ export function AirPlayPresentDialog({
       // operator guessing between UxPlay, GStreamer, the H.264 decoder, and
       // Avahi. Prefer the player's own sentence, which also carries the version
       // it found, and fall back to the component flags it reported.
-      const reason = blocked.find(
-        (item) => item.airplayLimitation,
-      )?.airplayLimitation;
-      const detail = reason ?? missingComponents(blocked);
+      const detail = airplayCapabilityBlockDetail(blocked);
       return blocked.length === 1
         ? `This display is not AirPlay-ready. ${detail}`
         : `${blocked.length} displays are not AirPlay-ready. ${detail}`;
@@ -229,7 +227,21 @@ export function AirPlayPresentDialog({
       onClose={onClose}
       className="airplay-present-dialog"
     >
-      {!live ? (
+      {!live && sessionId ? (
+        <>
+          <div className="airplay-present-dialog__readiness">
+            <Radio size={17} aria-hidden="true" />
+            <span>
+              {current.error
+                ? "Tilecast could not load the active AirPlay session. Refresh and try again."
+                : "Loading the active AirPlay session…"}
+            </span>
+          </div>
+          <footer className="dialog-actions">
+            <Button onClick={onClose}>Close</Button>
+          </footer>
+        </>
+      ) : !live ? (
         <>
           <div className="airplay-present-dialog__intro">
             <Airplay size={28} aria-hidden="true" />
@@ -316,7 +328,7 @@ export function AirPlayPresentDialog({
             <Button
               variant="primary"
               loading={create.isPending}
-              disabled={!canEnable}
+              disabled={!canEnable || Boolean(sessionId)}
               onClick={() => create.mutate()}
             >
               Enable AirPlay
@@ -381,7 +393,9 @@ export function AirPlayPresentDialog({
             <Button
               variant="danger"
               loading={stop.isPending}
-              disabled={["ended", "expired", "failed"].includes(live.status)}
+              disabled={["stopping", "ended", "expired", "failed"].includes(
+                live.status,
+              )}
               onClick={() => stop.mutate()}
             >
               Stop AirPlay
