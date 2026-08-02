@@ -5167,6 +5167,12 @@ tbody tr {
   overflow: hidden;
 }
 
+.dialog.playlist-picker > .dashboard-search {
+  height: var(--tc-control-height-sm);
+  min-height: var(--tc-control-height-sm);
+  padding-inline: var(--tc-space-2);
+}
+
 .playlist-picker__description {
   margin: 0;
   color: var(--tc-text-secondary);
