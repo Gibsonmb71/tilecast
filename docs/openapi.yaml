@@ -1194,18 +1194,29 @@ paths:
     get:
       operationId: getSpanGeometryAndPreparation
       responses:
-        { "200": { description: Canvas, panel geometry, and preparation status } }
+        {
+          "200":
+            { description: Canvas, panel geometry, and preparation status },
+        }
     put:
       operationId: updateSpanGeometry
       parameters:
-        [{ in: header, name: X-CSRF-Token, required: true, schema: { type: string } }]
+        [
+          {
+            in: header,
+            name: X-CSRF-Token,
+            required: true,
+            schema: { type: string },
+          },
+        ]
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: "#/components/schemas/SpanGeometryInput" }
       responses:
-        "200": { description: Display Group updated and member manifests revised }
+        "200":
+          { description: Display Group updated and member manifests revised }
         "409": { description: Geometry conflicts with current membership }
         "422": { description: Canvas or panel validation failed }
   /api/v1/screen-groups/{id}/screens:
@@ -2812,11 +2823,28 @@ components:
         canvas:
           oneOf:
             - { type: "null" }
-            - { type: object, required: [width, height], properties: { width: { type: integer }, height: { type: integer } } }
+            - {
+                type: object,
+                required: [width, height],
+                properties:
+                  { width: { type: integer }, height: { type: integer } },
+              }
         viewport:
           oneOf:
             - { type: "null" }
-            - { type: object, required: [x, y, width, height, rotation, order], properties: { x: { type: integer }, y: { type: integer }, width: { type: integer }, height: { type: integer }, rotation: { type: integer }, order: { type: integer } } }
+            - {
+                type: object,
+                required: [x, y, width, height, rotation, order],
+                properties:
+                  {
+                    x: { type: integer },
+                    y: { type: integer },
+                    width: { type: integer },
+                    height: { type: integer },
+                    rotation: { type: integer },
+                    order: { type: integer },
+                  },
+              }
         schedules:
           type: array
           items: { $ref: "#/components/schemas/ManifestSchedule" }
