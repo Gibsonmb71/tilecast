@@ -51,8 +51,25 @@ describe("QuickPresentDialog", () => {
       pageSize: 100,
     } satisfies LayoutList);
     vi.spyOn(api, "assets").mockResolvedValue({
-      items: [],
-      total: 0,
+      items: [
+        {
+          id: "website-1",
+          name: "Status website",
+          description: "",
+          type: "widget",
+          originalFilename: "",
+          declaredMimeType: "application/json",
+          detectedMimeType: "application/json",
+          sha256: "",
+          originalSize: 0,
+          metadata: {},
+          processingStatus: "ready",
+          createdAt: "2026-07-01T00:00:00Z",
+          updatedAt: "2026-07-01T00:00:00Z",
+          variants: [],
+        },
+      ],
+      total: 1,
       page: 1,
       pageSize: 100,
     } satisfies AssetList);
@@ -92,6 +109,13 @@ describe("QuickPresentDialog", () => {
     );
 
     expect(await screen.findByText("Open house · 3 items")).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("tab", { name: "Media, widget, or website" }),
+    );
+    expect(
+      await screen.findByRole("option", { name: "Status website · widget" }),
+    ).toBeInTheDocument();
+    await user.click(screen.getAllByRole("tab")[0]);
     await user.click(screen.getByLabelText("30 min"));
     await user.click(screen.getByRole("button", { name: "Show now" }));
 

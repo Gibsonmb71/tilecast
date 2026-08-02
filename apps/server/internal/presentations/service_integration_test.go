@@ -55,7 +55,7 @@ func TestQuickPresentPersistsGroupStateAndExpiresWithoutSnapshotRestore(t *testi
 	if _, err = pool.Exec(ctx, `TRUNCATE organization_settings,users CASCADE`); err != nil {
 		t.Fatal(err)
 	}
-	orgID, ownerID, screenID, groupID, assetID, playlistID := uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	orgID, ownerID, screenID, secondScreenID, groupID, assetID, playlistID := uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New()
 	if _, err = pool.Exec(ctx, `INSERT INTO organization_settings(singleton,organization_name,id)VALUES(TRUE,'Quick Present Test',$1)`, orgID); err != nil {
 		t.Fatal(err)
 	}
@@ -75,6 +75,21 @@ func TestQuickPresentPersistsGroupStateAndExpiresWithoutSnapshotRestore(t *testi
 		t.Fatal(err)
 	}
 	if _, err = pool.Exec(ctx, `INSERT INTO screen_group_memberships(screen_group_id,screen_id,added_by)VALUES($1,$2,$3)`, groupID, screenID, ownerID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO screens(id,organization_id,player_installation_id,name,platform,device_manufacturer,device_model,android_version,player_version,screen_width,screen_height,density,locale,timezone)VALUES($1,$2,$3,'Cafeteria Right','linux','Test','Test','none','1.0',1920,1080,1,'en-US','UTC')`, secondScreenID, orgID, uuid.NewString()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO screen_manifest_state(screen_id)VALUES($1)`, secondScreenID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO screen_player_status(screen_id)VALUES($1)`, secondScreenID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO screen_group_memberships(screen_group_id,screen_id,added_by)VALUES($1,$2,$3)`, groupID, secondScreenID, ownerID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `UPDATE screen_groups SET display_mode='span' WHERE id=$1`, groupID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = pool.Exec(ctx, `INSERT INTO assets(id,organization_id,name,type,original_filename,detected_mime_type,sha256,original_size,processing_status,origin,system_managed,created_by)VALUES($1,$2,'Welcome','image','welcome.png','image/png',$3,100,'ready','library',FALSE,$4)`, assetID, orgID, make([]byte, 32), ownerID); err != nil {
@@ -98,6 +113,10 @@ func TestQuickPresentPersistsGroupStateAndExpiresWithoutSnapshotRestore(t *testi
 	active, err := service.ActiveForScreen(ctx, screenID)
 	if err != nil || active == nil || active.ID != created.ID || active.TargetType != "group" {
 		t.Fatalf("active override=%#v err=%v", active, err)
+	}
+	secondActive, err := service.ActiveForScreen(ctx, secondScreenID)
+	if err != nil || secondActive == nil || secondActive.ID != created.ID || secondActive.TargetType != "group" {
+		t.Fatalf("Span member did not resolve the group Quick Present override: active=%#v err=%v", secondActive, err)
 	}
 	if _, err = service.Create(ctx, CreateInput{TargetType: "screen", TargetID: screenID, ContentType: "playlist", ContentID: playlistID, Duration: 15 * time.Minute}); !errors.Is(err, ErrConflict) {
 		t.Fatalf("overlapping override error=%v, want ErrConflict", err)

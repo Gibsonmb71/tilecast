@@ -154,7 +154,7 @@ export function QuickPresentDialog({
                 }}
               >
                 {type === "asset"
-                  ? "Media or widget"
+                  ? "Media, widget, or website"
                   : type.charAt(0).toUpperCase() + type.slice(1)}
               </button>
             ))}

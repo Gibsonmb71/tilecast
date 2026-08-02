@@ -70,6 +70,27 @@ func (s *Service) Enroll(ctx context.Context, sessionID uuid.UUID, enrollmentTok
 		if _, err := tx.Exec(ctx, `UPDATE screens SET player_installation_id=$2,platform=$3,device_manufacturer=$4,device_model=$5,android_version=$6,player_version=$7,screen_width=$8,screen_height=$9,density=$10,locale=$11,timezone=$12,archived_at=NULL,archived_reason='',enabled=TRUE,paired_at=now(),updated_at=now() WHERE id=$1`, screenID, metadata.PlayerInstallationID, metadata.Platform, metadata.Manufacturer, metadata.Model, metadata.AndroidVersion, metadata.PlayerVersion, metadata.ScreenWidth, metadata.ScreenHeight, metadata.Density, metadata.Locale, metadata.Timezone); err != nil {
 			return EnrollmentResult{}, fmt.Errorf("save replacement hardware: %w", err)
 		}
+		// A logical screen keeps its Display Control settings, but capability
+		// claims belong to the physical Player. Clear the old snapshot before
+		// the replacement can heartbeat so Studio never presents stale CEC/DDC
+		// controls for the new hardware.
+		if _, err := tx.Exec(ctx, `UPDATE screen_player_status SET
+				display_control_provider=NULL,
+				display_control_providers='{}',
+				display_control_capabilities='{}'::jsonb,
+				display_power_state=NULL,
+				display_power_state_confirmed=NULL,
+				display_power_state_observed_at=NULL,
+				display_control_policy_state='unknown',
+				display_control_last_command_id=NULL,
+				display_control_last_command_state=NULL,
+				display_control_last_command_result=NULL,
+				display_control_last_command_sent_at=NULL,
+				display_control_last_state_confirmed_at=NULL,
+				display_control_error=NULL
+				WHERE screen_id=$1`, screenID); err != nil {
+			return EnrollmentResult{}, fmt.Errorf("reset replacement display capabilities: %w", err)
+		}
 		if err := recordPlayerHistory(ctx, tx, screenID, credentialID, metadata); err != nil {
 			return EnrollmentResult{}, err
 		}

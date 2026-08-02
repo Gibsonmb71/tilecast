@@ -77,12 +77,21 @@ func TestScreenReplacementPreservesLogicalScreenAndRetiresHardware(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := pool.Exec(ctx, `INSERT INTO screen_player_status(screen_id,display_control_provider,display_control_providers,display_control_capabilities,display_power_state,display_control_policy_state)VALUES($1,'hdmi_cec',ARRAY['hdmi_cec'],'{"power":"hdmi_cec","mute":"hdmi_cec"}'::jsonb,'on','normal')`, screen.ID); err != nil {
+		t.Fatal(err)
+	}
 
 	groupID, playlistID, scheduleID := uuid.New(), uuid.New(), uuid.New()
 	if _, err := pool.Exec(ctx, `INSERT INTO screen_groups(id,organization_id,name,created_by) SELECT $1,id,'Cafeteria wall',$2 FROM organization_settings WHERE singleton`, groupID, owner.User.ID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, `INSERT INTO screen_group_memberships(screen_group_id,screen_id,added_by) VALUES($1,$2,$3)`, groupID, screen.ID, owner.User.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE screen_groups SET display_mode='span',span_canvas_width=3840,span_canvas_height=1080 WHERE id=$1`, groupID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO screen_group_panels(screen_group_id,screen_id,panel_order,x,y,width,height,rotation)VALUES($1,$2,0,1920,0,1920,1080,90)`, groupID, screen.ID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, `INSERT INTO playlists(id,organization_id,name,created_by) SELECT $1,id,'Cafeteria loop',$2 FROM organization_settings WHERE singleton`, playlistID, owner.User.ID); err != nil {
@@ -138,6 +147,14 @@ func TestScreenReplacementPreservesLogicalScreenAndRetiresHardware(t *testing.T)
 	if installation != newMetadata.PlayerInstallationID || model != newMetadata.Model || playerVersion != newMetadata.PlayerVersion {
 		t.Fatalf("replacement hardware was not applied: installation=%q model=%q version=%q", installation, model, playerVersion)
 	}
+	var provider, policy string
+	var capabilities []byte
+	if err := pool.QueryRow(ctx, `SELECT COALESCE(display_control_provider,''),display_control_policy_state,display_control_capabilities FROM screen_player_status WHERE screen_id=$1`, screen.ID).Scan(&provider, &policy, &capabilities); err != nil {
+		t.Fatal(err)
+	}
+	if provider != "" || policy != "unknown" || string(capabilities) != `{}` {
+		t.Fatalf("replacement retained stale display capability claims: provider=%q policy=%q capabilities=%s", provider, policy, capabilities)
+	}
 	var membership, assignment, target int
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM screen_group_memberships WHERE screen_group_id=$1 AND screen_id=$2`, groupID, screen.ID).Scan(&membership); err != nil {
 		t.Fatal(err)
@@ -150,6 +167,13 @@ func TestScreenReplacementPreservesLogicalScreenAndRetiresHardware(t *testing.T)
 	}
 	if membership != 1 || assignment != 1 || target != 1 {
 		t.Fatalf("logical relationships changed: membership=%d assignment=%d target=%d", membership, assignment, target)
+	}
+	var panelX, panelWidth, panelRotation int
+	if err := pool.QueryRow(ctx, `SELECT x,width,rotation FROM screen_group_panels WHERE screen_group_id=$1 AND screen_id=$2`, groupID, screen.ID).Scan(&panelX, &panelWidth, &panelRotation); err != nil {
+		t.Fatal(err)
+	}
+	if panelX != 1920 || panelWidth != 1920 || panelRotation != 90 {
+		t.Fatalf("Span panel geometry changed during replacement: x=%d width=%d rotation=%d", panelX, panelWidth, panelRotation)
 	}
 	history, err := service.ListPlayerHistory(ctx, screen.ID)
 	if err != nil || len(history) != 2 {
