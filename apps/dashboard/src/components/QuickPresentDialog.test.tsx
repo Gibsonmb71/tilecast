@@ -115,7 +115,7 @@ describe("QuickPresentDialog", () => {
     expect(
       await screen.findByRole("option", { name: "Status website · widget" }),
     ).toBeInTheDocument();
-    await user.click(screen.getAllByRole("tab")[0]);
+    await user.click(screen.getAllByRole("tab")[0]!);
     await user.click(screen.getByLabelText("30 min"));
     await user.click(screen.getByRole("button", { name: "Show now" }));
 
