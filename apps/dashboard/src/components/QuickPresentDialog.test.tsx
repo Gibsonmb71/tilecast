@@ -89,6 +89,7 @@ describe("QuickPresentDialog", () => {
         afterAction: "resume",
         wakeDisplay: false,
       });
+    const onClose = vi.fn();
 
     const user = userEvent.setup();
     render(
@@ -103,20 +104,28 @@ describe("QuickPresentDialog", () => {
           targetId="group-1"
           destinationName="Cafeteria"
           csrfToken="csrf"
-          onClose={vi.fn()}
+          onClose={onClose}
         />
       </QueryClientProvider>,
     );
 
-    expect(await screen.findByText("Open house · 3 items")).toBeInTheDocument();
-    await user.click(
-      screen.getByRole("tab", { name: "Media, widget, or website" }),
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    expect(onClose).toHaveBeenCalledOnce();
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("combobox", { name: "Content selection" }),
+      ).toHaveTextContent("Open house · 3 items"),
     );
-    expect(
-      await screen.findByRole("option", { name: "Status website · widget" }),
-    ).toBeInTheDocument();
-    await user.click(screen.getAllByRole("tab")[0]!);
-    await user.click(screen.getByLabelText("30 min"));
+    await user.click(screen.getByRole("button", { name: "Media / web" }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("combobox", { name: "Content selection" }),
+      ).toHaveTextContent("Status website · widget"),
+    );
+    await user.click(screen.getByRole("button", { name: "Playlist" }));
+    await user.click(screen.getByRole("combobox", { name: "Duration" }));
+    await user.click(screen.getByRole("option", { name: "30 minutes" }));
     await user.click(screen.getByRole("button", { name: "Show now" }));
 
     await waitFor(() =>
