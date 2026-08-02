@@ -2,7 +2,10 @@ import { EventEmitter } from "events";
 import { describe, expect, it, vi } from "vitest";
 import { AirplayManager, describeLimitation } from "./airplay";
 import type { ExecutableResolution } from "../core/executable";
-import type { ExternalPresentationConfig } from "../core/external-presentation";
+import type {
+  ExternalPresentationConfig,
+  ExternalPresentationStatus,
+} from "../core/external-presentation";
 
 class FakeProcess extends EventEmitter {
   stdout = new EventEmitter();
@@ -61,15 +64,27 @@ function resolvedExecutable(name: string): ExecutableResolution {
   };
 }
 
+interface TestManagerOptions {
+  resolveExecutable?: (name: string) => Promise<ExecutableResolution>;
+  onStatus?: (status: ExternalPresentationStatus | null) => void;
+  /** Fail the nth (1-based) state-file write, to exercise a torn persist. */
+  failWriteOnCall?: number;
+}
+
 function testManager(
   spawn: (binary: string, args: string[]) => FakeProcess,
-  resolveExecutable: (name: string) => Promise<ExecutableResolution> = async (
-    name,
-  ) => resolvedExecutable(name),
+  options: TestManagerOptions = {},
 ) {
   const files = new Map<string, unknown>();
+  let writes = 0;
   const store = {
-    writeJson: async (name: string, value: unknown) => files.set(name, value),
+    writeJson: async (name: string, value: unknown) => {
+      writes += 1;
+      if (writes === options.failWriteOnCall) {
+        throw new Error("state file is read-only");
+      }
+      files.set(name, value);
+    },
     readJson: async <T>(name: string) =>
       (files.get(name) as T | undefined) ?? null,
     delete: async (name: string) => void files.delete(name),
@@ -77,7 +92,9 @@ function testManager(
   const calls: { binary: string; args: string[]; process: FakeProcess }[] = [];
   const manager = new AirplayManager({
     store,
-    resolveExecutable,
+    resolveExecutable:
+      options.resolveExecutable ?? (async (name) => resolvedExecutable(name)),
+    onStatus: options.onStatus,
     spawn: ((binary: string, args: string[]) => {
       const process = spawn(binary, args);
       calls.push({ binary, args, process });
@@ -510,37 +527,83 @@ describe("AirPlay persisted preparation state", () => {
 
     expect(status).toBeNull();
     expect(result.files.has("airplay-session.json")).toBe(false);
+    // An invalid configuration must not reach a process argument.
+    expect(result.calls).toHaveLength(0);
+  });
+
+  it("discards a session written by a newer player instead of guessing", async () => {
+    const result = testManager(() => new FakeProcess());
+    // A downgrade could leave a format this build does not understand. Reading
+    // it as a version 1 bare config would misinterpret every field.
+    result.files.set("airplay-session.json", {
+      version: 3,
+      session: config("gateway"),
+      advertising: true,
+    });
+
+    const status = await result.manager.recoverSession("vah264dec");
+
+    expect(status).toBeNull();
+    expect(result.files.has("airplay-session.json")).toBe(false);
+    expect(result.calls).toHaveLength(0);
+  });
+
+  it("rejects a persisted audio mode outside the v1 contract", async () => {
+    const result = testManager(() => new FakeProcess());
+    const legacy = {
+      ...config("gateway"),
+      audioMode: "all",
+    } as unknown as ExternalPresentationConfig;
+    result.files.set("airplay-session.json", legacy);
+
+    const status = await result.manager.recoverSession("vah264dec");
+
+    expect(status).toBeNull();
+    expect(result.files.has("airplay-session.json")).toBe(false);
+    expect(result.calls).toHaveLength(0);
+  });
+
+  it("does not advertise when the start permission cannot be persisted", async () => {
+    // The prepare write succeeds; the write that records the server's start
+    // permission fails. UxPlay must never start ahead of that record.
+    const result = testManager(() => new FakeProcess(), {
+      failWriteOnCall: 2,
+    });
+    await result.manager.prepareSession(config("gateway"), "vah264dec");
+    expect(persistedSession(result.files)?.gatewayStarted).toBe(false);
+
+    await expect(result.manager.startGateway("vah264dec")).rejects.toThrow(
+      /read-only/,
+    );
+
+    expect(
+      result.calls.some((call) => call.binary === "/usr/local/bin/uxplay"),
+    ).toBe(false);
+    // The failed start tears the session down rather than leaving a half-armed
+    // gateway behind.
+    expect(result.files.has("airplay-session.json")).toBe(false);
+    expect(result.manager.getStatus()).toBeNull();
   });
 
   it("keeps the session while reconfiguring and clears it on stop", async () => {
-    const result = testManager(() => new FakeProcess());
     const statuses: (string | null)[] = [];
-    const observed = new AirplayManager({
-      store: {
-        writeJson: async (name: string, value: unknown) =>
-          result.files.set(name, value),
-        readJson: async <T>(name: string) =>
-          (result.files.get(name) as T | undefined) ?? null,
-        delete: async (name: string) => void result.files.delete(name),
-      } as never,
-      resolveExecutable: async (name: string) => resolvedExecutable(name),
-      spawn: (() => new FakeProcess()) as never,
+    const result = testManager(() => new FakeProcess(), {
       onStatus: (status) => statuses.push(status?.state ?? null),
     });
 
     const multicast = config("gateway");
     multicast.transport = "multicast";
     multicast.multicastAddress = "239.255.42.7";
-    await observed.prepareSession(multicast, "vah264dec");
-    await observed.startGateway("vah264dec");
+    await result.manager.prepareSession(multicast, "vah264dec");
+    await result.manager.startGateway("vah264dec");
     // Multicast -> unicast fallback reuses the same server session.
-    await observed.prepareSession(config("gateway"), "vah264dec");
+    await result.manager.prepareSession(config("gateway"), "vah264dec");
 
     expect(statuses).not.toContain(null);
     expect(persistedSession(result.files)?.config.transport).toBe("unicast");
     expect(persistedSession(result.files)?.gatewayStarted).toBe(false);
 
-    await observed.stopSession("manual_stop");
+    await result.manager.stopSession("manual_stop");
     expect(result.files.has("airplay-session.json")).toBe(false);
     expect(statuses[statuses.length - 1]).toBeNull();
   });

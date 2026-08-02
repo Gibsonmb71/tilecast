@@ -341,7 +341,12 @@ function validateConfig(config: ExternalPresentationConfig): void {
     !isAirplayProfile(config.profile) ||
     !Number.isInteger(config.videoPort) ||
     config.videoPort !== AIRPLAY_PORTS.videoRtp ||
-    !["single", "gateway", "receiver"].includes(config.role)
+    !["single", "gateway", "receiver"].includes(config.role) ||
+    // A persisted session is read back as ExternalPresentationConfig without
+    // going through the command parser, so the audio mode is checked here too.
+    // Anything outside the v1 contract — including the "all" the type used to
+    // permit — is rejected rather than silently treated as gateway-only.
+    !["gateway_only", "none"].includes(config.audioMode)
   ) {
     throw new Error("invalid AirPlay session configuration");
   }
@@ -744,11 +749,21 @@ export class AirplayManager {
    * without advertising and letting the server reissue the start decision is
    * recoverable, whereas advertising a receiver the server never released is
    * exactly the failure this format exists to prevent.
+   *
+   * Anything that is neither this format nor a recognizable version 1 config —
+   * including a file written by a newer player after a downgrade — is discarded
+   * rather than guessed at.
    */
   private async readPersistedSession(): Promise<PersistedAirplaySession | null> {
     const raw =
       await this.store.readJson<Record<string, unknown>>(SESSION_FILE);
-    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+    // No file, or one the store already quarantined as corrupt. Nothing to
+    // discard and nothing worth logging on every boot.
+    if (raw === null) return null;
+    if (typeof raw !== "object" || Array.isArray(raw)) {
+      await this.discardPersistedSession("not a session object");
+      return null;
+    }
     const envelope = raw as Partial<PersistedAirplaySession>;
     if (
       envelope.version === SESSION_FORMAT &&
@@ -761,12 +776,31 @@ export class AirplayManager {
         gatewayStarted: envelope.gatewayStarted === true,
       };
     }
+    // A file written by a newer player is not a legacy bare config and must not
+    // be read as one — its fields may mean something else entirely. The same
+    // goes for anything that does not have the shape of a version 1 config.
+    // Discard it: the server sees the session cleared and ends it, which is
+    // recoverable, whereas guessing at an unknown layout is not.
+    if (
+      typeof envelope.version === "number" ||
+      raw["provider"] !== "airplay" ||
+      typeof raw["sessionId"] !== "string" ||
+      typeof raw["role"] !== "string"
+    ) {
+      await this.discardPersistedSession("unrecognized format");
+      return null;
+    }
     const legacy = raw as unknown as ExternalPresentationConfig;
     return {
       version: SESSION_FORMAT,
       config: legacy,
       gatewayStarted: legacy.role === "single",
     };
+  }
+
+  private async discardPersistedSession(reason: string): Promise<void> {
+    log.warn("discarding a persisted AirPlay session", { reason });
+    await this.store.delete(SESSION_FILE).catch(() => undefined);
   }
 
   getStatus(): ExternalPresentationStatus | null {

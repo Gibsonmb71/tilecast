@@ -118,7 +118,14 @@ else
   installed_packages > "${after_packages}"
   # Everything apt added for the toolchain, direct and transitive. Packages that
   # were already on the machine are never in this list and are never touched.
-  comm -13 "${before_packages}" "${after_packages}" > "${BUILD_PACKAGE_STATE}"
+  #
+  # Merged with any state a previous run recorded, never overwritten. A run that
+  # installs the toolchain and then fails (no route to the archive, a build
+  # error) leaves it on disk; on the retry those packages are already present,
+  # so this diff is empty. Truncating here would forget them and leak the whole
+  # toolchain permanently.
+  comm -13 "${before_packages}" "${after_packages}" >> "${BUILD_PACKAGE_STATE}"
+  sort -u -o "${BUILD_PACKAGE_STATE}" "${BUILD_PACKAGE_STATE}"
   chmod 600 "${BUILD_PACKAGE_STATE}"
 
   archive="${build_dir}/uxplay-${UXPLAY_VERSION}.tar.gz"
