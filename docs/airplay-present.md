@@ -134,6 +134,14 @@ status, and multicast test status. These fields are included in heartbeat and
 screen reliability status. A support test is available through the persistent
 `test_airplay_support` command.
 
+The probe also reports a one-sentence `airplayLimitation` naming the dependency
+that failed and what to run, in provisioning order: UxPlay missing, UxPlay older
+than the baseline (with the version it found), GStreamer missing, no supported
+H.264 decoder, Avahi missing, then the VA-API/hardware-decode quality notes.
+Studio shows it verbatim in Present · AirPlay, so an operator sees which of the
+five dependencies to fix rather than a generic "not AirPlay-ready". It is
+cleared as soon as a capability report arrives without one.
+
 AirPlay frames are never sent through Tilecast live-preview or snapshot
 capture. While an external presentation is active, Studio shows external
 presentation state instead of uploading mirrored-device frames.

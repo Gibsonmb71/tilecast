@@ -23,6 +23,12 @@ func (s *Service) updateAirplayHeartbeat(ctx context.Context, screenID uuid.UUID
 	if state != "" && !airplayExternalStates[state] {
 		state = ""
 	}
+	// By rune: a byte slice can cut a multi-byte character in half, and Postgres
+	// rejects the invalid UTF-8 that produces.
+	limitation := heartbeat.AirplayLimitation
+	if runes := []rune(limitation); len(runes) > 240 {
+		limitation = string(runes[:240])
+	}
 	// What the player *can* do is written unconditionally. It used to share the
 	// session-ownership guard below, which deadlocked the feature: an idle
 	// player reports externalPresentationState 'none' with no session id, that
@@ -43,13 +49,17 @@ func (s *Service) updateAirplayHeartbeat(ctx context.Context, screenID uuid.UUID
 		airplay_h264_decoder_available=COALESCE($14,airplay_h264_decoder_available),
 		airplay_mdns_advertisement_available=COALESCE($15,airplay_mdns_advertisement_available),
 		airplay_multicast_supported=COALESCE($10,airplay_multicast_supported),
-		airplay_multicast_test_status=COALESCE(NULLIF($11,''),airplay_multicast_test_status)
+		airplay_multicast_test_status=COALESCE(NULLIF($11,''),airplay_multicast_test_status),
+		-- Cleared, not coalesced: once provisioning fixes the box the operator
+		-- must stop seeing the sentence describing what used to be missing.
+		airplay_limitation=CASE WHEN $16 THEN NULLIF($17,'') ELSE airplay_limitation END
 		WHERE screen_id=$1`, screenID, heartbeat.AirplaySupported, heartbeat.AirplayUxPlayVersion,
 		heartbeat.AirplayHardwareDecode, heartbeat.AirplayDecoder, heartbeat.AirplayMaxProfile,
 		heartbeat.AirplayGroupSupported, heartbeat.AirplayAudioAvailable, heartbeat.AirplayAvahiAvailable,
 		heartbeat.AirplayMulticastSupported, heartbeat.AirplayMulticastTestStatus,
 		heartbeat.AirplayUxPlayInstalled, heartbeat.AirplayGstreamerInstalled,
-		heartbeat.AirplayH264DecoderAvailable, heartbeat.AirplayMdnsAdvertisementAvailable)
+		heartbeat.AirplayH264DecoderAvailable, heartbeat.AirplayMdnsAdvertisementAvailable,
+		heartbeat.AirplaySupported != nil, limitation)
 
 	// Live session state stays guarded: a player may only clear or advance the
 	// snapshot of a session it still owns, so a stale 'none' cannot wipe a

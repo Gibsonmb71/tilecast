@@ -55,6 +55,7 @@ func (s *server) screenReliability(w http.ResponseWriter, r *http.Request) {
 		'airplayMaxProfile',ps.airplay_max_profile,'airplayGroupSupported',ps.airplay_group_supported,
 		'airplayAudioAvailable',ps.airplay_audio_available,'airplayAvahiAvailable',ps.airplay_avahi_available,'airplayMdnsAdvertisementAvailable',ps.airplay_mdns_advertisement_available,
 		'airplayMulticastSupported',ps.airplay_multicast_supported,'airplayMulticastTestStatus',ps.airplay_multicast_test_status,
+		'airplayLimitation',ps.airplay_limitation,
 		'externalPresentationState',ps.external_presentation_state,'externalPresentationSessionId',ps.external_presentation_session_id,
 		'externalPresentationRole',ps.external_presentation_role,'airplayReceiverState',ps.airplay_receiver_state,
 		'airplayTransport',ps.airplay_transport,'airplayConnected',ps.airplay_connected,

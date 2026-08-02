@@ -2018,6 +2018,15 @@ export class PlayerRuntime {
         this.airplayCapabilities.multicastSupported ?? undefined;
       heartbeat.airplayMulticastTestStatus =
         this.airplayCapabilities.multicastTestStatus;
+      // The probe already knows which dependency failed and why. Without this
+      // Studio can only say "not AirPlay-ready" and leave an operator guessing
+      // between UxPlay, GStreamer, the H.264 decoder, Avahi, and VA-API.
+      if (this.airplayCapabilities.limitation) {
+        heartbeat.airplayLimitation = this.airplayCapabilities.limitation.slice(
+          0,
+          240,
+        );
+      }
     }
     if (this.externalPresentation && this.externalPresentationStatus) {
       heartbeat.externalPresentationState =

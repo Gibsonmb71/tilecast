@@ -501,6 +501,7 @@ export type ReliabilityStatus = {
   airplayMdnsAdvertisementAvailable?: boolean;
   airplayMulticastSupported?: boolean;
   airplayMulticastTestStatus?: string;
+  airplayLimitation?: string;
   externalPresentationState?: string;
   externalPresentationSessionId?: string;
   externalPresentationRole?: string;
