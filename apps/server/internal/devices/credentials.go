@@ -161,6 +161,34 @@ func (s *Service) AuthenticateDevice(ctx context.Context, credential string) (De
 	return principal, nil
 }
 
+// effectiveHealthyPlaybackAt dates this screen's most recent healthy playback in
+// a clock the server can compare against its own timestamps. It is the evidence a
+// finished self-update needs and the only reason the server reads the field.
+//
+// A heartbeat that says it is playing and is not in safe mode is playing right
+// now, as observed here, so it is dated with the server's clock. That is the
+// whole point: the settle compares this against install_started_at, which the
+// server stamped with now(), and the player's own timestamp comes from the
+// device's clock. A screen whose clock runs behind the server's — a kiosk with no
+// NTP, or any player in the window after a restart and before NTP resyncs, which
+// is precisely the moment a self-update produces — could never satisfy that
+// comparison, and stayed at "Installing" forever on evidence that was otherwise
+// conclusive. Comparing two clocks was the bug; this keeps both sides on one.
+//
+// The player's reported timestamp is used when the screen is not currently
+// playing, because then it is the only account of when it last did. Sending the
+// field at all is optional: the Android socket status message carries
+// playbackState but not lastHealthyPlaybackAt, and every heartbeat after the
+// first one on a connection goes over that socket.
+func effectiveHealthyPlaybackAt(heartbeat Heartbeat) *time.Time {
+	inSafeMode := heartbeat.SafeMode != nil && *heartbeat.SafeMode
+	if heartbeat.PlaybackState == "playing" && !inSafeMode {
+		now := time.Now().UTC()
+		return &now
+	}
+	return heartbeat.LastHealthyPlaybackAt
+}
+
 func (s *Service) Heartbeat(ctx context.Context, principal DevicePrincipal, heartbeat Heartbeat, address string) error {
 	if len(heartbeat.PlayerVersion) > 120 {
 		return errors.New("heartbeat metadata is invalid")
@@ -215,6 +243,7 @@ func (s *Service) Heartbeat(ctx context.Context, principal DevicePrincipal, hear
 	// Display Control is also optional. Invalid capability claims are discarded
 	// by the helper rather than taking a healthy legacy player offline.
 	s.updateDisplayControlHeartbeat(ctx, principal.ScreenID, heartbeat)
+	healthyPlaybackAt := effectiveHealthyPlaybackAt(heartbeat)
 	if heartbeat.ConfiguredReliabilityMode != "" || heartbeat.SafeMode != nil {
 		var previousSafeMode bool
 		var previousMaintenance, previousPINChange *time.Time
@@ -223,7 +252,12 @@ func (s *Service) Heartbeat(ctx context.Context, principal DevicePrincipal, hear
 		if heartbeat.AdminPINChangedAt != nil {
 			_, _ = s.db.Exec(ctx, `UPDATE screen_player_status SET admin_pin_changed_at=$2 WHERE screen_id=$1 AND (admin_pin_changed_at IS NULL OR admin_pin_changed_at<$2)`, principal.ScreenID, heartbeat.AdminPINChangedAt)
 		}
-		_, _ = s.db.Exec(ctx, `UPDATE screen_player_status SET commissioning_state=NULLIF($2,''),commissioning_step=NULLIF($3,''),commissioning_completed_at=$4,cached_fallback_available=$5,last_healthy_playback_at=$6,last_playlist_transition_at=$7,last_successful_sync_at=$8,last_server_connection_at=$9,boot_attempt_count=$10,boot_last_attempt_at=$11,boot_launch_verified=$12,update_readiness=NULLIF($13,''),self_test_result=NULLIF($14,''),self_test_completed_at=$15 WHERE screen_id=$1`, principal.ScreenID, heartbeat.CommissioningState, heartbeat.CommissioningStep, heartbeat.CommissioningCompletedAt, heartbeat.CachedFallbackAvailable, heartbeat.LastHealthyPlaybackAt, heartbeat.LastPlaylistTransitionAt, heartbeat.LastSuccessfulSyncAt, heartbeat.LastServerConnectionAt, heartbeat.BootAttemptCount, heartbeat.BootLastAttemptAt, heartbeat.BootLaunchVerified, heartbeat.UpdateReadiness, heartbeat.SelfTestResult, heartbeat.SelfTestCompletedAt)
+		// COALESCE, not assignment: a heartbeat that omits one of these fields is
+		// saying nothing about it, not saying it is empty. The socket status message
+		// carries a smaller field set than the HTTP heartbeat, so a plain assignment
+		// erased the values the HTTP heartbeat had just stored — including
+		// last_healthy_playback_at, which is what settles a finished self-update.
+		_, _ = s.db.Exec(ctx, `UPDATE screen_player_status SET commissioning_state=COALESCE(NULLIF($2,''),commissioning_state),commissioning_step=COALESCE(NULLIF($3,''),commissioning_step),commissioning_completed_at=COALESCE($4,commissioning_completed_at),cached_fallback_available=COALESCE($5,cached_fallback_available),last_healthy_playback_at=GREATEST(COALESCE($6,last_healthy_playback_at),last_healthy_playback_at),last_playlist_transition_at=COALESCE($7,last_playlist_transition_at),last_successful_sync_at=COALESCE($8,last_successful_sync_at),last_server_connection_at=COALESCE($9,last_server_connection_at),boot_attempt_count=COALESCE($10,boot_attempt_count),boot_last_attempt_at=COALESCE($11,boot_last_attempt_at),boot_launch_verified=COALESCE($12,boot_launch_verified),update_readiness=COALESCE(NULLIF($13,''),update_readiness),self_test_result=COALESCE(NULLIF($14,''),self_test_result),self_test_completed_at=COALESCE($15,self_test_completed_at) WHERE screen_id=$1`, principal.ScreenID, heartbeat.CommissioningState, heartbeat.CommissioningStep, heartbeat.CommissioningCompletedAt, heartbeat.CachedFallbackAvailable, healthyPlaybackAt, heartbeat.LastPlaylistTransitionAt, heartbeat.LastSuccessfulSyncAt, heartbeat.LastServerConnectionAt, heartbeat.BootAttemptCount, heartbeat.BootLastAttemptAt, heartbeat.BootLaunchVerified, heartbeat.UpdateReadiness, heartbeat.SelfTestResult, heartbeat.SelfTestCompletedAt)
 		now := time.Now()
 		newSafeMode := previousSafeMode
 		if heartbeat.SafeMode != nil {
@@ -256,13 +290,23 @@ func (s *Service) Heartbeat(ctx context.Context, principal DevicePrincipal, hear
 		}
 	}
 	// A self-update settles here, on every accepted heartbeat, so a target that
-	// was still `reconnecting` when the first post-install heartbeat arrived
-	// cannot stay there: the conditions are re-evaluated each time. The state
-	// filter excludes terminal states, which makes the transition idempotent —
-	// a repeated heartbeat updates no rows and cannot double-count a target.
+	// was still mid-flight when the first post-install heartbeat arrived cannot
+	// stay there: the conditions are re-evaluated each time. The state filter
+	// excludes terminal states, which makes the transition idempotent — a
+	// repeated heartbeat updates no rows and cannot double-count a target.
+	//
+	// Every non-terminal state, not a list of the ones a player is expected to
+	// stop on. A player's update-status reports are best-effort — the Linux
+	// player logs a failed report at debug and installs anyway, on the stated
+	// assumption that the server reconciles from heartbeats — so the state a
+	// finished update was left in says only which report was the last to land,
+	// and a lost report is not a reason to show a rollout as running forever.
+	// The evidence below is what proves the update finished: this screen is
+	// heartbeating, on the expected version or newer, playing content since the
+	// installation began, out of safe mode, reporting no update failure.
 	updateFailureReported := heartbeat.UpdateState == "failed" || heartbeat.UpdateError != ""
-	if heartbeat.PlayerVersionCode != nil && heartbeat.LastHealthyPlaybackAt != nil && !updateFailureReported && (heartbeat.SafeMode == nil || !*heartbeat.SafeMode) {
-		_, _ = s.db.Exec(ctx, `WITH completed AS (UPDATE screen_update_states SET state='succeeded',reconnect_at=now(),completed_at=now(),updated_at=now() WHERE screen_id=$1 AND expected_version_code<=$2 AND state IN('ready','waiting_for_permission','waiting_for_user','installing','reconnecting') AND (install_started_at IS NULL OR $3>install_started_at) RETURNING deployment_id) UPDATE update_deployments d SET status=CASE WHEN NOT EXISTS(SELECT 1 FROM screen_update_states st WHERE st.deployment_id=d.id AND st.state NOT IN('succeeded','failed','cancelled','incompatible','already_current')) THEN 'completed' ELSE d.status END,completed_at=CASE WHEN NOT EXISTS(SELECT 1 FROM screen_update_states st WHERE st.deployment_id=d.id AND st.state NOT IN('succeeded','failed','cancelled','incompatible','already_current')) THEN now() ELSE d.completed_at END WHERE d.id IN(SELECT deployment_id FROM completed)`, principal.ScreenID, *heartbeat.PlayerVersionCode, heartbeat.LastHealthyPlaybackAt)
+	if heartbeat.PlayerVersionCode != nil && healthyPlaybackAt != nil && !updateFailureReported && (heartbeat.SafeMode == nil || !*heartbeat.SafeMode) {
+		_, _ = s.db.Exec(ctx, `WITH completed AS (UPDATE screen_update_states SET state='succeeded',reconnect_at=now(),completed_at=now(),updated_at=now() WHERE screen_id=$1 AND expected_version_code<=$2 AND state NOT IN('succeeded','failed','cancelled','incompatible','already_current') AND (install_started_at IS NULL OR $3>install_started_at) RETURNING deployment_id) UPDATE update_deployments d SET status=CASE WHEN NOT EXISTS(SELECT 1 FROM screen_update_states st WHERE st.deployment_id=d.id AND st.state NOT IN('succeeded','failed','cancelled','incompatible','already_current')) THEN 'completed' ELSE d.status END,completed_at=CASE WHEN NOT EXISTS(SELECT 1 FROM screen_update_states st WHERE st.deployment_id=d.id AND st.state NOT IN('succeeded','failed','cancelled','incompatible','already_current')) THEN now() ELSE d.completed_at END WHERE d.id IN(SELECT deployment_id FROM completed)`, principal.ScreenID, *heartbeat.PlayerVersionCode, healthyPlaybackAt)
 	}
 	// Bounded reconciliation: a deployment whose targets are all terminal must not
 	// keep reporting progress just because the transition that finished the last
