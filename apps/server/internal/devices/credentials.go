@@ -161,25 +161,41 @@ func (s *Service) AuthenticateDevice(ctx context.Context, credential string) (De
 	return principal, nil
 }
 
-// effectiveHealthyPlaybackAt dates this screen's most recent healthy playback in
-// a clock the server can compare against its own timestamps. It is the evidence a
-// finished self-update needs and the only reason the server reads the field.
+// Least time a player must have been up before its heartbeat settles an update.
+// Long enough that a build which comes up and immediately dies does not report
+// itself finished, short enough that nobody watches a rollout wait on it.
+// SettledUptimeSeconds is exported so the reconciler applies the identical
+// threshold; the two paths must not disagree about when a build has stayed up.
+const SettledUptimeSeconds = 120
+
+// settledUptime reports whether the player has been running long enough for its
+// version code to mean "this build came up and stayed up" rather than "this build
+// managed one heartbeat".
+//
+// A duration, not a timestamp, on purpose: the server has no way to compare a
+// device's clock against its own, and it must not try. Screens that never report
+// uptime are not held back by a check they cannot answer.
+func settledUptime(heartbeat Heartbeat) bool {
+	return heartbeat.UptimeSeconds == nil || *heartbeat.UptimeSeconds >= SettledUptimeSeconds
+}
+
+// effectiveHealthyPlaybackAt dates this screen's most recent healthy playback.
 //
 // A heartbeat that says it is playing and is not in safe mode is playing right
-// now, as observed here, so it is dated with the server's clock. That is the
-// whole point: the settle compares this against install_started_at, which the
-// server stamped with now(), and the player's own timestamp comes from the
-// device's clock. A screen whose clock runs behind the server's — a kiosk with no
-// NTP, or any player in the window after a restart and before NTP resyncs, which
-// is precisely the moment a self-update produces — could never satisfy that
-// comparison, and stayed at "Installing" forever on evidence that was otherwise
-// conclusive. Comparing two clocks was the bug; this keeps both sides on one.
+// now, as observed here, so it is dated with the server's clock rather than the
+// device's — the column is read next to server-generated timestamps, and a player
+// whose clock is off should not appear to have last played hours ago or in the
+// future. The player's reported timestamp is used when the screen is not
+// currently playing, because then it is the only account of when it last did.
 //
-// The player's reported timestamp is used when the screen is not currently
-// playing, because then it is the only account of when it last did. Sending the
-// field at all is optional: the Android socket status message carries
+// Sending the field at all is optional: the Android socket status message carries
 // playbackState but not lastHealthyPlaybackAt, and every heartbeat after the
-// first one on a connection goes over that socket.
+// first one on a connection goes over that socket. Deriving it here is what keeps
+// the column populated for those players.
+//
+// Nothing about finishing an update depends on this. It once did, and that was
+// the bug: a screen asleep outside its active hours never reports playback and so
+// could never finish an update it had plainly completed.
 func effectiveHealthyPlaybackAt(heartbeat Heartbeat) *time.Time {
 	inSafeMode := heartbeat.SafeMode != nil && *heartbeat.SafeMode
 	if heartbeat.PlaybackState == "playing" && !inSafeMode {
@@ -301,12 +317,24 @@ func (s *Service) Heartbeat(ctx context.Context, principal DevicePrincipal, hear
 	// assumption that the server reconciles from heartbeats — so the state a
 	// finished update was left in says only which report was the last to land,
 	// and a lost report is not a reason to show a rollout as running forever.
-	// The evidence below is what proves the update finished: this screen is
-	// heartbeating, on the expected version or newer, playing content since the
-	// installation began, out of safe mode, reporting no update failure.
+	//
+	// What proves the update finished is that this heartbeat came from the new
+	// build: the version code is the running process reporting itself, and the
+	// old process could not have sent it. Add to that a player out of safe mode
+	// and reporting no update failure, and there is nothing left to wait for.
+	//
+	// Playing content is deliberately NOT required. It was standing in for "the
+	// new build runs", but it only holds for a screen that happens to be showing
+	// something: one asleep outside its active hours is healthy, is on the new
+	// version, and is finished updating, and demanding playback stranded exactly
+	// those screens until their next school day. Process uptime is the honest
+	// version of that check — it says the new build came up and stayed up, it
+	// resets on the restart an install causes, and being a duration rather than
+	// a timestamp it cannot be skewed against the server's clock.
 	updateFailureReported := heartbeat.UpdateState == "failed" || heartbeat.UpdateError != ""
-	if heartbeat.PlayerVersionCode != nil && healthyPlaybackAt != nil && !updateFailureReported && (heartbeat.SafeMode == nil || !*heartbeat.SafeMode) {
-		_, _ = s.db.Exec(ctx, `WITH completed AS (UPDATE screen_update_states SET state='succeeded',reconnect_at=now(),completed_at=now(),updated_at=now() WHERE screen_id=$1 AND expected_version_code<=$2 AND state NOT IN('succeeded','failed','cancelled','incompatible','already_current') AND (install_started_at IS NULL OR $3>install_started_at) RETURNING deployment_id) UPDATE update_deployments d SET status=CASE WHEN NOT EXISTS(SELECT 1 FROM screen_update_states st WHERE st.deployment_id=d.id AND st.state NOT IN('succeeded','failed','cancelled','incompatible','already_current')) THEN 'completed' ELSE d.status END,completed_at=CASE WHEN NOT EXISTS(SELECT 1 FROM screen_update_states st WHERE st.deployment_id=d.id AND st.state NOT IN('succeeded','failed','cancelled','incompatible','already_current')) THEN now() ELSE d.completed_at END WHERE d.id IN(SELECT deployment_id FROM completed)`, principal.ScreenID, *heartbeat.PlayerVersionCode, healthyPlaybackAt)
+	settledSafeMode := heartbeat.SafeMode == nil || !*heartbeat.SafeMode
+	if heartbeat.PlayerVersionCode != nil && settledUptime(heartbeat) && !updateFailureReported && settledSafeMode {
+		_, _ = s.db.Exec(ctx, `WITH completed AS (UPDATE screen_update_states SET state='succeeded',reconnect_at=now(),completed_at=now(),updated_at=now() WHERE screen_id=$1 AND expected_version_code<=$2 AND state NOT IN('succeeded','failed','cancelled','incompatible','already_current') RETURNING deployment_id) UPDATE update_deployments d SET status=CASE WHEN NOT EXISTS(SELECT 1 FROM screen_update_states st WHERE st.deployment_id=d.id AND st.state NOT IN('succeeded','failed','cancelled','incompatible','already_current')) THEN 'completed' ELSE d.status END,completed_at=CASE WHEN NOT EXISTS(SELECT 1 FROM screen_update_states st WHERE st.deployment_id=d.id AND st.state NOT IN('succeeded','failed','cancelled','incompatible','already_current')) THEN now() ELSE d.completed_at END WHERE d.id IN(SELECT deployment_id FROM completed)`, principal.ScreenID, *heartbeat.PlayerVersionCode)
 	}
 	// Bounded reconciliation: a deployment whose targets are all terminal must not
 	// keep reporting progress just because the transition that finished the last
