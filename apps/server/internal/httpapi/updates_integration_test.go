@@ -70,7 +70,7 @@ func TestCreateUpdateDeploymentPersistsHistoryAndCommand(t *testing.T) {
 	if _, err = pool.Exec(ctx, `INSERT INTO users(id,name,username,password_hash,role) VALUES($1,'Owner','owner','test','owner')`, userID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = pool.Exec(ctx, `INSERT INTO screens(id,organization_id,player_installation_id,name,platform,device_manufacturer,device_model,android_version,player_version,screen_width,screen_height,density,locale,timezone,last_heartbeat_at) VALUES($1,$2,$3,'Lobby','android-tv','Test','Test','14','0.10.0',1920,1080,1,'en-US','UTC',now())`, screenID, organizationID, uuid.NewString()); err != nil {
+	if _, err = pool.Exec(ctx, `INSERT INTO screens(id,organization_id,player_installation_id,name,platform,device_manufacturer,device_model,android_version,player_version,screen_width,screen_height,density,locale,timezone,last_heartbeat_at,uptime_seconds) VALUES($1,$2,$3,'Lobby','android-tv','Test','Test','14','0.10.0',1920,1080,1,'en-US','UTC',now(),3600)`, screenID, organizationID, uuid.NewString()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = pool.Exec(ctx, `INSERT INTO screen_player_status(screen_id,player_version_code,android_sdk,install_permission_status) VALUES($1,10,35,'granted')`, screenID); err != nil {
@@ -265,7 +265,7 @@ func TestLinuxUpdateSettlesDespiteSyntheticItemIdentifier(t *testing.T) {
 	if _, err = pool.Exec(ctx, `INSERT INTO users(id,name,username,password_hash,role) VALUES($1,'Owner','owner','test','owner')`, userID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = pool.Exec(ctx, `INSERT INTO screens(id,organization_id,player_installation_id,name,platform,device_manufacturer,device_model,android_version,player_version,screen_width,screen_height,density,locale,timezone,last_heartbeat_at) VALUES($1,$2,$3,'Linux Lobby','linux','Test','Test','','0.2.5',1920,1080,1,'en-US','UTC',now())`, screenID, organizationID, uuid.NewString()); err != nil {
+	if _, err = pool.Exec(ctx, `INSERT INTO screens(id,organization_id,player_installation_id,name,platform,device_manufacturer,device_model,android_version,player_version,screen_width,screen_height,density,locale,timezone,last_heartbeat_at,uptime_seconds) VALUES($1,$2,$3,'Linux Lobby','linux','Test','Test','','0.2.5',1920,1080,1,'en-US','UTC',now(),3600)`, screenID, organizationID, uuid.NewString()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = pool.Exec(ctx, `INSERT INTO screen_player_status(screen_id,player_version_code) VALUES($1,2005)`, screenID); err != nil {
@@ -393,7 +393,7 @@ func TestStuckReconnectingTargetIsReconciled(t *testing.T) {
 	if _, err = pool.Exec(ctx, `INSERT INTO users(id,name,username,password_hash,role) VALUES($1,'Owner','owner','test','owner')`, userID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = pool.Exec(ctx, `INSERT INTO screens(id,organization_id,player_installation_id,name,platform,device_manufacturer,device_model,android_version,player_version,screen_width,screen_height,density,locale,timezone,last_heartbeat_at) VALUES($1,$2,$3,'Linux Lobby','linux','Test','Test','','0.2.6',1920,1080,1,'en-US','UTC',now())`, screenID, organizationID, uuid.NewString()); err != nil {
+	if _, err = pool.Exec(ctx, `INSERT INTO screens(id,organization_id,player_installation_id,name,platform,device_manufacturer,device_model,android_version,player_version,screen_width,screen_height,density,locale,timezone,last_heartbeat_at,uptime_seconds) VALUES($1,$2,$3,'Linux Lobby','linux','Test','Test','','0.2.6',1920,1080,1,'en-US','UTC',now(),3600)`, screenID, organizationID, uuid.NewString()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = pool.Exec(ctx, `INSERT INTO screen_player_status(screen_id,player_version_code,safe_mode,last_healthy_playback_at) VALUES($1,2006,false,now())`, screenID); err != nil {
@@ -493,7 +493,7 @@ func TestLinuxDeploymentTargetsOnlyLinuxScreens(t *testing.T) {
 		t.Fatal(err)
 	}
 	screen := func(id uuid.UUID, name, platform string) {
-		if _, err = pool.Exec(ctx, `INSERT INTO screens(id,organization_id,player_installation_id,name,platform,device_manufacturer,device_model,android_version,player_version,screen_width,screen_height,density,locale,timezone,last_heartbeat_at) VALUES($1,$2,$3,$4,$5,'Test','Test','','0.1.0',1920,1080,1,'en-US','UTC',now())`, id, organizationID, uuid.NewString(), name, platform); err != nil {
+		if _, err = pool.Exec(ctx, `INSERT INTO screens(id,organization_id,player_installation_id,name,platform,device_manufacturer,device_model,android_version,player_version,screen_width,screen_height,density,locale,timezone,last_heartbeat_at,uptime_seconds) VALUES($1,$2,$3,$4,$5,'Test','Test','','0.1.0',1920,1080,1,'en-US','UTC',now(),3600)`, id, organizationID, uuid.NewString(), name, platform); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -601,7 +601,7 @@ func TestAndroidSocketHeartbeatSettlesInstallingTarget(t *testing.T) {
 	if _, err = pool.Exec(ctx, `INSERT INTO users(id,name,username,password_hash,role) VALUES($1,'Owner','owner','test','owner')`, userID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = pool.Exec(ctx, `INSERT INTO screens(id,organization_id,player_installation_id,name,platform,device_manufacturer,device_model,android_version,player_version,screen_width,screen_height,density,locale,timezone,last_heartbeat_at) VALUES($1,$2,$3,'Cafeteria','android','Test','Test','13','0.11.0',1920,1080,1,'en-US','UTC',now())`, screenID, organizationID, uuid.NewString()); err != nil {
+	if _, err = pool.Exec(ctx, `INSERT INTO screens(id,organization_id,player_installation_id,name,platform,device_manufacturer,device_model,android_version,player_version,screen_width,screen_height,density,locale,timezone,last_heartbeat_at,uptime_seconds) VALUES($1,$2,$3,'Cafeteria','android','Test','Test','13','0.11.0',1920,1080,1,'en-US','UTC',now(),3600)`, screenID, organizationID, uuid.NewString()); err != nil {
 		t.Fatal(err)
 	}
 	// The pre-update playback timestamp the HTTP heartbeat stored at connect. It
@@ -716,10 +716,10 @@ func TestLinuxTargetSettlesWhenStatusReportsWereLost(t *testing.T) {
 			}
 			// Linux 0.10.0: version code 10000, the same formula the signed manifest
 			// carries. The player has already restarted onto it.
-			if _, err = pool.Exec(ctx, `INSERT INTO screens(id,organization_id,player_installation_id,name,platform,device_manufacturer,device_model,android_version,player_version,screen_width,screen_height,density,locale,timezone,last_heartbeat_at) VALUES($1,$2,$3,'Linux Lobby','linux','Test','Test','','0.10.0',1920,1080,1,'en-US','UTC',now())`, screenID, organizationID, uuid.NewString()); err != nil {
+			if _, err = pool.Exec(ctx, `INSERT INTO screens(id,organization_id,player_installation_id,name,platform,device_manufacturer,device_model,android_version,player_version,screen_width,screen_height,density,locale,timezone,last_heartbeat_at,uptime_seconds) VALUES($1,$2,$3,'Linux Lobby','linux','Test','Test','','0.10.0',1920,1080,1,'en-US','UTC',now(),3600)`, screenID, organizationID, uuid.NewString()); err != nil {
 				t.Fatal(err)
 			}
-			if _, err = pool.Exec(ctx, `INSERT INTO screen_player_status(screen_id,player_version_code,safe_mode,last_healthy_playback_at) VALUES($1,10000,false,now())`, screenID); err != nil {
+			if _, err = pool.Exec(ctx, `INSERT INTO screen_player_status(screen_id,player_version_code,safe_mode) VALUES($1,10000,false)`, screenID); err != nil {
 				t.Fatal(err)
 			}
 			if _, err = pool.Exec(ctx, `INSERT INTO player_releases(id,platform,source,channel,version_code,version_name,release_notes,published_at,apk_name,apk_size,apk_sha256,signing_certificate_sha256,manifest,manifest_signature,cache_status,verification_status,imported_by) VALUES($1,'linux','upload','stable',10000,'0.10.0','',now(),'tilecast-player.AppImage',4096,$2,'','{}'::jsonb,'signature','cached','verified',$3)`, releaseID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", userID); err != nil {
@@ -799,11 +799,11 @@ func TestStrandedTargetOnTheOldVersionIsNotSettled(t *testing.T) {
 	if _, err = pool.Exec(ctx, `INSERT INTO users(id,name,username,password_hash,role) VALUES($1,'Owner','owner','test','owner')`, userID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = pool.Exec(ctx, `INSERT INTO screens(id,organization_id,player_installation_id,name,platform,device_manufacturer,device_model,android_version,player_version,screen_width,screen_height,density,locale,timezone,last_heartbeat_at) VALUES($1,$2,$3,'Linux Lobby','linux','Test','Test','','0.9.0',1920,1080,1,'en-US','UTC',now())`, screenID, organizationID, uuid.NewString()); err != nil {
+	if _, err = pool.Exec(ctx, `INSERT INTO screens(id,organization_id,player_installation_id,name,platform,device_manufacturer,device_model,android_version,player_version,screen_width,screen_height,density,locale,timezone,last_heartbeat_at,uptime_seconds) VALUES($1,$2,$3,'Linux Lobby','linux','Test','Test','','0.9.0',1920,1080,1,'en-US','UTC',now(),3600)`, screenID, organizationID, uuid.NewString()); err != nil {
 		t.Fatal(err)
 	}
 	// Healthy and heartbeating, but still on 0.9.0.
-	if _, err = pool.Exec(ctx, `INSERT INTO screen_player_status(screen_id,player_version_code,safe_mode,last_healthy_playback_at) VALUES($1,9000,false,now())`, screenID); err != nil {
+	if _, err = pool.Exec(ctx, `INSERT INTO screen_player_status(screen_id,player_version_code,safe_mode) VALUES($1,9000,false)`, screenID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = pool.Exec(ctx, `INSERT INTO player_releases(id,platform,source,channel,version_code,version_name,release_notes,published_at,apk_name,apk_size,apk_sha256,signing_certificate_sha256,manifest,manifest_signature,cache_status,verification_status,imported_by) VALUES($1,'linux','upload','stable',10000,'0.10.0','',now(),'tilecast-player.AppImage',4096,$2,'','{}'::jsonb,'signature','cached','verified',$3)`, releaseID, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", userID); err != nil {
@@ -885,7 +885,7 @@ func TestInstallingTargetSettlesWhenTheDeviceClockRunsBehind(t *testing.T) {
 	if _, err = pool.Exec(ctx, `INSERT INTO users(id,name,username,password_hash,role) VALUES($1,'Owner','owner','test','owner')`, userID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = pool.Exec(ctx, `INSERT INTO screens(id,organization_id,player_installation_id,name,platform,device_manufacturer,device_model,android_version,player_version,screen_width,screen_height,density,locale,timezone,last_heartbeat_at) VALUES($1,$2,$3,'Linux Lobby','linux','Test','Test','','0.10.0',1920,1080,1,'en-US','UTC',now())`, screenID, organizationID, uuid.NewString()); err != nil {
+	if _, err = pool.Exec(ctx, `INSERT INTO screens(id,organization_id,player_installation_id,name,platform,device_manufacturer,device_model,android_version,player_version,screen_width,screen_height,density,locale,timezone,last_heartbeat_at,uptime_seconds) VALUES($1,$2,$3,'Linux Lobby','linux','Test','Test','','0.10.0',1920,1080,1,'en-US','UTC',now(),3600)`, screenID, organizationID, uuid.NewString()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = pool.Exec(ctx, `INSERT INTO screen_player_status(screen_id,player_version_code,safe_mode) VALUES($1,9000,false)`, screenID); err != nil {
@@ -927,5 +927,173 @@ func TestInstallingTargetSettlesWhenTheDeviceClockRunsBehind(t *testing.T) {
 	}
 	if state != "succeeded" || status != "completed" {
 		t.Fatalf("a screen behind the server clock stayed stuck: state=%q status=%q", state, status)
+	}
+}
+
+// The reported failure, reproduced exactly. Four school TVs restarted onto the
+// new build, connected, and went straight to sleep because it was outside their
+// active hours — playback_state 'sleep', last_healthy_playback_at never set,
+// everything else healthy. Requiring playback as proof of a finished update left
+// them at "Installing" indefinitely: an asleep screen has no playback to report
+// and will not have any until its next school day, which over a summer is weeks.
+func TestSleepingScreenSettlesItsUpdate(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	lockPool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lockPool.Close()
+	lock, err := lockPool.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Release()
+	if _, err = lock.Exec(ctx, `SELECT pg_advisory_lock(7421999)`); err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Exec(ctx, `SELECT pg_advisory_unlock(7421999)`) //nolint:errcheck
+	if err = database.Migrate(ctx, databaseURL); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	pool, err := database.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if _, err = pool.Exec(ctx, `TRUNCATE organization_settings,users CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+
+	organizationID := uuid.New()
+	userID := uuid.New()
+	screenID := uuid.New()
+	releaseID := uuid.New()
+	deploymentID := uuid.New()
+	if _, err = pool.Exec(ctx, `INSERT INTO organization_settings(singleton,organization_name,id) VALUES(true,'Sleeping Screen Test',$1)`, organizationID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO users(id,name,username,password_hash,role) VALUES($1,'Owner','owner','test','owner')`, userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO screens(id,organization_id,player_installation_id,name,platform,device_manufacturer,device_model,android_version,player_version,screen_width,screen_height,density,locale,timezone,last_heartbeat_at,uptime_seconds) VALUES($1,$2,$3,'NSHS - Library TV','linux','Test','Test','','0.14.0',1920,1080,1,'en-US','UTC',now(),3600)`, screenID, organizationID, uuid.NewString()); err != nil {
+		t.Fatal(err)
+	}
+	// Asleep, healthy, on the new build, and no playback timestamp has ever been
+	// recorded — the exact row the fleet reported.
+	if _, err = pool.Exec(ctx, `INSERT INTO screen_player_status(screen_id,player_version_code,safe_mode,playback_state,last_healthy_playback_at) VALUES($1,14000,false,'sleep',NULL)`, screenID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO player_releases(id,platform,source,channel,version_code,version_name,release_notes,published_at,apk_name,apk_size,apk_sha256,signing_certificate_sha256,manifest,manifest_signature,cache_status,verification_status,imported_by) VALUES($1,'linux','upload','stable',14000,'0.14.0','',now(),'tilecast-player.AppImage',4096,$2,'','{}'::jsonb,'signature','cached','verified',$3)`, releaseID, "1111111111111111111111111111111111111111111111111111111111111111", userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO update_deployments(id,release_id,name,mode,status,created_by) VALUES($1,$2,'Tilecast Player 0.14.0','install_now','active',$3)`, deploymentID, releaseID, userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO screen_update_states(deployment_id,screen_id,previous_version_code,expected_version_code,state,install_started_at) VALUES($1,$2,13001,14000,'reconnecting',now()-interval '3 minutes')`, deploymentID, screenID); err != nil {
+		t.Fatal(err)
+	}
+
+	s := &server{
+		db:      pool,
+		logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+		devices: devices.NewService(pool, devices.NewPresenceHub(), "http://localhost"),
+	}
+	recorder := httptest.NewRecorder()
+	s.listUpdateDeployments(recorder, deploymentRequest(http.MethodGet, "/api/v1/update-deployments", userID, "owner"))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("list status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var state, status string
+	if err = pool.QueryRow(ctx, `SELECT st.state,d.status FROM screen_update_states st JOIN update_deployments d ON d.id=st.deployment_id WHERE st.deployment_id=$1`, deploymentID).Scan(&state, &status); err != nil {
+		t.Fatal(err)
+	}
+	if state != "succeeded" || status != "completed" {
+		t.Fatalf("a sleeping screen on the new build did not settle: state=%q status=%q", state, status)
+	}
+}
+
+// The guard that replaces playback: a build that came up seconds ago has not
+// shown it will stay up, so its first heartbeat must not report the update
+// finished. A crash-looping player would otherwise settle every restart.
+func TestFreshlyStartedPlayerDoesNotSettleYet(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	lockPool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lockPool.Close()
+	lock, err := lockPool.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Release()
+	if _, err = lock.Exec(ctx, `SELECT pg_advisory_lock(7421999)`); err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Exec(ctx, `SELECT pg_advisory_unlock(7421999)`) //nolint:errcheck
+	if err = database.Migrate(ctx, databaseURL); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	pool, err := database.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if _, err = pool.Exec(ctx, `TRUNCATE organization_settings,users CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+
+	organizationID := uuid.New()
+	userID := uuid.New()
+	screenID := uuid.New()
+	releaseID := uuid.New()
+	deploymentID := uuid.New()
+	if _, err = pool.Exec(ctx, `INSERT INTO organization_settings(singleton,organization_name,id) VALUES(true,'Fresh Boot Test',$1)`, organizationID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO users(id,name,username,password_hash,role) VALUES($1,'Owner','owner','test','owner')`, userID); err != nil {
+		t.Fatal(err)
+	}
+	// Up for four seconds: the process that just replaced itself.
+	if _, err = pool.Exec(ctx, `INSERT INTO screens(id,organization_id,player_installation_id,name,platform,device_manufacturer,device_model,android_version,player_version,screen_width,screen_height,density,locale,timezone,last_heartbeat_at,uptime_seconds) VALUES($1,$2,$3,'Linux Lobby','linux','Test','Test','','0.14.0',1920,1080,1,'en-US','UTC',now(),4)`, screenID, organizationID, uuid.NewString()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO screen_player_status(screen_id,player_version_code,safe_mode) VALUES($1,14000,false)`, screenID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO player_releases(id,platform,source,channel,version_code,version_name,release_notes,published_at,apk_name,apk_size,apk_sha256,signing_certificate_sha256,manifest,manifest_signature,cache_status,verification_status,imported_by) VALUES($1,'linux','upload','stable',14000,'0.14.0','',now(),'tilecast-player.AppImage',4096,$2,'','{}'::jsonb,'signature','cached','verified',$3)`, releaseID, "2222222222222222222222222222222222222222222222222222222222222222", userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO update_deployments(id,release_id,name,mode,status,created_by) VALUES($1,$2,'Tilecast Player 0.14.0','install_now','active',$3)`, deploymentID, releaseID, userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO screen_update_states(deployment_id,screen_id,previous_version_code,expected_version_code,state,install_started_at) VALUES($1,$2,13001,14000,'reconnecting',now()-interval '10 seconds')`, deploymentID, screenID); err != nil {
+		t.Fatal(err)
+	}
+
+	s := &server{
+		db:      pool,
+		logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+		devices: devices.NewService(pool, devices.NewPresenceHub(), "http://localhost"),
+	}
+	recorder := httptest.NewRecorder()
+	s.listUpdateDeployments(recorder, deploymentRequest(http.MethodGet, "/api/v1/update-deployments", userID, "owner"))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("list status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var state string
+	if err = pool.QueryRow(ctx, `SELECT state FROM screen_update_states WHERE deployment_id=$1`, deploymentID).Scan(&state); err != nil {
+		t.Fatal(err)
+	}
+	if state != "reconnecting" {
+		t.Fatalf("a player up for four seconds settled early: state=%q", state)
 	}
 }
