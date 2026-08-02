@@ -325,7 +325,8 @@ describe("AirPlay capability probing", () => {
     const capabilities = await result.manager.probeCapabilities();
 
     expect(
-      result.calls.find((call) => call.binary === "/usr/local/bin/uxplay")?.args,
+      result.calls.find((call) => call.binary === "/usr/local/bin/uxplay")
+        ?.args,
     ).toEqual(["-v"]);
     expect(capabilities.uxplayInstalled).toBe(true);
     expect(capabilities.uxplayVersion).toBe("1.73.6");
