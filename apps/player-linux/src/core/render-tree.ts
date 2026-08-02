@@ -155,5 +155,13 @@ export interface LayoutRenderPayload {
   canvasHeight: number;
   background: string;
   backgroundImage?: string;
+  backgroundImageViewport?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    canvasWidth: number;
+    canvasHeight: number;
+  };
   zones: LayoutZone[];
 }

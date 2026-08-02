@@ -91,6 +91,29 @@ export interface ManifestAsset {
   downloadPath: string;
 }
 
+export interface ManifestCanvas {
+  width: number;
+  height: number;
+}
+
+export interface ManifestViewport {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  order: number;
+  bezelLeft?: number;
+  bezelTop?: number;
+  bezelRight?: number;
+  bezelBottom?: number;
+}
+
+export interface SpanViewport extends ManifestViewport {
+  canvasWidth: number;
+  canvasHeight: number;
+}
+
 export interface ManifestCountdownBarConfig {
   name: string;
   message: string;
@@ -172,6 +195,12 @@ export interface ManifestSchedule {
   id: string;
   playlistId?: string | null;
   layoutId?: string | null;
+  displayAction?: {
+    type: string;
+    input?: string;
+    volume?: number;
+    brightness?: number;
+  } | null;
   type: string; // "weekly" | "one_time"
   timezone: string;
   priority: number;
@@ -192,6 +221,18 @@ export interface ManifestTakeover {
   expiresAt: string;
 }
 
+export interface ManifestPresentationOverride {
+  id: string;
+  contentType: "playlist" | "layout" | "asset";
+  contentId: string;
+  contentName: string;
+  startedAt: string;
+  expiresAt?: string | null;
+  playlistId?: string | null;
+  layoutId?: string | null;
+  wakeDisplay?: boolean;
+}
+
 export interface Manifest {
   schemaVersion: number;
   manifestVersion: number;
@@ -208,6 +249,7 @@ export interface Manifest {
   prefetchHorizonDays: number;
   activationGraceSeconds: number;
   websites: ManifestWebsite[];
+  presentationOverride?: ManifestPresentationOverride | null;
   takeover?: ManifestTakeover | null;
   /** Pre-rename manifest key accepted during staggered upgrades. */
   emergency?: ManifestTakeover | null;
@@ -220,6 +262,8 @@ export interface Manifest {
   widgets?: unknown[];
   dataSources?: unknown[];
   syncGroup?: { id: string; playbackEpoch?: string } | null;
+  canvas?: ManifestCanvas | null;
+  viewport?: ManifestViewport | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -383,6 +427,15 @@ export interface Heartbeat {
   airplayTransport?: string;
   airplayConnected?: boolean;
   externalPresentationExpiresAt?: string;
+  displayControlProvider?: string;
+  displayControlProviders?: string[];
+  displayControlCapabilities?: Record<string, string>;
+  displayPowerState?:
+    "unknown" | "on" | "off" | "transitioning" | "unsupported";
+  displayPowerStateConfirmed?: boolean;
+  displayPowerStateObservedAt?: string;
+  displayControlPolicyState?: "normal" | "powered_off_by_policy" | "unknown";
+  displayControlError?: string;
 }
 
 // ---------------------------------------------------------------------------

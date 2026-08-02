@@ -19,7 +19,12 @@ import type {
   ManifestDataSource,
   ManifestWidget,
 } from "./content-types";
-import type { Manifest, ManifestAsset, ManifestPlaylist } from "./types";
+import type {
+  Manifest,
+  ManifestAsset,
+  ManifestPlaylist,
+  SpanViewport,
+} from "./types";
 import type {
   LayoutPlaylistItem,
   LayoutRenderPayload,
@@ -55,6 +60,7 @@ function mediaSrc(asset: ManifestAsset): string {
 export function renderLayout(
   document: LayoutDocument,
   ctx: LayoutRenderContext,
+  viewport?: SpanViewport,
 ): LayoutRenderPayload | null {
   if (document.schemaVersion !== 2 || !document.canvas) {
     return null;
@@ -79,7 +85,10 @@ export function renderLayout(
     }
     const zone = renderPlacement(placement, ctx);
     if (zone) {
-      zones.push(zone);
+      const projected = viewport ? clipZone(zone, viewport) : zone;
+      if (projected) {
+        zones.push(projected);
+      }
     }
   }
 
@@ -92,11 +101,38 @@ export function renderLayout(
   }
 
   return {
-    canvasWidth: canvas.width,
-    canvasHeight: canvas.height,
+    canvasWidth: viewport?.width ?? canvas.width,
+    canvasHeight: viewport?.height ?? canvas.height,
     background: safeColor(canvas.backgroundColor, "#000000"),
     backgroundImage,
+    backgroundImageViewport: viewport
+      ? {
+          x: viewport.x,
+          y: viewport.y,
+          width: viewport.width,
+          height: viewport.height,
+          canvasWidth: viewport.canvasWidth,
+          canvasHeight: viewport.canvasHeight,
+        }
+      : undefined,
     zones,
+  };
+}
+
+function clipZone(zone: LayoutZone, viewport: SpanViewport): LayoutZone | null {
+  const left = Math.max(zone.x, viewport.x);
+  const top = Math.max(zone.y, viewport.y);
+  const right = Math.min(zone.x + zone.width, viewport.x + viewport.width);
+  const bottom = Math.min(zone.y + zone.height, viewport.y + viewport.height);
+  if (right <= left || bottom <= top) {
+    return null;
+  }
+  return {
+    ...zone,
+    x: left - viewport.x,
+    y: top - viewport.y,
+    width: right - left,
+    height: bottom - top,
   };
 }
 

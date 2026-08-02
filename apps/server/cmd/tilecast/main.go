@@ -33,10 +33,12 @@ import (
 	"github.com/tilecast/tilecast/apps/server/internal/notify"
 	"github.com/tilecast/tilecast/apps/server/internal/playlists"
 	"github.com/tilecast/tilecast/apps/server/internal/plugins"
+	"github.com/tilecast/tilecast/apps/server/internal/presentations"
 	"github.com/tilecast/tilecast/apps/server/internal/previews"
 	"github.com/tilecast/tilecast/apps/server/internal/scheduling"
 	"github.com/tilecast/tilecast/apps/server/internal/settings"
 	"github.com/tilecast/tilecast/apps/server/internal/snapshots"
+	"github.com/tilecast/tilecast/apps/server/internal/span"
 	"github.com/tilecast/tilecast/apps/server/internal/updates"
 	"github.com/tilecast/tilecast/apps/server/internal/version"
 )
@@ -117,6 +119,10 @@ func serve() {
 		AirQualityBaseURL: cfg.Sources.AirQualityBaseURL,
 	})
 	playlistService := playlists.NewService(db, deviceService)
+	spanService := span.NewService(db, mediaStorage, span.Config{FFmpegPath: cfg.Media.FFmpegPath, FFprobePath: cfg.Media.FFprobePath}, deviceService)
+	playlistService.SetSpanProjector(spanService)
+	presentationService := presentations.NewService(db, deviceService)
+	playlistService.SetPresentationOverrides(presentationService)
 	pluginService := plugins.NewService(db, deviceService)
 	playlistService.SetPluginProjector(pluginService)
 	mediaService.SetContentDefinitions(contentDefinitions)
@@ -167,6 +173,7 @@ func serve() {
 	}
 	_, _ = db.Exec(ctx, `INSERT INTO media_jobs(id,kind,status,run_after) VALUES(gen_random_uuid(),'clean_expired_uploads','queued',now())`)
 	mediaWorkers := media.NewWorkerPool(mediaService, logger)
+	mediaWorkers.SetExtraProcessor(spanService.ProcessJob)
 	mediaWorkers.SetGate(backupGuard.BackgroundJobsAllowed)
 	mediaWorkers.Start(ctx)
 	defer mediaWorkers.Stop()
@@ -242,6 +249,7 @@ func serve() {
 		Media:               mediaService,
 		Forms:               formService,
 		Playlists:           playlistService,
+		Presentations:       presentationService,
 		Plugins:             pluginService,
 		Layouts:             layoutService,
 		Scheduling:          schedulingService,
@@ -254,6 +262,7 @@ func serve() {
 		Integrations:        integrationService,
 		Approvals:           approvalService,
 		Snapshots:           snapshotService,
+		Span:                spanService,
 		DB:                  db,
 		Logger:              logger,
 		CookieName:          cfg.CookieName,

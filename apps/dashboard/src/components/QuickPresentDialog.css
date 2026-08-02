@@ -1,0 +1,64 @@
+.quick-present-dialog {
+  width: min(560px, calc(100vw - 32px));
+}
+
+.quick-present-dialog__body {
+  display: grid;
+  gap: 16px;
+  padding: 20px 24px;
+}
+
+.quick-present-dialog__intro {
+  margin: 0;
+  color: var(--signal-muted);
+  line-height: 1.45;
+}
+
+.quick-present-dialog__destination {
+  border: 1px solid var(--signal-border);
+  background: var(--signal-surface-muted);
+  padding: 9px 11px;
+}
+
+.quick-present-dialog__content-type {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.quick-present-dialog__content-type button {
+  border: 1px solid var(--signal-border);
+  background: transparent;
+  color: var(--signal-muted);
+  padding: 7px 10px;
+}
+
+.quick-present-dialog__content-type button.is-active {
+  border-color: var(--signal-accent);
+  color: var(--signal-text);
+  background: var(--signal-surface-muted);
+}
+
+.quick-present-dialog__durations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.quick-present-dialog__durations legend {
+  color: var(--signal-text);
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.quick-present-dialog__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 24px 20px;
+  border-top: 1px solid var(--signal-border);
+}

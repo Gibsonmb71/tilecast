@@ -28,6 +28,7 @@ import type {
   PasskeyCeremony,
   Passkey,
   PairingRequest,
+  PlayerHistory,
   Location,
   LocationInput,
   Screen,
@@ -42,6 +43,9 @@ import type {
   PlaylistList,
   ScreenGroup,
   ScreenGroupList,
+  SpanStatus,
+  DisplayControlGroupApplyResult,
+  DisplayControlGroupPreview,
   Schedule,
   ScheduleInput,
   ScheduleList,
@@ -54,6 +58,7 @@ import type {
   DataSourceListResult,
   PlayerCommand,
   Takeover,
+  PresentationOverride,
   NWSAlertMonitor,
   NWSAlertRule,
   NWSAlertRuleInput,
@@ -163,6 +168,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 function normalizeScreenGroup(group: ScreenGroup): ScreenGroup {
   return {
     ...group,
+    displayMode: group.displayMode === "span" ? "span" : "mirror",
     screens: Array.isArray(group.screens) ? group.screens : [],
   };
 }
@@ -1085,6 +1091,15 @@ export const api = {
     normalizeScreen(await request<Screen | null>(`/screens/${id}`)),
   screenReliability: (id: string) =>
     request<ReliabilityStatus>(`/screens/${id}/reliability`),
+  screenPlayerHistory: async (id: string) => {
+    const result = await request<{ items: PlayerHistory[]; total: number }>(
+      `/screens/${id}/player-history`,
+    );
+    return {
+      ...result,
+      items: Array.isArray(result.items) ? result.items : [],
+    };
+  },
   airplaySession: (id: string) =>
     request<AirplaySession>(`/airplay/sessions/${id}`),
   createAirplaySession: (
@@ -1107,6 +1122,33 @@ export const api = {
       method: "POST",
       headers: { "X-CSRF-Token": csrfToken },
       body: JSON.stringify({ reason }),
+    }),
+  presentationOverrides: () =>
+    request<{ items: PresentationOverride[]; total: number }>(
+      "/presentation-overrides",
+    ),
+  createPresentationOverride: (
+    input: {
+      targetType: "screen" | "group";
+      targetId: string;
+      contentType: "playlist" | "layout" | "asset";
+      contentId: string;
+      durationMinutes: 0 | 5 | 15 | 30 | 60;
+      afterAction: "resume";
+      wakeDisplay: boolean;
+    },
+    csrfToken: string,
+  ) =>
+    request<PresentationOverride>("/presentation-overrides", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  stopPresentationOverride: (id: string, csrfToken: string) =>
+    request<PresentationOverride>(`/presentation-overrides/${id}/stop`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ reason: "Stopped from Tilecast Studio" }),
     }),
   fleetUptime: (window: UptimeWindow) =>
     request<UptimeReport>(`/activity/uptime?window=${window}`),
@@ -1137,6 +1179,8 @@ export const api = {
       roomNumber: string;
       description: string;
       replaceExistingCredential: boolean;
+      replaceHardware?: boolean;
+      replacementScreenId?: string;
     },
     csrfToken: string,
   ) =>
@@ -1185,7 +1229,7 @@ export const api = {
   createScreenCommand: (
     id: string,
     type: string,
-    payload: Record<string, number>,
+    payload: Record<string, unknown>,
     csrfToken: string,
   ) =>
     request<{ id: string; state: string; expiresAt: string }>(
@@ -1910,16 +1954,57 @@ export const api = {
   },
   screenGroup: async (id: string) =>
     normalizeScreenGroup(await request<ScreenGroup>(`/screen-groups/${id}`)),
-  createScreenGroup: (
+  spanStatus: async (id: string) =>
+    request<SpanStatus>(`/screen-groups/${id}/span`),
+  displayControlGroupPreview: async (
+    id: string,
+    commandType: DisplayControlGroupPreview["commandType"],
+  ) =>
+    request<DisplayControlGroupPreview>(
+      `/screen-groups/${id}/display-control/preview?commandType=${encodeURIComponent(commandType)}`,
+    ),
+  applyDisplayControlGroup: async (
+    id: string,
+    commandType: DisplayControlGroupPreview["commandType"],
+    fingerprint: string,
+    csrfToken: string,
+  ) =>
+    request<DisplayControlGroupApplyResult>(
+      `/screen-groups/${id}/display-control`,
+      {
+        method: "POST",
+        headers: { "X-CSRF-Token": csrfToken },
+        body: JSON.stringify({ commandType, fingerprint }),
+      },
+    ),
+  updateSpanGeometry: async (
+    id: string,
+    input: {
+      displayMode?: "mirror" | "span";
+      canvas?: { width: number; height: number };
+      panels?: SpanStatus["geometry"]["panels"];
+    },
+    csrfToken: string,
+  ) =>
+    normalizeScreenGroup(
+      await request<ScreenGroup>(`/screen-groups/${id}/span`, {
+        method: "PUT",
+        headers: { "X-CSRF-Token": csrfToken },
+        body: JSON.stringify(input),
+      }),
+    ),
+  createScreenGroup: async (
     input: { name: string; description: string },
     csrfToken: string,
   ) =>
-    request<ScreenGroup>("/screen-groups", {
-      method: "POST",
-      headers: { "X-CSRF-Token": csrfToken },
-      body: JSON.stringify(input),
-    }),
-  updateScreenGroup: (
+    normalizeScreenGroup(
+      await request<ScreenGroup>("/screen-groups", {
+        method: "POST",
+        headers: { "X-CSRF-Token": csrfToken },
+        body: JSON.stringify(input),
+      }),
+    ),
+  updateScreenGroup: async (
     id: string,
     input: {
       name: string;
@@ -1929,11 +2014,13 @@ export const api = {
     },
     csrfToken: string,
   ) =>
-    request<ScreenGroup>(`/screen-groups/${id}`, {
-      method: "PATCH",
-      headers: { "X-CSRF-Token": csrfToken },
-      body: JSON.stringify(input),
-    }),
+    normalizeScreenGroup(
+      await request<ScreenGroup>(`/screen-groups/${id}`, {
+        method: "PATCH",
+        headers: { "X-CSRF-Token": csrfToken },
+        body: JSON.stringify(input),
+      }),
+    ),
   deleteScreenGroup: (id: string, csrfToken: string) =>
     request<void>(`/screen-groups/${id}`, {
       method: "DELETE",

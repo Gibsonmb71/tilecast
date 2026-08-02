@@ -18,11 +18,26 @@ func TestCommandPayloadValidation(t *testing.T) {
 			t.Fatalf("%s command: %v", command, err)
 		}
 	}
+	for _, input := range []struct {
+		typ  string
+		body string
+	}{
+		{"display_power_on", `{}`},
+		{"display_set_input", `{"input":"1.0.0.0"}`},
+		{"display_set_volume", `{"volume":50}`},
+		{"display_set_brightness", `{"brightness":75}`},
+	} {
+		if _, err := s.validateCommand(input.typ, json.RawMessage(input.body)); err != nil {
+			t.Fatalf("%s command: %v", input.typ, err)
+		}
+	}
 	for _, input := range []struct{ typ, body string }{
 		{"shell", `{}`},
 		{"sync_now", `{"url":"https://example.com"}`},
 		{"identify_screen", `{"durationSeconds":121}`},
 		{"identify_screen", `{"durationSeconds":30,"extra":1}`},
+		{"display_set_volume", `{"volume":101}`},
+		{"display_set_input", `{"input":"1; reboot"}`},
 	} {
 		if _, err := s.validateCommand(input.typ, json.RawMessage(input.body)); err == nil {
 			t.Fatalf("expected %s payload to be rejected", input.typ)

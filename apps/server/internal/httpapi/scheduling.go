@@ -87,6 +87,12 @@ func (s *server) addScreenGroupMember(w http.ResponseWriter, r *http.Request) {
 		s.writeScheduleError(w, r, e)
 		return
 	}
+	if s.span != nil {
+		if e = s.span.SyncMembershipGeometry(r.Context(), id, u.ID); e != nil {
+			s.writeSpanError(w, r, e)
+			return
+		}
+	}
 	x, e := s.scheduling.GetGroup(r.Context(), id)
 	s.scheduleResponse(w, r, x, e, http.StatusOK)
 }
@@ -105,6 +111,12 @@ func (s *server) removeScreenGroupMember(w http.ResponseWriter, r *http.Request)
 	if e != nil {
 		s.writeScheduleError(w, r, e)
 		return
+	}
+	if s.span != nil {
+		if e = s.span.SyncMembershipGeometry(r.Context(), id, u.ID); e != nil {
+			s.writeSpanError(w, r, e)
+			return
+		}
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -190,6 +202,9 @@ func (s *server) updateSchedule(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) validateSchedulePresentation(r *http.Request, input scheduling.Input) error {
+	if input.DisplayAction != nil {
+		return nil
+	}
 	var playlistID *uuid.UUID
 	if input.LayoutID == nil {
 		playlistID = &input.PlaylistID

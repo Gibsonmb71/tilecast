@@ -53,7 +53,26 @@ interface LayoutPayload {
   canvasHeight: number;
   background: string;
   backgroundImage?: string;
+  backgroundImageViewport?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    canvasWidth: number;
+    canvasHeight: number;
+  };
   zones: LayoutZonePayload[];
+}
+
+interface RendererViewport {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  order: number;
+  canvasWidth: number;
+  canvasHeight: number;
 }
 
 interface RendererItem {
@@ -66,6 +85,7 @@ interface RendererItem {
   volume: number;
   videoStartOffsetMs: number | null;
   videoEndOffsetMs: number | null;
+  viewport?: RendererViewport;
   website?: {
     loadTimeoutSeconds: number;
     refreshIntervalSeconds: number | null;
@@ -1471,9 +1491,17 @@ function renderLayoutItem(item: RendererItem, myGeneration: number): void {
     const bg = document.createElement("img");
     bg.src = payload.backgroundImage;
     bg.style.position = "absolute";
-    bg.style.inset = "0";
-    bg.style.width = "100%";
-    bg.style.height = "100%";
+    const crop = payload.backgroundImageViewport;
+    if (crop) {
+      bg.style.left = `${(-crop.x / crop.width) * 100}%`;
+      bg.style.top = `${(-crop.y / crop.height) * 100}%`;
+      bg.style.width = `${(crop.canvasWidth / crop.width) * 100}%`;
+      bg.style.height = `${(crop.canvasHeight / crop.height) * 100}%`;
+    } else {
+      bg.style.inset = "0";
+      bg.style.width = "100%";
+      bg.style.height = "100%";
+    }
     bg.style.objectFit = "cover";
     canvas.appendChild(bg);
   }
@@ -1648,6 +1676,26 @@ function renderImage(
   myGeneration: number,
 ): void {
   const img = document.createElement("img");
+  const viewport = item.viewport;
+  let target: HTMLElement = img;
+  if (viewport) {
+    const frame = document.createElement("div");
+    frame.style.position = "relative";
+    frame.style.width = "100%";
+    frame.style.height = "100%";
+    frame.style.overflow = "hidden";
+    img.style.position = "absolute";
+    img.style.left = `${(-viewport.x / viewport.width) * 100}%`;
+    img.style.top = `${(-viewport.y / viewport.height) * 100}%`;
+    img.style.width = `${(viewport.canvasWidth / viewport.width) * 100}%`;
+    img.style.height = `${(viewport.canvasHeight / viewport.height) * 100}%`;
+    if (viewport.rotation) {
+      img.style.transformOrigin = "top left";
+      img.style.transform = `rotate(${viewport.rotation}deg)`;
+    }
+    frame.appendChild(img);
+    target = frame;
+  }
   img.style.objectFit = fit;
   img.onload = () => {
     if (myGeneration !== generation || currentItem !== item) {
@@ -1667,7 +1715,7 @@ function renderImage(
       failItem(item, "image failed to load");
     }
   };
-  fillBackLayer(img);
+  fillBackLayer(target);
   img.src = item.src;
 }
 

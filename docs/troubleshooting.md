@@ -7,7 +7,8 @@
 
 - **Managed Kiosk remains Standard:** the policy is requested but Android has not confirmed device-owner permission and active lock task. Provision locally on compatible firmware.
 - **Tilecast does not launch after boot:** consumer firmware may block foreground launch. Open Tilecast once, remove vendor battery restrictions, and record `foreground_launch_blocked` in Studio; cached content remains available when launched.
-- **TV did not turn off or wake:** Power Assist asks Android to sleep/wake. Enable the device and TV HDMI-CEC options, test sleep and wake separately, and store the observed physical result. Tilecast does not send raw CEC.
+- **TV did not turn off or wake:** Android Power Assist asks Android to sleep/wake and does not send raw CEC. On Linux, open the screen's Display Control details, confirm `cec-ctl`/`ddcutil` installation and device permissions, probe again, and distinguish a command that was sent from a display state that was confirmed.
+- **Display Control is unsupported:** capability detection is per Player. Check `/dev/cec0`, the CEC device group, the display's I²C access, and `ddcutil detect --brief`; a missing or incompatible provider is reported without interrupting playback.
 - **Accessibility keeps returning from Settings:** Settings and installers are excluded by default. End the loop with the maintenance sequence and verify the locally configured package allowlist.
 - **Recovery screen is shown:** the bounded watchdog entered safe mode. Inspect the diagnostic code and storage, then issue Retry recovery or Exit safe mode. Tilecast does not automatically delete cache, manifests, or pairing.
 

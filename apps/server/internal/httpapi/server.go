@@ -29,9 +29,11 @@ import (
 	"github.com/tilecast/tilecast/apps/server/internal/notify"
 	"github.com/tilecast/tilecast/apps/server/internal/playlists"
 	"github.com/tilecast/tilecast/apps/server/internal/plugins"
+	"github.com/tilecast/tilecast/apps/server/internal/presentations"
 	"github.com/tilecast/tilecast/apps/server/internal/scheduling"
 	"github.com/tilecast/tilecast/apps/server/internal/settings"
 	"github.com/tilecast/tilecast/apps/server/internal/snapshots"
+	"github.com/tilecast/tilecast/apps/server/internal/span"
 	"github.com/tilecast/tilecast/apps/server/internal/updates"
 )
 
@@ -41,6 +43,7 @@ type Dependencies struct {
 	Media               *media.Service
 	Forms               *forms.Service
 	Playlists           *playlists.Service
+	Presentations       *presentations.Service
 	Plugins             *plugins.Service
 	Layouts             *layouts.Service
 	Scheduling          *scheduling.Service
@@ -53,6 +56,7 @@ type Dependencies struct {
 	Integrations        *integrations.Service
 	Approvals           *approvals.Service
 	Snapshots           *snapshots.Service
+	Span                *span.Service
 	DB                  *pgxpool.Pool
 	Logger              *slog.Logger
 	CookieName          string
@@ -80,6 +84,7 @@ type server struct {
 	media                         *media.Service
 	forms                         *forms.Service
 	playlists                     *playlists.Service
+	presentations                 *presentations.Service
 	plugins                       *plugins.Service
 	layouts                       *layouts.Service
 	scheduling                    *scheduling.Service
@@ -101,6 +106,7 @@ type server struct {
 	integrations                  *integrations.Service
 	approvals                     *approvals.Service
 	snapshots                     *snapshots.Service
+	span                          *span.Service
 	liveStreams                   *livestream.Service
 	releasePublishTokenHash       [32]byte
 	releasePublishTokenConfigured bool
@@ -123,6 +129,7 @@ func New(deps Dependencies) http.Handler {
 		media:             deps.Media,
 		forms:             deps.Forms,
 		playlists:         deps.Playlists,
+		presentations:     deps.Presentations,
 		plugins:           deps.Plugins,
 		layouts:           deps.Layouts,
 		scheduling:        deps.Scheduling,
@@ -149,6 +156,7 @@ func New(deps Dependencies) http.Handler {
 		integrations:         deps.Integrations,
 		approvals:            deps.Approvals,
 		snapshots:            deps.Snapshots,
+		span:                 deps.Span,
 		liveStreams:          livestream.NewService(deps.Devices),
 		startedAt:            time.Now(),
 		backups:              deps.Backups,

@@ -135,7 +135,7 @@ class ManifestSyncManager(
     suspend fun loadActive(): PreparedContent? {
         val stored = database.manifests().active() ?: run { activeCacheVerified = false; return null }
         val manifest = runCatching { api.decodeManifest(stored.rawJson) }.getOrNull() ?: run { activeCacheVerified = false; return null }
-        if (manifest.schemaVersion !in setOf(11,12,13,14)) { activeCacheVerified = false; return null }
+        if (manifest.schemaVersion !in setOf(11,12,13,14,15)) { activeCacheVerified = false; return null }
         val validation = withContext(Dispatchers.IO) {
             validateActiveCache(database.cachedAssets().all())
         }
@@ -239,7 +239,7 @@ class ManifestSyncManager(
     private fun finalFile(asset: ManifestAsset) = File(mediaDirectory(), "${asset.variantId}.${extension(asset.mimeType)}")
     private fun extension(mime: String) = when (mime) { "video/mp4" -> "mp4"; "image/png" -> "png"; "image/webp" -> "webp"; "image/gif" -> "gif"; else -> "jpg" }
 	private fun validateManifest(manifest: PlayerManifest, screenId: String) {
-		require(manifest.schemaVersion in setOf(11,12,13,14) && manifest.mode in setOf("single-zone", "presentation") && manifest.screenId == screenId) { "Manifest validation failed" }
+		require(manifest.schemaVersion in setOf(11,12,13,14,15) && manifest.mode in setOf("single-zone", "presentation") && manifest.screenId == screenId) { "Manifest validation failed" }
 		val assets = manifest.assets.associateBy { it.variantId }
 		val websites = manifest.websites.associateBy { it.assetId }
 		val widgets = manifest.widgets.associateBy { it.assetId }

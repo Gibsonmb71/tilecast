@@ -117,8 +117,28 @@ export function oneTimeDuration(input: ScheduleInput) {
 export function validateScheduleInput(input: ScheduleInput) {
   const errors: Record<string, string> = {};
   if (!input.name.trim()) errors.name = "Enter a schedule name.";
-  if (!input.playlistId && !input.layoutId)
-    errors.playlistId = "Choose a playlist or published Layout.";
+  if (!input.playlistId && !input.layoutId && !input.displayAction)
+    errors.playlistId = "Choose content or a Display Control action.";
+  if (
+    input.displayAction?.type === "display_set_input" &&
+    !input.displayAction.input?.trim()
+  )
+    errors.playlistId =
+      "Enter an input identifier for the Display Control action.";
+  if (
+    input.displayAction?.type === "display_set_volume" &&
+    (input.displayAction.volume == null ||
+      input.displayAction.volume < 0 ||
+      input.displayAction.volume > 100)
+  )
+    errors.playlistId = "Volume must be between 0 and 100.";
+  if (
+    input.displayAction?.type === "display_set_brightness" &&
+    (input.displayAction.brightness == null ||
+      input.displayAction.brightness < 0 ||
+      input.displayAction.brightness > 100)
+  )
+    errors.playlistId = "Brightness must be between 0 and 100.";
   if (!input.timezone) errors.timezone = "Choose a timezone.";
   if (!input.targets.length)
     errors.targets = "Select at least one screen or group.";

@@ -25,7 +25,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -346,7 +348,25 @@ private fun ImageItem(
         }
         onDone()
     }
-    bitmap?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize().background(Color.Black), contentScale = scale(item.fitMode)) }
+	bitmap?.let {
+		val canvas = session.content.manifest.canvas
+		val viewport = session.content.manifest.viewport
+		val imageModifier = if (canvas != null && viewport != null) {
+			Modifier.fillMaxSize().background(Color.Black).graphicsLayer {
+				transformOrigin = TransformOrigin(0f, 0f)
+				val sx = canvas.width.toFloat() / viewport.width.toFloat()
+				val sy = canvas.height.toFloat() / viewport.height.toFloat()
+				scaleX = sx
+				scaleY = sy
+				translationX = -viewport.x * sx
+				translationY = -viewport.y * sy
+				rotationZ = viewport.rotation.toFloat()
+			}
+		} else {
+			Modifier.fillMaxSize().background(Color.Black)
+		}
+		Image(it.asImageBitmap(), null, imageModifier, contentScale = scale(item.fitMode))
+	}
 }
 
 @OptIn(UnstableApi::class)

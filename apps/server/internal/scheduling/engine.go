@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/tilecast/tilecast/apps/server/internal/displaycontrol"
 )
 
 type Kind string
@@ -18,21 +19,22 @@ const (
 )
 
 type Schedule struct {
-	ID           uuid.UUID  `json:"id"`
-	PlaylistID   uuid.UUID  `json:"playlistId"`
-	LayoutID     *uuid.UUID `json:"layoutId,omitempty"`
-	Type         Kind       `json:"type"`
-	Timezone     string     `json:"timezone"`
-	Priority     int        `json:"priority"`
-	Specificity  int        `json:"specificity"`
-	Enabled      bool       `json:"enabled"`
-	StartDate    *string    `json:"startDate,omitempty"`
-	EndDate      *string    `json:"endDate,omitempty"`
-	OneTimeStart *time.Time `json:"oneTimeStart,omitempty"`
-	OneTimeEnd   *time.Time `json:"oneTimeEnd,omitempty"`
-	DailyStart   *string    `json:"dailyStart,omitempty"`
-	DailyEnd     *string    `json:"dailyEnd,omitempty"`
-	DaysOfWeek   []int      `json:"daysOfWeek,omitempty"`
+	ID            uuid.UUID              `json:"id"`
+	PlaylistID    uuid.UUID              `json:"playlistId,omitempty"`
+	LayoutID      *uuid.UUID             `json:"layoutId,omitempty"`
+	DisplayAction *displaycontrol.Action `json:"displayAction,omitempty"`
+	Type          Kind                   `json:"type"`
+	Timezone      string                 `json:"timezone"`
+	Priority      int                    `json:"priority"`
+	Specificity   int                    `json:"specificity"`
+	Enabled       bool                   `json:"enabled"`
+	StartDate     *string                `json:"startDate,omitempty"`
+	EndDate       *string                `json:"endDate,omitempty"`
+	OneTimeStart  *time.Time             `json:"oneTimeStart,omitempty"`
+	OneTimeEnd    *time.Time             `json:"oneTimeEnd,omitempty"`
+	DailyStart    *string                `json:"dailyStart,omitempty"`
+	DailyEnd      *string                `json:"dailyEnd,omitempty"`
+	DaysOfWeek    []int                  `json:"daysOfWeek,omitempty"`
 }
 type Active struct {
 	Schedule Schedule

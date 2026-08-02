@@ -401,7 +401,7 @@ export type PlaylistAssignment = {
     id: string;
     name: string;
     playlistName: string;
-    presentationType: "playlist" | "layout";
+    presentationType: "playlist" | "layout" | "display_control";
     priority: number;
     enabled: boolean;
   }[];
@@ -430,7 +430,7 @@ export type PlaylistAssignment = {
 export type PlayerCommand = {
   id: string;
   type: string;
-  payload: Record<string, number>;
+  payload: Record<string, unknown>;
   state: string;
   createdAt: string;
   expiresAt: string;
@@ -509,6 +509,23 @@ export type ReliabilityStatus = {
   airplayTransport?: AirplayString<"unicast" | "multicast">;
   airplayConnected?: boolean;
   externalPresentationExpiresAt?: string;
+  displayControlProvider?: string;
+  displayControlProviders?: string[];
+  displayControlCapabilities?: Record<string, string>;
+  displayPowerState?: AirplayString<
+    "unknown" | "on" | "off" | "transitioning" | "unsupported"
+  >;
+  displayPowerStateConfirmed?: boolean;
+  displayPowerStateObservedAt?: string;
+  displayControlPolicyState?: AirplayString<
+    "normal" | "powered_off_by_policy" | "unknown"
+  >;
+  displayControlLastCommandId?: string;
+  displayControlLastCommandState?: string;
+  displayControlLastCommandResult?: string;
+  displayControlLastCommandSentAt?: string;
+  displayControlLastStateConfirmedAt?: string;
+  displayControlError?: string;
   powerAssist: PowerAssistResults;
 };
 
@@ -630,6 +647,23 @@ export type Takeover = {
   activeCount: number;
   preparingCount: number;
   failedCount: number;
+};
+
+export type PresentationOverride = {
+  id: string;
+  targetType: "screen" | "group";
+  targetId: string;
+  targetName: string;
+  contentType: "playlist" | "layout" | "asset";
+  contentId: string;
+  contentName: string;
+  durationSeconds: number;
+  startedAt: string;
+  expiresAt?: string;
+  afterAction: "resume";
+  wakeDisplay: boolean;
+  stoppedAt?: string;
+  stopReason?: string;
 };
 
 export type NWSAlertMonitor = {
@@ -820,6 +854,8 @@ export type ScreenGroup = {
   id: string;
   name: string;
   description: string;
+  /** Added by the Display Groups migration; old servers are normalized to Mirror. */
+  displayMode: "mirror" | "span";
   playlistId?: string;
   playlistName?: string;
   layoutId?: string;
@@ -831,6 +867,83 @@ export type ScreenGroup = {
   screens: { id: string; name: string; location: string }[];
   createdAt: string;
   updatedAt: string;
+};
+export type SpanPanel = {
+  screenId: string;
+  screenName?: string;
+  order: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: 0 | 90 | 180 | 270;
+  bezelLeft: number;
+  bezelTop: number;
+  bezelRight: number;
+  bezelBottom: number;
+};
+export type SpanStatus = {
+  groupId: string;
+  displayMode: "mirror" | "span";
+  geometry: {
+    canvas: { width: number; height: number };
+    panels: SpanPanel[];
+  };
+  preparations: {
+    id: string;
+    screenId: string;
+    sourceAssetId: string;
+    sourceVariantId: string;
+    status: "queued" | "processing" | "ready" | "failed";
+    progress?: number;
+    width?: number;
+    height?: number;
+    durationSeconds?: number;
+    frameRate?: number;
+    errorCode?: string;
+    errorMessage?: string;
+    updatedAt: string;
+  }[];
+};
+export type DisplayControlGroupScreen = {
+  screenId: string;
+  name: string;
+  provider: string;
+  capabilities: Record<string, string>;
+  supported: boolean;
+  eligible: boolean;
+  reason?: string;
+};
+export type DisplayControlGroupPreview = {
+  groupId: string;
+  groupName: string;
+  commandType:
+    | "display_power_on"
+    | "display_power_off"
+    | "display_mute"
+    | "display_unmute";
+  selectedCount: number;
+  supportedCount: number;
+  unsupportedCount: number;
+  eligibleCount: number;
+  fingerprint: string;
+  screens: DisplayControlGroupScreen[];
+};
+export type DisplayControlGroupApplyResult = {
+  groupId: string;
+  commandType: DisplayControlGroupPreview["commandType"];
+  selectedCount: number;
+  supportedCount: number;
+  queuedCount: number;
+  failedCount: number;
+  unsupportedCount: number;
+  results: {
+    screenId: string;
+    name: string;
+    state: "queued" | "skipped" | "failed";
+    reason?: string;
+    id?: string;
+  }[];
 };
 export type ScreenGroupList = {
   items: ScreenGroup[];
@@ -946,6 +1059,19 @@ export type ScheduleTarget = {
   id: string;
   name?: string;
 };
+export type DisplayControlAction = {
+  type:
+    | "display_power_on"
+    | "display_power_off"
+    | "display_set_input"
+    | "display_set_volume"
+    | "display_mute"
+    | "display_unmute"
+    | "display_set_brightness";
+  input?: string;
+  volume?: number;
+  brightness?: number;
+};
 export type Schedule = {
   id: string;
   name: string;
@@ -954,7 +1080,7 @@ export type Schedule = {
   playlistName: string;
   layoutId?: string;
   layoutName?: string;
-  presentationType: "playlist" | "layout";
+  presentationType: "playlist" | "layout" | "display_control";
   type: "one_time" | "weekly";
   timezone: string;
   priority: number;
@@ -967,6 +1093,7 @@ export type Schedule = {
   dailyStart?: string;
   dailyEnd?: string;
   daysOfWeek: number[];
+  displayAction?: DisplayControlAction;
   targets: ScheduleTarget[];
   createdAt: string;
   updatedAt: string;
@@ -1148,6 +1275,7 @@ export type PairingRequest = {
   existingScreenName?: string;
   hasActiveCredential: boolean;
   credentialReplacementAuthorized: boolean;
+  pairingMode?: "new_screen" | "credential_repair" | "hardware_replacement";
   metadata: {
     playerInstallationId: string;
     platform: string;
@@ -1162,6 +1290,26 @@ export type PairingRequest = {
     timezone: string;
     approximateAddress?: string;
   };
+};
+
+export type PlayerHistory = {
+  id: string;
+  screenId: string;
+  credentialId?: string;
+  installationId: string;
+  platform: string;
+  manufacturer: string;
+  model: string;
+  androidVersion: string;
+  playerVersion: string;
+  screenWidth: number;
+  screenHeight: number;
+  density: number;
+  locale: string;
+  timezone: string;
+  pairedAt: string;
+  retiredAt?: string;
+  retirementReason?: string;
 };
 
 export type AssetStatus =

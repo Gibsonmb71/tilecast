@@ -6,6 +6,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/tilecast/tilecast/apps/server/internal/displaycontrol"
 )
 
 func p[T any](v T) *T { return &v }
@@ -20,6 +22,28 @@ func TestPrecedenceAndHalfOpen(t *testing.T) {
 	}
 	if Resolve(*b.OneTimeEnd, []Schedule{b}).Winner != nil {
 		t.Fatal("end must be exclusive")
+	}
+}
+
+func TestDisplayControlScheduleUsesNormalPrecedence(t *testing.T) {
+	at := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
+	brightness := 50
+	schedules := []Schedule{
+		{ID: uuid.New(), Type: OneTime, Timezone: "UTC", Priority: 10, Enabled: true, DisplayAction: &displaycontrol.Action{Type: displaycontrol.CommandPowerOn}, OneTimeStart: p(at.Add(-time.Hour)), OneTimeEnd: p(at.Add(time.Hour))},
+		{ID: uuid.New(), Type: OneTime, Timezone: "UTC", Priority: 20, Enabled: true, DisplayAction: &displaycontrol.Action{Type: displaycontrol.CommandSetBrightness, Brightness: &brightness}, OneTimeStart: p(at.Add(-time.Hour)), OneTimeEnd: p(at.Add(time.Hour))},
+	}
+	result := Resolve(at, schedules)
+	if result.Winner == nil || result.Winner.Schedule.DisplayAction == nil || result.Winner.Schedule.DisplayAction.Type != displaycontrol.CommandSetBrightness {
+		t.Fatalf("winner=%#v", result.Winner)
+	}
+}
+
+func TestDisplayControlScheduleRequiresValidAction(t *testing.T) {
+	if err := Validate(Schedule{Type: OneTime, Timezone: "UTC", Enabled: true, DisplayAction: &displaycontrol.Action{Type: displaycontrol.CommandPowerOn}, OneTimeStart: p(time.Now()), OneTimeEnd: p(time.Now().Add(time.Hour))}); err != nil {
+		t.Fatal(err)
+	}
+	if err := (&displaycontrol.Action{Type: displaycontrol.CommandSetVolume}).Validate(); err == nil {
+		t.Fatal("incomplete action was accepted")
 	}
 }
 func TestSharedParityFixtures(t *testing.T) {

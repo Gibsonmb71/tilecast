@@ -37,6 +37,7 @@ import { applyLowEndTuning } from "./hardware";
 import { LanDiscovery, type DiscoveredServer } from "./discovery";
 import { AirplayManager } from "./airplay";
 import type { SupportedDecoder } from "./airplay";
+import { LinuxDisplayControl } from "./display-control";
 
 const log = logger("main");
 
@@ -369,6 +370,7 @@ async function startRuntime(serverUrl: string): Promise<void> {
     store,
     onStatus: (status) => runtime?.onExternalPresentationStatus(status),
   });
+  const displayControl = new LinuxDisplayControl();
   runtime = new PlayerRuntime(
     store,
     {
@@ -462,6 +464,8 @@ async function startRuntime(serverUrl: string): Promise<void> {
       },
       getExternalPresentationStatus: () => airplay.getStatus(),
       probeAirplayCapabilities: () => airplay.probeCapabilities(),
+      probeDisplayControl: () => displayControl.probe(),
+      executeDisplayControl: (command) => displayControl.execute(command),
       screenSize: () => {
         // The server rejects any heartbeat whose screen size is < 1, which
         // silently freezes the screen's presence ("online" but never updating

@@ -57,6 +57,7 @@ import type {
 import { useAuth } from "../auth/AuthProvider";
 import { ScreenContentChain } from "../content/ScreenContentChain";
 import { AirPlayPresentDialog } from "../components/AirPlayPresentDialog";
+import { QuickPresentDialog } from "../components/QuickPresentDialog";
 import { FormField } from "../components/FormField";
 import { FireTvAccessibilityAdbPanel } from "../components/FireTvAccessibilityAdbPanel";
 import { PlayerPolicyEditor } from "../settings/PlayerPolicyEditor";
@@ -238,15 +239,33 @@ type ApprovalForm = z.infer<typeof approvalSchema>;
 export const pairingApprovalPayload = (
   request: PairingRequest,
   values: ApprovalForm,
+  destination: PairingDestination = "automatic",
+  replacementScreenId?: string,
 ) => ({
   ...values,
   replaceExistingCredential:
-    request.previouslyPaired && request.hasActiveCredential,
+    destination === "credential_repair" ||
+    (destination === "automatic" &&
+      request.previouslyPaired &&
+      request.hasActiveCredential),
+  ...(destination === "replace_hardware"
+    ? { replaceHardware: true, replacementScreenId }
+    : {}),
 });
-export const pairingApprovalLabel = (request: PairingRequest) =>
-  request.previouslyPaired && request.hasActiveCredential
-    ? "Repair and replace credential"
-    : "Approve and pair";
+type PairingDestination =
+  "automatic" | "new_screen" | "credential_repair" | "replace_hardware";
+export const pairingApprovalLabel = (
+  request: PairingRequest,
+  destination: PairingDestination = "automatic",
+) =>
+  destination === "replace_hardware"
+    ? "Replace hardware"
+    : destination === "credential_repair" ||
+        (destination === "automatic" &&
+          request.previouslyPaired &&
+          request.hasActiveCredential)
+      ? "Repair and replace credential"
+      : "Approve and pair";
 
 function LocationPicker({
   locations,
@@ -342,7 +361,7 @@ export function ScreensPage() {
         <Link to="/screens" aria-current="page">
           Screens
         </Link>
-        <Link to="/groups">Sync groups</Link>
+        <Link to="/groups">Display Groups</Link>
         {manageable && <Link to="/screens/bulk">Bulk changes</Link>}
       </nav>
       <ActiveTakeoverBanners canManage={manageable} />
@@ -618,7 +637,7 @@ function TakeoverAction({ screens }: { screens: Screen[] }) {
             </div>
           </fieldset>
           <fieldset className="takeover-form__targets">
-            <legend>Target sync groups</legend>
+            <legend>Target Display Groups</legend>
             <div>
               {groups.data?.items?.map((group) => (
                 <label className="checkbox-control" key={group.id}>
@@ -651,7 +670,7 @@ function TakeoverAction({ screens }: { screens: Screen[] }) {
             ) : (
               `${screenIds.length} screen${screenIds.length === 1 ? "" : "s"} selected`
             )}{" "}
-            and {groupIds.length} sync group
+            and {groupIds.length} Display Group
             {groupIds.length === 1 ? "" : "s"} selected
             {offlineSelected > 0
               ? ` · ${offlineSelected} selected screen${offlineSelected === 1 ? " is" : "s are"} not online`
@@ -841,7 +860,7 @@ export function ScreenListContent({
     [];
   if (syncGroup)
     chippedFilters.push({
-      facet: "Sync group",
+      facet: "Display Group",
       value: syncGroupFilterLabel(syncGroup, screens),
       remove: () => setSyncGroup(""),
     });
@@ -951,7 +970,13 @@ export function ScreenListContent({
             onSelect: () => navigate(`/screens/${screen.id}?tab=content`),
           },
           {
-            label: screen.syncGroupId ? "Open sync group" : "Add to sync group",
+            label: "Show now",
+            onSelect: () => navigate(`/screens/${screen.id}?present=1`),
+          },
+          {
+            label: screen.syncGroupId
+              ? "Open Display Group"
+              : "Add to Display Group",
             onSelect: () =>
               navigate(
                 screen.syncGroupId
@@ -1073,14 +1098,14 @@ export function ScreenListContent({
             )}
           >
             <FilterSelect
-              label="Sync group"
+              label="Display Group"
               value={syncGroup}
               onChange={setSyncGroup}
               block
             >
               <option value="">All screens</option>
-              <option value="any">In any sync group</option>
-              <option value="none">Not in a sync group</option>
+              <option value="any">In any Display Group</option>
+              <option value="none">Not in a Display Group</option>
               {[
                 ...new Map(
                   screens
@@ -1151,7 +1176,7 @@ export function ScreenListContent({
           <FilterSelect label="Group by" value={groupBy} onChange={setGroupBy}>
             <option value="location">Group by location</option>
             <option value="status">Group by status</option>
-            <option value="sync">Group by sync group</option>
+            <option value="sync">Group by Display Group</option>
             <option value="none">No grouping</option>
           </FilterSelect>
           <FilterSelect label="Sort" value={sort} onChange={setSort}>
@@ -1518,8 +1543,8 @@ function GroupHealth({ screens }: { screens: Screen[] }) {
 }
 
 function syncGroupFilterLabel(value: string, screens: Screen[]) {
-  if (value === "any") return "In any sync group";
-  if (value === "none") return "Not in a sync group";
+  if (value === "any") return "In any Display Group";
+  if (value === "none") return "Not in a Display Group";
   return (
     screens.find((item) => item.syncGroupId === value)?.syncGroupName ??
     "Selected"
@@ -1622,7 +1647,7 @@ function buildScreenGroups(
       groupBy === "status"
         ? statusContent[screen.status].label
         : groupBy === "sync"
-          ? (screen.syncGroupName ?? "Not in a sync group")
+          ? (screen.syncGroupName ?? "Not in a Display Group")
           : screen.location || "Unassigned";
     const description =
       groupBy === "location"
@@ -2085,6 +2110,13 @@ function ApprovalPanel({
 }) {
   const auth = useAuth();
   const queryClient = useQueryClient();
+  const defaultDestination: PairingDestination =
+    request.previouslyPaired && request.hasActiveCredential
+      ? "credential_repair"
+      : "new_screen";
+  const [destination, setDestination] =
+    useState<PairingDestination>(defaultDestination);
+  const [replacementScreenId, setReplacementScreenId] = useState("");
   const form = useForm<ApprovalForm>({
     resolver: zodResolver(approvalSchema),
     defaultValues: {
@@ -2101,9 +2133,18 @@ function ApprovalPanel({
     queryKey: ["locations"],
     queryFn: api.locations,
   });
+  const screens = useQuery({
+    queryKey: ["screens", "pairing-replacement-options"],
+    queryFn: api.screens,
+    enabled: destination === "replace_hardware",
+  });
   const approve = useMutation({
     mutationFn: (values: ApprovalForm) => {
-      const repair = request.previouslyPaired && request.hasActiveCredential;
+      const repair = destination === "credential_repair";
+      if (destination === "replace_hardware" && !replacementScreenId)
+        throw new Error(
+          "Choose the existing screen whose hardware is being replaced.",
+        );
       if (
         repair &&
         !window.confirm(
@@ -2111,9 +2152,27 @@ function ApprovalPanel({
         )
       )
         throw new Error("Pairing repair was cancelled.");
+      if (destination === "replace_hardware") {
+        const target = screens.data?.items.find(
+          (screen) => screen.id === replacementScreenId,
+        );
+        if (!target)
+          throw new Error("The replacement screen could not be found.");
+        if (
+          !window.confirm(
+            `Replace the hardware for “${target.name}”? Its name, group membership, assignments, schedules, policies, and history will stay on the same logical screen.`,
+          )
+        )
+          throw new Error("Hardware replacement was cancelled.");
+      }
       return api.approvePairing(
         request.id,
-        pairingApprovalPayload(request, values),
+        pairingApprovalPayload(
+          request,
+          values,
+          destination,
+          replacementScreenId,
+        ),
         auth.status?.csrfToken ?? "",
       );
     },
@@ -2192,15 +2251,87 @@ function ApprovalPanel({
           </div>
         )}
       </dl>
+      <fieldset className="pairing-destination">
+        <legend>Pairing destination</legend>
+        <label className="radio-control">
+          <input
+            type="radio"
+            name="pairingDestination"
+            value="new_screen"
+            checked={destination === "new_screen"}
+            onChange={() => setDestination("new_screen")}
+          />
+          <span>
+            <strong>Create new screen</strong>
+            <small>Create a new logical screen from this player.</small>
+          </span>
+        </label>
+        {request.previouslyPaired && request.hasActiveCredential && (
+          <label className="radio-control">
+            <input
+              type="radio"
+              name="pairingDestination"
+              value="credential_repair"
+              checked={destination === "credential_repair"}
+              onChange={() => setDestination("credential_repair")}
+            />
+            <span>
+              <strong>Repair existing credential</strong>
+              <small>
+                Keep this player installation on “{request.existingScreenName}”.
+              </small>
+            </span>
+          </label>
+        )}
+        <label className="radio-control">
+          <input
+            type="radio"
+            name="pairingDestination"
+            value="replace_hardware"
+            checked={destination === "replace_hardware"}
+            onChange={() => setDestination("replace_hardware")}
+          />
+          <span>
+            <strong>Replace hardware for an existing screen</strong>
+            <small>
+              Keep the logical screen, Display Group, content, schedules,
+              policies, and history.
+            </small>
+          </span>
+        </label>
+        {destination === "replace_hardware" && (
+          <label className="field pairing-destination__picker">
+            <span className="field__label">Existing screen</span>
+            <Select
+              value={replacementScreenId}
+              onChange={(event) => setReplacementScreenId(event.target.value)}
+            >
+              <option value="">Choose a screen</option>
+              {(screens.data?.items ?? [])
+                .filter((screen) => screen.id !== request.existingScreenId)
+                .map((screen) => (
+                  <option key={screen.id} value={screen.id}>
+                    {screen.name}
+                    {screen.location ? ` — ${screen.location}` : ""}
+                  </option>
+                ))}
+            </Select>
+            <small>
+              The old credential is retired only after this player successfully
+              enrolls.
+            </small>
+          </label>
+        )}
+      </fieldset>
       {request.previouslyPaired && (
         <div className="notice notice--warning" role="status">
           <strong>
             This device was previously paired as “{request.existingScreenName}.”
           </strong>
           <p>
-            Repairing the pairing will preserve this screen and its content
-            assignments. The previous device credential will be revoked only
-            after this player completes enrollment.
+            {destination === "replace_hardware"
+              ? "Choose the logical screen above; its identity and configuration are preserved."
+              : "Repairing the pairing will preserve this screen and its content assignments. The previous device credential will be revoked only after this player completes enrollment."}
           </p>
         </div>
       )}
@@ -2259,7 +2390,9 @@ function ApprovalPanel({
             className="button button--primary"
             disabled={approve.isPending || reject.isPending}
           >
-            {approve.isPending ? "Approving…" : pairingApprovalLabel(request)}
+            {approve.isPending
+              ? "Approving…"
+              : pairingApprovalLabel(request, destination)}
           </button>
         </div>
       </form>
@@ -2277,6 +2410,9 @@ export function ScreenDetailPage() {
   const [policyDirty, setPolicyDirty] = useState(false);
   const [selectedPresentation, setSelectedPresentation] = useState("");
   const [airplayOpen, setAirplayOpen] = useState(false);
+  const [quickPresentOpen, setQuickPresentOpen] = useState(
+    () => searchParams.get("present") === "1",
+  );
   useEffect(() => {
     if (searchParams.get("edit") === "details") setEditingDetails(true);
   }, [searchParams]);
@@ -2400,6 +2536,10 @@ export function ScreenDetailPage() {
     queryFn: () => api.screenReliability(id),
     refetchInterval: 10_000,
   });
+  const playerHistory = useQuery({
+    queryKey: ["screens", id, "player-history"],
+    queryFn: () => api.screenPlayerHistory(id),
+  });
   const screenPolicy = useQuery({
     queryKey: ["screen", id, "policy"],
     queryFn: () => api.screenPolicy(id),
@@ -2410,11 +2550,17 @@ export function ScreenDetailPage() {
       payload,
     }: {
       type: string;
-      payload: Record<string, number>;
+      payload: Record<string, unknown>;
     }) =>
       api.createScreenCommand(id, type, payload, auth.status?.csrfToken ?? ""),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ["screens", id, "commands"] }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ["screens", id, "commands"],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["screens", id, "reliability"],
+      });
+    },
   });
   const listedScreen = screens.data?.items?.find((screen) => screen.id === id);
   const screen = resolveScreenDetail(query.data, listedScreen);
@@ -2424,6 +2570,9 @@ export function ScreenDetailPage() {
     return (
       <div className="notice notice--error">Screen could not be loaded.</div>
     );
+  const displayCapabilities =
+    reliability.data?.displayControlCapabilities ?? {};
+  const hasDisplayControl = Object.keys(displayCapabilities).length > 0;
   const requestedTab = searchParams.get("tab") ?? "overview";
   const tab = normalizeScreenDetailTab(requestedTab);
   const manageSection = normalizeScreenManageSection(
@@ -2489,6 +2638,15 @@ export function ScreenDetailPage() {
                   Present · AirPlay
                 </button>
               )}
+            {canManageScreens(auth.status?.user) && (
+              <button
+                type="button"
+                className="button button--secondary"
+                onClick={() => setQuickPresentOpen(true)}
+              >
+                Show now
+              </button>
+            )}
           </>
         }
       />
@@ -2504,6 +2662,14 @@ export function ScreenDetailPage() {
         capabilityError={reliability.error?.message}
         audioDisplayName={screen.name}
         onClose={() => setAirplayOpen(false)}
+      />
+      <QuickPresentDialog
+        open={quickPresentOpen}
+        targetType="screen"
+        targetId={screen.id}
+        destinationName={screen.name}
+        csrfToken={auth.status?.csrfToken ?? ""}
+        onClose={() => setQuickPresentOpen(false)}
       />
       {editingDetails && (
         <section
@@ -2685,6 +2851,55 @@ export function ScreenDetailPage() {
               Manage screen
             </button>
           </div>
+          <section
+            className="screen-hardware-history"
+            aria-labelledby="screen-hardware-history-title"
+          >
+            <header>
+              <h3 id="screen-hardware-history-title">Hardware history</h3>
+              <p>The logical screen stays stable when hardware is replaced.</p>
+            </header>
+            {playerHistory.data?.items.length ? (
+              <div className="screen-hardware-history__list">
+                {playerHistory.data.items.map((hardware) => (
+                  <article
+                    key={hardware.id}
+                    className="screen-hardware-history__item"
+                  >
+                    <div>
+                      <strong>
+                        {hardware.manufacturer} {hardware.model}
+                      </strong>
+                      <span>
+                        {hardware.platform} · {hardware.playerVersion} ·{" "}
+                        {hardware.screenWidth}×{hardware.screenHeight}
+                      </span>
+                    </div>
+                    <div>
+                      <span>
+                        {hardware.retiredAt
+                          ? `Retired ${new Date(hardware.retiredAt).toLocaleDateString()}`
+                          : "Current hardware"}
+                      </span>
+                      <small>
+                        Paired{" "}
+                        {new Date(hardware.pairedAt).toLocaleDateString()}
+                        {hardware.retirementReason
+                          ? ` · ${hardware.retirementReason}`
+                          : ""}
+                      </small>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : playerHistory.isLoading ? (
+              <p className="table-loading">Loading hardware history…</p>
+            ) : (
+              <p className="empty-state__message">
+                No hardware history recorded.
+              </p>
+            )}
+          </section>
         </section>
       )}
 
@@ -2697,7 +2912,7 @@ export function ScreenDetailPage() {
               <Link to={`/groups/${assignment.data.groups[0].id}`}>
                 {assignment.data.groups[0].name}
               </Link>{" "}
-              sync group. Content and schedules apply to every member.
+              Display Group. Content and schedules apply to every member.
             </div>
           )}
           {canManageScreens(auth.status?.user) ? (
@@ -2741,7 +2956,7 @@ export function ScreenDetailPage() {
                 onClick={() => assign.mutate()}
               >
                 {assignment.data?.groups?.[0]
-                  ? "Apply to sync group"
+                  ? "Apply to Display Group"
                   : "Apply assignment"}
               </button>
             </div>
@@ -2806,7 +3021,7 @@ export function ScreenDetailPage() {
               </dd>
             </div>
             <div>
-              <dt>Sync group</dt>
+              <dt>Display Group</dt>
               <dd>
                 {(assignment.data?.groups ?? [])
                   .map((g) => g.name)
@@ -3051,6 +3266,39 @@ export function ScreenDetailPage() {
               </div>
               {screen.platform.toLowerCase() === "linux" && (
                 <>
+                  <div>
+                    <dt>Display Control</dt>
+                    <dd>
+                      {reliability.data?.displayControlProvider
+                        ? `${reliability.data.displayControlProvider} · ${Object.keys(reliability.data.displayControlCapabilities ?? {}).length} capabilities`
+                        : "Not reported"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Display state</dt>
+                    <dd>
+                      {formatReportedStatus(
+                        reliability.data?.displayPowerState,
+                      )}
+                      {reliability.data?.displayControlLastCommandResult ===
+                        "display_command_sent" &&
+                      reliability.data?.displayPowerStateConfirmed === false
+                        ? " · command sent, not confirmed"
+                        : ""}
+                      {reliability.data?.displayControlPolicyState ===
+                      "powered_off_by_policy"
+                        ? " · powered off by policy"
+                        : ""}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Last display command</dt>
+                    <dd>
+                      {reliability.data?.displayControlLastCommandState
+                        ? `${formatReportedStatus(reliability.data.displayControlLastCommandState)}${reliability.data.displayControlLastCommandResult ? ` · ${reliability.data.displayControlLastCommandResult}` : ""}`
+                        : "Not reported"}
+                    </dd>
+                  </div>
                   <div>
                     <dt>AirPlay Present</dt>
                     <dd>
@@ -3300,6 +3548,162 @@ export function ScreenDetailPage() {
                         >
                           Remove autostart
                         </button>
+                      </div>
+                    </div>
+                  )}
+                  {screen.platform.toLowerCase() === "linux" && (
+                    <div className="reliability-control-group reliability-control-group--wide">
+                      <div>
+                        <h5>Display Control</h5>
+                        <p>
+                          Player connectivity and display power are separate
+                          states. Controls appear only for capabilities reported
+                          by this player; provider commands have a bounded
+                          timeout and may report sent without a confirmed panel
+                          state.
+                        </p>
+                      </div>
+                      <div className="reliability-button-grid reliability-button-grid--wide">
+                        {displayCapabilities.power && (
+                          <>
+                            <button
+                              className="button button--secondary"
+                              disabled={command.isPending}
+                              onClick={() =>
+                                command.mutate({
+                                  type: "display_power_on",
+                                  payload: {},
+                                })
+                              }
+                            >
+                              Power on display
+                            </button>
+                            <button
+                              className="button button--secondary"
+                              disabled={command.isPending}
+                              onClick={() =>
+                                command.mutate({
+                                  type: "display_power_off",
+                                  payload: {},
+                                })
+                              }
+                            >
+                              Power off display
+                            </button>
+                          </>
+                        )}
+                        {displayCapabilities.input && (
+                          <button
+                            className="button button--secondary"
+                            disabled={command.isPending}
+                            onClick={() => {
+                              const input = window.prompt(
+                                "CEC physical address (for example 1.0.0.0)",
+                              );
+                              if (input?.trim())
+                                command.mutate({
+                                  type: "display_set_input",
+                                  payload: { input: input.trim() },
+                                });
+                            }}
+                          >
+                            Set display input
+                          </button>
+                        )}
+                        {displayCapabilities.volume && (
+                          <button
+                            className="button button--secondary"
+                            disabled={command.isPending}
+                            onClick={() => {
+                              const value = window.prompt(
+                                "Display volume, from 0 to 100",
+                              );
+                              const volume =
+                                value == null ? NaN : Number(value);
+                              if (
+                                Number.isInteger(volume) &&
+                                volume >= 0 &&
+                                volume <= 100
+                              )
+                                command.mutate({
+                                  type: "display_set_volume",
+                                  payload: { volume },
+                                });
+                            }}
+                          >
+                            Set display volume
+                          </button>
+                        )}
+                        {displayCapabilities.mute && (
+                          <>
+                            <button
+                              className="button button--secondary"
+                              disabled={command.isPending}
+                              onClick={() =>
+                                command.mutate({
+                                  type: "display_mute",
+                                  payload: {},
+                                })
+                              }
+                            >
+                              Mute display
+                            </button>
+                            <button
+                              className="button button--secondary"
+                              disabled={command.isPending}
+                              onClick={() =>
+                                command.mutate({
+                                  type: "display_unmute",
+                                  payload: {},
+                                })
+                              }
+                            >
+                              Unmute display
+                            </button>
+                          </>
+                        )}
+                        {displayCapabilities.brightness && (
+                          <button
+                            className="button button--secondary"
+                            disabled={command.isPending}
+                            onClick={() => {
+                              const value = window.prompt(
+                                "Display brightness, from 0 to 100",
+                              );
+                              const brightness =
+                                value == null ? NaN : Number(value);
+                              if (
+                                Number.isInteger(brightness) &&
+                                brightness >= 0 &&
+                                brightness <= 100
+                              )
+                                command.mutate({
+                                  type: "display_set_brightness",
+                                  payload: { brightness },
+                                });
+                            }}
+                          >
+                            Set display brightness
+                          </button>
+                        )}
+                        <button
+                          className="button button--secondary"
+                          disabled={command.isPending}
+                          onClick={() =>
+                            command.mutate({
+                              type: "display_probe",
+                              payload: {},
+                            })
+                          }
+                        >
+                          Probe display capabilities
+                        </button>
+                        {!hasDisplayControl && (
+                          <span className="field__hint">
+                            No HDMI-CEC or DDC/CI capability is currently
+                            reported.
+                          </span>
+                        )}
                       </div>
                     </div>
                   )}

@@ -96,7 +96,7 @@ func (s *Service) DependencyGraph(ctx context.Context, visibleScreenIDs []uuid.U
 		`WITH visible_screens AS (SELECT unnest($1::uuid[]) id)
 		 SELECT CASE WHEN s.layout_id IS NOT NULL THEN 'layout' ELSE 'playlist' END,
 		        COALESCE(s.layout_id,s.playlist_id),'schedule',s.id,'scheduled by'
-		   FROM schedules s WHERE s.deleted_at IS NULL`,
+		   FROM schedules s WHERE s.deleted_at IS NULL AND s.display_action IS NULL`,
 		`WITH visible_screens AS (SELECT unnest($1::uuid[]) id)
 		 SELECT CASE WHEN a.layout_id IS NOT NULL THEN 'layout' ELSE 'playlist' END,
 		        COALESCE(a.layout_id,a.playlist_id),'screen',a.screen_id,'assigned to'

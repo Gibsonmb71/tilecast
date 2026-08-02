@@ -1,6 +1,7 @@
 package org.tilecast.player.content
 
 import org.tilecast.player.network.ManifestSchedule
+import org.tilecast.player.network.ManifestPresentationOverride
 import java.time.*
 
 data class ScheduleSelection(val scheduleId:String?,val playlistId:String?,val layoutId:String?,val source:String,val nextTransition:Instant?,val error:String?=null,val playbackAnchor:Instant?=null)
@@ -11,13 +12,25 @@ fun pendingActivationDelayMillis(graceSeconds:Int):Long = (if(graceSeconds>0)gra
 
 /** Offline, timezone-aware schedule evaluator. Intervals are half-open [start,end). */
 object ScheduleEngine {
-    fun resolve(now:Instant,schedules:List<ManifestSchedule>,fallbackPlaylistId:String?,fallbackLayoutId:String?=null):ScheduleSelection = try {
+    fun resolve(now:Instant,schedules:List<ManifestSchedule>,fallbackPlaylistId:String?,fallbackLayoutId:String?=null,override:ManifestPresentationOverride?=null):ScheduleSelection = try {
         val active=mutableListOf<ActiveWindow>();val transitions=mutableListOf<Instant>()
-        schedules.forEach { schedule -> windows(schedule,now).forEach { window -> transitions += window.start;transitions += window.end;if(!now.isBefore(window.start)&&now.isBefore(window.end))active+=window } }
+        schedules.filter { it.playlistId != null || it.layoutId != null }.forEach { schedule -> windows(schedule,now).forEach { window -> transitions += window.start;transitions += window.end;if(!now.isBefore(window.start)&&now.isBefore(window.end))active+=window } }
+        override?.let { value ->
+            runCatching { Instant.parse(value.startedAt) }.getOrNull()?.let { start -> if (start.isAfter(now)) transitions += start }
+            value.expiresAt?.let { expires -> runCatching { Instant.parse(expires) }.getOrNull()?.let { if (it.isAfter(now)) transitions += it } }
+        }
         val winner=active.sortedWith(compareByDescending<ActiveWindow>{it.schedule.priority}.thenByDescending{it.schedule.specificity}.thenByDescending{it.start}.thenBy{it.schedule.id}).firstOrNull()
-        val playlistId=if(winner!=null)winner.schedule.playlistId?.takeIf(String::isNotBlank) else fallbackPlaylistId
-        val layoutId=if(winner!=null)winner.schedule.layoutId else fallbackLayoutId
-        ScheduleSelection(winner?.schedule?.id,playlistId,layoutId,if(winner!=null)"schedule" else if(fallbackPlaylistId!=null||fallbackLayoutId!=null)"direct_fallback" else "none",transitions.filter{it.isAfter(now)}.minOrNull(),playbackAnchor=winner?.start)
+        val overrideStart=override?.let { runCatching { Instant.parse(it.startedAt) }.getOrNull() }
+        val overrideEnd=override?.expiresAt?.let { runCatching { Instant.parse(it) }.getOrNull() }
+        if (override != null && overrideStart != null && !now.isBefore(overrideStart) && (overrideEnd == null || now.isBefore(overrideEnd))) {
+            val playlistId=override.playlistId ?: override.contentId.takeIf { override.contentType=="playlist" || override.contentType=="asset" }
+            val layoutId=override.layoutId ?: override.contentId.takeIf { override.contentType=="layout" }
+            ScheduleSelection(null,playlistId,layoutId,"quick_present",transitions.filter{it.isAfter(now)}.minOrNull(),playbackAnchor=overrideStart)
+        } else {
+            val playlistId=if(winner!=null)winner.schedule.playlistId?.takeIf(String::isNotBlank) else fallbackPlaylistId
+            val layoutId=if(winner!=null)winner.schedule.layoutId else fallbackLayoutId
+            ScheduleSelection(winner?.schedule?.id,playlistId,layoutId,if(winner!=null)"schedule" else if(fallbackPlaylistId!=null||fallbackLayoutId!=null)"direct_fallback" else "none",transitions.filter{it.isAfter(now)}.minOrNull(),playbackAnchor=winner?.start)
+        }
     } catch(error:Exception){ScheduleSelection(null,fallbackPlaylistId,fallbackLayoutId,if(fallbackPlaylistId!=null||fallbackLayoutId!=null)"direct_fallback" else "none",null,"Schedule evaluation failed")}
 
     private fun windows(s:ManifestSchedule,now:Instant):List<ActiveWindow>{

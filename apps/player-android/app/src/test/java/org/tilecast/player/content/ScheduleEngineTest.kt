@@ -2,6 +2,7 @@ package org.tilecast.player.content
 import org.junit.Assert.*
 import org.junit.Test
 import org.tilecast.player.network.ManifestSchedule
+import org.tilecast.player.network.ManifestPresentationOverride
 import java.time.Instant
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -15,4 +16,5 @@ class ScheduleEngineTest {
  @Test fun repeatedTimeUsesEarlierStartAndLaterEnd(){val repeated=ManifestSchedule("fall","p","weekly","America/New_York",0,0,dailyStart="01:30",dailyEnd="01:45",daysOfWeek=listOf(0));assertEquals("fall",ScheduleEngine.resolve(Instant.parse("2026-11-01T06:35:00Z"),listOf(repeated),null).scheduleId)}
  @Serializable data class Fixture(val name:String,val now:String,val fallbackPlaylistId:String?=null,val schedules:List<ManifestSchedule>,val expectedScheduleId:String?=null,val expectedPlaylistId:String?=null,val expectedSource:String)
  @Test fun sharedParityFixtures(){val file=generateSequence(File(requireNotNull(System.getProperty("user.dir")))){it.parentFile}.map{File(it,"packages/manifest-schema/schedule-fixtures.json")}.first{it.exists()};val fixtures=fixtureJson.decodeFromString<List<Fixture>>(file.readText());fixtures.forEach{fixture->val result=ScheduleEngine.resolve(Instant.parse(fixture.now),fixture.schedules,fixture.fallbackPlaylistId);assertEquals(fixture.name,fixture.expectedScheduleId,result.scheduleId);assertEquals(fixture.name,fixture.expectedPlaylistId,result.playlistId);assertEquals(fixture.name,fixture.expectedSource,result.source)}}
+ @Test fun quickPresentWinsUntilExpiryAndUsesItsAnchor(){val at=Instant.parse("2026-07-12T16:00:00Z");val override=ManifestPresentationOverride("present","playlist","quick","Quick","2026-07-12T15:30:00Z","2026-07-12T16:30:00Z",playlistId="quick");val result=ScheduleEngine.resolve(at,listOf(ManifestSchedule("scheduled","normal","one_time","UTC",100,1,oneTimeStart="2026-07-12T15:00:00Z",oneTimeEnd="2026-07-12T17:00:00Z")),"fallback",override=override);assertEquals("quick",result.playlistId);assertEquals("quick_present",result.source);assertEquals(Instant.parse("2026-07-12T15:30:00Z"),result.playbackAnchor);assertEquals("normal",ScheduleEngine.resolve(Instant.parse("2026-07-12T16:30:00Z"),emptyList(),"normal",override=override).playlistId)}
 }

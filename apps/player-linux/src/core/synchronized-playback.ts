@@ -1,4 +1,5 @@
 import {
+  presentationOverrideActive,
   takeoverActive,
   findPlaylist,
   manifestTakeover,
@@ -372,6 +373,16 @@ export function enrichSynchronizedPresentation(
     );
     if (Number.isFinite(takeoverAnchor)) {
       anchorMs = takeoverAnchor;
+    }
+  } else if (
+    selection.source === "quick_present" &&
+    presentationOverrideActive(manifest, new Date(nowMs))
+  ) {
+    const overrideAnchor = Date.parse(
+      manifest.presentationOverride?.startedAt ?? "",
+    );
+    if (Number.isFinite(overrideAnchor)) {
+      anchorMs = overrideAnchor;
     }
   } else if (selection.source === "schedule" && selection.scheduleId) {
     const schedule = manifest.schedules.find(

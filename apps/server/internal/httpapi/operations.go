@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/tilecast/tilecast/apps/server/internal/auth"
 	"github.com/tilecast/tilecast/apps/server/internal/devices"
+	"github.com/tilecast/tilecast/apps/server/internal/displaycontrol"
 )
 
 var commandTypes = map[string]bool{
@@ -33,6 +34,10 @@ var commandTypes = map[string]bool{
 	// External presentation is a player capability, not playlist content.
 	"prepare_airplay_session": true, "stop_airplay_session": true,
 	"test_airplay_support": true,
+	"display_power_on":     true, "display_power_off": true,
+	"display_set_input": true, "display_set_volume": true,
+	"display_mute": true, "display_unmute": true,
+	"display_set_brightness": true, "display_probe": true,
 }
 
 type takeoverInput struct {
@@ -550,6 +555,7 @@ func (s *server) updatePlayerCommand(w http.ResponseWriter, r *http.Request, sta
 	}
 	if state != "acknowledged" {
 		_, _ = s.db.Exec(r.Context(), `UPDATE screen_player_status SET last_command_id=$2,last_command_state=$3,last_command_result=NULLIF($4,''),last_command_completed_at=now(),playback_disabled=CASE WHEN $4='playback_disabled' THEN true WHEN $4='playback_enabled' THEN false ELSE playback_disabled END WHERE screen_id=$1`, principal.ScreenID, id, state, code)
+		s.recordDisplayControlCommandResult(r.Context(), id, state, code, message)
 		s.recordAirplayCommandResult(r.Context(), id, state, code, message)
 		action := "command.failed"
 		if state == "succeeded" {
@@ -623,6 +629,10 @@ func (s *server) validateCommand(typ string, raw json.RawMessage) ([]byte, error
 	case "test_airplay_support":
 		if len(object) > 0 {
 			return nil, errors.New("AirPlay support test does not accept a payload")
+		}
+	case "display_power_on", "display_power_off", "display_set_input", "display_set_volume", "display_mute", "display_unmute", "display_set_brightness", "display_probe":
+		if err := displaycontrol.ValidateCommandPayload(typ, object); err != nil {
+			return nil, err
 		}
 	default:
 		if len(object) > 0 {
