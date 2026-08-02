@@ -17,7 +17,7 @@ import "./SecurityPage.css";
 
 export const securityKey = ["me", "security"] as const;
 
-export function SecurityPage({ embedded = false }: { embedded?: boolean }) {
+export function SecurityPage() {
   const security = useQuery({ queryKey: securityKey, queryFn: api.security });
   if (security.isLoading)
     return <div className="table-loading">Loading sign-in security…</div>;
@@ -27,13 +27,7 @@ export function SecurityPage({ embedded = false }: { embedded?: boolean }) {
         Sign-in security could not be loaded.
       </div>
     );
-  return embedded ? (
-    <div className="my-account-security">
-      <SecurityPanels status={security.data} />
-    </div>
-  ) : (
-    <SecurityPanels status={security.data} />
-  );
+  return <SecurityPanels status={security.data} />;
 }
 
 export function SecurityPanels({ status }: { status: SecurityStatus }) {
@@ -90,6 +84,7 @@ function AuthenticatorPanel({ status }: { status: SecurityStatus }) {
     <Panel>
       <SectionHeader
         title="Authenticator app"
+        level={3}
         description="A six-digit code from an app such as Aegis, Google Authenticator, or 1Password."
         actions={
           status.totpEnrolled ? (
@@ -238,6 +233,7 @@ function PasskeyPanel({ status }: { status: SecurityStatus }) {
     <Panel>
       <SectionHeader
         title="Passkeys"
+        level={3}
         description="Sign in with a fingerprint, face, screen lock, or security key. A passkey signs you in on its own and counts as two-step verification."
         actions={
           status.passkeysAvailable &&
@@ -366,6 +362,7 @@ function RecoveryCodePanel({ status }: { status: SecurityStatus }) {
     <Panel>
       <SectionHeader
         title="Recovery codes"
+        level={3}
         description="Single-use codes that let you sign in when you cannot reach your authenticator or passkey."
         actions={
           <Button onClick={() => setConfirming((open) => !open)}>

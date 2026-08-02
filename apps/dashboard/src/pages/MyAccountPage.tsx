@@ -1,6 +1,5 @@
-import { KeyRound, Palette, ShieldCheck } from "lucide-react";
 import { useAuth } from "../auth/AuthProvider";
-import { PageHeader } from "../components/ui";
+import { PageHeader, Panel } from "../components/ui";
 import { PreferencesPage } from "./PreferencesPage";
 import { SecurityPage } from "./SecurityPage";
 import type { User } from "../api/types";
@@ -14,93 +13,82 @@ const roleLabels: Record<User["role"], string> = {
   viewer: "Viewer",
 };
 
+/**
+ * Two groups of account-owned settings in one column.
+ *
+ * The section ids are load-bearing: `/preferences` and `/security` redirect to
+ * `/account#preferences` and `/account#security`.
+ *
+ * Each group is a heading over panels rather than a card wrapping panels. The
+ * page previously boxed both groups, which put the security panels a card deep
+ * and left the two columns at wildly different heights — preferences is a fixed
+ * short list, while security grows a QR code and a password prompt mid-flow.
+ */
 export function MyAccountPage() {
   const { status } = useAuth();
   const user = status?.user;
-  const initial = user?.name.trim().slice(0, 1).toUpperCase() || "?";
 
   return (
-    <section className="my-account-page">
+    <div className="my-account-page">
       <PageHeader
-        eyebrow="Account"
         title="My Account"
-        description="Manage your Tilecast profile, preferences, and sign-in protection."
+        description="Settings that belong to you rather than to the organization."
+        actions={user && <SignedInAs user={user} />}
       />
 
       <section
-        className="my-account-profile"
-        aria-labelledby="account-profile-title"
+        id="preferences"
+        className="my-account-group"
+        aria-labelledby="account-preferences-title"
       >
-        <div className="my-account-profile__avatar" aria-hidden="true">
-          {initial}
+        <div className="my-account-group__heading">
+          <h2 id="account-preferences-title">Preferences</h2>
+          <p>
+            Appearance and workflow settings, stored with your account rather
+            than this browser.
+          </p>
         </div>
-        <div className="my-account-profile__identity">
-          <p className="my-account-profile__eyebrow">Your Tilecast account</p>
-          <h2 id="account-profile-title">{user?.name ?? "Your account"}</h2>
-          <p>{user?.username ?? "Signed-in account"}</p>
-        </div>
-        <div className="my-account-profile__facts">
-          <div>
-            <span>Role</span>
-            <strong>{user ? roleLabels[user.role] : "—"}</strong>
-          </div>
-          <div>
-            <span>Account status</span>
-            <strong>{user?.active === false ? "Inactive" : "Active"}</strong>
-          </div>
-        </div>
+        <Panel className="my-account-preferences">
+          <PreferencesPage />
+        </Panel>
       </section>
 
-      <div className="my-account-cards">
-        <section
-          id="preferences"
-          className="my-account-card my-account-card--preferences"
-          aria-labelledby="account-preferences-title"
-        >
-          <header className="my-account-card__header">
-            <span className="my-account-card__icon" aria-hidden="true">
-              <Palette size={20} />
-            </span>
-            <div>
-              <h2 id="account-preferences-title">Preferences</h2>
-              <p>Choose how Tilecast Studio looks and behaves for you.</p>
-            </div>
-          </header>
-          <div className="my-account-card__body">
-            <PreferencesPage embedded />
-          </div>
-        </section>
+      <section
+        id="security"
+        className="my-account-group"
+        aria-labelledby="account-security-title"
+      >
+        <div className="my-account-group__heading">
+          <h2 id="account-security-title">Sign-in security</h2>
+          <p>
+            Whether a second factor is required is an organization setting. What
+            you use to satisfy it is your choice.
+          </p>
+        </div>
+        <SecurityPage />
+      </section>
+    </div>
+  );
+}
 
-        <section
-          id="security"
-          className="my-account-card my-account-card--security"
-          aria-labelledby="account-security-title"
-        >
-          <header className="my-account-card__header">
-            <span className="my-account-card__icon" aria-hidden="true">
-              <ShieldCheck size={20} />
-            </span>
-            <div>
-              <h2 id="account-security-title">Sign-in security</h2>
-              <p>
-                Protect this account with an authenticator, passkey, or recovery
-                codes.
-              </p>
-            </div>
-          </header>
-          <div className="my-account-card__body">
-            <SecurityPage embedded />
-          </div>
-        </section>
-      </div>
-
-      <div className="my-account-note">
-        <KeyRound size={17} aria-hidden="true" />
-        <p>
-          Sign-in security changes apply only to your account. Organization-wide
-          multi-factor requirements remain under Settings.
-        </p>
-      </div>
-    </section>
+/**
+ * Which account is being edited, stated once. Studio supports several roles
+ * with visibly different pages, so the role belongs next to the name — a
+ * viewer and an owner should not have to guess why they see different things.
+ */
+function SignedInAs({ user }: { user: User }) {
+  return (
+    <p className="my-account-identity">
+      <span className="my-account-identity__avatar" aria-hidden="true">
+        {user.name.trim().slice(0, 1).toUpperCase() || "?"}
+      </span>
+      <span className="my-account-identity__copy">
+        <span className="visually-hidden">Signed in as </span>
+        <strong>{user.name}</strong>
+        <small>
+          {user.username} · {roleLabels[user.role]}
+        </small>
+      </span>
+    </p>
   );
 }

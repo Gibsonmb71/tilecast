@@ -1,214 +1,98 @@
+/* One column. Preferences and sign-in security are read and changed one at a
+   time, and the security panels grow and shrink as a flow opens, so pairing
+   them in columns only produced two ragged halves. */
 .my-account-page {
   display: grid;
-  max-width: 1180px;
-  gap: var(--tc-space-6);
-  margin: 0 auto;
+  max-width: 900px;
+  gap: var(--tc-space-8);
 }
 
 .my-account-page > .page-header {
   margin-bottom: 0;
 }
 
-.my-account-profile {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: var(--tc-space-4);
+/* Signed-in identity, as a line of text rather than a hero. It answers "which
+   account is this" and nothing else: the avatar is a monogram of the name
+   beside it, so it carries no information of its own. */
+.my-account-identity {
+  display: flex;
+  gap: var(--tc-space-3);
   align-items: center;
-  padding: var(--tc-space-5);
-  background: var(--tc-bg-surface);
-  border: 1px solid var(--tc-border-default);
-  border-radius: var(--tc-radius-panel);
+  margin: 0;
 }
 
-.my-account-profile__avatar {
+.my-account-identity__avatar {
   display: grid;
-  width: 64px;
-  height: 64px;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
   place-items: center;
   color: var(--tc-neutral-0);
   background: var(--tc-action-primary-active);
-  border: 1px solid var(--tc-action-primary);
   border-radius: 50%;
-  font-size: 24px;
-  font-weight: 700;
-}
-
-.my-account-profile__identity {
-  min-width: 0;
-}
-
-.my-account-profile__eyebrow {
-  margin: 0 0 2px;
-  color: var(--tc-text-secondary);
-  font: var(--tc-text-supporting);
-}
-
-.my-account-profile__identity h2 {
-  margin: 0;
-  font: var(--tc-text-section-title);
-}
-
-.my-account-profile__identity > p:last-child {
-  margin: 3px 0 0;
-  color: var(--tc-text-secondary);
-}
-
-.my-account-profile__facts {
-  display: flex;
-  gap: var(--tc-space-6);
-  padding-left: var(--tc-space-6);
-  border-left: 1px solid var(--tc-border-default);
-}
-
-.my-account-profile__facts div {
-  display: grid;
-  gap: 3px;
-  min-width: 92px;
-}
-
-.my-account-profile__facts span {
-  color: var(--tc-text-secondary);
-  font: var(--tc-text-supporting);
-}
-
-.my-account-profile__facts strong {
   font: var(--tc-text-label);
 }
 
-.my-account-cards {
+.my-account-identity__copy {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--tc-space-5);
-  align-items: start;
-}
-
-.my-account-card {
+  gap: 1px;
   min-width: 0;
-  overflow: hidden;
-  background: var(--tc-bg-surface);
-  border: 1px solid var(--tc-border-default);
-  border-radius: var(--tc-radius-panel);
 }
 
-.my-account-card__header {
+.my-account-identity__copy strong {
+  font: var(--tc-text-label);
+}
+
+.my-account-identity__copy small {
+  color: var(--tc-text-secondary);
+  font: var(--tc-text-supporting);
+}
+
+/* A group is a heading over panels, not a panel around panels: sign-in
+   security is three panels of its own, and wrapping them would nest cards. */
+.my-account-group {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: var(--tc-space-3);
-  align-items: start;
-  padding: var(--tc-space-5);
-  border-bottom: 1px solid var(--tc-border-default);
+  gap: var(--tc-space-4);
+  scroll-margin-top: var(--tc-space-6);
 }
 
-.my-account-card__icon {
-  display: grid;
-  width: 40px;
-  height: 40px;
-  place-items: center;
-  color: var(--tc-action-primary);
-  background: var(--tc-action-primary-soft);
-  border-radius: var(--tc-radius-control);
-}
-
-.my-account-card__header h2 {
+.my-account-group__heading h2 {
   margin: 0;
   font: var(--tc-text-section-title);
 }
 
-.my-account-card__header p {
+.my-account-group__heading p {
+  max-width: 74ch;
   margin: var(--tc-space-1) 0 0;
   color: var(--tc-text-secondary);
-  font-size: 0.88rem;
-  line-height: 1.45;
 }
 
-.my-account-card__body {
-  padding: var(--tc-space-5);
+/* The save bar is sticky against the bottom of the viewport, so it has to
+   reach the panel's edges instead of floating inset within it. */
+.my-account-preferences .settings-action-bar {
+  margin-right: calc(-1 * var(--tc-space-6));
+  margin-bottom: calc(-1 * var(--tc-space-6));
+  margin-left: calc(-1 * var(--tc-space-6));
+  border-right: 0;
+  border-bottom: 0;
+  border-left: 0;
+  border-radius: 0 0 var(--tc-radius-panel) var(--tc-radius-panel);
 }
 
-.my-account-card--preferences .settings-subsection {
-  padding-top: var(--tc-space-3);
-}
-
-.my-account-card--preferences .settings-subsection:first-child {
+.my-account-preferences .settings-subsection:first-child {
   padding-top: 0;
 }
 
-.my-account-card--preferences .setting-row {
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--tc-space-2);
-  align-items: start;
-  min-height: 0;
-  padding: var(--tc-space-3) 0;
-}
-
-.my-account-card--preferences .settings-action-bar {
-  margin-right: calc(-1 * var(--tc-space-5));
-  margin-bottom: calc(-1 * var(--tc-space-5));
-  margin-left: calc(-1 * var(--tc-space-5));
-}
-
-.my-account-security .security-page {
-  gap: var(--tc-space-4);
-}
-
-.my-account-security .panel {
-  padding: var(--tc-space-4);
-  border-radius: var(--tc-radius-control);
-  background: var(--tc-bg-subtle);
-}
-
-.my-account-note {
-  display: flex;
-  gap: var(--tc-space-2);
-  align-items: flex-start;
-  max-width: 720px;
-  color: var(--tc-text-secondary);
-  font-size: 0.82rem;
-}
-
-.my-account-note svg {
-  flex: 0 0 auto;
-  margin-top: 1px;
-  color: var(--tc-action-primary);
-}
-
-.my-account-note p {
-  margin: 0;
-}
-
-@media (max-width: 980px) {
-  .my-account-cards {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-@media (max-width: 680px) {
-  .my-account-profile {
-    grid-template-columns: auto minmax(0, 1fr);
+@media (max-width: 560px) {
+  .my-account-page {
+    gap: var(--tc-space-6);
   }
 
-  .my-account-profile__facts {
-    grid-column: 1 / -1;
-    justify-content: space-between;
-    padding-top: var(--tc-space-4);
-    padding-left: 0;
-    border-top: 1px solid var(--tc-border-default);
-    border-left: 0;
-  }
-}
-
-@media (max-width: 440px) {
-  .my-account-profile__facts {
-    gap: var(--tc-space-3);
-  }
-
-  .my-account-card__header,
-  .my-account-card__body,
-  .my-account-profile {
+  .my-account-preferences {
     padding: var(--tc-space-4);
   }
 
-  .my-account-card--preferences .settings-action-bar {
+  .my-account-preferences .settings-action-bar {
     margin-right: calc(-1 * var(--tc-space-4));
     margin-bottom: calc(-1 * var(--tc-space-4));
     margin-left: calc(-1 * var(--tc-space-4));
