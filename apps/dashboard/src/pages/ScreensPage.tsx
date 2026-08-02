@@ -2500,6 +2500,8 @@ export function ScreenDetailPage() {
         displayCount={1}
         csrfToken={auth.status?.csrfToken ?? ""}
         capability={reliability.data}
+        capabilityLoading={reliability.isPending}
+        capabilityError={reliability.error?.message}
         audioDisplayName={screen.name}
         onClose={() => setAirplayOpen(false)}
       />

@@ -191,13 +191,21 @@ export function GroupDetailPage() {
       queryKey: ["layouts", "sync-group"],
       queryFn: () => api.layouts(""),
     });
-  const groupAirplayCapabilities = useQueries({
+  const groupAirplayQueries = useQueries({
     queries: (group.data?.screens ?? []).map((screen) => ({
       queryKey: ["screen-reliability", screen.id],
       queryFn: () => api.screenReliability(screen.id),
       refetchInterval: 10_000,
     })),
-  }).flatMap((query) => (query.data ? [query.data] : []));
+  });
+  const groupAirplayCapabilities = groupAirplayQueries.flatMap((query) =>
+    query.data ? [query.data] : [],
+  );
+  const groupAirplayLoading = groupAirplayQueries.some(
+    (query) => query.isPending,
+  );
+  const groupAirplayError = groupAirplayQueries.find((query) => query.error)
+    ?.error?.message;
   const refresh = () =>
     client.invalidateQueries({ queryKey: ["screen-groups", id] });
   const add = useMutation({
@@ -324,6 +332,8 @@ export function GroupDetailPage() {
         displayCount={groupData.membershipCount}
         csrfToken={csrf}
         capabilities={groupAirplayCapabilities}
+        capabilityLoading={groupAirplayLoading}
+        capabilityError={groupAirplayError}
         audioDisplayName={
           groupData.presentationGatewayScreenId
             ? groupData.screens.find(

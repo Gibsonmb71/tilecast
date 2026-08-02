@@ -19,6 +19,10 @@ func (s *server) screenReliability(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var raw []byte
+	// Postgres caps any function call at 100 arguments, and jsonb_build_object
+	// spends two per field. This payload is well past that, so it is built in
+	// chunks and merged with ||. Keep each chunk under 50 fields when adding to
+	// it: overflowing produces a run-time 54023, not a compile-time failure.
 	err := s.db.QueryRow(r.Context(), `SELECT jsonb_build_object(
 		'configuredMode',ps.configured_reliability_mode,'effectiveMode',ps.effective_reliability_mode,
 		'foregroundState',ps.foreground_state,'lastForegroundExitAt',ps.last_foreground_exit_at,
@@ -31,7 +35,8 @@ func (s *server) screenReliability(w http.ResponseWriter, r *http.Request) {
 		'activeHoursState',ps.active_hours_state,'sleepCapability',ps.sleep_capability,
 		'lastSleepRequestResult',ps.last_sleep_request_result,'lastWakeResult',ps.last_wake_result,
 		'recoveryLevel',ps.recovery_level,'recoveryCount',ps.recovery_count,'safeMode',ps.safe_mode,
-		'lastWatchdogFailure',ps.last_watchdog_failure,'lastWatchdogRecoveryAt',ps.last_watchdog_recovery_at,
+		'lastWatchdogFailure',ps.last_watchdog_failure,'lastWatchdogRecoveryAt',ps.last_watchdog_recovery_at
+	) || jsonb_build_object(
 		'maintenanceSessionExpiresAt',ps.maintenance_session_expires_at,
 		'commissioningState',ps.commissioning_state,'commissioningStep',ps.commissioning_step,
 		'commissioningCompletedAt',ps.commissioning_completed_at,'cachedFallbackAvailable',ps.cached_fallback_available,
@@ -44,7 +49,8 @@ func (s *server) screenReliability(w http.ResponseWriter, r *http.Request) {
 		'autostartSupervised',ps.autostart_supervised,'autostartLingerEnabled',ps.autostart_linger_enabled,
 		'autostartError',ps.autostart_error,
 		'airplaySupported',ps.airplay_supported,'airplayUxPlayInstalled',ps.airplay_uxplay_installed,'airplayUxPlayVersion',ps.airplay_uxplay_version,
-		'airplayGstreamerInstalled',ps.airplay_gstreamer_installed,'airplayH264DecoderAvailable',ps.airplay_h264_decoder_available,
+		'airplayGstreamerInstalled',ps.airplay_gstreamer_installed,'airplayH264DecoderAvailable',ps.airplay_h264_decoder_available
+	) || jsonb_build_object(
 		'airplayHardwareDecode',ps.airplay_hardware_decode,'airplayDecoder',ps.airplay_decoder,
 		'airplayMaxProfile',ps.airplay_max_profile,'airplayGroupSupported',ps.airplay_group_supported,
 		'airplayAudioAvailable',ps.airplay_audio_available,'airplayAvahiAvailable',ps.airplay_avahi_available,'airplayMdnsAdvertisementAvailable',ps.airplay_mdns_advertisement_available,

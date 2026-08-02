@@ -36,6 +36,8 @@ export function AirPlayPresentDialog({
   csrfToken,
   capability,
   capabilities,
+  capabilityLoading = false,
+  capabilityError,
   audioDisplayName,
   onClose,
 }: {
@@ -47,6 +49,8 @@ export function AirPlayPresentDialog({
   csrfToken: string;
   capability?: ReliabilityStatus;
   capabilities?: ReliabilityStatus[];
+  capabilityLoading?: boolean;
+  capabilityError?: string;
   audioDisplayName?: string;
   onClose: () => void;
 }) {
@@ -108,7 +112,13 @@ export function AirPlayPresentDialog({
       : allCapabilities.every((item) => item.airplayGroupSupported === true);
   const capabilityText = useMemo(() => {
     if (displayCount === 0) return "Add at least one display to this target.";
+    // A failed capability read is not the same as a display that has not
+    // reported yet. Reporting both as "waiting" leaves the dialog stuck with
+    // no way to tell a broken request from a player that never probed.
+    if (capabilityError)
+      return `Tilecast could not read display capabilities: ${capabilityError}`;
     if (!capabilitiesComplete) {
+      if (capabilityLoading) return "Reading display capabilities…";
       const remaining = Math.max(1, displayCount - allCapabilities.length);
       return `Waiting for ${remaining} display${remaining === 1 ? "" : "s"} to report AirPlay capabilities.`;
     }
@@ -126,7 +136,7 @@ export function AirPlayPresentDialog({
       targetType !== "group" &&
       allCapabilities.some((item) => item.airplaySupported !== true)
     )
-      return "Waiting for a complete AirPlay capability report.";
+      return "This display has not reported AirPlay capabilities yet. Run Test AirPlay support from Health & recovery, and confirm the player is on 0.12.0 or newer.";
     const hardware1080 = allCapabilities.every(
       (item) =>
         item.airplayHardwareDecode && item.airplayMaxProfile === "1080p30",
@@ -144,6 +154,8 @@ export function AirPlayPresentDialog({
   }, [
     allCapabilities,
     capabilitiesComplete,
+    capabilityError,
+    capabilityLoading,
     displayCount,
     groupReady,
     targetType,
