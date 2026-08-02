@@ -2022,8 +2022,10 @@ export class PlayerRuntime {
       // Studio can only say "not AirPlay-ready" and leave an operator guessing
       // between UxPlay, GStreamer, the H.264 decoder, Avahi, and VA-API.
       if (this.airplayCapabilities.limitation) {
-        heartbeat.airplayLimitation =
-          this.airplayCapabilities.limitation.slice(0, 240);
+        heartbeat.airplayLimitation = this.airplayCapabilities.limitation.slice(
+          0,
+          240,
+        );
       }
     }
     if (this.externalPresentation && this.externalPresentationStatus) {

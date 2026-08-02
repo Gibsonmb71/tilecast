@@ -164,8 +164,9 @@ export function AirPlayPresentDialog({
       // operator guessing between UxPlay, GStreamer, the H.264 decoder, and
       // Avahi. Prefer the player's own sentence, which also carries the version
       // it found, and fall back to the component flags it reported.
-      const reason = blocked.find((item) => item.airplayLimitation)
-        ?.airplayLimitation;
+      const reason = blocked.find(
+        (item) => item.airplayLimitation,
+      )?.airplayLimitation;
       const detail = reason ?? missingComponents(blocked);
       return blocked.length === 1
         ? `This display is not AirPlay-ready. ${detail}`

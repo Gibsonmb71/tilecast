@@ -173,7 +173,11 @@ describe("AirPlay capability limitation reporting", () => {
 
   it("names GStreamer and the decoder when they are missing", () => {
     expect(
-      describeLimitation({ ...ready, gstreamerInstalled: false, supported: false }),
+      describeLimitation({
+        ...ready,
+        gstreamerInstalled: false,
+        supported: false,
+      }),
     ).toContain("GStreamer is not installed");
     expect(
       describeLimitation({ ...ready, decoder: null, supported: false }),
