@@ -17,8 +17,8 @@
  * fresh command).
  */
 
-import { chmod, rename, stat } from "node:fs/promises";
-import type { DownloadRequest } from "./download";
+import { access, chmod, rename, stat } from "node:fs/promises";
+import { verifyFileIntegrity, type DownloadRequest } from "./download";
 import { logger } from "./log";
 import type {
   PlayerCommand,
@@ -246,6 +246,22 @@ export class SelfUpdater {
         state: "downloaded",
         downloadedBytes: meta.artifactSizeBytes,
       });
+      // Re-read the staged file immediately before it can be promoted. The
+      // downloader verifies it too, but this closes the gap where another
+      // process could replace a staged artifact between download and install.
+      const present = await access(this.deps.stagePath)
+        .then(() => true)
+        .catch(() => false);
+      if (
+        !present ||
+        !(await verifyFileIntegrity(
+          this.deps.stagePath,
+          meta.artifactSha256,
+          meta.artifactSizeBytes,
+        ))
+      ) {
+        throw new Error("staged AppImage failed final integrity verification");
+      }
       // The download already verified size + SHA-256; surface the state anyway
       // so the dashboard mirrors the Android progression.
       await this.report(deploymentId, { state: "verifying" });
@@ -267,6 +283,20 @@ export class SelfUpdater {
         await new Promise<void>((resolve) => setTimeout(resolve, delay));
       }
 
+      // A maintenance window may leave the staged file unattended for hours.
+      // Verify again at the last possible moment; a same-sized replacement
+      // must never become the executable AppImage.
+      if (
+        !(await verifyFileIntegrity(
+          this.deps.stagePath,
+          meta.artifactSha256,
+          meta.artifactSizeBytes,
+        ))
+      ) {
+        throw new Error(
+          "staged AppImage failed pre-promotion integrity verification",
+        );
+      }
       await this.report(deploymentId, { state: "installing" });
       await this.deps.promote(this.deps.stagePath, this.deps.appImagePath);
       // Signal that a supervised restart is imminent; the next heartbeat's

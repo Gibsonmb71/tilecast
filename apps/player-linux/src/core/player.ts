@@ -43,6 +43,7 @@ import {
   onPlaybackIdle,
   onRenderProgress,
   recordAssessment,
+  renderProgressConfigFor,
   type ContentExpectation,
   type ProgressSignal,
   type RenderProgressState,
@@ -55,6 +56,14 @@ import {
 } from "./identifiers";
 import { CommandCoordinator } from "./commands";
 import { ConfigSync } from "./config";
+import { ServerClock } from "./clock";
+import { shouldClearWebsiteDataAtStartup } from "./website-startup";
+import {
+  isAvailableAt,
+  nextAvailabilityTransition,
+  type AvailabilityWindow,
+} from "./content-availability";
+import { cacheIdentityMatches, makeCacheIdentity } from "./cache-identity";
 import { downloadVerified } from "./download";
 import { readSystemDiagnostics } from "./system-probe";
 import { SelfUpdater, parseVersionCode, promoteAppImage } from "./self-update";
@@ -88,6 +97,7 @@ import { PlayerSocket } from "./socket";
 import { activeHoursFromConfig, evaluateActiveHours } from "./active-hours";
 import { renderWidget } from "./widget-render";
 import { renderLayout } from "./layout-render";
+import { resolvePlaybackItemSettings } from "./playback-defaults";
 import type {
   ManifestDataSource,
   ManifestLayout,
@@ -115,6 +125,7 @@ import {
   initialSupervisorState,
   onProgress,
   type HealAction,
+  type SupervisorConfig,
   type SupervisorState,
 } from "./supervisor";
 import type {
@@ -133,9 +144,12 @@ const log = logger("player");
 
 const SUPERVISOR_FILE = "supervisor-state.json";
 const PLAYBACK_FLAGS_FILE = "playback-flags.json";
+const PLAYBACK_CHECKPOINT_FILE = "playback-checkpoint.json";
 const SELECTION_EVAL_INTERVAL_MS = 30_000;
 const SUPERVISOR_TICK_MS = 15_000;
 const DEFAULT_STATUS_INTERVAL_S = 60;
+
+export { resolvePlaybackItemSettings } from "./playback-defaults";
 
 function spanViewport(manifest: Manifest): SpanViewport | undefined {
   const canvas = manifest.canvas;
@@ -157,6 +171,7 @@ export interface PresentationItem {
   src: string;
   durationMs: number | null;
   fitMode: string;
+  transition?: string;
   audioEnabled: boolean;
   volume: number;
   videoStartOffsetMs: number | null;
@@ -167,6 +182,13 @@ export interface PresentationItem {
     loadTimeoutSeconds: number;
     refreshIntervalSeconds: number | null;
     zoomPercent: number;
+    javascriptEnabled: boolean;
+    domStorageEnabled: boolean;
+    cookiePolicy: string;
+    reloadPolicy: string;
+    customUserAgent: string;
+    scrollX: number;
+    scrollY: number;
     backgroundColor: string;
     failureBehavior: string;
     fallbackSrc: string | null;
@@ -186,8 +208,36 @@ export type Presentation =
       approvalUrl: string;
       organizationName?: string;
     }
-  | { state: "idle"; title: string; message: string }
-  | { state: "disabled"; title: string; message: string }
+  | {
+      state: "idle";
+      title: string;
+      message: string;
+      backgroundColor?: string;
+      textColor?: string;
+      logoSrc?: string | null;
+      footerText?: string;
+      status?: string;
+    }
+  | {
+      state: "disabled";
+      title: string;
+      message: string;
+      backgroundColor?: string;
+      textColor?: string;
+      logoSrc?: string | null;
+      footerText?: string;
+      status?: string;
+    }
+  | {
+      state: "unavailable";
+      title: string;
+      message: string;
+      backgroundColor?: string;
+      textColor?: string;
+      logoSrc?: string | null;
+      footerText?: string;
+      status?: string;
+    }
   | { state: "safe-mode"; reason: string }
   | { state: "sleep" }
   | {
@@ -282,6 +332,16 @@ interface PlaybackFlags {
   playbackDisabled: boolean;
 }
 
+interface PlaybackCheckpoint {
+  installationId: string;
+  screenId: string;
+  normalizedServerUrl: string;
+  manifestVersion: number;
+  playlistId: string;
+  itemId: string;
+  savedAt: string;
+}
+
 export interface PlayerRuntimeOptions {
   serverUrl: string;
   playerVersion: string;
@@ -349,6 +409,9 @@ export class PlayerRuntime {
   private lastHealthyPlaybackAt: string | null = null;
   private lastPlaybackError: string | null = null;
   private websiteRecoveryCount = 0;
+  private playbackCheckpoint: PlaybackCheckpoint | null = null;
+  private resumeCheckpointPending = true;
+  private checkpointWrite = Promise.resolve();
 
   private supervisorState: SupervisorState = initialSupervisorState(Date.now());
   private flags: PlaybackFlags = { playbackDisabled: false };
@@ -360,22 +423,27 @@ export class PlayerRuntime {
   } | null = null;
 
   private timers: NodeJS.Timeout[] = [];
+  private statusTimer: NodeJS.Timeout | null = null;
+  private configTimer: NodeJS.Timeout | null = null;
+  private pairedTimersStarted = false;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private pendingActivationTimer: NodeJS.Timeout | null = null;
   private selectionTransitionTimer: NodeJS.Timeout | null = null;
   private selectionTransitionAt: string | null = null;
   private displayPolicyTransitionTimer: NodeJS.Timeout | null = null;
   private displayPolicyTransitionAt: string | null = null;
+  private availabilityTransitionTimer: NodeJS.Timeout | null = null;
+  private availabilityTransitionAt: string | null = null;
   private displayPolicyKey = "";
   private stopped = false;
   private socketOpen = false;
   private readonly startedAt = Date.now();
   /**
-   * Server time minus device time, from the most recent manifest. Reported
-   * because offline scheduling runs on the device clock, so drift shows up only
-   * as content playing at the wrong time.
+   * One corrected wall clock shared by scheduling, availability, takeovers,
+   * transitions, plugins, and offline playback. The offset is restored from
+   * the cached manifest before any cached selection is evaluated.
    */
-  private clockOffsetMs = 0;
+  private readonly clock = new ServerClock();
   /** Refreshed on the telemetry cadence rather than per tick: sysfs reads. */
   private systemDiagnostics: TelemetryGauges = {};
   private lastDisconnectReason: DisconnectReason | undefined;
@@ -436,11 +504,38 @@ export class PlayerRuntime {
           this.telemetry?.addCount("integrityFailureCount", 1),
         onFailure: () => this.telemetry?.addCount("downloadFailureCount", 1),
       },
+      this.clock,
     );
     this.configSync = new ConfigSync(this.store, this.client, {
       onConfigApplied: (config) => {
         this.config = config;
+        this.manifestSync.applyPolicy(
+          this.numberConfig(config.cache, "maximumBytes", 8 * 1024 ** 3),
+          this.numberConfig(config.cache, "minimumFreeBytes", 1024 ** 3),
+          this.numberConfig(
+            config.cache,
+            "automaticThresholdBytes",
+            256 * 1024 ** 2,
+          ),
+          this.numberConfig(config.cache, "concurrentDownloads", 2),
+          this.numberConfig(config.sync, "manifestReconciliationSeconds", 300),
+        );
         this.host.applyPlayerConfiguration?.(config);
+        if (this.pairedTimersStarted) {
+          this.rescheduleRuntimeTimers();
+          this.evaluatePresentation();
+        }
+        if (
+          shouldClearWebsiteDataAtStartup(
+            config.website["clearOnRestart"] === true,
+          )
+        ) {
+          void this.host.clearWebsiteData().catch((error) =>
+            log.warn("website startup data clear failed", {
+              error: String(error),
+            }),
+          );
+        }
       },
       onCredentialRejected: () => void this.onCredentialRejected(),
     });
@@ -475,9 +570,29 @@ export class PlayerRuntime {
     }
 
     if (this.credential) {
+      const identity = makeCacheIdentity(
+        this.options.serverUrl,
+        this.credential.installationId,
+        this.credential.screenId,
+      );
+      this.manifestSync.setIdentity(identity);
+      this.configSync.setIdentity(identity);
+      const checkpoint = await this.store.readJson<PlaybackCheckpoint>(
+        PLAYBACK_CHECKPOINT_FILE,
+      );
+      if (
+        identity &&
+        checkpoint &&
+        cacheIdentityMatches(identity, checkpoint)
+      ) {
+        this.playbackCheckpoint = checkpoint;
+      } else {
+        await this.store.delete(PLAYBACK_CHECKPOINT_FILE);
+      }
       this.client.setCredential(this.credential.deviceCredential);
       await this.runPaired();
     } else {
+      await this.store.delete(PLAYBACK_CHECKPOINT_FILE);
       await this.runPairing();
     }
   }
@@ -487,6 +602,11 @@ export class PlayerRuntime {
     for (const timer of this.timers) {
       clearInterval(timer);
     }
+    if (this.statusTimer) clearInterval(this.statusTimer);
+    if (this.configTimer) clearInterval(this.configTimer);
+    this.statusTimer = null;
+    this.configTimer = null;
+    this.pairedTimersStarted = false;
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
     }
@@ -495,6 +615,8 @@ export class PlayerRuntime {
       clearTimeout(this.selectionTransitionTimer);
     if (this.displayPolicyTransitionTimer)
       clearTimeout(this.displayPolicyTransitionTimer);
+    if (this.availabilityTransitionTimer)
+      clearTimeout(this.availabilityTransitionTimer);
     this.socket?.close();
     this.manifestSync.stop();
     this.commands?.stop();
@@ -503,8 +625,7 @@ export class PlayerRuntime {
     // left for the server's bounded timeout to guess at.
     this.telemetry?.stop();
     this.sessions?.shutdown("process_exit");
-    void this.activity?.flush();
-    this.activity?.stop();
+    await this.activity?.stop();
     this.preview?.stop();
     this.liveStream?.stop();
     await this.host.stopExternalPresentation?.("process_exit");
@@ -513,7 +634,7 @@ export class PlayerRuntime {
   // ---------------------------------------------------------------- pairing
 
   private async runPairing(): Promise<void> {
-    const identity = await this.waitForVerifiedIdentity(null);
+    const serverIdentity = await this.waitForVerifiedIdentity(null);
     const size = this.host.screenSize();
     const metadata = buildDeviceMetadata({
       playerInstallationId: this.installationId,
@@ -525,7 +646,7 @@ export class PlayerRuntime {
     const credential = await pairUntilEnrolled(
       this.store,
       this.client,
-      identity.installationId,
+      serverIdentity.installationId,
       metadata,
       {
         onWaitingForApproval: (progress) => {
@@ -544,6 +665,15 @@ export class PlayerRuntime {
     );
 
     this.credential = credential;
+    this.playbackCheckpoint = null;
+    await this.store.delete(PLAYBACK_CHECKPOINT_FILE);
+    const identity = makeCacheIdentity(
+      this.options.serverUrl,
+      credential.installationId,
+      credential.screenId,
+    );
+    this.manifestSync.setIdentity(identity);
+    this.configSync.setIdentity(identity);
     this.client.setCredential(credential.deviceCredential);
     await this.runPaired();
   }
@@ -563,6 +693,12 @@ export class PlayerRuntime {
             expected,
             actual: identity.installationId,
           });
+          await Promise.all([
+            this.manifestSync.invalidateCachedState(),
+            this.configSync.invalidateCachedState(),
+            this.store.delete(PLAYBACK_CHECKPOINT_FILE),
+          ]);
+          this.playbackCheckpoint = null;
           await this.sleep(60_000);
           continue;
         }
@@ -601,16 +737,9 @@ export class PlayerRuntime {
       ),
       setInterval(() => void this.supervisorTick(), SUPERVISOR_TICK_MS),
       setInterval(() => void this.externalPresentationTick(), 1_000),
-      setInterval(
-        () => void this.reportStatus(),
-        this.statusIntervalSeconds() * 1_000,
-      ),
-      // Config piggybacks on the manifest reconcile cadence.
-      setInterval(
-        () => void this.configSync.syncNow("reconcile-timer"),
-        5 * 60_000,
-      ),
     );
+    this.pairedTimersStarted = true;
+    this.rescheduleRuntimeTimers();
 
     this.selfUpdater = new SelfUpdater({
       appImagePath: process.env["APPIMAGE"] ?? null,
@@ -860,7 +989,7 @@ export class PlayerRuntime {
   // ------------------------------------------------------------- activation
 
   private onManifestPrepared(manifest: Manifest, clockOffsetMs = 0): void {
-    this.clockOffsetMs = clockOffsetMs;
+    this.clock.restore(clockOffsetMs);
     // Plugin state is independent of presentation activation. Sending it on
     // its own channel makes create/update/hide immediate and guarantees that
     // the current item, decoder, timeline, and proof-of-play session remain
@@ -869,8 +998,11 @@ export class PlayerRuntime {
       this.externalPresentation ? [] : (manifest.plugins ?? []),
       clockOffsetMs,
     );
-    const takeoverNow = takeoverActive(manifest, new Date());
-    const quickPresentNow = presentationOverrideActive(manifest, new Date());
+    const takeoverNow = takeoverActive(manifest, this.clock.now());
+    const quickPresentNow = presentationOverrideActive(
+      manifest,
+      this.clock.now(),
+    );
     if (
       this.activeManifest === null ||
       this.playbackState !== "playing" ||
@@ -935,7 +1067,7 @@ export class PlayerRuntime {
     // Manifest plugins are part of normal signage and must not remain over a
     // user's mirrored device. They are restored from the current manifest as
     // soon as the external session ends.
-    this.host.presentPlugins?.([], this.clockOffsetMs);
+    this.host.presentPlugins?.([], this.clock.offsetMs);
     this.sessions?.stopPresentation("external_presentation", "partial");
     this.host.present(view);
   }
@@ -947,7 +1079,7 @@ export class PlayerRuntime {
       if (!recovered) return;
       const takeoverNow =
         this.activeManifest !== null &&
-        takeoverActive(this.activeManifest, new Date());
+        takeoverActive(this.activeManifest, this.clock.now());
       if (takeoverNow) {
         await this.host.stopExternalPresentation?.("emergency_takeover");
         return;
@@ -980,7 +1112,7 @@ export class PlayerRuntime {
       this.lastPresentedKey = "";
       this.host.presentPlugins?.(
         this.activeManifest?.plugins ?? [],
-        this.clockOffsetMs,
+        this.clock.offsetMs,
       );
       this.evaluatePresentation(true);
       void this.reportStatus();
@@ -1009,7 +1141,7 @@ export class PlayerRuntime {
   private async externalPresentationTick(): Promise<void> {
     const config = this.externalPresentation;
     if (!config) return;
-    if (Date.parse(config.expiresAt) <= Date.now()) {
+    if (Date.parse(config.expiresAt) <= this.clock.nowMs()) {
       await this.stopExternalPresentation("expired");
       return;
     }
@@ -1057,7 +1189,7 @@ export class PlayerRuntime {
     const config = parseExternalPresentationConfig(command.payload);
     const takeoverNow =
       this.activeManifest !== null &&
-      takeoverActive(this.activeManifest, new Date());
+      takeoverActive(this.activeManifest, this.clock.now());
     if (takeoverNow) {
       return {
         success: false,
@@ -1132,7 +1264,7 @@ export class PlayerRuntime {
     this.lastPresentedKey = "";
     this.host.presentPlugins?.(
       this.activeManifest?.plugins ?? [],
-      this.clockOffsetMs,
+      this.clock.offsetMs,
     );
     this.evaluatePresentation(true);
     if (reportCleared) void this.reportStatus();
@@ -1184,11 +1316,17 @@ export class PlayerRuntime {
     // The supervisor only sees progress the content was actually expected to
     // produce; feeding it every raw signal is how a frozen screen keeps a
     // player looking healthy.
-    if (assessRenderProgress(this.renderProgress, now).progressing) {
+    if (
+      assessRenderProgress(
+        this.renderProgress,
+        now,
+        renderProgressConfigFor(this.config?.reliability),
+      ).progressing
+    ) {
       this.supervisorState = onProgress(
         this.supervisorState,
         now,
-        DEFAULT_SUPERVISOR_CONFIG,
+        this.supervisorConfig(),
       );
     }
     if (kind === "item-started") {
@@ -1199,6 +1337,32 @@ export class PlayerRuntime {
       // the child session. Without this the server would only ever see a
       // terminal event and could not derive a real playback interval.
       this.currentItemId = itemId;
+      if (itemId && this.selection?.playlistId && this.activeManifest) {
+        const identity = makeCacheIdentity(
+          this.options.serverUrl,
+          this.credential?.installationId,
+          this.credential?.screenId,
+        );
+        if (identity) {
+          const checkpoint: PlaybackCheckpoint = {
+            ...identity,
+            manifestVersion: this.activeManifest.manifestVersion,
+            playlistId: this.selection.playlistId,
+            itemId,
+            savedAt: this.clock.now().toISOString(),
+          };
+          this.playbackCheckpoint = checkpoint;
+          this.checkpointWrite = this.checkpointWrite
+            .then(() =>
+              this.store.writeJson(PLAYBACK_CHECKPOINT_FILE, checkpoint),
+            )
+            .catch((error) => {
+              log.warn("playback checkpoint persistence failed", {
+                error: String(error),
+              });
+            });
+        }
+      }
       if (itemId) this.sessions?.startContent(this.contentContextFor(itemId));
       return;
     }
@@ -1244,7 +1408,7 @@ export class PlayerRuntime {
       // cadence rather than read here: these are sysfs files, not variables.
       ...this.systemDiagnostics,
       lastDisconnectReason: this.lastDisconnectReason,
-      clockOffsetSeconds: Math.round(this.clockOffsetMs / 1_000),
+      clockOffsetSeconds: Math.round(this.clock.offsetMs / 1_000),
       ...this.displayGauges(),
       startupTotalMs: this.startupTimings.totalMs,
       startupConfigMs: this.startupTimings.configMs,
@@ -1295,7 +1459,11 @@ export class PlayerRuntime {
       this.socketOpen ? "connectedSeconds" : "disconnectedSeconds",
       seconds,
     );
-    const assessment = assessRenderProgress(this.renderProgress, now);
+    const assessment = assessRenderProgress(
+      this.renderProgress,
+      now,
+      renderProgressConfigFor(this.config?.reliability),
+    );
     // Healthy and stalled seconds come from meaningful progress, not from
     // whether a renderer object exists.
     this.telemetry.addSeconds(
@@ -1308,7 +1476,11 @@ export class PlayerRuntime {
 
   /** The current render-progress assessment, for the heartbeat and telemetry. */
   renderProgressStatus() {
-    const assessment = assessRenderProgress(this.renderProgress, Date.now());
+    const assessment = assessRenderProgress(
+      this.renderProgress,
+      Date.now(),
+      renderProgressConfigFor(this.config?.reliability),
+    );
     this.renderProgress = recordAssessment(this.renderProgress, assessment);
     return assessment;
   }
@@ -1453,7 +1625,7 @@ export class PlayerRuntime {
   private async applyDisplayPolicy(): Promise<void> {
     const manifest = this.activeManifest;
     if (!manifest) return;
-    const resolved = resolveDisplayPolicy(manifest, new Date());
+    const resolved = resolveDisplayPolicy(manifest, this.clock.now());
     this.scheduleDisplayPolicyTransition(resolved.nextTransitionAt);
     const key = resolved.action
       ? `${resolved.scheduleId}:${JSON.stringify(resolved.action)}`
@@ -1506,7 +1678,7 @@ export class PlayerRuntime {
     }
     this.displayPolicyTransitionAt = at;
     if (!at) return;
-    const delay = Date.parse(at) - Date.now();
+    const delay = Date.parse(at) - this.clock.nowMs();
     if (!Number.isFinite(delay)) return;
     this.displayPolicyTransitionTimer = setTimeout(
       () => {
@@ -1528,7 +1700,7 @@ export class PlayerRuntime {
     }
     this.selectionTransitionAt = at;
     if (!at) return;
-    const delay = Date.parse(at) - Date.now();
+    const delay = Date.parse(at) - this.clock.nowMs();
     if (!Number.isFinite(delay)) return;
     this.selectionTransitionTimer = setTimeout(
       () => {
@@ -1541,13 +1713,54 @@ export class PlayerRuntime {
     this.selectionTransitionTimer.unref?.();
   }
 
+  private scheduleAvailabilityTransition(
+    manifest: Manifest,
+    at: Date,
+    values: readonly AvailabilityWindow[] = this.availabilityWindows(manifest),
+  ): void {
+    const next = nextAvailabilityTransition(values, at)?.toISOString() ?? null;
+    if (next === this.availabilityTransitionAt) return;
+    if (this.availabilityTransitionTimer) {
+      clearTimeout(this.availabilityTransitionTimer);
+      this.availabilityTransitionTimer = null;
+    }
+    this.availabilityTransitionAt = next;
+    if (!next) return;
+    const delay = Date.parse(next) - this.clock.nowMs();
+    if (!Number.isFinite(delay)) return;
+    this.availabilityTransitionTimer = setTimeout(
+      () => {
+        this.availabilityTransitionTimer = null;
+        this.availabilityTransitionAt = null;
+        this.evaluatePresentation();
+      },
+      Math.min(Math.max(delay + 100, 0), 2_147_000_000),
+    );
+    this.availabilityTransitionTimer.unref?.();
+  }
+
+  /**
+   * Availability is a property of every manifest item, not just top-level
+   * assets. Include nested playlist items here so an item that enters or
+   * leaves its window while a Layout or takeover is already on screen causes
+   * the same boundary re-evaluation as Android.
+   */
+  private availabilityWindows(manifest: Manifest): AvailabilityWindow[] {
+    return [
+      ...manifest.assets,
+      ...(manifest.playlist?.items ?? []),
+      ...(manifest.directFallbackPlaylist?.items ?? []),
+      ...(manifest.playlists ?? []).flatMap((playlist) => playlist.items),
+    ];
+  }
+
   private buildPresentation(): Presentation {
     const manifest = this.activeManifest;
     const branding = this.config?.branding ?? {};
-    const takeoverNow =
-      manifest !== null && takeoverActive(manifest, new Date());
+    const now = this.clock.now();
+    const takeoverNow = manifest !== null && takeoverActive(manifest, now);
     const quickPresentNow =
-      manifest !== null && presentationOverrideActive(manifest, new Date());
+      manifest !== null && presentationOverrideActive(manifest, now);
 
     // Emergency takeover outranks AirPlay. The server normally sends an
     // explicit stop command as well; this local check closes the race when a
@@ -1575,43 +1788,56 @@ export class PlayerRuntime {
     // is active — takeover always overrides off-hours sleep.
     if (!takeoverNow && !quickPresentNow) {
       const activeHours = activeHoursFromConfig(this.config?.power);
-      if (!evaluateActiveHours(activeHours, new Date()).active) {
+      if (!evaluateActiveHours(activeHours, now).active) {
         return { state: "sleep" };
       }
     }
 
     if (this.flags.playbackDisabled && !takeoverNow && !quickPresentNow) {
-      return {
+      return this.brandingFallback({
         state: "disabled",
         title: String(branding["disabledTitle"] ?? "Screen disabled"),
         message: String(branding["disabledMessage"] ?? ""),
-      };
+        manifest,
+      });
     }
 
     if (!manifest) {
       return {
         state: "idle",
-        title: String(branding["noContentTitle"] ?? "Waiting for content"),
-        message: String(branding["noContentMessage"] ?? ""),
+        title: "Connecting to Tilecast",
+        message: "Content status will appear when the server is available.",
+        backgroundColor: this.brandingColor(
+          branding["backgroundColor"],
+          "#0E141B",
+        ),
+        textColor: this.brandingColor(branding["textColor"], "#F5F7FA"),
+        footerText: String(branding["footerText"] ?? ""),
+        status: "connecting",
       };
     }
 
-    this.selection = resolveSelection(manifest, new Date());
+    this.selection = resolveSelection(manifest, now);
 
     // A directly-assigned or scheduled Layout: render it as a single
     // fullscreen presentation item.
     if (this.selection.layoutId && !this.selection.playlistId) {
-      const layoutItem = this.buildItem(manifest, {
-        id: layoutItemKey(this.selection.layoutId),
-        assetId: "",
-        layoutId: this.selection.layoutId,
-        assetType: "layout",
-        fitMode: "contain",
-        transition: "none",
-        audioEnabled: false,
-        volume: 0,
-        deliveryPolicy: "download",
-      } as ManifestItem);
+      this.scheduleAvailabilityTransition(manifest, now);
+      const layoutItem = this.buildItem(
+        manifest,
+        {
+          id: layoutItemKey(this.selection.layoutId),
+          assetId: "",
+          layoutId: this.selection.layoutId,
+          assetType: "layout",
+          fitMode: "contain",
+          transition: "none",
+          audioEnabled: false,
+          volume: 0,
+          deliveryPolicy: "download",
+        } as ManifestItem,
+        now,
+      );
       if (layoutItem) {
         return {
           state: "playing",
@@ -1620,45 +1846,128 @@ export class PlayerRuntime {
           generation: this.generation,
         };
       }
+      return this.brandingFallback({
+        state: "unavailable",
+        title: "Content unavailable",
+        message: "The assigned Layout is not currently renderable.",
+        manifest,
+      });
     }
 
     const playlist = findPlaylist(manifest, this.selection.playlistId);
-    if (!playlist || playlist.items.length === 0) {
-      return {
+    if (!playlist) {
+      return this.brandingFallback({
         state: "idle",
-        title: String(branding["noContentTitle"] ?? "Waiting for content"),
+        title: String(branding["noContentTitle"] ?? "No content assigned"),
         message: String(branding["noContentMessage"] ?? ""),
-      };
+        manifest,
+      });
+    }
+    if (playlist.items.length === 0) {
+      return this.brandingFallback({
+        state: "unavailable",
+        title: "Content unavailable",
+        message: "Assigned content is not currently available.",
+        manifest,
+      });
     }
 
-    const items = this.buildItems(manifest, playlist);
+    this.scheduleAvailabilityTransition(manifest, now);
+    const items = this.buildItems(manifest, playlist, now);
     if (items.length === 0) {
-      return {
-        state: "idle",
-        title: String(branding["noContentTitle"] ?? "Waiting for content"),
-        message: "No renderable items in the assigned playlist",
-      };
+      return this.brandingFallback({
+        state: "unavailable",
+        title: "Content unavailable",
+        message: "Assigned content is not currently available.",
+        manifest,
+      });
     }
+    const resumedItems = this.applyResumeCheckpoint(items);
     return {
       state: "playing",
-      items,
+      items: resumedItems,
       takeover: this.selection.source === "takeover",
       generation: this.generation,
+    };
+  }
+
+  private brandingColor(value: unknown, fallback: string): string {
+    return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value)
+      ? value
+      : fallback;
+  }
+
+  private brandingFallback(input: {
+    state: "idle" | "disabled" | "unavailable";
+    title: string;
+    message: string;
+    manifest: Manifest | null;
+  }): Presentation {
+    const branding = this.config?.branding ?? {};
+    const logoAssetId = input.manifest?.branding?.logoAssetId;
+    const logoVariantId = input.manifest?.branding?.logoVariantId;
+    const logo =
+      logoAssetId &&
+      logoVariantId &&
+      input.manifest?.assets.some(
+        (asset) =>
+          asset.assetId === logoAssetId &&
+          asset.variantId === logoVariantId &&
+          isAvailableAt(asset, this.clock.now()),
+      )
+        ? `tcmedia://variant/${logoAssetId}/${logoVariantId}`
+        : null;
+    return {
+      state: input.state,
+      title: input.title,
+      message: input.message,
+      backgroundColor: this.brandingColor(
+        branding["backgroundColor"],
+        "#0E141B",
+      ),
+      textColor: this.brandingColor(branding["textColor"], "#F5F7FA"),
+      logoSrc: logo,
+      footerText: String(branding["footerText"] ?? ""),
+      status:
+        input.state === "disabled"
+          ? "disabled"
+          : input.state === "unavailable"
+            ? "unavailable"
+            : "no_content",
     };
   }
 
   private buildItems(
     manifest: Manifest,
     playlist: ManifestPlaylist,
+    at: Date,
   ): PresentationItem[] {
     const items: PresentationItem[] = [];
     for (const item of playlist.items) {
-      const built = this.buildItem(manifest, item);
+      if (!isAvailableAt(item, at)) continue;
+      const built = this.buildItem(manifest, item, at);
       if (built) {
         items.push(built);
       }
     }
     return items;
+  }
+
+  private applyResumeCheckpoint(items: PresentationItem[]): PresentationItem[] {
+    if (!this.config || !this.resumeCheckpointPending) return items;
+    this.resumeCheckpointPending = false;
+    if (this.config.playback["resumeAfterRestart"] === false) return items;
+    const checkpoint = this.playbackCheckpoint;
+    if (
+      !checkpoint ||
+      checkpoint.manifestVersion !== this.activeManifest?.manifestVersion ||
+      checkpoint.playlistId !== this.selection?.playlistId
+    ) {
+      return items;
+    }
+    const index = items.findIndex((item) => item.id === checkpoint.itemId);
+    if (index <= 0) return items;
+    return [...items.slice(index), ...items.slice(0, index)];
   }
 
   /** Widget/data-source/layout lookup maps, rebuilt when the manifest swaps. */
@@ -1704,8 +2013,21 @@ export class PlayerRuntime {
   private buildItem(
     manifest: Manifest,
     item: ManifestItem,
+    at: Date = this.clock.now(),
   ): PresentationItem | null {
     const maps = this.lookups(manifest);
+    const settings = this.itemSettings(
+      item,
+      item.assetType === "image"
+        ? this.numberConfig(
+            this.config?.playback,
+            "defaultImageDurationSeconds",
+            10,
+          ) * 1_000
+        : item.assetType === "website"
+          ? 60_000
+          : 30_000,
+    );
 
     if (item.layoutId) {
       const layout = maps.layouts.get(item.layoutId);
@@ -1719,7 +2041,8 @@ export class PlayerRuntime {
           manifest,
           widgets: maps.widgets,
           dataSources: maps.dataSources,
-          at: new Date(),
+          at,
+          playback: this.config?.playback,
         },
         viewport,
       );
@@ -1730,10 +2053,11 @@ export class PlayerRuntime {
         id: item.id,
         kind: "layout",
         src: "",
-        durationMs: item.durationMs ?? 30_000,
-        fitMode: item.fitMode,
-        audioEnabled: item.audioEnabled,
-        volume: item.volume,
+        durationMs: settings.durationMs,
+        fitMode: settings.fitMode,
+        transition: settings.transition,
+        audioEnabled: settings.audioEnabled,
+        volume: settings.volume,
         videoStartOffsetMs: null,
         videoEndOffsetMs: null,
         layout: payload,
@@ -1749,7 +2073,8 @@ export class PlayerRuntime {
       }
       const payload = renderWidget(widget, {
         dataSources: maps.dataSources,
-        at: new Date(),
+        at,
+        assets: manifest.assets,
       });
       if (!payload) {
         return null;
@@ -1758,10 +2083,11 @@ export class PlayerRuntime {
         id: item.id,
         kind: "widget",
         src: "",
-        durationMs: item.durationMs ?? 30_000,
-        fitMode: item.fitMode,
-        audioEnabled: item.audioEnabled,
-        volume: item.volume,
+        durationMs: settings.durationMs,
+        fitMode: settings.fitMode,
+        transition: settings.transition,
+        audioEnabled: settings.audioEnabled,
+        volume: settings.volume,
         videoStartOffsetMs: null,
         videoEndOffsetMs: null,
         widget: payload,
@@ -1781,7 +2107,8 @@ export class PlayerRuntime {
           (a) =>
             a.assetId === website.fallbackImageAssetId &&
             (!website.fallbackVariantId ||
-              a.variantId === website.fallbackVariantId),
+              a.variantId === website.fallbackVariantId) &&
+            isAvailableAt(a, at),
         );
         if (fallbackAsset) {
           fallbackSrc = `tcmedia://variant/${fallbackAsset.assetId}/${fallbackAsset.variantId}`;
@@ -1791,18 +2118,45 @@ export class PlayerRuntime {
         id: item.id,
         kind: "website",
         src: website.url,
-        durationMs: item.durationMs ?? 60_000,
-        fitMode: item.fitMode,
-        audioEnabled: item.audioEnabled,
-        volume: item.volume,
+        durationMs: settings.durationMs,
+        fitMode: settings.fitMode,
+        transition: settings.transition,
+        audioEnabled: settings.audioEnabled,
+        volume: settings.volume,
         videoStartOffsetMs: null,
         videoEndOffsetMs: null,
         website: {
-          loadTimeoutSeconds: website.loadTimeoutSeconds,
+          loadTimeoutSeconds: this.numberConfig(
+            this.config?.website,
+            "timeoutSeconds",
+            website.loadTimeoutSeconds > 0 ? website.loadTimeoutSeconds : 20,
+          ),
           refreshIntervalSeconds: website.refreshIntervalSeconds ?? null,
-          zoomPercent: website.zoomPercent,
+          zoomPercent:
+            website.zoomPercent > 0
+              ? website.zoomPercent
+              : this.numberConfig(
+                  this.config?.website,
+                  "defaultZoomPercent",
+                  100,
+                ),
+          javascriptEnabled: website.javascriptEnabled,
+          domStorageEnabled: website.domStorageEnabled,
+          cookiePolicy: this.stringConfig(
+            this.config?.website,
+            "cookiePolicy",
+            website.cookiePolicy,
+          ),
+          reloadPolicy: website.reloadPolicy || "on_each_activation",
+          customUserAgent: website.customUserAgent ?? "",
+          scrollX: website.scrollX ?? 0,
+          scrollY: website.scrollY ?? 0,
           backgroundColor: website.backgroundColor,
-          failureBehavior: website.failureBehavior,
+          failureBehavior:
+            website.failureBehavior ||
+            String(
+              this.config?.website?.["defaultFailureBehavior"] ?? "placeholder",
+            ),
           fallbackSrc,
           allowedHosts: website.allowedHosts,
         },
@@ -1810,7 +2164,10 @@ export class PlayerRuntime {
     }
 
     const asset = manifest.assets.find(
-      (a) => a.assetId === item.assetId && a.variantId === item.variantId,
+      (a) =>
+        a.assetId === item.assetId &&
+        a.variantId === item.variantId &&
+        isAvailableAt(a, at),
     );
     if (!asset) {
       return null;
@@ -1827,14 +2184,32 @@ export class PlayerRuntime {
       id: item.id,
       kind,
       src: `tcmedia://variant/${asset.assetId}/${asset.variantId}`,
-      durationMs: item.durationMs ?? (kind === "image" ? 10_000 : null),
-      fitMode: item.fitMode,
-      audioEnabled: item.audioEnabled,
-      volume: item.volume,
+      durationMs: settings.durationMs,
+      fitMode: settings.fitMode,
+      transition: settings.transition,
+      audioEnabled: settings.audioEnabled,
+      volume: settings.volume,
       videoStartOffsetMs: item.videoStartOffsetMs ?? null,
       videoEndOffsetMs: item.videoEndOffsetMs ?? null,
       viewport: kind === "image" ? spanViewport(manifest) : undefined,
     };
+  }
+
+  private itemSettings(
+    item: ManifestItem,
+    fallbackDurationMs: number,
+  ): {
+    durationMs: number | null;
+    fitMode: string;
+    transition: string;
+    audioEnabled: boolean;
+    volume: number;
+  } {
+    return resolvePlaybackItemSettings(
+      item,
+      this.config?.playback,
+      fallbackDurationMs,
+    );
   }
 
   /**
@@ -1857,9 +2232,10 @@ export class PlayerRuntime {
       controls: "0",
       rel: "0",
       modestbranding: "1",
-      mute: item.audioEnabled ? "0" : "1",
+      mute: this.itemSettings(item, 60_000).audioEnabled ? "0" : "1",
       loop: "1",
     });
+    const settings = this.itemSettings(item, 60_000);
     if (config["startSeconds"]) {
       params.set("start", String(config["startSeconds"]));
     }
@@ -1879,16 +2255,40 @@ export class PlayerRuntime {
       id: item.id,
       kind: "youtube",
       src: url,
-      durationMs: item.durationMs ?? null,
+      durationMs: settings.durationMs,
       fitMode: "cover",
-      audioEnabled: item.audioEnabled,
-      volume: item.volume,
+      transition: settings.transition,
+      audioEnabled: settings.audioEnabled,
+      volume: settings.volume,
       videoStartOffsetMs: null,
       videoEndOffsetMs: null,
       website: {
-        loadTimeoutSeconds: 20,
+        loadTimeoutSeconds: this.numberConfig(
+          this.config?.website,
+          "timeoutSeconds",
+          20,
+        ),
         refreshIntervalSeconds: null,
-        zoomPercent: 100,
+        zoomPercent: this.numberConfig(
+          this.config?.website,
+          "defaultZoomPercent",
+          100,
+        ),
+        javascriptEnabled: true,
+        domStorageEnabled: true,
+        cookiePolicy: this.stringConfig(
+          this.config?.website,
+          "cookiePolicy",
+          "first_party",
+        ),
+        reloadPolicy: this.stringConfig(
+          this.config?.website,
+          "defaultReloadPolicy",
+          "on_each_activation",
+        ),
+        customUserAgent: "",
+        scrollX: 0,
+        scrollY: 0,
         backgroundColor: "#000000",
         failureBehavior: "placeholder",
         fallbackSrc: null,
@@ -1911,13 +2311,12 @@ export class PlayerRuntime {
     | null
   > {
     const manifest = this.activeManifest ?? this.pendingManifest;
-    const asset =
-      manifest?.assets.find(
-        (a) => a.assetId === assetId && a.variantId === variantId,
-      ) ??
-      // Widget/layout references may carry the asset id only; fall back to any
-      // variant of that asset.
-      manifest?.assets.find((a) => a.assetId === assetId);
+    const asset = manifest?.assets.find(
+      (a) =>
+        a.assetId === assetId &&
+        a.variantId === variantId &&
+        isAvailableAt(a, this.clock.now()),
+    );
     if (!asset) {
       return null;
     }
@@ -1941,8 +2340,11 @@ export class PlayerRuntime {
     }
     const decision = evaluate(
       this.supervisorState,
+      // Reliability intervals are elapsed local-process time. Server-clock
+      // offsets belong to content policy and would make a device with a
+      // skewed RTC look stalled immediately after a clock sync.
       Date.now(),
-      DEFAULT_SUPERVISOR_CONFIG,
+      this.supervisorConfig(),
     );
     if (decision.state !== this.supervisorState) {
       this.supervisorState = decision.state;
@@ -1998,11 +2400,84 @@ export class PlayerRuntime {
 
   // ---------------------------------------------------------------- status
 
+  private numberConfig(
+    values: Record<string, unknown> | undefined,
+    key: string,
+    fallback: number,
+  ): number {
+    const value = Number(values?.[key]);
+    return Number.isFinite(value) ? value : fallback;
+  }
+
+  private stringConfig(
+    values: Record<string, unknown> | undefined,
+    key: string,
+    fallback: string,
+  ): string {
+    const value = values?.[key];
+    return typeof value === "string" && value.trim() !== "" ? value : fallback;
+  }
+
   private statusIntervalSeconds(): number {
-    const value = Number(this.config?.sync?.["statusReportSeconds"]);
+    const value = this.numberConfig(
+      this.config?.sync,
+      "statusReportSeconds",
+      DEFAULT_STATUS_INTERVAL_S,
+    );
     return Number.isFinite(value) && value >= 15
       ? value
       : DEFAULT_STATUS_INTERVAL_S;
+  }
+
+  private manifestIntervalSeconds(): number {
+    const value = this.numberConfig(
+      this.config?.sync,
+      "manifestReconciliationSeconds",
+      300,
+    );
+    return Number.isFinite(value) && value >= 60 ? value : 300;
+  }
+
+  private rescheduleRuntimeTimers(): void {
+    if (!this.pairedTimersStarted) return;
+    if (this.statusTimer) clearInterval(this.statusTimer);
+    if (this.configTimer) clearInterval(this.configTimer);
+    this.statusTimer = setInterval(
+      () => void this.reportStatus(),
+      this.statusIntervalSeconds() * 1_000,
+    );
+    this.configTimer = setInterval(
+      () => void this.configSync.syncNow("reconcile-timer"),
+      this.manifestIntervalSeconds() * 1_000,
+    );
+    this.statusTimer.unref?.();
+    this.configTimer.unref?.();
+  }
+
+  private supervisorConfig(): SupervisorConfig {
+    const reliability = this.config?.reliability ?? {};
+    const stallSeconds = this.numberConfig(
+      reliability,
+      "playbackStallSeconds",
+      DEFAULT_SUPERVISOR_CONFIG.stallThresholdMs / 1_000,
+    );
+    const restartWindowMinutes = this.numberConfig(
+      reliability,
+      "restartWindowMinutes",
+      DEFAULT_SUPERVISOR_CONFIG.ladderRunWindowMs / 60_000,
+    );
+    const maximumRestarts = this.numberConfig(
+      reliability,
+      "maximumProcessRestarts",
+      DEFAULT_SUPERVISOR_CONFIG.maxLadderRunsBeforeSafeMode,
+    );
+    return {
+      ...DEFAULT_SUPERVISOR_CONFIG,
+      stallThresholdMs: Math.max(10_000, stallSeconds * 1_000),
+      ladderRunWindowMs: Math.max(60_000, restartWindowMinutes * 60_000),
+      maxLadderRunsBeforeSafeMode: Math.max(1, Math.floor(maximumRestarts)),
+      safeModeEnabled: reliability["safeModeEnabled"] !== false,
+    };
   }
 
   /**
@@ -2348,10 +2823,15 @@ export class PlayerRuntime {
     });
     handlers.set("identify_screen", async (command) => {
       const duration = Number(command.payload?.["durationSeconds"] ?? 15);
-      this.host.identify(
-        this.credential?.screenName ?? "Tilecast Player",
-        Math.min(Math.max(duration, 5), 120),
-      );
+      const showLocation =
+        this.config?.playback["identifyShowsLocation"] !== false;
+      const location = showLocation
+        ? this.stringConfig(this.config?.playback, "screenLocation", "")
+        : "";
+      const name = [this.credential?.screenName ?? "Tilecast Player", location]
+        .filter(Boolean)
+        .join("\n");
+      this.host.identify(name, Math.min(Math.max(duration, 5), 120));
       return ok("identified");
     });
     handlers.set("clear_media_cache", async () => {

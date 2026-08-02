@@ -17,6 +17,8 @@ interface TilecastBrandBugPlugin {
     corner: string;
     imageAssetId?: string | null;
     imageVariantId?: string | null;
+    imageAvailableFrom?: string | null;
+    imageExpiresAt?: string | null;
     text?: string;
     widthPercent: number;
     textSizePercent: number;
@@ -99,7 +101,9 @@ const tilecastBrandBug: TilecastBrandBugResolver = (() => {
         // Without a resolved variant there is no cached file to draw, so the
         // mark falls back to its text exactly as a text-only mark would.
         const imageSrc =
-          config.imageAssetId && config.imageVariantId
+          config.imageAssetId &&
+          config.imageVariantId &&
+          withinWindow(config.imageAvailableFrom, config.imageExpiresAt, now)
             ? `tcmedia://variant/${config.imageAssetId}/${config.imageVariantId}`
             : null;
         const text = (config.text ?? "").trim();

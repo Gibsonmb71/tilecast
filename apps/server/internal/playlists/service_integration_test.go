@@ -348,4 +348,25 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 	if len(notifier.versions) < 3 {
 		t.Fatalf("notifications=%v", notifier.versions)
 	}
+
+	// Media authoring defaults are read from the same organization registry, and
+	// an item can explicitly delegate playback decisions to the Player policy.
+	if _, err = pool.Exec(ctx, `INSERT INTO organization_runtime_settings(organization_id,settings) VALUES($1,$2::jsonb) ON CONFLICT(organization_id) DO UPDATE SET settings=organization_runtime_settings.settings||EXCLUDED.settings`, org, `{"media.image.default_fit_mode":"cover","player.playback.default_transition":"fade","player.playback.default_audio_enabled":false}`); err != nil {
+		t.Fatal(err)
+	}
+	delegated, err := service.Create(ctx, owner.User.ID, "Delegated defaults", "", "static")
+	if err != nil {
+		t.Fatal(err)
+	}
+	delegated, err = service.AddItem(ctx, delegated.ID, owner.User.ID, ItemInput{AssetID: imageID, UsePlayerDefaults: true})
+	if err != nil || len(delegated.Items) != 1 || !delegated.Items[0].UsePlayerDefaults || delegated.Items[0].DurationMS != nil || delegated.Items[0].FitMode != "cover" || delegated.Items[0].Transition != "fade" || delegated.Items[0].AudioEnabled {
+		t.Fatalf("delegated defaults item=%#v err=%v", delegated.Items, err)
+	}
+	if _, err = service.Assign(ctx, screenID, delegated.ID, owner.User.ID); err != nil {
+		t.Fatal(err)
+	}
+	delegatedManifest, _, err := service.BuildManifest(ctx, screenID)
+	if err != nil || delegatedManifest.DirectFallbackPlaylist == nil || !delegatedManifest.DirectFallbackPlaylist.Items[0].UsePlayerDefaults {
+		t.Fatalf("delegated defaults manifest=%#v err=%v", delegatedManifest, err)
+	}
 }

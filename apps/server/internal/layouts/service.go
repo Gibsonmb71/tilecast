@@ -14,18 +14,30 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/tilecast/tilecast/apps/server/internal/manifestchanges"
 )
 
 const MaxPreviewImageBytes = 500 * 1024
 
 type Notifier interface{ ManifestChanged(uuid.UUID, int64) }
+type ManifestInvalidator interface {
+	LayoutChanged(context.Context, uuid.UUID, string) error
+}
+type TransactionalManifestInvalidator interface {
+	LayoutChangedInTx(context.Context, pgx.Tx, uuid.UUID, string) ([]manifestchanges.Change, error)
+	NotifyManifestChanges([]manifestchanges.Change)
+}
 type Service struct {
-	db       *pgxpool.Pool
-	notifier Notifier
+	db          *pgxpool.Pool
+	notifier    Notifier
+	invalidator ManifestInvalidator
 }
 
 func NewService(db *pgxpool.Pool) *Service       { return &Service{db: db} }
 func (s *Service) SetNotifier(notifier Notifier) { s.notifier = notifier }
+func (s *Service) SetManifestInvalidator(invalidator ManifestInvalidator) {
+	s.invalidator = invalidator
+}
 
 func defaultDocument(orientation string, width, height int) Document {
 	return Document{SchemaVersion: 2, Canvas: Canvas{Width: width, Height: height, Orientation: orientation, BackgroundColor: "#0E141B", SafeAreaPercent: 5}, Placements: []Placement{}}
@@ -330,68 +342,23 @@ func (s *Service) Publish(ctx context.Context, id, userID uuid.UUID, expected in
 	if err = insertAuditTx(ctx, tx, userID, "layout.published", id); err != nil {
 		return Revision{}, err
 	}
-	rows, err := tx.Query(ctx, `WITH RECURSIVE dependents(kind,id) AS (
-		SELECT 'layout', $1::uuid
-		UNION
-		SELECT next.kind,next.id
-		FROM dependents dependent
-		CROSS JOIN LATERAL (
-			SELECT 'playlist'::text AS kind,item.playlist_id AS id
-			FROM playlist_items item
-			WHERE dependent.kind='layout' AND item.layout_id=dependent.id
-			UNION
-			SELECT 'layout'::text,layout.id
-			FROM layouts layout
-			JOIN layout_revision_dependencies dependency
-			  ON dependency.revision_id=layout.published_revision_id
-			 AND dependency.dependency_type='playlist'
-			WHERE dependent.kind='playlist' AND dependency.dependency_id=dependent.id
-		) next
-	), affected AS (
-		SELECT assignment.screen_id FROM screen_playlist_assignments assignment
-		WHERE (assignment.layout_id IN (SELECT id FROM dependents WHERE kind='layout')
-			OR assignment.playlist_id IN (SELECT id FROM dependents WHERE kind='playlist'))
-		UNION SELECT membership.screen_id
-		FROM screen_group_playlist_assignments assignment
-		JOIN screen_group_memberships membership ON membership.screen_group_id=assignment.screen_group_id
-		WHERE (assignment.layout_id IN (SELECT id FROM dependents WHERE kind='layout')
-			OR assignment.playlist_id IN (SELECT id FROM dependents WHERE kind='playlist'))
-		UNION SELECT target.screen_id
-		FROM schedules schedule JOIN schedule_targets target ON target.schedule_id=schedule.id
-		WHERE schedule.deleted_at IS NULL AND target.screen_id IS NOT NULL
-		  AND (schedule.layout_id IN (SELECT id FROM dependents WHERE kind='layout')
-			OR schedule.playlist_id IN (SELECT id FROM dependents WHERE kind='playlist'))
-		UNION SELECT membership.screen_id
-		FROM schedules schedule
-		JOIN schedule_targets target ON target.schedule_id=schedule.id
-		JOIN screen_group_memberships membership ON membership.screen_group_id=target.screen_group_id
-		WHERE schedule.deleted_at IS NULL
-		  AND (schedule.layout_id IN (SELECT id FROM dependents WHERE kind='layout')
-			OR schedule.playlist_id IN (SELECT id FROM dependents WHERE kind='playlist'))
-	) UPDATE screen_manifest_state state SET manifest_version=manifest_version+1,changed_at=now(),change_reason='layout.published' FROM affected WHERE state.screen_id=affected.screen_id RETURNING state.screen_id,state.manifest_version`, id)
-	if err != nil {
-		return Revision{}, err
-	}
-	type notice struct {
-		screen  uuid.UUID
-		version int64
-	}
-	notices := []notice{}
-	for rows.Next() {
-		var n notice
-		if err = rows.Scan(&n.screen, &n.version); err != nil {
-			rows.Close()
+	var changes []manifestchanges.Change
+	transactionalUsed := false
+	if transactional, ok := s.invalidator.(TransactionalManifestInvalidator); ok {
+		transactionalUsed = true
+		changes, err = transactional.LayoutChangedInTx(ctx, tx, id, "layout.published")
+		if err != nil {
 			return Revision{}, err
 		}
-		notices = append(notices, n)
 	}
-	rows.Close()
 	if err = tx.Commit(ctx); err != nil {
 		return Revision{}, err
 	}
-	if s.notifier != nil {
-		for _, n := range notices {
-			s.notifier.ManifestChanged(n.screen, n.version)
+	if transactionalUsed {
+		s.invalidator.(TransactionalManifestInvalidator).NotifyManifestChanges(changes)
+	} else if s.invalidator != nil {
+		if err := s.invalidator.LayoutChanged(ctx, id, "layout.published"); err != nil {
+			return Revision{}, err
 		}
 	}
 	return s.GetRevision(ctx, id, revisionID)
@@ -477,21 +444,47 @@ func (s *Service) Duplicate(ctx context.Context, id, userID uuid.UUID) (Layout, 
 }
 
 func (s *Service) Delete(ctx context.Context, id, userID uuid.UUID) error {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
 	var inUse bool
-	if err := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM screen_playlist_assignments WHERE layout_id=$1) OR EXISTS(SELECT 1 FROM screen_group_playlist_assignments WHERE layout_id=$1) OR EXISTS(SELECT 1 FROM schedules WHERE layout_id=$1 AND deleted_at IS NULL) OR EXISTS(SELECT 1 FROM playlist_items WHERE layout_id=$1)`, id).Scan(&inUse); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM screen_playlist_assignments WHERE layout_id=$1) OR EXISTS(SELECT 1 FROM screen_group_playlist_assignments WHERE layout_id=$1) OR EXISTS(SELECT 1 FROM schedules WHERE layout_id=$1 AND deleted_at IS NULL) OR EXISTS(SELECT 1 FROM playlist_items WHERE layout_id=$1)`, id).Scan(&inUse); err != nil {
 		return err
 	}
 	if inUse {
 		return ErrInUse
 	}
-	command, err := s.db.Exec(ctx, `UPDATE layouts SET deleted_at=now(),updated_by=$1,updated_at=now() WHERE id=$2 AND deleted_at IS NULL`, userID, id)
+	command, err := tx.Exec(ctx, `UPDATE layouts SET deleted_at=now(),updated_by=$1,updated_at=now() WHERE id=$2 AND deleted_at IS NULL`, userID, id)
 	if err != nil {
 		return err
 	}
 	if command.RowsAffected() == 0 {
 		return ErrNotFound
 	}
-	_ = s.audit(ctx, userID, "layout.deleted", id)
+	if err = insertAuditTx(ctx, tx, userID, "layout.deleted", id); err != nil {
+		return err
+	}
+	var changes []manifestchanges.Change
+	transactionalUsed := false
+	if transactional, ok := s.invalidator.(TransactionalManifestInvalidator); ok {
+		transactionalUsed = true
+		changes, err = transactional.LayoutChangedInTx(ctx, tx, id, "layout.deleted")
+		if err != nil {
+			return err
+		}
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return err
+	}
+	if transactionalUsed {
+		s.invalidator.(TransactionalManifestInvalidator).NotifyManifestChanges(changes)
+	} else if s.invalidator != nil {
+		if err := s.invalidator.LayoutChanged(ctx, id, "layout.deleted"); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

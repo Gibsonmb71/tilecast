@@ -290,6 +290,8 @@ func (s *server) writePlaylistError(w http.ResponseWriter, r *http.Request, err 
 		writeError(w, http.StatusUnprocessableEntity, "asset_not_ready", "Only ready assets with a playable variant may be added.")
 	case errors.Is(err, playlists.ErrInvalidItem):
 		writeError(w, http.StatusUnprocessableEntity, "playlist_validation_failed", "The playlist rule or item references unavailable content.")
+	case errors.Is(err, playlists.ErrPresentationNotReady):
+		writeError(w, http.StatusUnprocessableEntity, "presentation_not_ready", strings.TrimPrefix(err.Error(), playlists.ErrPresentationNotReady.Error()+": "))
 	case errors.Is(err, playlists.ErrConflict):
 		writeError(w, http.StatusConflict, "playlist_conflict", strings.TrimPrefix(err.Error(), playlists.ErrConflict.Error()+": "))
 	case strings.Contains(err.Error(), "must be") || strings.Contains(err.Error(), "duration") || strings.Contains(err.Error(), "offset") || strings.Contains(err.Error(), "order") || strings.Contains(err.Error(), "in use") || strings.Contains(err.Error(), "cannot be added"):

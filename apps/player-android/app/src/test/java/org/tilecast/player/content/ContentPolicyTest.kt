@@ -16,6 +16,8 @@ class ContentPolicyTest {
     @Test fun verifiesSizeAndSha256() {
         val file=File.createTempFile("tilecast-content", ".bin").apply{writeText("tilecast")}
         assertTrue(ContentPolicy.verify(file,8,"7ac03e565712af76035ca74340408d2b6525fe910a79ea248a6f76a555542dc9"))
+        file.writeText("tilecasx")
+        assertFalse(ContentPolicy.verify(file,8,"7ac03e565712af76035ca74340408d2b6525fe910a79ea248a6f76a555542dc9"))
         assertFalse(ContentPolicy.verify(file,7,"7ac03e565712af76035ca74340408d2b6525fe910a79ea248a6f76a555542dc9"))
         file.delete()
     }

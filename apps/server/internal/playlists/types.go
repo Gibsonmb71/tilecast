@@ -92,6 +92,7 @@ type Item struct {
 	VideoStartOffsetMS   *int64     `json:"videoStartOffsetMs,omitempty"`
 	VideoEndOffsetMS     *int64     `json:"videoEndOffsetMs,omitempty"`
 	DeliveryPolicy       string     `json:"deliveryPolicy"`
+	UsePlayerDefaults    bool       `json:"usePlayerDefaults"`
 	AssetName            string     `json:"assetName"`
 	AssetType            string     `json:"assetType"`
 	WidgetProvider       string     `json:"widgetProvider,omitempty"`
@@ -117,6 +118,7 @@ type ItemInput struct {
 	VideoStartOffsetMS *int64     `json:"videoStartOffsetMs"`
 	VideoEndOffsetMS   *int64     `json:"videoEndOffsetMs"`
 	DeliveryPolicy     string     `json:"deliveryPolicy"`
+	UsePlayerDefaults  bool       `json:"usePlayerDefaults"`
 }
 
 type ListResult struct {
@@ -203,6 +205,7 @@ type Manifest struct {
 	Playlists              []ManifestPlaylist            `json:"playlists"`
 	Schedules              []ManifestSchedule            `json:"schedules"`
 	Assets                 []ManifestAsset               `json:"assets"`
+	Branding               *ManifestBranding             `json:"branding,omitempty"`
 	ServerTime             time.Time                     `json:"serverTime"`
 	PrefetchHorizonDays    int                           `json:"prefetchHorizonDays"`
 	ActivationGraceSeconds int                           `json:"activationGraceSeconds"`
@@ -224,6 +227,10 @@ type Manifest struct {
 	Layout               *ManifestLayout    `json:"layout,omitempty"`
 	DirectFallbackLayout *ManifestLayout    `json:"directFallbackLayout,omitempty"`
 	Layouts              []ManifestLayout   `json:"layouts"`
+}
+type ManifestBranding struct {
+	LogoAssetID   *uuid.UUID `json:"logoAssetId,omitempty"`
+	LogoVariantID *uuid.UUID `json:"logoVariantId,omitempty"`
 }
 type ManifestPresentationOverride struct {
 	ID          uuid.UUID  `json:"id"`
@@ -353,19 +360,22 @@ type ManifestItem struct {
 	VideoStartOffsetMS *int64     `json:"videoStartOffsetMs,omitempty"`
 	VideoEndOffsetMS   *int64     `json:"videoEndOffsetMs,omitempty"`
 	DeliveryPolicy     string     `json:"deliveryPolicy"`
+	UsePlayerDefaults  bool       `json:"usePlayerDefaults,omitempty"`
 	AvailableFrom      *time.Time `json:"availableFrom,omitempty"`
 	ExpiresAt          *time.Time `json:"expiresAt,omitempty"`
 }
 type ManifestAsset struct {
-	AssetID         uuid.UUID `json:"assetId"`
-	VariantID       uuid.UUID `json:"variantId"`
-	MIMEType        string    `json:"mimeType"`
-	SHA256          string    `json:"sha256"`
-	FileSize        int64     `json:"fileSize"`
-	Width           *int      `json:"width,omitempty"`
-	Height          *int      `json:"height,omitempty"`
-	DurationSeconds *float64  `json:"durationSeconds,omitempty"`
-	DownloadPath    string    `json:"downloadPath"`
+	AssetID         uuid.UUID  `json:"assetId"`
+	VariantID       uuid.UUID  `json:"variantId"`
+	MIMEType        string     `json:"mimeType"`
+	SHA256          string     `json:"sha256"`
+	FileSize        int64      `json:"fileSize"`
+	Width           *int       `json:"width,omitempty"`
+	Height          *int       `json:"height,omitempty"`
+	DurationSeconds *float64   `json:"durationSeconds,omitempty"`
+	DownloadPath    string     `json:"downloadPath"`
+	AvailableFrom   *time.Time `json:"availableFrom,omitempty"`
+	ExpiresAt       *time.Time `json:"expiresAt,omitempty"`
 }
 
 type PlayerStatus struct {

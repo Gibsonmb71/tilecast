@@ -284,6 +284,7 @@ export interface LayoutPlacement {
   groupId?: string | null;
   widgetId?: string | null;
   assetId?: string | null;
+  variantId?: string | null;
   playlistId?: string | null;
   overrides?: Record<string, unknown> | null;
   primitive?: LayoutPrimitive | null;
@@ -296,6 +297,7 @@ export interface LayoutCanvas {
   orientation: string;
   backgroundColor: string;
   backgroundAssetId?: string | null;
+  backgroundVariantId?: string | null;
   safeAreaPercent?: number;
 }
 

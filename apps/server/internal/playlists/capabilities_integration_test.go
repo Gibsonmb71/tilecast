@@ -58,7 +58,7 @@ func setupCapabilityFixture(t *testing.T) *capabilityFixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(pool.Close)
-	if _, err := pool.Exec(ctx, `TRUNCATE screen_group_memberships,screen_groups,screen_player_status,screen_manifest_state,screen_playlist_assignments,playlist_items,playlists,layout_revision_dependencies,layout_revisions,layouts,data_source_refresh_states,data_sources,widgets,asset_variants,assets,screens,sessions,audit_logs,users,organization_settings CASCADE`); err != nil {
+	if _, err := pool.Exec(ctx, `TRUNCATE presentation_overrides,takeover_screen_states,takeover_targets,takeovers,screen_group_memberships,screen_groups,screen_player_status,screen_manifest_state,screen_playlist_assignments,playlist_items,playlists,layout_revision_dependencies,layout_revisions,layouts,data_source_refresh_states,data_sources,widgets,asset_variants,assets,screens,sessions,audit_logs,users,organization_settings CASCADE`); err != nil {
 		t.Fatal(err)
 	}
 	owner, err := auth.NewService(pool, time.Hour).Setup(ctx, auth.SetupInput{OrganizationName: "District", OwnerName: "Owner", Username: "owner", Password: "correct horse battery staple"})
@@ -79,6 +79,24 @@ func setupCapabilityFixture(t *testing.T) *capabilityFixture {
 	return &capabilityFixture{ctx: ctx, pool: pool, service: service, media: mediaService, org: org, user: owner.User.ID, screen: screen}
 }
 
+// addReadyImageToPlaylist gives tests that exercise assignment/readiness a
+// real player-compatible presentation. Keeping this in the integration
+// fixture makes the readiness contract explicit instead of weakening the
+// production validator for otherwise empty test playlists.
+func (f *capabilityFixture) addReadyImageToPlaylist(t *testing.T, playlistID uuid.UUID) {
+	t.Helper()
+	assetID, variantID := uuid.New(), uuid.New()
+	if _, err := f.pool.Exec(f.ctx, `INSERT INTO assets(id,organization_id,name,type,original_filename,detected_mime_type,sha256,original_size,width,height,processing_status,created_by)VALUES($1,$2,'Test image','image','test.png','image/png',$3,100,1920,1080,'ready',$4)`, assetID, f.org, make([]byte, 32), f.user); err != nil {
+		t.Fatalf("insert test image: %v", err)
+	}
+	if _, err := f.pool.Exec(f.ctx, `INSERT INTO asset_variants(id,asset_id,kind,storage_provider,storage_key,mime_type,file_size,sha256,width,height,player_compatible)VALUES($1,$2,'original','local',$3,'image/png',100,$4,1920,1080,TRUE)`, variantID, assetID, "originals/"+assetID.String(), make([]byte, 32)); err != nil {
+		t.Fatalf("insert test image variant: %v", err)
+	}
+	if _, err := f.pool.Exec(f.ctx, `INSERT INTO playlist_items(id,playlist_id,asset_id,position,duration_ms)SELECT $1,$2,$3,COALESCE(MAX(position)+1,0),10000 FROM playlist_items WHERE playlist_id=$2`, uuid.New(), playlistID, assetID); err != nil {
+		t.Fatalf("insert test playlist item: %v", err)
+	}
+}
+
 // createSchoolStatusSource creates the release-defined School Status Data Source, which
 // requires manifest v13 (Data Document v1).
 func (f *capabilityFixture) createSchoolStatusSource(t *testing.T, name string) uuid.UUID {
@@ -96,7 +114,27 @@ func (f *capabilityFixture) createSchoolStatusSource(t *testing.T, name string) 
 func (f *capabilityFixture) createLayoutBoundToSource(t *testing.T, sourceID uuid.UUID) uuid.UUID {
 	t.Helper()
 	layoutID, revisionID := uuid.New(), uuid.New()
-	document := `{"zones":[]}`
+	placementID := uuid.New()
+	documentBytes, err := json.Marshal(map[string]any{
+		"schemaVersion": 2,
+		"canvas": map[string]any{
+			"width": 1920, "height": 1080, "orientation": "landscape",
+			"backgroundColor": "#000000", "safeAreaPercent": 0,
+		},
+		"placements": []any{map[string]any{
+			"id": placementID, "type": "primitive", "name": "Status",
+			"x": 0, "y": 0, "width": 1920, "height": 1080,
+			"layer": 0, "opacity": 1, "visible": true, "locked": false,
+			"primitive": map[string]any{
+				"kind": "text", "text": "Status", "color": "#FFFFFF",
+				"binding": map[string]any{"dataSourceId": sourceID, "field": "status"},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("marshal source layout: %v", err)
+	}
+	document := string(documentBytes)
 	sum := sha256.Sum256([]byte(document))
 	if _, err := f.pool.Exec(f.ctx, `INSERT INTO layouts(id,organization_id,name,orientation,canvas_width,canvas_height,draft_document,created_by)VALUES($1,$2,'Status Board','landscape',1920,1080,$3::jsonb,$4)`, layoutID, f.org, document, f.user); err != nil {
 		t.Fatal(err)

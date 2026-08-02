@@ -6,6 +6,9 @@ import (
 	"errors"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/tilecast/tilecast/apps/server/internal/manifestchanges"
+
 	"github.com/google/uuid"
 )
 
@@ -821,6 +824,13 @@ type AssetInvalidator interface {
 	AssetChanged(context.Context, uuid.UUID, string) error
 	TagAssignmentsChanged(context.Context, []uuid.UUID, string) error
 	DataSourceChanged(context.Context, uuid.UUID, string) error
+}
+
+type TransactionalAssetInvalidator interface {
+	AssetChangedInTx(context.Context, pgx.Tx, uuid.UUID, string) ([]manifestchanges.Change, error)
+	TagAssignmentsChangedInTx(context.Context, pgx.Tx, []uuid.UUID, string) ([]manifestchanges.Change, error)
+	DataSourceChangedInTx(context.Context, pgx.Tx, uuid.UUID, string) ([]manifestchanges.Change, error)
+	NotifyManifestChanges([]manifestchanges.Change)
 }
 
 type Creator struct {

@@ -79,12 +79,14 @@ import org.tilecast.player.network.DocumentRecord
 import org.tilecast.player.network.DocumentValue
 import org.tilecast.player.network.ManifestWidget
 import org.tilecast.player.network.ManifestItem
+import org.tilecast.player.network.ManifestAsset
 import org.tilecast.player.network.PresentationBinding
 import org.tilecast.player.network.PresentationNode
 
 data class PresentationContext(
     val datasets: Map<String, DocumentDataset>,
     val localFiles: Map<String, String>,
+    val assets: Map<String, ManifestAsset> = emptyMap(),
     val record: DocumentRecord? = null,
     val repeatIndex: Int = 0,
     val now: Instant = Instant.now(),
@@ -101,10 +103,10 @@ fun DeclarativeWidgetItem(item:ManifestItem,widget: ManifestWidget, session: Pla
     LaunchedEffect(item.id,startOffsetMs){delay(((item.durationMs?:30_000)-startOffsetMs).coerceAtLeast(1));onDone()}
     val presentation = widget.presentation ?: return onFailure("Presentation is unavailable")
     val native = presentation.native ?: return onFailure("Native presentation is unavailable")
-    var now by remember { mutableStateOf(Instant.now()) }
+    var now by remember { mutableStateOf(session.content.serverNow()) }
     LaunchedEffect(widget.assetId) {
         while (true) {
-            now = Instant.now()
+            now = session.content.serverNow()
             delay(1_000)
         }
     }
@@ -115,7 +117,12 @@ fun DeclarativeWidgetItem(item:ManifestItem,widget: ManifestWidget, session: Pla
             }
         }
     }
-    val context = PresentationContext(datasets, session.content.localFiles, now = now)
+    val context = PresentationContext(
+        datasets,
+        session.content.localFiles,
+        session.content.manifest.assets.associateBy { it.variantId },
+        now = now,
+    )
     val shouldSkip = allowAutoSkip && presentationSignalsEmpty(native.root, context)
     if (shouldSkip) {
         LaunchedEffect(item.id, shouldSkip) {
@@ -455,7 +462,9 @@ private fun conditionMatches(node: PresentationNode, context: PresentationContex
 
 @Composable
 private fun AssetImageNode(node: PresentationNode, context: PresentationContext) {
-    val path = context.localFiles[node.string("variantId", "")]
+    val variantId = node.string("variantId", "")
+    val available = context.assets[variantId]?.isAvailableAt(context.now) == true
+    val path = variantId.takeIf { available }?.let(context.localFiles::get)
     val bitmap = remember(path) { path?.let(BitmapFactory::decodeFile) }
     if (bitmap != null) {
         Image(

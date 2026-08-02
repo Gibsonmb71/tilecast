@@ -65,7 +65,7 @@ private val UrgentBackground = Color(0xFFB91C1C)
 @Composable
 internal fun WithPluginBars(
     plugins: List<ManifestPlugin>,
-    clockOffsetSeconds: Long?,
+    clockOffsetMillis: Long?,
     content: @Composable () -> Unit,
 ) {
     val hasBars =
@@ -81,13 +81,13 @@ internal fun WithPluginBars(
         }
     }
     val ticker =
-        remember(plugins, clockOffsetSeconds, now) {
-            if (hasBars) resolveAlertTicker(plugins, now, clockOffsetSeconds) else null
+        remember(plugins, clockOffsetMillis, now) {
+            if (hasBars) resolveAlertTicker(plugins, now, clockOffsetMillis = clockOffsetMillis) else null
         }
     val countdown =
-        remember(plugins, clockOffsetSeconds, now) {
+        remember(plugins, clockOffsetMillis, now) {
             if (hasBars && ticker == null) {
-                resolveCountdownBar(plugins, now, clockOffsetSeconds)
+                resolveCountdownBar(plugins, now, clockOffsetMillis = clockOffsetMillis)
             } else {
                 null
             }

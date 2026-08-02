@@ -10,6 +10,8 @@ interface BrandBugPlugin {
     corner: string;
     imageAssetId?: string | null;
     imageVariantId?: string | null;
+    imageAvailableFrom?: string | null;
+    imageExpiresAt?: string | null;
     text?: string;
     widthPercent: number;
     textSizePercent: number;
@@ -98,6 +100,33 @@ describe("brand bug resolution", () => {
     );
     expect(active?.imageSrc).toBeNull();
     expect(active?.text).toBe("Presented by Example");
+  });
+
+  it("does not render a future or expired logo through the plugin path", () => {
+    expect(
+      resolver.resolve(
+        [
+          mark({
+            imageAssetId: "asset-1",
+            imageVariantId: "variant-1",
+            imageAvailableFrom: "2026-09-15T13:00:00Z",
+          }),
+        ],
+        now,
+      )[0]?.imageSrc,
+    ).toBeNull();
+    expect(
+      resolver.resolve(
+        [
+          mark({
+            imageAssetId: "asset-1",
+            imageVariantId: "variant-1",
+            imageExpiresAt: "2026-09-15T11:00:00Z",
+          }),
+        ],
+        now,
+      )[0]?.imageSrc,
+    ).toBeNull();
   });
 
   it("drops a mark left with neither a drawable logo nor text", () => {

@@ -15,6 +15,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/tilecast/tilecast/apps/server/internal/manifestchanges"
 )
 
 // configNormalizer validates and canonicalizes one provider's configuration.
@@ -307,11 +308,24 @@ func (s *Service) UpdateWidget(ctx context.Context, id, user uuid.UUID, input Wi
 	if _, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id) VALUES($1,$2,'widget.updated','widget',$3)`, uuid.New(), user, id.String()); err != nil {
 		return Asset{}, err
 	}
+	var changes []manifestchanges.Change
+	transactionalUsed := false
+	if transactional, ok := s.invalidator.(TransactionalAssetInvalidator); ok {
+		transactionalUsed = true
+		changes, err = transactional.AssetChangedInTx(ctx, tx, id, "widget.updated")
+		if err != nil {
+			return Asset{}, fmt.Errorf("invalidate widget manifest: %w", err)
+		}
+	}
 	if err = tx.Commit(ctx); err != nil {
 		return Asset{}, err
 	}
-	if s.invalidator != nil {
-		_ = s.invalidator.AssetChanged(ctx, id, "widget.updated")
+	if transactionalUsed {
+		s.invalidator.(TransactionalAssetInvalidator).NotifyManifestChanges(changes)
+	} else if s.invalidator != nil {
+		if err := s.invalidator.AssetChanged(ctx, id, "widget.updated"); err != nil {
+			return Asset{}, fmt.Errorf("invalidate widget manifest: %w", err)
+		}
 	}
 	return s.GetAsset(ctx, id)
 }

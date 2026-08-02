@@ -18,10 +18,14 @@ import type {
   PresentationNode,
 } from "./content-types";
 import type { BoxStyle, RenderNode, TextStyle } from "./render-tree";
+import { isAvailableAt } from "./content-availability";
+import type { ManifestAsset } from "./types";
 
 export interface PresentationContext {
   datasets: Map<string, NormalizedSource>;
   at: Date;
+  /** Manifest assets available to the runtime presentation. */
+  assets?: readonly ManifestAsset[];
   /** Current repeat record and index, set while expanding a repeat. */
   record?: Record<string, string>;
   repeatIndex?: number;
@@ -583,6 +587,21 @@ export function renderPresentation(
           : String(props["assetId"] ?? "");
         const variantId = String(props["variantId"] ?? "");
         if (!assetId) {
+          return null;
+        }
+        // Declarative widgets can reference assets through bindings. The
+        // server validates the graph before publishing, but the player must
+        // still enforce the same exact-variant and availability contract when
+        // a cached manifest crosses an availability boundary.
+        if (
+          ctx.assets &&
+          !ctx.assets.some(
+            (asset) =>
+              asset.assetId === assetId &&
+              asset.variantId === variantId &&
+              isAvailableAt(asset, local.at),
+          )
+        ) {
           return null;
         }
         return {

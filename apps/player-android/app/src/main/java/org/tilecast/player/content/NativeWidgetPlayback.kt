@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -58,6 +59,7 @@ import org.tilecast.player.network.WeatherWidgetConfig
 fun WidgetItem(item: ManifestItem, widget: ManifestWidget, session: PlaybackSession, onDone: () -> Unit, onFailure: (String) -> Unit, onStatus: (WidgetPlaybackStatus) -> Unit, startOffsetMs: Long = 0) {
     DisposableEffect(widget.assetId) { onStatus(WidgetPlaybackStatus(widget.assetId, widget.provider, "ready")); onDispose { onStatus(WidgetPlaybackStatus()) } }
     LaunchedEffect(item.id, startOffsetMs) { delay(((item.durationMs ?: 30_000) - startOffsetMs).coerceAtLeast(1)); onDone() }
+    CompositionLocalProvider(LocalTilecastServerNow provides { session.content.serverNow() }) {
     when (widget.provider) {
         "clock" -> runCatching { Json.decodeFromJsonElement<ClockWidgetConfig>(widget.configuration) }.onSuccess { ClockWidget(it) }.onFailure { onFailure("Clock Widget configuration is invalid") }
         "date" -> runCatching { Json.decodeFromJsonElement<DateWidgetConfig>(widget.configuration) }.onSuccess { DateWidget(it) }.onFailure { onFailure("Date Widget configuration is invalid") }
@@ -113,14 +115,16 @@ fun WidgetItem(item: ManifestItem, widget: ManifestWidget, session: PlaybackSess
             ExpandedWeatherWidget(config,typed)
         }.onFailure { onFailure("Weather Widget configuration is invalid") }
     }
+    }
 }
 
 @Composable
 private fun ClockWidget(config: ClockWidgetConfig) {
-    var now by remember { mutableStateOf(Instant.now()) }
+    val serverNow = LocalTilecastServerNow.current
+    var now by remember { mutableStateOf(serverNow()) }
     LaunchedEffect(config.timezone, config.showSeconds) {
         while (true) {
-            now = Instant.now()
+            now = serverNow()
             delay(if (config.showSeconds) 1_000 else 15_000)
         }
     }
@@ -137,10 +141,11 @@ private fun ClockWidget(config: ClockWidgetConfig) {
 
 @Composable
 private fun DateWidget(config: DateWidgetConfig) {
-    var now by remember { mutableStateOf(Instant.now()) }
+    val serverNow = LocalTilecastServerNow.current
+    var now by remember { mutableStateOf(serverNow()) }
     LaunchedEffect(config.timezone) {
         while (true) {
-            now = Instant.now()
+            now = serverNow()
             delay(30_000)
         }
     }
@@ -191,10 +196,11 @@ private fun QRCodeWidget(config: QRCodeWidgetConfig) {
 }
 @Composable
 private fun TickerWidget(config: TickerWidgetConfig, data: StructuredSourceConfig) {
-    var now by remember { mutableStateOf(Instant.now()) }
+    val serverNow = LocalTilecastServerNow.current
+    var now by remember { mutableStateOf(serverNow()) }
     LaunchedEffect(data.dateSelection.timezone) {
         while (true) {
-            now = Instant.now()
+            now = serverNow()
             delay(30_000)
         }
     }
@@ -208,10 +214,11 @@ private fun TickerWidget(config: TickerWidgetConfig, data: StructuredSourceConfi
 }
 @Composable
 private fun MenuWidget(name: String, config: DisplayWidgetConfig, data: StructuredSourceConfig) {
-    var now by remember { mutableStateOf(Instant.now()) }
+    val serverNow = LocalTilecastServerNow.current
+    var now by remember { mutableStateOf(serverNow()) }
     LaunchedEffect(data.dateSelection.timezone) {
         while (true) {
-            now = Instant.now()
+            now = serverNow()
             delay(30_000)
         }
     }
@@ -277,10 +284,11 @@ internal fun menuContentScale(itemCount: Int, availableHeightDp: Float, textScal
 
 @Composable
 private fun DisplayStructuredWidget(config: DisplayWidgetConfig, data: StructuredSourceConfig) {
-    var now by remember { mutableStateOf(Instant.now()) }
+    val serverNow = LocalTilecastServerNow.current
+    var now by remember { mutableStateOf(serverNow()) }
     LaunchedEffect(data.dateSelection.timezone) {
         while (true) {
-            now = Instant.now()
+            now = serverNow()
             delay(30_000)
         }
     }

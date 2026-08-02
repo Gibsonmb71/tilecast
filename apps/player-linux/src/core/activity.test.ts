@@ -108,4 +108,37 @@ describe("ActivityReporter", () => {
     expect(stored.next).toBe(4);
     expect(stored.buffered.map((e) => e.sequence)).toEqual([1, 2, 3]);
   });
+
+  it("serializes records with flush and drains a concurrent shutdown", async () => {
+    const posted: unknown[][] = [];
+    let releaseUpload: (() => void) | undefined;
+    const uploadBlocked = new Promise<void>((resolve) => {
+      releaseUpload = resolve;
+    });
+    const client = {
+      postActivityEvents: vi.fn(async (events: unknown[]) => {
+        posted.push(events);
+        await uploadBlocked;
+      }),
+    } as unknown as ApiClient;
+    const reporter = new ActivityReporter(
+      fakeStore(),
+      client,
+      clock,
+      uuid,
+      "UTC",
+    );
+    await reporter.start();
+    const first = reporter.record({ eventType: "first" });
+    const flush = reporter.flush();
+    const second = reporter.record({ eventType: "second" });
+    const stop = reporter.stop();
+    await Promise.resolve();
+    releaseUpload!();
+    await Promise.all([first, flush, second, stop]);
+
+    expect(
+      posted.flat().map((event) => (event as { eventType: string }).eventType),
+    ).toEqual(["first", "second"]);
+  });
 });

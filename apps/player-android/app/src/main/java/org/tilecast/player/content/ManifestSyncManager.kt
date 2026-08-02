@@ -34,12 +34,11 @@ import org.tilecast.player.network.TypedRecordData
 import org.tilecast.player.network.PlayerManifest
 import org.tilecast.player.network.TilecastApi
 import java.io.File
-import java.time.Duration
 import java.time.Instant
 import kotlin.random.Random
 import java.util.concurrent.ConcurrentHashMap
 
-data class PreparedContent(val manifest: PlayerManifest, val localFiles: Map<String, String>,val serverClockOffsetSeconds:Long?=null)
+data class PreparedContent(val manifest: PlayerManifest, val localFiles: Map<String, String>,val serverClockOffsetSeconds:Long?=null, val serverClockOffsetMillis:Long?=null)
 data class SyncProgress(val pendingVersion: Long? = null, val queueCount: Int = 0, val downloadedBytes: Long = 0, val requiredBytes: Long = 0, val cacheUsedBytes: Long = 0, val error: String? = null)
 
 internal fun manifestEtagForRequest(activeCacheVerified: Boolean, etag: String?): String? =
@@ -55,13 +54,25 @@ internal fun validateActiveCache(
     verify: (CachedAsset) -> Boolean = { record ->
         ContentPolicy.verify(File(record.localPath), record.expectedFileSize, record.sha256)
     },
+    identity: CacheIdentity? = null,
 ): ActiveCacheValidation {
     val required = records.filter { it.requiredByActiveManifest }
+    val compatible = required.filter { record ->
+        identity == null || identity.matches(record.installationId, record.screenId, record.normalizedServerUrl)
+    }
     val local = required
-        .filter { it.downloadStatus == "ready" && verify(it) }
+        .filter { it in compatible && it.downloadStatus == "ready" && verify(it) }
         .associate { it.variantId to it.localPath }
-    return ActiveCacheValidation(local, local.size == required.size)
+    return ActiveCacheValidation(local, local.size == required.size && compatible.size == required.size)
 }
+
+// Keep the small test/helper contract source-compatible with callers that
+// provide the verifier as a trailing lambda. Identity-aware production paths
+// use the overload above with a named identity argument.
+internal fun validateActiveCache(
+    records: Collection<CachedAsset>,
+    verify: (CachedAsset) -> Boolean,
+): ActiveCacheValidation = validateActiveCache(records, verify, null)
 
 internal fun selectManifestDownloads(
     manifest: PlayerManifest,
@@ -73,7 +84,6 @@ internal fun selectManifestDownloads(
 ): List<ManifestAsset> {
     val items = (manifest.playlists.flatMap { it.items } + manifest.directFallbackPlaylist?.items.orEmpty() + manifest.playlist?.items.orEmpty()).distinctBy { it.id }
     val byVariant = manifest.assets.associateBy { it.variantId }
-    val byAsset = manifest.assets.associateBy { it.assetId }
     val explicit = items.mapNotNull { item ->
         val asset = item.variantId?.let { byVariant[it] } ?: return@mapNotNull null
         when (item.deliveryPolicy) {
@@ -85,6 +95,12 @@ internal fun selectManifestDownloads(
     fun add(asset: ManifestAsset) {
         if (explicit.none { it.variantId == asset.variantId }) explicit += asset
     }
+
+    manifest.branding?.logoAssetId?.let { assetId ->
+        manifest.branding.logoVariantId?.let { variantId ->
+            manifest.assets.firstOrNull { it.assetId == assetId && it.variantId == variantId }?.let(::add)
+        }
+    }
     manifest.websites.mapNotNull { it.fallbackVariantId?.let(byVariant::get) }.forEach(::add)
     fun presentationAssets(node: org.tilecast.player.network.PresentationNode): List<String> {
         val own = if (node.type == "asset_image") listOfNotNull(node.props["variantId"]?.jsonPrimitive?.contentOrNull) else emptyList()
@@ -95,10 +111,14 @@ internal fun selectManifestDownloads(
         .forEach(::add)
     val layouts = (manifest.layouts + listOfNotNull(manifest.layout, manifest.directFallbackLayout)).distinctBy { it.id }
     layouts.flatMap { layout ->
-        listOfNotNull(layout.document.canvas.backgroundAssetId) + layout.document.placements
+        listOfNotNull(layout.document.canvas.backgroundAssetId).map { id ->
+            id to layout.document.canvas.backgroundVariantId
+        } + layout.document.placements
             .filter { it.type == "asset" }
-            .mapNotNull { it.assetId }
-    }.mapNotNull(byAsset::get).forEach(::add)
+            .mapNotNull { placement -> placement.assetId?.let { it to placement.variantId } }
+    }.mapNotNull { (_, variantId) ->
+        variantId?.let(byVariant::get)
+    }.forEach(::add)
 
     var remaining = minOf(
         (cacheLimitBytes - cacheUsedBytes).coerceAtLeast(0),
@@ -120,8 +140,10 @@ class ManifestSyncManager(
     private var minimumFreeBytes: Long = 1024L * 1024 * 1024,
     private var automaticVideoThresholdBytes: Long = 256L * 1024 * 1024,
     private var concurrentDownloads: Int = 2,
+    private val serverClock: ServerClock = ServerClock(context.getSharedPreferences("tilecast-server-clock", Context.MODE_PRIVATE)),
 ) {
 	private var activeCacheVerified = false
+	private var currentCacheIdentity: CacheIdentity? = null
 	fun applyPolicy(maximumBytes:Long,minimumFree:Long,automaticThreshold:Long,downloads:Int){cacheLimitBytes=maximumBytes;minimumFreeBytes=minimumFree;automaticVideoThresholdBytes=automaticThreshold;concurrentDownloads=downloads}
 	fun invalidateActiveCacheVerification() { activeCacheVerified = false }
 	suspend fun clear() {
@@ -131,28 +153,48 @@ class ManifestSyncManager(
 		}
 		mediaDirectory().listFiles()?.forEach { it.delete() }
 		activeCacheVerified = false
+		currentCacheIdentity = null
 	}
-    suspend fun loadActive(): PreparedContent? {
+    suspend fun loadActive(serverUrl: String? = null, installationId: String? = null, screenId: String? = null): PreparedContent? {
+        val identity = serverUrl?.let { cacheIdentity(it, installationId, screenId) }
+        // A cached manifest is never safe to apply without all three identity
+        // fields.  In particular, a legacy cache with no installation/screen
+        // binding must not become playable merely because its JSON decodes.
+        if (identity == null) {
+            clear()
+            return null
+        }
+        currentCacheIdentity = identity
         val stored = database.manifests().active() ?: run { activeCacheVerified = false; return null }
+        if (!identity.matches(stored.installationId, stored.screenId, stored.normalizedServerUrl)) {
+            clear()
+            return null
+        }
         val manifest = runCatching { api.decodeManifest(stored.rawJson) }.getOrNull() ?: run { activeCacheVerified = false; return null }
         if (manifest.schemaVersion !in setOf(11,12,13,14,15)) { activeCacheVerified = false; return null }
         val validation = withContext(Dispatchers.IO) {
-            validateActiveCache(database.cachedAssets().all())
+            validateActiveCache(database.cachedAssets().all(), identity = identity)
         }
         if (!validation.complete) { activeCacheVerified = false; return null }
         activeCacheVerified = true
-        return PreparedContent(manifest, validation.localFiles)
+        return PreparedContent(manifest, validation.localFiles, serverClock.offsetSeconds(), serverClock.offsetMillis())
     }
 
-    suspend fun reconcile(serverUrl: String, credential: String, screenId: String, progress: (SyncProgress) -> Unit): PreparedContent? {
+    suspend fun reconcile(serverUrl: String, credential: String, screenId: String, progress: (SyncProgress) -> Unit, installationId: String? = null): PreparedContent? {
+        val identity = cacheIdentity(serverUrl, installationId, screenId)
+        if (identity == null) {
+            activeCacheVerified = false
+            return null
+        }
+        currentCacheIdentity = identity
         val current = database.manifests().active()
         val response = api.manifest(serverUrl, credential, manifestEtagForRequest(activeCacheVerified,current?.etag))
         if (response.notModified) return null
         val manifest = response.manifest ?: return null
-		val clockOffset=manifest.serverTime?.let{Duration.between(Instant.now(),Instant.parse(it)).seconds}
+		val clockOffset=manifest.serverTime?.let { serverClock.sync(it) }
 		try{validateManifest(manifest,screenId)}catch(error:Exception){progress(SyncProgress(pendingVersion=manifest.manifestVersion,cacheUsedBytes=cacheUsed(),error="Manifest validation failed"));return null}
         val raw = response.rawJson ?: error("Manifest response was empty")
-        database.manifests().save(StoredManifest(manifest.manifestVersion, manifest.schemaVersion, raw, response.etag, "preparing", System.currentTimeMillis()))
+            database.manifests().save(StoredManifest(manifest.manifestVersion, manifest.schemaVersion, raw, response.etag, "preparing", System.currentTimeMillis(), installationId=identity.installationId, screenId=identity.screenId, normalizedServerUrl=identity.normalizedServerUrl))
         return try {
 			database.cachedAssets().clearPendingRequirements()
 			cleanupUnneeded()
@@ -162,16 +204,19 @@ class ManifestSyncManager(
 			ensureSpace(missingBytes)
             required.forEach { asset ->
                 val path = finalFile(asset).absolutePath
-                val old = database.cachedAssets().get(asset.variantId)
-				database.cachedAssets().save(CachedAsset(asset.variantId,asset.assetId,asset.sha256,asset.fileSize,path,old?.downloadStatus?:"queued",old?.downloadedBytes?:0,old?.lastVerifiedAt,old?.lastUsedAt,old?.requiredByActiveManifest?:false,true,old?.failureReason))
+                val old = database.cachedAssets().get(asset.variantId)?.takeIf { identity.matches(it.installationId, it.screenId, it.normalizedServerUrl) }
+					database.cachedAssets().save(CachedAsset(asset.variantId,asset.assetId,asset.sha256,asset.fileSize,path,old?.downloadStatus?:"queued",old?.downloadedBytes?:0,old?.lastVerifiedAt,old?.lastUsedAt,old?.requiredByActiveManifest?:false,true,old?.failureReason,identity.installationId,identity.screenId,identity.normalizedServerUrl))
             }
 			val byteProgress=ConcurrentHashMap<String,Long>()
 			progress(SyncProgress(manifest.manifestVersion,required.size,0,requiredBytes,cacheUsed()))
             val semaphore = Semaphore(concurrentDownloads)
 			coroutineScope { required.map { asset -> async { semaphore.withPermit { downloadIfNeeded(serverUrl, credential, asset) { bytes -> byteProgress[asset.variantId]=bytes;progress(SyncProgress(manifest.manifestVersion,required.size,byteProgress.values.sum(),requiredBytes,cacheUsed())) } } } }.awaitAll() }
             database.manifests().setState(manifest.manifestVersion, "ready", System.currentTimeMillis(), null)
-            val local = database.cachedAssets().all().filter { it.downloadStatus == "ready" }.associate { it.variantId to it.localPath }
-            PreparedContent(manifest, local,clockOffset)
+            val local = database.cachedAssets().all().filter { record ->
+                record.downloadStatus == "ready" &&
+                    currentCacheIdentity?.matches(record.installationId, record.screenId, record.normalizedServerUrl) == true
+            }.associate { it.variantId to it.localPath }
+            PreparedContent(manifest, local, serverClock.offsetSeconds(), clockOffset ?: serverClock.offsetMillis())
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
@@ -197,18 +242,18 @@ class ManifestSyncManager(
 
     private suspend fun downloadIfNeeded(serverUrl: String, credential: String, asset: ManifestAsset, progress: (Long) -> Unit) {
         val final = finalFile(asset)
-        val existing = database.cachedAssets().get(asset.variantId)
+        val existing = database.cachedAssets().get(asset.variantId)?.takeIf { currentCacheIdentity == null || currentCacheIdentity!!.matches(it.installationId, it.screenId, it.normalizedServerUrl) }
         if (existing?.downloadStatus == "ready" && isValidCachedFile(final,asset.fileSize,asset.sha256)) return
         val part = File(final.absolutePath + ".part")
 		val wasActive=existing?.requiredByActiveManifest?:false
         var lastError: Exception? = null
         repeat(4) { attempt ->
             try {
-				database.cachedAssets().save(CachedAsset(asset.variantId,asset.assetId,asset.sha256,asset.fileSize,final.absolutePath,"downloading",part.takeIf{it.exists()}?.length()?:0,requiredByActiveManifest=wasActive,requiredByPendingManifest=true))
+				database.cachedAssets().save(CachedAsset(asset.variantId,asset.assetId,asset.sha256,asset.fileSize,final.absolutePath,"downloading",part.takeIf{it.exists()}?.length()?:0,requiredByActiveManifest=wasActive,requiredByPendingManifest=true,installationId=currentCacheIdentity?.installationId,screenId=currentCacheIdentity?.screenId,normalizedServerUrl=currentCacheIdentity?.normalizedServerUrl))
                 api.downloadVariant(serverUrl, asset.downloadPath, credential, part, asset.sha256, asset.fileSize, progress)
                 final.delete()
                 check(part.renameTo(final)) { "Verified media could not be activated" }
-				database.cachedAssets().save(CachedAsset(asset.variantId,asset.assetId,asset.sha256,asset.fileSize,final.absolutePath,"ready",asset.fileSize,System.currentTimeMillis(),requiredByActiveManifest=wasActive,requiredByPendingManifest=true))
+				database.cachedAssets().save(CachedAsset(asset.variantId,asset.assetId,asset.sha256,asset.fileSize,final.absolutePath,"ready",asset.fileSize,System.currentTimeMillis(),requiredByActiveManifest=wasActive,requiredByPendingManifest=true,installationId=currentCacheIdentity?.installationId,screenId=currentCacheIdentity?.screenId,normalizedServerUrl=currentCacheIdentity?.normalizedServerUrl))
                 return
             } catch (error: CancellationException) {
                 throw error
@@ -217,7 +262,7 @@ class ManifestSyncManager(
                 if (attempt < 3) delay((1L shl attempt) * 1_000 + Random.nextLong(500))
             }
         }
-		database.cachedAssets().save(CachedAsset(asset.variantId,asset.assetId,asset.sha256,asset.fileSize,final.absolutePath,"failed",part.takeIf{it.exists()}?.length()?:0,requiredByActiveManifest=wasActive,requiredByPendingManifest=true,failureReason=lastError?.message))
+		database.cachedAssets().save(CachedAsset(asset.variantId,asset.assetId,asset.sha256,asset.fileSize,final.absolutePath,"failed",part.takeIf{it.exists()}?.length()?:0,requiredByActiveManifest=wasActive,requiredByPendingManifest=true,failureReason=lastError?.message,installationId=currentCacheIdentity?.installationId,screenId=currentCacheIdentity?.screenId,normalizedServerUrl=currentCacheIdentity?.normalizedServerUrl))
         throw lastError ?: IllegalStateException("Media download failed")
     }
 
@@ -250,7 +295,8 @@ class ManifestSyncManager(
 		require(manifest.schedules.all { schedule -> schedule.layoutId?.let(layoutIds::contains) ?: (schedule.playlistId?.let(playlistIds::contains) ?: false) } && manifest.effectiveTakeover?.playlistId?.let(playlistIds::contains) != false) { "Manifest references an unavailable presentation" }
 		manifest.layouts.forEach { layout ->
 			LayoutValidator.validate(layout.document)
-			require(layout.document.placements.all { placement -> when (placement.type) { "widget" -> placement.widgetId?.let(widgets::containsKey) == true; "asset" -> manifest.assets.any { it.assetId == placement.assetId }; "playlistZone" -> placement.playlistId?.let(playlistIds::contains) == true; else -> true } }) { "Layout dependency is unavailable" }
+			require(layout.document.canvas.backgroundAssetId == null || (layout.document.canvas.backgroundVariantId != null && manifest.assets.any { it.assetId == layout.document.canvas.backgroundAssetId && it.variantId == layout.document.canvas.backgroundVariantId })) { "Layout background is unavailable" }
+			require(layout.document.placements.all { placement -> when (placement.type) { "widget" -> placement.widgetId?.let(widgets::containsKey) == true; "asset" -> placement.assetId != null && placement.variantId != null && manifest.assets.any { it.assetId == placement.assetId && it.variantId == placement.variantId }; "playlistZone" -> placement.playlistId?.let(playlistIds::contains) == true; else -> true } }) { "Layout dependency is unavailable" }
 			require(layout.document.placements.all { placement -> placement.primitive?.binding?.dataSourceId?.let(dataSources::containsKey) != false }) { "Layout binding Data Source is unavailable" }
 		}
 		require(manifest.layout?.id?.let(layoutIds::contains) != false && manifest.directFallbackLayout?.id?.let(layoutIds::contains) != false) { "Root Layout is unavailable" }
@@ -265,7 +311,7 @@ class ManifestSyncManager(
 			val availableFrom = item.availableFrom?.let(Instant::parse)
 			val expiresAt = item.expiresAt?.let(Instant::parse)
 			require(availableFrom == null || expiresAt == null || availableFrom.isBefore(expiresAt)) { "Manifest item availability is invalid" }
-			if (item.variantId?.let { assets[it]?.mimeType?.startsWith("image/") } == true) require((item.durationMs ?: 0) > 0) { "Image duration is invalid" }
+			if (item.variantId?.let { assets[it]?.mimeType?.startsWith("image/") } == true) require((item.durationMs ?: 0) > 0 || item.usePlayerDefaults) { "Image duration is invalid" }
 			if (item.videoEndOffsetMs != null) require(item.videoEndOffsetMs > (item.videoStartOffsetMs ?: 0)) { "Video offsets are invalid" }
 		}
 		manifest.websites.forEach { site ->

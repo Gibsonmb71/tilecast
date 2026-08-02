@@ -44,6 +44,7 @@ interface LayoutZonePayload {
     durationMs: number | null;
     fit: string;
     muted: boolean;
+    volume: number;
     loop: boolean;
   }[];
 }
@@ -81,6 +82,7 @@ interface RendererItem {
   src: string;
   durationMs: number | null;
   fitMode: string;
+  transition?: string;
   audioEnabled: boolean;
   volume: number;
   videoStartOffsetMs: number | null;
@@ -90,6 +92,13 @@ interface RendererItem {
     loadTimeoutSeconds: number;
     refreshIntervalSeconds: number | null;
     zoomPercent: number;
+    javascriptEnabled: boolean;
+    domStorageEnabled: boolean;
+    cookiePolicy: string;
+    reloadPolicy: string;
+    customUserAgent: string;
+    scrollX: number;
+    scrollY: number;
     backgroundColor: string;
     failureBehavior: string;
     fallbackSrc: string | null;
@@ -115,6 +124,11 @@ interface RendererPresentation {
   organizationName?: string;
   title?: string;
   message?: string;
+  backgroundColor?: string;
+  textColor?: string;
+  logoSrc?: string | null;
+  footerText?: string;
+  status?: string;
   reason?: string;
   provider?: string;
   sessionId?: string;
@@ -281,6 +295,7 @@ let renderToken = 0;
 let completion = new ItemCompletion("local", false);
 /** Teardowns for independently-rotating layout zones of the current item. */
 let zoneTeardowns: (() => void)[] = [];
+let activeTransition = "fade";
 
 /** The fade duration in static/index.html; two decoders overlap for it. */
 const CROSSFADE_MS = 300;
@@ -373,6 +388,10 @@ function swapLayers(): void {
   const outgoing = frontLayer;
   frontLayer = backLayer;
   backLayer = outgoing;
+  const transition =
+    activeTransition === "none" ? "none" : "opacity 300ms ease";
+  frontLayer.style.transition = transition;
+  outgoing.style.transition = transition;
   frontLayer.classList.add("visible");
   outgoing.classList.remove("visible");
 
@@ -407,6 +426,8 @@ function showMessage(html: string): void {
   clearTimers();
   currentItem = null;
   playbackAuthority = "local";
+  messageEl.style.background = "";
+  messageEl.style.color = "";
   messageEl.innerHTML = html;
   messageEl.classList.add("visible");
   layerA.classList.remove("visible");
@@ -415,6 +436,30 @@ function showMessage(html: string): void {
   pauseLayerVideos(layerB);
   layerA.replaceChildren();
   layerB.replaceChildren();
+}
+
+function showBrandedMessage(presentation: RendererPresentation): void {
+  showMessage("");
+  const background = /^#[0-9a-fA-F]{6}$/.test(
+    presentation.backgroundColor ?? "",
+  )
+    ? presentation.backgroundColor!
+    : "#0E141B";
+  const text = /^#[0-9a-fA-F]{6}$/.test(presentation.textColor ?? "")
+    ? presentation.textColor!
+    : "#F5F7FA";
+  messageEl.style.background = background;
+  messageEl.style.color = text;
+  const logo = presentation.logoSrc
+    ? `<img class="branded-fallback__logo" src="${escapeHtml(presentation.logoSrc)}" alt="" />`
+    : "";
+  const footer = presentation.footerText
+    ? `<p class="branded-fallback__footer">${escapeHtml(presentation.footerText)}</p>`
+    : "";
+  const status = presentation.status
+    ? `<p class="branded-fallback__status">${escapeHtml(presentation.status.replaceAll("_", " "))}</p>`
+    : "";
+  messageEl.innerHTML = `<div class="branded-fallback">${logo}<h1>${escapeHtml(presentation.title ?? "")}</h1><p>${escapeHtml(presentation.message ?? "")}</p>${status}${footer}</div>`;
 }
 
 function hideMessage(): void {
@@ -1397,6 +1442,7 @@ async function renderItem(
   clearTimers();
   renderToken += 1;
   currentItem = item;
+  activeTransition = item.transition || "fade";
   // Exactly one completion may act per occurrence. Only a single-video local
   // playlist restarts in place; everything else advances.
   completion = new ItemCompletion(
@@ -1633,6 +1679,7 @@ function startZonePlaylist(
       const video = document.createElement("video");
       video.src = zi.src;
       video.muted = zi.muted;
+      video.volume = Math.min(Math.max(zi.volume, 0), 1);
       video.autoplay = true;
       video.loop = zi.loop || list.length === 1;
       video.style.width = "100%";
@@ -1845,8 +1892,26 @@ function renderWebsite(item: RendererItem, myGeneration: number): void {
   }
 
   const webview = document.createElement("webview");
-  webview.setAttribute("partition", "persist:websites");
+  const policy = config.cookiePolicy;
+  const partition =
+    policy === "disabled"
+      ? `tilecast-websites-disabled-${item.id}-${myGeneration}`
+      : policy === "first_and_third_party"
+        ? "persist:tilecast-websites-all"
+        : "persist:tilecast-websites-first-party";
+  webview.setAttribute("partition", partition);
   webview.setAttribute("allowpopups", "false");
+  webview.setAttribute(
+    "webpreferences",
+    [
+      `javascript=${config.javascriptEnabled ? "yes" : "no"}`,
+      `webSecurity=yes`,
+      `domStorage=${config.domStorageEnabled ? "yes" : "no"}`,
+    ].join(","),
+  );
+  if (config.customUserAgent.trim()) {
+    webview.setAttribute("useragent", config.customUserAgent.trim());
+  }
   webview.style.backgroundColor = config.backgroundColor || "#000";
   let loaded = false;
   let failed = false;
@@ -1898,6 +1963,19 @@ function renderWebsite(item: RendererItem, myGeneration: number): void {
           /* zoom is cosmetic */
         }
       }
+      if (config.scrollX || config.scrollY) {
+        try {
+          (
+            webview as unknown as {
+              executeJavaScript(code: string): Promise<unknown>;
+            }
+          ).executeJavaScript(
+            `window.scrollTo(${Math.trunc(config.scrollX)},${Math.trunc(config.scrollY)})`,
+          );
+        } catch {
+          /* scroll position is cosmetic */
+        }
+      }
       swapLayers();
       consecutiveFailures = 0;
     } else {
@@ -1923,7 +2001,7 @@ function renderWebsite(item: RendererItem, myGeneration: number): void {
     showFallback("renderer crashed");
   });
 
-  if (config.refreshIntervalSeconds) {
+  if (config.reloadPolicy === "interval" && config.refreshIntervalSeconds) {
     websiteRefreshTimer = window.setInterval(
       () => {
         try {
@@ -2005,16 +2083,13 @@ function present(presentation: RendererPresentation): void {
       `);
       break;
     case "idle":
-      showMessage(`
-        <h1>${escapeHtml(presentation.title ?? "Waiting for content")}</h1>
-        <p>${escapeHtml(presentation.message ?? "")}</p>
-      `);
+      showBrandedMessage(presentation);
       break;
     case "disabled":
-      showMessage(`
-        <h1>${escapeHtml(presentation.title ?? "Screen disabled")}</h1>
-        <p>${escapeHtml(presentation.message ?? "")}</p>
-      `);
+      showBrandedMessage(presentation);
+      break;
+    case "unavailable":
+      showBrandedMessage(presentation);
       break;
     case "safe-mode":
       showMessage(`

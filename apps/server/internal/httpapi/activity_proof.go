@@ -101,9 +101,9 @@ func proofSummaryClauses(r *http.Request, window activityWindow) ([]string, []an
 }
 
 func proofClausesForWindow(r *http.Request, window activityWindow, overlap bool) ([]string, []any, error) {
-	clauses := []string{"p.started_at >= $1", "p.started_at < $2"}
+	clauses := []string{"p.started_at >= $1", "p.started_at < $2", "s.enabled = TRUE", "s.deleted_at IS NULL", "s.archived_at IS NULL"}
 	if overlap {
-		clauses = []string{"p.started_at < $2", "COALESCE(p.ended_at,$2) > $1"}
+		clauses = []string{"p.started_at < $2", "COALESCE(p.ended_at,$2) > $1", "s.enabled = TRUE", "s.deleted_at IS NULL", "s.archived_at IS NULL"}
 	}
 	args := []any{window.From, window.To}
 	for key, expression := range map[string]string{

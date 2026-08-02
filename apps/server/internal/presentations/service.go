@@ -18,13 +18,18 @@ type Notifier interface {
 }
 
 type Service struct {
-	db       *pgxpool.Pool
-	notifier Notifier
-	now      func() time.Time
+	db        *pgxpool.Pool
+	notifier  Notifier
+	now       func() time.Time
+	readiness playlists.PresentationReadiness
 }
 
 func NewService(db *pgxpool.Pool, notifier Notifier) *Service {
 	return &Service{db: db, notifier: notifier, now: time.Now}
+}
+
+func (s *Service) SetPresentationReadiness(readiness playlists.PresentationReadiness) {
+	s.readiness = readiness
 }
 
 // ActiveForScreen is the only lookup used by manifest generation. The player
@@ -108,9 +113,18 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (Override, erro
 	if len(screens) == 0 {
 		return Override{}, fmt.Errorf("%w: target has no active screens", ErrConflict)
 	}
-	contentName, err := validateContent(ctx, tx, org, input.ContentType, input.ContentID)
+	// When the shared readiness service is wired, it owns the complete graph
+	// decision below. The local query still verifies organization ownership and
+	// obtains the display name, but must not reject a dependency with a partial
+	// readiness rule before the authoritative validator can explain it.
+	contentName, err := validateContent(ctx, tx, org, input.ContentType, input.ContentID, s.readiness == nil)
 	if err != nil {
 		return Override{}, err
+	}
+	if s.readiness != nil {
+		if err = s.readiness.ValidatePresentationNowInTx(ctx, tx, input.ContentType, input.ContentID, s.now().UTC()); err != nil {
+			return Override{}, err
+		}
 	}
 	var conflict bool
 	err = tx.QueryRow(ctx, `
@@ -384,27 +398,45 @@ func targetScreens(ctx context.Context, tx pgx.Tx, org uuid.UUID, targetType str
 	return ids, name, rows.Err()
 }
 
-func validateContent(ctx context.Context, tx pgx.Tx, org uuid.UUID, contentType string, id uuid.UUID) (string, error) {
+func validateContent(ctx context.Context, tx pgx.Tx, org uuid.UUID, contentType string, id uuid.UUID, requireReady bool) (string, error) {
 	var name string
 	switch contentType {
 	case "playlist":
-		var ready bool
-		if err := tx.QueryRow(ctx, `SELECT p.name,(p.deleted_at IS NULL AND EXISTS(SELECT 1 FROM playlist_items i WHERE i.playlist_id=p.id)) FROM playlists p WHERE p.id=$1 AND p.organization_id=$2`, id, org).Scan(&name, &ready); err == pgx.ErrNoRows || !ready {
+		if requireReady {
+			var ready bool
+			if err := tx.QueryRow(ctx, `SELECT p.name,(p.deleted_at IS NULL AND EXISTS(SELECT 1 FROM playlist_items i WHERE i.playlist_id=p.id)) FROM playlists p WHERE p.id=$1 AND p.organization_id=$2`, id, org).Scan(&name, &ready); err == pgx.ErrNoRows || !ready {
+				return "", fmt.Errorf("%w: playlist is missing or empty", ErrInvalid)
+			} else if err != nil {
+				return "", err
+			}
+		} else if err := tx.QueryRow(ctx, `SELECT name FROM playlists WHERE id=$1 AND organization_id=$2`, id, org).Scan(&name); err == pgx.ErrNoRows {
 			return "", fmt.Errorf("%w: playlist is missing or empty", ErrInvalid)
 		} else if err != nil {
 			return "", err
 		}
 	case "layout":
-		var published bool
-		if err := tx.QueryRow(ctx, `SELECT name,(deleted_at IS NULL AND published_revision_id IS NOT NULL) FROM layouts WHERE id=$1 AND organization_id=$2`, id, org).Scan(&name, &published); err == pgx.ErrNoRows || !published {
-			return "", fmt.Errorf("%w: Layout is not published", ErrInvalid)
+		if requireReady {
+			var published bool
+			if err := tx.QueryRow(ctx, `SELECT name,(deleted_at IS NULL AND published_revision_id IS NOT NULL) FROM layouts WHERE id=$1 AND organization_id=$2`, id, org).Scan(&name, &published); err == pgx.ErrNoRows || !published {
+				return "", fmt.Errorf("%w: Layout is not published", ErrInvalid)
+			} else if err != nil {
+				return "", err
+			}
+		} else if err := tx.QueryRow(ctx, `SELECT name FROM layouts WHERE id=$1 AND organization_id=$2`, id, org).Scan(&name); err == pgx.ErrNoRows {
+			return "", fmt.Errorf("%w: Layout is missing", ErrInvalid)
 		} else if err != nil {
 			return "", err
 		}
 	case "asset":
-		var ready bool
-		if err := tx.QueryRow(ctx, `SELECT name,(deleted_at IS NULL AND archived_at IS NULL AND origin='library' AND system_managed=FALSE AND processing_status='ready') FROM assets WHERE id=$1 AND organization_id=$2`, id, org).Scan(&name, &ready); err == pgx.ErrNoRows || !ready {
-			return "", fmt.Errorf("%w: content is not ready", ErrInvalid)
+		if requireReady {
+			var ready bool
+			if err := tx.QueryRow(ctx, `SELECT name,(deleted_at IS NULL AND archived_at IS NULL AND origin='library' AND system_managed=FALSE AND processing_status='ready') FROM assets WHERE id=$1 AND organization_id=$2`, id, org).Scan(&name, &ready); err == pgx.ErrNoRows || !ready {
+				return "", fmt.Errorf("%w: content is not ready", ErrInvalid)
+			} else if err != nil {
+				return "", err
+			}
+		} else if err := tx.QueryRow(ctx, `SELECT name FROM assets WHERE id=$1 AND organization_id=$2`, id, org).Scan(&name); err == pgx.ErrNoRows {
+			return "", fmt.Errorf("%w: content is missing", ErrInvalid)
 		} else if err != nil {
 			return "", err
 		}

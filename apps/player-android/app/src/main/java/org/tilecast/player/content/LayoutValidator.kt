@@ -15,6 +15,7 @@ object LayoutValidator {
         require(canvas.width in 320..7680 && canvas.height in 320..7680)
         require(canvas.orientation in setOf("landscape", "portrait", "custom"))
         require(color.matches(canvas.backgroundColor) && canvas.safeAreaPercent in 0f..20f)
+        require(canvas.backgroundVariantId == null || canvas.backgroundAssetId != null)
         require(document.placements.size <= 200)
         val ids = mutableSetOf<String>()
         document.placements.forEach { placement ->
@@ -25,6 +26,7 @@ object LayoutValidator {
             require(placement.layer in 0..999 && placement.opacity in 0f..1f)
             require(listOfNotNull(placement.widgetId, placement.assetId, placement.playlistId, placement.primitive).size == 1)
             require((placement.type != "widget" || placement.widgetId != null) && (placement.type != "asset" || placement.assetId != null) && (placement.type != "playlistZone" || placement.playlistId != null))
+            require(placement.variantId == null || (placement.type == "asset" && placement.assetId != null))
             placement.primitive?.let { primitive ->
                 require(placement.type == "primitive" && primitive.kind in primitiveTypes)
                 require(primitive.text.length <= 4000 && primitive.fontFamily in fonts)

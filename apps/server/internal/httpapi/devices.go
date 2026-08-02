@@ -160,6 +160,18 @@ func (s *server) playerHeartbeat(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": data})
 }
 
+// playerLiveness deliberately updates only the authenticated contact time.
+// Background workers use it instead of fabricating a partial playback status
+// document; a stale snapshot can therefore never erase foreground state.
+func (s *server) playerLiveness(w http.ResponseWriter, r *http.Request) {
+	principal := r.Context().Value(deviceContextKey).(devices.DevicePrincipal)
+	if err := s.devices.MarkHeartbeatContact(r.Context(), principal.ScreenID, r.RemoteAddr); err != nil {
+		s.writeDeviceError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"accepted": true}})
+}
+
 type pairingCodeRequest struct {
 	Code string `json:"code"`
 }

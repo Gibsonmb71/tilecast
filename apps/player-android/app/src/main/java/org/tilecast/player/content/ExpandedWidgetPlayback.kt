@@ -55,10 +55,11 @@ import org.tilecast.player.network.WeatherWidgetConfig
 
 @Composable
 internal fun ExpandedCountdownWidget(config: CountdownWidgetConfig) {
-    var now by remember { mutableStateOf(Instant.now()) }
+    val serverNow = LocalTilecastServerNow.current
+    var now by remember { mutableStateOf(serverNow()) }
     LaunchedEffect(config.showSeconds) {
         while (true) {
-            now = Instant.now()
+            now = serverNow()
             delay(if (config.showSeconds) 1_000 else 15_000)
         }
     }
@@ -125,7 +126,7 @@ internal fun ExpandedCountdownWidget(config: CountdownWidgetConfig) {
 
 @Composable
 internal fun ExpandedTickerWidget(config: TickerWidgetConfig, data: TypedRecordData) {
-    val records = selectedTypedRecords(data, Instant.now())
+    val records = selectedTypedRecords(data, LocalTilecastServerNow.current())
     val fields = config.fields.ifEmpty { listOf(config.field) }.take(3)
     val text = records.mapNotNull { record ->
         fields.mapNotNull { record.values[it]?.takeIf(String::isNotBlank) }.joinToString(config.fieldSeparator).takeIf(String::isNotBlank)
@@ -146,7 +147,7 @@ internal fun ExpandedTickerWidget(config: TickerWidgetConfig, data: TypedRecordD
 
 @Composable
 internal fun ExpandedDisplayWidget(provider:String,name:String,config:DisplayWidgetConfig,data:TypedRecordData) {
-    val records=selectedTypedRecords(data,Instant.now()).take(config.maximumItems)
+    val records=selectedTypedRecords(data,LocalTilecastServerNow.current()).take(config.maximumItems)
     when(provider){
         "menu"->ExpandedMenu(name,config,records)
         "table"->ExpandedTable(config,records)
@@ -222,7 +223,7 @@ internal fun ExpandedDisplayWidget(provider:String,name:String,config:DisplayWid
 }
 
 @Composable internal fun ExpandedMetricWidget(config:MetricWidgetConfig,data:TypedRecordData){
-    val record=selectedTypedRecords(data,Instant.now()).firstOrNull()
+    val record=selectedTypedRecords(data,LocalTilecastServerNow.current()).firstOrNull()
     WidgetSurface(config.backgroundColor,config.contentPadding){
         if(record==null){EmptyExpanded(config.emptyState,config.foregroundColor);return@WidgetSurface}
         Column(Modifier.fillMaxSize(),horizontalAlignment=when(config.alignment){"left"->Alignment.Start;"right"->Alignment.End;else->Alignment.CenterHorizontally},verticalArrangement=Arrangement.Center){
@@ -235,7 +236,7 @@ internal fun ExpandedDisplayWidget(provider:String,name:String,config:DisplayWid
 }
 
 @Composable internal fun ExpandedCardsWidget(config:CardsWidgetConfig,data:TypedRecordData){
-    val records=selectedTypedRecords(data,Instant.now()).take(config.maximumItems)
+    val records=selectedTypedRecords(data,LocalTilecastServerNow.current()).take(config.maximumItems)
     WidgetSurface(config.backgroundColor,config.contentPadding){
         if(records.isEmpty()){EmptyExpanded(config.emptyState,config.foregroundColor);return@WidgetSurface}
         LazyVerticalGrid(columns=GridCells.Fixed(config.columns),horizontalArrangement=Arrangement.spacedBy(10.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){

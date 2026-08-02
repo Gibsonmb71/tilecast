@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/tilecast/tilecast/apps/server/internal/contentdefs"
+	"github.com/tilecast/tilecast/apps/server/internal/manifestchanges"
 	"github.com/tilecast/tilecast/apps/server/internal/plugins"
 	"github.com/tilecast/tilecast/apps/server/internal/scheduling"
 	"github.com/tilecast/tilecast/apps/server/internal/span"
@@ -217,7 +219,7 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (Playlist, error) {
 			return Playlist{}, tagErr
 		}
 	}
-	itemQuery := `SELECT i.id,COALESCE(i.asset_id,'00000000-0000-0000-0000-000000000000'::uuid),i.layout_id,i.position,i.duration_ms,i.fit_mode,i.transition,i.audio_enabled,i.volume,i.video_start_offset_ms,i.video_end_offset_ms,i.delivery_policy,COALESCE(a.name,l.name),CASE WHEN i.layout_id IS NOT NULL THEN 'layout' ELSE a.type END,COALESCE(s.provider,''),CASE WHEN i.layout_id IS NOT NULL THEN CASE WHEN l.published_revision_id IS NOT NULL THEN 'ready' ELSE 'draft' END ELSE a.processing_status END,a.duration_seconds,v.id,i.created_at,i.updated_at,a.available_from,a.expires_at,FALSE FROM playlist_items i LEFT JOIN assets a ON a.id=i.asset_id LEFT JOIN layouts l ON l.id=i.layout_id AND l.deleted_at IS NULL LEFT JOIN widgets s ON s.asset_id=a.id LEFT JOIN LATERAL(SELECT id FROM asset_variants WHERE asset_id=a.id AND deleted_at IS NULL AND player_compatible=TRUE ORDER BY CASE kind WHEN 'playback' THEN 0 WHEN 'original' THEN 1 ELSE 2 END LIMIT 1)v ON TRUE WHERE i.playlist_id=$1 ORDER BY i.position`
+	itemQuery := `SELECT i.id,COALESCE(i.asset_id,'00000000-0000-0000-0000-000000000000'::uuid),i.layout_id,i.position,i.duration_ms,i.fit_mode,i.transition,i.audio_enabled,i.volume,i.video_start_offset_ms,i.video_end_offset_ms,i.delivery_policy,i.use_player_defaults,COALESCE(a.name,l.name),CASE WHEN i.layout_id IS NOT NULL THEN 'layout' ELSE a.type END,COALESCE(s.provider,''),CASE WHEN i.layout_id IS NOT NULL THEN CASE WHEN l.published_revision_id IS NOT NULL THEN 'ready' ELSE 'draft' END ELSE a.processing_status END,a.duration_seconds,v.id,i.created_at,i.updated_at,a.available_from,a.expires_at,FALSE FROM playlist_items i LEFT JOIN assets a ON a.id=i.asset_id LEFT JOIN layouts l ON l.id=i.layout_id AND l.deleted_at IS NULL LEFT JOIN widgets s ON s.asset_id=a.id LEFT JOIN LATERAL(SELECT id FROM asset_variants WHERE asset_id=a.id AND deleted_at IS NULL AND player_compatible=TRUE ORDER BY CASE kind WHEN 'playback' THEN 0 WHEN 'original' THEN 1 ELSE 2 END,id LIMIT 1)v ON TRUE WHERE i.playlist_id=$1 ORDER BY i.position`
 	if p.SourceType == "tag" {
 		itemQuery = `WITH matched AS (
 			SELECT at.asset_id
@@ -228,10 +230,10 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (Playlist, error) {
 		)
 		SELECT a.id,a.id,NULL::uuid,row_number() OVER(ORDER BY lower(a.name),a.id)-1,
 			CASE WHEN a.type='image' THEN $3::bigint ELSE NULL::bigint END,
-			'contain','none',TRUE,1,NULL::bigint,NULL::bigint,'download',a.name,a.type,'',
+			'contain','none',TRUE,1,NULL::bigint,NULL::bigint,'download',FALSE,a.name,a.type,'',
 			a.processing_status,a.duration_seconds,v.id,a.created_at,a.updated_at,a.available_from,a.expires_at,TRUE
 		FROM matched m JOIN assets a ON a.id=m.asset_id
-		LEFT JOIN LATERAL(SELECT id FROM asset_variants WHERE asset_id=a.id AND deleted_at IS NULL AND player_compatible=TRUE ORDER BY CASE kind WHEN 'playback' THEN 0 WHEN 'original' THEN 1 ELSE 2 END LIMIT 1)v ON TRUE
+		LEFT JOIN LATERAL(SELECT id FROM asset_variants WHERE asset_id=a.id AND deleted_at IS NULL AND player_compatible=TRUE ORDER BY CASE kind WHEN 'playback' THEN 0 WHEN 'original' THEN 1 ELSE 2 END,id LIMIT 1)v ON TRUE
 		WHERE a.deleted_at IS NULL AND a.archived_at IS NULL AND (a.expires_at IS NULL OR a.expires_at>now()) AND a.origin='library' AND a.type IN ('image','video') AND a.processing_status='ready' AND v.id IS NOT NULL
 		ORDER BY lower(a.name),a.id`
 	}
@@ -250,7 +252,7 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (Playlist, error) {
 	p.LayoutUsage = []LayoutUsage{}
 	for rows.Next() {
 		var item Item
-		if err := rows.Scan(&item.ID, &item.AssetID, &item.LayoutID, &item.Position, &item.DurationMS, &item.FitMode, &item.Transition, &item.AudioEnabled, &item.Volume, &item.VideoStartOffsetMS, &item.VideoEndOffsetMS, &item.DeliveryPolicy, &item.AssetName, &item.AssetType, &item.WidgetProvider, &item.AssetStatus, &item.AssetDurationSeconds, &item.VariantID, &item.CreatedAt, &item.UpdatedAt, &item.AvailableFrom, &item.ExpiresAt, &item.Dynamic); err != nil {
+		if err := rows.Scan(&item.ID, &item.AssetID, &item.LayoutID, &item.Position, &item.DurationMS, &item.FitMode, &item.Transition, &item.AudioEnabled, &item.Volume, &item.VideoStartOffsetMS, &item.VideoEndOffsetMS, &item.DeliveryPolicy, &item.UsePlayerDefaults, &item.AssetName, &item.AssetType, &item.WidgetProvider, &item.AssetStatus, &item.AssetDurationSeconds, &item.VariantID, &item.CreatedAt, &item.UpdatedAt, &item.AvailableFrom, &item.ExpiresAt, &item.Dynamic); err != nil {
 			return Playlist{}, err
 		}
 		if item.AssetID != uuid.Nil {
@@ -488,7 +490,7 @@ func (s *Service) Duplicate(ctx context.Context, id, userID uuid.UUID) (Playlist
 		return Playlist{}, err
 	}
 	defer tx.Rollback(ctx)
-	_, err = tx.Exec(ctx, `INSERT INTO playlist_items(id,playlist_id,asset_id,layout_id,position,duration_ms,fit_mode,transition,audio_enabled,volume,video_start_offset_ms,video_end_offset_ms,delivery_policy) SELECT gen_random_uuid(),$2,asset_id,layout_id,position,duration_ms,fit_mode,transition,audio_enabled,volume,video_start_offset_ms,video_end_offset_ms,delivery_policy FROM playlist_items WHERE playlist_id=$1`, id, created.ID)
+	_, err = tx.Exec(ctx, `INSERT INTO playlist_items(id,playlist_id,asset_id,layout_id,position,duration_ms,fit_mode,transition,audio_enabled,volume,video_start_offset_ms,video_end_offset_ms,delivery_policy,use_player_defaults) SELECT gen_random_uuid(),$2,asset_id,layout_id,position,duration_ms,fit_mode,transition,audio_enabled,volume,video_start_offset_ms,video_end_offset_ms,delivery_policy,use_player_defaults FROM playlist_items WHERE playlist_id=$1`, id, created.ID)
 	if err != nil {
 		return Playlist{}, err
 	}
@@ -547,36 +549,8 @@ func (s *Service) validateItem(ctx context.Context, q interface {
 	if (input.AssetID == uuid.Nil) == (input.LayoutID == nil) {
 		return input, assetInfo{}, errors.New("playlist item must reference exactly one asset or Layout")
 	}
-	if input.FitMode == "" {
-		input.FitMode = "contain"
-	}
-	if input.Transition == "" {
-		input.Transition = "none"
-	}
-	if input.DeliveryPolicy == "" {
-		input.DeliveryPolicy = "download"
-	}
-	if input.AudioEnabled == nil {
-		v := true
-		input.AudioEnabled = &v
-	}
-	if input.Volume == nil {
-		v := 1.0
-		input.Volume = &v
-	}
-	if input.FitMode != "contain" && input.FitMode != "cover" && input.FitMode != "stretch" {
-		return input, assetInfo{}, errors.New("fitMode must be contain, cover, or stretch")
-	}
-	if input.Transition != "none" && input.Transition != "fade" && input.Transition != "crossfade" {
-		return input, assetInfo{}, errors.New("transition must be none, fade, or crossfade")
-	}
-	if input.DeliveryPolicy != "download" && input.DeliveryPolicy != "stream" && input.DeliveryPolicy != "automatic" {
-		return input, assetInfo{}, errors.New("deliveryPolicy must be download, stream, or automatic")
-	}
-	if *input.Volume < 0 || *input.Volume > 1 {
-		return input, assetInfo{}, errors.New("volume must be between 0 and 1")
-	}
 	if input.LayoutID != nil {
+		input = normalizeItemDefaults(input, "layout")
 		var published bool
 		err := q.QueryRow(ctx, `SELECT published_revision_id IS NOT NULL FROM layouts WHERE id=$1 AND deleted_at IS NULL`, *input.LayoutID).Scan(&published)
 		if errors.Is(err, pgx.ErrNoRows) || !published {
@@ -591,18 +565,35 @@ func (s *Service) validateItem(ctx context.Context, q interface {
 		input.DeliveryPolicy = "stream"
 		input.VideoStartOffsetMS, input.VideoEndOffsetMS = nil, nil
 		off, zero := false, 0.0
-		input.AudioEnabled, input.Volume = &off, &zero
+		input.AudioEnabled, input.Volume, input.UsePlayerDefaults = &off, &zero, false
 		return input, assetInfo{Type: "layout"}, nil
 	}
 	var a assetInfo
-	err := q.QueryRow(ctx, `SELECT a.type,COALESCE(s.provider,''),a.duration_seconds,v.id FROM assets a LEFT JOIN widgets s ON s.asset_id=a.id LEFT JOIN LATERAL(SELECT id FROM asset_variants WHERE asset_id=a.id AND deleted_at IS NULL AND player_compatible=TRUE ORDER BY CASE kind WHEN 'playback' THEN 0 ELSE 1 END LIMIT 1)v ON TRUE WHERE a.id=$1 AND a.deleted_at IS NULL AND a.processing_status='ready' AND (a.type='widget' OR v.id IS NOT NULL)`, input.AssetID).Scan(&a.Type, &a.Provider, &a.Duration, &a.Variant)
+	err := q.QueryRow(ctx, `SELECT a.type,COALESCE(s.provider,''),a.duration_seconds,v.id FROM assets a LEFT JOIN widgets s ON s.asset_id=a.id LEFT JOIN LATERAL(SELECT id FROM asset_variants WHERE asset_id=a.id AND deleted_at IS NULL AND player_compatible=TRUE ORDER BY CASE kind WHEN 'playback' THEN 0 ELSE 1 END,id LIMIT 1)v ON TRUE WHERE a.id=$1 AND a.deleted_at IS NULL AND a.processing_status='ready' AND (a.type='widget' OR v.id IS NOT NULL)`, input.AssetID).Scan(&a.Type, &a.Provider, &a.Duration, &a.Variant)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return input, a, ErrInvalidAsset
 	}
 	if err != nil {
 		return input, a, err
 	}
-	if a.Type == "image" && (input.DurationMS == nil || *input.DurationMS <= 0) {
+	var defaultsErr error
+	input, defaultsErr = normalizeItemDefaultsWithOrganization(ctx, q, input, a.Type)
+	if defaultsErr != nil {
+		return input, a, defaultsErr
+	}
+	if input.FitMode != "contain" && input.FitMode != "cover" && input.FitMode != "stretch" {
+		return input, a, errors.New("fitMode must be contain, cover, or stretch")
+	}
+	if input.Transition != "none" && input.Transition != "fade" && input.Transition != "crossfade" {
+		return input, a, errors.New("transition must be none, fade, or crossfade")
+	}
+	if input.DeliveryPolicy != "download" && input.DeliveryPolicy != "stream" && input.DeliveryPolicy != "automatic" {
+		return input, a, errors.New("deliveryPolicy must be download, stream, or automatic")
+	}
+	if input.Volume == nil || *input.Volume < 0 || *input.Volume > 1 {
+		return input, a, errors.New("volume must be between 0 and 1")
+	}
+	if a.Type == "image" && (input.DurationMS == nil || *input.DurationMS <= 0) && !input.UsePlayerDefaults {
 		return input, a, errors.New("image durationMs must be positive")
 	}
 	if a.Type == "widget" {
@@ -617,7 +608,7 @@ func (s *Service) validateItem(ctx context.Context, q interface {
 		off := false
 		input.AudioEnabled = &off
 		zero := 0.0
-		input.Volume = &zero
+		input.Volume, input.UsePlayerDefaults = &zero, false
 	}
 	if a.Type == "video" {
 		durationMS := int64(0)
@@ -638,6 +629,98 @@ func (s *Service) validateItem(ctx context.Context, q interface {
 		}
 	}
 	return input, a, nil
+}
+
+// normalizeItemDefaults applies organization-level authoring defaults only
+// when the caller omitted a field. A media item that explicitly opts into
+// Player defaults carries that choice through the manifest; its stored values
+// remain a valid fallback for older Players.
+func normalizeItemDefaults(input ItemInput, assetType string) ItemInput {
+	if input.FitMode == "" {
+		input.FitMode = "contain"
+	}
+	if input.Transition == "" {
+		input.Transition = "none"
+	}
+	if input.DeliveryPolicy == "" {
+		input.DeliveryPolicy = "download"
+	}
+	if input.AudioEnabled == nil {
+		v := true
+		input.AudioEnabled = &v
+	}
+	if input.Volume == nil {
+		v := 1.0
+		input.Volume = &v
+	}
+	if assetType != "image" && assetType != "video" {
+		input.UsePlayerDefaults = false
+	}
+	return input
+}
+
+func normalizeItemDefaultsWithOrganization(ctx context.Context, q interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}, input ItemInput, assetType string) (ItemInput, error) {
+	fitOmitted := input.FitMode == ""
+	transitionOmitted := input.Transition == ""
+	deliveryOmitted := input.DeliveryPolicy == ""
+	audioOmitted := input.AudioEnabled == nil
+	input = normalizeItemDefaults(input, assetType)
+	if fitOmitted {
+		key := ""
+		if assetType == "image" {
+			key = "media.image.default_fit_mode"
+		} else if assetType == "video" {
+			key = "media.video.default_fit_mode"
+		}
+		if key != "" {
+			value, err := organizationSettingText(ctx, q, key, input.FitMode)
+			if err != nil {
+				return input, err
+			}
+			input.FitMode = value
+		}
+	}
+	if transitionOmitted {
+		value, err := organizationSettingText(ctx, q, "player.playback.default_transition", input.Transition)
+		if err != nil {
+			return input, err
+		}
+		input.Transition = value
+	}
+	if deliveryOmitted && assetType == "video" {
+		value, err := organizationSettingText(ctx, q, "media.video.default_delivery_policy", input.DeliveryPolicy)
+		if err != nil {
+			return input, err
+		}
+		input.DeliveryPolicy = value
+	}
+	if audioOmitted {
+		value, err := organizationSettingText(ctx, q, "player.playback.default_audio_enabled", "true")
+		if err != nil {
+			return input, err
+		}
+		audio := value == "true"
+		input.AudioEnabled = &audio
+	}
+	return input, nil
+}
+
+func organizationSettingText(ctx context.Context, q interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}, key, fallback string) (string, error) {
+	var value *string
+	err := q.QueryRow(ctx, `SELECT settings->>$1 FROM organization_runtime_settings LIMIT 1`, key).Scan(&value)
+	if errors.Is(err, pgx.ErrNoRows) || value == nil || *value == "" {
+		return fallback, nil
+	}
+	if key == "player.playback.default_audio_enabled" {
+		if _, parseErr := strconv.ParseBool(*value); parseErr != nil {
+			return fallback, nil
+		}
+	}
+	return *value, nil
 }
 
 func validateLayoutItemCycle(ctx context.Context, q interface {
@@ -708,7 +791,7 @@ func (s *Service) AddItem(ctx context.Context, playlistID, userID uuid.UUID, inp
 	if input.LayoutID != nil {
 		assetID = nil
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO playlist_items(id,playlist_id,asset_id,layout_id,position,duration_ms,fit_mode,transition,audio_enabled,volume,video_start_offset_ms,video_end_offset_ms,delivery_policy)VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`, uuid.New(), playlistID, assetID, input.LayoutID, position, input.DurationMS, input.FitMode, input.Transition, *input.AudioEnabled, *input.Volume, input.VideoStartOffsetMS, input.VideoEndOffsetMS, input.DeliveryPolicy)
+	_, err = tx.Exec(ctx, `INSERT INTO playlist_items(id,playlist_id,asset_id,layout_id,position,duration_ms,fit_mode,transition,audio_enabled,volume,video_start_offset_ms,video_end_offset_ms,delivery_policy,use_player_defaults)VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`, uuid.New(), playlistID, assetID, input.LayoutID, position, input.DurationMS, input.FitMode, input.Transition, *input.AudioEnabled, *input.Volume, input.VideoStartOffsetMS, input.VideoEndOffsetMS, input.DeliveryPolicy, input.UsePlayerDefaults)
 	if err != nil {
 		return Playlist{}, err
 	}
@@ -749,7 +832,7 @@ func (s *Service) UpdateItem(ctx context.Context, playlistID, itemID, userID uui
 	if input.LayoutID != nil {
 		assetID = nil
 	}
-	tag, err := tx.Exec(ctx, `UPDATE playlist_items SET asset_id=$3,layout_id=$4,duration_ms=$5,fit_mode=$6,transition=$7,audio_enabled=$8,volume=$9,video_start_offset_ms=$10,video_end_offset_ms=$11,delivery_policy=$12,updated_at=now() WHERE playlist_id=$1 AND id=$2`, playlistID, itemID, assetID, input.LayoutID, input.DurationMS, input.FitMode, input.Transition, *input.AudioEnabled, *input.Volume, input.VideoStartOffsetMS, input.VideoEndOffsetMS, input.DeliveryPolicy)
+	tag, err := tx.Exec(ctx, `UPDATE playlist_items SET asset_id=$3,layout_id=$4,duration_ms=$5,fit_mode=$6,transition=$7,audio_enabled=$8,volume=$9,video_start_offset_ms=$10,video_end_offset_ms=$11,delivery_policy=$12,use_player_defaults=$13,updated_at=now() WHERE playlist_id=$1 AND id=$2`, playlistID, itemID, assetID, input.LayoutID, input.DurationMS, input.FitMode, input.Transition, *input.AudioEnabled, *input.Volume, input.VideoStartOffsetMS, input.VideoEndOffsetMS, input.DeliveryPolicy, input.UsePlayerDefaults)
 	if err != nil {
 		return Playlist{}, err
 	}
@@ -892,20 +975,7 @@ type notification struct {
 }
 
 func bumpAssigned(ctx context.Context, tx pgx.Tx, playlistID uuid.UUID, reason string) ([]notification, error) {
-	rows, err := tx.Query(ctx, `INSERT INTO screen_manifest_state(screen_id,manifest_version,previous_manifest_version,changed_at,change_reason) SELECT DISTINCT affected.screen_id,1,NULL::bigint,now(),$2 FROM (SELECT screen_id FROM screen_playlist_assignments WHERE playlist_id=$1 UNION SELECT m.screen_id FROM screen_group_playlist_assignments a JOIN screen_group_memberships m ON m.screen_group_id=a.screen_group_id WHERE a.playlist_id=$1 UNION SELECT t.screen_id FROM schedules s JOIN schedule_targets t ON t.schedule_id=s.id WHERE s.playlist_id=$1 AND s.deleted_at IS NULL AND t.screen_id IS NOT NULL UNION SELECT m.screen_id FROM schedules s JOIN schedule_targets t ON t.schedule_id=s.id JOIN screen_group_memberships m ON m.screen_group_id=t.screen_group_id WHERE s.playlist_id=$1 AND s.deleted_at IS NULL) affected ON CONFLICT(screen_id)DO UPDATE SET previous_manifest_version=screen_manifest_state.manifest_version,manifest_version=screen_manifest_state.manifest_version+1,changed_at=now(),change_reason=$2 RETURNING screen_id,manifest_version`, playlistID, reason)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	result := []notification{}
-	for rows.Next() {
-		var n notification
-		if err := rows.Scan(&n.screen, &n.version); err != nil {
-			return nil, err
-		}
-		result = append(result, n)
-	}
-	return result, rows.Err()
+	return bumpResourcesInTx(ctx, tx, "playlist", playlistID, reason)
 }
 
 func bumpAssignmentScreens(ctx context.Context, tx pgx.Tx, screenID uuid.UUID, reason string) ([]notification, error) {
@@ -950,6 +1020,23 @@ func (s *Service) notify(items []notification) {
 	}
 }
 
+func (s *Service) NotifyManifestChanges(changes []manifestchanges.Change) {
+	if s.notifier == nil {
+		return
+	}
+	for _, change := range changes {
+		s.notifier.ManifestChanged(change.ScreenID, change.Version)
+	}
+}
+
+func manifestChanges(notes []notification) []manifestchanges.Change {
+	changes := make([]manifestchanges.Change, 0, len(notes))
+	for _, note := range notes {
+		changes = append(changes, manifestchanges.Change{ScreenID: note.screen, Version: note.version})
+	}
+	return changes
+}
+
 func (s *Service) Assign(ctx context.Context, screenID, playlistID, userID uuid.UUID) (Assignment, error) {
 	return s.AssignPresentation(ctx, screenID, &playlistID, nil, userID)
 }
@@ -971,6 +1058,13 @@ func (s *Service) AssignPresentation(ctx context.Context, screenID uuid.UUID, pl
 	// content against a concurrent edit, and an edit that arrives now waits for
 	// this assignment rather than slipping between the check and the commit.
 	if err := s.passApprovalGate(ctx, tx, playlistID, layoutID); err != nil {
+		return Assignment{}, err
+	}
+	contentType, contentID := "layout", layoutID
+	if playlistID != nil {
+		contentType, contentID = "playlist", playlistID
+	}
+	if err = s.ValidatePresentationInTx(ctx, tx, contentType, *contentID, time.Now().UTC()); err != nil {
 		return Assignment{}, err
 	}
 	var exists bool
@@ -1118,6 +1212,13 @@ func (s *Service) AssignGroupPresentation(ctx context.Context, groupID uuid.UUID
 	// assignment path like any other and passes the same gate, in the same
 	// transaction.
 	if err := s.passApprovalGate(ctx, tx, playlistID, layoutID); err != nil {
+		return err
+	}
+	contentType, contentID := "layout", layoutID
+	if playlistID != nil {
+		contentType, contentID = "playlist", playlistID
+	}
+	if err = s.ValidatePresentationInTx(ctx, tx, contentType, *contentID, time.Now().UTC()); err != nil {
 		return err
 	}
 	var valid bool
@@ -1283,7 +1384,10 @@ func (s *Service) Assignment(ctx context.Context, screenID uuid.UUID) (Assignmen
 	a.RelevantSchedules = []AssignmentSchedule{}
 	a.ClockSkewWarningSeconds = 300
 	if s.scheduling != nil {
-		_, _, a.ClockSkewWarningSeconds = s.scheduling.Config()
+		_, _, a.ClockSkewWarningSeconds, err = s.scheduling.ConfigFor(ctx)
+		if err != nil {
+			return Assignment{}, err
+		}
 	}
 	scheduleRows, e := s.db.Query(ctx, `SELECT DISTINCT s.id,s.name,COALESCE(p.name,l.name,''),CASE WHEN s.display_action IS NOT NULL THEN 'display_control' WHEN s.layout_id IS NOT NULL THEN 'layout' ELSE 'playlist' END,s.priority,s.enabled FROM schedules s LEFT JOIN playlists p ON p.id=s.playlist_id LEFT JOIN layouts l ON l.id=s.layout_id JOIN schedule_targets t ON t.schedule_id=s.id LEFT JOIN screen_group_memberships m ON m.screen_group_id=t.screen_group_id AND m.screen_id=$1 WHERE s.deleted_at IS NULL AND (t.screen_id=$1 OR m.screen_id=$1) ORDER BY s.priority DESC,s.id`, screenID)
 	if e != nil {
@@ -1348,18 +1452,38 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 			return Manifest{}, "", err
 		}
 	}
+	now := time.Now().UTC()
 	// Expiration is persisted during reconciliation so an unchanged ETag can never
-	// hide the removal of a takeover from a player.
+	// hide the removal of a takeover from a player. The takeover state transition
+	// and manifest version bump share one transaction; a failed bump cannot leave
+	// an expired takeover with an old conditional-response identity.
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return Manifest{}, "", err
+	}
+	defer tx.Rollback(ctx)
 	var expired bool
-	_ = s.db.QueryRow(ctx, `WITH changed AS (
+	if err = tx.QueryRow(ctx, `WITH changed AS (
 		UPDATE takeovers e SET status='expired',updated_at=now()
 		WHERE e.status='active' AND e.expires_at<=now() AND EXISTS(SELECT 1 FROM takeover_screen_states es WHERE es.takeover_id=e.id AND es.screen_id=$1)
-		RETURNING e.id)
+		RETURNING e.id),
+		updated AS (
 		UPDATE takeover_screen_states es SET state='expired',restored_at=now(),last_updated_at=now()
-		WHERE es.screen_id=$1 AND es.takeover_id IN(SELECT id FROM changed) RETURNING true`, screenID).Scan(&expired)
-	if expired {
-		_, _ = s.db.Exec(ctx, `UPDATE screen_manifest_state SET manifest_version=manifest_version+1,changed_at=now(),change_reason='takeover.expired' WHERE screen_id=$1`, screenID)
+		WHERE es.screen_id=$1 AND es.takeover_id IN(SELECT id FROM changed) RETURNING true)
+		SELECT EXISTS(SELECT 1 FROM changed) OR EXISTS(SELECT 1 FROM updated)`, screenID).Scan(&expired); err != nil {
+		return Manifest{}, "", err
 	}
+	expirationNotes := []notification{}
+	if expired {
+		expirationNotes, err = bumpScreensInTx(ctx, tx, []uuid.UUID{screenID}, "takeover.expired")
+		if err != nil {
+			return Manifest{}, "", err
+		}
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return Manifest{}, "", err
+	}
+	s.notify(expirationNotes)
 	assignment, err := s.Assignment(ctx, screenID)
 	if err != nil {
 		return Manifest{}, "", err
@@ -1368,12 +1492,33 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 	if err = s.db.QueryRow(ctx, `UPDATE screen_manifest_state SET last_requested_at=now() WHERE screen_id=$1 RETURNING changed_at`, screenID).Scan(&changed); err != nil {
 		return Manifest{}, "", err
 	}
-	now := time.Now().UTC()
 	prefetch, grace := 14, 30
 	if s.scheduling != nil {
-		prefetch, grace, _ = s.scheduling.Config()
+		prefetch, grace, _, err = s.scheduling.ConfigFor(ctx)
+		if err != nil {
+			return Manifest{}, "", err
+		}
 	}
 	manifest := Manifest{SchemaVersion: 11, ManifestVersion: assignment.ManifestVersion, ScreenID: screenID, GeneratedAt: changed, ServerTime: now, Mode: "presentation", Assets: []ManifestAsset{}, Playlists: []ManifestPlaylist{}, Layouts: []ManifestLayout{}, Schedules: []ManifestSchedule{}, Websites: []ManifestWebsite{}, Widgets: []ManifestWidget{}, DataSources: []ManifestDataSource{}, Plugins: []plugins.ManifestPlugin{}, PrefetchHorizonDays: prefetch, ActivationGraceSeconds: grace}
+	// Branding is part of the player fallback, not a dashboard-only concern.
+	// Project its exact image variant into the same verified asset set so a
+	// paired player can render the no-content screen while offline. A stale or
+	// deleted logo is intentionally omitted; the configured colors/text remain
+	// valid and the fallback stays usable.
+	var brandingAssetID *uuid.UUID
+	if queryErr := s.db.QueryRow(ctx, `SELECT NULLIF(o.settings->>'branding.logo_asset_id','')::uuid FROM organization_runtime_settings o JOIN screens sc ON sc.organization_id=o.organization_id WHERE sc.id=$1`, screenID).Scan(&brandingAssetID); queryErr != nil && !errors.Is(queryErr, pgx.ErrNoRows) {
+		return Manifest{}, "", queryErr
+	}
+	if brandingAssetID != nil {
+		brandingAsset, resolveErr := s.resolveImageVariant(ctx, *brandingAssetID)
+		if resolveErr == nil && windowAvailable(brandingAsset.AvailableFrom, brandingAsset.ExpiresAt, now) {
+			brandingVariantID := brandingAsset.VariantID
+			manifest.Branding = &ManifestBranding{LogoAssetID: brandingAssetID, LogoVariantID: &brandingVariantID}
+			manifest.Assets = append(manifest.Assets, brandingAsset)
+		} else if resolveErr != nil && !errors.Is(resolveErr, pgx.ErrNoRows) {
+			return Manifest{}, "", resolveErr
+		}
+	}
 	spanEnabled := false
 	if s.span != nil {
 		panel, canvas, spanErr := s.span.ViewportForScreen(ctx, screenID)
@@ -1470,6 +1615,37 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 			}
 		}
 	}
+	// Validate every active and scheduled root through the same graph walk used
+	// by assignment and Quick Present. This is deliberately before projection:
+	// a deleted or unpublished Layout must not be allowed to disappear merely
+	// because its playlist item has no asset_id.
+	if len(playlistIDs) > 0 || len(layoutIDs) > 0 || (presentationOverride != nil && presentationOverride.ContentType == "asset") {
+		readinessTx, readinessErr := s.db.Begin(ctx)
+		if readinessErr != nil {
+			return Manifest{}, "", readinessErr
+		}
+		for _, id := range uniqueUUIDs(playlistIDs) {
+			if readinessErr = s.ValidatePresentationInTx(ctx, readinessTx, "playlist", id, now); readinessErr != nil {
+				readinessTx.Rollback(ctx)
+				return Manifest{}, "", readinessErr
+			}
+		}
+		for _, id := range uniqueUUIDs(layoutIDs) {
+			if readinessErr = s.ValidatePresentationInTx(ctx, readinessTx, "layout", id, now); readinessErr != nil {
+				readinessTx.Rollback(ctx)
+				return Manifest{}, "", readinessErr
+			}
+		}
+		if presentationOverride != nil && presentationOverride.ContentType == "asset" {
+			if readinessErr = s.ValidatePresentationInTx(ctx, readinessTx, "asset", presentationOverride.ContentID, now); readinessErr != nil {
+				readinessTx.Rollback(ctx)
+				return Manifest{}, "", readinessErr
+			}
+		}
+		if readinessErr = readinessTx.Commit(ctx); readinessErr != nil {
+			return Manifest{}, "", readinessErr
+		}
+	}
 	// Expand the complete presentation graph before projecting it. Playlists may contain
 	// published Layouts, and Layouts may contain playlist zones; UNION makes cycles finite.
 	graphRows, graphErr := s.db.Query(ctx, `
@@ -1519,6 +1695,7 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 		ID   uuid.UUID
 	}
 	layoutDependencies := []layoutManifestDependency{}
+	layoutAssetVariants := map[uuid.UUID][]*uuid.UUID{}
 	for _, layoutID := range uniqueUUIDs(layoutIDs) {
 		item := ManifestLayout{ID: layoutID}
 		var raw []byte
@@ -1527,6 +1704,31 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 		}
 		if err = json.Unmarshal(raw, &item.Document); err != nil {
 			return Manifest{}, "", err
+		}
+		if assetID := item.Document.Canvas.BackgroundAssetID; assetID != nil {
+			resolved, resolveErr := s.resolveAssetVariant(ctx, *assetID, item.Document.Canvas.BackgroundVariantID)
+			if resolveErr != nil {
+				return Manifest{}, "", fmt.Errorf("%w: Layout background variant unavailable", ErrConflict)
+			}
+			if item.Document.Canvas.BackgroundVariantID == nil {
+				variantID := resolved.VariantID
+				item.Document.Canvas.BackgroundVariantID = &variantID
+			}
+			layoutAssetVariants[*assetID] = append(layoutAssetVariants[*assetID], item.Document.Canvas.BackgroundVariantID)
+		}
+		for index := range item.Document.Placements {
+			placement := &item.Document.Placements[index]
+			if placement.Type == "asset" && placement.AssetID != nil {
+				resolved, resolveErr := s.resolveAssetVariant(ctx, *placement.AssetID, placement.VariantID)
+				if resolveErr != nil {
+					return Manifest{}, "", fmt.Errorf("%w: Layout asset variant unavailable", ErrConflict)
+				}
+				if placement.VariantID == nil {
+					variantID := resolved.VariantID
+					placement.VariantID = &variantID
+				}
+				layoutAssetVariants[*placement.AssetID] = append(layoutAssetVariants[*placement.AssetID], placement.VariantID)
+			}
 		}
 		rows, queryErr := s.db.Query(ctx, `SELECT dependency_type,dependency_id FROM layout_revision_dependencies WHERE revision_id=$1`, item.RevisionID)
 		if queryErr != nil {
@@ -1657,7 +1859,7 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 				continue
 			}
 			var asset ManifestAsset
-			err = s.db.QueryRow(ctx, `SELECT v.asset_id,v.id,v.mime_type,encode(v.sha256,'hex'),v.file_size,v.width,v.height,v.duration_seconds FROM asset_variants v WHERE v.id=$1 AND v.deleted_at IS NULL AND v.player_compatible=TRUE`, *item.VariantID).Scan(&asset.AssetID, &asset.VariantID, &asset.MIMEType, &asset.SHA256, &asset.FileSize, &asset.Width, &asset.Height, &asset.DurationSeconds)
+			err = s.db.QueryRow(ctx, `SELECT v.asset_id,v.id,v.mime_type,encode(v.sha256,'hex'),v.file_size,v.width,v.height,v.duration_seconds,a.available_from,a.expires_at FROM asset_variants v JOIN assets a ON a.id=v.asset_id AND a.deleted_at IS NULL WHERE v.id=$1 AND v.deleted_at IS NULL AND v.player_compatible=TRUE`, *item.VariantID).Scan(&asset.AssetID, &asset.VariantID, &asset.MIMEType, &asset.SHA256, &asset.FileSize, &asset.Width, &asset.Height, &asset.DurationSeconds, &asset.AvailableFrom, &asset.ExpiresAt)
 			if err != nil {
 				return Manifest{}, "", err
 			}
@@ -1669,7 +1871,7 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 			if !spanEnabled || item.AssetType != "video" {
 				asset.DownloadPath = "/api/v1/player/assets/" + asset.AssetID.String() + "/variants/" + asset.VariantID.String()
 			}
-			mp.Items = append(mp.Items, ManifestItem{ID: item.ID, AssetID: item.AssetID, AssetType: item.AssetType, VariantID: &assetVariantID, DurationMS: item.DurationMS, FitMode: item.FitMode, Transition: item.Transition, AudioEnabled: item.AudioEnabled, Volume: item.Volume, VideoStartOffsetMS: item.VideoStartOffsetMS, VideoEndOffsetMS: item.VideoEndOffsetMS, DeliveryPolicy: item.DeliveryPolicy, AvailableFrom: item.AvailableFrom, ExpiresAt: item.ExpiresAt})
+			mp.Items = append(mp.Items, ManifestItem{ID: item.ID, AssetID: item.AssetID, AssetType: item.AssetType, VariantID: &assetVariantID, DurationMS: item.DurationMS, FitMode: item.FitMode, Transition: item.Transition, AudioEnabled: item.AudioEnabled, Volume: item.Volume, VideoStartOffsetMS: item.VideoStartOffsetMS, VideoEndOffsetMS: item.VideoEndOffsetMS, DeliveryPolicy: item.DeliveryPolicy, UsePlayerDefaults: item.UsePlayerDefaults, AvailableFrom: item.AvailableFrom, ExpiresAt: item.ExpiresAt})
 			if !seen[asset.VariantID] {
 				manifest.Assets = append(manifest.Assets, asset)
 				seen[asset.VariantID] = true
@@ -1706,22 +1908,27 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 	for _, dependency := range layoutDependencies {
 		switch dependency.Type {
 		case "asset":
-			var asset ManifestAsset
-			err = s.db.QueryRow(ctx, `SELECT v.asset_id,v.id,v.mime_type,encode(v.sha256,'hex'),v.file_size,v.width,v.height,v.duration_seconds FROM asset_variants v WHERE v.asset_id=$1 AND v.deleted_at IS NULL AND v.player_compatible=TRUE ORDER BY CASE v.kind WHEN 'playback' THEN 0 WHEN 'original' THEN 1 ELSE 2 END LIMIT 1`, dependency.ID).Scan(&asset.AssetID, &asset.VariantID, &asset.MIMEType, &asset.SHA256, &asset.FileSize, &asset.Width, &asset.Height, &asset.DurationSeconds)
-			if err != nil {
-				return Manifest{}, "", fmt.Errorf("%w: Layout Asset unavailable", ErrConflict)
+			refs := layoutAssetVariants[dependency.ID]
+			if len(refs) == 0 {
+				refs = []*uuid.UUID{nil}
 			}
-			sourceVariantID := asset.VariantID
-			_, projectionErr := s.projectSpanVideo(ctx, screenID, dependency.ID, sourceVariantID, &asset, spanEnabled && strings.HasPrefix(asset.MIMEType, "video/"))
-			if projectionErr != nil {
-				return Manifest{}, "", projectionErr
-			}
-			if !spanEnabled || !strings.HasPrefix(asset.MIMEType, "video/") {
-				asset.DownloadPath = "/api/v1/player/assets/" + asset.AssetID.String() + "/variants/" + asset.VariantID.String()
-			}
-			if !seen[asset.VariantID] {
-				manifest.Assets = append(manifest.Assets, asset)
-				seen[asset.VariantID] = true
+			for _, requestedVariantID := range refs {
+				asset, resolveErr := s.resolveAssetVariant(ctx, dependency.ID, requestedVariantID)
+				if resolveErr != nil {
+					return Manifest{}, "", fmt.Errorf("%w: Layout Asset unavailable", ErrConflict)
+				}
+				sourceVariantID := asset.VariantID
+				_, projectionErr := s.projectSpanVideo(ctx, screenID, dependency.ID, sourceVariantID, &asset, spanEnabled && strings.HasPrefix(asset.MIMEType, "video/"))
+				if projectionErr != nil {
+					return Manifest{}, "", projectionErr
+				}
+				if !spanEnabled || !strings.HasPrefix(asset.MIMEType, "video/") {
+					asset.DownloadPath = "/api/v1/player/assets/" + asset.AssetID.String() + "/variants/" + asset.VariantID.String()
+				}
+				if !seen[asset.VariantID] {
+					manifest.Assets = append(manifest.Assets, asset)
+					seen[asset.VariantID] = true
+				}
 			}
 		case "widget":
 			found := false
@@ -1740,12 +1947,13 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 				return Manifest{}, "", fmt.Errorf("%w: Layout Widget unavailable", ErrConflict)
 			}
 			if widget.Provider == "website" {
-				var website ManifestWebsite
-				if err = json.Unmarshal(widget.Configuration, &website); err != nil {
-					return Manifest{}, "", err
+				// Website widgets use the authoritative website_assets row, just like
+				// playlist items and Quick Present. Do not deserialize an old widget
+				// configuration here: that path omitted fallback variants and could
+				// render an archived or unavailable fallback through a layout.
+				if err = s.projectPresentationWebsite(ctx, &manifest, widget.AssetID, widget.Name); err != nil {
+					return Manifest{}, "", fmt.Errorf("%w: Layout website unavailable", ErrConflict)
 				}
-				website.AssetID, website.Name = widget.AssetID, widget.Name
-				manifest.Websites = append(manifest.Websites, website)
 			}
 			manifest.Widgets = append(manifest.Widgets, widget)
 		case "data_source":
@@ -1881,7 +2089,21 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 		return Manifest{}, "", fmt.Errorf("%w: manifest exceeds the five MiB limit", ErrConflict)
 	}
 	baseETag := manifestETagForSchema(screenID, assignment.ManifestVersion, manifest.SchemaVersion)
-	return manifest, manifestETagForSchedules(baseETag, manifest.Schedules), nil
+	baseETag = manifestETagForSchedules(baseETag, manifest.Schedules)
+	// The version is an efficient push/change signal, but the response body is
+	// the authoritative dependency snapshot. Hash a stable copy as well so a
+	// missed invalidation cannot make a conditional request incorrectly return
+	// 304. GeneratedAt and ServerTime are intentionally excluded because they
+	// change on every read.
+	stable := manifest
+	stable.GeneratedAt = time.Time{}
+	stable.ServerTime = time.Time{}
+	stableEncoded, err := json.Marshal(stable)
+	if err != nil {
+		return Manifest{}, "", err
+	}
+	value := sha256.Sum256(append([]byte(baseETag+":"), stableEncoded...))
+	return manifest, `"sha256-` + hex.EncodeToString(value[:]) + `"`, nil
 }
 
 // projectPresentationAsset adapts one library asset into the same one-item
@@ -1902,7 +2124,7 @@ func (s *Service) projectPresentationAsset(ctx context.Context, screenID uuid.UU
 	switch assetType {
 	case "image", "video":
 		var asset ManifestAsset
-		if err := s.db.QueryRow(ctx, `SELECT v.asset_id,v.id,v.mime_type,encode(v.sha256,'hex'),v.file_size,v.width,v.height,v.duration_seconds FROM asset_variants v WHERE v.asset_id=$1 AND v.deleted_at IS NULL AND v.player_compatible=TRUE ORDER BY CASE v.kind WHEN 'playback' THEN 0 WHEN 'original' THEN 1 ELSE 2 END LIMIT 1`, override.ContentID).Scan(&asset.AssetID, &asset.VariantID, &asset.MIMEType, &asset.SHA256, &asset.FileSize, &asset.Width, &asset.Height, &asset.DurationSeconds); err != nil {
+		if err := s.db.QueryRow(ctx, `SELECT v.asset_id,v.id,v.mime_type,encode(v.sha256,'hex'),v.file_size,v.width,v.height,v.duration_seconds,a.available_from,a.expires_at FROM asset_variants v JOIN assets a ON a.id=v.asset_id AND a.deleted_at IS NULL WHERE v.asset_id=$1 AND v.deleted_at IS NULL AND v.player_compatible=TRUE ORDER BY CASE v.kind WHEN 'playback' THEN 0 WHEN 'original' THEN 1 ELSE 2 END,v.id LIMIT 1`, override.ContentID).Scan(&asset.AssetID, &asset.VariantID, &asset.MIMEType, &asset.SHA256, &asset.FileSize, &asset.Width, &asset.Height, &asset.DurationSeconds, &asset.AvailableFrom, &asset.ExpiresAt); err != nil {
 			return ManifestPlaylist{}, fmt.Errorf("%w: Quick Present media variant is unavailable", ErrConflict)
 		}
 		sourceVariantID := asset.VariantID
@@ -2081,37 +2303,63 @@ func (s *Service) projectWidgetAssets(ctx context.Context, manifest *Manifest, w
 	if json.Unmarshal(widget.Configuration, &configuration) != nil {
 		return errors.New("widget configuration is invalid")
 	}
-	rawID, _ := configuration["imageAssetId"].(string)
-	if rawID == "" {
-		return nil
+	for _, reference := range []struct {
+		assetKey   string
+		variantKey string
+		label      string
+	}{
+		{assetKey: "imageAssetId", variantKey: "imageVariantId", label: "widget image"},
+		{assetKey: "fallbackImageAssetId", variantKey: "fallbackVariantId", label: "widget fallback image"},
+	} {
+		rawID, _ := configuration[reference.assetKey].(string)
+		if rawID == "" {
+			continue
+		}
+		assetID, err := uuid.Parse(rawID)
+		if err != nil {
+			return fmt.Errorf("%w: %s reference is invalid", ErrConflict, reference.label)
+		}
+		asset, resolveErr := s.resolveImageVariant(ctx, assetID)
+		if resolveErr != nil {
+			return fmt.Errorf("%w: %s unavailable", ErrConflict, reference.label)
+		}
+		configuration[reference.variantKey] = asset.VariantID.String()
+		if !seen[asset.VariantID] {
+			manifest.Assets = append(manifest.Assets, asset)
+			seen[asset.VariantID] = true
+		}
 	}
-	assetID, err := uuid.Parse(rawID)
-	if err != nil {
-		return fmt.Errorf("%w: widget image reference is invalid", ErrConflict)
-	}
-	asset, resolveErr := s.resolveImageVariant(ctx, assetID)
-	if resolveErr != nil {
-		return fmt.Errorf("%w: widget image unavailable", ErrConflict)
-	}
-	configuration["imageVariantId"] = asset.VariantID.String()
 	widget.Configuration, _ = json.Marshal(configuration)
-	if !seen[asset.VariantID] {
-		manifest.Assets = append(manifest.Assets, asset)
-		seen[asset.VariantID] = true
-	}
 	return nil
 }
 
 func (s *Service) resolveImageVariant(ctx context.Context, assetID uuid.UUID) (ManifestAsset, error) {
+	asset, err := s.resolveAssetVariant(ctx, assetID, nil)
+	if err != nil {
+		return ManifestAsset{}, err
+	}
+	if !strings.HasPrefix(asset.MIMEType, "image/") {
+		return ManifestAsset{}, fmt.Errorf("asset is not an image")
+	}
+	asset.DownloadPath = "/api/v1/player/assets/" + asset.AssetID.String() + "/variants/" + asset.VariantID.String()
+	return asset, nil
+}
+
+// resolveAssetVariant is the one variant-selection rule used for Layout
+// placements and fallbacks. A document may request an exact variant; legacy
+// documents without one use the deterministic playback > original ordering.
+func (s *Service) resolveAssetVariant(ctx context.Context, assetID uuid.UUID, requested *uuid.UUID) (ManifestAsset, error) {
 	var asset ManifestAsset
-	// processing_status is checked alongside player_compatible because the worker
-	// marks a variant compatible while the asset is still processing; publishing
-	// then would hand the Player a logo it cannot yet download.
-	err := s.db.QueryRow(ctx, `SELECT v.asset_id,v.id,v.mime_type,encode(v.sha256,'hex'),v.file_size,v.width,v.height,v.duration_seconds
-		FROM asset_variants v JOIN assets a ON a.id=v.asset_id AND a.type='image' AND a.deleted_at IS NULL AND a.processing_status='ready'
-		WHERE v.asset_id=$1 AND v.deleted_at IS NULL AND v.player_compatible=TRUE
-		ORDER BY CASE v.kind WHEN 'playback' THEN 0 WHEN 'original' THEN 1 ELSE 2 END LIMIT 1`, assetID).
-		Scan(&asset.AssetID, &asset.VariantID, &asset.MIMEType, &asset.SHA256, &asset.FileSize, &asset.Width, &asset.Height, &asset.DurationSeconds)
+	query := `SELECT v.asset_id,v.id,v.mime_type,encode(v.sha256,'hex'),v.file_size,v.width,v.height,v.duration_seconds,a.available_from,a.expires_at
+		FROM asset_variants v JOIN assets a ON a.id=v.asset_id AND a.deleted_at IS NULL AND a.archived_at IS NULL AND a.origin='library' AND a.system_managed=FALSE AND a.processing_status='ready'
+		WHERE v.asset_id=$1 AND v.deleted_at IS NULL AND v.player_compatible=TRUE`
+	args := []any{assetID}
+	if requested != nil {
+		query += ` AND v.id=$2`
+		args = append(args, *requested)
+	}
+	query += ` ORDER BY CASE v.kind WHEN 'playback' THEN 0 WHEN 'original' THEN 1 ELSE 2 END,v.id LIMIT 1`
+	err := s.db.QueryRow(ctx, query, args...).Scan(&asset.AssetID, &asset.VariantID, &asset.MIMEType, &asset.SHA256, &asset.FileSize, &asset.Width, &asset.Height, &asset.DurationSeconds, &asset.AvailableFrom, &asset.ExpiresAt)
 	if err != nil {
 		return ManifestAsset{}, err
 	}
@@ -2162,6 +2410,8 @@ func (s *Service) resolveBrandBugLogo(ctx context.Context, manifest *Manifest, c
 	}
 	variantID := asset.VariantID
 	config.ImageVariantID = &variantID
+	config.ImageAvailableFrom = asset.AvailableFrom
+	config.ImageExpiresAt = asset.ExpiresAt
 	if !seen[asset.VariantID] {
 		manifest.Assets = append(manifest.Assets, asset)
 		seen[asset.VariantID] = true
@@ -2218,44 +2468,54 @@ func uniqueUUIDs(values []uuid.UUID) []uuid.UUID {
 	return result
 }
 
-// AssetChanged bumps manifests for screens whose assigned playlists contain the asset.
+// AssetChanged invalidates the complete presentation dependency graph rooted at
+// an asset. This includes layout placements, website/widget fallbacks, nested
+// playlists, schedules, takeovers, overrides, and plugin overlays.
 func (s *Service) AssetChanged(ctx context.Context, assetID uuid.UUID, reason string) error {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
-	rows, err := tx.Query(ctx, `SELECT DISTINCT i.playlist_id FROM playlist_items i WHERE i.asset_id=$1
-		UNION
-		SELECT DISTINCT pt.playlist_id
-		FROM playlist_tags pt JOIN content_asset_tags at ON at.tag_id=pt.tag_id
-		WHERE at.asset_id=$1`, assetID)
+	changes, err := s.AssetChangedInTx(ctx, tx, assetID, reason)
 	if err != nil {
 		return err
-	}
-	ids := []uuid.UUID{}
-	for rows.Next() {
-		var id uuid.UUID
-		if err = rows.Scan(&id); err != nil {
-			rows.Close()
-			return err
-		}
-		ids = append(ids, id)
-	}
-	rows.Close()
-	notes := []notification{}
-	for _, id := range ids {
-		changed, e := bumpAssigned(ctx, tx, id, reason)
-		if e != nil {
-			return e
-		}
-		notes = append(notes, changed...)
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return err
 	}
-	s.notify(notes)
+	s.NotifyManifestChanges(changes)
 	return nil
+}
+
+func (s *Service) AssetChangedInTx(ctx context.Context, tx pgx.Tx, assetID uuid.UUID, reason string) ([]manifestchanges.Change, error) {
+	notes, err := bumpResourcesInTx(ctx, tx, "asset", assetID, reason)
+	return manifestChanges(notes), err
+}
+
+// LayoutChanged is used by the layout service after a draft is published or a
+// layout is archived. Keeping the traversal here means layouts and media
+// mutations cannot drift into different definitions of “affected screen”.
+func (s *Service) LayoutChanged(ctx context.Context, layoutID uuid.UUID, reason string) error {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	changes, err := s.LayoutChangedInTx(ctx, tx, layoutID, reason)
+	if err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	s.NotifyManifestChanges(changes)
+	return nil
+}
+
+func (s *Service) LayoutChangedInTx(ctx context.Context, tx pgx.Tx, layoutID uuid.UUID, reason string) ([]manifestchanges.Change, error) {
+	notes, err := bumpResourcesInTx(ctx, tx, "layout", layoutID, reason)
+	return manifestChanges(notes), err
 }
 
 // TagAssignmentsChanged invalidates every tag-driven playlist that references a changed tag.
@@ -2271,33 +2531,31 @@ func (s *Service) TagAssignmentsChanged(ctx context.Context, tagIDs []uuid.UUID,
 		return err
 	}
 	defer tx.Rollback(ctx)
-	rows, err := tx.Query(ctx, `SELECT DISTINCT playlist_id FROM playlist_tags WHERE tag_id=ANY($1)`, tagIDs)
-	if err != nil {
-		return err
-	}
-	playlistIDs := []uuid.UUID{}
-	for rows.Next() {
-		var id uuid.UUID
-		if err = rows.Scan(&id); err != nil {
-			rows.Close()
-			return err
-		}
-		playlistIDs = append(playlistIDs, id)
-	}
-	rows.Close()
-	notes := []notification{}
-	for _, playlistID := range playlistIDs {
-		changed, bumpErr := bumpAssigned(ctx, tx, playlistID, reason)
+	changes := []manifestchanges.Change{}
+	for _, tagID := range tagIDs {
+		changed, bumpErr := s.TagAssignmentsChangedInTx(ctx, tx, []uuid.UUID{tagID}, reason)
 		if bumpErr != nil {
 			return bumpErr
 		}
-		notes = append(notes, changed...)
+		changes = append(changes, changed...)
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return err
 	}
-	s.notify(notes)
+	s.NotifyManifestChanges(changes)
 	return nil
+}
+
+func (s *Service) TagAssignmentsChangedInTx(ctx context.Context, tx pgx.Tx, tagIDs []uuid.UUID, reason string) ([]manifestchanges.Change, error) {
+	changes := []manifestchanges.Change{}
+	for _, tagID := range uniqueUUIDs(tagIDs) {
+		notes, err := bumpResourcesInTx(ctx, tx, "tag", tagID, reason)
+		if err != nil {
+			return nil, err
+		}
+		changes = append(changes, manifestChanges(notes)...)
+	}
+	return changes, nil
 }
 
 // DataSourceChanged bumps manifests for screens whose widgets consume the Data Source
@@ -2310,65 +2568,34 @@ func (s *Service) DataSourceChanged(ctx context.Context, dataSourceID uuid.UUID,
 		return err
 	}
 	defer tx.Rollback(ctx)
-	notes := []notification{}
-	// Playlists that sequence a widget consuming this Data Source.
-	rows, err := tx.Query(ctx, `SELECT DISTINCT i.playlist_id FROM playlist_items i
-		JOIN widgets w ON w.asset_id=i.asset_id
-		JOIN assets a ON a.id=w.asset_id AND a.deleted_at IS NULL
-		WHERE EXISTS(SELECT 1 FROM jsonb_each_text(w.configuration) field WHERE field.value=$1::text)`, dataSourceID.String())
+	changes, err := s.DataSourceChangedInTx(ctx, tx, dataSourceID, reason)
 	if err != nil {
 		return err
 	}
-	playlistIDs := []uuid.UUID{}
-	for rows.Next() {
-		var id uuid.UUID
-		if err = rows.Scan(&id); err != nil {
-			rows.Close()
-			return err
-		}
-		playlistIDs = append(playlistIDs, id)
-	}
-	rows.Close()
-	for _, id := range playlistIDs {
-		changed, e := bumpAssigned(ctx, tx, id, reason)
-		if e != nil {
-			return e
-		}
-		notes = append(notes, changed...)
-	}
-	// Screens (and group members) assigned a Layout that uses this Data Source, either
-	// via a contained widget placement or a direct text binding dependency.
-	layoutRows, err := tx.Query(ctx, `WITH affected_layouts AS (
-			SELECT DISTINCT l.id FROM layouts l WHERE l.deleted_at IS NULL AND (
-				EXISTS(SELECT 1 FROM layout_draft_dependencies d WHERE d.layout_id=l.id AND (
-					(d.dependency_type='data_source' AND d.dependency_id=$1)
-					OR (d.dependency_type='widget' AND d.dependency_id IN (SELECT asset_id FROM widgets WHERE EXISTS(SELECT 1 FROM jsonb_each_text(configuration) field WHERE field.value=$1::text)))))
-				OR EXISTS(SELECT 1 FROM layout_revision_dependencies d WHERE d.revision_id=l.published_revision_id AND (
-					(d.dependency_type='data_source' AND d.dependency_id=$1)
-					OR (d.dependency_type='widget' AND d.dependency_id IN (SELECT asset_id FROM widgets WHERE EXISTS(SELECT 1 FROM jsonb_each_text(configuration) field WHERE field.value=$1::text)))))))
-		INSERT INTO screen_manifest_state(screen_id,manifest_version,previous_manifest_version,changed_at,change_reason)
-		SELECT DISTINCT affected.screen_id,1,NULL::bigint,now(),$2 FROM (
-			SELECT screen_id FROM screen_playlist_assignments WHERE layout_id IN (SELECT id FROM affected_layouts)
-			UNION SELECT m.screen_id FROM screen_group_playlist_assignments a JOIN screen_group_memberships m ON m.screen_group_id=a.screen_group_id WHERE a.layout_id IN (SELECT id FROM affected_layouts)
-		) affected
-		ON CONFLICT(screen_id) DO UPDATE SET previous_manifest_version=screen_manifest_state.manifest_version,manifest_version=screen_manifest_state.manifest_version+1,changed_at=now(),change_reason=$2
-		RETURNING screen_id,manifest_version`, dataSourceID, reason)
-	if err != nil {
-		return err
-	}
-	for layoutRows.Next() {
-		var n notification
-		if err = layoutRows.Scan(&n.screen, &n.version); err != nil {
-			layoutRows.Close()
-			return err
-		}
-		notes = append(notes, n)
-	}
-	layoutRows.Close()
 	if err = tx.Commit(ctx); err != nil {
 		return err
 	}
-	s.notify(notes)
+	s.NotifyManifestChanges(changes)
+	return nil
+}
+
+func (s *Service) DataSourceChangedInTx(ctx context.Context, tx pgx.Tx, dataSourceID uuid.UUID, reason string) ([]manifestchanges.Change, error) {
+	notes, err := bumpResourcesInTx(ctx, tx, "data_source", dataSourceID, reason)
+	return manifestChanges(notes), err
+}
+
+// InvalidatePluginInTx lets plugin-owned mutations participate in the same
+// transaction as their manifest version bump. The callback receives the
+// committed-event payload only after the traversal query has succeeded; the
+// caller still emits it after its transaction commits.
+func (s *Service) InvalidatePluginInTx(ctx context.Context, tx pgx.Tx, pluginType string, pluginID uuid.UUID, reason string, notify func(uuid.UUID, int64)) error {
+	notes, err := bumpResourcesInTx(ctx, tx, "plugin", pluginID, reason+":"+pluginType)
+	if err != nil {
+		return err
+	}
+	for _, note := range notes {
+		notify(note.screen, note.version)
+	}
 	return nil
 }
 func manifestETag(screenID uuid.UUID, version int64) string {

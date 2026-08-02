@@ -43,6 +43,7 @@ import org.tilecast.player.network.TilecastApi
 import org.tilecast.player.security.CredentialStore
 import org.tilecast.player.security.KeystoreCredentialStore
 import org.tilecast.player.content.ManifestSyncManager
+import org.tilecast.player.content.ServerClock
 import org.tilecast.player.content.PlaybackSession
 import org.tilecast.player.content.PreparedContent
 import org.tilecast.player.content.SyncProgress
@@ -50,6 +51,7 @@ import org.tilecast.player.content.ScheduleEngine
 import org.tilecast.player.content.WebsitePlaybackStatus
 import org.tilecast.player.content.WidgetPlaybackStatus
 import org.tilecast.player.content.WebsiteDataManager
+import org.tilecast.player.content.WebsiteStartupClearGate
 import org.tilecast.player.content.CommandCoordinator
 import org.tilecast.player.content.CommandOutcome
 import org.tilecast.player.content.runCommandPollSafely
@@ -85,9 +87,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val machine = PlayerStateMachine()
     private val mutableState = MutableStateFlow<PlayerState>(PlayerState.Unconfigured)
     val state: StateFlow<PlayerState> = mutableState.asStateFlow()
-    private val configuration = ConfigurationRepository(PlayerDatabase.get(application).configuration())
+	private val configuration = ConfigurationRepository(PlayerDatabase.get(application).configuration())
 	private val database = PlayerDatabase.get(application)
-	private val synchronizer = ManifestSyncManager(application, database, api = TilecastApi(), cacheLimitBytes=BuildConfig.MEDIA_CACHE_BYTES, minimumFreeBytes=BuildConfig.MINIMUM_FREE_BYTES, automaticVideoThresholdBytes=BuildConfig.AUTOMATIC_VIDEO_THRESHOLD_BYTES, concurrentDownloads=BuildConfig.CONCURRENT_DOWNLOADS)
+	private val playbackCheckpoint = application.getSharedPreferences("tilecast-playback-checkpoint", android.content.Context.MODE_PRIVATE)
+    private val serverClock = ServerClock(application.getSharedPreferences("tilecast-server-clock", android.content.Context.MODE_PRIVATE))
+	private val synchronizer = ManifestSyncManager(application, database, api = TilecastApi(), cacheLimitBytes=BuildConfig.MEDIA_CACHE_BYTES, minimumFreeBytes=BuildConfig.MINIMUM_FREE_BYTES, automaticVideoThresholdBytes=BuildConfig.AUTOMATIC_VIDEO_THRESHOLD_BYTES, concurrentDownloads=BuildConfig.CONCURRENT_DOWNLOADS, serverClock=serverClock)
     private val credentials: CredentialStore = KeystoreCredentialStore(application)
     private val api = TilecastApi()
     private val discovery = LanDiscovery(application)
@@ -109,6 +113,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 	private var pairingRequestJob: Job? = null
 	private val mutableContent = MutableStateFlow<PlaybackSession?>(null)
 	val content: StateFlow<PlaybackSession?> = mutableContent.asStateFlow()
+	private val mutableNoContentKnown = MutableStateFlow(false)
+	val noContentKnown: StateFlow<Boolean> = mutableNoContentKnown.asStateFlow()
+	private val mutableUnavailableKnown = MutableStateFlow(false)
+	val unavailableKnown: StateFlow<Boolean> = mutableUnavailableKnown.asStateFlow()
+	private val mutableNoContentLogoPath = MutableStateFlow<String?>(null)
+	val noContentLogoPath: StateFlow<String?> = mutableNoContentLogoPath.asStateFlow()
 	private var pendingContent: PreparedContent? = null
 	private var syncJob: Job? = null
 	// A manifest.changed push that arrives while a sync is already running must not be
@@ -171,6 +181,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 	val safeMode:StateFlow<Boolean> = mutableSafeMode.asStateFlow()
 	private var powerJob:Job?=null
 	private var activeHoursNextTransition:Instant?=null
+	private var resumeCheckpointPending = true
 	private var lastWatchdogFailure:String?=null
 	private var lastWatchdogRecoveryAt:Instant?=null
 	private var recoveryLevel:Int=0
@@ -186,9 +197,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         current = configuration.getOrCreate()
         val saved = current ?: return
 		val storedCredential = credentials.read()
-			mutablePlayerConfig.value=configManager.loadActive();mutablePlayerConfig.value?.let(::applyPlayerConfig)
+			mutablePlayerConfig.value=configManager.loadActive(saved.serverUrl, saved.serverInstallationId, saved.screenId);mutablePlayerConfig.value?.let(::applyPlayerConfig)
 			if (saved.serverUrl != null && storedCredential != null) {
-				synchronizer.loadActive()?.let { active -> activeManifestVersion=active.manifest.manifestVersion;activateScheduleSelection(active,saved.serverUrl,storedCredential) }
+				synchronizer.loadActive(saved.serverUrl, saved.serverInstallationId, saved.screenId)?.let { active -> activeManifestVersion=active.manifest.manifestVersion;activateScheduleSelection(active,saved.serverUrl,storedCredential) }
 			}
 			refreshCommissioning()
 			startWatchdog()
@@ -196,9 +207,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         emit(PlayerEvent.Validate(saved.serverUrl))
         try {
             val identity = api.identity(saved.serverUrl)
-            if (saved.serverInstallationId != null && saved.serverInstallationId != identity.installationId) {
-                clearPlaybackState()
-                clearPlayerConfigState()
+			if (saved.serverInstallationId != null && saved.serverInstallationId != identity.installationId) {
+				clearPlaybackState()
+				synchronizer.clear()
+				clearPlayerConfigState()
                 emit(PlayerEvent.IdentityChanged(saved.serverInstallationId, identity.installationId)); return
             }
             selectedIdentity = identity
@@ -277,6 +289,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                         val token = result.enrollmentToken ?: return
                         emit(PlayerEvent.EnrollmentStarted)
                         val enrollment = api.enroll(url, sessionId, token)
+                        if (current?.screenId != null && current?.screenId != enrollment.screenId) {
+                            clearPlaybackState()
+                            synchronizer.clear()
+                            clearPlayerConfigState()
+                        }
                         credentials.save(enrollment.deviceCredential)
 						current = configuration.saveEnrollment(current ?: return, enrollment.screenId, enrollment.screenName)
 						refreshCommissioning()
@@ -513,6 +530,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun clearPlaybackState() {
         mutableContent.value = null
+        mutableNoContentKnown.value = false
+        mutableUnavailableKnown.value = false
+        mutableNoContentLogoPath.value = null
         pendingContent = null
         scheduleContent = null
         scheduleJob?.cancel(); scheduleJob = null
@@ -525,13 +545,14 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         currentPlaylistId = null
         currentItemId = null
         currentAssetId = null
+		playbackCheckpoint.edit().clear().apply()
 		// A later pairing must not answer its first manifest request with the old
 		// installation's ETag after the playback session has been discarded.
 		synchronizer.invalidateActiveCacheVerification()
     }
 	private suspend fun clearPlayerConfigState() { configManager.clear(); mutablePlayerConfig.value = null; activeConfigRevision = null; configurationError = null }
-	private suspend fun revokeLocally(screenName: String?) { stopConnectionWork(); clearPlaybackState(); clearPlayerConfigState(); credentials.clear(); configuration.clearPairing(); emit(PlayerEvent.Revoked(screenName)) }
-    fun reconnectAfterRevocation() { viewModelScope.launch { stopConnectionWork(); clearPlaybackState(); clearPlayerConfigState(); credentials.clear(); configuration.clearPairing(); selectedIdentity?.let { emit(PlayerEvent.IdentityConfirmed(selectedUrl ?: return@launch, it)) } ?: discover() } }
+	private suspend fun revokeLocally(screenName: String?) { stopConnectionWork(); clearPlaybackState(); synchronizer.clear(); clearPlayerConfigState(); credentials.clear(); configuration.clearPairing(); emit(PlayerEvent.Revoked(screenName)) }
+    fun reconnectAfterRevocation() { viewModelScope.launch { stopConnectionWork(); clearPlaybackState(); synchronizer.clear(); clearPlayerConfigState(); credentials.clear(); configuration.clearPairing(); selectedIdentity?.let { emit(PlayerEvent.IdentityConfirmed(selectedUrl ?: return@launch, it)) } ?: discover() } }
     fun cancelPairing() { pairingJob?.cancel(); pairingJob = null; pairingRequestJob?.cancel(); pairingRequestJob = null; viewModelScope.launch { current?.let { current = configuration.clearPairingSession(it) }; discover() } }
     fun resetServer() { viewModelScope.launch { stopConnectionWork(); clearPlaybackState(); credentials.clear(); WebsiteDataManager.clear(getApplication()){}; synchronizer.clear(); clearPlayerConfigState(); configuration.reset(); current = configuration.getOrCreate(); discover() } }
 
@@ -546,7 +567,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 					// Judge success by errors reported during this pass: a 304 never invokes the
 					// progress callback, so a stale error from an earlier failure must not count.
 					var reportedError: String? = null
-					val prepared = synchronizer.reconcile(url, credential, screenId) { syncProgress = it; reportedError = it.error }
+					val prepared = synchronizer.reconcile(url, credential, screenId, { syncProgress = it; reportedError = it.error }, selectedIdentity?.installationId)
 					if (reportedError == null) { syncFailureCount = 0; if (syncProgress.error != null) syncProgress = syncProgress.copy(error = null); getApplication<Application>().getSharedPreferences("tilecast-reliability",Application.MODE_PRIVATE).edit().putLong("last-successful-sync-at",System.currentTimeMillis()).apply() } else scheduleSyncRetry(url, credential)
 					if (prepared != null) {
 						val takeoverChanged=prepared.manifest.effectiveTakeover?.id!=activeTakeoverId
@@ -593,13 +614,16 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 	}
 
 	private fun activateScheduleSelection(prepared:PreparedContent,url:String,credential:String){
-		scheduleContent=prepared;scheduleJob?.cancel();takeoverJob?.cancel()
-		val contentNow=Instant.now().plusSeconds(prepared.serverClockOffsetSeconds?:0)
+		scheduleContent=prepared
+		mutableNoContentKnown.value=true
+		mutableNoContentLogoPath.value=prepared.manifest.branding?.logoVariantId?.let { prepared.localFiles[it] }
+		scheduleJob?.cancel();takeoverJob?.cancel()
+		val contentNow=serverClock.now()
 		val effectiveManifest=prepared.manifest.withAvailablePlaylistItems(contentNow)
-		val effectivePrepared=PreparedContent(effectiveManifest,prepared.localFiles,prepared.serverClockOffsetSeconds)
-		val takeover=TakeoverController.evaluate(Instant.now(),effectiveManifest.effectiveTakeover,true)
+		val effectivePrepared=PreparedContent(effectiveManifest,prepared.localFiles,prepared.serverClockOffsetSeconds,prepared.serverClockOffsetMillis)
+		val takeover=TakeoverController.evaluate(contentNow,effectiveManifest.effectiveTakeover,true)
 		val quickOverride=effectiveManifest.presentationOverride.takeIf { !takeover.active }
-		val selection=ScheduleEngine.resolve(Instant.now(),effectiveManifest.schedules,effectiveManifest.directFallbackPlaylist?.id?:effectiveManifest.playlist?.id,effectiveManifest.directFallbackLayout?.id?:effectiveManifest.layout?.id,quickOverride)
+		val selection=ScheduleEngine.resolve(contentNow,effectiveManifest.schedules,effectiveManifest.directFallbackPlaylist?.id?:effectiveManifest.playlist?.id,effectiveManifest.directFallbackLayout?.id?:effectiveManifest.layout?.id,quickOverride)
 		val quickPresent=selection.source=="quick_present"
 		val available=effectiveManifest.playlists+listOfNotNull(effectiveManifest.directFallbackPlaylist,effectiveManifest.playlist)
 		var playlist=available.firstOrNull{it.id==(takeover.playlistId?:selection.playlistId)}
@@ -609,14 +633,18 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 		if(takeover.active){activeTakeoverId=prepared.manifest.effectiveTakeover?.id;activePresentationOverrideId=null;takeoverState="active";currentScheduleId=null;currentPlaylistId=playlist?.id;selectionSource="takeover";nextTransition=takeover.nextTransition}else{activeTakeoverId=null;activePresentationOverrideId=if(selection.source=="quick_present")effectiveManifest.presentationOverride?.id else null;takeoverState=null}
 		evaluateActiveHours()
 		if(selection.source=="schedule"&&(playlist==null||playlist.items.isEmpty())&&layout==null){playlist=effectiveManifest.directFallbackPlaylist?.takeIf{it.items.isNotEmpty()};layout=effectiveManifest.directFallbackLayout;currentPlaylistId=playlist?.id;selectionSource=if(playlist!=null||layout!=null)"direct_fallback" else "none";scheduleError="Scheduled presentation is unavailable"}
+		val hasAssignedPresentation = selection.playlistId != null || selection.layoutId != null || takeover.active || quickPresent || effectiveManifest.directFallbackPlaylist != null || effectiveManifest.directFallbackLayout != null
+		mutableUnavailableKnown.value = (hasAssignedPresentation && playlist == null && layout == null) || (hasAssignedPresentation && playlist != null && playlist.items.isEmpty())
 		val selected=effectivePrepared.copy(manifest=effectiveManifest.copy(playlist=playlist,layout=layout))
 		val anchor=if(takeover.active)effectiveManifest.effectiveTakeover?.activatedAt?.let{runCatching{Instant.parse(it)}.getOrNull()} else selection.playbackAnchor?:effectiveManifest.syncGroup?.playbackEpoch?.let{runCatching{Instant.parse(it)}.getOrNull()}
 		val synchronizedStart=if(effectiveManifest.syncGroup!=null&&playlist!=null&&anchor!=null)synchronizedPlaybackStart(playlist,effectiveManifest.assets,anchor,contentNow)else null
-			mutableContent.value=if((mutablePlaybackDisabled.value||!mutableActiveHours.value||mutableSafeMode.value)&&!takeover.active&&!quickPresent)null else if(playlist?.items?.isNotEmpty()==true||layout!=null)PlaybackSession(selected,url,credential,synchronizedStart?.cursor?:org.tilecast.player.content.PlaybackCursor(0,0),synchronizedStart?.offsetMs?:0)else null
+		val resumedCursor = if (synchronizedStart == null && resumeCheckpointPending) resumeCursorFor(playlist) else null
+		resumeCheckpointPending = false
+			mutableContent.value=if((mutablePlaybackDisabled.value||!mutableActiveHours.value||mutableSafeMode.value)&&!takeover.active&&!quickPresent)null else if(playlist?.items?.isNotEmpty()==true||layout!=null)PlaybackSession(content=selected,serverUrl=url,credential=credential,initialCursor=synchronizedStart?.cursor?:resumedCursor?:org.tilecast.player.content.PlaybackCursor(0,0),initialOffsetMs=synchronizedStart?.offsetMs?:0,playbackDefaults=mutablePlayerConfig.value?.playback,websitePolicy=mutablePlayerConfig.value?.website)else null
 			getApplication<Application>().getSharedPreferences("tilecast-reliability",Application.MODE_PRIVATE).edit().putLong("last-playlist-transition-at",System.currentTimeMillis()).putBoolean("cached-fallback-available",(prepared.manifest.directFallbackPlaylist?.items?.isNotEmpty()==true||prepared.manifest.directFallbackLayout!=null)&&prepared.localFiles.isNotEmpty()).apply();refreshCommissioning()
-		val contentTransition=prepared.manifest.nextAvailabilityTransition(contentNow)?.minusSeconds(prepared.serverClockOffsetSeconds?:0)
-		listOfNotNull(selection.nextTransition,contentTransition).minOrNull()?.let{transition->scheduleJob=viewModelScope.launch{delay(Duration.between(Instant.now(),transition).toMillis().coerceAtLeast(0)+50);scheduleContent?.let{activateScheduleSelection(it,url,credential)}}}
-		takeover.nextTransition?.let{transition->takeoverJob=viewModelScope.launch{delay(Duration.between(Instant.now(),transition).toMillis().coerceAtLeast(0)+50);scheduleContent?.let{activateScheduleSelection(it,url,credential)}}}
+		val contentTransition=prepared.manifest.nextAvailabilityTransition(contentNow)
+		listOfNotNull(selection.nextTransition,contentTransition).minOrNull()?.let{transition->scheduleJob=viewModelScope.launch{delay(Duration.between(serverClock.now(),transition).toMillis().coerceAtLeast(0)+50);scheduleContent?.let{activateScheduleSelection(it,url,credential)}}}
+		takeover.nextTransition?.let{transition->takeoverJob=viewModelScope.launch{delay(Duration.between(serverClock.now(),transition).toMillis().coerceAtLeast(0)+50);scheduleContent?.let{activateScheduleSelection(it,url,credential)}}}
 	}
 
 	private suspend fun runCommands(url:String,credential:String){
@@ -662,19 +690,33 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 		} else commandFailureCount=0
 	}
 	private fun recordCommandPollFailure(code:String){lastCommandState="poll_failed";lastCommandResult=code;lastCommandCompletedAt=Instant.now().toString()}
-		private suspend fun reconcilePlayerConfig(url:String,credential:String){try{configManager.reconcile(url,credential)?.let{mutablePlayerConfig.value=it;applyPlayerConfig(it)};configurationError=null}catch(error:CancellationException){throw error}catch(_:Exception){configurationError="Player configuration could not be applied"}}
-		private fun applyPlayerConfig(config:PlayerConfig){activeConfigRevision=config.configRevision;synchronizer.applyPolicy(config.cache.maximumBytes,config.cache.minimumFreeBytes,config.cache.automaticThresholdBytes,config.cache.concurrentDownloads);if(config.website.clearOnRestart)WebsiteDataManager.clear(getApplication()){};reliabilitySupervisor=ReliabilitySupervisor(config.reliability.maximumProcessRestarts,Duration.ofMinutes(config.reliability.restartWindowMinutes.toLong()),config.reliability.safeModeEnabled,PreferencesRecoveryStateStore(getApplication()));getApplication<Application>().getSharedPreferences("tilecast-reliability",Application.MODE_PRIVATE).edit().putBoolean("launch-after-boot",config.reliability.launchAfterBoot).putBoolean("accessibility-enabled-by-policy",config.accessibility.controlAssistEnabled).putBoolean("report-foreground-package",config.accessibility.reportForegroundPackage).putBoolean("pause-accessibility-during-updates",config.accessibility.pauseDuringUpdates).putBoolean("pause-accessibility-during-admin",config.accessibility.pauseDuringAdminSession).putInt("return-delay",config.accessibility.returnDelaySeconds).putInt("maximum-returns",config.accessibility.maximumReturns).putInt("return-window",config.accessibility.returnWindowMinutes).putStringSet("allowed-packages",config.accessibility.allowedPackages.toSet()).apply();mutableSafeMode.value=reliabilitySupervisor.safeMode;evaluateActiveHours();refreshCommissioning() }
-	private fun evaluateActiveHours(){val config=mutablePlayerConfig.value?:return;val rule=ActiveHoursRule(config.power.activeHoursEnabled,config.power.activeHoursTimezone,config.power.activeHoursDays.map{DayOfWeek.of(it)}.toSet(),LocalTime.parse(config.power.activeHoursStart),LocalTime.parse(config.power.activeHoursEnd));val overrideActive=activePresentationOverrideId!=null;val result=runCatching{ActiveHoursEngine.evaluate(Instant.now(),rule,activeTakeoverId!=null||overrideActive)}.getOrNull()?:return;activeHoursNextTransition=result.nextTransition;val changed=mutableActiveHours.value!=result.active;mutableActiveHours.value=result.active;if(changed&&result.active)reliabilityController.requestWake();if(changed&&!result.active&&config.power.sleepOutsideActiveHours&&activeTakeoverId==null&&!overrideActive)reliabilityController.requestSleep();if(!result.active&&activeTakeoverId==null&&!overrideActive)mutableContent.value=null else if(changed){val url=current?.serverUrl;val credential=credentials.read();if(url!=null&&credential!=null)scheduleContent?.let{activateScheduleSelection(it,url,credential)}};powerJob?.cancel();result.nextTransition?.let{next->if(!result.active&&!overrideActive)reliabilityController.scheduleWake(next.minusSeconds(config.power.startupGraceSeconds.toLong()));powerJob=viewModelScope.launch{delay(Duration.between(Instant.now(),next).toMillis().coerceAtLeast(0)+100);evaluateActiveHours()}}}
+		private suspend fun reconcilePlayerConfig(url:String,credential:String){try{configManager.reconcile(url,credential,selectedIdentity?.installationId,current?.screenId)?.let{mutablePlayerConfig.value=it;applyPlayerConfig(it)};configurationError=null}catch(error:CancellationException){throw error}catch(_:Exception){configurationError="Player configuration could not be applied"}}
+	private fun applyPlayerConfig(config:PlayerConfig){activeConfigRevision=config.configRevision;synchronizer.applyPolicy(config.cache.maximumBytes,config.cache.minimumFreeBytes,config.cache.automaticThresholdBytes,config.cache.concurrentDownloads);if(WebsiteStartupClearGate.shouldClear(config.website.clearOnRestart))WebsiteDataManager.clear(getApplication()){};reliabilitySupervisor=ReliabilitySupervisor(config.reliability.maximumProcessRestarts,Duration.ofMinutes(config.reliability.restartWindowMinutes.toLong()),config.reliability.safeModeEnabled,PreferencesRecoveryStateStore(getApplication()));getApplication<Application>().getSharedPreferences("tilecast-reliability",Application.MODE_PRIVATE).edit().putBoolean("launch-after-boot",config.reliability.launchAfterBoot).putBoolean("accessibility-enabled-by-policy",config.accessibility.controlAssistEnabled).putBoolean("report-foreground-package",config.accessibility.reportForegroundPackage).putBoolean("pause-accessibility-during-updates",config.accessibility.pauseDuringUpdates).putBoolean("pause-accessibility-during-admin",config.accessibility.pauseDuringAdminSession).putInt("return-delay",config.accessibility.returnDelaySeconds).putInt("maximum-returns",config.accessibility.maximumReturns).putInt("return-window",config.accessibility.returnWindowMinutes).putStringSet("allowed-packages",config.accessibility.allowedPackages.toSet()).apply();mutableContent.value=mutableContent.value?.copy(playbackDefaults=config.playback,websitePolicy=config.website);mutableSafeMode.value=reliabilitySupervisor.safeMode;evaluateActiveHours();refreshCommissioning() }
+	private fun evaluateActiveHours(){val config=mutablePlayerConfig.value?:return;val rule=ActiveHoursRule(config.power.activeHoursEnabled,config.power.activeHoursTimezone,config.power.activeHoursDays.map{DayOfWeek.of(it)}.toSet(),LocalTime.parse(config.power.activeHoursStart),LocalTime.parse(config.power.activeHoursEnd));val overrideActive=activePresentationOverrideId!=null;val now=serverClock.now();val result=runCatching{ActiveHoursEngine.evaluate(now,rule,activeTakeoverId!=null||overrideActive)}.getOrNull()?:return;activeHoursNextTransition=result.nextTransition;val changed=mutableActiveHours.value!=result.active;mutableActiveHours.value=result.active;if(changed&&result.active)reliabilityController.requestWake();if(changed&&!result.active&&config.power.sleepOutsideActiveHours&&activeTakeoverId==null&&!overrideActive)reliabilityController.requestSleep();if(!result.active&&activeTakeoverId==null&&!overrideActive)mutableContent.value=null else if(changed){val url=current?.serverUrl;val credential=credentials.read();if(url!=null&&credential!=null)scheduleContent?.let{activateScheduleSelection(it,url,credential)}};powerJob?.cancel();result.nextTransition?.let{next->if(!result.active&&!overrideActive)reliabilityController.scheduleWake(next.minusSeconds(config.power.startupGraceSeconds.toLong()));powerJob=viewModelScope.launch{delay(Duration.between(serverClock.now(),next).toMillis().coerceAtLeast(0)+100);evaluateActiveHours()}}}
 
 		fun playbackBoundary(itemId: String, assetId: String) {
 			currentItemId=itemId;currentAssetId=assetId
+			mutableContent.value?.content?.manifest?.playlist?.let { playlist ->
+				playbackCheckpoint.edit().putString("playlist-id", playlist.id).putLong("playlist-revision", playlist.revision).putString("item-id", itemId).apply()
+			}
 			recordPlaybackProgress()
 		val pending=pendingContent ?: return
 		val url=current?.serverUrl ?: return;val credential=credentials.read() ?: return
 		viewModelScope.launch { activatePrepared(pending,url,credential) }
-	}
+		}
+		private fun resumeCursorFor(playlist:org.tilecast.player.network.ManifestPlaylist?):org.tilecast.player.content.PlaybackCursor? {
+			if (playlist == null || mutablePlayerConfig.value?.playback?.resumeAfterRestart != true) return null
+			if (playbackCheckpoint.getString("playlist-id", null) != playlist.id || playbackCheckpoint.getLong("playlist-revision", -1L) != playlist.revision) return null
+			val itemId = playbackCheckpoint.getString("item-id", null) ?: return null
+			val index = playlist.items.indexOfFirst { it.id == itemId }
+			return index.takeIf { it >= 0 }?.let { org.tilecast.player.content.PlaybackCursor(it, 0) }
+		}
 		fun playbackError(message:String){lastPlaybackError=message;lastWatchdogFailure=message;executeRecovery(reliabilitySupervisor.recordFailure())}
-	fun websitePlaybackStatus(status:WebsitePlaybackStatus){websiteStatus=status}
+	fun websitePlaybackStatus(status:WebsitePlaybackStatus){
+		websiteStatus=status
+		if(status.assetId!=null&&status.state in setOf("loading","refreshing")) lastPlaybackProgressAt=Instant.now()
+		if(status.state=="loaded") recordPlaybackProgress()
+	}
 		fun widgetPlaybackStatus(status:WidgetPlaybackStatus){widgetStatus=status}
 		fun recalculateSchedule(){evaluateActiveHours();val prepared=scheduleContent?:return;val url=current?.serverUrl?:return;val credential=credentials.read()?:return;activateScheduleSelection(prepared,url,credential)}
 		fun refreshCommissioning(){val cached=getApplication<Application>().getSharedPreferences("tilecast-reliability",Application.MODE_PRIVATE).getBoolean("cached-fallback-available",false);mutableCommissioning.value=commissioningController.status(current?.screenId,cached)}
@@ -690,7 +732,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 		private fun recreateRenderer()=retryCurrentItem()
 		private fun recreatePlaybackSession(){val prepared=scheduleContent?:return;val url=current?.serverUrl?:return;val credential=credentials.read()?:return;activateScheduleSelection(prepared,url,credential);recordPlaybackProgress()}
 		private fun executeRecovery(decision:RecoveryDecision){recoveryLevel=decision.level.ordinal+1;recoveryCount=decision.recoveryCount;lastWatchdogRecoveryAt=Instant.now();when(decision.level){RecoveryLevel.RETRY->retryCurrentItem();RecoveryLevel.SKIP_ITEM->skipCurrentItem();RecoveryLevel.RECREATE_RENDERER->recreateRenderer();RecoveryLevel.RECREATE_CONTROLLER->recreatePlaybackSession();RecoveryLevel.RESTART_ACTIVITY->reliabilityController.restartActivity();RecoveryLevel.RESTART_PROCESS->viewModelScope.launch{delay(500);reliabilityController.restartProcess()};RecoveryLevel.SAFE_MODE->{mutableSafeMode.value=true;reliabilityController.setSafeMode(true);mutableContent.value=null}}}
-		private fun startWatchdog(){watchdogJob?.cancel();watchdogJob=viewModelScope.launch{while(true){delay(10_000);val config=mutablePlayerConfig.value?.reliability?:continue;if(!config.foregroundWatchdogEnabled||mutableContent.value==null||mutableSafeMode.value)continue;if(websiteStatus.assetId!=null||widgetStatus.widgetId!=null)continue;val last=lastPlaybackProgressAt?:Instant.now().also{lastPlaybackProgressAt=it};if(Duration.between(last,Instant.now()).seconds>config.playbackStallSeconds){lastPlaybackProgressAt=Instant.now();playbackError("playback_stalled")}}}}
+	private fun startWatchdog(){watchdogJob?.cancel();watchdogJob=viewModelScope.launch{while(true){delay(10_000);val config=mutablePlayerConfig.value?.reliability?:continue;if(!config.foregroundWatchdogEnabled||mutableContent.value==null||mutableSafeMode.value)continue;if(widgetStatus.widgetId!=null)continue;val websitePending=websiteStatus.assetId!=null&&websiteStatus.state in setOf("loading","refreshing");val last=lastPlaybackProgressAt?:Instant.now().also{lastPlaybackProgressAt=it};val threshold=org.tilecast.player.content.watchdogThresholdSeconds(config,websitePending);if(Duration.between(last,Instant.now()).seconds>threshold){lastPlaybackProgressAt=Instant.now();playbackError(if(websitePending)"webview_stalled" else "playback_stalled")}}}}
 		fun openUpdatePermission(){updateManager.openPermissionSettings()}
 	fun refreshUpdatePermission(){mutableUpdate.value?.let{state->val changed=updateManager.installerFailure(state)?:updateManager.permissionGranted(state);changed?.let{updated->mutableUpdate.value=updated;val url=current?.serverUrl;val credential=credentials.read();if(updated.state=="failed"&&url!=null&&credential!=null)scheduleContent?.let{activateScheduleSelection(it,url,credential)};if(url!=null&&credential!=null)viewModelScope.launch{runCatching{api.updateStatus(url,credential,updated.deploymentId,updated.state,updated.downloadedBytes,if(updated.permissionRequired)"required" else "granted",error=if(updated.state=="failed")updated.errorCode?:"installer_failed" else "")}}}}}
 	fun resumeUpdateSchedule(){val state=mutableUpdate.value?:return;val url=current?.serverUrl?:return;val credential=credentials.read()?:return;updateManager.resumeMaintenance(url,credential,state,{activeTakeoverId!=null}){mutableUpdate.value=it}}
@@ -707,7 +749,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 			activeManifestVersion?.let { put("activeManifestVersion", it) }; assignedPlaylistId?.let { put("assignedPlaylistId", it) }
 			pendingContent?.let { put("pendingManifestVersion", it.manifest.manifestVersion) }; currentItemId?.let { put("currentItemId", it) }; currentAssetId?.let { put("currentAssetId", it) }
 			put("playbackState", if (mutableContent.value != null) "playing" else "idle"); put("downloadQueueCount", syncProgress.queueCount); put("downloadedBytes", syncProgress.downloadedBytes); put("requiredBytes", syncProgress.requiredBytes)
-			put("cacheUsedBytes", syncProgress.cacheUsedBytes); put("cacheLimitBytes", BuildConfig.MEDIA_CACHE_BYTES); syncProgress.error?.let { put("lastSynchronizationError", it) }; lastPlaybackError?.let { put("lastPlaybackError", it) }
+			put("cacheUsedBytes", syncProgress.cacheUsedBytes); put("cacheLimitBytes", mutablePlayerConfig.value?.cache?.maximumBytes ?: BuildConfig.MEDIA_CACHE_BYTES); syncProgress.error?.let { put("lastSynchronizationError", it) }; lastPlaybackError?.let { put("lastPlaybackError", it) }
 			currentScheduleId?.let{put("currentScheduleId",it)};currentPlaylistId?.let{put("currentPlaylistId",it)};put("selectionSource",selectionSource);nextTransition?.let{put("nextTransitionAt",it.toString())};clockOffsetSeconds?.let{put("deviceClockOffsetSeconds",it)};scheduleError?.let{put("scheduleEvaluationError",it)};activeManifestVersion?.let{put("scheduleManifestVersion",it)}
 			websiteStatus.assetId?.let{put("currentWebsiteAssetId",it)};put("websiteState",websiteStatus.state);websiteStatus.loadStartedAt?.let{put("websiteLoadStartedAt",it)};websiteStatus.loadCompletedAt?.let{put("websiteLoadCompletedAt",it)};websiteStatus.failureCategory?.let{put("websiteFailureCategory",it)};put("websiteBlockedNavigationCount",websiteStatus.blockedNavigationCount);websiteStatus.currentHost?.let{put("websiteCurrentHost",it)};put("websiteFallbackShown",websiteStatus.fallbackShown);put("websiteRendererRecoveryCount",websiteStatus.rendererRecoveryCount)
 			widgetStatus.widgetId?.let{put("currentWidgetId",it)};widgetStatus.provider?.let{put("widgetProvider",it)};put("widgetState",widgetStatus.state);widgetStatus.error?.let{put("widgetError",it)}
@@ -718,7 +760,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 			getApplication<Application>().getSharedPreferences("tilecast-reliability",Application.MODE_PRIVATE).getLong("admin-pin-changed-at",0).takeIf{it>0}?.let{put("adminPinChangedAt",Instant.ofEpochMilli(it).toString())}
 			val reliabilityPrefs=getApplication<Application>().getSharedPreferences("tilecast-reliability",Application.MODE_PRIVATE);reliabilityPrefs.getLong("last-foreground-exit",0).takeIf{it>0}?.let{put("lastForegroundExitAt",Instant.ofEpochMilli(it).toString())};reliabilityPrefs.getString("last-foreground-package",null)?.let{put("lastForegroundPackage",it)};put("accessibilityReturnAttempts",reliabilityPrefs.getInt("accessibility-return-attempts",0));reliabilityPrefs.getString("accessibility-return-state",null)?.let{put("accessibilityReturnState",it)}
 			if(mutablePlayerConfig.value?.accessibility?.controlAssistEnabled==true&&!reliabilityController.accessibilityEnabled())put("accessibilityServiceState","policy_enabled_service_disabled")
-			val shutdownPrepare=mutablePlayerConfig.value?.power?.shutdownPrepareSeconds?:0;if(mutableActiveHours.value&&activeHoursNextTransition?.let{Duration.between(Instant.now(),it).seconds in 0..shutdownPrepare.toLong()}==true)put("activeHoursState","shutdown_preparing")
+			val shutdownPrepare=mutablePlayerConfig.value?.power?.shutdownPrepareSeconds?:0;if(mutableActiveHours.value&&activeHoursNextTransition?.let{Duration.between(serverClock.now(),it).seconds in 0..shutdownPrepare.toLong()}==true)put("activeHoursState","shutdown_preparing")
 		})
 	}
 }

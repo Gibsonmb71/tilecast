@@ -55,20 +55,22 @@ type BrandBug struct {
 // ManifestBrandBugConfig is the Player-facing projection. ImageVariantID is
 // filled in by manifest assembly, which owns media variant selection.
 type ManifestBrandBugConfig struct {
-	Name            string     `json:"name"`
-	Corner          string     `json:"corner"`
-	ImageAssetID    *uuid.UUID `json:"imageAssetId,omitempty"`
-	ImageVariantID  *uuid.UUID `json:"imageVariantId,omitempty"`
-	Text            string     `json:"text,omitempty"`
-	WidthPercent    int        `json:"widthPercent"`
-	TextSizePercent int        `json:"textSizePercent"`
-	OpacityPercent  int        `json:"opacityPercent"`
-	MarginPercent   int        `json:"marginPercent"`
-	TextColor       string     `json:"textColor"`
-	BackgroundStyle string     `json:"backgroundStyle"`
-	StartsAt        *time.Time `json:"startsAt,omitempty"`
-	EndsAt          *time.Time `json:"endsAt,omitempty"`
-	Priority        int        `json:"priority"`
+	Name               string     `json:"name"`
+	Corner             string     `json:"corner"`
+	ImageAssetID       *uuid.UUID `json:"imageAssetId,omitempty"`
+	ImageVariantID     *uuid.UUID `json:"imageVariantId,omitempty"`
+	ImageAvailableFrom *time.Time `json:"imageAvailableFrom,omitempty"`
+	ImageExpiresAt     *time.Time `json:"imageExpiresAt,omitempty"`
+	Text               string     `json:"text,omitempty"`
+	WidthPercent       int        `json:"widthPercent"`
+	TextSizePercent    int        `json:"textSizePercent"`
+	OpacityPercent     int        `json:"opacityPercent"`
+	MarginPercent      int        `json:"marginPercent"`
+	TextColor          string     `json:"textColor"`
+	BackgroundStyle    string     `json:"backgroundStyle"`
+	StartsAt           *time.Time `json:"startsAt,omitempty"`
+	EndsAt             *time.Time `json:"endsAt,omitempty"`
+	Priority           int        `json:"priority"`
 }
 
 func (s *Service) ListBrandBugs(ctx context.Context) ([]BrandBug, error) {
@@ -202,7 +204,7 @@ func (s *Service) writeBrandBug(ctx context.Context, id, organizationID, userID 
 		uuid.New(), userID, action, id.String()); err != nil {
 		return err
 	}
-	notes, err := bumpAllScreens(ctx, tx, "plugin.brand_bug.changed")
+	notes, err := s.bumpPlugin(ctx, tx, "brand_bug", id, "plugin.brand_bug.changed")
 	if err != nil {
 		return err
 	}
@@ -230,7 +232,7 @@ func (s *Service) DeleteBrandBug(ctx context.Context, id, userID uuid.UUID) erro
 		VALUES($1,$2,'plugin.brand_bug.deleted','plugin',$3)`, uuid.New(), userID, id.String()); err != nil {
 		return err
 	}
-	notes, err := bumpAllScreens(ctx, tx, "plugin.brand_bug.deleted")
+	notes, err := s.bumpPlugin(ctx, tx, "brand_bug", id, "plugin.brand_bug.deleted")
 	if err != nil {
 		return err
 	}

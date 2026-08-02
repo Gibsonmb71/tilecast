@@ -80,8 +80,8 @@ export class ActivityReporter {
   private buffer: Record<string, unknown>[] = [];
   private loaded = false;
   private timer: NodeJS.Timeout | null = null;
-  private flushing = false;
-  private stopped = false;
+  private operation: Promise<void> = Promise.resolve();
+  private stopping = false;
   private readonly startMs: number;
 
   constructor(
@@ -110,53 +110,64 @@ export class ActivityReporter {
     }
   }
 
-  stop(): void {
-    this.stopped = true;
-    if (this.timer) {
-      clearInterval(this.timer);
-      this.timer = null;
-    }
+  async stop(): Promise<void> {
+    // Queue a shutdown marker behind every record/flush already submitted. This
+    // prevents a concurrent record from being dropped merely because shutdown
+    // began before its promise reached the writer.
+    await this.enqueue(async () => {
+      this.stopping = true;
+      if (this.timer) {
+        clearInterval(this.timer);
+        this.timer = null;
+      }
+    });
+    // Shutdown is a real durability boundary. Complete the final persistence
+    // and upload operation before returning.
+    await this.flush();
   }
 
   /** Record an event; persisted immediately, sent on the next flush. */
   async record(input: ActivityEventInput): Promise<void> {
-    const event: Record<string, unknown> = {
-      id: this.uuid(),
-      sequence: this.next++,
-      eventType: input.eventType,
-      category: input.category ?? "playback",
-      severity: input.severity ?? "info",
-      occurredAt: new Date(this.now()).toISOString(),
-      elapsedRealtimeMs: Math.max(0, this.now() - this.startMs),
-      playerTimezone: this.timezone,
-    };
-    for (const [key, value] of Object.entries(input)) {
-      if (
-        value !== undefined &&
-        !["eventType", "category", "severity"].includes(key)
-      ) {
-        event[key] =
-          key === "failureMessage" ? String(value).slice(0, 240) : value;
+    await this.enqueue(async () => {
+      if (this.stopping) {
+        return;
       }
-    }
-    this.buffer.push(event);
-    if (this.buffer.length > MAX_BUFFER) {
-      // Drop the oldest to stay bounded; note it so the gap is visible.
-      const dropped = this.buffer.length - MAX_BUFFER;
-      this.buffer.splice(0, dropped);
-      log.warn("activity buffer overflow; dropped oldest events", { dropped });
-    }
-    await this.persist();
+      const event: Record<string, unknown> = {
+        id: this.uuid(),
+        sequence: this.next++,
+        eventType: input.eventType,
+        category: input.category ?? "playback",
+        severity: input.severity ?? "info",
+        occurredAt: new Date(this.now()).toISOString(),
+        elapsedRealtimeMs: Math.max(0, this.now() - this.startMs),
+        playerTimezone: this.timezone,
+      };
+      for (const [key, value] of Object.entries(input)) {
+        if (
+          value !== undefined &&
+          !["eventType", "category", "severity"].includes(key)
+        ) {
+          event[key] =
+            key === "failureMessage" ? String(value).slice(0, 240) : value;
+        }
+      }
+      this.buffer.push(event);
+      if (this.buffer.length > MAX_BUFFER) {
+        // Drop the oldest to stay bounded; note it so the gap is visible.
+        const dropped = this.buffer.length - MAX_BUFFER;
+        this.buffer.splice(0, dropped);
+        log.warn("activity buffer overflow; dropped oldest events", {
+          dropped,
+        });
+      }
+      await this.persist();
+    });
   }
 
   /** Flush buffered events; keeps them on failure so nothing is lost. */
   async flush(): Promise<void> {
-    if (this.stopped || this.flushing || this.buffer.length === 0) {
-      return;
-    }
-    this.flushing = true;
-    try {
-      while (this.buffer.length > 0 && !this.stopped) {
+    await this.enqueue(async () => {
+      while (this.buffer.length > 0) {
         const batch = this.buffer.slice(0, MAX_BATCH);
         try {
           await this.client.postActivityEvents(batch);
@@ -167,14 +178,20 @@ export class ActivityReporter {
             return;
           }
           // Network/5xx: keep the buffer and retry on the next flush.
+          log.debug("activity flush deferred", { error: String(err) });
           return;
         }
         this.buffer.splice(0, batch.length);
         await this.persist();
       }
-    } finally {
-      this.flushing = false;
-    }
+    });
+  }
+
+  /** Serialize record, flush, and shutdown so snapshots cannot race. */
+  private enqueue(operation: () => Promise<void>): Promise<void> {
+    const next = this.operation.then(operation, operation);
+    this.operation = next.catch(() => undefined);
+    return next;
   }
 
   private async persist(): Promise<void> {

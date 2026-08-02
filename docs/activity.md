@@ -17,6 +17,8 @@ Every Player event has a UUID and a per-screen sequence. UUID and sequence const
 
 `occurredAt` is the Player wall-clock timestamp. `receivedAt` is assigned by the server. Durations are measured with Android elapsed realtime so wall-clock changes cannot create negative or inflated playback intervals.
 
+Heartbeat and WebSocket status transitions are serialized per screen in one database transaction. The screen-state timeline has at most one open interval per screen; a concurrent heartbeat cannot create a second connected/healthy interval or duplicate the connection transition. The liveness-only heartbeat endpoint updates contact time without replacing the foreground playback snapshot.
+
 ## Incidents
 
 Activity used to treat the latest bad event on a screen as an unresolved issue. A screen that dropped out five times showed five problems, a screen that had recovered still showed its last failure, and nothing could be acknowledged or closed. Incidents replace that with a record of the underlying condition.
@@ -63,6 +65,8 @@ Date-aware Widgets report the selected cached record by Source ID, placement or 
 ## Fleet health
 
 The Activity Overview reports fleet health as of now, not over the selected date range, because it answers what is on screen at this moment. It covers enabled, non-archived, non-deleted screens holding an unrevoked device credential; uptime has its own historical population and gap rules. A screen taken out of service deliberately never reads as a fleet-health fault.
+
+The same enabled, non-archived, non-deleted screen scope is applied to fleet, overview, uptime, proof, and activity aggregations. Archiving a screen therefore removes it consistently from active-fleet counts and historical uptime calculations without deleting its retained audit or playback records.
 
 A recent heartbeat is reachability, not health, and is reported separately as **Online**. Every measured screen also lands in exactly one of four states, so the four counts sum to the measured fleet:
 

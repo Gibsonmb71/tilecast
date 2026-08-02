@@ -69,6 +69,9 @@ func TestAlertTakeoverLifecycle(t *testing.T) {
 	if _, err = pool.Exec(ctx, `INSERT INTO assets(id,organization_id,name,type,original_filename,detected_mime_type,sha256,original_size,width,height,processing_status,created_by) VALUES($1,$2,'Alert image','image','alert.png','image/png',$3,100,1920,1080,'ready',$4)`, assetID, organizationID, make([]byte, 32), userID); err != nil {
 		t.Fatal(err)
 	}
+	if _, err = pool.Exec(ctx, `INSERT INTO asset_variants(id,asset_id,kind,storage_provider,storage_key,mime_type,file_size,sha256,width,height,player_compatible) VALUES($1,$2,'original','local','originals/alert','image/png',100,$3,1920,1080,TRUE)`, uuid.New(), assetID, make([]byte, 32)); err != nil {
+		t.Fatal(err)
+	}
 	if _, err = pool.Exec(ctx, `INSERT INTO playlists(id,organization_id,name,created_by) VALUES($1,$2,'Alert playlist',$3)`, playlistID, organizationID, userID); err != nil {
 		t.Fatal(err)
 	}
@@ -122,6 +125,23 @@ func TestAlertTakeoverLifecycle(t *testing.T) {
 	}
 	if takeoverCount != 1 || targetCount != 1 || stateCount != 1 || activationCount != 1 {
 		t.Fatalf("activation rows takeover=%d target=%d state=%d activation=%d", takeoverCount, targetCount, stateCount, activationCount)
+	}
+	// The activation transaction is followed by the same manifest read used by
+	// a reconnecting player. This catches regressions where a durable takeover
+	// exists but its playlist graph is not projected into the manifest.
+	manifest, _, manifestErr := service.playlists.BuildManifest(ctx, screenID)
+	if manifestErr != nil {
+		t.Fatalf("build manifest after takeover activation: %v", manifestErr)
+	}
+	projected := false
+	for _, playlist := range manifest.Playlists {
+		if playlist.ID == playlistID {
+			projected = true
+			break
+		}
+	}
+	if manifest.Takeover == nil || manifest.Takeover.ID != takeoverID || !projected {
+		t.Fatalf("takeover was not projected after activation: takeover=%#v playlists=%d", manifest.Takeover, len(manifest.Playlists))
 	}
 	if _, err = service.SaveRule(ctx, uuid.New(), RuleInput{
 		Name: "Unknown rule", Enabled: true, EventNames: []string{"Tornado Warning"},

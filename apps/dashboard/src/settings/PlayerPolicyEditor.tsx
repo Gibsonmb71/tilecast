@@ -22,7 +22,7 @@ const policyGroups = [
   {
     title: "Synchronization",
     description: "Server reconciliation, status, and diagnostics.",
-    prefixes: ["player.sync.", "player.identify.", "player.diagnostics."],
+    prefixes: ["player.sync.", "player.identify."],
   },
   {
     title: "Websites",

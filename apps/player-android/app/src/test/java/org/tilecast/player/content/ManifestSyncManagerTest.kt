@@ -29,9 +29,9 @@ class ManifestSyncManagerTest {
             documentSha256 = "document-hash",
             document = LayoutDocument(
                 schemaVersion = 1,
-                canvas = LayoutCanvas(1920, 1080, "landscape", "#000000", backgroundAssetId = background.assetId),
+            canvas = LayoutCanvas(1920, 1080, "landscape", "#000000", backgroundAssetId = background.assetId, backgroundVariantId = background.variantId),
                 placements = listOf(
-                    LayoutPlacement("placement-1", "asset", "Photo", 0f, 0f, 100f, 100f, 1, 1f, true, false, assetId = placementAsset.assetId),
+                    LayoutPlacement("placement-1", "asset", "Photo", 0f, 0f, 100f, 100f, 1, 1f, true, false, assetId = placementAsset.assetId, variantId = placementAsset.variantId),
                 ),
             ),
         )
@@ -57,6 +57,26 @@ class ManifestSyncManagerTest {
 
         assertEquals(listOf("variant-background", "variant-placement"), selected.map { it.variantId })
         assertTrue(selected.all { it.fileSize > 0 })
+    }
+
+    @Test
+    fun layoutReferencesSelectTheExactVariantWhenAnAssetHasSeveralVariants() {
+        val requested = ManifestAsset("asset", "variant-requested", "image/png", "requested", 10, downloadPath = "/requested")
+        val other = ManifestAsset("asset", "variant-other", "image/png", "other", 20, downloadPath = "/other")
+        val layout = ManifestLayout(
+            id = "layout",
+            revisionId = "revision",
+            revision = 1,
+            documentSha256 = "hash",
+            document = LayoutDocument(
+                schemaVersion = 1,
+                canvas = LayoutCanvas(1920, 1080, "landscape", "#000000", backgroundAssetId = "asset", backgroundVariantId = requested.variantId),
+                placements = emptyList(),
+            ),
+        )
+        val manifest = PlayerManifest(13, 1, "screen", "2026-07-18T00:00:00Z", "presentation", layout = layout, layouts = listOf(layout), assets = listOf(other, requested))
+
+        assertEquals(listOf(requested.variantId), selectManifestDownloads(manifest, 0, 1_000, 1_000, 0, 100).map { it.variantId })
     }
 
     @Test

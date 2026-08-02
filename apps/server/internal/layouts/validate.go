@@ -40,6 +40,9 @@ func ValidateDocument(document Document) error {
 	if !finite(canvas.SafeAreaPercent) || canvas.SafeAreaPercent < 0 || canvas.SafeAreaPercent > 20 {
 		return errors.New("layout safe area must be between 0 and 20 percent")
 	}
+	if canvas.BackgroundVariantID != nil && canvas.BackgroundAssetID == nil {
+		return errors.New("layout backgroundVariantId requires backgroundAssetId")
+	}
 	if len(document.Placements) > 200 {
 		return errors.New("layouts may contain at most 200 placements")
 	}
@@ -107,6 +110,9 @@ func validatePlacement(p Placement, canvas Canvas) error {
 		if overrides.FallbackVisibility != "" && overrides.FallbackVisibility != "show" && overrides.FallbackVisibility != "hide" {
 			return errors.New("Widget placement fallback override is invalid")
 		}
+	}
+	if p.VariantID != nil && (p.Type != "asset" || p.AssetID == nil) {
+		return errors.New("variantId is only valid for asset placements")
 	}
 	references := 0
 	if p.WidgetID != nil {

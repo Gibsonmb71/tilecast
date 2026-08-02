@@ -19,13 +19,25 @@ var (
 
 type Notifier interface{ ManifestChanged(uuid.UUID, int64) }
 
+// ManifestInvalidator is implemented by the playlist service so plugin
+// mutations use the same transactional dependency-version traversal as media,
+// layouts, schedules, and presentation overrides.
+type ManifestInvalidator interface {
+	InvalidatePluginInTx(context.Context, pgx.Tx, string, uuid.UUID, string, func(uuid.UUID, int64)) error
+}
+
 type Service struct {
-	db       *pgxpool.Pool
-	notifier Notifier
+	db          *pgxpool.Pool
+	notifier    Notifier
+	invalidator ManifestInvalidator
 }
 
 func NewService(db *pgxpool.Pool, notifier Notifier) *Service {
 	return &Service{db: db, notifier: notifier}
+}
+
+func (s *Service) SetManifestInvalidator(invalidator ManifestInvalidator) {
+	s.invalidator = invalidator
 }
 
 type CatalogPlugin struct {
@@ -421,7 +433,7 @@ func (s *Service) writeCountdownBar(ctx context.Context, id, organizationID, use
 	if _, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)VALUES($1,$2,$3,'plugin', $4)`, uuid.New(), userID, action, id.String()); err != nil {
 		return err
 	}
-	notes, err := bumpAllScreens(ctx, tx, "plugin.countdown_bar.changed")
+	notes, err := s.bumpPlugin(ctx, tx, "countdown_bar", id, "plugin.countdown_bar.changed")
 	if err != nil {
 		return err
 	}
@@ -448,7 +460,7 @@ func (s *Service) DeleteCountdownBar(ctx context.Context, id, userID uuid.UUID) 
 	if _, err = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id)VALUES($1,$2,'plugin.countdown_bar.deleted','plugin',$3)`, uuid.New(), userID, id.String()); err != nil {
 		return err
 	}
-	notes, err := bumpAllScreens(ctx, tx, "plugin.countdown_bar.deleted")
+	notes, err := s.bumpPlugin(ctx, tx, "countdown_bar", id, "plugin.countdown_bar.deleted")
 	if err != nil {
 		return err
 	}
@@ -589,6 +601,17 @@ func (s *Service) notify(notes []note) {
 	for _, n := range notes {
 		s.notifier.ManifestChanged(n.id, n.version)
 	}
+}
+
+func (s *Service) bumpPlugin(ctx context.Context, tx pgx.Tx, pluginType string, pluginID uuid.UUID, reason string) ([]note, error) {
+	if s.invalidator == nil {
+		return bumpAllScreens(ctx, tx, reason)
+	}
+	notes := []note{}
+	err := s.invalidator.InvalidatePluginInTx(ctx, tx, pluginType, pluginID, reason, func(id uuid.UUID, version int64) {
+		notes = append(notes, note{id: id, version: version})
+	})
+	return notes, err
 }
 
 // ManifestForScreen projects every enabled instance of every built-in plugin

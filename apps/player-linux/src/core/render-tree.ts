@@ -147,6 +147,7 @@ export interface LayoutPlaylistItem {
   durationMs: number | null;
   fit: string;
   muted: boolean;
+  volume: number;
   loop: boolean;
 }
 

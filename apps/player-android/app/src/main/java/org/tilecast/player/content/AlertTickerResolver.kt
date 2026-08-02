@@ -34,8 +34,9 @@ internal fun resolveAlertTicker(
     plugins: List<ManifestPlugin>,
     now: Instant,
     clockOffsetSeconds: Long? = null,
+    clockOffsetMillis: Long? = null,
 ): ActiveAlertTicker? {
-    val at = now.plusSeconds(clockOffsetSeconds ?: 0)
+    val at = now.plusMillis(clockOffsetMillis ?: (clockOffsetSeconds ?: 0) * 1_000L)
     val active = mutableListOf<ActiveAlertTicker>()
     for (plugin in plugins) {
         if (plugin.type != "alert_ticker" || plugin.version != 1) continue

@@ -70,6 +70,9 @@ export interface ManifestItem {
   videoStartOffsetMs?: number | null;
   videoEndOffsetMs?: number | null;
   deliveryPolicy: string; // "download" | "stream" | "automatic"
+  usePlayerDefaults?: boolean;
+  availableFrom?: string | null;
+  expiresAt?: string | null;
 }
 
 export interface ManifestPlaylist {
@@ -89,6 +92,13 @@ export interface ManifestAsset {
   height?: number | null;
   durationSeconds?: number | null;
   downloadPath: string;
+  availableFrom?: string | null;
+  expiresAt?: string | null;
+}
+
+export interface ManifestBranding {
+  logoAssetId?: string | null;
+  logoVariantId?: string | null;
 }
 
 export interface ManifestCanvas {
@@ -148,6 +158,8 @@ export interface ManifestBrandBugConfig {
   corner: "top_left" | "top_right" | "bottom_left" | "bottom_right";
   imageAssetId?: string | null;
   imageVariantId?: string | null;
+  imageAvailableFrom?: string | null;
+  imageExpiresAt?: string | null;
   text?: string;
   widthPercent: number;
   textSizePercent: number;
@@ -244,6 +256,7 @@ export interface Manifest {
   playlists: ManifestPlaylist[];
   schedules: ManifestSchedule[];
   assets: ManifestAsset[];
+  branding?: ManifestBranding | null;
   plugins?: ManifestPlugin[];
   serverTime: string;
   prefetchHorizonDays: number;
@@ -311,6 +324,8 @@ export interface CommandResultReport {
 
 export interface UpdateMetadata {
   releaseId: string;
+  /** Stable artifact identity; never infer the artifact from directory order. */
+  artifactId?: string;
   platform: string; // "linux" for this player
   versionCode: number;
   versionName: string;

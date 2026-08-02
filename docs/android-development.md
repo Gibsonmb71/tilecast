@@ -42,6 +42,23 @@ Milestone 6 uses the system Android WebView through a dedicated website playback
 
 Milestone 8 adds `PlayerConfigManager`, the validated source for effective branding, playback defaults, cache/download policy, and reporting intervals. Room schema 3 preserves current and previous valid configuration revisions independently of content manifests.
 
+The effective configuration is authoritative for every setting the Android
+Player advertises. Cache limits, free-space reserve, download concurrency and
+thresholds, manifest/status intervals, website timeout/cookie/reload policy,
+reliability limits, safe mode, playback defaults, branding, power/display
+policy, and screen-location reporting are validated before application. A
+configuration revision reschedules affected timers and updates supervisors;
+`clearOnRestart` is evaluated only at process startup. Display-control-only
+schedules are not assignable to Android screens until Android reports the
+required display capability.
+
+Cached manifests, configuration, downloads, and playback checkpoints carry
+the installation ID, screen ID, and normalized server URL. A replacement
+installation or screen assignment quarantines incompatible state. Cached
+assets are accepted only after their expected SHA-256 and size verify, and an
+APK installer selects the exact persisted release/artifact/path rather than
+the newest staged file.
+
 Production Player release signing is free and independent of app stores. Preserve one permanent Android keystore and a separate Ed25519 manifest key. Gradle reads signing values only from local environment variables, and `scripts/build-player-release.sh` fails closed when any secret is missing. See [player-updates.md](player-updates.md). Emulator/debug builds do not validate production-key replacement.
 
 Manifest v12 adds the common typed Data Source contract and native Countdown, Metric, Cards, and Weather renderers. This Player accepts both v11 and v12. Release version code 22 or later before assigning v12 presentations. Studio blocks assignments when any target screen in the assignment reports an older or unknown Player version.

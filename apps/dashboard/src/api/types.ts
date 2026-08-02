@@ -178,6 +178,7 @@ export type PlaylistItem = {
   videoStartOffsetMs?: number;
   videoEndOffsetMs?: number;
   deliveryPolicy: "download" | "stream" | "automatic";
+  usePlayerDefaults?: boolean;
   assetName: string;
   assetType: "image" | "video" | "widget" | "layout";
   widgetProvider?: WidgetProvider;
@@ -294,6 +295,7 @@ export type LayoutPlacement = {
   groupId?: string;
   widgetId?: string;
   assetId?: string;
+  variantId?: string;
   playlistId?: string;
   overrides?: Record<string, unknown>;
   primitive?: LayoutPrimitive;
@@ -307,6 +309,7 @@ export type LayoutDocument = {
     orientation: LayoutOrientation;
     backgroundColor: string;
     backgroundAssetId?: string;
+    backgroundVariantId?: string;
     safeAreaPercent: number;
   };
   placements: LayoutPlacement[];
@@ -373,6 +376,7 @@ export type PlaylistItemInput = {
   videoStartOffsetMs?: number;
   videoEndOffsetMs?: number;
   deliveryPolicy: PlaylistItem["deliveryPolicy"];
+  usePlayerDefaults?: boolean;
 };
 export type PlaylistAssignment = {
   screenId: string;
@@ -2521,10 +2525,26 @@ export type WebsiteConfig = {
   createdAt?: string;
   updatedAt?: string;
 };
-export type WebsiteInput = { name: string; description: string } & Omit<
-  WebsiteConfig,
-  "displayUrl" | "createdAt" | "updatedAt"
->;
+export type WebsiteInput = {
+  name: string;
+  description: string;
+  url: string;
+  allowedHosts: string[];
+  /** Omitted values use the organization website defaults when authored. */
+  javascriptEnabled?: boolean;
+  domStorageEnabled?: boolean;
+  cookiePolicy?: WebsiteConfig["cookiePolicy"];
+  reloadPolicy?: WebsiteConfig["reloadPolicy"];
+  refreshIntervalSeconds?: number;
+  loadTimeoutSeconds?: number;
+  zoomPercent?: number;
+  scrollX: number;
+  scrollY: number;
+  customUserAgent: string;
+  backgroundColor: string;
+  failureBehavior?: WebsiteConfig["failureBehavior"];
+  fallbackImageAssetId?: string;
+};
 export type WebsiteConfigInput = Omit<
   WebsiteConfig,
   "displayUrl" | "createdAt" | "updatedAt"

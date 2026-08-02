@@ -183,11 +183,11 @@ func (s *Service) PreviewView(ctx context.Context, id uuid.UUID, in ViewInput) (
 	if err := s.validateView(ctx, s.db, id, in); err != nil {
 		return media.TypedDataset{}, err
 	}
-	fieldTypes, fieldLabels, err := s.outputFieldMaps(ctx, id)
+	fieldTypes, fieldLabels, err := s.outputFieldMaps(ctx, s.db, id)
 	if err != nil {
 		return media.TypedDataset{}, err
 	}
-	return s.projectView(ctx, id, viewFromInput(in), fieldTypes, fieldLabels, time.Now().UTC(), func(*time.Time) {})
+	return s.projectView(ctx, s.db, id, viewFromInput(in), fieldTypes, fieldLabels, time.Now().UTC(), func(*time.Time) {})
 }
 
 // UpsertView creates or replaces a saved view (identified by its key) and rebuilds the

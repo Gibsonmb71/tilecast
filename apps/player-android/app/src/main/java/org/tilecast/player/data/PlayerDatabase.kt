@@ -55,6 +55,9 @@ data class StoredManifest(
     val readyAt: Long? = null,
     val activatedAt: Long? = null,
     val failureReason: String? = null,
+    val installationId: String? = null,
+    val screenId: String? = null,
+    val normalizedServerUrl: String? = null,
 )
 
 @Entity(tableName = "cached_assets")
@@ -71,10 +74,13 @@ data class CachedAsset(
     val requiredByActiveManifest: Boolean = false,
     val requiredByPendingManifest: Boolean = false,
     val failureReason: String? = null,
+    val installationId: String? = null,
+    val screenId: String? = null,
+    val normalizedServerUrl: String? = null,
 )
 
 @Entity(tableName="player_configs")
-data class StoredPlayerConfig(@androidx.room.PrimaryKey val configRevision:Long,val schemaVersion:Int,val rawJson:String,val etag:String?,val state:String,val receivedAt:Long,val activatedAt:Long?=null,val error:String?=null)
+data class StoredPlayerConfig(@androidx.room.PrimaryKey val configRevision:Long,val schemaVersion:Int,val rawJson:String,val etag:String?,val state:String,val receivedAt:Long,val activatedAt:Long?=null,val error:String?=null,val installationId:String?=null,val screenId:String?=null,val normalizedServerUrl:String?=null)
 @Dao interface PlayerConfigDao{
     @Query("SELECT * FROM player_configs WHERE state='active' ORDER BY configRevision DESC LIMIT 1") suspend fun active():StoredPlayerConfig?
     @Query("SELECT * FROM player_configs WHERE state='previous' ORDER BY configRevision DESC LIMIT 1") suspend fun previous():StoredPlayerConfig?
@@ -110,7 +116,7 @@ data class StoredPlayerConfig(@androidx.room.PrimaryKey val configRevision:Long,
     @Query("DELETE FROM cached_assets WHERE variantId=:variantId") suspend fun delete(variantId: String)
 }
 
-@Database(entities = [PlayerConfiguration::class, StoredManifest::class, CachedAsset::class,StoredPlayerConfig::class], version = 4, exportSchema = true)
+@Database(entities = [PlayerConfiguration::class, StoredManifest::class, CachedAsset::class,StoredPlayerConfig::class], version = 5, exportSchema = true)
 abstract class PlayerDatabase : RoomDatabase() {
     abstract fun configuration(): PlayerConfigurationDao
     abstract fun manifests(): ManifestDao
@@ -130,8 +136,19 @@ abstract class PlayerDatabase : RoomDatabase() {
             db.execSQL("ALTER TABLE player_configuration ADD COLUMN pairingExpiresAt TEXT")
             db.execSQL("ALTER TABLE player_configuration ADD COLUMN pairingPollingIntervalSeconds INTEGER")
         }}
+        val MIGRATION_4_5=object:Migration(4,5){override fun migrate(db:SupportSQLiteDatabase){
+            db.execSQL("ALTER TABLE stored_manifests ADD COLUMN installationId TEXT")
+            db.execSQL("ALTER TABLE stored_manifests ADD COLUMN screenId TEXT")
+            db.execSQL("ALTER TABLE stored_manifests ADD COLUMN normalizedServerUrl TEXT")
+            db.execSQL("ALTER TABLE cached_assets ADD COLUMN installationId TEXT")
+            db.execSQL("ALTER TABLE cached_assets ADD COLUMN screenId TEXT")
+            db.execSQL("ALTER TABLE cached_assets ADD COLUMN normalizedServerUrl TEXT")
+            db.execSQL("ALTER TABLE player_configs ADD COLUMN installationId TEXT")
+            db.execSQL("ALTER TABLE player_configs ADD COLUMN screenId TEXT")
+            db.execSQL("ALTER TABLE player_configs ADD COLUMN normalizedServerUrl TEXT")
+        }}
         fun get(context: Context): PlayerDatabase = instance ?: synchronized(this) {
-            instance ?: Room.databaseBuilder(context.applicationContext, PlayerDatabase::class.java, "tilecast-player.db").addMigrations(MIGRATION_1_2,MIGRATION_2_3,MIGRATION_3_4).build().also { instance = it }
+            instance ?: Room.databaseBuilder(context.applicationContext, PlayerDatabase::class.java, "tilecast-player.db").addMigrations(MIGRATION_1_2,MIGRATION_2_3,MIGRATION_3_4,MIGRATION_4_5).build().also { instance = it }
         }
     }
 }

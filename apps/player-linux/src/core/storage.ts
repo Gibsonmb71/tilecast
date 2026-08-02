@@ -12,6 +12,7 @@ import { promises as fs } from "fs";
 import * as fsSync from "fs";
 import * as path from "path";
 import * as os from "os";
+import { randomUUID } from "crypto";
 
 export function defaultDataDir(): string {
   const xdg = process.env.XDG_DATA_HOME;
@@ -64,7 +65,11 @@ export class StateStore {
 
   async writeJson(name: string, value: unknown): Promise<void> {
     const target = this.filePath(name);
-    const temp = target + ".tmp";
+    // A unique temporary name keeps two independent writers from ever
+    // truncating each other's in-flight snapshot. Callers still serialize
+    // logical updates, but this is an additional crash/concurrency guard for
+    // recovery paths and future state files.
+    const temp = `${target}.tmp-${randomUUID()}`;
     const data = JSON.stringify(value, null, 2);
     const handle = await fs.open(temp, "w", 0o600);
     try {
@@ -92,5 +97,20 @@ export class StateStore {
         throw err;
       }
     }
+  }
+
+  async clearMedia(): Promise<void> {
+    let entries: string[];
+    try {
+      entries = await fs.readdir(this.mediaDir());
+    } catch (err: unknown) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw err;
+    }
+    await Promise.all(
+      entries.map((entry) =>
+        fs.rm(path.join(this.mediaDir(), entry), { force: true }),
+      ),
+    );
   }
 }

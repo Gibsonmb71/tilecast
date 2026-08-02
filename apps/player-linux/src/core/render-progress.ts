@@ -81,6 +81,28 @@ export const DEFAULT_RENDER_PROGRESS_CONFIG: RenderProgressConfig = {
   stillWithoutDurationToleranceMs: 30 * 60_000,
 };
 
+/**
+ * Resolve the renderer policy from the server-owned player configuration.
+ *
+ * The other render-progress tolerances are renderer invariants, but the
+ * amount of time a website may take to produce its first meaningful render is
+ * an administrator policy. Keeping this conversion here makes every caller
+ * use the same units and preserves the safe default for older cached configs.
+ */
+export function renderProgressConfigFor(
+  reliability: Record<string, unknown> | undefined,
+): RenderProgressConfig {
+  const configuredSeconds = Number(reliability?.webviewStallSeconds);
+  const websiteFirstRenderTimeoutMs =
+    Number.isFinite(configuredSeconds) && configuredSeconds >= 1
+      ? configuredSeconds * 1_000
+      : DEFAULT_RENDER_PROGRESS_CONFIG.websiteFirstRenderTimeoutMs;
+  return {
+    ...DEFAULT_RENDER_PROGRESS_CONFIG,
+    websiteFirstRenderTimeoutMs,
+  };
+}
+
 export interface RenderProgressState {
   expectation: ContentExpectation;
   /** The item on screen, so a signal for a stale item is ignored. */

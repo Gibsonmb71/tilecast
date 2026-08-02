@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import {
   SelfUpdater,
@@ -10,14 +11,21 @@ import type {
   UpdateMetadata,
   UpdateStatusReport,
 } from "./types";
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 const RELEASE_ID = "11111111-1111-1111-1111-111111111111";
 const DEPLOYMENT_ID = "22222222-2222-2222-2222-222222222222";
-const ARTIFACT_SHA =
-  "abc123abc123abc123abc123abc123abc123abc123abc123abc123abc1230000";
+const TEST_ARTIFACT = Buffer.alloc(4096, 0x5a);
+const ARTIFACT_SHA = createHash("sha256").update(TEST_ARTIFACT).digest("hex");
 
 function metadata(overrides: Partial<UpdateMetadata> = {}): UpdateMetadata {
   return {
@@ -66,13 +74,20 @@ function deps(overrides: Partial<SelfUpdateDeps> = {}): {
   const download = vi.fn(async () => {});
   const d: SelfUpdateDeps = {
     appImagePath: "/home/tilecast/tilecast-player.AppImage",
-    stagePath: "/var/lib/tilecast/player-update.AppImage",
+    stagePath: path.join(
+      tmpdir(),
+      `tilecast-player-update-${randomUUID()}.AppImage`,
+    ),
     fetchMetadata: async () => metadata(),
     reportStatus: async (_id, body) => {
       states.push(body.state);
       reports.push(body);
     },
-    download,
+    download: vi.fn(async (request) => {
+      await mkdir(path.dirname(request.destination), { recursive: true });
+      await writeFile(request.destination, TEST_ARTIFACT, { mode: 0o600 });
+      await download(request);
+    }),
     buildUrl: (path) => `https://server${path}`,
     authHeaders: () => ({ Authorization: "Bearer device" }),
     promote,
@@ -184,6 +199,7 @@ describe("SelfUpdater", () => {
       },
       download: vi.fn(async (request) => {
         now = 3_000;
+        await writeFile(request.destination, TEST_ARTIFACT);
         request.onProgress?.(1024);
       }),
     });
@@ -211,48 +227,53 @@ describe("SelfUpdater", () => {
   });
 
   it("serializes shared-stage runs and releases the lock after failure", async () => {
-    const stagePath = "/var/lib/tilecast/shared-player-update.AppImage";
-    let releaseFirst!: () => void;
-    let markFirstStarted!: () => void;
-    const firstGate = new Promise<void>((resolve) => {
-      releaseFirst = resolve;
-    });
-    const firstStarted = new Promise<void>((resolve) => {
-      markFirstStarted = resolve;
-    });
-    const firstDownload = vi.fn(async () => {
-      markFirstStarted();
-      await firstGate;
-      throw new Error("first update failed");
-    });
-    const first = deps({ stagePath, download: firstDownload });
-    const second = deps({ stagePath });
+    const root = await mkdtemp(path.join(tmpdir(), "tilecast-shared-update-"));
+    try {
+      const stagePath = path.join(root, "shared-player-update.AppImage");
+      let releaseFirst!: () => void;
+      let markFirstStarted!: () => void;
+      const firstGate = new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+      const firstStarted = new Promise<void>((resolve) => {
+        markFirstStarted = resolve;
+      });
+      const firstDownload = vi.fn(async () => {
+        markFirstStarted();
+        await firstGate;
+        throw new Error("first update failed");
+      });
+      const first = deps({ stagePath, download: firstDownload });
+      const second = deps({ stagePath });
 
-    const firstRun = new SelfUpdater(first.d).run(
-      command({ installationMode: "download_only" }),
-    );
-    await firstStarted;
-    const secondRun = new SelfUpdater(second.d).run(
-      command({
-        deploymentId: "33333333-3333-3333-3333-333333333333",
-        installationMode: "download_only",
-      }),
-    );
-    await Promise.resolve();
+      const firstRun = new SelfUpdater(first.d).run(
+        command({ installationMode: "download_only" }),
+      );
+      await firstStarted;
+      const secondRun = new SelfUpdater(second.d).run(
+        command({
+          deploymentId: "33333333-3333-3333-3333-333333333333",
+          installationMode: "download_only",
+        }),
+      );
+      await Promise.resolve();
 
-    expect(second.download).not.toHaveBeenCalled();
+      expect(second.download).not.toHaveBeenCalled();
 
-    releaseFirst();
-    await Promise.all([firstRun, secondRun]);
+      releaseFirst();
+      await Promise.all([firstRun, secondRun]);
 
-    expect(first.states).toEqual(["downloading", "failed"]);
-    expect(second.download).toHaveBeenCalledOnce();
-    expect(second.states).toEqual([
-      "downloading",
-      "downloaded",
-      "verifying",
-      "ready",
-    ]);
+      expect(first.states).toEqual(["downloading", "failed"]);
+      expect(second.download).toHaveBeenCalledOnce();
+      expect(second.states).toEqual([
+        "downloading",
+        "downloaded",
+        "verifying",
+        "ready",
+      ]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("stages but does not restart on download_only", async () => {
@@ -262,6 +283,21 @@ describe("SelfUpdater", () => {
     );
 
     expect(states).toEqual(["downloading", "downloaded", "verifying", "ready"]);
+    expect(promote).not.toHaveBeenCalled();
+    expect(restart).not.toHaveBeenCalled();
+  });
+
+  it("does not report a missing staged artifact as ready", async () => {
+    const { d, states, restart, promote } = deps({
+      download: vi.fn(async () => {
+        // Simulate a downloader that returns successfully without leaving its
+        // destination behind. The final gate must still reject promotion.
+      }),
+    });
+
+    await new SelfUpdater(d).run(command());
+
+    expect(states).toEqual(["downloading", "downloaded", "failed"]);
     expect(promote).not.toHaveBeenCalled();
     expect(restart).not.toHaveBeenCalled();
   });

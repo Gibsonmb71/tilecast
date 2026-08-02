@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/tilecast/tilecast/apps/server/internal/manifestchanges"
 	"github.com/tilecast/tilecast/apps/server/internal/media"
 )
 
@@ -24,11 +25,17 @@ const farFuture = "now()+interval '100 years'"
 // refresh state is rescheduled to the next boundary so signage updates without a Player round trip
 // and stays correct offline.
 func (s *Service) RebuildProjection(ctx context.Context, formID uuid.UUID) error {
-	views, err := s.listViews(ctx, s.db, formID)
+	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	fieldTypes, fieldLabels, err := s.outputFieldMaps(ctx, formID)
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	views, err := s.listViews(ctx, tx, formID)
+	if err != nil {
+		return err
+	}
+	fieldTypes, fieldLabels, err := s.outputFieldMaps(ctx, tx, formID)
 	if err != nil {
 		return err
 	}
@@ -47,7 +54,7 @@ func (s *Service) RebuildProjection(ctx context.Context, formID uuid.UUID) error
 
 	payload := media.TypedDatasetPayload{Datasets: []media.TypedDataset{}}
 	for _, view := range views {
-		dataset, err := s.projectView(ctx, formID, view, fieldTypes, fieldLabels, now, noteBoundary)
+		dataset, err := s.projectView(ctx, tx, formID, view, fieldTypes, fieldLabels, now, noteBoundary)
 		if err != nil {
 			return err
 		}
@@ -57,7 +64,7 @@ func (s *Service) RebuildProjection(ctx context.Context, formID uuid.UUID) error
 	// Schedule a wake at the next expiry among eligible records so the worker can auto-expire them
 	// even when no view carries a relative time filter.
 	var nextExpiry *time.Time
-	if err := s.db.QueryRow(ctx, `SELECT min(expires_at) FROM form_records
+	if err := tx.QueryRow(ctx, `SELECT min(expires_at) FROM form_records
 		WHERE data_source_id=$1 AND deleted_at IS NULL AND eligible AND expires_at IS NOT NULL AND expires_at>now()`, formID).Scan(&nextExpiry); err != nil {
 		return err
 	}
@@ -78,17 +85,33 @@ func (s *Service) RebuildProjection(ctx context.Context, formID uuid.UUID) error
 		available_item_count=$3,using_cached_data=FALSE,cache_updated_at=now(),cache_expires_at=now()+interval '100 years',
 		cached_payload=$2::jsonb,error_code=NULL,locked_at=NULL,locked_by=NULL,updated_at=now()
 		WHERE data_source_id=$1`
-	tag, err := s.db.Exec(ctx, query, args...)
+	tag, err := tx.Exec(ctx, query, args...)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
 		// Seed the refresh row if it is somehow missing so the form still projects.
-		if _, err := s.db.Exec(ctx, `INSERT INTO data_source_refresh_states(data_source_id,next_refresh_at,last_attempt_at,last_success_at,http_result_category,parse_status,available_item_count,using_cached_data,cache_updated_at,cache_expires_at,cached_payload)
+		if _, err := tx.Exec(ctx, `INSERT INTO data_source_refresh_states(data_source_id,next_refresh_at,last_attempt_at,last_success_at,http_result_category,parse_status,available_item_count,using_cached_data,cache_updated_at,cache_expires_at,cached_payload)
 			VALUES($1,now()+interval '100 years',now(),now(),'manual','success',$2,FALSE,now(),now()+interval '100 years',$3::jsonb)
 			ON CONFLICT(data_source_id) DO NOTHING`, formID, len(payload.Datasets), string(encoded)); err != nil {
 			return err
 		}
+	}
+	var changes []manifestchanges.Change
+	transactionalUsed := false
+	if transactional, ok := s.invalidator.(media.TransactionalAssetInvalidator); ok {
+		transactionalUsed = true
+		changes, err = transactional.DataSourceChangedInTx(ctx, tx, formID, "form.projected")
+		if err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	if transactionalUsed {
+		s.invalidator.(media.TransactionalAssetInvalidator).NotifyManifestChanges(changes)
+		return nil
 	}
 	if s.invalidator != nil {
 		return s.invalidator.DataSourceChanged(ctx, formID, "form.projected")
@@ -98,10 +121,10 @@ func (s *Service) RebuildProjection(ctx context.Context, formID uuid.UUID) error
 
 // outputFieldMaps returns the key→type and key→label maps for a form's output fields, derived from
 // its published revision (empty when nothing is published yet).
-func (s *Service) outputFieldMaps(ctx context.Context, formID uuid.UUID) (map[string]string, map[string]string, error) {
+func (s *Service) outputFieldMaps(ctx context.Context, q rowQuerier, formID uuid.UUID) (map[string]string, map[string]string, error) {
 	fieldTypes := map[string]string{}
 	fieldLabels := map[string]string{}
-	revision, err := s.loadPublishedRevision(ctx, s.db, formID)
+	revision, err := s.loadPublishedRevision(ctx, q, formID)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			return fieldTypes, fieldLabels, nil
@@ -117,7 +140,7 @@ func (s *Service) outputFieldMaps(ctx context.Context, formID uuid.UUID) (map[st
 
 // projectView builds one typed dataset for a saved view. noteBoundary is called with every future
 // display/expiry timestamp among candidate records so the caller can schedule the next rebuild.
-func (s *Service) projectView(ctx context.Context, formID uuid.UUID, view View, fieldTypes, fieldLabels map[string]string, now time.Time, noteBoundary func(*time.Time)) (media.TypedDataset, error) {
+func (s *Service) projectView(ctx context.Context, q rowQuerier, formID uuid.UUID, view View, fieldTypes, fieldLabels map[string]string, now time.Time, noteBoundary func(*time.Time)) (media.TypedDataset, error) {
 	dataset := media.TypedDataset{ID: view.Key, Kind: "records", Records: []media.TypedRecord{}, Fields: []media.DataSourceField{}}
 	outputFields := view.OutputFields
 	if len(outputFields) == 0 {
@@ -135,7 +158,7 @@ func (s *Service) projectView(ctx context.Context, formID uuid.UUID, view View, 
 
 	// Candidate records: in the view's included states AND output-eligible. This is the safety
 	// invariant — no unapproved record can ever reach the payload.
-	rows, err := s.db.Query(ctx, `SELECT id,state_key,values,display_title,priority,display_at,expires_at,created_at
+	rows, err := q.Query(ctx, `SELECT id,state_key,values,display_title,priority,display_at,expires_at,created_at
 		FROM form_records
 		WHERE data_source_id=$1 AND deleted_at IS NULL AND eligible AND state_key = ANY($2)
 		ORDER BY priority DESC,created_at DESC`, formID, includedStates(view))

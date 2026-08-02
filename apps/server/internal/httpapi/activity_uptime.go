@@ -52,7 +52,7 @@ WITH bounds AS (
 	-- because their downtime is administrative rather than a fault.
 	SELECT s.id, s.name, s.last_heartbeat_at
 	FROM screens s
-	WHERE s.enabled = TRUE AND s.deleted_at IS NULL
+	WHERE s.enabled = TRUE AND s.deleted_at IS NULL AND s.archived_at IS NULL
 	  AND EXISTS (SELECT 1 FROM device_credentials c WHERE c.screen_id = s.id AND c.revoked_at IS NULL)
 ), buckets AS (
 	SELECT b.from_ts + make_interval(secs => b.bucket_seconds * (n - 1)) AS bucket_start,

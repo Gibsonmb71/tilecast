@@ -20,6 +20,7 @@ import (
 var ErrRevisionConflict = errors.New("settings revision conflict")
 
 type Notifier interface{ ConfigChanged(uuid.UUID, int64) }
+type ManifestNotifier interface{ ManifestChanged(uuid.UUID, int64) }
 type HardLimits struct {
 	MaxUploadBytes                                         int64
 	MaxTakeoverMinutes, MaxWebsiteTimeout, MaxPrefetchDays int
@@ -107,6 +108,16 @@ func (s *Service) Organization(ctx context.Context) (Document, error) {
 	d.Values["organization.name"] = name
 	return d, nil
 }
+
+// OrganizationValues exposes the validated, default-merged organization
+// settings to domain services that use the same authoritative registry.
+func (s *Service) OrganizationValues(ctx context.Context) (map[string]any, error) {
+	document, err := s.Organization(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return document.Values, nil
+}
 func (s *Service) UpdateOrganization(ctx context.Context, user uuid.UUID, revision int64, values map[string]any) (Document, error) {
 	validated, err := Validate(values, ScopeOrganization)
 	if err != nil {
@@ -153,10 +164,15 @@ func (s *Service) UpdateOrganization(ctx context.Context, user uuid.UUID, revisi
 	if err != nil {
 		return Document{}, err
 	}
+	manifestScreens, err := bumpOrganizationManifests(ctx, tx, org, "organization.settings_changed")
+	if err != nil {
+		return Document{}, err
+	}
 	if err = tx.Commit(ctx); err != nil {
 		return Document{}, err
 	}
 	s.notify(screens)
+	s.notifyManifests(manifestScreens)
 	return s.Organization(ctx)
 }
 func (s *Service) Preferences(ctx context.Context, user uuid.UUID) (Document, error) {
@@ -433,9 +449,10 @@ func (s *Service) PlayerConfiguration(ctx context.Context, screen uuid.UUID) (Pl
 	}
 	v := func(key string) any { return effective.Values[key].Value }
 	o := func(key string) any { return org.Values[key] }
-	config := PlayerConfig{SchemaVersion: 1, ConfigRevision: effective.ConfigRevision, GeneratedAt: time.Now().UTC(), Branding: map[string]any{"organizationName": name, "logoAssetId": o("branding.logo_asset_id"), "backgroundColor": o("branding.player_background_color"), "textColor": o("branding.player_text_color"), "noContentTitle": o("branding.no_content_title"), "noContentMessage": o("branding.no_content_message"), "disabledTitle": o("branding.disabled_title"), "disabledMessage": o("branding.disabled_message"), "footerText": o("branding.footer_text")}, Playback: map[string]any{"defaultVolume": v("player.playback.default_volume"), "defaultFitMode": v("player.playback.default_fit_mode"), "identifyShowsLocation": v("player.identify.show_location"), "screenLocation": screenLocation}, Cache: map[string]any{"maximumBytes": v("player.cache.max_bytes"), "minimumFreeBytes": v("player.cache.minimum_free_bytes"), "concurrentDownloads": v("player.download.concurrent_limit"), "automaticThresholdBytes": v("player.download.automatic_threshold_bytes")}, Sync: map[string]any{"manifestReconciliationSeconds": v("player.sync.manifest_seconds"), "statusReportSeconds": v("player.sync.status_seconds")}, Website: map[string]any{"timeoutSeconds": v("player.website.timeout_seconds"), "cookiePolicy": v("player.website.cookie_policy"), "clearOnRestart": v("player.website.clear_on_restart")},
+	config := PlayerConfig{SchemaVersion: 1, ConfigRevision: effective.ConfigRevision, GeneratedAt: time.Now().UTC(), Branding: map[string]any{"organizationName": name, "logoAssetId": o("branding.logo_asset_id"), "backgroundColor": o("branding.player_background_color"), "textColor": o("branding.player_text_color"), "noContentTitle": o("branding.no_content_title"), "noContentMessage": o("branding.no_content_message"), "disabledTitle": o("branding.disabled_title"), "disabledMessage": o("branding.disabled_message"), "footerText": o("branding.footer_text")}, Playback: map[string]any{"defaultVolume": v("player.playback.default_volume"), "defaultFitMode": v("player.playback.default_fit_mode"), "defaultImageDurationSeconds": v("player.playback.default_image_duration_seconds"), "defaultTransition": v("player.playback.default_transition"), "defaultAudioEnabled": v("player.playback.default_audio_enabled"), "resumeAfterRestart": v("player.playback.resume_after_restart"), "identifyShowsLocation": v("player.identify.show_location"), "screenLocation": screenLocation}, Cache: map[string]any{"maximumBytes": v("player.cache.max_bytes"), "minimumFreeBytes": v("player.cache.minimum_free_bytes"), "concurrentDownloads": v("player.download.concurrent_limit"), "automaticThresholdBytes": v("player.download.automatic_threshold_bytes")}, Sync: map[string]any{"manifestReconciliationSeconds": v("player.sync.manifest_seconds"), "statusReportSeconds": v("player.sync.status_seconds")},
 		Reliability:   map[string]any{"mode": v("reliability.mode"), "launchAfterBoot": v("reliability.launch_after_boot"), "immersiveMode": v("reliability.immersive_mode"), "foregroundWatchdogEnabled": v("reliability.foreground_watchdog_enabled"), "playbackStallSeconds": v("reliability.playback_stall_seconds"), "webviewStallSeconds": v("reliability.webview_stall_seconds"), "maximumProcessRestarts": v("reliability.maximum_process_restarts"), "restartWindowMinutes": v("reliability.restart_window_minutes"), "safeModeEnabled": v("reliability.safe_mode_enabled")},
-		Power:         map[string]any{"activeHoursEnabled": v("power.active_hours_enabled"), "activeHoursTimezone": v("power.active_hours_timezone"), "activeHoursDays": v("power.active_hours_days"), "activeHoursStart": v("power.active_hours_start"), "activeHoursEnd": v("power.active_hours_end"), "startupGraceSeconds": v("power.startup_grace_seconds"), "shutdownPrepareSeconds": v("power.shutdown_prepare_seconds"), "keepScreenOn": v("power.keep_screen_on"), "cecAssistEnabled": v("power.cec_assist_enabled"), "sleepOutsideActiveHours": v("power.sleep_outside_active_hours"), "outsideActiveHoursDisplay": v("power.outside_active_hours_display"), "outsideActiveHoursText": v("power.outside_active_hours_text"), "blackScreenFallback": v("power.outside_active_hours_display") == "black"},
+		Website:       map[string]any{"timeoutSeconds": v("player.website.timeout_seconds"), "cookiePolicy": v("player.website.cookie_policy"), "clearOnRestart": v("player.website.clear_on_restart"), "defaultJavascript": o("website.default_javascript"), "defaultDomStorage": o("website.default_dom_storage"), "defaultTimeoutSeconds": o("website.default_timeout_seconds"), "defaultCookiePolicy": o("website.default_cookie_policy"), "defaultReloadPolicy": o("website.default_reload_policy"), "minimumRefreshSeconds": o("website.minimum_refresh_seconds"), "defaultFailureBehavior": o("website.default_failure_behavior"), "defaultZoomPercent": o("website.default_zoom_percent"), "defaultFallbackImageId": o("website.default_fallback_image_id")},
+		Power:         map[string]any{"activeHoursEnabled": v("power.active_hours_enabled"), "activeHoursTimezone": v("power.active_hours_timezone"), "activeHoursDays": v("power.active_hours_days"), "activeHoursStart": v("power.active_hours_start"), "activeHoursEnd": v("power.active_hours_end"), "startupGraceSeconds": v("power.startup_grace_seconds"), "shutdownPrepareSeconds": v("power.shutdown_prepare_seconds"), "keepScreenOn": v("power.keep_screen_on"), "sleepOutsideActiveHours": v("power.sleep_outside_active_hours"), "outsideActiveHoursDisplay": v("power.outside_active_hours_display"), "outsideActiveHoursText": v("power.outside_active_hours_text"), "blackScreenFallback": v("power.outside_active_hours_display") == "black"},
 		ManagedKiosk:  map[string]any{"lockTaskEnabled": v("managed_kiosk.lock_task_enabled"), "blockOverlays": v("managed_kiosk.block_overlays"), "allowSettingsDuringAdmin": v("managed_kiosk.allow_settings_during_admin"), "adminSessionMinutes": v("managed_kiosk.admin_session_minutes")},
 		LinuxKiosk:    map[string]any{"fullscreenEnabled": v("linux_kiosk.fullscreen_enabled"), "preventDisplaySleep": v("linux_kiosk.prevent_display_sleep")},
 		Accessibility: map[string]any{"controlAssistEnabled": v("accessibility.control_assist_enabled"), "returnDelaySeconds": v("accessibility.return_delay_seconds"), "allowedPackages": v("accessibility.allowed_packages"), "pauseDuringUpdates": v("accessibility.pause_during_updates"), "pauseDuringAdminSession": v("accessibility.pause_during_admin_session"), "reportForegroundPackage": v("accessibility.report_foreground_package"), "maximumReturns": v("accessibility.maximum_returns"), "returnWindowMinutes": v("accessibility.return_window_minutes")},
@@ -480,6 +497,55 @@ func (s *Service) notify(notes []note) {
 		for _, n := range notes {
 			s.notifier.ConfigChanged(n.id, n.revision)
 		}
+	}
+}
+
+type manifestNote struct {
+	id      uuid.UUID
+	version int64
+}
+
+// Organization branding and fallback policy are part of the player manifest
+// even when no playlist names them. Keep the manifest version in the same
+// transaction as the settings revision so a conditional request cannot retain
+// an old logo or fallback after a successful settings write.
+func bumpOrganizationManifests(ctx context.Context, tx pgx.Tx, organization uuid.UUID, reason string) ([]manifestNote, error) {
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO screen_manifest_state(screen_id)
+		SELECT id FROM screens WHERE organization_id=$1
+		ON CONFLICT(screen_id) DO NOTHING`, organization); err != nil {
+		return nil, err
+	}
+	rows, err := tx.Query(ctx, `
+		UPDATE screen_manifest_state ms
+		SET previous_manifest_version=ms.manifest_version,
+			manifest_version=ms.manifest_version+1,
+			changed_at=now(),change_reason=$2
+		FROM screens s
+		WHERE s.id=ms.screen_id AND s.organization_id=$1
+		RETURNING ms.screen_id,ms.manifest_version`, organization, reason)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := []manifestNote{}
+	for rows.Next() {
+		var item manifestNote
+		if err := rows.Scan(&item.id, &item.version); err != nil {
+			return nil, err
+		}
+		result = append(result, item)
+	}
+	return result, rows.Err()
+}
+
+func (s *Service) notifyManifests(notes []manifestNote) {
+	notifier, ok := s.notifier.(ManifestNotifier)
+	if !ok {
+		return
+	}
+	for _, item := range notes {
+		notifier.ManifestChanged(item.id, item.version)
 	}
 }
 func (s *Service) audit(ctx context.Context, tx pgx.Tx, user uuid.UUID, action, resource string, id uuid.UUID, values map[string]any, revision int64) {
