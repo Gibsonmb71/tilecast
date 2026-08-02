@@ -1,6 +1,6 @@
 import { EventEmitter } from "events";
 import { describe, expect, it, vi } from "vitest";
-import { AirplayManager } from "./airplay";
+import { AirplayManager, describeLimitation } from "./airplay";
 import type { ExternalPresentationConfig } from "../core/external-presentation";
 
 class FakeProcess extends EventEmitter {
@@ -132,5 +132,71 @@ describe("AirPlay Linux process ownership", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("AirPlay capability limitation reporting", () => {
+  const ready = {
+    uxplayInstalled: true,
+    uxplayVersion: "1.73.6",
+    gstreamerInstalled: true,
+    decoder: "vah264dec" as const,
+    avahiAvailable: true,
+    hardware: true,
+    hardwarePlugin: true,
+    vainfoAvailable: true,
+    supported: true,
+  };
+
+  it("names UxPlay when it is absent", () => {
+    const limitation = describeLimitation({
+      ...ready,
+      uxplayInstalled: false,
+      uxplayVersion: null,
+      supported: false,
+    });
+    expect(limitation).toContain("UxPlay is not installed");
+    expect(limitation).toContain("install-airplay-support.sh");
+  });
+
+  // The common field failure: a distro package exists but predates the
+  // baseline, so airplaySupported is false while uxplayInstalled is true.
+  it("names the installed version when it is older than the baseline", () => {
+    const limitation = describeLimitation({
+      ...ready,
+      uxplayVersion: "1.68",
+      supported: false,
+    });
+    expect(limitation).toContain("1.68");
+    expect(limitation).toContain("1.73.6");
+  });
+
+  it("names GStreamer and the decoder when they are missing", () => {
+    expect(
+      describeLimitation({ ...ready, gstreamerInstalled: false, supported: false }),
+    ).toContain("GStreamer is not installed");
+    expect(
+      describeLimitation({ ...ready, decoder: null, supported: false }),
+    ).toContain("H.264 decoder");
+  });
+
+  // Blocking dependencies outrank quality notes: a box with neither UxPlay nor
+  // VA-API must be told about UxPlay first, since that is what it fixes next.
+  it("reports the blocking dependency ahead of a hardware-decode note", () => {
+    expect(
+      describeLimitation({
+        ...ready,
+        uxplayInstalled: false,
+        uxplayVersion: null,
+        decoder: "avdec_h264",
+        hardware: false,
+        hardwarePlugin: false,
+        supported: false,
+      }),
+    ).toContain("UxPlay is not installed");
+  });
+
+  it("reports nothing for a fully provisioned player", () => {
+    expect(describeLimitation(ready)).toBeUndefined();
   });
 });

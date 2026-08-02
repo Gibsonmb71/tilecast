@@ -17,6 +17,38 @@ function countdown(expiresAt: string, now: number) {
     : `${minutes}m ${String(seconds).padStart(2, "0")}s`;
 }
 
+// Fallback for a player too old to send its own limitation string, and for the
+// group case where several displays fail for different reasons.
+function missingComponents(blocked: ReliabilityStatus[]) {
+  const missing = [
+    [
+      "UxPlay",
+      blocked.some((item) => item.airplayUxPlayInstalled === false),
+    ] as const,
+    [
+      "GStreamer",
+      blocked.some((item) => item.airplayGstreamerInstalled === false),
+    ] as const,
+    [
+      "an H.264 decoder",
+      blocked.some((item) => item.airplayH264DecoderAvailable === false),
+    ] as const,
+    [
+      "Avahi/Bonjour",
+      blocked.some((item) => item.airplayAvahiAvailable === false),
+    ] as const,
+  ]
+    .filter(([, absent]) => absent)
+    .map(([name]) => name);
+  if (missing.length === 0)
+    return "Run install-airplay-support.sh on the player to provision UxPlay, GStreamer, an H.264 decoder, and Avahi.";
+  const list =
+    missing.length === 1
+      ? missing[0]
+      : `${missing.slice(0, -1).join(", ")} and ${missing[missing.length - 1]}`;
+  return `Missing ${list}. Run install-airplay-support.sh on the player.`;
+}
+
 function sessionStatus(session: AirplaySession) {
   if (session.status === "active" || session.connectedCount > 0)
     return `Presenting · ${session.connectedCount}/${session.screenCount} displays receiving`;
@@ -122,13 +154,23 @@ export function AirPlayPresentDialog({
       const remaining = Math.max(1, displayCount - allCapabilities.length);
       return `Waiting for ${remaining} display${remaining === 1 ? "" : "s"} to report AirPlay capabilities.`;
     }
-    const unsupported = allCapabilities.filter((item) =>
+    const blocked = allCapabilities.filter((item) =>
       targetType === "group"
         ? item.airplayGroupSupported === false
         : item.airplaySupported === false,
-    ).length;
-    if (unsupported > 0)
-      return `${unsupported} display${unsupported === 1 ? " is" : "s are"} not AirPlay-ready. Provision UxPlay, GStreamer, and an H.264 decoder first.`;
+    );
+    if (blocked.length > 0) {
+      // Naming the dependency is the whole point: "not AirPlay-ready" leaves an
+      // operator guessing between UxPlay, GStreamer, the H.264 decoder, and
+      // Avahi. Prefer the player's own sentence, which also carries the version
+      // it found, and fall back to the component flags it reported.
+      const reason = blocked.find((item) => item.airplayLimitation)
+        ?.airplayLimitation;
+      const detail = reason ?? missingComponents(blocked);
+      return blocked.length === 1
+        ? `This display is not AirPlay-ready. ${detail}`
+        : `${blocked.length} displays are not AirPlay-ready. ${detail}`;
+    }
     if (targetType === "group" && groupReady === false) {
       return "One or more displays has not verified the GStreamer RTP receiver path.";
     }

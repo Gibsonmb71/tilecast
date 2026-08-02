@@ -263,6 +263,7 @@ type Heartbeat struct {
 	AirplayMdnsAdvertisementAvailable *bool          `json:"airplayMdnsAdvertisementAvailable,omitempty"`
 	AirplayMulticastSupported         *bool          `json:"airplayMulticastSupported,omitempty"`
 	AirplayMulticastTestStatus        string         `json:"airplayMulticastTestStatus,omitempty"`
+	AirplayLimitation                 string         `json:"airplayLimitation,omitempty"`
 	ExternalPresentationState         string         `json:"externalPresentationState,omitempty"`
 	ExternalPresentationSessionID     *uuid.UUID     `json:"externalPresentationSessionId,omitempty"`
 	ExternalPresentationRole          string         `json:"externalPresentationRole,omitempty"`

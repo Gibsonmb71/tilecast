@@ -97,6 +97,53 @@ func TestAirplayCapabilitiesPersistWhileIdle(t *testing.T) {
 	}
 }
 
+// The probe's own diagnosis is what makes a failed capability check
+// actionable, and it has to clear once provisioning fixes the box.
+func TestAirplayLimitationIsStoredAndCleared(t *testing.T) {
+	service, pool, principal := airplayHeartbeatTestService(t)
+	ctx := context.Background()
+	unsupported, supported := false, true
+
+	service.updateAirplayHeartbeat(ctx, principal.ScreenID, Heartbeat{
+		AirplaySupported:          &unsupported,
+		AirplayLimitation:         "UxPlay is not installed; AirPlay needs UxPlay 1.73.6 or newer.",
+		ExternalPresentationState: "none",
+	})
+	var stored *string
+	if err := pool.QueryRow(ctx, `SELECT airplay_limitation FROM screen_player_status WHERE screen_id=$1`, principal.ScreenID).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored == nil || *stored != "UxPlay is not installed; AirPlay needs UxPlay 1.73.6 or newer." {
+		t.Fatalf("airplay_limitation = %v", stored)
+	}
+
+	service.updateAirplayHeartbeat(ctx, principal.ScreenID, Heartbeat{
+		AirplaySupported:          &supported,
+		ExternalPresentationState: "none",
+	})
+	if err := pool.QueryRow(ctx, `SELECT airplay_limitation FROM screen_player_status WHERE screen_id=$1`, principal.ScreenID).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored != nil {
+		t.Fatalf("airplay_limitation = %q, want NULL once the player reports no limitation", *stored)
+	}
+
+	// A heartbeat carrying no capability report at all must not wipe the last
+	// known diagnosis: that is the pre-0.13 player case.
+	service.updateAirplayHeartbeat(ctx, principal.ScreenID, Heartbeat{
+		AirplaySupported:          &unsupported,
+		AirplayLimitation:         "Avahi/Bonjour support is unavailable; AirPlay cannot be advertised.",
+		ExternalPresentationState: "none",
+	})
+	service.updateAirplayHeartbeat(ctx, principal.ScreenID, Heartbeat{ExternalPresentationState: "none"})
+	if err := pool.QueryRow(ctx, `SELECT airplay_limitation FROM screen_player_status WHERE screen_id=$1`, principal.ScreenID).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored == nil {
+		t.Fatal("airplay_limitation was cleared by a heartbeat with no capability report")
+	}
+}
+
 // The guard that the capability write no longer shares still has to hold: a
 // player reporting 'none' for a session it does not own must not clear the
 // snapshot of the session the server has since assigned.

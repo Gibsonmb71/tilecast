@@ -124,6 +124,54 @@ export function versionAtLeast(
   return true;
 }
 
+/**
+ * One operator-facing sentence naming what is missing and what to do about it.
+ *
+ * Blocking dependencies come first and in provisioning order, because a box
+ * missing UxPlay is usually missing GStreamer too and fixing the first is what
+ * the operator does next. The remaining cases are quality limitations on a
+ * player that can already present. Studio shows this verbatim, so each string
+ * has to name the dependency: "not AirPlay-ready" alone sends an operator
+ * hunting through five candidates.
+ */
+export function describeLimitation(probe: {
+  uxplayInstalled: boolean;
+  uxplayVersion: string | null;
+  gstreamerInstalled: boolean;
+  decoder: SupportedDecoder | null;
+  avahiAvailable: boolean;
+  hardware: boolean;
+  hardwarePlugin: boolean;
+  vainfoAvailable: boolean;
+  supported: boolean;
+}): string | undefined {
+  if (!probe.uxplayInstalled) {
+    return `UxPlay is not installed; AirPlay needs UxPlay ${UXPLAY_BASELINE} or newer. Run install-airplay-support.sh on this player.`;
+  }
+  if (!versionAtLeast(probe.uxplayVersion, UXPLAY_BASELINE)) {
+    return `UxPlay ${probe.uxplayVersion ?? "of an unknown version"} is older than the supported baseline ${UXPLAY_BASELINE}. Run install-airplay-support.sh on this player.`;
+  }
+  if (!probe.gstreamerInstalled) {
+    return "GStreamer is not installed; AirPlay needs the GStreamer tools and plugins. Run install-airplay-support.sh on this player.";
+  }
+  if (probe.decoder === null) {
+    return "No supported H.264 decoder was found; AirPlay needs vah264dec, vaapih264dec, or avdec_h264. Run install-airplay-support.sh on this player.";
+  }
+  if (!probe.avahiAvailable) {
+    return "Avahi/Bonjour support is unavailable; AirPlay cannot be advertised.";
+  }
+  if (!probe.hardware && probe.decoder === "avdec_h264") {
+    return "Intel VA-API H.264 decoding is unavailable; use 720p30 to limit CPU load.";
+  }
+  if (probe.hardwarePlugin && !probe.hardware) {
+    return "A VA-API decoder plugin is installed but vainfo could not validate the driver; use 720p30 until the driver is fixed.";
+  }
+  if (!probe.vainfoAvailable && probe.supported) {
+    return "vainfo is unavailable; hardware decode was inferred from GStreamer plugins only.";
+  }
+  return undefined;
+}
+
 export function selectDecoder(pluginOutput: {
   vah264dec: boolean;
   vaapih264dec: boolean;
@@ -359,15 +407,17 @@ export class AirplayManager {
       mdnsAdvertisementAvailable: avahi.ok,
       multicastSupported: null,
       multicastTestStatus: "not_tested",
-      limitation: !avahi.ok
-        ? "Avahi/Bonjour support is unavailable; AirPlay cannot be advertised."
-        : !hardware && decoder === "avdec_h264"
-          ? "Intel VA-API H.264 decoding is unavailable; use 720p30 to limit CPU load."
-          : hardwarePlugin && !hardware
-            ? "A VA-API decoder plugin is installed but vainfo could not validate the driver; use 720p30 until the driver is fixed."
-            : !vainfo.ok && supported
-              ? "vainfo is unavailable; hardware decode was inferred from GStreamer plugins only."
-              : undefined,
+      limitation: describeLimitation({
+        uxplayInstalled: uxplay.ok,
+        uxplayVersion,
+        gstreamerInstalled: gstreamer.ok,
+        decoder,
+        avahiAvailable: avahi.ok,
+        hardware,
+        hardwarePlugin,
+        vainfoAvailable: vainfo.ok,
+        supported,
+      }),
     };
   }
 
