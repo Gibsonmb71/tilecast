@@ -158,7 +158,7 @@ presentation state instead of uploading mirrored-device frames.
 
 Perform on a representative wired and wireless machine before rollout:
 
-1. Run the provisioning script and capture `uxplay --version`, `vainfo`, and
+1. Run the provisioning script and capture `uxplay -v`, `vainfo`, and
    the three decoder probes.
 2. Present from an iPhone, iPad, and Mac. Test the four-digit PIN, incorrect
    PIN, receiver picker name, 1080p30, audio, portrait rotation, reconnect,

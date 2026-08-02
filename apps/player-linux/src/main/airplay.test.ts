@@ -1,6 +1,7 @@
 import { EventEmitter } from "events";
 import { describe, expect, it, vi } from "vitest";
 import { AirplayManager, describeLimitation } from "./airplay";
+import type { ExecutableResolution } from "../core/executable";
 import type { ExternalPresentationConfig } from "../core/external-presentation";
 
 class FakeProcess extends EventEmitter {
@@ -49,7 +50,23 @@ function config(
   };
 }
 
-function testManager(spawn: (binary: string, args: string[]) => FakeProcess) {
+function resolvedExecutable(name: string): ExecutableResolution {
+  return {
+    name,
+    status: "resolved",
+    path: name === "uxplay" ? "/usr/local/bin/uxplay" : `/usr/bin/${name}`,
+    candidates: [
+      name === "uxplay" ? "/usr/local/bin/uxplay" : `/usr/bin/${name}`,
+    ],
+  };
+}
+
+function testManager(
+  spawn: (binary: string, args: string[]) => FakeProcess,
+  resolveExecutable: (name: string) => Promise<ExecutableResolution> = async (
+    name,
+  ) => resolvedExecutable(name),
+) {
   const files = new Map<string, unknown>();
   const store = {
     writeJson: async (name: string, value: unknown) => files.set(name, value),
@@ -60,6 +77,7 @@ function testManager(spawn: (binary: string, args: string[]) => FakeProcess) {
   const calls: { binary: string; args: string[]; process: FakeProcess }[] = [];
   const manager = new AirplayManager({
     store,
+    resolveExecutable,
     spawn: ((binary: string, args: string[]) => {
       const process = spawn(binary, args);
       calls.push({ binary, args, process });
@@ -76,7 +94,7 @@ describe("AirPlay Linux process ownership", () => {
     await result.manager.prepareSession(session, "avdec_h264");
     await result.manager.startGateway("avdec_h264");
 
-    expect(result.calls[0]?.binary).toBe("uxplay");
+    expect(result.calls[0]?.binary).toBe("/usr/local/bin/uxplay");
     expect(result.calls[0]?.args).toContain("-pin");
     expect(result.calls[0]?.args).toContain("4821");
     expect(result.calls[0]?.args).toContain("-vd");
@@ -94,8 +112,8 @@ describe("AirPlay Linux process ownership", () => {
     await result.manager.startGateway("vah264dec");
 
     expect(result.calls.map((call) => call.binary)).toEqual([
-      "gst-launch-1.0",
-      "uxplay",
+      "/usr/bin/gst-launch-1.0",
+      "/usr/local/bin/uxplay",
     ]);
     const uxplayArgs = result.calls[1]?.args ?? [];
     expect(uxplayArgs).toContain("-vs");
@@ -156,7 +174,7 @@ describe("AirPlay capability limitation reporting", () => {
       supported: false,
     });
     expect(limitation).toContain("UxPlay is not installed");
-    expect(limitation).toContain("install-airplay-support.sh");
+    expect(limitation).toContain("/install-airplay.sh");
   });
 
   // The common field failure: a distro package exists but predates the
@@ -202,5 +220,64 @@ describe("AirPlay capability limitation reporting", () => {
 
   it("reports nothing for a fully provisioned player", () => {
     expect(describeLimitation(ready)).toBeUndefined();
+  });
+
+  it("does not call an existing but non-executable UxPlay missing", () => {
+    const limitation = describeLimitation({
+      ...ready,
+      uxplayInstalled: true,
+      uxplayFailure: "not_executable",
+      uxplayPath: "/usr/local/bin/uxplay",
+      supported: false,
+    });
+    expect(limitation).toContain("found at /usr/local/bin/uxplay");
+    expect(limitation).toContain("not executable");
+    expect(limitation).not.toContain("not installed");
+  });
+});
+
+describe("AirPlay capability probing", () => {
+  it("uses an absolute provisioned UxPlay path and its supported version flag", async () => {
+    const result = testManager((binary) => {
+      const process = new FakeProcess();
+      queueMicrotask(() => {
+        if (binary === "/usr/local/bin/uxplay") {
+          process.stdout.emit(
+            "data",
+            'UxPlay version 1.73.6; for help, use option "-h"\n',
+          );
+        }
+        process.exitCode = 0;
+        process.emit("close", 0, null);
+      });
+      return process;
+    });
+
+    const capabilities = await result.manager.probeCapabilities();
+
+    const uxplayCall = result.calls.find(
+      (call) => call.binary === "/usr/local/bin/uxplay",
+    );
+    expect(uxplayCall?.args).toEqual(["-v"]);
+    expect(capabilities.uxplayInstalled).toBe(true);
+    expect(capabilities.uxplayVersion).toBe("1.73.6");
+  });
+
+  it("reports a resolved UxPlay whose version command fails as an execution failure", async () => {
+    const result = testManager((binary) => {
+      const process = new FakeProcess();
+      queueMicrotask(() => {
+        process.exitCode = binary === "/usr/local/bin/uxplay" ? 1 : 0;
+        process.emit("close", process.exitCode, null);
+      });
+      return process;
+    });
+
+    const capabilities = await result.manager.probeCapabilities();
+
+    expect(capabilities.uxplayInstalled).toBe(true);
+    expect(capabilities.limitation).toContain(
+      "UxPlay was found at /usr/local/bin/uxplay but its -v version check failed",
+    );
   });
 });

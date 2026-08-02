@@ -12,6 +12,12 @@
 import { spawn as nodeSpawn, type ChildProcess } from "child_process";
 import { logger } from "../core/log";
 import {
+  describeExecutableResolution,
+  resolveLinuxExecutable,
+  type ExecutableResolution,
+  type ExecutableResolver,
+} from "../core/executable";
+import {
   AIRPLAY_PORTS,
   isAirplayDeviceId,
   isAirplayPin,
@@ -34,9 +40,22 @@ const UXPLAY_BASELINE = "1.73.6";
 const HEALTH_INTERVAL_MS = 2_000;
 const RECEIVER_LATENCY_MS = 80;
 const MAX_PROCESS_RESTARTS = 2;
+const AIRPLAY_INSTALLER_HINT =
+  "Run the server's /install-airplay.sh installer as root.";
 
 type SpawnedProcess = ChildProcess;
 type SpawnFunction = typeof nodeSpawn;
+
+type UxplayProbeFailure =
+  "not_found" | "not_executable" | "command_failed" | "version_unrecognized";
+
+interface CommandProbeResult {
+  ok: boolean;
+  output: string;
+  resolution: ExecutableResolution;
+  /** The resolved executable ran but did not complete successfully. */
+  commandFailed: boolean;
+}
 
 interface ManagedProcess {
   child: SpawnedProcess;
@@ -47,6 +66,7 @@ interface ManagedProcess {
 export interface AirplayManagerOptions {
   store: StateStore;
   spawn?: SpawnFunction;
+  resolveExecutable?: ExecutableResolver;
   now?: () => number;
   onStatus?: (status: ExternalPresentationStatus | null) => void;
 }
@@ -75,15 +95,33 @@ function commandOutput(child: SpawnedProcess): Promise<{
 
 async function probeCommand(
   spawn: SpawnFunction,
+  resolveExecutable: ExecutableResolver,
   binary: string,
   args: string[],
   timeoutMs = 5_000,
-): Promise<{ ok: boolean; output: string }> {
+): Promise<CommandProbeResult> {
+  const resolution = await resolveExecutable(binary);
+  if (resolution.status !== "resolved" || !resolution.path) {
+    return {
+      ok: false,
+      output: "",
+      resolution,
+      commandFailed: false,
+    };
+  }
+
   let child: SpawnedProcess;
   try {
-    child = spawn(binary, args, { stdio: ["ignore", "pipe", "pipe"] });
+    child = spawn(resolution.path, args, {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
   } catch {
-    return { ok: false, output: "" };
+    return {
+      ok: false,
+      output: "",
+      resolution,
+      commandFailed: true,
+    };
   }
   const timeout = setTimeout(() => child.kill("SIGKILL"), timeoutMs);
   try {
@@ -91,6 +129,8 @@ async function probeCommand(
     return {
       ok: result.code === 0,
       output: `${result.stdout}\n${result.stderr}`,
+      resolution,
+      commandFailed: result.code !== 0,
     };
   } finally {
     clearTimeout(timeout);
@@ -137,6 +177,9 @@ export function versionAtLeast(
 export function describeLimitation(probe: {
   uxplayInstalled: boolean;
   uxplayVersion: string | null;
+  uxplayFailure?: UxplayProbeFailure;
+  uxplayPath?: string | null;
+  uxplayCandidates?: string[];
   gstreamerInstalled: boolean;
   decoder: SupportedDecoder | null;
   avahiAvailable: boolean;
@@ -145,17 +188,33 @@ export function describeLimitation(probe: {
   vainfoAvailable: boolean;
   supported: boolean;
 }): string | undefined {
+  const location = probe.uxplayPath ? ` at ${probe.uxplayPath}` : "";
+  if (probe.uxplayFailure === "not_found") {
+    const checked = probe.uxplayCandidates?.length
+      ? ` Checked ${probe.uxplayCandidates.slice(0, 5).join(", ")}${probe.uxplayCandidates.length > 5 ? ", …" : ""}.`
+      : "";
+    return `UxPlay was not found.${checked} AirPlay needs UxPlay ${UXPLAY_BASELINE} or newer. ${AIRPLAY_INSTALLER_HINT}`;
+  }
+  if (probe.uxplayFailure === "not_executable") {
+    return `UxPlay was found${location} but is not executable. AirPlay needs UxPlay ${UXPLAY_BASELINE} or newer; fix the file permissions or ${AIRPLAY_INSTALLER_HINT}`;
+  }
+  if (probe.uxplayFailure === "command_failed") {
+    return `UxPlay was found${location} but its -v version check failed. AirPlay needs UxPlay ${UXPLAY_BASELINE} or newer; ${AIRPLAY_INSTALLER_HINT}`;
+  }
+  if (probe.uxplayFailure === "version_unrecognized") {
+    return `UxPlay was found${location} but did not report a recognizable version with -v. AirPlay needs UxPlay ${UXPLAY_BASELINE} or newer; ${AIRPLAY_INSTALLER_HINT}`;
+  }
   if (!probe.uxplayInstalled) {
-    return `UxPlay is not installed; AirPlay needs UxPlay ${UXPLAY_BASELINE} or newer. Run install-airplay-support.sh on this player.`;
+    return `UxPlay is not installed; AirPlay needs UxPlay ${UXPLAY_BASELINE} or newer. ${AIRPLAY_INSTALLER_HINT}`;
   }
   if (!versionAtLeast(probe.uxplayVersion, UXPLAY_BASELINE)) {
-    return `UxPlay ${probe.uxplayVersion ?? "of an unknown version"} is older than the supported baseline ${UXPLAY_BASELINE}. Run install-airplay-support.sh on this player.`;
+    return `UxPlay ${probe.uxplayVersion ?? "of an unknown version"} is older than the supported baseline ${UXPLAY_BASELINE}. ${AIRPLAY_INSTALLER_HINT}`;
   }
   if (!probe.gstreamerInstalled) {
-    return "GStreamer is not installed; AirPlay needs the GStreamer tools and plugins. Run install-airplay-support.sh on this player.";
+    return `GStreamer is not installed; AirPlay needs the GStreamer tools and plugins. ${AIRPLAY_INSTALLER_HINT}`;
   }
   if (probe.decoder === null) {
-    return "No supported H.264 decoder was found; AirPlay needs vah264dec, vaapih264dec, or avdec_h264. Run install-airplay-support.sh on this player.";
+    return `No supported H.264 decoder was found; AirPlay needs vah264dec, vaapih264dec, or avdec_h264. ${AIRPLAY_INSTALLER_HINT}`;
   }
   if (!probe.avahiAvailable) {
     return "Avahi/Bonjour support is unavailable; AirPlay cannot be advertised.";
@@ -313,6 +372,7 @@ function receiverPipeline(
 export class AirplayManager {
   private readonly store: StateStore;
   private readonly spawn: SpawnFunction;
+  private readonly resolveExecutable: ExecutableResolver;
   private readonly now: () => number;
   private readonly onStatus?: (
     status: ExternalPresentationStatus | null,
@@ -332,22 +392,22 @@ export class AirplayManager {
   constructor(options: AirplayManagerOptions) {
     this.store = options.store;
     this.spawn = options.spawn ?? nodeSpawn;
+    this.resolveExecutable =
+      options.resolveExecutable ?? ((name) => resolveLinuxExecutable(name));
     this.now = options.now ?? Date.now;
     this.onStatus = options.onStatus;
   }
 
   async probeCapabilities(): Promise<AirplayCapabilities> {
-    const uxplay = await probeCommand(this.spawn, "uxplay", ["--version"]);
+    const uxplay = await this.probeCommand("uxplay", ["-v"]);
     const uxplayVersion = parseUxplayVersion(uxplay.output);
-    const gstreamer = await probeCommand(this.spawn, "gst-inspect-1.0", [
-      "--version",
-    ]);
+    const gstreamer = await this.probeCommand("gst-inspect-1.0", ["--version"]);
     const decoderChecks = await Promise.all(
       SUPPORTED_DECODERS.map(
         async (decoder) =>
           [
             decoder,
-            (await probeCommand(this.spawn, "gst-inspect-1.0", [decoder])).ok,
+            (await this.probeCommand("gst-inspect-1.0", [decoder])).ok,
           ] as const,
       ),
     );
@@ -358,15 +418,15 @@ export class AirplayManager {
     const decoder = selectDecoder(decoderAvailability);
     const [vainfo, avahi, receiverSink, audioSink, fullscreenSink] =
       await Promise.all([
-        probeCommand(this.spawn, "vainfo", []),
-        probeCommand(this.spawn, "avahi-browse", [
+        this.probeCommand("vainfo", []),
+        this.probeCommand("avahi-browse", [
           "--all",
           "--resolve",
           "--terminate",
         ]),
-        probeCommand(this.spawn, "gst-inspect-1.0", ["fpsdisplaysink"]),
-        probeCommand(this.spawn, "gst-inspect-1.0", ["autoaudiosink"]),
-        probeCommand(this.spawn, "gst-inspect-1.0", ["vaapisink"]),
+        this.probeCommand("gst-inspect-1.0", ["fpsdisplaysink"]),
+        this.probeCommand("gst-inspect-1.0", ["autoaudiosink"]),
+        this.probeCommand("gst-inspect-1.0", ["vaapisink"]),
       ]);
     this.receiverVideoSink = fullscreenSink.ok ? "vaapisink" : "autovideosink";
     const gstreamerReady = gstreamer.ok && decoder !== null;
@@ -388,9 +448,12 @@ export class AirplayManager {
       : hardware
         ? "1080p30"
         : "720p30";
+    const uxplayFailure = this.uxplayFailure(uxplay, uxplayVersion);
     return {
       airplaySupported: supported,
-      uxplayInstalled: uxplay.ok,
+      // Presence is separate from successful execution. This keeps Studio
+      // from calling an existing but unusable UxPlay binary "missing".
+      uxplayInstalled: uxplay.resolution.status !== "not_found",
       uxplayVersion,
       gstreamerInstalled: gstreamer.ok,
       h264DecoderAvailable: decoder !== null,
@@ -408,8 +471,11 @@ export class AirplayManager {
       multicastSupported: null,
       multicastTestStatus: "not_tested",
       limitation: describeLimitation({
-        uxplayInstalled: uxplay.ok,
+        uxplayInstalled: uxplay.resolution.status !== "not_found",
         uxplayVersion,
+        uxplayFailure,
+        uxplayPath: uxplay.resolution.path,
+        uxplayCandidates: uxplay.resolution.candidates,
         gstreamerInstalled: gstreamer.ok,
         decoder,
         avahiAvailable: avahi.ok,
@@ -419,6 +485,44 @@ export class AirplayManager {
         supported,
       }),
     };
+  }
+
+  private probeCommand(
+    binary: string,
+    args: string[],
+  ): Promise<CommandProbeResult> {
+    return probeCommand(
+      this.spawn,
+      (name) => this.resolveTool(name),
+      binary,
+      args,
+    );
+  }
+
+  private resolveTool(name: string): Promise<ExecutableResolution> {
+    // Do not retain a successful path across probes. An operator may install
+    // the pinned /usr/local/bin/uxplay while this Electron process remains
+    // alive, and the preferred provisioned candidate must win immediately.
+    return this.resolveExecutable(name);
+  }
+
+  private async requiredExecutable(name: string): Promise<string> {
+    const resolution = await this.resolveTool(name);
+    if (resolution.status !== "resolved" || !resolution.path) {
+      throw new Error(describeExecutableResolution(resolution));
+    }
+    return resolution.path;
+  }
+
+  private uxplayFailure(
+    probe: CommandProbeResult,
+    version: string | null,
+  ): UxplayProbeFailure | undefined {
+    if (probe.resolution.status === "not_found") return "not_found";
+    if (probe.resolution.status === "not_executable") return "not_executable";
+    if (probe.commandFailed) return "command_failed";
+    if (probe.ok && !version) return "version_unrecognized";
+    return undefined;
   }
 
   async prepareSession(
@@ -591,6 +695,7 @@ export class AirplayManager {
     config: ExternalPresentationConfig,
     decoder: SupportedDecoder,
   ): Promise<void> {
+    const executable = await this.requiredExecutable("uxplay");
     const profile = profileDimensions(config.profile);
     const args = [
       "-n",
@@ -623,7 +728,7 @@ export class AirplayManager {
       // decrypted compressed H.264 RTP packets to the receivers.
       args.push("-vs", "0", "-vrtp", receiverPipeline(config, decoder));
     }
-    const child = this.spawn("uxplay", args, {
+    const child = this.spawn(executable, args, {
       stdio: ["ignore", "pipe", "pipe"],
     });
     const managed: ManagedProcess = { child, kind: "uxplay", stopping: false };
@@ -650,8 +755,9 @@ export class AirplayManager {
     decoder: SupportedDecoder,
   ): Promise<void> {
     if (this.receiver) return;
+    const executable = await this.requiredExecutable("gst-launch-1.0");
     const child = this.spawn(
-      "gst-launch-1.0",
+      executable,
       buildReceiverArgs({
         ...config,
         decoder,

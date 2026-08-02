@@ -48,7 +48,7 @@ apt-get install -y \
 
 uxplay_is_baseline() {
   command -v uxplay >/dev/null 2>&1 || return 1
-  uxplay --version 2>&1 | grep -Eq "UxPlay[^0-9]*${UXPLAY_VERSION}([[:space:]]|$)"
+  uxplay -v 2>&1 | grep -Eq "UxPlay[^0-9]*${UXPLAY_VERSION}([[:space:];]|$)"
 }
 
 if ! uxplay_is_baseline; then

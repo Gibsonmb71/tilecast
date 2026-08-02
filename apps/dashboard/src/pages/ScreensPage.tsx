@@ -3263,11 +3263,15 @@ export function ScreenDetailPage() {
                           Installs the player's own systemd user service so it
                           starts with the graphical session and restarts after
                           any exit. Setting up is safe while the player is
-                          running: the service takes effect at the next start,
-                          neither action interrupts what is on screen, and a
-                          service file you wrote yourself is never overwritten.
-                          A graphical session that begins at boot (auto-login or
-                          a kiosk compositor) remains operating-system setup.
+                          running: Tilecast captures this AppImage's display,
+                          data directory, and server address, writes and enables
+                          the service, and does not start a duplicate process.
+                          The current manual process keeps running until the
+                          next controlled restart, session restart, or reboot,
+                          when systemd takes ownership. A service file you wrote
+                          yourself is never overwritten. A graphical session
+                          that begins at boot (auto-login or a kiosk compositor)
+                          remains operating-system setup.
                         </p>
                       </div>
                       <div className="reliability-button-grid">

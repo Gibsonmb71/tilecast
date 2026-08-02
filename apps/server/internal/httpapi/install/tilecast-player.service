@@ -38,6 +38,9 @@ ExecStartPre=/bin/sh -c 'command -v findmnt >/dev/null 2>&1 || exit 0; findmnt -
 ExecStart=%h/tilecast/tilecast-player.AppImage --appimage-extract-and-run
 Restart=always
 RestartSec=5
+# UxPlay is provisioned into /usr/local/bin. Keep the managed player's host
+# tools discoverable even when the display manager supplied a minimal PATH.
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
 Environment=TILECAST_LOG_LEVEL=info
 # Wayland kiosks (cage/weston): uncomment as needed
 # Environment=WAYLAND_DISPLAY=wayland-0
