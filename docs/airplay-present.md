@@ -42,7 +42,6 @@ Either path installs or validates:
   `fpsdisplaysink` for packet-derived receiver health/FPS reporting
 - VA-API userspace and `vainfo`
 - Avahi daemon and `avahi-browse`
-- UxPlay build dependencies when the distro package is not exactly 1.73.6
 
 The script never clones a repository or contacts GitHub or another source-code
 host. Tilecast Server embeds the upstream UxPlay v1.73.6 source archive (tag
@@ -55,6 +54,31 @@ verifies the downloaded archive again, and only then extracts and builds it.
 The signage player therefore needs network access only to Tilecast Server and
 the configured Debian/APT mirrors. As with the Linux Player AppImage, this
 provisioning path currently supports x86_64 machines.
+
+Tilecast does not ship a prebuilt UxPlay binary. A single binary cannot be
+pinned safely across the Debian releases in a district fleet — it would bind
+the deployment to one distribution's shared-library ABIs — so the verified
+source archive plus a disposable toolchain remains the provisioning contract.
+
+### Build toolchain footprint
+
+UxPlay is compiled from that archive when the machine does not already have
+exactly 1.73.6. The compiler, CMake, and the `-dev` packages that requires are
+roughly 800 MB with their transitive closure on Debian Trixie, and they are not
+something to leave behind on a 4 GB signage box, so they are installed only for
+the build and removed again afterwards:
+
+- Runtime dependencies (GStreamer, VA-API, Avahi, `curl`, `tar`) are permanent.
+- The toolchain is installed only when UxPlay actually has to be built. A
+  re-run on a provisioned machine installs no toolchain at all.
+- Only what this script added is removed. The set is the diff of `dpkg`'s
+  installed list around the toolchain install, recorded in
+  `/var/lib/tilecast/airplay-build-packages`, so a machine that already had
+  `build-essential` keeps it. There is no blanket `apt-get autoremove`.
+- The libraries the built `uxplay` links against are resolved from the binary
+  with `ldd` and protected. The removal is simulated first, and skipped
+  entirely if apt would take a protected package with it. If `uxplay -v` stops
+  working after a removal, the packages are reinstalled.
 
 The script does not create a permanent AirPlay advertisement, a kiosk-user
 sudo rule, or a second player service. Normal UxPlay/GStreamer processes are
@@ -121,6 +145,34 @@ the session to fail and all prepared processes are stopped. A follower that
 fails after activation receives bounded receiver restarts and is reported as
 degraded; a gateway failure ends the room session.
 
+### Durable group preparation
+
+Preparation is a database state machine, not a background goroutine. The
+session, its participants, and its preparation deadline
+(`external_presentation_sessions.prepare_deadline_at`, stamped at creation and
+re-stamped by a multicast fallback) are all persisted, and reconciliation reads
+them to decide what happens next:
+
+| Observed state                             | Decision                     |
+| ------------------------------------------ | ---------------------------- |
+| `preparing`, every participant ready       | queue the gateway start once |
+| `preparing`, a participant failed          | fail the session             |
+| `preparing`, preparation deadline exceeded | fail the session             |
+| `preparing`, expired                       | leave it to expiry           |
+| `waiting` / `active`                       | leave alone                  |
+| `stopping` / terminal                      | leave alone; cleanup owns it |
+
+Reconciliation runs after session creation, after a prepare command result,
+after a participant heartbeat, at server startup, and once a minute as a
+backstop. It is idempotent: the session row is locked for the decision, and the
+gateway start command is inserted in the same transaction that moves the
+session out of `preparing`, so two concurrent reconciliations cannot both
+release the gateway and a server that dies mid-preparation loses only time.
+
+Because leaving `preparing` is the server's all-or-nothing decision, a group
+gateway heartbeat cannot promote the room by itself. A single-screen session is
+unaffected: its start phase arrives with the first command.
+
 ## Priority, expiry, and recovery
 
 The runtime priority is:
@@ -135,10 +187,30 @@ Normal manifest and schedule changes continue to sync while AirPlay is active;
 the player never restores a stale content snapshot.
 
 Every session has an absolute `expiresAt`, enforced both by the server and by
-the Linux process manager. The player persists only the active session
-configuration in an owner-only `airplay-session.json`. An unexpired session is
-reconstructed after player restart; an expired one is deleted and signage is
-evaluated.
+the Linux process manager. The player persists the active session in an
+owner-only `airplay-session.json`: the configuration, plus whether the server
+has issued the start phase for it.
+
+```json
+{ "version": 2, "config": { ... }, "gatewayStarted": false }
+```
+
+That flag is the difference between _prepared_ and _permitted to advertise_. A
+group gateway that has only been prepared holds its RTP receiver ready and does
+not advertise; the start phase sets the flag before UxPlay can be seen on the
+network. After a reboot:
+
+- `gatewayStarted: false` restores the prepared receiver only, and the display
+  waits for the server to complete group preparation and reissue the start.
+- `gatewayStarted: true` restores the receiver and UxPlay.
+- An expired session is deleted and signage is evaluated.
+
+A version 1 file (the bare configuration, written by players before this
+format) says nothing about the start phase. A single-screen session is prepared
+and started by the same command, so it is recovered as started; a group
+gateway's start state is unknowable and is recovered as prepared-only, leaving
+the decision to the server rather than advertising a receiver it may never have
+released.
 
 The server clears PIN/device identity fields and the prepare-command payload
 when a session ends. PINs are not included in audit metadata. The player
@@ -182,9 +254,24 @@ Perform on a representative wired and wireless machine before rollout:
    the room session while follower failure is bounded/degraded.
 5. Restart one player during waiting and one during mirroring. Confirm an
    unexpired session recovers and an expired session resumes current signage.
-6. Activate an emergency takeover during mirroring and verify all group
+6. Restart the Tilecast server during single-screen mirroring, and again during
+   group preparation. Confirm the single-screen session survives, and that the
+   interrupted group is released exactly once by reconciliation — one
+   `prepare_airplay_session` command with `phase=start` on the gateway — rather
+   than sitting in `preparing`.
+7. Reboot the gateway before group activation. Confirm the RTP receiver comes
+   back, that nothing is advertised on the network (`avahi-browse -at` from
+   another machine shows no `_airplay._tcp` for this room), and that the server
+   issues the start once the room is ready. Repeat after activation and confirm
+   UxPlay is restored.
+8. Let a session expire while the server is stopped. Confirm the session is
+   expired, not resumed, when the server comes back.
+9. Activate an emergency takeover during mirroring and verify all group
    members leave AirPlay immediately.
-7. Measure CPU, RSS, VA-API activity, dropped frames, incoming FPS, RTP
-   bitrate, and temperature for at least 30 minutes at 720p30 and 1080p30.
-   Record whether the machine remains responsive and whether the selected
-   profile needs to be limited to 720p30.
+10. Confirm live preview and live stream never capture mirrored frames, and
+    that a player update/restart while AirPlay processes exist leaves no
+    orphaned `uxplay` or `gst-launch-1.0` process.
+11. Measure CPU, RSS, VA-API activity, dropped frames, incoming FPS, RTP
+    bitrate, and temperature for at least 30 minutes at 720p30 and 1080p30.
+    Record whether the machine remains responsive and whether the selected
+    profile needs to be limited to 720p30.

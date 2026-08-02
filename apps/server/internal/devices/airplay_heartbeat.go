@@ -133,7 +133,19 @@ func (s *Service) updateAirplayHeartbeat(ctx context.Context, screenID uuid.UUID
 		"degraded": "active", "failed": "failed",
 	}[state]
 	if nextSessionStatus != "" {
-		_, _ = s.db.Exec(ctx, `UPDATE external_presentation_sessions SET status=$2,ended_at=CASE WHEN $2='failed' THEN COALESCE(ended_at,now()) ELSE ended_at END,end_reason=CASE WHEN $2='failed' THEN COALESCE(end_reason,'player_reported_failure') ELSE end_reason END,pin=CASE WHEN $2='failed' THEN NULL ELSE pin END,device_id=CASE WHEN $2='failed' THEN NULL ELSE device_id END WHERE id=$1 AND status IN ('preparing','waiting','active') AND EXISTS(SELECT 1 FROM external_presentation_screen_states WHERE session_id=$1 AND screen_id=$3 AND role IN ('gateway','single'))`, *heartbeat.ExternalPresentationSessionID, nextSessionStatus, screenID)
+		// Leaving 'preparing' is the one transition a group gateway may not make
+		// on its own. Group preparation is all-or-nothing and server-owned, and a
+		// gateway that rebooted with a prepared-but-not-started session reports
+		// 'waiting' truthfully while it is deliberately not advertising. Promoting
+		// the room here would tell reconciliation the start had been issued when
+		// no start command exists, and the gateway would never be released.
+		_, _ = s.db.Exec(ctx, `UPDATE external_presentation_sessions SET status=$2,ended_at=CASE WHEN $2='failed' THEN COALESCE(ended_at,now()) ELSE ended_at END,end_reason=CASE WHEN $2='failed' THEN COALESCE(end_reason,'player_reported_failure') ELSE end_reason END,pin=CASE WHEN $2='failed' THEN NULL ELSE pin END,device_id=CASE WHEN $2='failed' THEN NULL ELSE device_id END WHERE id=$1 AND status IN ('preparing','waiting','active') AND NOT (status='preparing' AND target_type='group' AND $2 IN ('waiting','active')) AND EXISTS(SELECT 1 FROM external_presentation_screen_states WHERE session_id=$1 AND screen_id=$3 AND role IN ('gateway','single'))`, *heartbeat.ExternalPresentationSessionID, nextSessionStatus, screenID)
+	}
+
+	// A participant just reported its state. If the room is still preparing, that
+	// report may be the last one the all-or-nothing decision was waiting for.
+	if sessionStatus == "preparing" && s.airplayReconciler != nil {
+		s.airplayReconciler(ctx, *heartbeat.ExternalPresentationSessionID)
 	}
 }
 

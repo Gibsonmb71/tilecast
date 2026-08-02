@@ -16,14 +16,24 @@ import (
 )
 
 type Service struct {
-	db        *pgxpool.Pool
-	presence  *PresenceHub
-	publicURL string
-	now       func() time.Time
+	db                *pgxpool.Pool
+	presence          *PresenceHub
+	publicURL         string
+	now               func() time.Time
+	airplayReconciler func(context.Context, uuid.UUID)
 }
 
 func NewService(db *pgxpool.Pool, presence *PresenceHub, publicURL string) *Service {
 	return &Service{db: db, presence: presence, publicURL: strings.TrimRight(publicURL, "/"), now: time.Now}
+}
+
+// SetAirplayReconciler wires the durable AirPlay preparation state machine into
+// the heartbeat path. A follower reporting itself ready is one of the events
+// that can complete a group, and reconciliation has to see it without waiting
+// for the periodic sweep. The command layer owns that logic, so it is injected
+// rather than duplicated here.
+func (s *Service) SetAirplayReconciler(reconcile func(context.Context, uuid.UUID)) {
+	s.airplayReconciler = reconcile
 }
 
 func (s *Service) RegisterPresenceWithNotifier(screenID uuid.UUID, closeConnection func(), notify func(map[string]any) error) func() bool {

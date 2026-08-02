@@ -96,6 +96,7 @@ import type {
 import type { LayoutRenderPayload, WidgetRenderPayload } from "./render-tree";
 import type { StateStore } from "./storage";
 import type {
+  AirplayAudioMode,
   AirplayCapabilities,
   ExternalPresentationConfig,
   ExternalPresentationStatus,
@@ -205,7 +206,7 @@ export type Presentation =
       connected: boolean;
       role: "single" | "gateway" | "receiver";
       transport: "unicast" | "multicast";
-      audioMode: "gateway_only" | "none" | "all";
+      audioMode: AirplayAudioMode;
     };
 
 export function presentationIdentity(presentation: Presentation): string {

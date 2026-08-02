@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -142,6 +143,95 @@ func TestAirplayInstallScriptIsEmbeddedAndServedByTilecast(t *testing.T) {
 			t.Fatalf("unexpected AirPlay installer body: %s", firstLines(body, 20))
 		}
 	})
+}
+
+// The build toolchain is roughly 800 MB with its transitive closure on Debian
+// Trixie, which is not something to leave behind on a 4 GB signage box. It must
+// be installed only for the build, and only the packages this script actually
+// added may be removed again.
+func TestAirplayInstallerSeparatesRuntimeFromBuildDependencies(t *testing.T) {
+	raw, err := installAssets.ReadFile("install/install-airplay-support.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(raw)
+
+	runtimeBlock := installerVariableBlock(t, script, "RUNTIME_PACKAGES")
+	buildBlock := installerVariableBlock(t, script, "BUILD_PACKAGES")
+
+	// A package that only exists to compile UxPlay must not be in the set that
+	// stays on the machine.
+	for _, buildOnly := range []string{"build-essential", "cmake", "pkg-config", "libssl-dev", "libplist-dev", "libx11-dev", "libgstreamer1.0-dev", "libgstreamer-plugins-base1.0-dev", "libavahi-compat-libdnssd-dev"} {
+		if strings.Contains(runtimeBlock, buildOnly) {
+			t.Errorf("%s is a build-only package but is installed permanently", buildOnly)
+		}
+		if !strings.Contains(buildBlock, buildOnly) {
+			t.Errorf("%s is missing from the build toolchain", buildOnly)
+		}
+	}
+	// UxPlay and the RTP receivers cannot run without these.
+	for _, runtime := range []string{"gstreamer1.0-tools", "gstreamer1.0-plugins-base", "gstreamer1.0-plugins-bad", "gstreamer1.0-libav", "avahi-daemon", "vainfo"} {
+		if !strings.Contains(runtimeBlock, runtime) {
+			t.Errorf("%s is required at run time but is not installed permanently", runtime)
+		}
+	}
+
+	// Removal is scoped to the diff of dpkg's installed list around the
+	// toolchain install, never a blanket autoremove.
+	if !strings.Contains(script, "comm -13") || !strings.Contains(script, "airplay-build-packages") {
+		t.Error("the installer does not record which packages it installed before removing them")
+	}
+	if strings.Contains(script, "apt-get autoremove") {
+		t.Error("the installer autoremoves packages instead of removing only what it installed")
+	}
+	// A verified UxPlay must survive the cleanup, and the cleanup is skipped if
+	// apt would take one of its runtime libraries with it.
+	if !strings.Contains(script, "apt-get -s purge") {
+		t.Error("the installer purges the toolchain without simulating the removal first")
+	}
+	if !strings.Contains(script, "ldd \"${UXPLAY_BIN}\"") {
+		t.Error("the installer does not protect the libraries the built uxplay links against")
+	}
+	// Re-running on a provisioned box must not reinstall the toolchain at all.
+	if !strings.Contains(script, "skipping the build toolchain") {
+		t.Error("the installer does not skip the toolchain when UxPlay is already at the baseline")
+	}
+	if !strings.Contains(script, "uxplay -v") {
+		t.Error("the installer does not verify the resulting UxPlay")
+	}
+}
+
+// The served scripts are only ever executed on a signage box during
+// provisioning, where a syntax error costs a site visit. Parse them here.
+func TestServedInstallScriptsParse(t *testing.T) {
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("bash is not available")
+	}
+	for _, name := range []string{"install/install-tilecast-player.sh", "install/install-airplay-support.sh"} {
+		raw, readErr := installAssets.ReadFile(name)
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		// The served script always has the token substituted; parse the same
+		// shape a player receives.
+		script := strings.ReplaceAll(string(raw), installServerURLToken, "https://tilecast.example.org")
+		command := exec.Command(bash, "-n")
+		command.Stdin = strings.NewReader(script)
+		if output, runErr := command.CombinedOutput(); runErr != nil {
+			t.Errorf("%s does not parse: %v\n%s", name, runErr, output)
+		}
+	}
+}
+
+// installerVariableBlock returns the body of a `readonly NAME="..."` assignment.
+func installerVariableBlock(t *testing.T, script, name string) string {
+	t.Helper()
+	match := regexp.MustCompile(`(?s)readonly ` + regexp.QuoteMeta(name) + `="(.*?)"`).FindStringSubmatch(script)
+	if match == nil {
+		t.Fatalf("the AirPlay installer does not define %s", name)
+	}
+	return match[1]
 }
 
 func TestAirplayCleanupCommandWakesThePlayerAndDeduplicates(t *testing.T) {

@@ -36,6 +36,14 @@ import type { StateStore } from "../core/storage";
 
 const log = logger("airplay");
 const SESSION_FILE = "airplay-session.json";
+/**
+ * Version 1 persisted the bare session config. That could not distinguish a
+ * gateway the server had only asked to *prepare* from one it had explicitly
+ * *started*, so recovery advertised AirPlay for both — a group gateway could
+ * come back from a reboot advertising before the server had finished its
+ * all-or-nothing group preparation.
+ */
+const SESSION_FORMAT = 2;
 const UXPLAY_BASELINE = "1.73.6";
 const HEALTH_INTERVAL_MS = 2_000;
 const RECEIVER_LATENCY_MS = 80;
@@ -61,6 +69,20 @@ interface ManagedProcess {
   child: SpawnedProcess;
   kind: "uxplay" | "receiver";
   stopping: boolean;
+}
+
+/**
+ * Local session state that has to survive a reboot.
+ *
+ * `gatewayStarted` records whether the server has issued the start phase for
+ * this session — that is, whether this player is permitted to advertise an
+ * AirPlay receiver. A group gateway that has only been prepared holds its RTP
+ * receiver ready and waits; only the server decides when the room is complete.
+ */
+interface PersistedAirplaySession {
+  version: number;
+  config: ExternalPresentationConfig;
+  gatewayStarted: boolean;
 }
 
 export interface AirplayManagerOptions {
@@ -387,6 +409,7 @@ export class AirplayManager {
   private gatewayRestarts = 0;
   private senderSeenAt: number | null = null;
   private receiverVideoSink: "vaapisink" | "autovideosink" = "autovideosink";
+  private gatewayStarted = false;
   private stopping = false;
   private operationTail: Promise<void> = Promise.resolve();
 
@@ -538,6 +561,7 @@ export class AirplayManager {
   private async prepareSessionInternal(
     config: ExternalPresentationConfig,
     decoder: SupportedDecoder,
+    resumeGatewayStarted = false,
   ): Promise<ExternalPresentationStatus> {
     validateConfig(config);
     if (
@@ -555,8 +579,11 @@ export class AirplayManager {
     this.receiverRestarts = 0;
     this.gatewayRestarts = 0;
     this.senderSeenAt = null;
+    // Preparing does not grant permission to advertise. Only startGateway does,
+    // and only recovery of an already-started session resumes it.
+    this.gatewayStarted = resumeGatewayStarted && config.role !== "receiver";
     try {
-      await this.store.writeJson(SESSION_FILE, config);
+      await this.persistSession(config, this.gatewayStarted);
       this.setStatus({
         provider: "airplay",
         sessionId: config.sessionId,
@@ -597,6 +624,17 @@ export class AirplayManager {
       throw new Error("A group receiver cannot advertise AirPlay");
     }
     validateConfig(config);
+    // Record the server's permission to advertise before the receiver can be
+    // seen on the network. A crash between the two must leave a file that says
+    // "started" — resuming an authorized receiver is correct, whereas losing
+    // the authorization would strand a gateway the server believes is live.
+    try {
+      this.gatewayStarted = true;
+      await this.persistSession(config, true);
+    } catch (error) {
+      await this.stopSessionInternal("gateway_start_failed", true);
+      throw error;
+    }
     if (this.uxplay) return this.status!;
     try {
       await this.startUxplay(config, decoder);
@@ -634,6 +672,7 @@ export class AirplayManager {
     await Promise.all(processes.map((managed) => this.stopProcess(managed)));
     this.config = null;
     this.status = null;
+    this.gatewayStarted = false;
     await this.store.delete(SESSION_FILE).catch(() => undefined);
     log.info("AirPlay session stopped", { reason });
     if (notify) this.onStatus?.(null);
@@ -648,10 +687,10 @@ export class AirplayManager {
   private async recoverSessionInternal(
     decoder: SupportedDecoder | null,
   ): Promise<ExternalPresentationStatus | null> {
-    const persisted =
-      await this.store.readJson<ExternalPresentationConfig>(SESSION_FILE);
+    const persisted = await this.readPersistedSession();
     if (!persisted) return null;
-    if (isExpired(persisted.expiresAt)) {
+    const { config, gatewayStarted } = persisted;
+    if (isExpired(config.expiresAt)) {
       await this.store.delete(SESSION_FILE);
       return null;
     }
@@ -661,9 +700,17 @@ export class AirplayManager {
       return null;
     }
     try {
-      await this.prepareSessionInternal(persisted, decoder);
-      if (persisted.role === "single" || persisted.role === "gateway") {
+      await this.prepareSessionInternal(config, decoder, gatewayStarted);
+      if (gatewayStarted && config.role !== "receiver") {
         await this.startGatewayInternal(decoder);
+      } else if (config.role !== "receiver") {
+        // Prepared, not started. The RTP receiver is back and the display holds
+        // the Tilecast ready surface, but nothing is advertised until the
+        // server completes group preparation and reissues the start phase.
+        log.info("recovered a prepared AirPlay gateway without advertising", {
+          sessionId: config.sessionId,
+          role: config.role,
+        });
       }
     } catch (error) {
       log.warn("failed to reconstruct persisted AirPlay session", {
@@ -673,6 +720,53 @@ export class AirplayManager {
       return null;
     }
     return this.status;
+  }
+
+  private persistSession(
+    config: ExternalPresentationConfig,
+    gatewayStarted: boolean,
+  ): Promise<void> {
+    const persisted: PersistedAirplaySession = {
+      version: SESSION_FORMAT,
+      config,
+      gatewayStarted,
+    };
+    return this.store.writeJson(SESSION_FILE, persisted);
+  }
+
+  /**
+   * Read the persisted session, tolerating the pre-2 format.
+   *
+   * A version 1 file is the bare config and says nothing about whether the
+   * server had started the gateway. A single-screen session is prepared and
+   * started by the same command, so its answer is knowable; a group gateway's
+   * is not, and the conservative reading is "prepared only" — recovering
+   * without advertising and letting the server reissue the start decision is
+   * recoverable, whereas advertising a receiver the server never released is
+   * exactly the failure this format exists to prevent.
+   */
+  private async readPersistedSession(): Promise<PersistedAirplaySession | null> {
+    const raw =
+      await this.store.readJson<Record<string, unknown>>(SESSION_FILE);
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+    const envelope = raw as Partial<PersistedAirplaySession>;
+    if (
+      envelope.version === SESSION_FORMAT &&
+      envelope.config &&
+      typeof envelope.config === "object"
+    ) {
+      return {
+        version: SESSION_FORMAT,
+        config: envelope.config,
+        gatewayStarted: envelope.gatewayStarted === true,
+      };
+    }
+    const legacy = raw as unknown as ExternalPresentationConfig;
+    return {
+      version: SESSION_FORMAT,
+      config: legacy,
+      gatewayStarted: legacy.role === "single",
+    };
   }
 
   getStatus(): ExternalPresentationStatus | null {

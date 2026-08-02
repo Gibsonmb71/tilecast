@@ -299,12 +299,17 @@ func serve() {
 		// the server also expires sessions when a player is offline so the
 		// transient identity and commands do not remain active in Studio/DB.
 		deviceService.ExpireAirplaySessions(shutdownCtx)
+		// A group interrupted mid-preparation by a restart is resolved from
+		// durable state, not from a goroutine that no longer exists. Expiry runs
+		// first so an already-expired session is never resumed.
+		handler.ReconcileAirplaySessions(shutdownCtx)
 		for {
 			select {
 			case <-shutdownCtx.Done():
 				return
 			case <-ticker.C:
 				deviceService.ExpireAirplaySessions(shutdownCtx)
+				handler.ReconcileAirplaySessions(shutdownCtx)
 				updateService.Cleanup(shutdownCtx, cfg.Updates.RetentionDays)
 				_, _ = db.Exec(shutdownCtx, `UPDATE player_commands SET state='expired',completed_at=now(),updated_at=now() WHERE state IN ('pending','delivered','acknowledged','running') AND expires_at<=now()`)
 				_, _ = db.Exec(shutdownCtx, `DELETE FROM player_commands WHERE completed_at<now()-make_interval(days=>COALESCE((SELECT (settings->>'retention.command_history_days')::int FROM organization_runtime_settings),$1))`, cfg.Operations.CommandRetentionDays)

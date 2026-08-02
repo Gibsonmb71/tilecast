@@ -19,6 +19,11 @@ on:
         description: Optional public release summary; generated when omitted
         required: false
         default: ""
+      allow_behind_main:
+        description: Publish a stable tag that does not contain all of main (hotfix from an older base)
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -94,6 +99,32 @@ jobs:
             echo "version=$version"
             echo "channel=$channel"
           } >> "$GITHUB_OUTPUT"
+
+      # player-linux-v0.13.0 was cut from a branch that had diverged from main
+      # and shipped a stable AppImage missing merged AirPlay fixes. Because a
+      # published release is immutable and every player auto-updates to the
+      # newest stable versionCode, a stale base silently ships a regression to
+      # the whole fleet. A stable tag must therefore contain everything on main.
+      - name: Reject a stable release that does not contain main
+        if: steps.release.outputs.channel == 'stable'
+        env:
+          ALLOW_BEHIND_MAIN: ${{ inputs.allow_behind_main }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if git merge-base --is-ancestor refs/remotes/origin/main HEAD; then
+            echo "Release commit contains all of main."
+            exit 0
+          fi
+          echo "This stable release does not contain the following commits already merged to main:" >&2
+          git log --oneline --no-decorate HEAD..refs/remotes/origin/main >&2
+          if [ "${ALLOW_BEHIND_MAIN:-false}" = "true" ]; then
+            echo "allow_behind_main was set; publishing anyway." >&2
+            exit 0
+          fi
+          echo >&2
+          echo "Retag from current main, or re-run this workflow with allow_behind_main for a deliberate hotfix." >&2
+          exit 1
 
       - name: Require signing secrets
         env:
