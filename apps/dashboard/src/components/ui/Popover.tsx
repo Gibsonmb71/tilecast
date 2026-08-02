@@ -206,9 +206,16 @@ export function Popover({
       left: left - offset.left,
       ...(resolvedWidth ? { width: resolvedWidth } : {}),
       maxHeight: Math.max(160, (flip ? spaceAbove : spaceBelow) - gap),
+      // Exactly one vertical edge is anchored. The stylesheet's `top: 0` is the
+      // pre-measurement origin, and leaving it in place alongside `bottom` would
+      // make a flipped panel stretch from the top of the viewport down to the
+      // trigger instead of sizing to its content.
       ...(flip
-        ? { bottom: window.innerHeight - bounds.top + 4 - offset.bottom }
-        : { top: bounds.bottom + 4 - offset.top }),
+        ? {
+            top: "auto",
+            bottom: window.innerHeight - bounds.top + 4 - offset.bottom,
+          }
+        : { top: bounds.bottom + 4 - offset.top, bottom: "auto" }),
     });
   }, [align, host, matchTriggerWidth, open, width]);
 
