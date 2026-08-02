@@ -23,6 +23,12 @@ func (s *Service) updateAirplayHeartbeat(ctx context.Context, screenID uuid.UUID
 	if state != "" && !airplayExternalStates[state] {
 		state = ""
 	}
+	// What the player *can* do is written unconditionally. It used to share the
+	// session-ownership guard below, which deadlocked the feature: an idle
+	// player reports externalPresentationState 'none' with no session id, that
+	// guard matched no row, so capabilities were only ever stored while a
+	// presentation was already running — and a presentation cannot be started
+	// until Studio has seen the capabilities.
 	_, _ = s.db.Exec(ctx, `UPDATE screen_player_status SET
 		airplay_supported=COALESCE($2,airplay_supported),
 		airplay_uxplay_version=COALESCE(NULLIF($3,''),airplay_uxplay_version),
@@ -32,28 +38,34 @@ func (s *Service) updateAirplayHeartbeat(ctx context.Context, screenID uuid.UUID
 		airplay_group_supported=COALESCE($7,airplay_group_supported),
 		airplay_audio_available=COALESCE($8,airplay_audio_available),
 		airplay_avahi_available=COALESCE($9,airplay_avahi_available),
-		airplay_uxplay_installed=COALESCE($19,airplay_uxplay_installed),
-		airplay_gstreamer_installed=COALESCE($20,airplay_gstreamer_installed),
-		airplay_h264_decoder_available=COALESCE($21,airplay_h264_decoder_available),
-		airplay_mdns_advertisement_available=COALESCE($22,airplay_mdns_advertisement_available),
+		airplay_uxplay_installed=COALESCE($12,airplay_uxplay_installed),
+		airplay_gstreamer_installed=COALESCE($13,airplay_gstreamer_installed),
+		airplay_h264_decoder_available=COALESCE($14,airplay_h264_decoder_available),
+		airplay_mdns_advertisement_available=COALESCE($15,airplay_mdns_advertisement_available),
 		airplay_multicast_supported=COALESCE($10,airplay_multicast_supported),
-		airplay_multicast_test_status=COALESCE(NULLIF($11,''),airplay_multicast_test_status),
-		external_presentation_state=CASE WHEN $12='' THEN external_presentation_state WHEN $12='none' THEN NULL ELSE $12 END,
-		external_presentation_session_id=CASE WHEN $12='none' THEN NULL ELSE COALESCE($13,external_presentation_session_id) END,
-		external_presentation_role=CASE WHEN $12='none' THEN NULL ELSE COALESCE(NULLIF($14,''),external_presentation_role) END,
-		airplay_receiver_state=CASE WHEN $12='none' THEN NULL ELSE COALESCE(NULLIF($15,''),airplay_receiver_state) END,
-		airplay_transport=CASE WHEN $12='none' THEN NULL ELSE COALESCE(NULLIF($16,''),airplay_transport) END,
-		airplay_connected=CASE WHEN $12='none' THEN NULL ELSE COALESCE($17,airplay_connected) END,
-		external_presentation_expires_at=CASE WHEN $12='none' THEN NULL ELSE COALESCE($18,external_presentation_expires_at) END
-		WHERE screen_id=$1 AND ($12 <> 'none' OR ($13 IS NOT NULL AND external_presentation_session_id=$13))`, screenID, heartbeat.AirplaySupported, heartbeat.AirplayUxPlayVersion,
+		airplay_multicast_test_status=COALESCE(NULLIF($11,''),airplay_multicast_test_status)
+		WHERE screen_id=$1`, screenID, heartbeat.AirplaySupported, heartbeat.AirplayUxPlayVersion,
 		heartbeat.AirplayHardwareDecode, heartbeat.AirplayDecoder, heartbeat.AirplayMaxProfile,
 		heartbeat.AirplayGroupSupported, heartbeat.AirplayAudioAvailable, heartbeat.AirplayAvahiAvailable,
-		heartbeat.AirplayMulticastSupported, heartbeat.AirplayMulticastTestStatus, state,
-		heartbeat.ExternalPresentationSessionID, heartbeat.ExternalPresentationRole,
+		heartbeat.AirplayMulticastSupported, heartbeat.AirplayMulticastTestStatus,
+		heartbeat.AirplayUxPlayInstalled, heartbeat.AirplayGstreamerInstalled,
+		heartbeat.AirplayH264DecoderAvailable, heartbeat.AirplayMdnsAdvertisementAvailable)
+
+	// Live session state stays guarded: a player may only clear or advance the
+	// snapshot of a session it still owns, so a stale 'none' cannot wipe a
+	// session that has since been handed to it.
+	_, _ = s.db.Exec(ctx, `UPDATE screen_player_status SET
+		external_presentation_state=CASE WHEN $2='' THEN external_presentation_state WHEN $2='none' THEN NULL ELSE $2 END,
+		external_presentation_session_id=CASE WHEN $2='none' THEN NULL ELSE COALESCE($3,external_presentation_session_id) END,
+		external_presentation_role=CASE WHEN $2='none' THEN NULL ELSE COALESCE(NULLIF($4,''),external_presentation_role) END,
+		airplay_receiver_state=CASE WHEN $2='none' THEN NULL ELSE COALESCE(NULLIF($5,''),airplay_receiver_state) END,
+		airplay_transport=CASE WHEN $2='none' THEN NULL ELSE COALESCE(NULLIF($6,''),airplay_transport) END,
+		airplay_connected=CASE WHEN $2='none' THEN NULL ELSE COALESCE($7,airplay_connected) END,
+		external_presentation_expires_at=CASE WHEN $2='none' THEN NULL ELSE COALESCE($8,external_presentation_expires_at) END
+		WHERE screen_id=$1 AND ($2 <> 'none' OR ($3 IS NOT NULL AND external_presentation_session_id=$3))`,
+		screenID, state, heartbeat.ExternalPresentationSessionID, heartbeat.ExternalPresentationRole,
 		heartbeat.AirplayReceiverState, heartbeat.AirplayTransport, heartbeat.AirplayConnected,
-		heartbeat.ExternalPresentationExpiresAt, heartbeat.AirplayUxPlayInstalled,
-		heartbeat.AirplayGstreamerInstalled, heartbeat.AirplayH264DecoderAvailable,
-		heartbeat.AirplayMdnsAdvertisementAvailable)
+		heartbeat.ExternalPresentationExpiresAt)
 
 	if state == "" {
 		return
