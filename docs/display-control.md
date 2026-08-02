@@ -67,6 +67,17 @@ The initial Linux providers report a successful send as unconfirmed. This is
 intentional: CEC and DDC/CI do not provide a uniformly reliable panel-state
 query across hardware.
 
+## Display Group actions
+
+Studio can preview and send **Power on all**, **Power off all**, **Mute all**,
+and **Unmute all** for a Display Group. The preview is based on each current
+Player heartbeat and reports the selected count, capability-supported count,
+unsupported displays, and displays that cannot currently receive a command.
+Only supported displays receive a persistent Player command; unsupported or
+disabled members are skipped and named in the result. The preview fingerprint
+is checked at apply time so a replacement Player or a new capability report
+cannot be silently acted on using stale information.
+
 ## AirPlay and presentation priority
 
 Display Control does not change AirPlay. AirPlay remains an external runtime

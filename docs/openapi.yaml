@@ -1219,6 +1219,57 @@ paths:
           { description: Display Group updated and member manifests revised }
         "409": { description: Geometry conflicts with current membership }
         "422": { description: Canvas or panel validation failed }
+  /api/v1/screen-groups/{id}/display-control/preview:
+    get:
+      operationId: previewDisplayGroupControl
+      parameters:
+        - in: query
+          name: commandType
+          required: true
+          schema:
+            type: string
+            enum:
+              [
+                display_power_on,
+                display_power_off,
+                display_mute,
+                display_unmute,
+              ]
+      responses:
+        "200": { description: Capability coverage and apply fingerprint }
+        "404": { description: Display Group not found }
+        "422": { description: Unsupported group action }
+  /api/v1/screen-groups/{id}/display-control:
+    post:
+      operationId: applyDisplayGroupControl
+      parameters:
+        - in: header
+          name: X-CSRF-Token
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [commandType, fingerprint]
+              properties:
+                commandType:
+                  type: string
+                  enum:
+                    [
+                      display_power_on,
+                      display_power_off,
+                      display_mute,
+                      display_unmute,
+                    ]
+                fingerprint: { type: string, minLength: 64, maxLength: 64 }
+      responses:
+        "202": { description: Typed commands queued for eligible members }
+        "409": { description: Capability preview is stale }
+        "422": { description: Unsupported group action }
   /api/v1/screen-groups/{id}/screens:
     post:
       operationId: addScreenGroupMember
