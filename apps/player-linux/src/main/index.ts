@@ -4,7 +4,7 @@
  * The main process is a thin host: it owns the kiosk window, the tcmedia://
  * protocol, renderer crash recovery, and process relaunch. All protocol and
  * reliability logic lives in the core runtime. Under systemd (see
- * deploy/tilecast-player.service) a crashed or deliberately restarted
+ * /install/tilecast-player.service) a crashed or deliberately restarted
  * process comes straight back, completing the zero-touch loop.
  */
 

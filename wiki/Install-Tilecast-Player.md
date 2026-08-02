@@ -100,7 +100,35 @@ You need:
 
 X11 is currently the simplest choice for unattended signage because live screen previews do not require the Wayland screen-capture portal.
 
-## Download and launch the AppImage
+## Install from your Tilecast server
+
+Your server publishes an installer for the release it has cached. On the signage computer, run:
+
+```sh
+curl -fsSL https://your-tilecast-server/install.sh | sudo bash
+```
+
+This installs the player for the kiosk account, points it at the server it came from, installs and enables the managed service with linger so it starts at boot, and provisions AirPlay support. It downloads nothing from the internet: the AppImage, its checksum, and every script come from your server, so it works on a signage network that reaches nothing else.
+
+Re-running it upgrades the player in place.
+
+Useful options:
+
+| Option              | Purpose                                                                        |
+| ------------------- | ------------------------------------------------------------------------------ |
+| `--user NAME`       | Install for a specific kiosk account. Defaults to the account that ran `sudo`. |
+| `--create-user`     | Create the kiosk account if it does not exist.                                 |
+| `--without-airplay` | Skip AirPlay dependency provisioning.                                          |
+
+If the installer reports that no Linux release is cached, open **Settings → Player releases** in Studio and download the newest Linux release, then run it again.
+
+AirPlay provisioning never blocks the install. If it fails — usually no route to the Debian mirrors — the player still installs and pairs, and Studio reports which AirPlay dependency is missing. Add it later with:
+
+```sh
+curl -fsSL https://your-tilecast-server/install-airplay.sh | sudo bash
+```
+
+## Install by hand
 
 Download `tilecast-player.AppImage` from the latest **Tilecast Player for Linux** release, then place it in a permanent location:
 

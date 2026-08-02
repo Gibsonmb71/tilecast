@@ -28,10 +28,19 @@ func (s *server) routes() http.Handler {
 	r.Use(s.requestLog)
 	r.Use(s.restoreGate)
 	r.Get("/healthz", s.health)
+	// Linux provisioning. Unauthenticated on purpose: a machine being installed
+	// has no credential yet, and these serve only what an operator has already
+	// published — the vetted script and a release they chose to cache.
+	r.With(s.installRateLimit).Get("/install.sh", s.installScript)
+	r.With(s.installRateLimit).Get("/install-airplay.sh", s.airplayInstallScript)
+	r.With(s.installRateLimit).Get("/install/tilecast-player.service", s.playerServiceUnit)
 	r.Get("/readyz", s.ready)
 	r.Route("/api/v1", func(api chi.Router) {
 		api.Get("/system/health", s.health)
 		api.Get("/system/identity", s.systemIdentity)
+		api.With(s.installRateLimit).Get("/install/linux", s.installableLinuxRelease)
+		api.With(s.installRateLimit).Get("/install/linux/artifact", s.installableLinuxArtifact)
+		api.With(s.installRateLimit).Head("/install/linux/artifact", s.installableLinuxArtifact)
 		api.Get("/auth/status", s.authStatus)
 		api.With(s.authRateLimit).Post("/auth/setup", s.setup)
 		api.With(s.authRateLimit).Post("/auth/login", s.login)

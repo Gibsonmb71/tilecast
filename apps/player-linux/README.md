@@ -55,7 +55,8 @@ Everything after the initial pairing is remote or automatic:
   and enables that unit itself on an `install_autostart` command
   (`src/core/autostart.ts`), reading its own AppImage path, display variables,
   and data directory out of the live session rather than having an operator
-  guess them; `deploy/tilecast-player.service` remains as the by-hand template.
+  guess them; the server publishes the same unit at
+  `/install/tilecast-player.service` as the by-hand template.
   It never starts the unit it just enabled — that process is already running —
   and never overwrites or deletes a unit file it did not generate.
 - **Rests overnight on its own.** Active-hours configuration darks the screen

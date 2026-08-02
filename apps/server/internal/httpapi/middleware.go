@@ -93,6 +93,10 @@ func (s *server) pairingRateLimit(next http.Handler) http.Handler {
 	return s.rateLimit(s.pairingLimiter, false, next)
 }
 
+func (s *server) installRateLimit(next http.Handler) http.Handler {
+	return s.rateLimit(s.installLimiter, false, next)
+}
+
 func (s *server) codeRateLimit(next http.Handler) http.Handler {
 	return s.rateLimit(s.codeLimiter, true, next)
 }

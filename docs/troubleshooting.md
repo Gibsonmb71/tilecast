@@ -83,8 +83,8 @@ artifacts use the static runtime as the primary packaging-level fix.
 The Tilecast-managed service is a **user** unit. Use `systemctl --user`, not
 `sudo systemctl`; the latter operates a separate system manager and may still
 be running an older unit without the recovery hook. Re-run **Set up autostart**
-in Studio, or replace the hand-installed unit with the template in
-`apps/player-linux/deploy/tilecast-player.service`, then run:
+in Studio, or replace the hand-installed unit with the template the server
+publishes at `/install/tilecast-player.service`, then run:
 
 ```sh
 systemctl --user daemon-reload

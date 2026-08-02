@@ -607,3 +607,32 @@ func safeError(err error) string {
 	}
 	return message
 }
+
+// InstallableRelease is the newest Linux build an unpaired machine can be
+// provisioned with: verified, and already cached on this server so the install
+// never depends on the signage network reaching GitHub.
+type InstallableRelease struct {
+	ID          uuid.UUID
+	VersionName string
+	VersionCode int64
+	SizeBytes   int64
+	SHA256      string
+	Path        string
+}
+
+// LatestInstallableLinux returns the newest stable, verified, cached Linux
+// release. Stable only: a provisioning run is not the place to hand a new
+// signage box a beta. It reports an error when the operator has not cached one
+// yet, which the installer surfaces as an instruction rather than a failure.
+func (s *Service) LatestInstallableLinux(ctx context.Context) (InstallableRelease, error) {
+	var release InstallableRelease
+	err := s.db.QueryRow(ctx, `SELECT id,version_name,version_code,apk_size,apk_sha256 FROM player_releases
+		WHERE platform=$1 AND channel='stable' AND verification_status='verified' AND cache_status='cached'
+		ORDER BY version_code DESC LIMIT 1`, PlatformLinux).
+		Scan(&release.ID, &release.VersionName, &release.VersionCode, &release.SizeBytes, &release.SHA256)
+	if err != nil {
+		return InstallableRelease{}, errors.New("no cached, verified Linux release is available")
+	}
+	release.Path = filepath.Join(s.root, release.ID.String()+artifactSuffix(PlatformLinux))
+	return release, nil
+}

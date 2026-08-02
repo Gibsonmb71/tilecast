@@ -58,6 +58,7 @@ type Dependencies struct {
 	CookieName          string
 	SecureCookies       bool
 	ReleasePublishToken string
+	PublicURL           string
 	Operations          OperationsConfig
 	Backups             *backup.Service
 	BackupWorker        *backup.Worker
@@ -107,6 +108,8 @@ type server struct {
 	backups                       *backup.Service
 	backupWorker                  *backup.Worker
 	backupLimits                  backup.Limits
+	publicURL                     string
+	installLimiter                *rateLimiter
 }
 
 type contextKey string
@@ -115,22 +118,27 @@ const sessionContextKey contextKey = "session"
 
 func New(deps Dependencies) http.Handler {
 	s := &server{
-		auth:                 deps.Auth,
-		devices:              deps.Devices,
-		media:                deps.Media,
-		forms:                deps.Forms,
-		playlists:            deps.Playlists,
-		plugins:              deps.Plugins,
-		layouts:              deps.Layouts,
-		scheduling:           deps.Scheduling,
-		db:                   deps.DB,
-		logger:               deps.Logger,
-		cookieName:           deps.CookieName,
-		secureCookies:        deps.SecureCookies,
-		authLimiter:          newRateLimiter(10, 10*time.Minute),
-		pairingLimiter:       newRateLimiter(10, time.Minute),
-		codeLimiter:          newRateLimiter(30, 10*time.Minute),
-		operationsLimiter:    newRateLimiter(60, time.Minute),
+		auth:              deps.Auth,
+		devices:           deps.Devices,
+		media:             deps.Media,
+		forms:             deps.Forms,
+		playlists:         deps.Playlists,
+		plugins:           deps.Plugins,
+		layouts:           deps.Layouts,
+		scheduling:        deps.Scheduling,
+		db:                deps.DB,
+		logger:            deps.Logger,
+		cookieName:        deps.CookieName,
+		secureCookies:     deps.SecureCookies,
+		authLimiter:       newRateLimiter(10, 10*time.Minute),
+		pairingLimiter:    newRateLimiter(10, time.Minute),
+		codeLimiter:       newRateLimiter(30, 10*time.Minute),
+		operationsLimiter: newRateLimiter(60, time.Minute),
+		// Provisioning is unauthenticated by necessity — the box has no
+		// credential until it pairs — so it gets its own budget, generous
+		// enough for a cart of machines behind one NAT.
+		installLimiter:       newRateLimiter(60, time.Minute),
+		publicURL:            deps.PublicURL,
 		operations:           deps.Operations,
 		settings:             deps.Settings,
 		updates:              deps.Updates,
