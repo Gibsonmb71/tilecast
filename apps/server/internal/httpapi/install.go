@@ -1,7 +1,11 @@
 package httpapi
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"embed"
+	"encoding/hex"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -13,10 +17,16 @@ import (
 // nothing else, and an operator who has approved this server should not have to
 // approve a second origin to install a player against it.
 //
-//go:embed install/install-tilecast-player.sh install/install-airplay-support.sh install/tilecast-player.service
+//go:embed install/install-tilecast-player.sh install/install-airplay-support.sh install/tilecast-player.service install/uxplay-1.73.6.tar.gz
 var installAssets embed.FS
 
-const installServerURLToken = "__TILECAST_SERVER_URL__"
+const (
+	installServerURLToken   = "__TILECAST_SERVER_URL__"
+	installUxPlayVersion    = "1.73.6"
+	installUxPlaySHA256     = "3a1a754bc7ed4b0f72b6237aa4d769238b9c20a71b651bc3fe9ac679e2a67f18"
+	installUxPlayArchive    = "install/uxplay-1.73.6.tar.gz"
+	installUxPlayArchiveURL = "/api/v1/install/airplay/uxplay"
+)
 
 // serverBaseURL is the address the installed player should call home to. The
 // configured public URL wins, because that is the name an operator published
@@ -58,7 +68,36 @@ func (s *server) airplayInstallScript(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/x-shellscript; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	_, _ = w.Write(raw)
+	base := strings.ReplaceAll(s.serverBaseURL(r), `"`, "")
+	_, _ = w.Write([]byte(strings.ReplaceAll(string(raw), installServerURLToken, base)))
+}
+
+// installableUxPlayChecksum publishes the digest Tilecast pinned when the
+// upstream v1.73.6 source was vendored. The installer also carries this value,
+// so a mismatched server build is rejected before any source is extracted.
+func (s *server) installableUxPlayChecksum(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	_, _ = fmt.Fprintln(w, installUxPlaySHA256)
+}
+
+func (s *server) installableUxPlayArtifact(w http.ResponseWriter, r *http.Request) {
+	archive, err := installAssets.ReadFile(installUxPlayArchive)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	digest := sha256.Sum256(archive)
+	if hex.EncodeToString(digest[:]) != installUxPlaySHA256 {
+		s.internalError(w, r, fmt.Errorf("embedded UxPlay %s archive checksum mismatch", installUxPlayVersion))
+		return
+	}
+	w.Header().Set("Content-Type", "application/gzip")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.Header().Set("ETag", `"sha256-`+installUxPlaySHA256+`"`)
+	w.Header().Set("Accept-Ranges", "bytes")
+	w.Header().Set("Content-Disposition", `attachment; filename="uxplay-1.73.6.tar.gz"`)
+	http.ServeContent(w, r, "uxplay-1.73.6.tar.gz", time.Time{}, bytes.NewReader(archive))
 }
 
 func (s *server) playerServiceUnit(w http.ResponseWriter, r *http.Request) {

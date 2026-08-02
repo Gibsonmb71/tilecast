@@ -204,3 +204,30 @@ describe("AirPlay capability limitation reporting", () => {
     expect(describeLimitation(ready)).toBeUndefined();
   });
 });
+
+describe("AirPlay capability probing", () => {
+  it("uses UxPlay's supported version flag and recognizes 1.73.6", async () => {
+    const result = testManager((binary) => {
+      const process = new FakeProcess();
+      queueMicrotask(() => {
+        if (binary === "uxplay") {
+          process.stdout.emit(
+            "data",
+            'UxPlay version 1.73.6; for help, use option "-h"\n',
+          );
+        }
+        process.exitCode = 0;
+        process.emit("close", 0, null);
+      });
+      return process;
+    });
+
+    const capabilities = await result.manager.probeCapabilities();
+
+    expect(result.calls.find((call) => call.binary === "uxplay")?.args).toEqual(
+      ["-v"],
+    );
+    expect(capabilities.uxplayInstalled).toBe(true);
+    expect(capabilities.uxplayVersion).toBe("1.73.6");
+  });
+});
