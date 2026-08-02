@@ -183,15 +183,20 @@ export function SectionHeader({
   title,
   description,
   actions,
+  // A panel that sits under a heading of its own is a level deeper than one
+  // that opens a page, and the outline a screen reader reads should say so.
+  level = 2,
 }: {
   title: string;
   description?: string;
   actions?: ReactNode;
+  level?: 2 | 3;
 }) {
+  const Heading = level === 3 ? "h3" : "h2";
   return (
     <header className="section-header">
       <span>
-        <h2>{title}</h2>
+        <Heading>{title}</Heading>
         {description && <p>{description}</p>}
       </span>
       {actions}

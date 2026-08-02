@@ -1740,7 +1740,7 @@ label > .signal-select,
   margin-bottom: var(--tc-space-4);
 }
 
-.section-header h2 {
+.section-header :is(h2, h3) {
   margin: 0;
   font: var(--tc-text-section-title);
 }

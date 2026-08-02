@@ -2,13 +2,11 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
-import { PageHeader } from "../components/ui";
 import { SettingsSection } from "../settings/SettingsSection";
 import { SettingsActionBar } from "../settings/SettingsActionBar";
-import { sectionDetails } from "../settings/settingsNavigation";
 import { useNavigationWarning } from "../settings/useNavigationWarning";
 
-export function PreferencesPage({ embedded = false }: { embedded?: boolean }) {
+export function PreferencesPage() {
   const auth = useAuth();
   const client = useQueryClient();
   const preferences = useQuery({
@@ -39,7 +37,7 @@ export function PreferencesPage({ embedded = false }: { embedded?: boolean }) {
     );
   useNavigationWarning(
     dirty,
-    embedded ? "/account" : "/preferences",
+    "/account",
     "Leave My Account with unsaved preference changes?",
   );
   const save = useMutation({
@@ -60,8 +58,7 @@ export function PreferencesPage({ embedded = false }: { embedded?: boolean }) {
   };
   if (preferences.isLoading)
     return <div className="table-loading">Loading preferences…</div>;
-  const details = sectionDetails.preferences;
-  const content = (
+  return (
     <>
       <SettingsSection
         section="preferences"
@@ -89,14 +86,6 @@ export function PreferencesPage({ embedded = false }: { embedded?: boolean }) {
         onReload={isConflict(save.error) ? reload : undefined}
       />
     </>
-  );
-  return embedded ? (
-    <div className="my-account-preferences">{content}</div>
-  ) : (
-    <section>
-      <PageHeader title={details.title} description={details.description} />
-      {content}
-    </section>
   );
 }
 
