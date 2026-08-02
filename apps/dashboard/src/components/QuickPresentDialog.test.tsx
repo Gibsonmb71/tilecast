@@ -73,6 +73,9 @@ describe("QuickPresentDialog", () => {
       page: 1,
       pageSize: 100,
     } satisfies AssetList);
+    vi.spyOn(api, "contentFolders").mockResolvedValue([]);
+    vi.spyOn(api, "contentCollections").mockResolvedValue([]);
+    vi.spyOn(api, "contentTags").mockResolvedValue([]);
     const create = vi
       .spyOn(api, "createPresentationOverride")
       .mockResolvedValue({
@@ -109,21 +112,30 @@ describe("QuickPresentDialog", () => {
       </QueryClientProvider>,
     );
 
-    await user.click(screen.getByRole("button", { name: "Close" }));
-    expect(onClose).toHaveBeenCalledOnce();
-
+    await user.click(screen.getByRole("button", { name: "Choose playlist" }));
+    await user.click(await screen.findByRole("button", { name: /Open house/ }));
+    await user.click(screen.getByRole("button", { name: "Use playlist" }));
     await waitFor(() =>
       expect(
-        screen.getByRole("combobox", { name: "Content selection" }),
-      ).toHaveTextContent("Open house · 3 items"),
+        screen.getByRole("button", { name: "Change" }),
+      ).toBeInTheDocument(),
     );
     await user.click(screen.getByRole("button", { name: "Media / web" }));
+    await user.click(
+      screen.getByRole("button", { name: "Choose media or web" }),
+    );
+    expect(
+      await screen.findByRole("dialog", { name: "Choose media or web" }),
+    ).toBeInTheDocument();
+    await user.click(
+      await screen.findByRole("button", { name: /Status website/ }),
+    );
+    await user.click(screen.getByRole("button", { name: "Use content (1)" }));
     await waitFor(() =>
       expect(
-        screen.getByRole("combobox", { name: "Content selection" }),
-      ).toHaveTextContent("Status website · widget"),
+        screen.getByRole("button", { name: "Change" }),
+      ).toBeInTheDocument(),
     );
-    await user.click(screen.getByRole("button", { name: "Playlist" }));
     await user.click(screen.getByRole("combobox", { name: "Duration" }));
     await user.click(screen.getByRole("option", { name: "30 minutes" }));
     await user.click(screen.getByRole("button", { name: "Show now" }));
@@ -133,8 +145,8 @@ describe("QuickPresentDialog", () => {
         {
           targetType: "group",
           targetId: "group-1",
-          contentType: "playlist",
-          contentId: "playlist-1",
+          contentType: "asset",
+          contentId: "website-1",
           durationMinutes: 30,
           afterAction: "resume",
           wakeDisplay: false,

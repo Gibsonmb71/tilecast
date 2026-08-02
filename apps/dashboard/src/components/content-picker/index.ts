@@ -3,5 +3,6 @@ export type { ContentPickerProps, ContentPickerResult } from "./ContentPicker";
 export { PlaylistPicker } from "./PlaylistPicker";
 export type {
   PlaylistPickerChoice,
+  PlaylistPickerKind,
   PlaylistPickerProps,
 } from "./PlaylistPicker";
