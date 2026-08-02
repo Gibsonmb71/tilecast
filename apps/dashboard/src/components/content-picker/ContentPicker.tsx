@@ -4,6 +4,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { Globe2, Upload, X } from "lucide-react";
+import { createPortal } from "react-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api/client";
 import type { Asset, WidgetProvider } from "../../api/types";
@@ -264,7 +265,7 @@ export function ContentPicker({
       setConfirming(false);
     }
   };
-  return (
+  return createPortal(
     <div className="content-picker-backdrop">
       <section
         ref={dialog}
@@ -418,6 +419,7 @@ export function ContentPicker({
           onClose={() => setChild(undefined)}
         />
       )}
-    </div>
+    </div>,
+    document.body,
   );
 }

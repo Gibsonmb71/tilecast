@@ -8,34 +8,21 @@ import {
   ViewToggle,
 } from "../components/ui";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import {
-  ChevronRight,
-  Film,
-  Image as ImageIcon,
-  LayoutTemplate,
-  ListVideo,
-  PanelsTopLeft,
-  Plus,
-  Tags,
-} from "lucide-react";
+import { ChevronRight, ListVideo, Plus, Tags } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { api } from "../api/client";
-import type { Playlist } from "../api/types";
+import type { Playlist, PlaylistPreviewItem } from "../api/types";
 import { useAuth } from "../auth/AuthProvider";
 import {
   DashboardListToolbar,
   DashboardSearch,
 } from "../components/DashboardListToolbar";
+import { PlaylistPreview } from "../components/PresentationPreview";
 import { WorkspaceTabs, presentationTabs } from "../navigation/WorkspaceTabs";
 import "./PlaylistLibraryPage.css";
 
-export type PlaylistPreviewItem = {
-  id: string;
-  name: string;
-  type: "image" | "video" | "widget" | "layout";
-  thumbnailUrl?: string;
-};
+export type { PlaylistPreviewItem } from "../api/types";
 
 export type PlaylistLibraryItem = Pick<
   Playlist,
@@ -399,60 +386,5 @@ export function PlaylistLibraryPage() {
         </div>
       </Dialog>
     </section>
-  );
-}
-
-function PlaylistPreview({ playlist }: { playlist: PlaylistLibraryItem }) {
-  const previewItems = (playlist.previewItems ?? []).slice(0, 4);
-  if (previewItems.length === 0) {
-    const Icon = playlist.sourceType === "tag" ? Tags : ListVideo;
-    return (
-      <span className="playlist-library-preview playlist-library-preview--empty">
-        <Icon size={30} aria-hidden="true" />
-        <span>
-          {playlist.itemCount === 0 ? "No content yet" : "Preview unavailable"}
-        </span>
-      </span>
-    );
-  }
-  return (
-    <span
-      className={`playlist-library-preview playlist-library-preview--count-${previewItems.length}`}
-      aria-hidden="true"
-    >
-      {previewItems.map((item) => (
-        <PlaylistPreviewTile key={item.id} item={item} />
-      ))}
-    </span>
-  );
-}
-
-function PlaylistPreviewTile({ item }: { item: PlaylistPreviewItem }) {
-  const [failed, setFailed] = useState(false);
-  useEffect(() => setFailed(false), [item.thumbnailUrl]);
-  const Icon =
-    item.type === "video"
-      ? Film
-      : item.type === "widget"
-        ? PanelsTopLeft
-        : item.type === "layout"
-          ? LayoutTemplate
-          : ImageIcon;
-  return (
-    <span className="playlist-library-preview__tile" title={item.name}>
-      {item.thumbnailUrl && !failed ? (
-        <img
-          src={item.thumbnailUrl}
-          alt=""
-          loading="lazy"
-          onError={() => setFailed(true)}
-        />
-      ) : (
-        <span className="playlist-library-preview__fallback">
-          <Icon size={23} aria-hidden="true" />
-          <small>{item.name}</small>
-        </span>
-      )}
-    </span>
   );
 }

@@ -190,6 +190,13 @@ export type PlaylistItem = {
   dynamic?: boolean;
 };
 
+export type PlaylistPreviewItem = {
+  id: string;
+  name: string;
+  type: "image" | "video" | "widget" | "layout";
+  thumbnailUrl?: string;
+};
+
 export type Playlist = {
   id: string;
   name: string;
@@ -207,6 +214,8 @@ export type Playlist = {
     screens: { id: string; name: string }[];
     schedules: { id: string; name: string }[];
   };
+  /** Compact visual metadata returned by playlist list requests. */
+  previewItems?: PlaylistPreviewItem[];
   // Data Sources reached through this playlist's items — those its Widgets read plus those any
   // embedded Layout depends on. Only IDs; names and refresh status come from the Data Source list.
   dataSourceIds?: string[];
