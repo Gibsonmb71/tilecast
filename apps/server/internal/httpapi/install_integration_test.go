@@ -77,6 +77,93 @@ func TestInstallScriptFallsBackToTheRequestHost(t *testing.T) {
 	})
 }
 
+func TestInstallScriptRejectsAnUnsafeRequestURL(t *testing.T) {
+	withActivityDatabase(t, func(env activityTestEnvironment) {
+		env.server.publicURL = ""
+		request := httptest.NewRequest(http.MethodGet, "/install.sh", nil)
+		request.Host = "tilecast.example; touch /tmp/tilecast-owned"
+		request.Header.Set("X-Forwarded-Proto", "https\nsh")
+		recorder := httptest.NewRecorder()
+		env.server.installScript(recorder, request)
+
+		if recorder.Code != http.StatusInternalServerError {
+			t.Fatalf("status = %d, want 500", recorder.Code)
+		}
+		if strings.Contains(recorder.Body.String(), "SERVER_URL=") {
+			t.Fatal("unsafe request URL was interpolated into the installer")
+		}
+	})
+}
+
+func TestInstallScriptRejectsAnUnsafeConfiguredURL(t *testing.T) {
+	withActivityDatabase(t, func(env activityTestEnvironment) {
+		env.server.publicURL = "https://signage.example.org/$(touch /tmp/tilecast-owned)"
+		recorder := httptest.NewRecorder()
+		env.server.installScript(recorder, httptest.NewRequest(http.MethodGet, "/install.sh", nil))
+
+		if recorder.Code != http.StatusInternalServerError {
+			t.Fatalf("status = %d, want 500", recorder.Code)
+		}
+		if strings.Contains(recorder.Body.String(), "SERVER_URL=") {
+			t.Fatal("unsafe configured URL was interpolated into the installer")
+		}
+	})
+}
+
+func TestAirplayInstallScriptIsEmbeddedAndServedByTilecast(t *testing.T) {
+	withActivityDatabase(t, func(env activityTestEnvironment) {
+		recorder := httptest.NewRecorder()
+		env.server.airplayInstallScript(recorder, httptest.NewRequest(http.MethodGet, "/install-airplay.sh", nil))
+
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("status = %d", recorder.Code)
+		}
+		body := recorder.Body.String()
+		if !strings.Contains(body, "UXPLAY_VERSION=\"1.73.6\"") || !strings.Contains(body, "apt-get install") {
+			t.Fatalf("unexpected AirPlay installer body: %s", firstLines(body, 20))
+		}
+	})
+}
+
+func TestAirplayCleanupCommandWakesThePlayerAndDeduplicates(t *testing.T) {
+	withActivityDatabase(t, func(env activityTestEnvironment) {
+		var organizationID uuid.UUID
+		if err := env.pool.QueryRow(context.Background(), `SELECT organization_id FROM screens WHERE id=$1`, env.screenID).Scan(&organizationID); err != nil {
+			t.Fatal(err)
+		}
+		messages := make(chan map[string]any, 2)
+		unregister := env.server.devices.RegisterPresenceWithNotifier(env.screenID, nil, func(message map[string]any) error {
+			messages <- message
+			return nil
+		})
+		defer unregister()
+
+		sessionID := uuid.New()
+		payload := []byte(`{"sessionId":"` + sessionID.String() + `","reason":"expired"}`)
+		if err := env.server.queueAirplayStopCommand(context.Background(), organizationID, env.screenID, uuid.Nil, payload); err != nil {
+			t.Fatal(err)
+		}
+		if err := env.server.queueAirplayStopCommand(context.Background(), organizationID, env.screenID, uuid.Nil, payload); err != nil {
+			t.Fatal(err)
+		}
+		var count int
+		if err := env.pool.QueryRow(context.Background(), `SELECT count(*) FROM player_commands WHERE screen_id=$1 AND type='stop_airplay_session' AND payload->>'sessionId'=$2`, env.screenID, sessionID.String()).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 1 {
+			t.Fatalf("cleanup command count = %d, want one", count)
+		}
+		select {
+		case message := <-messages:
+			if message["type"] != "commands.available" {
+				t.Fatalf("wake message = %#v", message)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("cleanup command did not wake the connected player")
+		}
+	})
+}
+
 func TestAirPlayInstallScriptUsesOnlyTheTilecastServer(t *testing.T) {
 	withActivityDatabase(t, func(env activityTestEnvironment) {
 		env.server.installLimiter = newRateLimiter(60, time.Minute)
@@ -186,7 +273,6 @@ func TestEmbeddedUxPlayArtifactMatchesPinnedIdentity(t *testing.T) {
 		t.Fatalf("published checksum = %q", checksum.Body.String())
 	}
 }
-
 func TestInstallableLinuxReleaseReportsNothingUntilOneIsCached(t *testing.T) {
 	withActivityDatabase(t, func(env activityTestEnvironment) {
 		env.server.updates = newTestUpdateService(t, env, t.TempDir())

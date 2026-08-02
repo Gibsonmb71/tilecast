@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"math/big"
 	"sort"
 	"strconv"
 	"strings"
@@ -116,12 +117,11 @@ func CommonProfile(capabilities []Capability) (VideoProfile, error) {
 }
 
 func RandomPIN() (string, error) {
-	var bytes [4]byte
-	if _, err := rand.Read(bytes[:]); err != nil {
+	value, err := rand.Int(rand.Reader, big.NewInt(10000))
+	if err != nil {
 		return "", err
 	}
-	value := uint32(bytes[0])<<24 | uint32(bytes[1])<<16 | uint32(bytes[2])<<8 | uint32(bytes[3])
-	return fmt.Sprintf("%04d", value%10000), nil
+	return fmt.Sprintf("%04d", value.Int64()), nil
 }
 
 func RandomDeviceID() (string, error) {

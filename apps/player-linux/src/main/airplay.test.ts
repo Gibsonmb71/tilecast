@@ -114,6 +114,29 @@ describe("AirPlay Linux process ownership", () => {
     ).toBe(true);
   });
 
+  it("handles a receiver error and exit as one process failure", async () => {
+    const result = testManager(() => new FakeProcess());
+    await result.manager.prepareSession(config("gateway"), "vah264dec");
+    const originalReceiver = result.calls[0]?.process;
+
+    originalReceiver?.emit("error", new Error("receiver failed to start"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(
+      result.calls.filter((call) => call.binary === "gst-launch-1.0"),
+    ).toHaveLength(2);
+
+    // A child can emit both error and exit. The second notification belongs to
+    // the same process and must not consume another bounded restart.
+    originalReceiver?.emit("exit", 1, "SIGTERM");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(
+      result.calls.filter((call) => call.binary === "gst-launch-1.0"),
+    ).toHaveLength(2);
+
+    await result.manager.stopSession("test_cleanup");
+  });
+
   it("enforces the local absolute expiry even without server contact", async () => {
     vi.useFakeTimers();
     try {
@@ -156,7 +179,7 @@ describe("AirPlay capability limitation reporting", () => {
       supported: false,
     });
     expect(limitation).toContain("UxPlay is not installed");
-    expect(limitation).toContain("install-airplay-support.sh");
+    expect(limitation).toContain("/install-airplay.sh");
   });
 
   // The common field failure: a distro package exists but predates the

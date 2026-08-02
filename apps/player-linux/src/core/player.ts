@@ -481,7 +481,7 @@ export class PlayerRuntime {
     }
   }
 
-  stop(): void {
+  async stop(): Promise<void> {
     this.stopped = true;
     for (const timer of this.timers) {
       clearInterval(timer);
@@ -506,7 +506,7 @@ export class PlayerRuntime {
     this.activity?.stop();
     this.preview?.stop();
     this.liveStream?.stop();
-    void this.host.stopExternalPresentation?.("process_exit");
+    await this.host.stopExternalPresentation?.("process_exit");
   }
 
   // ---------------------------------------------------------------- pairing
@@ -1102,10 +1102,16 @@ export class PlayerRuntime {
     };
   }
 
-  private async stopExternalPresentation(reason: string): Promise<void> {
+  private async stopExternalPresentation(
+    reason: string,
+    reportCleared = true,
+  ): Promise<void> {
     if (this.externalPresentation) {
-      this.lastExternalPresentationSessionId =
-        this.externalPresentation.sessionId;
+      this.lastExternalPresentationSessionId = reportCleared
+        ? this.externalPresentation.sessionId
+        : null;
+    } else if (!reportCleared) {
+      this.lastExternalPresentationSessionId = null;
     }
     if (this.host.stopExternalPresentation) {
       await this.host.stopExternalPresentation(reason).catch((error) => {
@@ -1120,7 +1126,7 @@ export class PlayerRuntime {
       this.clockOffsetMs,
     );
     this.evaluatePresentation(true);
-    void this.reportStatus();
+    if (reportCleared) void this.reportStatus();
   }
 
   /** Renderer reported an item boundary. */
@@ -2523,7 +2529,19 @@ export class PlayerRuntime {
             "The requested AirPlay session is not active on this player.",
         };
       }
-      await this.stopExternalPresentation("remote_stop");
+      const reason =
+        typeof command.payload["reason"] === "string"
+          ? command.payload["reason"]
+          : "remote_stop";
+      // Multicast fallback deliberately reuses the same server session while
+      // replacing the local process pair. Do not report a terminal `none`
+      // heartbeat for that transition; the following prepare command owns the
+      // same assignment and the server expiry path remains the backstop if it
+      // never arrives.
+      await this.stopExternalPresentation(
+        reason,
+        reason !== "multicast_fallback",
+      );
       return {
         success: true,
         code: "airplay_stopped",
