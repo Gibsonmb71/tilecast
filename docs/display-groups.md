@@ -20,4 +20,5 @@ playback behavior. A screen still belongs to zero or one Display Group.
 
 The `/screen-groups` API paths and legacy `syncGroupId` screen fields remain
 valid. New group responses include `displayMode`; clients that talk to an older
-server should treat a missing value as `mirror`.
+server should treat a missing value as `mirror`. Span geometry and server-side
+panel preparation are described in [Span video walls](span-video-walls.md).

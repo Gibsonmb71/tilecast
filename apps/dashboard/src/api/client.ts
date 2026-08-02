@@ -43,6 +43,7 @@ import type {
   PlaylistList,
   ScreenGroup,
   ScreenGroupList,
+  SpanStatus,
   Schedule,
   ScheduleInput,
   ScheduleList,
@@ -1951,6 +1952,24 @@ export const api = {
   },
   screenGroup: async (id: string) =>
     normalizeScreenGroup(await request<ScreenGroup>(`/screen-groups/${id}`)),
+  spanStatus: async (id: string) =>
+    request<SpanStatus>(`/screen-groups/${id}/span`),
+  updateSpanGeometry: async (
+    id: string,
+    input: {
+      displayMode?: "mirror" | "span";
+      canvas?: { width: number; height: number };
+      panels?: SpanStatus["geometry"]["panels"];
+    },
+    csrfToken: string,
+  ) =>
+    normalizeScreenGroup(
+      await request<ScreenGroup>(`/screen-groups/${id}/span`, {
+        method: "PUT",
+        headers: { "X-CSRF-Token": csrfToken },
+        body: JSON.stringify(input),
+      }),
+    ),
   createScreenGroup: async (
     input: { name: string; description: string },
     csrfToken: string,

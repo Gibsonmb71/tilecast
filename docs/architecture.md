@@ -61,6 +61,11 @@ for half-open interval evaluation and deterministic precedence: priority, later
 effective start, then stable ID. The Android `ScheduleEngine` implements the
 same transport semantics for offline evaluation.
 
+Span Display Groups extend this model with a logical canvas and one validated
+viewport per member. The manifest adds optional canvas/viewport fields only for
+Span screens; server-side panel preparation keeps legacy Linux hardware on
+normal-resolution H.264 files. See [Span video walls](span-video-walls.md).
+
 Player manifests contain only schedules relevant to the authenticated screen, its playlist or Layout fallback, referenced published Layout revisions, required Apps, playlist zones, structured datasets, media variants, server time, preparation policy, and optional sync-group playback epoch. Group members calculate the same current item and elapsed offset from the shared clock, including after reconnecting late. Recurring rules use calendar calculations rather than fixed-duration days. A repeated local time uses the earlier occurrence for a start and later occurrence for an end; a nonexistent local time advances to the first valid time after the DST gap.
 
 ## Milestone 6 website playback

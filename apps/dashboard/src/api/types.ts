@@ -868,6 +868,43 @@ export type ScreenGroup = {
   createdAt: string;
   updatedAt: string;
 };
+export type SpanPanel = {
+  screenId: string;
+  screenName?: string;
+  order: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: 0 | 90 | 180 | 270;
+  bezelLeft: number;
+  bezelTop: number;
+  bezelRight: number;
+  bezelBottom: number;
+};
+export type SpanStatus = {
+  groupId: string;
+  displayMode: "mirror" | "span";
+  geometry: {
+    canvas: { width: number; height: number };
+    panels: SpanPanel[];
+  };
+  preparations: {
+    id: string;
+    screenId: string;
+    sourceAssetId: string;
+    sourceVariantId: string;
+    status: "queued" | "processing" | "ready" | "failed";
+    progress?: number;
+    width?: number;
+    height?: number;
+    durationSeconds?: number;
+    frameRate?: number;
+    errorCode?: string;
+    errorMessage?: string;
+    updatedAt: string;
+  }[];
+};
 export type ScreenGroupList = {
   items: ScreenGroup[];
   total: number;

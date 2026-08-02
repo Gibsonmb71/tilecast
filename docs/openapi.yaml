@@ -1136,6 +1136,18 @@ paths:
         "304": { description: Manifest ETag matched }
         "401": { description: Device credential invalid or revoked }
         "403": { description: Screen disabled }
+  /api/v1/player/span-panels/{id}:
+    get:
+      operationId: getPlayerSpanPanel
+      security: [{ deviceBearer: [] }]
+      responses:
+        "200": { description: Authenticated prepared H.264 panel variant }
+        "206": { description: Partial content range }
+        "404": { description: Panel is unavailable or not ready }
+    head:
+      operationId: headPlayerSpanPanel
+      security: [{ deviceBearer: [] }]
+      responses: { "200": { description: Prepared panel exists } }
   /api/v1/screen-groups:
     get:
       operationId: listScreenGroups
@@ -1178,6 +1190,24 @@ paths:
       operationId: deleteScreenGroup
       responses:
         { "204": { description: Display Group soft deleted; screens retained } }
+  /api/v1/screen-groups/{id}/span:
+    get:
+      operationId: getSpanGeometryAndPreparation
+      responses:
+        { "200": { description: Canvas, panel geometry, and preparation status } }
+    put:
+      operationId: updateSpanGeometry
+      parameters:
+        [{ in: header, name: X-CSRF-Token, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SpanGeometryInput" }
+      responses:
+        "200": { description: Display Group updated and member manifests revised }
+        "409": { description: Geometry conflicts with current membership }
+        "422": { description: Canvas or panel validation failed }
   /api/v1/screen-groups/{id}/screens:
     post:
       operationId: addScreenGroupMember
@@ -2705,6 +2735,57 @@ components:
         daysOfWeek:
           type: array
           items: { type: integer, minimum: 0, maximum: 6 }
+    SpanPanel:
+      type: object
+      additionalProperties: false
+      required: [screenId, order, x, y, width, height, rotation]
+      properties:
+        screenId: { type: string, format: uuid }
+        screenName: { type: string }
+        order: { type: integer, minimum: 0, maximum: 63 }
+        x: { type: integer, minimum: 0 }
+        y: { type: integer, minimum: 0 }
+        width: { type: integer, minimum: 1 }
+        height: { type: integer, minimum: 1 }
+        rotation: { type: integer, enum: [0, 90, 180, 270] }
+        bezelLeft: { type: integer, minimum: 0, maximum: 500 }
+        bezelTop: { type: integer, minimum: 0, maximum: 500 }
+        bezelRight: { type: integer, minimum: 0, maximum: 500 }
+        bezelBottom: { type: integer, minimum: 0, maximum: 500 }
+    SpanGeometryInput:
+      type: object
+      additionalProperties: false
+      properties:
+        displayMode: { type: string, enum: [mirror, span] }
+        canvas:
+          type: object
+          required: [width, height]
+          properties:
+            width: { type: integer, minimum: 320, maximum: 16384 }
+            height: { type: integer, minimum: 320, maximum: 16384 }
+        panels:
+          type: array
+          items: { $ref: "#/components/schemas/SpanPanel" }
+    SpanPreparation:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        screenId: { type: string, format: uuid }
+        sourceAssetId: { type: string, format: uuid }
+        sourceVariantId: { type: string, format: uuid }
+        status: { type: string, enum: [queued, processing, ready, failed] }
+        progress: { type: number, minimum: 0, maximum: 1 }
+        errorCode: { type: string }
+        errorMessage: { type: string }
+    SpanStatus:
+      type: object
+      properties:
+        groupId: { type: string, format: uuid }
+        displayMode: { type: string, enum: [mirror, span] }
+        geometry: { type: object }
+        preparations:
+          type: array
+          items: { $ref: "#/components/schemas/SpanPreparation" }
     PlayerManifest:
       type: object
       additionalProperties: false
@@ -2719,7 +2800,7 @@ components:
           assets,
         ]
       properties:
-        schemaVersion: { type: integer, const: 11 }
+        schemaVersion: { type: integer, enum: [11, 12, 13, 14, 15] }
         manifestVersion: { type: integer, format: int64, minimum: 1 }
         screenId: { type: string, format: uuid }
         generatedAt: { type: string, format: date-time }
@@ -2728,6 +2809,14 @@ components:
         layout: { oneOf: [{ type: "null" }, { type: object }] }
         layouts: { type: array, items: { type: object } }
         assets: { type: array, items: { type: object } }
+        canvas:
+          oneOf:
+            - { type: "null" }
+            - { type: object, required: [width, height], properties: { width: { type: integer }, height: { type: integer } } }
+        viewport:
+          oneOf:
+            - { type: "null" }
+            - { type: object, required: [x, y, width, height, rotation, order], properties: { x: { type: integer }, y: { type: integer }, width: { type: integer }, height: { type: integer }, rotation: { type: integer }, order: { type: integer } } }
         schedules:
           type: array
           items: { $ref: "#/components/schemas/ManifestSchedule" }

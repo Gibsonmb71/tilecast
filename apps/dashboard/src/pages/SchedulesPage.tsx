@@ -22,6 +22,7 @@ import { useAuth } from "../auth/AuthProvider";
 import { PlayerPolicyEditor } from "../settings/PlayerPolicyEditor";
 import { AirPlayPresentDialog } from "../components/AirPlayPresentDialog";
 import { QuickPresentDialog } from "../components/QuickPresentDialog";
+import { SpanWallEditor } from "../components/SpanWallEditor";
 
 const canManage = (role?: string) =>
   role === "owner" || role === "administrator";
@@ -386,6 +387,12 @@ export function GroupDetailPage() {
           </div>
         </dl>
       </Panel>
+
+      <SpanWallEditor
+        group={groupData}
+        manageable={manageable}
+        csrfToken={csrf}
+      />
 
       {manageable && groupData.screens.length > 0 && (
         <Panel className="sync-group-panel">
