@@ -548,6 +548,20 @@ describe("AirPlay persisted preparation state", () => {
     expect(result.calls).toHaveLength(0);
   });
 
+  it("discards a legacy-shaped session with a string version", async () => {
+    const result = testManager(() => new FakeProcess());
+    result.files.set("airplay-session.json", {
+      ...config("gateway"),
+      version: "3",
+    });
+
+    const status = await result.manager.recoverSession("vah264dec");
+
+    expect(status).toBeNull();
+    expect(result.files.has("airplay-session.json")).toBe(false);
+    expect(result.calls).toHaveLength(0);
+  });
+
   it("rejects a persisted audio mode outside the v1 contract", async () => {
     const result = testManager(() => new FakeProcess());
     const legacy = {

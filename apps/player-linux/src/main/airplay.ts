@@ -782,7 +782,7 @@ export class AirplayManager {
     // Discard it: the server sees the session cleared and ends it, which is
     // recoverable, whereas guessing at an unknown layout is not.
     if (
-      typeof envelope.version === "number" ||
+      Object.prototype.hasOwnProperty.call(raw, "version") ||
       raw["provider"] !== "airplay" ||
       typeof raw["sessionId"] !== "string" ||
       typeof raw["role"] !== "string"
