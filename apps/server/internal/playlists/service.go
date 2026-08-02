@@ -16,6 +16,7 @@ import (
 	"github.com/tilecast/tilecast/apps/server/internal/contentdefs"
 	"github.com/tilecast/tilecast/apps/server/internal/plugins"
 	"github.com/tilecast/tilecast/apps/server/internal/scheduling"
+	"github.com/tilecast/tilecast/apps/server/internal/span"
 )
 
 type Service struct {
@@ -26,6 +27,7 @@ type Service struct {
 	definitions           *contentdefs.Catalog
 	plugins               PluginProjector
 	presentationOverrides PresentationOverrideProjector
+	span                  SpanProjector
 	// approvalGate refuses assignment of content that is waiting for review.
 	// Nil means this installation does not gate assignment at all. It runs inside
 	// the assignment transaction so the answer cannot go stale before the commit.
@@ -41,6 +43,11 @@ type PluginProjector interface {
 	ManifestForScreen(context.Context, uuid.UUID) ([]plugins.ManifestPlugin, error)
 }
 
+type SpanProjector interface {
+	ViewportForScreen(context.Context, uuid.UUID) (*span.Panel, *span.Canvas, error)
+	PrepareVideo(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (span.VideoPanel, error)
+}
+
 func NewService(db *pgxpool.Pool, notifier Notifier) *Service {
 	return &Service{db: db, notifier: notifier, definitions: contentdefs.MustLoad()}
 }
@@ -49,6 +56,7 @@ func (s *Service) SetScheduling(service *scheduling.Service)          { s.schedu
 func (s *Service) SetSourceProjector(projector SourceProjector)       { s.sources = projector }
 func (s *Service) SetContentDefinitions(catalog *contentdefs.Catalog) { s.definitions = catalog }
 func (s *Service) SetPluginProjector(projector PluginProjector)       { s.plugins = projector }
+func (s *Service) SetSpanProjector(projector SpanProjector)           { s.span = projector }
 func (s *Service) SetPresentationOverrides(projector PresentationOverrideProjector) {
 	s.presentationOverrides = projector
 }
@@ -1303,6 +1311,34 @@ func (s *Service) Assignment(ctx context.Context, screenID uuid.UUID) (Assignmen
 	return a, nil
 }
 
+func (s *Service) projectSpanVideo(ctx context.Context, screenID, assetID, sourceVariantID uuid.UUID, asset *ManifestAsset, enabled bool) (uuid.UUID, error) {
+	if !enabled || s.span == nil {
+		return sourceVariantID, nil
+	}
+	panel, err := s.span.PrepareVideo(ctx, screenID, assetID, sourceVariantID)
+	if errors.Is(err, span.ErrNotFound) {
+		return sourceVariantID, nil
+	}
+	if err != nil {
+		return uuid.Nil, err
+	}
+	if panel.Status != "ready" {
+		if panel.Status == "failed" {
+			return uuid.Nil, fmt.Errorf("%w: Span video preparation failed", ErrConflict)
+		}
+		return uuid.Nil, fmt.Errorf("%w: Span video panel is still preparing", ErrConflict)
+	}
+	asset.VariantID = panel.ID
+	asset.MIMEType = panel.MIMEType
+	asset.FileSize = panel.FileSize
+	asset.SHA256 = panel.SHA256
+	asset.DownloadPath = panel.DownloadPath
+	width, height := panel.Width, panel.Height
+	duration := panel.DurationSeconds
+	asset.Width, asset.Height, asset.DurationSeconds = &width, &height, &duration
+	return panel.ID, nil
+}
+
 func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manifest, string, error) {
 	if err := s.reconcilePresentationCatalog(ctx); err != nil {
 		return Manifest{}, "", err
@@ -1338,6 +1374,22 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 		prefetch, grace, _ = s.scheduling.Config()
 	}
 	manifest := Manifest{SchemaVersion: 11, ManifestVersion: assignment.ManifestVersion, ScreenID: screenID, GeneratedAt: changed, ServerTime: now, Mode: "presentation", Assets: []ManifestAsset{}, Playlists: []ManifestPlaylist{}, Layouts: []ManifestLayout{}, Schedules: []ManifestSchedule{}, Websites: []ManifestWebsite{}, Widgets: []ManifestWidget{}, DataSources: []ManifestDataSource{}, Plugins: []plugins.ManifestPlugin{}, PrefetchHorizonDays: prefetch, ActivationGraceSeconds: grace}
+	spanEnabled := false
+	if s.span != nil {
+		panel, canvas, spanErr := s.span.ViewportForScreen(ctx, screenID)
+		if errors.Is(spanErr, span.ErrNotReady) {
+			return Manifest{}, "", fmt.Errorf("%w: Span geometry is incomplete", ErrConflict)
+		}
+		if spanErr != nil {
+			return Manifest{}, "", spanErr
+		}
+		if panel != nil && canvas != nil {
+			spanEnabled = true
+			manifest.SchemaVersion = 15
+			manifest.Canvas = &ManifestCanvas{Width: canvas.Width, Height: canvas.Height}
+			manifest.Viewport = &ManifestViewport{X: panel.X, Y: panel.Y, Width: panel.Width, Height: panel.Height, Rotation: panel.Rotation, Order: panel.PanelOrder, BezelLeft: panel.BezelLeft, BezelTop: panel.BezelTop, BezelRight: panel.BezelRight, BezelBottom: panel.BezelBottom}
+		}
+	}
 	if s.plugins != nil {
 		manifest.Plugins, err = s.plugins.ManifestForScreen(ctx, screenID)
 		if err != nil {
@@ -1502,7 +1554,7 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 	seen := map[uuid.UUID]bool{}
 	seenPlaylists := map[uuid.UUID]bool{}
 	if presentationOverride != nil && presentationOverride.ContentType == "asset" {
-		virtual, projectionErr := s.projectPresentationAsset(ctx, &manifest, *presentationOverride, seen)
+		virtual, projectionErr := s.projectPresentationAsset(ctx, screenID, &manifest, *presentationOverride, seen, spanEnabled)
 		if projectionErr != nil {
 			return Manifest{}, "", projectionErr
 		}
@@ -1609,8 +1661,15 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 			if err != nil {
 				return Manifest{}, "", err
 			}
-			asset.DownloadPath = "/api/v1/player/assets/" + asset.AssetID.String() + "/variants/" + asset.VariantID.String()
-			mp.Items = append(mp.Items, ManifestItem{ID: item.ID, AssetID: item.AssetID, AssetType: item.AssetType, VariantID: item.VariantID, DurationMS: item.DurationMS, FitMode: item.FitMode, Transition: item.Transition, AudioEnabled: item.AudioEnabled, Volume: item.Volume, VideoStartOffsetMS: item.VideoStartOffsetMS, VideoEndOffsetMS: item.VideoEndOffsetMS, DeliveryPolicy: item.DeliveryPolicy, AvailableFrom: item.AvailableFrom, ExpiresAt: item.ExpiresAt})
+			sourceVariantID := asset.VariantID
+			assetVariantID, projectionErr := s.projectSpanVideo(ctx, screenID, item.AssetID, sourceVariantID, &asset, spanEnabled && item.AssetType == "video")
+			if projectionErr != nil {
+				return Manifest{}, "", projectionErr
+			}
+			if !spanEnabled || item.AssetType != "video" {
+				asset.DownloadPath = "/api/v1/player/assets/" + asset.AssetID.String() + "/variants/" + asset.VariantID.String()
+			}
+			mp.Items = append(mp.Items, ManifestItem{ID: item.ID, AssetID: item.AssetID, AssetType: item.AssetType, VariantID: &assetVariantID, DurationMS: item.DurationMS, FitMode: item.FitMode, Transition: item.Transition, AudioEnabled: item.AudioEnabled, Volume: item.Volume, VideoStartOffsetMS: item.VideoStartOffsetMS, VideoEndOffsetMS: item.VideoEndOffsetMS, DeliveryPolicy: item.DeliveryPolicy, AvailableFrom: item.AvailableFrom, ExpiresAt: item.ExpiresAt})
 			if !seen[asset.VariantID] {
 				manifest.Assets = append(manifest.Assets, asset)
 				seen[asset.VariantID] = true
@@ -1652,7 +1711,14 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 			if err != nil {
 				return Manifest{}, "", fmt.Errorf("%w: Layout Asset unavailable", ErrConflict)
 			}
-			asset.DownloadPath = "/api/v1/player/assets/" + asset.AssetID.String() + "/variants/" + asset.VariantID.String()
+			sourceVariantID := asset.VariantID
+			_, projectionErr := s.projectSpanVideo(ctx, screenID, dependency.ID, sourceVariantID, &asset, spanEnabled && strings.HasPrefix(asset.MIMEType, "video/"))
+			if projectionErr != nil {
+				return Manifest{}, "", projectionErr
+			}
+			if !spanEnabled || !strings.HasPrefix(asset.MIMEType, "video/") {
+				asset.DownloadPath = "/api/v1/player/assets/" + asset.AssetID.String() + "/variants/" + asset.VariantID.String()
+			}
 			if !seen[asset.VariantID] {
 				manifest.Assets = append(manifest.Assets, asset)
 				seen[asset.VariantID] = true
@@ -1822,7 +1888,7 @@ func (s *Service) BuildManifest(ctx context.Context, screenID uuid.UUID) (Manife
 // playlist shape used by the normal Player renderer. This keeps Quick Present
 // lightweight without creating hidden playlists that would leak into the
 // content library or require cleanup after expiry.
-func (s *Service) projectPresentationAsset(ctx context.Context, manifest *Manifest, override PresentationOverride, seen map[uuid.UUID]bool) (ManifestPlaylist, error) {
+func (s *Service) projectPresentationAsset(ctx context.Context, screenID uuid.UUID, manifest *Manifest, override PresentationOverride, seen map[uuid.UUID]bool, spanEnabled bool) (ManifestPlaylist, error) {
 	var name, assetType, status string
 	var availableFrom, expiresAt *time.Time
 	if err := s.db.QueryRow(ctx, `SELECT name,type,processing_status,available_from,expires_at FROM assets WHERE id=$1 AND deleted_at IS NULL AND archived_at IS NULL AND origin='library' AND system_managed=FALSE`, override.ContentID).Scan(&name, &assetType, &status, &availableFrom, &expiresAt); err != nil {
@@ -1839,12 +1905,19 @@ func (s *Service) projectPresentationAsset(ctx context.Context, manifest *Manife
 		if err := s.db.QueryRow(ctx, `SELECT v.asset_id,v.id,v.mime_type,encode(v.sha256,'hex'),v.file_size,v.width,v.height,v.duration_seconds FROM asset_variants v WHERE v.asset_id=$1 AND v.deleted_at IS NULL AND v.player_compatible=TRUE ORDER BY CASE v.kind WHEN 'playback' THEN 0 WHEN 'original' THEN 1 ELSE 2 END LIMIT 1`, override.ContentID).Scan(&asset.AssetID, &asset.VariantID, &asset.MIMEType, &asset.SHA256, &asset.FileSize, &asset.Width, &asset.Height, &asset.DurationSeconds); err != nil {
 			return ManifestPlaylist{}, fmt.Errorf("%w: Quick Present media variant is unavailable", ErrConflict)
 		}
-		asset.DownloadPath = "/api/v1/player/assets/" + asset.AssetID.String() + "/variants/" + asset.VariantID.String()
+		sourceVariantID := asset.VariantID
+		projectedVariantID, projectionErr := s.projectSpanVideo(ctx, screenID, override.ContentID, sourceVariantID, &asset, spanEnabled && assetType == "video")
+		if projectionErr != nil {
+			return ManifestPlaylist{}, projectionErr
+		}
+		if !spanEnabled || assetType != "video" {
+			asset.DownloadPath = "/api/v1/player/assets/" + asset.AssetID.String() + "/variants/" + asset.VariantID.String()
+		}
 		if !seen[asset.VariantID] {
 			manifest.Assets = append(manifest.Assets, asset)
 			seen[asset.VariantID] = true
 		}
-		item.VariantID = &asset.VariantID
+		item.VariantID = &projectedVariantID
 		if assetType == "image" {
 			duration := int64(10_000)
 			item.DurationMS = &duration

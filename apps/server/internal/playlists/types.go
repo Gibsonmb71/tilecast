@@ -219,6 +219,8 @@ type Manifest struct {
 	// Remove it once no fielded Player predates the rename.
 	LegacyTakeover       *ManifestTakeover  `json:"emergency,omitempty"`
 	SyncGroup            *ManifestSyncGroup `json:"syncGroup,omitempty"`
+	Canvas               *ManifestCanvas    `json:"canvas,omitempty"`
+	Viewport             *ManifestViewport  `json:"viewport,omitempty"`
 	Layout               *ManifestLayout    `json:"layout,omitempty"`
 	DirectFallbackLayout *ManifestLayout    `json:"directFallbackLayout,omitempty"`
 	Layouts              []ManifestLayout   `json:"layouts"`
@@ -244,6 +246,24 @@ type ManifestLayout struct {
 type ManifestSyncGroup struct {
 	ID            uuid.UUID `json:"id"`
 	PlaybackEpoch time.Time `json:"playbackEpoch"`
+}
+
+type ManifestCanvas struct {
+	Width  int `json:"width"`
+	Height int `json:"height"`
+}
+
+type ManifestViewport struct {
+	X           int `json:"x"`
+	Y           int `json:"y"`
+	Width       int `json:"width"`
+	Height      int `json:"height"`
+	Rotation    int `json:"rotation"`
+	Order       int `json:"order"`
+	BezelLeft   int `json:"bezelLeft,omitempty"`
+	BezelTop    int `json:"bezelTop,omitempty"`
+	BezelRight  int `json:"bezelRight,omitempty"`
+	BezelBottom int `json:"bezelBottom,omitempty"`
 }
 
 // ManifestWidget is a renderable widget projected into the manifest. Its configuration

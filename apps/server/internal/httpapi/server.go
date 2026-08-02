@@ -33,6 +33,7 @@ import (
 	"github.com/tilecast/tilecast/apps/server/internal/scheduling"
 	"github.com/tilecast/tilecast/apps/server/internal/settings"
 	"github.com/tilecast/tilecast/apps/server/internal/snapshots"
+	"github.com/tilecast/tilecast/apps/server/internal/span"
 	"github.com/tilecast/tilecast/apps/server/internal/updates"
 )
 
@@ -55,6 +56,7 @@ type Dependencies struct {
 	Integrations        *integrations.Service
 	Approvals           *approvals.Service
 	Snapshots           *snapshots.Service
+	Span                *span.Service
 	DB                  *pgxpool.Pool
 	Logger              *slog.Logger
 	CookieName          string
@@ -104,6 +106,7 @@ type server struct {
 	integrations                  *integrations.Service
 	approvals                     *approvals.Service
 	snapshots                     *snapshots.Service
+	span                          *span.Service
 	liveStreams                   *livestream.Service
 	releasePublishTokenHash       [32]byte
 	releasePublishTokenConfigured bool
@@ -153,6 +156,7 @@ func New(deps Dependencies) http.Handler {
 		integrations:         deps.Integrations,
 		approvals:            deps.Approvals,
 		snapshots:            deps.Snapshots,
+		span:                 deps.Span,
 		liveStreams:          livestream.NewService(deps.Devices),
 		startedAt:            time.Now(),
 		backups:              deps.Backups,
