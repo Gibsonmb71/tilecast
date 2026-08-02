@@ -438,10 +438,11 @@ func TestAirplayMulticastFallbackRestartsPreparationOverUnicast(t *testing.T) {
 		if status != "preparing" || transport != "unicast" || multicast != nil {
 			t.Fatalf("fallback = %q/%q multicast=%v, want a preparing unicast session", status, transport, multicast)
 		}
-		// The retry needs its own window; reusing the exhausted one would fail
-		// the unicast attempt on the very next reconciliation.
-		if !deadline.After(time.Now()) {
-			t.Fatalf("preparation deadline = %s, want it restarted for the unicast attempt", deadline)
+		// The retry needs a newly stamped window, not merely a future one:
+		// reusing the exhausted deadline would fail the unicast attempt on the
+		// very next reconciliation.
+		if !deadline.After(originalDeadline) {
+			t.Fatalf("preparation deadline = %s, want it re-stamped past the original %s", deadline, originalDeadline)
 		}
 		var preparingParticipants int
 		if err := env.pool.QueryRow(ctx, `SELECT count(*) FROM external_presentation_screen_states WHERE session_id=$1 AND state='preparing'`, group.sessionID).Scan(&preparingParticipants); err != nil {
