@@ -2864,29 +2864,39 @@ export function ScreenDetailPage() {
                 {playerHistory.data.items.map((hardware) => (
                   <article
                     key={hardware.id}
-                    className="screen-hardware-history__item"
+                    className={
+                      hardware.retiredAt
+                        ? "screen-hardware-history__item screen-hardware-history__item--retired"
+                        : "screen-hardware-history__item"
+                    }
                   >
-                    <div>
+                    <div className="screen-hardware-history__identity">
                       <strong>
                         {hardware.manufacturer} {hardware.model}
                       </strong>
-                      <span>
+                      <span className="screen-hardware-history__specs">
                         {hardware.platform} · {hardware.playerVersion} ·{" "}
                         {hardware.screenWidth}×{hardware.screenHeight}
                       </span>
                     </div>
-                    <div>
-                      <span>
+                    <div className="screen-hardware-history__lifecycle">
+                      <span className="screen-hardware-history__state">
+                        <span aria-hidden="true" />
                         {hardware.retiredAt
                           ? `Retired ${new Date(hardware.retiredAt).toLocaleDateString()}`
                           : "Current hardware"}
                       </span>
-                      <small>
-                        Paired{" "}
-                        {new Date(hardware.pairedAt).toLocaleDateString()}
-                        {hardware.retirementReason
-                          ? ` · ${hardware.retirementReason}`
-                          : ""}
+                      <small className="screen-hardware-history__meta">
+                        <span>
+                          Paired{" "}
+                          {new Date(hardware.pairedAt).toLocaleDateString()}
+                        </span>
+                        {hardware.retirementReason ? (
+                          <>
+                            <span aria-hidden="true">·</span>
+                            <span>{hardware.retirementReason}</span>
+                          </>
+                        ) : null}
                       </small>
                     </div>
                   </article>
