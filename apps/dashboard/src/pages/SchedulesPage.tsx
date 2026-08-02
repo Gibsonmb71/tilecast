@@ -24,20 +24,10 @@ import { AirPlayPresentDialog } from "../components/AirPlayPresentDialog";
 import { QuickPresentDialog } from "../components/QuickPresentDialog";
 import { SpanWallEditor } from "../components/SpanWallEditor";
 import { DisplayControlGroupActions } from "../components/DisplayControlGroupActions";
+import { ScreenManagementTabs } from "../components/ScreenManagementTabs";
 
 const canManage = (role?: string) =>
   role === "owner" || role === "administrator";
-
-function ScreenManagementTabs() {
-  return (
-    <nav className="view-tabs sync-groups-tabs" aria-label="Screen management">
-      <Link to="/screens">Screens</Link>
-      <Link to="/groups" aria-current="page">
-        Display Groups
-      </Link>
-    </nav>
-  );
-}
 
 function groupFallbackName(
   group: Pick<ScreenGroup, "layoutName" | "playlistName">,
@@ -105,7 +95,7 @@ export function GroupsPage() {
           ) : undefined
         }
       />
-      <ScreenManagementTabs />
+      <ScreenManagementTabs current="groups" className="sync-groups-tabs" />
       {q.isError && (
         <div className="notice notice--error" role="alert">
           Display Groups could not be loaded. Try refreshing the page.
@@ -363,7 +353,7 @@ export function GroupDetailPage() {
         csrfToken={csrf}
         onClose={() => setQuickPresentOpen(false)}
       />
-      <ScreenManagementTabs />
+      <ScreenManagementTabs current="groups" className="sync-groups-tabs" />
 
       <Panel className="sync-group-overview">
         <dl>
