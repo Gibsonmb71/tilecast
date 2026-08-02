@@ -2405,7 +2405,10 @@ button.organizer-chip:disabled {
 .snapshot-history > .notice {
   margin: 0;
 }
-.snapshot-history > .table-loading {
+/* This panel is already inside .snapshot-history-card, so the slot states drop
+   their own surface rather than drawing a second card inside the first. */
+.snapshot-history > .table-loading,
+.snapshot-history > .empty-card {
   padding: var(--tc-space-5);
   background: transparent;
   border: 0;
@@ -3024,6 +3027,44 @@ button.organizer-chip:disabled {
   background: var(--tc-brand-soft);
   border: 1px solid var(--tc-status-success-border);
   border-radius: var(--tc-radius-md);
+}
+/* The in-panel empty state.
+
+   .screen-empty above is the page-sized version: it owns the whole viewport
+   area when a fleet has no screens. .empty-card is the small one that sits in
+   a slot inside a panel or settings subsection when a list came back empty —
+   backups, webhooks, integration tokens, deliveries, snapshots, the review
+   queue, and the content-health all-clear. In most of those it is the sibling
+   branch of the same ternary as .table-loading, so it carries the same surface
+   and reads as the same slot rather than as bare text on the page background.
+   Inner rhythm matches .bulk-empty in pages/FleetBulkPage.css, which is this
+   pattern already namespaced for the Bulk changes page.
+
+   Not the EmptyState component from components/ui: that renders a standalone
+   .empty-state card at min(620px, 100%) with page-level padding and an <h2>,
+   and it takes title and message as strings. Dropping it into these eight
+   slots would nest a wide card inside a panel that already has a border, and
+   two of the messages carry a link or interpolated thresholds rather than a
+   plain string. */
+.empty-card {
+  display: grid;
+  justify-items: center;
+  gap: var(--tc-space-1);
+  padding: var(--tc-space-8) var(--tc-space-4);
+  color: var(--tc-text-secondary);
+  font: var(--tc-text-body);
+  text-align: center;
+  background: var(--tc-bg-surface);
+  border: 1px solid var(--tc-border-default);
+  border-radius: var(--tc-radius-panel);
+}
+/* Some of these lead with a one-line headline over the explanation. */
+.empty-card strong {
+  color: var(--tc-text-primary);
+  font: var(--tc-text-label);
+}
+.empty-card p {
+  margin: 0;
 }
 .permission-note {
   padding: 8px 12px;
