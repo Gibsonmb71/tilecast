@@ -125,6 +125,7 @@ import type {
   ManifestPlaylist,
   PlayerCommand,
   PlayerConfig,
+  SpanViewport,
 } from "./types";
 
 const log = logger("player");
@@ -134,6 +135,19 @@ const PLAYBACK_FLAGS_FILE = "playback-flags.json";
 const SELECTION_EVAL_INTERVAL_MS = 30_000;
 const SUPERVISOR_TICK_MS = 15_000;
 const DEFAULT_STATUS_INTERVAL_S = 60;
+
+function spanViewport(manifest: Manifest): SpanViewport | undefined {
+  const canvas = manifest.canvas;
+  const viewport = manifest.viewport;
+  if (!canvas || !viewport) {
+    return undefined;
+  }
+  return {
+    ...viewport,
+    canvasWidth: canvas.width,
+    canvasHeight: canvas.height,
+  };
+}
 
 export interface PresentationItem {
   id: string;
@@ -146,6 +160,8 @@ export interface PresentationItem {
   volume: number;
   videoStartOffsetMs: number | null;
   videoEndOffsetMs: number | null;
+  /** Logical wall viewport, present only for Span content. */
+  viewport?: SpanViewport;
   website?: {
     loadTimeoutSeconds: number;
     refreshIntervalSeconds: number | null;
@@ -1681,12 +1697,17 @@ export class PlayerRuntime {
       if (!layout) {
         return null;
       }
-      const payload = renderLayout(layout.document, {
-        manifest,
-        widgets: maps.widgets,
-        dataSources: maps.dataSources,
-        at: new Date(),
-      });
+      const viewport = spanViewport(manifest);
+      const payload = renderLayout(
+        layout.document,
+        {
+          manifest,
+          widgets: maps.widgets,
+          dataSources: maps.dataSources,
+          at: new Date(),
+        },
+        viewport,
+      );
       if (!payload) {
         return null; // invalid layout: skip this item, keep the rest
       }
@@ -1701,6 +1722,7 @@ export class PlayerRuntime {
         videoStartOffsetMs: null,
         videoEndOffsetMs: null,
         layout: payload,
+        viewport,
       };
     }
 
@@ -1796,6 +1818,7 @@ export class PlayerRuntime {
       volume: item.volume,
       videoStartOffsetMs: item.videoStartOffsetMs ?? null,
       videoEndOffsetMs: item.videoEndOffsetMs ?? null,
+      viewport: kind === "image" ? spanViewport(manifest) : undefined,
     };
   }
 

@@ -700,4 +700,55 @@ describe("renderLayout", () => {
       ),
     ).toBeNull();
   });
+
+  it("clips layout zones to a Span viewport", () => {
+    const document: LayoutDocument = {
+      schemaVersion: 2,
+      canvas: {
+        width: 3840,
+        height: 1080,
+        orientation: "landscape",
+        backgroundColor: "#101418",
+      },
+      placements: [
+        {
+          id: "wall-zone",
+          type: "primitive",
+          name: "wall title",
+          x: 1800,
+          y: 0,
+          width: 1200,
+          height: 200,
+          layer: 1,
+          opacity: 1,
+          visible: true,
+          locked: false,
+          primitive: { kind: "text", text: "wall" },
+        },
+      ],
+    };
+    const payload = renderLayout(
+      document,
+      { manifest, widgets: new Map(), dataSources: new Map(), at },
+      {
+        x: 1920,
+        y: 0,
+        width: 1920,
+        height: 1080,
+        rotation: 0,
+        order: 1,
+        canvasWidth: 3840,
+        canvasHeight: 1080,
+      },
+    )!;
+    expect(payload.canvasWidth).toBe(1920);
+    expect(payload.canvasHeight).toBe(1080);
+    expect(payload.zones[0]).toMatchObject({
+      x: 0,
+      y: 0,
+      width: 1080,
+      height: 200,
+    });
+    expect(payload.backgroundImageViewport?.x).toBe(1920);
+  });
 });

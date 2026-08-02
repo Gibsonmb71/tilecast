@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.tilecast.player.network.LayoutDocument
 import org.tilecast.player.network.LayoutPlacement
+import org.tilecast.player.network.ManifestViewport
 import org.tilecast.player.network.StructuredSourceConfig
 import org.tilecast.player.R
 import java.time.Instant
@@ -49,11 +50,16 @@ fun LayoutPrimitiveCanvas(
     structuredSources: Map<String, StructuredSourceConfig> = emptyMap(),
     placementIds: Set<String>? = null,
     drawBackground: Boolean = true,
+    viewport: ManifestViewport? = null,
 ) {
     var now by remember { mutableStateOf(Instant.now()) }
     LaunchedEffect(structuredSources) { while (true) { now = Instant.now(); kotlinx.coroutines.delay(30_000) } }
     BoxWithConstraints(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        val sourceRatio = document.canvas.width.toFloat() / document.canvas.height
+        val sourceWidth = viewport?.width ?: document.canvas.width
+        val sourceHeight = viewport?.height ?: document.canvas.height
+        val originX = viewport?.x ?: 0
+        val originY = viewport?.y ?: 0
+        val sourceRatio = sourceWidth.toFloat() / sourceHeight
         val targetRatio = maxWidth.value / maxHeight.value
         val width: Dp
         val height: Dp
@@ -64,8 +70,8 @@ fun LayoutPrimitiveCanvas(
             width = maxWidth
             height = width / sourceRatio
         }
-        val sx = width.value / document.canvas.width
-        val sy = height.value / document.canvas.height
+        val sx = width.value / sourceWidth
+        val sy = height.value / sourceHeight
         val hiddenGroups = document.placements.filter { it.primitive?.kind == "group" && it.primitive.binding?.hideWhenEmpty == true }.filter { group ->
             val binding = group.primitive?.binding ?: return@filter false
             structuredSources[binding.dataSourceId]?.let { resolveLayoutBinding(binding, it, now).isBlank() } ?: true
@@ -83,7 +89,13 @@ fun LayoutPrimitiveCanvas(
                     placementGroupVisible(it, hiddenGroups) &&
                     (placementIds == null || it.id in placementIds)
             }.sortedBy { it.layer }.forEach { placement ->
-                PrimitivePlacement(placement, sx, sy, structuredSources, now)
+                val left = maxOf(placement.x, originX.toFloat())
+                val top = maxOf(placement.y, originY.toFloat())
+                val right = minOf(placement.x + placement.width, (originX + sourceWidth).toFloat())
+                val bottom = minOf(placement.y + placement.height, (originY + sourceHeight).toFloat())
+                if (right > left && bottom > top) {
+                    PrimitivePlacement(placement.copy(x = left - originX, y = top - originY, width = right - left, height = bottom - top), sx, sy, structuredSources, now)
+                }
             }
         }
     }

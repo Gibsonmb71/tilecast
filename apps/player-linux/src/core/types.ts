@@ -91,6 +91,29 @@ export interface ManifestAsset {
   downloadPath: string;
 }
 
+export interface ManifestCanvas {
+  width: number;
+  height: number;
+}
+
+export interface ManifestViewport {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  order: number;
+  bezelLeft?: number;
+  bezelTop?: number;
+  bezelRight?: number;
+  bezelBottom?: number;
+}
+
+export interface SpanViewport extends ManifestViewport {
+  canvasWidth: number;
+  canvasHeight: number;
+}
+
 export interface ManifestCountdownBarConfig {
   name: string;
   message: string;
@@ -239,6 +262,8 @@ export interface Manifest {
   widgets?: unknown[];
   dataSources?: unknown[];
   syncGroup?: { id: string; playbackEpoch?: string } | null;
+  canvas?: ManifestCanvas | null;
+  viewport?: ManifestViewport | null;
 }
 
 // ---------------------------------------------------------------------------
