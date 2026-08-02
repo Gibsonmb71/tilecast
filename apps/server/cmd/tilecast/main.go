@@ -18,6 +18,7 @@ import (
 	"github.com/tilecast/tilecast/apps/server/internal/approvals"
 	"github.com/tilecast/tilecast/apps/server/internal/auth"
 	"github.com/tilecast/tilecast/apps/server/internal/backup"
+	"github.com/tilecast/tilecast/apps/server/internal/campaigns"
 	"github.com/tilecast/tilecast/apps/server/internal/config"
 	"github.com/tilecast/tilecast/apps/server/internal/contentdefs"
 	"github.com/tilecast/tilecast/apps/server/internal/contenthealth"
@@ -137,11 +138,16 @@ func serve() {
 	formService := forms.NewService(db, mediaService)
 	formService.SetContentDefinitions(contentDefinitions)
 	formService.SetAssetInvalidator(playlistService)
-	schedulingService := scheduling.NewService(db, deviceService, scheduling.Limits{MaxSchedules: cfg.Scheduling.MaxSchedules, MaxTargetsPerSchedule: cfg.Scheduling.MaxTargetsPerSchedule, MaxGroupsPerScreen: cfg.Scheduling.MaxGroupsPerScreen, PrefetchDays: cfg.Scheduling.PrefetchDays, ActivationGraceSeconds: cfg.Scheduling.ActivationGraceSeconds, ClockSkewWarningSeconds: cfg.Scheduling.ClockSkewWarningSeconds})
+	scheduleLimits := scheduling.Limits{MaxSchedules: cfg.Scheduling.MaxSchedules, MaxTargetsPerSchedule: cfg.Scheduling.MaxTargetsPerSchedule, MaxGroupsPerScreen: cfg.Scheduling.MaxGroupsPerScreen, PrefetchDays: cfg.Scheduling.PrefetchDays, ActivationGraceSeconds: cfg.Scheduling.ActivationGraceSeconds, ClockSkewWarningSeconds: cfg.Scheduling.ClockSkewWarningSeconds}
+	schedulingService := scheduling.NewService(db, deviceService, scheduleLimits)
 	schedulingService.SetPresentationReadiness(playlistService)
 	playlistService.SetScheduling(schedulingService)
 	settingsService := settings.NewService(db, deviceService, settings.HardLimits{MaxUploadBytes: cfg.Media.MaxUploadBytes, MaxTakeoverMinutes: cfg.Operations.MaxTakeoverDurationHours * 60, MaxWebsiteTimeout: cfg.Website.MaxTimeoutSeconds, MaxPrefetchDays: cfg.Scheduling.PrefetchDays, PrivateHTTPAllowed: cfg.Website.AllowPrivateHTTP})
 	schedulingService.SetOrganizationSettingsProvider(settingsService)
+	campaignService := campaigns.NewService(db, deviceService)
+	campaignService.SetPresentationChecker(playlistService)
+	campaignService.SetScheduler(schedulingService)
+	campaignService.SetSchedulingLimits(scheduleLimits)
 	alertService := alerts.NewService(db, deviceService, playlistService, logger, cfg.PublicURL, time.Duration(cfg.Operations.MaxTakeoverDurationHours)*time.Hour)
 	updateService, updateErr := updates.NewService(db, updates.NewGitHubProvider(cfg.Updates.GitHubToken), updates.Config{Root: cfg.Updates.Root, TrustedPublicKey: cfg.Updates.TrustedPublicKey, MaxAPKBytes: cfg.Updates.MaxAPKBytes, GitHubClientID: cfg.Updates.GitHubClientID, GitHubTokenConfigured: strings.TrimSpace(cfg.Updates.GitHubToken) != ""})
 	if updateErr != nil {
@@ -208,6 +214,21 @@ func serve() {
 	fleetService := fleetops.NewService(db, playlistService, deviceService, logger)
 	integrationService := integrations.NewService(db)
 	approvalService := approvals.NewService(db, settingsService)
+	approvalService.SetProvider(approvals.TypePlaylist, playlistService)
+	approvalService.SetProvider(approvals.TypeLayout, layoutService)
+	approvalService.SetProvider(approvals.TypeCampaign, campaignService)
+	if err := approvalService.ReconcileScheduled(ctx); err != nil {
+		logger.Error("scheduled publication startup reconciliation failed", "error", err)
+	}
+	// Low-level Layout callers cannot publish around the editorial policy. The
+	// HTTP publication path goes through approvals.Service and records the
+	// immutable submission/publication history.
+	layoutService.SetPublicationGuard(func(ctx context.Context, _ uuid.UUID, _ uuid.UUID, _ int64) error {
+		if approvalService.Policy(ctx) != approvals.PolicyOff {
+			return approvals.ErrReviewRequired
+		}
+		return nil
+	})
 	// The snapshot service drives scheduled captures through the same live
 	// preview lease Studio uses, so there is one capture path.
 	snapshotService := snapshots.NewService(db, settingsService, previews.NewService(db, deviceService), logger)
@@ -254,6 +275,7 @@ func serve() {
 		Media:               mediaService,
 		Forms:               formService,
 		Playlists:           playlistService,
+		Campaigns:           campaignService,
 		Presentations:       presentationService,
 		Plugins:             pluginService,
 		Layouts:             layoutService,
@@ -313,6 +335,9 @@ func serve() {
 			case <-shutdownCtx.Done():
 				return
 			case <-ticker.C:
+				if err := approvalService.ReconcileScheduled(shutdownCtx); err != nil {
+					logger.Error("scheduled publication reconciliation failed", "error", err)
+				}
 				deviceService.ExpireAirplaySessions(shutdownCtx)
 				handler.ReconcileAirplaySessions(shutdownCtx)
 				updateService.Cleanup(shutdownCtx, cfg.Updates.RetentionDays)

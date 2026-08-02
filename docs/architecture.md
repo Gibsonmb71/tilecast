@@ -94,6 +94,17 @@ Live information sources may expose multiple named datasets. Transit emits depar
 
 Layout drafts are mutable JSON documents guarded by an optimistic draft revision. Publishing inserts an immutable revision with a canonical document SHA-256 and materialized App, Asset, and playlist dependencies. Published history is append-only; restoring history creates a new draft. This keeps usage checks relational and ensures Players can only activate a stable published document.
 
+Editorial publication is shared by Playlists, Layouts, and Campaigns. A
+submission stores the complete canonical snapshot a reviewer saw, so later
+working-draft edits cannot change an approval or a scheduled deployment.
+Playlist draft rows are separate from the normalized live rows used by
+manifest assembly; Campaign releases are immutable scheduling snapshots that
+materialize into ordinary `schedules` rows tagged with their Campaign and
+release IDs. Publication history is append-only, and rollback creates a new
+native revision/release rather than moving a live pointer backward. The
+server-owned scheduler and manifest invalidation path remain the only runtime
+boundary, so Players do not need to understand editorial objects.
+
 Studio's Layout editor uses the same v1 document as the server validator. Its local command history supports undo/redo independently from autosaved server revisions; pointer and keyboard edits always resolve to canvas coordinates so portrait and landscape documents remain resolution-independent. Android's native renderer scales that canvas into the available display bounds without WebView, resolves structured bindings against cached date-aware data, and preserves global layer order across primitives, Apps, Assets, and playlist zones.
 
 Manifest v5 contains only Sources referenced by playlists relevant to the authenticated screen. Source items use stream delivery; fallback images continue through the verified media-variant preparation path. The provider boundary is internal—Tilecast does not load third-party provider code or expose a marketplace.

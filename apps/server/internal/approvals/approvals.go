@@ -1,14 +1,16 @@
-// Package approvals gates content that is about to reach a screen.
+// Package approvals owns the server-side Draft -> Review -> Publish workflow.
 //
-// The model is a decision about a revision, not a submission workflow. Content
-// is pending review when its current revision has no approval; it is approved
-// when an approval exists for exactly that revision. Editing bumps the revision
-// and therefore re-opens review on its own, so no edit path has to remember to
-// re-submit anything.
+// Submissions freeze complete snapshots while the mutable authoring draft may
+// continue to change. Publication and assignment gates still check the exact
+// published revision in the same transaction, so an approval cannot silently
+// drift onto a later edit.
 package approvals
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -17,6 +19,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/tilecast/tilecast/apps/server/internal/editorial"
 	"github.com/tilecast/tilecast/apps/server/internal/settings"
 )
 
@@ -26,6 +29,7 @@ import (
 const (
 	TypePlaylist = "playlist"
 	TypeLayout   = "layout"
+	TypeCampaign = "campaign"
 )
 
 var (
@@ -34,7 +38,17 @@ var (
 	// ErrValidation marks a bad request.
 	ErrValidation = errors.New("review request is not valid")
 	// ErrNotFound is returned for unknown content.
-	ErrNotFound = errors.New("not found")
+	ErrNotFound       = errors.New("not found")
+	ErrConflict       = errors.New("editorial workflow conflict")
+	ErrReviewRequired = errors.New("content requires an approved submission before publication")
+)
+
+type ReviewPolicy string
+
+const (
+	PolicyOff          ReviewPolicy = "off"
+	PolicyContributors ReviewPolicy = "contributors"
+	PolicyEveryone     ReviewPolicy = "everyone"
 )
 
 // SettingsReader is the part of the settings service this package needs.
@@ -50,13 +64,29 @@ type Querier interface {
 
 // Service records review decisions and answers whether content may be used.
 type Service struct {
-	db       *pgxpool.Pool
-	settings SettingsReader
+	db        *pgxpool.Pool
+	settings  SettingsReader
+	providers map[string]editorial.Provider
 }
 
 // NewService builds the approvals service.
 func NewService(db *pgxpool.Pool, reader SettingsReader) *Service {
-	return &Service{db: db, settings: reader}
+	return &Service{db: db, settings: reader, providers: map[string]editorial.Provider{}}
+}
+
+func (s *Service) SetProvider(contentType string, provider editorial.Provider) {
+	if s.providers == nil {
+		s.providers = map[string]editorial.Provider{}
+	}
+	s.providers[contentType] = provider
+}
+
+func (s *Service) provider(contentType string) (editorial.Provider, error) {
+	provider := s.providers[contentType]
+	if provider == nil {
+		return nil, fmt.Errorf("%w: content type %q is not configured", ErrNotFound, contentType)
+	}
+	return provider, nil
 }
 
 // Required reports whether this installation gates assignment on review.
@@ -64,15 +94,49 @@ func NewService(db *pgxpool.Pool, reader SettingsReader) *Service {
 // Off by default. An existing installation that upgrades must not suddenly find
 // every playlist unassignable.
 func (s *Service) Required(ctx context.Context) bool {
+	return s.Policy(ctx) != PolicyOff
+}
+
+// Policy translates the new registry value and the pre-00095 boolean. An
+// unreadable policy is deliberately treated as off so an outage cannot take
+// an installation's fleet offline.
+func (s *Service) Policy(ctx context.Context) ReviewPolicy {
 	document, err := s.settings.Organization(ctx)
 	if err != nil {
-		// A settings read failure must not turn into a fleet-wide assignment
-		// block. Failing open here matches the enrollment-policy rule: an
-		// unreadable policy value means "not required".
+		return PolicyOff
+	}
+	if value, ok := document.Values["content.review_policy"].(string); ok {
+		switch ReviewPolicy(value) {
+		case PolicyContributors, PolicyEveryone:
+			return ReviewPolicy(value)
+		case PolicyOff:
+			return PolicyOff
+		}
+	}
+	if required, ok := document.Values["content.approval_required"].(bool); ok && required {
+		return PolicyEveryone
+	}
+	return PolicyOff
+}
+
+func (s *Service) AllowSelfApproval(ctx context.Context) bool {
+	document, err := s.settings.Organization(ctx)
+	if err != nil {
+		return true
+	}
+	if value, ok := document.Values["content.allow_self_approval"].(bool); ok {
+		return value
+	}
+	return true
+}
+
+func (s *Service) AutoPublishOnApproval(ctx context.Context) bool {
+	document, err := s.settings.Organization(ctx)
+	if err != nil {
 		return false
 	}
-	required, _ := document.Values["content.approval_required"].(bool)
-	return required
+	value, _ := document.Values["content.auto_publish_on_approval"].(bool)
+	return value
 }
 
 // Gate returns nil when the content may be assigned to a screen.
@@ -115,6 +179,9 @@ func (s *Service) gate(ctx context.Context, q Querier, contentType string, id uu
 	var approved bool
 	if err := q.QueryRow(ctx, `
 		SELECT EXISTS(
+			SELECT 1 FROM publication_history
+			WHERE content_type=$1 AND content_id=$2 AND content_revision=$3)
+		OR EXISTS(
 			SELECT 1 FROM content_reviews
 			WHERE content_type=$1 AND content_id=$2 AND revision=$3 AND decision='approved')`,
 		contentType, id, revision).Scan(&approved); err != nil {
@@ -309,4 +376,1099 @@ func (s *Service) Queue(ctx context.Context, state string) ([]QueueItem, error) 
 func (s *Service) PendingCount(ctx context.Context) (int, error) {
 	items, err := s.Queue(ctx, "pending")
 	return len(items), err
+}
+
+// Submission is an immutable reviewable snapshot.  WorkingRevision is the
+// author's draft number at submission time; it is intentionally not used to
+// re-read the content during approval or publication.
+type Submission struct {
+	ID                       uuid.UUID       `json:"id"`
+	ContentType              string          `json:"contentType"`
+	ContentID                uuid.UUID       `json:"contentId"`
+	ContentName              string          `json:"contentName,omitempty"`
+	WorkingRevision          int64           `json:"workingRevision"`
+	Snapshot                 json.RawMessage `json:"snapshot"`
+	SnapshotSHA256           string          `json:"snapshotSha256"`
+	SubmittedBy              *uuid.UUID      `json:"submittedBy,omitempty"`
+	SubmitterName            string          `json:"submitterName,omitempty"`
+	SubmittedAt              time.Time       `json:"submittedAt"`
+	BasedPublishedRevision   *int64          `json:"basedPublishedRevision,omitempty"`
+	BasedPublishedRevisionID *uuid.UUID      `json:"basedPublishedRevisionId,omitempty"`
+	Status                   string          `json:"status"`
+	ReviewRequired           bool            `json:"reviewRequired"`
+	AllowSelfApproval        bool            `json:"allowSelfApproval"`
+	ReviewNote               string          `json:"reviewNote,omitempty"`
+	ReviewedBy               *uuid.UUID      `json:"reviewedBy,omitempty"`
+	ReviewerName             string          `json:"reviewerName,omitempty"`
+	ReviewedAt               *time.Time      `json:"reviewedAt,omitempty"`
+	RequestedPublicationAt   *time.Time      `json:"requestedPublicationAt,omitempty"`
+	PublicationFailureReason string          `json:"publicationFailureReason,omitempty"`
+	PublishedAt              *time.Time      `json:"publishedAt,omitempty"`
+	NewerWorkingDraft        bool            `json:"newerWorkingDraft"`
+	CurrentPublishedRevision *int64          `json:"currentPublishedRevision,omitempty"`
+	AffectedScreenCount      int             `json:"affectedScreenCount"`
+	AffectedLocationCount    int             `json:"affectedLocationCount"`
+}
+
+type SubmissionList struct {
+	Items []Submission `json:"items"`
+}
+
+type PublicationResult struct {
+	Submission Submission          `json:"submission"`
+	Published  editorial.Published `json:"published"`
+}
+
+// Rollback publishes the exact snapshot represented by a previous
+// publication. It never moves a pointer backward: the provider creates a new
+// native revision and publication_history records method=rollback. Review
+// policy is evaluated again, so rollback cannot become an approval bypass.
+func (s *Service) Rollback(ctx context.Context, userID uuid.UUID, role, contentType string, contentID, publicationID uuid.UUID) (PublicationResult, error) {
+	if !canPublishContent(contentType, role) {
+		return PublicationResult{}, fmt.Errorf("%w: this role cannot roll back %s content", ErrValidation, contentType)
+	}
+	provider, err := s.provider(contentType)
+	if err != nil {
+		return PublicationResult{}, err
+	}
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return PublicationResult{}, err
+	}
+	defer tx.Rollback(ctx)
+	var historyContentType string
+	var historyContentID uuid.UUID
+	var nativeRevisionID, sourceSubmissionID, campaignReleaseID *uuid.UUID
+	var sourceDigest *string
+	if err = tx.QueryRow(ctx, `SELECT content_type,content_id,native_revision_id,submission_id,campaign_release_id,snapshot_sha256 FROM publication_history WHERE id=$1 FOR SHARE`, publicationID).Scan(&historyContentType, &historyContentID, &nativeRevisionID, &sourceSubmissionID, &campaignReleaseID, &sourceDigest); errors.Is(err, pgx.ErrNoRows) {
+		return PublicationResult{}, ErrNotFound
+	} else if err != nil {
+		return PublicationResult{}, err
+	}
+	if historyContentType != contentType || historyContentID != contentID {
+		return PublicationResult{}, fmt.Errorf("%w: publication belongs to a different content object", ErrConflict)
+	}
+	raw, err := rollbackSnapshotTx(ctx, tx, contentType, nativeRevisionID, sourceSubmissionID, campaignReleaseID)
+	if err != nil {
+		return PublicationResult{}, err
+	}
+	current, err := provider.SnapshotTx(ctx, tx, contentID)
+	if err != nil {
+		return PublicationResult{}, err
+	}
+	if err = provider.ValidateSnapshotTx(ctx, tx, contentID, raw); err != nil {
+		return PublicationResult{}, fmt.Errorf("%w: %v", ErrValidation, err)
+	}
+	var active bool
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM content_submissions WHERE content_type=$1 AND content_id=$2 AND status IN ('in_review','approved','scheduled'))`, contentType, contentID).Scan(&active); err != nil {
+		return PublicationResult{}, err
+	}
+	if active {
+		return PublicationResult{}, fmt.Errorf("%w: an active submission already exists", ErrConflict)
+	}
+	canonical, digest, err := canonicalSnapshot(raw)
+	if err != nil {
+		return PublicationResult{}, err
+	}
+	// A publication created by the editorial workflow already has the
+	// provider's canonical digest. Reuse it for the new submission so a
+	// rollback does not manufacture a different hash merely because a generic
+	// JSON map was used while loading the historical snapshot.
+	if sourceDigest != nil && *sourceDigest != "" {
+		digest = *sourceDigest
+	}
+	requiresReview := reviewRequiredFor(s.Policy(ctx), role)
+	status := "approved"
+	if requiresReview {
+		status = "in_review"
+	}
+	submissionID := uuid.New()
+	allowSelf := s.AllowSelfApproval(ctx)
+	if _, err = tx.Exec(ctx, `INSERT INTO content_submissions(id,content_type,content_id,working_revision,snapshot,snapshot_sha256,submitted_by,submitted_at,based_published_revision,based_published_revision_id,status,review_required,allow_self_approval,review_note) VALUES($1,$2,$3,$4,$5::jsonb,$6,$7,now(),$8,$9,$10,$11,$12,$13)`, submissionID, contentType, contentID, current.WorkingRevision, string(canonical), digest, userID, current.PublishedRevision, current.PublishedRevisionID, status, requiresReview, allowSelf, "Rollback requested from publication "+publicationID.String()); err != nil {
+		return PublicationResult{}, err
+	}
+	if requiresReview {
+		if err = auditTx(ctx, tx, userID, "content.rollback_submitted", contentType, contentID, map[string]any{"submissionId": submissionID.String(), "sourcePublicationId": publicationID.String()}); err != nil {
+			return PublicationResult{}, err
+		}
+		if err = tx.Commit(ctx); err != nil {
+			return PublicationResult{}, err
+		}
+		return PublicationResult{Submission: Submission{ID: submissionID, ContentType: contentType, ContentID: contentID, Status: status, ReviewRequired: true}}, nil
+	}
+	result, err := s.publishLockedTxPreservingDraft(ctx, tx, provider, submissionID, userID, "rollback")
+	if err != nil {
+		return PublicationResult{}, err
+	}
+	if err = auditTx(ctx, tx, userID, rollbackPublishedAction(contentType), contentType, contentID, map[string]any{"submissionId": submissionID.String(), "sourcePublicationId": publicationID.String(), "revision": result.Published.Revision}); err != nil {
+		return PublicationResult{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return PublicationResult{}, err
+	}
+	provider.NotifyPublication(result.Published.Changes)
+	return result, nil
+}
+
+func rollbackPublishedAction(contentType string) string {
+	switch contentType {
+	case TypeCampaign:
+		return "campaign.rolled_back"
+	case TypePlaylist:
+		return "playlist.rolled_back"
+	case TypeLayout:
+		return "layout.rolled_back"
+	}
+	return contentPublishedAction(contentType)
+}
+
+func canonicalSnapshot(raw json.RawMessage) ([]byte, string, error) {
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return nil, "", err
+	}
+	canonical, err := json.Marshal(value)
+	if err != nil {
+		return nil, "", err
+	}
+	sum := sha256.Sum256(canonical)
+	return canonical, hex.EncodeToString(sum[:]), nil
+}
+
+func rollbackSnapshotTx(ctx context.Context, tx pgx.Tx, contentType string, nativeRevisionID, sourceSubmissionID, campaignReleaseID *uuid.UUID) (json.RawMessage, error) {
+	if sourceSubmissionID != nil {
+		var raw []byte
+		if err := tx.QueryRow(ctx, `SELECT snapshot FROM content_submissions WHERE id=$1`, *sourceSubmissionID).Scan(&raw); err == nil {
+			return raw, nil
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			return nil, err
+		}
+	}
+	if campaignReleaseID != nil {
+		var raw []byte
+		if err := tx.QueryRow(ctx, `SELECT snapshot FROM campaign_releases WHERE id=$1`, *campaignReleaseID).Scan(&raw); err == nil {
+			return raw, nil
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			return nil, err
+		}
+	}
+	if nativeRevisionID == nil {
+		return nil, ErrNotFound
+	}
+	if contentType == TypeLayout {
+		var raw []byte
+		if err := tx.QueryRow(ctx, `SELECT document FROM layout_revisions WHERE id=$1`, *nativeRevisionID).Scan(&raw); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, ErrNotFound
+			}
+			return nil, err
+		}
+		return raw, nil
+	}
+	if contentType == TypeCampaign {
+		var raw []byte
+		if err := tx.QueryRow(ctx, `SELECT snapshot FROM campaign_releases WHERE id=$1`, *nativeRevisionID).Scan(&raw); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, ErrNotFound
+			}
+			return nil, err
+		}
+		return raw, nil
+	}
+	var name, description, sourceType, tagMatch string
+	var tagDuration int64
+	var items, tagIDs []byte
+	if err := tx.QueryRow(ctx, `SELECT name,description,source_type,tag_match,tag_image_duration_ms,items,tag_ids FROM playlist_revisions WHERE id=$1`, *nativeRevisionID).Scan(&name, &description, &sourceType, &tagMatch, &tagDuration, &items, &tagIDs); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	var decodedItems []map[string]any
+	if err := json.Unmarshal(items, &decodedItems); err != nil {
+		return nil, err
+	}
+	for _, item := range decodedItems {
+		if _, ok := item["id"]; !ok {
+			item["id"] = uuid.New()
+		}
+	}
+	var decodedTags any
+	if err := json.Unmarshal(tagIDs, &decodedTags); err != nil {
+		return nil, err
+	}
+	return json.Marshal(map[string]any{"name": name, "description": description, "sourceType": sourceType, "tagMatch": tagMatch, "tagImageDurationMs": tagDuration, "items": decodedItems, "tagIds": decodedTags})
+}
+
+func reviewRequiredFor(policy ReviewPolicy, role string) bool {
+	if policy == PolicyEveryone {
+		return true
+	}
+	return policy == PolicyContributors && role == "contributor"
+}
+
+func canPublish(role string) bool {
+	return role == "owner" || role == "administrator" || role == "editor"
+}
+
+func canReview(role string) bool { return canPublish(role) }
+
+func canAuthor(contentType, role string) bool {
+	if contentType == TypeCampaign {
+		return canPublish(role)
+	}
+	return role == "owner" || role == "administrator" || role == "editor" || role == "contributor"
+}
+
+func canPublishContent(contentType, role string) bool {
+	if contentType == TypeCampaign {
+		return role == "owner" || role == "administrator"
+	}
+	return canPublish(role)
+}
+
+func (s *Service) Submit(ctx context.Context, userID uuid.UUID, role, contentType string, contentID uuid.UUID, requestedAt *time.Time) (Submission, error) {
+	return s.submit(ctx, userID, role, contentType, contentID, requestedAt, 0)
+}
+
+// SubmitExpected is the optimistic-concurrency form used by editor publish
+// buttons. The reviewer workflow can also submit without an expected value
+// when the caller is deliberately asking the server to snapshot the current
+// draft.
+func (s *Service) SubmitExpected(ctx context.Context, userID uuid.UUID, role, contentType string, contentID uuid.UUID, requestedAt *time.Time, expectedRevision int64) (Submission, error) {
+	return s.submit(ctx, userID, role, contentType, contentID, requestedAt, expectedRevision)
+}
+
+func (s *Service) submit(ctx context.Context, userID uuid.UUID, role, contentType string, contentID uuid.UUID, requestedAt *time.Time, expectedRevision int64) (Submission, error) {
+	if !canAuthor(contentType, role) {
+		return Submission{}, fmt.Errorf("%w: this role cannot author %s content", ErrValidation, contentType)
+	}
+	provider, err := s.provider(contentType)
+	if err != nil {
+		return Submission{}, err
+	}
+	policy := s.Policy(ctx)
+	requiresReview := reviewRequiredFor(policy, role)
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return Submission{}, err
+	}
+	defer tx.Rollback(ctx)
+	snapshot, err := provider.SnapshotTx(ctx, tx, contentID)
+	if err != nil {
+		return Submission{}, err
+	}
+	if expectedRevision > 0 && snapshot.WorkingRevision != expectedRevision {
+		return Submission{}, fmt.Errorf("%w: the working draft changed", ErrConflict)
+	}
+	if err = provider.ValidateSnapshotTx(ctx, tx, contentID, snapshot.Document); err != nil {
+		return Submission{}, fmt.Errorf("%w: %v", ErrValidation, err)
+	}
+	var active bool
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM content_submissions WHERE content_type=$1 AND content_id=$2 AND status IN ('in_review','approved','scheduled'))`, contentType, contentID).Scan(&active); err != nil {
+		return Submission{}, err
+	}
+	if active {
+		return Submission{}, fmt.Errorf("%w: an active submission already exists", ErrConflict)
+	}
+	// A fresh submission replaces only an older changes-requested attempt. The
+	// old immutable snapshot remains in history, but it must not still be
+	// approvable after the author has sent a newer draft back to the queue.
+	if _, err = tx.Exec(ctx, `UPDATE content_submissions SET status='superseded',updated_at=now() WHERE content_type=$1 AND content_id=$2 AND status='changes_requested'`, contentType, contentID); err != nil {
+		return Submission{}, err
+	}
+	status := "in_review"
+	if !requiresReview {
+		status = "approved"
+	}
+	id := uuid.New()
+	allowSelf := s.AllowSelfApproval(ctx)
+	_, err = tx.Exec(ctx, `INSERT INTO content_submissions(id,content_type,content_id,working_revision,snapshot,snapshot_sha256,submitted_by,submitted_at,based_published_revision,based_published_revision_id,status,review_required,allow_self_approval,requested_publication_at) VALUES($1,$2,$3,$4,$5::jsonb,$6,$7,now(),$8,$9,$10,$11,$12,$13)`, id, contentType, contentID, snapshot.WorkingRevision, string(snapshot.Document), snapshot.Digest, userID, snapshot.PublishedRevision, snapshot.PublishedRevisionID, status, requiresReview, allowSelf, requestedAt)
+	if err != nil {
+		return Submission{}, err
+	}
+	if err = auditTx(ctx, tx, userID, "content.submitted", contentType, contentID, map[string]any{"workingRevision": snapshot.WorkingRevision, "reviewRequired": requiresReview}); err != nil {
+		return Submission{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return Submission{}, err
+	}
+	return s.GetSubmission(ctx, id)
+}
+
+func (s *Service) SubmitAndPublish(ctx context.Context, userID uuid.UUID, role, contentType string, contentID uuid.UUID, expectedRevision int64) (PublicationResult, error) {
+	if !canPublishContent(contentType, role) {
+		return PublicationResult{}, fmt.Errorf("%w: this role cannot publish content", ErrValidation)
+	}
+	if reviewRequiredFor(s.Policy(ctx), role) {
+		return PublicationResult{}, ErrReviewRequired
+	}
+	provider, err := s.provider(contentType)
+	if err != nil {
+		return PublicationResult{}, err
+	}
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return PublicationResult{}, err
+	}
+	defer tx.Rollback(ctx)
+	snapshot, err := provider.SnapshotTx(ctx, tx, contentID)
+	if err != nil {
+		return PublicationResult{}, err
+	}
+	if expectedRevision > 0 && snapshot.WorkingRevision != expectedRevision {
+		return PublicationResult{}, fmt.Errorf("%w: the working draft changed", ErrConflict)
+	}
+	if err = provider.ValidateSnapshotTx(ctx, tx, contentID, snapshot.Document); err != nil {
+		return PublicationResult{}, fmt.Errorf("%w: %v", ErrValidation, err)
+	}
+	submissionID := uuid.New()
+	allowSelf := s.AllowSelfApproval(ctx)
+	if _, err = tx.Exec(ctx, `INSERT INTO content_submissions(id,content_type,content_id,working_revision,snapshot,snapshot_sha256,submitted_by,submitted_at,based_published_revision,based_published_revision_id,status,review_required,allow_self_approval) VALUES($1,$2,$3,$4,$5::jsonb,$6,$7,now(),$8,$9,'approved',FALSE,$10)`, submissionID, contentType, contentID, snapshot.WorkingRevision, string(snapshot.Document), snapshot.Digest, userID, snapshot.PublishedRevision, snapshot.PublishedRevisionID, allowSelf); err != nil {
+		return PublicationResult{}, err
+	}
+	publication, err := s.publishLockedTx(ctx, tx, provider, submissionID, userID, "manual")
+	if err != nil {
+		return PublicationResult{}, err
+	}
+	if err = auditTx(ctx, tx, userID, contentPublishedAction(contentType), contentType, contentID, map[string]any{"revision": publication.Published.Revision, "method": "manual"}); err != nil {
+		return PublicationResult{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return PublicationResult{}, err
+	}
+	provider.NotifyPublication(publication.Published.Changes)
+	return publication, nil
+}
+
+func (s *Service) GetSubmission(ctx context.Context, id uuid.UUID) (Submission, error) {
+	var item Submission
+	err := s.db.QueryRow(ctx, `SELECT c.id,c.content_type,c.content_id,c.working_revision,c.snapshot,c.snapshot_sha256,c.submitted_by,COALESCE(su.name,''),c.submitted_at,c.based_published_revision,c.based_published_revision_id,c.status,c.review_required,c.allow_self_approval,c.review_note,c.reviewed_by,COALESCE(ru.name,''),c.reviewed_at,c.requested_publication_at,c.publication_failure_reason,c.published_at FROM content_submissions c LEFT JOIN users su ON su.id=c.submitted_by LEFT JOIN users ru ON ru.id=c.reviewed_by WHERE c.id=$1`, id).Scan(&item.ID, &item.ContentType, &item.ContentID, &item.WorkingRevision, &item.Snapshot, &item.SnapshotSHA256, &item.SubmittedBy, &item.SubmitterName, &item.SubmittedAt, &item.BasedPublishedRevision, &item.BasedPublishedRevisionID, &item.Status, &item.ReviewRequired, &item.AllowSelfApproval, &item.ReviewNote, &item.ReviewedBy, &item.ReviewerName, &item.ReviewedAt, &item.RequestedPublicationAt, &item.PublicationFailureReason, &item.PublishedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Submission{}, ErrNotFound
+	}
+	if err != nil {
+		return Submission{}, err
+	}
+	if err = s.enrichSubmission(ctx, &item); err != nil {
+		return Submission{}, err
+	}
+	return item, nil
+}
+
+func providerSnapshot(ctx context.Context, db *pgxpool.Pool, provider editorial.Provider, id uuid.UUID) (editorial.Snapshot, error) {
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		return editorial.Snapshot{}, err
+	}
+	defer tx.Rollback(ctx)
+	snapshot, err := provider.SnapshotTx(ctx, tx, id)
+	if err != nil {
+		return editorial.Snapshot{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return editorial.Snapshot{}, err
+	}
+	return snapshot, nil
+}
+
+func (s *Service) enrichSubmission(ctx context.Context, item *Submission) error {
+	if provider, providerErr := s.provider(item.ContentType); providerErr == nil {
+		current, currentErr := providerSnapshot(ctx, s.db, provider, item.ContentID)
+		if currentErr == nil {
+			item.NewerWorkingDraft = current.WorkingRevision > item.WorkingRevision
+			item.CurrentPublishedRevision = current.PublishedRevision
+		}
+	}
+	var name string
+	switch item.ContentType {
+	case TypePlaylist:
+		if err := s.db.QueryRow(ctx, `SELECT COALESCE(d.name,p.name) FROM playlists p LEFT JOIN playlist_drafts d ON d.playlist_id=p.id WHERE p.id=$1`, item.ContentID).Scan(&name); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+	case TypeLayout:
+		if err := s.db.QueryRow(ctx, `SELECT name FROM layouts WHERE id=$1`, item.ContentID).Scan(&name); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+	case TypeCampaign:
+		if err := s.db.QueryRow(ctx, `SELECT name FROM campaigns WHERE id=$1`, item.ContentID).Scan(&name); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+	}
+	item.ContentName = name
+	return s.populateImpact(ctx, item)
+}
+
+func (s *Service) populateImpact(ctx context.Context, item *Submission) error {
+	var screenQuery string
+	var impactArg any = item.ContentID
+	switch item.ContentType {
+	case TypePlaylist:
+		screenQuery = `SELECT count(DISTINCT x.screen_id) FROM (
+			SELECT screen_id FROM screen_playlist_assignments WHERE playlist_id=$1
+			UNION SELECT m.screen_id FROM screen_group_playlist_assignments a JOIN screen_group_memberships m ON m.screen_group_id=a.screen_group_id WHERE a.playlist_id=$1
+			UNION SELECT t.screen_id FROM schedules s JOIN schedule_targets t ON t.schedule_id=s.id WHERE s.playlist_id=$1 AND s.deleted_at IS NULL AND t.screen_id IS NOT NULL
+			UNION SELECT m.screen_id FROM schedules s JOIN schedule_targets t ON t.schedule_id=s.id JOIN screen_group_memberships m ON m.screen_group_id=t.screen_group_id WHERE s.playlist_id=$1 AND s.deleted_at IS NULL
+		)x`
+	case TypeLayout:
+		screenQuery = `SELECT count(DISTINCT x.screen_id) FROM (
+			SELECT screen_id FROM screen_playlist_assignments WHERE layout_id=$1
+			UNION SELECT m.screen_id FROM screen_group_playlist_assignments a JOIN screen_group_memberships m ON m.screen_group_id=a.screen_group_id WHERE a.layout_id=$1
+			UNION SELECT t.screen_id FROM schedules s JOIN schedule_targets t ON t.schedule_id=s.id WHERE s.layout_id=$1 AND s.deleted_at IS NULL AND t.screen_id IS NOT NULL
+			UNION SELECT m.screen_id FROM schedules s JOIN schedule_targets t ON t.schedule_id=s.id JOIN screen_group_memberships m ON m.screen_group_id=t.screen_group_id WHERE s.layout_id=$1 AND s.deleted_at IS NULL
+		)x`
+	case TypeCampaign:
+		// A campaign submission may not have materialized schedules yet. Its
+		// frozen destinations are the impact being reviewed, so calculate the
+		// preview from the snapshot rather than only from the current release.
+		screenQuery = `WITH destinations AS (
+			SELECT type,id FROM jsonb_to_recordset(($1::jsonb)->'destinations') AS destination(type text,id uuid)
+		) SELECT count(DISTINCT x.screen_id) FROM (
+			SELECT d.id AS screen_id FROM destinations d JOIN screens sc ON sc.id=d.id AND sc.archived_at IS NULL WHERE d.type='screen'
+			UNION SELECT m.screen_id FROM destinations d JOIN screen_group_memberships m ON m.screen_group_id=d.id JOIN screens sc ON sc.id=m.screen_id AND sc.archived_at IS NULL WHERE d.type='group'
+		)x`
+		impactArg = item.Snapshot
+	default:
+		return nil
+	}
+	if err := s.db.QueryRow(ctx, screenQuery, impactArg).Scan(&item.AffectedScreenCount); err != nil {
+		return err
+	}
+	var locationQuery string
+	if item.ContentType == TypeCampaign {
+		locationQuery = `WITH destinations AS (
+			SELECT type,id FROM jsonb_to_recordset(($1::jsonb)->'destinations') AS destination(type text,id uuid)
+		), affected AS (
+			SELECT d.id AS screen_id FROM destinations d WHERE d.type='screen'
+			UNION SELECT m.screen_id FROM destinations d JOIN screen_group_memberships m ON m.screen_group_id=d.id WHERE d.type='group'
+		) SELECT count(DISTINCT sc.location_id) FROM screens sc JOIN affected a ON a.screen_id=sc.id WHERE sc.archived_at IS NULL AND sc.location_id IS NOT NULL`
+	} else if item.ContentType == TypePlaylist {
+		locationQuery = `SELECT count(DISTINCT sc.location_id) FROM screens sc WHERE sc.archived_at IS NULL AND sc.location_id IS NOT NULL AND sc.id IN (SELECT screen_id FROM screen_playlist_assignments WHERE playlist_id=$1 UNION SELECT m.screen_id FROM screen_group_playlist_assignments a JOIN screen_group_memberships m ON m.screen_group_id=a.screen_group_id WHERE a.playlist_id=$1 UNION SELECT t.screen_id FROM schedules s JOIN schedule_targets t ON t.schedule_id=s.id WHERE s.playlist_id=$1 AND s.deleted_at IS NULL AND t.screen_id IS NOT NULL UNION SELECT m.screen_id FROM schedules s JOIN schedule_targets t ON t.schedule_id=s.id JOIN screen_group_memberships m ON m.screen_group_id=t.screen_group_id WHERE s.playlist_id=$1 AND s.deleted_at IS NULL)`
+	} else {
+		locationQuery = `SELECT count(DISTINCT sc.location_id) FROM screens sc WHERE sc.archived_at IS NULL AND sc.location_id IS NOT NULL AND sc.id IN (SELECT screen_id FROM screen_playlist_assignments WHERE layout_id=$1 UNION SELECT m.screen_id FROM screen_group_playlist_assignments a JOIN screen_group_memberships m ON m.screen_group_id=a.screen_group_id WHERE a.layout_id=$1 UNION SELECT t.screen_id FROM schedules s JOIN schedule_targets t ON t.schedule_id=s.id WHERE s.layout_id=$1 AND s.deleted_at IS NULL AND t.screen_id IS NOT NULL UNION SELECT m.screen_id FROM schedules s JOIN schedule_targets t ON t.schedule_id=s.id JOIN screen_group_memberships m ON m.screen_group_id=t.screen_group_id WHERE s.layout_id=$1 AND s.deleted_at IS NULL)`
+	}
+	return s.db.QueryRow(ctx, locationQuery, impactArg).Scan(&item.AffectedLocationCount)
+}
+
+func (s *Service) ListSubmissions(ctx context.Context, state string) (SubmissionList, error) {
+	args := []any{}
+	where := ""
+	if state != "" {
+		where = " WHERE c.status=$1"
+		args = append(args, state)
+	}
+	rows, err := s.db.Query(ctx, `SELECT c.id,c.content_type,c.content_id,c.working_revision,c.snapshot,c.snapshot_sha256,c.submitted_by,COALESCE(su.name,''),c.submitted_at,c.based_published_revision,c.based_published_revision_id,c.status,c.review_required,c.allow_self_approval,c.review_note,c.reviewed_by,COALESCE(ru.name,''),c.reviewed_at,c.requested_publication_at,c.publication_failure_reason,c.published_at FROM content_submissions c LEFT JOIN users su ON su.id=c.submitted_by LEFT JOIN users ru ON ru.id=c.reviewed_by`+where+` ORDER BY c.submitted_at DESC LIMIT 200`, args...)
+	if err != nil {
+		return SubmissionList{}, err
+	}
+	defer rows.Close()
+	result := SubmissionList{Items: []Submission{}}
+	for rows.Next() {
+		var item Submission
+		if err = rows.Scan(&item.ID, &item.ContentType, &item.ContentID, &item.WorkingRevision, &item.Snapshot, &item.SnapshotSHA256, &item.SubmittedBy, &item.SubmitterName, &item.SubmittedAt, &item.BasedPublishedRevision, &item.BasedPublishedRevisionID, &item.Status, &item.ReviewRequired, &item.AllowSelfApproval, &item.ReviewNote, &item.ReviewedBy, &item.ReviewerName, &item.ReviewedAt, &item.RequestedPublicationAt, &item.PublicationFailureReason, &item.PublishedAt); err != nil {
+			return SubmissionList{}, err
+		}
+		if err = s.enrichSubmission(ctx, &item); err != nil {
+			return SubmissionList{}, err
+		}
+		result.Items = append(result.Items, item)
+	}
+	return result, rows.Err()
+}
+
+func (s *Service) Approve(ctx context.Context, reviewerID uuid.UUID, role string, submissionID uuid.UUID, note string) (PublicationResult, error) {
+	if !canReview(role) {
+		return PublicationResult{}, fmt.Errorf("%w: this role cannot review content", ErrValidation)
+	}
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return PublicationResult{}, err
+	}
+	defer tx.Rollback(ctx)
+	var sub Submission
+	if err = scanSubmissionTx(ctx, tx, submissionID, &sub); err != nil {
+		return PublicationResult{}, err
+	}
+	if sub.Status != "in_review" {
+		return PublicationResult{}, fmt.Errorf("%w: submission is no longer awaiting a decision", ErrConflict)
+	}
+	if !sub.AllowSelfApproval && sub.SubmittedBy != nil && *sub.SubmittedBy == reviewerID {
+		return PublicationResult{}, fmt.Errorf("%w: self-approval is disabled", ErrValidation)
+	}
+	provider, err := s.provider(sub.ContentType)
+	if err != nil {
+		return PublicationResult{}, err
+	}
+	note = strings.TrimSpace(note)
+	var scheduledAt *time.Time
+	status := "approved"
+	if s.AutoPublishOnApproval(ctx) && canPublishContent(sub.ContentType, role) {
+		if sub.RequestedPublicationAt != nil && sub.RequestedPublicationAt.After(time.Now().UTC()) {
+			scheduledAt = sub.RequestedPublicationAt
+			status = "scheduled"
+		}
+	}
+	if _, err = tx.Exec(ctx, `UPDATE content_submissions SET status=$2,review_note=$3,reviewed_by=$4,reviewed_at=now(),requested_publication_at=COALESCE($5,requested_publication_at),updated_at=now() WHERE id=$1`, submissionID, status, note, reviewerID, scheduledAt); err != nil {
+		return PublicationResult{}, err
+	}
+	if err = auditTx(ctx, tx, reviewerID, "content.review_approved", sub.ContentType, sub.ContentID, map[string]any{"submissionId": submissionID.String()}); err != nil {
+		return PublicationResult{}, err
+	}
+	result := PublicationResult{}
+	if status == "approved" && s.AutoPublishOnApproval(ctx) && canPublishContent(sub.ContentType, role) {
+		result, err = s.publishLockedTx(ctx, tx, provider, submissionID, reviewerID, "automatic_after_approval")
+		if err != nil {
+			return PublicationResult{}, err
+		}
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return PublicationResult{}, err
+	}
+	if result.Submission.ID != uuid.Nil {
+		provider.NotifyPublication(result.Published.Changes)
+		return result, nil
+	}
+	updated, updateErr := s.GetSubmission(ctx, submissionID)
+	return PublicationResult{Submission: updated}, updateErr
+}
+
+func (s *Service) RequestChanges(ctx context.Context, reviewerID uuid.UUID, role string, submissionID uuid.UUID, note string) (Submission, error) {
+	if !canReview(role) {
+		return Submission{}, fmt.Errorf("%w: this role cannot review content", ErrValidation)
+	}
+	note = strings.TrimSpace(note)
+	if note == "" {
+		return Submission{}, fmt.Errorf("%w: a changes-request note is required", ErrValidation)
+	}
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return Submission{}, err
+	}
+	defer tx.Rollback(ctx)
+	var sub Submission
+	if err = scanSubmissionTx(ctx, tx, submissionID, &sub); err != nil {
+		return Submission{}, err
+	}
+	if sub.Status != "in_review" {
+		return Submission{}, fmt.Errorf("%w: submission is no longer awaiting a decision", ErrConflict)
+	}
+	if _, err = tx.Exec(ctx, `UPDATE content_submissions SET status='changes_requested',review_note=$2,reviewed_by=$3,reviewed_at=now(),updated_at=now() WHERE id=$1`, submissionID, note, reviewerID); err != nil {
+		return Submission{}, err
+	}
+	if err = auditTx(ctx, tx, reviewerID, "content.changes_requested", sub.ContentType, sub.ContentID, map[string]any{"submissionId": submissionID.String()}); err != nil {
+		return Submission{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return Submission{}, err
+	}
+	return s.GetSubmission(ctx, submissionID)
+}
+
+func (s *Service) Schedule(ctx context.Context, userID uuid.UUID, role string, submissionID uuid.UUID, when time.Time) (Submission, error) {
+	if !canPublish(role) {
+		return Submission{}, fmt.Errorf("%w: this role cannot schedule publication", ErrValidation)
+	}
+	when = when.UTC()
+	if !when.After(time.Now().UTC()) {
+		return Submission{}, fmt.Errorf("%w: publication time must be in the future", ErrValidation)
+	}
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return Submission{}, err
+	}
+	defer tx.Rollback(ctx)
+	var sub Submission
+	if err = scanSubmissionTx(ctx, tx, submissionID, &sub); err != nil {
+		return Submission{}, err
+	}
+	if !canPublishContent(sub.ContentType, role) {
+		return Submission{}, fmt.Errorf("%w: this role cannot schedule %s content", ErrValidation, sub.ContentType)
+	}
+	if sub.Status != "approved" {
+		return Submission{}, fmt.Errorf("%w: only an approved submission can be scheduled", ErrConflict)
+	}
+	if _, err = tx.Exec(ctx, `UPDATE content_submissions SET status='scheduled',requested_publication_at=$2,publication_failure_reason=NULL,updated_at=now() WHERE id=$1`, submissionID, when); err != nil {
+		return Submission{}, err
+	}
+	if err = auditTx(ctx, tx, userID, "content.publication_scheduled", sub.ContentType, sub.ContentID, map[string]any{"submissionId": submissionID.String(), "requestedPublicationAt": when}); err != nil {
+		return Submission{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return Submission{}, err
+	}
+	return s.GetSubmission(ctx, submissionID)
+}
+
+func (s *Service) CancelSchedule(ctx context.Context, userID uuid.UUID, role string, submissionID uuid.UUID) (Submission, error) {
+	if !canPublish(role) {
+		return Submission{}, fmt.Errorf("%w: this role cannot cancel publication", ErrValidation)
+	}
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return Submission{}, err
+	}
+	defer tx.Rollback(ctx)
+	var sub Submission
+	if err = scanSubmissionTx(ctx, tx, submissionID, &sub); err != nil {
+		return Submission{}, err
+	}
+	if !canPublishContent(sub.ContentType, role) {
+		return Submission{}, fmt.Errorf("%w: this role cannot cancel %s publication", ErrValidation, sub.ContentType)
+	}
+	if sub.Status != "scheduled" {
+		return Submission{}, fmt.Errorf("%w: submission is not scheduled", ErrConflict)
+	}
+	if _, err = tx.Exec(ctx, `UPDATE content_submissions SET status='approved',requested_publication_at=NULL,updated_at=now() WHERE id=$1`, submissionID); err != nil {
+		return Submission{}, err
+	}
+	if err = auditTx(ctx, tx, userID, "content.publication_cancelled", sub.ContentType, sub.ContentID, map[string]any{"submissionId": submissionID.String()}); err != nil {
+		return Submission{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return Submission{}, err
+	}
+	return s.GetSubmission(ctx, submissionID)
+}
+
+func (s *Service) PublishSubmission(ctx context.Context, userID uuid.UUID, role string, submissionID uuid.UUID, method string) (PublicationResult, error) {
+	if !canPublish(role) {
+		return PublicationResult{}, fmt.Errorf("%w: this role cannot publish content", ErrValidation)
+	}
+	return s.publishSubmission(ctx, userID, role, submissionID, method, true)
+}
+
+func (s *Service) publishSubmission(ctx context.Context, userID uuid.UUID, role string, submissionID uuid.UUID, method string, enforceRole bool) (PublicationResult, error) {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return PublicationResult{}, err
+	}
+	defer tx.Rollback(ctx)
+	var sub Submission
+	if err = scanSubmissionTx(ctx, tx, submissionID, &sub); err != nil {
+		return PublicationResult{}, err
+	}
+	if sub.Status != "approved" && sub.Status != "scheduled" {
+		return PublicationResult{}, fmt.Errorf("%w: submission is not approved", ErrReviewRequired)
+	}
+	if enforceRole && sub.ReviewRequired && !canPublishContent(sub.ContentType, role) {
+		return PublicationResult{}, fmt.Errorf("%w: this role cannot publish content", ErrValidation)
+	}
+	provider, err := s.provider(sub.ContentType)
+	if err != nil {
+		return PublicationResult{}, err
+	}
+	result, err := s.publishLockedTx(ctx, tx, provider, submissionID, userID, method)
+	if err != nil {
+		return PublicationResult{}, err
+	}
+	if err = auditTx(ctx, tx, userID, contentPublishedAction(sub.ContentType), sub.ContentType, sub.ContentID, map[string]any{"submissionId": submissionID.String(), "method": method, "revision": result.Published.Revision}); err != nil {
+		return PublicationResult{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return PublicationResult{}, err
+	}
+	provider.NotifyPublication(result.Published.Changes)
+	return result, nil
+}
+
+func contentPublishedAction(contentType string) string {
+	if contentType == "playlist" {
+		return "playlist.published"
+	}
+	if contentType == "layout" {
+		return "layout.published"
+	}
+	if contentType == TypeCampaign {
+		return "campaign.published"
+	}
+	return "content.published"
+}
+
+func (s *Service) publishLockedTx(ctx context.Context, tx pgx.Tx, provider editorial.Provider, submissionID, userID uuid.UUID, method string) (PublicationResult, error) {
+	return s.publishLockedTxMode(ctx, tx, provider, submissionID, userID, method, false)
+}
+
+// publishLockedTxPreservingDraft is used by rollback. The historical snapshot
+// becomes the new published revision, but the author's newer working draft is
+// deliberately left untouched. Ordinary publication may close the draft when
+// its working revision equals the submitted revision.
+func (s *Service) publishLockedTxPreservingDraft(ctx context.Context, tx pgx.Tx, provider editorial.Provider, submissionID, userID uuid.UUID, method string) (PublicationResult, error) {
+	return s.publishLockedTxMode(ctx, tx, provider, submissionID, userID, method, true)
+}
+
+func (s *Service) publishLockedTxMode(ctx context.Context, tx pgx.Tx, provider editorial.Provider, submissionID, userID uuid.UUID, method string, preserveDraft bool) (PublicationResult, error) {
+	var sub Submission
+	if err := scanSubmissionTx(ctx, tx, submissionID, &sub); err != nil {
+		return PublicationResult{}, err
+	}
+	if err := provider.ValidateSnapshotTx(ctx, tx, sub.ContentID, sub.Snapshot); err != nil {
+		return PublicationResult{}, fmt.Errorf("%w: %v", ErrValidation, err)
+	}
+	workingRevision := sub.WorkingRevision
+	if preserveDraft {
+		workingRevision = 0
+	}
+	published, err := provider.PublishSnapshotTx(ctx, tx, sub.ContentID, sub.Snapshot, workingRevision, userID)
+	if err != nil {
+		return PublicationResult{}, err
+	}
+	var supersedes *uuid.UUID
+	_ = tx.QueryRow(ctx, `SELECT id FROM publication_history WHERE content_type=$1 AND content_id=$2 ORDER BY published_at DESC,id DESC LIMIT 1`, sub.ContentType, sub.ContentID).Scan(&supersedes)
+	var campaignReleaseID *uuid.UUID
+	if sub.ContentType == TypeCampaign {
+		campaignReleaseID = published.RevisionID
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO publication_history(id,content_type,content_id,content_revision,native_revision_id,submission_id,campaign_release_id,published_by,published_at,supersedes_publication_id,method,affected_screen_count,snapshot_sha256) VALUES($1,$2,$3,$4,$5,$6,$7,$8,now(),$9,$10,$11,$12)`, uuid.New(), sub.ContentType, sub.ContentID, published.Revision, published.RevisionID, submissionID, campaignReleaseID, userID, supersedes, method, published.AffectedScreens, sub.SnapshotSHA256); err != nil {
+		return PublicationResult{}, err
+	}
+	publishedAt := time.Now().UTC()
+	if _, err = tx.Exec(ctx, `UPDATE content_submissions SET status='published',published_at=$2,requested_publication_at=NULL,publication_failure_reason=NULL,updated_at=now() WHERE id=$1`, submissionID, publishedAt); err != nil {
+		return PublicationResult{}, err
+	}
+	if _, err = tx.Exec(ctx, `UPDATE content_submissions SET status='superseded',updated_at=now() WHERE content_type=$1 AND content_id=$2 AND id<>$3 AND status IN ('in_review','changes_requested','approved','scheduled')`, sub.ContentType, sub.ContentID, submissionID); err != nil {
+		return PublicationResult{}, err
+	}
+	sub.Status = "published"
+	sub.PublishedAt = &publishedAt
+	sub.RequestedPublicationAt = nil
+	return PublicationResult{Submission: sub, Published: published}, nil
+}
+
+func scanSubmissionTx(ctx context.Context, tx pgx.Tx, id uuid.UUID, item *Submission) error {
+	err := tx.QueryRow(ctx, `SELECT c.id,c.content_type,c.content_id,c.working_revision,c.snapshot,c.snapshot_sha256,c.submitted_by,COALESCE(su.name,''),c.submitted_at,c.based_published_revision,c.based_published_revision_id,c.status,c.review_required,c.allow_self_approval,c.review_note,c.reviewed_by,COALESCE(ru.name,''),c.reviewed_at,c.requested_publication_at,c.publication_failure_reason,c.published_at FROM content_submissions c LEFT JOIN users su ON su.id=c.submitted_by LEFT JOIN users ru ON ru.id=c.reviewed_by WHERE c.id=$1 FOR UPDATE OF c`, id).Scan(&item.ID, &item.ContentType, &item.ContentID, &item.WorkingRevision, &item.Snapshot, &item.SnapshotSHA256, &item.SubmittedBy, &item.SubmitterName, &item.SubmittedAt, &item.BasedPublishedRevision, &item.BasedPublishedRevisionID, &item.Status, &item.ReviewRequired, &item.AllowSelfApproval, &item.ReviewNote, &item.ReviewedBy, &item.ReviewerName, &item.ReviewedAt, &item.RequestedPublicationAt, &item.PublicationFailureReason, &item.PublishedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	return err
+}
+
+func (s *Service) ReconcileScheduled(ctx context.Context) error {
+	rows, err := s.db.Query(ctx, `SELECT id FROM content_submissions WHERE status='scheduled' AND requested_publication_at IS NOT NULL AND requested_publication_at<=now() ORDER BY requested_publication_at,id LIMIT 50`)
+	if err != nil {
+		return err
+	}
+	ids := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err = rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	for _, id := range ids {
+		if err = s.publishScheduled(ctx, id); err != nil {
+			// A due item is not retried forever.  The failure is durable and
+			// visible in Studio for an operator to correct and resubmit.
+			_, _ = s.db.Exec(ctx, `UPDATE content_submissions SET status='publication_failed',publication_failure_reason=$2,updated_at=now() WHERE id=$1 AND status='scheduled'`, id, err.Error())
+		}
+	}
+	return nil
+}
+
+func (s *Service) publishScheduled(ctx context.Context, id uuid.UUID) error {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	var sub Submission
+	if err = scanSubmissionTx(ctx, tx, id, &sub); err != nil {
+		return err
+	}
+	if sub.Status != "scheduled" || sub.RequestedPublicationAt == nil || sub.RequestedPublicationAt.After(time.Now().UTC()) {
+		return nil
+	}
+	provider, err := s.provider(sub.ContentType)
+	if err != nil {
+		return err
+	}
+	publisher := sub.ReviewedBy
+	if publisher == nil {
+		publisher = sub.SubmittedBy
+	}
+	if publisher == nil {
+		publisher = new(uuid.UUID)
+		*publisher = uuid.Nil
+	}
+	result, err := s.publishLockedTx(ctx, tx, provider, id, *publisher, "scheduled")
+	if err != nil {
+		return err
+	}
+	if err = auditTx(ctx, tx, *publisher, contentPublishedAction(sub.ContentType), sub.ContentType, sub.ContentID, map[string]any{"submissionId": id.String(), "method": "scheduled", "revision": result.Published.Revision}); err != nil {
+		return err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return err
+	}
+	provider.NotifyPublication(result.Published.Changes)
+	return nil
+}
+
+func (s *Service) GetPublicationHistory(ctx context.Context, contentType string, contentID uuid.UUID) ([]map[string]any, error) {
+	rows, err := s.db.Query(ctx, `SELECT h.id,h.content_revision,h.native_revision_id,h.submission_id,h.campaign_release_id,h.published_by,COALESCE(u.name,''),h.published_at,h.supersedes_publication_id,h.method,h.affected_screen_count,h.snapshot_sha256 FROM publication_history h LEFT JOIN users u ON u.id=h.published_by WHERE h.content_type=$1 AND h.content_id=$2 ORDER BY h.published_at DESC,h.id DESC`, contentType, contentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []map[string]any{}
+	for rows.Next() {
+		var id uuid.UUID
+		var revision int64
+		var nativeID, submissionID, byID, supersedes, campaignReleaseID *uuid.UUID
+		var byName, method string
+		var publishedAt time.Time
+		var affected int
+		var digest *string
+		if err = rows.Scan(&id, &revision, &nativeID, &submissionID, &campaignReleaseID, &byID, &byName, &publishedAt, &supersedes, &method, &affected, &digest); err != nil {
+			return nil, err
+		}
+		items = append(items, map[string]any{"id": id, "revision": revision, "nativeRevisionId": nativeID, "submissionId": submissionID, "campaignReleaseId": campaignReleaseID, "publishedBy": byID, "publisherName": byName, "publishedAt": publishedAt, "supersedesPublicationId": supersedes, "method": method, "affectedScreenCount": affected, "snapshotSha256": digest})
+	}
+	return items, rows.Err()
+}
+
+// ComparePublications returns a compact semantic diff for two immutable
+// publication checkpoints. The raw snapshots remain available through the
+// submission/history endpoints, but Studio should lead with changes an
+// operator can understand rather than JSON noise.
+func (s *Service) ComparePublications(ctx context.Context, contentType string, contentID, fromID, toID uuid.UUID) (map[string]any, error) {
+	if contentType != TypePlaylist && contentType != TypeLayout && contentType != TypeCampaign {
+		return nil, fmt.Errorf("%w: unknown content type %q", ErrValidation, contentType)
+	}
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	from, err := publicationSnapshotTx(ctx, tx, contentType, contentID, fromID)
+	if err != nil {
+		return nil, err
+	}
+	to, err := publicationSnapshotTx(ctx, tx, contentType, contentID, toID)
+	if err != nil {
+		return nil, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	changes := semanticChanges(contentType, from, to)
+	return map[string]any{"fromPublicationId": fromID, "toPublicationId": toID, "changed": len(changes) > 0, "changes": changes}, nil
+}
+
+func publicationSnapshotTx(ctx context.Context, tx pgx.Tx, contentType string, contentID, publicationID uuid.UUID) (json.RawMessage, error) {
+	var historyContentType string
+	var historyContentID uuid.UUID
+	var nativeRevisionID, sourceSubmissionID, campaignReleaseID *uuid.UUID
+	if err := tx.QueryRow(ctx, `SELECT content_type,content_id,native_revision_id,submission_id,campaign_release_id FROM publication_history WHERE id=$1`, publicationID).Scan(&historyContentType, &historyContentID, &nativeRevisionID, &sourceSubmissionID, &campaignReleaseID); errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	} else if err != nil {
+		return nil, err
+	}
+	if historyContentType != contentType || historyContentID != contentID {
+		return nil, fmt.Errorf("%w: publication belongs to a different content object", ErrConflict)
+	}
+	return rollbackSnapshotTx(ctx, tx, contentType, nativeRevisionID, sourceSubmissionID, campaignReleaseID)
+}
+
+type semanticChange struct {
+	Kind        string `json:"kind"`
+	Path        string `json:"path"`
+	Description string `json:"description"`
+}
+
+func semanticChanges(contentType string, from, to json.RawMessage) []semanticChange {
+	var before, after map[string]any
+	if json.Unmarshal(from, &before) != nil || json.Unmarshal(to, &after) != nil {
+		return []semanticChange{{Kind: "changed", Path: "/", Description: "The published snapshot changed."}}
+	}
+	changes := []semanticChange{}
+	add := func(kind, path, description string) {
+		changes = append(changes, semanticChange{Kind: kind, Path: path, Description: description})
+	}
+	if contentType == TypePlaylist {
+		for _, key := range []string{"name", "description", "sourceType", "tagMatch", "tagImageDurationMs"} {
+			if !jsonEqual(before[key], after[key]) {
+				add("details_changed", "/"+key, fmt.Sprintf("Playlist %s changed.", key))
+			}
+		}
+		if !jsonEqual(before["tagIds"], after["tagIds"]) {
+			add("tags_changed", "/tagIds", "Playlist tags changed.")
+		}
+		playlistItemChanges(before["items"], after["items"], add)
+		return changes
+	}
+	if contentType == TypeLayout {
+		beforeCanvas, _ := before["canvas"].(map[string]any)
+		afterCanvas, _ := after["canvas"].(map[string]any)
+		if !jsonEqual(beforeCanvas, afterCanvas) {
+			add("canvas_changed", "/canvas", "Canvas or orientation changed.")
+		}
+		placementChanges(before["placements"], after["placements"], add)
+		if !jsonEqual(before["placements"], after["placements"]) && len(changes) == 0 {
+			add("placements_changed", "/placements", "Layout placements changed.")
+		}
+		return changes
+	}
+	for _, key := range []string{"name", "description", "timezone", "campaignStart", "campaignEnd", "destinations", "blocks"} {
+		if !jsonEqual(before[key], after[key]) {
+			kind := "campaign_changed"
+			if key == "blocks" {
+				kind = "schedule_blocks_changed"
+			} else if key == "destinations" {
+				kind = "destinations_changed"
+			}
+			add(kind, "/"+key, fmt.Sprintf("Campaign %s changed.", key))
+		}
+	}
+	return changes
+}
+
+func playlistItemChanges(beforeValue, afterValue any, add func(string, string, string)) {
+	before := snapshotItems(beforeValue)
+	after := snapshotItems(afterValue)
+	beforeByID := map[string]map[string]any{}
+	afterByID := map[string]map[string]any{}
+	for index, item := range before {
+		beforeByID[itemKey(item, index)] = item
+	}
+	for index, item := range after {
+		afterByID[itemKey(item, index)] = item
+	}
+	for key := range beforeByID {
+		if _, ok := afterByID[key]; !ok {
+			add("item_removed", "/items", "A playlist item was removed.")
+		}
+	}
+	for key := range afterByID {
+		old, existed := beforeByID[key]
+		if !existed {
+			add("item_added", "/items", "A playlist item was added.")
+			continue
+		}
+		if !jsonEqual(old["position"], afterByID[key]["position"]) {
+			add("item_reordered", "/items", "Playlist item order changed.")
+		}
+		for _, field := range []string{"durationMs", "fitMode", "transition", "audioEnabled", "volume", "deliveryPolicy", "usePlayerDefaults", "assetId", "layoutId"} {
+			if !jsonEqual(old[field], afterByID[key][field]) {
+				add("item_changed", "/items", "A playlist item's playback or content settings changed.")
+				break
+			}
+		}
+	}
+}
+
+func snapshotItems(value any) []map[string]any {
+	items, _ := value.([]any)
+	result := make([]map[string]any, 0, len(items))
+	for _, value := range items {
+		if item, ok := value.(map[string]any); ok {
+			result = append(result, item)
+		}
+	}
+	return result
+}
+
+func itemKey(item map[string]any, index int) string {
+	if id, ok := item["id"].(string); ok && id != "" {
+		return id
+	}
+	return fmt.Sprintf("position:%d", index)
+}
+
+func placementChanges(beforeValue, afterValue any, add func(string, string, string)) {
+	before := snapshotItems(beforeValue)
+	after := snapshotItems(afterValue)
+	if len(before) != len(after) {
+		add("placements_changed", "/placements", "Layout placements were added or removed.")
+		return
+	}
+	for index := range before {
+		if !jsonEqual(before[index], after[index]) {
+			add("placement_changed", "/placements", "A layout placement changed.")
+		}
+	}
+}
+
+func jsonEqual(left, right any) bool {
+	leftRaw, leftErr := json.Marshal(left)
+	rightRaw, rightErr := json.Marshal(right)
+	return leftErr == nil && rightErr == nil && string(leftRaw) == string(rightRaw)
+}
+
+// RestorePublicationToDraft copies a historical publication into the mutable
+// working area. It is intentionally separate from Rollback: no runtime row or
+// manifest changes are made, and the caller must still submit/publish the new
+// draft through normal policy checks.
+func (s *Service) RestorePublicationToDraft(ctx context.Context, userID uuid.UUID, role, contentType string, contentID, publicationID uuid.UUID) (editorial.Snapshot, error) {
+	if !canAuthor(contentType, role) {
+		return editorial.Snapshot{}, fmt.Errorf("%w: this role cannot restore %s content", ErrValidation, contentType)
+	}
+	provider, err := s.provider(contentType)
+	if err != nil {
+		return editorial.Snapshot{}, err
+	}
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return editorial.Snapshot{}, err
+	}
+	defer tx.Rollback(ctx)
+	var historyContentType string
+	var historyContentID uuid.UUID
+	var nativeRevisionID, sourceSubmissionID, campaignReleaseID *uuid.UUID
+	if err = tx.QueryRow(ctx, `SELECT content_type,content_id,native_revision_id,submission_id,campaign_release_id FROM publication_history WHERE id=$1 FOR SHARE`, publicationID).Scan(&historyContentType, &historyContentID, &nativeRevisionID, &sourceSubmissionID, &campaignReleaseID); errors.Is(err, pgx.ErrNoRows) {
+		return editorial.Snapshot{}, ErrNotFound
+	} else if err != nil {
+		return editorial.Snapshot{}, err
+	}
+	if historyContentType != contentType || historyContentID != contentID {
+		return editorial.Snapshot{}, fmt.Errorf("%w: publication belongs to a different content object", ErrConflict)
+	}
+	if err = lockEditorialDraftTx(ctx, tx, contentType, contentID); err != nil {
+		return editorial.Snapshot{}, err
+	}
+	raw, err := rollbackSnapshotTx(ctx, tx, contentType, nativeRevisionID, sourceSubmissionID, campaignReleaseID)
+	if err != nil {
+		return editorial.Snapshot{}, err
+	}
+	if err = provider.ValidateSnapshotTx(ctx, tx, contentID, raw); err != nil {
+		return editorial.Snapshot{}, fmt.Errorf("%w: historical publication is no longer valid: %v", ErrValidation, err)
+	}
+	if err = provider.RestoreDraftTx(ctx, tx, contentID, raw, userID); err != nil {
+		return editorial.Snapshot{}, err
+	}
+	if err = auditTx(ctx, tx, userID, "content.version_restored_to_draft", contentType, contentID, map[string]any{"publicationId": publicationID.String()}); err != nil {
+		return editorial.Snapshot{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return editorial.Snapshot{}, err
+	}
+	return providerSnapshot(ctx, s.db, provider, contentID)
+}
+
+func lockEditorialDraftTx(ctx context.Context, tx pgx.Tx, contentType string, id uuid.UUID) error {
+	var query string
+	switch contentType {
+	case TypePlaylist:
+		query = `SELECT playlist_id FROM playlist_drafts WHERE playlist_id=$1 FOR UPDATE`
+	case TypeLayout:
+		query = `SELECT id FROM layouts WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`
+	case TypeCampaign:
+		query = `SELECT id FROM campaigns WHERE id=$1 AND archived_at IS NULL FOR UPDATE`
+	default:
+		return fmt.Errorf("%w: unknown content type %q", ErrValidation, contentType)
+	}
+	var found uuid.UUID
+	if err := tx.QueryRow(ctx, query, id).Scan(&found); errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	} else {
+		return err
+	}
+}
+
+func auditTx(ctx context.Context, tx pgx.Tx, userID uuid.UUID, action, resourceType string, resourceID uuid.UUID, metadata map[string]any) error {
+	raw, _ := json.Marshal(metadata)
+	_, err := tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,result,metadata) VALUES($1,$2,$3,$4,$5,'success',$6::jsonb)`, uuid.New(), userID, action, resourceType, resourceID.String(), string(raw))
+	return err
 }

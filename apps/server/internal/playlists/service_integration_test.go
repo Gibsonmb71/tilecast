@@ -23,6 +23,27 @@ func (n *testNotifier) ManifestChanged(_ uuid.UUID, version int64) {
 	n.versions = append(n.versions, version)
 }
 
+func publishDraftForTest(t *testing.T, ctx context.Context, service *Service, playlistID, userID uuid.UUID) {
+	t.Helper()
+	snapshot, err := service.DraftSnapshot(ctx, playlistID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx, err := service.db.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	published, err := service.PublishSnapshotTx(ctx, tx, playlistID, snapshot.Document, snapshot.WorkingRevision, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	service.NotifyPublication(published.Changes)
+}
+
 func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 	databaseURL := os.Getenv("TEST_DATABASE_URL")
 	if databaseURL == "" {
@@ -102,12 +123,17 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(playlist.Items) != 2 || playlist.Revision != 3 {
+	if len(playlist.Items) != 2 || playlist.DraftRevision != 3 || playlist.Revision != 1 || !playlist.HasUnpublishedChanges {
 		t.Fatalf("playlist=%#v", playlist)
 	}
 	playlist, err = service.Reorder(ctx, playlist.ID, owner.User.ID, []uuid.UUID{playlist.Items[1].ID, playlist.Items[0].ID})
 	if err != nil || playlist.Items[0].AssetID != videoID {
 		t.Fatalf("reorder: %#v %v", playlist, err)
+	}
+	publishDraftForTest(t, ctx, service, playlist.ID, owner.User.ID)
+	playlist, err = service.GetDraft(ctx, playlist.ID)
+	if err != nil || playlist.HasUnpublishedChanges {
+		t.Fatalf("published playlist draft state=%#v err=%v", playlist, err)
 	}
 	assignment, err := service.Assign(ctx, screenID, playlist.ID, owner.User.ID)
 	if err != nil {
@@ -140,6 +166,7 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 	if err != nil || playlist.SourceType != "tag" || playlist.TagRule == nil || len(playlist.Items) != 1 || !playlist.Items[0].Dynamic || *playlist.Items[0].DurationMS != 15000 {
 		t.Fatalf("tag playlist=%#v err=%v", playlist, err)
 	}
+	publishDraftForTest(t, ctx, service, playlist.ID, owner.User.ID)
 	tagManifest, _, err := service.BuildManifest(ctx, screenID)
 	if err != nil || tagManifest.DirectFallbackPlaylist == nil || len(tagManifest.DirectFallbackPlaylist.Items) != 1 || tagManifest.DirectFallbackPlaylist.Items[0].AvailableFrom == nil || tagManifest.DirectFallbackPlaylist.Items[0].ExpiresAt == nil {
 		t.Fatalf("tag manifest=%#v err=%v", tagManifest, err)
@@ -151,10 +178,12 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 	if err != nil || playlist.SourceType != "static" || len(playlist.Items) != 2 {
 		t.Fatalf("manual playlist was not restored: %#v err=%v", playlist, err)
 	}
+	publishDraftForTest(t, ctx, service, playlist.ID, owner.User.ID)
 	playlist, err = service.UpdateItem(ctx, playlist.ID, playlist.Items[0].ID, owner.User.ID, ItemInput{AssetID: videoID, Transition: "crossfade"})
 	if err != nil {
 		t.Fatal(err)
 	}
+	publishDraftForTest(t, ctx, service, playlist.ID, owner.User.ID)
 	legacyCrossfade, _, err := service.BuildManifest(ctx, screenID)
 	if err != nil || legacyCrossfade.SchemaVersion != 11 || legacyCrossfade.DirectFallbackPlaylist.Items[0].Transition != "fade" {
 		t.Fatalf("legacy crossfade projection=%#v err=%v", legacyCrossfade, err)
@@ -171,6 +200,13 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Editing the working draft does not invalidate the assigned screen. The
+	// manifest changes only after the exact draft is published.
+	unchanged, _, err := service.BuildManifest(ctx, screenID)
+	if err != nil || unchanged.ManifestVersion != crossfadeManifest.ManifestVersion {
+		t.Fatalf("draft edit changed manifest: before=%d after=%d err=%v", crossfadeManifest.ManifestVersion, unchanged.ManifestVersion, err)
+	}
+	publishDraftForTest(t, ctx, service, playlist.ID, owner.User.ID)
 	if _, err = pool.Exec(ctx, `UPDATE screen_player_status SET player_version_code=NULL,presentation_schema_versions='{}',native_presentation_capabilities='{}',web_runtime_version=0,web_bundle_limit_bytes=0 WHERE screen_id=$1`, screenID); err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +266,7 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 	}
 	changed, _, err := service.BuildManifest(ctx, screenID)
 	if err != nil || changed.ManifestVersion <= manifest.ManifestVersion {
-		t.Fatal("playlist update did not advance manifest")
+		t.Fatal("playlist publication did not advance manifest")
 	}
 	active := changed.ManifestVersion
 	status := PlayerStatus{ActiveManifestVersion: &active, PlaybackState: "playing"}
@@ -277,6 +313,7 @@ func TestPlaylistAssignmentManifestLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	publishDraftForTest(t, ctx, service, webPlaylist.ID, owner.User.ID)
 	if _, err = service.Assign(ctx, screenID, webPlaylist.ID, owner.User.ID); err != nil {
 		t.Fatal(err)
 	}

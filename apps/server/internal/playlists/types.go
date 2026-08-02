@@ -20,16 +20,21 @@ var (
 )
 
 type Playlist struct {
-	ID          uuid.UUID     `json:"id"`
-	Name        string        `json:"name"`
-	Description string        `json:"description"`
-	Revision    int64         `json:"revision"`
-	CreatedAt   time.Time     `json:"createdAt"`
-	UpdatedAt   time.Time     `json:"updatedAt"`
-	Items       []Item        `json:"items"`
-	ItemCount   int           `json:"itemCount"`
-	Warnings    []string      `json:"warnings"`
-	LayoutUsage []LayoutUsage `json:"layoutUsage"`
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	// Revision is the currently published runtime revision. DraftRevision is
+	// the independent working-copy revision returned by the authoring API.
+	Revision              int64         `json:"revision"`
+	DraftRevision         int64         `json:"draftRevision,omitempty"`
+	PublishedRevision     int64         `json:"publishedRevision,omitempty"`
+	HasUnpublishedChanges bool          `json:"hasUnpublishedChanges"`
+	CreatedAt             time.Time     `json:"createdAt"`
+	UpdatedAt             time.Time     `json:"updatedAt"`
+	Items                 []Item        `json:"items"`
+	ItemCount             int           `json:"itemCount"`
+	Warnings              []string      `json:"warnings"`
+	LayoutUsage           []LayoutUsage `json:"layoutUsage"`
 	// Usage names the screens and schedules that play this playlist, so Studio can walk from a
 	// Data Source through its Widgets and playlists to the screens actually displaying it. It
 	// mirrors the Layout usage shape and is populated on the detail read only.
@@ -77,6 +82,7 @@ type UsageItem struct {
 type Usage struct {
 	Screens   []UsageItem `json:"screens"`
 	Schedules []UsageItem `json:"schedules"`
+	Campaigns []UsageItem `json:"campaigns"`
 }
 
 type Item struct {

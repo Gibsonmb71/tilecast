@@ -13,6 +13,7 @@ import {
   ListVideo,
   PanelsTopLeft,
   Plus,
+  Send,
   Trash2,
   Globe2,
   ExternalLink,
@@ -219,6 +220,10 @@ export function PlaylistEditorPage() {
   const auth = useAuth();
   const csrf = auth.status?.csrfToken ?? "";
   const canManage = canManagePlaylists(auth.status?.user?.role);
+  const canPublish = ["owner", "administrator", "editor"].includes(
+    auth.status?.user?.role ?? "",
+  );
+  const canSubmit = canPublish || auth.status?.user?.role === "contributor";
   const navigate = useNavigate();
   const client = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -272,6 +277,22 @@ export function PlaylistEditorPage() {
     onSuccess: (p) => {
       update(p);
       setDirty(false);
+    },
+  });
+  const publish = useMutation({
+    mutationFn: () => {
+      const expectedRevision = query.data?.draftRevision ?? 0;
+      return canPublish
+        ? api.publishPlaylist(id, expectedRevision, csrf)
+        : api.submitContent("playlist", id, csrf, undefined, expectedRevision);
+    },
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["playlists", id] });
+      void client.invalidateQueries({ queryKey: ["playlists"] });
+      void client.invalidateQueries({ queryKey: ["content-submissions"] });
+      void client.invalidateQueries({
+        queryKey: ["content-history", "playlist", id],
+      });
     },
   });
   const duplicate = useMutation({
@@ -398,7 +419,8 @@ export function PlaylistEditorPage() {
         title={playlist.name}
         description={
           <>
-            Revision {playlist.revision} ·{" "}
+            Published revision {playlist.publishedRevision ?? playlist.revision}{" "}
+            · draft {playlist.draftRevision ?? playlist.revision} ·{" "}
             {formatDuration(playlistDuration(playlist.items))}
           </>
         }
@@ -411,6 +433,20 @@ export function PlaylistEditorPage() {
               <ExternalLink size={15} aria-hidden="true" />
               Preview
             </button>
+            {canSubmit && (
+              <Button
+                variant="primary"
+                loading={publish.isPending}
+                onClick={() => publish.mutate()}
+                disabled={
+                  !playlist.hasUnpublishedChanges &&
+                  playlist.draftRevision === playlist.publishedRevision
+                }
+              >
+                <Send size={15} />
+                {canPublish ? "Submit / publish" : "Submit for review"}
+              </Button>
+            )}
             {canManage && (
               <>
                 <button
@@ -439,9 +475,18 @@ export function PlaylistEditorPage() {
           {w}
         </div>
       ))}
+      {publish.error && (
+        <div className="notice notice--error">{publish.error.message}</div>
+      )}
+      {publish.isSuccess && (
+        <div className="notice notice--info">
+          The playlist was submitted or published. Check Content review for its
+          immutable submission.
+        </div>
+      )}
       <UsedByPanel
         compact
-        emptyMessage="No Layout, screen, or schedule plays this playlist yet."
+        emptyMessage="No Layout, campaign, screen, or schedule plays this playlist yet."
         groups={[
           {
             label: "Layouts",
@@ -461,6 +506,11 @@ export function PlaylistEditorPage() {
             label: "Schedules",
             items: playlist.usage?.schedules ?? [],
             to: (scheduleId) => `/schedules/${scheduleId}`,
+          },
+          {
+            label: "Campaigns",
+            items: playlist.usage?.campaigns ?? [],
+            to: (campaignId) => `/campaigns/${campaignId}`,
           },
         ]}
       />

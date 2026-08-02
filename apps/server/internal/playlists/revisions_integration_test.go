@@ -92,6 +92,7 @@ func TestPlaylistRevisionSnapshotAndRestore(t *testing.T) {
 			t.Fatalf("add item: %v", err)
 		}
 	}
+	publishDraftForTest(t, ctx, service, playlist.ID, owner.User.ID)
 
 	// The snapshot must actually have been written by the mutation path, with
 	// its items array populated. This is the query a unit test cannot reach.
@@ -109,7 +110,7 @@ func TestPlaylistRevisionSnapshotAndRestore(t *testing.T) {
 	}
 	t.Logf("revisions recorded: %d, of which %d carry items", rows, withItems)
 
-	twoItems, err := service.Get(ctx, playlist.ID)
+	twoItems, err := service.GetDraft(ctx, playlist.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,7 +242,8 @@ func TestPlaylistRevisionOrdersTenOrMoreItemsNumerically(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	full, err := service.Get(ctx, playlist.ID)
+	publishDraftForTest(t, ctx, service, playlist.ID, owner.User.ID)
+	full, err := service.GetDraft(ctx, playlist.ID)
 	if err != nil {
 		t.Fatal(err)
 	}

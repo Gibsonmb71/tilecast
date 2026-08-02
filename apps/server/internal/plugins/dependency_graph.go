@@ -43,6 +43,8 @@ func (s *Service) DependencyGraph(ctx context.Context, visibleScreenIDs []uuid.U
 		UNION ALL
 		SELECT id,'playlist',name FROM playlists WHERE deleted_at IS NULL
 		UNION ALL
+		SELECT id,'campaign',name FROM campaigns WHERE archived_at IS NULL
+		UNION ALL
 		SELECT id,'schedule',name FROM schedules WHERE deleted_at IS NULL
 		UNION ALL
 		SELECT id,'screen_group',name FROM screen_groups WHERE deleted_at IS NULL
@@ -93,6 +95,20 @@ func (s *Service) DependencyGraph(ctx context.Context, visibleScreenIDs []uuid.U
 		   FROM layout_draft_dependencies d
 		   JOIN layouts l ON l.id=d.layout_id AND l.deleted_at IS NULL
 		  WHERE d.dependency_type IN ('data_source','widget','asset','playlist')`,
+		`SELECT 'playlist',p.id,'campaign',c.id,'used by'
+		   FROM campaigns c
+		   CROSS JOIN LATERAL jsonb_array_elements(c.draft->'blocks') block
+		   JOIN playlists p ON p.id::text=block->>'contentId'
+		  WHERE c.archived_at IS NULL AND p.deleted_at IS NULL AND block->>'contentType'='playlist'`,
+		`SELECT 'layout',l.id,'campaign',c.id,'used by'
+		   FROM campaigns c
+		   CROSS JOIN LATERAL jsonb_array_elements(c.draft->'blocks') block
+		   JOIN layouts l ON l.id::text=block->>'contentId'
+		  WHERE c.archived_at IS NULL AND l.deleted_at IS NULL AND block->>'contentType'='layout'`,
+		`SELECT 'campaign',s.campaign_id,'schedule',s.id,'materialized as'
+		   FROM schedules s
+		   JOIN campaigns c ON c.id=s.campaign_id AND c.archived_at IS NULL
+		  WHERE s.deleted_at IS NULL`,
 		`WITH visible_screens AS (SELECT unnest($1::uuid[]) id)
 		 SELECT CASE WHEN s.layout_id IS NOT NULL THEN 'layout' ELSE 'playlist' END,
 		        COALESCE(s.layout_id,s.playlist_id),'schedule',s.id,'scheduled by'

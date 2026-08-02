@@ -203,6 +203,9 @@ export type Playlist = {
   name: string;
   description: string;
   revision: number;
+  draftRevision?: number;
+  publishedRevision?: number;
+  hasUnpublishedChanges?: boolean;
   createdAt: string;
   updatedAt: string;
   items: PlaylistItem[];
@@ -214,6 +217,7 @@ export type Playlist = {
   usage?: {
     screens: { id: string; name: string }[];
     schedules: { id: string; name: string }[];
+    campaigns: { id: string; name: string }[];
   };
   /** Compact visual metadata returned by playlist list requests. */
   previewItems?: PlaylistPreviewItem[];

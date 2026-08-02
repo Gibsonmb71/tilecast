@@ -8,6 +8,7 @@ import { DashboardShell, FoundationPage } from "./pages/Dashboard";
 import { PairScreenPage, ScreensPage } from "./pages/ScreensPage";
 import { FleetBulkPage } from "./pages/FleetBulkPage";
 import { ContentReviewPage } from "./pages/ContentReviewPage";
+import { ContentSubmissionInboxPage } from "./pages/ContentSubmissionInboxPage";
 import { ScreenDetailWithPreviewPage } from "./pages/ScreenDetailWithPreviewPage";
 import { ArchivedScreensPage } from "./pages/ArchivedScreensPage";
 import { ContentPage } from "./pages/ContentPage";
@@ -46,6 +47,7 @@ import { FormsPluginPage } from "./pages/FormsPluginPage";
 import { CreateFormDataSourcePage } from "./pages/CreateFormDataSourcePage";
 import { FormDataSourcePage } from "./pages/FormDataSourcePage";
 import { DependencyGraphPage } from "./pages/DependencyGraphPage";
+import { CampaignsPage } from "./pages/CampaignsPage";
 
 const search = (
   label: string,
@@ -236,7 +238,6 @@ export const studioRoutes: RouteObject[] = [
       },
       {
         path: "content-review",
-        element: <ContentReviewPage />,
         handle: {
           breadcrumb: "Content review",
           search: search(
@@ -246,6 +247,10 @@ export const studioRoutes: RouteObject[] = [
             ["approval", "review", "publish"],
           ),
         },
+        children: [
+          { index: true, element: <ContentReviewPage /> },
+          { path: "submissions", element: <ContentSubmissionInboxPage /> },
+        ],
       },
       {
         path: "playlists",
@@ -284,6 +289,26 @@ export const studioRoutes: RouteObject[] = [
             path: ":id",
             element: <LayoutEditorPage />,
             handle: { breadcrumb: "Layout", resource: "layout" },
+          },
+        ],
+      },
+      {
+        path: "campaigns",
+        handle: {
+          breadcrumb: "Campaigns",
+          search: search(
+            "Presentations: Campaigns",
+            "Coordinate reviewed releases across screens and groups",
+            "/campaigns",
+            ["presentations", "release", "publish", "deployment"],
+          ),
+        },
+        children: [
+          { index: true, element: <CampaignsPage /> },
+          {
+            path: ":id",
+            element: <CampaignsPage />,
+            handle: { breadcrumb: "Campaign", resource: "campaign" },
           },
         ],
       },

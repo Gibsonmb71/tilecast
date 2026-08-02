@@ -28,15 +28,23 @@ type TransactionalManifestInvalidator interface {
 	NotifyManifestChanges([]manifestchanges.Change)
 }
 type Service struct {
-	db          *pgxpool.Pool
-	notifier    Notifier
-	invalidator ManifestInvalidator
+	db               *pgxpool.Pool
+	notifier         Notifier
+	invalidator      ManifestInvalidator
+	publicationGuard func(context.Context, uuid.UUID, uuid.UUID, int64) error
 }
 
 func NewService(db *pgxpool.Pool) *Service       { return &Service{db: db} }
 func (s *Service) SetNotifier(notifier Notifier) { s.notifier = notifier }
 func (s *Service) SetManifestInvalidator(invalidator ManifestInvalidator) {
 	s.invalidator = invalidator
+}
+
+// SetPublicationGuard lets the application-level editorial workflow own the
+// authorization boundary while keeping this low-level service safe for any
+// remaining callers.
+func (s *Service) SetPublicationGuard(guard func(context.Context, uuid.UUID, uuid.UUID, int64) error) {
+	s.publicationGuard = guard
 }
 
 func defaultDocument(orientation string, width, height int) Document {
@@ -132,7 +140,7 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (Layout, error) {
 	if err != nil {
 		return Layout{}, err
 	}
-	result.Usage = Usage{Screens: []UsageItem{}, Schedules: []UsageItem{}}
+	result.Usage = Usage{Screens: []UsageItem{}, Schedules: []UsageItem{}, Campaigns: []UsageItem{}}
 	rows, err := s.db.Query(ctx, `SELECT DISTINCT sc.id,sc.name FROM screens sc LEFT JOIN screen_playlist_assignments a ON a.screen_id=sc.id LEFT JOIN screen_group_memberships m ON m.screen_id=sc.id LEFT JOIN screen_group_playlist_assignments ga ON ga.screen_group_id=m.screen_group_id WHERE a.layout_id=$1 OR ga.layout_id=$1 ORDER BY sc.name`, id)
 	if err != nil {
 		return Layout{}, err
@@ -144,6 +152,10 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (Layout, error) {
 			return Layout{}, err
 		}
 		result.Usage.Screens = append(result.Usage.Screens, item)
+	}
+	if err = rows.Err(); err != nil {
+		rows.Close()
+		return Layout{}, err
 	}
 	rows.Close()
 	rows, err = s.db.Query(ctx, `SELECT id,name FROM schedules WHERE layout_id=$1 AND deleted_at IS NULL ORDER BY name`, id)
@@ -158,8 +170,24 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (Layout, error) {
 		}
 		result.Usage.Schedules = append(result.Usage.Schedules, item)
 	}
+	if err = rows.Err(); err != nil {
+		rows.Close()
+		return Layout{}, err
+	}
 	rows.Close()
-	return result, rows.Err()
+	campaignRows, err := s.db.Query(ctx, `SELECT DISTINCT c.id,c.name FROM campaigns c LEFT JOIN schedules s ON s.campaign_id=c.id AND s.layout_id=$1 AND s.deleted_at IS NULL WHERE c.archived_at IS NULL AND (s.id IS NOT NULL OR EXISTS(SELECT 1 FROM jsonb_array_elements(c.draft->'blocks') block WHERE block->>'contentType'='layout' AND block->>'contentId'=$1::text)) ORDER BY c.name`, id)
+	if err != nil {
+		return Layout{}, err
+	}
+	defer campaignRows.Close()
+	for campaignRows.Next() {
+		var item UsageItem
+		if err = campaignRows.Scan(&item.ID, &item.Name); err != nil {
+			return Layout{}, err
+		}
+		result.Usage.Campaigns = append(result.Usage.Campaigns, item)
+	}
+	return result, campaignRows.Err()
 }
 
 func (s *Service) UpdateDetails(ctx context.Context, id, userID uuid.UUID, name, description string) (Layout, error) {
@@ -171,7 +199,7 @@ func (s *Service) UpdateDetails(ctx context.Context, id, userID uuid.UUID, name,
 	if err = validateDetails(name, description, current.Orientation, current.CanvasWidth, current.CanvasHeight); err != nil {
 		return Layout{}, err
 	}
-	command, err := s.db.Exec(ctx, `UPDATE layouts SET name=$1,description=$2,updated_by=$3,updated_at=now() WHERE id=$4 AND deleted_at IS NULL`, name, description, userID, id)
+	command, err := s.db.Exec(ctx, `UPDATE layouts SET name=$1,description=$2,draft_revision=draft_revision+1,updated_by=$3,updated_at=now() WHERE id=$4 AND deleted_at IS NULL`, name, description, userID, id)
 	if err != nil {
 		return Layout{}, err
 	}
@@ -284,6 +312,11 @@ func (s *Service) PreviewImage(ctx context.Context, id uuid.UUID) (PreviewImage,
 }
 
 func (s *Service) Publish(ctx context.Context, id, userID uuid.UUID, expected int64) (Revision, error) {
+	if s.publicationGuard != nil {
+		if err := s.publicationGuard(ctx, id, userID, expected); err != nil {
+			return Revision{}, err
+		}
+	}
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return Revision{}, err

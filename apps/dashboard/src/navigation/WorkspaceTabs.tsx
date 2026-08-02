@@ -9,6 +9,7 @@
 // rather than buttons so a tab can be opened in a new tab like any other destination.
 import {
   Blocks,
+  CalendarRange,
   Database,
   Image,
   ListVideo,
@@ -32,6 +33,7 @@ export const contentTabs: readonly WorkspaceTab[] = [
 export const presentationTabs: readonly WorkspaceTab[] = [
   { label: "Playlists", to: "/playlists", icon: ListVideo },
   { label: "Layouts", to: "/layouts", icon: PanelsTopLeft },
+  { label: "Campaigns", to: "/campaigns", icon: CalendarRange },
 ];
 
 // Every route beneath a tab's path belongs to that tab, so a Widget editor still shows Widgets as

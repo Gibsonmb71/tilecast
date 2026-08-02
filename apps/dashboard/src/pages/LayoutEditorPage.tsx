@@ -474,6 +474,10 @@ export function LayoutEditorPage() {
   const navigate = useNavigate();
   const auth = useAuth();
   const csrf = auth.status?.csrfToken ?? "";
+  const canPublish = ["owner", "administrator", "editor"].includes(
+    auth.status?.user?.role ?? "",
+  );
+  const canSubmit = canPublish || auth.status?.user?.role === "contributor";
   const queryClient = useQueryClient();
   const layoutQuery = useQuery({
     queryKey: ["layout", id],
@@ -759,11 +763,18 @@ export function LayoutEditorPage() {
     observer.observe(frame);
     return () => observer.disconnect();
   }, [preview, document]);
-  const publish = useMutation({
-    mutationFn: () => api.publishLayout(id, serverRevision, csrf),
+  const publish = useMutation<unknown, ApiError>({
+    mutationFn: () =>
+      canPublish
+        ? api.publishLayout(id, serverRevision, csrf)
+        : api.submitContent("layout", id, csrf, undefined, serverRevision),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["layout", id] });
       void queryClient.invalidateQueries({ queryKey: ["layouts"] });
+      void queryClient.invalidateQueries({ queryKey: ["content-submissions"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["content-history", "layout", id],
+      });
     },
   });
   const rename = useMutation({
@@ -1857,13 +1868,21 @@ export function LayoutEditorPage() {
                   ? "Retry save"
                   : "Save now"}
         </button>
-        <button
-          className="button button--compact button--primary"
-          disabled={saveState !== "saved" || publish.isPending}
-          onClick={() => publish.mutate()}
-        >
-          {publish.isPending ? "Publishing…" : "Publish"}
-        </button>
+        {canSubmit && (
+          <button
+            className="button button--compact button--primary"
+            disabled={saveState !== "saved" || publish.isPending}
+            onClick={() => publish.mutate()}
+          >
+            {publish.isPending
+              ? canPublish
+                ? "Publishing…"
+                : "Submitting…"
+              : canPublish
+                ? "Publish"
+                : "Submit for review"}
+          </button>
+        )}
       </div>
       <aside className="layout-editor-left">
         <nav className="layout-sidebar-nav" aria-label="Layout builder">
@@ -2124,7 +2143,7 @@ export function LayoutEditorPage() {
               <CanvasInspector document={document} update={update} />
               {layoutQuery.data && (
                 <UsedByPanel
-                  emptyMessage="No screen or schedule shows this Layout yet."
+                  emptyMessage="No campaign, screen, or schedule shows this Layout yet."
                   groups={[
                     {
                       label: "Screens",
@@ -2135,6 +2154,11 @@ export function LayoutEditorPage() {
                       label: "Schedules",
                       items: layoutQuery.data.usage.schedules,
                       to: (scheduleId) => `/schedules/${scheduleId}`,
+                    },
+                    {
+                      label: "Campaigns",
+                      items: layoutQuery.data.usage.campaigns,
+                      to: (campaignId) => `/campaigns/${campaignId}`,
                     },
                   ]}
                 />

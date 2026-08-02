@@ -8,6 +8,7 @@ export type BreadcrumbResource =
   | "data-source"
   | "playlist"
   | "layout"
+  | "campaign"
   | "schedule";
 
 export type StudioRouteHandle = {

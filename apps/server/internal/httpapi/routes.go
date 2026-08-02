@@ -199,6 +199,18 @@ func (s *server) routes() http.Handler {
 				dashboard.With(s.requireRoles(contentAuthors...)).Get("/content-reviews", s.listContentReviews)
 				dashboard.With(s.requireRoles(contentManagers...), s.requireCSRF).
 					Post("/content-reviews/{type}/{id}", s.decideContentReview)
+				dashboard.With(s.requireRoles(contentAuthors...)).Get("/content-submissions", s.listContentSubmissions)
+				dashboard.With(s.requireRoles(contentAuthors...)).Get("/content-submissions/{id}", s.getContentSubmission)
+				dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Post("/content-submissions/{type}/{id}", s.submitContent)
+				dashboard.With(s.requireRoles(contentManagers...), s.requireCSRF).Post("/content-submissions/{id}/approve", s.approveContentSubmission)
+				dashboard.With(s.requireRoles(contentManagers...), s.requireCSRF).Post("/content-submissions/{id}/request-changes", s.requestContentChanges)
+				dashboard.With(s.requireRoles(contentManagers...), s.requireCSRF).Post("/content-submissions/{id}/publish", s.publishContentSubmission)
+				dashboard.With(s.requireRoles(contentManagers...), s.requireCSRF).Post("/content-submissions/{id}/schedule", s.scheduleContentSubmission)
+				dashboard.With(s.requireRoles(contentManagers...), s.requireCSRF).Post("/content-submissions/{id}/cancel-schedule", s.cancelContentSchedule)
+				dashboard.With(s.requireRoles(contentAuthors...)).Get("/content-history/{type}/{id}/publications", s.contentPublicationHistory)
+				dashboard.With(s.requireRoles(contentAuthors...)).Get("/content-history/{type}/{id}/compare", s.comparePublications)
+				dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Post("/content-history/{type}/{id}/publications/{publicationId}/restore-draft", s.restorePublicationToDraft)
+				dashboard.With(s.requireRoles(contentManagers...), s.requireCSRF).Post("/content-history/{type}/{id}/publications/{publicationId}/rollback", s.rollbackPublication)
 			}
 			if s.integrations != nil {
 				// Only an Owner mints or revokes a token: it is a standing
@@ -309,6 +321,18 @@ func (s *server) routes() http.Handler {
 			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Delete("/playlists/{id}/items/{itemId}", s.deletePlaylistItem)
 			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Put("/playlists/{id}/items/order", s.reorderPlaylistItems)
 			dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Put("/playlists/{id}/tag-rule", s.setPlaylistTagRule)
+			dashboard.With(s.requireRoles(contentManagers...), s.requireCSRF).Post("/playlists/{id}/publish", s.publishPlaylist)
+			if s.campaigns != nil {
+				dashboard.Get("/campaigns", s.listCampaigns)
+				dashboard.Get("/campaigns/{id}", s.getCampaign)
+				dashboard.Get("/campaigns/{id}/preflight", s.preflightCampaign)
+				dashboard.Get("/campaigns/{id}/releases", s.listCampaignReleases)
+				dashboard.With(s.requireRoles(contentManagers...), s.requireCSRF).Post("/campaigns", s.createCampaign)
+				dashboard.With(s.requireRoles(contentManagers...), s.requireCSRF).Patch("/campaigns/{id}/draft", s.updateCampaignDraft)
+				dashboard.With(s.requireRoles(contentAuthors...), s.requireCSRF).Post("/campaigns/{id}/releases/{releaseId}/restore", s.restoreCampaignRelease)
+				dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF).Post("/campaigns/{id}/publish", s.publishCampaign)
+				dashboard.With(s.requireRoles(contentManagers...), s.requireCSRF).Delete("/campaigns/{id}", s.archiveCampaign)
+			}
 			dashboard.With(s.requireScreenScope).Get("/screens/{id}/playlist-assignment", s.getPlaylistAssignment)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF, s.requireScreenScope).Put("/screens/{id}/playlist-assignment", s.assignPlaylist)
 			dashboard.With(s.requireRoles("owner", "administrator"), s.requireCSRF, s.requireScreenScope).Delete("/screens/{id}/playlist-assignment", s.unassignPlaylist)

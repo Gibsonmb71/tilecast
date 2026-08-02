@@ -38,6 +38,15 @@ import type {
   AssetList,
   UploadSession,
   Playlist,
+  Campaign,
+  CampaignList,
+  CampaignPreflight,
+  CampaignRelease,
+  CampaignSnapshot,
+  ContentSubmission,
+  ContentSubmissionList,
+  EditorialContentType,
+  PublicationHistoryItem,
   PlaylistAssignment,
   PlaylistItemInput,
   PlaylistList,
@@ -231,6 +240,7 @@ export function normalizePlaylist(
     items: Array.isArray(source.items) ? source.items : [],
     warnings: Array.isArray(source.warnings) ? source.warnings : [],
     layoutUsage: Array.isArray(source.layoutUsage) ? source.layoutUsage : [],
+    hasUnpublishedChanges: Boolean(source.hasUnpublishedChanges),
   };
 }
 
@@ -268,6 +278,9 @@ export function normalizeLayout(layout: Layout | null | undefined): Layout {
       screens: Array.isArray(source.usage?.screens) ? source.usage.screens : [],
       schedules: Array.isArray(source.usage?.schedules)
         ? source.usage.schedules
+        : [],
+      campaigns: Array.isArray(source.usage?.campaigns)
+        ? source.usage.campaigns
         : [],
     },
   };
@@ -735,6 +748,16 @@ export const api = {
       `/playlists/${playlistId}/revisions/${revision}/restore`,
       { method: "POST", headers: { "X-CSRF-Token": csrfToken } },
     ),
+  publishPlaylist: (
+    id: string,
+    expectedDraftRevision: number,
+    csrfToken: string,
+  ) =>
+    request<unknown>(`/playlists/${id}/publish`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ expectedDraftRevision }),
+    }),
   contentReviews: (state = "") =>
     request<ContentReviewQueue>(
       `/content-reviews${state ? `?state=${state}` : ""}`,
@@ -749,6 +772,146 @@ export const api = {
       method: "POST",
       headers: { "X-CSRF-Token": csrfToken },
       body: JSON.stringify(body),
+    }),
+  contentSubmissions: (state = "") =>
+    request<ContentSubmissionList>(
+      `/content-submissions${state ? `?state=${encodeURIComponent(state)}` : ""}`,
+    ),
+  contentSubmission: (id: string) =>
+    request<ContentSubmission>(`/content-submissions/${id}`),
+  submitContent: (
+    contentType: EditorialContentType,
+    id: string,
+    csrfToken: string,
+    requestedPublicationAt?: string,
+    expectedRevision?: number,
+  ) =>
+    request<ContentSubmission>(`/content-submissions/${contentType}/${id}`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ requestedPublicationAt, expectedRevision }),
+    }),
+  approveContentSubmission: (id: string, note: string, csrfToken: string) =>
+    request<ContentSubmission>(`/content-submissions/${id}/approve`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ note }),
+    }),
+  requestContentChanges: (id: string, note: string, csrfToken: string) =>
+    request<ContentSubmission>(`/content-submissions/${id}/request-changes`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ note }),
+    }),
+  publishContentSubmission: (
+    id: string,
+    csrfToken: string,
+    method = "manual",
+  ) =>
+    request<unknown>(`/content-submissions/${id}/publish`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ method }),
+    }),
+  scheduleContentSubmission: (
+    id: string,
+    requestedPublicationAt: string,
+    csrfToken: string,
+  ) =>
+    request<ContentSubmission>(`/content-submissions/${id}/schedule`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ requestedPublicationAt }),
+    }),
+  cancelContentSchedule: (id: string, csrfToken: string) =>
+    request<ContentSubmission>(`/content-submissions/${id}/cancel-schedule`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
+  publicationHistory: (contentType: EditorialContentType, id: string) =>
+    request<{ items: PublicationHistoryItem[] }>(
+      `/content-history/${contentType}/${id}/publications`,
+    ),
+  comparePublications: (
+    contentType: EditorialContentType,
+    id: string,
+    fromPublicationId: string,
+    toPublicationId: string,
+  ) =>
+    request<{
+      changed: boolean;
+      changes: { kind: string; path: string; description: string }[];
+    }>(
+      `/content-history/${contentType}/${id}/compare?fromPublicationId=${encodeURIComponent(fromPublicationId)}&toPublicationId=${encodeURIComponent(toPublicationId)}`,
+    ),
+  restorePublicationToDraft: (
+    contentType: EditorialContentType,
+    contentId: string,
+    publicationId: string,
+    csrfToken: string,
+  ) =>
+    request<unknown>(
+      `/content-history/${contentType}/${contentId}/publications/${publicationId}/restore-draft`,
+      { method: "POST", headers: { "X-CSRF-Token": csrfToken } },
+    ),
+  rollbackPublication: (
+    contentType: EditorialContentType,
+    contentId: string,
+    publicationId: string,
+    csrfToken: string,
+  ) =>
+    request<unknown>(
+      `/content-history/${contentType}/${contentId}/publications/${publicationId}/rollback`,
+      { method: "POST", headers: { "X-CSRF-Token": csrfToken } },
+    ),
+  campaigns: async (search = "") =>
+    request<CampaignList>(
+      `/campaigns?page=1&pageSize=100&search=${encodeURIComponent(search)}`,
+    ),
+  campaign: (id: string) => request<Campaign>(`/campaigns/${id}`),
+  createCampaign: (
+    input: { name: string; description?: string; timezone?: string },
+    csrfToken: string,
+  ) =>
+    request<Campaign>("/campaigns", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify(input),
+    }),
+  updateCampaignDraft: (
+    id: string,
+    expectedDraftRevision: number,
+    draft: CampaignSnapshot,
+    csrfToken: string,
+  ) =>
+    request<Campaign>(`/campaigns/${id}/draft`, {
+      method: "PATCH",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ expectedDraftRevision, draft }),
+    }),
+  campaignPreflight: (id: string) =>
+    request<CampaignPreflight>(`/campaigns/${id}/preflight`),
+  campaignReleases: (id: string) =>
+    request<{ items: CampaignRelease[] }>(`/campaigns/${id}/releases`),
+  restoreCampaignRelease: (id: string, releaseId: string, csrfToken: string) =>
+    request<Campaign>(`/campaigns/${id}/releases/${releaseId}/restore`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+    }),
+  publishCampaign: (
+    id: string,
+    expectedDraftRevision: number,
+    csrfToken: string,
+  ) =>
+    request<unknown>(`/campaigns/${id}/publish`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ expectedDraftRevision }),
+    }),
+  archiveCampaign: (id: string, csrfToken: string) =>
+    request<void>(`/campaigns/${id}`, {
+      method: "DELETE",
+      headers: { "X-CSRF-Token": csrfToken },
     }),
   userScreenScopes: (userId: string) =>
     request<ScreenScopes>(`/users/${userId}/screen-scopes`),

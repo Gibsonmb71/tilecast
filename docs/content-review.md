@@ -1,101 +1,125 @@
-# Content review and the Contributor role
+# Draft, review, and publication
 
-Approvals already exist for Forms records. This is the other half: a student
-club, a branch librarian, or a volunteer can build content, and somebody checks
-it before it reaches a hallway.
+Tilecast keeps authoring state separate from what Players can receive. A
+Playlist or Layout may have a working draft, an immutable submission under
+review, and a different published version at the same time. Editing an object
+that is already used by screens changes the draft only; it does not change
+those screens.
 
-Both parts are off or unused until you choose them. An installation that
-upgrades keeps working exactly as before.
+## Roles and policy
 
-## The Contributor role
+The organization setting `content.review_policy` has three values:
 
-A Contributor creates and edits content: media, Widgets, Data Sources,
-playlists, Layout drafts, folders, collections, and tags.
+- `off`: a user with publish permission can publish directly.
+- `contributors`: Contributor submissions require review; content managers can
+  publish their own work directly.
+- `everyone`: every publication requires an approved submission.
 
-A Contributor cannot:
+`content.allow_self_approval` controls whether the submitter may approve their
+own submission. It defaults to the compatible existing behavior, enabled.
+`content.auto_publish_on_approval` defaults to disabled. When enabled, an
+approval publishes immediately unless the submission has a future publication
+time, in which case it becomes Scheduled.
 
-- publish a Layout
-- delete content
-- assign anything to a screen
-- reach screens, groups, schedules, takeovers, commands, settings, or users
-- approve content, including their own
+The old `content.approval_required` setting is migrated predictably: `true`
+becomes `everyone`, and `false` becomes `off`. The old key remains available
+for compatibility. Review policy is enforced by the server; hiding a Studio
+button is not an authorization boundary.
 
-Assignment has always been Owner and Administrator only, so the boundary that
-matters for a Contributor is publish and delete.
+| Role          | Author drafts | Submit | Review | Publish Playlist/Layout | Publish Campaign |
+| ------------- | ------------- | ------ | ------ | ----------------------- | ---------------- |
+| Owner         | Yes           | Yes    | Yes    | Yes                     | Yes              |
+| Administrator | Yes           | Yes    | Yes    | Yes                     | Yes              |
+| Editor        | Yes           | Yes    | Yes    | Yes                     | No               |
+| Contributor   | Yes           | Yes    | No     | No                      | No               |
+| Viewer        | Read-only     | No     | No     | No                      | No               |
 
-| Role          | Creates content | Publishes and deletes | Operates screens | Reviews |
-| ------------- | --------------- | --------------------- | ---------------- | ------- |
-| Owner         | Yes             | Yes                   | Yes              | Yes     |
-| Administrator | Yes             | Yes                   | Yes              | Yes     |
-| Editor        | Yes             | Yes                   | Yes              | Yes     |
-| Contributor   | Yes             | No                    | No               | No      |
-| Viewer        | No              | No                    | No               | No      |
+Campaigns use the stricter deployment boundary because publishing one changes
+multiple schedules and destinations. Screen scopes still apply to the
+existing screen-operation routes.
 
-## Review
+## Immutable submissions
 
-Turn on **Require approval before content reaches a screen** under
-**Settings**, **Content review**.
+**Submit for review** snapshots the exact working definition, including the
+native/draft revision, full document, and SHA-256 digest. The snapshot is never
+re-read from mutable draft rows during review or publication. A submission
+moves through:
 
-With it on, a playlist or a published Layout must be approved at its current
-revision before it can be assigned to a screen. Assignment refuses with
-`content_not_approved` until it is.
+`in_review` → `changes_requested` or `approved` → `scheduled` or `published`.
 
-**There is no submit step.** Content is waiting for review whenever its current
-revision has no decision:
+Older submissions may become `superseded`, `cancelled`, or
+`publication_failed`. A submission that is still active is unique per content
+object, while its immutable record remains available in the submission list.
 
-- pending: the current revision has no decision
-- approved: a decision of approved exists for exactly this revision
-- sent back: a decision of rejected exists for exactly this revision
+Authors may continue editing after submitting. If revision 21 is in review and
+the working draft advances to revision 22, the reviewer sees that a newer draft
+exists, but approving revision 21 is still valid. Publishing it makes exactly
+revision 21 live and leaves revision 22 as the next unpublished draft.
 
-Editing content bumps its revision, so **editing approved content sends it back
-for review by itself**. That is the point of the design: a workflow with an
-explicit submit step has to be kept in step with every edit path, and the first
-path that forgot would let unreviewed content onto a screen while still reading
-as approved.
+Requesting changes requires a note. Approval may include an optional note.
+Approving a stale or superseded submission is rejected; a newer working draft
+does not make an otherwise active immutable submission stale.
 
-Reviewing is the same for a new playlist and for an edit to one that is already
-on forty screens. The queue lists the number of screens each item is already on,
-because that is the difference that matters.
+## Publication
 
-## Reviewing
+Publication validates the frozen snapshot against current readiness and
+dependency rules, then commits the runtime change, native revision, publication
+history, audit event, and manifest invalidation in one transaction. Player
+notifications are sent only after commit. Assignment still performs the
+transactional approval/publication gate as defense in depth, including its
+revision-row locking against edit/assignment races.
 
-**Content review** in the main navigation lists the queue. An Owner,
-Administrator, or Editor approves or sends back. A Contributor sees the queue
-and where their work stands, but no decision controls.
+Layouts already had draft and published revisions; their Publish action now
+uses the same submission path. A review-required installation cannot publish a
+Layout and only then discover that it needs approval.
 
-A rejection needs a note. A rejection with no reason leaves the author with
-nothing to act on, so it is refused.
+## Scheduled publication
 
-Approving again after a rejection replaces the decision for that revision. There
-is no third state to get stuck in.
+An approved submission can be scheduled with `requestedPublicationAt`. The
+intent is stored in PostgreSQL, not in a process timer. Tilecast reconciles due
+submissions at startup and periodically, locks each submission before
+publishing, and rechecks its status and due time. A manual publish or
+cancellation therefore cannot be duplicated by a second worker. A failed due
+publication becomes `publication_failed` with its reason visible in Studio;
+there is no unbounded silent retry loop.
 
-A decision carries the revision the reviewer was looking at. If the content
-changed while the review was open, the decision is refused and the reviewer is
-told to look again, so an approval can never land on a revision nobody read.
+## Studio review workspace
 
-## Where the check happens
+Content Review shows explicit submissions in the In review, Approved,
+Changes requested, Scheduled, Recently published, and All states. Each entry
+includes the title, type, submitter, exact revision, digest, current published
+revision, whether a newer draft exists, and the known screen/location impact.
+The submission snapshot—not the author's current draft—is the review subject.
 
-The gate is in the assignment path in the server, not in Studio. Single
-assignment, sync group assignment, bulk changes, and anything added later all
-pass through it.
+The workspace provides Approve, Request changes, Publish, Publish at, and
+Cancel schedule actions as permitted by role and policy. History links expose
+the semantic comparison against another publication and the separate
+Restore as draft and Roll back actions.
 
-The check runs inside the transaction that writes the assignment, and it holds
-the content against an edit until that transaction commits. An edit that arrives
-during an assignment waits for it, and then bumps the revision as any edit does.
-Without that, an assignment approved at one revision could commit after the
-content had already changed.
+## Review versus audit
 
-Bulk changes check it during the preview, so unreviewed content is refused once
-by name rather than failing separately on every screen in the selection. The
-preview takes no lock, because it writes nothing; the apply that follows goes
-through the assignment path and is checked again there.
+Content submissions and publication history are recovery/editorial data:
+they answer which immutable version was reviewed and what was live. The Audit
+Log remains accountability data: who submitted, approved, published,
+scheduled, restored, rolled back, or archived an object. Rollback reads a
+publication snapshot, but never replays or deletes audit records.
 
-## Known limitations
+## Migration and limitations
 
-- Only playlists and published Layouts are reviewed. Media, Widgets, and Data
-  Sources are reviewed through the playlist or Layout that carries them.
-- An unpublished Layout draft is not in the queue. It cannot reach a screen, so
-  there is nothing to decide yet.
-- Approval does not apply to a Takeover, which is an emergency path by design.
-- There is no per-reviewer routing. Anyone who can review can review anything.
-- A Contributor cannot delete their own draft. Ask an Editor.
+Migration `00095_editorial_workflow.sql` seeds a working Playlist draft from
+the current normalized runtime rows and backfills available Playlist and Layout
+publication checkpoints. It does not edit runtime rows or bump screen
+manifests. Existing review decisions remain readable through the assignment
+gate, and existing live content is not made blank solely because it predates
+the workflow.
+
+Publication history is bounded only by the existing native revision retention
+rules for ordinary Playlist checkpoints. Revisions referenced by the current
+publication, an active submission, a scheduled publication, or publication
+history are protected from pruning. A deleted media asset is never resurrected
+by restore; if a historical snapshot can no longer validate, Tilecast reports
+the validation failure instead of publishing an incomplete object.
+
+The legacy `/content-reviews` endpoints remain available for compatibility with
+older decision-based clients. New Studio flows use `/content-submissions` and
+`/content-history`.

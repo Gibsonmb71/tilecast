@@ -63,7 +63,7 @@ func (s *server) getPlaylist(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	result, err := s.playlists.Get(r.Context(), id)
+	result, err := s.playlists.GetDraft(r.Context(), id)
 	if err != nil {
 		s.writePlaylistError(w, r, err)
 		return
@@ -109,6 +109,40 @@ func (s *server) duplicatePlaylist(w http.ResponseWriter, r *http.Request) {
 	result, err := s.playlists.Duplicate(r.Context(), id, user.ID)
 	if err != nil {
 		s.writePlaylistError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"data": result})
+}
+
+func (s *server) publishPlaylist(w http.ResponseWriter, r *http.Request) {
+	id, ok := urlUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	var body struct {
+		ExpectedDraftRevision int64 `json:"expectedDraftRevision"`
+	}
+	if err := decodeJSON(w, r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	user := r.Context().Value(sessionContextKey).(auth.Session).User
+	if s.approvals == nil {
+		writeError(w, http.StatusServiceUnavailable, "editorial_unavailable", "Editorial publication is unavailable.")
+		return
+	}
+	result, publishErr := s.approvals.SubmitAndPublish(r.Context(), user.ID, user.Role, approvals.TypePlaylist, id, body.ExpectedDraftRevision)
+	if errors.Is(publishErr, approvals.ErrReviewRequired) {
+		submission, submitErr := s.approvals.SubmitExpected(r.Context(), user.ID, user.Role, approvals.TypePlaylist, id, nil, body.ExpectedDraftRevision)
+		if submitErr != nil {
+			s.writeEditorialError(w, r, submitErr)
+			return
+		}
+		writeJSON(w, http.StatusAccepted, map[string]any{"data": submission})
+		return
+	}
+	if publishErr != nil {
+		s.writeEditorialError(w, r, publishErr)
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"data": result})

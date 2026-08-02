@@ -10,6 +10,7 @@ import {
   Focus,
   LayoutTemplate,
   ListVideo,
+  Megaphone,
   Monitor,
   Network,
   Search,
@@ -86,6 +87,12 @@ const typePresentation: Record<DependencyNodeType, TypePresentation> = {
     plural: "Playlists",
     icon: ListVideo,
     path: (id) => `/playlists/${id}`,
+  },
+  campaign: {
+    label: "Campaign",
+    plural: "Campaigns",
+    icon: Megaphone,
+    path: (id) => `/campaigns/${id}`,
   },
   schedule: {
     label: "Schedule",
