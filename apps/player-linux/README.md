@@ -63,6 +63,15 @@ Everything after the initial pairing is remote or automatic:
   `/install/tilecast-player.service` as the by-hand template.
   It never starts the unit it just enabled — that process is already running —
   and never overwrites or deletes a unit file it did not generate.
+- **Legacy handoff is controlled.** If an AppImage was started manually and
+  has no `~/.config/systemd/user/tilecast-player.service`, use **Set up
+  autostart** in Studio. The player captures its actual AppImage path,
+  `DISPLAY`/`WAYLAND_DISPLAY`, data directory, and server URL, then writes and
+  enables the generated unit without starting a second process. The current
+  process remains in place until the next controlled restart, session restart,
+  or reboot; after that, systemd owns the player. Generated units explicitly
+  include `/usr/local/bin:/usr/bin:/bin` so provisioned UxPlay is visible to
+  display-manager, kiosk, SSH, and systemd launches.
 - **Rests overnight on its own.** Active-hours configuration darks the screen
   (true black, media torn down, no decoding) outside operating hours and
   wakes it at the next window with no operator action. An emergency always

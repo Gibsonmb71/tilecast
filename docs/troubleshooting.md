@@ -85,13 +85,26 @@ The Tilecast-managed service is a **user** unit. Use `systemctl --user`, not
 `sudo systemctl`; the latter operates a separate system manager and may still
 be running an older unit without the recovery hook. Re-run **Set up autostart**
 in Studio, or replace the hand-installed unit with the template the server
-publishes at `/install/tilecast-player.service`, then run:
+publishes at `/install/tilecast-player.service`. Studio captures the running
+AppImage's display variables, data directory, and server URL, writes and
+enables the unit, and deliberately does not start it: the current manual
+process remains on screen until the next controlled restart, session restart,
+or reboot. Do not run `systemctl --user start` or `--now` while that process is
+still running, because that would create a duplicate player. If the player is
+already stopped, or after the handoff, use:
 
 ```sh
 systemctl --user daemon-reload
 systemctl --user reset-failed tilecast-player
 systemctl --user start tilecast-player
 ```
+
+Current Tilecast-generated units include
+`Environment=PATH=/usr/local/bin:/usr/bin:/bin`, so a provisioned UxPlay at
+`/usr/local/bin/uxplay` is discoverable even when the display manager supplied
+a minimal PATH. Re-running **Set up autostart** safely repairs an older
+Tilecast-generated unit; an operator-owned unit without the Tilecast marker is
+left unchanged.
 
 The managed unit attempts to unmount stale FUSE filesystems below
 `/tmp/.mount_*` before each start. It does not recursively delete arbitrary

@@ -77,6 +77,25 @@ func TestInstallScriptFallsBackToTheRequestHost(t *testing.T) {
 	})
 }
 
+func TestServedPlayerUnitIncludesManagedHostToolPath(t *testing.T) {
+	withActivityDatabase(t, func(env activityTestEnvironment) {
+		recorder := httptest.NewRecorder()
+		env.server.playerServiceUnit(
+			recorder,
+			httptest.NewRequest(http.MethodGet, "/install/tilecast-player.service", nil),
+		)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("status = %d", recorder.Code)
+		}
+		if !strings.Contains(
+			recorder.Body.String(),
+			"Environment=PATH=/usr/local/bin:/usr/bin:/bin",
+		) {
+			t.Fatal("served player unit does not define the managed host-tool PATH")
+		}
+	})
+}
+
 func TestInstallScriptRejectsAnUnsafeRequestURL(t *testing.T) {
 	withActivityDatabase(t, func(env activityTestEnvironment) {
 		env.server.publicURL = ""

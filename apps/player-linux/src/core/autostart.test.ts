@@ -4,11 +4,14 @@ import {
   COLD_BOOT_WINDOW_SECONDS,
   FUSE_RECOVERY_COMMAND,
   GENERATED_MARKER,
+  MANAGED_PLAYER_PATH,
   UNIT_NAME,
   coldBootLaunchVerified,
   hasFuseIndependentLaunch,
+  hasManagedPlayerPath,
   parseProcUptime,
   renderUnit,
+  systemAutostartDeps,
   unitQuote,
   type AutostartDeps,
   type CommandOutput,
@@ -139,6 +142,7 @@ describe("renderUnit", () => {
     expect(unit).toContain("Environment=WAYLAND_DISPLAY=wayland-1");
     expect(unit).not.toContain("DISPLAY=:0");
     expect(unit).toContain("Environment=TILECAST_DATA_DIR=/srv/tilecast-state");
+    expect(unit).toContain(`Environment=PATH=${MANAGED_PLAYER_PATH}`);
     expect(unit).toContain(
       "Environment=TILECAST_SERVER_URL=https://signage.example.org",
     );
@@ -193,6 +197,18 @@ describe("hasFuseIndependentLaunch", () => {
   });
 });
 
+describe("hasManagedPlayerPath", () => {
+  it("recognizes the exact managed host-tool path", () => {
+    expect(
+      hasManagedPlayerPath(`Environment=PATH=${MANAGED_PLAYER_PATH}`),
+    ).toBe(true);
+    expect(hasManagedPlayerPath("# Environment=PATH=/usr/bin:/bin")).toBe(
+      false,
+    );
+    expect(hasManagedPlayerPath("Environment=PATH=/usr/bin:/bin")).toBe(false);
+  });
+});
+
 describe("AutostartInstaller.repairLegacyGeneratedUnit", () => {
   it("rewrites a legacy generated unit without changing its target", async () => {
     const h = harness({
@@ -217,7 +233,7 @@ describe("AutostartInstaller.repairLegacyGeneratedUnit", () => {
   it("leaves missing, current, and operator-owned units untouched", async () => {
     const current = harness({
       files: {
-        [UNIT_PATH]: `${GENERATED_MARKER}\nExecStart=${APP_IMAGE} --appimage-extract-and-run\n`,
+        [UNIT_PATH]: `${GENERATED_MARKER}\nExecStart=${APP_IMAGE} --appimage-extract-and-run\nEnvironment=PATH=${MANAGED_PLAYER_PATH}\n`,
       },
     });
     const operator = harness({
@@ -238,6 +254,22 @@ describe("AutostartInstaller.repairLegacyGeneratedUnit", () => {
     expect(operator.runs).toHaveLength(0);
     expect(missing.runs).toHaveLength(0);
   });
+
+  it("repairs a current-launch unit that predates the managed PATH", async () => {
+    const h = harness({
+      files: {
+        [UNIT_PATH]: `${GENERATED_MARKER}\nExecStart=${APP_IMAGE} --appimage-extract-and-run\n[Install]\nWantedBy=default.target\n`,
+      },
+    });
+
+    expect(await new AutostartInstaller(h.d).repairLegacyGeneratedUnit()).toBe(
+      true,
+    );
+    expect(h.files.get(UNIT_PATH)).toContain(
+      `Environment=PATH=${MANAGED_PLAYER_PATH}`,
+    );
+    expect(h.runs).toContainEqual(["systemctl", ["--user", "daemon-reload"]]);
+  });
 });
 
 describe("AutostartInstaller.install", () => {
@@ -254,6 +286,8 @@ describe("AutostartInstaller.install", () => {
     // Starting the unit would run a second player over this one.
     expect(lines.some((line) => line.includes("--now"))).toBe(false);
     expect(lines.some((line) => line.includes("start"))).toBe(false);
+    expect(result.message).toContain("no duplicate was started");
+    expect(result.message).toContain("next controlled restart");
   });
 
   it("falls back to default.target when the graphical target is not active", async () => {
@@ -319,6 +353,28 @@ describe("AutostartInstaller.install", () => {
 
     expect(result.success).toBe(false);
     expect(result.code).toBe("autostart_failed");
+  });
+});
+
+describe("systemAutostartDeps", () => {
+  it("can capture the effective state identity used by a manual launch", () => {
+    const deps = systemAutostartDeps(
+      {
+        APPIMAGE: APP_IMAGE,
+        DISPLAY: ":0",
+        HOME: "/home/kiosk",
+        TILECAST_SERVER_URL: "",
+      },
+      {
+        dataDirectory: "/srv/tilecast-state",
+        serverUrl: "https://signage.example.org",
+      },
+    );
+
+    expect(deps.appImagePath).toBe(APP_IMAGE);
+    expect(deps.environment.display).toBe(":0");
+    expect(deps.environment.dataDirectory).toBe("/srv/tilecast-state");
+    expect(deps.environment.serverUrl).toBe("https://signage.example.org");
   });
 });
 

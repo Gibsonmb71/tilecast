@@ -626,7 +626,15 @@ export class PlayerRuntime {
       now: () => Date.now(),
     });
 
-    this.autostart = new AutostartInstaller(systemAutostartDeps());
+    this.autostart = new AutostartInstaller(
+      systemAutostartDeps(process.env, {
+        // Persist the effective values, not just the variables that happened
+        // to be present when a legacy/manual AppImage was launched. This keeps
+        // the unit on the same identity and state directory after handoff.
+        dataDirectory: this.store.dataDir,
+        serverUrl: this.options.serverUrl,
+      }),
+    );
     // Probed once here so the first heartbeat already carries autostart state;
     // Studio's Linux boot row is otherwise blank until an operator acts. Runs
     // alongside the startup syncs and is awaited before the socket opens, so

@@ -42,6 +42,14 @@ const log = logger("autostart");
 export const UNIT_NAME = "tilecast-player.service";
 
 /**
+ * System paths inherited by a managed player. UxPlay is provisioned into
+ * /usr/local/bin, while Debian packages normally place the remaining host
+ * tools in /usr/bin. Keep this explicit so the systemd child has the same
+ * host-tool view as a display-manager or SSH-launched player.
+ */
+export const MANAGED_PLAYER_PATH = "/usr/local/bin:/usr/bin:/bin";
+
+/**
  * Marker written into every generated unit. `remove` requires it, so a unit an
  * operator wrote or edited by hand is left alone.
  */
@@ -203,6 +211,7 @@ export function renderUnit(input: UnitRenderInput): string {
     `ExecStart=${unitQuote(appImagePath)} --appimage-extract-and-run`,
     "Restart=always",
     "RestartSec=5",
+    `Environment=PATH=${MANAGED_PLAYER_PATH}`,
   );
 
   const environmentLines: Array<[string, string | null]> = [
@@ -233,6 +242,14 @@ export function hasFuseIndependentLaunch(contents: string): boolean {
   return /^ExecStart=.*(?:^|\s)--appimage-extract-and-run(?:\s|$)/m.test(
     contents,
   );
+}
+
+/** Whether a unit has the safe host-tool PATH emitted by current Tilecast. */
+export function hasManagedPlayerPath(contents: string): boolean {
+  return new RegExp(
+    `^Environment=PATH=${MANAGED_PLAYER_PATH.replaceAll(".", "\\.")}$`,
+    "m",
+  ).test(contents);
 }
 
 function usesLegacyDirectAppImageLaunch(contents: string): boolean {
@@ -352,7 +369,7 @@ export class AutostartInstaller {
     if (
       existing === null ||
       !existing.includes(GENERATED_MARKER) ||
-      hasFuseIndependentLaunch(existing) ||
+      (hasFuseIndependentLaunch(existing) && hasManagedPlayerPath(existing)) ||
       !this.deps.appImagePath
     ) {
       return false;
@@ -379,7 +396,7 @@ export class AutostartInstaller {
         });
         return false;
       }
-      log.info("legacy autostart unit upgraded to FUSE-independent launch", {
+      log.info("legacy Tilecast autostart unit upgraded", {
         target,
       });
       return true;
@@ -452,6 +469,15 @@ export class AutostartInstaller {
           detail: generated
             ? "Tilecast unit still launches through the legacy FUSE mount path"
             : "operator-managed unit launches through the legacy FUSE mount path",
+        };
+      }
+      if (generated && !hasManagedPlayerPath(existing)) {
+        return {
+          ...base,
+          state: "needs_attention",
+          lingerEnabled,
+          target: this.targetFromUnit(existing),
+          detail: "Tilecast unit is missing the managed host-tool PATH",
         };
       }
       return {
@@ -574,13 +600,15 @@ export class AutostartInstaller {
     target: AutostartTarget,
     lingerEnabled: boolean,
   ): string {
+    const handoff =
+      "The current player is still running from its existing launch; no duplicate was started. Systemd takes ownership after the next controlled restart, session restart, or reboot.";
     if (target === "graphical-session.target") {
-      return "Installed and enabled; the player starts with the graphical session and restarts after any exit. Confirm the session itself auto-starts at boot (auto-login or a kiosk compositor).";
+      return `Installed and enabled. ${handoff} The player starts with the graphical session and restarts after any exit. Confirm the session itself auto-starts at boot (auto-login or a kiosk compositor).`;
     }
     const linger = lingerEnabled
       ? "Lingering is enabled"
       : "Lingering is off, so run `loginctl enable-linger` as root";
-    return `Installed and enabled against default.target because graphical-session.target is not active in this session. ${linger}, and confirm a graphical session (auto-login or a kiosk compositor) starts at boot.`;
+    return `Installed and enabled against default.target because graphical-session.target is not active in this session. ${handoff} ${linger}, and confirm a graphical session (auto-login or a kiosk compositor) starts at boot.`;
   }
 
   /**
@@ -668,6 +696,10 @@ const COMMAND_TIMEOUT_MS = 10_000;
  */
 export function systemAutostartDeps(
   environment: NodeJS.ProcessEnv = process.env,
+  effective?: {
+    dataDirectory?: string | null;
+    serverUrl?: string | null;
+  },
 ): AutostartDeps {
   return {
     appImagePath: environment["APPIMAGE"] ?? null,
@@ -677,8 +709,10 @@ export function systemAutostartDeps(
       display: environment["DISPLAY"] ?? null,
       waylandDisplay: environment["WAYLAND_DISPLAY"] ?? null,
       invocationId: environment["INVOCATION_ID"] ?? null,
-      dataDirectory: environment["TILECAST_DATA_DIR"] ?? null,
-      serverUrl: environment["TILECAST_SERVER_URL"] ?? null,
+      dataDirectory:
+        effective?.dataDirectory ?? environment["TILECAST_DATA_DIR"] ?? null,
+      serverUrl:
+        effective?.serverUrl ?? environment["TILECAST_SERVER_URL"] ?? null,
       logLevel: environment["TILECAST_LOG_LEVEL"] ?? null,
     },
     // Resolves for a non-zero exit as well: a failed probe is an answer
