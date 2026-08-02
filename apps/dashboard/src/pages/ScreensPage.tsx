@@ -15,6 +15,7 @@ import {
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Airplay,
   CircleAlert,
   ChevronDown,
   ChevronRight,
@@ -2640,7 +2641,8 @@ export function ScreenDetailPage() {
                   className="button button--primary"
                   onClick={() => setAirplayOpen(true)}
                 >
-                  Present · AirPlay
+                  <Airplay size={15} aria-hidden="true" />
+                  AirPlay
                 </button>
               )}
             {canManageScreens(auth.status?.user) && (
