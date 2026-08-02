@@ -11,12 +11,16 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// host(), not ::text: last_known_ip is an inet, and casting an inet to text
+// appends the netmask, so the fleet list rendered "192.0.2.10/32" and the Fire
+// TV panel built an unusable "adb connect 192.0.2.10/32:5555". host() keeps the
+// bare address and still yields NULL when no heartbeat has reported one.
 const screenSelect = `
 SELECT s.id,s.name,s.description,COALESCE(l.name,''),s.location_id,s.room_name,s.room_number,
        l.address_line_1,l.address_line_2,l.city,l.state,l.postal_code,l.country,l.latitude,l.longitude,l.created_at,l.updated_at,
        s.platform,s.device_manufacturer,s.device_model,s.android_version,s.player_version,
        s.screen_width,s.screen_height,s.density,s.locale,s.timezone,s.available_storage_bytes,s.uptime_seconds,s.enabled,s.paired_at,
-       s.last_connected_at,s.last_disconnected_at,s.last_heartbeat_at,s.last_known_ip::text,s.created_at,s.updated_at,
+       s.last_connected_at,s.last_disconnected_at,s.last_heartbeat_at,host(s.last_known_ip),s.created_at,s.updated_at,
        EXISTS(SELECT 1 FROM device_credentials c WHERE c.screen_id=s.id AND c.revoked_at IS NULL),
        s.archived_at,s.archived_reason,
        sg.id,sg.name,COALESCE(p.name,ly.name),
