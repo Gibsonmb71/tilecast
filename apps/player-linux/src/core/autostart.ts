@@ -12,7 +12,8 @@
  *
  * This module owns (2), and reports honestly about (1) rather than claiming a
  * success it cannot verify. The installer is deliberately better-informed than
- * the hand-written unit in `deploy/tilecast-player.service`: a running player
+ * the hand-written unit the server publishes at
+ * `/install/tilecast-player.service`: a running player
  * knows its own `$APPIMAGE`, its real `DISPLAY`/`WAYLAND_DISPLAY`, its data
  * directory, and whether `graphical-session.target` is actually reachable in
  * this session — all of which the operator otherwise has to guess, and which

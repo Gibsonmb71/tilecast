@@ -26,8 +26,16 @@ class CPU, 4 GB RAM, Intel integrated graphics, and a 1080p HDMI display.
 
 ## Dependencies and provisioning
 
-Run `apps/player-linux/deploy/install-airplay-support.sh` as root during
-provisioning. It installs or validates:
+AirPlay support is provisioned by default by the player installer
+(`curl -fsSL https://your-server/install.sh | sudo bash`). To add it to a
+machine that already runs the player, the server publishes the same script on
+its own:
+
+```sh
+curl -fsSL https://your-server/install-airplay.sh | sudo bash
+```
+
+Either path installs or validates:
 
 - UxPlay 1.73.6
 - GStreamer tools and base/good/bad/libav/VA-API plugins, including
