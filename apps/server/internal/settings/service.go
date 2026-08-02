@@ -552,9 +552,25 @@ func (s *Service) audit(ctx context.Context, tx pgx.Tx, user uuid.UUID, action, 
 	metadata, _ := json.Marshal(map[string]any{"changedKeys": sortedKeys(values), "revision": revision, "scope": resource})
 	_, _ = tx.Exec(ctx, `INSERT INTO audit_logs(id,user_id,action,resource_type,resource_id,metadata)VALUES($1,$2,$3,$4,$5,$6::jsonb)`, uuid.New(), user, action, resource, id.String(), string(metadata))
 }
+
+// mergeDefaults lays the stored values over the registry's defaults, keeping only
+// the keys the registry still defines at this scope.
+//
+// The filter is the point. Stored settings outlive the registry: retiring a
+// setting deletes its definition but leaves its value in the JSON document, and
+// a document is only rewritten when someone saves. Handing those orphans back
+// made the Settings page unsavable — the dashboard posts the document it was
+// given, Validate refused the retired key with unknown_setting, and the entire
+// save failed, including whichever unrelated setting the operator had come to
+// change. Filtering here is also what cleans them up: the next successful save
+// writes back the validated set, and the orphan is gone for good.
 func mergeDefaults(values map[string]any, scope Scope) map[string]any {
 	out := Defaults(scope)
 	for key, value := range values {
+		definition, ok := byKey[key]
+		if !ok || !WritableAtScope(definition, scope) {
+			continue
+		}
 		out[key] = value
 	}
 	return out
