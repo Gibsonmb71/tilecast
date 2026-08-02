@@ -23,6 +23,7 @@ import { PlayerPolicyEditor } from "../settings/PlayerPolicyEditor";
 import { AirPlayPresentDialog } from "../components/AirPlayPresentDialog";
 import { QuickPresentDialog } from "../components/QuickPresentDialog";
 import { SpanWallEditor } from "../components/SpanWallEditor";
+import { DisplayControlGroupActions } from "../components/DisplayControlGroupActions";
 
 const canManage = (role?: string) =>
   role === "owner" || role === "administrator";
@@ -390,6 +391,13 @@ export function GroupDetailPage() {
 
       <SpanWallEditor
         group={groupData}
+        manageable={manageable}
+        csrfToken={csrf}
+      />
+
+      <DisplayControlGroupActions
+        groupId={groupData.id}
+        memberCount={groupData.membershipCount}
         manageable={manageable}
         csrfToken={csrf}
       />

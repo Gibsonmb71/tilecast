@@ -44,6 +44,8 @@ import type {
   ScreenGroup,
   ScreenGroupList,
   SpanStatus,
+  DisplayControlGroupApplyResult,
+  DisplayControlGroupPreview,
   Schedule,
   ScheduleInput,
   ScheduleList,
@@ -1954,6 +1956,27 @@ export const api = {
     normalizeScreenGroup(await request<ScreenGroup>(`/screen-groups/${id}`)),
   spanStatus: async (id: string) =>
     request<SpanStatus>(`/screen-groups/${id}/span`),
+  displayControlGroupPreview: async (
+    id: string,
+    commandType: DisplayControlGroupPreview["commandType"],
+  ) =>
+    request<DisplayControlGroupPreview>(
+      `/screen-groups/${id}/display-control/preview?commandType=${encodeURIComponent(commandType)}`,
+    ),
+  applyDisplayControlGroup: async (
+    id: string,
+    commandType: DisplayControlGroupPreview["commandType"],
+    fingerprint: string,
+    csrfToken: string,
+  ) =>
+    request<DisplayControlGroupApplyResult>(
+      `/screen-groups/${id}/display-control`,
+      {
+        method: "POST",
+        headers: { "X-CSRF-Token": csrfToken },
+        body: JSON.stringify({ commandType, fingerprint }),
+      },
+    ),
   updateSpanGeometry: async (
     id: string,
     input: {

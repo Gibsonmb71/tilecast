@@ -905,6 +905,46 @@ export type SpanStatus = {
     updatedAt: string;
   }[];
 };
+export type DisplayControlGroupScreen = {
+  screenId: string;
+  name: string;
+  provider: string;
+  capabilities: Record<string, string>;
+  supported: boolean;
+  eligible: boolean;
+  reason?: string;
+};
+export type DisplayControlGroupPreview = {
+  groupId: string;
+  groupName: string;
+  commandType:
+    | "display_power_on"
+    | "display_power_off"
+    | "display_mute"
+    | "display_unmute";
+  selectedCount: number;
+  supportedCount: number;
+  unsupportedCount: number;
+  eligibleCount: number;
+  fingerprint: string;
+  screens: DisplayControlGroupScreen[];
+};
+export type DisplayControlGroupApplyResult = {
+  groupId: string;
+  commandType: DisplayControlGroupPreview["commandType"];
+  selectedCount: number;
+  supportedCount: number;
+  queuedCount: number;
+  failedCount: number;
+  unsupportedCount: number;
+  results: {
+    screenId: string;
+    name: string;
+    state: "queued" | "skipped" | "failed";
+    reason?: string;
+    id?: string;
+  }[];
+};
 export type ScreenGroupList = {
   items: ScreenGroup[];
   total: number;
