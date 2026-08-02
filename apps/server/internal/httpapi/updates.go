@@ -462,9 +462,9 @@ func normalizedCanarySize(requested, targetCount int) int {
 }
 
 // reconcileUpdateDeployments settles what the live heartbeat path should already
-// have settled. It exists because a target stuck in `reconnecting` while its
-// screen is demonstrably healthy at the expected version is a reporting bug, not
-// an operational state, and Studio must not show it as progress forever.
+// have settled. It exists because a target stuck mid-install while its screen is
+// demonstrably healthy at the expected version is a reporting bug, not an
+// operational state, and Studio must not show it as progress forever.
 //
 // Bounded on purpose: three fixed statements, no per-row work, no retries. The
 // order matters — settle first, so a canary that did reconnect healthily is not
@@ -473,8 +473,16 @@ func (s *server) reconcileUpdateDeployments(ctx context.Context) {
 	// A screen counts as reconnected when it is currently heartbeating, reports a
 	// version code at or above the expected one, is not in safe mode, reports no
 	// update failure, and has healthy playback after the installation began.
-	_, _ = s.db.Exec(ctx, `UPDATE screen_update_states st SET state='succeeded',reconnect_at=COALESCE(st.reconnect_at,now()),completed_at=now(),updated_at=now() WHERE st.state='reconnecting' AND EXISTS(SELECT 1 FROM screens sc JOIN screen_player_status ps ON ps.screen_id=sc.id WHERE sc.id=st.screen_id AND sc.last_heartbeat_at>now()-interval '5 minutes' AND ps.player_version_code>=st.expected_version_code AND NOT ps.safe_mode AND ps.last_healthy_playback_at IS NOT NULL AND (st.install_started_at IS NULL OR ps.last_healthy_playback_at>st.install_started_at) AND (ps.update_error IS NULL OR ps.update_error=''))`)
-	_, _ = s.db.Exec(ctx, `UPDATE update_deployments d SET status='paused',rollout_phase='paused',paused_at=now(),pause_reason='A canary did not reconnect within ten minutes.' WHERE d.status='active' AND d.rollout_phase='canary' AND EXISTS(SELECT 1 FROM screen_update_states st WHERE st.deployment_id=d.id AND st.is_canary AND st.state='reconnecting' AND st.updated_at<now()-interval '10 minutes')`)
+	//
+	// Every non-terminal state, not just `reconnecting`. Which state a finished
+	// update was left in records only which of the player's best-effort status
+	// reports was the last to land: the Android installer replaces the process
+	// while the target still reads `installing`, and a Linux player whose reports
+	// were lost installs anyway and leaves the target as far back as `pending`.
+	// The evidence required is the same either way, and it is the version code
+	// and healthy playback — not the reporting — that prove the update finished.
+	_, _ = s.db.Exec(ctx, `UPDATE screen_update_states st SET state='succeeded',reconnect_at=COALESCE(st.reconnect_at,now()),completed_at=now(),updated_at=now() WHERE st.state NOT IN('succeeded','failed','cancelled','incompatible','already_current') AND EXISTS(SELECT 1 FROM screens sc JOIN screen_player_status ps ON ps.screen_id=sc.id WHERE sc.id=st.screen_id AND sc.last_heartbeat_at>now()-interval '5 minutes' AND ps.player_version_code>=st.expected_version_code AND NOT ps.safe_mode AND ps.last_healthy_playback_at IS NOT NULL AND (st.install_started_at IS NULL OR ps.last_healthy_playback_at>st.install_started_at) AND (ps.update_error IS NULL OR ps.update_error=''))`)
+	_, _ = s.db.Exec(ctx, `UPDATE update_deployments d SET status='paused',rollout_phase='paused',paused_at=now(),pause_reason='A canary did not reconnect within ten minutes.' WHERE d.status='active' AND d.rollout_phase='canary' AND EXISTS(SELECT 1 FROM screen_update_states st WHERE st.deployment_id=d.id AND st.is_canary AND st.state IN('installing','reconnecting') AND st.updated_at<now()-interval '10 minutes')`)
 	// The aggregate follows the targets: an active deployment with no unfinished
 	// target is finished, whichever path finished the last one. Idempotent, so a
 	// deployment that is already completed keeps its original completion time.

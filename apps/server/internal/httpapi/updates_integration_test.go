@@ -551,3 +551,381 @@ func TestLinuxDeploymentTargetsOnlyLinuxScreens(t *testing.T) {
 		t.Fatalf("linux command payload missing expectedArtifactSha256: %#v", payload)
 	}
 }
+
+// The Android regression: every heartbeat after the first one on a connection is
+// the socket status message, which carries playbackState but not
+// lastHealthyPlaybackAt. A screen that installed the release, restarted into it
+// and is playing content has finished its update, and must not be left reading
+// "Installing" because of which fields its transport happens to carry — nor have
+// the stored playback timestamp erased by the same partial heartbeat.
+func TestAndroidSocketHeartbeatSettlesInstallingTarget(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	lockPool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lockPool.Close()
+	lock, err := lockPool.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Release()
+	if _, err = lock.Exec(ctx, `SELECT pg_advisory_lock(7421999)`); err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Exec(ctx, `SELECT pg_advisory_unlock(7421999)`) //nolint:errcheck
+	if err = database.Migrate(ctx, databaseURL); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	pool, err := database.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if _, err = pool.Exec(ctx, `TRUNCATE organization_settings,users CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+
+	organizationID := uuid.New()
+	userID := uuid.New()
+	screenID := uuid.New()
+	releaseID := uuid.New()
+	deploymentID := uuid.New()
+	if _, err = pool.Exec(ctx, `INSERT INTO organization_settings(singleton,organization_name,id) VALUES(true,'Android Settle Test',$1)`, organizationID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO users(id,name,username,password_hash,role) VALUES($1,'Owner','owner','test','owner')`, userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO screens(id,organization_id,player_installation_id,name,platform,device_manufacturer,device_model,android_version,player_version,screen_width,screen_height,density,locale,timezone,last_heartbeat_at) VALUES($1,$2,$3,'Cafeteria','android','Test','Test','13','0.11.0',1920,1080,1,'en-US','UTC',now())`, screenID, organizationID, uuid.NewString()); err != nil {
+		t.Fatal(err)
+	}
+	// The pre-update playback timestamp the HTTP heartbeat stored at connect. It
+	// predates the installation, so it is not evidence of a settled update — and
+	// the partial heartbeat below must not erase it either.
+	if _, err = pool.Exec(ctx, `INSERT INTO screen_player_status(screen_id,player_version_code,safe_mode,last_healthy_playback_at,commissioning_state) VALUES($1,110,false,now()-interval '30 minutes','complete')`, screenID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO player_releases(id,platform,source,channel,version_code,version_name,release_notes,published_at,apk_name,apk_size,apk_sha256,signing_certificate_sha256,manifest,manifest_signature,cache_status,verification_status,imported_by) VALUES($1,'android','upload','stable',111,'0.11.1','',now(),'tilecast-player.apk',4096,$2,'','{}'::jsonb,'signature','cached','verified',$3)`, releaseID, "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO update_deployments(id,release_id,name,mode,status,created_by) VALUES($1,$2,'Tilecast Player 0.11.1','install_now','active',$3)`, deploymentID, releaseID, userID); err != nil {
+		t.Fatal(err)
+	}
+	// Where the Android installer leaves a target: it reports `installing` and the
+	// process is replaced before it can report anything else.
+	if _, err = pool.Exec(ctx, `INSERT INTO screen_update_states(deployment_id,screen_id,previous_version_code,expected_version_code,state,install_started_at,downloaded_at) VALUES($1,$2,110,111,'installing',now()-interval '2 minutes',now()-interval '3 minutes')`, deploymentID, screenID); err != nil {
+		t.Fatal(err)
+	}
+
+	s := &server{
+		db:      pool,
+		logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+		devices: devices.NewService(pool, devices.NewPresenceHub(), "http://localhost"),
+	}
+	// The socket status payload, field for field: a reliability mode and safeMode
+	// (so the reliability write runs), playbackState, and no lastHealthyPlaybackAt.
+	heartbeat := `{"screenWidth":1920,"screenHeight":1080,"playerVersion":"0.11.1","playerVersionCode":111,` +
+		`"playbackState":"playing","safeMode":false,"configuredReliabilityMode":"standard"}`
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/player/heartbeat", bytes.NewReader([]byte(heartbeat)))
+	request = request.WithContext(context.WithValue(request.Context(), deviceContextKey, devices.DevicePrincipal{ScreenID: screenID, Enabled: true}))
+	recorder := httptest.NewRecorder()
+	s.playerHeartbeat(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("heartbeat status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var state, status string
+	if err = pool.QueryRow(ctx, `SELECT st.state,d.status FROM screen_update_states st JOIN update_deployments d ON d.id=st.deployment_id WHERE st.deployment_id=$1 AND st.screen_id=$2`, deploymentID, screenID).Scan(&state, &status); err != nil {
+		t.Fatal(err)
+	}
+	if state != "succeeded" || status != "completed" {
+		t.Fatalf("socket-shaped heartbeat did not settle the update: state=%q status=%q", state, status)
+	}
+	// The partial heartbeat reported no commissioning state and no playback
+	// timestamp. Neither stored value may be erased by its silence.
+	var storedPlayback *time.Time
+	var commissioning *string
+	if err = pool.QueryRow(ctx, `SELECT last_healthy_playback_at,commissioning_state FROM screen_player_status WHERE screen_id=$1`, screenID).Scan(&storedPlayback, &commissioning); err != nil {
+		t.Fatal(err)
+	}
+	if storedPlayback == nil {
+		t.Fatal("a heartbeat that omitted lastHealthyPlaybackAt erased the stored value")
+	}
+	if commissioning == nil || *commissioning != "complete" {
+		t.Fatalf("a heartbeat that omitted commissioningState erased the stored value: %v", commissioning)
+	}
+}
+
+// The Linux regression: the self-updater's status reports are best effort. It
+// logs a failed report at debug and installs anyway, on the stated assumption
+// that the server reconciles from heartbeats. When those reports do not land the
+// target is left as far back as `pending` while the player promotes the AppImage,
+// restarts onto the new version and plays content — and the rollout must settle
+// from that evidence rather than from which report happened to arrive last.
+func TestLinuxTargetSettlesWhenStatusReportsWereLost(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	lockPool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lockPool.Close()
+	lock, err := lockPool.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Release()
+	if _, err = lock.Exec(ctx, `SELECT pg_advisory_lock(7421999)`); err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Exec(ctx, `SELECT pg_advisory_unlock(7421999)`) //nolint:errcheck
+	if err = database.Migrate(ctx, databaseURL); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	pool, err := database.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+
+	// Every state a lost report can leave behind, including the ones no player
+	// deliberately stops on. All of them are the same finished update.
+	for _, stranded := range []string{"pending", "offline", "held", "downloading", "downloaded", "verifying", "ready", "installing", "reconnecting"} {
+		t.Run(stranded, func(t *testing.T) {
+			if _, err = pool.Exec(ctx, `TRUNCATE organization_settings,users CASCADE`); err != nil {
+				t.Fatal(err)
+			}
+			organizationID := uuid.New()
+			userID := uuid.New()
+			screenID := uuid.New()
+			releaseID := uuid.New()
+			deploymentID := uuid.New()
+			if _, err = pool.Exec(ctx, `INSERT INTO organization_settings(singleton,organization_name,id) VALUES(true,'Linux Lost Report Test',$1)`, organizationID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = pool.Exec(ctx, `INSERT INTO users(id,name,username,password_hash,role) VALUES($1,'Owner','owner','test','owner')`, userID); err != nil {
+				t.Fatal(err)
+			}
+			// Linux 0.10.0: version code 10000, the same formula the signed manifest
+			// carries. The player has already restarted onto it.
+			if _, err = pool.Exec(ctx, `INSERT INTO screens(id,organization_id,player_installation_id,name,platform,device_manufacturer,device_model,android_version,player_version,screen_width,screen_height,density,locale,timezone,last_heartbeat_at) VALUES($1,$2,$3,'Linux Lobby','linux','Test','Test','','0.10.0',1920,1080,1,'en-US','UTC',now())`, screenID, organizationID, uuid.NewString()); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = pool.Exec(ctx, `INSERT INTO screen_player_status(screen_id,player_version_code,safe_mode,last_healthy_playback_at) VALUES($1,10000,false,now())`, screenID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = pool.Exec(ctx, `INSERT INTO player_releases(id,platform,source,channel,version_code,version_name,release_notes,published_at,apk_name,apk_size,apk_sha256,signing_certificate_sha256,manifest,manifest_signature,cache_status,verification_status,imported_by) VALUES($1,'linux','upload','stable',10000,'0.10.0','',now(),'tilecast-player.AppImage',4096,$2,'','{}'::jsonb,'signature','cached','verified',$3)`, releaseID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", userID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = pool.Exec(ctx, `INSERT INTO update_deployments(id,release_id,name,mode,status,created_by) VALUES($1,$2,'Tilecast Player for Linux 0.10.0','install_now','active',$3)`, deploymentID, releaseID, userID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = pool.Exec(ctx, `INSERT INTO screen_update_states(deployment_id,screen_id,previous_version_code,expected_version_code,state) VALUES($1,$2,9000,10000,$3)`, deploymentID, screenID, stranded); err != nil {
+				t.Fatal(err)
+			}
+
+			s := &server{
+				db:      pool,
+				logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+				devices: devices.NewService(pool, devices.NewPresenceHub(), "http://localhost"),
+			}
+			recorder := httptest.NewRecorder()
+			s.listUpdateDeployments(recorder, deploymentRequest(http.MethodGet, "/api/v1/update-deployments", userID, "owner"))
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("list status=%d body=%s", recorder.Code, recorder.Body.String())
+			}
+			var state, status string
+			if err = pool.QueryRow(ctx, `SELECT st.state,d.status FROM screen_update_states st JOIN update_deployments d ON d.id=st.deployment_id WHERE st.deployment_id=$1`, deploymentID).Scan(&state, &status); err != nil {
+				t.Fatal(err)
+			}
+			if state != "succeeded" || status != "completed" {
+				t.Fatalf("a target stranded at %q was not settled: state=%q status=%q", stranded, state, status)
+			}
+		})
+	}
+}
+
+// The other side of that rule: the same stranded states must NOT settle while the
+// screen is still on the old version. Reporting a rollout as finished because a
+// report was lost would be the same failure in the opposite direction.
+func TestStrandedTargetOnTheOldVersionIsNotSettled(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	lockPool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lockPool.Close()
+	lock, err := lockPool.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Release()
+	if _, err = lock.Exec(ctx, `SELECT pg_advisory_lock(7421999)`); err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Exec(ctx, `SELECT pg_advisory_unlock(7421999)`) //nolint:errcheck
+	if err = database.Migrate(ctx, databaseURL); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	pool, err := database.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if _, err = pool.Exec(ctx, `TRUNCATE organization_settings,users CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+
+	organizationID := uuid.New()
+	userID := uuid.New()
+	screenID := uuid.New()
+	releaseID := uuid.New()
+	deploymentID := uuid.New()
+	if _, err = pool.Exec(ctx, `INSERT INTO organization_settings(singleton,organization_name,id) VALUES(true,'Linux Unsettled Test',$1)`, organizationID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO users(id,name,username,password_hash,role) VALUES($1,'Owner','owner','test','owner')`, userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO screens(id,organization_id,player_installation_id,name,platform,device_manufacturer,device_model,android_version,player_version,screen_width,screen_height,density,locale,timezone,last_heartbeat_at) VALUES($1,$2,$3,'Linux Lobby','linux','Test','Test','','0.9.0',1920,1080,1,'en-US','UTC',now())`, screenID, organizationID, uuid.NewString()); err != nil {
+		t.Fatal(err)
+	}
+	// Healthy and heartbeating, but still on 0.9.0.
+	if _, err = pool.Exec(ctx, `INSERT INTO screen_player_status(screen_id,player_version_code,safe_mode,last_healthy_playback_at) VALUES($1,9000,false,now())`, screenID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO player_releases(id,platform,source,channel,version_code,version_name,release_notes,published_at,apk_name,apk_size,apk_sha256,signing_certificate_sha256,manifest,manifest_signature,cache_status,verification_status,imported_by) VALUES($1,'linux','upload','stable',10000,'0.10.0','',now(),'tilecast-player.AppImage',4096,$2,'','{}'::jsonb,'signature','cached','verified',$3)`, releaseID, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO update_deployments(id,release_id,name,mode,status,created_by) VALUES($1,$2,'Tilecast Player for Linux 0.10.0','install_now','active',$3)`, deploymentID, releaseID, userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO screen_update_states(deployment_id,screen_id,previous_version_code,expected_version_code,state) VALUES($1,$2,9000,10000,'downloading')`, deploymentID, screenID); err != nil {
+		t.Fatal(err)
+	}
+
+	s := &server{
+		db:      pool,
+		logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+		devices: devices.NewService(pool, devices.NewPresenceHub(), "http://localhost"),
+	}
+	recorder := httptest.NewRecorder()
+	s.listUpdateDeployments(recorder, deploymentRequest(http.MethodGet, "/api/v1/update-deployments", userID, "owner"))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("list status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var state, status string
+	if err = pool.QueryRow(ctx, `SELECT st.state,d.status FROM screen_update_states st JOIN update_deployments d ON d.id=st.deployment_id WHERE st.deployment_id=$1`, deploymentID).Scan(&state, &status); err != nil {
+		t.Fatal(err)
+	}
+	if state != "downloading" || status != "active" {
+		t.Fatalf("a target still on the old version was settled: state=%q status=%q", state, status)
+	}
+}
+
+// The clock-skew regression, which is what leaves a Linux screen reading
+// "Installing" after it has demonstrably updated. install_started_at is stamped
+// with the server's now(); the player's lastHealthyPlaybackAt comes from the
+// device's clock. A player whose clock runs behind the server's — no NTP, or the
+// window after a restart and before NTP resyncs, which a self-update produces on
+// every target — reports a healthy-playback time that is older than the install
+// it happened after, and no comparison of the two ever settles it.
+func TestInstallingTargetSettlesWhenTheDeviceClockRunsBehind(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	lockPool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lockPool.Close()
+	lock, err := lockPool.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Release()
+	if _, err = lock.Exec(ctx, `SELECT pg_advisory_lock(7421999)`); err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Exec(ctx, `SELECT pg_advisory_unlock(7421999)`) //nolint:errcheck
+	if err = database.Migrate(ctx, databaseURL); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	pool, err := database.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if _, err = pool.Exec(ctx, `TRUNCATE organization_settings,users CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+
+	organizationID := uuid.New()
+	userID := uuid.New()
+	screenID := uuid.New()
+	releaseID := uuid.New()
+	deploymentID := uuid.New()
+	if _, err = pool.Exec(ctx, `INSERT INTO organization_settings(singleton,organization_name,id) VALUES(true,'Clock Skew Test',$1)`, organizationID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO users(id,name,username,password_hash,role) VALUES($1,'Owner','owner','test','owner')`, userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO screens(id,organization_id,player_installation_id,name,platform,device_manufacturer,device_model,android_version,player_version,screen_width,screen_height,density,locale,timezone,last_heartbeat_at) VALUES($1,$2,$3,'Linux Lobby','linux','Test','Test','','0.10.0',1920,1080,1,'en-US','UTC',now())`, screenID, organizationID, uuid.NewString()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO screen_player_status(screen_id,player_version_code,safe_mode) VALUES($1,9000,false)`, screenID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO player_releases(id,platform,source,channel,version_code,version_name,release_notes,published_at,apk_name,apk_size,apk_sha256,signing_certificate_sha256,manifest,manifest_signature,cache_status,verification_status,imported_by) VALUES($1,'linux','upload','stable',10000,'0.10.0','',now(),'tilecast-player.AppImage',4096,$2,'','{}'::jsonb,'signature','cached','verified',$3)`, releaseID, "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO update_deployments(id,release_id,name,mode,status,created_by) VALUES($1,$2,'Tilecast Player for Linux 0.10.0','install_now','active',$3)`, deploymentID, releaseID, userID); err != nil {
+		t.Fatal(err)
+	}
+	// Reported `installing` a minute ago, stamped with the server's clock.
+	if _, err = pool.Exec(ctx, `INSERT INTO screen_update_states(deployment_id,screen_id,previous_version_code,expected_version_code,state,install_started_at,downloaded_at) VALUES($1,$2,9000,10000,'installing',now()-interval '1 minute',now()-interval '2 minutes')`, deploymentID, screenID); err != nil {
+		t.Fatal(err)
+	}
+
+	s := &server{
+		db:      pool,
+		logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+		devices: devices.NewService(pool, devices.NewPresenceHub(), "http://localhost"),
+	}
+	// The player restarted onto 0.10.0 and is playing content, but its clock is
+	// 90 minutes behind the server's, so every timestamp it reports predates the
+	// installation it happened after.
+	skewed := time.Now().UTC().Add(-90 * time.Minute).Format(time.RFC3339)
+	heartbeat := `{"screenWidth":1920,"screenHeight":1080,"playerVersion":"0.10.0","playerVersionCode":10000,` +
+		`"playbackState":"playing","safeMode":false,"lastHealthyPlaybackAt":"` + skewed + `"}`
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/player/heartbeat", bytes.NewReader([]byte(heartbeat)))
+	request = request.WithContext(context.WithValue(request.Context(), deviceContextKey, devices.DevicePrincipal{ScreenID: screenID, Enabled: true}))
+	recorder := httptest.NewRecorder()
+	s.playerHeartbeat(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("heartbeat status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var state, status string
+	if err = pool.QueryRow(ctx, `SELECT st.state,d.status FROM screen_update_states st JOIN update_deployments d ON d.id=st.deployment_id WHERE st.deployment_id=$1`, deploymentID).Scan(&state, &status); err != nil {
+		t.Fatal(err)
+	}
+	if state != "succeeded" || status != "completed" {
+		t.Fatalf("a screen behind the server clock stayed stuck: state=%q status=%q", state, status)
+	}
+}
