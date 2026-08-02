@@ -61,6 +61,7 @@ import { AirPlayPresentDialog } from "../components/AirPlayPresentDialog";
 import { QuickPresentDialog } from "../components/QuickPresentDialog";
 import { FormField } from "../components/FormField";
 import { FireTvAccessibilityAdbPanel } from "../components/FireTvAccessibilityAdbPanel";
+import { ScreenManagementTabs } from "../components/ScreenManagementTabs";
 import { PlayerPolicyEditor } from "../settings/PlayerPolicyEditor";
 import { formatLocationAddress } from "../settings/LocationsPanel";
 import { isAndroidScreen } from "../playerPlatform";
@@ -356,15 +357,7 @@ export function ScreensPage() {
           manageable && <TakeoverAction screens={screens.data?.items ?? []} />
         }
       />
-      {/* .view-tabs is the shared tab strip; these are links rather than buttons,
-          which it already styles. */}
-      <nav className="view-tabs" aria-label="Screen management">
-        <Link to="/screens" aria-current="page">
-          Screens
-        </Link>
-        <Link to="/groups">Display Groups</Link>
-        {manageable && <Link to="/screens/bulk">Bulk changes</Link>}
-      </nav>
+      <ScreenManagementTabs current="screens" />
       <ActiveTakeoverBanners canManage={manageable} />
       {screens.isError && (
         <div className="notice notice--error">{screens.error.message}</div>

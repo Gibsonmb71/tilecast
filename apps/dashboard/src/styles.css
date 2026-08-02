@@ -2376,16 +2376,8 @@ button.organizer-chip:disabled {
   display: grid;
   gap: 6px;
 }
-.bulk-screen-picker {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 4px;
-  max-height: 340px;
-  overflow-y: auto;
-  padding: 8px 0;
-  border-top: 1px solid var(--tc-border);
-  border-bottom: 1px solid var(--tc-border);
-}
+/* The bulk screen picker moved to src/pages/FleetBulkPage.css with the rest of
+   that page's styling. */
 .user-edit-dialog__scope {
   display: grid;
   gap: 10px;
