@@ -92,3 +92,54 @@ func TestReliabilityPoliciesAreTypedAndBounded(t *testing.T) {
 		})
 	}
 }
+
+// Retiring a setting must not make the Settings page unsavable. The value of a
+// removed setting stays in the stored document until something rewrites it, and
+// the dashboard posts back the document it was handed — so a read that returns a
+// key the write refuses fails every save, including the unrelated setting the
+// operator actually came to change.
+//
+// These two keys are real: both were retired from the registry while orgs still
+// had values stored for them, which is what put "unknown_setting:
+// player.sync.website_status_throttle_seconds" on the screen of anyone trying to
+// edit Active hours.
+func TestRetiredSettingsAreNotHandedBackToBeRejected(t *testing.T) {
+	stored := map[string]any{
+		"player.sync.website_status_throttle_seconds": 30.0,
+		"scheduling.confirm_overnight":                true,
+		"power.active_hours_enabled":                  true,
+	}
+	merged := mergeDefaults(stored, ScopeOrganization)
+	for _, retired := range []string{
+		"player.sync.website_status_throttle_seconds",
+		"scheduling.confirm_overnight",
+	} {
+		if _, present := merged[retired]; present {
+			t.Fatalf("retired setting %q was handed back to the client", retired)
+		}
+	}
+	// The live setting alongside them still reads back, and still reads back the
+	// stored value rather than the default.
+	if merged["power.active_hours_enabled"] != true {
+		t.Fatalf("a live setting was dropped: %v", merged["power.active_hours_enabled"])
+	}
+	// The contract this protects: everything a read returns, a write accepts.
+	if _, err := Validate(merged, ScopeOrganization); err != nil {
+		t.Fatalf("the settings document a client is given must be savable: %v", err)
+	}
+}
+
+// The same contract for user preferences, which share mergeDefaults and would
+// fail the same way.
+func TestPreferenceDocumentIsAlwaysSavable(t *testing.T) {
+	stored := map[string]any{
+		"scheduling.confirm_overnight": true,
+		// An organization-scope key stored in a preference document: not writable
+		// at this scope, so returning it would fail the save just as surely.
+		"organization.name": "Greenwood",
+	}
+	merged := mergeDefaults(stored, ScopePreference)
+	if _, err := Validate(merged, ScopePreference); err != nil {
+		t.Fatalf("the preference document a client is given must be savable: %v", err)
+	}
+}

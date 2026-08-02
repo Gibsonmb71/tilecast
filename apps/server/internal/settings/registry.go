@@ -220,6 +220,20 @@ func Defaults(scope Scope) map[string]any {
 	}
 	return out
 }
+
+// WritableAtScope reports whether a definition may be written at this scope.
+// Organization settings may also carry player-policy defaults; nothing else
+// crosses a scope.
+//
+// The read path filters stored values through this same predicate, and it must
+// keep doing so. A settings document that hands back a key the write will refuse
+// makes the whole page unsavable: the dashboard posts the document it was given,
+// one refused key fails the request, and every unrelated setting on the page
+// fails with it.
+func WritableAtScope(d Definition, scope Scope) bool {
+	return d.Scope == scope || (scope == ScopeOrganization && d.Scope == ScopePolicy)
+}
+
 func Validate(values map[string]any, scope Scope) (map[string]any, error) {
 	out := map[string]any{}
 	for key, value := range values {
@@ -227,7 +241,7 @@ func Validate(values map[string]any, scope Scope) (map[string]any, error) {
 		if !ok {
 			return nil, fmt.Errorf("unknown_setting: %s", key)
 		}
-		if d.Scope != scope && !(scope == ScopeOrganization && d.Scope == ScopePolicy) {
+		if !WritableAtScope(d, scope) {
 			return nil, fmt.Errorf("setting_not_allowed_at_scope: %s", key)
 		}
 		normalized, err := validateValue(d, value)
