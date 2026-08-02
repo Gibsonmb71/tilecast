@@ -31,7 +31,7 @@ func cacheLinuxRelease(t *testing.T, env activityTestEnvironment, root string, b
 		id, int64(4210), "player-linux-v0.12.0", int64(len(body)), hash); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, id.String()+".AppImage"), body, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, id.String()+".appimage"), body, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return hash
